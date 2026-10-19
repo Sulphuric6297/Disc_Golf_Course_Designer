@@ -142,7 +142,7 @@ export interface Layout {
   pin: PinPosition;
 }
 
-export type MapTheme = "satellite" | "illustrated" | "topo" | "minimal" | "night";
+export type MapTheme = "forest" | "illustrated" | "satellite" | "topo" | "minimal" | "night";
 export type PaperSize = "letter" | "tabloid" | "18x24" | "24x36" | "a4" | "a3";
 
 export interface MapStyle {
@@ -175,7 +175,13 @@ export interface MapStyle {
   holeTable: boolean;
   north: boolean;
   scale: boolean;
-  font: "Inter" | "Oswald" | "Bitter";
+  /** Lettering: "Script" sets the title in a brush script (the rest in Oswald). */
+  font: "Inter" | "Oswald" | "Bitter" | "Script";
+  /** Forest style: where to paint woods (everywhere off the fairways, where the photo shows trees,
+   * or only drawn woods and single trees). */
+  forest: "everywhere" | "photo" | "woods";
+  /** Turn of the map on the page, degrees (0: north up). */
+  rotation: number;
   /** How big labels are (1 = normal). */
   labelScale: number;
   paper: PaperSize;

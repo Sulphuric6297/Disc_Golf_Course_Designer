@@ -22,6 +22,7 @@ import { createAmenity, createBasket, createDropZone, createMando, createTeePad 
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
+import { createWoods } from "../three/woods";
 import type { AmenityItem, AreaItem, BasketItem, CourseItem, Hole, LabelItem, LineItem, MandoItem, TeeItem, TreeItem } from "../types";
 import { Ground } from "./ground";
 import type { P, ViewCallbacks, ViewDoc, ViewInfo, ViewTool } from "./types";
@@ -696,7 +697,9 @@ export class CourseView {
     const dt = this.clock.getDelta();
     if (this.controls.update(dt)) this.dirty = true;
     if (this.fly) {
-      this.fly.t += dt;
+      // At most a quarter second per frame: a slow first frame (or a tab coming back from the
+      // background) must not skip the flight
+      this.fly.t += Math.min(dt, 0.25);
       this.dirty = true;
       if (this.fly.t >= this.fly.dur) {
         const done = this.fly.done;
@@ -1068,6 +1071,13 @@ export class CourseView {
         g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, w, { order: 4, dashed: a.kind === "hazard" ? 6 : undefined }));
         return g;
       });
+      // Woods: trees standing in it (shadows and all)
+      if (a.kind === "woods") put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees]), () => {
+        const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees);
+        woods.traverse(o => { o.userData.itemId = a.id; });
+        this.shadowsDirty = true;
+        return woods;
+      }, this.itemsGroup);
     });
     // Lines
     for (const l of course.items.filter(i => i.type === "line") as LineItem[]) {
@@ -1409,10 +1419,16 @@ export class CourseView {
           return null;
         }, { index: i, title: i === 0 ? "Click to close the shape" : undefined });
       }
+      if (this.size.width > 1) this.layout();
       return;
     }
     if (hole) this.holeHandles(hole.id, add);
-    if (!sel || sel.locked) return;
+    if (sel && !sel.locked) this.itemHandles(sel, add);
+    // Place them now (not on the next frame), so a quick second click finds them where they were
+    if (this.size.width > 1) this.layout();
+  }
+
+  private itemHandles(sel: CourseItem, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
     if (sel.type === "area" || sel.type === "line") this.pointHandles(sel.id, add);
     else if (sel.type === "tree") {
       const id = sel.id;

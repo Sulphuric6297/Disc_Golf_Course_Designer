@@ -217,10 +217,20 @@ export async function importSite(page: Page, opts: { trees?: boolean; osm?: bool
   await expect(page.getByTestId("site-size")).toBeVisible();
   if (opts.trees === false) await page.getByText("Trees found on the photo").click();
   if (opts.osm === false) await page.getByText("Paths, water, roads and parking").click();
+  // The summary is a toast that goes after 12 seconds: note it the moment it shows (a busy test
+  // machine can take longer than that between two polls)
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__importDone = "";
+    const seen = new MutationObserver(() => {
+      const el = [...document.querySelectorAll("[role=status] > span")].find(e => /^Site brought in\./.test(e.textContent ?? ""));
+      if (el) { w.__importDone = el.textContent; seen.disconnect(); }
+    });
+    seen.observe(document.body, { childList: true, subtree: true, characterData: true });
+  });
   await page.getByTestId("import-site").click();
-  const done = page.getByText(/^Site brought in\./);
   let text = "";
-  await expect.poll(async () => (text = (await done.allTextContents())[0] ?? ""), { timeout: 60_000 }).toMatch(/^Site brought in\./);
+  await expect.poll(async () => (text = await page.evaluate(() => (window as any).__importDone)), { timeout: 60_000 }).toMatch(/^Site brought in\./);
   return text;
 }
 

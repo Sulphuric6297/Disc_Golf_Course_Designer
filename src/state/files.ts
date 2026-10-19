@@ -23,8 +23,9 @@ export const archiveCurrent = async () => {
 };
 
 const show = (doc: CourseDoc, opts: { viewOnly?: boolean } = {}) => {
-  useCourse.getState().load(doc);
+  // View-only first: the autosave must never see a shared course as yours
   useEditor.getState().set({ selectedId: null, activeHoleId: null, tool: "select", teeView: null, flyover: false, viewOnly: !!opts.viewOnly, step: doc.holes.length ? "holes" : "site" });
+  useCourse.getState().load(doc);
 };
 
 export const newCourse = async () => {
@@ -101,6 +102,7 @@ export const startAutosave = () =>
     if (state.doc === prev.doc || useEditor.getState().viewOnly) return;
     window.clearTimeout(saveTimer);
     saveTimer = window.setTimeout(() => {
+      if (useEditor.getState().viewOnly) return;
       const doc = getDoc();
       void idbSet(AUTOSAVE_KEY, doc.id ? doc : { ...doc, id: generateId() }).catch(err => console.warn("Autosave failed", err));
     }, 600);

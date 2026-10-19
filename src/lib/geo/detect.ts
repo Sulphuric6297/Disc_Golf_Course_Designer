@@ -146,7 +146,11 @@ const blur = (v: Float32Array, w: number, h: number, r: number) => localStats(v,
  * lawn around it is canopy (leaves shade each other; grass is smooth and bright); touching crowns
  * are split at the "necks" between them, using each pixel's distance to the canopy's edge.
  */
-export const detectTrees = (img: DetectImage, opts: Opts & { maxTrees?: number }): DetectedTree[] => {
+/**
+ * Where the photo shows tree canopy (1) rather than lawn, shadow or anything else (0): vegetation
+ * that is darker or more textured than the lawn. Null when there is too little vegetation to tell.
+ */
+export const canopyMask = (img: DetectImage, opts: Opts) => {
   const { width: w, height: h, data } = img;
   const mpp = opts.metersPerPx;
   const n = w * h;
@@ -164,7 +168,7 @@ export const detectTrees = (img: DetectImage, opts: Opts & { maxTrees?: number }
       vegCount++;
     }
   }
-  if (vegCount < 60) return [];
+  if (vegCount < 60) return null;
   // Brightness over about half a meter, and fine texture: how much each pixel differs from its
   // immediate neighbours, averaged over that area (leaves flicker everywhere; a shadow's edge is
   // one line, so it hardly counts).
@@ -228,6 +232,13 @@ export const detectTrees = (img: DetectImage, opts: Opts & { maxTrees?: number }
       for (const k of hole) mask[k] = 1;
     }
   }
+  return { mask, luma, lawn, win, mpp, w, h, n };
+};
+
+export const detectTrees = (img: DetectImage, opts: Opts & { maxTrees?: number }): DetectedTree[] => {
+  const found = canopyMask(img, opts);
+  if (!found) return [];
+  const { mask, luma, lawn, win, mpp, w, h, n } = found;
   const dt = distanceTransform(mask, w, h);
   // Crown tops: deep inside the canopy and sunlit (treetops catch the light).
   const lit = new Float32Array(n);

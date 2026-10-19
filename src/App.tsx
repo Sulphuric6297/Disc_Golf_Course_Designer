@@ -145,7 +145,6 @@ export default function App() {
   const ed = useEditor();
   const doc = useCourse(s => s.doc);
   const [findSite, setFindSite] = useState(false);
-  const [share, setShare] = useState(false);
   const [help, setHelp] = useState(false);
   const [menu, setMenu] = useState<{ clientX: number; clientY: number; itemId: string | null; ground: P | null } | null>(null);
   const [ready, setReady] = useState(false);
@@ -186,7 +185,12 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target.closest?.("input,textarea,select,[contenteditable=true]")) return;
+      // Keys go to text fields; sliders, checkboxes and color pickers keep the shortcuts (except
+      // the keys a slider uses itself)
+      const input = target.tagName === "INPUT" ? (target as HTMLInputElement) : null;
+      const textual = !!target.closest?.("textarea,select,[contenteditable=true]") || (!!input && !["range", "checkbox", "radio", "color", "button"].includes(input.type));
+      if (textual) return;
+      if (input?.type === "range" && /^(Arrow|Home|End|Page)/.test(e.key)) return;
       const s = useEditor.getState();
       const view = getView();
       const mod = e.ctrlKey || e.metaKey;
@@ -252,7 +256,7 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
-      <Header onShare={() => setShare(true)} onHelp={() => setHelp(true)} />
+      <Header onShare={() => useEditor.getState().set({ shareOpen: true })} onHelp={() => setHelp(true)} />
       {ed.viewOnly && (
         <div className="bg-emerald-900/70 border-b border-emerald-700 px-4 py-2 flex items-center gap-3 text-sm" data-testid="view-only-banner">
           <Eye size={16} className="text-emerald-300" />
@@ -285,7 +289,7 @@ export default function App() {
         </main>
       </div>
       {findSite && <SiteImportDialog onClose={() => setFindSite(false)} onImported={onImported} />}
-      {share && <ShareDialog onClose={() => setShare(false)} />}
+      {ed.shareOpen && <ShareDialog onClose={() => useEditor.getState().set({ shareOpen: false })} />}
       {help && <HelpDialog onClose={() => setHelp(false)} />}
       {menu && <ContextMenu info={menu} onClose={() => setMenu(null)} />}
     </div>

@@ -28,3 +28,18 @@ been seen working in the browser.
 - [ ] **A share link for a course**: send a link that opens the course for anyone (view it,
   and make their own copy to edit). With no server, the course goes inside the link and the
   map and elevation load again for that location.
+- [ ] **Course maps that look like professionally painted course maps** (the owner's example:
+  a course map from UDisc). What that look is made of:
+  - dense, lush painted woods, with the fairways cut through as bright mown clearings;
+  - single trees standing in the fairways;
+  - blue creeks winding through the woods, and dirt and gravel paths;
+  - small tee pads in their colors (gold, white…), small white basket marks, and bold white
+    italic hole numbers;
+  - the course name in a big brush-script title laid over the map;
+  - a chip for each layout with its par and length ("GOLD LAYOUT · PAR 64 | 7,670'");
+  - a full-bleed map, with no frame around it.
+- [ ] **Tee signs like the owner's second example** (a wide sign on a post):
+  - a light column on the left with the course name, the hole number big in a dark box, a PAR
+    tag in the tee color, the distance in big type ("305 FEET") and the hole notes;
+  - the hole map on the right in the same painted-woods style, tee at the bottom;
+  - the elevation change from the tee along the bottom.

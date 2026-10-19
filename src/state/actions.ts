@@ -186,3 +186,6 @@ export const layoutTee = (holeId: string) => {
 
 /** Recomputes an area's middle after its points changed (kept in step for labels and picking). */
 export const withCentroid = <T extends { points: P[] }>(item: T): T & P => ({ ...item, ...centroid(item.points) });
+
+// For the automated tests and screenshots: build a course quickly without clicking every spot.
+if (typeof window !== "undefined") (window as any).__dgActions = { addHole, addDrawn, placeAt, select };

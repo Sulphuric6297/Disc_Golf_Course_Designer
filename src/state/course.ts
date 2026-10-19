@@ -115,6 +115,8 @@ type EditorStore = {
   viewOnly: boolean;
   /** Points placed so far while drawing (for the hint). */
   drawPoints: number;
+  /** The share dialog is open. */
+  shareOpen: boolean;
   /** Map display: the satellite photo, contour lines, hill shading, ground texture up close. */
   photo: boolean;
   contours: boolean;
@@ -148,6 +150,7 @@ export const useEditor = create<EditorStore>()(set => ({
   flyover: false,
   viewOnly: false,
   drawPoints: 0,
+  shareOpen: false,
   photo: true,
   contours: true,
   shading: true,

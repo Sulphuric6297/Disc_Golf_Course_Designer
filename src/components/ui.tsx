@@ -13,12 +13,14 @@ export const Section = ({ title, children, right, testid }: { title?: ReactNode;
   </section>
 );
 
+/** A labelled control. A group, not a <label>: the controls inside carry their own names (a
+ * <label> would also name every button in a button group after the whole field). */
 export const Field = ({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) => (
-  <label className="block mb-2.5">
+  <div className="block mb-2.5" role="group" aria-label={label}>
     <span className="block text-xs font-medium text-zinc-300 mb-1">{label}</span>
     {children}
     {hint && <span className="block text-[11px] text-zinc-500 mt-1">{hint}</span>}
-  </label>
+  </div>
 );
 
 export const inputCls = "w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-orange-400";
@@ -49,13 +51,13 @@ export const NumberInput = ({ value, onChange, min, max, step = 1, label, unit }
   </div>
 );
 
-export const Slider = ({ value, onChange, min, max, step = 1, label, format }: { value: number; onChange: (v: number) => void; min: number; max: number; step?: number; label: string; format?: (v: number) => string }) => (
+export const Slider = ({ value, onChange, min, max, step = 1, label, format, onDone }: { value: number; onChange: (v: number) => void; min: number; max: number; step?: number; label: string; format?: (v: number) => string; onDone?: () => void }) => (
   <div className="mb-2.5">
     <div className="flex justify-between text-xs mb-1">
       <span className="font-medium text-zinc-300">{label}</span>
       <span className="text-zinc-400 tabular-nums">{format ? format(value) : value}</span>
     </div>
-    <input aria-label={label} type="range" className="w-full accent-orange-500" min={min} max={max} step={step} value={value} onChange={e => onChange(parseFloat(e.target.value))} />
+    <input aria-label={label} type="range" className="w-full accent-orange-500" min={min} max={max} step={step} value={value} onChange={e => onChange(parseFloat(e.target.value))} onPointerUp={onDone} onKeyUp={onDone} onBlur={onDone} />
   </div>
 );
 
@@ -108,10 +110,10 @@ export const Button = ({ children, onClick, tone = "default", disabled, title, t
   );
 };
 
-export const ColorInput = ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) => (
+export const ColorInput = ({ value, onChange, label, onDone }: { value: string; onChange: (v: string) => void; label: string; onDone?: () => void }) => (
   <label className="flex items-center justify-between gap-2 py-1">
     <span className="text-xs text-zinc-300">{label}</span>
-    <input aria-label={label} type="color" className="w-9 h-7 rounded border border-zinc-600 bg-transparent cursor-pointer" value={value} onChange={e => onChange(e.target.value)} />
+    <input aria-label={label} type="color" className="w-9 h-7 rounded border border-zinc-600 bg-transparent cursor-pointer" value={value} onChange={e => onChange(e.target.value)} onBlur={onDone} />
   </label>
 );
 
