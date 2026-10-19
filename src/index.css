@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  @apply bg-zinc-950 text-slate-200 antialiased selection:bg-indigo-500/30 selection:text-indigo-200;
+}
+
+/* Site picker: selected area size label */
+.leaflet-tooltip.site-picker-tooltip {
+  background: rgba(16, 185, 129, 0.92);
+  border: none;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.leaflet-tooltip.site-picker-tooltip::before {
+  display: none;
+}
+
+/* Site picker: selection handles */
+.site-handle-corner {
+  background: #ffffff;
+  border: 3px solid #10b981;
+  border-radius: 4px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+  cursor: nwse-resize;
+}
+.site-handle-move {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  background: #10b981;
+  color: #ffffff;
+  border-radius: 999px;
+  font-size: 16px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  cursor: move;
+}

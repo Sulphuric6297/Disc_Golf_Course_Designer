@@ -1,0 +1,11 @@
+node_modules
+.DS_Store
+dist
+.env
+.env.local
+test-results
+playwright-report
+/look/
+# Private scratch files (the owner's own plans and screenshots): never committed
+/tests/look/zz-*
+zz-*

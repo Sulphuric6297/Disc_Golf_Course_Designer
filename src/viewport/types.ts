@@ -1,0 +1,78 @@
+import type { AreaKind, CourseDoc, LineKind, P, ToolMode } from "../types";
+import type { HoleStats, SafetyIssue } from "../lib/holeStats";
+
+export type { P };
+export type Rect = { x: number; y: number; width: number; height: number };
+export type ContourSegment = { x1: number; y1: number; x2: number; y2: number; level: number };
+
+/** What the ground layer draws. Plan units are feet; plan (x, y) is 3D (x, z), Y up. */
+export type GroundDoc = {
+  canvas: { width: number; height: number };
+  unitsPerFoot: number;
+  gridSize: number;
+  showGrid: boolean;
+  heights: Record<string, number>;
+  terrain: { min: number; max: number; relief: number };
+  background: { url: string | null; rect: Rect; opacity: number };
+  overlay: "off" | "contours" | "shaded";
+  contours: { segments: ContourSegment[]; interval: number };
+  shadeUrl: string | null;
+  /** Real-scale grass, paving and soil texture over the aerial photo, where the photo shows them. */
+  groundDetail: boolean;
+  groundPaint: Record<string, number>;
+  /** Color of the ground where there is no photo (the map theme's rough). */
+  groundColor: string;
+};
+
+/** Everything the map view draws. */
+export type ViewDoc = GroundDoc & {
+  course: CourseDoc;
+  /** Numbers for each hole in the active layout (lengths, the throw line used). */
+  stats: HoleStats[];
+  /** The hole being edited: its doglegs and fairway width get handles. */
+  activeHoleId: string | null;
+  /** Problems to pin on the map (Review step), or none. */
+  issues: SafetyIssue[] | null;
+  sun: { azimuth: number; altitude: number } | null;
+};
+
+/** The active tool, as far as the map view cares. */
+export type ViewTool = {
+  mode: ToolMode;
+  areaKind: AreaKind;
+  lineKind: LineKind;
+  /** Look only (a shared course): no editing gestures. */
+  readOnly: boolean;
+};
+
+export type ViewInfo = {
+  /** Compass heading of the top of the screen, degrees clockwise from north. */
+  heading: number;
+  /** 0 = looking straight down. */
+  tiltDeg: number;
+  /** On-screen pixels per foot at the center of the view. */
+  pxPerUnit: number;
+  width: number;
+  height: number;
+};
+
+export type ViewCallbacks = {
+  onSelect: (id: string | null) => void;
+  /** A click with a placing tool (tee, basket, mando, drop zone, tree, amenity, label). */
+  onPlace: (mode: ToolMode, p: P) => void;
+  /** A new hole: where its tee and basket go. */
+  onHole: (tee: P, basket: P) => void;
+  /** An area or line finished drawing. */
+  onDrawn: (kind: "area" | "line", points: P[]) => void;
+  /** Live edits while dragging (no undo step); onCommit ends the gesture. */
+  onChange: (id: string, patch: Record<string, unknown>) => void;
+  /** Live edits to a hole (doglegs, fairway width). */
+  onHoleChange: (holeId: string, patch: Record<string, unknown>) => void;
+  onCommit: () => void;
+  onHover: (p: P | null) => void;
+  onPose: (pose: "top" | "tilt") => void;
+  /** Tee view: moved to another hole with the arrow keys, or closed. */
+  onTeeView: (holeId: string | null) => void;
+  onContextMenu: (info: { clientX: number; clientY: number; itemId: string | null; ground: P | null }) => void;
+  onDrawProgress: (points: number) => void;
+};

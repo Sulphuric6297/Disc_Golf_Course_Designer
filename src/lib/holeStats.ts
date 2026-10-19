@@ -1,0 +1,372 @@
+// Numbers for each hole and the whole course: length, elevation change, how long it plays, par,
+// shape, what is in the way, and safety checks between holes.
+import { CIRCLE_ONE_FT, CLEAR_IN_FRONT_FT, MIN_PAD, TEE_LEVELS, TEE_ORDER } from "../constants";
+import type { AreaItem, CourseDoc, Hole, Layout, LineItem, P, TeeItem, TeeLevel, TreeItem } from "../types";
+import { activeLayout, basketFor, holeNumber, holeTees, teeAim, teeFor, throwLine } from "./course";
+import { corridor, dist, distanceToPath, lengthInside, pathLength, pathTouchesPolygon, segmentsIntersect, smoothPath, turnAngles } from "./geom";
+import { heightAt, profileAlong } from "./terrainGrid";
+
+/**
+ * Minimum effective length (ft) for each par and tee color, from the PDGA Par Guidelines.
+ * Effective length = the length along the intended route + 3 x the climb from tee to basket
+ * (a drop counts the other way), longer again for doglegs and heavy foliage.
+ */
+export const PAR_MIN_FT: Record<TeeLevel, { par3: number; par4: number; par5: number }> = {
+  gold: { par3: 250, par4: 625, par5: 1000 },
+  blue: { par3: 200, par4: 525, par5: 800 },
+  white: { par3: 160, par4: 450, par5: 675 },
+  red: { par3: 140, par4: 375, par5: 550 },
+  green: { par3: 100, par4: 325, par5: 475 }
+};
+/** Typical 18-hole course length for each tee color (PDGA), ft. */
+export const COURSE_LENGTH_FT: Record<TeeLevel, [number, number]> = {
+  gold: [7000, 11000],
+  blue: [5000, 8500],
+  white: [4500, 7500],
+  red: [3500, 5500],
+  green: [2500, 4000]
+};
+/** No hole should play shorter than this (PDGA), ft. */
+export const MIN_HOLE_FT = 100;
+/** How much longer heavy foliage makes a hole play (an estimate; the PDGA's par table has separate columns). */
+export const HEAVY_FOLIAGE = 1.12;
+
+export const parForDistance = (effectiveFt: number, level: TeeLevel) => {
+  const lim = PAR_MIN_FT[level];
+  if (effectiveFt < lim.par4) return 3;
+  if (effectiveFt < lim.par5) return 4;
+  if (effectiveFt < lim.par5 + (lim.par5 - lim.par4)) return 5;
+  return 6;
+};
+
+export type HoleShape = "straight" | "left" | "right" | "s-curve";
+
+export type HoleStats = {
+  holeId: string;
+  number: number;
+  /** The tee and basket used (the layout's), and the throw line between them. */
+  teeId: string | null;
+  basketId: string | null;
+  level: TeeLevel;
+  line: P[];
+  /** Horizontal length along the throw line, ft. */
+  length: number;
+  /** Straight from tee to basket, ft. */
+  direct: number;
+  teeElevation: number;
+  basketElevation: number;
+  /** Basket minus tee, ft (positive: uphill). */
+  elevationChange: number;
+  /** Effective length (PDGA): length + 3 x climb, plus doglegs and heavy foliage. */
+  playsLike: number;
+  foliage: "light" | "heavy";
+  par: number;
+  parAuto: number;
+  shape: HoleShape;
+  /** Biggest turn of the line, degrees. */
+  turn: number;
+  /** Trees whose crowns the throw line passes through, and trees standing in the fairway. */
+  treesOnLine: number;
+  treesInFairway: number;
+  /** OB or water the throw line crosses, and OB within the fairway or close to the basket. */
+  obCrossed: number;
+  obInPlay: boolean;
+  obNearBasket: boolean;
+  /** Steepest slope along the line (percent) and climb/descent totals (ft). */
+  maxSlope: number;
+  climb: number;
+  descent: number;
+  /** 1 (easy) to 5 (hard), for the hole sheet. */
+  difficulty: number;
+  complete: boolean;
+};
+
+const areasOf = (doc: Pick<CourseDoc, "items">, kinds: string[]) => doc.items.filter(i => i.type === "area" && kinds.includes((i as AreaItem).kind)) as AreaItem[];
+
+export const holeStats = (doc: CourseDoc, hole: Hole, layout: Layout | undefined = activeLayout(doc)): HoleStats => {
+  const tee = teeFor(doc, hole.id, layout?.tee);
+  const basket = basketFor(doc, hole.id, layout?.pin);
+  const line = throwLine(hole, tee, basket);
+  const level = tee?.level ?? layout?.tee ?? "blue";
+  const complete = !!tee && !!basket;
+  const g = (p: P) => heightAt(doc.terrainHeights, doc.gridSize, p.x, p.y);
+  const length = complete ? pathLength(line) : 0;
+  const direct = complete ? dist(line[0], line[line.length - 1]) : 0;
+  const teeElevation = tee ? g(tee) + doc.site.baseElevationFt : 0;
+  const basketElevation = basket ? g(basket) + (basket.raised ?? 0) + doc.site.baseElevationFt : 0;
+  const elevationChange = complete ? basketElevation - teeElevation : 0;
+  const turns = turnAngles(line);
+  const turn = turns.reduce((m, t) => (Math.abs(t) > Math.abs(m) ? t : m), 0);
+  const total = turns.reduce((s, t) => s + t, 0);
+  const shape: HoleShape = Math.abs(turn) < 12 ? "straight"
+    : turns.some(t => t > 12) && turns.some(t => t < -12) ? "s-curve"
+    // Plan y points south, so a positive turn (clockwise on screen) bends right
+    : total > 0 ? "right" : "left";
+
+  // In the way
+  const smooth = smoothPath(line, 10);
+  const trees = doc.items.filter(i => i.type === "tree") as TreeItem[];
+  const treesOnLine = complete ? trees.filter(t => distanceToPath(t, smooth) < t.radius * (t.width ?? 1) * 0.8 && dist(t, line[0]) > 10).length : 0;
+  const halfWidth = hole.fairwayWidth / 2;
+  const treesInFairway = complete ? trees.filter(t => distanceToPath(t, smooth) < halfWidth).length : 0;
+  // Heavy foliage: trees all along it (about one per 60 ft of fairway), unless set by hand
+  const foliage = hole.foliage ?? (complete && treesInFairway >= Math.max(3, length / 60) ? "heavy" : "light");
+  // A bending hole plays longer than its line: the disc has to be shaped round the corner
+  const shapeExtra = Math.min(0.15, turns.reduce((s, t) => s + Math.max(0, Math.abs(t) - 15), 0) / 600);
+  const factor = doc.rules?.elevationFactor ?? 3;
+  const playsLike = complete ? Math.max(0, (length + factor * elevationChange) * (1 + shapeExtra) * (foliage === "heavy" ? HEAVY_FOLIAGE : 1)) : 0;
+  const parAuto = complete ? parForDistance(playsLike, level) : 3;
+  const obAreas = areasOf(doc, ["ob", "water"]).filter(a => !a.holeId || a.holeId === hole.id);
+  const obLines = (doc.items.filter(i => i.type === "line" && ((i as LineItem).kind === "ob" || (i as LineItem).kind === "stream")) as LineItem[]).filter(l => !l.holeId || l.holeId === hole.id);
+  let obCrossed = 0;
+  if (complete) {
+    obCrossed += obAreas.filter(a => lengthInside(smooth, a.points, 3) > 4).length;
+    for (const l of obLines) {
+      let crossed = false;
+      for (let i = 1; i < smooth.length && !crossed; i++) for (let j = 1; j < l.points.length && !crossed; j++) crossed = segmentsIntersect(smooth[i - 1], smooth[i], l.points[j - 1], l.points[j]);
+      if (crossed) obCrossed++;
+    }
+  }
+  const fairwayPoly = complete ? corridor(smooth, hole.fairwayWidth) : [];
+  const obInPlay = complete && (obCrossed > 0 || obAreas.some(a => pathTouchesPolygon(a.points, fairwayPoly)) || obLines.some(l => l.points.some(p => distanceToPath(p, smooth) < halfWidth)));
+  const obNearBasket = !!basket && (obAreas.some(a => {
+    const d = a.points.length >= 3 ? Math.min(...a.points.map((p, i) => distanceToPath(basket, [p, a.points[(i + 1) % a.points.length]]))) : Infinity;
+    return d < CIRCLE_ONE_FT;
+  }) || obLines.some(l => distanceToPath(basket, l.points) < CIRCLE_ONE_FT));
+
+  // Slope along the line
+  let maxSlope = 0, climb = 0, descent = 0;
+  if (complete) {
+    const prof = profileAlong(doc.terrainHeights, doc.gridSize, line, Math.max(8, Math.round(length / 15)));
+    for (let i = 1; i < prof.length; i++) {
+      const dh = prof[i].h - prof[i - 1].h;
+      const dd = prof[i].d - prof[i - 1].d;
+      if (dd > 0) maxSlope = Math.max(maxSlope, Math.abs(dh / dd) * 100);
+      if (dh > 0) climb += dh; else descent -= dh;
+    }
+  }
+
+  const lim = PAR_MIN_FT[level];
+  const par = hole.par ?? parAuto;
+  // Difficulty: how far it plays within its par's range, plus trees, OB and shape
+  const lo = par <= 3 ? lim.par3 : par === 4 ? lim.par4 : lim.par5;
+  const hi = par <= 3 ? lim.par4 : par === 4 ? lim.par5 : lim.par5 + (lim.par5 - lim.par4);
+  let score = 1.5 + 2 * Math.max(0, Math.min(1.2, (playsLike - lo) / Math.max(1, hi - lo)));
+  score += Math.min(1, treesOnLine * 0.25 + treesInFairway * 0.05);
+  score += obInPlay ? 0.6 : 0;
+  score += obNearBasket ? 0.4 : 0;
+  score += Math.min(0.5, Math.abs(turn) / 120);
+  const difficulty = Math.max(1, Math.min(5, Math.round(score - 0.4)));
+
+  return {
+    holeId: hole.id, number: holeNumber(doc, hole.id), teeId: tee?.id ?? null, basketId: basket?.id ?? null, level, line,
+    length, direct, teeElevation, basketElevation, elevationChange, playsLike, foliage, par, parAuto, shape, turn,
+    treesOnLine, treesInFairway, obCrossed, obInPlay, obNearBasket, maxSlope, climb, descent, difficulty, complete
+  };
+};
+
+export type CourseTotals = {
+  holes: number;
+  complete: number;
+  length: number;
+  par: number;
+  /** Walking from each basket to the next tee, ft. */
+  walk: number;
+  longestWalk: { from: number; ft: number } | null;
+  climb: number;
+  shortest: HoleStats | null;
+  longest: HoleStats | null;
+  parCounts: Record<number, number>;
+};
+
+export const courseTotals = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(h => holeStats(doc, h))): CourseTotals => {
+  const done = stats.filter(s => s.complete);
+  let walk = 0;
+  let longestWalk: CourseTotals["longestWalk"] = null;
+  for (let i = 0; i + 1 < stats.length; i++) {
+    const b = stats[i].line[stats[i].line.length - 1];
+    const t = stats[i + 1].line[0];
+    if (!stats[i].complete || !stats[i + 1].complete) continue;
+    const d = dist(b, t);
+    walk += d;
+    if (!longestWalk || d > longestWalk.ft) longestWalk = { from: i + 1, ft: d };
+  }
+  const parCounts: Record<number, number> = {};
+  done.forEach(s => { parCounts[s.par] = (parCounts[s.par] ?? 0) + 1; });
+  return {
+    holes: stats.length,
+    complete: done.length,
+    length: done.reduce((s, h) => s + h.length, 0),
+    par: done.reduce((s, h) => s + h.par, 0),
+    walk,
+    longestWalk,
+    climb: done.reduce((s, h) => s + h.climb, 0),
+    shortest: done.length ? done.reduce((a, b) => (b.length < a.length ? b : a)) : null,
+    longest: done.length ? done.reduce((a, b) => (b.length > a.length ? b : a)) : null,
+    parCounts
+  };
+};
+
+// --- Safety ---
+
+export type SafetyIssue = {
+  level: "danger" | "warning" | "info";
+  text: string;
+  /** Holes involved (ids) and a spot to show on the map. */
+  holes: string[];
+  at: P;
+};
+
+/**
+ * Recommended clear distance between one hole's throw line and another hole's tee, basket or
+ * throw line, ft: a disc can stray about 15% of the throw's length sideways, with a 50 ft floor.
+ */
+export const SAFE_GAP_MIN_FT = 50;
+export const defaultGap = (lengthFt: number) => Math.max(SAFE_GAP_MIN_FT, lengthFt * 0.15);
+
+const pathPathDistance = (a: P[], b: P[]) => {
+  let best = { d: Infinity, at: a[0] ?? { x: 0, y: 0 } };
+  for (const p of a) { const d = distanceToPath(p, b); if (d < best.d) best = { d, at: p }; }
+  for (const p of b) { const d = distanceToPath(p, a); if (d < best.d) best = { d, at: p }; }
+  return best;
+};
+
+const crossing = (a: P[], b: P[]): P | null => {
+  for (let i = 1; i < a.length; i++) for (let j = 1; j < b.length; j++) {
+    if (segmentsIntersect(a[i - 1], a[i], b[j - 1], b[j])) return { x: (a[i - 1].x + a[i].x) / 2, y: (a[i - 1].y + a[i].y) / 2 };
+  }
+  return null;
+};
+
+export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(h => holeStats(doc, h))): SafetyIssue[] => {
+  const issues: SafetyIssue[] = [];
+  const fixed = doc.rules?.safetyGapFt;
+  const safeGap = (len: number) => (fixed && fixed > 0 ? fixed : defaultGap(len));
+  const done = stats.filter(s => s.complete);
+  const smooth = new Map(done.map(s => [s.holeId, smoothPath(s.line, 8)]));
+  const n = (s: HoleStats) => `Hole ${s.number}`;
+  for (let i = 0; i < done.length; i++) {
+    const a = done[i];
+    const la = smooth.get(a.holeId)!;
+    const gapA = safeGap(a.length);
+    for (let j = i + 1; j < done.length; j++) {
+      const b = done[j];
+      const lb = smooth.get(b.holeId)!;
+      const x = crossing(la, lb);
+      if (x) {
+        issues.push({ level: "danger", text: `${n(a)} and ${n(b)}: the throw lines cross.`, holes: [a.holeId, b.holeId], at: x });
+        continue;
+      }
+      const near = pathPathDistance(la, lb);
+      const need = Math.min(gapA, safeGap(b.length));
+      if (near.d < need) {
+        issues.push({ level: near.d < need * 0.5 ? "danger" : "warning", text: `${n(a)} and ${n(b)}: throw lines only ${Math.round(near.d)} ft apart (${Math.round(need)} ft recommended).`, holes: [a.holeId, b.holeId], at: near.at });
+      }
+    }
+    // Other holes' tees and baskets near this hole's line (beyond its own ends)
+    for (const b of done) {
+      if (b.holeId === a.holeId) continue;
+      const tee = b.line[0];
+      const basket = b.line[b.line.length - 1];
+      const dTee = distanceToPath(tee, la);
+      // The next hole's tee is expected near this hole's basket, so measure it from the line short of the basket
+      if (dTee < gapA && dist(tee, la[la.length - 1]) > 30) {
+        issues.push({ level: dTee < gapA * 0.5 ? "danger" : "warning", text: `${n(b)}'s tee is ${Math.round(dTee)} ft from ${n(a)}'s throw line (${Math.round(gapA)} ft recommended).`, holes: [a.holeId, b.holeId], at: tee });
+      }
+      const dBasket = distanceToPath(basket, la);
+      if (dBasket < gapA * 0.8 && dist(basket, la[0]) > 30) {
+        issues.push({ level: "warning", text: `${n(b)}'s basket is ${Math.round(dBasket)} ft from ${n(a)}'s throw line: players putting there are in range.`, holes: [a.holeId, b.holeId], at: basket });
+      }
+    }
+    // Roads, paths, parking and out-of-play areas in the line of fire
+    for (const l of doc.items.filter(it => it.type === "line" && ((it as LineItem).kind === "road" || (it as LineItem).kind === "path")) as LineItem[]) {
+      const x2 = crossing(la, l.points);
+      if (x2) issues.push({ level: l.kind === "road" ? "danger" : "warning", text: `${n(a)} throws across a ${l.kind === "road" ? "road" : "walking path"}.`, holes: [a.holeId], at: x2 });
+    }
+    for (const ar of areasOf(doc, ["nogo", "parking", "building"])) {
+      if (pathTouchesPolygon(la, ar.points)) issues.push({ level: "danger", text: `${n(a)} throws over ${ar.kind === "nogo" ? "an out-of-play area" : ar.kind === "parking" ? "a parking lot" : "a building"}.`, holes: [a.holeId], at: ar });
+    }
+    // Off the site
+    const outside = la.find(p => p.x < 0 || p.y < 0 || p.x > doc.canvas.width || p.y > doc.canvas.height);
+    if (outside) issues.push({ level: "info", text: `${n(a)} runs off the edge of the site.`, holes: [a.holeId], at: outside });
+  }
+  // Walks between holes
+  for (let i = 0; i + 1 < stats.length; i++) {
+    const a = stats[i], b = stats[i + 1];
+    if (!a.complete || !b.complete) continue;
+    const d = dist(a.line[a.line.length - 1], b.line[0]);
+    if (d > 400) issues.push({ level: "info", text: `Long walk from ${n(a)}'s basket to ${n(b)}'s tee: ${Math.round(d)} ft. Add a next-tee sign.`, holes: [a.holeId, b.holeId], at: b.line[0] });
+  }
+  // Holes not finished
+  stats.filter(s => !s.complete).forEach(s => issues.push({ level: "info", text: `Hole ${s.number} needs ${s.teeId ? "a basket" : "a tee"}.`, holes: [s.holeId], at: s.line[0] ?? { x: 0, y: 0 } }));
+  issues.push(...designChecks(doc, stats));
+  return issues;
+};
+
+export const teeLevelLabel = (level: TeeLevel) => TEE_LEVELS[level].label;
+export const levelsOnCourse = (doc: CourseDoc): TeeLevel[] => TEE_ORDER.filter(l => doc.items.some(i => i.type === "tee" && i.level === l));
+
+/** Checks against the PDGA's design guidance: tee pads, the space in front of tees, hole and
+ * course length, water carries from the shortest tees, and where the course starts and ends. */
+export const designChecks = (doc: CourseDoc, stats: HoleStats[]): SafetyIssue[] => {
+  const issues: SafetyIssue[] = [];
+  const trees = doc.items.filter(i => i.type === "tree") as TreeItem[];
+  const tees = doc.items.filter(i => i.type === "tee") as TeeItem[];
+  for (const tee of tees) {
+    const num = holeNumber(doc, tee.holeId);
+    if (tee.padWidth < MIN_PAD.width || tee.padLength < MIN_PAD.length) {
+      issues.push({ level: "warning", text: `Hole ${num} ${TEE_LEVELS[tee.level].label.toLowerCase()} tee pad is ${tee.padWidth} x ${tee.padLength} ft; the PDGA asks for at least ${MIN_PAD.width} x ${MIN_PAD.length} ft.`, holes: [tee.holeId], at: tee });
+    }
+    // Trees within 20 ft in front of the pad (in a 60° wedge down the hole)
+    const aim = (teeAim(doc, tee) * Math.PI) / 180;
+    const front = { x: tee.x + Math.cos(aim) * tee.padLength / 2, y: tee.y + Math.sin(aim) * tee.padLength / 2 };
+    const blocker = trees.find(t => {
+      const d = dist(front, t) - t.radius * 0.3;
+      if (d > CLEAR_IN_FRONT_FT) return false;
+      const a = Math.atan2(t.y - front.y, t.x - front.x) - aim;
+      return Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) < Math.PI / 6;
+    });
+    if (blocker) issues.push({ level: "warning", text: `Hole ${num}: a tree stands within ${CLEAR_IN_FRONT_FT} ft in front of the ${TEE_LEVELS[tee.level].label.toLowerCase()} tee.`, holes: [tee.holeId], at: blocker });
+  }
+  for (const s of stats.filter(x => x.complete)) {
+    if (s.playsLike < MIN_HOLE_FT) issues.push({ level: "warning", text: `Hole ${s.number} plays ${Math.round(s.playsLike)} ft: shorter than the ${MIN_HOLE_FT} ft minimum.`, holes: [s.holeId], at: s.line[0] });
+  }
+  // Water carries from each hole's shortest tee
+  const water = doc.items.filter(i => i.type === "area" && (i as AreaItem).kind === "water") as AreaItem[];
+  if (water.length) {
+    for (const hole of doc.holes) {
+      const hTees = holeTees(doc, hole.id);
+      const shortest = hTees[hTees.length - 1];
+      const basket = basketFor(doc, hole.id);
+      if (!shortest || !basket) continue;
+      const line = smoothPath(throwLine(hole, shortest, basket), 8);
+      if (water.some(w => lengthInside(line, w.points, 3) > 6)) {
+        issues.push({ level: "warning", text: `Hole ${holeNumber(doc, hole.id)}: the shortest tee throws over water. Give beginners a way around (PDGA best practice).`, holes: [hole.id], at: shortest });
+      }
+    }
+  }
+  // Course length for the layout's tee color (scaled to the number of holes)
+  const done = stats.filter(x => x.complete);
+  if (done.length >= 9) {
+    const level = done[0].level;
+    const [lo, hi] = COURSE_LENGTH_FT[level];
+    const total = done.reduce((t, x) => t + x.length, 0);
+    const k = done.length / 18;
+    if (total < lo * k || total > hi * k) {
+      issues.push({ level: "info", text: `${done.length} holes total ${Math.round(total).toLocaleString()} ft; ${TEE_LEVELS[level].label} courses usually run ${Math.round(lo * k).toLocaleString()}–${Math.round(hi * k).toLocaleString()} ft for that many holes.`, holes: [], at: done[0].line[0] });
+    }
+  }
+  // Start and finish near parking
+  const parking = [
+    ...(doc.items.filter(i => i.type === "amenity" && i.kind === "parking") as P[]),
+    ...(doc.items.filter(i => i.type === "area" && (i as AreaItem).kind === "parking") as P[])
+  ];
+  if (parking.length && done.length >= 2) {
+    const first = done[0].line[0];
+    const last = done[done.length - 1].line[done[done.length - 1].line.length - 1];
+    const near = (p: P) => Math.min(...parking.map(q => dist(p, q)));
+    if (near(first) > 500) issues.push({ level: "info", text: `Hole ${done[0].number}'s tee is ${Math.round(near(first))} ft from parking; the first tee usually starts near it.`, holes: [done[0].holeId], at: first });
+    if (near(last) > 500) issues.push({ level: "info", text: `The last basket is ${Math.round(near(last))} ft from parking; courses usually finish near the start.`, holes: [done[done.length - 1].holeId], at: last });
+  }
+  return issues;
+};

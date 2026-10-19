@@ -1,0 +1,124 @@
+// Small building blocks shared by the panels.
+import type { ReactNode } from "react";
+
+export const Section = ({ title, children, right, testid }: { title?: ReactNode; children: ReactNode; right?: ReactNode; testid?: string }) => (
+  <section className="border-t border-zinc-800 first:border-t-0 px-4 py-3" data-testid={testid}>
+    {title && (
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">{title}</h3>
+        {right}
+      </div>
+    )}
+    {children}
+  </section>
+);
+
+export const Field = ({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) => (
+  <label className="block mb-2.5">
+    <span className="block text-xs font-medium text-zinc-300 mb-1">{label}</span>
+    {children}
+    {hint && <span className="block text-[11px] text-zinc-500 mt-1">{hint}</span>}
+  </label>
+);
+
+export const inputCls = "w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-orange-400";
+
+export const TextInput = ({ value, onChange, placeholder, label, area }: { value: string; onChange: (v: string) => void; placeholder?: string; label?: string; area?: boolean }) =>
+  area ? (
+    <textarea aria-label={label} className={`${inputCls} min-h-[64px] resize-y`} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} />
+  ) : (
+    <input aria-label={label} className={inputCls} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} />
+  );
+
+export const NumberInput = ({ value, onChange, min, max, step = 1, label, unit }: { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; label?: string; unit?: string }) => (
+  <div className="flex items-center gap-1.5">
+    <input
+      aria-label={label}
+      type="number"
+      className={inputCls}
+      value={Number.isFinite(value) ? value : ""}
+      min={min}
+      max={max}
+      step={step}
+      onChange={e => {
+        const v = parseFloat(e.target.value);
+        if (Number.isFinite(v)) onChange(Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v)));
+      }}
+    />
+    {unit && <span className="text-xs text-zinc-400">{unit}</span>}
+  </div>
+);
+
+export const Slider = ({ value, onChange, min, max, step = 1, label, format }: { value: number; onChange: (v: number) => void; min: number; max: number; step?: number; label: string; format?: (v: number) => string }) => (
+  <div className="mb-2.5">
+    <div className="flex justify-between text-xs mb-1">
+      <span className="font-medium text-zinc-300">{label}</span>
+      <span className="text-zinc-400 tabular-nums">{format ? format(value) : value}</span>
+    </div>
+    <input aria-label={label} type="range" className="w-full accent-orange-500" min={min} max={max} step={step} value={value} onChange={e => onChange(parseFloat(e.target.value))} />
+  </div>
+);
+
+export function Segmented<T extends string | number>({ value, options, onChange, label }: { value: T; options: { value: T; label: ReactNode; title?: string }[]; onChange: (v: T) => void; label?: string }) {
+  return (
+    <div className="flex flex-wrap gap-1 bg-zinc-800/80 p-1 rounded-lg" role="radiogroup" aria-label={label}>
+      {options.map(o => (
+        <button
+          key={String(o.value)}
+          role="radio"
+          aria-checked={value === o.value}
+          title={o.title}
+          onClick={() => onChange(o.value)}
+          className={`flex-1 min-w-[2.2rem] px-2 py-1 rounded-md text-xs font-semibold transition-colors ${value === o.value ? "bg-zinc-100 text-zinc-900" : "text-zinc-300 hover:bg-zinc-700"}`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export const Toggle = ({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) => (
+  <label className="flex items-start gap-2.5 py-1 cursor-pointer select-none">
+    <input type="checkbox" className="mt-0.5 accent-orange-500 w-4 h-4" checked={checked} onChange={e => onChange(e.target.checked)} />
+    <span>
+      <span className="block text-sm text-zinc-200">{label}</span>
+      {hint && <span className="block text-[11px] text-zinc-500">{hint}</span>}
+    </span>
+  </label>
+);
+
+export const Button = ({ children, onClick, tone = "default", disabled, title, testid, full, small }: { children: ReactNode; onClick: () => void; tone?: "default" | "primary" | "danger" | "ghost"; disabled?: boolean; title?: string; testid?: string; full?: boolean; small?: boolean }) => {
+  const tones = {
+    default: "bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700",
+    primary: "bg-orange-500 hover:bg-orange-400 text-white shadow",
+    danger: "bg-zinc-800 hover:bg-red-600/90 text-red-300 hover:text-white border border-zinc-700",
+    ghost: "text-zinc-300 hover:text-white hover:bg-zinc-800"
+  };
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      data-testid={testid}
+      className={`${full ? "w-full" : ""} inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold transition-colors disabled:opacity-40 disabled:pointer-events-none ${small ? "px-2.5 py-1 text-xs" : "px-3 py-2 text-sm"} ${tones[tone]}`}
+    >
+      {children}
+    </button>
+  );
+};
+
+export const ColorInput = ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) => (
+  <label className="flex items-center justify-between gap-2 py-1">
+    <span className="text-xs text-zinc-300">{label}</span>
+    <input aria-label={label} type="color" className="w-9 h-7 rounded border border-zinc-600 bg-transparent cursor-pointer" value={value} onChange={e => onChange(e.target.value)} />
+  </label>
+);
+
+export const Stat = ({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) => (
+  <div className="bg-zinc-800/70 rounded-lg px-2.5 py-2">
+    <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">{label}</div>
+    <div className="text-base font-bold text-zinc-50 tabular-nums leading-tight">{value}</div>
+    {sub && <div className="text-[11px] text-zinc-400">{sub}</div>}
+  </div>
+);

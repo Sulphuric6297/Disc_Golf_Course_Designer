@@ -1,0 +1,252 @@
+import { test as base, expect, Page } from "@playwright/test";
+import { encode } from "fast-png";
+
+// ---------------------------------------------------------------------------------------------
+// Offline stubs for every external service the app uses, so tests are fast and deterministic.
+// The place is made up ("Springfield Park").
+// ---------------------------------------------------------------------------------------------
+
+export const SITE = { lat: 39.78073, lon: -89.68103, label: "Springfield Park, 100 Park Rd, Springfield" };
+const M_PER_DEG = 111320;
+const COS = Math.cos((SITE.lat * Math.PI) / 180);
+/** East and north of the site's middle, meters. */
+const local = (lat: number, lon: number) => ({ e: (lon - SITE.lon) * M_PER_DEG * COS, n: (lat - SITE.lat) * M_PER_DEG });
+
+/** The ground: 600 m, a round hill 18 m high about 120 m north-east of the middle, rising gently east. */
+export const groundMeters = (lat: number, lon: number) => {
+  const { e, n } = local(lat, lon);
+  return 600 + e * 0.01 + 18 * Math.exp(-((e - 120) ** 2 + (n - 120) ** 2) / (2 * 70 ** 2));
+};
+
+// Photo features: a pond, a footpath and a few tree crowns
+export const POND = { e: -150, n: -60, r: 35 };
+export const PHOTO_TREES = [{ e: -40, n: 60, r: 5 }, { e: 40, n: -90, r: 6 }, { e: 170, n: -40, r: 5 }];
+
+const cors = { "access-control-allow-origin": "*" };
+const json = (body: unknown) => ({ status: 200, headers: { "content-type": "application/json", ...cors }, body: JSON.stringify(body) });
+const png = (bytes: Uint8Array) => ({ status: 200, headers: { "content-type": "image/png", ...cors }, body: Buffer.from(bytes) });
+
+const latOfPixel = (gy: number, world: number) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * gy) / world))) * 180) / Math.PI;
+
+/** Terrarium elevation tile. */
+const terrariumTile = (z: number, x: number, y: number) => {
+  const size = 256;
+  const world = size * Math.pow(2, z);
+  const data = new Uint8Array(size * size * 3);
+  for (let py = 0; py < size; py++) {
+    const lat = latOfPixel(y * size + py + 0.5, world);
+    for (let px = 0; px < size; px++) {
+      const lon = ((x * size + px + 0.5) / world) * 360 - 180;
+      const v = groundMeters(lat, lon) + 32768;
+      const i = (py * size + px) * 3;
+      data[i] = Math.floor(v / 256);
+      data[i + 1] = Math.floor(v % 256);
+      data[i + 2] = Math.floor((v % 1) * 256);
+    }
+  }
+  return encode({ width: size, height: size, data, channels: 3, depth: 8 });
+};
+
+/** Imagery tile: textured grass with a pond, a footpath and tree crowns. */
+const imageryTile = (z: number, tx: number, ty: number) => {
+  const size = 256;
+  const world = size * Math.pow(2, z);
+  const data = new Uint8Array(size * size * 4);
+  for (let py = 0; py < size; py++) {
+    const gy = ty * size + py;
+    const lat = latOfPixel(gy + 0.5, world);
+    for (let px = 0; px < size; px++) {
+      const gx = tx * size + px;
+      const lon = ((gx + 0.5) / world) * 360 - 180;
+      const h = Math.sin(gx * 12.9898 + gy * 78.233) * 43758.5453;
+      const noise = (h - Math.floor(h) - 0.5) * 26;
+      const { e, n } = local(lat, lon);
+      let col = [92 + noise, 132 + noise, 64 + noise * 0.5];
+      if (Math.abs(n - e * 0.3 + 20) < 1.2) col = [196 + noise * 0.3, 176 + noise * 0.3, 140];
+      if (Math.hypot(e - POND.e, n - POND.n) < POND.r) col = [40, 80 + noise * 0.2, 120];
+      for (const t of PHOTO_TREES) {
+        const d = Math.hypot(e - t.e, n - t.n);
+        if (d < t.r) {
+          const c = Math.sin(Math.floor(e / 0.5) * 91.7 + Math.floor(n / 0.5) * 47.3) * 9631.7;
+          const leaf = (c - Math.floor(c) - 0.5) * 60;
+          col = [38 + leaf * 0.6, 72 + leaf, 30 + leaf * 0.4];
+        }
+      }
+      const i = (py * size + px) * 4;
+      data[i] = col[0];
+      data[i + 1] = col[1];
+      data[i + 2] = col[2];
+      data[i + 3] = 255;
+    }
+  }
+  return encode({ width: size, height: size, data, channels: 4, depth: 8 });
+};
+
+const tileCache = new Map<string, Uint8Array>();
+const cached = (key: string, make: () => Uint8Array) => {
+  if (!tileCache.has(key)) tileCache.set(key, make());
+  return tileCache.get(key)!;
+};
+const at = (e: number, n: number) => ({ lat: SITE.lat + n / M_PER_DEG, lon: SITE.lon + e / (M_PER_DEG * COS) });
+
+export async function stubNetwork(page: Page) {
+  // Anything not explicitly stubbed must not hit the internet.
+  await page.route(/^https?:\/\/(?!localhost|127\.0\.0\.1)/, route => route.abort());
+  await page.route(/elevation-tiles-prod\/terrarium\/(\d+)\/(\d+)\/(\d+)\.png/, route => {
+    const [z, x, y] = route.request().url().match(/terrarium\/(\d+)\/(\d+)\/(\d+)/)!.slice(1).map(Number);
+    route.fulfill(png(cached(`t${z}/${x}/${y}`, () => terrariumTile(z, x, y))));
+  });
+  await page.route(/arcgisonline\.com\/.*\/tile\/(\d+)\/(\d+)\/(\d+)/, route => {
+    const [z, y, x] = route.request().url().match(/tile\/(\d+)\/(\d+)\/(\d+)/)!.slice(1).map(Number);
+    route.fulfill(png(cached(`i${z}/${x}/${y}`, () => imageryTile(z, x, y))));
+  });
+  await page.route(/tile\.openstreetmap\.org\/(\d+)\/(\d+)\/(\d+)/, route => {
+    const [z, x, y] = route.request().url().match(/org\/(\d+)\/(\d+)\/(\d+)/)!.slice(1).map(Number);
+    route.fulfill(png(cached(`i${z}/${x}/${y}`, () => imageryTile(z, x, y))));
+  });
+  await page.route(/\/tilemap\//, route => route.fulfill(json({ adjusted: false, data: [0] })));
+  // Statewide ortho and USGS: "unavailable", so the fallbacks run
+  await page.route(/nconemap\.gov|gis\.nc\.gov|elevation\.nationalmap\.gov/, route => route.abort());
+  await page.route(/GeocodeServer\/suggest/, route =>
+    route.fulfill(json({ suggestions: [{ text: `${SITE.label}, USA`, magicKey: "k1", isCollection: false }] }))
+  );
+  await page.route(/GeocodeServer\/findAddressCandidates/, route =>
+    route.fulfill(json({ candidates: [{ address: SITE.label, score: 100, location: { x: SITE.lon, y: SITE.lat } }] }))
+  );
+  await page.route(/census\.gov|photon\.komoot|nominatim/, route => route.abort());
+  // OpenStreetMap: the footpath, the pond, a road along the south edge and a parking lot
+  const ring = (c: { e: number; n: number }, r: number) => Array.from({ length: 13 }, (_, i) => at(c.e + Math.cos((i / 12) * Math.PI * 2) * r, c.n + Math.sin((i / 12) * Math.PI * 2) * r));
+  await page.route(/overpass/, route =>
+    route.fulfill(json({
+      elements: [
+        { type: "way", tags: { highway: "footway" }, geometry: [at(-200, -80), at(0, -20), at(200, 40)] },
+        { type: "way", tags: { natural: "water", name: "Mill Pond" }, geometry: ring(POND, POND.r) },
+        { type: "way", tags: { highway: "residential", name: "Park Rd" }, geometry: [at(-260, -140), at(260, -140)] },
+        { type: "way", tags: { amenity: "parking" }, geometry: [at(-60, -125), at(-20, -125), at(-20, -105), at(-60, -105), at(-60, -125)] }
+      ]
+    }))
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------------------------
+
+/** The open course, without the photo and terrain (their size only), for checking. */
+export const course = (page: Page) => page.evaluate(() => {
+  const d = (window as any).__dgCourse();
+  return { ...d, background: d.background ? `${d.background.slice(0, 22)}… (${d.background.length})` : null, terrainHeights: Object.keys(d.terrainHeights).length };
+});
+export const editorState = (page: Page) => page.evaluate(() => {
+  const s = (window as any).__dgEditor();
+  return { step: s.step, tool: s.tool, selectedId: s.selectedId, activeHoleId: s.activeHoleId, view: s.view, teeView: s.teeView, viewOnly: s.viewOnly };
+});
+
+/** Where a plan point (on the ground) is on screen. */
+export const screenOf = (page: Page, x: number, y: number, lift = 0) =>
+  page.evaluate(([x, y, lift]) => (window as any).__dgView.toClient(x, y, lift), [x, y, lift] as const) as Promise<{ x: number; y: number }>;
+
+/** Plan point under a screen point. */
+export const planAt = (page: Page, x: number, y: number) =>
+  page.evaluate(([x, y]) => (window as any).__dgView.toPlan(x, y), [x, y] as const) as Promise<{ x: number; y: number } | null>;
+
+/** A point on the map at a fraction of its box. */
+export async function mapPoint(page: Page, fx: number, fy: number) {
+  const box = (await page.getByTestId("plan").boundingBox())!;
+  return { x: box.x + box.width * fx, y: box.y + box.height * fy };
+}
+
+/** Clicks a plan point (feet) on the map. */
+export async function clickPlan(page: Page, x: number, y: number, opts: { double?: boolean } = {}) {
+  const p = await screenOf(page, x, y);
+  if (opts.double) await page.mouse.dblclick(p.x, p.y);
+  else await page.mouse.click(p.x, p.y);
+  await page.waitForTimeout(60);
+}
+
+/** Center of a selection handle. */
+export async function handleCenter(page: Page, kind: string, index = 0) {
+  const h = page.locator(`[data-handle="${kind}"]`).nth(index);
+  await expect(h).toBeVisible();
+  let last = { x: NaN, y: NaN };
+  for (let i = 0; i < 20; i++) {
+    const b = (await h.boundingBox())!;
+    const p = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    if (Math.hypot(p.x - last.x, p.y - last.y) < 0.5) return p;
+    last = p;
+    await page.waitForTimeout(60);
+  }
+  return last;
+}
+
+export async function drag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }, steps = 8) {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps });
+  await page.mouse.up();
+}
+
+/** Starts on open ground (no site) and lays out holes: each [tee, basket] in plan feet. */
+export async function blankCourse(page: Page) {
+  await page.getByTestId("welcome-blank").click();
+  await expect.poll(async () => (await editorState(page)).tool).toBe("add-hole");
+}
+
+export async function addHole(page: Page, tee: { x: number; y: number }, basket: { x: number; y: number }) {
+  const before = (await course(page)).holes.length;
+  if ((await editorState(page)).tool !== "add-hole") await page.keyboard.press("h");
+  await clickPlan(page, tee.x, tee.y);
+  await clickPlan(page, basket.x, basket.y);
+  await expect.poll(async () => (await course(page)).holes.length).toBe(before + 1);
+  const doc = await course(page);
+  return doc.holes[doc.holes.length - 1];
+}
+
+/** Runs the whole site import against the stubs; returns the summary message. */
+export async function importSite(page: Page, opts: { trees?: boolean; osm?: boolean } = {}) {
+  const welcome = page.getByTestId("welcome-find");
+  if (await welcome.isVisible()) await welcome.click();
+  else {
+    await page.getByRole("button", { name: /^1\s*Site$/ }).click();
+    const find = page.getByTestId("find-site");
+    if (await find.isVisible()) await find.click();
+    else await page.getByRole("button", { name: "Change or re-import the site" }).click();
+  }
+  await page.getByLabel("Search address").fill("Springfield Park");
+  await page.getByRole("button", { name: /Springfield Park/ }).first().click();
+  await expect(page.getByTestId("site-size")).toBeVisible();
+  if (opts.trees === false) await page.getByText("Trees found on the photo").click();
+  if (opts.osm === false) await page.getByText("Paths, water, roads and parking").click();
+  await page.getByTestId("import-site").click();
+  const done = page.getByText(/^Site brought in\./);
+  let text = "";
+  await expect.poll(async () => (text = (await done.allTextContents())[0] ?? ""), { timeout: 60_000 }).toMatch(/^Site brought in\./);
+  return text;
+}
+
+type Fixtures = { errors: string[] };
+
+/** Every test starts from an empty app with the network stubbed, and fails on uncaught page errors. */
+export const test = base.extend<Fixtures>({
+  errors: async ({}, use) => {
+    await use([]);
+  },
+  page: async ({ page, errors }, use) => {
+    page.on("pageerror", err => errors.push(err.message));
+    await stubNetwork(page);
+    await page.goto("/");
+    await page.evaluate(async () => {
+      localStorage.clear();
+      await new Promise<void>(resolve => {
+        const req = indexedDB.deleteDatabase("disc-golf-course-designer");
+        req.onsuccess = req.onerror = req.onblocked = () => resolve();
+      });
+    });
+    await page.reload();
+    await expect(page.getByTestId("welcome")).toBeVisible();
+    await use(page);
+    expect(errors, "uncaught errors in the page").toEqual([]);
+  }
+});
+
+export { expect };
