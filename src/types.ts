@@ -143,6 +143,10 @@ export interface Layout {
 }
 
 export type MapTheme = "forest" | "illustrated" | "satellite" | "topo" | "minimal" | "night";
+
+/** A basket's mark on the printed map: side view, side view in a round badge, a pin flag, target
+ * rings, or the hole number in a circle. */
+export type BasketMark = "basket" | "badge" | "flag" | "target" | "number";
 export type PaperSize = "letter" | "tabloid" | "18x24" | "24x36" | "a4" | "a3";
 
 export interface MapStyle {
@@ -160,6 +164,8 @@ export interface MapStyle {
   path: string;
   trees: string;
   basket: string;
+  /** How baskets are drawn on printed maps and tee signs. */
+  basketMark: BasketMark;
   /** Satellite photo strength under the drawing (0..1). */
   photo: number;
   /** Contour lines and hill shading. */
@@ -180,6 +186,8 @@ export interface MapStyle {
   /** Forest style: where to paint woods (everywhere off the fairways, where the photo shows trees,
    * or only drawn woods and single trees). */
   forest: "everywhere" | "photo" | "woods";
+  /** Forest style: how thick the woods are, from a few scattered clumps (0.1) to solid canopy (1). */
+  treeCover: number;
   /** Turn of the map on the page, degrees (0: north up). */
   rotation: number;
   /** How big labels are (1 = normal). */

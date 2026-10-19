@@ -2,13 +2,27 @@
 // --- Autosave storage (tiny IndexedDB key-value store) ---
 
 export const AUTOSAVE_KEY = "current-course";
+// One connection for the page, closed when the page goes (a reload then opens the store at once;
+// a connection per call left dozens open, and the next page's first read could wait on them)
+let connection: Promise<IDBDatabase> | null = null;
 export const openAutosaveDb = () =>
-  new Promise<IDBDatabase>((resolve, reject) => {
+  (connection ??= new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open("disc-golf-course-designer", 1);
     req.onupgradeneeded = () => req.result.createObjectStore("kv");
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      db.onversionchange = () => { db.close(); connection = null; };
+      db.onclose = () => { connection = null; };
+      resolve(db);
+    };
+    req.onerror = () => { connection = null; reject(req.error); };
+  }));
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => {
+    void connection?.then(db => db.close());
+    connection = null;
   });
+}
 export const idbGet = async (key: string) => {
   const db = await openAutosaveDb();
   return new Promise<any>((resolve, reject) => {

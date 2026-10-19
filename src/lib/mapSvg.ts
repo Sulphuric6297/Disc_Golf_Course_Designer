@@ -4,7 +4,7 @@
 // north arrow, scale bar). The same renderer draws a single hole for tee signs, turned so the tee
 // is at the bottom.
 import { AMENITY_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, TEE_LEVELS, TEE_ORDER } from "../constants";
-import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PaperSize, TeeItem, TreeItem } from "../types";
+import type { AmenityItem, AreaItem, BasketItem, BasketMark, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PaperSize, TeeItem, TreeItem } from "../types";
 import { activeLayout, holeBaskets, teeAim } from "./course";
 import { boundsOf, corridor, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath } from "./geom";
 import { courseTotals, holeStats, type HoleStats } from "./holeStats";
@@ -33,17 +33,17 @@ export const THEMES: Record<MapTheme, { label: string; blurb: string }> = {
 /** What each theme shows by default: the forest look is a clean picture (no lines, legend or
  * table); the others are working maps. */
 export const THEME_SHOWS: Record<MapTheme, Partial<MapStyle>> = {
-  forest: { throwLines: false, distances: false, circle: false, legend: false, holeTable: false, contours: false, hillshade: true, font: "Script" },
-  illustrated: { throwLines: true, distances: true, circle: true, legend: true, holeTable: true, contours: true, hillshade: true, font: "Oswald" },
-  satellite: { throwLines: true, distances: true, circle: true, legend: true, holeTable: true, contours: false, hillshade: false, font: "Oswald" },
-  topo: { throwLines: true, distances: true, circle: true, legend: true, holeTable: true, contours: true, hillshade: true, font: "Bitter" },
-  minimal: { throwLines: true, distances: true, circle: true, legend: true, holeTable: true, contours: true, hillshade: false, font: "Inter" },
-  night: { throwLines: true, distances: true, circle: true, legend: true, holeTable: true, contours: true, hillshade: true, font: "Oswald" }
+  forest: { throwLines: false, distances: false, circle: false, legend: false, holeTable: false, contours: false, hillshade: true, font: "Script", basketMark: "basket" },
+  illustrated: { throwLines: true, distances: true, circle: true, legend: true, holeTable: true, contours: true, hillshade: true, font: "Oswald", basketMark: "badge" },
+  satellite: { throwLines: true, distances: true, circle: true, legend: true, holeTable: true, contours: false, hillshade: false, font: "Oswald", basketMark: "badge" },
+  topo: { throwLines: true, distances: true, circle: true, legend: true, holeTable: true, contours: true, hillshade: true, font: "Bitter", basketMark: "target" },
+  minimal: { throwLines: true, distances: true, circle: true, legend: true, holeTable: true, contours: true, hillshade: false, font: "Inter", basketMark: "target" },
+  night: { throwLines: true, distances: true, circle: true, legend: true, holeTable: true, contours: true, hillshade: true, font: "Oswald", basketMark: "target" }
 };
 
 /** Theme presets: picking a theme sets these colors (they can be changed afterwards). */
 export const THEME_COLORS: Record<MapTheme, Partial<MapStyle>> = {
-  forest: { fairway: "#a3d46c", rough: "#4f7f35", trees: "#2f6b2b", water: "#3f92d6", path: "#9a6a3c", ob: "#ff4b4b", hazard: "#ffd23f", basket: "#ffffff" },
+  forest: { fairway: "#9fd060", rough: "#6b9b3d", trees: "#33612a", water: "#2f8ad6", path: "#8c6a46", ob: "#ff4b4b", hazard: "#ffd23f", basket: "#ffffff" },
   illustrated: { fairway: "#a7dc7b", rough: "#5f9447", trees: "#2d6a35", water: "#4aa3e6", path: "#e2c08d", ob: "#e5383b", hazard: "#f2c230", basket: "#f2c94c" },
   satellite: { fairway: "#b5f08a", rough: "#4f7a3a", trees: "#1f4d29", water: "#3d9be9", path: "#f1d6a6", ob: "#ff3b3b", hazard: "#ffd23f", basket: "#ffd84d" },
   topo: { fairway: "#cfe7a8", rough: "#efe9d2", trees: "#9cc58a", water: "#8cc7ef", path: "#b0703a", ob: "#d62828", hazard: "#e09f1f", basket: "#f4b41a" },
@@ -93,6 +93,68 @@ export const fontStack = (f: string) => (f === "Oswald" || f === "Script" ? "Osw
 /** The title's lettering (the brush script for "Script"). */
 export const titleStack = (f: string) => (f === "Script" ? "'Kaushan Script', 'Brush Script MT', cursive" : fontStack(f));
 
+export const BASKET_MARKS: { value: BasketMark; label: string; title: string }[] = [
+  { value: "basket", label: "Basket", title: "A small basket seen from the side, as on painted course maps" },
+  { value: "badge", label: "Badge", title: "A basket in a round badge: clear on any background" },
+  { value: "flag", label: "Flag", title: "A pin flag, like a golf map" },
+  { value: "target", label: "Target", title: "Target rings" },
+  { value: "number", label: "Number", title: "The hole number in a circle" }
+];
+
+const INK = "#1b1d1a";
+/** Dark or white, whichever reads on `color`. */
+const inkOn = (color: string) => {
+  const v = parseInt(color.replace("#", "").slice(0, 6), 16);
+  const lum = (0.3 * ((v >> 16) & 255) + 0.59 * ((v >> 8) & 255) + 0.11 * (v & 255)) / 255;
+  return Number.isNaN(lum) || lum > 0.55 ? INK : "#ffffff";
+};
+
+/** The side view of a basket in unit coordinates (about 15 tall, centered): band, chains, tray, pole. */
+const basketShape = (f: (x: number, y: number) => string, u: number, ink: string, band: string, detail: boolean) => {
+  const chains = [-4.1, -2.5, -0.9, 0.9, 2.5, 4.1].map(x => `M${f(x, -5.4)}Q${f(x * 0.78, -2.6)} ${f(x * 0.42, 0.4)}`).join("");
+  const pole = `M${f(0, -7.4)}L${f(0, 7.1)}M${f(-2.5, 7.1)}L${f(2.5, 7.1)}`;
+  const tray = `M${f(-5.3, 0.3)}L${f(5.3, 0.3)}L${f(3.9, 3.9)}L${f(-3.9, 3.9)}Z`;
+  const bandD = `M${f(-4.8, -7.5)}L${f(4.8, -7.5)}L${f(4.8, -5.4)}L${f(-4.8, -5.4)}Z`;
+  const bars = detail ? [-3, -1, 1, 3].map(x => `M${f(x, 1)}L${f(x * 0.82, 3.4)}`).join("") : "";
+  return {
+    outline: `${chains}${pole}${tray}${bandD}`,
+    body: `<path d="${chains}" fill="none" stroke="${ink}" stroke-width="${n(0.55 * u)}" stroke-linecap="round"/><path d="${pole}" fill="none" stroke="${ink}" stroke-width="${n(0.95 * u)}" stroke-linecap="round"/><path d="${tray}" fill="${ink}"/>${bars ? `<path d="${bars}" stroke="#8a8f88" stroke-width="${n(0.35 * u)}"/>` : ""}<path d="${bandD}" fill="${band}" stroke="${ink}" stroke-width="${n(0.6 * u)}" stroke-linejoin="round"/>`
+  };
+};
+
+/**
+ * A basket on the map, drawn as the chosen mark, centered on `p` (`u`: page points per unit; a
+ * mark is about 15 units tall). `color` is the style's basket color; `label` is the hole number.
+ */
+export const basketMark = (mark: BasketMark, p: P, u: number, color: string, label = "") => `<g data-mark="${mark}">${markBody(mark, p, u, color, label)}</g>`;
+
+const markBody = (mark: BasketMark, p: P, u: number, color: string, label: string) => {
+  const f = (x: number, y: number) => `${n(p.x + x * u)} ${n(p.y + y * u)}`;
+  const halo = "#ffffff";
+  switch (mark) {
+    case "badge": {
+      const ink = inkOn(color);
+      const b = basketShape((x, y) => f(x * 0.62, y * 0.62), u * 0.62, ink, ink, false);
+      return `<circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(7.6 * u)}" fill="${color}" stroke="${INK}" stroke-width="${n(0.9 * u)}"/>${b.body}`;
+    }
+    case "flag": {
+      // The cup at the basket's spot, the flag above it
+      const g = (x: number, y: number) => f(x, y - 6.4);
+      const flag = `M${g(0.5, -7.4)}L${g(7.4, -5)}L${g(0.5, -2.6)}Z`;
+      const pole = `M${g(0, 6.3)}L${g(0, -7.6)}`;
+      return `<path d="${pole}${flag}" fill="${halo}" fill-opacity="0.7" stroke="${halo}" stroke-opacity="0.7" stroke-width="${n(2 * u)}" stroke-linejoin="round" stroke-linecap="round"/><ellipse cx="${n(p.x)}" cy="${n(p.y)}" rx="${n(2.6 * u)}" ry="${n(1.05 * u)}" fill="${INK}"/><path d="${pole}" stroke="${INK}" stroke-width="${n(0.9 * u)}" stroke-linecap="round"/><path d="${flag}" fill="${color}" stroke="${INK}" stroke-width="${n(0.6 * u)}" stroke-linejoin="round"/>`;
+    }
+    case "target":
+      return `<circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(6 * u)}" fill="${color}" stroke="${INK}" stroke-width="${n(1.1 * u)}"/><circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(3.3 * u)}" fill="none" stroke="${INK}" stroke-width="${n(0.85 * u)}"/><circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(1.1 * u)}" fill="${INK}"/>`;
+    case "number":
+      return `<circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(7.4 * u)}" fill="${color}" stroke="${INK}" stroke-width="${n(1 * u)}"/><text x="${n(p.x)}" y="${n(p.y + 0.4 * u)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, 'Arial Narrow', Arial, sans-serif" font-weight="700" font-size="${n((label.length > 1 ? 8.4 : 9.6) * u)}" fill="${inkOn(color)}">${esc(label || "•")}</text>`;
+    default: {
+      const b = basketShape(f, u, INK, color, true);
+      return `<path d="${b.outline}" fill="${halo}" fill-opacity="0.65" stroke="${halo}" stroke-opacity="0.65" stroke-width="${n(2.2 * u)}" stroke-linejoin="round" stroke-linecap="round"/>${b.body}`;
+    }
+  }
+};
+
 /** The map itself (everything inside the frame), in a box `view.width` × `view.height`. */
 export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers, uid = "m") => {
   const s = doc.style;
@@ -137,17 +199,19 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   const g = `translate(${n(view.width / 2)} ${n(view.height / 2)}) rotate(${n(-view.rotation)}) scale(${n(k)}) translate(${n(-view.cx)} ${n(-view.cy)})`;
   out.push(`<rect width="${n(view.width)}" height="${n(view.height)}" fill="${pal.bg}"/>`);
   out.push(`<g transform="${g}">`);
-  // Ground: the photo, or the drawn grass
-  if (photo) {
+  // Ground: the photo, the painted land (Forest), or the drawn grass
+  if (forest && typeof document !== "undefined") {
+    out.push(`</g><image href="${forestPicture(doc, view, layers)}" x="0" y="0" width="${n(view.width)}" height="${n(view.height)}" preserveAspectRatio="none"/><g transform="${g}">`);
+  } else if (photo) {
     out.push(`<image href="${doc.background}" x="0" y="0" width="${doc.canvas.width}" height="${doc.canvas.height}" preserveAspectRatio="none" opacity="${n(s.photo)}"/>`);
   } else {
     out.push(`<rect x="${-doc.canvas.width}" y="${-doc.canvas.height}" width="${doc.canvas.width * 3}" height="${doc.canvas.height * 3}" fill="${pal.grass}"/>`);
   }
-  if (s.hillshade && layers.hillshade && theme !== "minimal") {
+  if (s.hillshade && layers.hillshade && theme !== "minimal" && !forest) {
     out.push(`<image href="${layers.hillshade}" x="0" y="0" width="${doc.canvas.width}" height="${doc.canvas.height}" preserveAspectRatio="none" opacity="${theme === "satellite" ? 0.45 : theme === "night" ? 0.6 : forest ? 0.7 : 0.9}"/>`);
   }
   out.push(`</g>`);
-  if (pal.grain > 0 && !photo) out.push(`<rect width="${n(view.width)}" height="${n(view.height)}" fill="url(#${uid}-grain)"/>`);
+  if (pal.grain > 0 && !photo && !forest) out.push(`<rect width="${n(view.width)}" height="${n(view.height)}" fill="url(#${uid}-grain)"/>`);
   out.push(`<g transform="${g}">`);
 
   // Contours
@@ -180,7 +244,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   };
   for (const a of areas) {
     const fill = landFill(a);
-    if (!fill || a.points.length < 3) continue;
+    if (!fill || a.points.length < 3 || forest) continue;
     const o = dim(a.holeId);
     if (a.kind === "water") {
       out.push(`<polygon points="${pts(a.points)}" fill="${fill}" opacity="${o}" stroke="${shade(fill, -0.25)}" stroke-width="${n(px(1.4))}" stroke-linejoin="round"/>`);
@@ -199,23 +263,17 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   {
     for (const st of layers.stats) {
       const hole = doc.holes.find(h => h.id === st.holeId);
-      if (!hole?.fairway || !st.complete) continue;
+      if (!hole?.fairway || !st.complete || forest) continue;
       const poly = corridor(smoothPath(st.line, 10), hole.fairwayWidth, 12);
       const o = dim(hole.id) * (photo ? 0.4 : theme === "minimal" ? 0.8 : 0.95);
       out.push(`<polygon points="${pts(poly)}" fill="${s.fairway}" opacity="${n(o)}" ${theme === "minimal" ? "" : `filter="url(#${uid}-soft)"`}/>`);
-      if (forest) out.push(`<polygon points="${pts(corridor(smoothPath(st.line, 10), hole.fairwayWidth * 0.55, 12))}" fill="${shade(s.fairway, 0.12)}" opacity="${n(0.5 * dim(hole.id))}" filter="url(#${uid}-soft)"/>`);
       if (photo) out.push(`<polygon points="${pts(poly)}" fill="none" stroke="${s.fairway}" stroke-width="${n(px(1.2))}" opacity="${n(dim(hole.id))}"/>`);
     }
   }
 
-  // The painted forest over the land, cleared for the fairways, paths, water and putting areas
-  if (forest && typeof document !== "undefined") {
-    out.push(`</g><image href="${forestPicture(doc, view, layers)}" x="0" y="0" width="${n(view.width)}" height="${n(view.height)}" preserveAspectRatio="none"/><g transform="${g}">`);
-  }
-
   // Paths, roads, streams, fences, walks
   for (const l of lines) {
-    if (l.points.length < 2) continue;
+    if (l.points.length < 2 || (forest && l.kind !== "fence")) continue;
     const meta = LINE_KINDS[l.kind];
     const w = l.width ?? meta.width;
     const o = dim(l.holeId);
@@ -278,7 +336,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   }
 
   // Next-tee walks
-  if (s.nextTee) {
+  if (s.nextTee && !forest) {
     for (let i = 0; i + 1 < layers.stats.length; i++) {
       const a = layers.stats[i], b = layers.stats[i + 1];
       if (!a.complete || !b.complete || focus) continue;
@@ -407,7 +465,8 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     const r = 5.2 * ts;
     const o = dim(b.holeId);
     const multi = holeBaskets(doc, b.holeId).length > 1;
-    sym.push(`<g opacity="${o}"><circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(r)}" fill="${s.basket}" stroke="#111" stroke-width="${n(1.1 * ts)}"/><circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(r * 0.45)}" fill="none" stroke="#111" stroke-width="${n(0.9 * ts)}"/>`);
+    const number = layers.stats.find(st => st.holeId === b.holeId)?.number;
+    sym.push(`<g opacity="${o}">${basketMark(s.basketMark ?? "basket", p, 0.72 * ts, s.basket, number ? String(number) : "")}`);
     if (multi) sym.push(textLabel({ x: p.x + r * 1.6, y: p.y - r * 1.1 }, b.position, 7 * ts, { color: pal.label, weight: 800 }));
     sym.push(`</g>`);
   }
@@ -438,26 +497,32 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   return { svg: `<defs>${defs.join("")}</defs>${out.join("")}${sym.join("")}`, toScreen };
 };
 
-// The forest picture takes a moment to paint: keep the last few, keyed by what they depend on
-// (so typing a title or changing a color elsewhere doesn't repaint it).
+// The painted land takes a moment: keep the last few, keyed by what they depend on (so typing a
+// title or changing the OB color doesn't repaint it).
 const forestCache = new Map<string, string>();
-let canopyIds = new WeakMap<object, number>();
-let nextCanopy = 1;
+let objectIds = new WeakMap<object, number>();
+let nextId = 1;
+const idOf = (o: object | null | undefined) => {
+  if (!o) return 0;
+  if (!objectIds.has(o)) objectIds.set(o, nextId++);
+  return objectIds.get(o)!;
+};
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
   const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
-  if (canopy && !canopyIds.has(canopy)) canopyIds.set(canopy, nextCanopy++);
   const shapes = doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as LineItem).width] : [i.type, Math.round(i.x), Math.round(i.y), (i as TreeItem).radius]));
-  const key = JSON.stringify([view, s.forest, s.trees, canopy ? canopyIds.get(canopy) : 0, layers.stats.map(st => st.line), doc.holes.map(h => [h.fairwayWidth, h.fairway]), shapes, doc.canvas]);
+  const look = [s.forest, s.treeCover, s.trees, s.fairway, s.rough, s.water, s.path, s.nextTee, s.hillshade];
+  const key = JSON.stringify([view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairway]), shapes, doc.canvas, doc.id]);
   const hit = forestCache.get(key);
   if (hit) return hit;
-  const canvas = forestCanvas(doc, view, layers.stats, { mode: s.forest ?? "everywhere", canopy, trees: s.trees, density: Math.min(3, Math.max(1.5, 2400 / Math.max(view.width, view.height))) });
-  const url = canvas.toDataURL("image/png");
+  const canvas = forestCanvas(doc, view, layers.stats, { mode: s.forest ?? "everywhere", canopy, style: s, density: Math.min(3, Math.max(1.5, 2400 / Math.max(view.width, view.height))) });
+  // A photo-like picture: JPEG keeps it a tenth the size of a PNG
+  const url = canvas.toDataURL("image/jpeg", 0.9);
   forestCache.set(key, url);
   if (forestCache.size > 6) forestCache.delete(forestCache.keys().next().value!);
   return url;
 };
-export const resetForestCache = () => { forestCache.clear(); canopyIds = new WeakMap(); };
+export const resetForestCache = () => { forestCache.clear(); objectIds = new WeakMap(); };
 
 /** Lighter (amount > 0) or darker (< 0) version of a hex color. */
 export const shade = (hex: string, amount: number) => {
@@ -811,7 +876,7 @@ const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal
   const has = (pred: (i: (typeof doc.items)[number]) => boolean) => doc.items.some(pred);
   const levels = TEE_ORDER.filter(l => has(i => i.type === "tee" && i.level === l));
   levels.forEach(l => entries.push({ sym: `<rect x="2" y="${n(sh * 0.2)}" width="${n(sw - 4)}" height="${n(sh * 0.6)}" fill="${TEE_LEVELS[l].color}" stroke="#333" stroke-width="0.6"/>`, text: `${TEE_LEVELS[l].label} tee` }));
-  if (has(i => i.type === "basket")) entries.push({ sym: `<circle cx="${n(sw / 2)}" cy="${n(sh / 2)}" r="${n(sh * 0.48)}" fill="${s.basket}" stroke="#111" stroke-width="0.8"/>`, text: "Basket" });
+  if (has(i => i.type === "basket")) entries.push({ sym: basketMark(s.basketMark ?? "basket", { x: sw / 2, y: sh / 2 }, (sh * 1.25) / 16, s.basket, "1"), text: "Basket" });
   if (s.throwLines && doc.holes.length) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${pal.lineCasing}" stroke-width="${n(4 * ts)}"/><line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${pal.line}" stroke-width="${n(2 * ts)}"/>`, text: "Throw line" });
   if (s.nextTee && doc.holes.length > 1) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${pal.panelInk}" stroke-width="${n(1.6 * ts)}" stroke-dasharray="${n(1.5 * ts)} ${n(3 * ts)}" stroke-linecap="round"/>`, text: "To the next tee" });
   if (doc.holes.some(h => h.fairway)) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" rx="${n(sh / 2)}" fill="${s.fairway}"/>`, text: "Fairway" });

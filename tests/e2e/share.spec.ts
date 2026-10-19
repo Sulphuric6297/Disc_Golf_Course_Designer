@@ -29,6 +29,8 @@ plain("a broken link says so", async () => {
 });
 
 test("share a course: the link opens it for someone else, view only, with the map downloaded again", async ({ page, browser }) => {
+  // Two browsers, two site imports and a reload: a long test on a busy machine
+  test.setTimeout(180_000);
   await importSite(page, { trees: false, osm: false });
   const doc = await course(page);
   await addHole(page, { x: doc.canvas.width * 0.3, y: doc.canvas.height * 0.6 }, { x: doc.canvas.width * 0.6, y: doc.canvas.height * 0.6 });
@@ -55,15 +57,21 @@ test("share a course: the link opens it for someone else, view only, with the ma
   await expect(theirs.getByRole("toolbar", { name: "Tools" })).toBeHidden();
   expect((await editorState(theirs)).viewOnly).toBe(true);
   // Make a copy: it becomes theirs to edit, and the link leaves the address bar
-  await theirs.getByTestId("make-copy").click();
+  // (The link stays in the address bar until the copy is saved: a reload in between still has it)
+  const hashOnClick = await theirs.evaluate(() => {
+    (document.querySelector('[data-testid="make-copy"]') as HTMLElement).click();
+    return location.hash;
+  });
+  expect(hashOnClick).toMatch(/^#course=/);
+  await expect(theirs.getByText(/This copy is yours to edit/)).toBeVisible();
   await expect(theirs.getByTestId("view-only-banner")).toBeHidden();
   await expect(theirs.getByRole("toolbar", { name: "Tools" })).toBeVisible();
   expect((await course(theirs)).name).toBe(`${doc.name} (copy)`);
   expect(new URL(theirs.url()).hash).toBe("");
-  // It is saved: a reload brings the copy back
-  await theirs.waitForTimeout(900);
+  // It is saved: a reload right away brings the copy back
   await theirs.reload();
-  await expect.poll(async () => (await course(theirs)).name).toBe(`${doc.name} (copy)`);
+  // (Restoring a course with its photo takes a while on a busy test machine)
+  await expect.poll(async () => (await course(theirs)).name, { timeout: 30_000 }).toBe(`${doc.name} (copy)`);
   expect(errors).toEqual([]);
   await other.close();
 });

@@ -1,11 +1,26 @@
 // The Design step's controls: how the printed map looks (theme, colors, title block, what shows).
 import { ArrowRight, RotateCcw } from "lucide-react";
-import { PAPER, THEME_COLORS, THEME_SHOWS, THEMES, bestRotation, palette } from "../lib/mapSvg";
+import { BASKET_MARKS, PAPER, THEME_COLORS, THEME_SHOWS, THEMES, basketMark, bestRotation, palette } from "../lib/mapSvg";
 import { changeDoc, useCourse, useEditor } from "../state/course";
+import { useEffect, useRef, useState } from "react";
 import type { MapStyle, MapTheme, PaperSize } from "../types";
 import { Button, ColorInput, Field, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
 
 export const setStyle = (patch: Partial<MapStyle>, history = true) => changeDoc(d => ({ style: { ...d.style, ...patch } }), history);
+
+/** How thick the painted woods are. The map repaints when the slider is let go (painting takes a moment). */
+function TreeCover({ value }: { value: number }) {
+  const [v, setV] = useState(value);
+  // Only a slider that was moved commits (a key let go on it, like Ctrl+Z's, must not)
+  const moved = useRef(false);
+  useEffect(() => setV(value), [value]);
+  const word = v < 0.35 ? "Sparse" : v < 0.7 ? "Open woods" : v < 0.95 ? "Thick" : "Dense";
+  const done = () => {
+    if (moved.current && v !== value) setStyle({ treeCover: v });
+    moved.current = false;
+  };
+  return <Slider label="Tree cover" min={0.1} max={1} step={0.05} value={v} onChange={x => { moved.current = true; setV(x); }} onDone={done} format={x => `${word} · ${Math.round(x * 100)}%`} />;
+}
 
 export function DesignPanel() {
   const doc = useCourse(s => s.doc);
@@ -47,11 +62,31 @@ export function DesignPanel() {
             <Field label="Where to paint the woods">
               <Segmented label="Woods" value={s.forest} onChange={v => setStyle({ forest: v })} options={[{ value: "photo", label: "From the photo", title: "Woods where the satellite photo shows trees" }, { value: "everywhere", label: "Everywhere", title: "Woods everywhere off the fairways, paths and open areas" }, { value: "woods", label: "Drawn only", title: "Only the woods areas and single trees you drew" }]} />
             </Field>
+            <TreeCover value={s.treeCover ?? 1} />
             <p className="text-[11px] text-zinc-500 -mt-1">Fairways, putting areas, paths, water and open areas you draw stay clear. Lone trees you place stand in the open.</p>
           </div>
         )}
         {s.theme === "satellite" && !doc.background && <p className="text-[11px] text-amber-300 mt-2">There is no satellite photo yet: bring in your park on the Site step.</p>}
         {s.theme === "satellite" && doc.background && <div className="mt-2"><Slider label="Photo strength" min={0.2} max={1} step={0.05} value={s.photo} onChange={v => setStyle({ photo: v })} format={v => `${Math.round(v * 100)}%`} /></div>}
+      </Section>
+      <Section title="Baskets">
+        <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="Basket marks">
+          {BASKET_MARKS.map(m => (
+            <button
+              key={m.value}
+              role="radio"
+              aria-checked={s.basketMark === m.value}
+              title={m.title}
+              data-testid={`basket-mark-${m.value}`}
+              onClick={() => setStyle({ basketMark: m.value })}
+              className={`rounded-lg border p-1 flex flex-col items-center gap-1 transition-colors ${s.basketMark === m.value ? "border-orange-500 bg-orange-500/10" : "border-zinc-700 hover:border-zinc-500"}`}
+            >
+              <svg viewBox="0 0 40 40" className="w-10 h-10 rounded" style={{ background: s.fairway }} dangerouslySetInnerHTML={{ __html: basketMark(m.value, { x: 20, y: m.value === "flag" ? 30 : 20 }, 2, s.basket, "7") }} />
+              <span className="text-[10px] font-semibold text-zinc-300">{m.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="mt-2"><ColorInput label="Basket color" value={s.basket} onChange={v => setStyle({ basket: v }, false)} onDone={done} /></div>
       </Section>
       <Section title="Title block">
         <Field label="Title"><TextInput label="Map title" value={s.title} placeholder={doc.name} onChange={v => setStyle({ title: v })} /></Field>

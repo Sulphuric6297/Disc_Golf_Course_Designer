@@ -32,16 +32,24 @@ test("view from the tee: the hole's numbers, other holes with the arrows, back w
 
 test("a slow frame doesn't skip the flyover", async ({ page }) => {
   await blankCourse(page);
-  await addHole(page, { x: 400, y: 700 }, { x: 650, y: 700 });
+  // A long hole: a long flight
+  await addHole(page, { x: 250, y: 850 }, { x: 1250, y: 250 });
   await page.keyboard.press("Escape");
   await page.getByTestId("hole-row").click();
   await page.getByTestId("flyover").click();
   await expect(page.getByTestId("hud-flyover")).toHaveText(/Flying/);
-  // The page is busy for longer than the whole flight (like a first frame compiling shaders)
-  await page.evaluate(() => { const t = performance.now(); while (performance.now() - t < 7000); });
+  // The page is busy for longer than a short flight (like a first frame compiling shaders)
+  const before = await page.evaluate(() => {
+    const p = (window as any).__dgView.flyProgress();
+    const t = performance.now();
+    while (performance.now() - t < 7000);
+    return p;
+  });
   await page.waitForTimeout(100);
+  const after = await page.evaluate(() => (window as any).__dgView.flyProgress());
+  expect(after).not.toBeNull();
+  expect(after - before).toBeLessThan(0.2);
   await expect(page.getByTestId("hud-flyover")).toHaveText(/Flying/);
-  expect(await page.evaluate(() => (window as any).__dgView.flyProgress())).toBeLessThan(0.5);
 });
 
 test("flyover runs from the tee to the basket and stops", async ({ page }) => {

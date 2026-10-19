@@ -161,17 +161,19 @@ export const refetchSite = async () => {
 /** Keeps a shared course as your own: it becomes the open course, autosaved and editable. */
 export const makeCopy = async () => {
   const shared = getDoc();
-  useEditor.getState().set({ viewOnly: false });
-  history.replaceState(null, "", location.pathname + location.search);
-  // Your own course from before goes to the library
+  // Saved first, and only then the link leaves the address bar: a reload in between still finds
+  // the shared course (a course with its photo takes a moment to save)
   const own = await idbGet(AUTOSAVE_KEY).catch(() => null);
   if (own && Array.isArray(own.holes) && (own.holes.length || own.items?.length)) {
+    // Your own course from before goes to the library
     const meta: PlanMeta = { id: own.id ?? generateId(), name: own.name || "Untitled course", updatedAt: Date.now(), holes: own.holes.length };
     await storePlan(meta, { ...own, id: meta.id });
   }
-  const copy = { ...shared, id: generateId(), name: shared.name.endsWith("(copy)") ? shared.name : `${shared.name} (copy)` };
-  useCourse.getState().load(copy);
+  const copy = { ...getDoc(), id: generateId(), name: shared.name.endsWith("(copy)") ? shared.name : `${shared.name} (copy)` };
   await idbSet(AUTOSAVE_KEY, copy);
+  history.replaceState(null, "", location.pathname + location.search);
+  useEditor.getState().set({ viewOnly: false });
+  useCourse.getState().load(copy);
   useEditor.getState().set({ step: "holes" });
   toast("This copy is yours to edit. Your earlier course is under Open → Recent courses.", "success");
 };

@@ -38,6 +38,20 @@ been seen working in the browser.
   - the course name in a big brush-script title laid over the map;
   - a chip for each layout with its par and length ("GOLD LAYOUT · PAR 64 | 7,670'");
   - a full-bleed map, with no frame around it.
+- [ ] **The painted look, mimicked closely: water, dirt and trees** (the owner's photo of a
+  painted course map on a park sign; everything but the font):
+  - woods as a fine, irregular texture of small treetops of many sizes (not round blobs, and
+    nothing regular or "mathematical"-looking), dark with sunlit yellow-green flecks, with shadows
+    falling onto the fairways and a dark rim where the woods meet them;
+  - bright fairways with lighter middles, widening around tees and baskets, and lone trees
+    standing in them;
+  - brown dirt trails winding from each basket to the next tee, and worn dirt at the tees;
+  - a bright blue creek winding through the woods with dark banks, partly under the trees;
+  - soft gray roads; small tee pads in their colors; small dark basket marks.
+- [ ] **Trees can be sparse too**: a setting from a few scattered trees to solid woods.
+- [ ] **Better basket ("pin") pictures, with several to choose from.**
+- [ ] **Mandos, OB, hazards and everything else**, rendered perfectly on the map and really easy
+  to lay out.
 - [ ] **Tee signs like the owner's second example** (a wide sign on a post):
   - a light column on the left with the course name, the hole number big in a dark box, a PAR
     tag in the tee color, the distance in big type ("305 FEET") and the hole notes;

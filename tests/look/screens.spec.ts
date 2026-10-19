@@ -111,3 +111,39 @@ test("course design and export", async ({ page }) => {
   await page.waitForTimeout(800);
   await shot(page, "12-export");
 });
+
+test("forest map close up", async ({ page }) => {
+  await importSite(page);
+  await seedCourse(page);
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
+  await page.waitForTimeout(2500);
+  await page.getByTestId("design-page").screenshot({ path: "look/13-forest-page.png" });
+  // Twice as big: the treetops, trails and creek up close
+  const bar = page.getByRole("button", { name: "Fit the page" }).locator("..");
+  for (let i = 0; i < 3; i++) await bar.getByRole("button", { name: "Zoom in" }).click();
+  await page.waitForTimeout(800);
+  await shot(page, "13-forest-zoom");
+  await page.getByTestId("forest-options").getByRole("radio", { name: "From the photo" }).click();
+  await page.getByRole("button", { name: "Fit the page" }).click();
+  await page.waitForTimeout(2500);
+  await page.getByTestId("design-page").screenshot({ path: "look/13-forest-page-photo.png" });
+});
+
+test("basket marks", async ({ page }) => {
+  await importSite(page);
+  await seedCourse(page);
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
+  await page.waitForTimeout(2500);
+  const bar = page.getByRole("button", { name: "Fit the page" }).locator("..");
+  for (let i = 0; i < 4; i++) await bar.getByRole("button", { name: "Zoom in" }).click();
+  await page.waitForTimeout(800);
+  for (const mark of ["basket", "badge", "flag", "target", "number"]) {
+    await page.getByTestId(`basket-mark-${mark}`).click();
+    await page.waitForTimeout(600);
+    await shot(page, `15-basket-${mark}`);
+  }
+  await page.getByTestId("basket-mark-basket").scrollIntoViewIfNeeded();
+  await page.getByRole("radiogroup", { name: "Basket marks" }).locator("..").screenshot({ path: "look/15-basket-picker.png" });
+});

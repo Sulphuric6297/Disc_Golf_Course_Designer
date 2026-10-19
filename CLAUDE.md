@@ -59,10 +59,10 @@ design tools and the PDGA guidance the app follows.
 | `features.spec.ts` | Drawing OB areas and lines, hazards, water, mandos (side, direction), drop zones, trees, amenities, labels, moving and reshaping shapes |
 | `import-site.spec.ts` | Address search, framing the area, photo + elevation + trees + OpenStreetMap paths and water, elevation change per hole |
 | `stats.spec.ts` | Hole math: PDGA effective length and par, doglegs, foliage, trees and OB in play, safety checks, design checks (pure logic) |
-| `views.spec.ts` | View from the tee, flyover, back to the map |
-| `design.spec.ts` | Map designer: themes, colors, title block, legend, hole table, contours; the printed map's contents |
+| `views.spec.ts` | View from the tee, flyover (a slow frame doesn't skip it), back to the map |
+| `design.spec.ts` | Map designer: themes, colors, title block, legend, hole table, contours, turning the map; the Forest painting (tree cover from sparse to dense, winding creeks and trails), basket marks (five kinds, legend, older courses); the printed map's and tee signs' contents |
 | `export.spec.ts` | Course map (SVG/PNG/PDF), tee signs, scorecard, GeoJSON, KML, GPX, CSV, stake-out list, parts list |
-| `share.spec.ts` | Share links: packing, opening (view only), photo and elevation downloaded again, "Make a copy" |
+| `share.spec.ts` | Share links: packing, opening (view only), photo and elevation downloaded again, "Make a copy" (saved before the link leaves the address bar), never overwriting your own course |
 | `persistence.spec.ts` | Autosave restore, course files, New keeps the old course in Recent courses |
 
 ## Project conventions
@@ -74,7 +74,9 @@ design tools and the PDGA guidance the app follows.
 - Pure logic goes in `src/lib/`:
   - `holeStats.ts`: par, lengths and checks;
   - `geom.ts`;
-  - `mapSvg.ts`: the printed map;
+  - `mapSvg.ts`: the printed map (vector symbols and labels, basket marks);
+  - `forest.ts`: the Forest style's painted land (one picture: canopy height field lit from the
+    top left, fairways, dirt, water, roads), cached by what it depends on;
   - `exports.ts`;
   - `share.ts`;
   - `geo/`: site import.
