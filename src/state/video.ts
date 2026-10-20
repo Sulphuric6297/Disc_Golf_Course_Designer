@@ -5,7 +5,8 @@ import { getView } from "../components/MapViewport";
 import { holeNumber } from "../lib/course";
 import { VIDEO_SIZES, videoSuffix, type VideoFps, type VideoResolution } from "../lib/video";
 import { runExport } from "./exportJob";
-import { getDoc, useCourse } from "./course";
+import { getDoc, useCourse, useEditor } from "./course";
+import { paintedGround } from "./paintedGround";
 import { download, fileName } from "./files";
 import { toast } from "./toast";
 
@@ -56,7 +57,10 @@ export const recordVideo = (holeIds: string[]) => {
     job.signal.addEventListener("abort", () => ctrl.abort());
     try {
       job.progress(0);
-      const video = await view.recordFlyover(holeIds, { width, height, fps, signal: ctrl.signal, onProgress: f => job.progress(f) });
+      // The ground in the Design look (unless the photo was asked for)
+      const ground = useEditor.getState().flyLook === "photo" ? null : await paintedGround(doc);
+      if (ctrl.signal.aborted) throw new DOMException("Cancelled", "AbortError");
+      const video = await view.recordFlyover(holeIds, { width, height, fps, signal: ctrl.signal, onProgress: f => job.progress(f), ground });
       download(video.blob, fileName(doc, `${videoSuffix(doc, holeIds)}.${video.ext}`));
       toast(`Flyover video saved: ${Math.round(video.seconds)} s, ${width} × ${height}, ${video.ext.toUpperCase()}.`, "success");
     } catch (err) {

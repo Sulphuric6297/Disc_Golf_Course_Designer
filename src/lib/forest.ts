@@ -515,7 +515,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       const m = y * mw + x;
       // A wobbly edge where the trees stop
       if (a[m * 4 + 1] / 255 + at(treeEdge, x * cell + 1, y * cell + 1) * 0.5 > 0.5) continue;
-      if (b[m * 4 + 2] > 127) { wooded[m] = 1; continue; }
+      // (2: drawn woods, which plant their own trees in 3D)
+      if (b[m * 4 + 2] > 127) { wooded[m] = 2; continue; }
       if (opts.mode === "woods") continue;
       const p = toPlan(x * cell + cell / 2, y * cell + cell / 2);
       wooded[m] = (opts.mode === "everywhere" || !canopy ? site(p) : photoTrees(p)) ? 1 : 0;
@@ -928,8 +929,16 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     }
   }
   ctx.putImageData(img, 0, 0);
+  // Where it painted woods, for 3D trees standing on the painting (an unturned view only)
+  if (!view.rotation) woodedGrids.set(canvas, { cols: mw, rows: mh, data: wooded, x0: view.cx - W / 2 / k, y0: view.cy - H / 2 / k, ftPerCell: cell / k, cover });
   return canvas;
 }
+
+/** Where a painting shows woods, cell by cell (1: woods it painted itself; 2: drawn woods), and how thick. */
+export type WoodedGrid = { cols: number; rows: number; data: Uint8Array; x0: number; y0: number; ftPerCell: number; cover: number };
+const woodedGrids = new WeakMap<HTMLCanvasElement, WoodedGrid>();
+/** The woods on a painting made by `forestCanvas` or `forestCanvasAsync`. */
+export const woodedOf = (canvas: HTMLCanvasElement) => woodedGrids.get(canvas) ?? null;
 
 /** The painted land, all at once (for prints and exports). */
 export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts) => {

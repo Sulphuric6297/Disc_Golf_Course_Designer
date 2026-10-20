@@ -143,11 +143,13 @@ type EditorStore = {
   grass: "auto" | 0 | 1 | 2 | 3;
   /** Grass sways in the wind (from a tee and in flyovers). */
   wind: boolean;
+  /** The ground from a tee, in flyovers and videos: the painted map (the Design look) or the photo. */
+  flyLook: "painted" | "photo";
   set: (patch: Partial<Omit<EditorStore, "set">>) => void;
 };
 
 const DISPLAY_KEY = "dg.display";
-const DISPLAY = ["photo", "contours", "shading", "groundDetail", "grass", "wind"] as const;
+const DISPLAY = ["photo", "contours", "shading", "groundDetail", "grass", "wind", "flyLook"] as const;
 const savedDisplay = (): Partial<Pick<EditorStore, (typeof DISPLAY)[number]>> => {
   try {
     return JSON.parse(localStorage.getItem(DISPLAY_KEY) ?? "{}");
@@ -184,6 +186,7 @@ export const useEditor = create<EditorStore>()(set => ({
   groundDetail: true,
   grass: "auto",
   wind: true,
+  flyLook: "painted",
   ...(typeof localStorage !== "undefined" ? savedDisplay() : {}),
   set: patch => {
     set(patch);

@@ -16,6 +16,11 @@ export class Ground {
   terrain: THREE.Mesh | null = null;
   photo: THREE.Texture | null = null;
   private photoUrl: string | null = null;
+  /** The painted map draped in place of the photo (flyovers, the tee view, videos), once loaded. */
+  private painted: THREE.Texture | null = null;
+  private paintedUrl: string | null = null;
+  private paintedReady: Promise<void> = Promise.resolve();
+  private bgOpacity = 1;
   private mapPlane: THREE.Mesh | null = null;
   private shade: THREE.Mesh | null = null;
   /** Map-only drawings on the ground (grid, site edge, contours, cut-away sides): hidden in camera views. */
@@ -50,10 +55,9 @@ export class Ground {
     const bg = doc.background;
     let changed = false;
     const key = JSON.stringify([doc.canvas, doc.gridSize, bg.rect, !!bg.url, doc.showGrid]);
-    const planeMat = this.mapPlane?.material as THREE.MeshLambertMaterial | undefined;
-    if (planeMat && (planeMat.opacity !== bg.opacity || planeMat.visible !== (!!this.photo && bg.opacity > 0.001))) {
-      planeMat.opacity = bg.opacity;
-      planeMat.visible = !!this.photo && bg.opacity > 0.001;
+    if (this.bgOpacity !== bg.opacity) {
+      this.bgOpacity = bg.opacity;
+      this.applyMap();
       changed = true;
     }
     this.photoFt = bg.rect.width / (doc.unitsPerFoot || 1);
@@ -88,13 +92,59 @@ export class Ground {
     return changed;
   }
 
+  /** The painted map on the ground now (loaded), or null. */
+  get paintedTexture() {
+    return this.painted;
+  }
+
+  /** What the map plane shows: the painted map when there is one, else the photo (as visible as asked). */
+  private applyMap() {
+    const mat = this.mapPlane?.material as THREE.MeshLambertMaterial | undefined;
+    const map = this.painted ?? this.photo;
+    if (mat) {
+      if (mat.map !== map) { mat.map = map; mat.needsUpdate = true; }
+      mat.opacity = this.painted ? 1 : this.bgOpacity;
+      mat.visible = !!map && mat.opacity > 0.001;
+    }
+    // (the photo's grass, paving and soil texture belongs to the photo)
+    this.detailActive(this.close);
+  }
+
+  /** The painted map draped over the ground in place of the photo (null: the photo again).
+   * Resolves once it shows. */
+  setPainted(url: string | null): Promise<void> {
+    if (url === this.paintedUrl) return this.paintedReady;
+    this.paintedUrl = url;
+    this.painted?.dispose();
+    this.painted = null;
+    if (!url) {
+      this.applyMap();
+      this.onChanged();
+      this.paintedReady = Promise.resolve();
+      return this.paintedReady;
+    }
+    this.paintedReady = new Promise<void>(resolve => {
+      const tex: THREE.Texture = new THREE.TextureLoader().load(url, () => {
+        if (this.paintedUrl === url) {
+          this.painted = tex;
+          this.applyMap();
+          this.onChanged();
+        } else tex.dispose();
+        resolve();
+      }, undefined, () => resolve());
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+    });
+    return this.paintedReady;
+  }
+
   private loadPhoto(url: string | null) {
-    const mat = this.mapPlane?.material as THREE.MeshBasicMaterial | undefined;
     if (this.photo) this.photo.dispose();
     this.photo = null;
     this.setCover(null);
     if (!url) {
-      if (mat) { mat.map = null; mat.visible = false; mat.needsUpdate = true; }
+      this.applyMap();
       return;
     }
     const tex = new THREE.TextureLoader().load(url, () => {
@@ -114,7 +164,7 @@ export class Ground {
     tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
     tex.minFilter = THREE.LinearMipmapLinearFilter;
     this.photo = tex;
-    if (mat) { mat.map = tex; mat.visible = mat.opacity > 0.001; mat.needsUpdate = true; }
+    this.applyMap();
   }
 
   private setCover(cover: THREE.DataTexture | null) {
@@ -129,7 +179,7 @@ export class Ground {
    */
   detailActive(close: boolean) {
     this.close = close;
-    this.detail.groundDetail.value = close && this.wantDetail && this.detail.detailMap.value ? 1 : 0;
+    this.detail.groundDetail.value = close && this.wantDetail && !this.painted && this.detail.detailMap.value ? 1 : 0;
   }
 
   /** The texture patterns, once there is a photo's cover or painted ground to use them. */
@@ -283,11 +333,11 @@ export class Ground {
       this.draped(doc, r.x, r.y, r.width, r.height, MAP_OVERLAY_OFFSET),
       new THREE.MeshLambertMaterial({
         color: 0xffffff,
-        map: this.photo,
-        visible: !!this.photo && doc.background.opacity > 0.001,
+        map: this.painted ?? this.photo,
+        visible: !!(this.painted ?? this.photo) && (this.painted ? 1 : doc.background.opacity) > 0.001,
         // Drawn in the transparent pass so it lands on top of the (opaque) terrain under it.
         transparent: true,
-        opacity: doc.background.opacity,
+        opacity: this.painted ? 1 : doc.background.opacity,
         depthWrite: false,
         polygonOffset: true,
         polygonOffsetFactor: -2,
@@ -479,6 +529,7 @@ export class Ground {
   dispose() {
     disposeObjectDeep(this.group);
     this.photo?.dispose();
+    this.painted?.dispose();
     this.setCover(null);
     this.detail.paintColorMap.value?.dispose();
     this.detail.paintCoverMap.value?.dispose();

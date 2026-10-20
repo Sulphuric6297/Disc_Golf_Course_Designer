@@ -10,10 +10,16 @@ const MAX_TREES = 6000;
 
 /** Trees about every `spacing` feet inside the outline, standing on the ground. */
 export const createWoods = (outline: P[], groundAt: (x: number, y: number) => number, color: string, conifers = 0.22, mix: string[] = [], keepOut: (p: P, reach: number) => boolean = () => false, spacing = 22) => {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of outline) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+  return createWoodsWhere(outline.length >= 3 ? { minX, minY, maxX, maxY } : null, p => pointInPolygon(p, outline), groundAt, color, conifers, mix, keepOut, spacing);
+};
+
+/** Trees about every `spacing` feet wherever `inside` says, within the bounds, standing on the ground. */
+export const createWoodsWhere = (bounds: { minX: number; minY: number; maxX: number; maxY: number } | null, inside: (p: P) => boolean, groundAt: (x: number, y: number) => number, color: string, conifers = 0.22, mix: string[] = [], keepOut: (p: P, reach: number) => boolean = () => false, spacing = 22) => {
   const spots: TreeSpot[] = [];
-  if (outline.length >= 3) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const p of outline) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+  if (bounds) {
+    const { minX, minY, maxX, maxY } = bounds;
     const area = (maxX - minX) * (maxY - minY);
     const step = Math.max(spacing, Math.sqrt(area / MAX_TREES));
     let seed = Math.round(Math.abs(minX * 13 + minY * 7)) % 2147483646 + 1;
@@ -21,7 +27,7 @@ export const createWoods = (outline: P[], groundAt: (x: number, y: number) => nu
     for (let y = minY; y <= maxY; y += step * 0.87) {
       for (let x = minX + ((Math.round((y - minY) / step) % 2) * step) / 2; x <= maxX; x += step) {
         const p = { x: x + (rnd() - 0.5) * step * 0.7, y: y + (rnd() - 0.5) * step * 0.7 };
-        if (!pointInPolygon(p, outline)) continue;
+        if (!inside(p)) continue;
         const u = rnd();
         const shape = u < conifers ? "conifer" : "broadleaf";
         // Now and then a smaller tree under the big ones

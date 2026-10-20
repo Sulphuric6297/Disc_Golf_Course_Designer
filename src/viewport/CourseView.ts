@@ -25,7 +25,8 @@ import { createAmenity, createBasket, createDropZone, createMando, createTeePad 
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
-import { createWoods } from "../three/woods";
+import { createWoods, createWoodsWhere } from "../three/woods";
+import type { WoodedGrid } from "../lib/forest";
 import { forestDetail, type Forest } from "../three/treeKit";
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
@@ -105,6 +106,17 @@ const STYLE = `
 const lineMats = new Set<LineMaterial>();
 /** A finger is the main pointer (handles are drawn bigger there). */
 const COARSE = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
+
+/** The painted map for the ground (a picture's URL) and where it shows woods. */
+export type PaintedLook = { url: string; wooded: WoodedGrid | null };
+
+const gridIds = new WeakMap<object, number>();
+let nextGridId = 1;
+/** A short name for a woods grid (it is only ever replaced, never changed). */
+const idOfGrid = (g: object) => {
+  if (!gridIds.has(g)) gridIds.set(g, nextGridId++);
+  return gridIds.get(g)!;
+};
 
 export class CourseView {
   readonly renderer: THREE.WebGLRenderer;
@@ -806,12 +818,51 @@ export class CourseView {
   /** Records flyovers of the holes, one after another, to a video file: rendered offline, frame by
    * frame at a steady 1/fps step, into an offscreen picture of the asked size (the view on screen
    * keeps its size and goes on as before). See flyoverVideo.ts. */
-  async recordFlyover(holeIds: string[], opts: RecordOptions): Promise<FlyoverVideo> {
+  async recordFlyover(holeIds: string[], opts: RecordOptions & { ground?: PaintedLook | null }): Promise<FlyoverVideo> {
     if (!this.doc || this.disposed) throw new Error("The map isn't ready yet.");
     const doc = this.doc.course;
     const { recordFlights } = await import("./flyoverVideo");
-    return recordFlights(this.flightFrames(opts.width, opts.height), doc, holeIds, opts);
+    // The ground the video shows (the painted map, or the photo), whatever the screen shows
+    if (opts.ground !== undefined) {
+      this.paintedRecord = opts.ground;
+      await this.applyPainted();
+    }
+    try {
+      return await recordFlights(this.flightFrames(opts.width, opts.height), doc, holeIds, opts);
+    } finally {
+      if (opts.ground !== undefined) {
+        this.paintedRecord = undefined;
+        void this.applyPainted();
+      }
+    }
   }
+
+  /** The painted map on the ground for the tee view and flyovers, with trees where it paints
+   * woods (null: the photo). */
+  setPaintedGround(look: PaintedLook | null) {
+    this.paintedScreen = look;
+    return this.applyPainted();
+  }
+
+  private paintedScreen: PaintedLook | null = null;
+  /** While recording: the ground the video shows (undefined: as on screen). */
+  private paintedRecord: PaintedLook | null | undefined = undefined;
+  /** Where the painting on the ground shows woods (3D trees stand there). */
+  private paintedWoods: WoodedGrid | null = null;
+
+  private async applyPainted() {
+    const look = this.paintedRecord !== undefined ? this.paintedRecord : this.paintedScreen;
+    await this.ground.setPainted(look?.url ?? null);
+    if (this.disposed) return;
+    const woods = this.ground.paintedTexture ? look?.wooded ?? null : null;
+    if (woods !== this.paintedWoods || this.shapesPainted !== !!this.ground.paintedTexture) {
+      this.paintedWoods = woods;
+      this.syncShapes();
+    }
+    this.invalidate(true);
+  }
+  /** Whether the shapes on the ground were last drawn for the painted map. */
+  private shapesPainted = false;
 
   /** Flights over holes drawn offscreen at a fixed size, one moment at a time (for a recording):
    * like the flyover on screen, into a render target of its own. */
@@ -1141,7 +1192,7 @@ export class CourseView {
       this.grassTerrainRef = doc.heights;
       this.grass.setTerrain(grassTerrain(doc));
     }
-    const photo = this.ground.photo && doc.background.opacity > 0.3 ? this.ground.photo : null;
+    const photo = this.ground.paintedTexture ?? (this.ground.photo && doc.background.opacity > 0.3 ? this.ground.photo : null);
     if (this.grassPhoto !== photo) {
       this.grassPhoto = photo;
       this.grass.setPhoto(photo, doc.background.rect, 0.8);
@@ -1517,11 +1568,15 @@ export class CourseView {
     const pdga = st.markings === "pdga";
     const color = (kind: string) => (kind === "ob" ? (pdga ? "#ffffff" : st.ob) : kind === "nogo" && pdga ? RESTRICTED : kind === "hazard" ? st.hazard : kind === "water" ? st.water : kind === "fairway" ? st.fairway : kind === "woods" ? st.trees : null);
     const photo = !!doc.background.url && doc.background.opacity > 0.3;
+    // The painted map on the ground (flyovers, the tee view): it has the fairways, grass, woods,
+    // paths and roads painted already; the rules (OB, hazards), water and what stands up stay
+    const painted = !!this.ground.paintedTexture;
+    this.shapesPainted = painted;
 
     // Fairways (under everything else)
     for (const s of doc.stats) {
       const hole = course.holes.find(h => h.id === s.holeId);
-      if (!hole || !s.complete || !hole.fairway) continue;
+      if (!hole || !s.complete || !hole.fairway || painted) continue;
       const line = smoothPath(s.line, 10);
       put(`fair:${hole.id}`, JSON.stringify([line, hole.fairwayWidth, hole.fairwayShape, hv, st.fairway, photo]), () => {
         const g = new THREE.Group();
@@ -1573,9 +1628,15 @@ export class CourseView {
     areas.forEach((a, order) => {
       const meta = AREA_KINDS[a.kind];
       const c = color(a.kind) ?? meta.color;
-      put(`area:${a.id}`, JSON.stringify([a.points, a.kind, hv, c, photo, order, a.ob, a.kind === "water" ? this.waterShore(a.points) : 0]), () => {
+      put(`area:${a.id}`, JSON.stringify([a.points, a.kind, hv, c, photo, order, a.ob, a.kind === "water" ? this.waterShore(a.points) : 0, painted]), () => {
         const g = new THREE.Group();
         const fill = photo ? meta.fill : Math.min(0.9, meta.fill + 0.35);
+        const rule = a.kind === "ob" || a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo";
+        if (painted && a.kind !== "water") {
+          if (rule) g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, 3, { order: 4, dashed: a.kind === "ob" ? undefined : 6 }));
+          if (a.ob === true && a.kind !== "ob") g.add(this.fatLine(this.drapeLine(a.points, LIFT + 0.05, true), color("ob")!, 3, { order: 5 }));
+          return g;
+        }
         if (a.kind === "water") {
           // Water lies level at its shore's lowest point, and where the ground (measured only every
           // few yards) rises above that, it rides just over the ground instead of sinking under it
@@ -1611,8 +1672,24 @@ export class CourseView {
         return woods;
       }, this.itemsGroup);
     });
+    // The painted map's own woods: trees standing on it
+    const pw = painted ? this.paintedWoods : null;
+    if (pw) {
+      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, clearings.key]), () => {
+        const land = landscapeOf(st);
+        const inside = (p: P) => {
+          const c = Math.floor((p.x - pw.x0) / pw.ftPerCell), r = Math.floor((p.y - pw.y0) / pw.ftPerCell);
+          return c >= 0 && r >= 0 && c < pw.cols && r < pw.rows && pw.data[r * pw.cols + c] === 1;
+        };
+        // (as thick as the painting's tree cover)
+        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, clearings.test, 22 / Math.sqrt(Math.max(0.15, pw.cover)));
+        this.shadowsDirty = true;
+        return woods;
+      }, this.itemsGroup);
+    }
     // Lines
     for (const l of course.items.filter(i => i.type === "line") as LineItem[]) {
+      if (painted && (l.kind === "path" || l.kind === "road" || l.kind === "walk") && l.ob !== true) continue;
       const meta = LINE_KINDS[l.kind];
       const c = l.kind === "ob" ? color("ob")! : l.kind === "path" ? st.path : l.kind === "stream" ? st.water : meta.color;
       const width = l.width ?? meta.width;

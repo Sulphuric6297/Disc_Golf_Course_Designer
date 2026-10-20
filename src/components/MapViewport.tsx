@@ -14,6 +14,7 @@ import { fmtElev } from "../lib/units";
 import type { P } from "../types";
 import { SceneButton } from "./ScenePanel";
 import { landscapeOf } from "../lib/landscapes";
+import { usePaintedGround } from "../state/paintedGround";
 
 let current: CourseView | null = null;
 /** The live map view (for buttons elsewhere: fit, tee view, snapshots). */
@@ -77,12 +78,16 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const contours = useMemo(() => (ed.contours ? contoursOf(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height) : { segments: [], interval: 1 }), [ed.contours, doc.terrainHeights, doc.gridSize, doc.canvas]);
   const shadeUrl = useMemo(() => (ed.shading && terrain.relief > 1 && (doc.style.reliefScale ?? 1) > 0 ? hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, undefined, doc.style.reliefScale ?? 1).toDataURL() : null), [ed.shading, terrain.relief, doc.terrainHeights, doc.gridSize, doc.canvas, doc.style.reliefScale]);
   const issues = useMemo(() => (ed.step === "review" ? safetyIssues(doc, stats) : null), [ed.step, doc, stats]);
+  // From a tee and in flyovers: the ground in the Design look (the painted map), not the photo
+  const paintedOn = !!ed.teeView && ed.flyLook === "painted" && !!doc.holes.length;
+  const painted = usePaintedGround(paintedOn);
 
   // The 3D view shows the course in its landscape's natural colors (whatever the map's style)
   const natural = landscapeOf(doc.style);
   const naturalStyle = useMemo(() => ({ ...doc.style, ...natural.colors }), [doc.style, natural]);
   const viewDoc: ViewDoc = useMemo(() => ({
-    course: { ...doc, style: naturalStyle },
+    // (the painted map in its own colors, and what stands on it too)
+    course: { ...doc, style: paintedOn ? doc.style : naturalStyle },
     stats,
     activeHoleId: ed.activeHoleId,
     issues,
@@ -93,16 +98,18 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     showGrid: !doc.background,
     heights: doc.terrainHeights,
     terrain,
-    background: { url: doc.background, rect: { x: 0, y: 0, width: doc.canvas.width, height: doc.canvas.height }, opacity: ed.photo ? 1 : 0 },
+    // (no photo while the painted map is on its way)
+    background: { url: doc.background, rect: { x: 0, y: 0, width: doc.canvas.width, height: doc.canvas.height }, opacity: ed.photo && !paintedOn ? 1 : 0 },
     overlay: shadeUrl ? "shaded" : contours.segments.length ? "contours" : "off",
     contours,
     shadeUrl,
     groundDetail: ed.groundDetail,
     groundPaint: doc.groundPaint,
     groundColor: natural.colors.rough
-  }), [doc, stats, ed.activeHoleId, issues, terrain, ed.photo, shadeUrl, contours, ed.groundDetail, natural, naturalStyle]);
+  }), [doc, stats, ed.activeHoleId, issues, terrain, ed.photo, shadeUrl, contours, ed.groundDetail, natural, naturalStyle, paintedOn]);
 
   useEffect(() => { view?.setDoc(viewDoc); }, [view, viewDoc]);
+  useEffect(() => { void view?.setPaintedGround(paintedOn ? painted : null); }, [view, paintedOn, painted]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
   useEffect(() => { view?.setGroup(ed.group); }, [view, ed.group]);
   useEffect(() => {
