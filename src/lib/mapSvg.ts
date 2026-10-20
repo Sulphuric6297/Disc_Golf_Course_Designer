@@ -689,6 +689,16 @@ let failedPaint: string | null = null;
 
 /** For tests: whether a live painting is under way. */
 export const paintingNow = () => !!livePaint;
+
+/** How far the live painting under way is (0..1), or null when none is: heard as it goes. */
+let liveProgress = 0;
+const progressListeners = new Set<(fraction: number | null) => void>();
+export const onPaintProgress = (fn: (fraction: number | null) => void) => {
+  progressListeners.add(fn);
+  fn(livePaint ? liveProgress : null);
+  return () => { progressListeners.delete(fn); };
+};
+const tellProgress = () => progressListeners.forEach(fn => fn(livePaint ? liveProgress : null));
 if (typeof window !== "undefined") (window as any).__dgPainting = paintingNow;
 
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
@@ -741,7 +751,13 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
     livePaint?.stop.abort();
     const job = { key, stop: new AbortController() };
     livePaint = job;
-    void forestCanvasAsync(doc, view, layers.stats, opts, job.stop.signal)
+    liveProgress = 0;
+    queueMicrotask(tellProgress);
+    void forestCanvasAsync(doc, view, layers.stats, opts, job.stop.signal, f => {
+      if (livePaint !== job) return;
+      liveProgress = f;
+      tellProgress();
+    })
       // (encoded off the page's thread, unlike toDataURL)
       .then(canvas => new Promise<Blob>((res, rej) => canvas.toBlob(b => (b ? res(b) : rej(new Error("no picture"))), "image/jpeg", 0.9)))
       .then(blob => {
@@ -758,9 +774,11 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
         if (lastForView.size > 8) lastForView.delete(lastForView.keys().next().value!);
         lastLive = { url, view, doc: doc.id ?? "", limit: paintLimit };
         if (livePaint === job) livePaint = null;
+        tellProgress();
         paintedListeners.forEach(fn => fn());
       }, (err: unknown) => {
         if (livePaint === job) livePaint = null;
+        tellProgress();
         // (stopped for a newer one: nothing to do; a painting that failed is said, and not tried
         // again until the course changes)
         if (job.stop.signal.aborted) return;
@@ -777,6 +795,7 @@ export const resetForestCache = () => {
   forestCache.clear();
   livePaint?.stop.abort();
   livePaint = null;
+  tellProgress();
   for (const url of liveCache.values()) URL.revokeObjectURL(url);
   liveCache.clear();
   lastForView.clear();

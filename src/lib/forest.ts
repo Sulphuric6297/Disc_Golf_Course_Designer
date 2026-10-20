@@ -230,7 +230,8 @@ export type ForestOpts = {
  * The painted land over the map view, as a canvas `density` times the view's size (the view is
  * in page points; `view.scale` is points per foot).
  */
-function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts): Generator<void, HTMLCanvasElement, void> {
+/** The painting, a slice at a time; some slices say how far along it is (0..1). */
+function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts): Generator<number | void, HTMLCanvasElement, void> {
   const density = opts.density ?? 2;
   const s = opts.style;
   const W = Math.max(1, Math.round(view.width * density)), H = Math.max(1, Math.round(view.height * density));
@@ -532,7 +533,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   };
   const wooded = new Uint8Array(mw * mh);
   for (let y = 0; y < mh; y++) {
-    if ((y & 31) === 0) yield;
+    if ((y & 31) === 0) yield 0.05 + 0.1 * (y / mh);
     for (let x = 0; x < mw; x++) {
       const m = y * mw + x;
       // A wobbly edge where the trees stop
@@ -607,7 +608,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const stepPx = crownR * 1.15;
   const grow = 1 + (1 - cover) * 0.7;
   for (let gy = -stepPx; gy < H + stepPx; gy += stepPx) {
-    yield;
+    yield 0.15 + 0.35 * ((gy + stepPx) / (H + 2 * stepPx));
     for (let gx = -stepPx; gx < W + stepPx; gx += stepPx) {
       const n = rnd() < 0.5 ? 2 : 1;
       for (let j = 0; j < n; j++) {
@@ -719,7 +720,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const groundSun = new Float32Array(hw * ((H >> 1) + 1));
   for (let y = 0; y < H; y += 2) {
     for (let x = 0; x < W; x += 2) groundSun[(y >> 1) * hw + (x >> 1)] = sunlit(x, y, 0);
-    if ((y & 15) === 0) yield;
+    if ((y & 15) === 0) yield 0.5 + 0.15 * (y / H);
   }
   yield;
   // The ground darkens near the woods, all round (the light under the trees' edges)
@@ -827,7 +828,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const light = s.light ?? 0, contrast = s.contrast ?? 0, sat = s.colorStrength ?? 1;
   yield;
   for (let y = 0; y < H; y++) {
-    if ((y & 7) === 0) yield;
+    if ((y & 7) === 0) yield 0.7 + 0.3 * (y / H);
     const my = Math.min(mh - 1, y >> 1) * mw;
     const tr = (y & 511) << 9, tu = ((y - 1) & 511) << 9, td = ((y + 1) & 511) << 9;
     for (let x = 0, i = y * W; x < W; x++, i++) {
@@ -1016,13 +1017,14 @@ export const paintedFrom = (doc: CourseDoc) => [
   doc.holes.map(h => ({ ...h, name: undefined, par: undefined, notes: undefined, flyKeys: undefined }))
 ];
 
-export const forestCanvasAsync = async (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts, signal?: AbortSignal) => {
+export const forestCanvasAsync = async (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts, signal?: AbortSignal, onProgress?: (fraction: number) => void) => {
   const steps = forestSteps(doc, view, stats, opts);
-  let start = performance.now();
+  let start = performance.now(), told = -1;
   for (;;) {
     if (signal?.aborted) throw new DOMException("Painting stopped", "AbortError");
     const r = steps.next();
     if (r.done) return r.value;
+    if (onProgress && typeof r.value === "number" && r.value - told >= 0.01) onProgress((told = r.value));
     if (performance.now() - start > 8) {
       await new Promise<void>(res => setTimeout(res, 0));
       start = performance.now();

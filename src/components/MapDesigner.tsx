@@ -2,7 +2,7 @@
 // scorecard) exactly as it will print, updating as the style changes.
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EyeOff, Minus, Plus, Scan, Trash2 } from "lucide-react";
-import { onPainted, renderPoster, withLivePaint } from "../lib/mapSvg";
+import { onPaintProgress, onPainted, renderPoster, withLivePaint } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
 import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
 import { useCourse, useEditor } from "../state/course";
@@ -137,6 +137,9 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
   // small; quicker and lighter on memory), and is drawn again when a painting is ready
   const [painted, setPainted] = useState(0);
   useEffect(() => onPainted(() => setPainted(v => v + 1)), []);
+  // How far the painting under way is (shown over the page while it paints)
+  const [painting, setPainting] = useState<number | null>(null);
+  useEffect(() => onPaintProgress(setPainting), []);
   const page = useMemo(() => withLivePaint(PHONE ? 1500 : 2400, () => {
     if (preview === "sign" && holeId) return renderTeeSign(doc, holeId, signSize, relief);
     if (preview === "page" && holeId) return renderHolePage(doc, holeId, pageSize, relief);
@@ -349,6 +352,13 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
           </div>
         </div>
       </div>
+      {painting !== null && (
+        <div className={`absolute left-1/2 -translate-x-1/2 ${compact ? "" : "top-14"} z-10 pointer-events-none flex items-center gap-2.5 rounded-full bg-zinc-900/90 border border-white/10 shadow-lg px-3.5 py-1.5`} style={compact ? { top: topInset + 104 } : undefined} role="progressbar" aria-label="Painting the map" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(painting * 100)} data-testid="paint-progress">
+          <span className="text-xs font-semibold text-zinc-200 whitespace-nowrap">Painting the map</span>
+          <span className="w-32 h-1.5 rounded-full bg-zinc-700 overflow-hidden"><span className="block h-full bg-orange-500 transition-[width] duration-200" style={{ width: `${Math.max(3, Math.round(painting * 100))}%` }} /></span>
+          <span className="text-xs tabular-nums text-zinc-300 w-8 text-right">{Math.round(painting * 100)}%</span>
+        </div>
+      )}
       {doc.holes.length === 0 && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="bg-zinc-900/90 rounded-xl px-4 py-3 text-sm text-zinc-200">No holes yet.</div></div>}
     </div>
   );

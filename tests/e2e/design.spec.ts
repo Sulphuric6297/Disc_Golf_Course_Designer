@@ -854,3 +854,17 @@ plain("tee signs: other holes faded, left out or shown; each part shown or left 
   plainExpect(sign(h2.id)).toContain(">PAR ");
   plainExpect(sign(h1.id)).not.toContain(">PAR ");
 });
+
+test("while the Design preview paints, a bar shows how far along it is, gone when it is done", async ({ page }) => {
+  test.setTimeout(180_000);
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "5 Design" }).click();
+  const bar = page.getByTestId("paint-progress");
+  await expect(bar).toBeVisible({ timeout: 20_000 });
+  await expect(bar).toContainText("Painting the map");
+  const first = Number(await bar.getAttribute("aria-valuenow"));
+  await expect.poll(async () => Number((await bar.getAttribute("aria-valuenow").catch(() => null)) ?? 100), { timeout: 90_000 }).toBeGreaterThan(first);
+  await expect(bar).toBeHidden({ timeout: 150_000 });
+});
