@@ -203,6 +203,10 @@ What made the difference:
   most 30 frames a second when nothing else moves (battery).
 - Frame times are watched while the view moves: under 30 frames a second it steps down (pixel
   ratio, then grass, shadows and tree detail), and back up after a few smooth windows in a row.
+  Only frames drawn back to back count (the pause between two separate changes is not a slow
+  frame), however slow they are; a window is 24 frames or a second and a half, whichever comes
+  first, and under about 14 frames a second it drops two steps at once, so even a very slow phone
+  is smooth again within a few seconds.
 
 ## Phones and tablets: research and design
 

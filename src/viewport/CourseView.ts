@@ -188,6 +188,8 @@ export class CourseView {
   private perfSamples: number[] = [];
   private fastWindows = 0;
   private lastRender = 0;
+  /** The last tick drew a picture (two in a row: the gap between them is a real frame time). */
+  private drewLastTick = false;
   private adaptiveForced = false;
   private paused = false;
   private frames = 0;
@@ -883,11 +885,18 @@ export class CourseView {
     // phone when nothing else moves: the battery matters more than the breeze)
     const breeze = !!this.povHole && this.wind;
     if (breeze && !(this.mobile && !this.dirty && performance.now() - this.lastRender < 33)) this.dirty = true;
-    if (!this.dirty || this.size.width <= 1 || this.paused) return;
+    if (!this.dirty || this.size.width <= 1 || this.paused) {
+      this.drewLastTick = false;
+      return;
+    }
     this.dirty = false;
     const now = performance.now();
-    // Frame after frame (something moving): how long each took, to keep the frame rate up
-    if (now - this.lastRender < 250) this.perfSample(now - this.lastRender);
+    // Frame after frame (something moving, a picture on every tick): how long each took, to keep
+    // the frame rate up. Only ticks that drew one after the other count, so the pauses between
+    // two separate changes are never taken for slow frames, and frames however slow always count
+    // (not a gap of minutes, though: a tab coming back from the background)
+    if (this.drewLastTick && now - this.lastRender < 2000) this.perfSample(now - this.lastRender);
+    this.drewLastTick = true;
     this.lastRender = now;
     this.frames++;
     this.render();
@@ -903,13 +912,16 @@ export class CourseView {
     if (this.software && !this.adaptiveForced) return;
     const s = this.perfSamples;
     s.push(ms);
-    if (s.length < 24) return;
+    // A window of 24 frames, or a second and a half on a slow device (24 frames at 5 a second
+    // would be five seconds of a juddering view for every step)
+    if (s.length < 6 || (s.length < 24 && s.reduce((a, b) => a + b, 0) < 1500)) return;
     const sorted = [...s].sort((a, b) => a - b);
     const median = sorted[s.length >> 1];
     s.length = 0;
     if (median > 34 && this.tier < 4) {
       this.fastWindows = 0;
-      this.setTier(this.tier + 1);
+      // (Very slow, under about 14 frames a second: two steps at once)
+      this.setTier(this.tier + (median > 70 ? 2 : 1));
     } else if (median < 17 && this.tier > 0) {
       // (only after a few quick windows in a row: no flickering between two levels)
       if (++this.fastWindows >= 3) {
@@ -959,9 +971,10 @@ export class CourseView {
     return { tier: this.tier, pixelRatio: this.renderer.getPixelRatio(), shadow: this.sun.shadow.mapSize.x, nearFt: forestDetail.nearFt, grass: this.grassQuality(), mobile: this.mobile, software: this.software };
   }
 
-  /** For tests: let the frame-rate watch work under software rendering too. */
+  /** For tests: let the frame-rate watch work under software rendering too (a fresh window). */
   forceAdaptive(on = true) {
     this.adaptiveForced = on;
+    this.perfSamples.length = 0;
   }
 
   private render() {

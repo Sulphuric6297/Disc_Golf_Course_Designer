@@ -1,4 +1,5 @@
 import { test, expect, addHole, blankCourse, course, importSite } from "./fixtures";
+import type { Page } from "@playwright/test";
 
 const grassSetting = (page: import("@playwright/test").Page) => page.evaluate(() => (window as any).__dgEditor().grass);
 
@@ -162,7 +163,9 @@ test("smooth on any device: slow frames make the 3D view lighter step by step, a
   await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
   await page.keyboard.press("Escape");
   await page.keyboard.press("3");
+  await settled(page);
   const q = () => page.evaluate(() => (window as any).__dgView.qualityInfo() as { tier: number; pixelRatio: number; shadow: number; nearFt: number });
+  // (Frames of a given length, as the view would time them; each batch a fresh window)
   const frames = (ms: number, n: number) => page.evaluate(([ms, n]) => { const v = (window as any).__dgView; v.forceAdaptive(); for (let i = 0; i < n; i++) v.perfSample(ms); }, [ms, n]);
   const start = await q();
   expect(start.tier).toBe(0);
@@ -182,6 +185,53 @@ test("smooth on any device: slow frames make the 3D view lighter step by step, a
   expect((await q()).tier).toBe(4);
   await frames(10, 24);
   expect((await q()).tier).toBe(3);
+  // A very slow device (5 frames a second): a window closes after a second and a half, not 24
+  // frames, and drops two steps at once (first back to full quality: three quick windows a step)
+  await frames(10, 24 * 9);
+  expect((await q()).tier).toBe(0);
+  const slow = await page.evaluate(() => {
+    const v = (window as any).__dgView;
+    v.forceAdaptive();
+    for (let i = 0; i < 7; i++) v.perfSample(200);
+    const before = v.qualityInfo().tier;
+    v.perfSample(200);
+    return [before, v.qualityInfo().tier];
+  });
+  expect(slow).toEqual([0, 2]);
+});
+
+/** Waits until the view has stopped drawing (a view change's animation is over). */
+async function settled(page: Page) {
+  let last = -1;
+  await expect.poll(async () => {
+    const n = await page.evaluate(() => (window as any).__dgView.drawInfo().frames);
+    const still = n === last;
+    last = n;
+    return still;
+  }, { timeout: 60_000, intervals: [1000] }).toBe(true);
+}
+
+test("frames however slow are counted while the 3D view moves (a slow phone adapts within seconds)", async ({ page }) => {
+  test.setTimeout(120_000);
+  await blankCourse(page);
+  await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("3");
+  await page.waitForTimeout(1500);
+  // Software rendering here draws a frame in a few hundred milliseconds (it once counted only
+  // frames under a quarter second, so the slowest devices never got lighter)
+  await page.evaluate(() => {
+    const v = (window as any).__dgView;
+    v.forceAdaptive();
+    const spin = () => {
+      if ((window as any).__stopSpin) return;
+      void v.controls.rotate(0.03, 0, false);
+      requestAnimationFrame(spin);
+    };
+    requestAnimationFrame(spin);
+  });
+  await expect.poll(() => page.evaluate(() => (window as any).__dgView.qualityInfo().tier), { timeout: 60_000 }).toBeGreaterThan(0);
+  await page.evaluate(() => { (window as any).__stopSpin = true; });
 });
 
 test.describe("on a phone", () => {
