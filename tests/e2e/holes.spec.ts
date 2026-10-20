@@ -139,3 +139,28 @@ test("dragging a tee moves it and the hole's length follows", async ({ page }) =
   await expect.poll(async () => Math.round((await course(page)).items.find((i: any) => i.type === "tee").x / 10)).toBe(30);
   await expect(page.getByTestId("hole-row")).toContainText("500 ft");
 });
+
+test("the walk to the next tee becomes a line to reshape, in place of the automatic one; Undo brings that back", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
+  await addHole(page, { x: 700, y: 600 }, { x: 700, y: 300 });
+  await page.keyboard.press("Escape");
+  await page.getByTestId("hole-row").first().click();
+  await page.getByTestId("edit-walk").click();
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "line" && i.kind === "walk").length).toBe(1);
+  const walk = (await course(page)).items.find((i: any) => i.kind === "walk");
+  // From just off the basket to just behind the next tee, selected, with points to pull
+  expect(Math.hypot(walk.points[0].x - 650, walk.points[0].y - 700)).toBeLessThan(40);
+  expect(Math.hypot(walk.points[3].x - 700, walk.points[3].y - 600)).toBeLessThan(40);
+  expect((await editorState(page)).selectedId).toBe(walk.id);
+  await expect(page.getByTestId("edit-walk")).toHaveCount(0);
+  await drag(page, await handleCenter(page, "corner", 1), await screenOf(page, 640, 560));
+  await expect.poll(async () => (await course(page)).items.find((i: any) => i.kind === "walk").points[1].y).toBeLessThan(600);
+  // Nothing automatic left to edit in the Design step either
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await expect(page.getByTestId("edit-walks")).toHaveCount(0);
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.kind === "walk").length).toBe(0);
+  await expect(page.getByTestId("edit-walks")).toBeVisible();
+});

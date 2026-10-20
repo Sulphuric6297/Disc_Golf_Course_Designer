@@ -2,7 +2,7 @@
 import { CIRCLE_ONE_FT, PIN_POSITIONS, TEE_ORDER, generateId } from "../constants";
 import {
   createAmenity, createArea, createBasket, createDropZone, createLabel, createLine, createMando, createStructure, createTee, createTree,
-  holeBaskets, holeTees, itemHoleId, newHole, teeFor
+  autoWalks, holeBaskets, holeTees, itemHoleId, newHole, teeFor
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { holeStats } from "../lib/holeStats";
@@ -263,4 +263,18 @@ export const addHoleOb = (holeId: string, where: "left" | "right" | "long") => {
   select(item.id);
   const number = doc.holes.indexOf(hole) + 1;
   toast(`OB line added ${where === "long" ? "behind the basket" : `along the ${where}`} of hole ${number}: drag its points to fit.`, "success", true);
+};
+
+/** The walk from a hole's basket to the next hole's tee as a line of its own (points along the way
+ * to pull), in place of the automatic one; `holeId` null for every hole's. Selected when one. */
+export const editWalks = (holeId: string | null) => {
+  const doc = getDoc();
+  const stats = doc.holes.map(h => holeStats(doc, h));
+  const lines = autoWalks(doc.items, stats)
+    .filter(w => holeId === null || w.a.holeId === holeId)
+    .map(({ from, to }) => createLine("walk", [0.06, 0.36, 0.66, 0.96].map(t => ({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t }))));
+  if (!lines.length) return [];
+  changeDoc(d => ({ items: [...d.items, ...lines] }));
+  if (lines.length === 1) select(lines[0].id);
+  return lines;
 };

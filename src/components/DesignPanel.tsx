@@ -2,6 +2,9 @@
 import { ArrowRight, RotateCcw } from "lucide-react";
 import { BASKET_MARKS, PAPER, THEME_COLORS, basketMark, bestRotation } from "../lib/mapSvg";
 import { landscapeOf } from "../lib/landscapes";
+import { autoWalks } from "../lib/course";
+import { holeStats } from "../lib/holeStats";
+import { editWalks } from "../state/actions";
 import { CARD_DEFAULTS } from "../lib/teeSign";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { AREA_KINDS } from "../constants";
@@ -179,6 +182,7 @@ export function DesignPanel() {
         <Toggle label="Throw lines" checked={s.throwLines} onChange={v => setStyle({ throwLines: v })} />
         <Toggle label="Distances on the lines" checked={s.distances} onChange={v => setStyle({ distances: v })} />
         <Toggle label="Walks to the next tee" checked={s.nextTee} onChange={v => setStyle({ nextTee: v })} />
+        {s.nextTee && autoWalks(doc.items, doc.holes.map(h => holeStats(doc, h))).length > 0 && <div className="-mt-1 mb-1"><Button small onClick={() => editWalks(null)} testid="edit-walks">Edit the walks</Button></div>}
         <Toggle label="Putting circle (10 m)" checked={s.circle} onChange={v => setStyle({ circle: v })} />
         <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />
         <Toggle label="Hill shading" checked={s.hillshade} onChange={v => setStyle({ hillshade: v })} />

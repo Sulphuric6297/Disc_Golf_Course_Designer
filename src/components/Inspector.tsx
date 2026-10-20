@@ -2,13 +2,13 @@
 import { useEffect, useMemo } from "react";
 import { ArrowDown, ArrowUp, Copy, Eye, Lock, Plane, Trash2, Unlock, X } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
-import { holeBaskets, holeNumber, holeTees, ITEM_LABELS } from "../lib/course";
+import { autoWalks, holeBaskets, holeNumber, holeTees, ITEM_LABELS } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
 import { holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
-import { addHoleOb, deleteSelection, duplicateSelection, select, setTeeLevel } from "../state/actions";
+import { addHoleOb, deleteSelection, duplicateSelection, editWalks, select, setTeeLevel } from "../state/actions";
 import { moveHole, updateHole, updateItem, useCourse, useEditor } from "../state/course";
 import type { AmenityKind, AreaItem, AreaKind, CourseItem, Hole, LineItem, LineKind, RoofKind, StructureKind, TeeSurface, TreeKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
@@ -23,6 +23,8 @@ function HoleInspector({ hole }: { hole: Hole }) {
   const doc = useCourse(s => s.doc);
   const s = useMemo(() => holeStats(doc, hole), [doc, hole]);
   const n = holeNumber(doc, hole.id);
+  // The walk on to the next tee, while it is the automatic one
+  const walkNext = useMemo(() => doc.style.nextTee && autoWalks(doc.items, doc.holes.map(h => holeStats(doc, h))).some(w => w.a.holeId === hole.id), [doc, hole.id]);
   const u = doc.units;
   const tees = holeTees(doc, hole.id);
   const baskets = holeBaskets(doc, hole.id);
@@ -106,6 +108,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
           <Field label="Name (optional)"><TextInput label="Hole name" value={hole.name ?? ""} placeholder="e.g. The Gauntlet" onChange={v => set({ name: v || undefined })} /></Field>
           <Field label="Notes and hole rules"><TextInput area label="Hole notes" value={hole.notes ?? ""} placeholder="e.g. OB left of the path. Mando right of the big oak; drop zone by the bench." onChange={v => set({ notes: v || undefined })} /></Field>
           {hole.doglegs.length > 0 && <Button small onClick={() => set({ doglegs: [] })}>Straighten the throw line</Button>}
+          {walkNext && <div className="mt-1.5"><Button small onClick={() => editWalks(hole.id)} testid="edit-walk">Edit the walk to hole {n + 1}</Button></div>}
         </Section>
       )}
       {s.complete && (
