@@ -4,7 +4,7 @@ import type {
   AmenityItem, AmenityKind, AreaItem, AreaKind, BasketItem, CourseDoc, CourseItem, CourseRules, DropZoneItem, Hole, LabelItem,
   Layout, LineItem, LineKind, MandoItem, MapStyle, P, PinPosition, StructureItem, StructureKind, TeeItem, TeeLevel, TreeItem
 } from "../types";
-import { centroid, corridor, dist } from "./geom";
+import { centroid, corridor, dist, smoothPath } from "./geom";
 import { landscapeOf } from "./landscapes";
 
 export const defaultStyle = (): MapStyle => ({
@@ -144,6 +144,12 @@ export const fairwayOutline = (hole: Pick<Hole, "fairwayWidth" | "fairwayShape" 
   const w = fairwayWidthAt(hole);
   return corridor(line, t => w(t) + extra, roundSteps, hole.fairwayShift ? fairwayShiftAt(hole) : undefined);
 };
+
+/** Lines that curve through their points as drawn (OB lines and fences go straight). */
+export const CURVED_LINES: LineKind[] = ["path", "walk", "stream", "road"];
+export const curves = (l: Pick<LineItem, "kind" | "straight">) => !l.straight && CURVED_LINES.includes(l.kind);
+/** A line as it is drawn: a smooth curve through its points, or straight between them. */
+export const linePath = (l: Pick<LineItem, "kind" | "straight" | "points">, perSegment = 8) => (curves(l) ? smoothPath(l.points, l.points.length > 60 ? 3 : perSegment) : l.points);
 
 export const newHole = (over: Partial<Hole> = {}): Hole => ({ id: `hole-${generateId()}`, doglegs: [], fairwayWidth: DEFAULT_FAIRWAY_FT, fairway: true, ...over });
 

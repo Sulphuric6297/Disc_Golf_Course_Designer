@@ -1,7 +1,7 @@
 import { test as plain, expect as plainExpect } from "@playwright/test";
 import { test, expect, addHole, blankCourse, course, importSite } from "./fixtures";
-import { autoWalks, createAmenity, createArea, createBasket, createDropZone, createEmptyCourse, createLine, createMando, createTee, newHole, normalizeCourse } from "../../src/lib/course";
-import { contourInterval, meander } from "../../src/lib/forest";
+import { autoWalks, createAmenity, createArea, createBasket, createDropZone, createEmptyCourse, createLine, createMando, createTee, curves, linePath, newHole, normalizeCourse } from "../../src/lib/course";
+import { contourInterval, meander, paintedLine } from "../../src/lib/forest";
 import { contoursOf, reliefExaggeration } from "../../src/lib/relief";
 import { dist, distanceToPath } from "../../src/lib/geom";
 import { BASKET_MARKS, basketMark, bestRotation, renderPoster } from "../../src/lib/mapSvg";
@@ -262,6 +262,25 @@ plain("creeks and trails wind: straight stretches get bends, the ends stay put",
   const kept = meander(traced, 12, 80, 7);
   const moved = Math.max(...kept.map(p => distanceToPath(p, traced)));
   plainExpect(moved).toBeLessThan(5);
+});
+
+plain("paths curve through their points, painted exactly where drawn (no wobble); OB lines and Straight ones go straight", () => {
+  const pts = [{ x: 0, y: 0 }, { x: 100, y: 60 }, { x: 200, y: 0 }, { x: 300, y: 60 }];
+  const path = createLine("path", pts);
+  const curve = linePath(path);
+  plainExpect(curve.length).toBeGreaterThan(pts.length * 4);
+  // (through every point it was drawn with)
+  for (const p of pts) plainExpect(Math.min(...curve.map(q => dist(p, q)))).toBeLessThan(0.01);
+  // Not straight between them: the middle of the first stretch is off the straight line
+  const mid = curve.filter(q => q.x > 40 && q.x < 60);
+  plainExpect(mid.some(q => Math.abs(q.y - q.x * 0.6) > 2)).toBe(true);
+  // The painting follows that curve
+  plainExpect(paintedLine(path, 2).points).toEqual(curve);
+  // Straight on request; OB lines always
+  plainExpect(linePath({ ...path, straight: true })).toEqual(pts);
+  plainExpect(linePath(createLine("ob", pts))).toEqual(pts);
+  plainExpect(curves({ kind: "road" })).toBe(true);
+  plainExpect(curves({ kind: "fence" })).toBe(false);
 });
 
 plain("basket marks: five kinds, on the map and in the legend", () => {

@@ -8,7 +8,7 @@ import { CIRCLE_ONE_FT, LINE_KINDS, PATH_SURFACES } from "../constants";
 import type { AreaItem, CourseDoc, LineItem, MapStyle, P, PathSurface, StructureItem, TreeItem } from "../types";
 import { canopyMask } from "./geo/detect";
 import { boundsOf, corridor, dist, pathLength, pointInPolygon, smoothPath } from "./geom";
-import { autoWalks, fairwayShiftAt, fairwayWidthAt } from "./course";
+import { autoWalks, fairwayShiftAt, fairwayWidthAt, linePath } from "./course";
 import type { HoleStats } from "./holeStats";
 import { landscapeOf } from "./landscapes";
 import { reliefExaggeration } from "./relief";
@@ -165,7 +165,7 @@ const hexRgb = (hex: string): RGB => {
  * A line that winds like a creek or a trail: long straight stretches (drawn with few clicks) get
  * bends, lines that already follow the ground closely (many points) only a little wobble.
  */
-export const meander = (pts: P[], amp: number, wave: number, seed: number): P[] => {
+export const meander = (pts: P[], amp: number, wave: number, seed: number, fine = 0.18): P[] => {
   if (pts.length < 2 || amp <= 0) return pts;
   const rnd = seeded(seed);
   const ph = [rnd() * 6.28, rnd() * 6.28, rnd() * 6.28];
@@ -184,7 +184,7 @@ export const meander = (pts: P[], amp: number, wave: number, seed: number): P[] 
     for (let j = i === 1 ? 0 : 1; j <= n; j++) {
       const t = j / n, d = s + len * t;
       const taper = Math.min(1, d / (wave * 0.5), (total - d) / (wave * 0.5));
-      const off = amp * taper * (bend * (0.62 * Math.sin((d / wave) * 6.28 + ph[0]) + 0.28 * Math.sin((d / (wave * 0.41)) * 6.28 + ph[1])) + 0.18 * Math.sin((d / (wave * 0.13)) * 6.28 + ph[2]));
+      const off = amp * taper * (bend * (0.62 * Math.sin((d / wave) * 6.28 + ph[0]) + 0.28 * Math.sin((d / (wave * 0.41)) * 6.28 + ph[1]) + fine * Math.sin((d / (wave * 0.13)) * 6.28 + ph[2])));
       out.push({ x: a.x + (b.x - a.x) * t + nx * off, y: a.y + (b.y - a.y) * t + ny * off });
     }
     s += len;
@@ -208,13 +208,11 @@ export const paintedLine = (l: LineItem, scale: number): { points: P[]; width: n
   const atLeast = (points: number) => Math.max(w, points / scale);
   if (l.kind === "stream") {
     const cw = atLeast(5.5);
-    return { points: smoothPath(meander(l.points, cw * 1.6, Math.max(50, cw * 11), idSeed(l.id)), 3), width: cw };
+    return { points: l.straight ? l.points : smoothPath(meander(l.points, cw * 1.6, Math.max(50, cw * 11), idSeed(l.id)), 3), width: cw };
   }
-  if (l.kind === "path" || l.kind === "walk") {
-    const tw = atLeast(3.6);
-    return { points: meander(smoothPath(l.points, 8), tw * 0.9, Math.max(40, tw * 14), idSeed(l.id)), width: tw };
-  }
-  if (l.kind === "road") return { points: l.points, width: atLeast(3.5) };
+  // (paths, walks and roads exactly where they were drawn)
+  if (l.kind === "path" || l.kind === "walk") return { points: linePath(l), width: atLeast(3.6) };
+  if (l.kind === "road") return { points: linePath(l), width: atLeast(3.5) };
   return { points: l.points, width: w };
 };
 
@@ -390,7 +388,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       // set, never too thin to see)
       const hole = doc.holes.find(h => h.id === a.holeId);
       const tw = hole?.walkWidth ? Math.max(hole.walkWidth, ftOf(2)) : Math.max(6, ftOf(6));
-      const pts = smoothPath(meander([from, to], Math.min(d * 0.07, 30), Math.max(70, d * 0.55), idSeed(a.holeId + b.holeId)), 3);
+      const pts = smoothPath(meander([from, to], Math.min(d * 0.07, 30), Math.max(70, d * 0.55), idSeed(a.holeId + b.holeId), 0), 3);
       line(surfaceCh(hole?.walkSurface), pts, tw);
       line(CLEAR, pts, tw + (crownR * 2.4) / k);
     }
@@ -878,11 +876,11 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         const sa = c[m4 + 1] / 255;
         if (sa > 0.3) lay(sandPal, (0.6 + grain * 0.3) * lit, smooth(0.45, 0.55, sa));
         // Roads and parking: soft gray, darker at the edges, a little gravel
-        if (r > 0.2) lay(road, (0.35 + 0.45 * smooth(0.45, 0.9, r) + grain * 0.25 + mott * 0.1) * lit, smooth(0.38, 0.5, r + rag * 0.12));
+        if (r > 0.2) lay(road, (0.35 + 0.45 * smooth(0.45, 0.9, r) + grain * 0.25 + mott * 0.1) * lit, smooth(0.38, 0.5, r + rag * 0.04));
         // Dirt: fuzzy edged, speckled with lighter and darker grit
         const d = b[m4] / 255;
         if (d > 0.1) {
-          const da = smooth(0.45, 0.55, d + (fbm(x / pt * 0.35 + 80, y / pt * 0.35) - 0.5) * 0.55);
+          const da = smooth(0.45, 0.55, d + (fbm(x / pt * 0.35 + 80, y / pt * 0.35) - 0.5) * 0.12);
           if (da > 0) {
             const grit = GRIT[tr | (x & 511)];
             lay(dirtPal, (0.52 + (grit - 0.5) * 0.7 + mott * 0.3) * (0.45 + 0.55 * lit), da);
@@ -891,7 +889,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         // Gravel and wood chips: speckled, fuzzy edged like the dirt
         const gv = dd[m4] / 255, ch2 = dd[m4 + 1] / 255;
         if (gv > 0.1 || ch2 > 0.1) {
-          const edge = (fbm(x / pt * 0.35 + 120, y / pt * 0.35) - 0.5) * 0.45;
+          const edge = (fbm(x / pt * 0.35 + 120, y / pt * 0.35) - 0.5) * 0.12;
           const grit = GRIT[tr | (x & 511)];
           if (gv > 0.1) lay(gravelPal, (0.55 + (grit - 0.5) * 0.8 + mott * 0.2) * (0.5 + 0.5 * lit), smooth(0.45, 0.55, gv + edge));
           if (ch2 > 0.1) lay(chipsPal, (0.5 + (grit - 0.5) * 0.9 + mott * 0.25) * (0.45 + 0.55 * lit), smooth(0.45, 0.55, ch2 + edge));

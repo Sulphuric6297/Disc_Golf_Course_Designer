@@ -113,6 +113,8 @@ export interface LineItem extends BaseItem {
   width?: number;
   /** What a path or a walk is made of (unset: dirt). */
   surface?: PathSurface;
+  /** Straight between its points (paths, walks, streams and roads curve through them unless set). */
+  straight?: boolean;
   holeId?: string;
   label?: string;
   /** Out of bounds: a stream is unless set false; a road, fence or path is when true (and then

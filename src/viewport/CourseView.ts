@@ -15,7 +15,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, autoWalks, basketFor, basketHoles, fairwayOutline, fairwayShiftAt, fairwayWidthAt, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { FAIRWAY_STATIONS, autoWalks, basketFor, basketHoles, curves, fairwayOutline, fairwayShiftAt, fairwayWidthAt, linePath, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
@@ -1767,32 +1767,33 @@ export class CourseView {
       const surfaced = (l.kind === "path" || l.kind === "walk") && l.surface && l.surface !== "dirt" ? PATH_SURFACES[l.surface].color : null;
       const c = l.kind === "ob" ? color("ob")! : surfaced ?? (l.kind === "path" || (l.kind === "walk" && l.width) ? st.path : l.kind === "stream" ? st.water : meta.color);
       const width = l.width ?? meta.width;
-      put(`line:${l.id}`, JSON.stringify([l.points, l.kind, width, hv, c, l.ob, l.kind === "stream" ? this.waterShore(l.points) : 0]), () => {
+      put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, hv, c, l.ob, l.kind === "stream" ? this.waterShore(l.points) : 0]), () => {
         const g = new THREE.Group();
+        const pts = linePath(l);
         // Marked OB (a creek, a road): a red edge either side
         if (l.ob === true && l.kind !== "ob" && l.points.length >= 2) {
           if (width > 0) {
             const edge = new THREE.Mesh(
-              drapedRibbon(l.points, width + 5, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.16),
+              drapedRibbon(pts, width + 5, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.16),
               new THREE.MeshLambertMaterial({ color: color("ob")!, transparent: true, opacity: 0.95, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 })
             );
             edge.renderOrder = 1.9;
             g.add(edge);
-          } else g.add(this.fatLine(this.drapeLine(l.points), color("ob")!, 5, { order: 4.9 }));
+          } else g.add(this.fatLine(this.drapeLine(pts), color("ob")!, 5, { order: 4.9 }));
         }
         if (width > 0 && l.points.length >= 2) {
           const ribbon = new THREE.Mesh(
-            drapedRibbon(l.kind === "stream" ? smoothPath(l.points, 8) : l.points, width, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.18),
+            drapedRibbon(pts, width, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.18),
             l.kind === "stream" ? waterMaterial(c, ...this.waterShore(l.points)) : new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
           );
           ribbon.renderOrder = 2;
           ribbon.receiveShadow = true;
           g.add(ribbon);
         } else {
-          g.add(this.fatLine(this.drapeLine(l.points), c, l.kind === "ob" ? 3.5 : 2.5, { order: 5, dashed: l.kind === "walk" ? 5 : l.kind === "fence" ? 2 : undefined }));
+          g.add(this.fatLine(this.drapeLine(pts), c, l.kind === "ob" ? 3.5 : 2.5, { order: 5, dashed: l.kind === "walk" ? 5 : l.kind === "fence" ? 2 : undefined }));
         }
         // (a walk with a width: its dashes along the middle too)
-        if (l.kind === "walk" && width > 0) g.add(this.fatLine(this.drapeLine(l.points, 0.4), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 4 }));
+        if (l.kind === "walk" && width > 0) g.add(this.fatLine(this.drapeLine(pts, 0.4), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 4 }));
         return g;
       });
     }
@@ -3494,9 +3495,11 @@ export class CourseView {
         this.draftAt = new THREE.Vector3(last.x, this.h(last.x, last.y), last.y);
       }
     } else if (this.drawPts.length) {
-      const pts = [...this.drawPts];
+      let pts = [...this.drawPts];
       if (this.cursor) pts.push(this.cursor);
       const area = this.drawn() === "area";
+      // (a path, walk, creek or road curves through its points as they are added)
+      if (this.tool.mode === "draw-line" && curves({ kind: this.tool.lineKind })) pts = linePath({ kind: this.tool.lineKind, points: pts });
       const color = this.tool.mode === "draw-structure" ? STRUCTURE_KINDS[this.tool.structureKind ?? "bridge"].color : area ? AREA_KINDS[this.tool.areaKind].color : LINE_KINDS[this.tool.lineKind].color;
       if (area && pts.length >= 3) {
         const mesh = new THREE.Mesh(drapedPolygon(pts, (x, y) => this.h(x, y), doc.gridSize, 0.3), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25, depthWrite: false, depthTest: false }));

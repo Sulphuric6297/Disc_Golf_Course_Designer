@@ -5,7 +5,7 @@
 // is at the bottom.
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
-import { activeLayout, fairwayOutline, holeBaskets, teeAim } from "./course";
+import { activeLayout, fairwayOutline, holeBaskets, linePath, teeAim } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath } from "./geom";
 import { courseTotals, holeStats, isOb, type HoleStats } from "./holeStats";
 import { forestCanvas, forestCanvasAsync, paintedLine, type CanopyGrid } from "./forest";
@@ -292,7 +292,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     const w = l.width ?? meta.width;
     const o = dim(l.holeId);
     // Creeks and trails wind: draw them as smooth curves through their points
-    const d = pathD(l.kind === "stream" || l.kind === "path" ? smoothPath(l.points, 8) : l.points);
+    const d = pathD(linePath(l));
     if (l.kind === "road") {
       out.push(`<path d="${d}" fill="none" stroke="${shade(pal.road, -0.25)}" stroke-width="${n(Math.max(w, px(3)) + px(2))}" stroke-linecap="round" stroke-linejoin="round" opacity="${o}"/>`);
       out.push(`<path d="${d}" fill="none" stroke="${pal.road}" stroke-width="${n(Math.max(w, px(3)))}" stroke-linecap="round" stroke-linejoin="round" opacity="${o}"/>`);
@@ -394,7 +394,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       if (l.ob !== true || l.kind === "ob" || l.points.length < 2) continue;
       const o = dim(l.holeId);
       const w = l.width ?? LINE_KINDS[l.kind].width;
-      const g = forest ? paintedLine(l, view.scale) : { points: l.kind === "stream" || l.kind === "path" ? smoothPath(l.points, 8) : l.points, width: Math.max(w, px(l.kind === "road" ? 3 : l.kind === "path" ? 2.2 : 2)) };
+      const g = forest ? paintedLine(l, view.scale) : { points: linePath(l), width: Math.max(w, px(l.kind === "road" ? 3 : l.kind === "path" ? 2.2 : 2)) };
       if (l.kind === "fence" || l.kind === "walk") edge(pathD(g.points), o);
       else {
         const off = (g.width / 2) * (forest && l.kind === "stream" ? 1.3 : 1) + px(1.6);
@@ -661,7 +661,7 @@ if (typeof window !== "undefined") (window as any).__dgPainting = paintingNow;
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
   const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
-  const shapes = doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as LineItem).width, (i as LineItem).surface] : i.type === "structure" ? [i.type, i.kind, i.points, i.width, i.height, i.roof, i.roofColor, i.wallColor] : [i.type, Math.round(i.x), Math.round(i.y), (i as TreeItem).radius]));
+  const shapes = doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as LineItem).width, (i as LineItem).surface, (i as LineItem).straight] : i.type === "structure" ? [i.type, i.kind, i.points, i.width, i.height, i.roof, i.roofColor, i.wallColor] : [i.type, Math.round(i.x), Math.round(i.y), (i as TreeItem).radius]));
   const look = [s.forest, s.treeCover, s.landscape, s.contours, s.trees, s.fairway, s.rough, s.water, s.path, s.nextTee, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale];
   const key = JSON.stringify([paintLimit, printDensity, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairwayShape, h.fairwayShift, h.fairway, h.walkOut, h.walkIn, h.walkWidth, h.walkSurface]), shapes, doc.canvas, doc.id]);
   // (A live preview may show a picture made for print; a print never uses a live one, which is a

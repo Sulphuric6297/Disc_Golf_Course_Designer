@@ -2,7 +2,7 @@
 import { useEffect, useMemo } from "react";
 import { ArrowDown, ArrowUp, Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
-import { autoWalks, holeBaskets, holeNumber, holeTees, ITEM_LABELS, wholeHoles } from "../lib/course";
+import { autoWalks, CURVED_LINES, holeBaskets, holeNumber, holeTees, ITEM_LABELS, wholeHoles } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
@@ -310,6 +310,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
           </Field>
           {(LINE_KINDS[item.kind].width > 0 || item.kind === "walk") && <Slider label="Width" min={1} max={60} value={item.width ?? (LINE_KINDS[item.kind].width || 6)} onChange={v => set({ width: v })} format={v => fmtDist(v, u)} />}
           {(item.kind === "path" || item.kind === "walk") && <SurfacePick value={item.surface} onChange={v => set({ surface: v })} />}
+          {CURVED_LINES.includes(item.kind) && <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />}
           <Field label="Name on the map (optional)"><TextInput label="Line name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
           {item.kind !== "ob" && item.kind !== "walk" && <ObChoice item={item} />}
           {item.kind === "ob" && holePicker}
