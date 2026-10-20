@@ -22,6 +22,10 @@ export class Ground {
   private paintedReady: Promise<void> = Promise.resolve();
   private bgOpacity = 1;
   private mapPlane: THREE.Mesh | null = null;
+  /** The sharper painting round one hole, over the painted map (see setPaintedDetail). */
+  private detailPlane: THREE.Mesh | null = null;
+  private detailPainting: { canvas: HTMLCanvasElement; rect: { x: number; y: number; width: number; height: number } } | null = null;
+  private lastDoc: ViewDoc | null = null;
   private shade: THREE.Mesh | null = null;
   /** Map-only drawings on the ground (grid, site edge, contours, cut-away sides): hidden in camera views. */
   extras = new THREE.Group();
@@ -52,6 +56,7 @@ export class Ground {
 
   /** Rebuilds what changed. Returns true when anything did. */
   update(doc: ViewDoc) {
+    this.lastDoc = doc;
     const bg = doc.background;
     let changed = false;
     const key = JSON.stringify([doc.canvas, doc.gridSize, bg.rect, !!bg.url, doc.showGrid]);
@@ -108,6 +113,41 @@ export class Ground {
     }
     // (the photo's grass, paving and soil texture belongs to the photo)
     this.detailActive(this.close);
+    if (this.detailPlane) this.detailPlane.visible = !!this.painted;
+  }
+
+  /** A sharper painting of part of the site (round the hole being looked at) over the painted map;
+   * null takes it away. It shows only while the painted map does. */
+  setPaintedDetail(d: { canvas: HTMLCanvasElement; rect: { x: number; y: number; width: number; height: number } } | null) {
+    if (d === this.detailPainting) return;
+    this.detailPainting = d;
+    this.buildDetail();
+    this.onChanged();
+  }
+
+  private buildDetail() {
+    if (this.detailPlane) {
+      this.group.remove(this.detailPlane);
+      disposeObjectDeep(this.detailPlane);
+      this.detailPlane = null;
+    }
+    const d = this.detailPainting, doc = this.lastDoc;
+    if (!d || !doc) return;
+    const tex = new THREE.CanvasTexture(d.canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    const plane = new THREE.Mesh(
+      this.draped(doc, d.rect.x, d.rect.y, d.rect.width, d.rect.height, MAP_OVERLAY_OFFSET * 1.5),
+      new THREE.MeshLambertMaterial({ color: 0xffffff, map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -5 })
+    );
+    plane.name = "terrain-detail-plane";
+    plane.renderOrder = -0.5;
+    plane.receiveShadow = true;
+    plane.visible = !!this.painted;
+    noRaycast(plane);
+    this.detailPlane = plane;
+    this.group.add(plane);
   }
 
   /** The painted map draped over the ground in place of the photo (null: the photo again).
@@ -351,12 +391,15 @@ export class Ground {
     noRaycast(mapPlane);
     this.mapPlane = mapPlane;
     this.group.add(mapPlane);
+    this.detailPlane = null;
+    this.buildDetail();
   }
 
   private reshape(doc: ViewDoc) {
     this.redrape(doc, this.terrain, 0);
     this.colorTerrain(doc);
     this.redrape(doc, this.mapPlane, MAP_OVERLAY_OFFSET);
+    this.redrape(doc, this.detailPlane, MAP_OVERLAY_OFFSET * 1.5);
     this.redrape(doc, this.shade, MAP_OVERLAY_OFFSET * 2);
   }
 

@@ -2,7 +2,7 @@
 // whole site (the Forest painting, in the course's own colors), draped on the terrain in place of
 // the satellite photo. Painted a slice at a time, once per version of the course.
 import { useEffect, useState } from "react";
-import { canopyFor, forestCanvasAsync, paintedFrom, woodedOf, type WoodedGrid } from "../lib/forest";
+import { canopyFor, detailArea, forestCanvasAsync, paintedFrom, woodedOf, type WoodedGrid } from "../lib/forest";
 import { holeStats } from "../lib/holeStats";
 import type { CourseDoc } from "../types";
 import { useCourse } from "./course";
@@ -69,6 +69,68 @@ export const paintedGround = (doc: CourseDoc): Promise<PaintedGround | null> => 
     if (under === job) under = null;
   });
   made.set(key, work);
+  return work;
+};
+
+/** A sharper painting round one hole, for its tee view, flyover and video: the canvas (its edges
+ * fading out, over the painting of the whole site) and the plan rectangle it covers. */
+export type PaintedDetail = { canvas: HTMLCanvasElement; rect: { x: number; y: number; width: number; height: number } };
+
+/** Its edges fade over this many ft into the painting of the whole site. */
+const DETAIL_FADE = 40;
+
+const detailMade = new Map<string, Promise<PaintedDetail | null>>();
+let detailUnder: { key: string; stop: AbortController } | null = null;
+
+/** The sharp painting round a hole (`maxPx` its longest side), or null when the whole site's
+ * painting is already about as sharp there. Painted once per version of the course. */
+export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Promise<PaintedDetail | null> => {
+  const hole = doc.holes.find(h => h.id === holeId);
+  if (!hole) return Promise.resolve(null);
+  const st = holeStats(doc, hole);
+  if (!st.complete) return Promise.resolve(null);
+  const { width, height } = doc.canvas;
+  const at = detailArea(doc, st.line, maxPx, Math.min(4, MAX_PX / Math.max(width, height, 1)));
+  if (!at) return Promise.resolve(null);
+  const { rect, k } = at;
+  const key = JSON.stringify([paintKey(doc), rect, Math.round(k * 100)]);
+  const hit = detailMade.get(key);
+  if (hit) return hit;
+  if (detailUnder && detailUnder.key !== key) detailUnder.stop.abort();
+  const job = { key, stop: new AbortController() };
+  detailUnder = job;
+  const view = { cx: rect.x + rect.width / 2, cy: rect.y + rect.height / 2, rotation: 0, scale: k, width: rect.width * k, height: rect.height * k };
+  const work = (async () => {
+    const canopy = doc.style.forest === "photo" ? await canopyFor(doc) : null;
+    const canvas = await forestCanvasAsync(doc, view, doc.holes.map(h => holeStats(doc, h)), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1 }, job.stop.signal);
+    // Its edges fade into the painting of the whole site (none where it meets the site's edge)
+    const c = canvas.getContext("2d")!;
+    const f = DETAIL_FADE * k;
+    c.globalCompositeOperation = "destination-out";
+    const W = canvas.width, H = canvas.height;
+    const band = (x: number, y: number, w: number, h: number, gx0: number, gy0: number, gx1: number, gy1: number) => {
+      const grad = c.createLinearGradient(gx0, gy0, gx1, gy1);
+      grad.addColorStop(0, "rgba(0,0,0,1)");
+      grad.addColorStop(1, "rgba(0,0,0,0)");
+      c.fillStyle = grad;
+      c.fillRect(x, y, w, h);
+    };
+    if (rect.x > 0) band(0, 0, f, H, 0, 0, f, 0);
+    if (rect.x + rect.width < width) band(W - f, 0, f, H, W, 0, W - f, 0);
+    if (rect.y > 0) band(0, 0, W, f, 0, 0, 0, f);
+    if (rect.y + rect.height < height) band(0, H - f, W, f, 0, H, 0, H - f);
+    c.globalCompositeOperation = "source-over";
+    return { canvas, rect };
+  })().catch((err: unknown) => {
+    if (!job.stop.signal.aborted) console.error("The hole's ground couldn't be painted:", err);
+    detailMade.delete(key);
+    return null;
+  }).finally(() => {
+    if (detailUnder === job) detailUnder = null;
+  });
+  // (only the latest two kept: each is a big picture)
+  detailMade.set(key, work);
+  while (detailMade.size > 2) detailMade.delete(detailMade.keys().next().value!);
   return work;
 };
 

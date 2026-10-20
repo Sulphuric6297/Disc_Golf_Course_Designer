@@ -227,6 +227,26 @@ const cumulative = (pts: P[]) => {
   return out;
 };
 
+/**
+ * Where to paint a hole sharper (for its tee view, flyover and video) and how sharp (pixels a
+ * foot): round its line with room for the flight, on the terrain's grid (so its ground lines up
+ * with the ground under it), at most 6 px a foot and `maxPx` on its longest side; null when that
+ * isn't clearly sharper than the whole site's painting (`wholeK` px a foot).
+ */
+export const detailArea = (doc: Pick<CourseDoc, "canvas" | "gridSize">, line: P[], maxPx: number, wholeK: number) => {
+  if (!line.length) return null;
+  const MARGIN = 160, MAX_K = 6;
+  const { width, height } = doc.canvas;
+  const g = doc.gridSize || 20;
+  const xs = line.map(p => p.x), ys = line.map(p => p.y);
+  const x0 = Math.max(0, Math.floor((Math.min(...xs) - MARGIN) / g) * g), y0 = Math.max(0, Math.floor((Math.min(...ys) - MARGIN) / g) * g);
+  const x1 = Math.min(width, Math.ceil((Math.max(...xs) + MARGIN) / g) * g), y1 = Math.min(height, Math.ceil((Math.max(...ys) + MARGIN) / g) * g);
+  const rect = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  const k = Math.min(MAX_K, maxPx / Math.max(rect.width, rect.height));
+  return k < wholeK * 1.5 ? null : { rect, k };
+};
+
 export type ForestView = { cx: number; cy: number; rotation: number; scale: number; width: number; height: number };
 
 export type ForestOpts = {

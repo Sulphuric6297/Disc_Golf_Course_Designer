@@ -3,6 +3,7 @@ import { test, expect, addHole, blankCourse, course, drag, editorState, handleCe
 import { autoFlight, FLYOVER_DEFAULTS, keyBetween, keyFlight, keysFromFlight } from "../../src/lib/flight";
 import { createEmptyCourse } from "../../src/lib/course";
 import { drawOverlay } from "../../src/viewport/flyTitle";
+import { detailArea } from "../../src/lib/forest";
 
 test("view from the tee: the hole's numbers, other holes with the arrows, back with Esc", async ({ page }) => {
   await blankCourse(page);
@@ -101,6 +102,50 @@ test("from a tee and flying over, the ground is the painted map with trees on it
   // Back on the map: the photo's ground again, no painted trees
   await page.getByTestId("hud-close").click();
   await expect.poll(ground).toEqual({ painted: false, shown: false, trees: false });
+});
+
+test("from a tee, the hole's ground is painted sharper (over the whole site's painting); gone back on the map", async ({ page }) => {
+  test.setTimeout(240_000);
+  await blankCourse(page);
+  await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.getByTestId("hole-row").first().click();
+  await page.getByTestId("tee-view").click();
+  // (the 3D view rests while it paints: drawn in software, its frames would starve the painting)
+  await page.evaluate(() => (window as any).__dgView.setPaused(true));
+  const sharp = () => page.evaluate(() => {
+    const v = (window as any).__dgView;
+    const d = v.ground.detailPainting, plane = v.ground.detailPlane, base = v.ground.paintedTexture;
+    if (!d || !plane || !base) return null;
+    return { rect: d.rect, pxPerFt: d.canvas.width / d.rect.width, basePxPerFt: base.image.width / v.doc.canvas.width, shown: plane.visible };
+  });
+  await expect.poll(sharp, { timeout: 120_000 }).not.toBeNull();
+  const d = (await sharp())!;
+  expect(d.shown).toBe(true);
+  // (round the hole, tee to basket)
+  expect(d.rect.x).toBeLessThan(400);
+  expect(d.rect.x + d.rect.width).toBeGreaterThan(750);
+  expect(d.rect.y).toBeLessThan(700);
+  expect(d.rect.y + d.rect.height).toBeGreaterThan(700);
+  expect(d.pxPerFt).toBeGreaterThan(d.basePxPerFt * 1.5);
+  await page.evaluate(() => (window as any).__dgView.setPaused(false));
+  await page.getByTestId("hud-close").click();
+  await expect.poll(sharp).toBeNull();
+});
+
+plain("where a hole is painted sharper: round its line on the terrain's grid, at most 6 px a foot, none when no sharper than the whole site", () => {
+  const doc = { canvas: { width: 2000, height: 1500 }, gridSize: 10 };
+  const line = [{ x: 403, y: 707 }, { x: 755, y: 698 }];
+  const a = detailArea(doc, line, 3072, 1)!;
+  plainExpect(a.rect).toEqual({ x: 240, y: 530, width: 680, height: 340 });
+  for (const v of Object.values(a.rect)) plainExpect(v % 10).toBe(0);
+  plainExpect(a.k).toBeCloseTo(3072 / 680, 6);
+  // (a short hole: no sharper than 6 px a foot)
+  plainExpect(detailArea(doc, [{ x: 500, y: 500 }, { x: 560, y: 500 }], 3072, 1)!.k).toBe(6);
+  // (at the site's edge: kept on the site)
+  plainExpect(detailArea(doc, [{ x: 30, y: 20 }, { x: 300, y: 20 }], 3072, 1)!.rect.x).toBe(0);
+  // Not worth it when the whole site's painting is about as sharp
+  plainExpect(detailArea(doc, line, 3072, 4)).toBeNull();
 });
 
 test("flyover settings: height, speed and field of view change the flight, one undo step each; a hole's own", async ({ page }) => {

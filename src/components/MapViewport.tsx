@@ -14,7 +14,7 @@ import { fmtElev } from "../lib/units";
 import type { P } from "../types";
 import { SceneButton } from "./ScenePanel";
 import { landscapeOf } from "../lib/landscapes";
-import { usePaintedGround } from "../state/paintedGround";
+import { paintedDetail, usePaintedGround } from "../state/paintedGround";
 
 let current: CourseView | null = null;
 /** The live map view (for buttons elsewhere: fit, tee view, snapshots). */
@@ -111,6 +111,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
 
   useEffect(() => { view?.setDoc(viewDoc); }, [view, viewDoc]);
   useEffect(() => { void view?.setPaintedGround(paintedOn ? painted : null); }, [view, paintedOn, painted]);
+  // (and a sharper painting round the hole looked at, flown over or filmed)
+  useEffect(() => { view?.setDetailPainter((holeId, maxPx) => paintedDetail(doc, holeId, maxPx)); }, [view, doc]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
   useEffect(() => { view?.setGroup(ed.group); }, [view, ed.group]);
   useEffect(() => { view?.setPlotLine(ed.plotLine); }, [view, ed.plotLine]);

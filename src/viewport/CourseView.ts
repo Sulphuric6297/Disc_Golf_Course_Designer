@@ -124,6 +124,8 @@ const TRUNK_ROOM = 8;
 
 /** The painted map for the ground (a picture's URL) and where it shows woods. */
 export type PaintedLook = { url: string; wooded: WoodedGrid | null };
+/** A sharper painting of part of the site (see state/paintedGround: paintedDetail). */
+export type PaintedDetailLook = { canvas: HTMLCanvasElement; rect: { x: number; y: number; width: number; height: number } };
 
 const gridIds = new WeakMap<object, number>();
 let nextGridId = 1;
@@ -693,6 +695,7 @@ export class CourseView {
     if (holeId === this.povHole) return;
     this.povHole = holeId;
     this.povLook = { yaw: 0, pitch: 0 };
+    void this.updateDetail();
     this.controls.enabled = !holeId;
     this.labelsLayer.style.display = holeId ? "none" : "";
     this.handlesLayer.style.display = holeId ? "none" : "";
@@ -982,7 +985,7 @@ export class CourseView {
       if (opts.ground !== undefined) {
         this.paintedRecord = undefined;
         void this.applyPainted();
-      }
+      } else void this.updateDetail();
     }
   }
 
@@ -999,10 +1002,36 @@ export class CourseView {
   /** Where the painting on the ground shows woods (3D trees stand there). */
   private paintedWoods: WoodedGrid | null = null;
 
+  /** Paints the sharp picture round a hole (set by the app; null: none). */
+  private detailPainter: ((holeId: string, maxPx: number) => Promise<PaintedDetailLook | null>) | null = null;
+  setDetailPainter(fn: ((holeId: string, maxPx: number) => Promise<PaintedDetailLook | null>) | null) {
+    this.detailPainter = fn;
+    void this.updateDetail();
+  }
+  /** The longest side of the sharp painting (what the graphics card takes, at most 4096). */
+  private detailPx() {
+    return Math.min(4096, this.renderer.capabilities.maxTextureSize, COARSE ? 2048 : 3072);
+  }
+  /** The sharp painting round `holeId` (default: the hole looked at), while the painted map shows. */
+  private async updateDetail(holeId = this.povHole) {
+    const look = this.paintedRecord !== undefined ? this.paintedRecord : this.paintedScreen;
+    if (!holeId || !look || !this.detailPainter) {
+      this.ground.setPaintedDetail(null);
+      return;
+    }
+    const d = await this.detailPainter(holeId, this.detailPx());
+    if (this.disposed) return;
+    // (still wanted: the same hole, the painted map still on)
+    const now = this.paintedRecord !== undefined ? this.paintedRecord : this.paintedScreen;
+    if (now && (holeId === this.povHole || this.recordings > 0)) this.ground.setPaintedDetail(d);
+  }
+
   private async applyPainted() {
     const look = this.paintedRecord !== undefined ? this.paintedRecord : this.paintedScreen;
     await this.ground.setPainted(look?.url ?? null);
     if (this.disposed) return;
+    if (!look) this.ground.setPaintedDetail(null);
+    else if (this.recordings === 0) void this.updateDetail();
     const woods = this.ground.paintedTexture ? look?.wooded ?? null : null;
     if (woods !== this.paintedWoods || this.shapesPainted !== !!this.ground.paintedTexture) {
       this.paintedWoods = woods;
@@ -1038,6 +1067,7 @@ export class CourseView {
     };
     return {
       duration: id => path(id)?.dur ?? 0,
+      prepare: id => this.updateDetail(id),
       draw: (id, t, out): FrameInfo => {
         const p = path(id);
         if (!p) throw new Error("That hole can't be flown over.");

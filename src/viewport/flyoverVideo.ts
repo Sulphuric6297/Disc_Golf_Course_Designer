@@ -29,6 +29,8 @@ export interface FlightFrames {
   duration(holeId: string): number;
   /** Draws the hole's flight at `t` seconds into `out` (RGBA, top row first, opaque). */
   draw(holeId: string, t: number, out: Uint8ClampedArray): FrameInfo;
+  /** Gets the ground ready for a hole before its frames (its sharp painting). */
+  prepare?(holeId: string): Promise<void>;
   dispose(): void;
 }
 
@@ -220,9 +222,15 @@ export async function recordFlights(src: FlightFrames, doc: CourseDoc, holeIds: 
     if (!sink) throw new Error("This browser can't make videos.");
     let info: FrameInfo | null = null;
     let breath = performance.now();
+    let ready = -1;
     for (let i = 0; i < plan.length; i++) {
       if (opts.signal?.aborted) throw abortError();
       const f = plan[i];
+      if (f.hole !== ready) {
+        await src.prepare?.(holes[f.hole].id);
+        ready = f.hole;
+        if (opts.signal?.aborted) throw abortError();
+      }
       if (sink.behind?.(i) && !f.cut) continue;
       if (f.render) {
         info = src.draw(holes[f.hole].id, f.t, image.data);
