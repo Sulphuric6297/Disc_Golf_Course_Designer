@@ -102,9 +102,10 @@ test("from a tee and flying over, the ground is the painted map with trees on it
   expect((await editorState(page)).flyLook).toBe("photo");
   await page.getByTestId("flyover-settings").getByRole("radio", { name: "Painted map" }).click();
   await expect.poll(async () => (await ground()).painted, { timeout: 30_000 }).toBe(true);
-  // Back on the map: the photo's ground again, no painted trees
-  await page.evaluate(() => (window as any).__dgView.setPaused(false));
+  // Back on the map: the photo's ground again, no painted trees (closed while still resting:
+  // the tee view's painted woods drawn in software would hold up the click)
   await page.getByTestId("hud-close").click();
+  await page.evaluate(() => (window as any).__dgView.setPaused(false));
   await expect.poll(ground, { timeout: 30_000 }).toEqual({ painted: false, shown: false, trees: false });
 });
 
@@ -132,8 +133,9 @@ test("from a tee, the hole's ground is painted sharper (over the whole site's pa
   expect(d.rect.y).toBeLessThan(700);
   expect(d.rect.y + d.rect.height).toBeGreaterThan(700);
   expect(d.pxPerFt).toBeGreaterThan(d.basePxPerFt * 1.5);
-  await page.evaluate(() => (window as any).__dgView.setPaused(false));
+  // (closed while still resting, as above)
   await page.getByTestId("hud-close").click();
+  await page.evaluate(() => (window as any).__dgView.setPaused(false));
   await expect.poll(sharp).toBeNull();
 });
 
