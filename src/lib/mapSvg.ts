@@ -3,13 +3,13 @@
 // tees, baskets, mandos, drop zones, distances), labels, and the frame (title, legend, hole table,
 // north arrow, scale bar). The same renderer draws a single hole for tee signs, turned so the tee
 // is at the bottom.
-import { AMENITY_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, TEE_LEVELS, TEE_ORDER } from "../constants";
+import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PaperSize, TeeItem, TreeItem } from "../types";
 import { activeLayout, holeBaskets, teeAim } from "./course";
 import { boundsOf, corridor, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath } from "./geom";
-import { courseTotals, holeStats, type HoleStats } from "./holeStats";
+import { courseTotals, holeStats, isOb, type HoleStats } from "./holeStats";
 import { forestCanvas, paintedLine, type CanopyGrid } from "./forest";
-import { BASKET_MARKS, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol } from "./symbols";
+import { BASKET_MARKS, RESTRICTED, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol } from "./symbols";
 import { chainContours, type Contours } from "./relief";
 import { fmtDist } from "./units";
 
@@ -44,7 +44,7 @@ export const THEME_SHOWS: Record<MapTheme, Partial<MapStyle>> = {
 
 /** Theme presets: picking a theme sets these colors (they can be changed afterwards). */
 export const THEME_COLORS: Record<MapTheme, Partial<MapStyle>> = {
-  forest: { fairway: "#9fd060", rough: "#6b9b3d", trees: "#33612a", water: "#2f8ad6", path: "#8c6a46", ob: "#ff4b4b", hazard: "#ffd23f", basket: "#ffffff" },
+  forest: { fairway: "#6f9255", rough: "#4d6a3c", trees: "#354a2c", water: "#23677f", path: "#6e5b38", ob: "#e0483d", hazard: "#e8c547", basket: "#ffffff" },
   illustrated: { fairway: "#a7dc7b", rough: "#5f9447", trees: "#2d6a35", water: "#4aa3e6", path: "#e2c08d", ob: "#e5383b", hazard: "#f2c230", basket: "#f2c94c" },
   satellite: { fairway: "#b5f08a", rough: "#4f7a3a", trees: "#1f4d29", water: "#3d9be9", path: "#f1d6a6", ob: "#ff3b3b", hazard: "#ffd23f", basket: "#ffd84d" },
   topo: { fairway: "#cfe7a8", rough: "#efe9d2", trees: "#9cc58a", water: "#8cc7ef", path: "#b0703a", ob: "#d62828", hazard: "#e09f1f", basket: "#f4b41a" },
@@ -122,7 +122,13 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   // --- Patterns and filters
   const hatch = (id: string, color: string, gap: number, width: number, angle = 45) =>
     `<pattern id="${id}" patternUnits="userSpaceOnUse" width="${n(px(gap))}" height="${n(px(gap))}" patternTransform="rotate(${angle})"><rect width="${n(px(gap))}" height="${n(px(gap))}" fill="${color}" fill-opacity="0.12"/><line x1="0" y1="0" x2="0" y2="${n(px(gap))}" stroke="${color}" stroke-width="${n(px(width))}" stroke-opacity="0.8"/></pattern>`;
-  defs.push(hatch(`${uid}-ob`, s.ob, 9, 1.6), hatch(`${uid}-hz`, s.hazard, 9, 1.6, -45), hatch(`${uid}-ng`, "#7c3aed", 10, 1.2));
+  // Regulated areas: the common map habit (red OB, purple out of play) or the PDGA course marking
+  // colors (white OB, red out of play, cased dark so white reads on a light map). Hazards yellow,
+  // casual areas blue in both.
+  const pdga = s.markings === "pdga";
+  const obCol = pdga ? "#ffffff" : s.ob, obCase = pdga ? "#1b1d1a" : "#ffffff", obInk = pdga ? "#1b1d1a" : "#ffffff";
+  const nogoCol = pdga ? RESTRICTED : "#7c3aed", casualCol = AREA_KINDS.casual.color;
+  defs.push(hatch(`${uid}-ob`, obCol, 9, 1.6), hatch(`${uid}-hz`, s.hazard, 9, 1.6, -45), hatch(`${uid}-ng`, nogoCol, 10, 1.2), hatch(`${uid}-cs`, casualCol, 12, 1, 0));
   defs.push(`<filter id="${uid}-soft" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="${n(px(1.6))}"/></filter>`);
   defs.push(`<radialGradient id="${uid}-crown" cx="38%" cy="35%" r="70%"><stop offset="0" stop-color="#ffffff" stop-opacity="0.32"/><stop offset="0.55" stop-color="#ffffff" stop-opacity="0.05"/><stop offset="1" stop-color="#000000" stop-opacity="0.18"/></radialGradient>`);
   if (pal.grain > 0) {
@@ -267,26 +273,27 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   // itself crisp on a white casing, and a tag saying what it is (when there is room)
   const tags: { at: P; text: string; bg: string; fg: string; o: number }[] = [];
   for (const a of areas) {
-    if (a.kind !== "ob" && a.kind !== "hazard" && a.kind !== "nogo") continue;
+    if (a.kind !== "ob" && a.kind !== "hazard" && a.kind !== "nogo" && a.kind !== "casual") continue;
     if (a.points.length < 3) continue;
-    const pat = a.kind === "ob" ? `${uid}-ob` : a.kind === "hazard" ? `${uid}-hz` : `${uid}-ng`;
-    const col = a.kind === "ob" ? s.ob : a.kind === "hazard" ? s.hazard : "#7c3aed";
+    const pat = a.kind === "ob" ? `${uid}-ob` : a.kind === "hazard" ? `${uid}-hz` : a.kind === "casual" ? `${uid}-cs` : `${uid}-ng`;
+    const col = a.kind === "ob" ? obCol : a.kind === "hazard" ? s.hazard : a.kind === "casual" ? casualCol : nogoCol;
+    const casing = a.kind === "ob" ? obCase : "#ffffff";
     const o = dim(a.holeId);
     const clip = `${uid}-in-${a.id.replace(/[^\w-]/g, "")}`;
     const poly = pts(a.points);
     defs.push(`<clipPath id="${clip}"><polygon points="${poly}"/></clipPath>`);
     const dash = a.kind === "ob" ? "" : `stroke-dasharray="${n(px(6))} ${n(px(3.5))}"`;
-    out.push(`<g opacity="${o}"><polygon points="${poly}" fill="url(#${pat})" stroke="none"/><polygon points="${poly}" fill="none" stroke="${col}" stroke-opacity="0.38" stroke-width="${n(px(10))}" clip-path="url(#${clip})"/><polygon points="${poly}" fill="none" stroke="#ffffff" stroke-opacity="0.9" stroke-width="${n(px(4.6))}" stroke-linejoin="round"/><polygon points="${poly}" fill="none" stroke="${col}" stroke-width="${n(px(2.5))}" stroke-linejoin="round" ${dash}/></g>`);
+    out.push(`<g opacity="${o}"><polygon points="${poly}" fill="url(#${pat})" stroke="none"/><polygon points="${poly}" fill="none" stroke="${col}" stroke-opacity="0.38" stroke-width="${n(px(10))}" clip-path="url(#${clip})"/><polygon points="${poly}" fill="none" stroke="${casing}" stroke-opacity="0.9" stroke-width="${n(px(4.6))}" stroke-linejoin="round"/><polygon points="${poly}" fill="none" stroke="${col}" stroke-width="${n(px(2.5))}" stroke-linejoin="round" ${dash}/></g>`);
     const b = boundsOf(a.points);
     if (!a.label && Math.min(b.maxX - b.minX, b.maxY - b.minY) * k > 34 * ts) {
-      tags.push({ at: toScreen(labelPoint(a.points)), text: a.kind === "ob" ? "OB" : a.kind === "hazard" ? "HAZARD" : "OUT OF PLAY", bg: col, fg: a.kind === "hazard" ? "#1b1d1a" : "#ffffff", o });
+      tags.push({ at: toScreen(labelPoint(a.points)), text: a.kind === "ob" ? "OB" : a.kind === "hazard" ? "HAZARD" : a.kind === "casual" ? "CASUAL" : "OUT OF PLAY", bg: col, fg: a.kind === "hazard" ? "#1b1d1a" : a.kind === "ob" ? obInk : "#ffffff", o });
     }
   }
   for (const l of lines.filter(x => x.kind === "ob")) {
-    out.push(`<path d="${pathD(l.points)}" fill="none" stroke="#ffffff" stroke-width="${n(px(4.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(0.9 * dim(l.holeId))}"/>`);
-    out.push(`<path d="${pathD(l.points)}" fill="none" stroke="${s.ob}" stroke-width="${n(px(2.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(dim(l.holeId))}"/>`);
+    out.push(`<path d="${pathD(l.points)}" fill="none" stroke="${obCase}" stroke-width="${n(px(4.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(0.9 * dim(l.holeId))}"/>`);
+    out.push(`<path d="${pathD(l.points)}" fill="none" stroke="${obCol}" stroke-width="${n(px(2.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(dim(l.holeId))}"/>`);
     const len = pathLength(l.points);
-    if (len * k > 70 * ts) tags.push({ at: toScreen(pointAlong(l.points, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: s.ob, fg: "#ffffff", o: dim(l.holeId) });
+    if (len * k > 70 * ts) tags.push({ at: toScreen(pointAlong(l.points, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: obCol, fg: obInk, o: dim(l.holeId) });
   }
 
   // Water, creeks, roads, fences and paths marked OB: a red edge along them (on both banks of a
@@ -297,7 +304,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
       return { x: p.x - (dy / len) * d, y: p.y + (dx / len) * d };
     });
-    const edge = (d: string, o: number) => out.push(`<path d="${d}" fill="none" stroke="#ffffff" stroke-opacity="0.9" stroke-width="${n(px(3.6))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/><path d="${d}" fill="none" stroke="${s.ob}" stroke-width="${n(px(1.9))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/>`);
+    const edge = (d: string, o: number) => out.push(`<path d="${d}" fill="none" stroke="${obCase}" stroke-opacity="0.9" stroke-width="${n(px(3.6))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/><path d="${d}" fill="none" stroke="${obCol}" stroke-width="${n(px(1.9))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/>`);
     for (const a of areas) if (a.ob === true && a.kind !== "ob" && a.points.length >= 3) edge(pathD(a.points, true), dim(a.holeId));
     for (const l of lines) {
       if (l.ob !== true || l.kind === "ob" || l.points.length < 2) continue;
@@ -312,7 +319,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       }
       const len = pathLength(g.points);
       // (Away from its name, which sits in the middle)
-      if (len * k > 70 * ts) tags.push({ at: toScreen(pointAlong(g.points, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: s.ob, fg: "#ffffff", o });
+      if (len * k > 70 * ts) tags.push({ at: toScreen(pointAlong(g.points, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: obCol, fg: obInk, o });
     }
   }
 
@@ -485,7 +492,7 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
   const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
   const shapes = doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as LineItem).width] : [i.type, Math.round(i.x), Math.round(i.y), (i as TreeItem).radius]));
-  const look = [s.forest, s.treeCover, s.trees, s.fairway, s.rough, s.water, s.path, s.nextTee, s.hillshade];
+  const look = [s.forest, s.treeCover, s.trees, s.fairway, s.rough, s.water, s.path, s.nextTee, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint];
   const key = JSON.stringify([view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairway]), shapes, doc.canvas, doc.id]);
   const hit = forestCache.get(key);
   if (hit) return hit;
@@ -856,8 +863,21 @@ const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal
   if (doc.holes.some(h => h.fairway)) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" rx="${n(sh / 2)}" fill="${s.fairway}"/>`, text: "Fairway" });
   const areaKinds = new Set(doc.items.filter(i => i.type === "area").map(i => (i as AreaItem).kind));
   const lineKinds = new Set(doc.items.filter(i => i.type === "line").map(i => (i as LineItem).kind));
-  if (areaKinds.has("ob") || lineKinds.has("ob") || doc.items.some(i => (i.type === "area" || i.type === "line") && i.ob === true)) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" fill="${s.ob}" fill-opacity="0.25" stroke="${s.ob}" stroke-width="${n(1.4 * ts)}"/>`, text: "Out of bounds" });
-  if (areaKinds.has("hazard")) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" fill="${s.hazard}" fill-opacity="0.25" stroke="${s.hazard}" stroke-width="${n(1.4 * ts)}" stroke-dasharray="${n(3 * ts)} ${n(2 * ts)}"/>`, text: "Hazard" });
+  {
+    // Regulated areas, each the way it is drawn on the map
+    const pdga = s.markings === "pdga";
+    const obCol = pdga ? "#ffffff" : s.ob, obCase = pdga ? "#1b1d1a" : "#ffffff";
+    const nogoCol = pdga ? RESTRICTED : "#7c3aed", casualCol = AREA_KINDS.casual.color;
+    const box = (fill: string, stroke: string, casing: string, dash = "") => `<rect x="1" y="1" width="${n(sw - 2)}" height="${n(sh - 2)}" fill="${fill}" fill-opacity="0.3" stroke="${casing}" stroke-width="${n(3 * ts)}"/><rect x="1" y="1" width="${n(sw - 2)}" height="${n(sh - 2)}" fill="none" stroke="${stroke}" stroke-width="${n(1.6 * ts)}" ${dash ? `stroke-dasharray="${dash}"` : ""}/>`;
+    const dashed = `${n(3 * ts)} ${n(2 * ts)}`;
+    const obItems = doc.items.filter(i => (i.type === "area" || i.type === "line") && isOb(i as AreaItem | LineItem));
+    if (areaKinds.has("ob") || obItems.some(i => i.type === "area" && (i as AreaItem).kind !== "water")) entries.push({ sym: box(obCol, obCol, obCase), text: "Out of bounds" });
+    if (obItems.some(i => (i.type === "area" && (i as AreaItem).kind === "water") || (i.type === "line" && (i as LineItem).kind === "stream"))) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" rx="${n(2 * ts)}" fill="${s.water}"/><rect x="${n(1.5 * ts)}" y="${n(1.5 * ts)}" width="${n(sw - 3 * ts)}" height="${n(sh - 3 * ts)}" rx="${n(2 * ts)}" fill="none" stroke="${obCase}" stroke-width="${n(2.6 * ts)}"/><rect x="${n(1.5 * ts)}" y="${n(1.5 * ts)}" width="${n(sw - 3 * ts)}" height="${n(sh - 3 * ts)}" rx="${n(2 * ts)}" fill="none" stroke="${obCol}" stroke-width="${n(1.3 * ts)}"/>`, text: "OB water" });
+    if (obItems.some(i => i.type === "line" && (i as LineItem).kind !== "stream")) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${obCase}" stroke-width="${n(4.2 * ts)}" stroke-linecap="round"/><line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${obCol}" stroke-width="${n(2.2 * ts)}" stroke-linecap="round"/>`, text: "OB line (road, fence)" });
+    if (areaKinds.has("hazard")) entries.push({ sym: box(s.hazard, s.hazard, "#ffffff", dashed), text: "Hazard (one-throw penalty)" });
+    if (areaKinds.has("casual")) entries.push({ sym: box(casualCol, casualCol, "#ffffff", dashed), text: "Casual area (free relief)" });
+    if (areaKinds.has("nogo")) entries.push({ sym: box(nogoCol, nogoCol, "#ffffff", dashed), text: "Out of play (relief required)" });
+  }
   if (has(i => i.type === "mando" && !i.pairId)) entries.push({ sym: mandoSymbol({ x: sw / 2, y: sh * 0.62 }, 0, "left", sh / 15), text: "Mando: pass on the arrow's side" });
   if (has(i => i.type === "mando" && !!i.pairId)) entries.push({ sym: gateSymbol({ x: sw / 2, y: sh * 0.12 }, { x: sw / 2, y: sh * 0.88 }, 0, sh / 17), text: "Gate: pass between" });
   if (has(i => i.type === "dropzone")) entries.push({ sym: dropZoneSymbol({ x: sw / 2, y: sh / 2 }, sh / 12.5), text: "Drop zone" });
@@ -865,7 +885,6 @@ const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal
   if (areaKinds.has("woods") || has(i => i.type === "tree")) entries.push({ sym: `<circle cx="${n(sw * 0.35)}" cy="${n(sh / 2)}" r="${n(sh * 0.48)}" fill="${s.trees}"/><circle cx="${n(sw * 0.7)}" cy="${n(sh / 2)}" r="${n(sh * 0.4)}" fill="${shade(s.trees, 0.1)}"/>`, text: "Trees" });
   if (lineKinds.has("path")) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${s.path}" stroke-width="${n(3 * ts)}" stroke-linecap="round"/>`, text: "Path" });
   if (lineKinds.has("road")) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${pal.road}" stroke-width="${n(5 * ts)}"/>`, text: "Road" });
-  if (areaKinds.has("nogo")) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" fill="#7c3aed" fill-opacity="0.2" stroke="#7c3aed"/>`, text: "Out of play" });
   if (s.contours) entries.push({ sym: `<path d="M0 ${n(sh * 0.7)}Q${n(sw / 2)} ${n(-sh * 0.2)} ${n(sw)} ${n(sh * 0.7)}" fill="none" stroke="${pal.contourMajor === "rgba(255,255,255,.6)" ? "#666" : pal.contourMajor}" stroke-width="${n(1 * ts)}"/>`, text: "Contour line" });
   const kinds = new Set(doc.items.filter(i => i.type === "amenity").map(i => (i as AmenityItem).kind));
   kinds.forEach(kd => {

@@ -210,6 +210,7 @@ function FeaturesStep() {
           {tool("add-tree", <TreeDeciduous size={17} className="text-green-400" />, "Trees (R)", "Single trees that matter for play.")}
           {area("fairway", "A fairway shape drawn by hand (instead of the automatic one).")}
           {area("nogo", "Playgrounds, gardens, private land: keep throws away.")}
+          {area("casual", "Casual relief: move the lie out, no penalty (marked blue).")}
         </div>
       </Section>
       <Section title="Getting around">

@@ -24,9 +24,10 @@ export const TEE_LEVELS: Record<TeeLevel, { label: string; skill: string; rating
   blue: { label: "Blue", skill: "Advanced", rating: "925+", color: "#2563eb", ink: "#ffffff" },
   white: { label: "White", skill: "Intermediate", rating: "875+", color: "#f8fafc", ink: "#1c1917" },
   red: { label: "Red", skill: "Recreational", rating: "825+", color: "#dc2626", ink: "#ffffff" },
-  green: { label: "Green", skill: "Novice / juniors", rating: "under 825", color: "#16a34a", ink: "#ffffff" }
+  green: { label: "Green", skill: "Novice", rating: "under 825", color: "#16a34a", ink: "#ffffff" },
+  purple: { label: "Purple", skill: "Beginners / juniors", rating: "under 750", color: "#7c3aed", ink: "#ffffff" }
 };
-export const TEE_ORDER: TeeLevel[] = ["gold", "blue", "white", "red", "green"];
+export const TEE_ORDER: TeeLevel[] = ["gold", "blue", "white", "red", "green", "purple"];
 
 export const TEE_SURFACES: Record<TeeSurface, { label: string; color: string }> = {
   concrete: { label: "Concrete", color: "#cfcac0" },
@@ -50,12 +51,13 @@ export const PIN_POSITIONS: PinPosition[] = ["A", "B", "C", "D"];
 export const AREA_KINDS: Record<AreaKind, { label: string; color: string; fill: number; help: string }> = {
   ob: { label: "Out of bounds (OB)", color: "#ef4444", fill: 0.22, help: "Landing inside is out of bounds: one penalty throw." },
   hazard: { label: "Hazard", color: "#eab308", fill: 0.2, help: "A penalty area that is not OB: play it where it lies, plus one throw (PDGA marks hazards yellow)." },
+  casual: { label: "Casual area", color: "#3b82f6", fill: 0.2, help: "Casual relief: the player may move the lie out, no penalty (PDGA marks casual areas blue)." },
   water: { label: "Water", color: "#2b8fd6", fill: 0.55, help: "Ponds and streams (usually OB too)." },
   fairway: { label: "Fairway", color: "#8fd16a", fill: 0.35, help: "A fairway shape drawn by hand." },
   green: { label: "Green / landing zone", color: "#b7ec8a", fill: 0.4, help: "The area around a basket." },
   woods: { label: "Woods", color: "#2f5d34", fill: 0.45, help: "Dense trees (shown as canopy on the map)." },
   rough: { label: "Rough / tall grass", color: "#a8a35a", fill: 0.3, help: "Long grass or brush." },
-  nogo: { label: "Out of play (no-go)", color: "#7c3aed", fill: 0.22, help: "Keep out: playgrounds, gardens, private land." },
+  nogo: { label: "Out of play (no-go)", color: "#7c3aed", fill: 0.22, help: "Keep out: playgrounds, gardens, private land (PDGA \"required relief area\": played like OB, no penalty)." },
   parking: { label: "Parking lot", color: "#6b7280", fill: 0.5, help: "Parking." },
   building: { label: "Building", color: "#a8a29e", fill: 0.7, help: "A building or shelter." },
   sand: { label: "Sand / dirt", color: "#d9c48f", fill: 0.5, help: "Sand, dirt or a bare area." }

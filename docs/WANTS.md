@@ -57,3 +57,22 @@ been seen working in the browser.
     tag in the tee color, the distance in big type ("305 FEET") and the hole notes;
   - the hole map on the right in the same painted-woods style, tee at the bottom;
   - the elevation change from the tee along the bottom.
+
+## Second round (the owner's feedback on the maps)
+
+- [ ] **Beautiful, aesthetically pleasing maps are the one real requirement.** The maps must
+  replicate the owner's reference course's painted maps in every way (looked up online):
+  - really dark, speckled trees contrasted with the grass;
+  - darker water colors;
+  - earth tones, less bright tones.
+- [ ] **Shadows and light are settings** that can be changed.
+- [ ] **Good for visualizing in 3D**, planning a course, and creating beautiful maps.
+- [ ] **Renders look really great, not cheesy 3D**; the 3D view is a true perspective.
+- [ ] **Grass is rendered as blades of grass in 3D**, from short greens up to tall grass.
+- [ ] **Any type of terrain** is handled.
+- [ ] **Placing individual trees** is an option.
+- [ ] **Buildings, bridges and any other infrastructure** are available.
+- [ ] **Industry-standard symbols**, after researching what official disc golf maps use.
+- [ ] **Record and export flyovers** (video); a robust export system.
+- [ ] **Per-hole exports**, not just the whole map.
+

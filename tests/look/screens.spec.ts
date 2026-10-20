@@ -124,6 +124,16 @@ test("forest map close up", async ({ page }) => {
   for (let i = 0; i < 3; i++) await bar.getByRole("button", { name: "Zoom in" }).click();
   await page.waitForTimeout(800);
   await shot(page, "13-forest-zoom");
+  // Different light: a low sun from the right, deep shadows
+  await page.getByRole("button", { name: "Fit the page" }).click();
+  for (const [label, v] of [["Sun from the", "90"], ["Sun height", "18"], ["Shadows", "1"]] as const) {
+    const sl = page.getByLabel(label);
+    await sl.fill(v);
+    await sl.dispatchEvent("pointerup");
+  }
+  await page.waitForTimeout(3500);
+  await page.getByTestId("design-page").screenshot({ path: "look/13-forest-light.png" });
+  await page.getByTestId("light-shadow").screenshot({ path: "look/13-light-panel.png" });
   await page.getByTestId("forest-options").getByRole("radio", { name: "From the photo" }).click();
   await page.getByRole("button", { name: "Fit the page" }).click();
   await page.waitForTimeout(2500);

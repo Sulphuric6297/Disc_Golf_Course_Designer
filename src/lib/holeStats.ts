@@ -16,7 +16,8 @@ export const PAR_MIN_FT: Record<TeeLevel, { par3: number; par4: number; par5: nu
   blue: { par3: 200, par4: 525, par5: 800 },
   white: { par3: 160, par4: 450, par5: 675 },
   red: { par3: 140, par4: 375, par5: 550 },
-  green: { par3: 100, par4: 325, par5: 475 }
+  green: { par3: 100, par4: 325, par5: 475 },
+  purple: { par3: 80, par4: 275, par5: 400 }
 };
 /** Typical 18-hole course length for each tee color (PDGA), ft. */
 export const COURSE_LENGTH_FT: Record<TeeLevel, [number, number]> = {
@@ -24,7 +25,8 @@ export const COURSE_LENGTH_FT: Record<TeeLevel, [number, number]> = {
   blue: [5000, 8500],
   white: [4500, 7500],
   red: [3500, 5500],
-  green: [2500, 4000]
+  green: [2500, 4000],
+  purple: [2000, 3500]
 };
 /** No hole should play shorter than this (PDGA), ft. */
 export const MIN_HOLE_FT = 100;

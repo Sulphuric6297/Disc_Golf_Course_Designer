@@ -88,10 +88,43 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
   await expect.poll(async () => (await course(page)).style.treeCover).toBe(0.2);
   await expect(page.getByTestId("forest-options")).toContainText("Sparse");
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
-  expect(await lightness()).toBeGreaterThan(dense + 15);
+  // (The earthy lawn is darker than it was, so the step is smaller than it once was)
+  expect(await lightness()).toBeGreaterThan(dense + 8);
   // One undo step brings the thick woods back
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).style.treeCover).toBe(1);
+});
+
+test("light and shadow: the sun, shadows and brightness repaint the Forest map, and Reset brings them back", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
+  const painting = page.getByTestId("design-page").locator("image").first();
+  await expect(painting).toHaveAttribute("href", /^data:image\/jpeg/);
+  const panel = page.getByTestId("light-shadow");
+  await expect(panel).toBeVisible();
+  const set = async (label: string, value: string) => {
+    const slider = panel.getByLabel(label);
+    await slider.fill(value);
+    await slider.dispatchEvent("pointerup");
+  };
+  let before = await painting.getAttribute("href");
+  await set("Sun from the", "90");
+  await expect.poll(async () => (await course(page)).style.sunAngle).toBe(90);
+  await expect(panel).toContainText("right");
+  await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
+  before = await painting.getAttribute("href");
+  await set("Shadows", "1");
+  await expect.poll(async () => (await course(page)).style.shadows).toBe(1);
+  await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
+  before = await painting.getAttribute("href");
+  await set("Brightness", "0.3");
+  await expect.poll(async () => (await course(page)).style.light).toBe(0.3);
+  await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
+  await panel.getByRole("button", { name: "Reset" }).click();
+  await expect.poll(async () => { const s = (await course(page)).style; return [s.sunAngle, s.shadows, s.light]; }).toEqual([315, 0.65, 0]);
 });
 
 test("picking a basket mark changes the map's baskets", async ({ page }) => {
@@ -285,4 +318,52 @@ plain("features on the printed map: mandos, drop zones, amenity pictograms, OB a
   plainExpect(gated.split('data-symbol="gate"').length - 1).toBe(2);
   plainExpect(gated.split('data-symbol="mando"').length - 1).toBe(2);
   plainExpect(gated).toContain("Gate: pass between");
+});
+
+plain("marking colors: map colors (red OB) or PDGA colors (white OB, red out of play); casual areas in blue", () => {
+  const doc = sample();
+  doc.style.theme = "illustrated";
+  doc.style.legend = true;
+  const box = (x: number, y: number) => [{ x, y }, { x: x + 150, y }, { x: x + 150, y: y + 120 }, { x, y: y + 120 }];
+  doc.items.push(createArea("ob", box(600, 300)), createArea("nogo", box(600, 500)), createArea("casual", box(100, 600)), createArea("hazard", box(300, 600)));
+  const pond = createArea("water", box(800, 600));
+  doc.items.push(pond);
+  const legendOf = (svg: string) => svg.slice(svg.indexOf("Out of bounds") - 2000);
+  const map = renderPoster(doc, { contours: null, hillshade: null }).svg;
+  plainExpect(doc.style.markings).toBe("map");
+  plainExpect(map).toContain(">CASUAL<");
+  plainExpect(map).toContain(">OUT OF PLAY<");
+  plainExpect(map).toContain("Casual area (free relief)");
+  plainExpect(map).toContain("Out of play (relief required)");
+  plainExpect(map).toContain("Hazard (one-throw penalty)");
+  // A pond is OB by default: its own legend line
+  plainExpect(map).toContain("OB water");
+  plainExpect(map).toContain(`stroke="${doc.style.ob}" stroke-width`);
+  plainExpect(map).toContain('stroke="#7c3aed"');
+  plainExpect(map).toContain('stroke="#3b82f6"');
+  // PDGA colors: no red OB left, white OB cased dark, red out of play
+  doc.style.markings = "pdga";
+  const pdga = renderPoster(doc, { contours: null, hillshade: null }).svg;
+  plainExpect(pdga).not.toContain(`stroke="${doc.style.ob}" stroke-width`);
+  plainExpect(pdga).not.toContain('stroke="#7c3aed"');
+  plainExpect(pdga).toContain('stroke="#e11d2e"');
+  plainExpect(pdga).toContain('stroke="#1b1d1a" stroke-opacity="0.9"');
+  plainExpect(legendOf(pdga)).toContain('stroke="#ffffff" stroke-width');
+  // Not marked OB (the pond, and the sample's creek): no OB water line
+  pond.ob = false;
+  for (const i of doc.items) if (i.type === "line" && i.kind === "stream") i.ob = false;
+  plainExpect(renderPoster(doc, { contours: null, hillshade: null }).svg).not.toContain("OB water");
+});
+
+test("choosing PDGA marking colors in the Design step", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await expect(page.getByTestId("markings-map")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("markings-pdga").click();
+  await expect.poll(async () => (await course(page)).style.markings).toBe("pdga");
+  await expect(page.getByTestId("markings-pdga")).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await course(page)).style.markings).toBe("map");
 });

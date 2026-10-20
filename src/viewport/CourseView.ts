@@ -12,7 +12,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { INK, MANDO, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
+import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, TEE_LEVELS, clamp } from "../constants";
 import { basketFor, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, corridor, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
@@ -24,7 +24,7 @@ import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
 import { createWoods } from "../three/woods";
-import type { AmenityItem, AreaItem, BasketItem, CourseItem, Hole, LabelItem, LineItem, MandoItem, TeeItem, TreeItem } from "../types";
+import type { AmenityItem, AreaItem, BasketItem, CourseItem, Hole, LabelItem, LineItem, MandoItem, TeeItem, TeeLevel, TreeItem } from "../types";
 import { Ground } from "./ground";
 import type { P, ViewCallbacks, ViewDoc, ViewInfo, ViewTool } from "./types";
 
@@ -117,7 +117,7 @@ export class CourseView {
   private selectedId: string | null = null;
   private hoverId: string | null = null;
   private tool: ViewTool = { mode: "select", areaKind: "ob", lineKind: "ob", shape: "points", readOnly: false };
-  private teeLevel: "gold" | "blue" | "white" | "red" | "green" = "blue";
+  private teeLevel: TeeLevel = "blue";
   private raycaster = new THREE.Raycaster();
   private dirty = true;
   private shadowsDirty = true;
@@ -1037,7 +1037,8 @@ export class CourseView {
       group.add(obj);
       this.shapes.set(key, { obj, sig });
     };
-    const color = (kind: string) => (kind === "ob" ? st.ob : kind === "hazard" ? st.hazard : kind === "water" ? st.water : kind === "fairway" ? st.fairway : kind === "woods" ? st.trees : null);
+    const pdga = st.markings === "pdga";
+    const color = (kind: string) => (kind === "ob" ? (pdga ? "#ffffff" : st.ob) : kind === "nogo" && pdga ? RESTRICTED : kind === "hazard" ? st.hazard : kind === "water" ? st.water : kind === "fairway" ? st.fairway : kind === "woods" ? st.trees : null);
     const photo = !!doc.background.url && doc.background.opacity > 0.3;
 
     // Fairways (under everything else)
@@ -1074,10 +1075,10 @@ export class CourseView {
         mesh.renderOrder = 2 + order * 0.001;
         mesh.receiveShadow = true;
         g.add(mesh);
-        const w = a.kind === "ob" || a.kind === "hazard" ? 3 : 1.5;
-        g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, w, { order: 4, dashed: a.kind === "hazard" ? 6 : undefined }));
+        const w = a.kind === "ob" || a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo" ? 3 : 1.5;
+        g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, w, { order: 4, dashed: a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo" ? 6 : undefined }));
         // Marked OB (water, say): its red OB edge
-        if (a.ob === true && a.kind !== "ob") g.add(this.fatLine(this.drapeLine(a.points, LIFT + 0.05, true), st.ob, 3, { order: 5 }));
+        if (a.ob === true && a.kind !== "ob") g.add(this.fatLine(this.drapeLine(a.points, LIFT + 0.05, true), color("ob")!, 3, { order: 5 }));
         return g;
       });
       // Woods: trees standing in it (shadows and all)
@@ -1091,7 +1092,7 @@ export class CourseView {
     // Lines
     for (const l of course.items.filter(i => i.type === "line") as LineItem[]) {
       const meta = LINE_KINDS[l.kind];
-      const c = l.kind === "ob" ? st.ob : l.kind === "path" ? st.path : l.kind === "stream" ? st.water : meta.color;
+      const c = l.kind === "ob" ? color("ob")! : l.kind === "path" ? st.path : l.kind === "stream" ? st.water : meta.color;
       const width = l.width ?? meta.width;
       put(`line:${l.id}`, JSON.stringify([l.points, l.kind, width, hv, c, l.ob]), () => {
         const g = new THREE.Group();
@@ -1100,11 +1101,11 @@ export class CourseView {
           if (width > 0) {
             const edge = new THREE.Mesh(
               drapedRibbon(l.points, width + 5, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.16),
-              new THREE.MeshLambertMaterial({ color: st.ob, transparent: true, opacity: 0.95, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 })
+              new THREE.MeshLambertMaterial({ color: color("ob")!, transparent: true, opacity: 0.95, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 })
             );
             edge.renderOrder = 1.9;
             g.add(edge);
-          } else g.add(this.fatLine(this.drapeLine(l.points), st.ob, 5, { order: 4.9 }));
+          } else g.add(this.fatLine(this.drapeLine(l.points), color("ob")!, 5, { order: 4.9 }));
         }
         if (width > 0 && l.points.length >= 2) {
           const ribbon = new THREE.Mesh(

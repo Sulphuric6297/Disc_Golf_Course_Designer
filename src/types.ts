@@ -4,7 +4,7 @@
 export type P = { x: number; y: number };
 
 /** Tee colors, longest to shortest (the PDGA's Gold / Blue / White / Red skill levels, plus Green). */
-export type TeeLevel = "gold" | "blue" | "white" | "red" | "green";
+export type TeeLevel = "gold" | "blue" | "white" | "red" | "green" | "purple";
 export type TeeSurface = "concrete" | "turf" | "rubber" | "pavers" | "gravel" | "natural";
 export type PinPosition = "A" | "B" | "C" | "D";
 
@@ -84,7 +84,7 @@ export interface LabelItem extends BaseItem {
 }
 
 /** Areas drawn on the map. OB and hazards are what play cares about; the rest make the map read. */
-export type AreaKind = "ob" | "hazard" | "water" | "fairway" | "green" | "woods" | "rough" | "nogo" | "parking" | "building" | "sand";
+export type AreaKind = "ob" | "hazard" | "casual" | "water" | "fairway" | "green" | "woods" | "rough" | "nogo" | "parking" | "building" | "sand";
 export interface AreaItem extends BaseItem {
   type: "area";
   kind: AreaKind;
@@ -174,6 +174,10 @@ export interface MapStyle {
   basket: string;
   /** How baskets are drawn on printed maps and tee signs. */
   basketMark: BasketMark;
+  /** Colors for regulated areas: the common map habit (red OB, purple out of play) or the PDGA
+   * course marking colors (white OB, red out of play). Hazards are yellow, casual areas blue, mando
+   * lines and drop zones orange in both. */
+  markings: "map" | "pdga";
   /** Satellite photo strength under the drawing (0..1). */
   photo: number;
   /** Contour lines and hill shading. */
@@ -196,6 +200,18 @@ export interface MapStyle {
   forest: "everywhere" | "photo" | "woods";
   /** Forest style: how thick the woods are, from a few scattered clumps (0.1) to solid canopy (1). */
   treeCover: number;
+  /** Light on the painted map: where the sun comes from (degrees clockwise from the top of the
+   * page) and how high it is (degrees; low sun, long shadows). */
+  sunAngle: number;
+  sunHeight: number;
+  /** How dark the shadows are (0 none, 1 deep). */
+  shadows: number;
+  /** Brightness and contrast adjustments (-0.5..0.5) and color strength (0 gray .. 1.5). */
+  light: number;
+  contrast: number;
+  colorStrength: number;
+  /** Painted look: tones in crisp bands (1) or blended smoothly (0). */
+  paint: number;
   /** Turn of the map on the page, degrees (0: north up). */
   rotation: number;
   /** How big labels are (1 = normal). */

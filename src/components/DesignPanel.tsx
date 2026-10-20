@@ -2,6 +2,8 @@
 import { ArrowRight, RotateCcw } from "lucide-react";
 import { BASKET_MARKS, PAPER, THEME_COLORS, THEME_SHOWS, THEMES, basketMark, bestRotation, palette } from "../lib/mapSvg";
 import { changeDoc, useCourse, useEditor } from "../state/course";
+import { AREA_KINDS } from "../constants";
+import { RESTRICTED } from "../lib/symbols";
 import { useEffect, useRef, useState } from "react";
 import type { MapStyle, MapTheme, PaperSize } from "../types";
 import { Button, ColorInput, Field, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
@@ -9,17 +11,39 @@ import { Button, ColorInput, Field, Section, Segmented, Slider, TextInput, Toggl
 export const setStyle = (patch: Partial<MapStyle>, history = true) => changeDoc(d => ({ style: { ...d.style, ...patch } }), history);
 
 /** How thick the painted woods are. The map repaints when the slider is let go (painting takes a moment). */
-function TreeCover({ value }: { value: number }) {
+/** A slider for a style setting that repaints the map: it changes the map when let go. */
+function StyleSlider<K extends keyof MapStyle>({ k, value, label, min, max, step, format }: { k: K; value: number; label: string; min: number; max: number; step: number; format: (v: number) => string }) {
   const [v, setV] = useState(value);
   // Only a slider that was moved commits (a key let go on it, like Ctrl+Z's, must not)
   const moved = useRef(false);
   useEffect(() => setV(value), [value]);
-  const word = v < 0.35 ? "Sparse" : v < 0.7 ? "Open woods" : v < 0.95 ? "Thick" : "Dense";
   const done = () => {
-    if (moved.current && v !== value) setStyle({ treeCover: v });
+    if (moved.current && v !== value) setStyle({ [k]: v } as Partial<MapStyle>);
     moved.current = false;
   };
-  return <Slider label="Tree cover" min={0.1} max={1} step={0.05} value={v} onChange={x => { moved.current = true; setV(x); }} onDone={done} format={x => `${word} · ${Math.round(x * 100)}%`} />;
+  return <Slider label={label} min={min} max={max} step={step} value={v} onChange={x => { moved.current = true; setV(x); }} onDone={done} format={format} />;
+}
+
+const TreeCover = ({ value }: { value: number }) => (
+  <StyleSlider k="treeCover" value={value} label="Tree cover" min={0.1} max={1} step={0.05} format={x => `${x < 0.35 ? "Sparse" : x < 0.7 ? "Open woods" : x < 0.95 ? "Thick" : "Dense"} · ${Math.round(x * 100)}%`} />
+);
+
+const FROM = ["top", "top right", "right", "bottom right", "bottom", "bottom left", "left", "top left"];
+const signed = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.round(Math.abs(x) * 100)}%`;
+
+/** Where the light comes from, how long and dark the shadows are, and the picture's tone. */
+function LightAndShadow({ s }: { s: MapStyle }) {
+  return (
+    <Section title="Light and shadow" testid="light-shadow" right={<button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ sunAngle: 315, sunHeight: 38, shadows: 0.65, light: 0, contrast: 0, colorStrength: 1, paint: 0.8 })}><RotateCcw size={12} /> Reset</button>}>
+      <StyleSlider k="sunAngle" value={s.sunAngle ?? 315} label="Sun from the" min={0} max={359} step={5} format={x => FROM[Math.round(x / 45) % 8]} />
+      <StyleSlider k="sunHeight" value={s.sunHeight ?? 38} label="Sun height" min={12} max={80} step={2} format={x => `${Math.round(x)}° · ${x < 25 ? "long shadows" : x < 50 ? "afternoon" : "midday"}`} />
+      <StyleSlider k="shadows" value={s.shadows ?? 0.65} label="Shadows" min={0} max={1} step={0.05} format={x => `${Math.round(x * 100)}%`} />
+      <StyleSlider k="light" value={s.light ?? 0} label="Brightness" min={-0.3} max={0.3} step={0.02} format={signed} />
+      <StyleSlider k="contrast" value={s.contrast ?? 0} label="Contrast" min={-0.3} max={0.4} step={0.02} format={signed} />
+      <StyleSlider k="colorStrength" value={s.colorStrength ?? 1} label="Color strength" min={0.3} max={1.4} step={0.05} format={x => `${Math.round(x * 100)}%`} />
+      <StyleSlider k="paint" value={s.paint ?? 0.8} label="Painted look" min={0} max={1} step={0.05} format={x => (x < 0.25 ? "Smooth" : x < 0.7 ? "Soft bands" : "Painted bands")} />
+    </Section>
+  );
 }
 
 export function DesignPanel() {
@@ -69,7 +93,8 @@ export function DesignPanel() {
         {s.theme === "satellite" && !doc.background && <p className="text-[11px] text-amber-300 mt-2">There is no satellite photo yet: bring in your park on the Site step.</p>}
         {s.theme === "satellite" && doc.background && <div className="mt-2"><Slider label="Photo strength" min={0.2} max={1} step={0.05} value={s.photo} onChange={v => setStyle({ photo: v })} format={v => `${Math.round(v * 100)}%`} /></div>}
       </Section>
-      <Section title="Baskets">
+      {s.theme === "forest" && <LightAndShadow s={s} />}
+      <Section title="Symbols">
         <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="Basket marks">
           {BASKET_MARKS.map(m => (
             <button
@@ -87,6 +112,28 @@ export function DesignPanel() {
           ))}
         </div>
         <div className="mt-2"><ColorInput label="Basket color" value={s.basket} onChange={v => setStyle({ basket: v }, false)} onDone={done} /></div>
+        <div className="mt-3 text-xs text-zinc-400">Marking colors</div>
+        <div className="mt-1 grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Marking colors">
+          {([
+            { value: "map", label: "Map colors", title: "Red OB, purple out of play: what most course maps and signs use", ob: s.ob, nogo: "#7c3aed" },
+            { value: "pdga", label: "PDGA colors", title: "The colors courses are marked with on the ground: white OB, red out of play (relief required)", ob: "#ffffff", nogo: RESTRICTED }
+          ] as const).map(m => (
+            <button
+              key={m.value}
+              role="radio"
+              aria-checked={(s.markings ?? "map") === m.value}
+              title={m.title}
+              data-testid={`markings-${m.value}`}
+              onClick={() => setStyle({ markings: m.value })}
+              className={`rounded-lg border px-2 py-1.5 flex items-center gap-2 text-xs font-semibold text-zinc-200 transition-colors ${(s.markings ?? "map") === m.value ? "border-orange-500 bg-orange-500/10" : "border-zinc-700 hover:border-zinc-500"}`}
+            >
+              <span className="flex gap-0.5">
+                {[m.ob, s.hazard, AREA_KINDS.casual.color, m.nogo].map((c, i) => <span key={i} className="w-2.5 h-4 rounded-sm border border-zinc-900" style={{ background: c }} />)}
+              </span>
+              {m.label}
+            </button>
+          ))}
+        </div>
       </Section>
       <Section title="Title block">
         <Field label="Title"><TextInput label="Map title" value={s.title} placeholder={doc.name} onChange={v => setStyle({ title: v })} /></Field>
