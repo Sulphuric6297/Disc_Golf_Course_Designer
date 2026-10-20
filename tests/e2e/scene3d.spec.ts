@@ -100,6 +100,30 @@ test("3D grass: what grows where follows the course (mown fairway, tall rough, n
   expect(water).toBe(0);
 });
 
+test("3D grass: the blades' shader (tufts, ragged edges, drier and lusher stretches) builds and draws close to the ground", async ({ page }) => {
+  const shaderErrors: string[] = [];
+  page.on("console", m => { if (/Shader Error|WebGLProgram|ERROR: \d+:/.test(m.text())) shaderErrors.push(m.text().slice(0, 300)); });
+  await blankCourse(page);
+  await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => {
+    const s = (window as any).__dgEditor();
+    s.set({ grass: 2, areaKind: "rough" });
+    (window as any).__dgActions.addDrawn("area", [{ x: 420, y: 560 }, { x: 560, y: 560 }, { x: 560, y: 660 }, { x: 420, y: 660 }]);
+    (window as any).__dgActions.select(null);
+  });
+  await page.keyboard.press("3");
+  await page.evaluate(() => {
+    const v = (window as any).__dgView;
+    void v.controls.setLookAt(400, v.groundHeight(400, 720) + 6, 720, 490, v.groundHeight(490, 610) + 1, 610, false);
+  });
+  await expect.poll(async () => (await scene(page)).grass.visible, { timeout: 30_000 }).toBe(true);
+  expect((await scene(page)).grass.blades).toBeGreaterThan(1000);
+  // (a frame or two drawn with them)
+  await page.waitForTimeout(1500);
+  expect(shaderErrors).toEqual([]);
+});
+
 test("3D woods: real trees, the ones near the camera in full detail and the rest lighter", async ({ page }) => {
   await blankCourse(page);
   await page.evaluate(() => {

@@ -22,9 +22,9 @@ export type GrassQuality = 0 | 1 | 2 | 3;
 
 /** Blades per square foot (inner patch, outer patch) and the patches' half-widths, per quality. */
 const LEVELS: Record<Exclude<GrassQuality, 0>, { inner: number; outer: number; innerR: number; outerR: number }> = {
-  1: { inner: 5, outer: 0.5, innerR: 28, outerR: 90 },
-  2: { inner: 10, outer: 1, innerR: 36, outerR: 120 },
-  3: { inner: 18, outer: 1.6, innerR: 44, outerR: 150 }
+  1: { inner: 6, outer: 0.6, innerR: 28, outerR: 90 },
+  2: { inner: 13, outer: 1.2, innerR: 36, outerR: 120 },
+  3: { inner: 24, outer: 2, innerR: 44, outerR: 150 }
 };
 /** Size of the repeating pattern of blade spots, ft (the patches move by this much). */
 const TILE = 8;
@@ -81,6 +81,12 @@ float gHeight( vec2 p ) {
   if ( t.x + t.y <= 1.0 ) return h00 + ( h10 - h00 ) * t.x + ( h01 - h00 ) * t.y;
   return h11 + ( h01 - h11 ) * ( 1.0 - t.x ) + ( h10 - h11 ) * ( 1.0 - t.y );
 }
+// Smooth noise (0..1): stretches of drier and lusher grass, tufts within them
+float gNoise( vec2 p ) {
+  vec2 i = floor( p ), f = fract( p );
+  vec2 u = f * f * ( 3.0 - 2.0 * f );
+  return mix( mix( gHash( i ), gHash( i + vec2( 1.0, 0.0 ) ), u.x ), mix( gHash( i + vec2( 0.0, 1.0 ) ), gHash( i + vec2( 1.0, 1.0 ) ), u.x ), u.y );
+}
 `;
 
 const VERT_BODY = /* glsl */ `
@@ -95,9 +101,16 @@ const VERT_BODY = /* glsl */ `
   // Fewer blades farther away (and none inside the inner patch, for the outer one)
   float keep = fld.g * uDensity * ( 1.0 - smoothstep( uFar * 0.72, uFar, d ) ) * step( uHole, d + r4 * 6.0 );
   float alive = inside * step( r2, keep );
-  float tall = fld.r * ${GRASS.max.toFixed(1)};
-  float bh = tall * ( 0.6 + 0.8 * r1 ) * alive;
-  float bw = uWidth * ( 0.75 + 0.5 * r3 ) * ( 1.0 + d / uNear ) * min( 1.0, 0.45 + tall * 0.5 ) * alive;
+  // How tall it grows here, read a little off to one side so long grass meets short grass along a
+  // ragged edge, not a ruled line (where blades grow at all stays exact: none on pads or paths)
+  vec2 wob = vec2( gNoise( wp * 0.23 ), gNoise( wp * 0.23 + 31.0 ) ) - 0.5;
+  float tall = max( fld.r, texture2D( uField, fuv + wob * 4.0 / uRect.zw ).r * step( 0.05, fld.g ) ) * ${GRASS.max.toFixed(1)};
+  float stretch = gNoise( wp * 0.03 );
+  float tuft = gNoise( wp * 0.45 + 11.0 );
+  // (0: mown, 1: long grass)
+  float wild = smoothstep( 0.3, 1.2, tall );
+  float bh = tall * ( 0.6 + 0.8 * r1 ) * mix( 1.0, 0.4 + 1.2 * tuft, wild * 0.85 ) * ( 0.85 + 0.3 * stretch ) * alive;
+  float bw = uWidth * ( 0.75 + 0.5 * r3 ) * ( 1.0 + d / uNear ) * min( 1.0, 0.45 + tall * 0.5 ) * mix( 1.0, 0.6, wild ) * alive;
   float yaw = r3 * 6.2832;
   vec2 dir = vec2( cos( yaw ), sin( yaw ) );
   // Long grass bends over more; the wind leans it all one way, in waves
@@ -108,28 +121,31 @@ const VERT_BODY = /* glsl */ `
   vec2 side = vec2( -dir.y, dir.x );
   float base = gHeight( wp );
   vec3 grassPos = vec3( wp.x + side.x * position.x * bw + bend.x * bh, base + bh * t * ( 1.0 - 0.25 * dot( bend, bend ) ) + 0.04, wp.y + side.y * position.x * bw + bend.y * bh );
-  vec3 bladeN = normalize( vec3( dir.x, 0.0, dir.y ) );
-  vec3 objectNormal = normalize( mix( bladeN, vec3( 0.0, 1.0, 0.0 ), 0.72 ) );
-  // Color: the ground's grass color (or the photo's), darker at the root, lighter at the tip
+  // Rounded across the blade (lit a little differently edge to edge), mostly facing up
+  vec3 bladeN = normalize( vec3( dir.x + side.x * position.x * 1.2, 0.0, dir.y + side.y * position.x * 1.2 ) );
+  vec3 objectNormal = normalize( mix( bladeN, vec3( 0.0, 1.0, 0.0 ), 0.62 ) );
+  // Color: the ground's grass color (or the photo's), drier or lusher in stretches
   vec3 tint = texture2D( uTint, fuv ).rgb;
   vec2 puv = ( wp - uPhotoRect.xy ) / uPhotoRect.zw;
   if ( uPhotoMix > 0.0 && puv.x > 0.0 && puv.x < 1.0 && puv.y > 0.0 && puv.y < 1.0 ) {
     vec3 ph = texture2D( uPhoto, vec2( puv.x, 1.0 - puv.y ) ).rgb;
     tint = mix( tint, ph * 1.15, uPhotoMix );
   }
-  float v = 0.82 + 0.36 * r4;
-  vec3 straw = vec3( 0.62, 0.56, 0.34 );
-  vGrass = tint * v;
-  vGrass = mix( vGrass, straw * ( 0.7 + 0.3 * r1 ), smoothstep( 0.9, 2.6, tall ) * 0.35 * r3 );
+  tint = mix( tint * vec3( 0.86, 1.0, 0.94 ), tint * vec3( 1.12, 1.06, 0.74 ), smoothstep( 0.25, 0.85, stretch ) );
+  vec3 straw = vec3( 0.66, 0.6, 0.36 );
+  vGrass = tint * ( 0.9 + 0.2 * r4 );
+  // (long grass: some blades gone to straw)
+  vGrass = mix( vGrass, straw * ( 0.75 + 0.25 * r1 ), wild * smoothstep( 0.55, 1.0, r3 ) * 0.55 );
   vTip = t;
 `;
 
 /** One blade: a tapered strip, base to tip (x across -0.5..0.5, y up 0..1). */
 const bladeGeometry = () => {
   const pos: number[] = [];
-  const seg = 3;
+  const seg = 4;
   for (let i = 0; i < seg; i++) {
-    const t = i / seg, w = 1 - t * 0.75;
+    // (full width low down, narrowing faster toward a point)
+    const t = i / seg, w = 1 - Math.pow(t, 1.4) * 0.9;
     pos.push(-0.5 * w, t, 0, 0.5 * w, t, 0);
   }
   pos.push(0, 1, 0);
@@ -289,7 +305,10 @@ export class Grass {
           .replace("#include <begin_vertex>", "vec3 transformed = grassPos;");
         shader.fragmentShader = shader.fragmentShader
           .replace("#include <common>", "#include <common>\nvarying vec3 vGrass;\nvarying float vTip;")
-          .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb *= vGrass * mix( 0.42, 1.12, vTip );")
+          // (shaded toward the root, not black: the turf reads as one dense green)
+          .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb *= vGrass * mix( 0.6, 1.1, vTip );")
+          // Tips catch the light
+          .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGrass * vTip * vTip * 0.12;")
           // Lit like the ground under it from both sides (no dark backs)
           .replace("#include <normal_fragment_begin>", "float faceDirection = 1.0;\nvec3 normal = normalize( vNormal );\nvec3 nonPerturbedNormal = normal;");
       };
@@ -303,7 +322,7 @@ export class Grass {
       this.group.add(mesh);
       this.patches.push({ mesh, mat, span, count, uniforms });
     };
-    add(lv.innerR, lv.inner, 0.07, 30, lv.innerR, 0);
+    add(lv.innerR, lv.inner, 0.06, 30, lv.innerR, 0);
     add(lv.outerR, lv.outer, 0.16, 18, lv.outerR, lv.innerR * 0.85);
   }
 
