@@ -719,6 +719,27 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     return g2.getImageData(0, 0, mw, mh).data;
   })();
   yield;
+  // How far into the woods each spot is, softened: the floor under the trees shows only well
+  // inside them and fades into the grass at their edges (the woods' outline is coarse; hard
+  // edged, its gaps beside the treetops read as dark specks)
+  const inWoods = (() => {
+    const cov = document.createElement("canvas");
+    cov.width = mw;
+    cov.height = mh;
+    const g = cov.getContext("2d", { willReadFrequently: true })!;
+    const id = g.createImageData(mw, mh);
+    for (let m = 0; m < wooded.length; m++) if (wooded[m]) id.data[m * 4] = 255;
+    for (let m = 3; m < id.data.length; m += 4) id.data[m] = 255;
+    g.putImageData(id, 0, 0);
+    const o2 = document.createElement("canvas");
+    o2.width = mw;
+    o2.height = mh;
+    const g2 = o2.getContext("2d", { willReadFrequently: true })!;
+    g2.filter = `blur(${2.5 * (pt / cell)}px)`;
+    g2.drawImage(cov, 0, 0);
+    return g2.getImageData(0, 0, mw, mh).data;
+  })();
+  yield;
   // The ground's relief (hill shading), from the terrain, lit from the same side
   const relief = reliefGrid(doc, s.hillshade || s.contours, W, H, toPlan, L);
   // Contour lines painted in (when shown): a tidy interval for the course's rise and fall
@@ -737,7 +758,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const mixPals = (landscapeOf(s).mix ?? []).map(c => palette(c, woodsFactors, 6, 0.9));
   const fair = palette(s.fairway, [0.56, 0.7, 0.84, 1, 1.14, 1.28], 4);
   const lawn = palette(s.rough, [0.6, 0.76, 0.9, 1.04, 1.18], 3);
-  const floorPal = palette(s.trees, [0.3, 0.42, 0.56], 0);
+  // (shaded green, never black: the gaps between treetops are where it shows)
+  const floorPal = palette(s.trees, [0.5, 0.64, 0.8], 0, 0.9);
   // (the lightest tones toward teal: shallows and the rim)
   const water = palette(s.water, [0.42, 0.58, 0.76, 0.94, 1.12, 1.34, 1.62], -14);
   // Worn dirt: an olive tan, lighter than the shade around it (it reads as open ground)
@@ -827,12 +849,13 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         const lit = (1 - shadowK * 0.75 * (1 - sun)) * (1 - 0.62 * shadowK * ao) * rf;
         const mott = at(mottle, x, y);
         const grain = GRAIN[tr | (x & 511)];
-        if (wooded[m]) {
-          tone(thick > 0.5 ? floorPal : lawn, (0.45 + mott * 0.4 + grain * 0.2) * lit * (thick > 0.5 ? 1 : 0.8));
-          cr = tr0; cg = tg0; cb = tb0;
-        } else {
-          tone(lawn, (0.5 + mott * 0.5 + grain * 0.18) * lit);
-          cr = tr0; cg = tg0; cb = tb0;
+        tone(lawn, (0.5 + mott * 0.5 + grain * 0.18) * lit);
+        cr = tr0; cg = tg0; cb = tb0;
+        // The floor under the trees, well inside the woods (fading out toward their edges)
+        const deep = smooth(0.55, 0.95, inWoods[m4] / 255);
+        if (deep > 0) {
+          if (thick > 0.5) lay(floorPal, (0.5 + mott * 0.4 + grain * 0.2) * (0.35 + 0.65 * lit), deep);
+          else lay(lawn, (0.45 + mott * 0.4 + grain * 0.2) * lit * 0.8, deep);
         }
         const f = a[m4] / 255, r = b[m4 + 1] / 255;
         const rag = f > 0.05 || r > 0.2 ? fbm(x / pt * 0.16 + 50, y / pt * 0.16) - 0.5 : 0;
