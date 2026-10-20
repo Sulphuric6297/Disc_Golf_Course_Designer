@@ -187,6 +187,11 @@ function HolesStep() {
             <Stat label="Walking" value={fmtDist(totals.walk, u)} sub="between holes" />
           </div>
         )}
+        {doc.holes.length > 1 && (
+          <div className="mt-3" data-testid="auto-walks">
+            <Toggle label="Walks to the next hole (automatic)" checked={doc.style.nextTee} onChange={v => changeDoc(d => ({ style: { ...d.style, nextTee: v } }))} />
+          </div>
+        )}
       </Section>
       <NextButton step="holes" />
     </>

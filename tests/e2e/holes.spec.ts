@@ -367,3 +367,19 @@ test("a hole with two numbers (1/2): shown as both; a new hole doesn't take eith
   const b = await addHole(page, { x: 600, y: 600 }, { x: 900, y: 600 });
   await expect.poll(async () => (await course(page)).holes.find((h: any) => h.id === b.id).number).toBe(3);
 });
+
+test("automatic walks to the next hole turned off and on from the Holes step", async ({ page }) => {
+  await blankCourse(page);
+  const a = await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
+  await addHole(page, { x: 800, y: 400 }, { x: 900, y: 700 });
+  await page.keyboard.press("Escape");
+  const walk = () => page.evaluate(id => !!(window as any).__dgView.scene.getObjectByName(`walk:${id}`), a.id);
+  await expect.poll(walk).toBe(true);
+  const toggle = page.getByTestId("auto-walks").getByText("Walks to the next hole (automatic)");
+  await toggle.click();
+  await expect.poll(async () => (await course(page)).style.nextTee).toBe(false);
+  await expect.poll(walk).toBe(false);
+  await toggle.click();
+  await expect.poll(async () => (await course(page)).style.nextTee).toBe(true);
+  await expect.poll(walk).toBe(true);
+});

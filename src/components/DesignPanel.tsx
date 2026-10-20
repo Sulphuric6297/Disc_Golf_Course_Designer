@@ -186,7 +186,7 @@ export function DesignPanel() {
       <Section title="On the map">
         <Toggle label="Throw lines" checked={s.throwLines} onChange={v => setStyle({ throwLines: v })} />
         <Toggle label="Distances on the lines" checked={s.distances} onChange={v => setStyle({ distances: v })} />
-        <Toggle label="Walks to the next tee" checked={s.nextTee} onChange={v => setStyle({ nextTee: v })} />
+        <Toggle label="Walks to the next hole (automatic)" checked={s.nextTee} onChange={v => setStyle({ nextTee: v })} />
         {s.nextTee && (
           <>
             <Slider label="Walk width" min={1} max={20} step={0.5} value={s.walkWidth ?? 6} onChange={v => setAllWalks(v, false)} onDone={done} format={v => fmtDist(v, doc.units)} />
