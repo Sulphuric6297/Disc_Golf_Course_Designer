@@ -8,32 +8,32 @@ import { Segmented, Toggle } from "./ui";
 import { LandscapePicker } from "./LandscapePicker";
 import { RotateCcw } from "lucide-react";
 
-export function SceneButton({ className = "" }: { className?: string }) {
+export function SceneButton({ className = "", big = false }: { className?: string; big?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <div className={`relative pointer-events-auto ${className}`}>
       <button
-        className={`bg-zinc-900/85 backdrop-blur rounded-lg w-8 h-8 flex items-center justify-center border shadow transition-colors ${open ? "border-orange-500 text-orange-300" : "border-zinc-700/60 text-amber-300 hover:text-amber-200"}`}
+        className={`bg-zinc-900/85 backdrop-blur ${big ? "rounded-2xl w-11 h-11" : "rounded-lg w-8 h-8"} flex items-center justify-center border shadow transition-colors ${open ? "border-orange-500 text-orange-300" : "border-zinc-700/60 text-amber-300 hover:text-amber-200"}`}
         title="Light and grass"
         aria-expanded={open}
         onClick={() => setOpen(o => !o)}
         data-testid="scene-button"
       >
-        <Sun size={16} />
+        <Sun size={big ? 20 : 16} />
       </button>
-      {open && <ScenePanel onClose={() => setOpen(false)} />}
+      {open && <ScenePanel onClose={() => setOpen(false)} big={big} />}
     </div>
   );
 }
 
-function ScenePanel({ onClose }: { onClose: () => void }) {
+function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
   const s = useCourse(c => c.doc.style);
   const ro = useEditor(e => e.viewOnly);
   const grass = useEditor(e => e.grass);
   const wind = useEditor(e => e.wind);
   const set = useEditor(e => e.set);
   return (
-    <div className="absolute right-0 top-10 w-72 rounded-xl bg-zinc-900/95 backdrop-blur border border-zinc-700 shadow-2xl p-3 z-30 text-left" data-testid="scene-panel">
+    <div className={`absolute ${big ? "right-[52px] top-0 max-h-[min(70vh,calc(100dvh-140px))] overflow-y-auto dg-scroll" : "right-0 top-10"} w-72 rounded-xl bg-zinc-900/95 backdrop-blur border border-zinc-700 shadow-2xl p-3 z-30 text-left`} data-testid="scene-panel">
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-semibold text-zinc-100">Light and grass</div>
         <div className="flex items-center gap-2">
@@ -42,7 +42,7 @@ function ScenePanel({ onClose }: { onClose: () => void }) {
               <RotateCcw size={12} /> Reset
             </button>
           )}
-          <button className="text-zinc-400 hover:text-white" title="Close" onClick={onClose}><X size={15} /></button>
+          <button className={`text-zinc-400 hover:text-white ${big ? "w-9 h-9 -m-2 flex items-center justify-center" : ""}`} title="Close" aria-label="Close" onClick={onClose}><X size={15} /></button>
         </div>
       </div>
       {!ro && (

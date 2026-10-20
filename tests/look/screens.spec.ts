@@ -1,6 +1,6 @@
 // `npm run look`: screenshots of the main screens into look/, to see the real UI (not assertions).
-import { test, expect, importSite, addHole, course, handleCenter, drag } from "../e2e/fixtures";
-import type { Page } from "@playwright/test";
+import { test, expect, importSite, addHole, course, handleCenter, drag, longPress, tapPlan } from "../e2e/fixtures";
+import { devices, type Page } from "@playwright/test";
 
 const shot = (page: Page, name: string) => page.screenshot({ path: `look/${name}.png` });
 
@@ -593,4 +593,176 @@ test("half wooded, half open course: painted map, 3D and from a tee", async ({ p
   await page.getByTestId("tee-view").click();
   await page.waitForTimeout(4000);
   await shot(page, "20-tee-woods-edge");
+});
+
+// ---------------------------------------------------------------------------------------------
+// Phones and tablets: the bottom sheet and step bar (upright), the rail (on its side), tablets
+// ---------------------------------------------------------------------------------------------
+
+/** A Playwright device in Chromium (the device list's iPhones say WebKit). */
+const device = (name: string) => {
+  const { defaultBrowserType: _browser, ...d } = devices[name];
+  return d;
+};
+const sheetTo = async (page: Page, detent: "peek" | "half" | "full") => {
+  for (let i = 0; i < 3 && (await page.getByTestId("sheet").getAttribute("data-detent")) !== detent; i++) await page.getByTestId("sheet-handle").click();
+  await page.waitForTimeout(450);
+};
+const navTo = (page: Page, step: string) => page.getByRole("navigation", { name: "Steps" }).getByRole("button", { name: new RegExp(step) }).click();
+
+test.describe("phone", () => {
+  test.use(device("iPhone 13"));
+
+  test("phone: steps, sheet, drawing, selection, tee view", async ({ page }) => {
+    test.setTimeout(300_000);
+    await shot(page, "m01-phone-start");
+    await page.getByTestId("welcome-find").click();
+    await page.getByLabel("Search address").fill("Springfield Park");
+    await page.getByRole("button", { name: /Springfield Park/ }).first().click();
+    await expect(page.getByTestId("site-size")).toBeVisible();
+    await page.waitForTimeout(1500);
+    await shot(page, "m02-phone-find-site");
+    await page.getByTestId("import-site").click();
+    await expect(page.getByTestId("import-site")).toBeHidden({ timeout: 60_000 });
+    await page.waitForTimeout(1500);
+    await shot(page, "m03-phone-hole-tool");
+    const doc = await course(page);
+    const W = doc.canvas.width, H = doc.canvas.height;
+    await tapPlan(page, W * 0.35, H * 0.62);
+    await page.waitForTimeout(300);
+    await shot(page, "m04-phone-hole-tee-placed");
+    await tapPlan(page, W * 0.55, H * 0.42);
+    await page.waitForTimeout(600);
+    await page.getByTestId("tool-close").click();
+    await seedCourse(page);
+    await page.evaluate(() => (window as any).__dgView.fitCourse(false));
+    await page.waitForTimeout(1200);
+    await shot(page, "m05-phone-holes-peek");
+    await sheetTo(page, "half");
+    await shot(page, "m06-phone-holes-half");
+    await sheetTo(page, "full");
+    await shot(page, "m07-phone-holes-full");
+    await page.getByTestId("hole-row").first().click();
+    await page.waitForTimeout(1200);
+    await shot(page, "m08-phone-inspector");
+    await sheetTo(page, "peek");
+    await shot(page, "m09-phone-inspector-peek");
+    const tee = await page.evaluate(() => { const d = (window as any).__dgCourse(); const t = d.items.find((i: any) => i.type === "tee"); return (window as any).__dgView.toClient(t.x, t.y, 1); });
+    await longPress(page, tee);
+    await page.waitForTimeout(400);
+    await shot(page, "m10-phone-item-menu");
+    await page.getByTestId("action-sheet-cancel").click();
+    await page.getByTestId("selection-back").click();
+    await navTo(page, "Features");
+    await page.waitForTimeout(600);
+    await shot(page, "m11-phone-features");
+    await page.locator('[data-tool="draw-area"]').click();
+    await page.getByTestId("area-kind-ob").click();
+    await page.waitForTimeout(300);
+    for (const [fx, fy] of [[0.4, 0.5], [0.5, 0.47], [0.52, 0.58]]) await tapPlan(page, W * fx, H * fy);
+    await page.waitForTimeout(400);
+    await shot(page, "m12-phone-drawing");
+    await page.getByTestId("draw-done").click();
+    await page.waitForTimeout(600);
+    await shot(page, "m12-phone-drawn");
+    await page.getByTestId("selection-back").click().catch(() => {});
+    for (const [step, name] of [["Review", "m13-phone-review"], ["Design", "m14-phone-design"], ["Export", "m15-phone-export"], ["Site", "m16-phone-site"]]) {
+      await navTo(page, step);
+      await page.waitForTimeout(step === "Design" ? 3500 : 900);
+      await shot(page, name);
+    }
+    await navTo(page, "Holes");
+    await page.getByRole("radio", { name: "3D" }).click();
+    await page.waitForTimeout(2000);
+    await shot(page, "m17-phone-3d");
+    await page.getByRole("radio", { name: "2D" }).click();
+    await sheetTo(page, "half");
+    await page.getByTestId("hole-row").nth(2).click();
+    await page.waitForTimeout(800);
+    await page.getByRole("button", { name: "View from the tee" }).first().click();
+    await page.waitForTimeout(2500);
+    await shot(page, "m18-phone-tee-view");
+    await page.getByTestId("hud-close").click();
+    await page.waitForTimeout(600);
+    await page.getByTestId("app-menu-button").click();
+    await page.waitForTimeout(400);
+    await shot(page, "m19-phone-menu");
+    await page.getByTestId("menu-help").click();
+    await page.waitForTimeout(400);
+    await shot(page, "m20-phone-help");
+  });
+});
+
+test.describe("phone on its side", () => {
+  test.use(device("iPhone 13 landscape"));
+
+  test("phone landscape: rail, side panel, selection, design", async ({ page }) => {
+    test.setTimeout(240_000);
+    await importSite(page);
+    await seedCourse(page);
+    await page.evaluate(() => (window as any).__dgView.fitCourse(false));
+    await page.waitForTimeout(1500);
+    await shot(page, "m30-landscape-holes");
+    await page.getByTestId("hole-row").first().click();
+    await page.waitForTimeout(1200);
+    await shot(page, "m31-landscape-inspector");
+    await page.getByTestId("selection-back").click();
+    await page.locator('[data-tool="draw-line"]').click();
+    await page.waitForTimeout(400);
+    await shot(page, "m32-landscape-tool");
+    await page.getByTestId("tool-close").click();
+    await navTo(page, "Design");
+    await page.waitForTimeout(3500);
+    await shot(page, "m33-landscape-design");
+  });
+});
+
+test.describe("tablet held upright", () => {
+  test.use(device("iPad Pro 11"));
+
+  test("tablet upright: rail and panel", async ({ page }) => {
+    test.setTimeout(240_000);
+    await importSite(page);
+    await seedCourse(page);
+    await page.evaluate(() => (window as any).__dgView.fitCourse(false));
+    await page.waitForTimeout(1500);
+    await shot(page, "m42-tablet-upright-holes");
+    await page.getByTestId("hole-row").first().click();
+    await page.waitForTimeout(1200);
+    await shot(page, "m43-tablet-upright-inspector");
+  });
+});
+
+test.describe("tablet", () => {
+  test.use(device("iPad Pro 11 landscape"));
+
+  test("tablet: side panel layout", async ({ page }) => {
+    test.setTimeout(240_000);
+    await importSite(page);
+    await seedCourse(page);
+    await page.evaluate(() => (window as any).__dgView.fitCourse(false));
+    await page.waitForTimeout(1500);
+    await shot(page, "m40-tablet-holes");
+    await page.getByTestId("hole-row").first().click();
+    await page.waitForTimeout(1200);
+    await shot(page, "m41-tablet-inspector");
+  });
+});
+
+test.describe("android phone", () => {
+  test.use(device("Pixel 7"));
+
+  test("pixel: holes and a line being drawn", async ({ page }) => {
+    test.setTimeout(240_000);
+    await importSite(page);
+    await seedCourse(page);
+    await page.evaluate(() => (window as any).__dgView.fitCourse(false));
+    await page.waitForTimeout(1200);
+    await shot(page, "m50-pixel-holes");
+    await page.locator('[data-tool="draw-line"]').click();
+    const doc = await course(page);
+    for (const [fx, fy] of [[0.3, 0.3], [0.45, 0.36], [0.6, 0.33]]) await tapPlan(page, doc.canvas.width * fx, doc.canvas.height * fy);
+    await page.waitForTimeout(400);
+    await shot(page, "m51-pixel-drawing-line");
+  });
 });

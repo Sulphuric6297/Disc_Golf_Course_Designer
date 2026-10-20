@@ -67,6 +67,7 @@ design tools and the PDGA guidance the app follows.
 | `video.spec.ts` | Flyover videos: recording a hole from the Export step (progress, a real WebM/MP4 that plays at the asked size and length), Cancel, going on when the step is left, Record over the flyover, the MediaRecorder fallback without WebCodecs, MP4 when H.264 can be encoded (stand-in encoder); codec levels and the frames of a recording (pure logic) |
 | `share.spec.ts` | Share links: packing, opening (view only), photo and elevation downloaded again, "Make a copy" (saved before the link leaves the address bar), never overwriting your own course |
 | `persistence.spec.ts` | Autosave restore, course files, New keeps the old course in Recent courses |
+| `mobile.spec.ts` | Phones and tablets (device emulation, touch): the step bar, the bottom sheet's three heights (drag, tap, keys), a hole and an area laid out with taps (Undo, Cancel, Done), the selection in the sheet, long-press menus, pinch without placing, the Design preview fitted to the screen, the tee view, 44 px targets, a phone on its side (rail + panel), a tablet, and the desktop layout unchanged at 1600 × 1000 |
 
 ## Project conventions
 
@@ -91,6 +92,14 @@ design tools and the PDGA guidance the app follows.
   - `share.ts`;
   - `geo/`: site import.
 - The map view engine is `src/viewport/CourseView.ts`, wrapped by `src/components/MapViewport.tsx`.
+- Phones and tablets: `useLayout()` (`src/components/useLayout.ts`) picks the layout: `phone`
+  (under 768 px wide: a bottom sheet and a step bar), `landscape` (a short, wide screen: a step rail
+  and a side panel) or `desktop` (tablets and computers, unchanged). The phone layouts are in
+  `src/components/mobile/` (`CompactShell.tsx`, `BottomSheet.tsx`, `ActionSheet.tsx`); the step
+  panels and the inspector are shared with the desktop. `touch:` Tailwind classes apply where a
+  finger is the main pointer (bigger targets, 16 px text fields). Every keyboard or right-click
+  action needs a touch path (Done/Undo/Cancel while drawing, long-press menus, map buttons). No
+  backdrop blur over the map on touch screens (it costs frames on phone GPUs).
 - 3D look: `src/three/treeKit.ts` (tree shapes made once and shared: a branching skeleton and
   leaf-spray cards; woods drawn instanced, full detail near the camera), `src/three/grass.ts`
   (blades in two patches that travel with the camera, reading height, what grows where and color

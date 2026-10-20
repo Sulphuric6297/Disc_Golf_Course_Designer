@@ -203,3 +203,129 @@ What made the difference:
   most 30 frames a second when nothing else moves (battery).
 - Frame times are watched while the view moves: under 30 frames a second it steps down (pixel
   ratio, then grass, shadows and tree detail), and back up after a few smooth windows in a row.
+
+## Phones and tablets: research and design
+
+Searched in October 2026, from search-result summaries (most design pages and image hosts could
+not be opened from here). What the best map apps do on a phone, and the guidance behind them:
+
+- **Google Maps** keeps the map as the screen and puts everything else in a bottom sheet that
+  peeks, opens to half height for details, and drags to full height. Since its 2025 redesign even
+  the full-height sheet leaves a strip of map showing, and tapping a place opens its sheet over
+  the map ([9to5Google](https://9to5google.com/2025/01/21/google-maps-redesign-sheets/),
+  [Android Authority](https://www.androidauthority.com/google-maps-sheets-3548003/)).
+- **Apple Maps** moved search and results from the top bar into a card at the bottom that swipes
+  up ([MacStories](https://macstories.net/stories/ios-10-the-macstories-review/18)). Apple's sheets
+  rest at medium and large heights ("detents"), may be non-modal so the map behind stays usable,
+  and show a grabber that VoiceOver users activate to step through the heights
+  ([WWDC21 "Customize and resize sheets"](https://developer.apple.com/wwdc21/10063)).
+- **AllTrails** pairs a swipe with a visible map button: the gesture for regulars, the button so
+  new users find it ([design critique](https://ixd.prattsi.org/2025/02/design-critique-alltrails-ios-app-2/)).
+- **Strava's route builder** places points by tapping, with Undo in the lower right; drawing is a
+  separate mode whose undo removes the whole stroke; people complain when undo is coarse
+  ([Strava help](https://support.strava.com/hc/en-us/articles/18001474720397-Creating-Routes-on-Mobile),
+  [TrainerRoad forum](https://www.trainerroad.com/forum/t/tweaking-a-planned-route-in-strava/38823)).
+- **UDisc** (the players' app): swipe on the bottom panel for the next hole, hold a finger on the
+  map to add a throw, buttons to zoom to the circle ([UDisc help](https://help.udisc.com/en/articles/10705067-map-scoring)).
+- **Felt** keeps phones for viewing and field work and sends editing to a tablet or computer
+  ([Felt help](https://help.felt.com/field-app/tour-the-field-app)). This app goes further: the
+  whole course can be laid out on a phone.
+- **Reach:** in Steven Hoober's observations 49% of people hold a phone in one hand, 36% cradle
+  it, 15% use two hands ([A List Apart](https://alistapart.com/1-8-phablet-choke-2x-jpg/)); he
+  also warns the "thumb zone" is not a rigid rule. So: the most used controls along the bottom,
+  big enough for any grip.
+- **Targets:** WCAG 2.2 asks for at least 24 × 24 CSS px (2.5.8), and 44 × 44 for the enhanced
+  level; Apple says 44 pt, Material 48 dp ([summary](https://www.disabilityworld.org/toolkit/glossary/touch-target-size/)).
+- **Gestures:** WCAG 2.5.1 needs a single-pointer way for every pinch or two-finger gesture,
+  such as zoom buttons, and the alternative should not rely on dragging alone (2.5.7)
+  ([W3C](https://www.w3.org/WAI/WCAG22/Understanding/pointer-gestures)). A long-press is hard to
+  discover, so it should only be a shortcut for something also on a visible button
+  ([GNOME Maps](https://gitlab.gnome.org/GNOME/gnome-maps/issues/2)).
+- **Dialogs and sheets:** focus moves into a dialog when it opens and back when it closes; a
+  draggable sheet must also work from the keyboard ([MDN](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Roles/dialog_role)).
+- **The screen's edges:** `viewport-fit=cover` with `env(safe-area-inset-*)` padding keeps bars
+  clear of the notch and home indicator, and `dvh` units follow the browser's own bars
+  ([safe area insets](https://mohammadshehadeh.com/css/safe-area-insets/)).
+
+**What the app does with it** (below 768 px wide; the desktop layout is unchanged):
+
+1. **The map is the screen.** A slim floating top bar (name, 2D/3D, share, menu) and the map's
+   buttons (compass, zoom, whole course, turn; light in 3D), all 44 px, are the only things over it.
+2. **The six steps in a bar at the bottom**, icons with labels. Six is one more than the usual
+   bottom bar, but they are one ordered workflow and each is still 65 px wide on a 390 px phone.
+   Tapping the open step shows more or less of its panel.
+3. **One bottom sheet** for the step's panel, the selection, or the active tool, resting at peek
+   (its header), half and full height (a strip of map always stays). Drag it, flick it, drag the
+   list when it is at the top, tap the grabber to step through the heights (as on iOS), or use
+   the arrow keys on it. Picking a tool lowers it; picking something from a full list brings it
+   to half height so the map shows it, and the map fits holes above it.
+4. **Tools in a labelled row** at the top of the sheet (Select, Hole, Tee, Pin, Mando…), with
+   Undo and Redo always at its end. The active tool's hint and choices (tee colors, kinds of
+   area) sit right under it, in words for fingers ("Tap the corners, then Done").
+5. **Drawing by taps:** Undo, Cancel and Done float over the map while a shape is drawn (there is
+   no Enter, Backspace or Esc on a phone), with the point count on Done. Rectangles, circles and
+   freehand shapes are dragged out with one finger; two fingers still move the map and never
+   place anything.
+6. **Long-press = right-click:** holding a finger on a hole or a thing opens its menu as an action
+   sheet from the bottom (view from the tee, fly over, mark OB, play earlier or later, duplicate,
+   lock, delete). The same menu is on the selection's "More" button, so nothing depends on the
+   hidden gesture.
+7. **The selection takes over the sheet** with a back arrow to the step, and Delete, View from
+   the tee and More in reach.
+8. **On its side** (a short, wide screen) and on a tablet held upright, the steps move to a rail
+   on the left with the panel beside it (Material's navigation rail for medium widths); tablets on
+   their side keep the desktop layout.
+9. **Dialogs become sheets from the bottom;** finding the park is full screen with the search on
+   top and "Bring in this site" at the bottom. The Design preview fits the page to the screen's
+   width, pinches to zoom, and keeps its zoom buttons floating within reach. The view from a tee
+   puts the hole's card on top and big buttons along the bottom.
+10. **Readable and reachable:** small print is bumped up on touch screens, text fields use 16 px
+    (phones zoom into smaller ones), handles on the map get bigger invisible hit areas, and a tap
+    may wobble 10 px before it counts as a drag.
+
+### Mobile performance
+
+The owner asked that it "works performance perfectly" on phones. What the guidance says, and what
+the app does:
+
+- **Animate only transform and opacity**; they run on the compositor without layout or paint
+  ([web.dev](https://web.dev/articles/stick-to-compositor-only-properties-and-manage-layer-count)).
+  The sheet is always full height and slides with `translate3d`; while a finger drags it the
+  position is written to the element once per animation frame, with no React render. The list
+  inside is resized once when the sheet comes to rest.
+- **No frosted glass over the map.** A backdrop blur is redrawn behind each panel whenever the
+  map draws a frame, and blur cost is known to hurt on phone GPUs
+  ([OpenReplay](https://blog.openreplay.com/creating-blurred-backgrounds-css-backdrop-filter/)).
+  On touch screens the panels over the map are solid or slightly see-through instead.
+- **Keep taps instant:** `touch-action: manipulation` on the app (no double-tap-zoom wait),
+  `touch-action: none` on the map (the map's own gestures, no page zoom), non-passive touch
+  listeners only where a drag must be taken over. The goal is the "good" Interaction to Next Paint
+  of 200 ms or less ([web.dev](https://web.dev/articles/inp)).
+- **No needless map frames:** UI changes don't redraw the 3D map (a step change used to clear an
+  empty drawing, which redrew it).
+- **The keyboard:** Chrome on Android and Safari resize only the visual viewport when the
+  keyboard opens ([Chrome](https://developer.chrome.com/blog/viewport-resize-behavior)); the
+  sheet goes to full height when a field takes the focus and makes room under the list, so the
+  layout does not jump.
+
+**Measured** (Playwright, Chromium's iPhone 13 profile, CPU slowed 4× through the DevTools
+protocol, an imported site with 18 holes; medians of 3 rounds; "before" is the app before the
+phone layout, on the same phone profile). Interaction = the slowest event of the tap or drag
+(Event Timing, what INP reports; "under 16" means no event took 16 ms):
+
+| | Before | After |
+| --- | --- | --- |
+| Tap a hole in the list: interaction | 312 ms | under 16 ms |
+| Tap a tool: interaction | 232 ms | 32 ms |
+| Tap the sheet's handle: interaction, map frames | (no sheet) | 24 ms, 0 |
+| Drag the sheet (30 moves): interaction, long tasks, layouts, map frames | (no sheet) | 40 ms, 0, 1–2, 0 |
+| Slide the sheet 30 frames by height vs by transform: layouts | | 31 vs 0 |
+| One 3D map frame (software rendering in the test machine) | ~170 ms on a 100 × 1216 px canvas | ~580 ms on a 780 × 1202 px canvas |
+
+The taps and the sheet are now well inside the 200 ms "good" mark. What is left is the 3D map's
+own frame time: the phone layout gives the map the whole screen (before, the side panel squeezed
+it to a sliver 50 px wide, which is why its frames were cheaper). The test machine renders WebGL
+in software, so real phone GPUs are much faster, but the map's frame cost on phones (pixel ratio,
+shadow map size, grass and tree detail) is handled in the map engine's quality settings, not in
+the interface (see "Water, mixed terrain and performance" above: the phone defaults and the
+adaptive quality).

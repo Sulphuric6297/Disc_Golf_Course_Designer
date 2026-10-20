@@ -30,12 +30,12 @@ export function ExportBanner() {
 }
 
 /** Over the map, when the Export step isn't showing (or the view from a tee is). */
-export function ExportProgressPill() {
+export function ExportProgressPill({ top }: { top?: number }) {
   const job = useExportJob(s => s.job);
   const elsewhere = useEditor(s => s.step !== "export" || !!s.teeView);
   if (!job || !elsewhere) return null;
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 w-[300px] bg-zinc-950/90 backdrop-blur border border-zinc-700 rounded-xl px-3 py-2 shadow-2xl text-zinc-100" data-testid="export-progress-pill">
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 w-[300px] max-w-[calc(100%-16px)] bg-zinc-950/90 backdrop-blur border border-zinc-700 rounded-xl px-3 py-2 shadow-2xl text-zinc-100" style={top !== undefined ? { top } : undefined} data-testid="export-progress-pill">
       <div className="flex items-center gap-2 text-xs">
         <Loader2 size={14} className="animate-spin text-orange-300 shrink-0" />
         <span className="flex-1 min-w-0 truncate font-semibold">{job.label}</span>

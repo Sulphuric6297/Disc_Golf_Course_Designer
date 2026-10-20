@@ -1,7 +1,7 @@
 // The side panel follows the steps: what to do now, and the lists for it. The map stays the one
 // canvas; the steps never lock anything.
 import { useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, CircleDot, Info, MapPinned, Pentagon, Plus, Route, Signpost, Spline, Trash2, TreeDeciduous } from "lucide-react";
+import { AlertTriangle, ArrowRight, CircleDot, ClipboardCheck, Download, Info, MapPinned, Palette, Pentagon, Plus, Route, Signpost, Spline, Trash2, TreeDeciduous, type LucideIcon } from "lucide-react";
 import { AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
 import { activeLayout, holeTees } from "../lib/course";
 import { courseTotals, holeStats, levelsOnCourse, safetyIssues, type SafetyIssue } from "../lib/holeStats";
@@ -14,6 +14,7 @@ import { structureIcon } from "./Toolbar";
 import { Button, Field, Section, Segmented, Stat, TextInput, Toggle } from "./ui";
 import { DesignPanel } from "./DesignPanel";
 import { ExportPanel } from "./ExportPanel";
+import { useTouch } from "./useLayout";
 
 export const STEPS: { id: Step; label: string; title: string; blurb: string }[] = [
   { id: "site", label: "Site", title: "Your site", blurb: "The satellite photo, elevation, trees, paths and water for the land the course goes on." },
@@ -23,6 +24,17 @@ export const STEPS: { id: Step; label: string; title: string; blurb: string }[] 
   { id: "design", label: "Design", title: "Map design", blurb: "Make the course map beautiful: style, colors, labels and the title block." },
   { id: "export", label: "Export", title: "Export and share", blurb: "Course map, tee signs, scorecard, GPS files, and a link to share." }
 ];
+
+/** The steps' icons (the phone's step bar and rail). */
+export const STEP_ICONS: Record<Step, LucideIcon> = { site: MapPinned, holes: Route, features: Signpost, review: ClipboardCheck, design: Palette, export: Download };
+
+/** Mouse words for a touch screen: tap instead of click, hold instead of right-click, no key letters. */
+export const touchWords = (text: string) =>
+  text
+    .replace(/,? then double-click the other/g, ", then the other and Done")
+    .replace(/Right-click/g, "Hold a finger on")
+    .replace(/\b([Cc])lick(s|ing)?\b/g, (_m, c: string, end?: string) => `${c === "C" ? "T" : "t"}ap${end === "ing" ? "ping" : end ?? ""}`)
+    .replace(/ \((?:[A-Z]|[A-Z] \/ [A-Z])\)$/, "");
 
 const NextButton = ({ step }: { step: Step }) => {
   const i = STEPS.findIndex(s => s.id === step);
@@ -35,15 +47,18 @@ const NextButton = ({ step }: { step: Step }) => {
   );
 };
 
-const ToolCard = ({ icon, title, text, onClick, active, testid }: { icon: ReactNode; title: string; text: string; onClick: () => void; active?: boolean; testid?: string }) => (
-  <button onClick={onClick} data-testid={testid} className={`w-full text-left flex gap-3 items-start rounded-lg px-3 py-2 border transition-colors ${active ? "border-orange-400 bg-orange-500/10" : "border-zinc-800 hover:border-zinc-600 bg-zinc-800/40"}`}>
-    <span className="mt-0.5 text-orange-300">{icon}</span>
-    <span>
-      <span className="block text-sm font-semibold text-zinc-100">{title}</span>
-      <span className="block text-[11px] text-zinc-400">{text}</span>
-    </span>
-  </button>
-);
+const ToolCard = ({ icon, title, text, onClick, active, testid }: { icon: ReactNode; title: string; text: string; onClick: () => void; active?: boolean; testid?: string }) => {
+  const touch = useTouch();
+  return (
+    <button onClick={onClick} data-testid={testid} className={`w-full text-left flex gap-3 items-start rounded-lg px-3 py-2 touch:py-2.5 border transition-colors ${active ? "border-orange-400 bg-orange-500/10" : "border-zinc-800 hover:border-zinc-600 bg-zinc-800/40"}`}>
+      <span className="mt-0.5 text-orange-300">{icon}</span>
+      <span>
+        <span className="block text-sm font-semibold text-zinc-100">{touch ? touchWords(title) : title}</span>
+        <span className="block text-[11px] text-zinc-400">{touch ? touchWords(text) : text}</span>
+      </span>
+    </button>
+  );
+};
 
 function SiteStep({ onFindSite }: { onFindSite: () => void }) {
   const doc = useCourse(s => s.doc);
@@ -125,6 +140,7 @@ function LayoutEditor() {
 function HolesStep() {
   const doc = useCourse(s => s.doc);
   const ed = useEditor();
+  const touch = useTouch();
   const stats = useMemo(() => doc.holes.map(h => holeStats(doc, h)), [doc]);
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
   const u = doc.units;
@@ -136,7 +152,7 @@ function HolesStep() {
       <LayoutEditor />
       <Section title={`${doc.holes.length} hole${doc.holes.length === 1 ? "" : "s"}`} testid="hole-list">
         {doc.holes.length === 0 ? (
-          <p className="text-xs text-zinc-400">No holes yet. Pick the Hole tool and click a tee spot, then a basket spot.</p>
+          <p className="text-xs text-zinc-400">{touch ? "No holes yet. Pick the Hole tool and tap a tee spot, then a basket spot." : "No holes yet. Pick the Hole tool and click a tee spot, then a basket spot."}</p>
         ) : (
           <ol className="space-y-0.5">
             {stats.map(s => {
@@ -180,6 +196,7 @@ function HolesStep() {
 function FeaturesStep() {
   const doc = useCourse(s => s.doc);
   const ed = useEditor();
+  const touch = useTouch();
   const area = (kind: AreaKind, text: string) => (
     <ToolCard key={kind} icon={<Pentagon size={17} style={{ color: AREA_KINDS[kind].color }} />} title={AREA_KINDS[kind].label} text={text} active={ed.tool === "draw-area" && ed.areaKind === kind} onClick={() => ed.set({ tool: "draw-area", areaKind: kind })} testid={`feature-area-${kind}`} />
   );
@@ -204,7 +221,7 @@ function FeaturesStep() {
           {tool("add-mando", <Signpost size={17} className="text-orange-400" />, "Mando (M)", "Click beside the hole's line where the post or tree is: it faces down the hole, passed on the line's side. Or a gate of two posts to pass between.")}
           {tool("add-dropzone", <CircleDot size={17} className="text-orange-400" />, "Drop zone (Z)", "Where to throw from after a missed mando or OB.")}
         </div>
-        <p className="text-[11px] text-zinc-400 mt-2">Quick OB: pick a hole and use <b>Add OB</b> (left side, right side, behind the basket). Right-click a creek, road or fence to mark it OB. Areas can be dragged out as a rectangle or circle, or drawn freehand.</p>
+        <p className="text-[11px] text-zinc-400 mt-2">Quick OB: pick a hole and use <b>Add OB</b> (left side, right side, behind the basket). {touch ? "Hold a finger on a creek, road or fence to mark it OB." : "Right-click a creek, road or fence to mark it OB."} Areas can be dragged out as a rectangle or circle, or drawn freehand.</p>
       </Section>
       <Section title="The land">
         <div className="space-y-1.5">
@@ -336,9 +353,25 @@ function ReviewStep() {
   );
 }
 
-export function SidePanel({ onFindSite }: { onFindSite: () => void }) {
+/** The step's own content (lists, settings and tools), under its heading. */
+export function StepContent({ onFindSite }: { onFindSite: () => void }) {
   const step = useEditor(e => e.step);
   const viewOnly = useEditor(e => e.viewOnly);
+  return (
+    <>
+      {step === "site" && <SiteStep onFindSite={onFindSite} />}
+      {step === "holes" && (viewOnly ? <ReviewStep /> : <HolesStep />)}
+      {step === "features" && <FeaturesStep />}
+      {step === "review" && <ReviewStep />}
+      {step === "design" && <DesignPanel />}
+      {step === "export" && <ExportPanel />}
+    </>
+  );
+}
+
+export function SidePanel({ onFindSite }: { onFindSite: () => void }) {
+  const step = useEditor(e => e.step);
+  const touch = useTouch();
   const i = STEPS.findIndex(s => s.id === step);
   const meta = STEPS[i];
   return (
@@ -346,14 +379,9 @@ export function SidePanel({ onFindSite }: { onFindSite: () => void }) {
       <div className="px-4 pt-4 pb-2">
         <div className="text-[11px] font-bold tracking-wider text-orange-400 uppercase">Step {i + 1} of {STEPS.length}</div>
         <h2 className="text-lg font-bold text-zinc-50">{meta.title}</h2>
-        <p className="text-sm text-zinc-400">{meta.blurb}</p>
+        <p className="text-sm text-zinc-400">{touch ? touchWords(meta.blurb) : meta.blurb}</p>
       </div>
-      {step === "site" && <SiteStep onFindSite={onFindSite} />}
-      {step === "holes" && (viewOnly ? <ReviewStep /> : <HolesStep />)}
-      {step === "features" && <FeaturesStep />}
-      {step === "review" && <ReviewStep />}
-      {step === "design" && <DesignPanel />}
-      {step === "export" && <ExportPanel />}
+      <StepContent onFindSite={onFindSite} />
     </aside>
   );
 }

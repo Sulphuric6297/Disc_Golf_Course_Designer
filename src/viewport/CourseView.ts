@@ -44,6 +44,10 @@ const DEG = Math.PI / 180;
 const SUN_INTENSITY = 2.4;
 const HEMI_INTENSITY = 0.9;
 const CLICK_PX = 4;
+/** A finger moves a little in a tap (more than a mouse in a click). */
+const TOUCH_SLOP = 10;
+/** Holding a finger this long on an item opens its menu (the touch right-click). */
+const LONG_PRESS_MS = 500;
 const TILT_TOP = 8 * DEG;
 const DEFAULT_TILT = 55 * DEG;
 const MAX_TILT = 84 * DEG;
@@ -92,10 +96,12 @@ const STYLE = `
 .dg-h[data-handle=radius]{width:15px;height:15px;border-radius:50%;background:#16a34a;border:2.5px solid #fff;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=draw]{width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #f59e0b;pointer-events:none}
 .dg-h[data-handle=draw][data-index="0"]{width:14px;height:14px;pointer-events:auto;cursor:pointer;border-width:3px}
-@media (pointer:coarse){.dg-h{transform-origin:center}.dg-h[data-handle]{scale:1.5}}
+@media (pointer:coarse){.dg-h{transform-origin:center}.dg-h[data-handle]{scale:1.5}.dg-h[data-handle]::before{content:"";position:absolute;left:50%;top:50%;width:30px;height:30px;translate:-50% -50%;border-radius:50%}.dg-tee::before,.dg-basket::before,.dg-sym::before,.dg-chip::before{content:"";position:absolute;inset:-10px}}
 `;
 
 const lineMats = new Set<LineMaterial>();
+/** A finger is the main pointer (handles are drawn bigger there). */
+const COARSE = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
 
 export class CourseView {
   readonly renderer: THREE.WebGLRenderer;
@@ -307,6 +313,8 @@ export class CourseView {
     on(container, "pointermove", e => this.onHoverMove(e));
     on(container, "pointerleave", () => { this.lastPointer = null; this.cb.onHover(null); this.setHover(null); this.updateGhost(null); this.invalidate(); });
     on(container, "dblclick", e => this.onDoubleClick(e));
+    on(window, "pointerup", e => this.touchUp(e));
+    on(window, "pointercancel", e => this.touchUp(e));
     on(container, "contextmenu", e => e.preventDefault());
     on(window, "keydown", e => { if (e.key === " " && !(e.target as HTMLElement)?.closest?.("input,textarea,select")) this.spaceDown = true; });
     on(window, "keyup", e => { if (e.key === " ") this.spaceDown = false; });
@@ -417,6 +425,22 @@ export class CourseView {
   /** Fit plan bounds in view, keeping the current rotation and tilt. */
   /** Pixels on the right covered by a panel: fitting keeps things clear of them. */
   rightInset = 0;
+  /** Pixels at the bottom and top covered by panels (a phone's bottom sheet; its top bar). */
+  bottomInset = 0;
+  topInset = 0;
+
+  /** The plan offset that moves a point from the screen's middle to the middle of the part of the
+   * map between the top and bottom panels, at `dist` from the camera. */
+  private insetShift(dist: number) {
+    const below = clamp(this.bottomInset, 0, this.size.height * 0.6), above = clamp(this.topInset, 0, this.size.height * 0.3);
+    if (below === above) return { x: 0, y: 0 };
+    const worldPerPx = (2 * dist * Math.tan((this.camera.fov * DEG) / 2)) / Math.max(1, this.size.height);
+    const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
+    up.y = 0;
+    if (up.lengthSq() > 1e-6) up.normalize();
+    const k = ((below - above) / 2) * worldPerPx / Math.max(0.35, Math.cos(this.controls.polarAngle));
+    return { x: -up.x * k, y: -up.z * k };
+  }
 
   fitBounds(b: { minX: number; minY: number; maxX: number; maxY: number }, opts: { minSpan?: number; margin?: number; animate?: boolean } = {}) {
     const doc = this.doc;
@@ -426,20 +450,26 @@ export class CourseView {
     const w = Math.max(b.maxX - b.minX, minSpan, 1) * margin;
     const d = Math.max(b.maxY - b.minY, minSpan * 0.6, 1) * margin;
     const inset = clamp(this.rightInset, 0, this.size.width * 0.5);
-    const aspect = (this.size.width - inset) / Math.max(1, this.size.height);
+    const covered = clamp(this.bottomInset, 0, this.size.height * 0.6) + clamp(this.topInset, 0, this.size.height * 0.3);
+    const H = Math.max(1, this.size.height);
+    const aspect = (this.size.width - inset) / H;
     const t = Math.tan((this.camera.fov * DEG) / 2);
-    const dist = clamp(Math.max(d / (2 * t), w / (2 * t * aspect)), this.controls.minDistance, this.controls.maxDistance);
+    const dist = clamp(Math.max(d / (2 * t), w / (2 * t * aspect)) * (H / Math.max(1, H - covered)), this.controls.minDistance, this.controls.maxDistance);
     let cx = (b.minX + b.maxX) / 2;
     let cy = (b.minY + b.maxY) / 2;
+    const worldPerPx = (2 * dist * t) / H;
     if (inset > 0) {
       // Look a little right of the middle, so the middle lands in the visible part
-      const worldPerPx = (2 * dist * t) / Math.max(1, this.size.height);
       const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
       right.y = 0;
       if (right.lengthSq() > 1e-6) right.normalize();
       cx += right.x * (inset / 2) * worldPerPx;
       cy += right.z * (inset / 2) * worldPerPx;
     }
+    // (And between the top and bottom panels)
+    const shift = this.insetShift(dist);
+    cx += shift.x;
+    cy += shift.y;
     const animate = opts.animate ?? true;
     void this.controls.moveTo(cx, this.h(cx, cy), cy, animate);
     void this.controls.dollyTo(dist, animate);
@@ -479,13 +509,16 @@ export class CourseView {
     const box = this.screenBox(id);
     const m = 24;
     const visibleW = this.size.width - rightInset;
-    if (box && box.x >= m && box.y >= m && box.x + box.width <= visibleW - m && box.y + box.height <= this.size.height - m) return;
-    if (box && (box.width > visibleW - 2 * m || box.height > this.size.height - 2 * m)) {
+    const top = this.topInset, visibleH = this.size.height - this.bottomInset;
+    if (box && box.x >= m && box.y >= top + m && box.x + box.width <= visibleW - m && box.y + box.height <= visibleH - m) return;
+    if (box && (box.width > visibleW - 2 * m || box.height > visibleH - top - 2 * m)) {
       this.fitBounds(b, { margin: 1.3 });
       return;
     }
-    const cx = (b.minX + b.maxX) / 2;
-    const cy = (b.minY + b.maxY) / 2;
+    // (In the middle of the part of the map between the panels)
+    const shift = this.insetShift(this.controls.distance);
+    const cx = (b.minX + b.maxX) / 2 + shift.x;
+    const cy = (b.minY + b.maxY) / 2 + shift.y;
     void this.controls.moveTo(cx, this.h(cx, cy), cy, true);
     this.invalidate();
   }
@@ -1972,7 +2005,10 @@ export class CourseView {
         const it = this.item(id);
         if (!it) return null;
         const a = (it.type === "tee" ? teeAim(this.doc!.course, it) : it.rotation) * DEG;
-        const x = it.x + Math.cos(a) * reach, y = it.y + Math.sin(a) * reach;
+        // (On a touch screen, where handles are bigger, never on top of the thing itself when
+        // zoomed out: a little way off on screen)
+        const r = COARSE ? Math.max(reach, 40 * this.upp(new THREE.Vector3(it.x, this.h(it.x, it.y), it.y))) : reach;
+        const x = it.x + Math.cos(a) * r, y = it.y + Math.sin(a) * r;
         return new THREE.Vector3(x, this.h(x, y) + 0.3, y);
       }, e => this.planeDrag(e, id, (p, it, ev) => {
         let deg = (Math.atan2(p.y - it.y, p.x - it.x) * 180) / Math.PI;
@@ -2249,6 +2285,8 @@ export class CourseView {
     const sx = clientX - r.left;
     const sy = clientY - r.top;
     let best: { id: string; score: number } | null = null;
+    // A fingertip is less exact than a mouse pointer: reach a little further
+    const reach = this.fingers ? 1.6 : 1;
     for (const item of doc.course.items) {
       if (item.type === "area" || item.type === "line" || item.type === "label" || item.type === "structure") continue;
       const a = new THREE.Vector3(item.x, this.h(item.x, item.y) + 1, item.y);
@@ -2256,7 +2294,7 @@ export class CourseView {
       if (!s) continue;
       const upp = this.upp(a);
       const real = item.type === "tree" ? item.radius * (item.width ?? 1) : item.type === "tee" ? item.padLength / 2 : item.type === "amenity" ? 4 : 2;
-      const radius = Math.max(item.type === "tree" ? 8 : 13, real / upp);
+      const radius = Math.max((item.type === "tree" ? 8 : 13) * reach, real / upp);
       const d = Math.hypot(s.x - sx, s.y - sy);
       if (d <= radius) {
         const score = d / radius + (item.type === "tree" ? 0.5 : 0);
@@ -2268,7 +2306,7 @@ export class CourseView {
     if (!g) return null;
     const p = { x: g.x, y: g.z };
     const upp = this.upp(g);
-    const tol = 7 * upp;
+    const tol = 7 * reach * upp;
     // Built things (they stand over what is drawn on the ground): on a bridge or wall, or inside a
     // building's outline
     let near: { id: string; d: number } | null = null;
@@ -2311,11 +2349,12 @@ export class CourseView {
     const sx = e.clientX;
     const sy = e.clientY;
     const id = e.pointerId;
+    const slop = e.pointerType === "touch" ? TOUCH_SLOP : CLICK_PX;
     let drag: Drag | null = null;
     let moved = false;
     const move = (ev: PointerEvent) => {
       if (ev.pointerId !== id) return;
-      if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) > CLICK_PX) {
+      if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) > slop) {
         moved = true;
         drag = h.drag?.(e) ?? null;
         if (drag) this.setDragging(true);
@@ -2404,9 +2443,123 @@ export class CourseView {
     };
   }
 
+  // ------------------------------------------------------------------ touch: two fingers, long-press
+
+  /** Fingers on the map now. */
+  private touchIds = new Set<number>();
+  private longPress: { id: number; t0: number; fire: () => void; stop: () => void } | null = null;
+  /** Whether the last press was a finger (taps get a bigger reach for picking things). */
+  private fingers = false;
+
+  private touchUp(e: PointerEvent) {
+    this.touchIds.delete(e.pointerId);
+    const lp = this.longPress;
+    if (lp?.id !== e.pointerId) return;
+    // (Held long enough, even if a busy page ran the timer late: still the long-press)
+    if (e.type === "pointerup" && e.timeStamp - lp.t0 >= LONG_PRESS_MS) lp.fire();
+    else this.cancelLongPress();
+  }
+
+  private cancelLongPress() {
+    this.longPress?.stop();
+    this.longPress = null;
+  }
+
+  /** A second finger on the map: the camera pinches, turns and tilts; nothing is placed or picked. */
+  private secondFinger() {
+    this.cancelLongPress();
+    if (this.shaping) {
+      this.shaping = false;
+      this.draftPending = false;
+      this.cancelDrawing();
+    }
+    this.endDragListeners?.();
+    this.setDragging(false);
+  }
+
+  /** A finger on a handle: it moves once the finger does (a handle's hit area is big for a finger,
+   * so a tap on a hole's line often lands on one); a tap selects what the handle belongs to. */
+  private fingerOnHandle(e: PointerEvent, h: Handle) {
+    const x0 = e.clientX, y0 = e.clientY, id = e.pointerId;
+    let drag: Drag | null = null, moved = false;
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== id) return;
+      if (!moved) {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) <= TOUCH_SLOP) return;
+        moved = true;
+        drag = h.start(e);
+        if (!drag) { cleanup(); this.invalidate(); return; }
+        this.setDragging(true);
+      }
+      drag?.move(ev);
+      this.invalidate();
+    };
+    const up = (ev: PointerEvent) => {
+      if (ev.pointerId !== id) return;
+      cleanup();
+      if (drag) {
+        drag.end(ev);
+        this.setDragging(false);
+      } else if (!moved && ev.type === "pointerup") {
+        const owner = this.selectedId ?? this.doc?.activeHoleId ?? null;
+        if (owner && owner !== this.selectedId) this.cb.onSelect(owner);
+      }
+      this.invalidate();
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  }
+
+  /** Holding a finger still on an item opens its menu, like a right-click. */
+  private startLongPress(e: PointerEvent, target: HTMLElement) {
+    this.cancelLongPress();
+    const id = e.pointerId, x = e.clientX, y = e.clientY;
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId === id && Math.hypot(ev.clientX - x, ev.clientY - y) > TOUCH_SLOP) this.cancelLongPress();
+    };
+    const stop = () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("pointermove", move);
+    };
+    const fire = () => {
+      this.cancelLongPress();
+      const domItem = (target.closest?.("[data-item-id]") as HTMLElement | null)?.dataset.itemId ?? null;
+      const itemId = domItem ?? this.pick(x, y);
+      if (!itemId) return;
+      // The press is now the menu's: no tap, no drag, and the map stops following the finger
+      this.endDragListeners?.();
+      this.setDragging(false);
+      this.controls.cancel();
+      try { navigator.vibrate?.(12); } catch { /* not allowed */ }
+      const g = this.groundAt(x, y);
+      this.cb.onContextMenu({ clientX: x, clientY: y, itemId, ground: g ? { x: g.x, y: g.z } : null });
+    };
+    window.addEventListener("pointermove", move);
+    const timer = window.setTimeout(fire, LONG_PRESS_MS);
+    this.longPress = { id, t0: e.timeStamp, fire, stop };
+  }
+
   private onPointerDown(e: PointerEvent) {
     const target = e.target as HTMLElement;
     if (!this.doc) return;
+    this.fingers = e.pointerType === "touch";
+    if (this.fingers) {
+      this.touchIds.add(e.pointerId);
+      if (this.touchIds.size > 1) {
+        this.secondFinger();
+        return;
+      }
+      // (Not on a handle that moves something: holding one still before dragging it slowly is no
+      // menu; a line's middle dot is fine, it is where a finger lands to hold a hole)
+      const handle = (target.closest?.("[data-handle]") as HTMLElement | null)?.dataset.handle;
+      if (!this.povHole && !this.tool.readOnly && this.tool.mode === "select" && e.button === 0 && (!handle || handle === "mid")) this.startLongPress(e, target);
+    }
     if (this.povHole) {
       if (e.button !== 0 || target.closest?.("button,input,select,[data-pov-ui]")) return;
       e.preventDefault();
@@ -2434,6 +2587,10 @@ export class CourseView {
       e.preventDefault();
       const h = this.handles.find(x => x.el === handleEl);
       if (!h) return;
+      if (e.pointerType === "touch" && h.kind !== "draw") {
+        this.fingerOnHandle(e, h);
+        return;
+      }
       const drag = h.start(e);
       if (!drag) { this.invalidate(); return; }
       const id = e.pointerId;
@@ -2514,11 +2671,14 @@ export class CourseView {
       return;
     }
     if (this.drawn(tool)) {
-      stop();
-      // A rectangle, circle or freehand shape is dragged out (clicking still adds points)
+      // A rectangle, circle or freehand shape is dragged out (clicking still adds points); with a
+      // finger too, so the map stays put (two fingers still move it)
       const shape = this.drawn(tool) === "line" && (tool.shape === "box" || tool.shape === "circle") ? "freehand" : tool.shape;
+      const shaped = shape !== "points" && !this.drawPts.length;
+      if (shaped) e.stopPropagation();
+      else stop();
       this.gesture(e, {
-        drag: shape !== "points" && !this.drawPts.length && !touch ? s => this.shapeDrag(s, shape) : panOrNothing,
+        drag: shaped ? s => this.shapeDrag(s, shape) : panOrNothing,
         click: groundClick(p0 => {
           const p = this.snap(p0);
           const last = this.drawPts[this.drawPts.length - 1];
@@ -2712,7 +2872,7 @@ export class CourseView {
       const len = dist(a, b);
       const dh = this.h(b.x, b.y) - this.h(a.x, a.y);
       const eff = len + (doc.course.rules?.elevationFactor ?? 3) * dh;
-      label = len > 1 ? `${fmtDist(len, doc.course.units)}${Math.abs(dh) >= 1 ? ` · ${fmtElev(dh, doc.course.units)}` : ""} · par ${parForDistance(eff, this.teeLevel)}` : "Click where the basket goes";
+      label = len > 1 ? `${fmtDist(len, doc.course.units)}${Math.abs(dh) >= 1 ? ` · ${fmtElev(dh, doc.course.units)}` : ""} · par ${parForDistance(eff, this.teeLevel)}` : this.fingers ? "Tap where the basket goes" : "Click where the basket goes";
       this.draftAt = new THREE.Vector3(b.x, this.h(b.x, b.y), b.y);
     } else if (this.drawPts.length) {
       const pts = [...this.drawPts];
@@ -2726,11 +2886,13 @@ export class CourseView {
       }
       g.add(this.fatLine(this.drapeLine(area && pts.length >= 3 ? [...pts, pts[0]] : pts, LIFT + 0.2), color === "#ffffff" ? "#fde68a" : color, 3, { depthTest: false, order: 20 }));
       const len = pathLength(pts);
+      // (With a finger: the Done button finishes, so the label only counts)
+      const finish = this.fingers ? "" : " · Enter or double-click to finish";
       label = this.shaping
-        ? area ? `${fmtArea(Math.abs(polygonArea(pts)), doc.course.units)} · let go to finish` : `${fmtDist(len, doc.course.units)} · let go to finish`
+        ? area ? `${fmtArea(Math.abs(polygonArea(pts)), doc.course.units)} · ${this.fingers ? "lift" : "let go"} to finish` : `${fmtDist(len, doc.course.units)} · ${this.fingers ? "lift" : "let go"} to finish`
         : area
-        ? `${pts.length - (this.cursor ? 1 : 0)} points · Enter or double-click to finish`
-        : `${fmtDist(len, doc.course.units)} · Enter or double-click to finish`;
+        ? `${pts.length - (this.cursor ? 1 : 0)} points${finish}`
+        : `${fmtDist(len, doc.course.units)}${finish}`;
       const last = pts[pts.length - 1];
       this.draftAt = new THREE.Vector3(last.x, this.h(last.x, last.y), last.y);
     }

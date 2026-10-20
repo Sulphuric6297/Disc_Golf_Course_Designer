@@ -186,6 +186,55 @@ export async function drag(page: Page, from: { x: number; y: number }, to: { x: 
   await page.mouse.up();
 }
 
+// --- Touch (for the phone and tablet layouts; the page needs `hasTouch`) ---
+
+type XY = { x: number; y: number };
+/** Raw touches through the DevTools protocol: a finger's press, moves and lift (pointer events
+ * of type "touch", as on a phone). */
+async function touches(page: Page, run: (send: (type: "touchStart" | "touchMove" | "touchEnd", points: XY[]) => Promise<void>) => Promise<void>) {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    await run(async (type, points) => { await cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points.map((p, i) => ({ x: p.x, y: p.y, id: i })) }); });
+  } finally {
+    await cdp.detach();
+  }
+}
+
+/** Taps a plan point (feet) on the map with a finger. */
+export async function tapPlan(page: Page, x: number, y: number) {
+  const p = await screenOf(page, x, y);
+  await page.touchscreen.tap(p.x, p.y);
+  await page.waitForTimeout(80);
+}
+
+/** Holds a finger still at a point (a long-press). */
+export async function longPress(page: Page, p: XY, ms = 750) {
+  await touches(page, async send => {
+    await send("touchStart", [p]);
+    await page.waitForTimeout(ms);
+    await send("touchEnd", []);
+  });
+}
+
+/** Drags one finger from a point to another. */
+export async function touchDrag(page: Page, from: XY, to: XY, steps = 12) {
+  await touches(page, async send => {
+    await send("touchStart", [from]);
+    for (let i = 1; i <= steps; i++) await send("touchMove", [{ x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps }]);
+    await send("touchEnd", []);
+  });
+}
+
+/** Pinches two fingers apart (scale > 1) or together around a point. */
+export async function pinch(page: Page, at: XY, fromGap: number, toGap: number, steps = 10) {
+  await touches(page, async send => {
+    const pts = (g: number) => [{ x: at.x - g / 2, y: at.y }, { x: at.x + g / 2, y: at.y }];
+    await send("touchStart", pts(fromGap));
+    for (let i = 1; i <= steps; i++) await send("touchMove", pts(fromGap + ((toGap - fromGap) * i) / steps));
+    await send("touchEnd", []);
+  });
+}
+
 /** Starts on open ground (no site) and lays out holes: each [tee, basket] in plan feet. */
 export async function blankCourse(page: Page) {
   await page.getByTestId("welcome-blank").click();

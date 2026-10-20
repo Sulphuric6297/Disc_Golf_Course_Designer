@@ -30,7 +30,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
   return (
     <>
       <Section>
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-2" data-insp-title>
           <div className="w-10 h-10 rounded-full bg-orange-500 text-white flex items-center justify-center text-lg font-bold" style={{ fontFamily: "Oswald, Inter" }}>{n}</div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold text-zinc-50 truncate" data-testid="inspector-title">Hole {n}{hole.name ? ` · ${hole.name}` : ""}</div>
@@ -307,10 +307,10 @@ function ItemInspector({ item }: { item: CourseItem }) {
       break;
   }
   const holeId = "holeId" in item ? item.holeId : undefined;
-  const title = item.type === "tee" ? `${TEE_LEVELS[item.level].label} tee` : item.type === "basket" ? `Basket (pin ${item.position})` : item.type === "area" ? AREA_KINDS[item.kind].label : item.type === "line" ? LINE_KINDS[item.kind].label : item.type === "amenity" ? AMENITY_KINDS[item.kind].label : item.type === "structure" ? STRUCTURE_KINDS[item.kind].label : ITEM_LABELS[item.type];
+  const title = itemTitle(item);
   return (
     <>
-      <Section>
+      <Section testid="item-title">
         <div className="text-sm font-bold text-zinc-50" data-testid="inspector-title">{title}</div>
         {holeId && (
           <button className="text-xs text-orange-300 hover:text-orange-200" onClick={() => select(holeId)}>
@@ -323,39 +323,72 @@ function ItemInspector({ item }: { item: CourseItem }) {
   );
 }
 
+/** What a selected item is called ("Blue tee", "OB area", "Bridge"…). */
+export function itemTitle(item: CourseItem) {
+  return item.type === "tee" ? `${TEE_LEVELS[item.level].label} tee` : item.type === "basket" ? `Basket (pin ${item.position})` : item.type === "area" ? AREA_KINDS[item.kind].label : item.type === "line" ? LINE_KINDS[item.kind].label : item.type === "amenity" ? AMENITY_KINDS[item.kind].label : item.type === "structure" ? STRUCTURE_KINDS[item.kind].label : ITEM_LABELS[item.type];
+}
+
 /** How much of the map's right side the inspector covers (fitting a hole keeps clear of it). */
 export const INSPECTOR_INSET = 470;
 
-export function Inspector() {
+/** The selected hole or item, while it is shown (only with the Select tool: while placing things
+ * the whole map stays clear to click on). */
+export function useSelection() {
   const doc = useCourse(s => s.doc);
   const selectedId = useEditor(e => e.selectedId);
-  const ro = useEditor(e => e.viewOnly);
   const teeView = useEditor(e => e.teeView);
   const tool = useEditor(e => e.tool);
   const hole = doc.holes.find(h => h.id === selectedId);
   const item = doc.items.find(i => i.id === selectedId);
-  // Only with the Select tool: while placing things the whole map stays clear to click on
-  const open = !!(hole || item) && !teeView && tool === "select";
+  return { hole, item, open: !!(hole || item) && !teeView && tool === "select" };
+}
+
+/** The selection's own content: the hole or the item, its numbers and settings. */
+export function InspectorBody() {
+  const { hole, item } = useSelection();
+  return (
+    <>
+      {hole ? <HoleInspector hole={hole} /> : item ? <ItemInspector item={item} /> : null}
+      {hole && <div className="px-4 pb-3"><Button small full onClick={() => getView()?.fitHole(hole.id)}>Zoom to this hole</Button></div>}
+    </>
+  );
+}
+
+/** Lock, duplicate, delete and close; `big` for touch (44 px targets). */
+export function InspectorActions({ big = false, close = true }: { big?: boolean; close?: boolean }) {
+  const { item } = useSelection();
+  const ro = useEditor(e => e.viewOnly);
+  const locked = !!item?.locked;
+  const base = big ? "w-11 h-11 flex items-center justify-center rounded-xl text-zinc-300 hover:bg-zinc-800" : "p-1.5 rounded text-zinc-400 hover:bg-zinc-800";
+  const b = `${base} hover:text-white`;
+  const sz = big ? 19 : 15;
+  return (
+    <>
+      {!ro && (
+        <>
+          {item && <button className={b} title={locked ? "Unlock" : "Lock in place"} aria-label={locked ? "Unlock" : "Lock"} onClick={() => updateItem(item.id, { locked: !locked })}>{locked ? <Lock size={sz} /> : <Unlock size={sz} />}</button>}
+          <button className={b} title="Duplicate (Ctrl+D)" aria-label="Duplicate" onClick={duplicateSelection}><Copy size={sz} /></button>
+          <button className={`${base} hover:text-red-400`} title="Delete (Del)" aria-label="Delete" onClick={deleteSelection}><Trash2 size={sz} /></button>
+        </>
+      )}
+      {close && <button className={b} title="Close (Esc)" aria-label="Close" onClick={() => select(null)}><X size={sz} /></button>}
+    </>
+  );
+}
+
+export function Inspector() {
+  const { open } = useSelection();
   useEffect(() => {
     const v = getView();
     if (v) v.rightInset = open ? INSPECTOR_INSET : 0;
   }, [open]);
   if (!open) return null;
-  const locked = !!item?.locked;
   return (
     <aside className="absolute top-3 right-[150px] w-[300px] max-h-[calc(100%-120px)] overflow-y-auto bg-zinc-900/95 backdrop-blur border border-zinc-700/70 rounded-xl shadow-2xl z-20" data-testid="inspector" aria-label="Selection">
       <div className="flex items-center justify-end gap-0.5 px-2 pt-2">
-        {!ro && (
-          <>
-            {item && <button className="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-800" title={locked ? "Unlock" : "Lock in place"} aria-label={locked ? "Unlock" : "Lock"} onClick={() => updateItem(item.id, { locked: !locked })}>{locked ? <Lock size={15} /> : <Unlock size={15} />}</button>}
-            <button className="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-800" title="Duplicate (Ctrl+D)" aria-label="Duplicate" onClick={duplicateSelection}><Copy size={15} /></button>
-            <button className="p-1.5 rounded text-zinc-400 hover:text-red-400 hover:bg-zinc-800" title="Delete (Del)" aria-label="Delete" onClick={deleteSelection}><Trash2 size={15} /></button>
-          </>
-        )}
-        <button className="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-800" title="Close (Esc)" aria-label="Close" onClick={() => select(null)}><X size={15} /></button>
+        <InspectorActions />
       </div>
-      {hole ? <HoleInspector hole={hole} /> : item ? <ItemInspector item={item} /> : null}
-      {hole && <div className="px-4 pb-3"><Button small full onClick={() => getView()?.fitHole(hole.id)}>Zoom to this hole</Button></div>}
+      <InspectorBody />
     </aside>
   );
 }

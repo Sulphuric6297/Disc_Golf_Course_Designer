@@ -1,6 +1,6 @@
 // The app: header with the steps, the step panel, the map (2D and 3D in one view), the tools, the
 // inspector for the selection, and the dialogs.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Eye, MapPinned, Route, Share2, X } from "lucide-react";
 import { Header } from "./components/Header";
 import { SidePanel } from "./components/SidePanel";
@@ -12,6 +12,8 @@ import { TeeViewHud } from "./components/TeeViewHud";
 import { MapDesigner } from "./components/MapDesigner";
 import { ExportProgressPill } from "./components/ExportProgress";
 import { Button } from "./components/ui";
+import { useLayout, useTouch } from "./components/useLayout";
+import { CompactShell, ItemMenu } from "./components/mobile/CompactShell";
 import { useCourse, useEditor, getDoc, changeDoc, updateItem } from "./state/course";
 import { deleteSelection, duplicateSelection, nudgeSelection, select } from "./state/actions";
 import { makeCopy, openSharedLink, restoreAutosave, startAutosave } from "./state/files";
@@ -21,25 +23,48 @@ import { shareUrl } from "./lib/share";
 import type { ImportedSite } from "./lib/importSite";
 import type { CourseItem, P } from "./types";
 
-function Toasts() {
+function Toasts({ bottom }: { bottom?: number }) {
   const toasts = useToasts(s => s.toasts);
   const dismiss = useToasts(s => s.dismiss);
   const undo = useCourse(s => s.undo);
   return (
-    <div className="absolute bottom-[120px] left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-40 pointer-events-none">
+    <div className="absolute bottom-[120px] left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-40 pointer-events-none w-max max-w-[calc(100%-16px)]" style={bottom !== undefined ? { bottom } : undefined}>
       {toasts.map(t => (
-        <div key={t.id} role="status" className={`pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-2.5 shadow-2xl text-sm max-w-[560px] border ${t.tone === "error" ? "bg-red-950 border-red-800 text-red-100" : t.tone === "success" ? "bg-emerald-950 border-emerald-800 text-emerald-50" : "bg-zinc-900 border-zinc-700 text-zinc-100"}`}>
-          <span>{t.text}</span>
-          {t.undo && <button className="font-bold text-orange-300 hover:text-orange-200" onClick={() => { undo(); dismiss(t.id); }}>Undo</button>}
-          {t.action && <button className="font-bold text-orange-300 hover:text-orange-200 whitespace-nowrap" onClick={() => { t.action!.run(); dismiss(t.id); }}>{t.action.label}</button>}
-          <button aria-label="Dismiss" className="text-zinc-400 hover:text-white" onClick={() => dismiss(t.id)}><X size={14} /></button>
+        <div key={t.id} role="status" className={`pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-2.5 touch:py-3 shadow-2xl text-sm max-w-[560px] border ${t.tone === "error" ? "bg-red-950 border-red-800 text-red-100" : t.tone === "success" ? "bg-emerald-950 border-emerald-800 text-emerald-50" : "bg-zinc-900 border-zinc-700 text-zinc-100"}`}>
+          <span className={bottom !== undefined ? "text-[13px] leading-snug line-clamp-3" : undefined}>{t.text}</span>
+          {t.undo && <button className="font-bold text-orange-300 hover:text-orange-200 touch:min-h-[40px]" onClick={() => { undo(); dismiss(t.id); }}>Undo</button>}
+          {t.action && <button className="font-bold text-orange-300 hover:text-orange-200 whitespace-nowrap touch:min-h-[40px]" onClick={() => { t.action!.run(); dismiss(t.id); }}>{t.action.label}</button>}
+          <button aria-label="Dismiss" className="text-zinc-400 hover:text-white touch:w-9 touch:h-9 touch:-mr-2 touch:flex touch:items-center touch:justify-center shrink-0" onClick={() => dismiss(t.id)}><X size={14} /></button>
         </div>
       ))}
     </div>
   );
 }
 
+/** A dialog takes the focus when it opens and gives it back when it closes; Esc closes it. */
+function useModal(onClose: () => void) {
+  const box = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null;
+    box.current?.querySelector<HTMLElement>("button, input")?.focus({ preventScroll: true });
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      close.current();
+    };
+    window.addEventListener("keydown", esc, true);
+    return () => {
+      window.removeEventListener("keydown", esc, true);
+      before?.focus?.({ preventScroll: true });
+    };
+  }, []);
+  return box;
+}
+
 function ShareDialog({ onClose }: { onClose: () => void }) {
+  const box = useModal(onClose);
   const doc = useCourse(s => s.doc);
   const [url, setUrl] = useState("");
   const [copied, setCopied] = useState(false);
@@ -54,21 +79,21 @@ function ShareDialog({ onClose }: { onClose: () => void }) {
   };
   const canShare = typeof navigator !== "undefined" && "share" in navigator;
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" role="dialog" aria-label="Share this course" onClick={onClose}>
-      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-lg p-5" onClick={e => e.stopPropagation()}>
+    <div ref={box} className="fixed inset-0 z-50 bg-black/60 flex items-end md:items-center justify-center p-0 md:p-4" role="dialog" aria-modal="true" aria-label="Share this course" onClick={onClose}>
+      <div className={`${SHEET} md:max-w-lg p-5`} onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-2 mb-1">
           <Share2 size={18} className="text-emerald-400" />
           <h2 className="font-bold text-zinc-50 text-lg flex-1">Share this course</h2>
-          <button aria-label="Close" className="text-zinc-400 hover:text-white" onClick={onClose}><X size={18} /></button>
+          <button aria-label="Close" className={CLOSE} onClick={onClose}><X size={18} /></button>
         </div>
         <p className="text-sm text-zinc-400 mb-3">Anyone with the link sees the course on the map, in 3D and from every tee, and can make their own copy to edit. The whole design is inside the link; the satellite photo and elevation load again on their side.</p>
         <div className="flex gap-2">
-          <input id="share-url" aria-label="Share link" readOnly value={url} className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-2 text-xs text-zinc-200 font-mono" onFocus={e => e.target.select()} />
+          <input id="share-url" aria-label="Share link" readOnly value={url} className="flex-1 min-w-0 bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-2 text-xs text-zinc-200 font-mono" onFocus={e => e.target.select()} />
           <Button tone="primary" onClick={() => void copy()} testid="copy-link"><Copy size={15} /> {copied ? "Copied" : "Copy"}</Button>
         </div>
         <div className="flex items-center justify-between mt-3 text-xs text-zinc-500">
           <span data-testid="share-size">{url ? `${(url.length / 1024).toFixed(1)} KB link` : "Packing the course…"}</span>
-          {canShare && url && <button className="text-emerald-300 hover:text-emerald-200 font-semibold" onClick={() => void navigator.share({ title: doc.name, url }).catch(() => {})}>Share with an app…</button>}
+          {canShare && url && <button className="text-emerald-300 hover:text-emerald-200 font-semibold touch:text-sm touch:min-h-[44px] touch:px-2" onClick={() => void navigator.share({ title: doc.name, url }).catch(() => {})}>Share with an app…</button>}
         </div>
         {url.length > 60000 && <p className="text-xs text-amber-300 mt-2">This is a long link (lots of trees and shapes). Most browsers and email open it fine; some chat apps shorten long links. Removing trees found on the photo makes it much shorter.</p>}
       </div>
@@ -84,13 +109,45 @@ const SHORTCUTS: [string, string][] = [
   ["Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"], ["2 / 3", "Top-down / 3D"], ["0 / F", "Whole course / zoom to selection"], ["Q / E / N", "Turn left / right / north up"], ["+ / −", "Zoom"]
 ];
 
+const GESTURES: [string, string][] = [
+  ["One finger", "Pan the map; drag a selected thing or its handles to move or reshape it"],
+  ["Pinch", "Zoom in and out (or the + and − buttons)"],
+  ["Two fingers up or down", "Tilt into 3D and back"],
+  ["Two fingers sideways", "Turn the map (or the turn buttons; the compass puts north up)"],
+  ["Tap", "Select a hole or a thing; with a tool, place it"],
+  ["Hold", "A thing's menu: view from the tee, mark OB, duplicate, lock, delete"],
+  ["Drag the panel", "Up for more, down for more map; tap its handle to step through"]
+];
+
+/** A dialog's box: a sheet up from the bottom on a phone, a centered box from a tablet up. */
+const SHEET = "bg-zinc-900 border border-zinc-700 shadow-2xl w-full rounded-t-[22px] md:rounded-2xl max-h-[92dvh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] md:pb-5 animate-[dgrise_220ms_cubic-bezier(0.2,0.9,0.3,1)] md:animate-none";
+const CLOSE = "text-zinc-400 hover:text-white touch:w-11 touch:h-11 touch:-m-2.5 touch:flex touch:items-center touch:justify-center";
+
 function HelpDialog({ onClose }: { onClose: () => void }) {
+  const touch = useTouch();
+  const box = useModal(onClose);
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" role="dialog" aria-label="Shortcuts and help" onClick={onClose}>
-      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-2xl p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+    <div ref={box} className="fixed inset-0 z-50 bg-black/60 flex items-end md:items-center justify-center p-0 md:p-4" role="dialog" aria-modal="true" aria-label="Shortcuts and help" onClick={onClose}>
+      <div className={`${SHEET} h-[92dvh] md:h-auto md:max-w-2xl p-5 md:max-h-[90vh]`} onClick={e => e.stopPropagation()}>
+        {touch && (
+          <>
+            <div className="flex items-center mb-3">
+              <h2 className="font-bold text-zinc-50 text-lg flex-1">Touch gestures</h2>
+              <button aria-label="Close" className={CLOSE} onClick={onClose}><X size={18} /></button>
+            </div>
+            <dl className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-x-4 text-[15px] mb-5" data-testid="gestures">
+              {GESTURES.map(([k, v]) => (
+                <div key={k} className="contents">
+                  <dt className="font-semibold text-zinc-100 mt-2.5 sm:mt-2">{k}</dt>
+                  <dd className="text-zinc-300 sm:mt-2">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </>
+        )}
         <div className="flex items-center mb-3">
           <h2 className="font-bold text-zinc-50 text-lg flex-1">Keyboard shortcuts</h2>
-          <button aria-label="Close" className="text-zinc-400 hover:text-white" onClick={onClose}><X size={18} /></button>
+          {!touch && <button aria-label="Close" className={CLOSE} onClick={onClose}><X size={18} /></button>}
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
           {SHORTCUTS.map(([k, v]) => (
@@ -147,6 +204,7 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
 
 export default function App() {
   const ed = useEditor();
+  const layout = useLayout();
   const doc = useCourse(s => s.doc);
   const [findSite, setFindSite] = useState(false);
   const [help, setHelp] = useState(false);
@@ -257,6 +315,44 @@ export default function App() {
   }, []);
 
   const empty = useMemo(() => !doc.background && !doc.holes.length && !doc.items.length, [doc]);
+  const showWelcome = ready && empty && ed.step === "site" && !ed.viewOnly;
+  const onContextMenu = (i: { clientX: number; clientY: number; itemId: string | null; ground: P | null }) => !useEditor.getState().viewOnly && setMenu(i);
+  const welcome = (
+    <div className="pointer-events-auto bg-zinc-900/95 backdrop-blur border border-zinc-700 rounded-2xl shadow-2xl p-6 w-[440px] max-w-full text-center" data-testid="welcome">
+      <div className="w-12 h-12 rounded-xl bg-orange-500/15 text-orange-400 flex items-center justify-center mx-auto mb-3"><Route size={24} /></div>
+      <h2 className="text-xl font-bold text-zinc-50">Design your disc golf course</h2>
+      <p className="text-sm text-zinc-400 mt-1.5">Bring in your park's satellite photo, elevation and trees, then lay out tees, baskets, fairways, OB and mandos. Par and lengths follow the terrain; print maps and tee signs, export GPS files, and share a link.</p>
+      <div className="mt-4 flex flex-col gap-2">
+        <Button tone="primary" full onClick={() => setFindSite(true)} testid="welcome-find"><MapPinned size={16} /> Find your park</Button>
+        <Button full onClick={() => useEditor.getState().set({ step: "holes", tool: "add-hole" })} testid="welcome-blank">Start on open ground</Button>
+      </div>
+    </div>
+  );
+  const dialogs = (
+    <>
+      {findSite && <SiteImportDialog onClose={() => setFindSite(false)} onImported={onImported} />}
+      {ed.shareOpen && <ShareDialog onClose={() => useEditor.getState().set({ shareOpen: false })} />}
+      {help && <HelpDialog onClose={() => setHelp(false)} />}
+    </>
+  );
+
+  if (layout !== "desktop") {
+    return (
+      <>
+        <CompactShell
+          layout={layout}
+          onFindSite={() => setFindSite(true)}
+          onShare={() => useEditor.getState().set({ shareOpen: true })}
+          onHelp={() => setHelp(true)}
+          onContextMenu={onContextMenu}
+          welcome={showWelcome ? welcome : null}
+          toasts={bottom => <Toasts bottom={bottom} />}
+        />
+        {dialogs}
+        {menu?.itemId && <ItemMenu itemId={menu.itemId} onClose={() => setMenu(null)} />}
+      </>
+    );
+  }
 
   return (
     <div className="h-screen w-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
@@ -271,31 +367,21 @@ export default function App() {
       <div className="flex-1 flex min-h-0">
         <SidePanel onFindSite={() => setFindSite(true)} />
         <main className="flex-1 relative min-w-0">
-          <MapViewport onContextMenu={i => !useEditor.getState().viewOnly && setMenu(i)} />
+          <MapViewport onContextMenu={onContextMenu} />
           {ed.step === "design" && !ed.teeView && <MapDesigner />}
           {ed.step !== "design" && <Toolbar />}
           {ed.step !== "design" && <Inspector />}
           {ed.teeView && <TeeViewHud />}
           <ExportProgressPill />
           <Toasts />
-          {ready && empty && ed.step === "site" && !ed.viewOnly && (
+          {showWelcome && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-              <div className="pointer-events-auto bg-zinc-900/95 backdrop-blur border border-zinc-700 rounded-2xl shadow-2xl p-6 w-[440px] text-center" data-testid="welcome">
-                <div className="w-12 h-12 rounded-xl bg-orange-500/15 text-orange-400 flex items-center justify-center mx-auto mb-3"><Route size={24} /></div>
-                <h2 className="text-xl font-bold text-zinc-50">Design your disc golf course</h2>
-                <p className="text-sm text-zinc-400 mt-1.5">Bring in your park's satellite photo, elevation and trees, then lay out tees, baskets, fairways, OB and mandos. Par and lengths follow the terrain; print maps and tee signs, export GPS files, and share a link.</p>
-                <div className="mt-4 flex flex-col gap-2">
-                  <Button tone="primary" full onClick={() => setFindSite(true)} testid="welcome-find"><MapPinned size={16} /> Find your park</Button>
-                  <Button full onClick={() => useEditor.getState().set({ step: "holes", tool: "add-hole" })} testid="welcome-blank">Start on open ground</Button>
-                </div>
-              </div>
+              {welcome}
             </div>
           )}
         </main>
       </div>
-      {findSite && <SiteImportDialog onClose={() => setFindSite(false)} onImported={onImported} />}
-      {ed.shareOpen && <ShareDialog onClose={() => useEditor.getState().set({ shareOpen: false })} />}
-      {help && <HelpDialog onClose={() => setHelp(false)} />}
+      {dialogs}
       {menu && <ContextMenu info={menu} onClose={() => setMenu(null)} />}
     </div>
   );

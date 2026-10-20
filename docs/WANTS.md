@@ -107,7 +107,7 @@ been seen working in the browser.
 - [x] **Fairways can be widened**: all along, or in places (a wide landing zone, a pinched gap)
   with the width squares along the hole.
 - [ ] **Mobile friendly**, as a well thought out mobile navigation platform (not a strap-on),
-  while working just as well on desktop.
+  while working just as well on desktop: see "Phones and tablets" below.
 - [x] **A half wooded, half open course looks good either way** (tested on purpose: the painted
   map with drawn woods only, with woods everywhere, in 3D and from a tee; 3D woods now keep off
   the fairways and the pond).
@@ -115,4 +115,21 @@ been seen working in the browser.
   water lines and a deep middle; 3D water mirroring the sky and the treeline, with small waves.
 - [ ] **Mobile performs perfectly** (researched): the engine side is done and measured (never
   freezes while the map paints, lighter 3D on phones, quality that adapts, the hidden map view
-  rests); the phone layout's own performance comes with the mobile layout.
+  rests); the phone layout's own (the sheet on the GPU, no frosted glass, taps answered in
+  under 50 ms) is in "Phones and tablets" below. Still to check on a real phone.
+
+## Phones and tablets
+
+- [ ] **Mobile friendly, "not a strap-on feature but a well thought out mobile navigation
+  platform", and just as good on desktop.** Researched first (`docs/RESEARCH.md`, "Phones and
+  tablets"). Seen in Chromium's phone and tablet emulation; still to check on a real phone:
+  - the map is the screen; the six steps in a bar at the bottom (a rail on the left with the
+    phone on its side); the desktop layout unchanged, tablets keep the side panel;
+  - the step's panel and the selection in a bottom sheet that rests at peek, half and full
+    height (drag, flick, tap its handle, arrow keys), never hiding the whole map;
+  - tools in a labelled row at the top of the sheet; drawing by taps with Undo, Cancel and Done;
+    holding a finger on a thing opens its menu; pinch, two-finger turns and the 44 px map buttons;
+  - the Design preview fitted to the screen (pinch or + and −), the tee view laid out for an
+    upright phone, dialogs as sheets from the bottom, readable text;
+  - "make sure mobile works performance perfectly": the sheet slides on the GPU, no frosted
+    glass over the map, measured on a throttled phone profile (`docs/RESEARCH.md`).

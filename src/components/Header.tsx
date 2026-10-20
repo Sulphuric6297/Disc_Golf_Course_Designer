@@ -38,7 +38,7 @@ export function Header({ onShare, onHelp }: { onShare: () => void; onHelp: () =>
       <div className="flex items-center gap-1 min-w-0">
         <input
           aria-label="Course name"
-          className="bg-transparent text-zinc-50 font-bold text-[15px] px-1.5 py-1 rounded hover:bg-zinc-900 focus:bg-zinc-900 focus:outline-none w-[230px] truncate"
+          className="bg-transparent text-zinc-50 font-bold text-[15px] px-1.5 py-1 rounded hover:bg-zinc-900 focus:bg-zinc-900 focus:outline-none w-[160px] xl:w-[230px] truncate"
           value={name}
           disabled={ed.viewOnly}
           onChange={e => changeDoc(() => ({ name: e.target.value }), false)}
@@ -78,7 +78,7 @@ export function Header({ onShare, onHelp }: { onShare: () => void; onHelp: () =>
               <button
                 onClick={() => ed.set({ step: s.id, tool: "select" })}
                 aria-current={ed.step === s.id ? "step" : undefined}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold transition-colors ${ed.step === s.id ? "bg-orange-500 text-white" : "text-zinc-300 hover:bg-zinc-800"}`}
+                className={`flex items-center gap-1.5 px-2 xl:px-3 py-1.5 rounded-lg text-[13px] font-semibold transition-colors ${ed.step === s.id ? "bg-orange-500 text-white" : "text-zinc-300 hover:bg-zinc-800"}`}
               >
                 <span className={`w-[18px] h-[18px] rounded-full text-[10px] flex items-center justify-center ${ed.step === s.id ? "bg-white/25" : "bg-zinc-800"}`}>{i + 1}</span>
                 {s.label}
