@@ -48,8 +48,8 @@ been seen working in the browser.
   - brown dirt trails winding from each basket to the next tee, and worn dirt at the tees;
   - a bright blue creek winding through the woods with dark banks, partly under the trees;
   - soft gray roads; small tee pads in their colors; small dark basket marks.
-- [ ] **Trees can be sparse too**: a setting from a few scattered trees to solid woods.
-- [ ] **Better basket ("pin") pictures, with several to choose from.**
+- [x] **Trees can be sparse too**: a setting from a few scattered trees to solid woods.
+- [x] **Better basket ("pin") pictures, with several to choose from.**
 - [ ] **Mandos, OB, hazards and everything else**, rendered perfectly on the map and really easy
   to lay out.
 - [ ] **Tee signs like the owner's second example** (a wide sign on a post):
