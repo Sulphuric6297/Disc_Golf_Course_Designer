@@ -452,6 +452,8 @@ export interface CourseDoc {
   version: 1;
   /** Stable name for the course library. */
   id?: string;
+  /** What the painted woods are drawn from, kept when a copy gets a new id. */
+  seed?: string;
   name: string;
   designer: string;
   site: SiteInfo;

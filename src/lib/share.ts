@@ -71,8 +71,8 @@ const ITEMS = "~i";
 
 /**
  * What a link holds, packed tight with nothing left out: every setting and every point (to a
- * hundredth of a foot), points as steps from the one before, the items of each kind as columns,
- * and ids short (an item's only where something refers to it: the others get new ones).
+ * hundredth of a foot), points as steps from the one before, the items of each kind as columns.
+ * Every id is kept (the woods, creeks and trees are drawn from them).
  */
 const packCourse = (doc: CourseDoc) => {
   const s = shareable(doc);
@@ -88,9 +88,6 @@ const packCourse = (doc: CourseDoc) => {
     }
     return { type: i.type as string, o };
   });
-  // Ids only where something else refers to them
-  const others = JSON.stringify({ ...s, items: rows.map(r => ({ ...r.o, id: undefined })) });
-  for (const r of rows) if (typeof r.o.id === "string" && !others.includes(r.o.id as string)) delete r.o.id;
   // The items of each kind as columns, in the order they came
   const kinds = [...new Set(rows.map(r => r.type))];
   const table: Record<string, { k: string[]; c: unknown[][] }> = {};
@@ -102,16 +99,7 @@ const packCourse = (doc: CourseDoc) => {
   const { items: _items, holes: _holes, ...rest } = s;
   void _items;
   void _holes;
-  let json = JSON.stringify({ ...rest, holes, [ITEMS]: { order: rows.map(r => kinds.indexOf(r.type)), table } }, compact);
-  // Short ids
-  const ids = [...s.holes.map(h => h.id), ...s.items.map(i => i.id), ...s.layouts.map(l => l.id), ...(s.style.texts ?? []).map(t => t.id)]
-    .filter((id, k, all): id is string => typeof id === "string" && id.length >= 6 && /^[A-Za-z0-9_-]+$/.test(id) && all.indexOf(id) === k && json.includes(id));
-  if (ids.length) {
-    const short = new Map(ids.map((id, k) => [id, `.${k.toString(36)}`]));
-    const re = new RegExp(`(?<![A-Za-z0-9_-])(${[...ids].sort((a, b) => b.length - a.length).join("|")})(?![A-Za-z0-9_-])`, "g");
-    json = json.replace(re, id => short.get(id) ?? id);
-  }
-  return json;
+  return JSON.stringify({ ...rest, holes, [ITEMS]: { order: rows.map(r => kinds.indexOf(r.type)), table } }, compact);
 };
 
 const unpackCourse = (raw: Record<string, unknown>) => {
@@ -143,24 +131,12 @@ const unpackCourse = (raw: Record<string, unknown>) => {
   return { ...rest, holes, items: packed.order.map(ki => byKind[ki][next[ki]++]) };
 };
 
-/** A course as a link keeps it, every id named by where its thing is (the n-th hole, item...),
- * to tell whether a link brings it back whole. */
+/** A course as a link keeps it (the same whatever order an object's keys come in), to tell
+ * whether a link brings it back whole. */
 const comparable = (doc: CourseDoc) => {
-  const s = shareable(doc);
-  const names = new Map<string, string>();
-  s.holes.forEach((h, k) => names.set(h.id, `#h${k}`));
-  s.items.forEach((i, k) => names.set(i.id, `#i${k}`));
-  s.layouts.forEach((l, k) => names.set(l.id, `#l${k}`));
-  (s.style.texts ?? []).forEach((t, k) => names.set(t.id, `#t${k}`));
-  // (the same whatever order an object's keys come in)
   const canonical = (k: string, v: unknown) =>
     v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(key => [key, (v as Record<string, unknown>)[key]])) : compact(k, v);
-  const json = JSON.stringify({ ...s, id: undefined }, canonical);
-  const list = [...names.keys()].filter(id => typeof id === "string" && id.length > 0).sort((a, b) => b.length - a.length);
-  if (!list.length) return json;
-  const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(`(?<![A-Za-z0-9_.-])(${list.map(esc).join("|")})(?![A-Za-z0-9_.-])`, "g");
-  return json.replace(re, id => names.get(id) ?? id);
+  return JSON.stringify(shareable(doc), canonical);
 };
 
 /** The course as the text after "#course=" (compressed when the browser can): packed tight, and

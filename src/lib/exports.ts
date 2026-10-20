@@ -2,8 +2,8 @@
 // positions), the hole list as CSV, the stake-out list, and the parts list with a cost estimate.
 import { AMENITY_KINDS, AREA_KINDS, FT_PER_M, LINE_KINDS, TEE_LEVELS, TEE_SURFACES } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, CourseItem, DropZoneItem, Hole, LineItem, MandoItem, P, TeeItem, TreeItem } from "../types";
-import { belongsTo, fairwayOutline, holeBaskets, holeNumber, holeTees } from "./course";
-import { pathTouchesPolygon, pointInPolygon, smoothPath } from "./geom";
+import { areaPath, belongsTo, fairwayOutline, holeBaskets, holeNumber, holeTees, linePath } from "./course";
+import { pathLength, pathTouchesPolygon, pointInPolygon, smoothPath } from "./geom";
 import { bearing, compassPoint, geoRefOf, toLatLon, type GeoRef } from "./geoRef";
 import { holeStats, isOb } from "./holeStats";
 import { heightAt } from "./terrainGrid";
@@ -58,12 +58,12 @@ const itemFeature = (doc: CourseDoc, ref: GeoRef, i: CourseItem): Feature | null
   if (i.type === "amenity") return point(i, { kind: (i as AmenityItem).kind, name: (i as AmenityItem).label ?? AMENITY_KINDS[(i as AmenityItem).kind].label });
   if (i.type === "tree" && !(i as TreeItem).importSource) return point(i, { kind: "tree", crown_radius_ft: Math.round((i as TreeItem).radius) });
   if (i.type === "area") {
-    const a = i as AreaItem;
-    return { type: "Feature", geometry: { type: "Polygon", coordinates: [[...a.points, a.points[0]].map(p => ll(ref, p))] }, properties: { kind: a.kind, label: AREA_KINDS[a.kind].label, name: a.label ?? null, hole: a.holeId ? holeNumber(doc, a.holeId) : null } };
+    const a = i as AreaItem, pts = areaPath(a);
+    return { type: "Feature", geometry: { type: "Polygon", coordinates: [[...pts, pts[0]].map(p => ll(ref, p))] }, properties: { kind: a.kind, label: AREA_KINDS[a.kind].label, name: a.label ?? null, hole: a.holeId ? holeNumber(doc, a.holeId) : null } };
   }
   if (i.type === "line") {
     const l = i as LineItem;
-    return { type: "Feature", geometry: { type: "LineString", coordinates: l.points.map(p => ll(ref, p)) }, properties: { kind: `${l.kind}_line`, label: LINE_KINDS[l.kind].label, name: l.label ?? null, hole: l.holeId ? holeNumber(doc, l.holeId) : null } };
+    return { type: "Feature", geometry: { type: "LineString", coordinates: linePath(l).map(p => ll(ref, p)) }, properties: { kind: `${l.kind}_line`, label: LINE_KINDS[l.kind].label, name: l.label ?? null, hole: l.holeId ? holeNumber(doc, l.holeId) : null } };
   }
   return null;
 };
@@ -94,7 +94,7 @@ export const holeGeoJSON = (doc: CourseDoc, holeId: string) => {
   for (const i of doc.items) {
     if (i.type === "tee" || i.type === "basket") continue;
     const own = belongsTo(i, holeId);
-    const shared = !own && (i.type === "area" || i.type === "line") && !i.holeId && (isOb(i) || i.kind === "hazard") && inPlay(i.points, i.type === "area");
+    const shared = !own && (i.type === "area" || i.type === "line") && !i.holeId && (isOb(i) || i.kind === "hazard") && inPlay(i.type === "area" ? areaPath(i) : linePath(i), i.type === "area");
     if (!own && !shared) continue;
     const f = itemFeature(doc, ref, i);
     if (f) features.push(shared ? { ...f, properties: { ...f.properties, in_play: true } } : f);
@@ -135,8 +135,8 @@ export const toKML = (doc: CourseDoc) => {
   }
   out.push(`<Folder><name>OB, hazards and land</name>`);
   for (const i of doc.items) {
-    if (i.type === "area") out.push(`<Placemark><name>${xml(i.label ?? AREA_KINDS[i.kind].label)}</name><styleUrl>#${i.kind === "ob" ? "ob" : "area"}</styleUrl><Polygon><tessellate>1</tessellate><outerBoundaryIs><LinearRing><coordinates>${[...i.points, i.points[0]].map(c).join(" ")}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`);
-    if (i.type === "line") out.push(`<Placemark><name>${xml(i.label ?? LINE_KINDS[i.kind].label)}</name><styleUrl>#${i.kind === "ob" ? "ob" : "line"}</styleUrl><LineString><tessellate>1</tessellate><coordinates>${i.points.map(c).join(" ")}</coordinates></LineString></Placemark>`);
+    if (i.type === "area") out.push(`<Placemark><name>${xml(i.label ?? AREA_KINDS[i.kind].label)}</name><styleUrl>#${i.kind === "ob" ? "ob" : "area"}</styleUrl><Polygon><tessellate>1</tessellate><outerBoundaryIs><LinearRing><coordinates>${[...areaPath(i), areaPath(i)[0]].map(c).join(" ")}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`);
+    if (i.type === "line") out.push(`<Placemark><name>${xml(i.label ?? LINE_KINDS[i.kind].label)}</name><styleUrl>#${i.kind === "ob" ? "ob" : "line"}</styleUrl><LineString><tessellate>1</tessellate><coordinates>${linePath(i).map(c).join(" ")}</coordinates></LineString></Placemark>`);
     if (i.type === "amenity") out.push(`<Placemark><name>${xml(i.label ?? AMENITY_KINDS[i.kind].label)}</name><Point><coordinates>${c(i)}</coordinates></Point></Placemark>`);
   }
   out.push(`</Folder></Document></kml>`);
@@ -236,7 +236,7 @@ export const partsList = (doc: CourseDoc): { lines: PartLine[]; total: number; c
   // A 4 in slab: width x length x 1/3 ft, in cubic yards
   const concreteYd3 = concreteTees.reduce((t, x) => t + (x.padWidth * x.padLength * (4 / 12)) / 27, 0);
   const amen = (k: AmenityItem["kind"]) => doc.items.filter(i => i.type === "amenity" && i.kind === k).length;
-  const obFt = (doc.items.filter(i => i.type === "line" && i.kind === "ob") as LineItem[]).reduce((t, l) => t + l.points.reduce((s, q, i) => (i ? s + Math.hypot(q.x - l.points[i - 1].x, q.y - l.points[i - 1].y) : 0), 0), 0);
+  const obFt = (doc.items.filter(i => i.type === "line" && i.kind === "ob") as LineItem[]).reduce((t, l) => t + pathLength(linePath(l)), 0);
   const lines: PartLine[] = [
     { item: "Baskets", qty: holesWithBaskets.size, unit: "each", unitPrice: p.basket, total: 0 },
     { item: "Basket sleeves (ground mounts)", qty: baskets.length, unit: "each", unitPrice: p.sleeve, total: 0 },

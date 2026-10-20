@@ -217,7 +217,7 @@ export const paintedLine = (l: LineItem, scale: number): { points: P[]; width: n
   // (paths, walks and roads exactly where they were drawn)
   if (l.kind === "path" || l.kind === "walk") return { points: linePath(l), width: atLeast(3.6) };
   if (l.kind === "road") return { points: linePath(l), width: atLeast(3.5) };
-  return { points: l.points, width: w };
+  return { points: linePath(l), width: w };
 };
 
 /** How far along a polyline each of its points is. */
@@ -652,7 +652,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       stamp(cx + Math.cos(a) * d, cy + Math.sin(a) * d, r, (R * 1.25 + r * 0.4 - d * 0.3) * tall, t);
     }
   };
-  const rnd = seeded(idSeed(doc.id ?? doc.name) ^ 0x5bd1e995);
+  const rnd = seeded(idSeed(doc.seed ?? doc.id ?? doc.name) ^ 0x5bd1e995);
   // Stratified at random (no grid shows): one or two treetops in each small square, all sizes.
   // Sparse woods keep fewer, in clumps, and the trees stand bigger on their own.
   const stepPx = crownR * 1.15;
@@ -1061,10 +1061,10 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
  */
 /** Everything of the course the painting is made from (for knowing when to paint it again):
  * every thing on the map in full but its name and lock (labels and mandos aren't painted), and
- * the holes, in order, but their names, par, notes and flyovers. */
+ * the holes, in order, but their names, par, notes, flyovers and tee sign settings. */
 export const paintedFrom = (doc: CourseDoc) => [
   doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => ({ ...i, label: undefined, locked: undefined })),
-  doc.holes.map(h => ({ ...h, name: undefined, par: undefined, notes: undefined, flyKeys: undefined }))
+  doc.holes.map(h => ({ ...h, name: undefined, par: undefined, notes: undefined, flyKeys: undefined, flyover: undefined, sign: undefined }))
 ];
 
 export const forestCanvasAsync = async (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts, signal?: AbortSignal, onProgress?: (fraction: number) => void) => {

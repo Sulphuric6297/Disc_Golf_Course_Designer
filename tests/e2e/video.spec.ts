@@ -191,6 +191,49 @@ test("without WebCodecs, the flyover is recorded in real time with a MediaRecord
   expect(video.duration).toBeGreaterThan(5);
 });
 
+test("in real time, getting the next hole ready is left out of the video (its frames all go in)", async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.addInitScript(() => {
+    delete (window as any).VideoEncoder;
+    delete (window as any).VideoFrame;
+    const w = window as any;
+    w.__frameTimes = [];
+    const req = CanvasCaptureMediaStreamTrack.prototype.requestFrame;
+    CanvasCaptureMediaStreamTrack.prototype.requestFrame = function () {
+      w.__frameTimes.push(performance.now());
+      return req.call(this);
+    };
+  });
+  await page.reload();
+  await twoHoles(page);
+  // Getting hole 2 ready takes longer than its flight
+  await page.evaluate(() => {
+    const w = window as any, v = w.__dgView;
+    const frames = v.flightFrames.bind(v);
+    v.flightFrames = (width: number, height: number) => {
+      const f = frames(width, height);
+      let n = 0;
+      return { ...f, duration: f.duration, draw: f.draw, dispose: f.dispose, prepare: async (id: string) => {
+        if (n++ === 1) await new Promise(r => setTimeout(r, 7000));
+        await f.prepare?.(id);
+        w.__secondReady = performance.now();
+      } };
+    };
+  });
+  await page.getByRole("button", { name: "6 Export" }).click();
+  await page.getByTestId("video-holes").selectOption("all");
+  const downloading = page.waitForEvent("download", { timeout: 200_000 });
+  await page.getByTestId("video-record").click();
+  await downloading;
+  const { after, all } = await page.evaluate(() => {
+    const w = window as any;
+    return { after: (w.__frameTimes as number[]).filter(t => t >= w.__secondReady).length, all: w.__frameTimes.length };
+  });
+  console.log(`frames: ${all}, after hole 2 was ready: ${after}`);
+  // As many of hole 2's frames as hole 1's (both fly for 6 s; software drawing here skips some of each)
+  expect(after).toBeGreaterThan((all - after) * 0.75);
+});
+
 test("where the browser encodes H.264, the video is an MP4", async ({ page }) => {
   test.setTimeout(150_000);
   // Chromium here has no H.264 encoder: a stand-in that takes H.264 settings and gives out

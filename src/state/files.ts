@@ -22,6 +22,9 @@ export const archiveCurrent = async () => {
   return meta;
 };
 
+/** The course under a new id, looking the same. */
+const renamed = (doc: CourseDoc): CourseDoc => ({ ...doc, seed: doc.seed ?? doc.id, id: generateId() });
+
 const show = (doc: CourseDoc, opts: { viewOnly?: boolean } = {}) => {
   // View-only first: the autosave must never see a shared course as yours
   useEditor.getState().set({ selectedId: null, activeHoleId: null, tool: "select", teeView: null, flyover: false, viewOnly: !!opts.viewOnly, step: doc.holes.length ? "holes" : "site" });
@@ -87,7 +90,7 @@ export const openCourseFile = async (file: File) => {
     const raw = JSON.parse(await file.text());
     if (!raw || !Array.isArray(raw.holes)) throw new Error("not a course");
     await archiveCurrent();
-    show(normalizeCourse({ ...raw, id: generateId() }));
+    show(renamed(normalizeCourse(raw)));
     toast(`Opened "${raw.name ?? file.name}".`, "success");
   } catch {
     toast("That file isn't a course file (.dgcourse.json).", "error");
@@ -129,7 +132,7 @@ export const openSharedLink = async (hash = location.hash) => {
   if (!packed) return false;
   try {
     const doc = await decodeCourse(packed);
-    show({ ...doc, id: generateId() }, { viewOnly: true });
+    show(renamed(doc), { viewOnly: true });
     useEditor.getState().set({ step: "review" });
     void refetchSite();
     return true;
@@ -169,7 +172,7 @@ export const makeCopy = async () => {
     const meta: PlanMeta = { id: own.id ?? generateId(), name: own.name || "Untitled course", updatedAt: Date.now(), holes: own.holes.length };
     await storePlan(meta, { ...own, id: meta.id });
   }
-  const copy = { ...getDoc(), id: generateId(), name: shared.name.endsWith("(copy)") ? shared.name : `${shared.name} (copy)` };
+  const copy = { ...renamed(getDoc()), name: shared.name.endsWith("(copy)") ? shared.name : `${shared.name} (copy)` };
   await idbSet(AUTOSAVE_KEY, copy);
   history.replaceState(null, "", location.pathname + location.search);
   useEditor.getState().set({ viewOnly: false });

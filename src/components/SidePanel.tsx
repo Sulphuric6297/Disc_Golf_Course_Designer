@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowRight, CircleDot, ClipboardCheck, Download, Eye, EyeOff, Info, MapPinned, Palette, Pentagon, Plus, Route, Signpost, Spline, Trash2, TreeDeciduous, type LucideIcon } from "lucide-react";
 import { AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
 import { activeLayout, holeTees } from "../lib/course";
-import { courseTotals, holeStats, levelsOnCourse, openIssues, safetyIssues, type SafetyIssue } from "../lib/holeStats";
+import { courseTotals, holeStats, levelsOnCourse, openIssues, safetyIssues, swapped, type SafetyIssue } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { select } from "../state/actions";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
@@ -292,7 +292,7 @@ function ReviewStep() {
   const { open: issues, ignored } = openIssues(doc, all);
   const ignore = (id: string, off: boolean) =>
     changeDoc(d => {
-      const list = (d.ignoredChecks ?? []).filter(x => x !== id);
+      const list = (d.ignoredChecks ?? []).filter(x => x !== id && x !== swapped(id));
       return { ignoredChecks: off ? [...list, id] : list.length ? list : undefined };
     });
   const [showIgnored, setShowIgnored] = useState(false);

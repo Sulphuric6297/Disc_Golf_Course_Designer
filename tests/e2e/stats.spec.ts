@@ -1,6 +1,6 @@
 // Pure-logic tests (no browser page) for the hole and course numbers and the checks.
 import { test, expect } from "@playwright/test";
-import { FAIRWAY_STATIONS, createArea, createBasket, createEmptyCourse, createLine, createTee, createTree, fairwayOutline, fairwayWidthAt, newHole } from "../../src/lib/course";
+import { FAIRWAY_STATIONS, areaPath, createArea, createBasket, createEmptyCourse, createLine, createTee, createTree, fairwayOutline, fairwayWidthAt, linePath, newHole } from "../../src/lib/course";
 import { corridor, pathLength, pointInPolygon, smoothPath } from "../../src/lib/geom";
 import { courseTotals, designChecks, holeStats, isOb, openIssues, parForDistance, safetyIssues } from "../../src/lib/holeStats";
 import type { CourseDoc, P, TeeLevel } from "../../src/types";
@@ -151,6 +151,44 @@ test.describe("safety and design checks", () => {
     expect(openIssues({}, safetyIssues(doc)).open).toHaveLength(ids.length);
   });
 
+  test("a check between two holes keeps its id whichever order the holes are in (and one set aside before stays aside)", () => {
+    const doc = make([[{ x: 100, y: 300 }, { x: 500, y: 300 }], [{ x: 300, y: 100 }, { x: 300, y: 500 }]]);
+    const cross = safetyIssues(doc).find(i => /cross/.test(i.text))!;
+    const turned = { ...doc, holes: [...doc.holes].reverse() };
+    expect(safetyIssues(turned).find(i => /cross/.test(i.text))!.id).toBe(cross.id);
+    // (ignored with the holes the other way round)
+    const [, a, b] = cross.id.split(":");
+    const { open, ignored } = openIssues({ ignoredChecks: [`cross:${b}:${a}`] }, safetyIssues(turned));
+    expect(open.some(i => /cross/.test(i.text))).toBe(false);
+    expect(ignored).toHaveLength(1);
+  });
+
+  test("curved OB, water and roads count where they are drawn, not their corners", () => {
+    // An OB triangle drawn curved bulges out past its straight bottom edge (y 200)
+    const tri = [{ x: 200, y: 200 }, { x: 400, y: 200 }, { x: 300, y: 373 }];
+    expect(Math.min(...areaPath({ kind: "ob", points: tri }).map(p => p.y))).toBeLessThan(185);
+    const doc = make([[{ x: 100, y: 190 }, { x: 500, y: 190 }]]);
+    doc.items.push(createArea("ob", tri));
+    expect(holeStats(doc, doc.holes[0]).obCrossed).toBe(1);
+    const straight = { ...doc, items: doc.items.map(i => (i.type === "area" ? { ...i, straight: true } : i)) };
+    expect(holeStats(straight, straight.holes[0]).obCrossed).toBe(0);
+    // An OB line round a corner swings out past its points; a hole ending between the two
+    const corner = [{ x: 100, y: 300 }, { x: 400, y: 300 }, { x: 400, y: 600 }];
+    const curve = linePath({ kind: "ob", points: corner });
+    const q = curve.reduce((m, p) => (p.y < m.y ? p : m));
+    expect(q.y).toBeLessThan(290);
+    const lined = make([[{ x: q.x + 1, y: q.y - 250 }, { x: q.x + 1, y: (q.y + 300) / 2 }]]);
+    lined.items.push(createLine("ob", corner));
+    expect(holeStats(lined, lined.holes[0]).obCrossed).toBe(1);
+    // A road drawn curved across the line of fire
+    const road = make([[{ x: q.x + 1, y: q.y - 250 }, { x: q.x + 1, y: (q.y + 300) / 2 }]]);
+    road.items.push(createLine("road", corner));
+    expect(safetyIssues(road).some(i => /across a road/.test(i.text))).toBe(true);
+    // The printed map draws an OB line as its curve
+    const svg = renderPoster(lined, { contours: null, hillshade: null }).svg;
+    expect(svg).not.toContain('d="M100 300L400 300L400 600"');
+  });
+
   test("throwing across a road or a path, and over a parking lot", () => {
     const doc = make([[{ x: 100, y: 300 }, { x: 500, y: 300 }]]);
     doc.items.push(createLine("road", [{ x: 300, y: 100 }, { x: 300, y: 500 }]));
@@ -265,6 +303,14 @@ test("a fairway wider on one side only: its middle moved off the line, the other
   // Further on, centred again
   expect(Math.max(...ys(300))).toBeCloseTo(15, 0);
   expect(Math.min(...ys(300))).toBeCloseTo(-15, 0);
+});
+
+test("the course length check counts a two-number hole twice", () => {
+  // Nine 100 ft holes, one of them played twice
+  const doc = make(Array.from({ length: 9 }, (_, k): [P, P] => [{ x: 100, y: 100 + k * 150 }, { x: 200, y: 100 + k * 150 }]));
+  doc.holes[0].alsoNumbers = [10];
+  const checks = [...safetyIssues(doc), ...designChecks(doc, doc.holes.map(h => holeStats(doc, h)))];
+  expect(checks.find(i => i.id === "course-length")?.text).toMatch(/^10 holes total 1,000 ft/);
 });
 
 test("an OB line belonging to two holes counts for both (and for neither of the others)", () => {

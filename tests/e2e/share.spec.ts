@@ -32,7 +32,7 @@ plain("a course packs into a link and comes back the same (without photo and ter
   plainExpect(doc.style.logo).toBeTruthy();
 });
 
-plain("links are short and lose nothing: every item, point, hole and setting comes back; old links still open", async () => {
+plain("links are short and lose nothing: every item, point, hole, id and setting comes back; old links still open", async () => {
   // A made-up 18-hole course: turns, trees, big imported woods, paths, OB, settings that refer to things
   const doc = createEmptyCourse();
   doc.name = "Springfield Park";
@@ -63,24 +63,21 @@ plain("links are short and lose nothing: every item, point, hole and setting com
   const back = await decodeCourse(link);
   // Everything, in order: each item's every setting and point (to a hundredth of a foot)
   const r2 = (v: number) => Math.round(v * 100) / 100;
-  const holeOf = new Map(doc.holes.map((h, k) => [h.id, back.holes[k].id]));
-  plainExpect(back.holes.map(h => [h.name, h.fairwayWidth, h.doglegs.map(p => [p.x, p.y])])).toEqual(doc.holes.map(h => [h.name, h.fairwayWidth, h.doglegs.map(p => [r2(p.x), r2(p.y)])]));
+  plainExpect(back.holes.map(h => [h.id, h.name, h.fairwayWidth, h.doglegs.map(p => [p.x, p.y])])).toEqual(doc.holes.map(h => [h.id, h.name, h.fairwayWidth, h.doglegs.map(p => [r2(p.x), r2(p.y)])]));
   plainExpect(back.items).toHaveLength(doc.items.length);
   doc.items.forEach((i, k) => {
     const b = back.items[k] as unknown as Record<string, unknown>;
     for (const [key, v] of Object.entries(i)) {
-      if (key === "id" || v === undefined) continue;
-      if (key === "holeId") plainExpect(b.holeId).toBe(holeOf.get(v as string));
-      else if (key === "alsoHoles") plainExpect(b.alsoHoles).toEqual((v as string[]).map(x => holeOf.get(x)));
-      else if (key === "points") plainExpect(b.points).toEqual((v as { x: number; y: number }[]).map(p => ({ x: r2(p.x), y: r2(p.y) })));
+      if (v === undefined) continue;
+      // (ids exactly: the woods, creeks and trees are drawn from them)
+      if (key === "points") plainExpect(b.points).toEqual((v as { x: number; y: number }[]).map(p => ({ x: r2(p.x), y: r2(p.y) })));
       else plainExpect(b[key]).toEqual(typeof v === "number" ? r2(v) : v);
     }
   });
   plainExpect(back.style.shadows).toBe(0.65);
   // (what refers to things still finds them)
-  const backOb = back.items[doc.items.length - 1];
-  plainExpect(back.ignoredChecks).toEqual([`crosses:${back.holes[0].id}:${backOb.id}`]);
-  plainExpect(back.style.labelAt).toEqual({ [`num:${back.holes[2].id}`]: { dx: 12, dy: -4 } });
+  plainExpect(back.ignoredChecks).toEqual(doc.ignoredChecks);
+  plainExpect(back.style.labelAt).toEqual(doc.style.labelAt);
   plainExpect(back.id).toBe(doc.id);
   plainExpect(link.length).toBeLessThan(oldLink.length);
   // The old kind of link still opens
@@ -114,6 +111,10 @@ test("share a course: the link opens it for someone else, view only, with the ma
   await expect(theirs.getByTestId("view-only-banner")).toBeVisible();
   await expect.poll(async () => (await course(theirs)).holes.length).toBe(1);
   expect((await course(theirs)).name).toBe(doc.name);
+  // (the same woods: the painting's seed comes with it)
+  const opened = await course(theirs);
+  expect(opened.items.map(i => i.id)).toEqual((await course(page)).items.map(i => i.id));
+  expect(opened.seed).toBe(doc.id);
   // The photo and elevation come down again for the same place
   await expect.poll(async () => (await course(theirs)).background, { timeout: 30_000 }).toMatch(/^data:image/);
   await expect.poll(async () => (await course(theirs)).terrainHeights).toBeGreaterThan(1000);
@@ -132,6 +133,7 @@ test("share a course: the link opens it for someone else, view only, with the ma
   await expect(theirs.getByTestId("view-only-banner")).toBeHidden();
   await expect(theirs.getByRole("toolbar", { name: "Tools" })).toBeVisible();
   expect((await course(theirs)).name).toBe(`${doc.name} (copy)`);
+  expect((await course(theirs)).seed).toBe(doc.id);
   expect(new URL(theirs.url()).hash).toBe("");
   // It is saved: a reload right away brings the copy back
   await theirs.reload();

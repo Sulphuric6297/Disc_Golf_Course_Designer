@@ -522,6 +522,13 @@ test("a creek wider in one stretch: drag the square on its bank; the Width slide
   const wb = (await wide.boundingBox())!;
   await page.mouse.dblclick(wb.x + wb.width / 2, wb.y + wb.height / 2);
   await expect.poll(async () => (await creek()).widths?.[2]).toBe(1);
+  // Made a path: one width all along (the creek's widths kept for when it is a creek again)
+  await page.getByLabel("Line kind").selectOption("path");
+  await expect(page.getByText("Width (all along)")).toHaveCount(0);
+  await expect(page.getByTestId("line-widths")).toHaveCount(0);
+  await expect(page.locator('[data-handle="linewidth"]')).toHaveCount(0);
+  await page.getByLabel("Line kind").selectOption("stream");
+  await expect(page.getByTestId("line-widths")).toBeVisible();
   // Even width: the same all along
   await page.getByRole("button", { name: "Even width" }).click();
   await expect.poll(async () => (await creek()).widths).toBeUndefined();

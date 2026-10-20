@@ -389,10 +389,11 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     }
   }
   for (const l of lines.filter(x => x.kind === "ob")) {
-    out.push(`<path d="${pathD(l.points)}" fill="none" stroke="${obCase}" stroke-width="${n(px(4.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(0.9 * dim(l.holeId, l.alsoHoles))}"/>`);
-    out.push(`<path d="${pathD(l.points)}" fill="none" stroke="${obCol}" stroke-width="${n(px(2.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(dim(l.holeId, l.alsoHoles))}"/>`);
-    const len = pathLength(l.points);
-    if (len * k > 70 * ts) tags.push({ id: `tag:${l.id}`, at: toScreen(pointAlong(l.points, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: obCol, fg: obInk, o: dim(l.holeId, l.alsoHoles) });
+    const pts = linePath(l);
+    out.push(`<path d="${pathD(pts)}" fill="none" stroke="${obCase}" stroke-width="${n(px(4.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(0.9 * dim(l.holeId, l.alsoHoles))}"/>`);
+    out.push(`<path d="${pathD(pts)}" fill="none" stroke="${obCol}" stroke-width="${n(px(2.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(dim(l.holeId, l.alsoHoles))}"/>`);
+    const len = pathLength(pts);
+    if (len * k > 70 * ts) tags.push({ id: `tag:${l.id}`, at: toScreen(pointAlong(pts, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: obCol, fg: obInk, o: dim(l.holeId, l.alsoHoles) });
   }
 
   // Water, creeks, roads, fences and paths marked OB: a red edge along them (on both banks of a
@@ -1216,7 +1217,7 @@ const holeTable = (doc: CourseDoc, stats: HoleStats[], x: number, y: number, w: 
     if (show.includes("lengths")) layouts.forEach((l, i) => cols.push({
       head: l.name.toUpperCase().slice(0, 8), dot: TEE_LEVELS[l.tee].color, weight: 1,
       cell: r => (lengths[i][r].complete ? fmtDist(lengths[i][r].length, doc.units, false) : "–"),
-      total: fmtDist(lengths[i].filter(st => st.complete).reduce((t, st) => t + st.length, 0), doc.units, false)
+      total: fmtDist(lengths[i].filter(st => st.complete).reduce((t, st) => t + st.length * playsOf(doc, st.holeId), 0), doc.units, false)
     }));
     if (show.includes("elevation")) {
       const elev = (ft: number) => { const v = Math.round(doc.units === "m" ? ft / FT_PER_M : ft); return v === 0 ? "0" : `${v > 0 ? "+" : "−"}${Math.abs(v)}`; };

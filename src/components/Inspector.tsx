@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
-import { autoWalks, byNumber, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
+import { areaPath, autoWalks, byNumber, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
@@ -357,7 +357,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
           {(item.kind === "ob" || item.kind === "hazard") && holePicker}
           {item.kind !== "parking" && item.kind !== "building" && <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />}
           <TurnShape item={item} />
-          <div className="text-xs text-zinc-400">{Math.round(polygonArea(item.points)).toLocaleString()} sq ft ({(polygonArea(item.points) / 43560).toFixed(2)} acres) · {item.points.length} corners</div>
+          <div className="text-xs text-zinc-400">{Math.round(polygonArea(areaPath(item))).toLocaleString()} sq ft ({(polygonArea(areaPath(item)) / 43560).toFixed(2)} acres) · {item.points.length} corners</div>
         </>
       );
       break;

@@ -2,7 +2,7 @@
 // shape, what is in the way, and safety checks between holes.
 import { CIRCLE_ONE_FT, CLEAR_IN_FRONT_FT, MIN_PAD, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AreaItem, CourseDoc, Hole, Layout, LineItem, P, TeeItem, TeeLevel, TreeItem } from "../types";
-import { activeLayout, basketFor, belongsTo, fairwayOutline, holeLabel, holeNumber, holeTees, teeAim, teeFor, throwLine } from "./course";
+import { activeLayout, areaPath, basketFor, belongsTo, fairwayOutline, holeLabel, holeNumber, holeTees, linePath, teeAim, teeFor, throwLine } from "./course";
 import { dist, distanceToPath, lengthInside, pathLength, pathTouchesPolygon, segmentsIntersect, smoothPath, turnAngles } from "./geom";
 import { heightAt, profileAlong } from "./terrainGrid";
 
@@ -85,7 +85,9 @@ export type HoleStats = {
   complete: boolean;
 };
 
-const areasOf = (doc: Pick<CourseDoc, "items">, kinds: string[]) => doc.items.filter(i => i.type === "area" && kinds.includes((i as AreaItem).kind)) as AreaItem[];
+/** Areas and lines as drawn (curved through their points, unless set straight). */
+const asDrawn = <T extends AreaItem | LineItem>(i: T): T => ({ ...i, points: i.type === "area" ? areaPath(i) : linePath(i) });
+const areasOf = (doc: Pick<CourseDoc, "items">, kinds: string[]) => (doc.items.filter(i => i.type === "area" && kinds.includes((i as AreaItem).kind)) as AreaItem[]).map(asDrawn);
 
 /** Whether landing in or beyond it is out of bounds: OB shapes; water and streams unless marked
  * otherwise; anything else marked OB (a road, a fence line). */
@@ -124,8 +126,8 @@ export const holeStats = (doc: CourseDoc, hole: Hole, layout: Layout | undefined
   const factor = doc.rules?.elevationFactor ?? 3;
   const playsLike = complete ? Math.max(0, (length + factor * elevationChange) * (1 + shapeExtra) * (foliage === "heavy" ? HEAVY_FOLIAGE : 1)) : 0;
   const parAuto = complete ? parForDistance(playsLike, level) : 3;
-  const obAreas = (doc.items.filter(i => i.type === "area" && isOb(i)) as AreaItem[]).filter(a => !a.holeId || belongsTo(a, hole.id));
-  const obLines = (doc.items.filter(i => i.type === "line" && isOb(i)) as LineItem[]).filter(l => !l.holeId || belongsTo(l, hole.id));
+  const obAreas = (doc.items.filter(i => i.type === "area" && isOb(i)) as AreaItem[]).filter(a => !a.holeId || belongsTo(a, hole.id)).map(asDrawn);
+  const obLines = (doc.items.filter(i => i.type === "line" && isOb(i)) as LineItem[]).filter(l => !l.holeId || belongsTo(l, hole.id)).map(asDrawn);
   let obCrossed = 0;
   if (complete) {
     obCrossed += obAreas.filter(a => lengthInside(smooth, a.points, 3) > 4).length;
@@ -279,15 +281,17 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
     for (let j = i + 1; j < done.length; j++) {
       const b = done[j];
       const lb = smooth.get(b.holeId)!;
+      // (the same id whichever order the holes are in)
+      const pair = [a.holeId, b.holeId].sort().join(":");
       const x = crossing(la, lb);
       if (x) {
-        issues.push({ id: `cross:${a.holeId}:${b.holeId}`, level: "danger", text: `${n(a)} and ${n(b)}: the throw lines cross.`, holes: [a.holeId, b.holeId], at: x });
+        issues.push({ id: `cross:${pair}`, level: "danger", text: `${n(a)} and ${n(b)}: the throw lines cross.`, holes: [a.holeId, b.holeId], at: x });
         continue;
       }
       const near = pathPathDistance(la, lb);
       const need = Math.min(gapA, safeGap(b.length));
       if (near.d < need) {
-        issues.push({ id: `close:${a.holeId}:${b.holeId}`, level: near.d < need * 0.5 ? "danger" : "warning", text: `${n(a)} and ${n(b)}: throw lines only ${Math.round(near.d)} ft apart (${Math.round(need)} ft recommended).`, holes: [a.holeId, b.holeId], at: near.at });
+        issues.push({ id: `close:${pair}`, level: near.d < need * 0.5 ? "danger" : "warning", text: `${n(a)} and ${n(b)}: throw lines only ${Math.round(near.d)} ft apart (${Math.round(need)} ft recommended).`, holes: [a.holeId, b.holeId], at: near.at });
       }
     }
     // Other holes' tees and baskets near this hole's line (beyond its own ends)
@@ -307,7 +311,7 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
     }
     // Roads, paths, parking and out-of-play areas in the line of fire
     for (const l of doc.items.filter(it => it.type === "line" && ((it as LineItem).kind === "road" || (it as LineItem).kind === "path")) as LineItem[]) {
-      const x2 = crossing(la, l.points);
+      const x2 = crossing(la, linePath(l));
       if (x2) issues.push({ id: `crosses:${a.holeId}:${l.id}`, level: l.kind === "road" ? "danger" : "warning", text: `${n(a)} throws across a ${l.kind === "road" ? "road" : "walking path"}.`, holes: [a.holeId], at: x2 });
     }
     for (const ar of areasOf(doc, ["nogo", "parking", "building"])) {
@@ -331,8 +335,11 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
 };
 
 /** The checks not set aside, and those set aside. */
+/** A two-hole check's id with its holes the other way round (as ignored before they were sorted). */
+export const swapped = (id: string) => id.replace(/^(cross|close):([^:]+):([^:]+)$/, "$1:$3:$2");
 export const openIssues = (doc: Pick<CourseDoc, "ignoredChecks">, issues: SafetyIssue[]) => {
-  const off = new Set(doc.ignoredChecks ?? []);
+  const list = doc.ignoredChecks ?? [];
+  const off = new Set([...list, ...list.map(swapped)]);
   return { open: issues.filter(i => !off.has(i.id)), ignored: issues.filter(i => off.has(i.id)) };
 };
 
@@ -365,7 +372,7 @@ export const designChecks = (doc: CourseDoc, stats: HoleStats[]): SafetyIssue[] 
     if (s.playsLike < MIN_HOLE_FT) issues.push({ id: `short:${s.holeId}`, level: "warning", text: `Hole ${s.label} plays ${Math.round(s.playsLike)} ft: shorter than the ${MIN_HOLE_FT} ft minimum.`, holes: [s.holeId], at: s.line[0] });
   }
   // Water carries from each hole's shortest tee
-  const water = doc.items.filter(i => i.type === "area" && (i as AreaItem).kind === "water") as AreaItem[];
+  const water = areasOf(doc, ["water"]);
   if (water.length) {
     for (const hole of doc.holes) {
       const hTees = holeTees(doc, hole.id);
@@ -384,9 +391,10 @@ export const designChecks = (doc: CourseDoc, stats: HoleStats[]): SafetyIssue[] 
     const level = done[0].level;
     const [lo, hi] = COURSE_LENGTH_FT[level];
     const total = done.reduce((t, x) => t + x.length * playsOf(doc, x.holeId), 0);
-    const k = done.reduce((t, x) => t + playsOf(doc, x.holeId), 0) / 18;
+    const played = done.reduce((t, x) => t + playsOf(doc, x.holeId), 0);
+    const k = played / 18;
     if (total < lo * k || total > hi * k) {
-      issues.push({ id: "course-length", level: "info", text: `${done.length} holes total ${Math.round(total).toLocaleString()} ft (${TEE_LEVELS[level].label}: ${Math.round(lo * k).toLocaleString()}–${Math.round(hi * k).toLocaleString()} ft).`, holes: [], at: done[0].line[0] });
+      issues.push({ id: "course-length", level: "info", text: `${played} holes total ${Math.round(total).toLocaleString()} ft (${TEE_LEVELS[level].label}: ${Math.round(lo * k).toLocaleString()}–${Math.round(hi * k).toLocaleString()} ft).`, holes: [], at: done[0].line[0] });
     }
   }
   // Start and finish near parking

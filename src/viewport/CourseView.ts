@@ -754,10 +754,10 @@ export class CourseView {
     if (!doc) return null;
     let base = Infinity, top = -Infinity;
     const trunks: P[] = [];
-    const near = (pts: P[]) => {
+    const near = (pts: P[], within = reach) => {
       const b = boundsOf(pts);
-      if (p.x < b.minX - reach || p.x > b.maxX + reach || p.y < b.minY - reach || p.y > b.maxY + reach) return false;
-      return pointInPolygon(p, pts) || distanceToPath(p, [...pts, pts[0]]) < reach;
+      if (p.x < b.minX - within || p.x > b.maxX + within || p.y < b.minY - within || p.y > b.maxY + within) return false;
+      return pointInPolygon(p, pts) || distanceToPath(p, [...pts, pts[0]]) < within;
     };
     const solid = (g: number, h: number) => { base = Math.min(base, g); top = Math.max(top, g + h); };
     for (const i of doc.course.items) {
@@ -771,7 +771,8 @@ export class CourseView {
         }
         if (d < reach + TRUNK_ROOM) trunks.push({ x: i.x, y: i.y });
       } else if (i.type === "area" && i.kind === "woods") {
-        if (near(i.points)) solid(this.h(p.x, p.y), WOODS_TOP_FT);
+        // (its outline as drawn, once it is close)
+        if (near(i.points, reach + 30) && near(areaPath(i))) solid(this.h(p.x, p.y), WOODS_TOP_FT);
       } else if (i.type === "structure" && !isLineKind(i.kind)) {
         if (near(i.points)) solid(this.h(p.x, p.y), structureHeight(i) + 10);
       }
@@ -1014,18 +1015,22 @@ export class CourseView {
   private detailPx() {
     return Math.min(4096, this.renderer.capabilities.maxTextureSize, COARSE ? 2048 : 3072);
   }
-  /** The sharp painting round `holeId` (default: the hole looked at), while the painted map shows. */
-  private async updateDetail(holeId = this.povHole) {
+  private detailAsk = 0;
+  /** The sharp painting round `holeId` (default: the hole looked at), while the painted map shows.
+   * While a video records, only the recording sets it (for each hole before its frames). */
+  private async updateDetail(holeId = this.povHole, forVideo = false) {
+    if (this.recordings > 0 && !forVideo) return;
+    const ask = ++this.detailAsk;
     const look = this.paintedRecord !== undefined ? this.paintedRecord : this.paintedScreen;
     if (!holeId || !look || !this.detailPainter) {
       this.ground.setPaintedDetail(null);
       return;
     }
     const d = await this.detailPainter(holeId, this.detailPx());
-    if (this.disposed) return;
-    // (still wanted: the same hole, the painted map still on)
+    // (still wanted: asked for last, the same hole, the painted map still on)
+    if (this.disposed || ask !== this.detailAsk) return;
     const now = this.paintedRecord !== undefined ? this.paintedRecord : this.paintedScreen;
-    if (now && (holeId === this.povHole || this.recordings > 0)) this.ground.setPaintedDetail(d);
+    if (now && (forVideo || holeId === this.povHole)) this.ground.setPaintedDetail(d);
   }
 
   private async applyPainted() {
@@ -1033,7 +1038,7 @@ export class CourseView {
     await this.ground.setPainted(look?.url ?? null);
     if (this.disposed) return;
     if (!look) this.ground.setPaintedDetail(null);
-    else if (this.recordings === 0) void this.updateDetail();
+    else void this.updateDetail();
     const woods = this.ground.paintedTexture ? look?.wooded ?? null : null;
     if (woods !== this.paintedWoods || this.shapesPainted !== !!this.ground.paintedTexture) {
       this.paintedWoods = woods;
@@ -1070,7 +1075,7 @@ export class CourseView {
     };
     return {
       duration: id => path(id)?.play ?? 0,
-      prepare: id => this.updateDetail(id),
+      prepare: id => this.updateDetail(id, true),
       draw: (id, t, out): FrameInfo => {
         const p = path(id);
         if (!p) throw new Error("That hole can't be flown over.");
@@ -1840,8 +1845,8 @@ export class CourseView {
         if (s.complete && hole) for (const l of teeLines(course, hole, s.line, s.teeId)) polys.push(fairwayOutline(hole, smoothPath(l, 8), hole.fairway ? 0 : -hole.fairwayWidth * 0.4, 6));
       }
       for (const it of course.items) {
-        if (it.type === "area" && ["fairway", "green", "water", "parking", "building", "sand", "rough", "nogo"].includes(it.kind)) polys.push(it.points);
-        else if (it.type === "line" && it.kind !== "ob" && it.kind !== "fence") lines.push({ pts: it.points, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 + 3 });
+        if (it.type === "area" && ["fairway", "green", "water", "parking", "building", "sand", "rough", "nogo"].includes(it.kind)) polys.push(areaPath(it));
+        else if (it.type === "line" && it.kind !== "ob" && it.kind !== "fence") lines.push({ pts: linePath(it), half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 + 3 });
         else if (it.type === "tee") discs.push({ p: it, r: Math.max(12, it.padLength) });
         else if (it.type === "basket") discs.push({ p: it, r: CIRCLE_ONE_FT * 0.6 });
         else if (it.type === "structure") lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 6 });
@@ -2369,7 +2374,7 @@ export class CourseView {
     const holeId = editing ? (this.hole(this.selectedId)?.id ?? doc.activeHoleId) : null;
     const hole = this.hole(holeId);
     const drawing = this.drawn() ? this.drawPts.length : -1;
-    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
+    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" || sel.type === "line" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
     if (key === this.handleKey) return;
     this.handleKey = key;
     this.handles.forEach(h => h.el.remove());
@@ -2798,7 +2803,7 @@ export class CourseView {
           if (e.altKey || (last && last.id === `${id}:lw` && last.index === i && now - last.time < 400)) {
             this.lastCorner = null;
             const f = widthFactors(l0).map((v, k) => (k === i ? 1 : v));
-            this.cb.onChange(id, { widths: widthVaries({ points: l0.points, widths: f }) ? f : undefined });
+            this.cb.onChange(id, { widths: widthVaries({ kind: "stream", points: l0.points, widths: f }) ? f : undefined });
             this.cb.onCommit();
             return null;
           }
@@ -2816,7 +2821,7 @@ export class CourseView {
               const half = Math.max(0.5, half0 + out(hit.x, hit.z) - from);
               const f = widthFactors(it() ?? l0).slice();
               f[i] = Math.round((2 * half / w0) * 100) / 100;
-              this.cb.onChange(id, { widths: widthVaries({ points: l0.points, widths: f }) ? f : undefined });
+              this.cb.onChange(id, { widths: widthVaries({ kind: "stream", points: l0.points, widths: f }) ? f : undefined });
             },
             end: () => this.cb.onCommit()
           };
@@ -3025,7 +3030,7 @@ export class CourseView {
     if (near) return near.id;
     // Drawn lines, then throw lines
     for (const l of doc.course.items.filter(i => i.type === "line") as LineItem[]) {
-      const d = distanceToPath(p, l.points) - ((l.width ?? LINE_KINDS[l.kind].width) / 2);
+      const d = distanceToPath(p, linePath(l)) - ((l.width ?? LINE_KINDS[l.kind].width) / 2);
       if (d < tol && (!near || d < near.d)) near = { id: l.id, d };
     }
     if (near) return near.id;
@@ -3043,7 +3048,7 @@ export class CourseView {
       if (d < tol && (!near || d < near.d)) near = { id: s.holeId, d };
     }
     if (near) return near.id;
-    const areas = (doc.course.items.filter(i => i.type === "area") as AreaItem[]).filter(a => pointInPolygon(p, a.points));
+    const areas = (drawnAreas(doc.course.items).filter(i => i.type === "area") as AreaItem[]).filter(a => pointInPolygon(p, a.points));
     if (areas.length) return areas.sort((a, b) => polygonArea(a.points) - polygonArea(b.points))[0].id;
     // Inside a fairway: its hole
     for (const s of doc.stats) {

@@ -74,11 +74,14 @@ class FileParts {
   }
 }
 
-/** Where encoded frames go. `behind` (real-time recorders only): frame i is already late, skip it. */
+/** Where encoded frames go. `behind` (real-time recorders only): frame i is already late, skip it.
+ * `pause`/`resume` (real-time recorders only): the time between is left out of the video. */
 type Sink = {
   codec: string;
   add(canvas: HTMLCanvasElement, index: number, keyFrame: boolean): Promise<void>;
   behind?(index: number): boolean;
+  pause?(): Promise<void>;
+  resume?(): void;
   finish(): Promise<{ blob: Blob; mime: string; ext: "mp4" | "webm" }>;
   close(): void;
 };
@@ -169,6 +172,7 @@ function recorderSink(canvas: HTMLCanvasElement, width: number, height: number, 
   recorder.start(1000);
   let start = 0;
   let last = -1;
+  let pausedAt = 0;
   const due = (i: number) => start + (i * 1000) / fps;
   return {
     codec: mime,
@@ -179,6 +183,20 @@ function recorderSink(canvas: HTMLCanvasElement, width: number, height: number, 
       if (wait > 1) await sleep(wait);
       track.requestFrame();
       last = index;
+    },
+    async pause() {
+      if (!start || pausedAt) return;
+      // The last frame shows for its full time first
+      const wait = due(last + 1) - performance.now();
+      if (wait > 0) await sleep(wait);
+      if (recorder.state === "recording") recorder.pause();
+      pausedAt = performance.now();
+    },
+    resume() {
+      if (!pausedAt) return;
+      start += performance.now() - pausedAt;
+      pausedAt = 0;
+      if (recorder.state === "paused") recorder.resume();
     },
     async finish() {
       // The last frame shows for its full time
@@ -227,7 +245,9 @@ export async function recordFlights(src: FlightFrames, doc: CourseDoc, holeIds: 
       if (opts.signal?.aborted) throw abortError();
       const f = plan[i];
       if (f.hole !== ready) {
+        await sink.pause?.();
         await src.prepare?.(holes[f.hole].id);
+        sink.resume?.();
         ready = f.hole;
         if (opts.signal?.aborted) throw abortError();
       }

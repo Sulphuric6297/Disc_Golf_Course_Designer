@@ -192,10 +192,11 @@ export const linePath = (l: Pick<LineItem, "kind" | "straight" | "points">, perS
 
 /** A line's width, ft: its own, or its kind's. */
 export const lineWidth = (l: Pick<LineItem, "kind" | "width">) => l.width ?? LINE_KINDS[l.kind].width;
-/** A line's own factor at each of its points (1 where it is its usual width). */
-export const widthFactors = (l: Pick<LineItem, "widths" | "points">) => l.points.map((_, i) => (l.widths && l.widths.length === l.points.length ? l.widths[i] : 1));
+/** A line's own factor at each of its points (1 where it is its usual width). Only creeks keep
+ * them (a line made another kind keeps its factors for when it is a creek again). */
+export const widthFactors = (l: Pick<LineItem, "kind" | "widths" | "points">) => l.points.map((_, i) => (l.kind === "stream" && l.widths && l.widths.length === l.points.length ? l.widths[i] : 1));
 /** Whether a line is wider or narrower somewhere along it (a creek that opens out). */
-export const widthVaries = (l: Pick<LineItem, "widths" | "points">) => widthFactors(l).some(f => Math.abs(f - 1) > 1e-3);
+export const widthVaries = (l: Pick<LineItem, "kind" | "widths" | "points">) => widthFactors(l).some(f => Math.abs(f - 1) > 1e-3);
 /**
  * How wide a line is along its length (`t`: 0 at its start, 1 at its end), ft: its width times its
  * factor at each point, easing from one point to the next.
@@ -218,18 +219,18 @@ export const widthAlong = (l: Pick<LineItem, "kind" | "width" | "widths" | "poin
 };
 /** A line's factors with a point put in after `index` (its factor between its neighbours'), or
  * taken out: kept in step with its points. */
-export const widthsWithPoint = (l: Pick<LineItem, "widths" | "points">, index: number): number[] | undefined => {
+export const widthsWithPoint = (l: Pick<LineItem, "kind" | "widths" | "points">, index: number): number[] | undefined => {
   if (!widthVaries(l)) return undefined;
   const f = widthFactors(l);
   const next = f[Math.min(f.length - 1, index + 1)];
   return [...f.slice(0, index + 1), index + 1 < f.length ? (f[index] + next) / 2 : f[index], ...f.slice(index + 1)];
 };
-export const widthsWithEnd = (l: Pick<LineItem, "widths" | "points">, end: 0 | 1): number[] | undefined => {
+export const widthsWithEnd = (l: Pick<LineItem, "kind" | "widths" | "points">, end: 0 | 1): number[] | undefined => {
   if (!widthVaries(l)) return undefined;
   const f = widthFactors(l);
   return end ? [...f, f[f.length - 1]] : [f[0], ...f];
 };
-export const widthsWithout = (l: Pick<LineItem, "widths" | "points">, index: number): number[] | undefined => {
+export const widthsWithout = (l: Pick<LineItem, "kind" | "widths" | "points">, index: number): number[] | undefined => {
   if (!widthVaries(l)) return undefined;
   const f = widthFactors(l).filter((_, k) => k !== index);
   return f.some(v => Math.abs(v - 1) > 1e-3) ? f : undefined;

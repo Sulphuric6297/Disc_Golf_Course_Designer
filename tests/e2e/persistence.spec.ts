@@ -32,7 +32,7 @@ test("New keeps the old course under Recent courses, with Undo; it can be reopen
   expect((await course(page)).holes).toHaveLength(1);
 });
 
-test("save as a file, then open it again", async ({ page }) => {
+test("save as a file, then open it again (painted the same: its seed kept under the new id)", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 300, y: 600 }, { x: 650, y: 600 });
   await page.keyboard.press("Escape");
@@ -51,6 +51,9 @@ test("save as a file, then open it again", async ({ page }) => {
   await page.getByLabel("Open course file").setInputFiles(path);
   await expect.poll(async () => (await course(page)).name).toBe("File Round Trip");
   await expect(page.getByTestId("hole-row")).toContainText("350 ft");
+  const opened = await course(page);
+  expect(opened.id).not.toBe(saved.id);
+  expect(opened.seed).toBe(saved.id);
 });
 
 test("undo and redo cover course edits", async ({ page }) => {
