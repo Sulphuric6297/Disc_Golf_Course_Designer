@@ -564,3 +564,49 @@ plain("a walk drawn to the next tee takes the automatic walk's place (pure logic
   // A walk somewhere else, or a path (not a walk), changes nothing
   plainExpect(pairs([createLine("walk", [{ x: 0, y: 0 }, { x: 50, y: 0 }]), createLine("path", walk.points)])).toEqual(["1>2", "2>3"]);
 });
+
+test("trees placed on a fairway are painted where and as they were placed, and the woods add none there", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 500 }, { x: 700, y: 500 });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
+  const painting = page.getByTestId("design-page").locator("image").first();
+  await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
+  // The share of the land in canopy shade (much darker than the grass)
+  const dark = async () => {
+    const href = await painting.getAttribute("href");
+    return page.evaluate(async (url: string) => {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = 300;
+      c.height = 200;
+      const g = c.getContext("2d")!;
+      g.drawImage(img, 0, 0, 300, 200);
+      const d = g.getImageData(0, 0, 300, 200).data;
+      const l: number[] = [];
+      for (let i = 0; i < d.length; i += 4) l.push((d[i] + d[i + 1] + d[i + 2]) / 3);
+      const median = [...l].sort((a, b) => a - b)[l.length >> 1];
+      return l.filter(v => v < median * 0.62).length / l.length;
+    }, href!);
+  };
+  // Nothing drawn, nothing placed: no trees at all (the woods once stood a few along every fairway)
+  expect(await dark()).toBeLessThan(0.002);
+  // A big pine placed in the middle of the fairway: there, at its own size
+  const before = await painting.getAttribute("href");
+  await page.evaluate(() => {
+    const e = (window as any).__dgEditor();
+    e.set({ treeKind: "conifer" });
+    (window as any).__dgActions.placeAt("add-tree", { x: 500, y: 500 });
+  });
+  const tree = (await course(page)).items.find((i: any) => i.type === "tree");
+  expect(tree.treeType).toBe("conifer");
+  await expect.poll(() => painting.getAttribute("href"), { timeout: 30_000 }).not.toBe(before);
+  const share = await dark();
+  // (its crown's share of the land, give or take its shaded side and the page's margins)
+  const doc = await course(page);
+  const crown = (Math.PI * tree.radius * tree.radius) / (doc.canvas.width * doc.canvas.height);
+  expect(share).toBeGreaterThan(crown * 0.3);
+});

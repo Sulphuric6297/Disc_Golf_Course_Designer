@@ -7,7 +7,7 @@
 import { CIRCLE_ONE_FT, LINE_KINDS } from "../constants";
 import type { AreaItem, CourseDoc, LineItem, MapStyle, P, StructureItem, TreeItem } from "../types";
 import { canopyMask } from "./geo/detect";
-import { boundsOf, corridor, dist, pathLength, pointAlong, pointInPolygon, smoothPath } from "./geom";
+import { boundsOf, corridor, dist, pathLength, pointInPolygon, smoothPath } from "./geom";
 import { autoWalks, fairwayWidthAt } from "./course";
 import type { HoleStats } from "./holeStats";
 import { landscapeOf } from "./landscapes";
@@ -565,15 +565,17 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       }
     }
   };
-  /** A bigger single tree: a few leafy clumps (each lit on its own), higher in the middle. */
-  const clumpTree = (cx: number, cy: number, R: number, t: number) => {
+  /** A bigger single tree: a few leafy clumps (each lit on its own), higher in the middle; `top`
+   * its height (shadows), in pixels. */
+  const clumpTree = (cx: number, cy: number, R: number, t: number, top = R * 1.3) => {
     const tr = seeded(Math.round(cx * 7 + cy * 13));
     const n = 3 + Math.round((R / crownR) * 2.5);
-    stamp(cx, cy, R * 0.7, R * 1.3, t);
+    const tall = top / (R * 1.3);
+    stamp(cx, cy, R * 0.7, top, t);
     for (let j = 0; j < n; j++) {
       const a = tr() * Math.PI * 2, d = Math.sqrt(tr()) * R * 0.55;
       const r = Math.min(R * 0.6, crownR * (0.8 + tr() * 0.6));
-      stamp(cx + Math.cos(a) * d, cy + Math.sin(a) * d, r, R * 1.25 + r * 0.4 - d * 0.3, t);
+      stamp(cx + Math.cos(a) * d, cy + Math.sin(a) * d, r, (R * 1.25 + r * 0.4 - d * 0.3) * tall, t);
     }
   };
   const rnd = seeded(idSeed(doc.id ?? doc.name) ^ 0x5bd1e995);
@@ -602,34 +604,18 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       }
     }
   }
-  // Single trees: real ones placed on the map, and (when the woods aren't from the photo) a few
-  // standing along the fairways' edges, as on painted course maps
-  const lone = (p: P, rFt: number, t: number) => {
-    const sp = toScreen(p);
-    if (sp.x < -40 || sp.y < -40 || sp.x > W + 40 || sp.y > H + 40) return;
-    clumpTree(sp.x, sp.y, Math.min(Math.max(5.5 * pt, crownR * 2.4), Math.max(2.4 * pt, crownR * 0.9, rFt * k * 0.6)), t);
-  };
-  for (const t of doc.items.filter(i => i.type === "tree") as TreeItem[]) lone(t, t.radius * (t.width ?? 1), 1 + (idSeed(t.id) % 6));
-  if (opts.mode !== "photo") {
-    for (const st of stats) {
-      const hole = doc.holes.find(h => h.id === st.holeId);
-      if (!st.complete || !hole?.fairway) continue;
-      const path = smoothPath(st.line, 10);
-      const len = pathLength(path);
-      const tr = seeded(idSeed(hole.id));
-      for (let d = 30; d < len - 20; d += 10 + tr() * 22) {
-        if (tr() > 0.7 * cover) continue;
-        const along = pointAlong(path, d);
-        const side = tr() < 0.5 ? -1 : 1;
-        const off = (hole.fairwayWidth / 2) * (0.35 + tr() * 0.7) * side;
-        const p = { x: along.point.x - Math.sin(along.angle) * off, y: along.point.y + Math.cos(along.angle) * off };
-        const sp = toScreen(p);
-        const mx = Math.min(mw - 1, Math.max(0, Math.floor(sp.x / cell))), my = Math.min(mh - 1, Math.max(0, Math.floor(sp.y / cell)));
-        const m4 = (my * mw + mx) * 4;
-        if (a[m4 + 2] > 60 || b[m4 + 1] > 60 || b[m4] > 120) continue;
-        lone(p, 5 + tr() * 6, 1 + Math.floor(tr() * 6));
-      }
-    }
+  // Trees placed on the map (or found on the photo): each where it stands, at its own size and
+  // height and of its own kind, wherever it is (on a fairway too), apart from the woods
+  for (const t of doc.items.filter(i => i.type === "tree") as TreeItem[]) {
+    const sp = toScreen(t);
+    const r = Math.max(2.2 * pt, t.radius * (t.width ?? 1) * k);
+    if (sp.x < -r || sp.y < -r || sp.x > W + r || sp.y > H + r) continue;
+    const top = Math.max(r * 1.2, (t.height ?? t.radius * 2.6) * k);
+    const tone = 1 + (idSeed(t.id) % 6);
+    if (t.treeType === "conifer") pine(sp.x, sp.y, r, top, tone);
+    else if (t.treeType === "bush") stamp(sp.x, sp.y, r, Math.min(top, r * 1.1), tone);
+    else if (r > crownR * 1.4) clumpTree(sp.x, sp.y, r, tone, top);
+    else stamp(sp.x, sp.y, r, top, tone);
   }
 
   yield;
