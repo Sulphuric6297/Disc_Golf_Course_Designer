@@ -19,6 +19,7 @@ import { getDoc, updateItem, useCourse, useEditor, type Step } from "../../state
 import { deleteRecent, makeCopy, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../../state/files";
 import type { PlanMeta } from "../../lib/storage";
 import type { CourseItem, P } from "../../types";
+import { HoleSteps } from "../HoleSteps";
 import { InspectorBody, groupSummary, itemTitle, useSelection } from "../Inspector";
 import { MapViewport, getView } from "../MapViewport";
 import { MapDesigner } from "../MapDesigner";
@@ -308,6 +309,7 @@ function SelectionHeader({ onMore }: { onMore: () => void }) {
           <div className="text-[13px] text-zinc-400 truncate tabular-nums">{sub}</div>
         )}
       </div>
+      {hole && <HoleSteps holeId={hole.id} big />}
       {hole && s?.complete && <button className={iconBtn} aria-label="View from the tee" title="View from the tee" onClick={() => useEditor.getState().set({ teeView: hole.id, flyover: false })}><Eye size={20} /></button>}
       {!ro && group.length > 0 && <button className={iconBtn} aria-label="Duplicate" title="Duplicate" onClick={duplicateSelection}><Copy size={19} /></button>}
       {!ro && <button className={`${iconBtn} hover:text-red-400`} aria-label="Delete" title="Delete" onClick={deleteSelection} data-testid="selection-delete"><Trash2 size={19} /></button>}

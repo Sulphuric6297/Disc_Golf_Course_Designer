@@ -83,6 +83,19 @@ test.describe("phone", () => {
     await above();
   });
 
+  test("a selected hole's header steps to the next and previous hole", async ({ page }) => {
+    await oneHole(page);
+    await page.evaluate(() => (window as any).__dgActions.addHole({ x: 300, y: 700 }, { x: 600, y: 700 }, "blue"));
+    await page.evaluate(() => (window as any).__dgActions.select((window as any).__dgCourse().holes[0].id));
+    await expect(page.getByTestId("sheet-title")).toHaveText("Hole 1");
+    await page.getByTestId("selection-header").getByTestId("hole-next").tap();
+    await expect(page.getByTestId("sheet-title")).toHaveText("Hole 2");
+    const next = (await page.getByTestId("selection-header").getByTestId("hole-next").boundingBox())!;
+    expect(next.height).toBeGreaterThanOrEqual(44);
+    await page.getByTestId("selection-header").getByTestId("hole-prev").tap();
+    await expect(page.getByTestId("sheet-title")).toHaveText("Hole 1");
+  });
+
   test("the step bar switches steps and the sheet shows each one; no desktop panels", async ({ page }) => {
     await expect(page.getByTestId("side-panel")).toHaveCount(0);
     await expect(page.getByRole("toolbar", { name: "Tools" })).toHaveCount(0);

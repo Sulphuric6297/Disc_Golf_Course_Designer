@@ -373,6 +373,35 @@ test("a hole with two numbers (1/2): shown as both, counted twice; a new hole do
   await expect.poll(async () => (await course(page)).holes.find((h: any) => h.id === b.id).number).toBe(3);
 });
 
+test("from hole to hole: the panel's arrows and [ ] go to the previous and next hole and bring it into view", async ({ page }) => {
+  await blankCourse(page);
+  const a = await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
+  const b = await addHole(page, { x: 600, y: 700 }, { x: 900, y: 700 });
+  const c = await addHole(page, { x: 200, y: 800 }, { x: 300, y: 1000 });
+  await page.keyboard.press("Escape");
+  await page.getByTestId("hole-row").first().click();
+  const sel = async () => (await editorState(page)).selectedId;
+  await expect.poll(sel).toBe(a.id);
+  await page.getByTestId("hole-next").click();
+  await expect.poll(sel).toBe(b.id);
+  await expect(page.getByTestId("inspector-title")).toHaveText("Hole 2");
+  // In view: hole 2's basket on the map
+  await expect.poll(async () => {
+    const box = await page.getByTestId("plan").boundingBox();
+    const p = await page.evaluate(() => (window as any).__dgView.toClient(900, 700));
+    return !!box && p.x > box.x && p.x < box.x + box.width && p.y > box.y && p.y < box.y + box.height;
+  }).toBe(true);
+  await page.keyboard.press("]");
+  await expect.poll(sel).toBe(c.id);
+  // (round the end of the list)
+  await page.keyboard.press("]");
+  await expect.poll(sel).toBe(a.id);
+  await page.keyboard.press("[");
+  await expect.poll(sel).toBe(c.id);
+  await page.getByTestId("hole-prev").click();
+  await expect.poll(sel).toBe(b.id);
+});
+
 test("automatic walks to the next hole turned off and on from the Holes step", async ({ page }) => {
   await blankCourse(page);
   const a = await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });

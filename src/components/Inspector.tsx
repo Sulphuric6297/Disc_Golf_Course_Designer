@@ -13,6 +13,7 @@ import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor 
 import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface, TreeKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { HoleFlight } from "./FlyoverSettings";
+import { HoleSteps } from "./HoleSteps";
 import { getView } from "./MapViewport";
 import { Button, ColorInput, Field, NumberInput, Section, Segmented, Slider, Stat, TextInput, Toggle } from "./ui";
 
@@ -587,7 +588,7 @@ export function InspectorActions({ big = false, close = true }: { big?: boolean;
 }
 
 export function Inspector() {
-  const { open } = useSelection();
+  const { open, hole } = useSelection();
   useEffect(() => {
     const v = getView();
     if (v) v.rightInset = open ? INSPECTOR_INSET : 0;
@@ -595,7 +596,9 @@ export function Inspector() {
   if (!open) return null;
   return (
     <aside className="absolute top-3 right-[150px] w-[300px] max-h-[calc(100%-120px)] overflow-y-auto bg-zinc-900/95 backdrop-blur border border-zinc-700/70 rounded-xl shadow-2xl z-20" data-testid="inspector" aria-label="Selection">
-      <div className="flex items-center justify-end gap-0.5 px-2 pt-2">
+      <div className="flex items-center gap-0.5 px-2 pt-2">
+        {hole && <HoleSteps holeId={hole.id} />}
+        <div className="flex-1" />
         <InspectorActions />
       </div>
       <InspectorBody />

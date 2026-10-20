@@ -7,6 +7,7 @@ import { SidePanel } from "./components/SidePanel";
 import { MapViewport, getView } from "./components/MapViewport";
 import { Toolbar, TOOLS } from "./components/Toolbar";
 import { Inspector } from "./components/Inspector";
+import { stepHole } from "./components/HoleSteps";
 import { SiteImportDialog } from "./components/SiteImportDialog";
 import { TeeViewHud } from "./components/TeeViewHud";
 import { MapDesigner } from "./components/MapDesigner";
@@ -107,7 +108,7 @@ const SHORTCUTS: [string, string][] = [
   ["Enter", "Finish drawing · view from the selected hole's tee"], ["Esc", "Cancel · back to Select · close"], ["Backspace", "Remove the last point drawn"],
   ["Shift+drag", "Select with a box"], ["Shift+click", "Add to the selection, or take out"], ["Ctrl+A", "Select everything"],
   ["Del", "Delete the selection"], ["Ctrl+D", "Duplicate"], ["Ctrl+C / X / V", "Copy / cut / paste (where the pointer is)"], ["Arrows", "Nudge 1 ft (Shift: 10 ft) · other holes in the tee view"],
-  ["Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"], ["2 / 3", "Top-down / 3D"], ["0 / F", "Whole course / zoom to selection"], ["Q / E / N", "Turn left / right / north up"], ["+ / −", "Zoom"]
+  ["Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"], ["2 / 3", "Top-down / 3D"], ["0 / F", "Whole course / zoom to selection"], ["[ / ]", "Previous / next hole"], ["Q / E / N", "Turn left / right / north up"], ["+ / −", "Zoom"]
 ];
 
 const GESTURES: [string, string][] = [
@@ -313,6 +314,7 @@ export default function App() {
         return;
       }
       if (e.key === "?") { setHelp(h => !h); return; }
+      if ((e.key === "[" || e.key === "]") && s.step !== "design") { stepHole(e.key === "[" ? -1 : 1); return; }
       if (e.key === "2") { s.set({ view: "2d" }); return; }
       if (e.key === "3") { s.set({ view: "3d" }); return; }
       if (e.key === "0") { view?.fitCourse(); return; }
