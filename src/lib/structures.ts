@@ -195,6 +195,15 @@ export const orientedBox = (pts: P[]): Box => {
   return box;
 };
 
+/** A drawn shape's points (and its spot) turned `rad` about its middle: clockwise on the map for
+ * a positive angle. */
+export const turnShape = (points: P[], at: P, rad: number, about = orientedBox(points).c) => {
+  const cs = Math.cos(rad), sn = Math.sin(rad);
+  const turn = (p: P) => ({ x: about.x + (p.x - about.x) * cs - (p.y - about.y) * sn, y: about.y + (p.x - about.x) * sn + (p.y - about.y) * cs });
+  const c = turn(at);
+  return { points: points.map(turn), x: c.x, y: c.y };
+};
+
 /** A gazebo's outline over the same ground as `pts`: a regular octagon, turned like it. */
 export const gazeboOutline = (pts: P[], sides = 8): P[] => {
   const { c, u, a, b } = orientedBox(pts);

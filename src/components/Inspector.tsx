@@ -1,16 +1,16 @@
 // The panel for what is selected: a hole (par, fairway, notes, numbers, profile) or one item.
 import { useEffect, useMemo } from "react";
-import { ArrowDown, ArrowUp, Copy, Eye, Lock, Plane, Trash2, Unlock, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
 import { autoWalks, holeBaskets, holeNumber, holeTees, ITEM_LABELS, wholeHoles } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
-import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth } from "../lib/structures";
+import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
 import { holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { addHoleOb, deleteSelection, duplicateSelection, editWalks, select, setTeeLevel, shareBasket } from "../state/actions";
 import { changeDoc, moveHole, updateHole, updateItem, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureKind, TeeSurface, TreeKind } from "../types";
+import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface, TreeKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { HoleFlight } from "./FlyoverSettings";
 import { getView } from "./MapViewport";
@@ -209,6 +209,22 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
   );
 }
 
+/** Turn buttons for a drawn shape (about its middle). */
+function TurnShape({ item }: { item: AreaItem | LineItem | StructureItem }) {
+  if (item.locked || item.points.length < 2) return null;
+  const turn = (deg: number) => updateItem(item.id, turnShape(item.points, item, (deg * Math.PI) / 180) as Partial<CourseItem>);
+  const b = "flex-1 h-8 touch:h-11 rounded-lg border border-zinc-700 hover:border-zinc-500 text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1";
+  return (
+    <Field label="Turn">
+      <div className="flex gap-1.5" data-testid="turn-shape">
+        <button className={b} aria-label="Turn left 15°" onClick={() => turn(-15)}><RotateCcw size={13} /> 15°</button>
+        <button className={b} aria-label="Turn right 15°" onClick={() => turn(15)}><RotateCw size={13} /> 15°</button>
+        <button className={b} aria-label="Turn right 90°" onClick={() => turn(90)}><RotateCw size={13} /> 90°</button>
+      </div>
+    </Field>
+  );
+}
+
 function ItemInspector({ item }: { item: CourseItem }) {
   const doc = useCourse(s => s.doc);
   const ro = useEditor(e => e.viewOnly);
@@ -279,6 +295,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
           <Field label="Name on the map (optional)"><TextInput label="Area name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
           {item.kind === "water" && <ObChoice item={item} />}
           {(item.kind === "ob" || item.kind === "hazard") && holePicker}
+          <TurnShape item={item} />
           <div className="text-xs text-zinc-400">{Math.round(polygonArea(item.points)).toLocaleString()} sq ft ({(polygonArea(item.points) / 43560).toFixed(2)} acres) · {item.points.length} corners</div>
         </>
       );
@@ -296,6 +313,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
           <Field label="Name on the map (optional)"><TextInput label="Line name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
           {item.kind !== "ob" && item.kind !== "walk" && <ObChoice item={item} />}
           {item.kind === "ob" && holePicker}
+          <TurnShape item={item} />
           <div className="text-xs text-zinc-400">{fmtDist(pathLength(item.points), u)} long</div>
         </>
       );
@@ -347,6 +365,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
           )}
           <Field label="Name on the map (optional)"><TextInput label="Structure name" value={item.label ?? ""} placeholder={item.kind === "building" ? "e.g. Clubhouse" : item.kind === "bridge" ? "e.g. Mill Creek Bridge" : ""} onChange={v => set({ label: v || undefined })} /></Field>
           {holePicker}
+          <TurnShape item={item} />
           <div className="text-xs text-zinc-400" data-testid="structure-size">{line ? `${fmtDist(pathLength(item.points), u)} long` : `${Math.round(polygonArea(item.points)).toLocaleString()} sq ft · ${item.points.length} corners`}</div>
         </>
       );

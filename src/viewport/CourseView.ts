@@ -32,7 +32,7 @@ import { forestDetail, type Forest } from "../three/treeKit";
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createStructure } from "../three/structures";
-import { isLineKind, orientedBox, structureBounds, structureHeight, structurePath, structureWidth } from "../lib/structures";
+import { isLineKind, orientedBox, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
 import type { AmenityItem, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
@@ -2204,7 +2204,10 @@ export class CourseView {
   }
 
   private itemHandles(sel: CourseItem, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
-    if (sel.type === "area" || sel.type === "line" || sel.type === "structure") this.pointHandles(sel.id, add);
+    if (sel.type === "area" || sel.type === "line" || sel.type === "structure") {
+      this.pointHandles(sel.id, add);
+      this.turnHandle(sel.id, add);
+    }
     if (sel.type === "structure" && !isLineKind(sel.kind)) this.outlineHandles(sel.id, add);
     else if (sel.type === "tree") {
       const id = sel.id;
@@ -2493,13 +2496,13 @@ export class CourseView {
     }
   }
 
-  /** A building's, shelter's or deck's own handles (as in the Security Camera Planner): turn it
-   * about its middle (Shift: 15° steps), and, in the tilted view, its height. */
-  private outlineHandles(id: string, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
-    const it = () => this.item(id) as StructureItem | null;
+  /** A drawn shape's round handle (an area, a line, anything built): turn it about its middle
+   * (Shift: 15° steps). */
+  private turnHandle(id: string, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
+    const it = () => this.item(id) as AreaItem | LineItem | StructureItem | null;
     add("rotate", () => {
       const st = it();
-      if (!st || st.points.length < 3) return null;
+      if (!st || st.points.length < 2) return null;
       const box = orientedBox(st.points);
       const reach = box.b + Math.max(6, 34 * this.upp(new THREE.Vector3(box.c.x, this.h(box.c.x, box.c.y), box.c.y)));
       const p = { x: box.c.x - box.v.x * reach, y: box.c.y - box.v.y * reach };
@@ -2512,19 +2515,23 @@ export class CourseView {
       const g0 = this.planeAt(e.clientX, e.clientY, y);
       if (!g0) return null;
       const a0 = Math.atan2(g0.z - c.y, g0.x - c.x);
-      const start = st0.points.map(p => ({ ...p }));
+      const start = st0.points.map(p => ({ ...p })), at0 = { x: st0.x, y: st0.y };
       return {
         move: ev => {
           const hit = this.planeAt(ev.clientX, ev.clientY, y);
           if (!hit) return;
           let d = Math.atan2(hit.z - c.y, hit.x - c.x) - a0;
           if (ev.shiftKey) d = Math.round(d / (15 * DEG)) * 15 * DEG;
-          const cs = Math.cos(d), sn = Math.sin(d);
-          this.cb.onChange(id, { points: start.map(p => ({ x: c.x + (p.x - c.x) * cs - (p.y - c.y) * sn, y: c.y + (p.x - c.x) * sn + (p.y - c.y) * cs })) });
+          this.cb.onChange(id, turnShape(start, at0, d, c));
         },
         end: () => this.cb.onCommit()
       };
     }, { title: "Drag to turn · Shift: 15° steps" });
+  }
+
+  /** A building's, shelter's or deck's height handle (as in the Security Camera Planner), in the tilted view. */
+  private outlineHandles(id: string, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
+    const it = () => this.item(id) as StructureItem | null;
     add("height", () => {
       const st = it();
       if (!st || st.points.length < 3) return null;

@@ -339,3 +339,33 @@ test("a mando joins the hole it is placed beside, not just the one being worked 
   // Facing up the first hole (north)
   expect(Math.round(mando.rotation)).toBe(-90);
 });
+
+test("turning drawn shapes: an area with its round handle, a path with the Turn buttons; one undo step each", async ({ page }) => {
+  await blankCourse(page);
+  await page.evaluate(() => {
+    const a = (window as any).__dgActions;
+    a.addDrawn("area", [{ x: 400, y: 400 }, { x: 560, y: 400 }, { x: 560, y: 460 }, { x: 400, y: 460 }]);
+  });
+  const area = (await course(page)).items.find((i: any) => i.type === "area");
+  await page.keyboard.press("v");
+  await page.evaluate(id => (window as any).__dgActions.select(id), area.id);
+  // A quarter turn about its middle (480, 430)
+  const r = await handleCenter(page, "rotate");
+  const mid = await screenOf(page, 480, 430);
+  await drag(page, r, { x: mid.x + (mid.y - r.y), y: mid.y }, 12);
+  const turned = (await course(page)).items.find((i: any) => i.id === area.id).points;
+  const xs = turned.map((p: any) => p.x), ys = turned.map((p: any) => p.y);
+  // (long side now north-south)
+  expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(Math.max(...xs) - Math.min(...xs));
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === area.id).points[1].x).toBeCloseTo(560, 3);
+  // A path: Turn right 90° in the inspector
+  await page.evaluate(() => (window as any).__dgActions.addDrawn("line", [{ x: 300, y: 600 }, { x: 400, y: 600 }]));
+  const path = (await course(page)).items.find((i: any) => i.type === "line");
+  await page.evaluate(id => (window as any).__dgActions.select(id), path.id);
+  await page.getByRole("button", { name: "Turn right 90°" }).click();
+  await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === path.id).points.map((p: any) => ({ x: Math.round(p.x), y: Math.round(p.y) }))).toEqual([{ x: 350, y: 550 }, { x: 350, y: 650 }]);
+  await page.getByRole("button", { name: "Turn left 15°" }).click();
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => Math.round((await course(page)).items.find((i: any) => i.id === path.id).points[0].x)).toBe(350);
+});
