@@ -125,7 +125,18 @@ export const overpassQuery = (bounds: GeoBounds) => {
 export const fetchOsmFeatures = async (bounds: GeoBounds, timeoutMs = OVERPASS_TIMEOUT_MS, onServer?: (index: number) => void): Promise<OsmFeature[]> => {
   const query = overpassQuery(bounds);
   let lastError: unknown = null;
-  for (const [index, endpoint] of OVERPASS_ENDPOINTS.entries()) {
+  // Each server once; those that turned it down straight away (busy: 502, 503, 504, 429) once
+  // more after a short pause
+  const quick: number[] = [];
+  const order = [...OVERPASS_ENDPOINTS.keys()];
+  for (let round = 0; round < 2; round++) {
+    if (round === 1) {
+      if (!quick.length) break;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    for (const index of round === 0 ? order : quick.splice(0)) {
+    const endpoint = OVERPASS_ENDPOINTS[index];
+    const t0 = Date.now();
     onServer?.(index);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -143,8 +154,10 @@ export const fetchOsmFeatures = async (bounds: GeoBounds, timeoutMs = OVERPASS_T
       return osmFeaturesFrom(json);
     } catch (err) {
       lastError = err;
+      if (round === 0 && Date.now() - t0 < 8000) quick.push(index);
     } finally {
       clearTimeout(timer);
+    }
     }
   }
   throw lastError instanceof Error ? lastError : new Error("OpenStreetMap lookup failed.");

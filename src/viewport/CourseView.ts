@@ -14,7 +14,7 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
-import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
+import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
 import { FAIRWAY_STATIONS, autoWalks, basketFor, basketHoles, fairwayOutline, fairwayWidthAt, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
@@ -92,6 +92,7 @@ const STYLE = `
 .dg-h{position:absolute;left:0;top:0;pointer-events:auto;will-change:translate;box-sizing:border-box;touch-action:none}
 .dg-h[data-handle=corner],.dg-h[data-handle=dogleg]{width:14px;height:14px;border-radius:50%;background:#fff;border:2.5px solid #0891b2;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=dogleg]{border-color:#f59e0b}
+.dg-h[data-handle=walkout],.dg-h[data-handle=walkin]{width:13px;height:13px;border-radius:3px;background:#e2e8f0;border:2px dashed #475569;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=flykey]{width:20px;height:20px;border-radius:6px;background:#0284c7;border:2px solid #fff;color:#fff;font:800 11px/16px Inter,system-ui,sans-serif;text-align:center;cursor:grab;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .dg-h[data-handle=flykey]::after{content:attr(data-n)}
 .dg-h[data-handle=flylook]{width:12px;height:12px;border-radius:50%;border:2.5px solid #38bdf8;background:rgba(15,23,42,.35);cursor:grab}
@@ -193,6 +194,8 @@ export class CourseView {
   private povHole: string | null = null;
   private povLook = { yaw: 0, pitch: 0 };
   private fly: { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; t: number; dur: number; ease: boolean; done?: () => void } | null = null;
+  /** The last press on a walk's end (a second one soon after resets it). */
+  private lastWalkTap: { key: string; time: number } | null = null;
   /** The tee view's field of view, kept while a flight sets its own. */
   private povFov = 62;
   private skyBox: Sky;
@@ -1756,7 +1759,9 @@ export class CourseView {
     for (const l of course.items.filter(i => i.type === "line") as LineItem[]) {
       if (painted && (l.kind === "path" || l.kind === "road" || l.kind === "walk") && l.ob !== true) continue;
       const meta = LINE_KINDS[l.kind];
-      const c = l.kind === "ob" ? color("ob")! : l.kind === "path" ? st.path : l.kind === "stream" ? st.water : meta.color;
+      // (paths and walks in their surface's color; dirt in the map's path color)
+      const surfaced = (l.kind === "path" || l.kind === "walk") && l.surface && l.surface !== "dirt" ? PATH_SURFACES[l.surface].color : null;
+      const c = l.kind === "ob" ? color("ob")! : surfaced ?? (l.kind === "path" || (l.kind === "walk" && l.width) ? st.path : l.kind === "stream" ? st.water : meta.color);
       const width = l.width ?? meta.width;
       put(`line:${l.id}`, JSON.stringify([l.points, l.kind, width, hv, c, l.ob, l.kind === "stream" ? this.waterShore(l.points) : 0]), () => {
         const g = new THREE.Group();
@@ -1782,13 +1787,16 @@ export class CourseView {
         } else {
           g.add(this.fatLine(this.drapeLine(l.points), c, l.kind === "ob" ? 3.5 : 2.5, { order: 5, dashed: l.kind === "walk" ? 5 : l.kind === "fence" ? 2 : undefined }));
         }
+        // (a walk with a width: its dashes along the middle too)
+        if (l.kind === "walk" && width > 0) g.add(this.fatLine(this.drapeLine(l.points, 0.4), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 4 }));
         return g;
       });
     }
     // Built things: bridges, boardwalks, stairs, walls, buildings, shelters and decks, as models
     // at real size on the ground (each one rebuilt only when it or the ground changes)
     for (const st of course.items.filter(i => i.type === "structure") as StructureItem[]) {
-      put(`struct:${st.id}`, JSON.stringify([st.kind, st.points, st.width, st.height, st.roof, hv]), () => {
+      // (rebuilt on any change to it: its shape, size, roof, look or colors)
+      put(`struct:${st.id}`, JSON.stringify([{ ...st, label: undefined, locked: undefined }, hv]), () => {
         const model = createStructure(st, (x, y) => this.h(x, y));
         model.traverse(o => { o.userData.itemId = st.id; });
         this.shadowsDirty = true;
@@ -1844,15 +1852,22 @@ export class CourseView {
     }
     // Walks to the next tee
     if (st.nextTee) {
-      for (const { from, to, a } of autoWalks(doc.course.items, doc.stats)) {
-        put(`walk:${a.holeId}`, JSON.stringify([from, to, hv]), () => {
+      // (from outside the putting circle to behind the next tee: see walkEnds)
+      for (const { from, to, a } of autoWalks(doc.course.items, doc.stats, course.holes)) {
+        const hole = course.holes.find(h => h.id === a.holeId);
+        const wide = hole?.walkWidth, surface = hole?.walkSurface;
+        put(`walk:${a.holeId}`, JSON.stringify([from, to, hv, wide, surface, painted, st.path]), () => {
           const g = new THREE.Group();
-          if (dist(from, to) < 40) return g;
-          // Leave the putting area and arrive behind the tee
-          const k0 = Math.min(0.4, CIRCLE_ONE_FT / dist(from, to)), k1 = Math.max(0.6, 1 - 15 / dist(from, to));
-          const s0 = { x: from.x + (to.x - from.x) * k0, y: from.y + (to.y - from.y) * k0 };
-          const s1 = { x: from.x + (to.x - from.x) * k1, y: from.y + (to.y - from.y) * k1 };
-          g.add(this.fatLine(this.drapeLine([s0, s1], 0.35), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 4 }));
+          if (dist(from, to) < 10) return g;
+          if (wide && !painted) {
+            const mesh = new THREE.Mesh(
+              drapedRibbon([from, to], wide, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.17),
+              new THREE.MeshLambertMaterial({ color: surface && surface !== "dirt" ? PATH_SURFACES[surface].color : st.path, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
+            );
+            mesh.renderOrder = 2;
+            g.add(mesh);
+          }
+          g.add(this.fatLine(this.drapeLine([from, to], 0.35), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 4 }));
           return g;
         });
       }
@@ -2151,7 +2166,7 @@ export class CourseView {
     const holeId = editing ? (this.hole(this.selectedId)?.id ?? doc.activeHoleId) : null;
     const hole = this.hole(holeId);
     const drawing = this.drawn() ? this.drawPts.length : -1;
-    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${this.selectedId === hole.id}` : ""}|${drawing}`;
+    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
     if (key === this.handleKey) return;
     this.handleKey = key;
     this.handles.forEach(h => h.el.remove());
@@ -2253,6 +2268,42 @@ export class CourseView {
         return dragPoint(i, h.doglegs);
       }, { index: i, title: "Drag to move this turn · double-click to remove it" });
     });
+    // The walks on to the next tee and in from the hole before (while the hole is selected): where
+    // each starts and ends, to drag (double-click: back where it goes by itself)
+    if (this.selectedId === holeId && this.doc?.course.style.nextTee) {
+      const walks = () => (this.doc ? autoWalks(this.doc.course.items, this.doc.stats, this.doc.course.holes) : []);
+      const end = (which: "out" | "in") => {
+        const w = walks().find(x => (which === "out" ? x.a.holeId : x.b.holeId) === holeId);
+        return w ? { at: which === "out" ? w.from : w.to, anchor: which === "out" ? w.basket : w.tee } : null;
+      };
+      for (const which of ["out", "in"] as const) {
+        if (!end(which)) continue;
+        add(which === "out" ? "walkout" : "walkin", () => { const e = end(which); return e ? at(e.at) : null; }, () => {
+          const e0 = end(which);
+          if (!e0) return null;
+          const now = performance.now();
+          const key = `${holeId}:${which}`;
+          if (this.lastWalkTap && this.lastWalkTap.key === key && now - this.lastWalkTap.time < 400) {
+            this.lastWalkTap = null;
+            this.cb.onHoleChange(holeId, which === "out" ? { walkOut: undefined } : { walkIn: undefined });
+            this.cb.onCommit();
+            return null;
+          }
+          this.lastWalkTap = { key, time: now };
+          const y = this.h(e0.at.x, e0.at.y);
+          const r1 = (v: number) => Math.round(v * 10) / 10;
+          return {
+            move: ev => {
+              const hit = this.planeAt(ev.clientX, ev.clientY, y);
+              if (!hit) return;
+              const off = { x: r1(hit.x - e0.anchor.x), y: r1(hit.z - e0.anchor.y) };
+              this.cb.onHoleChange(holeId, which === "out" ? { walkOut: off } : { walkIn: off });
+            },
+            end: () => this.cb.onCommit()
+          };
+        }, { title: which === "out" ? "Where the walk to the next tee starts: drag · double-click to reset" : "Where the walk from the hole before arrives: drag · double-click to reset" });
+      }
+    }
     // A hand-made flyover (while the hole is selected): each keyframe's camera spot (numbered) and
     // what it looks at, to drag
     const keys = h0.flyKeys;

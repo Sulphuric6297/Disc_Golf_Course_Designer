@@ -14,7 +14,7 @@ import { holeNumber } from "../../lib/course";
 import { courseTotals, holeStats, safetyIssues } from "../../lib/holeStats";
 import { landscapeOf } from "../../lib/landscapes";
 import { fmtDist, fmtElev } from "../../lib/units";
-import { deleteSelection, duplicateSelection, select } from "../../state/actions";
+import { canPaste, copySelection, deleteSelection, duplicateSelection, pasteClipboard, select } from "../../state/actions";
 import { getDoc, moveHole, updateItem, useCourse, useEditor, type Step } from "../../state/course";
 import { deleteRecent, makeCopy, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../../state/files";
 import type { PlanMeta } from "../../lib/storage";
@@ -341,6 +341,9 @@ export function ItemMenu({ itemId, onClose }: { itemId: string; onClose: () => v
     // (on one of the things picked together: for all of them)
     const group = useEditor.getState().group;
     const inGroup = !!item && group.includes(item.id);
+    a.push({ label: inGroup ? `Copy ${group.length}` : "Copy", icon: <Copy size={18} />, run: () => { if (!inGroup) select(itemId); copySelection(); } });
+    const here = item ? { x: item.x + 30, y: item.y + 30 } : null;
+    if (canPaste() && here) a.push({ label: "Paste next to it", icon: <Copy size={18} />, run: () => pasteClipboard(here) });
     a.push({ label: inGroup ? `Duplicate ${group.length}` : "Duplicate", icon: <Copy size={18} />, run: () => { if (!inGroup) select(itemId); duplicateSelection(); } });
     if (item && !inGroup) a.push({ label: item.locked ? "Unlock" : "Lock in place", icon: item.locked ? <Unlock size={18} /> : <Lock size={18} />, run: () => updateItem(item.id, { locked: !item.locked } as Partial<CourseItem>) });
     a.push({ label: inGroup ? `Delete ${group.length}` : "Delete", icon: <Trash2 size={18} />, danger: true, run: () => { if (!inGroup) select(itemId); deleteSelection(); }, testid: "menu-delete" });

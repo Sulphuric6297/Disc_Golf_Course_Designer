@@ -8,6 +8,7 @@ import { canopyMask, detectTrees, waterRegions, woodsRegions } from "./geo/detec
 import { fetchBestElevationGrid } from "./geo/elevation";
 import { creditHeightPx, fetchMapImagery, type MapImagerySource } from "./geo/imagery";
 import { fetchOsmFeatures } from "./geo/osm";
+import { fetchTileFeatures } from "./geo/vectorTiles";
 import { createArea, createLine, createStructure, createTree } from "./course";
 import { centroid, clipPathToRect, clipPolygonToRect, pointInPolygon, polygonArea, simplify } from "./geom";
 import { reframe, toPlanXY, type GeoRef } from "./geoRef";
@@ -29,7 +30,8 @@ export type ImportOptions = {
   imagery: MapImagerySource | "none";
   trees: boolean;
   osm: boolean;
-  onStatus: (text: string) => void;
+  /** What it is doing: step `step` of `of`, and how far along that step is (0..1) where known. */
+  onStatus: (text: string, progress?: { step: number; of: number; fraction?: number }) => void;
 };
 
 /** Terrain grid spacing for a site this wide: about 160 cells across, 4 to 20 ft. */
@@ -73,7 +75,9 @@ const outlineToPlan = (outline: { x: number; y: number }[], w: number, h: number
 
 /** What the satellite photo shows: stands of trees (as woods areas), the trees standing on their
  * own (as trees) and open water (as water areas). */
-export const natureFromPhoto = async (url: string, width: number, height: number): Promise<{ trees: TreeItem[]; woods: AreaItem[]; water: AreaItem[] }> => {
+export const natureFromPhoto = async (url: string, width: number, height: number, onStep: (text: string, fraction: number) => void = () => {}): Promise<{ trees: TreeItem[]; woods: AreaItem[]; water: AreaItem[] }> => {
+  // (a pause between the long steps, so the page shows how far along it is)
+  const breathe = () => new Promise(r => setTimeout(r, 30));
   const img = await loadImage(url);
   const widthM = width / FEET_PER_METER;
   // About 30 cm per pixel: plenty for crowns, and quick
@@ -90,10 +94,18 @@ export const natureFromPhoto = async (url: string, width: number, height: number
   const mpp = widthM / w;
   const pixels = ctx.getImageData(0, 0, w, h);
   const opts = { metersPerPx: mpp, exclude: (_x: number, y: number) => y >= creditTop };
+  onStep("Finding the trees on the photo…", 0.05);
+  await breathe();
   const canopy = canopyMask(pixels, opts);
+  onStep("Tracing the woods…", 0.35);
+  await breathe();
   const area = (kind: "woods" | "water", outline: { x: number; y: number }[], tolerance: number) => ({ ...createArea(kind, outlineToPlan(outline, w, h, width, height, tolerance)), importSource: "photo" as const }) as AreaItem;
   const woods = canopy ? woodsRegions(canopy).map(r => area("woods", r.outline, 4)).filter(a => a.points.length >= 3) : [];
+  onStep("Finding water on the photo…", 0.55);
+  await breathe();
   const water = waterRegions(pixels, opts).map(r => area("water", r.outline, 2)).filter(a => a.points.length >= 3);
+  onStep("Placing the trees…", 0.75);
+  await breathe();
   // The trees in a stand are the woods now; the rest stand on their own
   const trees = detectTrees(pixels, { ...opts, maxTrees: 400, canopy })
     .map(t => {
@@ -119,7 +131,8 @@ const OSM_NAMES: Record<string, [string, string]> = {
  * ("2 paths, 1 road, 1 water area"). Throws when no server could be reached.
  */
 export const osmItems = async (bounds: GeoBounds, width: number, height: number, onServer?: (index: number) => void) => {
-  const features = await fetchOsmFeatures(bounds, undefined, onServer);
+  // (every Overpass server busy: the same OpenStreetMap data from OpenFreeMap's map tiles)
+  const features = await fetchOsmFeatures(bounds, undefined, onServer).catch(err => fetchTileFeatures(bounds).catch(() => Promise.reject(err)));
   const ref = { ...bounds, width, height };
   // (a little past the edges, so lines run cleanly off the map)
   const edge = { x0: -20, y0: -20, x1: width + 20, y1: height + 20 };
@@ -191,18 +204,22 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   const height = Math.max(1, Math.round(selection.heightFt / grid)) * grid;
   const bounds = getGeoBounds(location, width, height);
   const notes: string[] = [];
+  // The steps it takes, to say which one it is on
+  const steps = [opts.imagery !== "none" ? "photo" : "", "elevation", opts.trees && opts.imagery === "satellite" ? "nature" : "", opts.osm ? "osm" : ""].filter(Boolean);
+  const status = (step: string, text: string, fraction?: number) => opts.onStatus(text, { step: steps.indexOf(step) + 1, of: steps.length, fraction });
 
   let background: string | null = null;
   let imagerySource: string | undefined;
   if (opts.imagery !== "none") {
-    opts.onStatus("Downloading the satellite photo…");
-    const map = await fetchMapImagery(location, width, height, opts.imagery);
+    const what = opts.imagery === "satellite" ? "Downloading the satellite photo…" : "Downloading the map…";
+    status("photo", what, 0);
+    const map = await fetchMapImagery(location, width, height, opts.imagery, f => status("photo", what, f));
     background = map.url;
     imagerySource = map.sourceLabel;
     if (map.partial) notes.push("Some map tiles were missing.");
   }
 
-  opts.onStatus("Downloading elevation…");
+  status("elevation", "Downloading elevation…");
   const spacing = Math.max(grid / 2, Math.max(width, height) / 600);
   const samplesX = clamp(Math.round(width / spacing) + 1, 2, 800);
   const samplesY = clamp(Math.round(height / spacing) + 1, 2, 800);
@@ -213,8 +230,8 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
 
   let found: { trees: TreeItem[]; woods: AreaItem[]; water: AreaItem[] } = { trees: [], woods: [], water: [] };
   if (opts.trees && background && opts.imagery === "satellite") {
-    opts.onStatus("Finding woods, trees and water on the photo…");
-    found = await natureFromPhoto(background, width, height).catch(err => {
+    status("nature", "Finding woods, trees and water on the photo…", 0);
+    found = await natureFromPhoto(background, width, height, (text, f) => status("nature", text, f)).catch(err => {
       console.warn("Tree detection failed", err);
       return { trees: [], woods: [], water: [] };
     });
@@ -223,9 +240,10 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   let mapped: CourseItem[] = [];
   let osmFailed = false;
   if (opts.osm) {
-    opts.onStatus("Looking up paths, water and roads on OpenStreetMap…");
+    const ask = "Looking up paths, water and roads on OpenStreetMap…";
+    status("osm", ask);
     try {
-      const found = await osmItems(bounds, width, height);
+      const found = await osmItems(bounds, width, height, i => status("osm", i ? "OpenStreetMap is busy: asking another server…" : ask));
       mapped = found.items;
       notes.push(found.summary ? `From OpenStreetMap: ${found.summary}.` : "OpenStreetMap has no paths, roads or water mapped here.");
     } catch (err) {

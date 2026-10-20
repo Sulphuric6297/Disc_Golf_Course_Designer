@@ -24,7 +24,12 @@ const startFrom = () => {
   return { view: { lat, lon, zoom, key: 1 }, selection: b, label: site.location?.label ?? "" };
 };
 
+/** An import under way (whichever dialog started it). */
+let importing = false;
+
 export function SiteImportDialog({ onClose, onImported }: { onClose: () => void; onImported: (site: ImportedSite, opts: { trees: boolean; osm: boolean }) => void }) {
+  const open = useRef(true);
+  useEffect(() => () => { open.current = false; }, []);
   const [start] = useState(startFrom);
   const [query, setQuery] = useState(start.label);
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
@@ -36,7 +41,15 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   const [imagery, setImagery] = useState<MapImagerySource>("satellite");
   const [trees, setTrees] = useState(true);
   const [osm, setOsm] = useState(true);
-  const [status, setStatus] = useState<{ state: "idle" | "searching" | "loading" | "error"; text: string }>({ state: "idle", text: "" });
+  const [status, setStatus] = useState<{ state: "idle" | "searching" | "loading" | "error"; text: string; progress?: { step: number; of: number; fraction?: number } }>({ state: "idle", text: "" });
+  // How long the import has been going (a big site takes a while: it shows it is still working)
+  const [started, setStarted] = useState(0);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (status.state !== "loading") return;
+    const t = setInterval(() => tick(n => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [status.state]);
   const layout = useLayout();
   const timer = useRef(0);
   /** The place just picked (its name in the search box asks for no more suggestions). */
@@ -74,14 +87,20 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   const tooBig = !!dims && (dims.widthFt > SITE_MAX_WIDTH_FT || dims.heightFt > SITE_MAX_WIDTH_FT);
 
   const run = async () => {
-    if (!selection || tooBig) return;
+    // One import at a time (a second click, before the button shows it is busy, starts nothing)
+    if (!selection || tooBig || importing) return;
+    importing = true;
+    setStarted(Date.now());
     setStatus({ state: "loading", text: "Starting…" });
     try {
-      const site = await importSite(selectionFromBounds(selection, label || query || "Course site"), { imagery, trees, osm, onStatus: text => setStatus({ state: "loading", text }) });
-      onImported(site, { trees, osm });
+      const site = await importSite(selectionFromBounds(selection, label || query || "Course site"), { imagery, trees, osm, onStatus: (text, progress) => setStatus({ state: "loading", text, progress }) });
+      // (closed meanwhile: left as it was)
+      if (open.current) onImported(site, { trees, osm });
     } catch (err) {
       console.error(err);
       setStatus({ state: "error", text: err instanceof Error ? err.message : "Couldn't bring in the site." });
+    } finally {
+      importing = false;
     }
   };
 
@@ -98,10 +117,20 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
       <Toggle label="Paths, water, roads and parking" checked={osm} onChange={setOsm} />
     </>
   );
+  const secs = status.state === "loading" && started ? Math.floor((Date.now() - started) / 1000) : 0;
+  const p = status.state === "loading" ? status.progress : undefined;
   const statusEl = status.text && (
-    <div className={`text-sm flex items-start gap-2 ${status.state === "error" ? "text-red-300" : "text-zinc-300"}`} data-testid="import-status">
-      {status.state === "loading" || status.state === "searching" ? <Loader2 size={15} className="animate-spin mt-0.5 shrink-0" /> : null}
-      {status.text}
+    <div data-testid="import-status">
+      <div className={`text-sm flex items-start gap-2 ${status.state === "error" ? "text-red-300" : "text-zinc-300"}`}>
+        {status.state === "loading" || status.state === "searching" ? <Loader2 size={15} className="animate-spin mt-0.5 shrink-0" /> : null}
+        <span className="flex-1">{status.text}</span>
+        {status.state === "loading" && <span className="text-xs text-zinc-400 tabular-nums whitespace-nowrap" data-testid="import-elapsed">{p ? `Step ${p.step} of ${p.of} · ` : ""}{Math.floor(secs / 60)}:{String(secs % 60).padStart(2, "0")}</span>}
+      </div>
+      {p && (
+        <div className="mt-1.5 h-1.5 rounded-full bg-zinc-800 overflow-hidden" role="progressbar" aria-label="Import progress" aria-valuenow={Math.round((((p.step - 1) + (p.fraction ?? 0.5)) / p.of) * 100)}>
+          <div className="h-full bg-orange-500 transition-[width] duration-500" style={{ width: `${(((p.step - 1) + (p.fraction ?? 0.5)) / p.of) * 100}%` }} />
+        </div>
+      )}
     </div>
   );
   const mapEl = (

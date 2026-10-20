@@ -15,7 +15,7 @@ import { Button } from "./components/ui";
 import { useLayout, useTouch } from "./components/useLayout";
 import { CompactShell, ItemMenu } from "./components/mobile/CompactShell";
 import { useCourse, useEditor, getDoc, changeDoc, updateItem } from "./state/course";
-import { deleteSelection, duplicateSelection, nudgeSelection, select, selectAll } from "./state/actions";
+import { canPaste, copySelection, cutSelection, deleteSelection, duplicateSelection, nudgeSelection, pasteClipboard, select, selectAll } from "./state/actions";
 import { osmFailedToast } from "./state/osm";
 import { makeCopy, openSharedLink, restoreAutosave, startAutosave } from "./state/files";
 import { toast, useToasts } from "./state/toast";
@@ -106,7 +106,7 @@ const SHORTCUTS: [string, string][] = [
   ["O / L", "Draw an area / a line"], ["S", "Build: bridge, boardwalk, stairs, wall, building, shelter, deck"], ["R / A / K", "Tree / bench, sign… / label"], ["D", "Measure"],
   ["Enter", "Finish drawing · view from the selected hole's tee"], ["Esc", "Cancel · back to Select · close"], ["Backspace", "Remove the last point drawn"],
   ["Shift+drag", "Select with a box"], ["Shift+click", "Add to the selection, or take out"], ["Ctrl+A", "Select everything"],
-  ["Del", "Delete the selection"], ["Ctrl+D", "Duplicate"], ["Arrows", "Nudge 1 ft (Shift: 10 ft) · other holes in the tee view"],
+  ["Del", "Delete the selection"], ["Ctrl+D", "Duplicate"], ["Ctrl+C / X / V", "Copy / cut / paste (where the pointer is)"], ["Arrows", "Nudge 1 ft (Shift: 10 ft) · other holes in the tee view"],
   ["Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"], ["2 / 3", "Top-down / 3D"], ["0 / F", "Whole course / zoom to selection"], ["Q / E / N", "Turn left / right / north up"], ["+ / −", "Zoom"]
 ];
 
@@ -162,7 +162,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
         <h3 className="font-bold text-zinc-100 mt-5 mb-1">Map navigation</h3>
         <p className="text-sm text-zinc-400">Drag to pan, scroll or pinch to zoom at the cursor, right-drag (or Ctrl+drag) to turn and tilt, Shift+drag to select, double-click to zoom in.</p>
         <h3 className="font-bold text-zinc-100 mt-4 mb-1">Credits</h3>
-        <p className="text-xs text-zinc-500">Imagery © Esri, Maxar, Earthstar Geographics. Map data © OpenStreetMap contributors. Elevation: USGS 3DEP and AWS Terrain Tiles (Mapzen).</p>
+        <p className="text-xs text-zinc-500">Imagery © Esri, Maxar, Earthstar Geographics. Map data © OpenStreetMap contributors (and OpenFreeMap, OpenMapTiles). Elevation: USGS 3DEP and AWS Terrain Tiles (Mapzen).</p>
       </div>
     </div>
   );
@@ -179,7 +179,7 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
     window.addEventListener("keydown", esc);
     return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc); };
   }, [onClose]);
-  if (!hole && !item) return null;
+  if (!hole && !item && !(canPaste() && info.ground)) return null;
   const x = Math.min(info.clientX, window.innerWidth - 220), y = Math.min(info.clientY, window.innerHeight - 200);
   const row = "w-full text-left px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800";
   const run = (fn: () => void) => () => { fn(); onClose(); };
@@ -198,9 +198,11 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
       {item && (item.type === "area" && item.kind === "water" || item.type === "line" && item.kind !== "ob" && item.kind !== "walk") && (
         <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, { ob: item.ob === true ? undefined : true } as Partial<CourseItem>))}>{item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)"}</button>
       )}
-      <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); duplicateSelection(); })}>{inGroup ? `Duplicate ${group.length}` : "Duplicate"}</button>
+      {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); copySelection(); })}>{inGroup ? `Copy ${group.length}` : "Copy"}</button>}
+      {canPaste() && info.ground && <button className={row} role="menuitem" onClick={run(() => pasteClipboard(info.ground))}>Paste here</button>}
+      {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); duplicateSelection(); })}>{inGroup ? `Duplicate ${group.length}` : "Duplicate"}</button>}
       {item && !inGroup && <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, { locked: !item.locked } as Partial<CourseItem>))}>{item.locked ? "Unlock" : "Lock in place"}</button>}
-      <button className={`${row} text-red-300`} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); deleteSelection(); })}>{inGroup ? `Delete ${group.length}` : "Delete"}</button>
+      {(hole || item) && <button className={`${row} text-red-300`} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); deleteSelection(); })}>{inGroup ? `Delete ${group.length}` : "Delete"}</button>}
     </div>
   );
 }
@@ -229,7 +231,9 @@ export default function App() {
     // What was designed stays on the same ground when the frame grows, shrinks or moves
     const d0 = getDoc();
     const from = geoRefOf(d0);
-    const designed = d0.items.filter(i => !isImported(i));
+    // (OpenStreetMap out of reach this time: what it brought in before stays)
+    const keptOsm = (i: CourseItem) => !!site.osmFailed && (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm";
+    const designed = d0.items.filter(i => !isImported(i) || keptOsm(i));
     const carried = from && site.site.bounds ? reframeDesign({ holes: d0.holes, items: designed }, from, { ...site.site.bounds, ...site.canvas }) : { holes: d0.holes, items: designed, outside: 0 };
     changeDoc(d => ({
       canvas: site.canvas,
@@ -266,6 +270,9 @@ export default function App() {
       if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (s.viewOnly) return; if (e.shiftKey) useCourse.getState().redo(); else useCourse.getState().undo(); return; }
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); if (!s.viewOnly) useCourse.getState().redo(); return; }
       if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (!s.viewOnly) duplicateSelection(); return; }
+      if (mod && e.key.toLowerCase() === "c" && !s.teeView && s.step !== "design") { if (copySelection()) e.preventDefault(); return; }
+      if (mod && e.key.toLowerCase() === "x" && !s.teeView && s.step !== "design") { e.preventDefault(); if (!s.viewOnly) cutSelection(); return; }
+      if (mod && e.key.toLowerCase() === "v" && !s.teeView && s.step !== "design") { e.preventDefault(); if (!s.viewOnly) { s.set({ tool: "select" }); pasteClipboard(); } return; }
       if (mod && e.key.toLowerCase() === "a" && !s.teeView && s.step !== "design") { e.preventDefault(); if (!s.viewOnly) { s.set({ tool: "select" }); selectAll(); } return; }
       if (mod) return;
       if (s.teeView) {

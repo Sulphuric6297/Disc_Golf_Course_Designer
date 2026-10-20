@@ -3,6 +3,7 @@ import { test, expect, addHole, course, geoAt, importSite, STAND } from "./fixtu
 import { osmFeaturesFrom, overpassQuery } from "../../src/lib/geo/osm";
 import { clipPathToRect, clipPolygonToRect, pointInPolygon as inPoly, polygonArea as polyArea } from "../../src/lib/geom";
 import { boxFill, traceOutline, waterRegions, woodsRegions, type Canopy } from "../../src/lib/geo/detect";
+import { decodeMvt, tileFeatures } from "../../src/lib/geo/vectorTiles";
 import { reframeDesign } from "../../src/lib/importSite";
 
 /** A point given in meters east and north of the site's center, on the plan (ft from its north-west corner). */
@@ -347,4 +348,54 @@ plain("tree stands and ponds traced into outlines; lone crowns, pools and courts
   const wx = water[0].outline.map(q => q.x);
   plainExpect(Math.min(...wx)).toBeLessThan(28);
   plainExpect(Math.max(...wx)).toBeLessThan(110);
+});
+
+plain("OpenStreetMap from map tiles when Overpass is busy: a vector tile's paths, roads, streams, water, woods and buildings (pure logic)", () => {
+  // A tiny Mapbox Vector Tile, written by hand
+  const varint = (n: number) => { const out: number[] = []; while (n >= 0x80) { out.push((n & 0x7f) | 0x80); n = Math.floor(n / 128); } out.push(n); return out; };
+  const field = (num: number, type: number, body: number[]) => [...varint(num * 8 + type), ...(type === 2 ? varint(body.length) : []), ...body];
+  const str = (s: string) => [...new TextEncoder().encode(s)];
+  const zz = (n: number) => (n < 0 ? -n * 2 - 1 : n * 2);
+  const geom = (cmds: [number, [number, number][]][]) => {
+    const out: number[] = [];
+    let x = 0, y = 0;
+    for (const [cmd, pts] of cmds) {
+      out.push((pts.length << 3) | cmd);
+      for (const [px, py] of pts) { out.push(zz(px - x), zz(py - y)); x = px; y = py; }
+    }
+    return out;
+  };
+  const packed = (nums: number[]) => nums.flatMap(varint);
+  const layer = (name: string, keys: string[], values: string[], feats: { tags: number[]; type: number; geom: number[] }[]) => field(3, 2, [
+    ...field(1, 2, str(name)),
+    ...feats.flatMap(f => field(2, 2, [...field(2, 2, packed(f.tags)), ...field(3, 0, varint(f.type)), ...field(4, 2, packed(f.geom))])),
+    ...keys.flatMap(k => field(3, 2, str(k))),
+    ...values.flatMap(v => field(4, 2, field(1, 2, str(v)))),
+    ...field(5, 0, varint(4096))
+  ]);
+  // A closed square, clockwise on the screen (an outer ring)
+  const square = [...geom([[1, [[100, 100]]], [2, [[300, 100], [300, 300], [100, 300]]]]), 15];
+  const tile = new Uint8Array([
+    ...layer("transportation", ["class"], ["path", "minor", "rail"], [
+      { tags: [0, 0], type: 2, geom: geom([[1, [[0, 2048]]], [2, [[4096, 2048]]]]) },
+      { tags: [0, 1], type: 2, geom: geom([[1, [[2048, 0]]], [2, [[2048, 4096]]]]) },
+      { tags: [0, 2], type: 2, geom: geom([[1, [[0, 0]]], [2, [[10, 10]]]]) }
+    ]),
+    ...layer("waterway", ["class"], ["stream"], [{ tags: [0, 0], type: 2, geom: geom([[1, [[0, 0]]], [2, [[4096, 4096]]]]) }]),
+    ...layer("water", ["class"], ["lake"], [{ tags: [0, 0], type: 3, geom: square }]),
+    ...layer("landcover", ["class", "subclass"], ["wood", "forest", "grass", "meadow"], [{ tags: [0, 0, 1, 1], type: 3, geom: square }, { tags: [0, 2, 1, 3], type: 3, geom: square }]),
+    ...layer("building", [], [], [{ tags: [], type: 3, geom: square }])
+  ]);
+  const layers = decodeMvt(tile);
+  plainExpect(layers.map(l => l.name)).toEqual(["transportation", "waterway", "water", "landcover", "building"]);
+  plainExpect(layers[0].features[0].rings[0]).toEqual([{ x: 0, y: 2048 }, { x: 4096, y: 2048 }]);
+  plainExpect(layers[2].features[0].rings[0]).toHaveLength(5);
+  const feats = tileFeatures(layers, 4823, 6160);
+  plainExpect(feats.map(f => `${f.geom}:${f.kind}`)).toEqual(["line:path", "line:road", "line:stream", "area:water", "area:woods", "area:rough", "area:building"]);
+  // In latitude and longitude, inside the tile
+  const n = 2 ** 14;
+  const path = feats[0].points;
+  plainExpect(path[0].lon).toBeCloseTo((4823 / n) * 360 - 180, 6);
+  plainExpect(path[1].lon).toBeCloseTo((4824 / n) * 360 - 180, 6);
+  plainExpect(feats[3].points).toHaveLength(4);
 });

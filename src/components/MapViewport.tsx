@@ -4,7 +4,7 @@ import { BoxSelect, Compass, Maximize2, Minus, Plus, RotateCcw, RotateCw } from 
 import { CourseView } from "../viewport/CourseView";
 import type { ViewDoc, ViewInfo } from "../viewport/types";
 import { useCourse, useEditor, updateItem, updateHole, useCourse as courseStore } from "../state/course";
-import { addDrawn, addHole, boxSelect, moveGroup, placeAt, select } from "../state/actions";
+import { addDrawn, addHole, boxSelect, moveGroup, placeAt, select, setPastePoint } from "../state/actions";
 import { holeStats, safetyIssues } from "../lib/holeStats";
 import { contoursOf, hillshadeCanvas } from "../lib/relief";
 import { terrainStats, heightAt } from "../lib/terrainGrid";
@@ -56,7 +56,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       },
       onHoleChange: (id, patch) => updateHole(id, patch, false),
       onCommit: () => courseStore.getState().commit(),
-      onHover: p => setHover(p),
+      onHover: p => { setHover(p); setPastePoint(p); },
       onPose: pose => useEditor.getState().set({ view: pose === "top" ? "2d" : "3d" }),
       onTeeView: id => useEditor.getState().set({ teeView: id }),
       onContextMenu: i => menuRef.current(i),

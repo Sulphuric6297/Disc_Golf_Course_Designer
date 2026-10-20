@@ -1,7 +1,7 @@
 // The panel for what is selected: a hole (par, fairway, notes, numbers, profile) or one item.
 import { useEffect, useMemo } from "react";
 import { ArrowDown, ArrowUp, Copy, Eye, Lock, Plane, Trash2, Unlock, X } from "lucide-react";
-import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
+import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
 import { autoWalks, holeBaskets, holeNumber, holeTees, ITEM_LABELS, wholeHoles } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth } from "../lib/structures";
@@ -10,7 +10,7 @@ import { holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { addHoleOb, deleteSelection, duplicateSelection, editWalks, select, setTeeLevel, shareBasket } from "../state/actions";
 import { changeDoc, moveHole, updateHole, updateItem, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, RoofKind, StructureKind, TeeSurface, TreeKind } from "../types";
+import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureKind, TeeSurface, TreeKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { HoleFlight } from "./FlyoverSettings";
 import { getView } from "./MapViewport";
@@ -34,7 +34,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
   const s = useMemo(() => holeStats(doc, hole), [doc, hole]);
   const n = holeNumber(doc, hole.id);
   // The walk on to the next tee, while it is the automatic one
-  const walkNext = useMemo(() => doc.style.nextTee && autoWalks(doc.items, doc.holes.map(h => holeStats(doc, h))).some(w => w.a.holeId === hole.id), [doc, hole.id]);
+  const walkNext = useMemo(() => doc.style.nextTee && autoWalks(doc.items, doc.holes.map(h => holeStats(doc, h)), doc.holes).some(w => w.a.holeId === hole.id), [doc, hole.id]);
   const u = doc.units;
   const tees = holeTees(doc, hole.id);
   const baskets = holeBaskets(doc, hole.id);
@@ -126,7 +126,16 @@ function HoleInspector({ hole }: { hole: Hole }) {
               {hole.doglegs.length > 0 && <Button small onClick={() => set({ doglegs: [] })}>Straighten</Button>}
             </div>
           )}
-          {walkNext && <div className="mt-1.5"><Button small onClick={() => editWalks(hole.id)} testid="edit-walk">Edit the walk to hole {n + 1}</Button></div>}
+        </Section>
+      )}
+      {!ro && walkNext && (
+        <Section title={`Walk to hole ${n + 1}`} testid="hole-walk">
+          <Slider label="Width" min={1} max={20} step={0.5} value={hole.walkWidth ?? 6} onChange={v => set({ walkWidth: v })} format={v => fmtDist(v, u)} />
+          <SurfacePick value={hole.walkSurface} onChange={v => set({ walkSurface: v })} />
+          <div className="flex flex-wrap gap-1.5">
+            <Button small onClick={() => editWalks(hole.id)} testid="edit-walk">Edit the walk to hole {n + 1}</Button>
+            {hole.walkOut && <Button small onClick={() => set({ walkOut: undefined })} testid="walk-out-reset">Start off the green again</Button>}
+          </div>
         </Section>
       )}
       {s.complete && (
@@ -173,6 +182,17 @@ function HoleInspector({ hole }: { hole: Hole }) {
         </Section>
       )}
     </>
+  );
+}
+
+/** What a path or a walk is made of. */
+function SurfacePick({ value, onChange }: { value?: PathSurface; onChange: (v: PathSurface | undefined) => void }) {
+  return (
+    <Field label="Surface">
+      <select aria-label="Surface" data-testid="path-surface" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={value ?? "dirt"} onChange={e => onChange(e.target.value === "dirt" ? undefined : (e.target.value as PathSurface))}>
+        {(Object.keys(PATH_SURFACES) as PathSurface[]).map(k => <option key={k} value={k}>{PATH_SURFACES[k].label}</option>)}
+      </select>
+    </Field>
   );
 }
 
@@ -270,7 +290,8 @@ function ItemInspector({ item }: { item: CourseItem }) {
               {(Object.keys(LINE_KINDS) as LineKind[]).map(k => <option key={k} value={k}>{LINE_KINDS[k].label}</option>)}
             </select>
           </Field>
-          {LINE_KINDS[item.kind].width > 0 && <Slider label="Width" min={1} max={60} value={item.width ?? LINE_KINDS[item.kind].width} onChange={v => set({ width: v })} format={v => fmtDist(v, u)} />}
+          {(LINE_KINDS[item.kind].width > 0 || item.kind === "walk") && <Slider label="Width" min={1} max={60} value={item.width ?? (LINE_KINDS[item.kind].width || 6)} onChange={v => set({ width: v })} format={v => fmtDist(v, u)} />}
+          {(item.kind === "path" || item.kind === "walk") && <SurfacePick value={item.surface} onChange={v => set({ surface: v })} />}
           <Field label="Name on the map (optional)"><TextInput label="Line name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
           {item.kind !== "ob" && item.kind !== "walk" && <ObChoice item={item} />}
           {item.kind === "ob" && holePicker}

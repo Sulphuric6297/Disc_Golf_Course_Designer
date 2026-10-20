@@ -4,8 +4,8 @@
 // and worn dirt at the tees; creeks and ponds in clear blue with dark banks; soft gray roads and
 // mown grass. It is one picture for the whole map, laid into the SVG under the symbols (built
 // things are drawn there too; the painting clears the trees from them and casts their shadows).
-import { CIRCLE_ONE_FT, LINE_KINDS } from "../constants";
-import type { AreaItem, CourseDoc, LineItem, MapStyle, P, StructureItem, TreeItem } from "../types";
+import { CIRCLE_ONE_FT, LINE_KINDS, PATH_SURFACES } from "../constants";
+import type { AreaItem, CourseDoc, LineItem, MapStyle, P, PathSurface, StructureItem, TreeItem } from "../types";
 import { canopyMask } from "./geo/detect";
 import { boundsOf, corridor, dist, pathLength, pointInPolygon, smoothPath } from "./geom";
 import { autoWalks, fairwayWidthAt } from "./course";
@@ -274,12 +274,16 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     g.lineJoin = "round";
     return { c, g };
   };
-  const A = mask(), B = mask(), C = mask();
+  const A = mask(), B = mask(), C = mask(), D = mask();
   type Ch = { g: CanvasRenderingContext2D; color: string };
   const ch = (m: { g: CanvasRenderingContext2D }, i: 0 | 1 | 2, v = 255): Ch => ({ g: m.g, color: `rgb(${i === 0 ? v : 0},${i === 1 ? v : 0},${i === 2 ? v : 0})` });
   const FAIR = ch(A, 0), CLEAR = ch(A, 1), WATER = ch(A, 2);
   const DIRT = ch(B, 0), ROAD = ch(B, 1), WOODS = ch(B, 2);
   const BUILDING = ch(C, 0), SAND = ch(C, 1), MIDDLE = ch(C, 2);
+  //   D: gravel, wood chips
+  const GRAVEL = ch(D, 0), CHIPS = ch(D, 1);
+  /** Where a path or walk of this surface is painted (grass: as mown as a fairway; paved: as a road). */
+  const surfaceCh = (surface: PathSurface | undefined) => (surface === "gravel" ? GRAVEL : surface === "woodchips" ? CHIPS : surface === "grass" ? FAIR : surface === "paved" ? ROAD : DIRT);
   const poly = (c: Ch, pts: P[]) => {
     if (pts.length < 3) return;
     c.g.fillStyle = c.color;
@@ -360,7 +364,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         line(ROAD, pts, lw);
         line(CLEAR, pts, lw + ftOf(2));
       } else if (l.kind === "path" || l.kind === "walk") {
-        line(DIRT, pts, lw);
+        line(surfaceCh(l.surface), pts, lw);
         line(CLEAR, pts, lw + (crownR * 2.4) / k);
       } else if (l.kind === "stream") {
         const cw = lw;
@@ -378,13 +382,15 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   yield;
   // Dirt trails from each basket to the next tee
   if (s.nextTee) {
-    for (const { from, to, a, b } of autoWalks(doc.items, stats)) {
+    for (const { from, to, a, b } of autoWalks(doc.items, stats, doc.holes)) {
       const d = dist(from, to);
       if (d < 40) continue;
-      // (worn wide, as on painted course maps: a walk you can see from across the map)
-      const tw = Math.max(6, ftOf(6));
+      // (worn wide, as on painted course maps: a walk you can see from across the map; or as wide as
+      // set, never too thin to see)
+      const hole = doc.holes.find(h => h.id === a.holeId);
+      const tw = hole?.walkWidth ? Math.max(hole.walkWidth, ftOf(2)) : Math.max(6, ftOf(6));
       const pts = smoothPath(meander([from, to], Math.min(d * 0.07, 30), Math.max(70, d * 0.55), idSeed(a.holeId + b.holeId)), 3);
-      line(DIRT, pts, tw);
+      line(surfaceCh(hole?.walkSurface), pts, tw);
       line(CLEAR, pts, tw + (crownR * 2.4) / k);
     }
   }
@@ -403,6 +409,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const b = read(B.c, 0.9 * (pt / cell));
   yield;
   const c = read(C.c, 1 * (pt / cell));
+  yield;
+  const dd = read(D.c, 0.9 * (pt / cell));
   yield;
   const wet = read(A.c, 0.6 * (pt / cell));
   yield;
@@ -766,6 +774,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const dirtPal = palette(s.path, [0.86, 1.03, 1.19, 1.35, 1.54], -8, 0.85);
   const road = palette("#969a9d", [0.66, 0.8, 0.92, 1.02, 1.1], 0);
   const sandPal = palette("#b3a275", [0.78, 0.9, 1, 1.1], 0);
+  const gravelPal = palette(PATH_SURFACES.gravel.color, [0.8, 0.9, 1, 1.1], 0);
+  const chipsPal = palette(PATH_SURFACES.woodchips.color, [0.72, 0.86, 1, 1.16], 0);
   const roof = palette("#77716a", [0.6, 0.8, 1, 1.18], 0);
   const n6 = (pal: RGB[]) => pal.length;
   /** A palette tone for brightness v (0..1): bands with soft or crisp steps. */
@@ -876,6 +886,14 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
             const grit = GRIT[tr | (x & 511)];
             lay(dirtPal, (0.52 + (grit - 0.5) * 0.7 + mott * 0.3) * (0.45 + 0.55 * lit), da);
           }
+        }
+        // Gravel and wood chips: speckled, fuzzy edged like the dirt
+        const gv = dd[m4] / 255, ch2 = dd[m4 + 1] / 255;
+        if (gv > 0.1 || ch2 > 0.1) {
+          const edge = (fbm(x / pt * 0.35 + 120, y / pt * 0.35) - 0.5) * 0.45;
+          const grit = GRIT[tr | (x & 511)];
+          if (gv > 0.1) lay(gravelPal, (0.55 + (grit - 0.5) * 0.8 + mott * 0.2) * (0.5 + 0.5 * lit), smooth(0.45, 0.55, gv + edge));
+          if (ch2 > 0.1) lay(chipsPal, (0.5 + (grit - 0.5) * 0.9 + mott * 0.25) * (0.45 + 0.55 * lit), smooth(0.45, 0.55, ch2 + edge));
         }
         const bd = c[m4] / 255;
         if (bd > 0.25) lay(roof, (0.25 + 0.6 * smooth(0.5, 0.8, bd)) * (0.6 + 0.4 * lit), smooth(0.42, 0.52, bd));

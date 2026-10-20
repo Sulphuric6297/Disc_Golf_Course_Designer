@@ -1,4 +1,4 @@
-import type { AmenityKind, AreaKind, LineKind, PinPosition, RoofKind, StructureKind, TeeLevel, TeeSurface } from "./types";
+import type { AmenityKind, AreaKind, LineKind, PathSurface, PinPosition, RoofKind, StructureKind, TeeLevel, TeeSurface } from "./types";
 
 export const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -61,6 +61,15 @@ export const AREA_KINDS: Record<AreaKind, { label: string; color: string; fill: 
   parking: { label: "Parking lot", color: "#6b7280", fill: 0.5, help: "Parking." },
   building: { label: "Building", color: "#a8a29e", fill: 0.7, help: "A building or shelter." },
   sand: { label: "Sand / dirt", color: "#d9c48f", fill: 0.5, help: "Sand, dirt or a bare area." }
+};
+
+/** What paths and walks can be made of (dirt takes the map's path color). */
+export const PATH_SURFACES: Record<PathSurface, { label: string; color: string }> = {
+  dirt: { label: "Dirt", color: "#b08a5a" },
+  gravel: { label: "Gravel", color: "#bdb6a6" },
+  woodchips: { label: "Wood chips", color: "#7a5236" },
+  grass: { label: "Mown grass", color: "#9cc46a" },
+  paved: { label: "Paved", color: "#a3a6a8" }
 };
 
 export const LINE_KINDS: Record<LineKind, { label: string; color: string; width: number; help: string }> = {

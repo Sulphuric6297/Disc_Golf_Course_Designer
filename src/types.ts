@@ -103,12 +103,16 @@ export interface AreaItem extends BaseItem {
 
 /** Lines drawn on the map: OB lines (the line itself is OB), paths, roads, fences, streams. */
 export type LineKind = "ob" | "path" | "road" | "fence" | "stream" | "walk";
+/** What a path or a walk between holes is made of. */
+export type PathSurface = "dirt" | "gravel" | "woodchips" | "grass" | "paved";
 export interface LineItem extends BaseItem {
   type: "line";
   kind: LineKind;
   points: P[];
   /** Drawn width in feet (paths, roads and streams). */
   width?: number;
+  /** What a path or a walk is made of (unset: dirt). */
+  surface?: PathSurface;
   holeId?: string;
   label?: string;
   /** Out of bounds: a stream is unless set false; a road, fence or path is when true (and then
@@ -170,6 +174,15 @@ export interface Hole {
   notes?: string;
   /** A flyover made by hand: the camera's keyframes, in order (two or more; unset: flown by itself). */
   flyKeys?: FlyKey[];
+  /** Where the walk to the next tee starts, moved by hand: ft from this hole's basket (unset: outside
+   * the putting circle, away from the fairway, toward the next tee). */
+  walkOut?: P;
+  /** Where the walk from the hole before arrives, moved by hand: ft from this hole's tee (unset:
+   * behind the tee). */
+  walkIn?: P;
+  /** The walk on to the next tee: its width (ft) and what it is made of (unset: a worn dirt trail). */
+  walkWidth?: number;
+  walkSurface?: PathSurface;
 }
 
 /** One moment of a hand-made flyover: where the camera is and what it looks at. */

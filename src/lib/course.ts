@@ -1,5 +1,5 @@
 // Making course documents and items, and finding a hole's parts.
-import { DEFAULT_CANVAS, DEFAULT_FAIRWAY_FT, DEFAULT_PAD, PIN_POSITIONS, STRUCTURE_KINDS, TEE_ORDER, TREE_COLORS, generateId } from "../constants";
+import { CIRCLE_ONE_FT, DEFAULT_CANVAS, DEFAULT_FAIRWAY_FT, DEFAULT_PAD, PIN_POSITIONS, STRUCTURE_KINDS, TEE_ORDER, TREE_COLORS, generateId } from "../constants";
 import type {
   AmenityItem, AmenityKind, AreaItem, AreaKind, BasketItem, CourseDoc, CourseItem, CourseRules, DropZoneItem, Hole, LabelItem,
   Layout, LineItem, LineKind, MandoItem, MapStyle, P, PinPosition, StructureItem, StructureKind, TeeItem, TeeLevel, TreeItem
@@ -241,22 +241,57 @@ export const ITEM_LABELS: Record<CourseItem["type"], string> = {
  * in a row, except where a walk line has been drawn from near the one hole's basket to near the
  * next hole's tee (either way round), which takes its place.
  */
-export const autoWalks = <S extends { holeId: string; complete: boolean; line: P[] }>(items: CourseItem[], stats: S[]) => {
+export const autoWalks = <S extends { holeId: string; complete: boolean; line: P[] }>(items: CourseItem[], stats: S[], holes: Pick<Hole, "id" | "walkOut" | "walkIn">[] = []) => {
   const drawn = items.filter((i): i is LineItem => i.type === "line" && i.kind === "walk" && i.points.length >= 2);
-  const out: { from: P; to: P; a: S; b: S }[] = [];
+  const out: { from: P; to: P; basket: P; tee: P; a: S; b: S }[] = [];
   for (let i = 0; i + 1 < stats.length; i++) {
     const a = stats[i], b = stats[i + 1];
     if (!a.complete || !b.complete) continue;
-    const from = a.line[a.line.length - 1], to = b.line[0];
-    const reach = Math.max(60, dist(from, to) * 0.3);
+    const basket = a.line[a.line.length - 1], tee = b.line[0];
+    const reach = Math.max(60, dist(basket, tee) * 0.3);
     const near = (p: P, q: P) => dist(p, q) < reach;
     const replaced = drawn.some(w => {
       const p = w.points[0], q = w.points[w.points.length - 1];
-      return (near(p, from) && near(q, to)) || (near(q, from) && near(p, to));
+      return (near(p, basket) && near(q, tee)) || (near(q, basket) && near(p, tee));
     });
-    if (!replaced) out.push({ from, to, a, b });
+    if (replaced) continue;
+    const { from, to } = walkEnds(a.line, b.line, holes.find(h => h.id === a.holeId)?.walkOut, holes.find(h => h.id === b.holeId)?.walkIn);
+    out.push({ from, to, basket, tee, a, b });
   }
   return out;
+};
+
+/** How far from the basket the walk to the next tee starts: just outside the putting circle. */
+export const WALK_OUT_FT = CIRCLE_ONE_FT + 6;
+
+/**
+ * Where the walk from one hole to the next starts and ends. It leaves the basket from outside the
+ * putting circle (10 m), toward the next tee but never back across the fairway the hole was
+ * played down (at least 70 degrees off it), and arrives behind the next tee, out of the way of
+ * whoever is throwing. `out` (ft from the basket) and `in` (ft from the tee) are where they were
+ * moved by hand.
+ */
+export const walkEnds = (holeLine: P[], nextLine: P[], out?: P, inn?: P) => {
+  const basket = holeLine[holeLine.length - 1], back = holeLine[holeLine.length - 2] ?? basket;
+  const tee = nextLine[0], ahead = nextLine[1] ?? tee;
+  let from: P;
+  if (out) from = { x: basket.x + out.x, y: basket.y + out.y };
+  else {
+    const toTee = Math.atan2(tee.y - basket.y, tee.x - basket.x);
+    const fairway = Math.atan2(back.y - basket.y, back.x - basket.x);
+    let off = Math.atan2(Math.sin(toTee - fairway), Math.cos(toTee - fairway));
+    const MIN = (70 * Math.PI) / 180;
+    if (Math.abs(off) < MIN) off = (off < 0 ? -1 : 1) * MIN;
+    const dir = dist(basket, back) > 1 ? fairway + off : toTee;
+    from = { x: basket.x + Math.cos(dir) * WALK_OUT_FT, y: basket.y + Math.sin(dir) * WALK_OUT_FT };
+  }
+  let to: P;
+  if (inn) to = { x: tee.x + inn.x, y: tee.y + inn.y };
+  else {
+    const d = dist(tee, ahead) || 1;
+    to = { x: tee.x - ((ahead.x - tee.x) / d) * 18, y: tee.y - ((ahead.y - tee.y) / d) * 18 };
+  }
+  return { from, to };
 };
 
 /** Every hole a basket is played to: its own, then the ones sharing it. */

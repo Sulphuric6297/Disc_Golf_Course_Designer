@@ -189,3 +189,29 @@ test.describe("touch", () => {
     await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "amenity").length).toBe(1);
   });
 });
+
+test("copy and paste: Ctrl+C, then Ctrl+V where the pointer is (a group too); Ctrl+X cuts", async ({ page }) => {
+  const ids = await benchesOnArea(page);
+  await page.locator(`[data-item-id="${ids[0]}"]`).click();
+  await page.keyboard.press("Control+c");
+  const there = await screenOf(page, 650, 650);
+  await page.mouse.move(there.x, there.y, { steps: 3 });
+  await page.keyboard.press("Control+v");
+  await expect.poll(async () => (await benches(page)).length).toBe(4);
+  const pasted = (await course(page)).items.find((i: any) => i.type === "amenity" && !ids.includes(i.id));
+  expect(Math.hypot(pasted.x - 650, pasted.y - 650)).toBeLessThan(15);
+  expect((await editorState(page)).selectedId).toBe(pasted.id);
+  // A group keeps its arrangement
+  await shiftBox(page, { x: 350, y: 350 }, { x: 540, y: 540 });
+  await expect.poll(async () => (await group(page)).length).toBe(3);
+  await page.keyboard.press("Control+c");
+  const far = await screenOf(page, 450, 650);
+  await page.mouse.move(far.x, far.y, { steps: 3 });
+  await page.keyboard.press("Control+v");
+  await expect.poll(async () => (await benches(page)).length).toBe(7);
+  // Cut: gone, and pasted back
+  await page.keyboard.press("Control+x");
+  await expect.poll(async () => (await benches(page)).length).toBe(4);
+  await page.keyboard.press("Control+v");
+  await expect.poll(async () => (await benches(page)).length).toBe(7);
+});

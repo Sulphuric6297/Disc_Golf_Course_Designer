@@ -1,4 +1,7 @@
+import { test as plainHoles, expect as plainHolesExpect } from "@playwright/test";
 import { test, expect, addHole, blankCourse, clickPlan, course, drag, editorState, handleCenter, screenOf } from "./fixtures";
+import { walkEnds, WALK_OUT_FT } from "../../src/lib/course";
+import { CIRCLE_ONE_FT } from "../../src/constants";
 
 test("a new hole: click the tee, then the basket; length and par show live", async ({ page }) => {
   await blankCourse(page);
@@ -222,4 +225,21 @@ test("two holes to one basket: a basket click on a basket shares it; the Basket 
   expect((await baskets())[0].holeId).toBe(b.id);
   expect((await baskets())[0].alsoHoles).toBeUndefined();
   await expect(page.getByTestId("hole-row")).toContainText("350 ft");
+});
+
+plainHoles("the walk to the next tee leaves from outside the putting circle, away from the fairway, and arrives behind the next tee; moved by hand where asked (pure logic)", () => {
+  // Hole 1 played south, to (0, 300); hole 2's tee up the fairway's side, throwing north
+  const hole = [{ x: 0, y: 0 }, { x: 0, y: 300 }];
+  const next = [{ x: 40, y: 200 }, { x: 40, y: -100 }];
+  const { from, to } = walkEnds(hole, next);
+  const basket = hole[1];
+  plainHolesExpect(Math.hypot(from.x - basket.x, from.y - basket.y)).toBeCloseTo(WALK_OUT_FT, 5);
+  plainHolesExpect(WALK_OUT_FT).toBeGreaterThan(CIRCLE_ONE_FT);
+  // At least 70 degrees off the way back up the fairway (north)
+  const angle = Math.acos(((from.x - basket.x) * 0 + (from.y - basket.y) * -1) / WALK_OUT_FT) * 180 / Math.PI;
+  plainHolesExpect(angle).toBeGreaterThanOrEqual(70 - 1e-6);
+  // Behind the next tee (south of it, as it throws north)
+  plainHolesExpect(to).toEqual({ x: 40, y: 218 });
+  // Moved by hand: where it was put, from the basket and the tee
+  plainHolesExpect(walkEnds(hole, next, { x: -50, y: 10 }, { x: 5, y: 25 })).toEqual({ from: { x: -50, y: 310 }, to: { x: 45, y: 225 } });
 });

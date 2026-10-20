@@ -67,7 +67,8 @@ export const loadTileMosaic = async (
   bounds: GeoBounds,
   maxZoom: number,
   maxTiles: number,
-  tileUrl: (z: number, x: number, y: number) => string
+  tileUrl: (z: number, x: number, y: number) => string,
+  onProgress?: (fraction: number) => void
 ) => {
   let z = maxZoom;
   let range = getTileRange(bounds, z);
@@ -81,9 +82,12 @@ export const loadTileMosaic = async (
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Your browser couldn't create a canvas for map data.");
   const jobs: Promise<boolean>[] = [];
+  const total = (range.x1 - range.x0 + 1) * (range.y1 - range.y0 + 1);
+  let done = 0;
   for (let ty = range.y0; ty <= range.y1; ty++) {
     for (let tx = range.x0; tx <= range.x1; tx++) {
       jobs.push(loadTileImage(tileUrl(z, tx, ty)).then(img => {
+        onProgress?.(++done / total);
         if (!img) return false;
         ctx.drawImage(img, (tx - range.x0) * ELEVATION_TILE_SIZE, (ty - range.y0) * ELEVATION_TILE_SIZE, ELEVATION_TILE_SIZE, ELEVATION_TILE_SIZE);
         return true;

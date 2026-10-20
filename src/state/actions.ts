@@ -243,33 +243,94 @@ const basketOrTeeHoles = (i: CourseItem) => (i.type === "basket" ? basketHoles(i
 
 /** Copies of the things picked together, a little to the side; whole holes among them copy as new
  * holes (a tee or pin on its own stays out). */
-const duplicateGroup = (group: string[]) => {
-  const doc = getDoc();
-  const off = 30;
-  const ids = new Set(group);
+/** Things to copy: the items and the whole holes among them (a tee or pin on its own stays out,
+ * as it belongs to its hole). */
+type Parts = { items: CourseItem[]; holes: Hole[] };
+const partsFrom = (doc: CourseDoc, ids: Set<string>): Parts => {
   const holes = wholeHoles(doc, ids);
-  const holeMap = new Map(holes.map(h => [h.id, `hole-${generateId()}`]));
+  const whole = new Set(holes.map(h => h.id));
+  const items = doc.items.filter(i => ids.has(i.id) && !((i.type === "tee" || i.type === "basket") && !basketOrTeeHoles(i).some(h => whole.has(h))));
+  return { items: items.map(i => structuredClone(i)), holes: holes.map(h => structuredClone(h)) };
+};
+
+/** Copies of parts, moved by (dx, dy), with ids and holes of their own, added and picked. */
+const placeParts = (parts: Parts, dx: number, dy: number) => {
+  const holeMap = new Map(parts.holes.map(h => [h.id, `hole-${generateId()}`]));
   const copies: CourseItem[] = [];
-  for (const i of doc.items) {
-    if (!ids.has(i.id)) continue;
+  for (const i of parts.items) {
     const own = basketOrTeeHoles(i).filter(h => holeMap.has(h));
     if ((i.type === "tee" || i.type === "basket") && !own.length) continue;
-    const c = { ...i, id: generateId(), x: i.x + off, y: i.y + off, locked: false } as CourseItem;
-    if (c.type === "area" || c.type === "line" || c.type === "structure") c.points = c.points.map(p => ({ x: p.x + off, y: p.y + off }));
+    const c = { ...structuredClone(i), id: generateId(), x: i.x + dx, y: i.y + dy, locked: false } as CourseItem;
+    if (c.type === "area" || c.type === "line" || c.type === "structure") c.points = c.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
     if (c.type === "tee") c.holeId = holeMap.get(own[0])!;
     else if (c.type === "basket") {
       c.holeId = holeMap.get(own[0])!;
       c.alsoHoles = own.length > 1 ? own.slice(1).map(h => holeMap.get(h)!) : undefined;
-    } else if ("holeId" in c && c.holeId && holeMap.has(c.holeId)) (c as { holeId?: string }).holeId = holeMap.get(c.holeId);
+    } else if ("holeId" in c && c.holeId) (c as { holeId?: string }).holeId = holeMap.get(c.holeId) ?? (getDoc().holes.some(h => h.id === c.holeId) ? c.holeId : undefined);
     copies.push(c);
   }
-  if (!copies.length) return;
+  if (!copies.length) return false;
+  const shift = (p: P) => ({ x: p.x + dx, y: p.y + dy });
   changeDoc(d => ({
-    holes: [...d.holes, ...holes.map(h => ({ ...h, id: holeMap.get(h.id)!, doglegs: h.doglegs.map(p => ({ x: p.x + off, y: p.y + off })) }))],
+    holes: [...d.holes, ...parts.holes.map(h => ({ ...structuredClone(h), id: holeMap.get(h.id)!, doglegs: h.doglegs.map(shift), flyKeys: h.flyKeys?.map(k => ({ ...k, x: k.x + dx, y: k.y + dy, lookX: k.lookX + dx, lookY: k.lookY + dy })) }))],
     items: [...d.items, ...copies]
   }));
-  pickGroup(copies.map(c => c.id));
+  const holeIds = [...holeMap.values()];
+  if (copies.length === parts.items.length && holeIds.length === 1 && copies.every(c => (c.type === "tee" || c.type === "basket") && c.holeId === holeIds[0])) select(holeIds[0]);
+  else pickGroup(copies.map(c => c.id));
+  return true;
 };
+
+const duplicateGroup = (group: string[]) => {
+  placeParts(partsFrom(getDoc(), new Set(group)), 30, 30);
+};
+
+// ------------------------------------------------------------------ copy and paste
+
+let clipboard: (Parts & { center: P }) | null = null;
+/** Where the pointer last was on the map (pastes go there). */
+let pastePoint: P | null = null;
+export const setPastePoint = (p: P | null) => {
+  if (p) pastePoint = p;
+};
+
+/** The selection's parts: a hole with its tees and baskets, a thing, or the things picked together. */
+const selectedParts = (): Parts | null => {
+  const { selectedId, group } = editor();
+  const doc = getDoc();
+  if (group.length) return partsFrom(doc, new Set(group));
+  if (!selectedId) return null;
+  const hole = doc.holes.find(h => h.id === selectedId);
+  if (hole) return partsFrom(doc, new Set([...holeTees(doc, hole.id), ...holeBaskets(doc, hole.id)].map(i => i.id)));
+  const item = doc.items.find(i => i.id === selectedId);
+  return item ? { items: [structuredClone(item)], holes: [] } : null;
+};
+
+/** Ctrl+C: the selection, kept to paste (in this course or another). */
+export const copySelection = () => {
+  const parts = selectedParts();
+  if (!parts || !parts.items.length) return false;
+  const pts = parts.items.flatMap(i => (i.type === "area" || i.type === "line" || i.type === "structure" ? i.points : [{ x: i.x, y: i.y }]));
+  const b = { minX: Math.min(...pts.map(p => p.x)), maxX: Math.max(...pts.map(p => p.x)), minY: Math.min(...pts.map(p => p.y)), maxY: Math.max(...pts.map(p => p.y)) };
+  clipboard = { ...parts, center: { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 } };
+  return true;
+};
+
+/** Ctrl+X: copied, then deleted. */
+export const cutSelection = () => {
+  if (copySelection()) deleteSelection();
+};
+
+/** Ctrl+V: what was copied, where the pointer is (or a little to the side of where it was). */
+export const pasteClipboard = (at: P | null = pastePoint) => {
+  if (!clipboard) return false;
+  const c = clipboard;
+  const to = at ?? { x: c.center.x + 30, y: c.center.y + 30 };
+  return placeParts(c, to.x - c.center.x, to.y - c.center.y);
+};
+
+/** Whether anything was copied. */
+export const canPaste = () => !!clipboard;
 
 /** A copy of the selection, a little to the side (a hole copies with its tees and baskets). */
 export const duplicateSelection = () => {
@@ -388,9 +449,14 @@ export const addHoleOb = (holeId: string, where: "left" | "right" | "long") => {
 export const editWalks = (holeId: string | null) => {
   const doc = getDoc();
   const stats = doc.holes.map(h => holeStats(doc, h));
-  const lines = autoWalks(doc.items, stats)
+  const lines = autoWalks(doc.items, stats, doc.holes)
     .filter(w => holeId === null || w.a.holeId === holeId)
-    .map(({ from, to }) => createLine("walk", [0.06, 0.36, 0.66, 0.96].map(t => ({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t }))));
+    .map(({ from, to, a }) => {
+      const line = createLine("walk", [0, 1 / 3, 2 / 3, 1].map(t => ({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t })));
+      // (as wide and of what it was, on its own)
+      const hole = doc.holes.find(h => h.id === a.holeId);
+      return { ...line, ...(hole?.walkWidth ? { width: hole.walkWidth } : {}), ...(hole?.walkSurface ? { surface: hole.walkSurface } : {}) };
+    });
   if (!lines.length) return [];
   changeDoc(d => ({ items: [...d.items, ...lines] }));
   if (lines.length === 1) select(lines[0].id);

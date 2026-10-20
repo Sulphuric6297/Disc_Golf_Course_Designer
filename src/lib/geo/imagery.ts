@@ -143,7 +143,8 @@ export const fetchMapImagery = async (
   location: SiteLocation,
   widthFt: number,
   heightFt: number,
-  source: MapImagerySource
+  source: MapImagerySource,
+  onProgress?: (fraction: number) => void
 ): Promise<{ url: string; partial: boolean; sourceLabel: string }> => {
   const config = MAP_IMAGERY_SOURCES[source];
   const bounds = getGeoBounds(location, widthFt, heightFt);
@@ -181,7 +182,7 @@ export const fetchMapImagery = async (
       zoom -= 1;
     }
   }
-  const mosaic = await loadTileMosaic(bounds, zoom, MAP_IMAGERY_MAX_TILES, config.url);
+  const mosaic = await loadTileMosaic(bounds, zoom, MAP_IMAGERY_MAX_TILES, config.url, onProgress);
   if (!mosaic.loadedAny) {
     throw new Error(`Couldn't download ${config.label.toLowerCase()} imagery.`);
   }

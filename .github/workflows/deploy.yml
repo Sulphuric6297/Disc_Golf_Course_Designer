@@ -67,3 +67,5 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: dist
+          # (earlier builds' files stay: a page still open or cached asks for them)
+          clean: false
