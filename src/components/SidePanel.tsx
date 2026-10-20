@@ -17,13 +17,13 @@ import { DesignPanel } from "./DesignPanel";
 import { ExportPanel } from "./ExportPanel";
 import { useTouch } from "./useLayout";
 
-export const STEPS: { id: Step; label: string; title: string; blurb: string }[] = [
-  { id: "site", label: "Site", title: "Your site", blurb: "The satellite photo, elevation, trees, paths and water for the land the course goes on." },
-  { id: "holes", label: "Holes", title: "Holes", blurb: "Click a tee spot, then a basket spot. Bend the line with its dots; add more tees and pins." },
-  { id: "features", label: "Features", title: "OB, mandos and more", blurb: "Out of bounds, hazards, water, mandos, drop zones, paths, bridges, buildings, benches and signs." },
-  { id: "review", label: "Review", title: "Review", blurb: "Par, lengths, elevation and safety checks for the whole course." },
-  { id: "design", label: "Design", title: "Map design", blurb: "Make the course map beautiful: style, colors, labels and the title block." },
-  { id: "export", label: "Export", title: "Export and share", blurb: "Course map, tee signs, scorecard, GPS files, and a link to share." }
+export const STEPS: { id: Step; label: string; title: string }[] = [
+  { id: "site", label: "Site", title: "Your site" },
+  { id: "holes", label: "Holes", title: "Holes" },
+  { id: "features", label: "Features", title: "OB, mandos and more" },
+  { id: "review", label: "Review", title: "Review" },
+  { id: "design", label: "Design", title: "Map design" },
+  { id: "export", label: "Export", title: "Export and share" }
 ];
 
 /** The steps' icons (the phone's step bar and rail). */
@@ -48,14 +48,13 @@ const NextButton = ({ step }: { step: Step }) => {
   );
 };
 
-const ToolCard = ({ icon, title, text, onClick, active, testid }: { icon: ReactNode; title: string; text: string; onClick: () => void; active?: boolean; testid?: string }) => {
+const ToolCard = ({ icon, title, onClick, active, testid }: { icon: ReactNode; title: string; onClick: () => void; active?: boolean; testid?: string }) => {
   const touch = useTouch();
   return (
     <button onClick={onClick} data-testid={testid} className={`w-full text-left flex gap-3 items-start rounded-lg px-3 py-2 touch:py-2.5 border transition-colors ${active ? "border-orange-400 bg-orange-500/10" : "border-zinc-800 hover:border-zinc-600 bg-zinc-800/40"}`}>
       <span className="mt-0.5 text-orange-300">{icon}</span>
       <span>
         <span className="block text-sm font-semibold text-zinc-100">{touch ? touchWords(title) : title}</span>
-        <span className="block text-[11px] text-zinc-400">{touch ? touchWords(text) : text}</span>
       </span>
     </button>
   );
@@ -74,7 +73,6 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
       {!doc.site.bounds ? (
         <Section>
           <Button tone="primary" full onClick={onFindSite} testid="find-site"><MapPinned size={16} /> Find your park</Button>
-          <p className="text-xs text-zinc-400 mt-2">Search for the park or address, frame the area, and the photo, elevation, trees and paths come in by themselves. Or design on open ground: the Hole tool works right away.</p>
         </Section>
       ) : (
         <Section title="Site" testid="site-info">
@@ -86,8 +84,8 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
             {doc.site.imagerySource && <div>Photo: {doc.site.imagerySource}</div>}
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            <Button small onClick={onFindSite} title="Drag the frame's corners to make the site bigger or smaller, or move it: your holes and features stay where they are on the ground">Resize or re-import the site</Button>
-            <Button small onClick={() => void refreshOsm()} testid="refresh-osm" title="Look up OpenStreetMap again: what came from it before is replaced (Undo brings it back)">Update paths, roads and water</Button>
+            <Button small onClick={onFindSite}>Resize or re-import the site</Button>
+            <Button small onClick={() => void refreshOsm()} testid="refresh-osm">Update paths, roads and water</Button>
           </div>
         </Section>
       )}
@@ -99,7 +97,7 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
         </Field>
       </Section>
       <Section title="Map display">
-        <Toggle label="Satellite photo" checked={ed.photo} onChange={v => ed.set({ photo: v })} hint={ed.photo ? undefined : "Showing the course in its landscape's natural colors (Design step)."} />
+        <Toggle label="Satellite photo" checked={ed.photo} onChange={v => ed.set({ photo: v })} />
         <Toggle label="Contour lines" checked={ed.contours} onChange={v => ed.set({ contours: v })} />
         <Toggle label="Hill shading" checked={ed.shading} onChange={v => ed.set({ shading: v })} />
         <Toggle label="Ground texture up close" checked={ed.groundDetail} onChange={v => ed.set({ groundDetail: v })} />
@@ -116,7 +114,6 @@ function LayoutEditor() {
   return (
     <Section title="Layout" right={<button className="text-xs text-orange-300 hover:text-orange-200" onClick={() => setOpen(o => !o)}>{open ? "Done" : "Edit layouts"}</button>}>
       <Segmented label="Active layout" value={doc.activeLayout} onChange={v => changeDoc(() => ({ activeLayout: v }))} options={doc.layouts.map(l => ({ value: l.id, label: <span className="flex items-center gap-1 justify-center"><span className="w-2 h-2 rounded-full" style={{ background: TEE_LEVELS[l.tee].color }} />{l.name}</span> }))} />
-      <p className="text-[11px] text-zinc-500 mt-1.5">A layout plays each hole from one tee color to one pin position. Lengths and par follow it.</p>
       {open && (
         <div className="mt-2 space-y-2" data-testid="layout-editor">
           {doc.layouts.map(l => (
@@ -144,19 +141,18 @@ function LayoutEditor() {
 function HolesStep() {
   const doc = useCourse(s => s.doc);
   const ed = useEditor();
-  const touch = useTouch();
   const stats = useMemo(() => doc.holes.map(h => holeStats(doc, h)), [doc]);
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
   const u = doc.units;
   return (
     <>
       <Section>
-        <ToolCard icon={<Route size={18} />} title="New hole (H)" text="Click where the tee goes, then where the basket goes. Keep clicking pairs for the next holes." active={ed.tool === "add-hole"} onClick={() => ed.set({ tool: "add-hole" })} testid="new-hole" />
+        <ToolCard icon={<Route size={18} />} title="New hole (H)" active={ed.tool === "add-hole"} onClick={() => ed.set({ tool: "add-hole" })} testid="new-hole" />
       </Section>
       <LayoutEditor />
       <Section title={`${doc.holes.length} hole${doc.holes.length === 1 ? "" : "s"}`} testid="hole-list">
         {doc.holes.length === 0 ? (
-          <p className="text-xs text-zinc-400">{touch ? "No holes yet. Pick the Hole tool and tap a tee spot, then a basket spot." : "No holes yet. Pick the Hole tool and click a tee spot, then a basket spot."}</p>
+          <p className="text-xs text-zinc-400">No holes yet.</p>
         ) : (
           <ol className="space-y-0.5">
             {stats.map(s => {
@@ -200,18 +196,17 @@ function HolesStep() {
 function FeaturesStep() {
   const doc = useCourse(s => s.doc);
   const ed = useEditor();
-  const touch = useTouch();
-  const area = (kind: AreaKind, text: string) => (
-    <ToolCard key={kind} icon={<Pentagon size={17} style={{ color: AREA_KINDS[kind].color }} />} title={AREA_KINDS[kind].label} text={text} active={ed.tool === "draw-area" && ed.areaKind === kind} onClick={() => ed.set({ tool: "draw-area", areaKind: kind })} testid={`feature-area-${kind}`} />
+  const area = (kind: AreaKind) => (
+    <ToolCard key={kind} icon={<Pentagon size={17} style={{ color: AREA_KINDS[kind].color }} />} title={AREA_KINDS[kind].label} active={ed.tool === "draw-area" && ed.areaKind === kind} onClick={() => ed.set({ tool: "draw-area", areaKind: kind })} testid={`feature-area-${kind}`} />
   );
-  const line = (kind: LineKind, text: string) => (
-    <ToolCard key={kind} icon={<Spline size={17} style={{ color: LINE_KINDS[kind].color }} />} title={LINE_KINDS[kind].label} text={text} active={ed.tool === "draw-line" && ed.lineKind === kind} onClick={() => ed.set({ tool: "draw-line", lineKind: kind })} testid={`feature-line-${kind}`} />
+  const line = (kind: LineKind) => (
+    <ToolCard key={kind} icon={<Spline size={17} style={{ color: LINE_KINDS[kind].color }} />} title={LINE_KINDS[kind].label} active={ed.tool === "draw-line" && ed.lineKind === kind} onClick={() => ed.set({ tool: "draw-line", lineKind: kind })} testid={`feature-line-${kind}`} />
   );
-  const built = (kind: StructureKind, text: string) => (
-    <ToolCard key={kind} icon={<span className="inline-block" dangerouslySetInnerHTML={{ __html: structureIcon(kind, 18, `card-${kind}`) }} />} title={STRUCTURE_KINDS[kind].label} text={text} active={ed.tool === "draw-structure" && ed.structureKind === kind} onClick={() => ed.set({ tool: "draw-structure", structureKind: kind, ...(STRUCTURE_KINDS[kind].shape === "line" && (ed.drawShape === "box" || ed.drawShape === "circle") ? { drawShape: "points" as const } : {}) })} testid={`feature-structure-${kind}`} />
+  const built = (kind: StructureKind) => (
+    <ToolCard key={kind} icon={<span className="inline-block" dangerouslySetInnerHTML={{ __html: structureIcon(kind, 18, `card-${kind}`) }} />} title={STRUCTURE_KINDS[kind].label} active={ed.tool === "draw-structure" && ed.structureKind === kind} onClick={() => ed.set({ tool: "draw-structure", structureKind: kind, ...(STRUCTURE_KINDS[kind].shape === "line" && (ed.drawShape === "box" || ed.drawShape === "circle") ? { drawShape: "points" as const } : {}) })} testid={`feature-structure-${kind}`} />
   );
-  const tool = (mode: ToolMode, icon: ReactNode, title: string, text: string) => (
-    <ToolCard key={mode} icon={icon} title={title} text={text} active={ed.tool === mode} onClick={() => ed.set({ tool: mode })} testid={`feature-${mode}`} />
+  const tool = (mode: ToolMode, icon: ReactNode, title: string) => (
+    <ToolCard key={mode} icon={icon} title={title} active={ed.tool === mode} onClick={() => ed.set({ tool: mode })} testid={`feature-${mode}`} />
   );
   const photoTrees = doc.items.filter(i => i.type === "tree" && i.importSource === "photo").length;
   const osm = doc.items.filter(i => (i.type === "area" || i.type === "line") && i.importSource === "osm").length;
@@ -219,44 +214,43 @@ function FeaturesStep() {
     <>
       <Section title="Rules of play">
         <div className="space-y-1.5">
-          {area("ob", "Draw around it: landing inside is OB.")}
-          {line("ob", "A line that is OB (a road edge, a fence line).")}
-          {area("hazard", "A penalty area that isn't OB.")}
-          {tool("add-mando", <Signpost size={17} className="text-orange-400" />, "Mando (M)", "Click beside the hole's line where the post or tree is: it faces down the hole, passed on the line's side. Or a gate of two posts to pass between.")}
-          {tool("add-dropzone", <CircleDot size={17} className="text-orange-400" />, "Drop zone (Z)", "Where to throw from after a missed mando or OB.")}
+          {area("ob")}
+          {line("ob")}
+          {area("hazard")}
+          {tool("add-mando", <Signpost size={17} className="text-orange-400" />, "Mando (M)")}
+          {tool("add-dropzone", <CircleDot size={17} className="text-orange-400" />, "Drop zone (Z)")}
         </div>
-        <p className="text-[11px] text-zinc-400 mt-2">Quick OB: pick a hole and use <b>Add OB</b> (left side, right side, behind the basket). {touch ? "Hold a finger on a creek, road or fence to mark it OB." : "Right-click a creek, road or fence to mark it OB."} Areas can be dragged out as a rectangle or circle, or drawn freehand.</p>
       </Section>
       <Section title="The land">
         <div className="space-y-1.5">
-          {area("water", "Ponds and lakes.")}
-          {line("stream", "Creeks and ditches.")}
-          {area("woods", "Thick woods, drawn as canopy.")}
-          {tool("add-tree", <TreeDeciduous size={17} className="text-green-400" />, "Trees (R)", "Single trees that matter for play.")}
-          {area("fairway", "A fairway shape drawn by hand (instead of the automatic one).")}
-          {area("nogo", "Playgrounds, gardens, private land: keep throws away.")}
-          {area("casual", "Casual relief: move the lie out, no penalty (marked blue).")}
+          {area("water")}
+          {line("stream")}
+          {area("woods")}
+          {tool("add-tree", <TreeDeciduous size={17} className="text-green-400" />, "Trees (R)")}
+          {area("fairway")}
+          {area("nogo")}
+          {area("casual")}
         </div>
       </Section>
       <Section title="Getting around">
         <div className="space-y-1.5">
-          {line("path", "Trails between holes.")}
-          {line("walk", "The way to the next tee.")}
-          {line("road", "Roads and drives.")}
-          {line("fence", "Fences and walls.")}
-          {area("parking", "Parking lots.")}
-          {tool("add-amenity", <Info size={17} className="text-sky-400" />, "Benches, signs, parking… (A)", "Pick the kind in the bar above the tools.")}
+          {line("path")}
+          {line("walk")}
+          {line("road")}
+          {line("fence")}
+          {area("parking")}
+          {tool("add-amenity", <Info size={17} className="text-sky-400" />, "Benches, signs, parking… (A)")}
         </div>
       </Section>
       <Section title="Buildings and bridges (S)" testid="feature-structures">
         <div className="space-y-1.5">
-          {built("bridge", "Across a creek: click one bank, then double-click the other.")}
-          {built("boardwalk", "A low deck on posts over wet ground.")}
-          {built("stairs", "Steps up a slope, end to end.")}
-          {built("wall", "A stone or retaining wall.")}
-          {built("building", "Clubhouse, restrooms, a barn: drag a rectangle or click its corners.")}
-          {built("shelter", "An open pavilion with picnic tables.")}
-          {built("deck", "A raised platform: a tee deck, a lookout.")}
+          {built("bridge")}
+          {built("boardwalk")}
+          {built("stairs")}
+          {built("wall")}
+          {built("building")}
+          {built("shelter")}
+          {built("deck")}
         </div>
       </Section>
       {(photoTrees > 0 || osm > 0) && (
@@ -329,7 +323,7 @@ function ReviewStep() {
           </ul>
         )}
         <div className="mt-3 border-t border-zinc-800 pt-2">
-          <Field label="Safe distance between holes" hint="The PDGA gives no number; automatic is the larger of 50 ft and 15% of the hole's length.">
+          <Field label="Safe distance between holes">
             <Segmented label="Safe distance" value={doc.rules.safetyGapFt ?? 0} onChange={v => set({ safetyGapFt: v || undefined })} options={[{ value: 0, label: "Auto" }, { value: 50, label: "50 ft" }, { value: 75, label: "75 ft" }, { value: 100, label: "100 ft" }, { value: 150, label: "150 ft" }]} />
           </Field>
         </div>
@@ -375,7 +369,6 @@ export function StepContent({ onFindSite }: { onFindSite: () => void }) {
 
 export function SidePanel({ onFindSite }: { onFindSite: () => void }) {
   const step = useEditor(e => e.step);
-  const touch = useTouch();
   const i = STEPS.findIndex(s => s.id === step);
   const meta = STEPS[i];
   return (
@@ -383,7 +376,6 @@ export function SidePanel({ onFindSite }: { onFindSite: () => void }) {
       <div className="px-4 pt-4 pb-2">
         <div className="text-[11px] font-bold tracking-wider text-orange-400 uppercase">Step {i + 1} of {STEPS.length}</div>
         <h2 className="text-lg font-bold text-zinc-50">{meta.title}</h2>
-        <p className="text-sm text-zinc-400">{touch ? touchWords(meta.blurb) : meta.blurb}</p>
       </div>
       <StepContent onFindSite={onFindSite} />
     </aside>

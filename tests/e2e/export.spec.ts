@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import JSZip from "jszip";
 import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
 import { test, expect, addHole, importSite, course } from "./fixtures";
-import { createBasket, createEmptyCourse, createTee, newHole } from "../../src/lib/course";
+import { createArea, createBasket, createEmptyCourse, createTee, newHole } from "../../src/lib/course";
 import { HOLE_PAGES, holeLengths, renderHolePage } from "../../src/lib/holePage";
 
 /** Clicks an export button and returns the downloaded file's name and contents. */
@@ -201,4 +201,18 @@ plain("hole pages: number, par, the length from each tee, elevation, notes and t
   plainExpect(open.svg).toContain("UNFINISHED");
   plainExpect(open.svg).not.toContain('data-part="tee-length"');
   plainExpect(renderHolePage(doc, "nope", "letter", { contours: null, hillshade: null })).toBeNull();
+});
+
+plain("a hole page's key lists only the markings on its map", () => {
+  const doc = createEmptyCourse();
+  const h = newHole();
+  doc.holes.push(h);
+  doc.items.push(createTee(h.id, { x: 200, y: 500 }), createBasket(h.id, { x: 500, y: 500 }));
+  // Nothing marked: no key entries
+  const key = (svg: string) => ["OB", "Hazard", "Mando / DZ"].filter(k => svg.includes(`</tspan> ${k}`));
+  plainExpect(key(renderHolePage(doc, h.id, "letter", { contours: null, hillshade: null })!.svg)).toEqual([]);
+  // OB beside the fairway shows; a hazard far off the map doesn't
+  doc.items.push(createArea("ob", [{ x: 250, y: 530 }, { x: 450, y: 530 }, { x: 450, y: 560 }, { x: 250, y: 560 }]));
+  doc.items.push(createArea("hazard", [{ x: 3000, y: 3000 }, { x: 3100, y: 3000 }, { x: 3100, y: 3100 }]));
+  plainExpect(key(renderHolePage(doc, h.id, "letter", { contours: null, hillshade: null })!.svg)).toEqual(["OB"]);
 });

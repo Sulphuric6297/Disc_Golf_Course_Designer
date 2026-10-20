@@ -91,6 +91,29 @@ const pathD = (p: P[], closed = false) => p.map((q, i) => `${i ? "L" : "M"}${n(q
  * direction is "up" for tee signs) and pixels per foot, into a box of the given size. */
 export type MapView = { cx: number; cy: number; rotation: number; scale: number; width: number; height: number };
 
+/** Whether a plan point lands inside a map drawn with this view. */
+export const inView = (view: MapView, p: P) => {
+  const v = rotatePoint({ x: p.x - view.cx, y: p.y - view.cy }, -view.rotation);
+  const x = view.width / 2 + v.x * view.scale, y = view.height / 2 + v.y * view.scale;
+  return x >= 0 && y >= 0 && x <= view.width && y <= view.height;
+};
+
+/** The markings a map with this view shows, for its key: red OB, hazards, mandos and drop zones. */
+export const markingsInView = (doc: Pick<CourseDoc, "items">, view: MapView) => {
+  const middle = { x: view.cx, y: view.cy };
+  const shows = (i: CourseDoc["items"][number]) => {
+    if (i.type === "area") return i.points.some(p => inView(view, p)) || pointInPolygon(middle, i.points);
+    if (i.type === "line") return i.points.some((p, k) => inView(view, p) || (k > 0 && inView(view, { x: (p.x + i.points[k - 1].x) / 2, y: (p.y + i.points[k - 1].y) / 2 })));
+    return inView(view, i);
+  };
+  const shown = doc.items.filter(shows);
+  return {
+    ob: shown.some(i => (i.type === "area" || i.type === "line") && (i.kind === "ob" || i.ob === true)),
+    hazard: shown.some(i => i.type === "area" && i.kind === "hazard"),
+    mando: shown.some(i => i.type === "mando" || i.type === "dropzone")
+  };
+};
+
 export type MapLayers = {
   stats: HoleStats[];
   contours: Contours | null;
@@ -818,7 +841,7 @@ export const renderPoster = (doc: CourseDoc, opts: PosterOptions) => {
   const sub = s.subtitle || [doc.site.location?.label, doc.designer ? `Designed by ${doc.designer}` : ""].filter(Boolean).join(" · ");
   const parts: string[] = [];
   parts.push(`<rect width="${n(W)}" height="${n(H)}" fill="${pal.paper}"/>`);
-  const credit = [s.footer, doc.site.imagerySource && s.theme === "satellite" ? "Imagery © Esri" : "", doc.items.some(i => (i.type === "area" || i.type === "line") && i.importSource === "osm") ? "Map data © OpenStreetMap contributors" : "", "Made with Disc Golf Course Designer"].filter(Boolean).join(" · ");
+  const credit = [s.footer, doc.site.imagerySource && s.theme === "satellite" ? "Imagery © Esri" : "", doc.items.some(i => (i.type === "area" || i.type === "line") && i.importSource === "osm") ? "Map data © OpenStreetMap contributors" : ""].filter(Boolean).join(" · ");
 
   if (full) {
     // The map fills the page; the course fits inside a margin

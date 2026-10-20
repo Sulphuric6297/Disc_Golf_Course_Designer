@@ -60,7 +60,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
           <div className="mt-3">
             <div className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wide mb-1">Add OB</div>
             <div className="flex gap-1.5" role="group" aria-label="Add OB">
-              <Button small onClick={() => addHoleOb(hole.id, "left")} testid="ob-left" title="An OB line along the left of the fairway, from near the tee to past the basket">Left side</Button>
+              <Button small onClick={() => addHoleOb(hole.id, "left")} testid="ob-left">Left side</Button>
               <Button small onClick={() => addHoleOb(hole.id, "right")} testid="ob-right" title="An OB line along the right of the fairway">Right side</Button>
               <Button small onClick={() => addHoleOb(hole.id, "long")} testid="ob-long" title="An OB arc behind the basket (OB long)">Behind basket</Button>
             </div>
@@ -95,15 +95,15 @@ function HoleInspector({ hole }: { hole: Hole }) {
               <div className="flex items-center justify-between gap-2 -mt-1 mb-2" data-testid="fairway-shape">
                 <p className="text-[11px] text-zinc-400 leading-snug">
                   {hole.fairwayShape
-                    ? `Shaped: ${hole.fairwayShape.map(f => fmtDist(f * hole.fairwayWidth, u)).join(" · ")} from tee to basket.`
-                    : "Drag the green squares on the fairway's edges to widen it in places (landing zones) or pinch it (gaps)."}
+                    ? `Shaped: ${hole.fairwayShape.map(f => fmtDist(f * hole.fairwayWidth, u)).join(" · ")}`
+                    : "Even width"}
                 </p>
                 {hole.fairwayShape && <button className="shrink-0 text-xs text-orange-300 hover:text-orange-200" onClick={() => set({ fairwayShape: undefined })}>Even width</button>}
               </div>
             </>
           )}
           <Field label="Name (optional)"><TextInput label="Hole name" value={hole.name ?? ""} placeholder="e.g. The Gauntlet" onChange={v => set({ name: v || undefined })} /></Field>
-          <Field label="Notes and hole rules" hint="Shown on the tee sign and the hole sheet."><TextInput area label="Hole notes" value={hole.notes ?? ""} placeholder="e.g. OB left of the path. Mando right of the big oak; drop zone by the bench." onChange={v => set({ notes: v || undefined })} /></Field>
+          <Field label="Notes and hole rules"><TextInput area label="Hole notes" value={hole.notes ?? ""} placeholder="e.g. OB left of the path. Mando right of the big oak; drop zone by the bench." onChange={v => set({ notes: v || undefined })} /></Field>
           {hole.doglegs.length > 0 && <Button small onClick={() => set({ doglegs: [] })}>Straighten the throw line</Button>}
         </Section>
       )}
@@ -136,7 +136,6 @@ function HoleInspector({ hole }: { hole: Hole }) {
             </li>
           ))}
         </ul>
-        {!ro && <p className="text-[11px] text-zinc-500 mt-1.5">Add more with the Tee (T) and Basket (B) tools. Drag the orange dots on the line to move turns; pull a small dot to add one.</p>}
       </Section>
     </>
   );
@@ -194,7 +193,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
           <Field label="Pin position">
             <Segmented label="Pin position" value={item.position} onChange={v => set({ position: v })} options={PIN_POSITIONS.map(p => ({ value: p, label: p }))} />
           </Field>
-          <Field label="Raised above the ground" hint="An elevated basket (on a platform or a mound).">
+          <Field label="Raised above the ground">
             <NumberInput label="Raised" value={item.raised ?? 0} min={0} max={30} step={0.5} unit="ft" onChange={v => set({ raised: v || undefined })} />
           </Field>
         </>
@@ -203,7 +202,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
     case "mando":
       body = (
         <>
-          <Field label="The disc must pass" hint="Looking along the arrow (the direction of play). Drag the round handle to turn the arrow.">
+          <Field label="The disc must pass">
             <Segmented label="Mando side" value={item.side} onChange={v => set({ side: v })} options={[{ value: "left", label: "Left of it" }, { value: "right", label: "Right of it" }]} />
           </Field>
           {holePicker}
@@ -221,7 +220,6 @@ function ItemInspector({ item }: { item: CourseItem }) {
               {(Object.keys(AREA_KINDS) as AreaKind[]).map(k => <option key={k} value={k}>{AREA_KINDS[k].label}</option>)}
             </select>
           </Field>
-          <p className="text-[11px] text-zinc-400 -mt-1 mb-2">{AREA_KINDS[item.kind].help}</p>
           <Field label="Name on the map (optional)"><TextInput label="Area name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
           {item.kind === "water" && <ObChoice item={item} />}
           {(item.kind === "ob" || item.kind === "hazard") && holePicker}
@@ -237,7 +235,6 @@ function ItemInspector({ item }: { item: CourseItem }) {
               {(Object.keys(LINE_KINDS) as LineKind[]).map(k => <option key={k} value={k}>{LINE_KINDS[k].label}</option>)}
             </select>
           </Field>
-          <p className="text-[11px] text-zinc-400 -mt-1 mb-2">{LINE_KINDS[item.kind].help}</p>
           {LINE_KINDS[item.kind].width > 0 && <Slider label="Width" min={1} max={60} value={item.width ?? LINE_KINDS[item.kind].width} onChange={v => set({ width: v })} format={v => fmtDist(v, u)} />}
           <Field label="Name on the map (optional)"><TextInput label="Line name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
           {item.kind !== "ob" && item.kind !== "walk" && <ObChoice item={item} />}
@@ -258,7 +255,6 @@ function ItemInspector({ item }: { item: CourseItem }) {
               {kinds.map(k => <option key={k} value={k}>{STRUCTURE_KINDS[k].label}</option>)}
             </select>
           </Field>
-          <p className="text-[11px] text-zinc-400 -mt-1 mb-2">{meta.help}</p>
           {line && <Slider label={item.kind === "wall" ? "Thickness" : "Width"} min={1} max={item.kind === "wall" ? 6 : 24} step={0.5} value={structureWidth(item)} onChange={v => set({ width: v })} format={v => fmtSize(v, u)} />}
           {meta.heightLabel && <Slider label={meta.heightLabel} min={item.kind === "building" || item.kind === "shelter" ? 6 : 0} max={item.kind === "building" ? 40 : item.kind === "shelter" ? 20 : item.kind === "wall" ? 12 : 10} step={0.5} value={structureHeight(item)} onChange={v => set({ height: v })} format={v => fmtSize(v, u)} />}
           {(item.kind === "building" || item.kind === "shelter") && (

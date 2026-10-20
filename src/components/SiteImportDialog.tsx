@@ -89,15 +89,13 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     <div className={`text-sm rounded-lg px-3 py-2 ${tooBig ? "bg-red-900/40 text-red-200" : "bg-zinc-800 text-zinc-200"}`} data-testid="site-size">
       Area: {Math.round(dims.widthFt).toLocaleString()} × {Math.round(dims.heightFt).toLocaleString()} ft ({((dims.widthFt * dims.heightFt) / 43560).toFixed(1)} acres)
       {tooBig && <div className="text-xs mt-1">Keep it under {SITE_MAX_WIDTH_FT.toLocaleString()} ft each way.</div>}
-      {!tooBig && <div className="text-xs text-zinc-400 mt-1">An 18-hole course usually needs 15–40 acres or more.</div>}
-      {!tooBig && start.selection && <div className="text-xs text-emerald-300 mt-1" data-testid="design-kept">Drag the corners to make it bigger or smaller: your holes and features stay where they are on the ground.</div>}
     </div>
   );
   const options = (
     <>
       <Toggle label="Satellite photo" checked={imagery === "satellite"} onChange={v => setImagery(v ? "satellite" : "streets")} hint={imagery === "satellite" ? "Esri World Imagery" : "Street map instead (OpenStreetMap)"} />
-      <Toggle label="Trees found on the photo" checked={trees && imagery === "satellite"} onChange={setTrees} hint="Each crown becomes a tree you can move or remove." />
-      <Toggle label="Paths, water, roads and parking" checked={osm} onChange={setOsm} hint="From OpenStreetMap, for the map and the safety checks." />
+      <Toggle label="Trees found on the photo" checked={trees && imagery === "satellite"} onChange={setTrees} />
+      <Toggle label="Paths, water, roads and parking" checked={osm} onChange={setOsm} />
       <div className="text-[11px] text-zinc-500 mt-1">Elevation always comes in: USGS 3DEP lidar in the US, global terrain elsewhere.</div>
     </>
   );

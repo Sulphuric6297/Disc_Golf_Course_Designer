@@ -89,12 +89,11 @@ test("course design and export", async ({ page }) => {
   await page.waitForTimeout(2000);
   await shot(page, "08-design-forest-turned");
   await page.getByRole("button", { name: "North up" }).click();
-  for (const t of ["illustrated", "satellite", "topo", "minimal", "night"]) {
-    await page.getByTestId(`theme-${t}`).click();
-    await page.waitForTimeout(1200);
+  for (const t of ["park", "pines", "dry", "autumn", "desert", "woods"]) {
+    await page.getByTestId(`style-${t}`).click();
+    await page.waitForTimeout(2500);
     await shot(page, `09-design-${t}`);
   }
-  await page.getByTestId("theme-forest").click();
   await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
   await page.getByRole("tab", { name: "Tee sign" }).click();
   await page.waitForTimeout(2000);
@@ -256,12 +255,9 @@ test("features close up", async ({ page }) => {
   await page.waitForTimeout(1500);
   await shot(page, "16-features-zoom");
   await page.getByRole("button", { name: "5 Design" }).click();
-  for (const theme of ["illustrated", "forest"]) {
-    await page.getByTestId(`theme-${theme}`).click();
-    if (theme === "forest") await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
-    await page.waitForTimeout(2500);
-    await page.getByTestId("design-page").screenshot({ path: `look/16-print-${theme}.png` });
-  }
+  await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
+  await page.waitForTimeout(2500);
+  await page.getByTestId("design-page").screenshot({ path: "look/16-print-forest.png" });
 });
 
 test("3d scene: sky, grass and trees", async ({ page }) => {
@@ -431,21 +427,13 @@ test("structures", async ({ page }) => {
   await page.waitForTimeout(2500);
   await page.getByTestId("design-page").screenshot({ path: "look/17-tee-sign.png" });
   await page.getByRole("tab", { name: "Course map" }).click();
-  await page.getByTestId("theme-illustrated").click();
   await page.waitForTimeout(2000);
-  await page.getByTestId("design-page").screenshot({ path: "look/17-print-illustrated.png" });
+  await page.getByTestId("design-page").screenshot({ path: "look/17-print-forest.png" });
   for (let i = 0; i < 5; i++) await bar.getByRole("button", { name: "Zoom in" }).click();
   await page.waitForTimeout(1000);
   await page.locator('[data-testid="design-page"] [data-structure="bridge"]').first().scrollIntoViewIfNeeded();
   await page.waitForTimeout(500);
-  await shot(page, "17-print-illustrated-zoom");
-  for (const theme of ["topo", "night", "minimal"]) {
-    await page.getByTestId(`theme-${theme}`).click();
-    await page.waitForTimeout(1500);
-    await page.locator('[data-testid="design-page"] [data-structure="bridge"]').first().scrollIntoViewIfNeeded();
-    await page.waitForTimeout(400);
-    await shot(page, `17-print-${theme}-zoom`);
-  }
+  await shot(page, "17-print-forest-zoom");
 });
 
 test("structures close up", async ({ page }) => {
@@ -503,16 +491,10 @@ test("structures close up", async ({ page }) => {
   const bar = page.getByRole("button", { name: "Fit the page" }).locator("..");
   for (let i = 0; i < 7; i++) await bar.getByRole("button", { name: "Zoom in" }).click();
   await page.waitForTimeout(2000);
-  for (const theme of ["forest", "illustrated"]) {
-    if (theme !== "forest") {
-      await page.getByTestId(`theme-${theme}`).click();
-      await page.waitForTimeout(2000);
-    }
-    for (const kind of ["building", "bridge", "shelter"]) {
-      await page.locator(`[data-testid="design-page"] [data-structure="${kind}"]`).first().scrollIntoViewIfNeeded();
-      await page.waitForTimeout(600);
-      await page.screenshot({ path: `look/18-print-${theme}-${kind}.png`, clip: { x: 340, y: 105, width: 1260, height: 870 } });
-    }
+  for (const kind of ["building", "bridge", "shelter"]) {
+    await page.locator(`[data-testid="design-page"] [data-structure="${kind}"]`).first().scrollIntoViewIfNeeded();
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: `look/18-print-forest-${kind}.png`, clip: { x: 340, y: 105, width: 1260, height: 870 } });
   }
 });
 

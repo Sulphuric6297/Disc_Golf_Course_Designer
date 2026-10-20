@@ -8,7 +8,7 @@ import { CIRCLE_ONE_FT, LINE_KINDS } from "../constants";
 import type { AreaItem, CourseDoc, LineItem, MapStyle, P, StructureItem, TreeItem } from "../types";
 import { canopyMask } from "./geo/detect";
 import { boundsOf, corridor, dist, pathLength, pointAlong, pointInPolygon, smoothPath } from "./geom";
-import { fairwayWidthAt } from "./course";
+import { autoWalks, fairwayWidthAt } from "./course";
 import type { HoleStats } from "./holeStats";
 import { landscapeOf } from "./landscapes";
 import { reliefExaggeration } from "./relief";
@@ -378,10 +378,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   yield;
   // Dirt trails from each basket to the next tee
   if (s.nextTee) {
-    for (let i = 0; i + 1 < stats.length; i++) {
-      const a = stats[i], b = stats[i + 1];
-      if (!a.complete || !b.complete) continue;
-      const from = a.line[a.line.length - 1], to = b.line[0];
+    for (const { from, to, a, b } of autoWalks(doc.items, stats)) {
       const d = dist(from, to);
       if (d < 40) continue;
       // (worn wide, as on painted course maps: a walk you can see from across the map)

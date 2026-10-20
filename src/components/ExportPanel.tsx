@@ -177,7 +177,6 @@ export function ExportPanel() {
       <ExportBanner />
       <Section title="Share">
         <Button tone="primary" full onClick={() => useEditor.getState().set({ shareOpen: true })} testid="export-share"><Share2 size={15} /> Get a share link</Button>
-        <p className="text-[11px] text-zinc-500 mt-1.5">Anyone with the link can explore the course and make their own copy.</p>
       </Section>
       <Section title="Print">
         <Row icon={<MapIcon size={15} className="text-orange-300" />} title="Course map" text="The whole course in the style from the Design step. Info boards are often 18 × 24 in.">
@@ -193,7 +192,7 @@ export function ExportPanel() {
             {(Object.keys(SIGN_SIZES) as SignSize[]).map(p => <option key={p} value={p}>{SIGN_SIZES[p].label}</option>)}
           </select>
           <Button small onClick={signsPdf} disabled={busy || nothing} testid="export-signs-pdf"><FileDown size={13} /> PDF</Button>
-          <Button small onClick={signsZip} disabled={busy || nothing} testid="export-signs-zip" title="PNG pictures under 5 MB each (UDisc tee sign uploads), plus SVG"><ImageIcon size={13} /> Pictures (ZIP)</Button>
+          <Button small onClick={signsZip} disabled={busy || nothing} testid="export-signs-zip"><ImageIcon size={13} /> Pictures (ZIP)</Button>
         </Row>
         <Row icon={<FileDown size={15} className="text-orange-300" />} title="Scorecard" text="Par and length for each layout, totals, rows for five players.">
           <Button small onClick={scorecardPdf} disabled={busy || nothing} testid="export-scorecard"><FileDown size={13} /> PDF</Button>
@@ -221,11 +220,10 @@ export function ExportPanel() {
             <>
               <Button small onClick={pagePng} disabled={busy} testid="export-hole-png"><ImageIcon size={13} /> PNG</Button>
               <Button small onClick={pageSvg} disabled={busy} testid="export-hole-svg">SVG</Button>
-              <Button small onClick={pageGeo} disabled={busy || !geo} testid="export-hole-geojson" title={geo ? "The hole's tees, baskets, throw line, mandos, OB and hazards with real coordinates" : "GPS files need a real site"}>GeoJSON</Button>
+              <Button small onClick={pageGeo} disabled={busy || !geo} testid="export-hole-geojson">GeoJSON</Button>
             </>
           )}
         </div>
-        {nothing && <p className="text-[11px] text-zinc-500 mt-1.5">Finish a hole (a tee and a basket) to export it.</p>}
       </Section>
       <Section title="Flyover video" testid="video-export">
         <div className="text-[11px] text-zinc-400 mb-2">A flight over each hole from behind the tee to the basket, with its number, par and length on screen. It is made frame by frame, so it plays smoothly however long it takes to make.</div>
@@ -242,7 +240,7 @@ export function ExportPanel() {
             </select>
           </Field>
           <Field label="Frame rate">
-            <Segmented label="Frame rate" value={video.fps} onChange={v => video.set({ fps: v })} options={[{ value: 30, label: "30 fps" }, { value: 60, label: "60 fps", title: "Smoother; takes twice as long to make" }]} />
+            <Segmented label="Frame rate" value={video.fps} onChange={v => video.set({ fps: v })} options={[{ value: 30, label: "30 fps" }, { value: 60, label: "60 fps" }]} />
           </Field>
         </div>
         {recording ? (
@@ -257,12 +255,11 @@ export function ExportPanel() {
         ) : (
           <>
             <Button tone="primary" full onClick={() => void recordVideo(videoHoles)} disabled={busy || nothing} testid="video-record"><Clapperboard size={15} /> Record {videoHoles.length === 1 ? `hole ${holeNumber(doc, videoHoles[0])}` : "the course"}</Button>
-            {!nothing && <p className="text-[11px] text-zinc-500 mt-1.5">About {minSec(videoSeconds(doc, videoHoles))} of video. MP4 (H.264) where the browser can make it, otherwise WebM.</p>}
+            {!nothing && <p className="text-[11px] text-zinc-500 mt-1.5">About {minSec(videoSeconds(doc, videoHoles))} of video.</p>}
           </>
         )}
       </Section>
       <Section title="GPS and data">
-        {!geo && <p className="text-[11px] text-amber-300 mb-2">GPS files need a real site: bring in your park on the Site step.</p>}
         <Row icon={<FileJson size={15} className="text-sky-300" />} title="GPS files" text="Tees, baskets, mandos, drop zones, OB and throw lines with real coordinates. KML opens in Google Earth; GPX waypoints help find each spot with a phone.">
           <Button small onClick={text(() => toKML(getDoc()), ".kml", "application/vnd.google-earth.kml+xml")} disabled={busy || !geo} testid="export-kml">KML</Button>
           <Button small onClick={text(() => toGeoJSON(getDoc()), ".geojson", "application/geo+json")} disabled={busy || !geo} testid="export-geojson">GeoJSON</Button>
@@ -292,7 +289,7 @@ export function ExportPanel() {
                 <tr className="border-t border-zinc-700"><td className="pt-1 font-bold text-zinc-100" colSpan={3}>Estimate</td><td className="text-right pt-1 font-bold text-zinc-50" data-testid="parts-total">${parts.total.toLocaleString()}</td></tr>
               </tbody>
             </table>
-            <p className="text-[11px] text-zinc-500 mt-1">Concrete for the pads: {parts.concreteYd3.toFixed(1)} cu yd (4 in slabs). Course design budgets usually run $350–$1,000 per hole (PDGA).</p>
+            <p className="text-[11px] text-zinc-500 mt-1">Concrete for the pads: {parts.concreteYd3.toFixed(1)} cu yd</p>
             <details className="mt-2">
               <summary className="text-xs text-orange-300 cursor-pointer">Change prices</summary>
               <div className="grid grid-cols-2 gap-2 mt-2">

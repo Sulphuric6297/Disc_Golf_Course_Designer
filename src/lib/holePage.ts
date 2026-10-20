@@ -8,7 +8,7 @@ import type { CourseDoc, P, PinPosition, TeeLevel, Units } from "../types";
 import { activeLayout, holeBaskets, holeTees, throwLine } from "./course";
 import { dist, rotatePoint, smoothPath } from "./geom";
 import { holeStats } from "./holeStats";
-import { northArrow, palette, scaleBar, wrapSvg } from "./mapSvg";
+import { markingsInView, northArrow, palette, scaleBar, wrapSvg } from "./mapSvg";
 import { autoRules, holeMap, type SignArt } from "./teeSign";
 import { profileAlong } from "./terrainGrid";
 import { fmtDist, fmtElev } from "./units";
@@ -192,7 +192,8 @@ export const renderHolePage = (doc: CourseDoc, holeId: string, size: HolePageSiz
     wrap(notes, Math.max(10, Math.floor(nw / (fs * 0.52)))).slice(0, 6).forEach((l, i) => parts.push(`<text x="${n(nx)}" y="${n(y + 40 * u + i * fs * 1.35)}" font-family="${BODY}" font-size="${n(fs)}" fill="${INK}">${esc(l)}</text>`));
     // Bottom line: what the colors mean, and which hole of how many
     const by = H - 10 * u;
-    const key = [`<tspan fill="${sty.ob}">■</tspan> OB`, `<tspan fill="${sty.hazard}">■</tspan> Hazard`, `<tspan fill="#f97316">●</tspan> Mando / DZ`].join("   ");
+    const shown = markingsInView(doc, map.view);
+    const key = [shown.ob && `<tspan fill="${sty.ob}">■</tspan> OB`, shown.hazard && `<tspan fill="${sty.hazard}">■</tspan> Hazard`, shown.mando && `<tspan fill="#f97316">●</tspan> Mando / DZ`].filter(Boolean).join("   ");
     parts.push(`<text x="${n(m)}" y="${n(by)}" font-family="${BODY}" font-size="${n(7.5 * u)}" fill="${SOFT}">${key}</text>`);
     const layout = activeLayout(doc);
     parts.push(`<text x="${n(W - m)}" y="${n(by)}" text-anchor="end" font-family="${BODY}" font-size="${n(7.5 * u)}" fill="${SOFT}">Hole ${st.number} of ${doc.holes.length}${layout && doc.layouts.length > 1 ? ` · ${esc(layout.name)} layout` : ""}</text>`);

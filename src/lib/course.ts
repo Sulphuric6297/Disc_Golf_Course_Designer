@@ -4,7 +4,8 @@ import type {
   AmenityItem, AmenityKind, AreaItem, AreaKind, BasketItem, CourseDoc, CourseItem, CourseRules, DropZoneItem, Hole, LabelItem,
   Layout, LineItem, LineKind, MandoItem, MapStyle, P, PinPosition, StructureItem, StructureKind, TeeItem, TeeLevel, TreeItem
 } from "../types";
-import { centroid, corridor } from "./geom";
+import { centroid, corridor, dist } from "./geom";
+import { landscapeOf } from "./landscapes";
 
 export const defaultStyle = (): MapStyle => ({
   theme: "forest",
@@ -78,6 +79,15 @@ export const createEmptyCourse = (): CourseDoc => ({
   rules: defaultRules()
 });
 
+/** The painted Forest map is the one style: a course saved in one of the old ones (illustrated,
+ * satellite, topographic, minimal, night) comes back as Forest in its landscape's colors (keeping
+ * what it showed, its lettering and its marks). */
+const forestStyle = (style: CourseDoc["style"]): CourseDoc["style"] => {
+  if (style.theme === "forest") return style;
+  const l = landscapeOf(style);
+  return { ...style, theme: "forest", ...l.colors, ob: "#e0483d", hazard: "#e8c547", basket: "#ffffff" };
+};
+
 /** Fills in anything an older or hand-edited file is missing. */
 export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
   const base = createEmptyCourse();
@@ -87,7 +97,7 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
     site: { ...base.site, ...(raw.site ?? {}) },
     canvas: raw.canvas && raw.canvas.width > 0 && raw.canvas.height > 0 ? raw.canvas : base.canvas,
     // (Courses saved before there was a choice of basket marks keep the mark their style had)
-    style: { ...base.style, ...(raw.style && !raw.style.basketMark ? { basketMark: raw.style.theme === "forest" || !raw.style.theme ? "basket" : "target" } : {}), ...(raw.style ?? {}) },
+    style: forestStyle({ ...base.style, ...(raw.style && !raw.style.basketMark ? { basketMark: raw.style.theme === "forest" || !raw.style.theme ? "basket" : "target" } : {}), ...(raw.style ?? {}) }),
     rules: { ...base.rules, ...(raw.rules ?? {}), prices: { ...base.rules.prices, ...(raw.rules?.prices ?? {}) } },
     holes: (raw.holes ?? []).map(h => {
       const shape = Array.isArray(h.fairwayShape) && h.fairwayShape.length === FAIRWAY_STATIONS.length && h.fairwayShape.every(v => typeof v === "number" && v > 0) ? h.fairwayShape : undefined;
@@ -224,4 +234,27 @@ export const ITEM_LABELS: Record<CourseItem["type"], string> = {
   area: "Area",
   line: "Line",
   structure: "Structure"
+};
+
+/**
+ * The walks from each basket to the next tee the map draws by itself: one for each pair of holes
+ * in a row, except where a walk line has been drawn from near the one hole's basket to near the
+ * next hole's tee (either way round), which takes its place.
+ */
+export const autoWalks = <S extends { holeId: string; complete: boolean; line: P[] }>(items: CourseItem[], stats: S[]) => {
+  const drawn = items.filter((i): i is LineItem => i.type === "line" && i.kind === "walk" && i.points.length >= 2);
+  const out: { from: P; to: P; a: S; b: S }[] = [];
+  for (let i = 0; i + 1 < stats.length; i++) {
+    const a = stats[i], b = stats[i + 1];
+    if (!a.complete || !b.complete) continue;
+    const from = a.line[a.line.length - 1], to = b.line[0];
+    const reach = Math.max(60, dist(from, to) * 0.3);
+    const near = (p: P, q: P) => dist(p, q) < reach;
+    const replaced = drawn.some(w => {
+      const p = w.points[0], q = w.points[w.points.length - 1];
+      return (near(p, from) && near(q, to)) || (near(q, from) && near(p, to));
+    });
+    if (!replaced) out.push({ from, to, a, b });
+  }
+  return out;
 };

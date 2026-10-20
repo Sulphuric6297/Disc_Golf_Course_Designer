@@ -15,7 +15,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, basketFor, fairwayOutline, fairwayWidthAt, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { FAIRWAY_STATIONS, autoWalks, basketFor, fairwayOutline, fairwayWidthAt, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
@@ -1685,10 +1685,7 @@ export class CourseView {
     }
     // Walks to the next tee
     if (st.nextTee) {
-      for (let i = 0; i + 1 < doc.stats.length; i++) {
-        const a = doc.stats[i], b = doc.stats[i + 1];
-        if (!a.complete || !b.complete) continue;
-        const from = a.line[a.line.length - 1], to = b.line[0];
+      for (const { from, to, a } of autoWalks(doc.course.items, doc.stats)) {
         put(`walk:${a.holeId}`, JSON.stringify([from, to, hv]), () => {
           const g = new THREE.Group();
           if (dist(from, to) < 40) return g;

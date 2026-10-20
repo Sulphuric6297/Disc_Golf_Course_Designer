@@ -6,7 +6,7 @@ import type { AreaItem, BasketItem, CourseDoc, P } from "../types";
 import { activeLayout, fairwayOutline, holeBaskets, holeTees, throwLine } from "./course";
 import { boundsOf, dist, pointInPolygon, rotatePoint, smoothPath } from "./geom";
 import { holeStats } from "./holeStats";
-import { northArrow, palette, renderMapLayers, scaleBar, titleStack, wrapSvg, type MapView } from "./mapSvg";
+import { markingsInView, northArrow, palette, renderMapLayers, scaleBar, titleStack, wrapSvg, type MapView } from "./mapSvg";
 import type { CanopyGrid } from "./forest";
 import type { Contours } from "./relief";
 import { profileAlong } from "./terrainGrid";
@@ -161,7 +161,8 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   (wrapped.length ? wrapped : ["Play it as it lies."]).slice(0, 7).forEach((l, i) => parts.push(`<text x="${n(nx)}" y="${n(fy + 24 * ts + i * fs * 1.35)}" font-family="Inter, Arial, sans-serif" font-size="${n(fs)}" fill="${pal.ink}">${esc(l)}</text>`));
   // Bottom strip
   const by = H - m * 0.6;
-  const legend = [`<tspan fill="${st0.ob}">■</tspan> OB`, `<tspan fill="${st0.hazard}">■</tspan> Hazard`, `<tspan fill="#f97316">●</tspan> Mando / DZ`, `<tspan fill="${st0.basket}">●</tspan> Basket`].join("   ");
+  const shown = markingsInView(doc, view);
+  const legend = [shown.ob && `<tspan fill="${st0.ob}">■</tspan> OB`, shown.hazard && `<tspan fill="${st0.hazard}">■</tspan> Hazard`, shown.mando && `<tspan fill="#f97316">●</tspan> Mando / DZ`, `<tspan fill="${st0.basket}">●</tspan> Basket`].filter(Boolean).join("   ");
   parts.push(`<text x="${n(m)}" y="${n(by)}" font-family="Inter, Arial, sans-serif" font-size="${n(8 * ts)}" fill="${pal.inkSoft}">${legend}</text>`);
   parts.push(`<text x="${n(W - m)}" y="${n(by)}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="${n(8 * ts)}" fill="${pal.inkSoft}">Hole ${st.number} of ${doc.holes.length}${layout && doc.layouts.length > 1 ? ` · ${esc(layout.name)} layout` : ""}</text>`);
   return { svg: wrapSvg(W, H, parts.join("")), width: W, height: H };
@@ -217,7 +218,6 @@ export const renderScorecard = (doc: CourseDoc, players = 5) => {
   y += 10;
   for (let p = 0; p < players; p++) row(`PLAYER ${p + 1}`, cols.map(() => ""));
   y += 14;
-  parts.push(`<text x="${m}" y="${y}" font-family="Inter, Arial, sans-serif" font-size="9" fill="#555">Par from the PDGA par guidelines. Play safe: wait until the fairway ahead is clear. Made with Disc Golf Course Designer.</text>`);
   return { svg: wrapSvg(W, H, parts.join("")), width: W, height: H };
 };
 
@@ -251,7 +251,7 @@ export const holeMap = (doc: CourseDoc, holeId: string, box: { w: number; h: num
   // On a sign the hole's own line shows, faintly, even when the course map leaves lines out
   const styled = { ...doc, style: { ...doc.style, throwLines: true, circle: doc.style.circle } };
   const map = renderMapLayers(styled, view, { stats, contours: opts.contours, hillshade: opts.hillshade, focusHole: holeId, textScale: ts, fontFamily: doc.style.font, canopy: opts.canopy }, uid);
-  return { ...map, rotation, scale, st, stats };
+  return { ...map, rotation, scale, st, stats, view };
 };
 
 /**

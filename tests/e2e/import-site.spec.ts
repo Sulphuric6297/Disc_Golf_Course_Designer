@@ -217,7 +217,8 @@ test("making the site bigger keeps the design on the same ground", async ({ page
   // The site's frame opens as it is; its north-west corner dragged out
   await page.getByRole("button", { name: /^1\s*Site$/ }).click();
   await page.getByRole("button", { name: "Resize or re-import the site" }).click();
-  await expect(page.getByTestId("design-kept")).toBeVisible();
+  // (the frame as it is, straight away: no search)
+  await expect(page.getByTestId("site-size")).toContainText(/Area: 1,50\d × 99\d ft/);
   const corners = await page.locator(".site-handle-corner").evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }));
   const nw = corners.reduce((a, b) => (b.x + b.y < a.x + a.y ? b : a));
   await page.mouse.move(nw.x, nw.y);

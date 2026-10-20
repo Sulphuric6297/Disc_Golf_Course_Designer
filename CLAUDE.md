@@ -33,6 +33,10 @@ design tools and the PDGA guidance the app follows.
 - **Say only what you have seen.** Call a feature working only after using it in the browser.
   Call it live only after the deployed site serves the new build.
 - Develop on a feature branch. Do not merge to `main` (which deploys) without the owner's OK.
+- **No explainers, anywhere.** Never put text in the app or on anything it prints or exports that
+  explains why something works the way it does or how it works (e.g. "Par from the PDGA par
+  guidelines", "Play safe: wait until the fairway ahead is clear", "Made with Disc Golf Course
+  Designer", helper paragraphs under settings). Labels, values and short tool prompts only.
 
 ## Testing
 

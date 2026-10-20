@@ -327,7 +327,6 @@ export default function App() {
     <div className="pointer-events-auto bg-zinc-900/95 backdrop-blur border border-zinc-700 rounded-2xl shadow-2xl p-6 w-[440px] max-w-full text-center" data-testid="welcome">
       <div className="w-12 h-12 rounded-xl bg-orange-500/15 text-orange-400 flex items-center justify-center mx-auto mb-3"><Route size={24} /></div>
       <h2 className="text-xl font-bold text-zinc-50">Design your disc golf course</h2>
-      <p className="text-sm text-zinc-400 mt-1.5">Bring in your park's satellite photo, elevation and trees, then lay out tees, baskets, fairways, OB and mandos. Par and lengths follow the terrain; print maps and tee signs, export GPS files, and share a link.</p>
       <div className="mt-4 flex flex-col gap-2">
         <Button tone="primary" full onClick={() => setFindSite(true)} testid="welcome-find"><MapPinned size={16} /> Find your park</Button>
         <Button full onClick={() => useEditor.getState().set({ step: "holes", tool: "add-hole" })} testid="welcome-blank">Start on open ground</Button>

@@ -1,13 +1,13 @@
 import { test as plain, expect as plainExpect } from "@playwright/test";
 import { test, expect, addHole, blankCourse, course, importSite } from "./fixtures";
-import { createAmenity, createArea, createBasket, createDropZone, createEmptyCourse, createLine, createMando, createTee, newHole, normalizeCourse } from "../../src/lib/course";
+import { autoWalks, createAmenity, createArea, createBasket, createDropZone, createEmptyCourse, createLine, createMando, createTee, newHole, normalizeCourse } from "../../src/lib/course";
 import { contourInterval, meander } from "../../src/lib/forest";
 import { contoursOf, reliefExaggeration } from "../../src/lib/relief";
 import { dist, distanceToPath } from "../../src/lib/geom";
 import { BASKET_MARKS, basketMark, bestRotation, renderPoster } from "../../src/lib/mapSvg";
 import { renderScorecard, renderTeeSign } from "../../src/lib/teeSign";
 
-test("the Design step shows the printed map, and each style changes it", async ({ page }) => {
+test("the Design step shows the printed map; its styles are the painted map in each landscape", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await addHole(page, { x: 700, y: 650 }, { x: 700, y: 300 });
@@ -19,19 +19,22 @@ test("the Design step shows the printed map, and each style changes it", async (
   await expect(pageSvg).toContainText("DISC GOLF COURSE");
   await expect(pageSvg).toContainText(/PAR 6 \| 700'/);
   await expect(pageSvg.locator("image").first()).toBeVisible();
-  // Illustrated: a hole table and a legend
-  await page.getByTestId("theme-illustrated").click();
-  await expect.poll(async () => (await course(page)).style.theme).toBe("illustrated");
-  await expect(pageSvg).toContainText("LEGEND");
-  await expect(pageSvg).toContainText("TOTAL");
-  await expect(pageSvg).toContainText("Throw line");
-  // Title, colors and toggles go straight onto the map
+  // One style, the painted Forest map: the styles are its landscapes (colors and woods)
+  await expect(page.getByTestId("styles").getByRole("radio")).toHaveCount(6);
+  await expect(page.getByTestId("theme-illustrated")).toHaveCount(0);
+  await page.getByTestId("style-autumn").click();
+  await expect.poll(async () => (await course(page)).style.landscape).toBe("autumn");
+  const autumn = await course(page);
+  expect(autumn.style.theme).toBe("forest");
+  expect(autumn.style.trees).toBe("#7a4b26");
+  await expect(page.getByTestId("style-autumn")).toHaveAttribute("aria-checked", "true");
+  // Title and toggles go straight onto the map
   await page.getByLabel("Map title").fill("Ridge Run");
-  await expect(pageSvg).toContainText("RIDGE RUN");
+  await expect(pageSvg).toContainText("Ridge Run");
   await page.getByText("Legend", { exact: true }).click();
-  await expect(pageSvg).not.toContainText("LEGEND");
+  await expect(pageSvg).toContainText("LEGEND");
   await page.getByText("Hole table").click();
-  await expect(pageSvg).not.toContainText("TOTAL");
+  await expect(pageSvg).toContainText("TOTAL");
   // Tee sign and scorecard previews
   await page.getByRole("tab", { name: "Tee sign" }).click();
   await expect(pageSvg).toContainText("PAR 3");
@@ -148,9 +151,10 @@ test("picking a basket mark changes the map's baskets", async ({ page }) => {
   await page.getByTestId("basket-mark-number").click();
   await expect.poll(async () => (await course(page)).style.basketMark).toBe("number");
   await expect(pageSvg.locator('[data-mark="number"]')).toContainText("1");
-  // A style's own mark comes with it; the choice can be changed after
-  await page.getByTestId("theme-topo").click();
-  await expect.poll(async () => (await course(page)).style.basketMark).toBe("target");
+  // Another style keeps the mark chosen
+  await page.getByTestId("style-pines").click();
+  await expect.poll(async () => (await course(page)).style.landscape).toBe("pines");
+  expect((await course(page)).style.basketMark).toBe("number");
 });
 
 // The printed pages' contents (pure logic: the SVG is built without a browser)
@@ -183,7 +187,7 @@ plain("course map page: title, layout chips, holes and credits", () => {
   plainExpect(p.svg).toContain("2 HOLES · PAR 6 · 650 FT");
   plainExpect(p.svg).toContain("LEGEND");
   plainExpect(p.svg).toContain("Out of bounds");
-  plainExpect(p.svg).toContain("Made with Disc Golf Course Designer");
+  plainExpect(p.svg).not.toContain("Made with");
   // Forest: full-bleed with "The" split off, the name, and a chip per layout
   doc.style.theme = "forest";
   doc.style.font = "Script";
@@ -261,13 +265,19 @@ plain("basket marks: five kinds, on the map and in the legend", () => {
   plainExpect(basketMark("badge", { x: 0, y: 0 }, 1, "#222222")).toContain('stroke="#ffffff"');
 });
 
-plain("courses saved before basket marks keep their look", () => {
+plain("courses saved before basket marks keep their look; old styles come back as Forest", () => {
   const forest = normalizeCourse({ holes: [], items: [], style: { theme: "forest" } });
   plainExpect(forest.style.basketMark).toBe("basket");
   const topo = normalizeCourse({ holes: [], items: [], style: { theme: "topo" } });
   plainExpect(topo.style.basketMark).toBe("target");
   const chosen = normalizeCourse({ holes: [], items: [], style: { theme: "topo", basketMark: "flag" } });
   plainExpect(chosen.style.basketMark).toBe("flag");
+  // The old styles come back as the painted Forest map, in their landscape's colors, keeping what they showed
+  const night = normalizeCourse({ holes: [], items: [], style: { theme: "night", landscape: "pines", legend: true, font: "Bitter", fairway: "#2f6b3a", rough: "#16211b" } as any });
+  plainExpect(night.style.theme).toBe("forest");
+  plainExpect(night.style.rough).toBe("#55703f");
+  plainExpect(night.style.legend).toBe(true);
+  plainExpect(night.style.font).toBe("Bitter");
 });
 
 plain("the wide tee sign's north arrow stands out from its disc in every style", () => {
@@ -516,4 +526,41 @@ test("the page never freezes while the map paints: it paints between frames, the
   expect(gaps.length).toBeGreaterThan(20);
   // No frame held up for long (a painting all at once took over a second here)
   expect(Math.max(...gaps)).toBeLessThan(400);
+});
+
+test("no explainers: the steps' panels and the printed pages say what things are, not how they work", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
+  await page.keyboard.press("Escape");
+  const explainers = [/Make the course map beautiful/, /Click a tee spot, then a basket spot/, /A layout plays each hole/, /Quick OB/, /Draw around it/, /Anyone with the link/, /budgets usually run/, /The same sun lights/, /Short on fairways/, /stay clear\. Lone trees/, /Made with/, /PDGA par guidelines/, /Play safe/];
+  for (const step of ["1 Site", "2 Holes", "3 Features", "4 Review", "5 Design", "6 Export"]) {
+    await page.getByRole("button", { name: step }).click();
+    const text = (await page.getByTestId("side-panel").textContent()) ?? "";
+    for (const e of explainers) expect(text, `${step}: ${e}`).not.toMatch(e);
+  }
+  // The printed pages: the course map, a tee sign, the scorecard
+  for (const tab of ["Course map", "Tee sign", "Scorecard"]) {
+    await page.getByRole("button", { name: "5 Design" }).click();
+    await page.getByRole("tab", { name: tab }).click();
+    const text = (await page.getByTestId("design-page").textContent()) ?? "";
+    for (const e of explainers) expect(text, `${tab}: ${e}`).not.toMatch(e);
+  }
+});
+
+plain("a walk drawn to the next tee takes the automatic walk's place (pure logic)", () => {
+  // Three holes: baskets at (400, 500), (500, 150); tees at (100, 500), (500, 450), (800, 150)
+  const stats = [
+    { holeId: "1", complete: true, line: [{ x: 100, y: 500 }, { x: 400, y: 500 }] },
+    { holeId: "2", complete: true, line: [{ x: 500, y: 450 }, { x: 500, y: 150 }] },
+    { holeId: "3", complete: true, line: [{ x: 800, y: 150 }, { x: 800, y: 600 }] }
+  ];
+  const pairs = (items: any[]) => autoWalks(items, stats).map(w => `${w.a.holeId}>${w.b.holeId}`);
+  plainExpect(pairs([])).toEqual(["1>2", "2>3"]);
+  // A winding walk drawn from hole 1's basket to hole 2's tee: only 2 > 3 is left automatic
+  const walk = createLine("walk", [{ x: 410, y: 510 }, { x: 460, y: 560 }, { x: 495, y: 470 }]);
+  plainExpect(pairs([walk])).toEqual(["2>3"]);
+  // Drawn the other way round, the same
+  plainExpect(pairs([{ ...walk, points: [...walk.points].reverse() }])).toEqual(["2>3"]);
+  // A walk somewhere else, or a path (not a walk), changes nothing
+  plainExpect(pairs([createLine("walk", [{ x: 0, y: 0 }, { x: 50, y: 0 }]), createLine("path", walk.points)])).toEqual(["1>2", "2>3"]);
 });

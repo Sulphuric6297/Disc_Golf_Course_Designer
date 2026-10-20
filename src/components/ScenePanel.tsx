@@ -51,7 +51,6 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
           <StyleSlider k="sunHeight" value={s.sunHeight ?? 38} label="Sun height" min={12} max={80} step={2} format={x => `${Math.round(x)}° · ${x < 25 ? "evening" : x < 50 ? "afternoon" : "midday"}`} />
           <StyleSlider k="shadows" value={s.shadows ?? 0.65} label="Shadows" min={0} max={1} step={0.05} format={x => `${Math.round(x * 100)}%`} />
           <StyleSlider k="light" value={s.light ?? 0} label="Brightness" min={-0.3} max={0.3} step={0.02} format={signed} />
-          <p className="text-[11px] text-zinc-500 mb-2">The same sun lights the painted course map.</p>
         </>
       )}
       {!ro && (
@@ -67,14 +66,13 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
         value={grass}
         onChange={v => set({ grass: v })}
         options={[
-          { value: "auto", label: "Auto", title: "On with a graphics card, off without one" },
+          { value: "auto", label: "Auto" },
           { value: 0, label: "Off" },
           { value: 1, label: "Low" },
           { value: 2, label: "Medium" },
           { value: 3, label: "High" }
         ]}
       />
-      <p className="text-[11px] text-zinc-500 mt-1 mb-2">Short on fairways, longer between holes, tall in the rough. Seen when the view is tilted and close to the ground.</p>
       <Toggle label="Grass sways in the wind" checked={wind} onChange={v => set({ wind: v })} />
     </div>
   );

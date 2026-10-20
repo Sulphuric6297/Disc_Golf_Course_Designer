@@ -12,7 +12,7 @@ import { ArrowDown, ArrowUp, Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, 
 import { STRUCTURE_KINDS } from "../../constants";
 import { holeNumber } from "../../lib/course";
 import { courseTotals, holeStats, safetyIssues } from "../../lib/holeStats";
-import { THEMES } from "../../lib/mapSvg";
+import { landscapeOf } from "../../lib/landscapes";
 import { fmtDist, fmtElev } from "../../lib/units";
 import { deleteSelection, duplicateSelection, select } from "../../state/actions";
 import { getDoc, moveHole, updateItem, useCourse, useEditor, type Step } from "../../state/course";
@@ -159,7 +159,7 @@ function StepHeader({ onFindSite, onShare }: { onFindSite: () => void; onShare: 
   const viewOnly = useEditor(e => e.viewOnly);
   const site = useCourse(s => s.doc.site);
   const canvas = useCourse(s => s.doc.canvas);
-  const theme = useCourse(s => s.doc.style.theme);
+  const look = useCourse(s => landscapeOf(s.doc.style).label);
   const sum = useSummary();
   const i = STEPS.findIndex(s => s.id === step);
   const meta = STEPS[i];
@@ -168,7 +168,7 @@ function StepHeader({ onFindSite, onShare }: { onFindSite: () => void; onShare: 
     step === "site" ? (!site.bounds && !viewOnly ? <button className="shrink-0 h-10 px-4 rounded-full bg-orange-500 text-white text-[14px] font-bold active:bg-orange-600" onClick={onFindSite}>Find your park</button> : site.bounds ? chip(`${((canvas.width * canvas.height) / 43560).toFixed(1)} acres`) : null)
     : step === "holes" || step === "features" ? (sum.holes ? chip(`${sum.holes} hole${sum.holes === 1 ? "" : "s"} · Par ${sum.par}`) : null)
     : step === "review" ? chip(sum.issues ? `${sum.issues} check${sum.issues === 1 ? "" : "s"}` : "No problems")
-    : step === "design" ? chip(THEMES[theme]?.label ?? "")
+    : step === "design" ? chip(look)
     : null;
   return (
     <div className="touch-none flex items-center gap-3 px-4 pb-3" data-testid="sheet-header">
@@ -449,7 +449,6 @@ function usePanel({ onFindSite, onShare, onMore }: { onFindSite: () => void; onS
     </div>
   ) : (
     <div className="pb-4" data-testid="step-panel">
-      <p className="px-4 pb-2 text-[14px] leading-snug text-zinc-400 border-b border-zinc-800">{touchWords(meta.blurb)}</p>
       <StepContent onFindSite={onFindSite} />
     </div>
   );
