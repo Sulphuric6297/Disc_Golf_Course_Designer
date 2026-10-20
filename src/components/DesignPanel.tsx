@@ -44,6 +44,7 @@ function LightAndShadow({ s }: { s: MapStyle }) {
       <StyleSlider k="contrast" value={s.contrast ?? 0} label="Contrast" min={-0.3} max={0.4} step={0.02} format={signed} />
       <StyleSlider k="colorStrength" value={s.colorStrength ?? 1} label="Color strength" min={0.3} max={1.4} step={0.05} format={x => `${Math.round(x * 100)}%`} />
       <StyleSlider k="paint" value={s.paint ?? 0.8} label="Painted look" min={0} max={1} step={0.05} format={x => (x < 0.25 ? "Smooth" : x < 0.7 ? "Soft bands" : "Painted bands")} />
+      <StyleSlider k="reliefScale" value={s.reliefScale ?? 1} label="Hills" min={0} max={3} step={0.05} format={x => (x === 0 ? "Flat" : `${x.toFixed(2).replace(/0$/, "")}×`)} />
     </Section>
   );
 }

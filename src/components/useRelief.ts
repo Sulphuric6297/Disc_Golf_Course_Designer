@@ -5,22 +5,24 @@ import { contoursOf, hillshadeCanvas, type Contours } from "../lib/relief";
 import { terrainStats } from "../lib/terrainGrid";
 import type { CourseDoc } from "../types";
 
-const cache = new WeakMap<Record<string, number>, { contours: Contours; hillshade: string | null }>();
+const cache = new WeakMap<Record<string, number>, Map<number, { contours: Contours; hillshade: string | null }>>();
 
-/** Contours and a hill shading picture for a course's terrain (cached per terrain). */
+/** Contours and a hill shading picture for a course's terrain (cached per terrain and Hills setting). */
 export const reliefOf = (doc: CourseDoc) => {
-  const hit = cache.get(doc.terrainHeights);
+  const hills = doc.style.reliefScale ?? 1;
+  const hit = cache.get(doc.terrainHeights)?.get(hills);
   if (hit) return hit;
   const t = terrainStats(doc.terrainHeights);
   const value = {
     contours: contoursOf(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height),
-    hillshade: t.relief > 1 && typeof document !== "undefined" ? hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height).toDataURL("image/png") : null
+    hillshade: t.relief > 1 && hills > 0 && typeof document !== "undefined" ? hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, undefined, hills).toDataURL("image/png") : null
   };
-  cache.set(doc.terrainHeights, value);
+  if (!cache.has(doc.terrainHeights)) cache.set(doc.terrainHeights, new Map());
+  cache.get(doc.terrainHeights)!.set(hills, value);
   return value;
 };
 
-export const useRelief = (doc: CourseDoc) => useMemo(() => reliefOf(doc), [doc.terrainHeights, doc.gridSize, doc.canvas]); // eslint-disable-line react-hooks/exhaustive-deps
+export const useRelief = (doc: CourseDoc) => useMemo(() => reliefOf(doc), [doc.terrainHeights, doc.gridSize, doc.canvas, doc.style.reliefScale]); // eslint-disable-line react-hooks/exhaustive-deps
 
 /** Where the photo shows trees (Forest style), once it has been worked out. */
 export const useCanopy = (doc: CourseDoc) => {

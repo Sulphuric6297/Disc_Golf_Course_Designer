@@ -188,6 +188,8 @@ export type PaperSize = "letter" | "tabloid" | "18x24" | "24x36" | "a4" | "a3";
 
 export interface MapStyle {
   theme: MapTheme;
+  /** Hills: how strongly the ground's relief shows on the map, times the automatic (0: flat). */
+  reliefScale?: number;
   /** Title block. */
   title: string;
   subtitle: string;

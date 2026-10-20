@@ -1070,9 +1070,11 @@ const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (
   }
   slopes.sort((a, b) => a - b);
   const p90 = slopes[Math.floor(slopes.length * 0.9)] ?? 0;
-  if (hi - lo < 0.5 || p90 < 0.002) return null;
-  // Steep enough to read: the steeper slopes shown at about 20 degrees, whatever the course
-  const exag = reliefExaggeration(p90);
+  const hills = doc.style.reliefScale ?? 1;
+  if (hi - lo < 0.5 || p90 < 0.002 || hills <= 0) return null;
+  // Steep enough to read: the steeper slopes shown at about 20 degrees, whatever the course (and
+  // as much more or less as the Hills setting asks)
+  const exag = reliefExaggeration(p90) * hills;
   const lxy = Math.hypot(L.x, L.y) || 1;
   const lights = [0, 50, -50].map((deg, k) => {
     const a = (deg * Math.PI) / 180, c = Math.cos(a), s2 = Math.sin(a);

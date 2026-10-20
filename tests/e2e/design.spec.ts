@@ -409,7 +409,7 @@ plain("elevation on the map: relief exaggerated to suit the course, tidy contour
   plainExpect(renderPoster(doc, { contours, hillshade: null }).svg).toMatch(/>3\d\d<\/text>/);
 });
 
-test("elevation on the Forest map: hills shade the painting, and contour lines are painted in on request", async ({ page }) => {
+test("elevation on the Forest map: hills shade the painting, contour lines are painted in on request, Hills fine-tunes the relief", async ({ page }) => {
   test.setTimeout(150_000);
   await importSite(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
@@ -428,6 +428,19 @@ test("elevation on the Forest map: hills shade the painting, and contour lines a
   await expect.poll(async () => (await course(page)).style.contours).toBe(true);
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(shaded);
   expect(await page.getByTestId("design-page").locator("path[stroke-linejoin='round'][fill='none'][stroke^='rgba(20,40,10']").count()).toBe(0);
+  await page.getByLabel("Contour lines").uncheck();
+  await expect.poll(async () => painting.getAttribute("href")).toBe(shaded);
+  // Hills: the relief fine-tuned, from flat (the same as no hill shading) to stronger
+  const hills = page.getByLabel("Hills");
+  await hills.fill("0");
+  await hills.dispatchEvent("pointerup");
+  await expect.poll(async () => (await course(page)).style.reliefScale).toBe(0);
+  await expect(page.getByText("Flat", { exact: true })).toBeVisible();
+  await expect.poll(async () => painting.getAttribute("href")).not.toBe(shaded);
+  await hills.fill("2");
+  await hills.dispatchEvent("pointerup");
+  await expect.poll(async () => (await course(page)).style.reliefScale).toBe(2);
+  await expect.poll(async () => painting.getAttribute("href")).not.toBe(shaded);
 });
 
 test("painted water: a pond is lighter at its rim and in the shallows, deep and dark in the middle", async ({ page }) => {

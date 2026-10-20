@@ -73,7 +73,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const stats = useMemo(() => doc.holes.map(h => holeStats(doc, h)), [doc]);
   const terrain = useMemo(() => terrainStats(doc.terrainHeights), [doc.terrainHeights]);
   const contours = useMemo(() => (ed.contours ? contoursOf(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height) : { segments: [], interval: 1 }), [ed.contours, doc.terrainHeights, doc.gridSize, doc.canvas]);
-  const shadeUrl = useMemo(() => (ed.shading && terrain.relief > 1 ? hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height).toDataURL() : null), [ed.shading, terrain.relief, doc.terrainHeights, doc.gridSize, doc.canvas]);
+  const shadeUrl = useMemo(() => (ed.shading && terrain.relief > 1 && (doc.style.reliefScale ?? 1) > 0 ? hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, undefined, doc.style.reliefScale ?? 1).toDataURL() : null), [ed.shading, terrain.relief, doc.terrainHeights, doc.gridSize, doc.canvas, doc.style.reliefScale]);
   const issues = useMemo(() => (ed.step === "review" ? safetyIssues(doc, stats) : null), [ed.step, doc, stats]);
 
   // The 3D view shows the course in its landscape's natural colors (whatever the map's style)

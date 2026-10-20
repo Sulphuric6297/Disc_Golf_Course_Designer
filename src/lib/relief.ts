@@ -61,7 +61,7 @@ export const chainContours = (segments: Contours["segments"]) => {
  */
 export const reliefExaggeration = (p90: number) => Math.max(1.5, Math.min(14, 0.36 / Math.max(1e-6, p90)));
 
-export const hillshadeCanvas = (heights: Record<string, number>, grid: number, width: number, height: number, exaggerate?: number) => {
+export const hillshadeCanvas = (heights: Record<string, number>, grid: number, width: number, height: number, exaggerate?: number, scale = 1) => {
   const ftPerPx = Math.max(2, Math.max(width, height) / 1200);
   const w = Math.max(2, Math.round(width / ftPerPx));
   const h = Math.max(2, Math.round(height / ftPerPx));
@@ -82,7 +82,7 @@ export const hillshadeCanvas = (heights: Record<string, number>, grid: number, w
     const p90 = slopes[Math.floor(slopes.length * 0.9)] ?? 0;
     exaggerate = p90 > 0.002 ? reliefExaggeration(p90) : 2.5;
   }
-  for (let k = 0; k < z.length; k++) z[k] *= exaggerate;
+  for (let k = 0; k < z.length; k++) z[k] *= exaggerate * scale;
   const lights = [
     { az: 315, w: 0.5 },
     { az: 270, w: 0.2 },
