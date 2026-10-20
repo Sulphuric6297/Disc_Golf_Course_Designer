@@ -61,12 +61,18 @@ export const createTeePad = (tee: TeeItem, holeNumber: number | string) => {
   const g = new THREE.Group();
   const L = tee.padLength, W = tee.padWidth;
   const thick = tee.surface === "natural" ? 0.05 : 0.35;
+  // (the pad and what is painted on it, tilted with the ground: see fitTeePad)
+  const deck = new THREE.Group();
+  deck.name = "tee-deck";
+  g.add(deck);
   const slab = box(L, thick, W, std(TEE_SURFACES[tee.surface].color, tee.surface === "rubber" ? 0.95 : 0.9), 0, thick / 2 - 0.05, 0);
   slab.name = "tee-pad";
-  g.add(slab);
+  deck.add(slab);
   // Painted tee color: a band across the front, plus the hole number on the pad
   const lvl = TEE_LEVELS[tee.level];
-  g.add(box(0.8, 0.02, W * 0.96, std(lvl.color, 0.7), L / 2 - 0.6, thick - 0.04, 0));
+  const band = box(0.8, 0.02, W * 0.96, std(lvl.color, 0.7), L / 2 - 0.6, thick - 0.04, 0);
+  deck.add(band);
+  const onTop: THREE.Object3D[] = [band];
   const plate = signTexture(`pad:${holeNumber}:${tee.level}`, (c, w, h) => {
     c.fillStyle = lvl.color;
     c.fillRect(0, 0, w, h);
@@ -80,11 +86,14 @@ export const createTeePad = (tee: TeeItem, holeNumber: number | string) => {
     const num = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(2, W * 0.5), Math.min(2, W * 0.5)), plate);
     num.rotation.set(-Math.PI / 2, 0, -Math.PI / 2);
     num.position.set(-L / 2 + 1.4, thick - 0.03, 0);
-    g.add(num);
+    deck.add(num);
+    onTop.push(num);
   }
-  // The tee sign: behind the pad, a little to the side, facing the player (toward -x)
+  // The tee sign: behind the pad, a little to the side, facing the player (toward -x): a board on
+  // two posts behind it
   const sign = new THREE.Group();
-  sign.add(cyl(0.15, 0.15, 4.2, std("#5b4636", 0.9), 0, 0, 0, 8));
+  const wood = std("#5b4636", 0.9);
+  for (const z of [-0.7, 0.7]) sign.add(cyl(0.12, 0.12, 4.15, wood, 0.19, 0, z, 8));
   const face = signTexture(`tee-sign:${holeNumber}`, (c, w, h) => {
     c.fillStyle = "#14532d";
     c.fillRect(0, 0, w, h);
@@ -101,7 +110,51 @@ export const createTeePad = (tee: TeeItem, holeNumber: number | string) => {
   sign.add(board);
   sign.position.set(-L / 2 - 2.5, 0, W / 2 + 1.5);
   g.add(sign);
+  for (const o of onTop) o.userData.y0 = o.position.y;
+  g.userData.pad = { deck, slab, onTop, sign, thick };
   return g;
+};
+
+/** How steep a tee pad can lie with the ground (about 8°); steeper ground is built up under it. */
+const PAD_TILT = Math.tan((8 * Math.PI) / 180);
+
+/**
+ * A tee pad on sloping ground (placed at its middle's ground height, facing `aim` degrees): tilted
+ * with the ground as far as a pad can be, raised just clear of the highest ground under it and
+ * built down into the lowest, so the ground never cuts through it; the sign's posts on their own
+ * ground.
+ */
+export const fitTeePad = (obj: THREE.Object3D, tee: Pick<TeeItem, "x" | "y" | "padLength" | "padWidth">, aim: number, ground: (x: number, y: number) => number) => {
+  const pad = obj.userData.pad as { deck: THREE.Object3D; slab: THREE.Object3D; onTop: THREE.Object3D[]; sign: THREE.Object3D; thick: number } | undefined;
+  if (!pad) return;
+  const a = (aim * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  const L = tee.padLength, W = tee.padWidth;
+  const at = (lx: number, lz: number) => ground(tee.x + lx * c - lz * s, tee.y + lx * s + lz * c);
+  const g0 = ground(tee.x, tee.y);
+  // The ground under it, every couple of feet (along its length x and across it z)
+  const nx = Math.max(2, Math.ceil(L / 2)), nz = Math.max(2, Math.ceil(W / 2));
+  const pts: { x: number; z: number; d: number }[] = [];
+  for (let i = 0; i <= nx; i++) for (let j = 0; j <= nz; j++) {
+    const x = (i / nx - 0.5) * L, z = (j / nz - 0.5) * W;
+    pts.push({ x, z, d: at(x, z) - g0 });
+  }
+  // Its slope each way (the ground's, as far as a pad can lie)
+  const fit = (k: "x" | "z") => pts.reduce((t, p) => t + p[k] * p.d, 0) / (pts.reduce((t, p) => t + p[k] * p[k], 0) || 1);
+  const tx = Math.max(-PAD_TILT, Math.min(PAD_TILT, fit("x"))), tz = Math.max(-PAD_TILT, Math.min(PAD_TILT, fit("z")));
+  pad.deck.rotation.set(-Math.atan(tz), 0, Math.atan(tx), "XYZ");
+  // What is left above and below that slope
+  let hi = 0, lo = 0;
+  for (const p of pts) {
+    const r = p.d - (p.x * tx + p.z * tz);
+    hi = Math.max(hi, r);
+    lo = Math.min(lo, r);
+  }
+  const top0 = pad.thick - 0.05;
+  const top = hi + top0, bottom = lo - 0.2;
+  pad.slab.scale.y = (top - bottom) / pad.thick;
+  pad.slab.position.y = (top + bottom) / 2;
+  for (const o of pad.onTop) o.position.y = (o.userData.y0 as number) + hi;
+  pad.sign.position.y = at(pad.sign.position.x, pad.sign.position.z) - g0;
 };
 
 /** A basket at real size (about 4.5 ft tall): pole, tray, chains and a colored top band. */

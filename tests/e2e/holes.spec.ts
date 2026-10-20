@@ -1,6 +1,8 @@
 import { test as plainHoles, expect as plainHolesExpect } from "@playwright/test";
 import { test, expect, addHole, blankCourse, clickPlan, course, drag, editorState, handleCenter, screenOf } from "./fixtures";
-import { walkEnds, WALK_OUT_FT } from "../../src/lib/course";
+import { createTee, walkEnds, WALK_OUT_FT } from "../../src/lib/course";
+import { createTeePad, fitTeePad } from "../../src/three/courseModels";
+import * as THREE from "three";
 import { CIRCLE_ONE_FT } from "../../src/constants";
 
 test("a new hole: click the tee, then the basket; length and par show live", async ({ page }) => {
@@ -408,4 +410,49 @@ test("one automatic walk picked on the map and removed (and added back), the oth
   expect(await walk(b.id)).toBe(true);
   await page.getByTestId("walk-restore").click();
   await expect.poll(() => walk(a.id)).toBe(true);
+});
+
+plainHoles("a tee pad on sloping ground tilts with it (up to 8 degrees), raised clear and built down: the ground never cuts through", () => {
+  const tee = { ...createTee("h", { x: 100, y: 100 }), padLength: 12, padWidth: 5 };
+  // A gentle slope, a steep one (1 ft every 3 ft) with a hump under the pad's back corner
+  const grounds = [(x: number) => (x - 100) / 20, (x: number, y: number) => (x - 100) / 3 + (Math.hypot(x - 95, y - 98) < 2 ? 1 : 0)];
+  for (const [gi, ground] of grounds.entries()) for (const aim of [0, 35, 90, 200]) {
+    const obj = createTeePad(tee, 1);
+    obj.position.set(tee.x, ground(tee.x, tee.y), tee.y);
+    obj.rotation.set(0, (-aim * Math.PI) / 180, 0);
+    fitTeePad(obj, tee, aim, ground);
+    obj.updateMatrixWorld(true);
+    const deck = obj.getObjectByName("tee-deck")!;
+    const slab = obj.getObjectByName("tee-pad") as THREE.Mesh;
+    const half = (0.35 * slab.scale.y) / 2;
+    // Everywhere under the pad, the ground is below its top and above its bottom (in the pad's own frame)
+    const a = (aim * Math.PI) / 180;
+    for (let i = 0; i <= 12; i++) for (let j = 0; j <= 5; j++) {
+      const lx = i - 6, lz = j - 2.5;
+      const x = tee.x + lx * Math.cos(a) - lz * Math.sin(a), y = tee.y + lx * Math.sin(a) + lz * Math.cos(a);
+      const local = deck.worldToLocal(new THREE.Vector3(x, ground(x, y), y));
+      plainHolesExpect(local.y).toBeLessThan(slab.position.y + half);
+      plainHolesExpect(local.y).toBeGreaterThan(slab.position.y - half);
+    }
+    const tilt = Math.max(Math.abs(deck.rotation.x), Math.abs(deck.rotation.z));
+    plainHolesExpect(tilt).toBeLessThanOrEqual((8 * Math.PI) / 180 + 1e-9);
+    // (a gentle slope: it simply lies on it, as thin as on flat ground)
+    if (gi === 0) plainHolesExpect(slab.scale.y).toBeLessThan(1.6);
+  }
+  // On flat ground: flat and thin
+  const flat = createTeePad(tee, 1);
+  fitTeePad(flat, tee, 0, () => 5);
+  plainHolesExpect((flat.getObjectByName("tee-pad") as THREE.Mesh).scale.y).toBeCloseTo(0.5 / 0.35, 2);
+  plainHolesExpect(flat.getObjectByName("tee-deck")!.rotation.z).toBeCloseTo(0, 6);
+  // The sign's board in front of its posts: no post through it
+  const sign = (flat.userData.pad as { sign: THREE.Object3D }).sign;
+  flat.updateMatrixWorld(true);
+  const parts = sign.children.map(m => new THREE.Box3().setFromObject(m));
+  const board = parts.reduce((b, p) => (p.max.y - p.min.y < b.max.y - b.min.y ? p : b));
+  const posts = parts.filter(p => p !== board);
+  plainHolesExpect(posts).toHaveLength(2);
+  for (const p of posts) {
+    plainHolesExpect(p.intersectsBox(board)).toBe(false);
+    plainHolesExpect(p.max.y).toBeGreaterThan(board.min.y);
+  }
 });

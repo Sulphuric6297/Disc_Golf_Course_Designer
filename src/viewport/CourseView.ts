@@ -21,7 +21,7 @@ import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
 import { landscapeOf } from "../lib/landscapes";
 import { fmtArea, fmtDist, fmtElev } from "../lib/units";
-import { createAmenity, createBasket, createDropZone, createMando, createTeePad } from "../three/courseModels";
+import { createAmenity, createBasket, createDropZone, createMando, createTeePad, fitTeePad } from "../three/courseModels";
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
@@ -1667,8 +1667,11 @@ export class CourseView {
     const doc = this.doc!;
     const g = this.h(item.x, item.y);
     if (item.type === "tee") {
+      const aim = teeAim(doc.course, item);
       obj.position.set(item.x, g, item.y);
-      obj.rotation.set(0, -teeAim(doc.course, item) * DEG, 0);
+      obj.rotation.set(0, -aim * DEG, 0);
+      // (level on sloping ground, never cut by it)
+      fitTeePad(obj, item, aim, (x, y) => this.h(x, y));
     } else if (item.type === "basket") {
       obj.position.set(item.x, g + (item.raised ?? 0), item.y);
       obj.rotation.set(0, 0, 0);
