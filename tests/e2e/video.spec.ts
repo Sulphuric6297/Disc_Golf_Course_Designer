@@ -31,12 +31,24 @@ const probe = (page: Page, data: Buffer, type: string) =>
     return { duration: v.duration, width: v.videoWidth, height: v.videoHeight };
   }, { b64: data.toString("base64"), type });
 
+/** Notes every toast from now on (they go after a few seconds, and a busy machine can miss one). */
+const watchToasts = (page: Page) =>
+  page.evaluate(() => {
+    const w = window as any;
+    w.__toasts = [];
+    new MutationObserver(() => {
+      for (const el of document.querySelectorAll("[role=status] > span")) if (!w.__toasts.includes(el.textContent)) w.__toasts.push(el.textContent);
+    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+  });
+const toasts = (page: Page) => page.evaluate(() => (((window as any).__toasts ?? []) as string[]).join("\n"));
+
 /** A real video file: an MP4 ("ftyp" box) or a WebM (EBML header). */
 const kindOf = (data: Buffer) => (data.subarray(4, 8).toString("latin1") === "ftyp" ? "mp4" : data.subarray(0, 4).toString("hex") === "1a45dfa3" ? "webm" : "?");
 
 test("record a hole's flyover from the Export step: progress, then a real video file", async ({ page }) => {
   test.setTimeout(240_000);
   await twoHoles(page);
+  await watchToasts(page);
   await page.getByRole("button", { name: "6 Export" }).click();
   const section = page.getByTestId("video-export");
   await section.getByTestId("video-holes").selectOption({ label: "Hole 1" });
@@ -48,7 +60,7 @@ test("record a hole's flyover from the Export step: progress, then a real video 
   await expect(page.getByTestId("export-map-svg")).toBeDisabled();
   await expect.poll(async () => Number(await section.getByTestId("video-progress").getAttribute("aria-valuenow")), { timeout: 60_000 }).toBeGreaterThan(5);
   const download = await downloading;
-  await expect(page.getByRole("status").filter({ hasText: "Flyover video saved" })).toBeVisible();
+  await expect.poll(() => toasts(page), { timeout: 30_000 }).toContain("Flyover video saved: 7 s, 320 × 180, ");
   const data = readFileSync((await download.path())!);
   const kind = kindOf(data);
   expect(["mp4", "webm"]).toContain(kind);
@@ -70,6 +82,7 @@ test("record a hole's flyover from the Export step: progress, then a real video 
 test("cancel stops a recording, and leaving the Export step doesn't", async ({ page }) => {
   test.setTimeout(120_000);
   await twoHoles(page, [160, 90]);
+  await watchToasts(page);
   let downloads = 0;
   page.on("download", () => downloads++);
   await page.getByRole("button", { name: "6 Export" }).click();
@@ -86,7 +99,7 @@ test("cancel stops a recording, and leaving the Export step doesn't", async ({ p
   await page.getByRole("button", { name: "6 Export" }).click();
   await page.getByTestId("video-cancel").click();
   await expect(page.getByTestId("video-progress")).toBeHidden();
-  await expect(page.getByRole("status").filter({ hasText: "Cancelled" })).toBeVisible();
+  await expect.poll(() => toasts(page), { timeout: 30_000 }).toContain("Cancelled: Course flyover video.");
   await expect(page.getByTestId("video-record")).toBeEnabled();
   await page.waitForTimeout(500);
   expect(downloads).toBe(0);
