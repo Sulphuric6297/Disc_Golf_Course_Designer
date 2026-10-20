@@ -1622,6 +1622,7 @@ export class CourseView {
       const obj = make();
       if (!obj) return;
       obj.traverse(o => { o.raycast = () => {}; });
+      if (!obj.name) obj.name = key;
       group.add(obj);
       this.shapes.set(key, { obj, sig });
     };
@@ -1786,14 +1787,15 @@ export class CourseView {
             drapedRibbon(pts, width, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.18),
             l.kind === "stream" ? waterMaterial(c, ...this.waterShore(l.points)) : new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
           );
-          ribbon.renderOrder = 2;
+          // (walks to the next hole over every other path)
+          ribbon.renderOrder = l.kind === "walk" ? 2.6 : 2;
           ribbon.receiveShadow = true;
           g.add(ribbon);
         } else {
-          g.add(this.fatLine(this.drapeLine(pts), c, l.kind === "ob" ? 3.5 : 2.5, { order: 5, dashed: l.kind === "walk" ? 5 : l.kind === "fence" ? 2 : undefined }));
+          g.add(this.fatLine(this.drapeLine(pts, l.kind === "walk" ? LIFT + 0.15 : LIFT), c, l.kind === "ob" ? 3.5 : 2.5, { order: l.kind === "walk" ? 6 : 5, dashed: l.kind === "walk" ? 5 : l.kind === "fence" ? 2 : undefined }));
         }
         // (a walk with a width: its dashes along the middle too)
-        if (l.kind === "walk" && width > 0) g.add(this.fatLine(this.drapeLine(pts, 0.4), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 4 }));
+        if (l.kind === "walk" && width > 0) g.add(this.fatLine(this.drapeLine(pts, LIFT + 0.15), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 6 }));
         return g;
       });
     }
@@ -1869,10 +1871,11 @@ export class CourseView {
               drapedRibbon([from, to], wide, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.17),
               new THREE.MeshLambertMaterial({ color: surface && surface !== "dirt" ? PATH_SURFACES[surface].color : st.path, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
             );
-            mesh.renderOrder = 2;
+            // (walks to the next hole over every other path)
+            mesh.renderOrder = 2.6;
             g.add(mesh);
           }
-          g.add(this.fatLine(this.drapeLine([from, to], 0.35), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 4 }));
+          g.add(this.fatLine(this.drapeLine([from, to], LIFT + 0.15), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 6 }));
           return g;
         });
       }

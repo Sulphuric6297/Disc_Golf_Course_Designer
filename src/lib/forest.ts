@@ -362,7 +362,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       if (l.kind === "road") {
         line(ROAD, pts, lw);
         line(CLEAR, pts, lw + ftOf(2));
-      } else if (l.kind === "path" || l.kind === "walk") {
+      } else if (l.kind === "path") {
         line(surfaceCh(l.surface), pts, lw);
         line(CLEAR, pts, lw + (crownR * 2.4) / k);
       } else if (l.kind === "stream") {
@@ -379,7 +379,21 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     }
   }
   yield;
-  // Dirt trails from each basket to the next tee
+  // Walks to the next hole, over every other path (what other paths and roads painted under them
+  // taken out first): drawn ones, then dirt trails from each basket to the next tee
+  const walkLine = (c: Ch, pts: P[], width: number) => {
+    for (const m of [B, D]) {
+      m.g.globalCompositeOperation = "multiply";
+      line({ g: m.g, color: "rgb(0,0,255)" }, pts, width);
+      m.g.globalCompositeOperation = "lighter";
+    }
+    line(c, pts, width);
+  };
+  for (const l of doc.items.filter(i => i.type === "line" && i.kind === "walk") as LineItem[]) {
+    const { points: pts, width: lw } = paintedLine(l, view.scale);
+    walkLine(surfaceCh(l.surface), pts, lw);
+    line(CLEAR, pts, lw + (crownR * 2.4) / k);
+  }
   if (s.nextTee) {
     for (const { from, to, a, b } of autoWalks(doc.items, stats, doc.holes)) {
       const d = dist(from, to);
@@ -389,7 +403,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       const hole = doc.holes.find(h => h.id === a.holeId);
       const tw = hole?.walkWidth ? Math.max(hole.walkWidth, ftOf(2)) : Math.max(6, ftOf(6));
       const pts = smoothPath(meander([from, to], Math.min(d * 0.07, 30), Math.max(70, d * 0.55), idSeed(a.holeId + b.holeId), 0), 3);
-      line(surfaceCh(hole?.walkSurface), pts, tw);
+      walkLine(surfaceCh(hole?.walkSurface), pts, tw);
       line(CLEAR, pts, tw + (crownR * 2.4) / k);
     }
   }

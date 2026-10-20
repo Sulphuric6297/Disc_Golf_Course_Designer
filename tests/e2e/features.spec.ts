@@ -369,3 +369,28 @@ test("turning drawn shapes: an area with its round handle, a path with the Turn 
   await page.keyboard.press("Control+z");
   await expect.poll(async () => Math.round((await course(page)).items.find((i: any) => i.id === path.id).points[0].x)).toBe(350);
 });
+
+test("walks to the next hole are drawn over the paths they cross", async ({ page }) => {
+  await blankCourse(page);
+  await page.keyboard.press("v");
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__dgEditor().set({ lineKind: "path" });
+    w.__dgActions.addDrawn("line", [{ x: 300, y: 500 }, { x: 700, y: 500 }]);
+    w.__dgEditor().set({ lineKind: "walk" });
+    w.__dgActions.addDrawn("line", [{ x: 500, y: 300 }, { x: 500, y: 700 }]);
+  });
+  // (the walk as wide as a path: a ribbon like the path's)
+  await page.getByRole("slider", { name: "Width" }).fill("8");
+  const items = (await course(page)).items;
+  const path = items.find((i: any) => i.kind === "path"), walk = items.find((i: any) => i.kind === "walk");
+  await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === walk.id).width).toBe(8);
+  const orders = (name: string) => page.evaluate(n => {
+    const out: number[] = [];
+    (window as any).__dgView.scene.getObjectByName(n)?.traverse((o: any) => { if (o.isMesh) out.push(o.renderOrder); });
+    return out;
+  }, name);
+  await expect.poll(async () => (await orders(`line:${walk.id}`)).length).toBeGreaterThan(1);
+  expect((await orders(`line:${path.id}`)).length).toBeGreaterThan(0);
+  expect(Math.min(...(await orders(`line:${walk.id}`)))).toBeGreaterThan(Math.max(...(await orders(`line:${path.id}`))));
+});
