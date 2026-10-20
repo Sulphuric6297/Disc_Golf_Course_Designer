@@ -170,6 +170,9 @@ Map design
 - [ ] **Map keys list only what is on that map** (the hole card's key).
 - [ ] **The hole card's whole style is editable** (colors and such).
 - [ ] **The tee sign's info column looks good** (it was sparse, with a "course map" of bare lines).
+- [ ] **The final render is print quality, for prints and large maps** (exports at 300 dpi,
+  about 200 dpi on big posters, the painted land painted to match; a 36 × 48 in poster).
+- [ ] **No black specks in the painted woods** (beside the treetops).
 - [ ] **Scorecards look like the Innova card** (Distance or Par, Name, 1–9, Front, 10–18, Back,
   Total; Date, Par, Course), with a place to upload the course logo.
 

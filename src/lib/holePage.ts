@@ -15,8 +15,8 @@ import { fmtDist, fmtElev } from "./units";
 export type HolePageSize = "letter" | "a4" | "card" | "square";
 /** Page sizes (inches) and the resolution of their pictures (the square one is 1080 px). */
 export const HOLE_PAGES: Record<HolePageSize, { label: string; w: number; h: number; dpi: number }> = {
-  letter: { label: "Letter page (8.5 × 11 in)", w: 8.5, h: 11, dpi: 150 },
-  a4: { label: "A4 page", w: 8.27, h: 11.69, dpi: 150 },
+  letter: { label: "Letter page (8.5 × 11 in)", w: 8.5, h: 11, dpi: 300 },
+  a4: { label: "A4 page", w: 8.27, h: 11.69, dpi: 300 },
   card: { label: "Card 4 × 6 in (yardage book)", w: 4, h: 6, dpi: 300 },
   square: { label: "Square 1080 px (social)", w: 7.5, h: 7.5, dpi: 144 }
 };

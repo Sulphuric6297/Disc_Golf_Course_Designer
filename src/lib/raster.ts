@@ -72,8 +72,34 @@ export const pngUnder = async (svg: string, w: number, h: number, maxBytes: numb
   return canvasBlob(await svgToCanvas(svg, w, h, 50));
 };
 
+/** The most pixels a printed picture may have: what a computer's browser holds safely in one
+ * picture (an iPhone's or iPad's far less). */
+const maxPixels = () =>
+  typeof navigator !== "undefined" && (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent))) ? 16e6 : 40e6;
+
+/** Print resolution for a page this size (points): `most` dpi (300) where the picture fits, less
+ * on big posters (200 dpi on 24 × 36 in, 150 on 36 × 48 in). */
+export const printDpi = (widthPt: number, heightPt: number, most = 300) => {
+  const wIn = widthPt / 72, hIn = heightPt / 72;
+  const fit = Math.sqrt(maxPixels() / (wIn * hIn));
+  // (no side over 16,000 pixels: browsers stop there)
+  const side = 16000 / Math.max(wIn, hIn);
+  return Math.max(72, Math.floor(Math.min(most, fit, side) / 25) * 25);
+};
+
+/** One page of a PDF, its picture compressed straight away (so a stack of big pages never needs
+ * every picture at full size at once). */
+export type PdfPage = { jpeg: Uint8Array; pxW: number; pxH: number; widthPt: number; heightPt: number };
+export const pdfPage = async (canvas: HTMLCanvasElement, widthPt: number, heightPt: number): Promise<PdfPage> => {
+  const jpeg = new Uint8Array(await (await canvasBlob(canvas, "image/jpeg", 0.93)).arrayBuffer());
+  const page = { jpeg, pxW: canvas.width, pxH: canvas.height, widthPt, heightPt };
+  // (let the picture go now)
+  canvas.width = canvas.height = 1;
+  return page;
+};
+
 /** A PDF with one picture per page, each page its own size (points). */
-export const pdfFromPages = async (pages: { canvas: HTMLCanvasElement; widthPt: number; heightPt: number }[]) => {
+export const pdfFromPages = async (pages: PdfPage[]) => {
   const enc = new TextEncoder();
   const chunks: Uint8Array[] = [];
   const offsets: number[] = [];
@@ -96,12 +122,11 @@ export const pdfFromPages = async (pages: { canvas: HTMLCanvasElement; widthPt: 
   obj(1, () => push("<< /Type /Catalog /Pages 2 0 R >>"));
   obj(2, () => push(`<< /Type /Pages /Count ${count} /Kids [${pages.map((_, i) => `${pageId(i)} 0 R`).join(" ")}] >>`));
   for (let i = 0; i < count; i++) {
-    const { canvas, widthPt: w, heightPt: h } = pages[i];
-    const jpeg = new Uint8Array(await (await canvasBlob(canvas, "image/jpeg", 0.9)).arrayBuffer());
+    const { jpeg, pxW, pxH, widthPt: w, heightPt: h } = pages[i];
     const id = pageId(i);
     obj(id, () => push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w.toFixed(2)} ${h.toFixed(2)}] /Resources << /XObject << /Im${i} ${id + 1} 0 R >> >> /Contents ${id + 2} 0 R >>`));
     obj(id + 1, () => {
-      push(`<< /Type /XObject /Subtype /Image /Width ${canvas.width} /Height ${canvas.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`);
+      push(`<< /Type /XObject /Subtype /Image /Width ${pxW} /Height ${pxH} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`);
       push(jpeg);
       push("\nendstream");
     });

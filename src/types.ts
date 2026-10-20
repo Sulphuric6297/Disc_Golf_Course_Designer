@@ -220,7 +220,7 @@ export type MapTheme = "forest" | "illustrated" | "satellite" | "topo" | "minima
 /** A basket's mark on the printed map: side view, side view in a round badge, a pin flag, target
  * rings, or the hole number in a circle. */
 export type BasketMark = "basket" | "badge" | "flag" | "target" | "number";
-export type PaperSize = "letter" | "tabloid" | "18x24" | "24x36" | "a4" | "a3";
+export type PaperSize = "letter" | "tabloid" | "18x24" | "24x36" | "36x48" | "a4" | "a3";
 
 export interface MapStyle {
   theme: MapTheme;

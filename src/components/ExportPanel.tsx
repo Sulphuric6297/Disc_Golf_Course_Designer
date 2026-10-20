@@ -3,11 +3,11 @@
 import { useState, type ReactNode } from "react";
 import { Box, Clapperboard, FileDown, FileJson, Image as ImageIcon, Map as MapIcon, Share2 } from "lucide-react";
 import JSZip from "jszip";
-import { PAPER, renderPoster } from "../lib/mapSvg";
+import { PAPER, paintedForPrint, renderPoster } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
 import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
 import { holeGeoJSON, holesCsv, partsCsv, partsList, stakeOutCsv, toGPX, toGeoJSON, toKML } from "../lib/exports";
-import { canvasBlob, pdfFromPages, pngUnder, svgToCanvas } from "../lib/raster";
+import { canvasBlob, pdfFromPages, pdfPage, pngUnder, printDpi, svgToCanvas } from "../lib/raster";
 import { holeStats } from "../lib/holeStats";
 import { holeNumber } from "../lib/course";
 import { VIDEO_SIZES, VIDEO_HOLD, type VideoResolution } from "../lib/video";
@@ -62,30 +62,39 @@ export function ExportPanel() {
 
   const run = (label: string, fn: (job: JobControl) => Promise<void> | void) => () => void runExport(label, fn);
 
-  const mapPdf = run("Course map PDF", async () => {
+  // Prints at print resolution: 300 dpi, less on big posters (see printDpi), the map painted to match
+  const poster = async (d: CourseDoc, job: JobControl) => {
+    const a = await art(d);
+    job.progress(null, "Painting the map");
+    const p = await paintedForPrint(page => printDpi(page.width, page.height), () => renderPoster(d, a));
+    return { p, dpi: printDpi(p.width, p.height) };
+  };
+  const mapPdf = run("Course map PDF", async job => {
     const d = getDoc();
-    const p = renderPoster(d, await art(d));
-    const dpi = p.page.w * p.page.h > 300 ? 120 : 200;
-    download(await pdfFromPages([{ canvas: await svgToCanvas(p.svg, p.width, p.height, dpi), widthPt: p.width, heightPt: p.height }]), fileName(d, "-map.pdf"));
+    const { p, dpi } = await poster(d, job);
+    job.progress(null, "Making the PDF");
+    download(await pdfFromPages([await pdfPage(await svgToCanvas(p.svg, p.width, p.height, dpi), p.width, p.height)]), fileName(d, "-map.pdf"));
   });
-  const mapPng = run("Course map PNG", async () => {
+  const mapPng = run("Course map PNG", async job => {
     const d = getDoc();
-    const p = renderPoster(d, await art(d));
-    download(await canvasBlob(await svgToCanvas(p.svg, p.width, p.height, 150)), fileName(d, "-map.png"));
+    const { p, dpi } = await poster(d, job);
+    job.progress(null, "Making the picture");
+    download(await canvasBlob(await svgToCanvas(p.svg, p.width, p.height, dpi)), fileName(d, "-map.png"));
   });
-  const mapSvg = run("Course map SVG", async () => {
+  const mapSvg = run("Course map SVG", async job => {
     const d = getDoc();
-    download(svgBlob(renderPoster(d, await art(d)).svg), fileName(d, "-map.svg"));
+    download(svgBlob((await poster(d, job)).p.svg), fileName(d, "-map.svg"));
   });
   const signsPdf = run("Tee signs PDF", async job => {
     const d = getDoc();
     const relief = await art(d);
     const pages = [];
     for (const h of d.holes) {
-      const s = renderTeeSign(d, h.id, signSize, relief);
-      if (!s) continue;
       job.progress(pages.length / d.holes.length, `Tee sign ${pages.length + 1} of ${d.holes.length}`);
-      pages.push({ canvas: await svgToCanvas(s.svg, s.width, s.height, signSize === "18x24" ? 100 : 130), widthPt: s.width, heightPt: s.height });
+      const s = await paintedForPrint(page => (page ? printDpi(page.width, page.height) : 72), () => renderTeeSign(d, h.id, signSize, relief));
+      if (!s) continue;
+      const dpi = printDpi(s.width, s.height);
+      pages.push(await pdfPage(await svgToCanvas(s.svg, s.width, s.height, dpi), s.width, s.height));
     }
     download(await pdfFromPages(pages), fileName(d, signSize === "letter" || signSize === "a4" ? "-hole-sheets.pdf" : "-tee-signs.pdf"));
   });
@@ -94,11 +103,11 @@ export function ExportPanel() {
     const relief = await art(d);
     const zip = new JSZip();
     for (let i = 0; i < d.holes.length; i++) {
-      const s = renderTeeSign(d, d.holes[i].id, signSize, relief);
-      if (!s) continue;
       job.progress(i / d.holes.length, `Tee sign ${i + 1} of ${d.holes.length}`);
+      const s = await paintedForPrint(150, () => renderTeeSign(d, d.holes[i].id, signSize, relief));
+      if (!s) continue;
       // UDisc takes tee sign pictures up to 5 MB
-      zip.file(`hole-${two(i + 1)}.png`, await pngUnder(s.svg, s.width, s.height, 4.8 * 1024 * 1024, 120));
+      zip.file(`hole-${two(i + 1)}.png`, await pngUnder(s.svg, s.width, s.height, 4.8 * 1024 * 1024, 150));
       zip.file(`hole-${two(i + 1)}.svg`, s.svg);
     }
     download(await zip.generateAsync({ type: "blob" }), fileName(d, "-tee-signs.zip"));
@@ -106,7 +115,7 @@ export function ExportPanel() {
   const scorecardPdf = run("Scorecard PDF", async () => {
     const d = getDoc();
     const s = renderScorecard(d);
-    download(await pdfFromPages([{ canvas: await svgToCanvas(s.svg, s.width, s.height, 200), widthPt: s.width, heightPt: s.height }]), fileName(d, "-scorecard.pdf"));
+    download(await pdfFromPages([await pdfPage(await svgToCanvas(s.svg, s.width, s.height, 300), s.width, s.height)]), fileName(d, "-scorecard.pdf"));
   });
   const snapshot = run("3D picture", async () => {
     const url = getView()?.capture();
@@ -128,8 +137,9 @@ export function ExportPanel() {
     const pages = [];
     for (const [i, h] of holes.entries()) {
       job.progress(i / holes.length, `Hole page ${i + 1} of ${holes.length}`);
-      const p = renderHolePage(d, h.id, pageSize, relief)!;
-      pages.push({ canvas: await svgToCanvas(p.svg, p.width, p.height, Math.min(HOLE_PAGES[pageSize].dpi, 200)), widthPt: p.width, heightPt: p.height });
+      const dpi = HOLE_PAGES[pageSize].dpi;
+      const p = (await paintedForPrint(dpi, () => renderHolePage(d, h.id, pageSize, relief)))!;
+      pages.push(await pdfPage(await svgToCanvas(p.svg, p.width, p.height, dpi), p.width, p.height));
     }
     download(await pdfFromPages(pages), fileName(d, holes.length === 1 ? `${holeSuffix(d, holes[0].id)}.pdf` : "-hole-pages.pdf"));
   });
@@ -141,14 +151,15 @@ export function ExportPanel() {
     const zip = new JSZip();
     for (const [i, h] of holes.entries()) {
       job.progress(i / holes.length, `Hole picture ${i + 1} of ${holes.length}`);
-      const p = renderHolePage(d, h.id, pageSize, relief)!;
+      const p = (await paintedForPrint(HOLE_PAGES[pageSize].dpi, () => renderHolePage(d, h.id, pageSize, relief)))!;
       zip.file(`hole-${two(holeNumber(d, h.id))}.png`, await canvasBlob(await svgToCanvas(p.svg, p.width, p.height, HOLE_PAGES[pageSize].dpi)));
     }
     download(await zip.generateAsync({ type: "blob" }), fileName(d, "-hole-pages.zip"));
   });
   const onePage = async (d: CourseDoc) => {
     if (!pageHole) throw new Error("Pick a hole first.");
-    return renderHolePage(d, pageHole.id, pageSize, await art(d))!;
+    const relief = await art(d);
+    return (await paintedForPrint(HOLE_PAGES[pageSize].dpi, () => renderHolePage(d, pageHole.id, pageSize, relief)))!;
   };
   const pagePng = run("Hole picture", async () => {
     const d = getDoc();

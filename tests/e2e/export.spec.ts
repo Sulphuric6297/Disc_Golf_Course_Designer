@@ -125,7 +125,8 @@ test("hole by hole: a PDF page and a picture per hole, and one hole's PNG, SVG a
   expect(Object.keys(zip.files).sort()).toEqual(["hole-01.png", "hole-02.png"]);
   const letter = await zip.file("hole-01.png")!.async("uint8array");
   expect(Buffer.from(letter.subarray(1, 4)).toString()).toBe("PNG");
-  expect(pngSize(letter)).toEqual({ width: 1275, height: 1650 });
+  // (printed at 300 dpi)
+  expect(pngSize(letter)).toEqual({ width: 2550, height: 3300 });
   // One hole: its page as a square picture for sharing, as SVG, and its GPS file
   await holes.getByTestId("hole-pick").selectOption({ label: "Hole 2" });
   await holes.getByTestId("hole-page-size").selectOption("square");

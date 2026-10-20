@@ -19,6 +19,7 @@ export const PAPER: Record<PaperSize, { label: string; w: number; h: number }> =
   tabloid: { label: "Tabloid 11 × 17 in", w: 11, h: 17 },
   "18x24": { label: "Poster 18 × 24 in", w: 18, h: 24 },
   "24x36": { label: "Poster 24 × 36 in", w: 24, h: 36 },
+  "36x48": { label: "Poster 36 × 48 in", w: 36, h: 48 },
   a4: { label: "A4", w: 8.27, h: 11.69 },
   a3: { label: "A3", w: 11.69, h: 16.54 }
 };
@@ -590,6 +591,37 @@ const idOf = (o: object | null | undefined) => {
 let paintLimit = 2400;
 /** A live preview: paint in slices between frames, showing the last picture until it's done. */
 let paintLive = false;
+/** A print: the painting's pixels per page point (null: as the preview or a quick export). */
+let printDensity: number | null = null;
+/** The paintings the first drawing of a print asks for (painted before it is drawn again). */
+let printJobs: (() => Promise<void>)[] | null = null;
+
+/**
+ * Draws a page for print: a first drawing notes the paintings it needs, they are painted at
+ * `dpi` (a slice at a time, so the page never freezes; at most 250 dpi, plenty for the painted
+ * texture, and no bigger than a browser holds), then the page is drawn with them.
+ */
+export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), draw: () => T): Promise<T> => {
+  const was = printDensity;
+  try {
+    // (a resolution that depends on the page: measured by a drawing that paints nothing)
+    if (typeof dpi === "function") {
+      printDensity = 1;
+      printJobs = [];
+      dpi = dpi(draw());
+    }
+    printDensity = Math.min(dpi, 250) / 72;
+    printJobs = [];
+    draw();
+    const jobs = printJobs;
+    printJobs = null;
+    for (const job of jobs) await job();
+    return draw();
+  } finally {
+    printDensity = was;
+    printJobs = null;
+  }
+};
 
 /**
  * Draws pages for the live preview: the painted land at most `px` pixels across (less on a
@@ -631,7 +663,7 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
   const shapes = doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as LineItem).width] : i.type === "structure" ? [i.type, i.kind, i.points, i.width, i.height, i.roof] : [i.type, Math.round(i.x), Math.round(i.y), (i as TreeItem).radius]));
   const look = [s.forest, s.treeCover, s.landscape, s.contours, s.trees, s.fairway, s.rough, s.water, s.path, s.nextTee, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale];
-  const key = JSON.stringify([paintLimit, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairwayShape, h.fairway]), shapes, doc.canvas, doc.id]);
+  const key = JSON.stringify([paintLimit, printDensity, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairwayShape, h.fairway]), shapes, doc.canvas, doc.id]);
   // (A live preview may show a picture made for print; a print never uses a live one, which is a
   // blob only this page can read)
   const hit = (paintLive && liveCache.get(key)) || forestCache.get(key);
@@ -640,7 +672,9 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
     if (paintLive) lastForView.set(viewKey, hit);
     return hit;
   }
-  const opts = { mode: s.forest ?? "everywhere", canopy, style: s, density: Math.min(3, Math.max(paintLimit < 2400 ? 1 : 1.5, paintLimit / Math.max(view.width, view.height))) } as const;
+  // (a print: its resolution, up to about 32 million pixels)
+  const density = printDensity !== null ? Math.min(printDensity, Math.sqrt(32e6 / Math.max(1, view.width * view.height))) : Math.min(3, Math.max(paintLimit < 2400 ? 1 : 1.5, paintLimit / Math.max(view.width, view.height)));
+  const opts = { mode: s.forest ?? "everywhere", canopy, style: s, density } as const;
   // A photo-like picture: JPEG keeps it a tenth the size of a PNG
   const keep = (canvas: HTMLCanvasElement) => {
     const url = canvas.toDataURL("image/jpeg", 0.9);
@@ -648,6 +682,24 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
     if (forestCache.size > 6) forestCache.delete(forestCache.keys().next().value!);
     return url;
   };
+  if (printJobs) {
+    // (a print's first drawing: painted between frames, and finer JPEG, before it is drawn again)
+    printJobs.push(async () => {
+      if (forestCache.has(key)) return;
+      const canvas = await forestCanvasAsync(doc, view, layers.stats, opts);
+      const url = await new Promise<string>((res, rej) => canvas.toBlob(b => {
+        if (!b) return rej(new Error("The map couldn't be painted."));
+        const r = new FileReader();
+        r.onload = () => res(r.result as string);
+        r.onerror = () => rej(new Error("The map couldn't be painted."));
+        r.readAsDataURL(b);
+      }, "image/jpeg", 0.95));
+      canvas.width = canvas.height = 1;
+      forestCache.set(key, url);
+      if (forestCache.size > 6) forestCache.delete(forestCache.keys().next().value!);
+    });
+    return null;
+  }
   if (!paintLive) return keep(forestCanvas(doc, view, layers.stats, opts));
   // Live: paint in the background (unless already under way), meanwhile the last picture
   if (livePaint?.key !== key) {
