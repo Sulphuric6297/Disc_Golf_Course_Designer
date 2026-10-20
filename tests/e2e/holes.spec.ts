@@ -456,3 +456,30 @@ plainHoles("a tee pad on sloping ground tilts with it (up to 8 degrees), raised 
     plainHolesExpect(p.max.y).toBeGreaterThan(board.min.y);
   }
 });
+
+test("walks leaving a basket that two holes share say which hole each goes to, on the map and the printed map", async ({ page }) => {
+  await blankCourse(page);
+  await page.evaluate(() => {
+    const a = (window as any).__dgActions;
+    // Holes 1 and 2 both end at the basket at (650, 700); hole 3 elsewhere
+    a.addHole({ x: 300, y: 700 }, { x: 650, y: 700 }, "blue");
+    a.addHole({ x: 650, y: 350 }, { x: 650, y: 700 }, "blue");
+    a.addHole({ x: 900, y: 500 }, { x: 1150, y: 500 }, "blue");
+    a.select(null);
+    (window as any).__dgEditor().set({ tool: "select" });
+  });
+  const tags = page.getByTestId("walk-tag");
+  await expect(tags).toHaveCount(2);
+  await expect(tags.filter({ hasText: "→ 2" })).toHaveCount(1);
+  await expect(tags.filter({ hasText: "→ 3" })).toHaveCount(1);
+  // On the printed map too (each one movable like the other labels)
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await expect(page.getByTestId("design-page").locator('[data-label^="walk:"]')).toHaveCount(2, { timeout: 60_000 });
+  await expect(page.getByTestId("design-page")).toContainText("→ 3");
+  // Hole 2 taken out: one walk from that basket, no tag
+  await page.getByRole("button", { name: "2 Holes" }).click();
+  await page.evaluate(() => { const w = window as any; w.__dgActions.select(w.__dgCourse().holes[1].id); });
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await course(page)).holes.length).toBe(2);
+  await expect(tags).toHaveCount(0);
+});

@@ -413,6 +413,38 @@ export const autoWalks = <S extends { holeId: string; complete: boolean; line: P
   return out;
 };
 
+/**
+ * The walks on to the next tee, drawn ones and the map's own, each with the holes it goes between
+ * (its points from the basket's end).
+ */
+export const walkRoutes = <S extends { holeId: string; complete: boolean; line: P[] }>(items: CourseItem[], stats: S[], holes: Pick<Hole, "id" | "walkOut" | "walkIn" | "walkOff">[] = []) => {
+  const drawn = items.filter((i): i is LineItem => i.type === "line" && i.kind === "walk" && i.points.length >= 2);
+  const out: { points: P[]; a: S; b: S; lineId?: string }[] = [];
+  for (let i = 0; i + 1 < stats.length; i++) {
+    const a = stats[i], b = stats[i + 1];
+    if (!a.complete || !b.complete || holes.find(h => h.id === a.holeId)?.walkOff) continue;
+    const basket = a.line[a.line.length - 1], tee = b.line[0];
+    const reach = Math.max(60, dist(basket, tee) * 0.3);
+    const near = (p: P, q: P) => dist(p, q) < reach;
+    const w = drawn.find(x => {
+      const p = x.points[0], q = x.points[x.points.length - 1];
+      return (near(p, basket) && near(q, tee)) || (near(q, basket) && near(p, tee));
+    });
+    if (w) {
+      out.push({ points: near(w.points[0], basket) ? w.points : [...w.points].reverse(), a, b, lineId: w.id });
+      continue;
+    }
+    const { from, to } = walkEnds(a.line, b.line, holes.find(h => h.id === a.holeId)?.walkOut, holes.find(h => h.id === b.holeId)?.walkIn);
+    out.push({ points: [from, to], a, b });
+  }
+  return out;
+};
+
+/** The walks that leave the same basket as another (holes that share it): each is labelled with
+ * the hole it goes to. */
+export const sharedWalks = <R extends { a: { line: P[] } }>(routes: R[]) =>
+  routes.filter(r => routes.some(o => o !== r && dist(o.a.line[o.a.line.length - 1], r.a.line[r.a.line.length - 1]) < 3));
+
 /** How far from the basket the walk to the next tee starts: just outside the putting circle. */
 export const WALK_OUT_FT = CIRCLE_ONE_FT + 6;
 

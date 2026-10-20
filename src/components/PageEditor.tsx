@@ -54,7 +54,7 @@ export const elementLabel = (doc: CourseDoc, sel: string) => {
   return e.label;
 };
 
-const LABEL_KINDS: Record<string, string> = { num: "Hole number", dist: "Distance", name: "Name", tag: "OB tag", text: "Text label" };
+const LABEL_KINDS: Record<string, string> = { num: "Hole number", dist: "Distance", name: "Name", tag: "OB tag", text: "Text label", walk: "Walk to the next tee" };
 
 /** A label on the map moved by (dx, dy) feet on the ground, hidden, or put back (null). */
 export const patchLabel = (id: string, patch: { dx?: number; dy?: number; hidden?: boolean } | null) =>

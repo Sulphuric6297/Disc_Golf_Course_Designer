@@ -15,7 +15,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, drawnAreas, fairwayOutline, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { FAIRWAY_STATIONS, sharedWalks, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, drawnAreas, fairwayOutline, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
@@ -2269,6 +2269,20 @@ export class CourseView {
         el.appendChild(i);
         return el;
       }, at(mid, 1), 0, 110);
+    }
+    // Walks leaving a basket that holes share: which hole each goes to
+    if (course.style.nextTee) {
+      for (const r of sharedWalks(walkRoutes(course.items, doc.stats, course.holes))) {
+        const len = pathLength(r.points);
+        const text = `→ ${r.b.label}`;
+        put(`walk:${r.a.holeId}`, text, 2, () => {
+          const el = document.createElement("div");
+          el.className = "dg-dist";
+          el.setAttribute("data-testid", "walk-tag");
+          el.textContent = text;
+          return el;
+        }, at(pointAlong(r.points, len * 0.32).point, 1), 0, 60);
+      }
     }
     // Problems (Review step)
     (doc.issues ?? []).forEach((issue, i) => {

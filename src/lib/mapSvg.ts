@@ -5,7 +5,7 @@
 // is at the bottom.
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
-import { activeLayout, drawnAreas, fairwayOutline, holeBaskets, linePath, teeAim } from "./course";
+import { activeLayout, drawnAreas, fairwayOutline, holeBaskets, linePath, sharedWalks, teeAim, walkRoutes } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath } from "./geom";
 import { courseTotals, holeStats, isOb, type HoleStats } from "./holeStats";
 import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, type CanopyGrid } from "./forest";
@@ -549,6 +549,13 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     }
   }
 
+  // Walks leaving a basket that holes share: which hole each goes to
+  if (s.nextTee) {
+    for (const r of sharedWalks(walkRoutes(doc.items, layers.stats, doc.holes))) {
+      const len = pathLength(r.points);
+      tags.push({ id: `walk:${r.a.holeId}`, at: toScreen(pointAlong(r.points, len * 0.32).point), text: `→ ${r.b.label}`, bg: "#ffffff", fg: "#1b1d1a", o: dim(r.b.holeId) });
+    }
+  }
   // What the OB, hazard and out-of-play shapes are
   for (const t of tags) {
     const fs = 6.6 * ts, w = (t.text.length * 0.66 + 1.2) * fs, h = fs * 1.55;
