@@ -14,6 +14,9 @@ async function twoHoles(page: Page, size: [number, number] = [320, 180]) {
   await addHole(page, { x: 700, y: 650 }, { x: 700, y: 350 });
   await page.keyboard.press("Escape");
   await small(page, ...size);
+  // (over the photo: painting the ground is tested on its own, and drawn in software here it
+  // would take most of a recording's time)
+  await page.evaluate(() => (window as any).__dgEditor().set({ flyLook: "photo" }));
 }
 
 /** What the browser makes of a video file: its length and size (after loading its metadata). */

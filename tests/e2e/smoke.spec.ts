@@ -37,5 +37,5 @@ test("tool shortcuts pick tools; Esc goes back to Select; ? shows the shortcuts"
   await expect.poll(async () => (await editorState(page)).tool).toBe("select");
   await page.keyboard.press("?");
   await expect(page.getByRole("dialog", { name: "Shortcuts and help" })).toBeVisible();
-  await expect(page.getByText("PDGA Par Guidelines")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Shortcuts and help" })).toContainText("Undo");
 });

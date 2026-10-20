@@ -280,7 +280,8 @@ test.describe("phone", () => {
         for (const e of ends) expect(Math.hypot(c.x - e.x, c.y - e.y), `zoom ${zoom}`).toBeGreaterThanOrEqual(40);
         for (const r of label) expect(c.x > r.left - 4 && c.x < r.right + 4 && c.y > r.top - 4 && c.y < r.bottom + 4, `zoom ${zoom}: a square on the label`).toBe(false);
       }
-      if (zoom === 2.5) expect(squares.length).toBe(4);
+      // (a square on each edge at each of the four points along the hole)
+      if (zoom === 2.5) expect(squares.length).toBe(8);
     }
   });
 

@@ -5,7 +5,7 @@ import { CIRCLE_ONE_FT, FT_PER_M, TEE_LEVELS } from "../constants";
 import type { AreaItem, BasketItem, CourseDoc, CourseItem, P, SignPart } from "../types";
 import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, throwLine } from "./course";
 import { boundsOf, dist, pointInPolygon, rotatePoint, smoothPath } from "./geom";
-import { holeStats } from "./holeStats";
+import { holeStats, playedHoles } from "./holeStats";
 import { markingsInView, northArrow, palette, renderMapLayers, scaleBar, titleStack, wrapSvg, type MapView } from "./mapSvg";
 import type { CanopyGrid } from "./forest";
 import type { Contours } from "./relief";
@@ -257,7 +257,8 @@ export const renderScorecard = (doc: CourseDoc, players = 5) => {
   const cardH = H / 2;
   const card = cardStyle(doc);
   const sty = doc.style;
-  const stats = doc.holes.map(h => holeStats(doc, h, activeLayout(doc)));
+  // (one column for each number: a hole that is 3 and 13 in both)
+  const stats = playedHoles(doc, doc.holes.map(h => holeStats(doc, h, activeLayout(doc))));
   const split = stats.length > 9;
   type Col = { label: string; holes: number[]; total?: boolean; extra?: boolean };
   const cols: Col[] = [];
@@ -315,7 +316,7 @@ export const renderScorecard = (doc: CourseDoc, players = 5) => {
     };
     row("Distance or Par", cols.map(c => (c.extra ? "" : par(c) || "")));
     if (doc.layouts.length) for (const l of doc.layouts) {
-      const ls = doc.holes.map(h => holeStats(doc, h, l));
+      const ls = playedHoles(doc, doc.holes.map(h => holeStats(doc, h, l)));
       row(`${l.name} (${doc.units})`, cols.map(c => {
         if (c.extra) return "";
         const v = c.holes.reduce((t, i) => t + (ls[i]?.complete ? ls[i].length : 0), 0);

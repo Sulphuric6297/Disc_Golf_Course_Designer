@@ -7,7 +7,7 @@ import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTU
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
 import { activeLayout, drawnAreas, fairwayOutline, holeBaskets, linePath, sharedWalks, teeAim, walkRoutes } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath } from "./geom";
-import { courseTotals, holeStats, isOb, type HoleStats } from "./holeStats";
+import { courseTotals, holeStats, isOb, playsOf, type HoleStats } from "./holeStats";
 import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, type CanopyGrid } from "./forest";
 import { BASKET_MARKS, RESTRICTED, STRUCTURE_INK, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol, structureLegend, structureSymbol, type StructureDraw, type StructureInk } from "./symbols";
 import { isLineKind, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
@@ -1037,7 +1037,8 @@ export const renderPoster = (doc: CourseDoc, opts: PosterOptions) => {
       // Layout chips: name with a rule in the tee color, then PAR | LENGTH on black
       const chips = doc.layouts.slice(0, 3).map(l => {
         const ls = doc.holes.map(h => holeStats(doc, h, l)).filter(x => x.complete);
-        return { l, par: ls.reduce((t, x) => t + x.par, 0), len: ls.reduce((t, x) => t + x.length, 0) };
+        // (a hole played as two numbers counts twice)
+        return { l, par: ls.reduce((t, x) => t + x.par * playsOf(doc, x.holeId), 0), len: ls.reduce((t, x) => t + x.length * playsOf(doc, x.holeId), 0) };
       }).filter(c => c.par > 0);
       const cw = 104 * ts, chH = 20 * ts;
       chips.forEach((c, i) => {
@@ -1211,7 +1212,7 @@ const holeTable = (doc: CourseDoc, stats: HoleStats[], x: number, y: number, w: 
     type Col = { head: string; dot?: string; weight: number; left?: boolean; cell: (r: number) => string; total: string };
     const cols: Col[] = [];
     if (show.includes("names")) cols.push({ head: "NAME", weight: 2.4, left: true, cell: r => doc.holes.find(h => h.id === stats[r].holeId)?.name ?? "", total: "" });
-    if (show.includes("par")) cols.push({ head: "PAR", weight: 1, cell: r => (stats[r].complete ? String(stats[r].par) : "–"), total: String(done.reduce((t, st) => t + st.par, 0)) });
+    if (show.includes("par")) cols.push({ head: "PAR", weight: 1, cell: r => (stats[r].complete ? String(stats[r].par) : "–"), total: String(done.reduce((t, st) => t + st.par * playsOf(doc, st.holeId), 0)) });
     if (show.includes("lengths")) layouts.forEach((l, i) => cols.push({
       head: l.name.toUpperCase().slice(0, 8), dot: TEE_LEVELS[l.tee].color, weight: 1,
       cell: r => (lengths[i][r].complete ? fmtDist(lengths[i][r].length, doc.units, false) : "–"),
@@ -1271,7 +1272,7 @@ const holeTable = (doc: CourseDoc, stats: HoleStats[], x: number, y: number, w: 
     yy += rowsDef.length * rowH + 6 * ts;
   }
   const total = stats.filter(s => s.complete);
-  rows.push(`<text x="${n(x)}" y="${n(yy + 2 * ts)}" font-family="${font}" font-weight="700" font-size="${n(fs)}" fill="${pal.panelInk}">TOTAL PAR ${total.reduce((t, s) => t + s.par, 0)} · ${layouts.map((l, i) => `${l.name} ${fmtDist(lengths[i].filter(s => s.complete).reduce((t, s) => t + s.length, 0), doc.units)}`).join(" · ")}</text>`);
+  rows.push(`<text x="${n(x)}" y="${n(yy + 2 * ts)}" font-family="${font}" font-weight="700" font-size="${n(fs)}" fill="${pal.panelInk}">TOTAL PAR ${total.reduce((t, s) => t + s.par * playsOf(doc, s.holeId), 0)} · ${layouts.map((l, i) => `${l.name} ${fmtDist(lengths[i].filter(s => s.complete).reduce((t, s) => t + s.length * playsOf(doc, s.holeId), 0), doc.units)}`).join(" · ")}</text>`);
   return { svg: rows.join(""), bottom: yy + 8 * ts };
 };
 

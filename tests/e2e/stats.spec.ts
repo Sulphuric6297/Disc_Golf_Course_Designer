@@ -4,6 +4,9 @@ import { FAIRWAY_STATIONS, createArea, createBasket, createEmptyCourse, createLi
 import { corridor, pathLength, pointInPolygon, smoothPath } from "../../src/lib/geom";
 import { courseTotals, designChecks, holeStats, isOb, openIssues, parForDistance, safetyIssues } from "../../src/lib/holeStats";
 import type { CourseDoc, P, TeeLevel } from "../../src/types";
+import { renderPoster } from "../../src/lib/mapSvg";
+import { renderScorecard } from "../../src/lib/teeSign";
+const plainPar = expect;
 
 /** A course with holes from [tee, basket] pairs, on flat ground (or with `heights`). */
 const make = (holes: [P, P, TeeLevel?][], heights: Record<string, number> = {}): CourseDoc => {
@@ -95,6 +98,22 @@ test.describe("par and effective length (PDGA)", () => {
     expect(Math.round(t.length)).toBe(600);
     expect(Math.round(t.walk)).toBe(50);
   });
+});
+
+test("a hole with two numbers (3/4) is played twice: the course's par, length and holes count it twice, the scorecard has both", () => {
+  const doc = make([[{ x: 100, y: 300 }, { x: 400, y: 300 }], [{ x: 100, y: 500 }, { x: 400, y: 500 }], [{ x: 100, y: 700 }, { x: 400, y: 700 }]]);
+  doc.holes[2].alsoNumbers = [4];
+  const t = courseTotals(doc);
+  const one = holeStats(doc, doc.holes[0]);
+  plainPar(t.complete).toBe(4);
+  plainPar(t.par).toBe(one.par * 4);
+  plainPar(Math.round(t.length)).toBe(Math.round(one.length * 4));
+  // The title's layout chip and the scorecard
+  const poster = renderPoster(doc, { contours: null, hillshade: null }).svg;
+  plainPar(poster).toContain(`PAR ${one.par * 4}`);
+  const card = renderScorecard(doc).svg;
+  for (const n of [">1<", ">2<", ">3<", ">4<"]) plainPar(card).toContain(n);
+  plainPar(card).not.toContain(">3/4<");
 });
 
 test.describe("safety and design checks", () => {

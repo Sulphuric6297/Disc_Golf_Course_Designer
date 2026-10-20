@@ -133,7 +133,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const elevation = hover ? heightAt(doc.terrainHeights, doc.gridSize, hover.x, hover.y) + doc.site.baseElevationFt : null;
   const btn = "w-8 h-8 flex items-center justify-center text-zinc-300 hover:text-white hover:bg-zinc-700/70 transition-colors";
 
-  const plotBar = ed.plotLine && !ed.teeView && <PlotBar view={view} holeNumber={doc.holes.findIndex(h => h.id === ed.plotLine) + 1} top={compact ? controlsTop + 8 : 12} />;
+  // (on a computer, clear of the Selection panel at the top right: 150 to 450 px from the edge)
+  const plotBar = ed.plotLine && !ed.teeView && <PlotBar view={view} holeNumber={doc.holes.findIndex(h => h.id === ed.plotLine) + 1} top={compact ? controlsTop + 8 : 12} right={!compact && ed.selectedId && ed.step !== "design" ? 462 : 8} />;
   if (compact) {
     return (
       <div className="absolute inset-0">
@@ -193,15 +194,17 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
 /** The map's controls for a finger: 44 px buttons (zoom and turn also work by pinching and
  * twisting; these are the one-finger way, and the way for anyone who can't pinch). */
 /** While a hole's line is plotted by hand: what to do, and Undo point, Done and Cancel (for a finger too). */
-function PlotBar({ view, holeNumber, top }: { view: CourseView | null; holeNumber: number; top: number }) {
+function PlotBar({ view, holeNumber, top, right }: { view: CourseView | null; holeNumber: number; top: number; right: number }) {
   const b = "px-3 h-9 touch:h-11 rounded-lg text-sm font-semibold";
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-zinc-900/95 border border-zinc-700 rounded-xl shadow-2xl px-3 py-2 max-w-[calc(100%-16px)]" style={{ top }} data-testid="plot-bar">
+    <div className="absolute left-2 z-20 flex justify-center pointer-events-none" style={{ top, right }}>
+    <div className="pointer-events-auto flex items-center gap-2 bg-zinc-900/95 border border-zinc-700 rounded-xl shadow-2xl px-3 py-2 max-w-full" data-testid="plot-bar">
       <span className="text-sm text-zinc-100 font-semibold whitespace-nowrap">Hole {holeNumber}</span>
       <span className="text-xs text-zinc-300 hidden sm:inline">Click along the line to the basket, or drag it</span>
       <button className={`${b} text-zinc-200 hover:bg-zinc-800`} onClick={() => view?.undoPoint()} data-testid="plot-undo">Undo point</button>
       <button className={`${b} bg-orange-500 text-white hover:bg-orange-400`} onClick={() => view?.finishPlot()} data-testid="plot-done">Done</button>
       <button className={`${b} text-zinc-300 hover:bg-zinc-800`} onClick={() => view?.cancelDrawing()} data-testid="plot-cancel">Cancel</button>
+    </div>
     </div>
   );
 }

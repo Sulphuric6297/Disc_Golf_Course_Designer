@@ -91,6 +91,10 @@ test("from a tee and flying over, the ground is the painted map with trees on it
     const plane = v.ground.mapPlane.material;
     return { painted: !!v.ground.paintedTexture, shown: !!plane.map && plane.map === v.ground.paintedTexture && plane.visible, trees: v.shapes.has("painted-woods") };
   });
+  // (the 3D view rests while it paints: drawn in software here, its frames would starve the painting)
+  await page.evaluate(() => (window as any).__dgView.setPaused(true));
+  await expect.poll(async () => (await ground()).painted, { timeout: 120_000 }).toBe(true);
+  await page.evaluate(() => (window as any).__dgView.setPaused(false));
   await expect.poll(ground, { timeout: 30_000 }).toEqual({ painted: true, shown: true, trees: true });
   // The Camera settings: the photo instead (kept for next time)
   await page.getByTestId("hud-camera").click();

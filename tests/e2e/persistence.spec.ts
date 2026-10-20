@@ -5,8 +5,8 @@ test("the course is saved as you go and comes back after a reload", async ({ pag
   await blankCourse(page);
   await addHole(page, { x: 300, y: 600 }, { x: 600, y: 600 });
   await page.keyboard.press("Escape");
-  await page.getByLabel("Course name").fill("Autosave Acres");
-  await page.getByLabel("Course name").blur();
+  await page.getByRole("textbox", { name: "Course name" }).fill("Autosave Acres");
+  await page.getByRole("textbox", { name: "Course name" }).blur();
   await page.waitForTimeout(900);
   await page.reload();
   await expect.poll(async () => (await course(page)).name).toBe("Autosave Acres");
@@ -18,8 +18,8 @@ test("New keeps the old course under Recent courses, with Undo; it can be reopen
   await blankCourse(page);
   await addHole(page, { x: 300, y: 600 }, { x: 600, y: 600 });
   await page.keyboard.press("Escape");
-  await page.getByLabel("Course name").fill("First Course");
-  await page.getByLabel("Course name").blur();
+  await page.getByRole("textbox", { name: "Course name" }).fill("First Course");
+  await page.getByRole("textbox", { name: "Course name" }).blur();
   await page.getByTestId("file-menu").click();
   await page.getByRole("menuitem", { name: "New course" }).click();
   await expect.poll(async () => (await course(page)).holes.length).toBe(0);
@@ -36,8 +36,8 @@ test("save as a file, then open it again", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 300, y: 600 }, { x: 650, y: 600 });
   await page.keyboard.press("Escape");
-  await page.getByLabel("Course name").fill("File Round Trip");
-  await page.getByLabel("Course name").blur();
+  await page.getByRole("textbox", { name: "Course name" }).fill("File Round Trip");
+  await page.getByRole("textbox", { name: "Course name" }).blur();
   await page.getByTestId("file-menu").click();
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("menuitem", { name: "Save as a file" }).click()]);
   expect(download.suggestedFilename()).toBe("file-round-trip.dgcourse.json");

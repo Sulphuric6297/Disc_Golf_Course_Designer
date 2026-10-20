@@ -336,7 +336,8 @@ export const itemHoleId = (item: CourseItem | null | undefined): string | undefi
 const numbered = new WeakMap<Hole[], Map<string, number>>();
 export const holeNumbers = (holes: Hole[]) => {
   let m = numbered.get(holes);
-  if (m) return m;
+  // (still the same holes: a list changed in place is numbered again)
+  if (m && m.size === holes.length && holes.every(h => m!.has(h.id))) return m;
   m = new Map();
   const taken = new Set(holes.flatMap(h => [h.number, ...(h.alsoNumbers ?? [])]).filter((v): v is number => !!v));
   let next = 1;

@@ -112,7 +112,7 @@ test("hole by hole: a PDF page and a picture per hole, and one hole's PNG, SVG a
     a.addDrawn("line", [{ x: W * 0.5, y: H * 0.5 }, { x: W * 0.6, y: H * 0.5 }]);
     a.addDrawn("area", [{ x: W * 0.38, y: H * 0.73 }, { x: W * 0.42, y: H * 0.73 }, { x: W * 0.42, y: H * 0.76 }]);
   }, [W, H]);
-  await page.getByLabel("Belongs to hole").selectOption({ label: "Hole 1" });
+  await page.getByTestId("belongs-to").getByRole("button", { name: "Hole 1" }).click();
   await page.keyboard.press("Escape");
   const holes = page.getByTestId("hole-exports");
   await expect(holes.getByTestId("hole-pick")).toHaveValue("all");

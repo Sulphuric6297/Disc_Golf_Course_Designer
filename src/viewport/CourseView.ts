@@ -1052,7 +1052,7 @@ export class CourseView {
       throw new Error("This computer's graphics can't draw a video that big: pick a smaller size.");
     }
     // Smooth edges (fewer samples on very big pictures, where they matter less and cost the most)
-    const rt = new THREE.WebGLRenderTarget(width, height, { samples: width * height > 4e6 ? 2 : 4, type: THREE.UnsignedByteType });
+    const rt = new THREE.WebGLRenderTarget(width, height, { samples: width * height > 4e6 ? 2 : 4, type: THREE.UnsignedByteType, stencilBuffer: true });
     // Rendered exactly like the screen (tone mapping, sRGB colors) and with the same shaders: three
     // only does that for the screen and XR targets, so this target says it is one; its plain RGBA8
     // storage then holds the finished sRGB colors

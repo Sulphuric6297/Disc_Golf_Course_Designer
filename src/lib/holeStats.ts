@@ -187,8 +187,24 @@ export type CourseTotals = {
   parCounts: Record<number, number>;
 };
 
+/** How many times a hole is played: once for each of its numbers (a hole that is 3 and 13 twice). */
+export const playsOf = (doc: Pick<CourseDoc, "holes">, holeId: string) => 1 + (doc.holes.find(h => h.id === holeId)?.alsoNumbers?.length ?? 0);
+
+/** The holes as they are played, in the order of their numbers: one for each number (a hole with
+ * two numbers twice), each labelled with that number. */
+export const playedHoles = <S extends { holeId: string; label: string }>(doc: Pick<CourseDoc, "holes">, stats: S[]) =>
+  stats
+    .flatMap(s => {
+      const hole = doc.holes.find(h => h.id === s.holeId);
+      const nums = [holeNumber(doc, s.holeId), ...(hole?.alsoNumbers ?? [])];
+      return nums.map(n => ({ ...s, label: String(n), number: n }));
+    })
+    .sort((a, b) => a.number - b.number);
+
 export const courseTotals = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(h => holeStats(doc, h))): CourseTotals => {
   const done = stats.filter(s => s.complete);
+  // (a hole played as two numbers counts twice)
+  const sum = (list: HoleStats[], f: (s: HoleStats) => number) => list.reduce((t, s) => t + f(s) * playsOf(doc, s.holeId), 0);
   let walk = 0;
   let longestWalk: CourseTotals["longestWalk"] = null;
   for (let i = 0; i + 1 < stats.length; i++) {
@@ -200,15 +216,15 @@ export const courseTotals = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
     if (!longestWalk || d > longestWalk.ft) longestWalk = { from: i + 1, ft: d };
   }
   const parCounts: Record<number, number> = {};
-  done.forEach(s => { parCounts[s.par] = (parCounts[s.par] ?? 0) + 1; });
+  done.forEach(s => { parCounts[s.par] = (parCounts[s.par] ?? 0) + playsOf(doc, s.holeId); });
   return {
-    holes: stats.length,
-    complete: done.length,
-    length: done.reduce((s, h) => s + h.length, 0),
-    par: done.reduce((s, h) => s + h.par, 0),
+    holes: sum(stats, () => 1),
+    complete: sum(done, () => 1),
+    length: sum(done, s => s.length),
+    par: sum(done, s => s.par),
     walk,
     longestWalk,
-    climb: done.reduce((s, h) => s + h.climb, 0),
+    climb: sum(done, s => s.climb),
     shortest: done.length ? done.reduce((a, b) => (b.length < a.length ? b : a)) : null,
     longest: done.length ? done.reduce((a, b) => (b.length > a.length ? b : a)) : null,
     parCounts
@@ -367,8 +383,8 @@ export const designChecks = (doc: CourseDoc, stats: HoleStats[]): SafetyIssue[] 
   if (done.length >= 9) {
     const level = done[0].level;
     const [lo, hi] = COURSE_LENGTH_FT[level];
-    const total = done.reduce((t, x) => t + x.length, 0);
-    const k = done.length / 18;
+    const total = done.reduce((t, x) => t + x.length * playsOf(doc, x.holeId), 0);
+    const k = done.reduce((t, x) => t + playsOf(doc, x.holeId), 0) / 18;
     if (total < lo * k || total > hi * k) {
       issues.push({ id: "course-length", level: "info", text: `${done.length} holes total ${Math.round(total).toLocaleString()} ft (${TEE_LEVELS[level].label}: ${Math.round(lo * k).toLocaleString()}–${Math.round(hi * k).toLocaleString()} ft).`, holes: [], at: done[0].line[0] });
     }
