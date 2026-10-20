@@ -244,7 +244,24 @@ export interface FlyoverSettings {
   side: number;
   /** How far down the hole it looks ahead, ft. */
   lookAhead: number;
+  /** On screen (each one shown unless switched off): the hole's big title as the flight starts,
+   * its badge in the corner, the marker over the basket with the distance left, the course's name;
+   * in the picture, the disc's flight (the yellow arc), the line of play on the ground, the putting
+   * circle, OB lines and areas, other holes' lines, and walks to the next tee. */
+  title: boolean;
+  badge: boolean;
+  pinDistance: boolean;
+  courseName: boolean;
+  discFlight: boolean;
+  playLine: boolean;
+  circle: boolean;
+  ob: boolean;
+  otherHoles: boolean;
+  walks: boolean;
 }
+
+/** What a flyover can show or hide. */
+export type FlyShow = "title" | "badge" | "pinDistance" | "courseName" | "discFlight" | "playLine" | "circle" | "ob" | "otherHoles" | "walks";
 
 /** A layout picks which tee and pin each hole uses (e.g. "Blue", long tees to B pins). */
 export interface Layout {
@@ -381,6 +398,9 @@ export interface MapStyle {
   nextTee: boolean;
   /** Putting circle (10 m) around each basket. */
   circle: boolean;
+  /** The disc's flight over each hole in 3D (the yellow arcs) anywhere: the map, the tee view and
+   * flyovers (unset: shown). */
+  discFlight?: boolean;
   legend: boolean;
   holeTable: boolean;
   north: boolean;

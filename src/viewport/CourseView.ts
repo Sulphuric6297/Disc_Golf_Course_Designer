@@ -29,7 +29,7 @@ import { createWoods, createWoodsWhere } from "../three/woods";
 import type { WoodedGrid } from "../lib/forest";
 import { autoFlight, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy } from "../lib/flight";
 import { VIDEO_HOLD, titleStrength } from "../lib/video";
-import { drawOverlay, holeTitle, type HoleTitle } from "./flyTitle";
+import { drawOverlay, holeTitle, overlayShow, type HoleTitle } from "./flyTitle";
 import { forestDetail, type Forest } from "../three/treeKit";
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
@@ -838,6 +838,7 @@ export class CourseView {
     waterUniforms.uWind.value = this.wind ? 1 : 0.25;
     this.arcsGroup.visible = true;
     this.fx.visible = false;
+    const hidden = this.fly ? this.hideForFlight() : [];
     this.ground.detailActive(true);
     if (this.shadowsDirty) {
       this.placeSun();
@@ -857,12 +858,44 @@ export class CourseView {
       this.renderer.setScissorTest(false);
     }
     restore();
+    for (const o of hidden) o.visible = true;
     this.ground.extras.visible = true;
     this.fx.visible = true;
     if (!target) {
       this.placePovMarker(cam, rect);
       this.placeFlyOverlay(cam, rect);
     }
+  }
+
+  /** Hides what the flown hole's flyover is set not to show (the disc's flight, lines of play,
+   * putting circles, OB, other holes' lines, walks); returns what it hid, to show again. */
+  private hideForFlight(): THREE.Object3D[] {
+    const doc = this.doc, holeId = this.povHole;
+    if (!doc || !holeId) return [];
+    const f = flyoverOf(doc.course, doc.course.holes.find(h => h.id === holeId));
+    const items = new Map(doc.course.items.map(i => [i.id, i]));
+    const hidden: THREE.Object3D[] = [];
+    for (const [key, { obj }] of this.shapes) {
+      const at = key.indexOf(":");
+      const kind = key.slice(0, at), id = key.slice(at + 1);
+      const it = items.get(id);
+      // (whose it is: the flown hole's, or another's)
+      const own = (holes: (string | undefined)[]) => holes.includes(holeId);
+      let show = true;
+      if (kind === "arc") show = f.discFlight && (id === holeId || f.otherHoles);
+      else if (kind === "throw") show = f.playLine && (!!it && it.type === "tee" && (own([it.holeId]) || f.otherHoles));
+      else if (kind === "circle") show = f.circle && (!!it && it.type === "basket" && (own(basketHoles(it)) || f.otherHoles));
+      else if (kind === "walk") show = f.walks;
+      else if ((kind === "line" || kind === "area") && it && (it.type === "line" || it.type === "area")) {
+        if (it.kind === "ob") show = f.ob;
+        else if (it.kind === "walk") show = f.walks;
+      }
+      if (!show && obj.visible) {
+        obj.visible = false;
+        hidden.push(obj);
+      }
+    }
+    return hidden;
   }
 
   private flyCanvas: HTMLCanvasElement | null = null;
@@ -898,7 +931,8 @@ export class CourseView {
       const inside = q.z <= 1 && Math.abs(q.x) <= 1.05 && Math.abs(q.y) <= 1.05;
       info = { basket: inside ? { x: ((q.x + 1) / 2) * w, y: ((1 - q.y) / 2) * h } : null, toBasket: dist({ x: cam.position.x, y: cam.position.z }, b) };
     }
-    drawOverlay(g, w, h, f.title, titleStrength(f.t), info, doc.course);
+    // (what it shows as set now, if changed mid-flight)
+    drawOverlay(g, w, h, { ...f.title, show: overlayShow(doc.course, this.povHole ?? "") }, titleStrength(f.t), info, doc.course);
   }
 
   /** In the tee view: a marker over the basket (too small to see from far away) with the distance. */
@@ -1887,7 +1921,8 @@ export class CourseView {
           return g;
         });
         if (main && line.length >= 2) {
-          put(`arc:${hole.id}`, JSON.stringify([line, hv]), () => {
+          put(`arc:${hole.id}`, JSON.stringify([line, hv, st.discFlight !== false]), () => {
+            if (st.discFlight === false) return new THREE.Group();
             // The disc's flight: up from the tee and down to the basket, about 15% of the length high at most
             const len = pathLength(line);
             const pts: THREE.Vector3[] = [];

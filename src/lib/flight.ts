@@ -4,7 +4,9 @@
 import type { CourseDoc, FlyKey, FlyoverSettings, P } from "../types";
 import { pathLength, pointAlong } from "./geom";
 
-export const FLYOVER_DEFAULTS: FlyoverSettings = { height: 24, speed: 1, fov: 62, behind: 60, side: 0, lookAhead: 120 };
+export const FLYOVER_DEFAULTS: FlyoverSettings = { height: 24, speed: 1, fov: 62, behind: 60, side: 0, lookAhead: 120,
+  title: true, badge: true, pinDistance: true, courseName: true, discFlight: true, playLine: true, circle: true, ob: true, otherHoles: true, walks: true
+};
 
 /** A course's flyover settings, filled in (with a hole's own over them). */
 export const flyoverOf = (doc: Pick<CourseDoc, "flyover">, hole?: { flyover?: Partial<FlyoverSettings> } | null): FlyoverSettings => ({ ...FLYOVER_DEFAULTS, ...doc.flyover, ...hole?.flyover });

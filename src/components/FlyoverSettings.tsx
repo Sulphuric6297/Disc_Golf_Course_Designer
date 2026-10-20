@@ -7,9 +7,24 @@ import { flyoverOf, keyBetween } from "../lib/flight";
 import { holeLabel } from "../lib/course";
 import { fmtDist } from "../lib/units";
 import { changeDoc, updateHole, useCourse, useEditor } from "../state/course";
-import type { FlyKey, FlyoverSettings, Hole } from "../types";
+import type { FlyKey, FlyoverSettings, FlyShow, Hole } from "../types";
 import { getView } from "./MapViewport";
-import { Button, NumberInput, Segmented, Slider } from "./ui";
+import { Button, NumberInput, Segmented, Slider, Toggle } from "./ui";
+import { setStyle } from "./DesignPanel";
+
+/** What a flyover can show, in the order the switches are listed. */
+const FLY_SHOW: [FlyShow, string][] = [
+  ["title", "Hole title"],
+  ["badge", "Hole badge"],
+  ["pinDistance", "Distance to the pin"],
+  ["courseName", "Course name"],
+  ["discFlight", "Disc flight"],
+  ["playLine", "Line of play"],
+  ["circle", "Putting circle"],
+  ["ob", "OB"],
+  ["otherHoles", "Other holes"],
+  ["walks", "Walks"]
+];
 
 /** How flyovers fly: for one hole (`holeId`: its own settings, over the course's) or for all
  * holes (the course's). `only`: this hole's, with no choice; `keys`: through keyframes (only the
@@ -55,6 +70,12 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { ho
               <Slider label="Look ahead" min={30} max={500} step={10} value={f.lookAhead} onChange={v => set({ lookAhead: v })} onDone={done} format={ft} />
             </>
           )}
+          <div className="text-xs text-zinc-300 mt-2.5 mb-0.5">On screen</div>
+          <div className="grid grid-cols-2 gap-x-2 mb-2" data-testid="flyover-show">
+            {FLY_SHOW.map(([k, label]) => (
+              <Toggle key={k} label={label} checked={f[k] && (k !== "discFlight" || doc.style.discFlight !== false)} onChange={v => { set({ [k]: v }); done(); if (v && k === "discFlight" && doc.style.discFlight === false) setStyle({ discFlight: undefined }); }} />
+            ))}
+          </div>
           {forHole ? (
             <Button small onClick={() => updateHole(hole!.id, { flyover: undefined })} disabled={!hole!.flyover} testid="flyover-same">Same as all holes</Button>
           ) : (

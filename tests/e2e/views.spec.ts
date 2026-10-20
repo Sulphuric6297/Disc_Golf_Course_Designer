@@ -1,6 +1,8 @@
 import { test as plain, expect as plainExpect } from "@playwright/test";
 import { test, expect, addHole, blankCourse, course, drag, editorState, handleCenter, screenOf } from "./fixtures";
 import { autoFlight, FLYOVER_DEFAULTS, keyBetween, keyFlight, keysFromFlight } from "../../src/lib/flight";
+import { createEmptyCourse } from "../../src/lib/course";
+import { drawOverlay } from "../../src/viewport/flyTitle";
 
 test("view from the tee: the hole's numbers, other holes with the arrows, back with Esc", async ({ page }) => {
   await blankCourse(page);
@@ -154,6 +156,80 @@ test("flyover settings: height, speed and field of view change the flight, one u
   expect((await flight()).alt).toBeLessThan(after.alt - 150);
   await page.getByTestId("flyover-same").click();
   await expect.poll(async () => (await course(page)).holes[0].flyover).toBeUndefined();
+});
+
+test("flyover on-screen switches: off for all holes, back on for one; the disc flight lines off everywhere", async ({ page }) => {
+  await blankCourse(page);
+  const h1 = await addHole(page, { x: 300, y: 500 }, { x: 800, y: 500 });
+  const h2 = await addHole(page, { x: 300, y: 700 }, { x: 800, y: 700 });
+  await page.keyboard.press("Escape");
+  // All holes: the Export step's Camera settings
+  await page.getByRole("button", { name: "6 Export" }).click();
+  await page.getByTestId("video-camera").locator("summary").click();
+  const sw = (name: string) => page.getByTestId("video-camera").getByRole("checkbox", { name, exact: true });
+  for (const name of ["Hole title", "Hole badge", "Distance to the pin", "Course name", "Disc flight", "Line of play", "Putting circle", "OB", "Other holes", "Walks"]) await expect(sw(name)).toBeChecked();
+  await sw("Distance to the pin").uncheck();
+  await sw("Disc flight").uncheck();
+  await sw("Other holes").uncheck();
+  await expect.poll(async () => { const f = (await course(page)).flyover; return [f?.pinDistance, f?.discFlight, f?.otherHoles]; }).toEqual([false, false, false]);
+  // One undo step each
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await course(page)).flyover?.otherHoles).toBeUndefined();
+  await sw("Other holes").uncheck();
+  // Hole 1's own: the distance back on for it
+  await page.getByRole("button", { name: "2 Holes" }).click();
+  await page.getByTestId("hole-row").first().click();
+  await expect(page.getByTestId("hole-flight").getByTestId("flyover-show")).toBeVisible();
+  const own = (name: string) => page.getByTestId("hole-flight").getByRole("checkbox", { name, exact: true });
+  await expect(own("Distance to the pin")).not.toBeChecked();
+  await own("Distance to the pin").check();
+  await expect.poll(async () => (await course(page)).holes[0].flyover?.pinDistance).toBe(true);
+  expect((await course(page)).flyover?.pinDistance).toBe(false);
+  // While hole 1 flies: its disc flight and the other hole's are hidden (shown again after)
+  const hidden = await page.evaluate(id => {
+    const v = (window as any).__dgView;
+    v.povHole = id;
+    const names = v.hideForFlight().map((o: any) => { o.visible = true; return o.name; });
+    v.povHole = null;
+    return names;
+  }, h1.id);
+  expect(hidden).toContain(`arc:${h1.id}`);
+  expect(hidden).toContain(`arc:${h2.id}`);
+  // The yellow lines off everywhere (the 3D view's switch)
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("3");
+  await page.getByTestId("scene-button").click();
+  await page.getByTestId("scene-panel").getByRole("checkbox", { name: "Disc flight lines" }).uncheck();
+  await expect.poll(async () => (await course(page)).style.discFlight).toBe(false);
+  await expect.poll(() => page.evaluate(k => (window as any).__dgView.scene.getObjectByName(k)?.children.length ?? -1, `arc:${h1.id}`)).toBe(0);
+});
+
+plain("the flyover's picture shows only what is switched on: the distance to the pin, the badge, the course's name", () => {
+  const texts: string[] = [];
+  const noop = () => {};
+  const g = new Proxy({} as any, {
+    get: (t, k) => (k === "fillText" ? (s: string) => texts.push(s) : k === "measureText" ? () => ({ width: 40 }) : k === "createLinearGradient" ? () => ({ addColorStop: noop }) : k in t ? t[k] : noop),
+    set: (t, k, v) => { t[k] = v; return true; }
+  });
+  const doc = { ...createEmptyCourse(), name: "Springfield Park" };
+  const all = { title: true, badge: true, pinDistance: true, courseName: true };
+  const title = { number: "1", name: "", par: "PAR 3", length: "300 FT", elevation: "", color: "#fff", ink: "#000", show: all };
+  const info = { basket: { x: 600, y: 300 }, toBasket: 287 };
+  drawOverlay(g, 1280, 720, title, 0, info, doc);
+  plainExpect(texts.some(t => /287/.test(t))).toBe(true);
+  plainExpect(texts).toContain("HOLE 1");
+  plainExpect(texts).toContain("Springfield Park");
+  texts.length = 0;
+  drawOverlay(g, 1280, 720, { ...title, show: { ...all, pinDistance: false, badge: false, courseName: false } }, 0, info, doc);
+  plainExpect(texts.some(t => /287/.test(t))).toBe(false);
+  plainExpect(texts).not.toContain("HOLE 1");
+  plainExpect(texts).not.toContain("Springfield Park");
+  // The big title off: never drawn, and the distance shows from the start
+  texts.length = 0;
+  drawOverlay(g, 1280, 720, { ...title, show: { ...all, title: false } }, 1, info, doc);
+  plainExpect(texts.some(t => /287/.test(t))).toBe(true);
+  plainExpect(texts.filter(t => t === "HOLE 1")).toHaveLength(1);
+  plainExpect(FLYOVER_DEFAULTS.pinDistance && FLYOVER_DEFAULTS.discFlight && FLYOVER_DEFAULTS.otherHoles).toBe(true);
 });
 
 test("a hole's own flight through keyframes: shown on the map, dragged, set, added, removed, and flown", async ({ page }) => {
