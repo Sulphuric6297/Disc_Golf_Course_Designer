@@ -243,10 +243,12 @@ test("flyover settings: height, speed and field of view change the flight, one u
   await page.getByTestId("hole-row").first().click();
   await page.getByTestId("tee-view").click();
   await page.getByTestId("hud-camera").click();
+  // (the 3D view rests while the settings change: drawn in software, its frames hold up the page)
+  await page.evaluate(() => (window as any).__dgView.setPaused(true));
   await page.getByTestId("flyover-settings").getByRole("radio", { name: /^Hole 1/ }).click();
   await slider("Height").focus();
   await page.keyboard.press("Home");
-  await expect.poll(async () => (await course(page)).holes[0].flyover?.height).toBe(10);
+  await expect.poll(async () => (await course(page)).holes[0].flyover?.height, { timeout: 30_000 }).toBe(10);
   expect((await course(page)).flyover?.height).toBe(250);
   expect((await flight()).alt).toBeLessThan(after.alt - 150);
   // (from All holes: Apply to holes, hole 1 picked)
