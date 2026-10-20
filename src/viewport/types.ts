@@ -88,4 +88,6 @@ export type ViewCallbacks = {
   onTeeView: (holeId: string | null) => void;
   onContextMenu: (info: { clientX: number; clientY: number; itemId: string | null; ground: P | null }) => void;
   onDrawProgress: (points: number) => void;
+  /** Plotting a hole's line by hand ended (finished or cancelled). */
+  onPlotEnd: () => void;
 };

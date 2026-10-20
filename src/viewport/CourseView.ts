@@ -194,6 +194,10 @@ export class CourseView {
   private povHole: string | null = null;
   private povLook = { yaw: 0, pitch: 0 };
   private fly: { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; t: number; dur: number; ease: boolean; done?: () => void } | null = null;
+  /** A hole whose line is being plotted by hand, and its turns so far (from the tee). */
+  private plotHole: string | null = null;
+  private plotPts: P[] = [];
+  private lastPlotClick: { x: number; y: number; time: number } | null = null;
   /** The last press on a walk's end (a second one soon after resets it). */
   private lastWalkTap: { key: string; time: number } | null = null;
   /** The tee view's field of view, kept while a flight sets its own. */
@@ -3005,6 +3009,12 @@ export class CourseView {
       this.gesture(e, { click: ev => { const g = this.groundAt(ev.clientX, ev.clientY); if (g) this.addMeasurePoint(g, ev.shiftKey); }, drag: panOrNothing });
       return;
     }
+    if (this.plotHole && !tool.readOnly) {
+      // Plotting a hole's line: clicks add turns; a drag draws it freehand
+      e.stopPropagation();
+      this.gesture(e, { click: groundClick((p, ev) => this.plotClick(p, ev)), drag: s => this.plotDrag(s) });
+      return;
+    }
     if (tool.mode === "add-hole") {
       stop();
       this.gesture(e, {
@@ -3292,6 +3302,7 @@ export class CourseView {
 
   /** Ends drawing an area or line (Enter, double-click, or clicking the first point). */
   finishDrawing() {
+    if (this.plotHole) return this.finishPlot();
     const kind = this.drawn();
     const pts = this.drawPts;
     if (kind && pts.length >= (kind === "area" ? 3 : 2)) {
@@ -3306,8 +3317,89 @@ export class CourseView {
     return false;
   }
 
+  /** Plot a hole's line by hand: clicks along it from the tee (or a freehand drag), to the basket. */
+  setPlotLine(holeId: string | null) {
+    if (holeId === this.plotHole) return;
+    this.plotHole = holeId;
+    this.plotPts = [];
+    this.lastPlotClick = null;
+    this.cursor = null;
+    if (holeId) this.drawDraft();
+    else this.clearDraft();
+    this.invalidate();
+  }
+
+  /** The line plotted so far becomes the hole's (Enter, double-click, the basket, Done). */
+  finishPlot() {
+    const holeId = this.plotHole;
+    if (!holeId) return false;
+    this.cb.onHoleChange(holeId, { doglegs: this.plotPts.map(p => ({ ...p })) });
+    this.cb.onCommit();
+    this.endPlot();
+    return true;
+  }
+
+  private endPlot() {
+    this.plotHole = null;
+    this.plotPts = [];
+    this.cursor = null;
+    this.clearDraft();
+    this.cb.onPlotEnd();
+    this.invalidate();
+  }
+
+  /** A click while plotting: a turn there, or done (on the basket, or a second click on the same spot). */
+  private plotClick(p: P, ev: PointerEvent) {
+    const s = this.doc?.stats.find(x => x.holeId === this.plotHole);
+    if (!s?.complete) return;
+    const basket = s.line[s.line.length - 1];
+    const bs = this.project(new THREE.Vector3(basket.x, this.h(basket.x, basket.y), basket.y));
+    const rect = this.container.getBoundingClientRect();
+    const onBasket = !!bs && Math.hypot(bs.x - (ev.clientX - rect.left), bs.y - (ev.clientY - rect.top)) < 16;
+    const last = this.lastPlotClick;
+    const again = !!last && ev.timeStamp - last.time < 400 && Math.hypot(last.x - ev.clientX, last.y - ev.clientY) < 8;
+    this.lastPlotClick = { x: ev.clientX, y: ev.clientY, time: ev.timeStamp };
+    if (onBasket || again) {
+      this.finishPlot();
+      return;
+    }
+    this.plotPts.push(p);
+    this.drawDraft();
+  }
+
+  /** A drag while plotting: the line drawn freehand from wherever it starts (then done). */
+  private plotDrag(start: PointerEvent): Drag | null {
+    const s = this.doc?.stats.find(x => x.holeId === this.plotHole);
+    const g0 = this.groundAt(start.clientX, start.clientY);
+    if (!s?.complete || !g0) return null;
+    const tee = s.line[0], basket = s.line[s.line.length - 1];
+    const free: P[] = [...this.plotPts, { x: g0.x, y: g0.z }];
+    const step = Math.max(2, 6 / Math.max(0.01, this.viewInfo().pxPerUnit));
+    return {
+      move: ev => {
+        const g = this.groundAt(ev.clientX, ev.clientY);
+        if (g && dist(free[free.length - 1], { x: g.x, y: g.z }) >= step) free.push({ x: g.x, y: g.z });
+        this.plotPts = free;
+        this.cursor = null;
+        this.drawDraft();
+      },
+      end: () => {
+        // Smoothed into turns, none right at the tee or the basket
+        const turns = simplify([tee, ...free, basket], step * 1.5).slice(1, -1).filter(p => dist(p, tee) > 12 && dist(p, basket) > 12);
+        this.plotPts = turns;
+        this.finishPlot();
+      }
+    };
+  }
+
   /** Takes back the last point drawn (Backspace). */
   undoPoint() {
+    if (this.plotHole) {
+      if (!this.plotPts.length) return false;
+      this.plotPts.pop();
+      this.drawDraft();
+      return true;
+    }
     if (this.holeStart) { this.cancelDrawing(); return true; }
     if (!this.drawPts.length) return false;
     this.drawPts.pop();
@@ -3320,6 +3412,10 @@ export class CourseView {
 
   /** Drops what is being drawn (Esc). Returns whether there was anything. */
   cancelDrawing() {
+    if (this.plotHole) {
+      this.endPlot();
+      return true;
+    }
     const had = !!this.holeStart || this.drawPts.length > 0 || !!this.shapeAnchor;
     this.holeStart = null;
     this.shapeAnchor = null;
@@ -3363,6 +3459,24 @@ export class CourseView {
       const eff = len + (doc.course.rules?.elevationFactor ?? 3) * dh;
       label = len > 1 ? `${fmtDist(len, doc.course.units)}${Math.abs(dh) >= 1 ? ` · ${fmtElev(dh, doc.course.units)}` : ""} · par ${parForDistance(eff, this.teeLevel)}` : this.fingers ? "Tap where the basket goes" : "Click where the basket goes";
       this.draftAt = new THREE.Vector3(b.x, this.h(b.x, b.y), b.y);
+    } else if (this.plotHole) {
+      const s = doc.stats.find(x => x.holeId === this.plotHole);
+      if (s?.complete) {
+        const tee = s.line[0], basket = s.line[s.line.length - 1];
+        const done = [tee, ...this.plotPts];
+        const reach = this.cursor ? [...done, this.cursor] : done;
+        g.add(this.fatLine(this.drapeLine(reach, LIFT + 0.2), "#fde68a", 3, { depthTest: false, order: 20 }));
+        g.add(this.fatLine(this.drapeLine([reach[reach.length - 1], basket], LIFT + 0.2), "#fde68a", 2, { dashed: 6, opacity: 0.8, depthTest: false, order: 20 }));
+        for (const p of this.plotPts) {
+          const ring: P[] = [];
+          for (let i = 0; i < 16; i++) ring.push({ x: p.x + Math.cos((i / 16) * Math.PI * 2) * 2.5, y: p.y + Math.sin((i / 16) * Math.PI * 2) * 2.5 });
+          g.add(this.fatLine(this.drapeLine(ring, LIFT + 0.3, true), "#f59e0b", 3, { depthTest: false, order: 21 }));
+        }
+        const len = pathLength([...reach, basket]);
+        label = `${fmtDist(len, doc.course.units)} · ${this.plotPts.length} turn${this.plotPts.length === 1 ? "" : "s"}`;
+        const last = reach[reach.length - 1];
+        this.draftAt = new THREE.Vector3(last.x, this.h(last.x, last.y), last.y);
+      }
     } else if (this.drawPts.length) {
       const pts = [...this.drawPts];
       if (this.cursor) pts.push(this.cursor);
@@ -3558,7 +3672,7 @@ export class CourseView {
         }
         return;
       }
-      if (this.holeStart || this.drawPts.length) {
+      if (this.holeStart || this.drawPts.length || this.plotHole) {
         if (g) {
           this.cursor = { x: g.x, y: g.z };
           this.drawDraft();

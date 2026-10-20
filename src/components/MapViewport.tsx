@@ -60,7 +60,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       onPose: pose => useEditor.getState().set({ view: pose === "top" ? "2d" : "3d" }),
       onTeeView: id => useEditor.getState().set({ teeView: id }),
       onContextMenu: i => menuRef.current(i),
-      onDrawProgress: n => useEditor.getState().set({ drawPoints: n })
+      onDrawProgress: n => useEditor.getState().set({ drawPoints: n }),
+      onPlotEnd: () => useEditor.getState().set({ plotLine: null })
     });
     current = v;
     (window as any).__dgView = v;
@@ -112,6 +113,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { void view?.setPaintedGround(paintedOn ? painted : null); }, [view, paintedOn, painted]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
   useEffect(() => { view?.setGroup(ed.group); }, [view, ed.group]);
+  useEffect(() => { view?.setPlotLine(ed.plotLine); }, [view, ed.plotLine]);
   useEffect(() => {
     view?.setTool({ mode: ed.viewOnly ? "select" : ed.tool, areaKind: ed.areaKind, lineKind: ed.lineKind, structureKind: ed.structureKind, shape: ed.drawShape, readOnly: ed.viewOnly, dragSelect: ed.dragSelect && !ed.viewOnly }, ed.teeLevel);
   }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.structureKind, ed.drawShape, ed.viewOnly, ed.teeLevel, ed.dragSelect]);
@@ -129,10 +131,12 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const elevation = hover ? heightAt(doc.terrainHeights, doc.gridSize, hover.x, hover.y) + doc.site.baseElevationFt : null;
   const btn = "w-8 h-8 flex items-center justify-center text-zinc-300 hover:text-white hover:bg-zinc-700/70 transition-colors";
 
+  const plotBar = ed.plotLine && !ed.teeView && <PlotBar view={view} holeNumber={doc.holes.findIndex(h => h.id === ed.plotLine) + 1} top={compact ? controlsTop + 8 : 12} />;
   if (compact) {
     return (
       <div className="absolute inset-0">
         <div ref={ref} data-testid="plan" className="absolute inset-0 overflow-hidden touch-none" />
+        {plotBar}
         {!ed.teeView && controlsRoom > 0 && <TouchControls view={view} info={info} scale={info ? niceScaleBar(info.pxPerUnit, 72) : null} units={doc.units} phone={compact === "phone"} top={controlsTop} room={controlsRoom} threeD={ed.view === "3d"} />}
       </div>
     );
@@ -141,6 +145,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   return (
     <div className="absolute inset-0">
       <div ref={ref} data-testid="plan" className="absolute inset-0 overflow-hidden touch-none" />
+      {plotBar}
       {!ed.teeView && (
         <>
           <div className="absolute top-3 right-3 flex gap-2 items-start pointer-events-none">
@@ -185,6 +190,20 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
 
 /** The map's controls for a finger: 44 px buttons (zoom and turn also work by pinching and
  * twisting; these are the one-finger way, and the way for anyone who can't pinch). */
+/** While a hole's line is plotted by hand: what to do, and Undo point, Done and Cancel (for a finger too). */
+function PlotBar({ view, holeNumber, top }: { view: CourseView | null; holeNumber: number; top: number }) {
+  const b = "px-3 h-9 touch:h-11 rounded-lg text-sm font-semibold";
+  return (
+    <div className="absolute left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-zinc-900/95 border border-zinc-700 rounded-xl shadow-2xl px-3 py-2 max-w-[calc(100%-16px)]" style={{ top }} data-testid="plot-bar">
+      <span className="text-sm text-zinc-100 font-semibold whitespace-nowrap">Hole {holeNumber}</span>
+      <span className="text-xs text-zinc-300 hidden sm:inline">Click along the line to the basket, or drag it</span>
+      <button className={`${b} text-zinc-200 hover:bg-zinc-800`} onClick={() => view?.undoPoint()} data-testid="plot-undo">Undo point</button>
+      <button className={`${b} bg-orange-500 text-white hover:bg-orange-400`} onClick={() => view?.finishPlot()} data-testid="plot-done">Done</button>
+      <button className={`${b} text-zinc-300 hover:bg-zinc-800`} onClick={() => view?.cancelDrawing()} data-testid="plot-cancel">Cancel</button>
+    </div>
+  );
+}
+
 function TouchControls({ view, info, scale, units, phone, top, room, threeD }: { view: CourseView | null; info: ViewInfo | null; scale: { px: number; label: string; feet: number } | null; units: "ft" | "m"; phone: boolean; top: number; room: number; threeD: boolean }) {
   const set = useEditor(e => e.set);
   const mode = useEditor(e => e.view);

@@ -243,3 +243,41 @@ plainHoles("the walk to the next tee leaves from outside the putting circle, awa
   // Moved by hand: where it was put, from the basket and the tee
   plainHolesExpect(walkEnds(hole, next, { x: -50, y: 10 }, { x: 5, y: 25 })).toEqual({ from: { x: -50, y: 310 }, to: { x: 45, y: 225 } });
 });
+
+test("plotting a hole's line by hand: clicks along it (Backspace takes one back), Enter; a freehand drag; Cancel leaves it be", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 600 }, { x: 800, y: 600 });
+  await page.keyboard.press("Escape");
+  await page.getByTestId("hole-row").first().click();
+  const turns = async () => (await course(page)).holes[0].doglegs as { x: number; y: number }[];
+  await page.getByTestId("plot-line").click();
+  await expect(page.getByTestId("plot-bar")).toBeVisible();
+  await clickPlan(page, 420, 500);
+  await page.waitForTimeout(450);
+  await clickPlan(page, 560, 700);
+  await page.waitForTimeout(450);
+  await clickPlan(page, 650, 520);
+  await page.keyboard.press("Backspace");
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await turns()).length).toBe(2);
+  const t = await turns();
+  expect(Math.hypot(t[0].x - 420, t[0].y - 500)).toBeLessThan(6);
+  expect(Math.hypot(t[1].x - 560, t[1].y - 700)).toBeLessThan(6);
+  await expect(page.getByTestId("plot-bar")).toHaveCount(0);
+  // Freehand: a sweep south of the straight line
+  await page.getByTestId("plot-line").click();
+  await page.mouse.move(...(Object.values(await screenOf(page, 330, 620)) as [number, number]));
+  await page.mouse.down();
+  for (const [x, y] of [[400, 680], [500, 720], [600, 700], [700, 650], [770, 610]]) {
+    const p = await screenOf(page, x, y);
+    await page.mouse.move(p.x, p.y, { steps: 4 });
+  }
+  await page.mouse.up();
+  await expect.poll(async () => (await turns()).some(p => p.y > 680)).toBe(true);
+  // Cancel: as it was
+  const before = await turns();
+  await page.getByTestId("plot-line").click();
+  await clickPlan(page, 500, 400);
+  await page.getByTestId("plot-cancel").click();
+  expect(await turns()).toEqual(before);
+});

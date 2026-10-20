@@ -109,6 +109,8 @@ type EditorStore = {
   group: string[];
   /** A drag on the map draws a box to pick things with (instead of moving the map). */
   dragSelect: boolean;
+  /** The hole whose line is being plotted by hand, point by point. */
+  plotLine: string | null;
   /** The hole being worked on (its parts get handles; new tees, baskets and mandos join it). */
   activeHoleId: string | null;
   view: "2d" | "3d";
@@ -164,6 +166,7 @@ export const useEditor = create<EditorStore>()(set => ({
   selectedId: null,
   group: [],
   dragSelect: false,
+  plotLine: null,
   activeHoleId: null,
   view: "2d",
   teeLevel: "blue",

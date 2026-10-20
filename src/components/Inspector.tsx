@@ -121,6 +121,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
           <Field label="Notes and hole rules"><TextInput area label="Hole notes" value={hole.notes ?? ""} placeholder="e.g. OB left of the path. Mando right of the big oak; drop zone by the bench." onChange={v => set({ notes: v || undefined })} /></Field>
           {s.complete && (
             <div className="flex flex-wrap gap-1.5">
+              <Button small tone="primary" onClick={() => useEditor.getState().set({ plotLine: hole.id, tool: "select" })} testid="plot-line">Plot the line</Button>
               <Button small onClick={() => set({ doglegs: bendHole(s.line, -1) })} testid="bend-left">Bend left</Button>
               <Button small onClick={() => set({ doglegs: bendHole(s.line, 1) })} testid="bend-right">Bend right</Button>
               {hole.doglegs.length > 0 && <Button small onClick={() => set({ doglegs: [] })}>Straighten</Button>}
