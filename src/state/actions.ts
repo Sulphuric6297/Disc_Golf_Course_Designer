@@ -6,7 +6,7 @@ import {
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { holeStats } from "../lib/holeStats";
-import type { CourseItem, Hole, P, TeeLevel, ToolMode } from "../types";
+import type { BasketItem, CourseItem, Hole, P, TeeLevel, ToolMode } from "../types";
 import { changeDoc, editor, getDoc, removeHole, removeItems, useEditor } from "./course";
 import { toast } from "./toast";
 
@@ -58,12 +58,18 @@ const lineAngleNear = (hole: Hole, p: P) => {
 export const addHole = (tee: P, basket: P, level: TeeLevel = editor().teeLevel) => {
   const hole = newHole();
   const t = createTee(hole.id, tee, level);
-  const b = createBasket(hole.id, basket, "A");
+  // The basket spot on (or right by) a basket already there: the new hole plays to that one too
+  const shared = (getDoc().items.filter(i => i.type === "basket") as BasketItem[])
+    .map(b => ({ b, d: Math.hypot(b.x - basket.x, b.y - basket.y) }))
+    .filter(x => x.d < 10)
+    .sort((x, y) => x.d - y.d)[0]?.b;
+  const b = shared ? null : createBasket(hole.id, basket, "A");
   changeDoc(d => {
     const at = d.holes.findIndex(h => h.id === editor().activeHoleId);
     const holes = [...d.holes];
     holes.splice(at >= 0 && at < holes.length - 1 ? at + 1 : holes.length, 0, hole);
-    return { holes, items: [...d.items, t, b] };
+    const items = shared ? d.items.map(i => (i.id === shared.id && i.type === "basket" ? { ...i, alsoHoles: [...(i.alsoHoles ?? []), hole.id] } : i)) : [...d.items];
+    return { holes, items: [...items, t, ...(b ? [b] : [])] };
   });
   useEditor.getState().set({ selectedId: hole.id, activeHoleId: hole.id });
   return hole;
@@ -164,7 +170,8 @@ export const duplicateSelection = () => {
   const hole = doc.holes.find(h => h.id === selectedId);
   if (hole) {
     const copy: Hole = { ...hole, id: `hole-${generateId()}`, doglegs: hole.doglegs.map(p => ({ x: p.x + off, y: p.y + off })) };
-    const parts = doc.items.filter(i => (i.type === "tee" || i.type === "basket") && i.holeId === hole.id).map(i => ({ ...i, id: generateId(), holeId: copy.id, x: i.x + off, y: i.y + off }) as CourseItem);
+    // (a basket it shares with other holes is copied as the copy's own)
+    const parts = [...holeTees(doc, hole.id), ...holeBaskets(doc, hole.id)].map(i => ({ ...i, id: generateId(), holeId: copy.id, ...(i.type === "basket" ? { alsoHoles: undefined } : {}), x: i.x + off, y: i.y + off }) as CourseItem);
     changeDoc(d => {
       const holes = [...d.holes];
       holes.splice(d.holes.indexOf(hole) + 1, 0, copy);
@@ -277,4 +284,31 @@ export const editWalks = (holeId: string | null) => {
   changeDoc(d => ({ items: [...d.items, ...lines] }));
   if (lines.length === 1) select(lines[0].id);
   return lines;
+};
+
+/** A hole played to another hole's basket (its own baskets go), or to a basket of its own again
+ * (set down a little short of the shared one, to drag where it belongs). */
+export const shareBasket = (holeId: string, withHoleId: string | null) => {
+  const doc = getDoc();
+  const target = withHoleId ? holeBaskets(doc, withHoleId).find(b => b.holeId === withHoleId) ?? holeBaskets(doc, withHoleId)[0] : null;
+  const current = holeBaskets(doc, holeId);
+  if (withHoleId && !target) return;
+  changeDoc(d => {
+    let items = d.items.filter(i => !(i.type === "basket" && i.holeId === holeId && !i.alsoHoles?.length));
+    items = items.map(i => {
+      if (i.type !== "basket") return i;
+      // Off any basket it shared before (or handing its own one on to the holes that share it)
+      let holes = [i.holeId, ...(i.alsoHoles ?? [])].filter(h => h !== holeId);
+      if (target && i.id === target.id) holes = [...holes, holeId];
+      if (!holes.length) return i;
+      return { ...i, holeId: holes[0], alsoHoles: holes.length > 1 ? holes.slice(1) : undefined };
+    });
+    if (!withHoleId) {
+      const from = current[0];
+      const tee = holeTees(d, holeId)[0];
+      const spot = from && tee ? { x: from.x + (tee.x - from.x) * (25 / Math.max(25, Math.hypot(tee.x - from.x, tee.y - from.y))), y: from.y + (tee.y - from.y) * (25 / Math.max(25, Math.hypot(tee.x - from.x, tee.y - from.y))) } : from ?? { x: 0, y: 0 };
+      items = [...items, createBasket(holeId, spot, "A")];
+    }
+    return { items };
+  });
 };

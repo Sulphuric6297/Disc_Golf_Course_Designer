@@ -35,6 +35,8 @@ export interface TeeItem extends BaseItem {
 export interface BasketItem extends BaseItem {
   type: "basket";
   holeId: string;
+  /** Other holes played to this basket too (each from its own tee, with its own number). */
+  alsoHoles?: string[];
   position: PinPosition;
   /** Raised on a platform or slope above the ground, ft (an elevated basket). */
   raised?: number;

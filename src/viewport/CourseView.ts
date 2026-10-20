@@ -15,7 +15,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, autoWalks, basketFor, fairwayOutline, fairwayWidthAt, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { FAIRWAY_STATIONS, autoWalks, basketFor, basketHoles, fairwayOutline, fairwayWidthAt, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
@@ -71,6 +71,7 @@ const STYLE = `
 .dg-layer{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .dg-ov{position:absolute;left:0;top:0;will-change:transform;white-space:nowrap}
 .dg-tee{pointer-events:auto;cursor:move;min-width:22px;height:22px;padding:0 5px;border-radius:999px;display:flex;align-items:center;justify-content:center;background:var(--c);color:var(--ink);font:800 12px/1 Oswald,Inter,system-ui,sans-serif;border:2px solid rgba(15,23,42,.85);box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.dg-basket .dg-shared{position:absolute;top:-15px;left:50%;transform:translateX(-50%);font:800 10px/1 Oswald,Inter,system-ui,sans-serif;font-style:normal;color:#fff;background:#0f172a;border-radius:6px;padding:2px 4px;white-space:nowrap}
 .dg-tee.alt{min-width:15px;height:15px;font-size:9px;padding:0 3px;opacity:.9}
 .dg-tee.sel,.dg-basket.sel,.dg-chip.sel{outline:3px solid ${SELECT};outline-offset:1px}
 .dg-basket{pointer-events:auto;cursor:move;width:20px;height:20px;border-radius:50%;background:#0f172a;border:2.5px solid var(--c);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.5)}
@@ -1873,7 +1874,9 @@ export class CourseView {
         }, at(t, 1), 0);
       } else if (item.type === "basket") {
         const b = item as BasketItem;
-        const n = this.num(b.holeId);
+        // (a basket several holes play to: each one's number)
+        const n = basketHoles(b).map(h => this.num(h)).filter(Boolean).sort((x, y) => x - y).join(" & ");
+        const shared = !!b.alsoHoles?.length;
         const multi = holeBaskets(course, b.holeId).length > 1;
         const main = mainBaskets.has(b.id);
         put(`basket:${b.id}`, `${n}|${b.position}|${multi}|${sel}|${main}|${course.style.basket}`, main ? 1 : 3, () => {
@@ -1887,6 +1890,12 @@ export class CourseView {
           if (multi) {
             const tag = document.createElement("b");
             tag.textContent = b.position;
+            el.appendChild(tag);
+          }
+          if (shared) {
+            const tag = document.createElement("i");
+            tag.className = "dg-shared";
+            tag.textContent = n;
             el.appendChild(tag);
           }
           return el;
@@ -2755,7 +2764,10 @@ export class CourseView {
     if (tool.mode === "add-hole") {
       stop();
       this.gesture(e, {
-        click: groundClick(p => {
+        click: groundClick(g => {
+          // (a click on a basket already there plays the new hole to it)
+          const onBasket = domItem ? this.doc?.course.items.find(i => i.id === domItem && i.type === "basket") : undefined;
+          const p = this.holeStart && onBasket ? { x: onBasket.x, y: onBasket.y } : g;
           if (!this.holeStart) {
             this.holeStart = p;
             this.cursor = p;

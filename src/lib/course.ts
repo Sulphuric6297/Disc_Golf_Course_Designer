@@ -175,7 +175,7 @@ export const holeTees = (doc: Pick<CourseDoc, "items">, holeId: string) =>
   (doc.items.filter(i => i.type === "tee" && i.holeId === holeId) as TeeItem[]).sort((a, b) => TEE_ORDER.indexOf(a.level) - TEE_ORDER.indexOf(b.level));
 
 export const holeBaskets = (doc: Pick<CourseDoc, "items">, holeId: string) =>
-  (doc.items.filter(i => i.type === "basket" && i.holeId === holeId) as BasketItem[]).sort((a, b) => PIN_POSITIONS.indexOf(a.position) - PIN_POSITIONS.indexOf(b.position));
+  (doc.items.filter(i => i.type === "basket" && (i.holeId === holeId || i.alsoHoles?.includes(holeId))) as BasketItem[]).sort((a, b) => PIN_POSITIONS.indexOf(a.position) - PIN_POSITIONS.indexOf(b.position));
 
 /** The tee a layout plays: its color, else the nearest color to it, else the first. */
 export const teeFor = (doc: Pick<CourseDoc, "items">, holeId: string, level?: TeeLevel): TeeItem | null => {
@@ -258,3 +258,6 @@ export const autoWalks = <S extends { holeId: string; complete: boolean; line: P
   }
   return out;
 };
+
+/** Every hole a basket is played to: its own, then the ones sharing it. */
+export const basketHoles = (b: Pick<BasketItem, "holeId" | "alsoHoles">) => [b.holeId, ...(b.alsoHoles ?? [])];

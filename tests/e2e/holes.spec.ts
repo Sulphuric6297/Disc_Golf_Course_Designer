@@ -184,3 +184,42 @@ test("bending a hole: Bend left and Bend right curve it, Straighten undoes it", 
   await page.getByRole("button", { name: "Straighten" }).click();
   await expect.poll(async () => (await turn()).length).toBe(0);
 });
+
+test("two holes to one basket: a basket click on a basket shares it; the Basket choice; deleting one hole leaves it to the other", async ({ page }) => {
+  await blankCourse(page);
+  const a = await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
+  // Hole 2 from another tee, its basket click on hole 1's basket
+  await clickPlan(page, 650, 350);
+  const badge = page.getByTestId("basket-badge").first();
+  const bb = (await badge.boundingBox())!;
+  await page.mouse.click(bb.x + bb.width / 2 + 3, bb.y + bb.height / 2 + 3);
+  await expect.poll(async () => (await course(page)).holes.length).toBe(2);
+  const b = (await course(page)).holes[1];
+  const baskets = () => course(page).then(d => d.items.filter((i: any) => i.type === "basket"));
+  expect(await baskets()).toHaveLength(1);
+  expect((await baskets())[0].holeId).toBe(a.id);
+  expect((await baskets())[0].alsoHoles).toEqual([b.id]);
+  // Each hole measured to it, and the basket carries both numbers
+  await expect(page.getByTestId("hole-row").nth(0)).toContainText("350 ft");
+  await expect(page.getByTestId("hole-row").nth(1)).toContainText("350 ft");
+  await expect(badge).toContainText("1 & 2");
+  // Hole 2 back to a basket of its own, then onto hole 1's again
+  await page.keyboard.press("Escape");
+  await page.getByTestId("hole-row").nth(1).click();
+  const pick = page.getByTestId("share-basket");
+  await expect(pick).toHaveValue(a.id);
+  await pick.selectOption("");
+  await expect.poll(async () => (await baskets()).length).toBe(2);
+  expect((await baskets()).find((i: any) => i.holeId === a.id).alsoHoles).toBeUndefined();
+  await expect(page.getByTestId("hole-row").nth(1)).toContainText("325 ft");
+  await pick.selectOption(a.id);
+  await expect.poll(async () => (await baskets()).length).toBe(1);
+  // Deleting hole 1 leaves the basket to hole 2
+  await page.getByTestId("hole-row").nth(0).click();
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await course(page)).holes.length).toBe(1);
+  expect(await baskets()).toHaveLength(1);
+  expect((await baskets())[0].holeId).toBe(b.id);
+  expect((await baskets())[0].alsoHoles).toBeUndefined();
+  await expect(page.getByTestId("hole-row")).toContainText("350 ft");
+});

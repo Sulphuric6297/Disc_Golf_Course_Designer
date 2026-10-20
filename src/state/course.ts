@@ -76,8 +76,15 @@ export const removeHole = (holeId: string) =>
   changeDoc(d => ({
     holes: d.holes.filter(h => h.id !== holeId),
     items: d.items
-      .filter(i => !((i.type === "tee" || i.type === "basket") && i.holeId === holeId))
-      .map(i => ("holeId" in i && i.holeId === holeId ? ({ ...i, holeId: undefined } as CourseItem) : i))
+      // (a basket another hole shares stays, as that hole's)
+      .filter(i => !((i.type === "tee" || (i.type === "basket" && !i.alsoHoles?.length)) && i.holeId === holeId))
+      .map(i => {
+        if (i.type === "basket" && (i.holeId === holeId || i.alsoHoles?.includes(holeId))) {
+          const holes = [i.holeId, ...(i.alsoHoles ?? [])].filter(h => h !== holeId);
+          return { ...i, holeId: holes[0], alsoHoles: holes.length > 1 ? holes.slice(1) : undefined };
+        }
+        return "holeId" in i && i.holeId === holeId ? ({ ...i, holeId: undefined } as CourseItem) : i;
+      })
   }));
 
 export const moveHole = (holeId: string, to: number) =>

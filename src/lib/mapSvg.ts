@@ -541,10 +541,11 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   for (const b of items.filter(i => i.type === "basket") as BasketItem[]) {
     const p = toScreen(b);
     const r = 5.2 * ts;
-    const o = dim(b.holeId);
+    const o = Math.max(...[b.holeId, ...(b.alsoHoles ?? [])].map(h => Number(dim(h))));
     const multi = holeBaskets(doc, b.holeId).length > 1;
-    const number = layers.stats.find(st => st.holeId === b.holeId)?.number;
-    sym.push(`<g opacity="${o}">${basketMark(s.basketMark ?? "basket", p, 0.72 * ts, s.basket, number ? String(number) : "")}`);
+    // (a basket several holes play to carries each one's number)
+    const number = [b.holeId, ...(b.alsoHoles ?? [])].map(h => layers.stats.find(st => st.holeId === h)?.number).filter(Boolean).sort((x, y) => x! - y!).join("/");
+    sym.push(`<g opacity="${o}">${basketMark(s.basketMark ?? "basket", p, 0.72 * ts, s.basket, number)}`);
     if (multi) sym.push(textLabel({ x: p.x + r * 1.6, y: p.y - r * 1.1 }, b.position, 7 * ts, { color: pal.label, weight: 800 }));
     sym.push(`</g>`);
   }

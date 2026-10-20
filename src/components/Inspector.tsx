@@ -8,7 +8,7 @@ import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRo
 import { STRUCTURE_INK } from "../lib/symbols";
 import { holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
-import { addHoleOb, deleteSelection, duplicateSelection, editWalks, select, setTeeLevel } from "../state/actions";
+import { addHoleOb, deleteSelection, duplicateSelection, editWalks, select, setTeeLevel, shareBasket } from "../state/actions";
 import { moveHole, updateHole, updateItem, useCourse, useEditor } from "../state/course";
 import type { AmenityKind, AreaItem, AreaKind, CourseItem, Hole, LineItem, LineKind, P, RoofKind, StructureKind, TeeSurface, TreeKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
@@ -37,6 +37,8 @@ function HoleInspector({ hole }: { hole: Hole }) {
   const u = doc.units;
   const tees = holeTees(doc, hole.id);
   const baskets = holeBaskets(doc, hole.id);
+  // The hole whose basket this one plays to, when it shares one
+  const sharing = baskets.find(b => b.holeId !== hole.id)?.holeId ?? null;
   const set = (patch: Partial<Hole>) => updateHole(hole.id, patch);
   const ro = useEditor(e => e.viewOnly);
   return (
@@ -136,6 +138,14 @@ function HoleInspector({ hole }: { hole: Hole }) {
         </Section>
       )}
       <Section title="Tees and pins">
+        {!ro && doc.holes.length > 1 && (
+          <Field label="Basket">
+            <select aria-label="Basket" data-testid="share-basket" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
+              <option value="">Its own</option>
+              {doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => b.holeId === h.id)).map(h => <option key={h.id} value={h.id}>Hole {holeNumber(doc, h.id)}'s</option>)}
+            </select>
+          </Field>
+        )}
         <ul className="space-y-1">
           {tees.map(t => (
             <li key={t.id}>
