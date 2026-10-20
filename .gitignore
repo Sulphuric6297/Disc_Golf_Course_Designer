@@ -9,3 +9,6 @@ playwright-report
 # Private scratch files (the owner's own plans and screenshots): never committed
 /tests/look/zz-*
 zz-*
+
+# Helper agents' working copies (Claude Code worktrees): local only
+/.claude/worktrees/
