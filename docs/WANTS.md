@@ -73,20 +73,38 @@ been seen working in the browser.
 - [ ] **Renders look really great, not cheesy 3D**; the 3D view is a true perspective.
 - [x] **Grass is rendered as blades of grass in 3D**, from short greens up to tall grass
   (mown fairways, longer grass between holes, knee-high in the rough).
-- [ ] **Any type of terrain** is handled.
+- [x] **Any type of terrain** is handled: landscapes (wooded park, open park, pine forest, dry
+  grass, autumn, desert) for the painted map and 3D, and relief shading that suits gentle or
+  steep ground.
 - [x] **Placing individual trees** is an option (the Tree tool: leafy, pine, palm, bush).
-- [ ] **Buildings, bridges and any other infrastructure** are available.
-- [ ] **Industry-standard symbols**, after researching what official disc golf maps use.
-- [ ] **A record option to export flyovers** as video files:
+- [x] **Buildings, bridges and any other infrastructure** are available: bridges, boardwalks,
+  stairs, walls, buildings, shelters and decks, in 3D and on every map style.
+- [x] **Industry-standard symbols**, after researching what official disc golf maps use: the
+  PDGA's marking colors (white OB, yellow hazard, blue casual, red out of play) or the common
+  map colors, with legend lines that say what each means for play.
+- [x] **A record option to export flyovers** as video files (seen as WebM; MP4 needs a browser
+  with H.264 encoding, not available in the test browser):
   - one hole, or the whole course in order, at 720p, 1080p, 1440p or 4K, 30 or 60 fps;
   - smooth however slow the computer (made frame by frame, not filmed off the screen), as an MP4
     where the browser can make one (WebM otherwise);
   - the hole's number, par and length on screen, and the basket marked with the distance left;
   - a Record button in the Export step (with progress and Cancel) and over the flyover itself.
-- [ ] **Per-hole exports too, not just the whole map**:
+- [x] **Per-hole exports too, not just the whole map**:
   - a page per hole like a yardage book or a hole map in a scoring app: the hole's map with the
     tee at the bottom, number, par, the length from each tee color, elevation change and "plays
     like", the hole notes and a small elevation profile;
   - Letter, A4, a 4 × 6 in card, or a square 1080 px picture for sharing;
   - all holes as one PDF or a ZIP of pictures; one hole as PDF, PNG, SVG or its own GeoJSON.
 
+## Third round
+
+- [ ] **Don't just follow the owner's directions**: look up how to actually make it look good,
+  research whether it's possible, and only build what makes it look great — something anyone
+  would love to look at.
+- [x] **Elevation is translated well on 2D maps**: hills read through the painted woods (lit and
+  shaded sides, Swiss-style warm and cool), illuminated contour lines painted on the open ground,
+  contour heights on the drawn styles, relief exaggerated to suit the course.
+- [x] **Fairways can be widened**: all along, or in places (a wide landing zone, a pinched gap)
+  with the width squares along the hole.
+- [ ] **Mobile friendly**, as a well thought out mobile navigation platform (not a strap-on),
+  while working just as well on desktop.
