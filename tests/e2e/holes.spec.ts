@@ -355,7 +355,7 @@ test("one width for every walk to the next hole; a hole's own walk wider; all wa
   expect((await course(page)).holes[0].walkWidth).toBeUndefined();
 });
 
-test("a hole with two numbers (1/2): shown as both; a new hole doesn't take either", async ({ page }) => {
+test("a hole with two numbers (1/2): shown as both, counted twice; a new hole doesn't take either", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
   await page.keyboard.press("Escape");
@@ -365,6 +365,9 @@ test("a hole with two numbers (1/2): shown as both; a new hole doesn't take eith
   await expect.poll(async () => { const h = (await course(page)).holes[0]; return [h.number, h.alsoNumbers]; }).toEqual([1, [2]]);
   await expect(page.getByTestId("inspector-title")).toHaveText("Hole 1/2");
   await expect(page.getByTestId("hole-row").first()).toContainText("1/2");
+  // Counted twice, as on the scorecard; its badge holds both numbers
+  await expect(page.getByTestId("hole-list")).toContainText("2 holes");
+  expect(await page.getByTestId("hole-badge").first().evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 100, minY: 100, maxX: 1000, maxY: 900 }, { animate: false }));
   const b = await addHole(page, { x: 600, y: 600 }, { x: 900, y: 600 });
   await expect.poll(async () => (await course(page)).holes.find((h: any) => h.id === b.id).number).toBe(3);

@@ -59,6 +59,30 @@ test.describe("phone", () => {
     expect((await course(page)).holes).toHaveLength(1);
   });
 
+  test("the map's buttons all sit above the panel; the compass shows once the map is turned", async ({ page }) => {
+    await oneHole(page);
+    const above = async () => {
+      await settle(page);
+      const top = (await sheet(page).boundingBox())!.y;
+      const buttons = page.getByTestId("map-controls").locator("button");
+      const n = await buttons.count();
+      expect(n).toBeGreaterThan(1);
+      for (let i = 0; i < n; i++) {
+        const b = (await buttons.nth(i).boundingBox())!;
+        expect(b.y + b.height).toBeLessThanOrEqual(top);
+      }
+    };
+    await above();
+    await expect(page.getByLabel("Show the whole course")).toBeVisible();
+    await expect(page.getByTestId("compass")).toHaveCount(0);
+    await page.evaluate(() => (window as any).__dgView.rotateBy(30));
+    await expect(page.getByTestId("compass")).toBeVisible();
+    await above();
+    // (with the panel lower, more of them)
+    await nav(page).getByRole("button", { name: /Holes/ }).tap();
+    await above();
+  });
+
   test("the step bar switches steps and the sheet shows each one; no desktop panels", async ({ page }) => {
     await expect(page.getByTestId("side-panel")).toHaveCount(0);
     await expect(page.getByRole("toolbar", { name: "Tools" })).toHaveCount(0);
@@ -443,7 +467,11 @@ test("desktop at 1600 × 1000 keeps its layout: top bar steps, side panel, tool 
   expect(side.y).toBe(56);
   await expect(page.getByRole("button", { name: "1 Site" })).toBeVisible();
   await expect(page.getByRole("toolbar", { name: "Tools" })).toBeVisible();
-  await expect(page.getByTestId("tool-hint")).toContainText("scroll or pinch to zoom");
+  // (no prompt over the map with Select; a tool's own prompt when one is picked)
+  await expect(page.getByTestId("tool-hint")).toHaveCount(0);
+  await page.keyboard.press("t");
+  await expect(page.getByTestId("tool-hint")).toContainText("another tee");
+  await page.keyboard.press("Escape");
   for (const id of ["bottom-nav", "sheet", "nav-rail", "side-sheet", "top-bar", "draw-bar"]) await expect(page.getByTestId(id)).toHaveCount(0);
   // The selection's inspector floats on the right of the map
   await page.getByTestId("hole-row").click();

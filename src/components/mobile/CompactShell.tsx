@@ -11,7 +11,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Share2, Trash2, Undo2, Unlock, X } from "lucide-react";
 import { STRUCTURE_KINDS } from "../../constants";
 import { holeLabel, holeNumber } from "../../lib/course";
-import { courseTotals, holeStats, openIssues, safetyIssues } from "../../lib/holeStats";
+import { courseTotals, holeStats, openIssues, playsOf, safetyIssues } from "../../lib/holeStats";
 import { landscapeOf } from "../../lib/landscapes";
 import { fmtDist, fmtElev } from "../../lib/units";
 import { canPaste, copySelection, deleteSelection, duplicateSelection, pasteClipboard, select } from "../../state/actions";
@@ -82,7 +82,8 @@ function useSummary() {
   return useMemo(() => {
     const stats = doc.holes.map(h => holeStats(doc, h));
     const t = courseTotals(doc, stats);
-    return { holes: doc.holes.length, par: t.par, complete: t.complete, length: t.length, issues: openIssues(doc, safetyIssues(doc, stats)).open.length, units: doc.units };
+    // (a hole with two numbers counts twice, as on the scorecard)
+    return { holes: doc.holes.reduce((n, h) => n + playsOf(doc, h.id), 0), par: t.par, complete: t.complete, length: t.length, issues: openIssues(doc, safetyIssues(doc, stats)).open.length, units: doc.units };
   }, [doc]);
 }
 

@@ -169,7 +169,8 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
       : ed.tool === "select" && ed.dragSelect ? "Drag a box around things · tap to add or take one out · two fingers move the map"
       : TOUCH_HINTS[ed.tool];
   }
-  return ed.tool === "select" ? (ed.dragSelect ? "Drag a box around things · Shift+click adds or takes one out · right-drag to turn and tilt" : "Drag to pan · Shift+drag to select · scroll or pinch to zoom · right-drag or Ctrl+drag to turn and tilt")
+  // (none with Select itself: the map stays clear; its gestures are in the shortcuts dialog)
+  return ed.tool === "select" ? (ed.dragSelect ? "Drag a box around things · Shift+click adds or takes one out · right-drag to turn and tilt" : undefined)
     : drawing && shape !== "points" ? SHAPE_HINTS[shape]
     : ed.tool === "add-mando" && ed.mandoKind === "gate" ? "Click on the hole's line where the gate is"
     : ed.tool === "draw-structure" && ed.structureKind === "bridge" ? "Click one bank, then double-click the other (or Enter) · Backspace removes the last point · Esc cancels"

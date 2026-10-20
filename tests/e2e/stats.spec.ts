@@ -163,6 +163,15 @@ test.describe("safety and design checks", () => {
     expect(ignored).toHaveLength(1);
   });
 
+  test("holes to one basket wait on each other: no alarms between them; a third hole still counts", () => {
+    const doc = make([[{ x: 100, y: 300 }, { x: 400, y: 300 }], [{ x: 400, y: 0 }, { x: 400, y: 300 }], [{ x: 250, y: 100 }, { x: 250, y: 500 }]]);
+    // (the second one bent across the first's line, its tee by the first's line)
+    doc.holes[1].doglegs = [{ x: 150, y: 450 }];
+    const t = safetyIssues(doc).filter(i => i.holes.length === 2 && !i.holes.includes(doc.holes[2].id)).map(i => i.text);
+    expect(t).toEqual([]);
+    expect(safetyIssues(doc).some(i => /Hole 1 and Hole 3: the throw lines cross/.test(i.text))).toBe(true);
+  });
+
   test("curved OB, water and roads count where they are drawn, not their corners", () => {
     // An OB triangle drawn curved bulges out past its straight bottom edge (y 200)
     const tri = [{ x: 200, y: 200 }, { x: 400, y: 200 }, { x: 300, y: 373 }];

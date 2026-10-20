@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowRight, CircleDot, ClipboardCheck, Download, Eye, EyeOff, Info, MapPinned, Palette, Pentagon, Plus, Route, Signpost, Spline, Trash2, TreeDeciduous, type LucideIcon } from "lucide-react";
 import { AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
 import { activeLayout, holeTees } from "../lib/course";
-import { courseTotals, holeStats, levelsOnCourse, openIssues, safetyIssues, swapped, type SafetyIssue } from "../lib/holeStats";
+import { courseTotals, holeStats, levelsOnCourse, openIssues, playsOf, safetyIssues, swapped, type SafetyIssue } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { select } from "../state/actions";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
@@ -143,6 +143,8 @@ function HolesStep() {
   const ed = useEditor();
   const stats = useMemo(() => doc.holes.map(h => holeStats(doc, h)), [doc]);
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
+  // (a hole with two numbers counts twice, as on the scorecard)
+  const played = doc.holes.reduce((n, h) => n + playsOf(doc, h.id), 0);
   const u = doc.units;
   return (
     <>
@@ -150,7 +152,7 @@ function HolesStep() {
         <ToolCard icon={<Route size={18} />} title="New hole (H)" active={ed.tool === "add-hole"} onClick={() => ed.set({ tool: "add-hole" })} testid="new-hole" />
       </Section>
       <LayoutEditor />
-      <Section title={`${doc.holes.length} hole${doc.holes.length === 1 ? "" : "s"}`} testid="hole-list">
+      <Section title={`${played} hole${played === 1 ? "" : "s"}`} testid="hole-list">
         {doc.holes.length === 0 ? (
           <p className="text-xs text-zinc-400">No holes yet.</p>
         ) : (
@@ -166,7 +168,7 @@ function HolesStep() {
                     onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
                     className={`w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${sel ? "bg-orange-500/15 ring-1 ring-orange-400/60" : "hover:bg-zinc-800"}`}
                   >
-                    <span className="w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink, fontFamily: "Oswald, Inter" }}>{s.label}</span>
+                    <span className="min-w-[1.5rem] h-6 px-1 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 whitespace-nowrap" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink, fontFamily: "Oswald, Inter" }} data-testid="hole-badge">{s.label}</span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm text-zinc-100 truncate">{hole.name || `Hole ${s.label}`}</span>
                       <span className="block text-[11px] text-zinc-400">

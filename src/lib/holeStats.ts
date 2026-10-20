@@ -267,6 +267,8 @@ const crossing = (a: P[], b: P[]): P | null => {
   return null;
 };
 
+/** Whether two holes play to the same basket (alternate tees: one waits on the other). */
+const sharesBasket = (a: HoleStats, b: HoleStats) => (!!a.basketId && a.basketId === b.basketId) || dist(a.line[a.line.length - 1], b.line[b.line.length - 1]) < 3;
 export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(h => holeStats(doc, h))): SafetyIssue[] => {
   const issues: SafetyIssue[] = [];
   const fixed = doc.rules?.safetyGapFt;
@@ -281,6 +283,8 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
     for (let j = i + 1; j < done.length; j++) {
       const b = done[j];
       const lb = smooth.get(b.holeId)!;
+      // (holes to one basket wait on each other for it: never thrown at the same time)
+      if (sharesBasket(a, b)) continue;
       // (the same id whichever order the holes are in)
       const pair = [a.holeId, b.holeId].sort().join(":");
       const x = crossing(la, lb);
@@ -296,7 +300,7 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
     }
     // Other holes' tees and baskets near this hole's line (beyond its own ends)
     for (const b of done) {
-      if (b.holeId === a.holeId) continue;
+      if (b.holeId === a.holeId || sharesBasket(a, b)) continue;
       const tee = b.line[0];
       const basket = b.line[b.line.length - 1];
       const dTee = distanceToPath(tee, la);

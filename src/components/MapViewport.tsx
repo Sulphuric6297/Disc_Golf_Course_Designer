@@ -216,9 +216,19 @@ function TouchControls({ view, info, scale, units, phone, top, room, threeD }: {
   const editing = useEditor(e => !e.viewOnly && e.step !== "design");
   const b = "w-11 h-11 flex items-center justify-center text-zinc-100 active:bg-zinc-700 focus:outline-none focus-visible:bg-zinc-700";
   const group = "pointer-events-auto flex flex-col bg-zinc-900/90 rounded-2xl border border-white/10 shadow-[0_6px_20px_rgba(0,0,0,0.35)] overflow-hidden divide-y divide-white/5";
-  // Room for: compass 44, zoom 88, fit 44, turn 88 (+ the gaps); the turn buttons go first
-  const turn = room >= 300;
-  const fit = room >= 200;
+  // On a phone the compass only once the map is turned (as in map apps), and only what fits above
+  // the panel: zoom (88), then the whole course, box select and turning, each with its 8 px gap
+  const heading = info?.heading ?? 0;
+  const compass = !phone || Math.min(heading, 360 - heading) > 1;
+  let used = 88 + (compass ? 52 : 0) + (threeD ? 52 : 0);
+  const fits = (h: number) => {
+    if (phone && used + h > room) return false;
+    used += h;
+    return true;
+  };
+  const fit = fits(52);
+  const box = editing && fits(52);
+  const turn = fits(96);
   return (
     <>
       {scale && (
@@ -237,22 +247,24 @@ function TouchControls({ view, info, scale, units, phone, top, room, threeD }: {
         )}
         <div className={phone ? "flex flex-col gap-2 items-end" : "grid grid-cols-2 gap-2"}>
           <div className="flex flex-col gap-2">
-            <button className={`${group} ${b}`} aria-label="North up" title="North up" onClick={() => view?.resetNorth()} data-testid="compass">
-              <Compass size={20} className="text-red-400" style={{ transform: `rotate(${-(info?.heading ?? 0)}deg)` }} />
-            </button>
+            {compass && (
+              <button className={`${group} ${b}`} aria-label="North up" title="North up" onClick={() => view?.resetNorth()} data-testid="compass">
+                <Compass size={20} className="text-red-400" style={{ transform: `rotate(${-heading}deg)` }} />
+              </button>
+            )}
             <div className={group}>
               <button className={b} aria-label="Zoom in" onClick={() => view?.zoomBy(1.4)}><Plus size={20} /></button>
               <button className={b} aria-label="Zoom out" onClick={() => view?.zoomBy(1 / 1.4)}><Minus size={20} /></button>
             </div>
-            {editing && (fit || !phone) && (
+            {box && (
               <button className={`${group} ${b} ${boxing ? "!bg-orange-500 !text-white" : ""}`} aria-label="Select with a box" title="Select with a box" aria-pressed={boxing} onClick={() => set({ dragSelect: !boxing, tool: "select" })} data-testid="touch-drag-select">
                 <BoxSelect size={19} />
               </button>
             )}
           </div>
           <div className="flex flex-col gap-2">
-            {(fit || !phone) && <button className={`${group} ${b}`} aria-label="Show the whole course" onClick={() => view?.fitCourse()}><Maximize2 size={18} /></button>}
-            {(turn || !phone) && (
+            {fit && <button className={`${group} ${b}`} aria-label="Show the whole course" onClick={() => view?.fitCourse()}><Maximize2 size={18} /></button>}
+            {turn && (
               <div className={group}>
                 <button className={b} aria-label="Turn left" onClick={() => view?.rotateBy(-30)}><RotateCcw size={18} /></button>
                 <button className={b} aria-label="Turn right" onClick={() => view?.rotateBy(30)}><RotateCw size={18} /></button>
