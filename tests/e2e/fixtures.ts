@@ -145,7 +145,7 @@ export const course = (page: Page) => page.evaluate(() => {
 });
 export const editorState = (page: Page) => page.evaluate(() => {
   const s = (window as any).__dgEditor();
-  return { step: s.step, tool: s.tool, selectedId: s.selectedId, group: s.group, dragSelect: s.dragSelect, designSel: s.designSel, activeHoleId: s.activeHoleId, view: s.view, teeView: s.teeView, viewOnly: s.viewOnly };
+  return { step: s.step, tool: s.tool, selectedId: s.selectedId, group: s.group, dragSelect: s.dragSelect, designSel: s.designSel, activeHoleId: s.activeHoleId, view: s.view, teeView: s.teeView, viewOnly: s.viewOnly, flyLook: s.flyLook };
 });
 
 /** Where a plan point (on the ground) is on screen. */

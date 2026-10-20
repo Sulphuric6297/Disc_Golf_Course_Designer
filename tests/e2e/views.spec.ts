@@ -81,6 +81,7 @@ test("Enter on a selected hole opens its tee view", async ({ page }) => {
 });
 
 test("from a tee and flying over, the ground is the painted map with trees on its woods; Photo puts the photo back", async ({ page }) => {
+  test.setTimeout(300_000);
   await blankCourse(page);
   await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
   await page.keyboard.press("Escape");
@@ -93,9 +94,7 @@ test("from a tee and flying over, the ground is the painted map with trees on it
   });
   // (the 3D view rests while it paints: drawn in software here, its frames would starve the painting)
   await page.evaluate(() => (window as any).__dgView.setPaused(true));
-  await expect.poll(async () => (await ground()).painted, { timeout: 120_000 }).toBe(true);
-  await page.evaluate(() => (window as any).__dgView.setPaused(false));
-  await expect.poll(ground, { timeout: 30_000 }).toEqual({ painted: true, shown: true, trees: true });
+  await expect.poll(ground, { timeout: 150_000 }).toEqual({ painted: true, shown: true, trees: true });
   // The Camera settings: the photo instead (kept for next time)
   await page.getByTestId("hud-camera").click();
   await page.getByTestId("flyover-settings").getByRole("radio", { name: "Photo" }).click();
@@ -104,8 +103,9 @@ test("from a tee and flying over, the ground is the painted map with trees on it
   await page.getByTestId("flyover-settings").getByRole("radio", { name: "Painted map" }).click();
   await expect.poll(async () => (await ground()).painted, { timeout: 30_000 }).toBe(true);
   // Back on the map: the photo's ground again, no painted trees
+  await page.evaluate(() => (window as any).__dgView.setPaused(false));
   await page.getByTestId("hud-close").click();
-  await expect.poll(ground).toEqual({ painted: false, shown: false, trees: false });
+  await expect.poll(ground, { timeout: 30_000 }).toEqual({ painted: false, shown: false, trees: false });
 });
 
 test("from a tee, the hole's ground is painted sharper (over the whole site's painting); gone back on the map", async ({ page }) => {
