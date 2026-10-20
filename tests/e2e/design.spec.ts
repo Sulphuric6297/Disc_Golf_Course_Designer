@@ -465,3 +465,19 @@ test("painted water: a pond is lighter at its rim and in the shallows, deep and 
   const middle = mean(profile.slice(Math.round(n * 0.35), Math.round(n * 0.65)));
   expect(rim).toBeGreaterThan(middle + 12);
 });
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+  test("the live preview's painting is smaller on a phone (quicker, lighter on memory)", async ({ page }) => {
+    await blankCourse(page);
+    await page.evaluate(() => {
+      (window as any).__dgActions.addHole({ x: 300, y: 700 }, { x: 650, y: 700 }, "blue");
+      (window as any).__dgEditor().set({ step: "design", tool: "select" });
+    });
+    const painting = page.getByTestId("design-page").locator("image").first();
+    await expect(painting).toHaveAttribute("href", /^data:image\/jpeg/, { timeout: 30_000 });
+    const width = await page.evaluate(async (url: string) => { const img = new Image(); img.src = url; await img.decode(); return Math.max(img.width, img.height); }, (await painting.getAttribute("href"))!);
+    expect(width).toBeLessThanOrEqual(1500);
+    expect(width).toBeGreaterThan(1000);
+  });
+});

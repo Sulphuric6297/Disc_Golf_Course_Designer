@@ -560,15 +560,32 @@ const idOf = (o: object | null | undefined) => {
   if (!objectIds.has(o)) objectIds.set(o, nextId++);
   return objectIds.get(o)!;
 };
+/** The painted land's longest side, pixels: full for prints and exports, less for a preview. */
+let paintLimit = 2400;
+
+/**
+ * Draws pages with the painted land at most `px` pixels across (a phone's live preview: quicker
+ * to paint and lighter on memory; what is exported stays full size).
+ */
+export const withPaintLimit = <T>(px: number, draw: () => T): T => {
+  const was = paintLimit;
+  paintLimit = px;
+  try {
+    return draw();
+  } finally {
+    paintLimit = was;
+  }
+};
+
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
   const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
   const shapes = doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as LineItem).width] : i.type === "structure" ? [i.type, i.kind, i.points, i.width, i.height, i.roof] : [i.type, Math.round(i.x), Math.round(i.y), (i as TreeItem).radius]));
   const look = [s.forest, s.treeCover, s.landscape, s.contours, s.trees, s.fairway, s.rough, s.water, s.path, s.nextTee, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint];
-  const key = JSON.stringify([view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairwayShape, h.fairway]), shapes, doc.canvas, doc.id]);
+  const key = JSON.stringify([paintLimit, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairwayShape, h.fairway]), shapes, doc.canvas, doc.id]);
   const hit = forestCache.get(key);
   if (hit) return hit;
-  const canvas = forestCanvas(doc, view, layers.stats, { mode: s.forest ?? "everywhere", canopy, style: s, density: Math.min(3, Math.max(1.5, 2400 / Math.max(view.width, view.height))) });
+  const canvas = forestCanvas(doc, view, layers.stats, { mode: s.forest ?? "everywhere", canopy, style: s, density: Math.min(3, Math.max(paintLimit < 2400 ? 1 : 1.5, paintLimit / Math.max(view.width, view.height))) });
   // A photo-like picture: JPEG keeps it a tenth the size of a PNG
   const url = canvas.toDataURL("image/jpeg", 0.9);
   forestCache.set(key, url);

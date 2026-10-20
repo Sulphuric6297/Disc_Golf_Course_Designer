@@ -2,7 +2,10 @@
 // scorecard) exactly as it will print, updating as the style changes.
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Minus, Plus, Scan } from "lucide-react";
-import { renderPoster } from "../lib/mapSvg";
+import { renderPoster, withPaintLimit } from "../lib/mapSvg";
+
+/** A phone or small tablet (touch first, small screen). */
+const PHONE = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches && typeof screen !== "undefined" && Math.min(screen.width, screen.height) < 900;
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
 import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
 import { useCourse, useEditor } from "../state/course";
@@ -34,12 +37,13 @@ export function MapDesigner() {
     return () => ro.disconnect();
   }, []);
 
-  const page = useMemo(() => {
+  // On a phone the preview is painted smaller (it is seen small; quicker and lighter on memory)
+  const page = useMemo(() => withPaintLimit(PHONE ? 1500 : 2400, () => {
     if (preview === "sign" && holeId) return renderTeeSign(doc, holeId, signSize, relief);
     if (preview === "page" && holeId) return renderHolePage(doc, holeId, pageSize, relief);
     if (preview === "scorecard") return renderScorecard(doc);
     return renderPoster(doc, relief);
-  }, [doc, relief, preview, holeId, signSize, pageSize]);
+  }), [doc, relief, preview, holeId, signSize, pageSize]);
 
   if (!page) return null;
   const fit = Math.min((size.w - 48) / page.width, (size.h - 48) / page.height);
