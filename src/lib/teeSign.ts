@@ -2,7 +2,7 @@
 // the hole drawn with the tee at the bottom, its elevation profile, the hole's rules, and an arrow
 // to the next tee.
 import { CIRCLE_ONE_FT, FT_PER_M, TEE_LEVELS } from "../constants";
-import type { AreaItem, BasketItem, CourseDoc, P } from "../types";
+import type { AreaItem, BasketItem, CourseDoc, CourseItem, P, SignPart } from "../types";
 import { activeLayout, fairwayOutline, holeBaskets, holeTees, throwLine } from "./course";
 import { boundsOf, dist, pointInPolygon, rotatePoint, smoothPath } from "./geom";
 import { holeStats } from "./holeStats";
@@ -79,6 +79,49 @@ export const elevationProfile = (doc: CourseDoc, line: P[], box: { x: number; y:
 
 export type SignArt = { contours: Contours | null; hillshade: string | null; canopy?: CanopyGrid | null };
 
+/** What a tee sign shows by default (all of it, but the distances on its map). */
+const SIGN_SHOW: Record<SignPart, boolean> = {
+  courseName: true, number: true, par: true, lengths: true, elevation: true, notes: true, courseMap: true, nextTee: true,
+  north: true, scale: true, throwLine: true, circle: true, distances: false, holeOf: true, designer: true, legend: true
+};
+
+/** The parts of a tee sign, in the order they are set. */
+export const SIGN_PARTS: { id: SignPart; label: string }[] = [
+  { id: "courseName", label: "Course name" }, { id: "number", label: "Hole number" }, { id: "par", label: "Par" },
+  { id: "lengths", label: "Lengths" }, { id: "elevation", label: "Elevation" }, { id: "notes", label: "Hole notes" },
+  { id: "courseMap", label: "Course map" }, { id: "nextTee", label: "Way to the next tee" }, { id: "north", label: "North arrow" },
+  { id: "scale", label: "Scale bar" }, { id: "throwLine", label: "Throw line" }, { id: "circle", label: "Putting circle" },
+  { id: "distances", label: "Distance on the line" }, { id: "holeOf", label: "Hole N of M" }, { id: "designer", label: "Designer" },
+  { id: "legend", label: "Legend" }
+];
+
+/** A hole's tee sign settings: its own over the course's, over the defaults. */
+export const signOf = (doc: Pick<CourseDoc, "style" | "holes">, holeId: string) => {
+  const g = doc.style.sign ?? {}, h = doc.holes.find(x => x.id === holeId)?.sign ?? {};
+  return {
+    others: h.others ?? g.others ?? "faded",
+    fade: h.fade ?? g.fade ?? 0.3,
+    show: (p: SignPart) => h.show?.[p] ?? g.show?.[p] ?? SIGN_SHOW[p]
+  };
+};
+
+/** The course as a sign's map draws it: with only this hole when the others are left out (their
+ * fairways, tees, baskets, mandos and drop zones gone; a basket it shares stays, as its own). */
+const signMapDoc = (doc: CourseDoc, holeId: string): CourseDoc => {
+  const sign = signOf(doc, holeId);
+  const style = { ...doc.style, throwLines: sign.show("throwLine"), circle: sign.show("circle"), distances: sign.show("distances") };
+  if (sign.others !== "hidden") return { ...doc, style };
+  const items = doc.items.flatMap((i): CourseItem[] => {
+    if (i.type === "basket") {
+      const holes = [i.holeId, ...(i.alsoHoles ?? [])];
+      return holes.includes(holeId) ? [{ ...i, holeId, alsoHoles: undefined } as BasketItem] : [];
+    }
+    if ((i.type === "tee" || i.type === "mando" || i.type === "dropzone") && i.holeId && i.holeId !== holeId) return [];
+    return [i];
+  });
+  return { ...doc, style, holes: doc.holes.filter(h => h.id === holeId), items };
+};
+
 export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: SignArt) => {
   const hole = doc.holes.find(h => h.id === holeId);
   if (!hole) return null;
@@ -101,25 +144,26 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   const lvl = TEE_LEVELS[mainTee?.level ?? "blue"];
   const card = cardStyle(doc);
   const dark = card.header;
+  const sign = signOf(doc, holeId), show = sign.show;
 
   parts.push(`<rect width="${n(W)}" height="${n(H)}" fill="${card.paper}"/>`);
   // Header band
   parts.push(`<rect width="${n(W)}" height="${n(header.h)}" fill="${dark}"/>`);
   parts.push(`<rect y="${n(header.h - 6 * ts)}" width="${n(W)}" height="${n(6 * ts)}" fill="${lvl.color}"/>`);
   const r = header.h * 0.36;
-  parts.push(`<circle cx="${n(m + r)}" cy="${n(header.h * 0.5)}" r="${n(r)}" fill="${lvl.color}" stroke="#ffffff" stroke-width="${n(4 * ts)}"/>`);
-  parts.push(`<text x="${n(m + r)}" y="${n(header.h * 0.5 + r * 0.06)}" text-anchor="middle" dominant-baseline="central" font-family="${F}" font-weight="700" font-size="${n(r * 1.25)}" fill="${lvl.ink}">${st.label}</text>`);
+  if (show("number")) parts.push(`<circle cx="${n(m + r)}" cy="${n(header.h * 0.5)}" r="${n(r)}" fill="${lvl.color}" stroke="#ffffff" stroke-width="${n(4 * ts)}"/>`);
+  if (show("number")) parts.push(`<text x="${n(m + r)}" y="${n(header.h * 0.5 + r * 0.06)}" text-anchor="middle" dominant-baseline="central" font-family="${F}" font-weight="700" font-size="${n(r * 1.25)}" fill="${lvl.ink}">${st.label}</text>`);
   const tx = m + 2 * r + 16 * ts;
   // The course name across the top, the par under it on the left, the distances on the right
   const name = (doc.name || "").toUpperCase();
   const nameSize = Math.min(10 * ts, ((W - tx - m) / Math.max(1, name.length)) * 1.55);
-  parts.push(`<text x="${n(tx)}" y="${n(header.h * 0.2)}" font-family="Inter, Arial, sans-serif" font-weight="600" font-size="${n(nameSize)}" fill="#d1fae5" letter-spacing="${n(nameSize * 0.12)}">${esc(name)}</text>`);
-  parts.push(`<text x="${n(tx)}" y="${n(header.h * 0.6)}" font-family="${F}" font-weight="700" font-size="${n(34 * ts)}" fill="#ffffff">PAR ${st.complete ? st.par : "–"}</text>`);
+  if (show("courseName")) parts.push(`<text x="${n(tx)}" y="${n(header.h * 0.2)}" font-family="Inter, Arial, sans-serif" font-weight="600" font-size="${n(nameSize)}" fill="#d1fae5" letter-spacing="${n(nameSize * 0.12)}">${esc(name)}</text>`);
+  if (show("par")) parts.push(`<text x="${n(tx)}" y="${n(header.h * 0.6)}" font-family="${F}" font-weight="700" font-size="${n(34 * ts)}" fill="#ffffff">PAR ${st.complete ? st.par : "–"}</text>`);
   if (hole.name) parts.push(`<text x="${n(tx)}" y="${n(header.h * 0.83)}" font-family="${F}" font-weight="500" font-size="${n(13 * ts)}" fill="${card.accent}">${esc(hole.name)}</text>`);
   // Distances per tee (each tee to the layout's pin)
   const basket = holeBaskets(doc, holeId).find(b => b.position === layout?.pin) ?? holeBaskets(doc, holeId)[0];
   const rowsX = W - m;
-  tees.forEach((t, i) => {
+  if (show("lengths")) tees.forEach((t, i) => {
     const len = basket ? holeStats(doc, hole, { id: "sign", name: "", tee: t.level, pin: basket.position }).length : 0;
     const y = header.h * 0.4 + i * 17 * ts * (tees.length > 3 ? 0.75 : 1);
     const L = TEE_LEVELS[t.level];
@@ -142,16 +186,18 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   const scale = Math.min(box.w / (rb.maxX - rb.minX + pad * 2), box.h / (rb.maxY - rb.minY + pad * 2));
   const c = rotatePoint({ x: (rb.minX + rb.maxX) / 2, y: (rb.minY + rb.maxY) / 2 }, rotation);
   const view: MapView = { cx: c.x, cy: c.y, rotation, scale, width: box.w, height: box.h };
-  const map = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, focusHole: holeId, textScale: ts * 0.75, fontFamily: st0.font, canopy: opts.canopy }, `ts${st.label}`);
+  const md = signMapDoc(doc, holeId);
+  const mapStats = md.holes.length === doc.holes.length ? stats : md.holes.map(h => holeStats(md, h, layout));
+  const map = renderMapLayers(md, view, { stats: mapStats, contours: opts.contours, hillshade: opts.hillshade, focusHole: holeId, fade: sign.others === "shown" ? 1 : sign.fade, textScale: ts * 0.75, fontFamily: st0.font, canopy: opts.canopy }, `ts${st.label}`);
   parts.push(`<clipPath id="sign-clip"><rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.w)}" height="${n(box.h)}" rx="${n(8 * ts)}"/></clipPath>`);
   parts.push(`<g clip-path="url(#sign-clip)"><g transform="translate(${n(box.x)} ${n(box.y)})">${map.svg}</g></g>`);
   parts.push(`<rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.w)}" height="${n(box.h)}" rx="${n(8 * ts)}" fill="none" stroke="${dark}" stroke-width="${n(2 * ts)}"/>`);
   // North, scale
-  parts.push(`<g transform="translate(${n(box.x + box.w - 22 * ts)} ${n(box.y + 26 * ts)}) rotate(${n(-rotation)})">${northArrow(0, 0, 13 * ts, pal)}</g>`);
-  parts.push(scaleBar(box.x + 10 * ts, box.y + box.h - 12 * ts, scale, ts * 0.85, pal, doc.units));
+  if (show("north")) parts.push(`<g transform="translate(${n(box.x + box.w - 22 * ts)} ${n(box.y + 26 * ts)}) rotate(${n(-rotation)})">${northArrow(0, 0, 13 * ts, pal)}</g>`);
+  if (show("scale")) parts.push(scaleBar(box.x + 10 * ts, box.y + box.h - 12 * ts, scale, ts * 0.85, pal, doc.units));
   // Next tee arrow
   const next = stats[stats.indexOf(st) + 1];
-  if (next?.complete && st.complete) {
+  if (show("nextTee") && next?.complete && st.complete) {
     const from = st.line[st.line.length - 1], to = next.line[0];
     const d = dist(from, to);
     const dir = rotatePoint({ x: to.x - from.x, y: to.y - from.y }, -rotation);
@@ -164,8 +210,8 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   const fy = H - footerH + m * 0.3;
   const prof = st.complete ? profileAlong(doc.terrainHeights, doc.gridSize, smoothPath(throwLine(hole, mainTee ?? null, basket ?? null), 6), 60) : [];
   const pw = (W - 2 * m) * 0.48, ph = footerH * 0.42;
-  parts.push(`<text x="${n(m)}" y="${n(fy + 6 * ts)}" font-family="${F}" font-weight="700" font-size="${n(11 * ts)}" fill="${pal.ink}">ELEVATION ${st.complete ? esc(fmtElev(st.elevationChange, doc.units).toUpperCase()) : ""}</text>`);
-  if (prof.length > 1) {
+  if (show("elevation")) parts.push(`<text x="${n(m)}" y="${n(fy + 6 * ts)}" font-family="${F}" font-weight="700" font-size="${n(11 * ts)}" fill="${pal.ink}">ELEVATION ${st.complete ? esc(fmtElev(st.elevationChange, doc.units).toUpperCase()) : ""}</text>`);
+  if (show("elevation") && prof.length > 1) {
     const hs = prof.map(p => p.h);
     const lo = Math.min(...hs), hi = Math.max(...hs);
     const span = Math.max(8, hi - lo) * 1.3;
@@ -180,7 +226,7 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   // Rules and notes
   const nx = m + pw + 20 * ts, nw = W - m - nx;
   const rules = [hole.notes ?? "", ...(hole.notes ? [] : autoRules(doc, holeId))].filter(Boolean);
-  parts.push(`<text x="${n(nx)}" y="${n(fy + 6 * ts)}" font-family="${F}" font-weight="700" font-size="${n(11 * ts)}" fill="${pal.ink}">HOLE NOTES</text>`);
+  if (show("notes")) parts.push(`<text x="${n(nx)}" y="${n(fy + 6 * ts)}" font-family="${F}" font-weight="700" font-size="${n(11 * ts)}" fill="${pal.ink}">HOLE NOTES</text>`);
   const words = rules.join(" ").split(/\s+/).filter(Boolean);
   const fs = 9.5 * ts;
   const maxChars = Math.max(10, Math.floor(nw / (fs * 0.52)));
@@ -190,13 +236,13 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
     if ((cur + " " + w).trim().length > maxChars) { wrapped.push(cur); cur = w; } else cur = (cur + " " + w).trim();
   }
   if (cur) wrapped.push(cur);
-  (wrapped.length ? wrapped : ["Play it as it lies."]).slice(0, 7).forEach((l, i) => parts.push(`<text x="${n(nx)}" y="${n(fy + 24 * ts + i * fs * 1.35)}" font-family="Inter, Arial, sans-serif" font-size="${n(fs)}" fill="${pal.ink}">${esc(l)}</text>`));
+  if (show("notes")) (wrapped.length ? wrapped : ["Play it as it lies."]).slice(0, 7).forEach((l, i) => parts.push(`<text x="${n(nx)}" y="${n(fy + 24 * ts + i * fs * 1.35)}" font-family="Inter, Arial, sans-serif" font-size="${n(fs)}" fill="${pal.ink}">${esc(l)}</text>`));
   // Bottom strip
   const by = H - m * 0.6;
   const shown = markingsInView(doc, view);
   const legend = [shown.ob && `<tspan fill="${st0.ob}">■</tspan> OB`, shown.hazard && `<tspan fill="${st0.hazard}">■</tspan> Hazard`, shown.mando && `<tspan fill="#f97316">●</tspan> Mando / DZ`, `<tspan fill="${st0.basket}">●</tspan> Basket`].filter(Boolean).join("   ");
-  parts.push(`<text x="${n(m)}" y="${n(by)}" font-family="Inter, Arial, sans-serif" font-size="${n(8 * ts)}" fill="${pal.inkSoft}">${legend}</text>`);
-  parts.push(`<text x="${n(W - m)}" y="${n(by)}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="${n(8 * ts)}" fill="${pal.inkSoft}">Hole ${st.label} of ${doc.holes.length}${layout && doc.layouts.length > 1 ? ` · ${esc(layout.name)} layout` : ""}</text>`);
+  if (show("legend")) parts.push(`<text x="${n(m)}" y="${n(by)}" font-family="Inter, Arial, sans-serif" font-size="${n(8 * ts)}" fill="${pal.inkSoft}">${legend}</text>`);
+  if (show("holeOf")) parts.push(`<text x="${n(W - m)}" y="${n(by)}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="${n(8 * ts)}" fill="${pal.inkSoft}">Hole ${st.label} of ${doc.holes.length}${layout && doc.layouts.length > 1 ? ` · ${esc(layout.name)} layout` : ""}</text>`);
   return { svg: wrapSvg(W, H, parts.join("")), width: W, height: H };
 };
 
@@ -299,7 +345,7 @@ const wrap = (text: string, max: number) => {
 };
 
 /** The hole drawn into a box with the tee at the bottom (for signs and hole pages). */
-export const holeMap = (doc: CourseDoc, holeId: string, box: { w: number; h: number }, opts: SignArt, ts: number, uid: string) => {
+export const holeMap = (doc: CourseDoc, holeId: string, box: { w: number; h: number }, opts: SignArt, ts: number, uid: string, asSign = false) => {
   const hole = doc.holes.find(h => h.id === holeId)!;
   const stats = doc.holes.map(h => holeStats(doc, h, activeLayout(doc)));
   const st = stats.find(s => s.holeId === holeId)!;
@@ -314,9 +360,12 @@ export const holeMap = (doc: CourseDoc, holeId: string, box: { w: number; h: num
   const scale = Math.min(box.w / (rb.maxX - rb.minX + 60), box.h / (rb.maxY - rb.minY + 60));
   const c = rotatePoint({ x: (rb.minX + rb.maxX) / 2, y: (rb.minY + rb.maxY) / 2 }, rotation);
   const view: MapView = { cx: c.x, cy: c.y, rotation, scale, width: box.w, height: box.h };
-  // On a sign the hole's own line shows, faintly, even when the course map leaves lines out
-  const styled = { ...doc, style: { ...doc.style, throwLines: true, circle: doc.style.circle } };
-  const map = renderMapLayers(styled, view, { stats, contours: opts.contours, hillshade: opts.hillshade, focusHole: holeId, textScale: ts, fontFamily: doc.style.font, canopy: opts.canopy }, uid);
+  // On a sign: as its settings say (the other holes faded, left out or shown; the line, circle and
+  // distance); else the hole's own line shows, faintly, even when the course map leaves lines out
+  const sign = asSign ? signOf(doc, holeId) : null;
+  const md = sign ? signMapDoc(doc, holeId) : { ...doc, style: { ...doc.style, throwLines: true, circle: doc.style.circle } };
+  const mapStats = md.holes.length === doc.holes.length ? stats : md.holes.map(h => holeStats(md, h, activeLayout(doc)));
+  const map = renderMapLayers(md, view, { stats: mapStats, contours: opts.contours, hillshade: opts.hillshade, focusHole: holeId, fade: sign ? (sign.others === "shown" ? 1 : sign.fade) : undefined, textScale: ts, fontFamily: doc.style.font, canopy: opts.canopy }, uid);
   return { ...map, rotation, scale, st, stats, view };
 };
 
@@ -333,7 +382,8 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
   const sty = doc.style;
   const col = { x: 0, w: W * 0.34 };
   const mapBox = { x: col.w, y: 0, w: W - col.w, h: H };
-  const map = holeMap(doc, holeId, mapBox, opts, 1.6 * u, `ws${holeId.slice(-4)}`);
+  const map = holeMap(doc, holeId, mapBox, opts, 1.6 * u, `ws${holeId.slice(-4)}`, true);
+  const show = signOf(doc, holeId).show;
   const st = map.st;
   const tees = holeTees(doc, holeId);
   const mainTee = tees.find(t => t.id === st.teeId) ?? tees[0];
@@ -345,12 +395,12 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
   parts.push(`<clipPath id="wide-map"><rect x="${n(mapBox.x)}" y="0" width="${n(mapBox.w)}" height="${n(H)}"/></clipPath>`);
   parts.push(`<g clip-path="url(#wide-map)"><g transform="translate(${n(mapBox.x)} 0)">${map.svg}</g></g>`);
   const stripH = 30 * u;
-  parts.push(`<rect x="${n(mapBox.x)}" y="${n(H - stripH)}" width="${n(mapBox.w)}" height="${n(stripH)}" fill="#0b120a" fill-opacity="0.82"/>`);
-  parts.push(`<text x="${n(mapBox.x + mapBox.w / 2)}" y="${n(H - stripH / 2)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(14 * u)}" letter-spacing="${n(1.5 * u)}" fill="#ffffff">ELEVATION CHANGE FROM TEE: ${st.complete ? esc(fmtElev(st.elevationChange, doc.units).toUpperCase()) : "–"}${st.complete && Math.abs(st.playsLike - st.length) >= 10 ? ` · PLAYS LIKE ${esc(fmtDist(st.playsLike, doc.units).toUpperCase())}` : ""}</text>`);
-  parts.push(`<g transform="translate(${n(W - 34 * u)} ${n(38 * u)}) rotate(${n(-map.rotation)})">${northArrow(0, 0, 20 * u, palette(sty))}</g>`);
+  if (show("elevation")) parts.push(`<rect x="${n(mapBox.x)}" y="${n(H - stripH)}" width="${n(mapBox.w)}" height="${n(stripH)}" fill="#0b120a" fill-opacity="0.82"/>`);
+  if (show("elevation")) parts.push(`<text x="${n(mapBox.x + mapBox.w / 2)}" y="${n(H - stripH / 2)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(14 * u)}" letter-spacing="${n(1.5 * u)}" fill="#ffffff">ELEVATION CHANGE FROM TEE: ${st.complete ? esc(fmtElev(st.elevationChange, doc.units).toUpperCase()) : "–"}${st.complete && Math.abs(st.playsLike - st.length) >= 10 ? ` · PLAYS LIKE ${esc(fmtDist(st.playsLike, doc.units).toUpperCase())}` : ""}</text>`);
+  if (show("north")) parts.push(`<g transform="translate(${n(W - 34 * u)} ${n(38 * u)}) rotate(${n(-map.rotation)})">${northArrow(0, 0, 20 * u, palette(sty))}</g>`);
   // The way to the next hole
   const next = map.stats[map.stats.indexOf(st) + 1];
-  if (next?.complete && st.complete) {
+  if (show("nextTee") && next?.complete && st.complete) {
     const from = st.line[st.line.length - 1], to = next.line[0];
     const d = dist(from, to);
     const dir = rotatePoint({ x: to.x - from.x, y: to.y - from.y }, -map.rotation);
@@ -373,23 +423,28 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
   const bandH = 128 * u;
   parts.push(`<rect width="${n(col.w)}" height="${n(bandH)}" fill="${card.header}"/>`);
   const nameSize = Math.min(40 * u, ((cw * 0.95) / Math.max(4, name.length)) * (sty.font === "Script" ? 2.1 : 1.75));
-  parts.push(`<text x="${n(cx)}" y="${n(bandH * 0.52)}" text-anchor="middle" font-family="${titleStack(sty.font)}" font-weight="700" font-size="${n(nameSize)}" fill="${card.accent}">${esc(sty.font === "Script" ? name : name.toUpperCase())}</text>`);
-  parts.push(`<text x="${n(cx)}" y="${n(bandH * 0.52 + 22 * u)}" text-anchor="middle" font-family="${card.body}" font-weight="800" font-size="${n(7.5 * u)}" letter-spacing="${n(2.6 * u)}" fill="${card.accent}" fill-opacity="0.75">DISC GOLF COURSE</text>`);
+  if (show("courseName")) parts.push(`<text x="${n(cx)}" y="${n(bandH * 0.52)}" text-anchor="middle" font-family="${titleStack(sty.font)}" font-weight="700" font-size="${n(nameSize)}" fill="${card.accent}">${esc(sty.font === "Script" ? name : name.toUpperCase())}</text>`);
+  if (show("courseName")) parts.push(`<text x="${n(cx)}" y="${n(bandH * 0.52 + 22 * u)}" text-anchor="middle" font-family="${card.body}" font-weight="800" font-size="${n(7.5 * u)}" letter-spacing="${n(2.6 * u)}" fill="${card.accent}" fill-opacity="0.75">DISC GOLF COURSE</text>`);
   parts.push(`<rect y="${n(bandH - 5 * u)}" width="${n(col.w)}" height="${n(5 * u)}" fill="${lvl.color}"/>`);
-  // The number, big, and its par on a tag in the tee's color
+  // The number, big, and its par on a tag in the tee's color (each when shown)
   let y = bandH + 34 * u;
-  parts.push(`<text x="${n(cx)}" y="${n(y)}" text-anchor="middle" font-family="${card.head}" font-weight="700" font-size="${n(13 * u)}" letter-spacing="${n(3 * u)}" fill="${soft}">HOLE</text>`);
-  const numSize = 132 * u;
-  parts.push(`<text x="${n(cx)}" y="${n(y + numSize * 0.86)}" text-anchor="middle" font-family="${card.head}" font-weight="700" font-size="${n(numSize)}" fill="${card.ink}">${st.label}</text>`);
-  y += numSize * 0.86 + 14 * u;
+  if (show("number")) {
+    parts.push(`<text x="${n(cx)}" y="${n(y)}" text-anchor="middle" font-family="${card.head}" font-weight="700" font-size="${n(13 * u)}" letter-spacing="${n(3 * u)}" fill="${soft}">HOLE</text>`);
+    const numSize = 132 * u;
+    parts.push(`<text x="${n(cx)}" y="${n(y + numSize * 0.86)}" text-anchor="middle" font-family="${card.head}" font-weight="700" font-size="${n(numSize)}" fill="${card.ink}">${st.label}</text>`);
+    y += numSize * 0.86 + 14 * u;
+  }
   const tagW = 112 * u, tagH = 30 * u;
+  if (show("par")) {
   parts.push(`<rect x="${n(cx - tagW / 2)}" y="${n(y)}" width="${n(tagW)}" height="${n(tagH)}" rx="${n(tagH / 2)}" fill="${lvl.color}" stroke="${lvl.color === "#f8fafc" ? card.ink : lvl.color}" stroke-width="${n(1.2 * u)}"/>`);
   parts.push(`<text x="${n(cx)}" y="${n(y + tagH / 2)}" text-anchor="middle" dominant-baseline="central" font-family="${card.head}" font-weight="700" font-size="${n(17 * u)}" letter-spacing="${n(1 * u)}" fill="${lvl.ink}">PAR ${st.complete ? st.par : "–"}</text>`);
   y += tagH + 30 * u;
+  }
   // The length from each tee
   const rule = (yy: number) => parts.push(`<line x1="${n(mx)}" x2="${n(col.w - mx)}" y1="${n(yy)}" y2="${n(yy)}" stroke="${card.ink}" stroke-opacity="0.18" stroke-width="${n(1 * u)}"/>`);
   const label = (text: string, yy: number) => parts.push(`<text x="${n(mx)}" y="${n(yy)}" font-family="${card.head}" font-weight="700" font-size="${n(10.5 * u)}" letter-spacing="${n(1.8 * u)}" fill="${soft}">${esc(text)}</text>`);
   rule(y - 14 * u);
+  if (show("lengths")) {
   for (const { t, len } of lens) {
     const L = TEE_LEVELS[t.level], main = t.id === mainTee?.id, rowH = main ? 30 * u : 24 * u;
     parts.push(`<circle cx="${n(mx + 8 * u)}" cy="${n(y + rowH / 2 - 4 * u)}" r="${n((main ? 8 : 6.5) * u)}" fill="${L.color}" stroke="${card.ink}" stroke-opacity="0.5" stroke-width="${n(1 * u)}"/>`);
@@ -400,8 +455,9 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
   y += 10 * u;
   rule(y);
   y += 22 * u;
+  }
   // The ground along the hole
-  if (st.complete) {
+  if (st.complete && show("elevation")) {
     label(`ELEVATION ${fmtElev(st.elevationChange, doc.units).toUpperCase()}`, y);
     parts.push(`<text x="${n(col.w - mx)}" y="${n(y)}" text-anchor="end" font-family="${card.head}" font-weight="600" font-size="${n(10.5 * u)}" letter-spacing="${n(1 * u)}" fill="${soft}">PLAYS LIKE ${esc(big(st.playsLike))}</text>`);
     parts.push(elevationProfile(doc, st.line, { x: mx, y: y + 8 * u, w: cw, h: 40 * u }, { fill: sty.fairway, stroke: card.ink, tee: lvl.color, basket: sty.basket, width: 1.6 * u }));
@@ -411,7 +467,7 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
   }
   // Hole notes
   const notes = [hole.notes ?? "", ...(hole.notes ? [] : autoRules(doc, holeId))].filter(Boolean).join(" ");
-  if (notes) {
+  if (notes && show("notes")) {
     label("HOLE NOTES", y);
     const fs = 9.5 * u;
     const lines = wrap(notes, Math.max(12, Math.floor(cw / (fs * 0.5)))).slice(0, 4);
@@ -423,7 +479,7 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
   // The course in miniature, in the map's colors: this hole picked out, "you are here" at its tee
   const done = map.stats.filter(x => x.complete);
   const bottom = H - 44 * u;
-  if (done.length > 1 && bottom - y > 90 * u) {
+  if (show("courseMap") && done.length > 1 && bottom - y > 90 * u) {
     const all = done.flatMap(x => x.line);
     const b0 = boundsOf(all);
     const pad = 80;
@@ -470,7 +526,7 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
     parts.push(`<rect x="${n(tagX - 38 * u)}" y="${n(Math.min(hy + 6 * u, mbox.y + mbox.h - 18 * u))}" width="${n(76 * u)}" height="${n(14 * u)}" rx="${n(7 * u)}" fill="#dc2626"/><text x="${n(tagX)}" y="${n(Math.min(hy + 6 * u, mbox.y + mbox.h - 18 * u) + 7 * u)}" text-anchor="middle" dominant-baseline="central" font-family="${card.body}" font-weight="800" font-size="${n(6.5 * u)}" letter-spacing="${n(1 * u)}" fill="#ffffff">YOU ARE HERE</text></g>`);
   }
   // Which hole of how many, and who designed the course
-  parts.push(`<text x="${n(mx)}" y="${n(H - 20 * u)}" font-family="${card.head}" font-weight="700" font-size="${n(9 * u)}" letter-spacing="${n(1.4 * u)}" fill="${soft}">HOLE ${st.label} OF ${doc.holes.length}</text>`);
-  if (doc.designer) parts.push(`<text x="${n(col.w - mx)}" y="${n(H - 20 * u)}" text-anchor="end" font-family="${card.body}" font-weight="600" font-size="${n(7.5 * u)}" letter-spacing="${n(0.8 * u)}" fill="${soft}">DESIGNED BY ${esc(doc.designer.toUpperCase())}</text>`);
+  if (show("holeOf")) parts.push(`<text x="${n(mx)}" y="${n(H - 20 * u)}" font-family="${card.head}" font-weight="700" font-size="${n(9 * u)}" letter-spacing="${n(1.4 * u)}" fill="${soft}">HOLE ${st.label} OF ${doc.holes.length}</text>`);
+  if (doc.designer && show("designer")) parts.push(`<text x="${n(col.w - mx)}" y="${n(H - 20 * u)}" text-anchor="end" font-family="${card.body}" font-weight="600" font-size="${n(7.5 * u)}" letter-spacing="${n(0.8 * u)}" fill="${soft}">DESIGNED BY ${esc(doc.designer.toUpperCase())}</text>`);
   return { svg: wrapSvg(W, H, parts.join("")), width: W, height: H };
 };

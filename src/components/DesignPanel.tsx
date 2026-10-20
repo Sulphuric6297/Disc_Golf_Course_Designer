@@ -5,13 +5,14 @@ import { landscapeOf } from "../lib/landscapes";
 import { autoWalks } from "../lib/course";
 import { holeStats } from "../lib/holeStats";
 import { editWalks } from "../state/actions";
-import { CARD_DEFAULTS } from "../lib/teeSign";
+import { CARD_DEFAULTS, SIGN_PARTS, signOf } from "../lib/teeSign";
+import { holeLabel } from "../lib/course";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { AREA_KINDS } from "../constants";
 import { RESTRICTED } from "../lib/symbols";
 import { StylePicker } from "./LandscapePicker";
 import { useEffect, useRef, useState } from "react";
-import type { MapStyle, PaperSize } from "../types";
+import type { MapStyle, PaperSize, SignSettings } from "../types";
 import { Button, ColorInput, Field, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
 import { PageElementPanel, PageSection } from "./PageEditor";
 import { setAllWalks } from "./Inspector";
@@ -83,6 +84,43 @@ function LogoPicker({ logo }: { logo?: string }) {
       <Button small onClick={() => input.current?.click()}>{logo ? "Change" : "Upload"}</Button>
       {logo && <Button small onClick={() => setStyle({ logo: undefined })}>Remove</Button>}
     </div>
+  );
+}
+
+/** How tee signs look: for all holes, or a hole's own (the one the tee sign preview shows): the
+ * other holes on its map faded, left out or shown, and each part shown or left out. */
+function TeeSignSettings() {
+  const doc = useCourse(s => s.doc);
+  const designHole = useEditor(e => e.designHole);
+  const active = useEditor(e => e.activeHoleId);
+  const holeId = [designHole, active].find(id => id && doc.holes.some(h => h.id === id)) ?? doc.holes[0]?.id ?? null;
+  const hole = doc.holes.find(h => h.id === holeId);
+  const [scope, setScope] = useState<"all" | "hole">("all");
+  const forHole = scope === "hole" && !!hole;
+  // (what shows: a hole's own over the course's, or the course's alone)
+  const eff = forHole ? signOf(doc, hole!.id) : signOf({ style: doc.style, holes: [] }, "");
+  const own = (forHole ? hole!.sign : doc.style.sign) ?? {};
+  const patch = (p: SignSettings, history = true) =>
+    changeDoc(d => (forHole ? { holes: d.holes.map(h => (h.id === hole!.id ? { ...h, sign: { ...h.sign, ...p } } : h)) } : { style: { ...d.style, sign: { ...d.style.sign, ...p } } }), history);
+  const reset = forHole
+    ? <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1 disabled:opacity-40" disabled={!hole!.sign} onClick={() => changeDoc(d => ({ holes: d.holes.map(h => (h.id === hole!.id ? { ...h, sign: undefined } : h)) }))} data-testid="sign-same"><RotateCcw size={12} /> Same as all holes</button>
+    : <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1 disabled:opacity-40" disabled={!doc.style.sign} onClick={() => setStyle({ sign: undefined })}><RotateCcw size={12} /> Reset</button>;
+  if (!doc.holes.length) return null;
+  return (
+    <Section title="Tee signs" testid="sign-settings" right={reset}>
+      {hole && (
+        <div className="mb-2.5">
+          <Segmented label="Tee sign settings for" value={scope} onChange={setScope} options={[{ value: "all", label: "All holes" }, { value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }]} />
+        </div>
+      )}
+      <Field label="Other holes">
+        <Segmented label="Other holes on the sign" value={eff.others} onChange={v => patch({ others: v })} options={[{ value: "faded", label: "Faded" }, { value: "hidden", label: "Hidden" }, { value: "shown", label: "Shown" }]} />
+      </Field>
+      {eff.others === "faded" && <Slider label="How faded" min={0.05} max={0.9} step={0.05} value={eff.fade} onChange={v => patch({ fade: v }, false)} onDone={() => useCourse.getState().commit()} format={v => `${Math.round(v * 100)}%`} />}
+      <div className="grid grid-cols-2 gap-x-3" data-testid="sign-parts">
+        {SIGN_PARTS.map(p => <Toggle key={p.id} label={p.label} checked={eff.show(p.id)} onChange={v => patch({ show: { ...own.show, [p.id]: v } })} />)}
+      </div>
+    </Section>
   );
 }
 
@@ -168,6 +206,7 @@ export function DesignPanel() {
           <Segmented label="Card font" value={s.card?.font ?? CARD_DEFAULTS.font} onChange={v => setStyle({ card: { ...s.card, font: v } })} options={[{ value: "Oswald", label: <span style={{ fontFamily: "Oswald" }}>Oswald</span> }, { value: "Bitter", label: <span style={{ fontFamily: "Bitter" }}>Bitter</span> }, { value: "Inter", label: <span style={{ fontFamily: "Inter" }}>Inter</span> }, { value: "Script", label: <span style={{ fontFamily: "Kaushan Script" }}>Script</span> }]} />
         </Field>
       </Section>
+      <TeeSignSettings />
       <Section title="Paper">
         <Field label="Size">
           <select aria-label="Paper size" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={s.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>

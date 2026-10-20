@@ -124,6 +124,8 @@ export type MapLayers = {
   hillshade: string | null;
   /** Show only this hole's parts (a tee sign); others are faded. */
   focusHole?: string;
+  /** How much the other holes show then (0..1; unset: 0.35). */
+  fade?: number;
   /** Text size multiplier (bigger on posters). */
   textScale: number;
   fontFamily: string;
@@ -157,7 +159,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   const out: string[] = [];
   const defs: string[] = [];
   const focus = layers.focusHole;
-  const dim = (holeId?: string) => (focus && holeId && holeId !== focus ? 0.35 : 1);
+  const dim = (holeId?: string) => (focus && holeId && holeId !== focus ? layers.fade ?? 0.35 : 1);
   const theme = s.theme;
   const photo = theme === "satellite" && !!doc.background;
   const forest = theme === "forest";

@@ -165,6 +165,8 @@ export interface Hole {
   walkOff?: boolean;
   /** This hole's own flyover settings (over the course's). */
   flyover?: Partial<FlyoverSettings>;
+  /** This hole's own tee sign settings (over the course's). */
+  sign?: SignSettings;
   /** Shown name, e.g. "The Gauntlet" (optional). */
   name?: string;
   /** Par set by hand; unset: worked out from the hole's length, elevation and shape. */
@@ -251,6 +253,18 @@ export type MapTheme = "forest" | "illustrated" | "satellite" | "topo" | "minima
 export type BasketMark = "basket" | "badge" | "flag" | "target" | "number";
 export type PaperSize = "letter" | "tabloid" | "18x24" | "24x36" | "36x48" | "a4" | "a3";
 
+/** The parts of a tee sign that can be shown or left out. */
+export type SignPart = "courseName" | "number" | "par" | "lengths" | "elevation" | "notes" | "courseMap" | "nextTee" | "north" | "scale" | "throwLine" | "circle" | "distances" | "holeOf" | "designer" | "legend";
+/** How tee signs look (the course's, and a hole's own over them). */
+export interface SignSettings {
+  /** The other holes on a sign's map: faded (unset), left out, or as clear as its own. */
+  others?: "faded" | "hidden" | "shown";
+  /** How much the other holes show when faded (0..1). */
+  fade?: number;
+  /** Parts shown or left out (unset: as by default). */
+  show?: Partial<Record<SignPart, boolean>>;
+}
+
 /** What is on the course map's page besides the map, each one moved, sized, colored or hidden by
  * hand in the Design step ("map" is the map itself: moved and zoomed on the page). */
 export type PageElementId = "map" | "title" | "holes" | "legend" | "north" | "scale" | "credit";
@@ -320,6 +334,8 @@ export interface MapStyle {
   labelAt?: Record<string, { dx: number; dy: number; hidden?: boolean }>;
   /** How wide every walk to the next tee is, ft (a hole's own walk width wins; unset: 6). */
   walkWidth?: number;
+  /** How tee signs look (a hole's own settings go over these). */
+  sign?: SignSettings;
   /** Tee signs' and hole cards' own look (unset: dark green header, light paper, Oswald). */
   card?: { header?: string; accent?: string; paper?: string; ink?: string; font?: string };
   /** The course's logo (a small picture, as a data URL): on the scorecard. */

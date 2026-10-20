@@ -826,3 +826,31 @@ test("the Design page zooms with the wheel and pans with a press and drag", asyn
   expect(s1.y - s0.y).toBeGreaterThan(50);
   expect((await editorState(page)).designSel).toBeNull();
 });
+
+plain("tee signs: other holes faded, left out or shown; each part shown or left out, for all holes or one hole's own", () => {
+  const doc = sample();
+  const [h1, h2] = doc.holes;
+  const art = { contours: null, hillshade: null };
+  const sign = (id: string, size: "18x12" | "12x18" = "18x12") => renderTeeSign(doc, id, size, art)!.svg;
+  // Other holes faded by default (as much as asked), shown as clear, or left out (their tees gone)
+  const blue = (svg: string) => (svg.match(/<polygon points="[^"]*" fill="#2563eb"/g) ?? []).length;
+  plainExpect(blue(sign(h1.id))).toBe(2);
+  plainExpect(sign(h1.id)).toContain('opacity="0.3"');
+  doc.style.sign = { fade: 0.15 };
+  plainExpect(sign(h1.id)).toContain('opacity="0.15"');
+  doc.style.sign = { others: "shown" };
+  plainExpect(sign(h1.id)).not.toContain('opacity="0.15"');
+  doc.style.sign = { others: "hidden" };
+  plainExpect(blue(sign(h1.id))).toBe(1);
+  // Parts left out for every hole: the par and the course's name
+  doc.style.sign = { show: { par: false, courseName: false } };
+  for (const id of [h1.id, h2.id]) {
+    plainExpect(sign(id)).not.toContain(">PAR ");
+    plainExpect(sign(id)).not.toContain("THE HOLLOW");
+    plainExpect(sign(id, "12x18")).not.toContain(">PAR ");
+  }
+  // One hole's own: the par back on hole 2 only
+  h2.sign = { show: { par: true } };
+  plainExpect(sign(h2.id)).toContain(">PAR ");
+  plainExpect(sign(h1.id)).not.toContain(">PAR ");
+});

@@ -24,7 +24,8 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
   const canopy = useCanopy(doc);
   const relief = useMemo(() => ({ ...relief0, canopy }), [relief0, canopy]);
   const [preview, setPreview] = useState<Preview>("map");
-  const [hole, setHole] = useState<string | null>(null);
+  const hole = useEditor(e => e.designHole);
+  const setHole = (id: string) => useEditor.getState().set({ designHole: id });
   const [signSize, setSignSize] = useState<SignSize>("18x12");
   const [pageSize, setPageSize] = useState<HolePageSize>("letter");
   const [zoom, setZoom] = useState<number | null>(null);
