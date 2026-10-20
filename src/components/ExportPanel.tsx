@@ -1,7 +1,7 @@
 // The Export step: printable maps, tee signs, scorecards and hole sheets, hole-by-hole pages and
-// GPS files, GPS and data files, the parts list, and the share link.
+// GPS files, flyover videos, GPS and data files, the parts list, and the share link.
 import { useState, type ReactNode } from "react";
-import { Box, FileDown, FileJson, Image as ImageIcon, Map as MapIcon, Share2 } from "lucide-react";
+import { Box, Clapperboard, FileDown, FileJson, Image as ImageIcon, Map as MapIcon, Share2 } from "lucide-react";
 import JSZip from "jszip";
 import { PAPER, renderPoster } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
@@ -10,16 +10,18 @@ import { holeGeoJSON, holesCsv, partsCsv, partsList, stakeOutCsv, toGPX, toGeoJS
 import { canvasBlob, pdfFromPages, pngUnder, svgToCanvas } from "../lib/raster";
 import { holeStats } from "../lib/holeStats";
 import { holeNumber } from "../lib/course";
+import { VIDEO_SIZES, VIDEO_HOLD, type VideoResolution } from "../lib/video";
 import { changeDoc, getDoc, useCourse, useEditor } from "../state/course";
 import { download, fileName, saveCourseFile } from "../state/files";
 import { runExport, useExportJob, type JobControl } from "../state/exportJob";
+import { recordVideo, useVideoSettings } from "../state/video";
 import type { CourseDoc, CourseRules, PaperSize } from "../types";
 import { getView } from "./MapViewport";
 import { reliefOf } from "./useRelief";
 import { canopyFor } from "../lib/forest";
 import { setStyle } from "./DesignPanel";
-import { ExportBanner } from "./ExportProgress";
-import { Button, Field, Section } from "./ui";
+import { ExportBanner, ProgressBar } from "./ExportProgress";
+import { Button, Field, Section, Segmented } from "./ui";
 
 const svgBlob = (svg: string) => new Blob([svg], { type: "image/svg+xml" });
 const two = (i: number) => String(i).padStart(2, "0");
@@ -31,6 +33,14 @@ const art = async (d: CourseDoc) => ({ ...reliefOf(d), canopy: await canopyFor(d
 /** Holes with a tee and a basket, in the order of play. */
 const playable = (d: CourseDoc) => d.holes.filter(h => holeStats(d, h).complete);
 
+/** Seconds of video for the holes (the flight lasts its length / 70 ft a second, 6 to 14 s). */
+const videoSeconds = (d: CourseDoc, ids: string[]) =>
+  ids.reduce((t, id) => {
+    const h = d.holes.find(x => x.id === id);
+    return h ? t + Math.min(14, Math.max(6, holeStats(d, h).length / 70)) + VIDEO_HOLD.intro + VIDEO_HOLD.outro : t;
+  }, 0);
+const minSec = (s: number) => (s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s)} s`);
+
 export function ExportPanel() {
   const doc = useCourse(s => s.doc);
   const job = useExportJob(s => s.job);
@@ -38,9 +48,12 @@ export function ExportPanel() {
   const [signSize, setSignSize] = useState<SignSize>("18x12");
   const [pagePick, setPagePick] = useState<string>("all");
   const [pageSize, setPageSize] = useState<HolePageSize>("letter");
+  const [videoPick, setVideoPick] = useState<string>("all");
+  const video = useVideoSettings();
   const geo = !!doc.site.bounds;
   const complete = playable(doc);
   const pageHole = complete.find(h => h.id === pagePick) ?? null;
+  const videoHoles = videoPick === "all" ? complete.map(h => h.id) : complete.some(h => h.id === videoPick) ? [videoPick] : complete.map(h => h.id);
 
   const run = (label: string, fn: (job: JobControl) => Promise<void> | void) => () => void runExport(label, fn);
 
@@ -158,6 +171,7 @@ export function ExportPanel() {
     </div>
   );
   const nothing = !complete.length;
+  const recording = job?.kind === "video" ? job : null;
   return (
     <>
       <ExportBanner />
@@ -212,6 +226,40 @@ export function ExportPanel() {
           )}
         </div>
         {nothing && <p className="text-[11px] text-zinc-500 mt-1.5">Finish a hole (a tee and a basket) to export it.</p>}
+      </Section>
+      <Section title="Flyover video" testid="video-export">
+        <div className="text-[11px] text-zinc-400 mb-2">A flight over each hole from behind the tee to the basket, with its number, par and length on screen. It is made frame by frame, so it plays smoothly however long it takes to make.</div>
+        <Field label="Holes">
+          <select aria-label="Holes to fly over" data-testid="video-holes" className={`${selectCls} w-full`} value={videoHoles.length === 1 && videoPick !== "all" ? videoPick : "all"} onChange={e => setVideoPick(e.target.value)} disabled={nothing}>
+            <option value="all">The whole course, in order{complete.length ? ` (${complete.length} holes)` : ""}</option>
+            {complete.map(h => <option key={h.id} value={h.id}>Hole {holeNumber(doc, h.id)}{h.name ? ` · ${h.name}` : ""}</option>)}
+          </select>
+        </Field>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Size">
+            <select aria-label="Video size" data-testid="video-resolution" className={`${selectCls} w-full`} value={video.resolution} onChange={e => video.set({ resolution: e.target.value as VideoResolution })}>
+              {(Object.keys(VIDEO_SIZES) as VideoResolution[]).map(k => <option key={k} value={k}>{VIDEO_SIZES[k].label}</option>)}
+            </select>
+          </Field>
+          <Field label="Frame rate">
+            <Segmented label="Frame rate" value={video.fps} onChange={v => video.set({ fps: v })} options={[{ value: 30, label: "30 fps" }, { value: 60, label: "60 fps", title: "Smoother; takes twice as long to make" }]} />
+          </Field>
+        </div>
+        {recording ? (
+          <div className="mt-1" data-testid="video-progress-row">
+            <div className="flex items-center justify-between text-xs text-zinc-300 mb-1">
+              <span className="truncate">{recording.label}</span>
+              <span className="tabular-nums">{Math.round((recording.progress ?? 0) * 100)}%</span>
+            </div>
+            <ProgressBar value={recording.progress} testid="video-progress" label="Recording progress" />
+            <div className="mt-2"><Button small onClick={() => recording.cancel?.()} testid="video-cancel">Cancel</Button></div>
+          </div>
+        ) : (
+          <>
+            <Button tone="primary" full onClick={() => void recordVideo(videoHoles)} disabled={busy || nothing} testid="video-record"><Clapperboard size={15} /> Record {videoHoles.length === 1 ? `hole ${holeNumber(doc, videoHoles[0])}` : "the course"}</Button>
+            {!nothing && <p className="text-[11px] text-zinc-500 mt-1.5">About {minSec(videoSeconds(doc, videoHoles))} of video. MP4 (H.264) where the browser can make it, otherwise WebM.</p>}
+          </>
+        )}
       </Section>
       <Section title="GPS and data">
         {!geo && <p className="text-[11px] text-amber-300 mb-2">GPS files need a real site: bring in your park on the Site step.</p>}

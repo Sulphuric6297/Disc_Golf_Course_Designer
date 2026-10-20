@@ -1,15 +1,20 @@
 // What shows over the view from a tee or a flyover: the hole's numbers and the controls.
 import { useMemo } from "react";
-import { ChevronLeft, ChevronRight, Plane, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clapperboard, Plane, X } from "lucide-react";
 import { TEE_LEVELS } from "../constants";
 import { holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
 import { useCourse, useEditor } from "../state/course";
+import { useExportJob } from "../state/exportJob";
+import { recordVideo, useVideoSettings } from "../state/video";
+import { VIDEO_SIZES } from "../lib/video";
 import { ElevationProfile } from "./ElevationProfile";
 
 export function TeeViewHud() {
   const doc = useCourse(s => s.doc);
   const ed = useEditor();
+  const job = useExportJob(s => s.job);
+  const video = useVideoSettings();
   const hole = doc.holes.find(h => h.id === ed.teeView);
   const s = useMemo(() => (hole ? holeStats(doc, hole) : null), [doc, hole]);
   if (!hole || !s) return null;
@@ -38,6 +43,15 @@ export function TeeViewHud() {
         <button className="p-2 rounded-full hover:bg-white/10 text-white" aria-label="Previous hole" title="Previous hole (←)" onClick={() => go(-1)}><ChevronLeft size={18} /></button>
         <button className={`px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 ${ed.flyover ? "bg-orange-500 text-white" : "text-white hover:bg-white/10"}`} onClick={() => ed.set({ flyover: !ed.flyover })} data-testid="hud-flyover"><Plane size={15} /> {ed.flyover ? "Flying…" : "Fly over"}</button>
         <button className="p-2 rounded-full hover:bg-white/10 text-white" aria-label="Next hole" title="Next hole (→)" onClick={() => go(1)}><ChevronRight size={18} /></button>
+        <button
+          className="px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 text-white hover:bg-white/10 disabled:opacity-60 disabled:hover:bg-transparent"
+          onClick={() => void recordVideo([hole.id])}
+          disabled={!!job}
+          title={`Record this hole's flyover as a video (${VIDEO_SIZES[video.resolution].label}, ${video.fps} fps; change it in the Export step)`}
+          data-testid="hud-record"
+        >
+          <Clapperboard size={15} /> {job?.kind === "video" ? `Recording ${Math.round((job.progress ?? 0) * 100)}%` : "Record"}
+        </button>
         <button className="px-3 py-1.5 rounded-full text-sm font-semibold text-white hover:bg-white/10 flex items-center gap-1.5" onClick={() => ed.set({ teeView: null, flyover: false })} data-testid="hud-close"><X size={15} /> Back to map</button>
       </div>
       {!ed.flyover && <div className="absolute bottom-20 left-1/2 -translate-x-1/2 text-xs text-white/80 bg-black/40 rounded px-2 py-1">Drag to look around · scroll to zoom · ← → other holes · Esc back to the map</div>}
