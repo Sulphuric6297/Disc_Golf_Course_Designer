@@ -1864,7 +1864,7 @@ export class CourseView {
       // (from outside the putting circle to behind the next tee: see walkEnds)
       for (const { from, to, a } of autoWalks(doc.course.items, doc.stats, course.holes)) {
         const hole = course.holes.find(h => h.id === a.holeId);
-        const wide = hole?.walkWidth, surface = hole?.walkSurface;
+        const wide = hole?.walkWidth ?? st.walkWidth, surface = hole?.walkSurface;
         put(`walk:${a.holeId}`, JSON.stringify([from, to, hv, wide, surface, painted, st.path]), () => {
           const g = new THREE.Group();
           if (dist(from, to) < 10) return g;

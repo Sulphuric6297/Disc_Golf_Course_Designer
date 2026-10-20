@@ -457,7 +457,8 @@ export const editWalks = (holeId: string | null) => {
       const line = createLine("walk", [0, 1 / 3, 2 / 3, 1].map(t => ({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t })));
       // (as wide and of what it was, on its own)
       const hole = doc.holes.find(h => h.id === a.holeId);
-      return { ...line, ...(hole?.walkWidth ? { width: hole.walkWidth } : {}), ...(hole?.walkSurface ? { surface: hole.walkSurface } : {}) };
+      const wide = hole?.walkWidth ?? doc.style.walkWidth;
+      return { ...line, ...(wide ? { width: wide } : {}), ...(hole?.walkSurface ? { surface: hole.walkSurface } : {}) };
     });
   if (!lines.length) return [];
   changeDoc(d => ({ items: [...d.items, ...lines] }));

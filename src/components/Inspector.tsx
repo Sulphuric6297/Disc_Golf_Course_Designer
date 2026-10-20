@@ -60,12 +60,22 @@ function HoleNumberInput({ holeId, value }: { holeId: string; value: number }) {
   );
 }
 
+/** Every walk to the next tee this wide (holes' own widths let go). */
+export const setAllWalks = (w: number, history = true) =>
+  changeDoc(d => ({
+    style: { ...d.style, walkWidth: w },
+    holes: d.holes.some(h => h.walkWidth !== undefined) ? d.holes.map(h => (h.walkWidth === undefined ? h : { ...h, walkWidth: undefined })) : d.holes,
+    // (walks drawn by hand too)
+    items: d.items.some(i => i.type === "line" && i.kind === "walk") ? d.items.map(i => (i.type === "line" && i.kind === "walk" ? { ...i, width: w } : i)) : d.items
+  }), history);
+
 function HoleInspector({ hole }: { hole: Hole }) {
   const doc = useCourse(s => s.doc);
   const s = useMemo(() => holeStats(doc, hole), [doc, hole]);
   const n = holeNumber(doc, hole.id);
   // The walk on to the next tee, while it is the automatic one
-  const walkNext = useMemo(() => doc.style.nextTee && autoWalks(doc.items, doc.holes.map(h => holeStats(doc, h)), doc.holes).some(w => w.a.holeId === hole.id), [doc, hole.id]);
+  const walkNext = useMemo(() => (doc.style.nextTee ? autoWalks(doc.items, doc.holes.map(h => holeStats(doc, h)), doc.holes).find(w => w.a.holeId === hole.id) ?? null : null), [doc, hole.id]);
+  const nextNo = walkNext ? holeNumber(doc, walkNext.b.holeId) : 0;
   const u = doc.units;
   const tees = holeTees(doc, hole.id);
   const baskets = holeBaskets(doc, hole.id);
@@ -157,11 +167,12 @@ function HoleInspector({ hole }: { hole: Hole }) {
         </Section>
       )}
       {!ro && walkNext && (
-        <Section title={`Walk to hole ${n + 1}`} testid="hole-walk">
-          <Slider label="Width" min={1} max={20} step={0.5} value={hole.walkWidth ?? 6} onChange={v => set({ walkWidth: v })} format={v => fmtDist(v, u)} />
+        <Section title={`Walk to hole ${nextNo}`} testid="hole-walk">
+          <Slider label="Width" min={1} max={20} step={0.5} value={hole.walkWidth ?? doc.style.walkWidth ?? 6} onChange={v => set({ walkWidth: v })} format={v => fmtDist(v, u)} />
+          <Slider label="All walks" min={1} max={20} step={0.5} value={doc.style.walkWidth ?? 6} onChange={v => setAllWalks(v, false)} onDone={() => useCourse.getState().commit()} format={v => fmtDist(v, u)} />
           <SurfacePick value={hole.walkSurface} onChange={v => set({ walkSurface: v })} />
           <div className="flex flex-wrap gap-1.5">
-            <Button small onClick={() => editWalks(hole.id)} testid="edit-walk">Edit the walk to hole {n + 1}</Button>
+            <Button small onClick={() => editWalks(hole.id)} testid="edit-walk">Edit the walk to hole {nextNo}</Button>
             {hole.walkOut && <Button small onClick={() => set({ walkOut: undefined })} testid="walk-out-reset">Start off the green again</Button>}
           </div>
         </Section>

@@ -14,6 +14,8 @@ import { useEffect, useRef, useState } from "react";
 import type { MapStyle, PaperSize } from "../types";
 import { Button, ColorInput, Field, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
 import { PageElementPanel, PageSection } from "./PageEditor";
+import { setAllWalks } from "./Inspector";
+import { fmtDist } from "../lib/units";
 
 export const setStyle = (patch: Partial<MapStyle>, history = true) => changeDoc(d => ({ style: { ...d.style, ...patch } }), history);
 
@@ -185,7 +187,12 @@ export function DesignPanel() {
         <Toggle label="Throw lines" checked={s.throwLines} onChange={v => setStyle({ throwLines: v })} />
         <Toggle label="Distances on the lines" checked={s.distances} onChange={v => setStyle({ distances: v })} />
         <Toggle label="Walks to the next tee" checked={s.nextTee} onChange={v => setStyle({ nextTee: v })} />
-        {s.nextTee && autoWalks(doc.items, doc.holes.map(h => holeStats(doc, h)), doc.holes).length > 0 && <div className="-mt-1 mb-1"><Button small onClick={() => editWalks(null)} testid="edit-walks">Edit the walks</Button></div>}
+        {s.nextTee && (
+          <>
+            <Slider label="Walk width" min={1} max={20} step={0.5} value={s.walkWidth ?? 6} onChange={v => setAllWalks(v, false)} onDone={done} format={v => fmtDist(v, doc.units)} />
+            {autoWalks(doc.items, doc.holes.map(h => holeStats(doc, h)), doc.holes).length > 0 && <div className="-mt-1 mb-1"><Button small onClick={() => editWalks(null)} testid="edit-walks">Edit the walks</Button></div>}
+          </>
+        )}
         <Toggle label="Putting circle (10 m)" checked={s.circle} onChange={v => setStyle({ circle: v })} />
         <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />
         <Toggle label="Hill shading" checked={s.hillshade} onChange={v => setStyle({ hillshade: v })} />

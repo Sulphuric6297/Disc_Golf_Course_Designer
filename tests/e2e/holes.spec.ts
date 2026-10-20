@@ -333,3 +333,22 @@ test("plotting a hole's line by hand: clicks along it (Backspace takes one back)
   await page.getByTestId("plot-cancel").click();
   expect(await turns()).toEqual(before);
 });
+
+test("one width for every walk to the next hole; a hole's own walk wider; all walks again", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
+  await addHole(page, { x: 800, y: 400 }, { x: 900, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.getByTestId("hole-row").first().click();
+  const walk = page.getByTestId("hole-walk");
+  await expect(walk).toBeVisible();
+  await expect(walk).toContainText("Walk to hole 2");
+  await walk.getByRole("slider", { name: "All walks" }).fill("12");
+  await expect.poll(async () => (await course(page)).style.walkWidth).toBe(12);
+  await walk.getByRole("slider", { name: "Width", exact: true }).fill("16");
+  await expect.poll(async () => (await course(page)).holes[0].walkWidth).toBe(16);
+  // All walks again: the hole's own width lets go
+  await walk.getByRole("slider", { name: "All walks" }).fill("8");
+  await expect.poll(async () => (await course(page)).style.walkWidth).toBe(8);
+  expect((await course(page)).holes[0].walkWidth).toBeUndefined();
+});

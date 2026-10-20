@@ -401,7 +401,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       // (worn wide, as on painted course maps: a walk you can see from across the map; or as wide as
       // set, never too thin to see)
       const hole = doc.holes.find(h => h.id === a.holeId);
-      const tw = hole?.walkWidth ? Math.max(hole.walkWidth, ftOf(2)) : Math.max(6, ftOf(6));
+      const ww = hole?.walkWidth ?? s.walkWidth;
+      const tw = ww ? Math.max(ww, ftOf(2)) : Math.max(6, ftOf(6));
       const pts = smoothPath(meander([from, to], Math.min(d * 0.07, 30), Math.max(70, d * 0.55), idSeed(a.holeId + b.holeId), 0), 3);
       walkLine(surfaceCh(hole?.walkSurface), pts, tw);
       line(CLEAR, pts, tw + (crownR * 2.4) / k);

@@ -312,6 +312,8 @@ export interface MapStyle {
   /** Labels on the course map dragged on the Design page ("num:HOLE", "dist:HOLE", "name:ITEM",
    * "tag:ITEM", "text:ITEM"): moved by (dx, dy) feet on the ground, or hidden. */
   labelAt?: Record<string, { dx: number; dy: number; hidden?: boolean }>;
+  /** How wide every walk to the next tee is, ft (a hole's own walk width wins; unset: 6). */
+  walkWidth?: number;
   /** Tee signs' and hole cards' own look (unset: dark green header, light paper, Oswald). */
   card?: { header?: string; accent?: string; paper?: string; ink?: string; font?: string };
   /** The course's logo (a small picture, as a data URL): on the scorecard. */
