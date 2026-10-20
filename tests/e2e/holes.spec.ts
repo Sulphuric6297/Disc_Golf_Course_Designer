@@ -138,6 +138,8 @@ test("another tee and pin for a hole, and layouts pick between them", async ({ p
   expect(doc.items.filter((i: any) => i.type === "basket").map((b: any) => b.position).sort()).toEqual(["A", "B"]);
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("hole-row")).toContainText("400 ft");
+  // (one layout: no switcher above the holes)
+  await expect(page.getByRole("radiogroup", { name: "Active layout" })).toHaveCount(0);
   // A red layout to pin B
   await page.getByRole("button", { name: "Edit layouts" }).click();
   await page.getByRole("button", { name: "Add a layout" }).click();
@@ -147,6 +149,9 @@ test("another tee and pin for a hole, and layouts pick between them", async ({ p
   await last.getByRole("radiogroup", { name: "Layout pins" }).getByRole("radio", { name: "Pin B" }).click();
   // Red tee at 500 to pin B at (850, 650): about 354 ft
   await expect(page.getByTestId("hole-row")).toContainText("354 ft");
+  // Two layouts: the switcher stays once the editor is closed
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByRole("radiogroup", { name: "Active layout" })).toBeVisible();
 });
 
 test("hole numbers typed in (any number, others keep theirs); deleted with undo", async ({ page }) => {

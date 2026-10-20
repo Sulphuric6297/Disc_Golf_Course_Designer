@@ -107,13 +107,12 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
   );
 }
 
-function LayoutEditor() {
+function LayoutEditor({ open, setOpen }: { open: boolean; setOpen: (f: (o: boolean) => boolean) => void }) {
   const doc = useCourse(s => s.doc);
-  const [open, setOpen] = useState(false);
   const setLayouts = (layouts: Layout[]) => changeDoc(() => ({ layouts }));
   return (
     <Section title="Layout" right={<button className="text-xs text-orange-300 hover:text-orange-200" onClick={() => setOpen(o => !o)}>{open ? "Done" : "Edit layouts"}</button>}>
-      <Segmented label="Active layout" value={doc.activeLayout} onChange={v => changeDoc(() => ({ activeLayout: v }))} options={doc.layouts.map(l => ({ value: l.id, label: <span className="flex items-center gap-1 justify-center"><span className="w-2 h-2 rounded-full" style={{ background: TEE_LEVELS[l.tee].color }} />{l.name}</span> }))} />
+      {doc.layouts.length > 1 && <Segmented label="Active layout" value={doc.activeLayout} onChange={v => changeDoc(() => ({ activeLayout: v }))} options={doc.layouts.map(l => ({ value: l.id, label: <span className="flex items-center gap-1 justify-center"><span className="w-2 h-2 rounded-full" style={{ background: TEE_LEVELS[l.tee].color }} />{l.name}</span> }))} />}
       {open && (
         <div className="mt-2 space-y-2" data-testid="layout-editor">
           {doc.layouts.map(l => (
@@ -146,13 +145,16 @@ function HolesStep() {
   // (a hole with two numbers counts twice, as on the scorecard)
   const played = doc.holes.reduce((n, h) => n + playsOf(doc, h.id), 0);
   const u = doc.units;
+  // One layout: no switcher above the list, its editor a link in the list's header
+  const [layoutsOpen, setLayoutsOpen] = useState(false);
+  const oneLayout = doc.layouts.length < 2 && !layoutsOpen;
   return (
     <>
       <Section>
         <ToolCard icon={<Route size={18} />} title="New hole (H)" active={ed.tool === "add-hole"} onClick={() => ed.set({ tool: "add-hole" })} testid="new-hole" />
       </Section>
-      <LayoutEditor />
-      <Section title={`${played} hole${played === 1 ? "" : "s"}`} testid="hole-list">
+      {!oneLayout && <LayoutEditor open={layoutsOpen} setOpen={setLayoutsOpen} />}
+      <Section title={`${played} hole${played === 1 ? "" : "s"}`} testid="hole-list" right={oneLayout ? <button className="text-xs text-orange-300 hover:text-orange-200 touch:py-2" onClick={() => setLayoutsOpen(true)}>Edit layouts</button> : undefined}>
         {doc.holes.length === 0 ? (
           <p className="text-xs text-zinc-400">No holes yet.</p>
         ) : (
