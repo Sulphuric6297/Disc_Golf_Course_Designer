@@ -114,8 +114,9 @@ been seen working in the browser.
 - [x] **Water looks better, not plain**: painted ponds with light shallows, a bright rim, faint
   water lines and a deep middle; 3D water mirroring the sky and the treeline, with small waves.
 - [ ] **Mobile performs perfectly** (researched): the engine side is done and measured (never
-  freezes while the map paints, lighter 3D on phones, quality that adapts, the hidden map view
-  rests); the phone layout's own (the sheet on the GPU, no frosted glass, taps answered in
+  freezes while the map paints, lighter 3D on phones, quality that adapts within seconds however
+  slow the phone, the hidden map view rests, nothing drawn while the map sits still, a flyover
+  recording never waits on the screen's breeze); the phone layout's own (the sheet on the GPU, no frosted glass, taps answered in
   under 50 ms) is in "Phones and tablets" below. Still to check on a real phone.
 
 ## Phones and tablets
