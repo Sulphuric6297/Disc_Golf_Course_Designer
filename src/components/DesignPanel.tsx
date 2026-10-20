@@ -1,5 +1,6 @@
 // The Design step's controls: how the printed map looks (its style, colors, title block, what shows).
 import { ArrowRight, RotateCcw } from "lucide-react";
+import { ApplyToHoles } from "./ApplyToHoles";
 import { BASKET_MARKS, PAPER, THEME_COLORS, basketMark, bestRotation } from "../lib/mapSvg";
 import { landscapeOf } from "../lib/landscapes";
 import { autoWalks } from "../lib/course";
@@ -103,8 +104,10 @@ function TeeSignSettings() {
   const patch = (p: SignSettings, history = true) =>
     changeDoc(d => (forHole ? { holes: d.holes.map(h => (h.id === hole!.id ? { ...h, sign: { ...h.sign, ...p } } : h)) } : { style: { ...d.style, sign: { ...d.style.sign, ...p } } }), history);
   const reset = forHole
-    ? <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1 disabled:opacity-40" disabled={!hole!.sign} onClick={() => changeDoc(d => ({ holes: d.holes.map(h => (h.id === hole!.id ? { ...h, sign: undefined } : h)) }))} data-testid="sign-same"><RotateCcw size={12} /> Same as all holes</button>
+    ? null
     : <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1 disabled:opacity-40" disabled={!doc.style.sign} onClick={() => setStyle({ sign: undefined })}><RotateCcw size={12} /> Reset</button>;
+  // (from a hole: its sign settings to the holes picked; for all holes: the picked holes follow them)
+  const applyTo = (ids: string[]) => changeDoc(d => ({ holes: d.holes.map(h => (ids.includes(h.id) ? { ...h, sign: forHole && hole!.sign ? JSON.parse(JSON.stringify(hole!.sign)) : undefined } : h)) }));
   if (!doc.holes.length) return null;
   return (
     <Section title="Tee signs" testid="sign-settings" right={reset}>
@@ -119,6 +122,9 @@ function TeeSignSettings() {
       {eff.others === "faded" && <Slider label="How faded" min={0.05} max={0.9} step={0.05} value={eff.fade} onChange={v => patch({ fade: v }, false)} onDone={() => useCourse.getState().commit()} format={v => `${Math.round(v * 100)}%`} />}
       <div className="grid grid-cols-2 gap-x-3" data-testid="sign-parts">
         {SIGN_PARTS.map(p => <Toggle key={p.id} label={p.label} checked={eff.show(p.id)} onChange={v => patch({ show: { ...own.show, [p.id]: v } })} />)}
+      </div>
+      <div className="mt-2">
+        <ApplyToHoles fromId={forHole ? hole!.id : undefined} apply={applyTo} testid="sign-apply" />
       </div>
     </Section>
   );

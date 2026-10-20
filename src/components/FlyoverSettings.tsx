@@ -9,6 +9,7 @@ import { fmtDist } from "../lib/units";
 import { changeDoc, updateHole, useCourse, useEditor } from "../state/course";
 import type { FlyKey, FlyoverSettings, FlyShow, Hole } from "../types";
 import { getView } from "./MapViewport";
+import { ApplyToHoles } from "./ApplyToHoles";
 import { Button, NumberInput, Segmented, Slider, Toggle } from "./ui";
 
 /** What a flyover can show, in the order the switches are listed. */
@@ -86,11 +87,15 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { ho
               <Toggle key={k} label={label} checked={f[k] && (k !== "discFlight" || doc.style.discFlight !== false)} onChange={v => showPart(k, v)} />
             ))}
           </div>
-          {forHole ? (
-            <Button small onClick={() => updateHole(hole!.id, { flyover: undefined })} disabled={!hole!.flyover} testid="flyover-same">Same as all holes</Button>
-          ) : (
-            <Button small onClick={() => changeDoc(() => ({ flyover: undefined }))} disabled={!doc.flyover} testid="flyover-defaults">Default flight</Button>
-          )}
+          {/* (from a hole: its settings to the holes picked; for all holes: the picked holes follow them) */}
+          <div className="flex flex-wrap items-start gap-2">
+            <ApplyToHoles
+              fromId={forHole ? hole!.id : undefined}
+              testid="flyover-apply"
+              apply={ids => changeDoc(d => ({ holes: d.holes.map(h => (ids.includes(h.id) ? { ...h, flyover: forHole && hole!.flyover ? { ...hole!.flyover } : undefined } : h)) }))}
+            />
+            {!forHole && <Button small onClick={() => changeDoc(() => ({ flyover: undefined }))} disabled={!doc.flyover} testid="flyover-defaults">Default flight</Button>}
+          </div>
         </>
       )}
     </div>

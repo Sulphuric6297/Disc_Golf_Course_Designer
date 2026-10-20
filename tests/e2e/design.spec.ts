@@ -910,3 +910,28 @@ test("while the Design preview paints, a bar shows how far along it is, gone whe
   await expect.poll(async () => Number((await bar.getAttribute("aria-valuenow").catch(() => null)) ?? 100), { timeout: 90_000 }).toBeGreaterThan(first);
   await expect(bar).toBeHidden({ timeout: 150_000 });
 });
+
+test("tee sign settings: one hole's own given to the holes picked (Apply to holes), and back to the settings for all holes", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 500 }, { x: 700, y: 500 });
+  await addHole(page, { x: 300, y: 700 }, { x: 700, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "5 Design" }).click();
+  const panel = page.getByTestId("sign-settings");
+  await panel.getByRole("radio", { name: /^Hole / }).click();
+  await panel.getByRole("radio", { name: "Hidden" }).click();
+  const signs = async () => (await course(page)).holes.map((h: any) => h.sign?.others);
+  await expect.poll(signs).toContain("hidden");
+  const own = (await signs()).indexOf("hidden");
+  await panel.getByTestId("sign-apply").getByRole("button", { name: "Apply to holes…" }).click();
+  await page.getByTestId("apply-holes").getByRole("checkbox", { name: "All holes" }).check();
+  await page.getByTestId("apply-holes").getByRole("button", { name: "Apply", exact: true }).click();
+  await expect.poll(signs).toEqual(["hidden", "hidden"]);
+  // From All holes: the picked hole follows them again
+  await panel.getByRole("radio", { name: "All holes" }).click();
+  await panel.getByTestId("sign-apply").getByRole("button", { name: "Apply to holes…" }).click();
+  await page.getByTestId("apply-holes").getByRole("button", { name: own === 0 ? "Hole 2" : "Hole 1" }).click();
+  await page.getByTestId("apply-holes").getByRole("button", { name: "Apply", exact: true }).click();
+  await expect.poll(async () => (await course(page)).holes[own === 0 ? 1 : 0].sign).toBeUndefined();
+  expect((await course(page)).holes[own].sign?.others).toBe("hidden");
+});

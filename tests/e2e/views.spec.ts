@@ -189,7 +189,7 @@ test("flyover settings: height, speed and field of view change the flight, one u
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).flyover?.fov).toBeUndefined();
   expect((await course(page)).flyover?.height).toBe(250);
-  // This hole's own: lower than the rest, kept for it only; Same as all holes again
+  // This hole's own: lower than the rest, kept for it only; back to the settings for all holes
   await page.getByTestId("hole-row").first().click();
   await page.getByTestId("tee-view").click();
   await page.getByTestId("hud-camera").click();
@@ -199,7 +199,11 @@ test("flyover settings: height, speed and field of view change the flight, one u
   await expect.poll(async () => (await course(page)).holes[0].flyover?.height).toBe(10);
   expect((await course(page)).flyover?.height).toBe(250);
   expect((await flight()).alt).toBeLessThan(after.alt - 150);
-  await page.getByTestId("flyover-same").click();
+  // (from All holes: Apply to holes, hole 1 picked)
+  await page.getByTestId("flyover-settings").getByRole("radio", { name: "All holes" }).click();
+  await page.getByTestId("flyover-apply").getByRole("button", { name: "Apply to holes…" }).click();
+  await page.getByTestId("apply-holes").getByRole("button", { name: "Hole 1" }).click();
+  await page.getByTestId("apply-holes").getByRole("button", { name: "Apply", exact: true }).click();
   await expect.poll(async () => (await course(page)).holes[0].flyover).toBeUndefined();
 });
 
@@ -232,6 +236,14 @@ test("flyover on-screen switches: off for all holes, back on for one; the disc f
   await own("Distance to the pin").check();
   await expect.poll(async () => (await course(page)).holes[0].flyover?.pinDistance).toBe(true);
   expect((await course(page)).flyover?.pinDistance).toBe(false);
+  // Hole 1's own settings given to hole 2 (Apply to holes: All picks every other hole)
+  const apply = page.getByTestId("hole-flight").getByTestId("flyover-apply");
+  await apply.getByRole("button", { name: "Apply to holes…" }).click();
+  await page.getByTestId("apply-holes").getByRole("checkbox", { name: "All holes" }).check();
+  await expect(page.getByTestId("apply-holes").getByRole("button", { name: "Hole 2" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("apply-holes").getByRole("button", { name: "Apply", exact: true }).click();
+  await expect.poll(async () => (await course(page)).holes[1].flyover?.pinDistance).toBe(true);
+  await expect(page.getByTestId("apply-holes")).toHaveCount(0);
   // All holes from the hole's own panel too: the disc's flight back on for every hole
   await page.getByTestId("hole-flight").getByRole("radio", { name: "All holes" }).click();
   await own("Disc flight").check();
