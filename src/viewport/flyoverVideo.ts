@@ -321,7 +321,7 @@ export async function recordFlights(src: FlightFrames, doc: CourseDoc, holeIds: 
   let sink: Sink | null = null;
   try {
     const holes = holeIds.map(id => ({ id, dur: src.duration(id) })).filter(x => x.dur > 0);
-    if (!holes.length) throw new Error("Nothing to fly over yet: a hole needs a tee and a basket.");
+    if (!holes.length) throw new Error("Nothing to fly over yet.");
     if (width % 2 || height % 2) throw new Error("A video's width and height must be even.");
     const titles = holes.map(x => holeTitle(doc, x.id));
     const plan = videoTimeline(holes.map(x => x.dur), fps);
@@ -336,7 +336,7 @@ export async function recordFlights(src: FlightFrames, doc: CourseDoc, holeIds: 
     }
     const image = g.createImageData(width, height);
     sink = (await webCodecsSink(width, height, fps)) ?? recorderSink(canvas, width, height, fps);
-    if (!sink) throw new Error("This browser can't make videos. Try a recent Chrome, Edge, Firefox or Safari.");
+    if (!sink) throw new Error("This browser can't make videos.");
     let info: FrameInfo | null = null;
     let breath = performance.now();
     for (let i = 0; i < plan.length; i++) {

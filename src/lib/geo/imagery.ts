@@ -183,7 +183,7 @@ export const fetchMapImagery = async (
   }
   const mosaic = await loadTileMosaic(bounds, zoom, MAP_IMAGERY_MAX_TILES, config.url);
   if (!mosaic.loadedAny) {
-    throw new Error(`Couldn't download ${config.label.toLowerCase()} imagery. Check your internet connection and try again.`);
+    throw new Error(`Couldn't download ${config.label.toLowerCase()} imagery.`);
   }
   const nw = mosaic.toMosaic(bounds.north, bounds.west);
   const se = mosaic.toMosaic(bounds.south, bounds.east);

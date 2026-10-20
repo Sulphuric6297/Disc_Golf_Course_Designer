@@ -149,5 +149,5 @@ export const resolveSiteLocation = async (
       console.info("Geocoder unavailable, trying the next one", err);
     }
   }
-  throw new Error("Couldn't find that place. Try adding the town, pick a suggestion, or just drag the map to the park.");
+  throw new Error("Couldn't find that place.");
 };

@@ -29,9 +29,9 @@ export const TOOLS: { mode: ToolMode; key: string; label: string; short: string;
 
 const HINTS: Partial<Record<ToolMode, string>> = {
   "add-hole": "Click where the tee goes, then where the basket goes. Keep going for the next hole · Esc when done",
-  "add-tee": "Click to add another tee (another color) to the selected hole",
+  "add-tee": "Click to add another tee to the selected hole",
   "add-basket": "Click to add another pin position (B, C…) to the selected hole",
-  "add-mando": "Click beside the hole's line where the post or tree is: it faces down the hole, and the disc passes on the line's side",
+  "add-mando": "Click beside the hole's line where the post or tree is",
   "add-dropzone": "Click to place a drop zone",
   "draw-area": "Click the corners · double-click or Enter to finish · Backspace removes the last point · Esc cancels",
   "draw-line": "Click along the line · double-click or Enter to finish · Backspace removes the last point · Esc cancels",
@@ -46,9 +46,9 @@ const HINTS: Partial<Record<ToolMode, string>> = {
 const TOUCH_HINTS: Partial<Record<ToolMode, string>> = {
   select: "Drag to pan · pinch to zoom · two fingers to turn and tilt · hold on a thing for its menu",
   "add-hole": "Tap where the tee goes, then where the basket goes. Keep going for the next hole",
-  "add-tee": "Tap to add another tee (another color) to the selected hole",
+  "add-tee": "Tap to add another tee to the selected hole",
   "add-basket": "Tap to add another pin position (B, C…) to the selected hole",
-  "add-mando": "Tap beside the hole's line where the post or tree is: the disc passes on the line's side",
+  "add-mando": "Tap beside the hole's line where the post or tree is",
   "add-dropzone": "Tap to place a drop zone",
   "draw-area": "Tap the corners, then Done (or tap the first corner again)",
   "draw-line": "Tap along the line, then Done",
@@ -147,7 +147,7 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
       case "add-mando":
         return [
           <Chip key="single" active={ed.mandoKind === "single"} testid="mando-kind-single" onClick={() => set({ mandoKind: "single" })}>One post</Chip>,
-          <Chip key="gate" active={ed.mandoKind === "gate"} testid="mando-kind-gate" onClick={() => set({ mandoKind: "gate" })}>Gate: pass between two</Chip>
+          <Chip key="gate" active={ed.mandoKind === "gate"} testid="mando-kind-gate" onClick={() => set({ mandoKind: "gate" })}>Gate</Chip>
         ];
       case "add-tree":
         return (["deciduous", "conifer", "palm", "bush"] as TreeKind[]).map(k => <Chip key={k} active={ed.treeKind === k} onClick={() => set({ treeKind: k })}>{k === "deciduous" ? "Leafy tree" : k === "conifer" ? "Pine" : k === "palm" ? "Palm" : "Bush"}</Chip>);
@@ -163,7 +163,7 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
   const shape = lineDrawn && (ed.drawShape === "box" || ed.drawShape === "circle") ? "freehand" : ed.drawShape;
   if (touch) {
     return drawing && shape !== "points" ? TOUCH_SHAPE_HINTS[shape]
-      : ed.tool === "add-mando" && ed.mandoKind === "gate" ? "Tap on the hole's line where the gate is: two posts across it, the disc passes between"
+      : ed.tool === "add-mando" && ed.mandoKind === "gate" ? "Tap on the hole's line where the gate is"
       : ed.tool === "draw-structure" && ed.structureKind === "bridge" ? "Tap one bank, then the other, then Done"
       : ed.tool === "draw-structure" && !lineDrawn ? "Tap the corners, then Done"
       : ed.tool === "select" && ed.dragSelect ? "Drag a box around things · tap to add or take one out · two fingers move the map"
@@ -171,7 +171,7 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
   }
   return ed.tool === "select" ? (ed.dragSelect ? "Drag a box around things · Shift+click adds or takes one out · right-drag to turn and tilt" : "Drag to pan · Shift+drag to select · scroll or pinch to zoom · right-drag or Ctrl+drag to turn and tilt")
     : drawing && shape !== "points" ? SHAPE_HINTS[shape]
-    : ed.tool === "add-mando" && ed.mandoKind === "gate" ? "Click on the hole's line where the gate is: two posts across it, the disc passes between"
+    : ed.tool === "add-mando" && ed.mandoKind === "gate" ? "Click on the hole's line where the gate is"
     : ed.tool === "draw-structure" && ed.structureKind === "bridge" ? "Click one bank, then double-click the other (or Enter) · Backspace removes the last point · Esc cancels"
     : ed.tool === "draw-structure" && !lineDrawn ? "Click the corners · double-click or Enter to finish · Esc cancels"
     : HINTS[ed.tool];

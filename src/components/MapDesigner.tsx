@@ -190,7 +190,7 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
           />
         </div>
       </div>
-      {doc.holes.length === 0 && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="bg-zinc-900/90 rounded-xl px-4 py-3 text-sm text-zinc-200">Add holes on the Holes step to see them here.</div></div>}
+      {doc.holes.length === 0 && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="bg-zinc-900/90 rounded-xl px-4 py-3 text-sm text-zinc-200">No holes yet.</div></div>}
     </div>
   );
 }

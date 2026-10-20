@@ -89,7 +89,7 @@ export function DesignPanel() {
   const ro = useEditor(e => e.viewOnly);
   // Color pickers change the map live while dragging; the change is one undo step when it ends
   const done = () => useCourse.getState().commit();
-  if (ro) return <Section><p className="text-sm text-zinc-400">This is how the course map prints. Make a copy to change its look.</p></Section>;
+  if (ro) return null;
   return (
     <>
       <Section title="Style" testid="themes">

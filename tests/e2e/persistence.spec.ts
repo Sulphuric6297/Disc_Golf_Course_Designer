@@ -23,7 +23,8 @@ test("New keeps the old course under Recent courses, with Undo; it can be reopen
   await page.getByTestId("file-menu").click();
   await page.getByRole("menuitem", { name: "New course" }).click();
   await expect.poll(async () => (await course(page)).holes.length).toBe(0);
-  await expect(page.getByText(/"First Course" is under Open/)).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Started a new course." })).toBeVisible();
+  await expect(page.getByText(/is under Open/)).toHaveCount(0);
   await page.getByTestId("file-menu").click();
   await expect(page.getByTestId("recent-course")).toContainText("First Course");
   await page.getByTestId("recent-course").getByRole("button", { name: /^First Course/ }).click();

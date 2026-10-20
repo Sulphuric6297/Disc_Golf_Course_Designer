@@ -55,7 +55,7 @@ export function Header({ onShare, onHelp }: { onShare: () => void; onHelp: () =>
               <button className={item} role="menuitem" onClick={() => { setMenu(false); saveCourseFile(); }}><Save size={15} /> Save as a file</button>
               <div className="border-t border-zinc-800 my-1" />
               <div className="px-3 py-1 text-[10px] uppercase tracking-wider font-bold text-zinc-500">Recent courses</div>
-              {recent.length === 0 && <div className="px-3 py-1.5 text-xs text-zinc-500">None yet. Starting a new course keeps this one here.</div>}
+              {recent.length === 0 && <div className="px-3 py-1.5 text-xs text-zinc-500">None yet.</div>}
               {recent.map(r => (
                 <div key={r.id} className="flex items-center hover:bg-zinc-800" data-testid="recent-course">
                   <button className="flex-1 text-left px-3 py-1.5 text-sm text-zinc-200" onClick={() => { setMenu(false); void openRecent(r.id); }}>

@@ -180,7 +180,7 @@ export const reframeDesign = (design: { holes: Hole[]; items: CourseItem[] }, fr
 };
 
 /** Said when OpenStreetMap couldn't be reached. */
-export const OSM_UNREACHABLE = "Couldn't reach OpenStreetMap (its servers are busy), so paths, roads and water weren't brought in.";
+export const OSM_UNREACHABLE = "Couldn't reach OpenStreetMap: paths, roads and water weren't brought in.";
 
 export const importSite = async (selection: SiteSelection, opts: ImportOptions): Promise<ImportedSite> => {
   const location = selection.center;
@@ -223,10 +223,9 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   let mapped: CourseItem[] = [];
   let osmFailed = false;
   if (opts.osm) {
-    const ask = "Looking up paths, water and roads on OpenStreetMap…";
-    opts.onStatus(ask);
+    opts.onStatus("Looking up paths, water and roads on OpenStreetMap…");
     try {
-      const found = await osmItems(bounds, width, height, i => opts.onStatus(i ? `${ask} (its main server is busy: asking another)` : ask));
+      const found = await osmItems(bounds, width, height);
       mapped = found.items;
       notes.push(found.summary ? `From OpenStreetMap: ${found.summary}.` : "OpenStreetMap has no paths, roads or water mapped here.");
     } catch (err) {

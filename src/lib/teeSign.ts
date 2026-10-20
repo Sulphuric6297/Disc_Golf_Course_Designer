@@ -49,14 +49,14 @@ export const autoRules = (doc: CourseDoc, holeId: string) => {
   const near = (a: AreaItem) => (!a.holeId || a.holeId === holeId) && (a.points.some(p => pointInPolygon(p, fairway)) || fairway.some(p => pointInPolygon(p, a.points)));
   const areas = doc.items.filter(i => i.type === "area") as AreaItem[];
   const obLine = doc.items.some(i => i.type === "line" && i.kind === "ob" && (!i.holeId || i.holeId === holeId) && i.points.some(p => pointInPolygon(p, fairway)));
-  if (areas.some(a => a.kind === "ob" && near(a)) || obLine) out.push("OB is marked in red.");
+  if (areas.some(a => a.kind === "ob" && near(a)) || obLine) out.push("OB in play.");
   if (areas.some(a => a.kind === "water" && near(a))) out.push("Water is OB.");
-  if (areas.some(a => a.kind === "hazard" && near(a))) out.push("Hazard: play it where it lies, plus one throw.");
+  if (areas.some(a => a.kind === "hazard" && near(a))) out.push("Hazard in play.");
   const mandos = doc.items.filter(i => i.type === "mando" && i.holeId === holeId);
   const dz = doc.items.filter(i => i.type === "dropzone" && i.holeId === holeId);
-  if (mandos.length) out.push(mandos.length === 1 ? `Mando: the disc must pass ${(mandos[0] as { side: string }).side} of the marked post.` : `${mandos.length} mandos on this hole: pass on the side of each arrow.`);
-  if (dz.length) out.push(`Drop zone: play from the DZ after a missed mando${s.obInPlay ? " or OB" : ""}.`);
-  if (s.obNearBasket) out.push("OB within 10 m of the basket: putt with care.");
+  if (mandos.length) out.push(mandos.length === 1 ? `Mando: pass ${(mandos[0] as { side: string }).side}.` : `${mandos.length} mandos.`);
+  if (dz.length) out.push(`Drop zone for a missed mando${s.obInPlay ? " or OB" : ""}.`);
+  if (s.obNearBasket) out.push("OB within 10 m of the basket.");
   return out;
 };
 

@@ -281,7 +281,7 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
       }
       const dBasket = distanceToPath(basket, la);
       if (dBasket < gapA * 0.8 && dist(basket, la[0]) > 30) {
-        issues.push({ level: "warning", text: `${n(b)}'s basket is ${Math.round(dBasket)} ft from ${n(a)}'s throw line: players putting there are in range.`, holes: [a.holeId, b.holeId], at: basket });
+        issues.push({ level: "warning", text: `${n(b)}'s basket is ${Math.round(dBasket)} ft from ${n(a)}'s throw line.`, holes: [a.holeId, b.holeId], at: basket });
       }
     }
     // Roads, paths, parking and out-of-play areas in the line of fire
@@ -301,7 +301,7 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
     const a = stats[i], b = stats[i + 1];
     if (!a.complete || !b.complete) continue;
     const d = dist(a.line[a.line.length - 1], b.line[0]);
-    if (d > 400) issues.push({ level: "info", text: `Long walk from ${n(a)}'s basket to ${n(b)}'s tee: ${Math.round(d)} ft. Add a next-tee sign.`, holes: [a.holeId, b.holeId], at: b.line[0] });
+    if (d > 400) issues.push({ level: "info", text: `Long walk from ${n(a)}'s basket to ${n(b)}'s tee: ${Math.round(d)} ft.`, holes: [a.holeId, b.holeId], at: b.line[0] });
   }
   // Holes not finished
   stats.filter(s => !s.complete).forEach(s => issues.push({ level: "info", text: `Hole ${s.number} needs ${s.teeId ? "a basket" : "a tee"}.`, holes: [s.holeId], at: s.line[0] ?? { x: 0, y: 0 } }));
@@ -321,7 +321,7 @@ export const designChecks = (doc: CourseDoc, stats: HoleStats[]): SafetyIssue[] 
   for (const tee of tees) {
     const num = holeNumber(doc, tee.holeId);
     if (tee.padWidth < MIN_PAD.width || tee.padLength < MIN_PAD.length) {
-      issues.push({ level: "warning", text: `Hole ${num} ${TEE_LEVELS[tee.level].label.toLowerCase()} tee pad is ${tee.padWidth} x ${tee.padLength} ft; the PDGA asks for at least ${MIN_PAD.width} x ${MIN_PAD.length} ft.`, holes: [tee.holeId], at: tee });
+      issues.push({ level: "warning", text: `Hole ${num} ${TEE_LEVELS[tee.level].label.toLowerCase()} tee pad is ${tee.padWidth} x ${tee.padLength} ft (at least ${MIN_PAD.width} x ${MIN_PAD.length} ft).`, holes: [tee.holeId], at: tee });
     }
     // Trees within 20 ft in front of the pad (in a 60° wedge down the hole)
     const aim = (teeAim(doc, tee) * Math.PI) / 180;
@@ -347,7 +347,7 @@ export const designChecks = (doc: CourseDoc, stats: HoleStats[]): SafetyIssue[] 
       if (!shortest || !basket) continue;
       const line = smoothPath(throwLine(hole, shortest, basket), 8);
       if (water.some(w => lengthInside(line, w.points, 3) > 6)) {
-        issues.push({ level: "warning", text: `Hole ${holeNumber(doc, hole.id)}: the shortest tee throws over water. Give beginners a way around (PDGA best practice).`, holes: [hole.id], at: shortest });
+        issues.push({ level: "warning", text: `Hole ${holeNumber(doc, hole.id)}: the shortest tee throws over water.`, holes: [hole.id], at: shortest });
       }
     }
   }
@@ -359,7 +359,7 @@ export const designChecks = (doc: CourseDoc, stats: HoleStats[]): SafetyIssue[] 
     const total = done.reduce((t, x) => t + x.length, 0);
     const k = done.length / 18;
     if (total < lo * k || total > hi * k) {
-      issues.push({ level: "info", text: `${done.length} holes total ${Math.round(total).toLocaleString()} ft; ${TEE_LEVELS[level].label} courses usually run ${Math.round(lo * k).toLocaleString()}–${Math.round(hi * k).toLocaleString()} ft for that many holes.`, holes: [], at: done[0].line[0] });
+      issues.push({ level: "info", text: `${done.length} holes total ${Math.round(total).toLocaleString()} ft (${TEE_LEVELS[level].label}: ${Math.round(lo * k).toLocaleString()}–${Math.round(hi * k).toLocaleString()} ft).`, holes: [], at: done[0].line[0] });
     }
   }
   // Start and finish near parking
@@ -371,8 +371,8 @@ export const designChecks = (doc: CourseDoc, stats: HoleStats[]): SafetyIssue[] 
     const first = done[0].line[0];
     const last = done[done.length - 1].line[done[done.length - 1].line.length - 1];
     const near = (p: P) => Math.min(...parking.map(q => dist(p, q)));
-    if (near(first) > 500) issues.push({ level: "info", text: `Hole ${done[0].number}'s tee is ${Math.round(near(first))} ft from parking; the first tee usually starts near it.`, holes: [done[0].holeId], at: first });
-    if (near(last) > 500) issues.push({ level: "info", text: `The last basket is ${Math.round(near(last))} ft from parking; courses usually finish near the start.`, holes: [done[done.length - 1].holeId], at: last });
+    if (near(first) > 500) issues.push({ level: "info", text: `Hole ${done[0].number}'s tee is ${Math.round(near(first))} ft from parking.`, holes: [done[0].holeId], at: first });
+    if (near(last) > 500) issues.push({ level: "info", text: `The last basket is ${Math.round(near(last))} ft from parking.`, holes: [done[done.length - 1].holeId], at: last });
   }
   return issues;
 };

@@ -90,7 +90,7 @@ export const fetchElevationGrid = async (
   }
   const loaded = await Promise.all(jobs);
   if (!loaded.some(Boolean)) {
-    throw new Error("Couldn't download elevation data. Check your internet connection and try again.");
+    throw new Error("Couldn't download elevation data.");
   }
   const at = (px: number, py: number) => mosaic[clamp(py, 0, mosaicH - 1) * mosaicW + clamp(px, 0, mosaicW - 1)];
   const sample = (lat: number, lon: number) => {
@@ -192,9 +192,8 @@ export const fetchBestElevationGrid = async (
     const usgs = await fetchUsgsElevationGrid(getGeoBounds(location, widthFt, heightFt), samplesX, samplesY);
     return { ...usgs, source: "USGS 3DEP (high detail)" };
   } catch (err) {
-    const reason = err instanceof Error ? (err.name === "AbortError" ? "timed out" : err.message) : "unavailable";
     console.warn("USGS 3DEP elevation unavailable, using global terrain tiles:", err);
     const tiles = await fetchElevationGrid(location, widthFt, heightFt, samplesX, samplesY);
-    return { values: tiles.values, min: tiles.min, max: tiles.max, source: `global terrain tiles (~10 m detail; USGS ${reason})` };
+    return { values: tiles.values, min: tiles.min, max: tiles.max, source: "global terrain tiles (~10 m detail)" };
   }
 };

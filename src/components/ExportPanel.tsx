@@ -123,7 +123,7 @@ export function ExportPanel() {
   const pagesPdf = run("Hole pages PDF", async job => {
     const d = getDoc();
     const holes = pickedPages(d);
-    if (!holes.length) throw new Error("No hole to export yet: a hole needs a tee and a basket.");
+    if (!holes.length) throw new Error("No hole to export yet.");
     const relief = await art(d);
     const pages = [];
     for (const [i, h] of holes.entries()) {
@@ -136,7 +136,7 @@ export function ExportPanel() {
   const pagesZip = run("Hole pictures", async job => {
     const d = getDoc();
     const holes = pickedPages(d);
-    if (!holes.length) throw new Error("No hole to export yet: a hole needs a tee and a basket.");
+    if (!holes.length) throw new Error("No hole to export yet.");
     const relief = await art(d);
     const zip = new JSZip();
     for (const [i, h] of holes.entries()) {
@@ -168,10 +168,9 @@ export function ExportPanel() {
   const parts = partsList(doc);
   const setPrice = (key: keyof CourseRules["prices"], v: number) => changeDoc(d => ({ rules: { ...d.rules, prices: { ...d.rules.prices, [key]: v } } }));
 
-  const Row = ({ icon, title, text: blurb, children }: { icon: ReactNode; title: string; text: string; children: ReactNode }) => (
+  const Row = ({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) => (
     <div className="mb-3">
-      <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">{icon}{title}</div>
-      <div className="text-[11px] text-zinc-400 mb-1.5">{blurb}</div>
+      <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100 mb-1.5">{icon}{title}</div>
       <div className="flex flex-wrap gap-1.5">{children}</div>
     </div>
   );
@@ -184,7 +183,7 @@ export function ExportPanel() {
         <Button tone="primary" full onClick={() => useEditor.getState().set({ shareOpen: true })} testid="export-share"><Share2 size={15} /> Get a share link</Button>
       </Section>
       <Section title="Print">
-        <Row icon={<MapIcon size={15} className="text-orange-300" />} title="Course map" text="The whole course in the style from the Design step. Info boards are often 18 × 24 in.">
+        <Row icon={<MapIcon size={15} className="text-orange-300" />} title="Course map">
           <select aria-label="Map paper" className={selectCls} value={doc.style.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
             {(Object.keys(PAPER) as PaperSize[]).map(p => <option key={p} value={p}>{PAPER[p].label}</option>)}
           </select>
@@ -192,23 +191,22 @@ export function ExportPanel() {
           <Button small onClick={mapPng} disabled={busy} testid="export-map-png"><ImageIcon size={13} /> PNG</Button>
           <Button small onClick={mapSvg} disabled={busy} testid="export-map-svg">SVG</Button>
         </Row>
-        <Row icon={<FileDown size={15} className="text-orange-300" />} title="Tee signs and hole sheets" text="One page per hole: number, par, distance from each tee, the hole map (tee at the bottom), elevation, rules and the way to the next tee.">
+        <Row icon={<FileDown size={15} className="text-orange-300" />} title="Tee signs and hole sheets">
           <select aria-label="Tee sign size" className={selectCls} value={signSize} onChange={e => setSignSize(e.target.value as SignSize)}>
             {(Object.keys(SIGN_SIZES) as SignSize[]).map(p => <option key={p} value={p}>{SIGN_SIZES[p].label}</option>)}
           </select>
           <Button small onClick={signsPdf} disabled={busy || nothing} testid="export-signs-pdf"><FileDown size={13} /> PDF</Button>
           <Button small onClick={signsZip} disabled={busy || nothing} testid="export-signs-zip"><ImageIcon size={13} /> Pictures (ZIP)</Button>
         </Row>
-        <Row icon={<FileDown size={15} className="text-orange-300" />} title="Scorecard" text="Par and length for each layout, totals, rows for five players.">
+        <Row icon={<FileDown size={15} className="text-orange-300" />} title="Scorecard">
           <Button small onClick={scorecardPdf} disabled={busy || nothing} testid="export-scorecard"><FileDown size={13} /> PDF</Button>
           <Button small onClick={run("Scorecard SVG", () => download(svgBlob(renderScorecard(getDoc()).svg), fileName(getDoc(), "-scorecard.svg")))} disabled={busy || nothing}>SVG</Button>
         </Row>
-        <Row icon={<Box size={15} className="text-orange-300" />} title="3D picture" text="The map view as it is now (tilt it with 3).">
+        <Row icon={<Box size={15} className="text-orange-300" />} title="3D picture">
           <Button small onClick={snapshot} disabled={busy} testid="export-3d"><ImageIcon size={13} /> PNG</Button>
         </Row>
       </Section>
       <Section title="Hole by hole" testid="hole-exports">
-        <div className="text-[11px] text-zinc-400 mb-2">A page for each hole, like a yardage book: its map with the tee at the bottom, par, the length from each tee, the elevation change and how long it plays, the notes and the elevation profile. Or one hole on its own, with its GPS file.</div>
         <div className="flex flex-wrap gap-1.5 mb-2">
           <select aria-label="Hole to export" data-testid="hole-pick" className={selectCls} value={pageHole ? pageHole.id : "all"} onChange={e => setPagePick(e.target.value)} disabled={nothing}>
             <option value="all">All holes{complete.length ? ` (${complete.length})` : ""}</option>
@@ -219,8 +217,8 @@ export function ExportPanel() {
           </select>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          <Button small onClick={pagesPdf} disabled={busy || nothing} testid="export-holes-pdf" title={pageHole ? "This hole's page" : "One page per hole"}><FileDown size={13} /> PDF</Button>
-          {!pageHole && <Button small onClick={pagesZip} disabled={busy || nothing} testid="export-holes-zip" title="A PNG picture of each hole's page"><ImageIcon size={13} /> Pictures (ZIP)</Button>}
+          <Button small onClick={pagesPdf} disabled={busy || nothing} testid="export-holes-pdf"><FileDown size={13} /> PDF</Button>
+          {!pageHole && <Button small onClick={pagesZip} disabled={busy || nothing} testid="export-holes-zip"><ImageIcon size={13} /> Pictures (ZIP)</Button>}
           {pageHole && (
             <>
               <Button small onClick={pagePng} disabled={busy} testid="export-hole-png"><ImageIcon size={13} /> PNG</Button>
@@ -268,26 +266,26 @@ export function ExportPanel() {
         )}
       </Section>
       <Section title="GPS and data">
-        <Row icon={<FileJson size={15} className="text-sky-300" />} title="GPS files" text="Tees, baskets, mandos, drop zones, OB and throw lines with real coordinates. KML opens in Google Earth; GPX waypoints help find each spot with a phone.">
+        <Row icon={<FileJson size={15} className="text-sky-300" />} title="GPS files">
           <Button small onClick={text(() => toKML(getDoc()), ".kml", "application/vnd.google-earth.kml+xml")} disabled={busy || !geo} testid="export-kml">KML</Button>
           <Button small onClick={text(() => toGeoJSON(getDoc()), ".geojson", "application/geo+json")} disabled={busy || !geo} testid="export-geojson">GeoJSON</Button>
           <Button small onClick={text(() => toGPX(getDoc()), ".gpx", "application/gpx+xml")} disabled={busy || !geo} testid="export-gpx">GPX</Button>
         </Row>
-        <Row icon={<FileJson size={15} className="text-sky-300" />} title="Spreadsheets" text="The hole list (par, lengths, elevations, coordinates for each layout) and the stake-out list for installing it.">
+        <Row icon={<FileJson size={15} className="text-sky-300" />} title="Spreadsheets">
           <Button small onClick={text(() => holesCsv(getDoc()), "-holes.csv", "text/csv")} disabled={busy || nothing} testid="export-holes-csv">Holes CSV</Button>
           <Button small onClick={text(() => stakeOutCsv(getDoc()), "-stake-out.csv", "text/csv")} disabled={busy || nothing} testid="export-stakeout">Stake-out CSV</Button>
         </Row>
-        <Row icon={<FileJson size={15} className="text-sky-300" />} title="Course file" text="Everything, photo and elevation included, to open again here or send to someone.">
+        <Row icon={<FileJson size={15} className="text-sky-300" />} title="Course file">
           <Button small onClick={saveCourseFile} disabled={busy} testid="export-file">Save .dgcourse.json</Button>
         </Row>
       </Section>
       <Section title="Parts list and budget" testid="parts">
-        {parts.lines.length === 0 ? <p className="text-xs text-zinc-400">Add holes to see what to buy.</p> : (
+        {parts.lines.length === 0 ? <p className="text-xs text-zinc-400">No holes yet.</p> : (
           <>
             <table className="w-full text-xs text-zinc-300 tabular-nums">
               <tbody>
                 {parts.lines.map(l => (
-                  <tr key={l.item} title={l.note}>
+                  <tr key={l.item}>
                     <td className="py-0.5">{l.item}</td>
                     <td className="text-right">{l.qty}</td>
                     <td className="text-right text-zinc-400">× ${l.unitPrice}</td>
@@ -312,7 +310,6 @@ export function ExportPanel() {
           </>
         )}
       </Section>
-      {useEditor.getState().viewOnly && <p className="px-4 pb-4 text-[11px] text-zinc-500">You can export a shared course too.</p>}
     </>
   );
 }

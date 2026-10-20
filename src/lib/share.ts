@@ -48,7 +48,7 @@ export const decodeCourse = async (text: string): Promise<CourseDoc> => {
   const bytes = fromBase64Url(text.slice(1));
   let json: Uint8Array;
   if (kind === "z") {
-    if (typeof DecompressionStream === "undefined") throw new Error("This browser can't open compressed course links. Try a current Chrome, Edge, Firefox or Safari.");
+    if (typeof DecompressionStream === "undefined") throw new Error("This browser can't open compressed course links.");
     json = await pipe(bytes, new DecompressionStream("deflate-raw"));
   } else if (kind === "j") json = bytes;
   else throw new Error("This link doesn't hold a course.");

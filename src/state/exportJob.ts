@@ -29,7 +29,7 @@ export const isCancel = (err: unknown) => err instanceof DOMException && err.nam
 export const runExport = async (label: string, fn: (job: JobControl) => Promise<void> | void, opts: { kind?: ExportJob["kind"]; cancellable?: boolean } = {}) => {
   const running = useExportJob.getState().job;
   if (running) {
-    toast(`Still making "${running.label}": wait for it to finish${running.cancel ? " or cancel it" : ""} first.`, "info");
+    toast(`Still making "${running.label}".`, "info");
     return false;
   }
   const ctrl = new AbortController();

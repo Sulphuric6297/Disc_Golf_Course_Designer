@@ -76,8 +76,8 @@ function HoleInspector({ hole }: { hole: Hole }) {
             <div className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wide mb-1">Add OB</div>
             <div className="flex gap-1.5" role="group" aria-label="Add OB">
               <Button small onClick={() => addHoleOb(hole.id, "left")} testid="ob-left">Left side</Button>
-              <Button small onClick={() => addHoleOb(hole.id, "right")} testid="ob-right" title="An OB line along the right of the fairway">Right side</Button>
-              <Button small onClick={() => addHoleOb(hole.id, "long")} testid="ob-long" title="An OB arc behind the basket (OB long)">Behind basket</Button>
+              <Button small onClick={() => addHoleOb(hole.id, "right")} testid="ob-right">Right side</Button>
+              <Button small onClick={() => addHoleOb(hole.id, "long")} testid="ob-long">Behind basket</Button>
             </div>
           </div>
         )}
@@ -92,7 +92,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
       )}
       {!ro && (
         <Section title="Par and play">
-          <Field label="Par" hint={`Worked out: par ${s.parAuto} for the ${TEE_LEVELS[s.level].label} tee (PDGA: length + 3 × climb, doglegs, foliage).`}>
+          <Field label="Par">
             <Segmented
               label="Par"
               value={hole.par ?? 0}
@@ -182,7 +182,7 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
   const value = item.ob === true ? "edge" : item.ob === false || !wet ? "no" : "yes";
   const options = [{ value: "no", label: "Not OB" }, ...(wet ? [{ value: "yes", label: "OB" }] : []), { value: "edge", label: "OB, red edge" }];
   return (
-    <Field label="Out of bounds" hint={wet ? "Water counts as OB unless set otherwise; \"red edge\" also marks it in red on the map." : "Marked OB, it gets a red OB edge on the map and counts in the hole numbers."}>
+    <Field label="Out of bounds">
       <Segmented label="Out of bounds" value={value} onChange={v => updateItem(item.id, { ob: v === "edge" ? true : v === "no" ? (wet ? false : undefined) : undefined } as Partial<CourseItem>)} options={options} />
     </Field>
   );

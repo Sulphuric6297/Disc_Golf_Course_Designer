@@ -33,7 +33,7 @@ export const newCourse = async () => {
   const meta = await archiveCurrent();
   show(createEmptyCourse());
   if (meta) {
-    toast(`Started a new course. "${meta.name}" is under Open → Recent courses.`, "success", false, {
+    toast("Started a new course.", "success", false, {
       label: "Undo",
       run: () => { void removePlan(meta.id); show(before); }
     });
@@ -154,7 +154,7 @@ export const refetchSite = async () => {
     useCourse.setState(s => ({ doc: { ...s.doc, background: site.background, terrainHeights: site.terrainHeights, gridSize: site.gridSize } }));
   } catch (err) {
     console.warn("Couldn't download the shared course's map", err);
-    toast("The map photo and elevation couldn't be downloaded; the course is shown on plain ground.", "info");
+    toast("The map photo and elevation couldn't be downloaded.", "info");
   }
 };
 
@@ -175,5 +175,5 @@ export const makeCopy = async () => {
   useEditor.getState().set({ viewOnly: false });
   useCourse.getState().load(copy);
   useEditor.getState().set({ step: "holes" });
-  toast("This copy is yours to edit. Your earlier course is under Open → Recent courses.", "success");
+  toast("Made a copy.", "success");
 };

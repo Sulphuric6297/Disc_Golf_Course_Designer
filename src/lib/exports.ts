@@ -16,7 +16,7 @@ const ll = (ref: GeoRef, p: P) => { const g = toLatLon(ref, p); return [r6(g.lon
 
 const needRef = (doc: CourseDoc) => {
   const ref = geoRefOf(doc);
-  if (!ref) throw new Error("GPS files need a real site: bring in your park on the Site step first.");
+  if (!ref) throw new Error("GPS files need a real site.");
   return ref;
 };
 
@@ -238,14 +238,14 @@ export const partsList = (doc: CourseDoc): { lines: PartLine[]; total: number; c
   const amen = (k: AmenityItem["kind"]) => doc.items.filter(i => i.type === "amenity" && i.kind === k).length;
   const obFt = (doc.items.filter(i => i.type === "line" && i.kind === "ob") as LineItem[]).reduce((t, l) => t + l.points.reduce((s, q, i) => (i ? s + Math.hypot(q.x - l.points[i - 1].x, q.y - l.points[i - 1].y) : 0), 0), 0);
   const lines: PartLine[] = [
-    { item: "Baskets", qty: holesWithBaskets.size, unit: "each", unitPrice: p.basket, total: 0, note: "One per hole; moved between pin positions" },
-    { item: "Basket sleeves (ground mounts)", qty: baskets.length, unit: "each", unitPrice: p.sleeve, total: 0, note: "One per pin position" },
+    { item: "Baskets", qty: holesWithBaskets.size, unit: "each", unitPrice: p.basket, total: 0 },
+    { item: "Basket sleeves (ground mounts)", qty: baskets.length, unit: "each", unitPrice: p.sleeve, total: 0 },
     { item: "Tee pads", qty: tees.length, unit: "each", unitPrice: p.teePad, total: 0, note: `${concreteTees.length} concrete (${concreteYd3.toFixed(1)} cu yd at 4 in), ${tees.length - concreteTees.length} other` },
-    { item: "Tee signs", qty: doc.holes.length, unit: "each", unitPrice: p.sign, total: 0, note: "One per hole (12 × 18 in is usual)" },
+    { item: "Tee signs", qty: doc.holes.length, unit: "each", unitPrice: p.sign, total: 0 },
     { item: "Benches", qty: amen("bench"), unit: "each", unitPrice: p.bench, total: 0 },
     { item: "Trash cans", qty: amen("trash"), unit: "each", unitPrice: p.trash, total: 0 },
     { item: "Course kiosk / map board", qty: amen("kiosk"), unit: "each", unitPrice: p.kiosk, total: 0 },
-    { item: "OB stakes (one every 30 ft)", qty: Math.ceil(obFt / 30), unit: "each", unitPrice: 4, total: 0, note: `${Math.round(obFt)} ft of OB lines` },
+    { item: "OB stakes", qty: Math.ceil(obFt / 30), unit: "each", unitPrice: 4, total: 0, note: `${Math.round(obFt)} ft of OB lines` },
     { item: "Mando and drop zone signs", qty: doc.items.filter(i => i.type === "mando" || i.type === "dropzone").length, unit: "each", unitPrice: 35, total: 0 }
   ].filter(l => l.qty > 0).map(l => ({ ...l, total: l.qty * l.unitPrice }));
   return { lines, total: lines.reduce((t, l) => t + l.total, 0), concreteYd3 };
@@ -253,6 +253,6 @@ export const partsList = (doc: CourseDoc): { lines: PartLine[]; total: number; c
 
 export const partsCsv = (doc: CourseDoc) => {
   const { lines, total } = partsList(doc);
-  return toCsv([["item", "quantity", "unit", "unit_price_usd", "total_usd", "note"], ...lines.map(l => [l.item, l.qty, l.unit, l.unitPrice, l.total, l.note ?? ""]), ["Total", "", "", "", total, "Prices are estimates; edit them in the Export step"]]);
+  return toCsv([["item", "quantity", "unit", "unit_price_usd", "total_usd", "note"], ...lines.map(l => [l.item, l.qty, l.unit, l.unitPrice, l.total, l.note ?? ""]), ["Total", "", "", "", total, ""]]);
 };
 

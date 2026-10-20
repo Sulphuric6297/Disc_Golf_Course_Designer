@@ -335,7 +335,8 @@ plain("features on the printed map: mandos, drop zones, amenity pictograms, OB a
     // On the map, and its sample in the legend
     plainExpect(plainSvg.split(`data-symbol="${sym}"`).length - 1, sym).toBe(2);
   }
-  plainExpect(plainSvg).toContain("Mando: pass on the arrow's side");
+  plainExpect(plainSvg).toContain(">Mando<");
+  plainExpect(plainSvg).not.toContain("Mando: pass on the arrow's side");
   plainExpect(plainSvg).toContain(">You are here<");
   plainExpect(plainSvg).toContain(">HAZARD<");
   plainExpect(plainSvg).toContain(">OB<");
@@ -353,7 +354,8 @@ plain("features on the printed map: mandos, drop zones, amenity pictograms, OB a
   const gated = renderPoster(doc, { contours: null, hillshade: null }).svg;
   plainExpect(gated.split('data-symbol="gate"').length - 1).toBe(2);
   plainExpect(gated.split('data-symbol="mando"').length - 1).toBe(2);
-  plainExpect(gated).toContain("Gate: pass between");
+  plainExpect(gated).toContain(">Mando gate<");
+  plainExpect(gated).not.toContain("Gate: pass between");
 });
 
 plain("marking colors: map colors (red OB) or PDGA colors (white OB, red out of play); casual areas in blue", () => {
@@ -369,9 +371,10 @@ plain("marking colors: map colors (red OB) or PDGA colors (white OB, red out of 
   plainExpect(doc.style.markings).toBe("map");
   plainExpect(map).toContain(">CASUAL<");
   plainExpect(map).toContain(">OUT OF PLAY<");
-  plainExpect(map).toContain("Casual area (free relief)");
-  plainExpect(map).toContain("Out of play (relief required)");
-  plainExpect(map).toContain("Hazard (one-throw penalty)");
+  plainExpect(map).toContain(">Casual area<");
+  plainExpect(map).toContain(">Out of play<");
+  plainExpect(map).toContain(">Hazard<");
+  plainExpect(map).not.toMatch(/free relief|relief required|one-throw penalty/);
   // A pond is OB by default: its own legend line
   plainExpect(map).toContain("OB water");
   plainExpect(map).toContain(`stroke="${doc.style.ob}" stroke-width`);

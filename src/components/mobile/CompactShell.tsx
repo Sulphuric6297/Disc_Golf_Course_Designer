@@ -359,7 +359,7 @@ function AppMenu({ onClose, onShare, onHelp }: { onClose: () => void; onShare: (
   useEffect(() => { void recentCourses().then(setRecent); }, []);
   const actions: SheetAction[] = [
     { label: "Share a link", icon: <Share2 size={19} />, run: onShare, testid: "menu-share" },
-    { label: "New course", icon: <FilePlus size={19} />, run: () => void newCourse(), hint: "This one stays in Recent courses" },
+    { label: "New course", icon: <FilePlus size={19} />, run: () => void newCourse() },
     { label: "Open a course file…", icon: <FolderOpen size={19} />, run: () => file.current?.click() },
     { label: "Save as a file", icon: <Save size={19} />, run: () => saveCourseFile() },
     { label: "Help and gestures", icon: <HelpCircle size={19} />, run: onHelp, testid: "menu-help" }
@@ -422,7 +422,7 @@ function PhoneTopBar({ onMenu, onShare }: { onMenu: () => void; onShare: () => v
       {viewOnly && (
         <div className="pointer-events-auto mt-2 flex items-center gap-2 rounded-2xl bg-emerald-950/95 border border-emerald-700/70 pl-3.5 pr-1.5 py-1.5 shadow-xl" data-testid="view-only-banner">
           <Eye size={16} className="text-emerald-300 shrink-0" />
-          <span className="flex-1 text-[13px] text-emerald-50 leading-snug">A shared course: look around. Nothing you do changes it.</span>
+          <span className="flex-1 text-[13px] text-emerald-50 leading-snug">Shared course: view only</span>
           <button className="shrink-0 h-10 px-3 rounded-xl bg-orange-500 text-white text-[14px] font-bold" onClick={() => void makeCopy()} data-testid="make-copy">Make a copy</button>
         </div>
       )}

@@ -1059,12 +1059,12 @@ const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal
     if (areaKinds.has("ob") || obItems.some(i => i.type === "area" && (i as AreaItem).kind !== "water")) entries.push({ sym: box(obCol, obCol, obCase), text: "Out of bounds" });
     if (obItems.some(i => (i.type === "area" && (i as AreaItem).kind === "water") || (i.type === "line" && (i as LineItem).kind === "stream"))) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" rx="${n(2 * ts)}" fill="${s.water}"/><rect x="${n(1.5 * ts)}" y="${n(1.5 * ts)}" width="${n(sw - 3 * ts)}" height="${n(sh - 3 * ts)}" rx="${n(2 * ts)}" fill="none" stroke="${obCase}" stroke-width="${n(2.6 * ts)}"/><rect x="${n(1.5 * ts)}" y="${n(1.5 * ts)}" width="${n(sw - 3 * ts)}" height="${n(sh - 3 * ts)}" rx="${n(2 * ts)}" fill="none" stroke="${obCol}" stroke-width="${n(1.3 * ts)}"/>`, text: "OB water" });
     if (obItems.some(i => i.type === "line" && (i as LineItem).kind !== "stream")) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${obCase}" stroke-width="${n(4.2 * ts)}" stroke-linecap="round"/><line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${obCol}" stroke-width="${n(2.2 * ts)}" stroke-linecap="round"/>`, text: "OB line (road, fence)" });
-    if (areaKinds.has("hazard")) entries.push({ sym: box(s.hazard, s.hazard, "#ffffff", dashed), text: "Hazard (one-throw penalty)" });
-    if (areaKinds.has("casual")) entries.push({ sym: box(casualCol, casualCol, "#ffffff", dashed), text: "Casual area (free relief)" });
-    if (areaKinds.has("nogo")) entries.push({ sym: box(nogoCol, nogoCol, "#ffffff", dashed), text: "Out of play (relief required)" });
+    if (areaKinds.has("hazard")) entries.push({ sym: box(s.hazard, s.hazard, "#ffffff", dashed), text: "Hazard" });
+    if (areaKinds.has("casual")) entries.push({ sym: box(casualCol, casualCol, "#ffffff", dashed), text: "Casual area" });
+    if (areaKinds.has("nogo")) entries.push({ sym: box(nogoCol, nogoCol, "#ffffff", dashed), text: "Out of play" });
   }
-  if (has(i => i.type === "mando" && !i.pairId)) entries.push({ sym: mandoSymbol({ x: sw / 2, y: sh * 0.62 }, 0, "left", sh / 15), text: "Mando: pass on the arrow's side" });
-  if (has(i => i.type === "mando" && !!i.pairId)) entries.push({ sym: gateSymbol({ x: sw / 2, y: sh * 0.12 }, { x: sw / 2, y: sh * 0.88 }, 0, sh / 17), text: "Gate: pass between" });
+  if (has(i => i.type === "mando" && !i.pairId)) entries.push({ sym: mandoSymbol({ x: sw / 2, y: sh * 0.62 }, 0, "left", sh / 15), text: "Mando" });
+  if (has(i => i.type === "mando" && !!i.pairId)) entries.push({ sym: gateSymbol({ x: sw / 2, y: sh * 0.12 }, { x: sw / 2, y: sh * 0.88 }, 0, sh / 17), text: "Mando gate" });
   if (has(i => i.type === "dropzone")) entries.push({ sym: dropZoneSymbol({ x: sw / 2, y: sh / 2 }, sh / 12.5), text: "Drop zone" });
   if (areaKinds.has("water") || lineKinds.has("stream")) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" rx="${n(2 * ts)}" fill="${s.water}"/>`, text: "Water" });
   if (areaKinds.has("woods") || has(i => i.type === "tree")) entries.push({ sym: `<circle cx="${n(sw * 0.35)}" cy="${n(sh / 2)}" r="${n(sh * 0.48)}" fill="${s.trees}"/><circle cx="${n(sw * 0.7)}" cy="${n(sh / 2)}" r="${n(sh * 0.4)}" fill="${shade(s.trees, 0.1)}"/>`, text: "Trees" });

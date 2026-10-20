@@ -67,7 +67,8 @@ test("share a course: the link opens it for someone else, view only, with the ma
     return location.hash;
   });
   expect(hashOnClick).toMatch(/^#course=/);
-  await expect(theirs.getByText(/This copy is yours to edit/)).toBeVisible();
+  await expect(theirs.getByRole("status").filter({ hasText: "Made a copy." })).toBeVisible();
+  await expect(theirs.getByText(/This copy is yours to edit/)).toHaveCount(0);
   await expect(theirs.getByTestId("view-only-banner")).toBeHidden();
   await expect(theirs.getByRole("toolbar", { name: "Tools" })).toBeVisible();
   expect((await course(theirs)).name).toBe(`${doc.name} (copy)`);

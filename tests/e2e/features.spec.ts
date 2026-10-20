@@ -285,7 +285,8 @@ test("a gate: two posts across the hole's line, passed between", async ({ page }
   const hole = await addHole(page, { x: 300, y: 500 }, { x: 800, y: 500 });
   await page.keyboard.press("m");
   await page.getByTestId("mando-kind-gate").click();
-  await expect(page.getByTestId("tool-hint")).toContainText("the disc passes between");
+  await expect(page.getByTestId("tool-hint")).toContainText("where the gate is");
+  await expect(page.getByTestId("tool-hint")).not.toContainText("the disc passes between");
   await clickPlan(page, 550, 505);
   await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "mando").length).toBe(2);
   const [a, b] = (await course(page)).items.filter((i: any) => i.type === "mando");

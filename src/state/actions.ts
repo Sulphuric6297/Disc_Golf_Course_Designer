@@ -127,7 +127,7 @@ export const placeAt = (mode: ToolMode, p: P) => {
   let item: CourseItem | null = null;
   if (mode === "add-tee") {
     if (!hole) {
-      toast("Pick a hole first (or use the Hole tool to make one), then add another tee to it.", "info");
+      toast("Pick a hole first.", "info");
       return;
     }
     const taken = new Set(holeTees(getDoc(), hole.id).map(t => t.level));
@@ -135,7 +135,7 @@ export const placeAt = (mode: ToolMode, p: P) => {
     item = createTee(hole.id, p, level);
   } else if (mode === "add-basket") {
     if (!hole) {
-      toast("Pick a hole first (or use the Hole tool to make one), then add another pin position to it.", "info");
+      toast("Pick a hole first.", "info");
       return;
     }
     const taken = new Set(holeBaskets(getDoc(), hole.id).map(b => b.position));
@@ -380,7 +380,7 @@ export const addHoleOb = (holeId: string, where: "left" | "right" | "long") => {
   changeDoc(d => ({ items: [...d.items, item] }));
   select(item.id);
   const number = doc.holes.indexOf(hole) + 1;
-  toast(`OB line added ${where === "long" ? "behind the basket" : `along the ${where}`} of hole ${number}: drag its points to fit.`, "success", true);
+  toast(`OB line added ${where === "long" ? "behind the basket" : `along the ${where}`} of hole ${number}.`, "success", true);
 };
 
 /** The walk from a hole's basket to the next hole's tee as a line of its own (points along the way

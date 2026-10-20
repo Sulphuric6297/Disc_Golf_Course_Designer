@@ -40,7 +40,6 @@ export function StylePicker() {
               <span className="absolute right-[4%] bottom-[6%] w-8 h-4 rounded-full" style={{ background: c.water }} />
             </span>
             <span className="block text-xs font-bold text-zinc-100">{l.label}</span>
-            <span className="block text-[10px] text-zinc-400 leading-tight">{l.blurb}</span>
           </button>
         );
       })}
@@ -61,7 +60,6 @@ export function LandscapePicker() {
             key={id}
             role="radio"
             aria-checked={current === id}
-            title={l.blurb}
             data-testid={`landscape-${id}`}
             onClick={() => pick(id)}
             className={`rounded-lg border p-1 flex flex-col items-center gap-1 transition-colors ${current === id ? "border-orange-500 bg-orange-500/10" : "border-zinc-700 hover:border-zinc-500"}`}

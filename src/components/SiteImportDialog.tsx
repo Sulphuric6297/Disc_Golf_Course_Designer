@@ -93,10 +93,9 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   );
   const options = (
     <>
-      <Toggle label="Satellite photo" checked={imagery === "satellite"} onChange={v => setImagery(v ? "satellite" : "streets")} hint={imagery === "satellite" ? "Esri World Imagery" : "Street map instead (OpenStreetMap)"} />
+      <Toggle label="Satellite photo" checked={imagery === "satellite"} onChange={v => setImagery(v ? "satellite" : "streets")} hint={imagery === "satellite" ? "Esri World Imagery" : "OpenStreetMap"} />
       <Toggle label="Trees found on the photo" checked={trees && imagery === "satellite"} onChange={setTrees} />
       <Toggle label="Paths, water, roads and parking" checked={osm} onChange={setOsm} />
-      <div className="text-[11px] text-zinc-500 mt-1">Elevation always comes in: USGS 3DEP lidar in the US, global terrain elsewhere.</div>
     </>
   );
   const statusEl = status.text && (

@@ -83,12 +83,11 @@ function ShareDialog({ onClose }: { onClose: () => void }) {
   return (
     <div ref={box} className="fixed inset-0 z-50 bg-black/60 flex items-end md:items-center justify-center p-0 md:p-4" role="dialog" aria-modal="true" aria-label="Share this course" onClick={onClose}>
       <div className={`${SHEET} md:max-w-lg p-5`} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-2 mb-3">
           <Share2 size={18} className="text-emerald-400" />
           <h2 className="font-bold text-zinc-50 text-lg flex-1">Share this course</h2>
           <button aria-label="Close" className={CLOSE} onClick={onClose}><X size={18} /></button>
         </div>
-        <p className="text-sm text-zinc-400 mb-3">Anyone with the link sees the course on the map, in 3D and from every tee, and can make their own copy to edit. The whole design is inside the link; the satellite photo and elevation load again on their side.</p>
         <div className="flex gap-2">
           <input id="share-url" aria-label="Share link" readOnly value={url} className="flex-1 min-w-0 bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-2 text-xs text-zinc-200 font-mono" onFocus={e => e.target.select()} />
           <Button tone="primary" onClick={() => void copy()} testid="copy-link"><Copy size={15} /> {copied ? "Copied" : "Copy"}</Button>
@@ -97,7 +96,6 @@ function ShareDialog({ onClose }: { onClose: () => void }) {
           <span data-testid="share-size">{url ? `${(url.length / 1024).toFixed(1)} KB link` : "Packing the course…"}</span>
           {canShare && url && <button className="text-emerald-300 hover:text-emerald-200 font-semibold touch:text-sm touch:min-h-[44px] touch:px-2" onClick={() => void navigator.share({ title: doc.name, url }).catch(() => {})}>Share with an app…</button>}
         </div>
-        {url.length > 60000 && <p className="text-xs text-amber-300 mt-2">This is a long link (lots of trees and shapes). Most browsers and email open it fine; some chat apps shorten long links. Removing trees found on the photo makes it much shorter.</p>}
       </div>
     </div>
   );
@@ -164,7 +162,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
         <h3 className="font-bold text-zinc-100 mt-5 mb-1">Map navigation</h3>
         <p className="text-sm text-zinc-400">Drag to pan, scroll or pinch to zoom at the cursor, right-drag (or Ctrl+drag) to turn and tilt, Shift+drag to select, double-click to zoom in.</p>
         <h3 className="font-bold text-zinc-100 mt-4 mb-1">Credits</h3>
-        <p className="text-xs text-zinc-500">Imagery © Esri, Maxar, Earthstar Geographics. Map data © OpenStreetMap contributors. Elevation: USGS 3DEP and AWS Terrain Tiles (Mapzen). Built on the map engine of the Security Camera Planner.</p>
+        <p className="text-xs text-zinc-500">Imagery © Esri, Maxar, Earthstar Geographics. Map data © OpenStreetMap contributors. Elevation: USGS 3DEP and AWS Terrain Tiles (Mapzen).</p>
       </div>
     </div>
   );
@@ -247,7 +245,7 @@ export default function App() {
     setFindSite(false);
     useEditor.getState().set({ step: "holes", tool: getDoc().holes.length ? "select" : "add-hole" });
     setTimeout(() => getView()?.fitSite(), 50);
-    const outside = carried.outside ? ` ${carried.outside} ${carried.outside === 1 ? "thing you drew is" : "things you drew are"} now past the site's edges: move ${carried.outside === 1 ? "it" : "them"} in or remove ${carried.outside === 1 ? "it" : "them"}.` : "";
+    const outside = carried.outside ? ` ${carried.outside} ${carried.outside === 1 ? "thing you drew is" : "things you drew are"} now past the site's edges.` : "";
     toast(`Site brought in. ${site.notes.join(" ")}${outside}`, "success", false, { label: "View in 3D", run: () => useEditor.getState().set({ view: "3d" }) }, 12000);
     if (site.osmFailed) osmFailedToast();
   };
@@ -369,7 +367,7 @@ export default function App() {
       {ed.viewOnly && (
         <div className="bg-emerald-900/70 border-b border-emerald-700 px-4 py-2 flex items-center gap-3 text-sm" data-testid="view-only-banner">
           <Eye size={16} className="text-emerald-300" />
-          <span className="flex-1 text-emerald-50">You're looking at a shared course: explore the map, the 3D view and the view from each tee. Nothing you do changes it.</span>
+          <span className="flex-1 text-emerald-50">Shared course: view only</span>
           <Button small tone="primary" onClick={() => void makeCopy()} testid="make-copy">Make a copy to edit</Button>
         </div>
       )}
