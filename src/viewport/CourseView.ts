@@ -12,12 +12,13 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import { INK, MANDO, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, TEE_LEVELS, clamp } from "../constants";
 import { basketFor, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
-import { boundsOf, corridor, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, smoothPath } from "../lib/geom";
+import { boundsOf, corridor, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
-import { fmtDist, fmtElev } from "../lib/units";
+import { fmtArea, fmtDist, fmtElev } from "../lib/units";
 import { createAmenity, createBasket, createDropZone, createMando, createTeePad } from "../three/courseModels";
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { disposeObjectDeep } from "../three/dispose";
@@ -63,6 +64,8 @@ const STYLE = `
 .dg-basket b{position:absolute;left:15px;top:-7px;font:800 9px/1 Inter,system-ui,sans-serif;color:#fff;background:#0f172a;border-radius:4px;padding:2px 3px}
 .dg-dist{pointer-events:none;padding:2px 7px;border-radius:6px;background:rgba(15,23,42,.82);color:#f8fafc;font:700 11px Inter,system-ui,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .dg-dist i{font-style:normal;color:#fde68a;margin-left:5px}
+.dg-sym{pointer-events:auto;cursor:move;filter:drop-shadow(0 1px 2px rgba(0,0,0,.55));border-radius:6px}
+.dg-sym.sel{outline:3px solid ${SELECT};outline-offset:2px}
 .dg-chip{pointer-events:auto;cursor:move;min-width:18px;height:18px;padding:0 4px;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#fff;font:800 10px/1 Inter,system-ui,sans-serif;border:1.5px solid rgba(255,255,255,.9);box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-text{pointer-events:auto;cursor:move;font-weight:700;font-family:Inter,system-ui,sans-serif;text-shadow:0 0 3px #000,0 0 2px #000}
 .dg-area{pointer-events:none;font:700 11px Inter,system-ui,sans-serif;color:#fff;text-shadow:0 0 3px #000,0 0 2px #000;opacity:.9}
@@ -113,7 +116,7 @@ export class CourseView {
   private heightsRef: unknown = null;
   private selectedId: string | null = null;
   private hoverId: string | null = null;
-  private tool: ViewTool = { mode: "select", areaKind: "ob", lineKind: "ob", readOnly: false };
+  private tool: ViewTool = { mode: "select", areaKind: "ob", lineKind: "ob", shape: "points", readOnly: false };
   private teeLevel: "gold" | "blue" | "white" | "red" | "green" = "blue";
   private raycaster = new THREE.Raycaster();
   private dirty = true;
@@ -707,6 +710,10 @@ export class CourseView {
         done?.();
       }
     }
+    if (this.draftPending) {
+      this.draftPending = false;
+      this.drawDraft();
+    }
     if (!this.dirty || this.size.width <= 1) return;
     this.dirty = false;
     this.render();
@@ -1057,7 +1064,7 @@ export class CourseView {
     areas.forEach((a, order) => {
       const meta = AREA_KINDS[a.kind];
       const c = color(a.kind) ?? meta.color;
-      put(`area:${a.id}`, JSON.stringify([a.points, a.kind, hv, c, photo, order]), () => {
+      put(`area:${a.id}`, JSON.stringify([a.points, a.kind, hv, c, photo, order, a.ob]), () => {
         const g = new THREE.Group();
         const fill = photo ? meta.fill : Math.min(0.9, meta.fill + 0.35);
         const mesh = new THREE.Mesh(
@@ -1069,6 +1076,8 @@ export class CourseView {
         g.add(mesh);
         const w = a.kind === "ob" || a.kind === "hazard" ? 3 : 1.5;
         g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, w, { order: 4, dashed: a.kind === "hazard" ? 6 : undefined }));
+        // Marked OB (water, say): its red OB edge
+        if (a.ob === true && a.kind !== "ob") g.add(this.fatLine(this.drapeLine(a.points, LIFT + 0.05, true), st.ob, 3, { order: 5 }));
         return g;
       });
       // Woods: trees standing in it (shadows and all)
@@ -1084,8 +1093,19 @@ export class CourseView {
       const meta = LINE_KINDS[l.kind];
       const c = l.kind === "ob" ? st.ob : l.kind === "path" ? st.path : l.kind === "stream" ? st.water : meta.color;
       const width = l.width ?? meta.width;
-      put(`line:${l.id}`, JSON.stringify([l.points, l.kind, width, hv, c]), () => {
+      put(`line:${l.id}`, JSON.stringify([l.points, l.kind, width, hv, c, l.ob]), () => {
         const g = new THREE.Group();
+        // Marked OB (a creek, a road): a red edge either side
+        if (l.ob === true && l.kind !== "ob" && l.points.length >= 2) {
+          if (width > 0) {
+            const edge = new THREE.Mesh(
+              drapedRibbon(l.points, width + 5, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.16),
+              new THREE.MeshLambertMaterial({ color: st.ob, transparent: true, opacity: 0.95, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 })
+            );
+            edge.renderOrder = 1.9;
+            g.add(edge);
+          } else g.add(this.fatLine(this.drapeLine(l.points), st.ob, 5, { order: 4.9 }));
+        }
         if (width > 0 && l.points.length >= 2) {
           const ribbon = new THREE.Mesh(
             drapedRibbon(l.points, width, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.18),
@@ -1165,23 +1185,57 @@ export class CourseView {
         });
       }
     }
-    // Mandos: the restricted side, an orange line from the post out to the side the disc must not pass
-    for (const m of course.items.filter(i => i.type === "mando") as MandoItem[]) {
+    // Mandos, on the ground: the restricted line out to the side the disc must not pass (red),
+    // and an arrow curving past the post on the side it must pass, in the direction of play
+    const mandos = course.items.filter(i => i.type === "mando") as MandoItem[];
+    for (const m of mandos) {
+      const pair = m.pairId ? mandos.find(o => o.id === m.pairId) : undefined;
+      if (pair) {
+        // A gate: each post's restricted line points away from the other; one arrow through the gap
+        put(`mando:${m.id}`, JSON.stringify([m.x, m.y, pair.x, pair.y, m.rotation, hv]), () => {
+          const g = new THREE.Group();
+          const dx = m.x - pair.x, dy = m.y - pair.y, l = Math.hypot(dx, dy) || 1;
+          const out = [{ x: m.x + (dx / l) * 2.5, y: m.y + (dy / l) * 2.5 }, { x: m.x + (dx / l) * 30, y: m.y + (dy / l) * 30 }];
+          g.add(this.fatLine(this.drapeLine(out, 0.4), "#ffffff", 5, { order: 5, opacity: 0.85 }));
+          g.add(this.fatLine(this.drapeLine(out, 0.45), "#e11d2e", 3, { order: 6 }));
+          if (m.id < pair.id) {
+            const a = m.rotation * DEG, f = { x: Math.cos(a), y: Math.sin(a) };
+            const mid = { x: (m.x + pair.x) / 2, y: (m.y + pair.y) / 2 };
+            const tail = { x: mid.x - f.x * 16, y: mid.y - f.y * 16 }, tip = { x: mid.x + f.x * 16, y: mid.y + f.y * 16 };
+            const w1 = { x: tip.x - Math.cos(a - 0.5) * 6, y: tip.y - Math.sin(a - 0.5) * 6 }, w2 = { x: tip.x - Math.cos(a + 0.5) * 6, y: tip.y - Math.sin(a + 0.5) * 6 };
+            g.add(this.fatLine(this.drapeLine([tail, tip], 0.4), "#ffffff", 5, { order: 5, opacity: 0.85 }));
+            g.add(this.fatLine(this.drapeLine([tail, tip], 0.45), "#f97316", 3, { order: 6 }));
+            g.add(this.fatLine(this.drapeLine([w1, tip, w2], 0.45), "#f97316", 3, { order: 6 }));
+          }
+          return g;
+        });
+        continue;
+      }
       put(`mando:${m.id}`, JSON.stringify([m.x, m.y, m.rotation, m.side, hv]), () => {
         const a = m.rotation * DEG;
         // Looking along the play direction (+angle), "right" on screen is +90° (plan y points down)
-        const sideSign = m.side === "right" ? -1 : 1;
-        const n = { x: Math.cos(a + (sideSign * Math.PI) / 2), y: Math.sin(a + (sideSign * Math.PI) / 2) };
+        const f = { x: Math.cos(a), y: Math.sin(a) };
+        const right = { x: -f.y, y: f.x };
+        const s = m.side === "left" ? -1 : 1;
+        const at = (along: number, across: number) => ({ x: m.x + f.x * along + right.x * s * across, y: m.y + f.y * along + right.y * s * across });
         const g = new THREE.Group();
-        g.add(this.fatLine(this.drapeLine([{ x: m.x, y: m.y }, { x: m.x + n.x * 40, y: m.y + n.y * 40 }], 0.4), "#f97316", 3, { order: 5 }));
-        // A little arrow on the pass side showing the direction of play
-        const o = { x: m.x - n.x * 8, y: m.y - n.y * 8 };
-        const tip = { x: o.x + Math.cos(a) * 8, y: o.y + Math.sin(a) * 8 };
-        const tail = { x: o.x - Math.cos(a) * 8, y: o.y - Math.sin(a) * 8 };
-        const w1 = { x: tip.x - Math.cos(a - 0.5) * 4, y: tip.y - Math.sin(a - 0.5) * 4 };
-        const w2 = { x: tip.x - Math.cos(a + 0.5) * 4, y: tip.y - Math.sin(a + 0.5) * 4 };
-        g.add(this.fatLine(this.drapeLine([tail, tip, w1], 0.4), "#f97316", 2.5, { order: 5 }));
-        g.add(this.fatLine(this.drapeLine([tip, w2], 0.4), "#f97316", 2.5, { order: 5 }));
+        g.add(this.fatLine(this.drapeLine([at(0, -2.5), at(0, -38)], 0.4), "#ffffff", 5, { order: 5, opacity: 0.85 }));
+        g.add(this.fatLine(this.drapeLine([at(0, -2.5), at(0, -38)], 0.45), "#e11d2e", 3, { order: 6 }));
+        // The pass arrow: a curve round the post, then its head
+        const curve: P[] = [];
+        for (let i = 0; i <= 16; i++) {
+          const t = i / 16;
+          const p0 = at(-22, 6), c = at(0, 20), p1 = at(18, 8);
+          curve.push({ x: (1 - t) * (1 - t) * p0.x + 2 * (1 - t) * t * c.x + t * t * p1.x, y: (1 - t) * (1 - t) * p0.y + 2 * (1 - t) * t * c.y + t * t * p1.y });
+        }
+        const end = curve[curve.length - 1], before = curve[curve.length - 3];
+        const ha = Math.atan2(end.y - before.y, end.x - before.x);
+        const tip = { x: end.x + Math.cos(ha) * 5, y: end.y + Math.sin(ha) * 5 };
+        const w1 = { x: end.x - Math.cos(ha - 1.1) * 6, y: end.y - Math.sin(ha - 1.1) * 6 };
+        const w2 = { x: end.x - Math.cos(ha + 1.1) * 6, y: end.y - Math.sin(ha + 1.1) * 6 };
+        g.add(this.fatLine(this.drapeLine(curve, 0.4), "#ffffff", 5, { order: 5, opacity: 0.85 }));
+        g.add(this.fatLine(this.drapeLine(curve, 0.45), "#f97316", 3, { order: 6 }));
+        g.add(this.fatLine(this.drapeLine([w1, tip, w2], 0.45), "#f97316", 3, { order: 6 }));
         return g;
       });
     }
@@ -1312,20 +1366,20 @@ export class CourseView {
           return el;
         }, at(b, 2), 0);
       } else if (item.type === "mando" || item.type === "dropzone" || item.type === "amenity") {
+        // The same symbols as the printed map (the mando's arrow and line are drawn on the ground)
         const isM = item.type === "mando", isDz = item.type === "dropzone";
-        const am = item.type === "amenity" ? AMENITY_KINDS[(item as AmenityItem).kind] : null;
-        const text = isM ? (item.side === "right" ? "M→" : "←M") : isDz ? "DZ" : am!.letter;
-        const bg = isM || isDz ? "#f97316" : am!.color;
-        put(`chip:${item.id}`, `${text}|${sel}|${bg}`, 2, () => {
+        const kind = item.type === "amenity" ? (item as AmenityItem).kind : null;
+        put(`chip:${item.id}`, `${kind ?? item.type}|${sel}`, 2, () => {
           const el = document.createElement("div");
-          el.className = `dg-chip${sel ? " sel" : ""}`;
+          el.className = `dg-sym${sel ? " sel" : ""}`;
           el.dataset.itemId = item.id;
           el.setAttribute("data-testid", `${item.type}-chip`);
-          el.style.background = bg;
-          el.title = `${isM ? `Mando: pass ${item.side}` : isDz ? "Drop zone" : am!.label}: drag to move`;
-          el.textContent = text;
+          el.title = `${isM ? `Mando: pass on the ${item.side} (drag the round handle to turn it)` : isDz ? "Drop zone" : AMENITY_KINDS[kind!].label}: drag to move`;
+          el.innerHTML = isM
+            ? symbolSvg(`<circle r="5.5" fill="#fff" stroke="${INK}" stroke-width="1.6"/><circle r="2.4" fill="${MANDO}"/>`, 18)
+            : isDz ? symbolSvg(dropZoneSymbol({ x: 0, y: 0 }, 1.15), 24) : symbolSvg(amenitySymbol(kind!, { x: 0, y: 0 }, 1), kind === "here" ? 34 : 22, kind === "here" ? 22 : 16);
           return el;
-        }, at(item, 3), -10, 0);
+        }, at(item, 3), isM ? 0 : -10, 0);
       } else if (item.type === "label") {
         const l = item as LabelItem;
         put(`txt:${l.id}`, `${l.text}|${l.color}|${l.fontSize}|${sel}`, 2, () => {
@@ -1350,7 +1404,9 @@ export class CourseView {
     // Distance chips on each throw line
     for (const s of doc.stats) {
       if (!s.complete) continue;
-      const mid = pointAlong(s.line, s.length / 2).point;
+      // Halfway, or nearby where no mando or drop zone sits
+      const marks = course.items.filter(i => i.type === "mando" || i.type === "dropzone");
+      const mid = [0.5, 0.35, 0.65, 0.25, 0.75].map(f => pointAlong(s.line, s.length * f).point).find(q => marks.every(m => dist(m, q) > 28)) ?? pointAlong(s.line, s.length / 2).point;
       const text = `${fmtDist(s.length, course.units)}`;
       const extra = `P${s.par}${Math.abs(s.elevationChange) >= 3 ? ` · ${fmtElev(s.elevationChange, course.units)}` : ""}`;
       put(`dist:${s.holeId}`, `${text}|${extra}`, 3, () => {
@@ -1970,8 +2026,12 @@ export class CourseView {
     }
     if (tool.mode === "draw-area" || tool.mode === "draw-line") {
       stop();
+      // A rectangle, circle or freehand shape is dragged out (clicking still adds points)
+      const shape = tool.mode === "draw-line" && (tool.shape === "box" || tool.shape === "circle") ? "freehand" : tool.shape;
       this.gesture(e, {
-        click: groundClick(p => {
+        drag: shape !== "points" && !this.drawPts.length && !touch ? s => this.shapeDrag(s, shape) : panOrNothing,
+        click: groundClick(p0 => {
+          const p = this.snap(p0);
           const last = this.drawPts[this.drawPts.length - 1];
           if (last && dist(last, p) < 1) return;
           this.drawPts.push(p);
@@ -1980,8 +2040,7 @@ export class CourseView {
           this.cb.onDrawProgress(this.drawPts.length);
           this.handleKey = "";
           this.syncHandles();
-        }),
-        drag: panOrNothing
+        })
       });
       return;
     }
@@ -2020,6 +2079,70 @@ export class CourseView {
   // ------------------------------------------------------------------ drawing new holes, areas and lines
 
   private draftAt: THREE.Vector3 | null = null;
+
+  private shaping = false;
+  private draftPending = false;
+
+  /** A point being drawn, moved onto a corner of a shape already drawn when it is within a few
+   * pixels of one (so OB lines and areas meet without gaps). */
+  private snap(p: P): P {
+    const doc = this.doc;
+    if (!doc) return p;
+    const tol = 9 * this.upp(new THREE.Vector3(p.x, this.h(p.x, p.y), p.y));
+    let best: P | null = null, bd = tol;
+    for (const i of doc.course.items) {
+      if (i.type !== "area" && i.type !== "line") continue;
+      for (const q of i.points) {
+        const d = dist(p, q);
+        if (d < bd) { bd = d; best = q; }
+      }
+    }
+    return best ? { x: best.x, y: best.y } : p;
+  }
+
+  /** Drags out a new area or line: a rectangle (square to the screen), a circle from its middle, or freehand. */
+  private shapeDrag(start: PointerEvent, shape: "box" | "circle" | "freehand"): { move: (ev: PointerEvent) => void; end: (ev: PointerEvent) => void } | null {
+    const g0 = this.groundAt(start.clientX, start.clientY);
+    if (!g0) return null;
+    const a = { x: g0.x, y: g0.z };
+    const free: P[] = [a];
+    const ground = (x: number, y: number) => {
+      const g = this.groundAt(x, y);
+      return g ? { x: g.x, y: g.z } : null;
+    };
+    // Freehand points every few pixels (in feet at this zoom)
+    const step = Math.max(1.5, 6 / Math.max(0.01, this.viewInfo().pxPerUnit));
+    const build = (ev: PointerEvent) => {
+      if (shape === "box") {
+        const c = [[start.clientX, start.clientY], [ev.clientX, start.clientY], [ev.clientX, ev.clientY], [start.clientX, ev.clientY]].map(([x, y]) => ground(x, y));
+        if (c.every(Boolean)) this.drawPts = c as P[];
+      } else if (shape === "circle") {
+        const b = ground(ev.clientX, ev.clientY);
+        if (!b) return;
+        const r = dist(a, b);
+        this.drawPts = Array.from({ length: 36 }, (_, i) => ({ x: a.x + Math.cos((i / 36) * Math.PI * 2) * r, y: a.y + Math.sin((i / 36) * Math.PI * 2) * r }));
+      } else {
+        const b = ground(ev.clientX, ev.clientY);
+        if (b && dist(free[free.length - 1], b) >= step) free.push(b);
+        this.drawPts = [...free];
+      }
+      this.cursor = null;
+      // Redrawn once per frame (moves can come faster than the draped shape is rebuilt)
+      this.draftPending = true;
+      this.invalidate();
+    };
+    this.shaping = true;
+    return {
+      move: build,
+      end: ev => {
+        build(ev);
+        this.draftPending = false;
+        this.shaping = false;
+        if (shape === "freehand") this.drawPts = simplify(this.drawPts, step * 0.5);
+        if (!this.finishDrawing()) this.cancelDrawing();
+      }
+    };
+  }
 
   /** Ends drawing an area or line (Enter, double-click, or clicking the first point). */
   finishDrawing() {
@@ -2106,7 +2229,9 @@ export class CourseView {
       }
       g.add(this.fatLine(this.drapeLine(area && pts.length >= 3 ? [...pts, pts[0]] : pts, LIFT + 0.2), color === "#ffffff" ? "#fde68a" : color, 3, { depthTest: false, order: 20 }));
       const len = pathLength(pts);
-      label = area
+      label = this.shaping
+        ? area ? `${fmtArea(Math.abs(polygonArea(pts)), doc.course.units)} · let go to finish` : `${fmtDist(len, doc.course.units)} · let go to finish`
+        : area
         ? `${pts.length - (this.cursor ? 1 : 0)} points · Enter or double-click to finish`
         : `${fmtDist(len, doc.course.units)} · Enter or double-click to finish`;
       const last = pts[pts.length - 1];

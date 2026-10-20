@@ -147,3 +147,47 @@ test("basket marks", async ({ page }) => {
   await page.getByTestId("basket-mark-basket").scrollIntoViewIfNeeded();
   await page.getByRole("radiogroup", { name: "Basket marks" }).locator("..").screenshot({ path: "look/15-basket-picker.png" });
 });
+
+test("features close up", async ({ page }) => {
+  await importSite(page);
+  await seedCourse(page);
+  await page.evaluate(() => {
+    const w = window as any, a = w.__dgActions, d = w.__dgCourse();
+    const W = d.canvas.width, H = d.canvas.height;
+    // A gate on hole 6
+    w.__dgEditor().set({ mandoKind: "gate", activeHoleId: d.holes[5].id });
+    a.placeAt("add-mando", { x: 0.79 * W, y: 0.58 * H });
+    w.__dgEditor().set({ mandoKind: "single", activeHoleId: null });
+    for (const [kind, x, y] of [["restroom", 0.26, 0.86], ["trash", 0.4, 0.84], ["water", 0.27, 0.8], ["kiosk", 0.33, 0.82], ["here", 0.38, 0.92], ["firstaid", 0.22, 0.88], ["picnic", 0.44, 0.9]] as const) {
+      w.__dgEditor().set({ amenityKind: kind });
+      a.placeAt("add-amenity", { x: x * W, y: y * H });
+    }
+    a.select(null);
+  });
+  // The road is OB (picked in its inspector)
+  await page.getByRole("button", { name: "3 Features" }).click();
+  const roadId = await page.evaluate(() => (window as any).__dgCourse().items.find((i: any) => i.type === "line" && i.kind === "road")?.id);
+  await page.evaluate(id => (window as any).__dgActions.select(id), roadId);
+  await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "OB, red edge" }).click();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "2 Holes" }).click();
+  await page.getByTestId("hole-row").nth(1).click();
+  await page.getByTestId("ob-left").click();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "3 Features" }).click();
+  await page.waitForTimeout(1200);
+  await shot(page, "16-features");
+  await page.evaluate(() => {
+    const d = (window as any).__dgCourse();
+    (window as any).__dgView.fitHole(d.holes[3].id);
+  });
+  await page.waitForTimeout(1500);
+  await shot(page, "16-features-zoom");
+  await page.getByRole("button", { name: "5 Design" }).click();
+  for (const theme of ["illustrated", "forest"]) {
+    await page.getByTestId(`theme-${theme}`).click();
+    if (theme === "forest") await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
+    await page.waitForTimeout(2500);
+    await page.getByTestId("design-page").screenshot({ path: `look/16-print-${theme}.png` });
+  }
+});

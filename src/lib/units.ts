@@ -20,3 +20,12 @@ export const fmtElev = (ft: number, units: Units) => {
 
 /** Both units, for signs: "312 ft / 95 m". */
 export const fmtBoth = (ft: number) => `${Math.round(ft)} ft / ${Math.round(ft / FT_PER_M)} m`;
+
+/** An area: "4,200 sq ft" or "1.3 acres" / "390 m²" or "1.2 ha". */
+export const fmtArea = (sqft: number, units: Units) => {
+  if (units === "m") {
+    const m2 = sqft / (FT_PER_M * FT_PER_M);
+    return m2 >= 10000 ? `${(m2 / 10000).toFixed(1)} ha` : `${Math.round(m2).toLocaleString()} m²`;
+  }
+  return sqft >= 43560 / 4 ? `${(sqft / 43560).toFixed(sqft >= 43560 * 10 ? 0 : 1)} acres` : `${Math.round(sqft).toLocaleString()} sq ft`;
+};

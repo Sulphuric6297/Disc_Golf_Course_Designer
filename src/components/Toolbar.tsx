@@ -1,9 +1,10 @@
 // The tools along the bottom of the map, with the active tool's options and a hint above them.
 import type { ReactNode } from "react";
-import { Armchair, CircleDot, MousePointer2, Pentagon, RectangleHorizontal, Redo2, Route, Ruler, Signpost, Spline, Target, TreeDeciduous, Type, Undo2 } from "lucide-react";
+import { Armchair, Circle, CircleDot, MousePointer2, PenLine, Pentagon, RectangleHorizontal, Redo2, Route, Ruler, Signpost, Spline, Square, Target, TreeDeciduous, Type, Undo2 } from "lucide-react";
+import { amenitySymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, TEE_LEVELS, TEE_ORDER } from "../constants";
 import { useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaKind, LineKind, ToolMode, TreeKind } from "../types";
+import type { AmenityKind, AreaKind, DrawShape, LineKind, ToolMode, TreeKind } from "../types";
 
 export const TOOLS: { mode: ToolMode; key: string; label: string; icon: ReactNode; group: number }[] = [
   { mode: "select", key: "V", label: "Select and move", icon: <MousePointer2 size={18} />, group: 0 },
@@ -24,7 +25,7 @@ const HINTS: Partial<Record<ToolMode, string>> = {
   "add-hole": "Click where the tee goes, then where the basket goes. Keep going for the next hole · Esc when done",
   "add-tee": "Click to add another tee (another color) to the selected hole",
   "add-basket": "Click to add another pin position (B, C…) to the selected hole",
-  "add-mando": "Click to place a mando; turn its arrow to the direction of play, and pick which side the disc must pass",
+  "add-mando": "Click beside the hole's line where the post or tree is: it faces down the hole, and the disc passes on the line's side",
   "add-dropzone": "Click to place a drop zone",
   "draw-area": "Click the corners · double-click or Enter to finish · Backspace removes the last point · Esc cancels",
   "draw-line": "Click along the line · double-click or Enter to finish · Backspace removes the last point · Esc cancels",
@@ -32,6 +33,19 @@ const HINTS: Partial<Record<ToolMode, string>> = {
   "add-amenity": "Click to place it",
   "add-label": "Click to place a label, then type its text in the panel",
   measure: "Click two points for distance and elevation change · Shift+click to keep going"
+};
+
+const SHAPES: Record<DrawShape, { label: string; title: string; icon: ReactNode }> = {
+  points: { label: "Points", title: "Click each corner or bend", icon: <Spline size={13} /> },
+  box: { label: "Rectangle", title: "Drag a rectangle", icon: <Square size={13} /> },
+  circle: { label: "Circle", title: "Drag from the middle out", icon: <Circle size={13} /> },
+  freehand: { label: "Freehand", title: "Drag to draw", icon: <PenLine size={13} /> }
+};
+const SHAPE_HINTS: Record<DrawShape, string> = {
+  points: "",
+  box: "Drag a rectangle (clicks still add corners) · Esc cancels",
+  circle: "Drag from the middle out · Esc cancels",
+  freehand: "Drag to draw; let go to finish · Esc cancels"
 };
 
 const Chip = ({ active, onClick, children, color, testid }: { active: boolean; onClick: () => void; children: ReactNode; color?: string; testid?: string }) => (
@@ -53,24 +67,50 @@ export function Toolbar() {
   const redo = useCourse(s => s.redo);
   if (ed.viewOnly || ed.teeView) return null;
   const set = ed.set;
+  // How to draw: point by point, or drag a rectangle, a circle or a freehand shape
+  const shapes = (list: DrawShape[]) => (
+    <div key="shapes" className="flex gap-0.5 bg-zinc-900/95 border border-zinc-700 rounded-full p-0.5 mr-1" role="radiogroup" aria-label="How to draw">
+      {list.map(sh => {
+        // (Lines can't be rectangles or circles: those draw freehand)
+        const on = ed.drawShape === sh || (sh === "freehand" && !list.includes(ed.drawShape));
+        return (
+          <button key={sh} role="radio" aria-checked={on} data-testid={`draw-shape-${sh}`} title={SHAPES[sh].title} onClick={() => set({ drawShape: sh })} className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${on ? "bg-orange-500 text-white" : "text-zinc-300 hover:bg-zinc-800"}`}>
+            {SHAPES[sh].icon}{SHAPES[sh].label}
+          </button>
+        );
+      })}
+    </div>
+  );
   const options = (() => {
     switch (ed.tool) {
       case "add-hole":
       case "add-tee":
         return TEE_ORDER.map(l => <Chip key={l} active={ed.teeLevel === l} color={TEE_LEVELS[l].color} onClick={() => set({ teeLevel: l })} testid={`tee-level-${l}`}>{TEE_LEVELS[l].label}</Chip>);
       case "draw-area":
-        return (Object.keys(AREA_KINDS) as AreaKind[]).map(k => <Chip key={k} active={ed.areaKind === k} color={AREA_KINDS[k].color} onClick={() => set({ areaKind: k })} testid={`area-kind-${k}`}>{AREA_KINDS[k].label.replace(/ \(.*\)/, "")}</Chip>);
+        return [shapes(["points", "box", "circle", "freehand"]), ...(Object.keys(AREA_KINDS) as AreaKind[]).map(k => <Chip key={k} active={ed.areaKind === k} color={AREA_KINDS[k].color} onClick={() => set({ areaKind: k })} testid={`area-kind-${k}`}>{AREA_KINDS[k].label.replace(/ \(.*\)/, "")}</Chip>)];
       case "draw-line":
-        return (Object.keys(LINE_KINDS) as LineKind[]).map(k => <Chip key={k} active={ed.lineKind === k} color={LINE_KINDS[k].color} onClick={() => set({ lineKind: k })} testid={`line-kind-${k}`}>{LINE_KINDS[k].label}</Chip>);
+        return [shapes(["points", "freehand"]), ...(Object.keys(LINE_KINDS) as LineKind[]).map(k => <Chip key={k} active={ed.lineKind === k} color={LINE_KINDS[k].color} onClick={() => set({ lineKind: k })} testid={`line-kind-${k}`}>{LINE_KINDS[k].label}</Chip>)];
       case "add-amenity":
-        return (Object.keys(AMENITY_KINDS) as AmenityKind[]).map(k => <Chip key={k} active={ed.amenityKind === k} color={AMENITY_KINDS[k].color} onClick={() => set({ amenityKind: k })}>{AMENITY_KINDS[k].label}</Chip>);
+        return (Object.keys(AMENITY_KINDS) as AmenityKind[]).map(k => (
+          <Chip key={k} active={ed.amenityKind === k} testid={`amenity-kind-${k}`} onClick={() => set({ amenityKind: k })}>
+            <span className="inline-block" dangerouslySetInnerHTML={{ __html: symbolSvg(amenitySymbol(k, { x: 0, y: 0 }, 1), 16, k === "here" ? 22 : 16) }} />
+            {k === "here" ? "You are here" : AMENITY_KINDS[k].label}
+          </Chip>
+        ));
+      case "add-mando":
+        return [
+          <Chip key="single" active={ed.mandoKind === "single"} testid="mando-kind-single" onClick={() => set({ mandoKind: "single" })}>One post</Chip>,
+          <Chip key="gate" active={ed.mandoKind === "gate"} testid="mando-kind-gate" onClick={() => set({ mandoKind: "gate" })}>Gate: pass between two</Chip>
+        ];
       case "add-tree":
         return (["deciduous", "conifer", "palm", "bush"] as TreeKind[]).map(k => <Chip key={k} active={ed.treeKind === k} onClick={() => set({ treeKind: k })}>{k === "deciduous" ? "Leafy tree" : k === "conifer" ? "Pine" : k === "palm" ? "Palm" : "Bush"}</Chip>);
       default:
         return null;
     }
   })();
-  const hint = ed.tool === "select" ? "Drag to pan · scroll or pinch to zoom · right-drag or Shift+drag to turn and tilt" : HINTS[ed.tool];
+  const drawing = ed.tool === "draw-area" || ed.tool === "draw-line";
+  const shape = ed.tool === "draw-line" && (ed.drawShape === "box" || ed.drawShape === "circle") ? "freehand" : ed.drawShape;
+  const hint = ed.tool === "select" ? "Drag to pan · scroll or pinch to zoom · right-drag or Shift+drag to turn and tilt" : drawing && shape !== "points" ? SHAPE_HINTS[shape] : ed.tool === "add-mando" && ed.mandoKind === "gate" ? "Click on the hole's line where the gate is: two posts across it, the disc passes between" : HINTS[ed.tool];
   return (
     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-20 max-w-[calc(100%-24px)]">
       {options && <div className="flex flex-wrap justify-center gap-1.5 max-w-[760px]" data-testid="tool-options">{options}</div>}

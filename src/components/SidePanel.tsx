@@ -197,9 +197,10 @@ function FeaturesStep() {
           {area("ob", "Draw around it: landing inside is OB.")}
           {line("ob", "A line that is OB (a road edge, a fence line).")}
           {area("hazard", "A penalty area that isn't OB.")}
-          {tool("add-mando", <Signpost size={17} className="text-orange-400" />, "Mando (M)", "The disc must pass on one side. Click near the hole's line; it faces down the hole.")}
+          {tool("add-mando", <Signpost size={17} className="text-orange-400" />, "Mando (M)", "Click beside the hole's line where the post or tree is: it faces down the hole, passed on the line's side. Or a gate of two posts to pass between.")}
           {tool("add-dropzone", <CircleDot size={17} className="text-orange-400" />, "Drop zone (Z)", "Where to throw from after a missed mando or OB.")}
         </div>
+        <p className="text-[11px] text-zinc-400 mt-2">Quick OB: pick a hole and use <b>Add OB</b> (left side, right side, behind the basket). Right-click a creek, road or fence to mark it OB. Areas can be dragged out as a rectangle or circle, or drawn freehand.</p>
       </Section>
       <Section title="The land">
         <div className="space-y-1.5">

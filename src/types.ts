@@ -69,7 +69,7 @@ export interface TreeItem extends BaseItem {
   importSource?: "photo";
 }
 
-export type AmenityKind = "bench" | "trash" | "sign" | "kiosk" | "restroom" | "parking" | "water" | "practice" | "shelter" | "bridge";
+export type AmenityKind = "bench" | "trash" | "sign" | "kiosk" | "restroom" | "parking" | "water" | "practice" | "shelter" | "bridge" | "firstaid" | "picnic" | "here";
 export interface AmenityItem extends BaseItem {
   type: "amenity";
   kind: AmenityKind;
@@ -93,6 +93,8 @@ export interface AreaItem extends BaseItem {
   /** For one hole only (unset: the whole course). */
   holeId?: string;
   label?: string;
+  /** Out of bounds: water is unless set false; true also draws the red OB edge on the map. */
+  ob?: boolean;
   /** Brought in from OpenStreetMap (replaced on re-import). */
   importSource?: "osm";
 }
@@ -107,6 +109,9 @@ export interface LineItem extends BaseItem {
   width?: number;
   holeId?: string;
   label?: string;
+  /** Out of bounds: a stream is unless set false; a road, fence or path is when true (and then
+   * its red OB edge is drawn on the map). */
+  ob?: boolean;
   /** Brought in from OpenStreetMap (replaced on re-import). */
   importSource?: "osm";
 }
@@ -141,6 +146,9 @@ export interface Layout {
   tee: TeeLevel;
   pin: PinPosition;
 }
+
+/** How a new area or line is drawn: point by point, a dragged rectangle or circle, or freehand. */
+export type DrawShape = "points" | "box" | "circle" | "freehand";
 
 export type MapTheme = "forest" | "illustrated" | "satellite" | "topo" | "minimal" | "night";
 

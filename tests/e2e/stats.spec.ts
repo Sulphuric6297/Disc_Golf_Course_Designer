@@ -2,7 +2,7 @@
 import { test, expect } from "@playwright/test";
 import { createArea, createBasket, createEmptyCourse, createLine, createTee, createTree, newHole } from "../../src/lib/course";
 import { corridor, pathLength, pointInPolygon, smoothPath } from "../../src/lib/geom";
-import { courseTotals, designChecks, holeStats, parForDistance, safetyIssues } from "../../src/lib/holeStats";
+import { courseTotals, designChecks, holeStats, isOb, parForDistance, safetyIssues } from "../../src/lib/holeStats";
 import type { CourseDoc, P, TeeLevel } from "../../src/types";
 
 /** A course with holes from [tee, basket] pairs, on flat ground (or with `heights`). */
@@ -161,4 +161,29 @@ test.describe("geometry", () => {
     expect(s.some(p => Math.hypot(p.x - 100, p.y - 100) < 0.01)).toBe(true);
     expect(pathLength(s)).toBeGreaterThan(pathLength(pts) * 0.98);
   });
+});
+
+test("what counts as OB: water unless marked otherwise; a road or fence only when marked", () => {
+  const doc = make([[{ x: 100, y: 500 }, { x: 500, y: 500 }]]);
+  // A road across the hole: not OB until marked
+  const road = createLine("road", [{ x: 300, y: 200 }, { x: 300, y: 800 }]);
+  doc.items.push(road);
+  expect(isOb(road)).toBe(false);
+  expect(holeStats(doc, doc.holes[0]).obCrossed).toBe(0);
+  road.ob = true;
+  expect(isOb(road)).toBe(true);
+  expect(holeStats(doc, doc.holes[0]).obCrossed).toBe(1);
+  // Water is OB unless set otherwise
+  const pond = createArea("water", [{ x: 380, y: 450 }, { x: 420, y: 450 }, { x: 420, y: 550 }, { x: 380, y: 550 }]);
+  doc.items.push(pond);
+  expect(isOb(pond)).toBe(true);
+  expect(holeStats(doc, doc.holes[0]).obCrossed).toBe(2);
+  pond.ob = false;
+  expect(isOb(pond)).toBe(false);
+  expect(holeStats(doc, doc.holes[0]).obCrossed).toBe(1);
+  // A creek is too
+  const creek = createLine("stream", [{ x: 200, y: 200 }, { x: 200, y: 800 }]);
+  expect(isOb(creek)).toBe(true);
+  creek.ob = false;
+  expect(isOb(creek)).toBe(false);
 });

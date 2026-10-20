@@ -152,6 +152,26 @@ const idSeed = (id: string) => {
   return h >>> 0;
 };
 
+/**
+ * Where the painting draws a line and how wide (feet), on a map of `scale` points per foot: creeks
+ * and trails wind, and everything is at least wide enough to see. (The red OB edge of a creek
+ * follows the same line.)
+ */
+export const paintedLine = (l: LineItem, scale: number): { points: P[]; width: number } => {
+  const w = l.width ?? LINE_KINDS[l.kind].width;
+  const atLeast = (points: number) => Math.max(w, points / scale);
+  if (l.kind === "stream") {
+    const cw = atLeast(5.5);
+    return { points: smoothPath(meander(l.points, cw * 1.6, Math.max(50, cw * 11), idSeed(l.id)), 3), width: cw };
+  }
+  if (l.kind === "path" || l.kind === "walk") {
+    const tw = atLeast(3.6);
+    return { points: meander(smoothPath(l.points, 8), tw * 0.9, Math.max(40, tw * 14), idSeed(l.id)), width: tw };
+  }
+  if (l.kind === "road") return { points: l.points, width: atLeast(3.5) };
+  return { points: l.points, width: w };
+};
+
 export type ForestView = { cx: number; cy: number; rotation: number; scale: number; width: number; height: number };
 
 export type ForestOpts = {
@@ -288,19 +308,15 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
       else if (a.kind === "woods") poly(WOODS, a.points);
     } else if (i.type === "line") {
       const l = i as LineItem;
-      const w = l.width ?? LINE_KINDS[l.kind].width;
+      const { points: pts, width: lw } = paintedLine(l, view.scale);
       if (l.kind === "road") {
-        const rw = Math.max(w, ftOf(3.5));
-        line(ROAD, l.points, rw);
-        line(CLEAR, l.points, rw + ftOf(2));
+        line(ROAD, pts, lw);
+        line(CLEAR, pts, lw + ftOf(2));
       } else if (l.kind === "path" || l.kind === "walk") {
-        const tw = Math.max(w, ftOf(3.6));
-        const pts = meander(smoothPath(l.points, 8), tw * 0.9, Math.max(40, tw * 14), idSeed(l.id));
-        line(DIRT, pts, tw);
-        line(CLEAR, pts, tw + (crownR * 2.4) / k);
+        line(DIRT, pts, lw);
+        line(CLEAR, pts, lw + (crownR * 2.4) / k);
       } else if (l.kind === "stream") {
-        const cw = Math.max(w, ftOf(5.5));
-        const pts = smoothPath(meander(l.points, cw * 1.6, Math.max(50, cw * 11), idSeed(l.id)), 3);
+        const cw = lw;
         wobblyLine(WATER, pts, cw, idSeed(l.id) + 1);
         // Crowns lean over the banks a little
         line(CLEAR, pts, cw + (crownR * 1.4) / k);

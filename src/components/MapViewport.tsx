@@ -93,8 +93,8 @@ export function MapViewport({ onContextMenu }: { onContextMenu: (info: { clientX
   useEffect(() => { view?.setDoc(viewDoc); }, [view, viewDoc]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
   useEffect(() => {
-    view?.setTool({ mode: ed.viewOnly ? "select" : ed.tool, areaKind: ed.areaKind, lineKind: ed.lineKind, readOnly: ed.viewOnly }, ed.teeLevel);
-  }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.viewOnly, ed.teeLevel]);
+    view?.setTool({ mode: ed.viewOnly ? "select" : ed.tool, areaKind: ed.areaKind, lineKind: ed.lineKind, shape: ed.drawShape, readOnly: ed.viewOnly }, ed.teeLevel);
+  }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.drawShape, ed.viewOnly, ed.teeLevel]);
   useEffect(() => { view?.setPose(ed.view === "2d" ? "top" : "tilt"); }, [view, ed.view]);
   useEffect(() => {
     if (!view) return;

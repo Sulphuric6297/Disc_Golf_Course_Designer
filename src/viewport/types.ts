@@ -1,4 +1,4 @@
-import type { AreaKind, CourseDoc, LineKind, P, ToolMode } from "../types";
+import type { AreaKind, CourseDoc, LineKind, P, ToolMode, DrawShape } from "../types";
 import type { HoleStats, SafetyIssue } from "../lib/holeStats";
 
 export type { P };
@@ -41,6 +41,8 @@ export type ViewTool = {
   mode: ToolMode;
   areaKind: AreaKind;
   lineKind: LineKind;
+  /** How areas and lines are drawn. */
+  shape: DrawShape;
   /** Look only (a shared course): no editing gestures. */
   readOnly: boolean;
 };

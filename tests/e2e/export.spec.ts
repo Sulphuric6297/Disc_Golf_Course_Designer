@@ -64,7 +64,8 @@ test("spreadsheets: the hole list, the stake-out list and the parts list", async
   const stake = (await exported(page, "export-stakeout")).data.toString();
   expect(stake).toContain("Blue tee (pad middle)");
   expect(stake).toContain("Basket A");
-  expect(stake).toMatch(/Mando \(pass right\)/);
+  // (East of a hole running north: passed on its left, on the line's side)
+  expect(stake).toMatch(/Mando \(pass left\)/);
   await expect(page.getByTestId("parts")).toContainText("Baskets");
   await expect(page.getByTestId("parts-total")).toHaveText(/\$\d/);
   const parts = (await exported(page, "export-parts")).data.toString();

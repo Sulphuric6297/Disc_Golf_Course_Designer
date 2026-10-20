@@ -83,6 +83,10 @@ export type HoleStats = {
 
 const areasOf = (doc: Pick<CourseDoc, "items">, kinds: string[]) => doc.items.filter(i => i.type === "area" && kinds.includes((i as AreaItem).kind)) as AreaItem[];
 
+/** Whether landing in or beyond it is out of bounds: OB shapes; water and streams unless marked
+ * otherwise; anything else marked OB (a road, a fence line). */
+export const isOb = (i: AreaItem | LineItem) => i.kind === "ob" || i.ob === true || ((i.kind === "water" || i.kind === "stream") && i.ob !== false);
+
 export const holeStats = (doc: CourseDoc, hole: Hole, layout: Layout | undefined = activeLayout(doc)): HoleStats => {
   const tee = teeFor(doc, hole.id, layout?.tee);
   const basket = basketFor(doc, hole.id, layout?.pin);
@@ -116,8 +120,8 @@ export const holeStats = (doc: CourseDoc, hole: Hole, layout: Layout | undefined
   const factor = doc.rules?.elevationFactor ?? 3;
   const playsLike = complete ? Math.max(0, (length + factor * elevationChange) * (1 + shapeExtra) * (foliage === "heavy" ? HEAVY_FOLIAGE : 1)) : 0;
   const parAuto = complete ? parForDistance(playsLike, level) : 3;
-  const obAreas = areasOf(doc, ["ob", "water"]).filter(a => !a.holeId || a.holeId === hole.id);
-  const obLines = (doc.items.filter(i => i.type === "line" && ((i as LineItem).kind === "ob" || (i as LineItem).kind === "stream")) as LineItem[]).filter(l => !l.holeId || l.holeId === hole.id);
+  const obAreas = (doc.items.filter(i => i.type === "area" && isOb(i)) as AreaItem[]).filter(a => !a.holeId || a.holeId === hole.id);
+  const obLines = (doc.items.filter(i => i.type === "line" && isOb(i)) as LineItem[]).filter(l => !l.holeId || l.holeId === hole.id);
   let obCrossed = 0;
   if (complete) {
     obCrossed += obAreas.filter(a => lengthInside(smooth, a.points, 3) > 4).length;

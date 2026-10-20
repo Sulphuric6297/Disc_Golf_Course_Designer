@@ -56,9 +56,9 @@ design tools and the PDGA guidance the app follows.
 | --- | --- |
 | `smoke.spec.ts` | Loads, welcome card, steps, 2D/3D, shortcuts dialog |
 | `holes.spec.ts` | New holes (tee then basket), live length and par, doglegs, fairway width, extra tees and pins, layouts, hole order, delete + undo |
-| `features.spec.ts` | Drawing OB areas and lines, hazards, water, mandos (side, direction), drop zones, trees, amenities, labels, moving and reshaping shapes |
+| `features.spec.ts` | Drawing OB areas and lines, hazards, water (click by click, or dragging a rectangle, circle or freehand shape), one-click OB along a hole or behind its basket, marking a road OB, mandos (passed on the line's side, direction), drop zones, trees, amenities (pictograms), labels, moving and reshaping shapes |
 | `import-site.spec.ts` | Address search, framing the area, photo + elevation + trees + OpenStreetMap paths and water, elevation change per hole |
-| `stats.spec.ts` | Hole math: PDGA effective length and par, doglegs, foliage, trees and OB in play, safety checks, design checks (pure logic) |
+| `stats.spec.ts` | Hole math: PDGA effective length and par, doglegs, foliage, trees and OB in play (what counts as OB), safety checks, design checks (pure logic) |
 | `views.spec.ts` | View from the tee, flyover (a slow frame doesn't skip it), back to the map |
 | `design.spec.ts` | Map designer: themes, colors, title block, legend, hole table, contours, turning the map; the Forest painting (tree cover from sparse to dense, winding creeks and trails), basket marks (five kinds, legend, older courses); the printed map's and tee signs' contents |
 | `export.spec.ts` | Course map (SVG/PNG/PDF), tee signs, scorecard, GeoJSON, KML, GPX, CSV, stake-out list, parts list |
@@ -74,7 +74,9 @@ design tools and the PDGA guidance the app follows.
 - Pure logic goes in `src/lib/`:
   - `holeStats.ts`: par, lengths and checks;
   - `geom.ts`;
-  - `mapSvg.ts`: the printed map (vector symbols and labels, basket marks);
+  - `mapSvg.ts`: the printed map (vector shapes and labels);
+  - `symbols.ts`: the symbols drawn the same on the printed map, tee signs, legend and the
+    editor's map (basket marks, mandos, drop zones, amenity pictograms);
   - `forest.ts`: the Forest style's painted land (one picture: canopy height field lit from the
     top left, fairways, dirt, water, roads), cached by what it depends on;
   - `exports.ts`;

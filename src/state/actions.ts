@@ -1,10 +1,10 @@
 // What the tools and menus do to the course.
-import { PIN_POSITIONS, TEE_ORDER, generateId } from "../constants";
+import { CIRCLE_ONE_FT, PIN_POSITIONS, TEE_ORDER, generateId } from "../constants";
 import {
   createAmenity, createArea, createBasket, createDropZone, createLabel, createLine, createMando, createTee, createTree,
   holeBaskets, holeTees, itemHoleId, newHole, teeFor
 } from "../lib/course";
-import { centroid, nearestOnSegment } from "../lib/geom";
+import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { holeStats } from "../lib/holeStats";
 import type { CourseItem, Hole, P, TeeLevel, ToolMode } from "../types";
 import { changeDoc, editor, getDoc, removeHole, removeItems, useEditor } from "./course";
@@ -26,15 +26,32 @@ const workingHole = (): Hole | null => {
   return doc.holes.find(h => h.id === id) ?? null;
 };
 
-/** The direction of a hole's line near a point (degrees), for mandos placed on it. */
+/** The hole whose line passes close to `p` (a mando or drop zone placed beside it belongs to it),
+ * else the hole being worked on. */
+const holeBeside = (p: P): Hole | null => {
+  const doc = getDoc();
+  let best: { hole: Hole; d: number } | null = null;
+  for (const hole of doc.holes) {
+    const s = holeStats(doc, hole);
+    if (!s.complete) continue;
+    const d = Math.min(...s.line.slice(1).map((b, i) => nearestOnSegment(p, s.line[i], b).distance));
+    if (d < 60 && (!best || d < best.d)) best = { hole, d };
+  }
+  return best?.hole ?? workingHole();
+};
+
+/** The hole line's direction where it passes `p` (degrees), which side of it `p` is, and the
+ * nearest point on it (for mandos placed beside it). */
 const lineAngleNear = (hole: Hole, p: P) => {
   const s = holeStats(getDoc(), hole);
-  let best = { d: Infinity, angle: 0 };
+  let best = { d: Infinity, angle: 0, right: false, point: p };
   for (let i = 1; i < s.line.length; i++) {
-    const n = nearestOnSegment(p, s.line[i - 1], s.line[i]);
-    if (n.distance < best.d) best = { d: n.distance, angle: (Math.atan2(s.line[i].y - s.line[i - 1].y, s.line[i].x - s.line[i - 1].x) * 180) / Math.PI };
+    const a = s.line[i - 1], b = s.line[i];
+    const n = nearestOnSegment(p, a, b);
+    // (With y pointing down, a positive cross product is to the right of a→b)
+    if (n.distance < best.d) best = { d: n.distance, angle: (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI, right: (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x) > 0, point: n.point };
   }
-  return best.angle;
+  return best;
 };
 
 /** A new hole from its tee and basket spots (added after the hole being worked on, or at the end). */
@@ -55,7 +72,7 @@ export const addHole = (tee: P, basket: P, level: TeeLevel = editor().teeLevel) 
 /** A click with a placing tool. */
 export const placeAt = (mode: ToolMode, p: P) => {
   const ed = editor();
-  const hole = workingHole();
+  const hole = mode === "add-mando" || mode === "add-dropzone" ? holeBeside(p) : workingHole();
   let item: CourseItem | null = null;
   if (mode === "add-tee") {
     if (!hole) {
@@ -77,7 +94,26 @@ export const placeAt = (mode: ToolMode, p: P) => {
       return;
     }
     item = createBasket(hole.id, p, position);
-  } else if (mode === "add-mando") item = createMando(p, hole?.id, hole ? lineAngleNear(hole, p) : 0);
+  } else if (mode === "add-mando") {
+    // Facing down the hole, with the disc passing on the side of the line: a post to the right of
+    // the line is passed on its left
+    const near = hole ? lineAngleNear(hole, p) : null;
+    if (ed.mandoKind === "gate") {
+      // A gate: two posts across the line where clicked, each passed on the inside
+      const a = ((near?.angle ?? 0) * Math.PI) / 180;
+      const at = near ? near.point : p;
+      const half = 9;
+      const right = { x: -Math.sin(a), y: Math.cos(a) };
+      const l = { ...createMando({ x: at.x - right.x * half, y: at.y - right.y * half }, hole?.id, near?.angle ?? 0), side: "right" as const };
+      const r = { ...createMando({ x: at.x + right.x * half, y: at.y + right.y * half }, hole?.id, near?.angle ?? 0), side: "left" as const };
+      l.pairId = r.id;
+      r.pairId = l.id;
+      changeDoc(d => ({ items: [...d.items, l, r] }));
+      select(r.id);
+      return;
+    }
+    item = { ...createMando(p, hole?.id, near?.angle ?? 0), side: near?.right ? "left" : "right" };
+  }
   else if (mode === "add-dropzone") item = createDropZone(p, hole?.id);
   else if (mode === "add-tree") {
     const kind = ed.treeKind;
@@ -189,3 +225,42 @@ export const withCentroid = <T extends { points: P[] }>(item: T): T & P => ({ ..
 
 // For the automated tests and screenshots: build a course quickly without clicking every spot.
 if (typeof window !== "undefined") (window as any).__dgActions = { addHole, addDrawn, placeAt, select };
+
+/**
+ * An OB line for a hole, ready to fine-tune with its handles: along the left or right of the
+ * fairway (a little outside its edge, from near the tee to past the basket), or "long": an arc
+ * behind the basket.
+ */
+export const addHoleOb = (holeId: string, where: "left" | "right" | "long") => {
+  const doc = getDoc();
+  const hole = doc.holes.find(h => h.id === holeId);
+  if (!hole) return;
+  const st = holeStats(doc, hole);
+  if (!st.complete) return;
+  const path = smoothPath(st.line, 10);
+  const len = pathLength(path);
+  const end = pointAlong(path, len);
+  let pts: P[];
+  if (where === "long") {
+    const r = CIRCLE_ONE_FT + 12;
+    pts = Array.from({ length: 11 }, (_, i) => {
+      const a = end.angle + ((-75 + i * 15) * Math.PI) / 180;
+      return { x: end.point.x + Math.cos(a) * r, y: end.point.y + Math.sin(a) * r };
+    });
+  } else {
+    // (With y pointing down, the right of the direction of play is the direction turned +90°)
+    const sign = where === "right" ? 1 : -1;
+    const off = hole.fairwayWidth / 2 + 12;
+    const along: P[] = [];
+    for (let d = Math.min(25, len * 0.15); d <= len + 30; d += 12) {
+      const at = d <= len ? pointAlong(path, d) : { point: { x: end.point.x + Math.cos(end.angle) * (d - len), y: end.point.y + Math.sin(end.angle) * (d - len) }, angle: end.angle };
+      along.push({ x: at.point.x - Math.sin(at.angle) * off * sign, y: at.point.y + Math.cos(at.angle) * off * sign });
+    }
+    pts = simplify(along, 2.5);
+  }
+  const item = { ...createLine("ob", pts), holeId };
+  changeDoc(d => ({ items: [...d.items, item] }));
+  select(item.id);
+  const number = doc.holes.indexOf(hole) + 1;
+  toast(`OB line added ${where === "long" ? "behind the basket" : `along the ${where}`} of hole ${number}: drag its points to fit.`, "success", true);
+};

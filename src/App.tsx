@@ -134,6 +134,9 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
           <button className={row} role="menuitem" onClick={run(() => useEditor.getState().set({ teeView: holeId, flyover: true }))}>Fly over the hole</button>
         </>
       )}
+      {item && (item.type === "area" && item.kind === "water" || item.type === "line" && item.kind !== "ob" && item.kind !== "walk") && (
+        <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, { ob: item.ob === true ? undefined : true } as Partial<CourseItem>))}>{item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)"}</button>
+      )}
       <button className={row} role="menuitem" onClick={run(() => { select(info.itemId); duplicateSelection(); })}>Duplicate</button>
       {item && <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, { locked: !item.locked } as Partial<CourseItem>))}>{item.locked ? "Unlock" : "Lock in place"}</button>}
       <button className={`${row} text-red-300`} role="menuitem" onClick={run(() => { select(info.itemId); deleteSelection(); })}>Delete</button>

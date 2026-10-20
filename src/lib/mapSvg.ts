@@ -4,11 +4,12 @@
 // north arrow, scale bar). The same renderer draws a single hole for tee signs, turned so the tee
 // is at the bottom.
 import { AMENITY_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, TEE_LEVELS, TEE_ORDER } from "../constants";
-import type { AmenityItem, AreaItem, BasketItem, BasketMark, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PaperSize, TeeItem, TreeItem } from "../types";
+import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PaperSize, TeeItem, TreeItem } from "../types";
 import { activeLayout, holeBaskets, teeAim } from "./course";
 import { boundsOf, corridor, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath } from "./geom";
 import { courseTotals, holeStats, type HoleStats } from "./holeStats";
-import { forestCanvas, type CanopyGrid } from "./forest";
+import { forestCanvas, paintedLine, type CanopyGrid } from "./forest";
+import { BASKET_MARKS, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol } from "./symbols";
 import { chainContours, type Contours } from "./relief";
 import { fmtDist } from "./units";
 
@@ -93,67 +94,7 @@ export const fontStack = (f: string) => (f === "Oswald" || f === "Script" ? "Osw
 /** The title's lettering (the brush script for "Script"). */
 export const titleStack = (f: string) => (f === "Script" ? "'Kaushan Script', 'Brush Script MT', cursive" : fontStack(f));
 
-export const BASKET_MARKS: { value: BasketMark; label: string; title: string }[] = [
-  { value: "basket", label: "Basket", title: "A small basket seen from the side, as on painted course maps" },
-  { value: "badge", label: "Badge", title: "A basket in a round badge: clear on any background" },
-  { value: "flag", label: "Flag", title: "A pin flag, like a golf map" },
-  { value: "target", label: "Target", title: "Target rings" },
-  { value: "number", label: "Number", title: "The hole number in a circle" }
-];
-
-const INK = "#1b1d1a";
-/** Dark or white, whichever reads on `color`. */
-const inkOn = (color: string) => {
-  const v = parseInt(color.replace("#", "").slice(0, 6), 16);
-  const lum = (0.3 * ((v >> 16) & 255) + 0.59 * ((v >> 8) & 255) + 0.11 * (v & 255)) / 255;
-  return Number.isNaN(lum) || lum > 0.55 ? INK : "#ffffff";
-};
-
-/** The side view of a basket in unit coordinates (about 15 tall, centered): band, chains, tray, pole. */
-const basketShape = (f: (x: number, y: number) => string, u: number, ink: string, band: string, detail: boolean) => {
-  const chains = [-4.1, -2.5, -0.9, 0.9, 2.5, 4.1].map(x => `M${f(x, -5.4)}Q${f(x * 0.78, -2.6)} ${f(x * 0.42, 0.4)}`).join("");
-  const pole = `M${f(0, -7.4)}L${f(0, 7.1)}M${f(-2.5, 7.1)}L${f(2.5, 7.1)}`;
-  const tray = `M${f(-5.3, 0.3)}L${f(5.3, 0.3)}L${f(3.9, 3.9)}L${f(-3.9, 3.9)}Z`;
-  const bandD = `M${f(-4.8, -7.5)}L${f(4.8, -7.5)}L${f(4.8, -5.4)}L${f(-4.8, -5.4)}Z`;
-  const bars = detail ? [-3, -1, 1, 3].map(x => `M${f(x, 1)}L${f(x * 0.82, 3.4)}`).join("") : "";
-  return {
-    outline: `${chains}${pole}${tray}${bandD}`,
-    body: `<path d="${chains}" fill="none" stroke="${ink}" stroke-width="${n(0.55 * u)}" stroke-linecap="round"/><path d="${pole}" fill="none" stroke="${ink}" stroke-width="${n(0.95 * u)}" stroke-linecap="round"/><path d="${tray}" fill="${ink}"/>${bars ? `<path d="${bars}" stroke="#8a8f88" stroke-width="${n(0.35 * u)}"/>` : ""}<path d="${bandD}" fill="${band}" stroke="${ink}" stroke-width="${n(0.6 * u)}" stroke-linejoin="round"/>`
-  };
-};
-
-/**
- * A basket on the map, drawn as the chosen mark, centered on `p` (`u`: page points per unit; a
- * mark is about 15 units tall). `color` is the style's basket color; `label` is the hole number.
- */
-export const basketMark = (mark: BasketMark, p: P, u: number, color: string, label = "") => `<g data-mark="${mark}">${markBody(mark, p, u, color, label)}</g>`;
-
-const markBody = (mark: BasketMark, p: P, u: number, color: string, label: string) => {
-  const f = (x: number, y: number) => `${n(p.x + x * u)} ${n(p.y + y * u)}`;
-  const halo = "#ffffff";
-  switch (mark) {
-    case "badge": {
-      const ink = inkOn(color);
-      const b = basketShape((x, y) => f(x * 0.62, y * 0.62), u * 0.62, ink, ink, false);
-      return `<circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(7.6 * u)}" fill="${color}" stroke="${INK}" stroke-width="${n(0.9 * u)}"/>${b.body}`;
-    }
-    case "flag": {
-      // The cup at the basket's spot, the flag above it
-      const g = (x: number, y: number) => f(x, y - 6.4);
-      const flag = `M${g(0.5, -7.4)}L${g(7.4, -5)}L${g(0.5, -2.6)}Z`;
-      const pole = `M${g(0, 6.3)}L${g(0, -7.6)}`;
-      return `<path d="${pole}${flag}" fill="${halo}" fill-opacity="0.7" stroke="${halo}" stroke-opacity="0.7" stroke-width="${n(2 * u)}" stroke-linejoin="round" stroke-linecap="round"/><ellipse cx="${n(p.x)}" cy="${n(p.y)}" rx="${n(2.6 * u)}" ry="${n(1.05 * u)}" fill="${INK}"/><path d="${pole}" stroke="${INK}" stroke-width="${n(0.9 * u)}" stroke-linecap="round"/><path d="${flag}" fill="${color}" stroke="${INK}" stroke-width="${n(0.6 * u)}" stroke-linejoin="round"/>`;
-    }
-    case "target":
-      return `<circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(6 * u)}" fill="${color}" stroke="${INK}" stroke-width="${n(1.1 * u)}"/><circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(3.3 * u)}" fill="none" stroke="${INK}" stroke-width="${n(0.85 * u)}"/><circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(1.1 * u)}" fill="${INK}"/>`;
-    case "number":
-      return `<circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(7.4 * u)}" fill="${color}" stroke="${INK}" stroke-width="${n(1 * u)}"/><text x="${n(p.x)}" y="${n(p.y + 0.4 * u)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, 'Arial Narrow', Arial, sans-serif" font-weight="700" font-size="${n((label.length > 1 ? 8.4 : 9.6) * u)}" fill="${inkOn(color)}">${esc(label || "•")}</text>`;
-    default: {
-      const b = basketShape(f, u, INK, color, true);
-      return `<path d="${b.outline}" fill="${halo}" fill-opacity="0.65" stroke="${halo}" stroke-opacity="0.65" stroke-width="${n(2.2 * u)}" stroke-linejoin="round" stroke-linecap="round"/>${b.body}`;
-    }
-  }
-};
+export { BASKET_MARKS, basketMark };
 
 /** The map itself (everything inside the frame), in a box `view.width` × `view.height`. */
 export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers, uid = "m") => {
@@ -322,17 +263,57 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     out.push(`<g fill="none" stroke="#bbf7d0" stroke-opacity="0.45" stroke-width="${n(px(0.8))}">${trees.map(t => `<circle cx="${n(t.x)}" cy="${n(t.y)}" r="${n(t.radius * (t.width ?? 1))}"/>`).join("")}</g>`);
   }
 
-  // OB, hazards and no-go areas over the land
+  // OB, hazards and no-go areas over the land: a soft band of color inside the edge, the edge
+  // itself crisp on a white casing, and a tag saying what it is (when there is room)
+  const tags: { at: P; text: string; bg: string; fg: string; o: number }[] = [];
   for (const a of areas) {
     if (a.kind !== "ob" && a.kind !== "hazard" && a.kind !== "nogo") continue;
+    if (a.points.length < 3) continue;
     const pat = a.kind === "ob" ? `${uid}-ob` : a.kind === "hazard" ? `${uid}-hz` : `${uid}-ng`;
     const col = a.kind === "ob" ? s.ob : a.kind === "hazard" ? s.hazard : "#7c3aed";
     const o = dim(a.holeId);
-    out.push(`<polygon points="${pts(a.points)}" fill="url(#${pat})" stroke="${col}" stroke-width="${n(px(2.2))}" stroke-linejoin="round" ${a.kind === "hazard" ? `stroke-dasharray="${n(px(6))} ${n(px(3))}"` : ""} opacity="${o}"/>`);
+    const clip = `${uid}-in-${a.id.replace(/[^\w-]/g, "")}`;
+    const poly = pts(a.points);
+    defs.push(`<clipPath id="${clip}"><polygon points="${poly}"/></clipPath>`);
+    const dash = a.kind === "ob" ? "" : `stroke-dasharray="${n(px(6))} ${n(px(3.5))}"`;
+    out.push(`<g opacity="${o}"><polygon points="${poly}" fill="url(#${pat})" stroke="none"/><polygon points="${poly}" fill="none" stroke="${col}" stroke-opacity="0.38" stroke-width="${n(px(10))}" clip-path="url(#${clip})"/><polygon points="${poly}" fill="none" stroke="#ffffff" stroke-opacity="0.9" stroke-width="${n(px(4.6))}" stroke-linejoin="round"/><polygon points="${poly}" fill="none" stroke="${col}" stroke-width="${n(px(2.5))}" stroke-linejoin="round" ${dash}/></g>`);
+    const b = boundsOf(a.points);
+    if (!a.label && Math.min(b.maxX - b.minX, b.maxY - b.minY) * k > 34 * ts) {
+      tags.push({ at: toScreen(labelPoint(a.points)), text: a.kind === "ob" ? "OB" : a.kind === "hazard" ? "HAZARD" : "OUT OF PLAY", bg: col, fg: a.kind === "hazard" ? "#1b1d1a" : "#ffffff", o });
+    }
   }
   for (const l of lines.filter(x => x.kind === "ob")) {
-    out.push(`<path d="${pathD(l.points)}" fill="none" stroke="#ffffff" stroke-width="${n(px(4.5))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(0.8 * dim(l.holeId))}"/>`);
+    out.push(`<path d="${pathD(l.points)}" fill="none" stroke="#ffffff" stroke-width="${n(px(4.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(0.9 * dim(l.holeId))}"/>`);
     out.push(`<path d="${pathD(l.points)}" fill="none" stroke="${s.ob}" stroke-width="${n(px(2.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(dim(l.holeId))}"/>`);
+    const len = pathLength(l.points);
+    if (len * k > 70 * ts) tags.push({ at: toScreen(pointAlong(l.points, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: s.ob, fg: "#ffffff", o: dim(l.holeId) });
+  }
+
+  // Water, creeks, roads, fences and paths marked OB: a red edge along them (on both banks of a
+  // creek or road, following the painted line in the Forest style)
+  {
+    const offset = (line: P[], d: number) => line.map((p, i) => {
+      const a = line[Math.max(0, i - 1)], b = line[Math.min(line.length - 1, i + 1)];
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+      return { x: p.x - (dy / len) * d, y: p.y + (dx / len) * d };
+    });
+    const edge = (d: string, o: number) => out.push(`<path d="${d}" fill="none" stroke="#ffffff" stroke-opacity="0.9" stroke-width="${n(px(3.6))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/><path d="${d}" fill="none" stroke="${s.ob}" stroke-width="${n(px(1.9))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/>`);
+    for (const a of areas) if (a.ob === true && a.kind !== "ob" && a.points.length >= 3) edge(pathD(a.points, true), dim(a.holeId));
+    for (const l of lines) {
+      if (l.ob !== true || l.kind === "ob" || l.points.length < 2) continue;
+      const o = dim(l.holeId);
+      const w = l.width ?? LINE_KINDS[l.kind].width;
+      const g = forest ? paintedLine(l, view.scale) : { points: l.kind === "stream" || l.kind === "path" ? smoothPath(l.points, 8) : l.points, width: Math.max(w, px(l.kind === "road" ? 3 : l.kind === "path" ? 2.2 : 2)) };
+      if (l.kind === "fence" || l.kind === "walk") edge(pathD(g.points), o);
+      else {
+        const off = (g.width / 2) * (forest && l.kind === "stream" ? 1.3 : 1) + px(1.6);
+        edge(pathD(offset(g.points, off)), o);
+        edge(pathD(offset(g.points, -off)), o);
+      }
+      const len = pathLength(g.points);
+      // (Away from its name, which sits in the middle)
+      if (len * k > 70 * ts) tags.push({ at: toScreen(pointAlong(g.points, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: s.ob, fg: "#ffffff", o });
+    }
   }
 
   // Next-tee walks
@@ -409,7 +390,11 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     for (const st of layers.stats) {
       if (!st.complete || (focus && st.holeId !== focus)) continue;
       const line = smoothPath(st.line, 10);
-      const mid = pointAlong(line, pathLength(line) * 0.55);
+      const len = pathLength(line);
+      // Along the line, clear of mandos, drop zones and the like
+      const busy = items.filter(i => i.type === "mando" || i.type === "dropzone" || i.type === "amenity").map(i => toScreen(i));
+      const clear = (q: P) => busy.every(b => Math.hypot(b.x - q.x, b.y - q.y) > 26 * ts);
+      const mid = [0.55, 0.4, 0.7, 0.3, 0.8].map(f => pointAlong(line, len * f)).find(m => clear(toScreen(m.point))) ?? pointAlong(line, len * 0.55);
       let ang = (mid.angle * 180) / Math.PI - view.rotation;
       while (ang > 90) ang -= 180;
       while (ang < -90) ang += 180;
@@ -420,34 +405,23 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     }
   }
 
+  // What the OB, hazard and out-of-play shapes are
+  for (const t of tags) {
+    const fs = 6.6 * ts, w = (t.text.length * 0.66 + 1.2) * fs, h = fs * 1.55;
+    sym.push(`<g opacity="${t.o}"><rect x="${n(t.at.x - w / 2)}" y="${n(t.at.y - h / 2)}" width="${n(w)}" height="${n(h)}" rx="${n(h / 2)}" fill="${t.bg}" stroke="#ffffff" stroke-width="${n(0.9 * ts)}"/><text x="${n(t.at.x)}" y="${n(t.at.y + 0.3 * ts)}" text-anchor="middle" dominant-baseline="central" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="${n(fs)}" letter-spacing="${n(0.4 * ts)}" fill="${t.fg}">${t.text}</text></g>`);
+  }
   // Mandos and drop zones
-  for (const m of items.filter(i => i.type === "mando") as MandoItem[]) {
-    const p = toScreen(m);
-    const a = m.rotation - view.rotation;
-    const r = 7 * ts;
-    // Restricted side: a short orange line to the side the disc must not pass
-    const sideSign = m.side === "right" ? -1 : 1;
-    const ra = ((a + sideSign * 90) * Math.PI) / 180;
-    sym.push(`<g opacity="${dim(m.holeId)}"><line x1="${n(p.x)}" y1="${n(p.y)}" x2="${n(p.x + Math.cos(ra) * r * 3)}" y2="${n(p.y + Math.sin(ra) * r * 3)}" stroke="#f97316" stroke-width="${n(2.4 * ts)}" stroke-linecap="round"/>`);
-    sym.push(`<circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(r)}" fill="#f97316" stroke="#fff" stroke-width="${n(1.4 * ts)}"/>`);
-    const pa = (a * Math.PI) / 180;
-    const pass = { x: p.x - Math.cos(ra) * r * 1.9, y: p.y - Math.sin(ra) * r * 1.9 };
-    sym.push(`<path d="M${n(pass.x - Math.cos(pa) * r)} ${n(pass.y - Math.sin(pa) * r)}L${n(pass.x + Math.cos(pa) * r)} ${n(pass.y + Math.sin(pa) * r)}" stroke="#f97316" stroke-width="${n(2 * ts)}" marker-end="url(#${uid}-arrow)"/>`);
-    sym.push(textLabel(p, "M", 8 * ts, { color: "#fff", halo: "#f97316", weight: 800 }) + `</g>`);
+  const mandos = items.filter(i => i.type === "mando") as MandoItem[];
+  for (const m of mandos) {
+    // A gate's two posts are drawn together, once
+    const pair = m.pairId ? mandos.find(o => o.id === m.pairId) : undefined;
+    if (pair && pair.id < m.id) continue;
+    sym.push(`<g opacity="${dim(m.holeId)}">${pair ? gateSymbol(toScreen(m), toScreen(pair), m.rotation - view.rotation, 1.3 * ts) : mandoSymbol(toScreen(m), m.rotation - view.rotation, m.side, 1.3 * ts)}</g>`);
   }
-  defs.push(`<marker id="${uid}-arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#f97316"/></marker>`);
-  for (const dz of items.filter(i => i.type === "dropzone") as DropZoneItem[]) {
-    const p = toScreen(dz);
-    sym.push(`<g opacity="${dim(dz.holeId)}"><circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(8 * ts)}" fill="#fff" stroke="#f97316" stroke-width="${n(2 * ts)}"/>${textLabel(p, "DZ", 7 * ts, { color: "#f97316", halo: "#fff", weight: 800 })}</g>`);
-  }
+  for (const dz of items.filter(i => i.type === "dropzone") as DropZoneItem[]) sym.push(`<g opacity="${dim(dz.holeId)}">${dropZoneSymbol(toScreen(dz), 1.15 * ts)}</g>`);
 
   // Amenities
-  for (const am of items.filter(i => i.type === "amenity") as AmenityItem[]) {
-    const p = toScreen(am);
-    const meta = AMENITY_KINDS[am.kind];
-    const w = (meta.letter.length > 1 ? 15 : 11) * ts, h = 11 * ts;
-    sym.push(`<rect x="${n(p.x - w / 2)}" y="${n(p.y - h / 2)}" width="${n(w)}" height="${n(h)}" rx="${n(2.5 * ts)}" fill="${meta.color}" stroke="#fff" stroke-width="${n(1.2 * ts)}"/>${textLabel(p, meta.letter, 7 * ts, { color: "#fff", halo: meta.color, weight: 800, family: "Inter, Arial, sans-serif" })}`);
-  }
+  for (const am of items.filter(i => i.type === "amenity") as AmenityItem[]) sym.push(amenitySymbol(am.kind, toScreen(am), 0.85 * ts));
 
   // Tees and baskets, then hole numbers
   const mainTees = new Set(layers.stats.map(st => st.teeId));
@@ -882,10 +856,11 @@ const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal
   if (doc.holes.some(h => h.fairway)) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" rx="${n(sh / 2)}" fill="${s.fairway}"/>`, text: "Fairway" });
   const areaKinds = new Set(doc.items.filter(i => i.type === "area").map(i => (i as AreaItem).kind));
   const lineKinds = new Set(doc.items.filter(i => i.type === "line").map(i => (i as LineItem).kind));
-  if (areaKinds.has("ob") || lineKinds.has("ob")) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" fill="${s.ob}" fill-opacity="0.25" stroke="${s.ob}" stroke-width="${n(1.4 * ts)}"/>`, text: "Out of bounds" });
+  if (areaKinds.has("ob") || lineKinds.has("ob") || doc.items.some(i => (i.type === "area" || i.type === "line") && i.ob === true)) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" fill="${s.ob}" fill-opacity="0.25" stroke="${s.ob}" stroke-width="${n(1.4 * ts)}"/>`, text: "Out of bounds" });
   if (areaKinds.has("hazard")) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" fill="${s.hazard}" fill-opacity="0.25" stroke="${s.hazard}" stroke-width="${n(1.4 * ts)}" stroke-dasharray="${n(3 * ts)} ${n(2 * ts)}"/>`, text: "Hazard" });
-  if (has(i => i.type === "mando")) entries.push({ sym: `<circle cx="${n(sw / 2)}" cy="${n(sh / 2)}" r="${n(sh * 0.48)}" fill="#f97316" stroke="#fff"/>`, text: "Mando" });
-  if (has(i => i.type === "dropzone")) entries.push({ sym: `<circle cx="${n(sw / 2)}" cy="${n(sh / 2)}" r="${n(sh * 0.48)}" fill="#fff" stroke="#f97316" stroke-width="${n(1.5 * ts)}"/>`, text: "Drop zone" });
+  if (has(i => i.type === "mando" && !i.pairId)) entries.push({ sym: mandoSymbol({ x: sw / 2, y: sh * 0.62 }, 0, "left", sh / 15), text: "Mando: pass on the arrow's side" });
+  if (has(i => i.type === "mando" && !!i.pairId)) entries.push({ sym: gateSymbol({ x: sw / 2, y: sh * 0.12 }, { x: sw / 2, y: sh * 0.88 }, 0, sh / 17), text: "Gate: pass between" });
+  if (has(i => i.type === "dropzone")) entries.push({ sym: dropZoneSymbol({ x: sw / 2, y: sh / 2 }, sh / 12.5), text: "Drop zone" });
   if (areaKinds.has("water") || lineKinds.has("stream")) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" rx="${n(2 * ts)}" fill="${s.water}"/>`, text: "Water" });
   if (areaKinds.has("woods") || has(i => i.type === "tree")) entries.push({ sym: `<circle cx="${n(sw * 0.35)}" cy="${n(sh / 2)}" r="${n(sh * 0.48)}" fill="${s.trees}"/><circle cx="${n(sw * 0.7)}" cy="${n(sh / 2)}" r="${n(sh * 0.4)}" fill="${shade(s.trees, 0.1)}"/>`, text: "Trees" });
   if (lineKinds.has("path")) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${s.path}" stroke-width="${n(3 * ts)}" stroke-linecap="round"/>`, text: "Path" });
@@ -894,8 +869,7 @@ const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal
   if (s.contours) entries.push({ sym: `<path d="M0 ${n(sh * 0.7)}Q${n(sw / 2)} ${n(-sh * 0.2)} ${n(sw)} ${n(sh * 0.7)}" fill="none" stroke="${pal.contourMajor === "rgba(255,255,255,.6)" ? "#666" : pal.contourMajor}" stroke-width="${n(1 * ts)}"/>`, text: "Contour line" });
   const kinds = new Set(doc.items.filter(i => i.type === "amenity").map(i => (i as AmenityItem).kind));
   kinds.forEach(kd => {
-    const meta = AMENITY_KINDS[kd];
-    entries.push({ sym: `<rect x="${n(sw / 2 - sh * 0.6)}" width="${n(sh * 1.2)}" height="${n(sh)}" rx="2" fill="${meta.color}"/><text x="${n(sw / 2)}" y="${n(sh / 2)}" text-anchor="middle" dominant-baseline="central" font-family="Inter, Arial, sans-serif" font-size="${n(sh * 0.62)}" font-weight="800" fill="#fff">${esc(meta.letter)}</text>`, text: meta.label });
+    entries.push({ sym: amenitySymbol(kd, { x: sw / 2, y: sh / 2 }, kd === "here" ? sh / 19 : (sh * 1.15) / 13.2), text: kd === "here" ? "You are here" : AMENITY_KINDS[kd].label });
   });
   const cols = w > 260 * ts ? 2 : 1;
   const colW = w / cols;

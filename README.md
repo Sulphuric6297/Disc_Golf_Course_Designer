@@ -23,10 +23,16 @@ and no API keys.
   effective length = length + 3 × climb, plus doglegs and foliage.
 
 **Features**
-- OB areas and OB lines, hazards, water and creeks, woods, no-go areas.
-- Mandos (with direction and side), drop zones, trees.
+- OB areas and OB lines, hazards, water and creeks, woods, no-go areas: click the corners, or
+  drag out a rectangle, a circle or a freehand shape.
+- One click adds OB along either side of a hole, or behind its basket. Water, creeks, roads,
+  fences and paths can be marked OB (a red edge on the map, and counted in the hole numbers).
+- Mandos (placed beside the hole's line, they face down it and are passed on the line's side),
+  drop zones, trees.
 - Paths, roads, fences, the route to the next tee.
-- Benches, trash cans, signs, the kiosk, restrooms and parking.
+- Benches, trash cans, tee signs, the kiosk, restrooms, parking, drinking water, a practice
+  basket, shelters, bridges, first aid, picnic tables and "You are here", each with its own
+  pictogram on the map.
 
 **Review**
 - Course totals: par, length, walking and climb.

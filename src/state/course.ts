@@ -1,6 +1,6 @@
 // The open course (the saved document) with undo and redo, and the editor's own state.
 import { create } from "zustand";
-import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, PinPosition } from "../types";
+import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, PinPosition, DrawShape } from "../types";
 import { createEmptyCourse } from "../lib/course";
 
 const HISTORY = 120;
@@ -106,6 +106,10 @@ type EditorStore = {
   pin: PinPosition;
   areaKind: AreaKind;
   lineKind: LineKind;
+  /** How areas and lines are drawn (points, rectangle, circle, freehand). */
+  drawShape: DrawShape;
+  /** The mando tool places one post, or a gate of two (pass between them). */
+  mandoKind: "single" | "gate";
   amenityKind: AmenityKind;
   treeKind: TreeKind;
   /** Looking from a tee down its hole (the hole's id), or flying over it. */
@@ -144,6 +148,8 @@ export const useEditor = create<EditorStore>()(set => ({
   pin: "A",
   areaKind: "ob",
   lineKind: "ob",
+  drawShape: "points",
+  mandoKind: "single",
   amenityKind: "bench",
   treeKind: "deciduous",
   teeView: null,

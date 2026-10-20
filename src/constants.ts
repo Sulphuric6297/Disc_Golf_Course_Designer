@@ -80,7 +80,10 @@ export const AMENITY_KINDS: Record<AmenityKind, { label: string; letter: string;
   water: { label: "Drinking water", letter: "W", color: "#0284c7" },
   practice: { label: "Practice basket", letter: "PB", color: "#ea580c" },
   shelter: { label: "Shelter", letter: "SH", color: "#7c2d12" },
-  bridge: { label: "Bridge", letter: "BR", color: "#78350f" }
+  bridge: { label: "Bridge", letter: "BR", color: "#78350f" },
+  firstaid: { label: "First aid", letter: "+", color: "#dc2626" },
+  picnic: { label: "Picnic table", letter: "PT", color: "#92400e" },
+  here: { label: "\"You are here\" (on the map board)", letter: "★", color: "#ca8a04" }
 };
 
 export const TREE_COLORS = ["#4a7a3a", "#3d6b2f", "#5c8a3c", "#2f5d34", "#7a9a3a"];

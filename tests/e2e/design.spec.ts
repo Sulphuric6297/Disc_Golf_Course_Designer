@@ -1,6 +1,6 @@
 import { test as plain, expect as plainExpect } from "@playwright/test";
 import { test, expect, addHole, blankCourse, course } from "./fixtures";
-import { createArea, createBasket, createEmptyCourse, createLine, createTee, newHole, normalizeCourse } from "../../src/lib/course";
+import { createAmenity, createArea, createBasket, createDropZone, createEmptyCourse, createLine, createMando, createTee, newHole, normalizeCourse } from "../../src/lib/course";
 import { meander } from "../../src/lib/forest";
 import { dist, distanceToPath } from "../../src/lib/geom";
 import { BASKET_MARKS, basketMark, bestRotation, renderPoster } from "../../src/lib/mapSvg";
@@ -245,4 +245,44 @@ plain("the wide tee sign's north arrow stands out from its disc in every style",
     plainExpect(m, theme).not.toBeNull();
     plainExpect(Math.abs(lum(m![1]) - lum(m![2])), theme).toBeGreaterThan(0.4);
   }
+});
+
+plain("features on the printed map: mandos, drop zones, amenity pictograms, OB and hazard tags, red OB edges", () => {
+  const doc = sample();
+  doc.style.theme = "illustrated";
+  doc.style.legend = true;
+  const h = doc.holes[0];
+  doc.items.push(
+    { ...createMando({ x: 280, y: 480 }, h.id, 0), side: "right" },
+    createDropZone({ x: 250, y: 560 }, h.id),
+    createAmenity({ x: 120, y: 620 }, "restroom"),
+    createAmenity({ x: 160, y: 620 }, "here"),
+    createArea("hazard", [{ x: 600, y: 300 }, { x: 800, y: 300 }, { x: 800, y: 450 }, { x: 600, y: 450 }])
+  );
+  const road = { ...createLine("road", [{ x: 0, y: 700 }, { x: 900, y: 700 }]), label: "Park Rd" };
+  doc.items.push(road);
+  const plainSvg = renderPoster(doc, { contours: null, hillshade: null }).svg;
+  for (const sym of ["mando", "dropzone", "restroom", "here"]) {
+    // On the map, and its sample in the legend
+    plainExpect(plainSvg.split(`data-symbol="${sym}"`).length - 1, sym).toBe(2);
+  }
+  plainExpect(plainSvg).toContain("Mando: pass on the arrow's side");
+  plainExpect(plainSvg).toContain(">You are here<");
+  plainExpect(plainSvg).toContain(">HAZARD<");
+  plainExpect(plainSvg).toContain(">OB<");
+  // The road marked OB: red edges along both sides and an OB tag of its own
+  const tagsBefore = plainSvg.split(">OB<").length;
+  road.ob = true;
+  const marked = renderPoster(doc, { contours: null, hillshade: null }).svg;
+  plainExpect(marked.split(">OB<").length).toBe(tagsBefore + 1);
+  plainExpect(marked.split(`stroke="${doc.style.ob}" stroke-width`).length).toBeGreaterThan(plainSvg.split(`stroke="${doc.style.ob}" stroke-width`).length + 1);
+  // A gate (two paired posts) is one symbol, with its own legend line
+  const a = { ...createMando({ x: 380, y: 491 }, h.id, 0), side: "right" as const }, b = { ...createMando({ x: 380, y: 509 }, h.id, 0), side: "left" as const };
+  a.pairId = b.id;
+  b.pairId = a.id;
+  doc.items.push(a, b);
+  const gated = renderPoster(doc, { contours: null, hillshade: null }).svg;
+  plainExpect(gated.split('data-symbol="gate"').length - 1).toBe(2);
+  plainExpect(gated.split('data-symbol="mando"').length - 1).toBe(2);
+  plainExpect(gated).toContain("Gate: pass between");
 });

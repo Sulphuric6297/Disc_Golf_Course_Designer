@@ -6,9 +6,9 @@ import { holeBaskets, holeNumber, holeTees, ITEM_LABELS } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
-import { deleteSelection, duplicateSelection, select, setTeeLevel } from "../state/actions";
+import { addHoleOb, deleteSelection, duplicateSelection, select, setTeeLevel } from "../state/actions";
 import { moveHole, updateHole, updateItem, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaKind, CourseItem, Hole, LineKind, TeeSurface, TreeKind } from "../types";
+import type { AmenityKind, AreaItem, AreaKind, CourseItem, Hole, LineItem, LineKind, TeeSurface, TreeKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { getView } from "./MapViewport";
 import { Button, Field, NumberInput, Section, Segmented, Slider, Stat, TextInput, Toggle } from "./ui";
@@ -51,6 +51,16 @@ function HoleInspector({ hole }: { hole: Hole }) {
           <div className="flex gap-1.5 mt-2">
             <Button small onClick={() => useEditor.getState().set({ teeView: hole.id, flyover: false })} testid="tee-view"><Eye size={14} /> View from tee</Button>
             <Button small onClick={() => useEditor.getState().set({ teeView: hole.id, flyover: true })} testid="flyover"><Plane size={14} /> Fly over</Button>
+          </div>
+        )}
+        {s.complete && !ro && (
+          <div className="mt-3">
+            <div className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wide mb-1">Add OB</div>
+            <div className="flex gap-1.5" role="group" aria-label="Add OB">
+              <Button small onClick={() => addHoleOb(hole.id, "left")} testid="ob-left" title="An OB line along the left of the fairway, from near the tee to past the basket">Left side</Button>
+              <Button small onClick={() => addHoleOb(hole.id, "right")} testid="ob-right" title="An OB line along the right of the fairway">Right side</Button>
+              <Button small onClick={() => addHoleOb(hole.id, "long")} testid="ob-long" title="An OB arc behind the basket (OB long)">Behind basket</Button>
+            </div>
           </div>
         )}
       </Section>
@@ -114,6 +124,18 @@ function HoleInspector({ hole }: { hole: Hole }) {
         {!ro && <p className="text-[11px] text-zinc-500 mt-1.5">Add more with the Tee (T) and Basket (B) tools. Drag the orange dots on the line to move turns; pull a small dot to add one.</p>}
       </Section>
     </>
+  );
+}
+
+/** Whether water, a creek, a road, a fence or a path is out of bounds (and shown so on the map). */
+function ObChoice({ item }: { item: AreaItem | LineItem }) {
+  const wet = item.kind === "water" || item.kind === "stream";
+  const value = item.ob === true ? "edge" : item.ob === false || !wet ? "no" : "yes";
+  const options = [{ value: "no", label: "Not OB" }, ...(wet ? [{ value: "yes", label: "OB" }] : []), { value: "edge", label: "OB, red edge" }];
+  return (
+    <Field label="Out of bounds" hint={wet ? "Water counts as OB unless set otherwise; \"red edge\" also marks it in red on the map." : "Marked OB, it gets a red OB edge on the map and counts in the hole numbers."}>
+      <Segmented label="Out of bounds" value={value} onChange={v => updateItem(item.id, { ob: v === "edge" ? true : v === "no" ? (wet ? false : undefined) : undefined } as Partial<CourseItem>)} options={options} />
+    </Field>
   );
 }
 
@@ -186,6 +208,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
           </Field>
           <p className="text-[11px] text-zinc-400 -mt-1 mb-2">{AREA_KINDS[item.kind].help}</p>
           <Field label="Name on the map (optional)"><TextInput label="Area name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
+          {item.kind === "water" && <ObChoice item={item} />}
           {(item.kind === "ob" || item.kind === "hazard") && holePicker}
           <div className="text-xs text-zinc-400">{Math.round(polygonArea(item.points)).toLocaleString()} sq ft ({(polygonArea(item.points) / 43560).toFixed(2)} acres) · {item.points.length} corners</div>
         </>
@@ -202,6 +225,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
           <p className="text-[11px] text-zinc-400 -mt-1 mb-2">{LINE_KINDS[item.kind].help}</p>
           {LINE_KINDS[item.kind].width > 0 && <Slider label="Width" min={1} max={60} value={item.width ?? LINE_KINDS[item.kind].width} onChange={v => set({ width: v })} format={v => fmtDist(v, u)} />}
           <Field label="Name on the map (optional)"><TextInput label="Line name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
+          {item.kind !== "ob" && item.kind !== "walk" && <ObChoice item={item} />}
           {item.kind === "ob" && holePicker}
           <div className="text-xs text-zinc-400">{fmtDist(pathLength(item.points), u)} long</div>
         </>
