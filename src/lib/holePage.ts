@@ -4,13 +4,12 @@
 // small elevation profile. Pages for print (Letter, A4, a 4 × 6 in card) and a square picture for
 // sharing; pure SVG, like the course map.
 import { FT_PER_M, TEE_LEVELS } from "../constants";
-import type { CourseDoc, P, PinPosition, TeeLevel, Units } from "../types";
+import type { CourseDoc, PinPosition, TeeLevel, Units } from "../types";
 import { activeLayout, holeBaskets, holeTees, throwLine } from "./course";
-import { dist, rotatePoint, smoothPath } from "./geom";
+import { dist, rotatePoint } from "./geom";
 import { holeStats } from "./holeStats";
 import { markingsInView, northArrow, palette, scaleBar, wrapSvg } from "./mapSvg";
-import { autoRules, cardStyle, holeMap, type SignArt } from "./teeSign";
-import { profileAlong } from "./terrainGrid";
+import { autoRules, cardStyle, elevationProfile as profile, holeMap, type SignArt } from "./teeSign";
 import { fmtDist, fmtElev } from "./units";
 
 export type HolePageSize = "letter" | "a4" | "card" | "square";
@@ -55,22 +54,6 @@ const wrap = (text: string, max: number) => {
 };
 
 /** The ground from the tee to the basket, heights stretched so small changes show. */
-const profile = (doc: CourseDoc, line: P[], box: { x: number; y: number; w: number; h: number }, c: { fill: string; stroke: string; tee: string; basket: string; width: number }) => {
-  if (line.length < 2) return "";
-  const prof = profileAlong(doc.terrainHeights, doc.gridSize, smoothPath(line, 6), 60);
-  if (prof.length < 2) return "";
-  const hs = prof.map(p => p.h);
-  const lo = Math.min(...hs), hi = Math.max(...hs);
-  const span = Math.max(8, hi - lo) * 1.3;
-  const mid = (lo + hi) / 2;
-  const total = prof[prof.length - 1].d || 1;
-  const X = (d: number) => box.x + (d / total) * box.w;
-  const Y = (h: number) => box.y + box.h * (0.5 - (h - mid) / span);
-  const d = prof.map((p, i) => `${i ? "L" : "M"}${n(X(p.d))} ${n(Y(p.h))}`).join("");
-  return `<g data-part="profile"><path d="${d}L${n(X(total))} ${n(box.y + box.h)}L${n(box.x)} ${n(box.y + box.h)}Z" fill="${c.fill}" opacity="0.75"/><path d="${d}" fill="none" stroke="${c.stroke}" stroke-width="${n(c.width)}" stroke-linejoin="round"/>`
-    + `<circle cx="${n(X(0))}" cy="${n(Y(prof[0].h))}" r="${n(c.width * 2)}" fill="${c.tee}" stroke="#111"/><circle cx="${n(X(total))}" cy="${n(Y(prof[prof.length - 1].h))}" r="${n(c.width * 2)}" fill="${c.basket}" stroke="#111"/></g>`;
-};
-
 /** One hole's page. Null for a hole that isn't there. */
 export const renderHolePage = (doc: CourseDoc, holeId: string, size: HolePageSize, art: SignArt) => {
   const { header: DARK, paper: PAPER, ink: INK, soft: SOFT, head: HEAD, body: BODY, accent: ACCENT } = cardStyle(doc);

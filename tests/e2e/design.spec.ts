@@ -203,8 +203,15 @@ plain("tee signs: wide and tall layouts, notes, next hole", () => {
   const wide = renderTeeSign(doc, doc.holes[1].id, "18x12", { contours: null, hillshade: null })!;
   plainExpect(wide.width).toBe(18 * 72);
   plainExpect(wide.svg).toContain("PAR 3");
-  plainExpect(wide.svg).toContain(">300<");
-  plainExpect(wide.svg).toContain("CREEK &amp; BEYOND OB");
+  // The info column: the length from each tee, the hole notes, the course in miniature with this
+  // hole's "you are here", which hole of how many
+  plainExpect(wide.svg).toContain(">300 FT<");
+  plainExpect(wide.svg).toContain("Creek &amp; beyond OB");
+  plainExpect(wide.svg).toContain("HOLE NOTES");
+  plainExpect(wide.svg).toContain('data-part="course-map"');
+  plainExpect(wide.svg).toContain("YOU ARE HERE");
+  plainExpect(wide.svg).toContain("HOLE 2 OF 2");
+  plainExpect(wide.svg).not.toContain("COURSE MAP<");
   plainExpect(wide.svg).toContain("ELEVATION CHANGE FROM TEE");
   const first = renderTeeSign(doc, doc.holes[0].id, "12x18", { contours: null, hillshade: null })!;
   plainExpect(first.height).toBe(18 * 72);

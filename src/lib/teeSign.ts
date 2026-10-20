@@ -60,6 +60,23 @@ export const autoRules = (doc: CourseDoc, holeId: string) => {
   return out;
 };
 
+/** The ground along a hole, tee to basket, as a filled profile in `box`. */
+export const elevationProfile = (doc: CourseDoc, line: P[], box: { x: number; y: number; w: number; h: number }, c: { fill: string; stroke: string; tee: string; basket: string; width: number }) => {
+  if (line.length < 2) return "";
+  const prof = profileAlong(doc.terrainHeights, doc.gridSize, smoothPath(line, 6), 60);
+  if (prof.length < 2) return "";
+  const hs = prof.map(p => p.h);
+  const lo = Math.min(...hs), hi = Math.max(...hs);
+  const span = Math.max(8, hi - lo) * 1.3;
+  const mid = (lo + hi) / 2;
+  const total = prof[prof.length - 1].d || 1;
+  const X = (d: number) => box.x + (d / total) * box.w;
+  const Y = (h: number) => box.y + box.h * (0.5 - (h - mid) / span);
+  const d = prof.map((p, i) => `${i ? "L" : "M"}${n(X(p.d))} ${n(Y(p.h))}`).join("");
+  return `<g data-part="profile"><path d="${d}L${n(X(total))} ${n(box.y + box.h)}L${n(box.x)} ${n(box.y + box.h)}Z" fill="${c.fill}" opacity="0.75"/><path d="${d}" fill="none" stroke="${c.stroke}" stroke-width="${n(c.width)}" stroke-linejoin="round"/>`
+    + `<circle cx="${n(X(0))}" cy="${n(Y(prof[0].h))}" r="${n(c.width * 2)}" fill="${c.tee}" stroke="#111"/><circle cx="${n(X(total))}" cy="${n(Y(prof[prof.length - 1].h))}" r="${n(c.width * 2)}" fill="${c.basket}" stroke="#111"/></g>`;
+};
+
 export type SignArt = { contours: Contours | null; hillshade: string | null; canopy?: CanopyGrid | null };
 
 export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: SignArt) => {
@@ -280,7 +297,6 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
   const W = page.w * 72, H = page.h * 72;
   const u = H / (12 * 72); // 1 at 12 in tall
   const sty = doc.style;
-  const F = font(sty.font);
   const col = { x: 0, w: W * 0.34 };
   const mapBox = { x: col.w, y: 0, w: W - col.w, h: H };
   const map = holeMap(doc, holeId, mapBox, opts, 1.6 * u, `ws${holeId.slice(-4)}`);
@@ -290,7 +306,6 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
   const lvl = TEE_LEVELS[mainTee?.level ?? "blue"];
   const parts: string[] = [];
   const card = cardStyle(doc);
-  const ink = card.ink;
   parts.push(`<rect width="${n(W)}" height="${n(H)}" fill="${card.paper}"/>`);
   // The map, with the elevation strip along its bottom
   parts.push(`<clipPath id="wide-map"><rect x="${n(mapBox.x)}" y="0" width="${n(mapBox.w)}" height="${n(H)}"/></clipPath>`);
@@ -309,71 +324,119 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
     const cx = W - 92 * u, cy = H - stripH - 30 * u;
     parts.push(`<rect x="${n(cx - 76 * u)}" y="${n(cy - 18 * u)}" width="${n(152 * u)}" height="${n(36 * u)}" rx="${n(18 * u)}" fill="#0b120a" fill-opacity="0.85"/><g transform="translate(${n(cx - 52 * u)} ${n(cy)}) rotate(${n(ang)})"><path d="M${n(-10 * u)} 0H${n(8 * u)}M${n(1 * u)} ${n(-7 * u)}L${n(9 * u)} 0L${n(1 * u)} ${n(7 * u)}" stroke="#fff" stroke-width="${n(3.4 * u)}" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g><text x="${n(cx - 32 * u)}" y="${n(cy)}" dominant-baseline="central" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(13 * u)}" fill="#fff">HOLE ${next.number} · ${Math.round(doc.units === "m" ? d / FT_PER_M : d)} ${doc.units.toUpperCase()}</text>`);
   }
-  // The column
-  const cx = col.w / 2;
-  let y = 46 * u;
-  let name = (sty.title || doc.name || "").trim();
-  const the = /^the\s+/i.test(name);
-  if (the) name = name.replace(/^the\s+/i, "");
-  name = name.replace(/\s+disc\s+golf(\s+course)?$/i, "");
-  const nameSize = Math.min(44 * u, ((col.w * 0.85) / Math.max(4, name.length)) * (sty.font === "Script" ? 2.1 : 1.8));
-  if (the) parts.push(`<text x="${n(cx)}" y="${n(y - nameSize * 0.55)}" text-anchor="middle" font-family="${F}" font-weight="700" font-size="${n(9 * u)}" fill="${ink}">THE</text>`);
-  parts.push(`<text x="${n(cx)}" y="${n(y + nameSize * 0.25)}" text-anchor="middle" font-family="${titleStack(sty.font)}" font-weight="700" font-size="${n(nameSize)}" fill="${ink}">${esc(sty.font === "Script" ? name : name.toUpperCase())}</text>`);
-  y += nameSize * 0.5 + 12 * u;
-  parts.push(`<text x="${n(cx)}" y="${n(y)}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="${n(7.5 * u)}" letter-spacing="${n(2.2 * u)}" fill="${ink}">DISC GOLF COURSE</text>`);
-  y += 22 * u;
-  // The hole number in a dark box, the par on a tag in the tee color
-  const box = Math.min(col.w * 0.62, H * 0.3);
-  parts.push(`<rect x="${n(cx - box / 2)}" y="${n(y)}" width="${n(box)}" height="${n(box)}" fill="#151a14"/>`);
-  parts.push(`<text x="${n(cx)}" y="${n(y + box * 0.53)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, Arial, sans-serif" font-weight="700" font-size="${n(box * 0.82)}" fill="#ffffff">${st.number}</text>`);
-  const tagW = box * 0.7, tagH = 26 * u;
-  parts.push(`<path d="M${n(cx - tagW / 2)} ${n(y + box - 2 * u)}h${n(tagW)}l${n(-8 * u)} ${n(tagH)}h${n(-tagW + 16 * u)}z" fill="${lvl.color}" stroke="${lvl.color === "#f8fafc" ? "#151a14" : lvl.color}" stroke-width="${n(1.5 * u)}"/>`);
-  parts.push(`<text x="${n(cx)}" y="${n(y + box - 2 * u + tagH / 2)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, Arial, sans-serif" font-weight="700" font-size="${n(16 * u)}" fill="${lvl.ink}">PAR ${st.complete ? st.par : "–"}</text>`);
-  y += box + tagH + 22 * u;
-  // The distance, big
-  const len = st.complete ? Math.round(doc.units === "m" ? st.length / FT_PER_M : st.length) : 0;
-  parts.push(`<text x="${n(cx)}" y="${n(y + 46 * u)}" text-anchor="middle" font-family="Oswald, Arial, sans-serif" font-weight="700" font-size="${n(66 * u)}" fill="${ink}">${len || "–"}</text>`);
-  y += 62 * u;
-  parts.push(`<text x="${n(cx)}" y="${n(y)}" text-anchor="middle" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(14 * u)}" letter-spacing="${n(2 * u)}" fill="${ink}">${doc.units === "m" ? "METERS" : "FEET"}</text>`);
-  y += 14 * u;
-  // Other tees, small
-  const others = tees.filter(t => t.id !== mainTee?.id);
-  const basket = doc.items.find(i => i.id === st.basketId && i.type === "basket") as BasketItem | undefined;
-  others.forEach(t => {
-    const L = TEE_LEVELS[t.level];
-    const l2 = basket ? holeStats(doc, hole, { id: "x", name: "", tee: t.level, pin: basket.position }).length : 0;
-    y += 18 * u;
-    parts.push(`<rect x="${n(cx - 58 * u)}" y="${n(y - 9 * u)}" width="${n(116 * u)}" height="${n(17 * u)}" rx="${n(8.5 * u)}" fill="${L.color}" stroke="#151a14" stroke-width="${n(0.8 * u)}"/><text x="${n(cx)}" y="${n(y)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(10 * u)}" fill="${L.ink}">${L.label.toUpperCase()} ${Math.round(doc.units === "m" ? l2 / FT_PER_M : l2)} ${doc.units.toUpperCase()}</text>`);
+  // The column, top to bottom: the course's name on the header band; the hole's number and par;
+  // the length from each tee; the elevation along the hole; the hole notes; a little map of the
+  // whole course with this hole picked out; which hole of how many
+  const mx = 30 * u, cw = col.w - 2 * mx, cx = col.w / 2;
+  const soft = card.soft;
+  const lens = tees.map(t => {
+    const basket = doc.items.find(i => i.id === st.basketId && i.type === "basket") as BasketItem | undefined;
+    return { t, len: t.id === mainTee?.id ? st.length : basket ? holeStats(doc, hole, { id: "x", name: "", tee: t.level, pin: basket.position }).length : 0 };
   });
-  y += 30 * u;
+  const big = (ft: number) => `${Math.round(doc.units === "m" ? ft / FT_PER_M : ft).toLocaleString()} ${doc.units === "m" ? "M" : "FT"}`;
+  // Header band: the course's name
+  let name = (sty.title || doc.name || "").trim().replace(/\s+disc\s+golf(\s+course)?$/i, "");
+  const bandH = 128 * u;
+  parts.push(`<rect width="${n(col.w)}" height="${n(bandH)}" fill="${card.header}"/>`);
+  const nameSize = Math.min(40 * u, ((cw * 0.95) / Math.max(4, name.length)) * (sty.font === "Script" ? 2.1 : 1.75));
+  parts.push(`<text x="${n(cx)}" y="${n(bandH * 0.52)}" text-anchor="middle" font-family="${titleStack(sty.font)}" font-weight="700" font-size="${n(nameSize)}" fill="${card.accent}">${esc(sty.font === "Script" ? name : name.toUpperCase())}</text>`);
+  parts.push(`<text x="${n(cx)}" y="${n(bandH * 0.52 + 22 * u)}" text-anchor="middle" font-family="${card.body}" font-weight="800" font-size="${n(7.5 * u)}" letter-spacing="${n(2.6 * u)}" fill="${card.accent}" fill-opacity="0.75">DISC GOLF COURSE</text>`);
+  parts.push(`<rect y="${n(bandH - 5 * u)}" width="${n(col.w)}" height="${n(5 * u)}" fill="${lvl.color}"/>`);
+  // The number, big, and its par on a tag in the tee's color
+  let y = bandH + 34 * u;
+  parts.push(`<text x="${n(cx)}" y="${n(y)}" text-anchor="middle" font-family="${card.head}" font-weight="700" font-size="${n(13 * u)}" letter-spacing="${n(3 * u)}" fill="${soft}">HOLE</text>`);
+  const numSize = 132 * u;
+  parts.push(`<text x="${n(cx)}" y="${n(y + numSize * 0.86)}" text-anchor="middle" font-family="${card.head}" font-weight="700" font-size="${n(numSize)}" fill="${card.ink}">${st.number}</text>`);
+  y += numSize * 0.86 + 14 * u;
+  const tagW = 112 * u, tagH = 30 * u;
+  parts.push(`<rect x="${n(cx - tagW / 2)}" y="${n(y)}" width="${n(tagW)}" height="${n(tagH)}" rx="${n(tagH / 2)}" fill="${lvl.color}" stroke="${lvl.color === "#f8fafc" ? card.ink : lvl.color}" stroke-width="${n(1.2 * u)}"/>`);
+  parts.push(`<text x="${n(cx)}" y="${n(y + tagH / 2)}" text-anchor="middle" dominant-baseline="central" font-family="${card.head}" font-weight="700" font-size="${n(17 * u)}" letter-spacing="${n(1 * u)}" fill="${lvl.ink}">PAR ${st.complete ? st.par : "–"}</text>`);
+  y += tagH + 30 * u;
+  // The length from each tee
+  const rule = (yy: number) => parts.push(`<line x1="${n(mx)}" x2="${n(col.w - mx)}" y1="${n(yy)}" y2="${n(yy)}" stroke="${card.ink}" stroke-opacity="0.18" stroke-width="${n(1 * u)}"/>`);
+  const label = (text: string, yy: number) => parts.push(`<text x="${n(mx)}" y="${n(yy)}" font-family="${card.head}" font-weight="700" font-size="${n(10.5 * u)}" letter-spacing="${n(1.8 * u)}" fill="${soft}">${esc(text)}</text>`);
+  rule(y - 14 * u);
+  for (const { t, len } of lens) {
+    const L = TEE_LEVELS[t.level], main = t.id === mainTee?.id, rowH = main ? 30 * u : 24 * u;
+    parts.push(`<circle cx="${n(mx + 8 * u)}" cy="${n(y + rowH / 2 - 4 * u)}" r="${n((main ? 8 : 6.5) * u)}" fill="${L.color}" stroke="${card.ink}" stroke-opacity="0.5" stroke-width="${n(1 * u)}"/>`);
+    parts.push(`<text x="${n(mx + 24 * u)}" y="${n(y + rowH / 2 - 4 * u)}" dominant-baseline="central" font-family="${card.head}" font-weight="${main ? 700 : 600}" font-size="${n((main ? 15 : 12.5) * u)}" letter-spacing="${n(1 * u)}" fill="${card.ink}">${esc(L.label.toUpperCase())}</text>`);
+    parts.push(`<text x="${n(col.w - mx)}" y="${n(y + rowH / 2 - 4 * u)}" text-anchor="end" dominant-baseline="central" font-family="${card.head}" font-weight="700" font-size="${n((main ? 22 : 15) * u)}" fill="${card.ink}">${len ? big(len) : "–"}</text>`);
+    y += rowH;
+  }
+  y += 10 * u;
+  rule(y);
+  y += 22 * u;
+  // The ground along the hole
+  if (st.complete) {
+    label(`ELEVATION ${fmtElev(st.elevationChange, doc.units).toUpperCase()}`, y);
+    parts.push(`<text x="${n(col.w - mx)}" y="${n(y)}" text-anchor="end" font-family="${card.head}" font-weight="600" font-size="${n(10.5 * u)}" letter-spacing="${n(1 * u)}" fill="${soft}">PLAYS LIKE ${esc(big(st.playsLike))}</text>`);
+    parts.push(elevationProfile(doc, st.line, { x: mx, y: y + 8 * u, w: cw, h: 40 * u }, { fill: sty.fairway, stroke: card.ink, tee: lvl.color, basket: sty.basket, width: 1.6 * u }));
+    y += 66 * u;
+    rule(y);
+    y += 22 * u;
+  }
   // Hole notes
   const notes = [hole.notes ?? "", ...(hole.notes ? [] : autoRules(doc, holeId))].filter(Boolean).join(" ");
-  parts.push(`<line x1="${n(col.w * 0.12)}" x2="${n(col.w * 0.88)}" y1="${n(y - 12 * u)}" y2="${n(y - 12 * u)}" stroke="${ink}" stroke-opacity="0.25"/>`);
-  parts.push(`<text x="${n(cx)}" y="${n(y)}" text-anchor="middle" font-family="Oswald, Arial, sans-serif" font-weight="700" font-size="${n(11 * u)}" letter-spacing="${n(1.5 * u)}" fill="${ink}">HOLE NOTES</text>`);
-  wrap(notes || "Play it as it lies.", 30).slice(0, 5).forEach((l, i) => parts.push(`<text x="${n(cx)}" y="${n(y + 16 * u + i * 12 * u)}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-weight="600" font-size="${n(8.5 * u)}" fill="#3b463a">${esc(l.toUpperCase())}</text>`));
-  // A little map of the whole course with this hole picked out ("you are here")
-  {
-    const top = y + 16 * u + 5 * 12 * u + 14 * u;
-    const bottom = H - 36 * u;
-    const mh = bottom - top, mw = col.w * 0.8;
-    if (mh > 70 * u) {
-      const lines = map.stats.filter(x => x.complete);
-      const all = lines.flatMap(x => x.line);
-      const b = boundsOf(all);
-      const k = Math.min(mw / Math.max(1, b.maxX - b.minX), mh / Math.max(1, b.maxY - b.minY)) * 0.9;
-      const ox = cx - ((b.minX + b.maxX) / 2) * k, oy = top + mh / 2 - ((b.minY + b.maxY) / 2) * k;
-      const pth = (pts: P[]) => pts.map((q, i) => `${i ? "L" : "M"}${n(ox + q.x * k)} ${n(oy + q.y * k)}`).join("");
-      parts.push(`<text x="${n(cx)}" y="${n(top - 4 * u)}" text-anchor="middle" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(8 * u)}" letter-spacing="${n(1.2 * u)}" fill="#3b463a">COURSE MAP</text>`);
-      for (const x of lines) {
-        const me = x.holeId === holeId;
-        parts.push(`<path d="${pth(smoothPath(x.line, 6))}" fill="none" stroke="${me ? lvl.color === "#f8fafc" ? "#151a14" : lvl.color : "#9aa598"}" stroke-width="${n((me ? 3.2 : 1.6) * u)}" stroke-linecap="round"/>`);
-        const t = x.line[0];
-        parts.push(`<text x="${n(ox + t.x * k)}" y="${n(oy + t.y * k - 4 * u)}" text-anchor="middle" font-family="Oswald, Arial, sans-serif" font-weight="700" font-size="${n((me ? 9 : 6.5) * u)}" fill="${me ? "#151a14" : "#7b867a"}">${x.number}</text>`);
-      }
-    }
+  if (notes) {
+    label("HOLE NOTES", y);
+    const fs = 9.5 * u;
+    const lines = wrap(notes, Math.max(12, Math.floor(cw / (fs * 0.5)))).slice(0, 4);
+    lines.forEach((l, i) => parts.push(`<text x="${n(mx)}" y="${n(y + 18 * u + i * fs * 1.4)}" font-family="${card.body}" font-weight="500" font-size="${n(fs)}" fill="${card.ink}">${esc(l)}</text>`));
+    y += 18 * u + lines.length * fs * 1.4 + 12 * u;
+    rule(y);
+    y += 14 * u;
   }
-  // Bottom of the column
-  const credit = doc.designer ? `DESIGNED BY ${doc.designer.toUpperCase()}` : `HOLE ${st.number} OF ${doc.holes.length}`;
-  parts.push(`<text x="${n(cx)}" y="${n(H - 20 * u)}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-weight="700" font-size="${n(7.5 * u)}" letter-spacing="${n(1 * u)}" fill="#3b463a">${esc(credit)}</text>`);
+  // The course in miniature, in the map's colors: this hole picked out, "you are here" at its tee
+  const done = map.stats.filter(x => x.complete);
+  const bottom = H - 44 * u;
+  if (done.length > 1 && bottom - y > 90 * u) {
+    const all = done.flatMap(x => x.line);
+    const b0 = boundsOf(all);
+    const pad = 80;
+    const b = { minX: b0.minX - pad, minY: b0.minY - pad, maxX: b0.maxX + pad, maxY: b0.maxY + pad };
+    const box = { x: mx, y, w: cw, h: bottom - y };
+    const k = Math.min(box.w / (b.maxX - b.minX), box.h / (b.maxY - b.minY));
+    const ox = box.x + box.w / 2 - ((b.minX + b.maxX) / 2) * k, oy = box.y + box.h / 2 - ((b.minY + b.maxY) / 2) * k;
+    const P2 = (q: P) => `${n(ox + q.x * k)} ${n(oy + q.y * k)}`;
+    const poly = (pts: P[]) => `M${pts.map(P2).join("L")}Z`;
+    const pth = (pts: P[]) => `M${pts.map(P2).join("L")}`;
+    const mw = (b.maxX - b.minX) * k, mh = (b.maxY - b.minY) * k;
+    const mbox = { x: box.x + (box.w - mw) / 2, y: box.y + (box.h - mh) / 2, w: mw, h: mh };
+    const clip = `mini${holeId.slice(-4)}`;
+    const woodsEverywhere = (sty.forest ?? "everywhere") === "everywhere";
+    const mini: string[] = [`<clipPath id="${clip}"><rect x="${n(mbox.x)}" y="${n(mbox.y)}" width="${n(mbox.w)}" height="${n(mbox.h)}" rx="${n(10 * u)}"/></clipPath>`];
+    mini.push(`<rect x="${n(mbox.x)}" y="${n(mbox.y)}" width="${n(mbox.w)}" height="${n(mbox.h)}" fill="${woodsEverywhere ? sty.trees : sty.rough}"/>`);
+    for (const a of doc.items) {
+      if (a.type === "area" && (a.kind === "woods" && !woodsEverywhere)) mini.push(`<path d="${poly(a.points)}" fill="${sty.trees}"/>`);
+      if (a.type === "area" && (a.kind === "fairway" || a.kind === "nogo" || a.kind === "parking") && woodsEverywhere) mini.push(`<path d="${poly(a.points)}" fill="${sty.rough}"/>`);
+    }
+    for (const x of done) {
+      const h = doc.holes.find(q => q.id === x.holeId);
+      if (h?.fairway) mini.push(`<path d="${poly(fairwayOutline(h, smoothPath(x.line, 6), 0, 6))}" fill="${sty.fairway}"/>`);
+    }
+    for (const a of doc.items) {
+      if (a.type === "area" && a.kind === "water") mini.push(`<path d="${poly(a.points)}" fill="${sty.water}"/>`);
+      if (a.type === "line" && a.kind === "stream") mini.push(`<path d="${pth(a.points)}" fill="none" stroke="${sty.water}" stroke-width="${n(2 * u)}" stroke-linecap="round"/>`);
+      if (a.type === "line" && (a.kind === "path" || a.kind === "walk")) mini.push(`<path d="${pth(a.points)}" fill="none" stroke="${sty.path}" stroke-width="${n(1.4 * u)}" stroke-linecap="round"/>`);
+    }
+    for (const x of done) {
+      const me = x.holeId === holeId;
+      mini.push(`<path d="${pth(smoothPath(x.line, 6))}" fill="none" stroke="${me ? lvl.color : "#ffffff"}" stroke-opacity="${me ? 1 : 0.75}" stroke-width="${n((me ? 3.4 : 1.4) * u)}" stroke-linecap="round"/>`);
+    }
+    for (const x of done) {
+      const t = x.line[0], me = x.holeId === holeId;
+      if (!me) mini.push(`<circle cx="${n(ox + t.x * k)}" cy="${n(oy + t.y * k)}" r="${n(6.5 * u)}" fill="${card.header}" stroke="#ffffff" stroke-width="${n(0.8 * u)}"/><text x="${n(ox + t.x * k)}" y="${n(oy + t.y * k)}" text-anchor="middle" dominant-baseline="central" font-family="${card.head}" font-weight="700" font-size="${n(7 * u)}" fill="#ffffff">${x.number}</text>`);
+    }
+    parts.push(`<g data-part="course-map"><g clip-path="url(#${clip})">${mini.join("")}</g><rect x="${n(mbox.x)}" y="${n(mbox.y)}" width="${n(mbox.w)}" height="${n(mbox.h)}" rx="${n(10 * u)}" fill="none" stroke="${card.ink}" stroke-opacity="0.35" stroke-width="${n(1.2 * u)}"/>`);
+    // You are here
+    const here = st.line[0];
+    const hx = ox + here.x * k, hy = oy + here.y * k;
+    parts.push(`<path d="M${n(hx)} ${n(hy)}c${n(-9 * u)} ${n(-12 * u)} ${n(-9 * u)} ${n(-24 * u)} 0 ${n(-24 * u)}s${n(9 * u)} ${n(12 * u)} 0 ${n(24 * u)}z" fill="#dc2626" stroke="#ffffff" stroke-width="${n(1.4 * u)}"/><text x="${n(hx)}" y="${n(hy - 15 * u)}" text-anchor="middle" dominant-baseline="central" font-family="${card.head}" font-weight="700" font-size="${n(8.5 * u)}" fill="#ffffff">${st.number}</text>`);
+    const tagX = Math.max(mbox.x + 40 * u, Math.min(mbox.x + mbox.w - 40 * u, hx));
+    parts.push(`<rect x="${n(tagX - 38 * u)}" y="${n(Math.min(hy + 6 * u, mbox.y + mbox.h - 18 * u))}" width="${n(76 * u)}" height="${n(14 * u)}" rx="${n(7 * u)}" fill="#dc2626"/><text x="${n(tagX)}" y="${n(Math.min(hy + 6 * u, mbox.y + mbox.h - 18 * u) + 7 * u)}" text-anchor="middle" dominant-baseline="central" font-family="${card.body}" font-weight="800" font-size="${n(6.5 * u)}" letter-spacing="${n(1 * u)}" fill="#ffffff">YOU ARE HERE</text></g>`);
+  }
+  // Which hole of how many, and who designed the course
+  parts.push(`<text x="${n(mx)}" y="${n(H - 20 * u)}" font-family="${card.head}" font-weight="700" font-size="${n(9 * u)}" letter-spacing="${n(1.4 * u)}" fill="${soft}">HOLE ${st.number} OF ${doc.holes.length}</text>`);
+  if (doc.designer) parts.push(`<text x="${n(col.w - mx)}" y="${n(H - 20 * u)}" text-anchor="end" font-family="${card.body}" font-weight="600" font-size="${n(7.5 * u)}" letter-spacing="${n(0.8 * u)}" fill="${soft}">DESIGNED BY ${esc(doc.designer.toUpperCase())}</text>`);
   return { svg: wrapSvg(W, H, parts.join("")), width: W, height: H };
 };
