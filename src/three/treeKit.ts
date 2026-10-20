@@ -566,6 +566,11 @@ export class Forest {
     });
   }
 
+  /** Trees standing within `r` of a plan point (for tests). */
+  treesNear(x: number, y: number, r: number) {
+    return this.sets.reduce((a, s) => a + s.spots.filter(t => Math.hypot(t.x - x, t.y - y) < r).length, 0);
+  }
+
   /** Trees in all, and in full detail just now (for tests). */
   counts() {
     return {

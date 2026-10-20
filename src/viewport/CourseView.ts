@@ -28,6 +28,7 @@ import { create3dTree, getTreeSignature } from "../three/trees";
 import { createWoods } from "../three/woods";
 import { forestDetail, type Forest } from "../three/treeKit";
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
+import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createStructure } from "../three/structures";
 import { isLineKind, structureBounds, structurePath, structureWidth } from "../lib/structures";
 import type { AmenityItem, AreaItem, BasketItem, CourseItem, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem } from "../types";
@@ -162,6 +163,9 @@ export class CourseView {
   /** Grass blades near the camera, in 3D (see three/grass). */
   readonly grass = new Grass();
   private grassInputs: unknown[] = [];
+  /** The sky as an environment for water to reflect (made again when the sun moves). */
+  private skyEnv: THREE.WebGLRenderTarget | null = null;
+  private skyEnvKey = "";
   private grassBuilt = 0;
   private grassTimer = 0;
   private lastSky = false;
@@ -171,12 +175,25 @@ export class CourseView {
   private wind = true;
   /** Drawn without a graphics card (software rendering): the grass starts off. */
   readonly software: boolean;
+  /** A phone or small tablet (touch first, small screen). */
+  readonly mobile: boolean;
+  private maxRatio = 1;
+  private tier = 0;
+  private perfSamples: number[] = [];
+  private fastWindows = 0;
+  private lastRender = 0;
+  private adaptiveForced = false;
   private povMarker: HTMLDivElement | null = null;
   private disposed = false;
 
   constructor(private container: HTMLDivElement, private cb: ViewCallbacks) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // (no preserveDrawingBuffer: snapshots render and read in one go, and keeping the buffer
+    // costs frame rate on phone GPUs)
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    // Phones and tablets: a little less sharp (their screens are dense; every pixel costs)
+    this.mobile = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 900;
+    this.maxRatio = Math.min(window.devicePixelRatio || 1, this.mobile ? 1.5 : 2);
+    this.renderer.setPixelRatio(this.maxRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -242,7 +259,7 @@ export class CourseView {
     this.scene.environment = this.env;
     this.scene.add(this.hemi);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(this.mobile ? 1024 : 2048, this.mobile ? 1024 : 2048);
     this.scene.add(this.sun, this.sun.target);
 
     this.camera = new THREE.PerspectiveCamera(30, 1, 0.5, 40000);
@@ -274,8 +291,9 @@ export class CourseView {
       const info = gl.getExtension("WEBGL_debug_renderer_info");
       const name = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
       this.software = /swiftshader|llvmpipe|software|basic render/i.test(name);
-      // Without a graphics card, only the closest trees in full detail
+      // Without a graphics card, or on a phone, fewer trees in full detail
       if (this.software) forestDetail.nearFt = 70;
+      else if (this.mobile) forestDetail.nearFt = 150;
     }
 
     const on = <K extends keyof HTMLElementEventMap>(el: HTMLElement | Window, type: K, fn: (e: HTMLElementEventMap[K]) => void, opts?: AddEventListenerOptions) => {
@@ -538,6 +556,7 @@ export class CourseView {
     const ratio = this.renderer.getPixelRatio();
     this.renderer.setPixelRatio(1);
     this.renderer.setSize(width, height, false);
+    this.lastRender = 0;
     this.drawPov({ x: 0, y: 0, width, height });
     out.getContext("2d")?.drawImage(this.renderer.domElement, 0, 0);
     this.renderer.setPixelRatio(ratio);
@@ -553,6 +572,7 @@ export class CourseView {
     cancelAnimationFrame(this.raf);
     clearTimeout(this.grassTimer);
     this.grass.dispose();
+    this.skyEnv?.dispose();
     this.ro.disconnect();
     this.disposers.forEach(d => d());
     this.endDragListeners?.();
@@ -670,6 +690,8 @@ export class CourseView {
     this.ground.extras.visible = false;
     this.updateGrass(cam, true);
     this.updateForests(cam.position);
+    waterUniforms.uTime.value = this.clock.elapsedTime;
+    waterUniforms.uWind.value = this.wind ? 1 : 0.25;
     this.arcsGroup.visible = true;
     this.fx.visible = false;
     this.ground.detailActive(true);
@@ -822,12 +844,73 @@ export class CourseView {
       this.draftPending = false;
       this.drawDraft();
     }
-    // Grass swaying in the wind, from the tee
-    if (this.povHole && this.wind && this.grass.group.visible) this.dirty = true;
+    // Grass swaying and water rippling in the wind, from the tee (at most 30 frames a second on a
+    // phone when nothing else moves: the battery matters more than the breeze)
+    const breeze = !!this.povHole && this.wind;
+    if (breeze && !(this.mobile && !this.dirty && performance.now() - this.lastRender < 33)) this.dirty = true;
     if (!this.dirty || this.size.width <= 1) return;
     this.dirty = false;
+    const now = performance.now();
+    // Frame after frame (something moving): how long each took, to keep the frame rate up
+    if (now - this.lastRender < 250) this.perfSample(now - this.lastRender);
+    this.lastRender = now;
     this.render();
   };
+
+  /**
+   * Quality that keeps the view smooth: frame times are watched while the view moves, and when
+   * frames run slow (under 30 a second) the picture gets a step less sharp (pixel ratio), then
+   * less grass, softer shadows and fewer trees in full detail; it steps back up when there is
+   * room again. Software rendering (no graphics card) keeps its own fixed, lower settings.
+   */
+  perfSample(ms: number) {
+    if (this.software && !this.adaptiveForced) return;
+    const s = this.perfSamples;
+    s.push(ms);
+    if (s.length < 24) return;
+    const sorted = [...s].sort((a, b) => a - b);
+    const median = sorted[s.length >> 1];
+    s.length = 0;
+    if (median > 34 && this.tier < 4) {
+      this.fastWindows = 0;
+      this.setTier(this.tier + 1);
+    } else if (median < 17 && this.tier > 0) {
+      // (only after a few quick windows in a row: no flickering between two levels)
+      if (++this.fastWindows >= 3) {
+        this.fastWindows = 0;
+        this.setTier(this.tier - 1);
+      }
+    } else this.fastWindows = 0;
+  }
+
+  /** A quality level: 0 full .. 4 the lightest. */
+  setTier(tier: number) {
+    this.tier = Math.max(0, Math.min(4, tier));
+    const ratio = Math.max(0.75, this.maxRatio * [1, 0.85, 0.72, 0.6, 0.5][this.tier]);
+    if (Math.abs(this.renderer.getPixelRatio() - ratio) > 0.01) {
+      this.renderer.setPixelRatio(ratio);
+      this.renderer.setSize(this.size.width, this.size.height, false);
+    }
+    const shadow = this.tier >= 3 ? 512 : this.mobile || this.tier >= 2 ? 1024 : 2048;
+    if (this.sun.shadow.mapSize.x !== shadow) {
+      this.sun.shadow.mapSize.set(shadow, shadow);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+      this.shadowsDirty = true;
+    }
+    forestDetail.nearFt = (this.software ? 70 : this.mobile ? 150 : 260) * (this.tier >= 3 ? 0.6 : 1);
+    this.invalidate();
+  }
+
+  /** For tests: the quality level now. */
+  qualityInfo() {
+    return { tier: this.tier, pixelRatio: this.renderer.getPixelRatio(), shadow: this.sun.shadow.mapSize.x, nearFt: forestDetail.nearFt, grass: this.grassQuality(), mobile: this.mobile, software: this.software };
+  }
+
+  /** For tests: let the frame-rate watch work under software rendering too. */
+  forceAdaptive(on = true) {
+    this.adaptiveForced = on;
+  }
 
   private render() {
     if (this.povHole) {
@@ -871,6 +954,7 @@ export class CourseView {
     const restore = tilted ? this.atmosphere(this.camera, false) : null;
     this.updateGrass(this.camera, tilted);
     this.updateForests(this.camera.position);
+    waterUniforms.uTime.value = this.clock.elapsedTime;
     this.renderer.render(this.scene, this.camera);
     restore?.();
     this.layout();
@@ -976,6 +1060,43 @@ export class CourseView {
     this.grass.update(p, this.h(clamp(p.x, 0, doc.canvas.width), clamp(p.z, 0, doc.canvas.height)), t, this.wind && this.povHole ? 0.14 : 0.05);
   }
 
+  /** What a stretch of water mirrors on its banks: woods close by (high and dark) or open grass. */
+  private waterShore(pts: P[]): [string, number] {
+    const doc = this.doc;
+    if (!doc) return ["#2a3a24", 0.08];
+    const b = boundsOf(pts);
+    const near = (p: P) => p.x > b.minX - 60 && p.x < b.maxX + 60 && p.y > b.minY - 60 && p.y < b.maxY + 60;
+    const st = doc.course.style;
+    const wooded = doc.course.items.some(i => (i.type === "area" && i.kind === "woods" && i.points.some(near)) || (i.type === "tree" && near(i)));
+    return wooded || st.forest === "everywhere" ? [st.trees, 0.26] : [doc.groundColor, 0.06];
+  }
+
+  /** The sky as an environment map, for water to reflect (only when the sun has moved). */
+  private updateSkyEnv(dir: THREE.Vector3) {
+    const key = `${dir.x.toFixed(3)},${dir.y.toFixed(3)},${dir.z.toFixed(3)}`;
+    if (key === this.skyEnvKey) return;
+    this.skyEnvKey = key;
+    const sky = new Sky();
+    const src = this.skyBox.material as THREE.ShaderMaterial;
+    const mat = src.clone();
+    for (const k of Object.keys(src.uniforms)) {
+      const v = src.uniforms[k].value;
+      mat.uniforms[k] = { value: v && typeof v.clone === "function" ? v.clone() : v };
+    }
+    sky.material = mat;
+    sky.scale.setScalar(1000);
+    const scene = new THREE.Scene();
+    scene.add(sky);
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const rt = pmrem.fromScene(scene, 0, 1, 3000);
+    pmrem.dispose();
+    mat.dispose();
+    sky.geometry.dispose();
+    this.skyEnv?.dispose();
+    this.skyEnv = rt;
+    setWaterSky(rt.texture);
+  }
+
   /** Woods: the trees near the camera in full detail. */
   private updateForests(eye: THREE.Vector3) {
     for (const o of this.itemsGroup.children) (o.userData.forest as Forest | undefined)?.update(eye);
@@ -984,7 +1105,9 @@ export class CourseView {
   /** How much grass to draw: as set, or (automatically) none without a graphics card. */
   private grassQuality(): GrassQuality {
     if (this.grassSetting !== "auto") return this.grassSetting;
-    return this.software ? 0 : 2;
+    // Automatic: off without a graphics card, low on a phone, and less while frames run slow
+    const base = this.software ? 0 : this.mobile ? 1 : 2;
+    return Math.max(0, base - (this.tier >= 4 ? 2 : this.tier >= 2 ? 1 : 0)) as GrassQuality;
   }
 
   /** Grass detail (0 off .. 3 high, or automatic) and whether it sways in the wind. */
@@ -1022,6 +1145,13 @@ export class CourseView {
     return { trees, near, conifers };
   }
 
+  /** For tests: trees of the woods standing within `r` ft of a plan point. */
+  treesNear(x: number, y: number, r: number) {
+    let n = 0;
+    for (const o of this.itemsGroup.children) n += (o.userData.forest as Forest | undefined)?.treesNear(x, y, r) ?? 0;
+    return n;
+  }
+
   /** For tests: the last picture's sky, sun and grass. */
   sceneInfo() {
     const d = this.sun.position.clone().sub(this.sun.target.position).normalize();
@@ -1057,6 +1187,7 @@ export class CourseView {
       (sm.uniforms.sunPosition.value as THREE.Vector3).copy(dir);
       const low = 1 - clamp((Math.asin(clamp(dir.y, -1, 1)) / DEG - 8) / 40, 0, 1);
       (sm.uniforms.uHaze.value as THREE.Color).set("#c4d0d9").lerp(new THREE.Color("#dcc8ae"), low * 0.65);
+      this.updateSkyEnv(dir);
     }
     this.sun.position.copy(center).add(dir.multiplyScalar(span * 1.5));
     this.sun.target.position.copy(center);
@@ -1315,19 +1446,63 @@ export class CourseView {
         return g;
       });
     }
+    // Where woods have no trees: fairways, water, open areas, paths, roads, creeks, tees, baskets
+    // and built things (as on the painted map)
+    const clearings = (() => {
+      const polys: P[][] = [], lines: { pts: P[]; half: number }[] = [], discs: { p: P; r: number }[] = [];
+      for (const s of doc.stats) {
+        const hole = course.holes.find(h => h.id === s.holeId);
+        if (s.complete && hole) polys.push(fairwayOutline(hole, smoothPath(s.line, 8), hole.fairway ? 0 : -hole.fairwayWidth * 0.4, 6));
+      }
+      for (const it of course.items) {
+        if (it.type === "area" && ["fairway", "green", "water", "parking", "building", "sand", "rough", "nogo"].includes(it.kind)) polys.push(it.points);
+        else if (it.type === "line" && it.kind !== "ob" && it.kind !== "fence") lines.push({ pts: it.points, half: (it.width ?? LINE_KINDS[it.kind].width) / 2 + 3 });
+        else if (it.type === "tee") discs.push({ p: it, r: Math.max(12, it.padLength) });
+        else if (it.type === "basket") discs.push({ p: it, r: CIRCLE_ONE_FT * 0.6 });
+        else if (it.type === "structure") lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 6 });
+      }
+      const boxes = polys.map(boundsOf);
+      const test = (p: P, reach: number) => {
+        for (let i = 0; i < polys.length; i++) {
+          const b = boxes[i];
+          if (p.x < b.minX - reach || p.x > b.maxX + reach || p.y < b.minY - reach || p.y > b.maxY + reach) continue;
+          if (pointInPolygon(p, polys[i]) || (reach > 0 && distanceToPath(p, [...polys[i], polys[i][0]]) < reach)) return true;
+        }
+        for (const l of lines) if (l.pts.length > 1 && distanceToPath(p, l.pts) < l.half + reach) return true;
+        for (const d of discs) if (Math.hypot(p.x - d.p.x, p.y - d.p.y) < d.r + reach) return true;
+        return false;
+      };
+      // Rounded to a foot, so the woods are planted again only when a clearing really moved
+      const r = (v: number) => Math.round(v);
+      const key = JSON.stringify([polys.map(pp => pp.map(q => [r(q.x), r(q.y)])), lines.map(l => [l.half, l.pts.map(q => [r(q.x), r(q.y)])]), discs.map(d => [r(d.p.x), r(d.p.y), d.r])]);
+      return { test, key };
+    })();
     // Areas: fill plus outline
     const areas = (course.items.filter(i => i.type === "area") as AreaItem[]).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
     areas.forEach((a, order) => {
       const meta = AREA_KINDS[a.kind];
       const c = color(a.kind) ?? meta.color;
-      put(`area:${a.id}`, JSON.stringify([a.points, a.kind, hv, c, photo, order, a.ob]), () => {
+      put(`area:${a.id}`, JSON.stringify([a.points, a.kind, hv, c, photo, order, a.ob, a.kind === "water" ? this.waterShore(a.points) : 0]), () => {
         const g = new THREE.Group();
         const fill = photo ? meta.fill : Math.min(0.9, meta.fill + 0.35);
+        if (a.kind === "water") {
+          // Water lies level at its shore's lowest point, and where the ground (measured only every
+          // few yards) rises above that, it rides just over the ground instead of sinking under it
+          const level = Math.min(...a.points.map(p => this.h(p.x, p.y))) + 0.2;
+          const pond = new THREE.Mesh(drapedPolygon(a.points, (x, y) => Math.max(level, this.h(x, y) + 0.2), doc.gridSize / 2, 0), waterMaterial(c, ...this.waterShore(a.points)));
+          pond.renderOrder = 2;
+          pond.receiveShadow = true;
+          g.add(pond);
+          if (a.ob === true) g.add(this.fatLine(this.drapeLine(a.points, LIFT + 0.05, true), color("ob")!, 3, { order: 5 }));
+          return g;
+        }
+        // (A woods' floor goes under the fairways and paths through it, and under its ponds)
+        const floor = a.kind === "woods";
         const mesh = new THREE.Mesh(
-          drapedPolygon(a.points, (x, y) => this.h(x, y), doc.gridSize, 0.15 + order * 0.01),
-          new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: fill, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
+          drapedPolygon(a.points, (x, y) => this.h(x, y), doc.gridSize, floor ? 0.08 : 0.15 + order * 0.01),
+          new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: floor ? Math.min(fill, 0.45) : fill, depthWrite: false, polygonOffset: true, polygonOffsetFactor: floor ? -1 : -4, polygonOffsetUnits: floor ? -2 : -8 })
         );
-        mesh.renderOrder = 2 + order * 0.001;
+        mesh.renderOrder = floor ? 0.5 : 2 + order * 0.001;
         mesh.receiveShadow = true;
         g.add(mesh);
         const w = a.kind === "ob" || a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo" ? 3 : 1.5;
@@ -1337,9 +1512,9 @@ export class CourseView {
         return g;
       });
       // Woods: trees standing in it (shadows and all)
-      if (a.kind === "woods") put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape]), () => {
+      if (a.kind === "woods") put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, clearings.key]), () => {
         const land = landscapeOf(st);
-        const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix);
+        const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, clearings.test);
         woods.traverse(o => { o.userData.itemId = a.id; });
         this.shadowsDirty = true;
         return woods;
@@ -1350,7 +1525,7 @@ export class CourseView {
       const meta = LINE_KINDS[l.kind];
       const c = l.kind === "ob" ? color("ob")! : l.kind === "path" ? st.path : l.kind === "stream" ? st.water : meta.color;
       const width = l.width ?? meta.width;
-      put(`line:${l.id}`, JSON.stringify([l.points, l.kind, width, hv, c, l.ob]), () => {
+      put(`line:${l.id}`, JSON.stringify([l.points, l.kind, width, hv, c, l.ob, l.kind === "stream" ? this.waterShore(l.points) : 0]), () => {
         const g = new THREE.Group();
         // Marked OB (a creek, a road): a red edge either side
         if (l.ob === true && l.kind !== "ob" && l.points.length >= 2) {
@@ -1365,8 +1540,8 @@ export class CourseView {
         }
         if (width > 0 && l.points.length >= 2) {
           const ribbon = new THREE.Mesh(
-            drapedRibbon(l.points, width, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.18),
-            new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
+            drapedRibbon(l.kind === "stream" ? smoothPath(l.points, 8) : l.points, width, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.18),
+            l.kind === "stream" ? waterMaterial(c, ...this.waterShore(l.points)) : new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
           );
           ribbon.renderOrder = 2;
           ribbon.receiveShadow = true;

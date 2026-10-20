@@ -401,6 +401,58 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
   };
   const a = read(A.c, 1.2 * (pt / cell)), b = read(B.c, 0.9 * (pt / cell)), c = read(C.c, 1 * (pt / cell));
   const wet = read(A.c, 0.6 * (pt / cell));
+  // How far into the water each cell is (pixels from the shore), and whether it is open water (a
+  // pond, a lake) or a narrow creek: the shore's distance averaged round about stays small along
+  // a creek and grows inside a pond
+  const shore = new Float32Array(mw * mh);
+  {
+    const INF = 1e9, D1 = 1, D2 = 1.4142;
+    for (let m = 0; m < shore.length; m++) shore[m] = wet[m * 4 + 2] > 127 ? INF : 0;
+    for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
+      const m = y * mw + x;
+      if (!shore[m]) continue;
+      let v = shore[m];
+      if (x > 0) v = Math.min(v, shore[m - 1] + D1);
+      if (y > 0) v = Math.min(v, shore[m - mw] + D1);
+      if (x > 0 && y > 0) v = Math.min(v, shore[m - mw - 1] + D2);
+      if (x < mw - 1 && y > 0) v = Math.min(v, shore[m - mw + 1] + D2);
+      shore[m] = v;
+    }
+    for (let y = mh - 1; y >= 0; y--) for (let x = mw - 1; x >= 0; x--) {
+      const m = y * mw + x;
+      if (!shore[m]) continue;
+      let v = shore[m];
+      if (x < mw - 1) v = Math.min(v, shore[m + 1] + D1);
+      if (y < mh - 1) v = Math.min(v, shore[m + mw] + D1);
+      if (x < mw - 1 && y < mh - 1) v = Math.min(v, shore[m + mw + 1] + D2);
+      if (x > 0 && y < mh - 1) v = Math.min(v, shore[m + mw - 1] + D2);
+      shore[m] = v;
+    }
+    for (let m = 0; m < shore.length; m++) if (shore[m] >= 1e8) shore[m] = 0;
+    for (let m = 0; m < shore.length; m++) shore[m] *= cell;
+  }
+  const openWater = (() => {
+    // A wide box average (rows, then columns) of the shore distance
+    const R = Math.max(2, Math.round((10 * pt) / cell));
+    const tmp = new Float32Array(mw * mh), out = new Float32Array(mw * mh);
+    for (let y = 0; y < mh; y++) {
+      let s2 = 0;
+      for (let x = -R; x <= R; x++) s2 += shore[y * mw + Math.min(mw - 1, Math.max(0, x))];
+      for (let x = 0; x < mw; x++) {
+        tmp[y * mw + x] = s2 / (2 * R + 1);
+        s2 += shore[y * mw + Math.min(mw - 1, x + R + 1)] - shore[y * mw + Math.max(0, x - R)];
+      }
+    }
+    for (let x = 0; x < mw; x++) {
+      let s2 = 0;
+      for (let y = -R; y <= R; y++) s2 += tmp[Math.min(mh - 1, Math.max(0, y)) * mw + x];
+      for (let y = 0; y < mh; y++) {
+        out[y * mw + x] = s2 / (2 * R + 1);
+        s2 += tmp[Math.min(mh - 1, y + R + 1) * mw + x] - tmp[Math.max(0, y - R) * mw + x];
+      }
+    }
+    return out;
+  })();
   const middle = read(C.c, 7 * (pt / cell));
 
   // Slow-changing noise on a coarse grid (every 8 pixels), read smoothly in between. In page
@@ -675,7 +727,8 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
   const fair = palette(s.fairway, [0.56, 0.7, 0.84, 1, 1.14, 1.28], 4);
   const lawn = palette(s.rough, [0.6, 0.76, 0.9, 1.04, 1.18], 3);
   const floorPal = palette(s.trees, [0.3, 0.42, 0.56], 0);
-  const water = palette(s.water, [0.42, 0.6, 0.8, 1, 1.22, 1.5], -6);
+  // (the lightest tones toward teal: shallows and the rim)
+  const water = palette(s.water, [0.42, 0.58, 0.76, 0.94, 1.12, 1.34, 1.62], -14);
   // Worn dirt: an olive tan, lighter than the shade around it (it reads as open ground)
   const dirtPal = palette(s.path, [0.86, 1.03, 1.19, 1.35, 1.54], -8, 0.85);
   const road = palette("#969a9d", [0.66, 0.8, 0.92, 1.02, 1.1], 0);
@@ -790,13 +843,25 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
         }
         const bd = c[m4] / 255;
         if (bd > 0.25) lay(roof, (0.25 + 0.6 * smooth(0.5, 0.8, bd)) * (0.6 + 0.4 * lit), smooth(0.42, 0.52, bd));
-        // Water: dark at the banks, lighter in the open middle, a glint of ripples
+        // Water. Ponds: lighter in the shallows, deepening toward the middle, a bright rim just
+        // inside the shore and a few faint lines following it out (as cartographers draw water),
+        // and now and then a glint of sun. Creeks: dark at the banks, light down the middle.
         const w0 = wet[m4 + 2] / 255;
         if (w0 > 0.25) {
           const w = w0 + (fbm(x / pt * 0.25 + 120, y / pt * 0.25) - 0.5) * 0.1;
           if (w > 0.36) {
             const ripple = noise(x / pt * 0.35 + 7, y / pt * 0.12) - 0.5;
-            lay(water, (0.15 + 0.6 * smooth(0.4, 0.8, w) + ripple * 0.1) * (0.55 + 0.45 * lit), smooth(0.4, 0.46, w));
+            const d = shore[m], open = smooth(2.5 * pt, 7 * pt, openWater[m]);
+            const creek = 0.15 + 0.6 * smooth(0.4, 0.8, w) + ripple * 0.1;
+            let pond = 0.7 - 0.38 * smooth(0, 32 * pt, d) + ripple * 0.06;
+            pond += 0.24 * (1 - smooth(0.5 * pt, 1.8 * pt, d));
+            for (let k = 1; k <= 3; k++) {
+              const at = (2.2 + k * k * 1.6) * pt;
+              pond += (0.11 / k) * (1 - smooth(0.2 * pt, 0.75 * pt, Math.abs(d - at))) * (1 - 0.4 * smooth(0, 30 * pt, d));
+            }
+            const sun = groundSun[(y >> 1) * hw + (x >> 1)];
+            if (sun > 0.9 && d > 6 * pt && GRIT[tr | (x & 511)] > 0.93 && GRIT[((y >> 1) & 511) << 9 | ((x * 3) & 511)] > 0.6) pond += 0.3;
+            lay(water, (creek + (pond - creek) * open) * (0.55 + 0.45 * lit), smooth(0.4, 0.46, w));
           }
         }
         // Illuminated contours on the open ground (never across the treetops or water): light

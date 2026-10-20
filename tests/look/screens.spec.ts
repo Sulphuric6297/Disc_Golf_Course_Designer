@@ -546,3 +546,51 @@ test("fairway shaped along a hole", async ({ page }) => {
   await page.waitForTimeout(2500);
   await page.getByTestId("design-page").screenshot({ path: "look/19-fairway-shape-print.png" });
 });
+
+test("half wooded, half open course: painted map, 3D and from a tee", async ({ page }) => {
+  test.setTimeout(300_000);
+  await importSite(page);
+  await seedCourse(page);
+  // Woods over the west half (the seeded corner woods replaced by a big stand), open field east
+  await page.evaluate(() => {
+    const d = (window as any).__dgCourse();
+    const W = d.canvas.width, H = d.canvas.height;
+    const s = (window as any).__dgEditor();
+    s.set({ areaKind: "woods" });
+    (window as any).__dgActions.addDrawn("area", [{ x: 0, y: 0 }, { x: 0.52 * W, y: 0 }, { x: 0.44 * W, y: 0.35 * H }, { x: 0.5 * W, y: 0.62 * H }, { x: 0.4 * W, y: H }, { x: 0, y: H }]);
+    s.set({ tool: "select", grass: 2 });
+  });
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
+  await page.waitForTimeout(3000);
+  await page.getByTestId("design-page").screenshot({ path: "look/20-half-woods-print.png" });
+  const bar = page.getByRole("button", { name: "Fit the page" }).locator("..");
+  for (let i = 0; i < 3; i++) await bar.getByRole("button", { name: "Zoom in" }).click();
+  await page.waitForTimeout(1200);
+  await shot(page, "20-half-woods-print-zoom");
+  // The same course painted with woods everywhere off the fairways, for comparison
+  await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
+  await page.waitForTimeout(3000);
+  await page.getByRole("button", { name: "Fit the page" }).click();
+  await page.waitForTimeout(800);
+  await page.getByTestId("design-page").screenshot({ path: "look/20-everywhere-print.png" });
+  // 3D: tilted over the whole course, then low over the pond, then from hole 2's tee
+  await page.getByRole("button", { name: "2 Holes" }).click();
+  await page.keyboard.press("3");
+  await page.waitForTimeout(3000);
+  await shot(page, "20-half-woods-3d");
+  await page.evaluate(() => {
+    const v = (window as any).__dgView;
+    const d = (window as any).__dgCourse();
+    const W = d.canvas.width, H = d.canvas.height;
+    // Low over the pond's south side, looking north across it
+    const ex = 0.2 * W, ey = 0.73 * H, tx = 0.16 * W, ty = 0.6 * H;
+    void v.controls.setLookAt(ex, v.groundHeight(ex, ey) + 9, ey, tx, v.groundHeight(tx, ty) + 2, ty, false);
+  });
+  await page.waitForTimeout(4000);
+  await shot(page, "20-pond-3d");
+  await page.getByTestId("hole-row").nth(1).click();
+  await page.getByTestId("tee-view").click();
+  await page.waitForTimeout(4000);
+  await shot(page, "20-tee-woods-edge");
+});

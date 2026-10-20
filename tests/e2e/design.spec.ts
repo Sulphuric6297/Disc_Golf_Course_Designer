@@ -419,3 +419,49 @@ test("elevation on the Forest map: hills shade the painting, and contour lines a
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(shaded);
   expect(await page.getByTestId("design-page").locator("path[stroke-linejoin='round'][fill='none'][stroke^='rgba(20,40,10']").count()).toBe(0);
 });
+
+test("painted water: a pond is lighter at its rim and in the shallows, deep and dark in the middle", async ({ page }) => {
+  test.setTimeout(150_000);
+  await blankCourse(page);
+  await addHole(page, { x: 150, y: 950 }, { x: 450, y: 950 });
+  await page.keyboard.press("Escape");
+  // A round pond beside the hole (in the map's frame)
+  await page.evaluate(() => {
+    const cx = 300, cy = 860;
+    const pts = Array.from({ length: 40 }, (_, i) => ({ x: cx + Math.cos((i / 40) * Math.PI * 2) * 70, y: cy + Math.sin((i / 40) * Math.PI * 2) * 70 }));
+    (window as any).__dgEditor().set({ areaKind: "water" });
+    (window as any).__dgActions.addDrawn("area", pts);
+  });
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
+  const painting = page.getByTestId("design-page").locator("image").first();
+  await expect(painting).toHaveAttribute("href", /^data:image\/jpeg/);
+  await page.waitForTimeout(1500);
+  // Along the row through the pond's middle (its widest): the water's edge against its middle
+  const profile = await page.evaluate(async (url: string) => {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const c = document.createElement("canvas");
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext("2d")!;
+    g.drawImage(img, 0, 0);
+    const all = g.getImageData(0, 0, img.width, img.height).data;
+    let best: number[] = [];
+    for (let y = 0; y < img.height; y += 2) {
+      const water: number[] = [];
+      for (let x = 0; x < img.width; x++) {
+        const k = (y * img.width + x) * 4, r = all[k], gg = all[k + 1], b = all[k + 2];
+        if (b > r + 15 && b > gg - 10) water.push(0.3 * r + 0.59 * gg + 0.11 * b);
+      }
+      if (water.length > best.length) best = water;
+    }
+    return best;
+  }, (await painting.getAttribute("href"))!);
+  expect(profile.length).toBeGreaterThan(100);
+  const n = profile.length, mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
+  const rim = mean([...profile.slice(0, Math.round(n * 0.06)), ...profile.slice(n - Math.round(n * 0.06))]);
+  const middle = mean(profile.slice(Math.round(n * 0.35), Math.round(n * 0.65)));
+  expect(rim).toBeGreaterThan(middle + 12);
+});

@@ -1,4 +1,4 @@
-import { test, expect, addHole, blankCourse, course } from "./fixtures";
+import { test, expect, addHole, blankCourse, course, importSite } from "./fixtures";
 
 const grassSetting = (page: import("@playwright/test").Page) => page.evaluate(() => (window as any).__dgEditor().grass);
 
@@ -155,4 +155,94 @@ test("3D is a real perspective: the lens widens as the view tilts, and narrows a
   await expect.poll(fov, { timeout: 30_000 }).toBeGreaterThan(40);
   await page.keyboard.press("2");
   await expect.poll(fov, { timeout: 30_000 }).toBeLessThan(31);
+});
+
+test("smooth on any device: slow frames make the 3D view lighter step by step, and it steps back up when there is room", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("3");
+  const q = () => page.evaluate(() => (window as any).__dgView.qualityInfo() as { tier: number; pixelRatio: number; shadow: number; nearFt: number });
+  const frames = (ms: number, n: number) => page.evaluate(([ms, n]) => { const v = (window as any).__dgView; v.forceAdaptive(); for (let i = 0; i < n; i++) v.perfSample(ms); }, [ms, n]);
+  const start = await q();
+  expect(start.tier).toBe(0);
+  // 24 frames under 30 a second: one step lighter (a little less sharp)
+  await frames(60, 24);
+  const one = await q();
+  expect(one.tier).toBe(1);
+  expect(one.pixelRatio).toBeLessThan(start.pixelRatio);
+  // Still slow: lighter again, down to softer shadows and fewer trees in full detail
+  await frames(60, 24 * 3);
+  const four = await q();
+  expect(four.tier).toBe(4);
+  expect(four.shadow).toBeLessThan(start.shadow);
+  expect(four.nearFt).toBeLessThan(start.nearFt);
+  // Smooth again: a step back only after a few quick windows in a row (no flicker)
+  await frames(10, 24 * 2);
+  expect((await q()).tier).toBe(4);
+  await frames(10, 24);
+  expect((await q()).tier).toBe(3);
+});
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+  test("the 3D view starts lighter on a phone: less sharp than the screen's full density, smaller shadows", async ({ page }) => {
+    const q = await page.evaluate(() => (window as any).__dgView?.qualityInfo());
+    expect(q.mobile).toBe(true);
+    expect(q.pixelRatio).toBeLessThanOrEqual(1.5);
+    expect(q.shadow).toBe(1024);
+  });
+});
+
+test("3D woods leave the fairways, ponds, tees and baskets clear (as the painted map does), and fill in when a hole is taken out", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 500 }, { x: 650, y: 500 });
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => {
+    const a = (window as any).__dgActions, s = (window as any).__dgEditor();
+    s.set({ areaKind: "woods" });
+    a.addDrawn("area", [{ x: 150, y: 250 }, { x: 900, y: 250 }, { x: 900, y: 800 }, { x: 150, y: 800 }]);
+    s.set({ areaKind: "water" });
+    a.addDrawn("area", [{ x: 700, y: 650 }, { x: 820, y: 650 }, { x: 820, y: 760 }, { x: 700, y: 760 }]);
+    s.set({ tool: "select" });
+  });
+  await page.keyboard.press("3");
+  const near = (x: number, y: number, r: number) => page.evaluate(([x, y, r]) => (window as any).__dgView.treesNear(x, y, r), [x, y, r]);
+  await expect.poll(() => page.evaluate(() => (window as any).__dgView.forestInfo().trees), { timeout: 40_000 }).toBeGreaterThan(300);
+  // None on the fairway (30 ft wide), the tee, the basket or in the pond
+  expect(await near(475, 500, 12)).toBe(0);
+  expect(await near(300, 500, 10)).toBe(0);
+  expect(await near(650, 500, 10)).toBe(0);
+  expect(await near(760, 705, 40)).toBe(0);
+  // Woods all round them
+  expect(await near(475, 380, 40)).toBeGreaterThan(0);
+  // The hole taken out: the woods grow back over where its fairway was
+  await page.getByTestId("hole-row").click();
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await course(page)).holes.length).toBe(0);
+  await expect.poll(() => near(475, 500, 30), { timeout: 40_000 }).toBeGreaterThan(0);
+});
+
+test("3D water: a pond on sloping ground lies level but never under the ground, and reflects (water material)", async ({ page }) => {
+  await importSite(page);
+  await page.keyboard.press("3");
+  const check = () => page.evaluate(() => {
+    const v = (window as any).__dgView;
+    let ponds = 0, below = 0, vertices = 0;
+    v.scene.traverse((o: any) => {
+      if (!o.isMesh || o.material?.customProgramCacheKey?.() !== "dg-water") return;
+      ponds++;
+      const pos = o.geometry.getAttribute("position");
+      for (let i = 0; i < pos.count; i++) {
+        vertices++;
+        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+        if (y < v.groundHeight(x, z) - 0.05) below++;
+      }
+    });
+    return { ponds, below, vertices };
+  });
+  await expect.poll(async () => (await check()).ponds, { timeout: 30_000 }).toBeGreaterThan(0);
+  const r = await check();
+  expect(r.vertices).toBeGreaterThan(10);
+  expect(r.below).toBe(0);
 });

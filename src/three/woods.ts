@@ -9,7 +9,7 @@ import { foliageTint } from "./trees";
 const MAX_TREES = 6000;
 
 /** Trees about every `spacing` feet inside the outline, standing on the ground. */
-export const createWoods = (outline: P[], groundAt: (x: number, y: number) => number, color: string, conifers = 0.22, mix: string[] = [], spacing = 22) => {
+export const createWoods = (outline: P[], groundAt: (x: number, y: number) => number, color: string, conifers = 0.22, mix: string[] = [], keepOut: (p: P, reach: number) => boolean = () => false, spacing = 22) => {
   const spots: TreeSpot[] = [];
   if (outline.length >= 3) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -28,9 +28,9 @@ export const createWoods = (outline: P[], groundAt: (x: number, y: number) => nu
         const small = rnd() < 0.18;
         const height = small ? 16 + rnd() * 12 : shape === "conifer" ? 45 + rnd() * 35 : 38 + rnd() * 34;
         const width = (shape === "conifer" ? height * 0.42 : Math.max(step * 1.25, height * 0.62)) * (0.8 + rnd() * 0.4) * (small ? 0.7 : 1);
-        spots.push({
+        const tree: TreeSpot = {
           ...p,
-          ground: groundAt(p.x, p.y),
+          ground: 0,
           height,
           width,
           shape,
@@ -39,7 +39,12 @@ export const createWoods = (outline: P[], groundAt: (x: number, y: number) => nu
           tint: shape === "conifer" ? foliageTint(color, rnd).offsetHSL(0.03, -0.06, -0.08) : foliageTint(mix.length ? mix[Math.floor(rnd() * mix.length)] : color, rnd),
           turn: rnd() * Math.PI * 2,
           lean: (rnd() - 0.5) * 0.06
-        });
+        };
+        // None on the fairways, water, paths, tees and baskets (crowns may lean over the edges).
+        // (Every draw above is made either way, so clearing one spot leaves the other trees be.)
+        if (keepOut(p, width * 0.3)) continue;
+        tree.ground = groundAt(p.x, p.y);
+        spots.push(tree);
       }
     }
   }
