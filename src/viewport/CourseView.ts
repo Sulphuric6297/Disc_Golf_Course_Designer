@@ -27,12 +27,13 @@ import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
 import { createWoods, createWoodsWhere } from "../three/woods";
 import type { WoodedGrid } from "../lib/forest";
+import { autoFlight, flyoverOf, keyFlight, keysFromFlight, type Air } from "../lib/flight";
 import { forestDetail, type Forest } from "../three/treeKit";
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createStructure } from "../three/structures";
 import { isLineKind, orientedBox, structureBounds, structureHeight, structurePath, structureWidth } from "../lib/structures";
-import type { AmenityItem, AreaItem, BasketItem, CourseItem, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem } from "../types";
+import type { AmenityItem, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
 import type { FlightFrames, FlyoverVideo, FrameInfo, RecordOptions } from "./flyoverVideo";
@@ -91,6 +92,9 @@ const STYLE = `
 .dg-h{position:absolute;left:0;top:0;pointer-events:auto;will-change:translate;box-sizing:border-box;touch-action:none}
 .dg-h[data-handle=corner],.dg-h[data-handle=dogleg]{width:14px;height:14px;border-radius:50%;background:#fff;border:2.5px solid #0891b2;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=dogleg]{border-color:#f59e0b}
+.dg-h[data-handle=flykey]{width:20px;height:20px;border-radius:6px;background:#0284c7;border:2px solid #fff;color:#fff;font:800 11px/16px Inter,system-ui,sans-serif;text-align:center;cursor:grab;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.dg-h[data-handle=flykey]::after{content:attr(data-n)}
+.dg-h[data-handle=flylook]{width:12px;height:12px;border-radius:50%;border:2.5px solid #38bdf8;background:rgba(15,23,42,.35);cursor:grab}
 .dg-h[data-handle=mid]{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.6);border:2px solid #0891b2;cursor:copy}
 .dg-h[data-handle=mid][data-kind=line]{border-color:#f59e0b}
 .dg-h[data-handle=width]{width:13px;height:13px;border-radius:3px;background:#fff;border:2.5px solid #16a34a;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
@@ -106,6 +110,9 @@ const STYLE = `
 const lineMats = new Set<LineMaterial>();
 /** A finger is the main pointer (handles are drawn bigger there). */
 const COARSE = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
+
+/** How high woods' trees reach, ft (the tallest of three/woods). */
+const WOODS_TOP_FT = 80;
 
 /** The painted map for the ground (a picture's URL) and where it shows woods. */
 export type PaintedLook = { url: string; wooded: WoodedGrid | null };
@@ -185,7 +192,9 @@ export class CourseView {
   private povCam = new THREE.PerspectiveCamera(62, 16 / 9, 0.3, 30000);
   private povHole: string | null = null;
   private povLook = { yaw: 0, pitch: 0 };
-  private fly: { pts: THREE.Vector3[]; look: THREE.Vector3[]; t: number; dur: number; done?: () => void } | null = null;
+  private fly: { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; t: number; dur: number; ease: boolean; done?: () => void } | null = null;
+  /** The tee view's field of view, kept while a flight sets its own. */
+  private povFov = 62;
   private skyBox: Sky;
   /** Grass blades near the camera, in 3D (see three/grass). */
   readonly grass = new Grass();
@@ -675,38 +684,71 @@ export class CourseView {
     const path = this.flightPath(holeId);
     if (!path) return;
     this.setTeeView(holeId);
+    if (!this.fly) this.povFov = this.povCam.fov;
     this.fly = { ...path, t: 0, done };
     this.invalidate();
   }
 
-  /** The flight over a hole: camera and look-at points from behind the tee to the basket, and how
-   * long it takes (s). */
-  private flightPath(holeId: string): { pts: THREE.Vector3[]; look: THREE.Vector3[]; dur: number } | null {
-    const s = this.doc?.stats.find(x => x.holeId === holeId);
-    if (!s?.complete) return null;
-    const line = smoothPath(s.line, 16);
-    const len = pathLength(line);
-    const start = line[0], end = line[line.length - 1];
-    const a0 = pointAlong(line, 0).angle;
-    const back = { x: start.x - Math.cos(a0) * 60, y: start.y - Math.sin(a0) * 60 };
-    const pts: THREE.Vector3[] = [];
-    const look: THREE.Vector3[] = [];
-    const n = 60;
-    for (let i = 0; i <= n; i++) {
-      const t = i / n;
-      // Camera: from behind and above the tee, along the line, ending short of the basket
-      const d = -60 + t * (len - 25 + 60);
-      const p = d < 0 ? { x: start.x + (back.x - start.x) * (-d / 60), y: start.y + (back.y - start.y) * (-d / 60) } : pointAlong(line, d).point;
-      const alt = 45 + Math.sin(Math.PI * Math.min(1, t * 1.1)) * Math.min(60, len * 0.12) - t * 25;
-      pts.push(new THREE.Vector3(p.x, this.h(p.x, p.y) + alt, p.y));
-      const ahead = pointAlong(line, Math.min(len, Math.max(0, d) + Math.max(120, len * 0.35))).point;
-      const toward = t > 0.75 ? end : ahead;
-      look.push(new THREE.Vector3(toward.x, this.h(toward.x, toward.y) + 3, toward.y));
+  /** The flight over a hole: camera and look-at points (by itself from behind the tee to the
+   * basket, over the trees; or through the hole's keyframes), fields of view, and how long it
+   * takes (s). */
+  private flightPath(holeId: string): { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; dur: number; ease: boolean } | null {
+    const doc = this.doc;
+    const s = doc?.stats.find(x => x.holeId === holeId);
+    if (!doc || !s?.complete) return null;
+    const hole = doc.course.holes.find(h => h.id === holeId);
+    const set = flyoverOf(doc.course);
+    const ground = (x: number, y: number) => this.h(x, y);
+    const byHand = !!hole?.flyKeys && hole.flyKeys.length >= 2;
+    const f = byHand ? keyFlight(hole!.flyKeys!, set, ground) : autoFlight(smoothPath(s.line, 16), set, ground, (p, r) => this.obstacleTop(p, r));
+    if (!f) return null;
+    const v = (a: Air) => new THREE.Vector3(a.x, a.z, a.y);
+    return { pts: f.cam.map(v), look: f.look.map(v), fov: f.fov, dur: f.dur, ease: !byHand };
+  }
+
+  /** Keyframes to start a hand-made flyover from: the flight it flies by itself, at a few moments. */
+  autoKeys(holeId: string): FlyKey[] | null {
+    const doc = this.doc;
+    const s = doc?.stats.find(x => x.holeId === holeId);
+    if (!doc || !s?.complete) return null;
+    const ground = (x: number, y: number) => this.h(x, y);
+    const f = autoFlight(smoothPath(s.line, 16), flyoverOf(doc.course), ground, (p, r) => this.obstacleTop(p, r));
+    return f ? keysFromFlight(f, ground) : null;
+  }
+
+  /** How high what stands near a point reaches (treetops, woods, roofs), ft on the terrain's
+   * datum, or -Infinity. */
+  private obstacleTop(p: P, reach: number): number {
+    const doc = this.doc;
+    if (!doc) return -Infinity;
+    let top = -Infinity;
+    const near = (pts: P[]) => {
+      const b = boundsOf(pts);
+      if (p.x < b.minX - reach || p.x > b.maxX + reach || p.y < b.minY - reach || p.y > b.maxY + reach) return false;
+      return pointInPolygon(p, pts) || distanceToPath(p, [...pts, pts[0]]) < reach;
+    };
+    for (const i of doc.course.items) {
+      if (i.type === "tree") {
+        if (Math.hypot(i.x - p.x, i.y - p.y) < reach + i.radius * (i.width ?? 1)) top = Math.max(top, this.h(i.x, i.y) + (i.height ?? i.radius * 2.6));
+      } else if (i.type === "area" && i.kind === "woods") {
+        if (near(i.points)) top = Math.max(top, this.h(p.x, p.y) + WOODS_TOP_FT);
+      } else if (i.type === "structure" && !isLineKind(i.kind)) {
+        if (near(i.points)) top = Math.max(top, this.h(p.x, p.y) + structureHeight(i) + 10);
+      }
     }
-    return { pts, look, dur: clamp(len / 70, 6, 14) };
+    // The painted map's own woods, where trees stand on it
+    const pw = this.ground.paintedTexture ? this.paintedWoods : null;
+    if (pw) {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const c = Math.floor((p.x + dx * reach - pw.x0) / pw.ftPerCell), r = Math.floor((p.y + dy * reach - pw.y0) / pw.ftPerCell);
+        if (c >= 0 && r >= 0 && c < pw.cols && r < pw.rows && pw.data[r * pw.cols + c] === 1) top = Math.max(top, this.h(p.x, p.y) + WOODS_TOP_FT);
+      }
+    }
+    return top;
   }
 
   stopFlyover() {
+    if (this.fly) this.povCam.fov = this.povFov;
     this.fly = null;
     this.invalidate();
   }
@@ -737,11 +779,13 @@ export class CourseView {
     if (this.fly) {
       const f = this.fly;
       const k = clamp(f.t / f.dur, 0, 1);
-      const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      // (by itself: easing in and out; through keyframes: on their seconds)
+      const e = !f.ease ? k : k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
       const idx = e * (f.pts.length - 1);
       const i0 = Math.floor(idx), i1 = Math.min(f.pts.length - 1, i0 + 1);
       cam.position.lerpVectors(f.pts[i0], f.pts[i1], idx - i0);
       cam.lookAt(new THREE.Vector3().lerpVectors(f.look[i0], f.look[i1], idx - i0));
+      cam.fov = f.fov[i0] + (f.fov[i1] - f.fov[i0]) * (idx - i0);
     } else {
       const pose = this.povPose();
       if (!pose) return;
@@ -948,6 +992,7 @@ export class CourseView {
       if (this.fly.t >= this.fly.dur) {
         const done = this.fly.done;
         this.fly = null;
+        this.povCam.fov = this.povFov;
         done?.();
       }
     }
@@ -1672,6 +1717,18 @@ export class CourseView {
         return woods;
       }, this.itemsGroup);
     });
+    // A hand-made flyover of the selected hole: its path over the ground, and where each keyframe looks
+    const flyHole = this.hole(this.selectedId);
+    if (flyHole?.flyKeys && flyHole.flyKeys.length >= 2 && !this.povHole) {
+      const keys = flyHole.flyKeys;
+      put(`flykeys:${flyHole.id}`, JSON.stringify([keys, hv, course.flyover]), () => {
+        const g = new THREE.Group();
+        const f = keyFlight(keys, flyoverOf(course), (x, y) => this.h(x, y));
+        if (f) g.add(this.fatLine(this.drapeLine(f.cam.map(c => ({ x: c.x, y: c.y })), 0.6), "#38bdf8", 2.5, { order: 8, dashed: 8 }));
+        for (const k of keys) g.add(this.fatLine(this.drapeLine([{ x: k.x, y: k.y }, { x: k.lookX, y: k.lookY }], 0.6), "#38bdf8", 1.5, { opacity: 0.7, order: 8 }));
+        return g;
+      });
+    }
     // The painted map's own woods: trees standing on it
     const pw = painted ? this.paintedWoods : null;
     if (pw) {
@@ -2086,7 +2143,7 @@ export class CourseView {
     const holeId = editing ? (this.hole(this.selectedId)?.id ?? doc.activeHoleId) : null;
     const hole = this.hole(holeId);
     const drawing = this.drawn() ? this.drawPts.length : -1;
-    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}` : ""}|${drawing}`;
+    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${this.selectedId === hole.id}` : ""}|${drawing}`;
     if (key === this.handleKey) return;
     this.handleKey = key;
     this.handles.forEach(h => h.el.remove());
@@ -2188,6 +2245,31 @@ export class CourseView {
         return dragPoint(i, h.doglegs);
       }, { index: i, title: "Drag to move this turn · double-click to remove it" });
     });
+    // A hand-made flyover (while the hole is selected): each keyframe's camera spot (numbered) and
+    // what it looks at, to drag
+    const keys = h0.flyKeys;
+    if (keys && keys.length >= 2 && this.selectedId === holeId) {
+      const dragKey = (index: number, look: boolean): Drag | null => {
+        const list = hole()?.flyKeys?.map(k => ({ ...k }));
+        const k0 = list?.[index];
+        if (!list || !k0) return null;
+        const y = look ? this.h(k0.lookX, k0.lookY) : this.h(k0.x, k0.y);
+        const r1 = (v: number) => Math.round(v * 10) / 10;
+        return {
+          move: ev => {
+            const hit = this.planeAt(ev.clientX, ev.clientY, y);
+            if (!hit) return;
+            list[index] = look ? { ...list[index], lookX: r1(hit.x), lookY: r1(hit.z) } : { ...list[index], x: r1(hit.x), y: r1(hit.z) };
+            this.cb.onHoleChange(holeId, { flyKeys: list.map(k => ({ ...k })) });
+          },
+          end: () => this.cb.onCommit()
+        };
+      };
+      keys.forEach((_, i) => {
+        add("flylook", () => { const k = hole()?.flyKeys?.[i]; return k ? at({ x: k.lookX, y: k.lookY }) : null; }, () => dragKey(i, true), { index: i, title: `Where keyframe ${i + 1} looks: drag` });
+        add("flykey", () => { const k = hole()?.flyKeys?.[i]; return k ? at(k) : null; }, () => dragKey(i, false), { index: i, title: `Flyover keyframe ${i + 1}: drag to move the camera`, data: { n: String(i + 1) } });
+      });
+    }
     // Mid dots between each pair of line points: pulling one adds a turn there
     const n = s0.line.length;
     for (let i = 0; i + 1 < n; i++) {

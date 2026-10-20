@@ -11,6 +11,8 @@ import { canvasBlob, pdfFromPages, pngUnder, svgToCanvas } from "../lib/raster";
 import { holeStats } from "../lib/holeStats";
 import { holeNumber } from "../lib/course";
 import { VIDEO_SIZES, VIDEO_HOLD, type VideoResolution } from "../lib/video";
+import { autoSeconds, flyoverOf, keySeconds } from "../lib/flight";
+import { FlyoverSettingsPanel } from "./FlyoverSettings";
 import { changeDoc, getDoc, useCourse, useEditor } from "../state/course";
 import { download, fileName, saveCourseFile } from "../state/files";
 import { runExport, useExportJob, type JobControl } from "../state/exportJob";
@@ -33,11 +35,14 @@ const art = async (d: CourseDoc) => ({ ...reliefOf(d), canopy: await canopyFor(d
 /** Holes with a tee and a basket, in the order of play. */
 const playable = (d: CourseDoc) => d.holes.filter(h => holeStats(d, h).complete);
 
-/** Seconds of video for the holes (the flight lasts its length / 70 ft a second, 6 to 14 s). */
+/** Seconds of video for the holes (each one's flight, by itself or through its keyframes). */
 const videoSeconds = (d: CourseDoc, ids: string[]) =>
   ids.reduce((t, id) => {
     const h = d.holes.find(x => x.id === id);
-    return h ? t + Math.min(14, Math.max(6, holeStats(d, h).length / 70)) + VIDEO_HOLD.intro + VIDEO_HOLD.outro : t;
+    if (!h) return t;
+    const set = flyoverOf(d);
+    const flight = h.flyKeys && h.flyKeys.length >= 2 ? keySeconds(h.flyKeys, set, () => 0).reduce((a, b) => a + b, 0) : autoSeconds(holeStats(d, h).length, set);
+    return t + flight + VIDEO_HOLD.intro + VIDEO_HOLD.outro;
   }, 0);
 const minSec = (s: number) => (s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s)} s`);
 
@@ -226,7 +231,6 @@ export function ExportPanel() {
         </div>
       </Section>
       <Section title="Flyover video" testid="video-export">
-        <div className="text-[11px] text-zinc-400 mb-2">A flight over each hole from behind the tee to the basket, with its number, par and length on screen. It is made frame by frame, so it plays smoothly however long it takes to make.</div>
         <Field label="Holes">
           <select aria-label="Holes to fly over" data-testid="video-holes" className={`${selectCls} w-full`} value={videoHoles.length === 1 && videoPick !== "all" ? videoPick : "all"} onChange={e => setVideoPick(e.target.value)} disabled={nothing}>
             <option value="all">The whole course, in order{complete.length ? ` (${complete.length} holes)` : ""}</option>
@@ -243,6 +247,10 @@ export function ExportPanel() {
             <Segmented label="Frame rate" value={video.fps} onChange={v => video.set({ fps: v })} options={[{ value: 30, label: "30 fps" }, { value: 60, label: "60 fps" }]} />
           </Field>
         </div>
+        <details className="mb-2 group" data-testid="video-camera">
+          <summary className="cursor-pointer text-xs font-semibold text-zinc-300 hover:text-white py-1 select-none">Camera</summary>
+          <div className="pt-2"><FlyoverSettingsPanel /></div>
+        </details>
         {recording ? (
           <div className="mt-1" data-testid="video-progress-row">
             <div className="flex items-center justify-between text-xs text-zinc-300 mb-1">

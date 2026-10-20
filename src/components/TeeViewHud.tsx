@@ -1,6 +1,6 @@
 // What shows over the view from a tee or a flyover: the hole's numbers and the controls.
-import { useMemo } from "react";
-import { ChevronLeft, ChevronRight, Clapperboard, Plane, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Camera, ChevronLeft, ChevronRight, Clapperboard, Plane, X } from "lucide-react";
 import { TEE_LEVELS } from "../constants";
 import { holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
@@ -10,6 +10,7 @@ import { recordVideo, useVideoSettings } from "../state/video";
 import { VIDEO_SIZES } from "../lib/video";
 import { ElevationProfile } from "./ElevationProfile";
 import { SceneButton } from "./ScenePanel";
+import { FlyoverSettingsPanel } from "./FlyoverSettings";
 
 export function TeeViewHud({ compact = false }: { compact?: boolean }) {
   const doc = useCourse(s => s.doc);
@@ -18,6 +19,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
   const video = useVideoSettings();
   const hole = doc.holes.find(h => h.id === ed.teeView);
   const s = useMemo(() => (hole ? holeStats(doc, hole) : null), [doc, hole]);
+  const [camera, setCamera] = useState(false);
   if (!hole || !s) return null;
   const done = doc.holes.filter(h => holeStats(doc, h).complete);
   const i = done.findIndex(h => h.id === hole.id);
@@ -44,14 +46,20 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
           <div className="mt-1.5"><ElevationProfile doc={doc} line={s.line} height={56} /></div>
           {hole.notes && <p className="text-[13px] text-zinc-200 mt-1 line-clamp-2">{hole.notes}</p>}
         </div>
-        {!ed.flyover && <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+92px)] left-1/2 -translate-x-1/2 text-[13px] text-white/90 bg-black/45 rounded-full px-3 py-1 whitespace-nowrap">Drag to look around</div>}
+        {!ed.flyover && !camera && <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+92px)] left-1/2 -translate-x-1/2 text-[13px] text-white/90 bg-black/45 rounded-full px-3 py-1 whitespace-nowrap">Drag to look around</div>}
         <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto flex items-center gap-1 bg-zinc-950/85 rounded-[22px] p-1.5 border border-white/10 shadow-2xl">
           <button className={bar} onClick={() => go(-1)}><ChevronLeft size={22} /><span>Previous</span></button>
           <button className={`${bar} ${ed.flyover ? "bg-orange-500" : ""}`} onClick={() => ed.set({ flyover: !ed.flyover })} data-testid="hud-flyover"><Plane size={20} /><span>{ed.flyover ? "Flying…" : "Fly over"}</span></button>
           <button className={bar} onClick={() => go(1)}><ChevronRight size={22} /><span>Next</span></button>
           <button className={bar} onClick={() => void recordVideo([hole.id])} disabled={!!job} data-testid="hud-record"><Clapperboard size={20} /><span>{job?.kind === "video" ? `${Math.round((job.progress ?? 0) * 100)}%` : "Record"}</span></button>
+          <button className={`${bar} ${camera ? "bg-white/15" : ""}`} onClick={() => setCamera(c => !c)} aria-pressed={camera} data-testid="hud-camera"><Camera size={20} /><span>Camera</span></button>
           <button className={bar} onClick={() => ed.set({ teeView: null, flyover: false })} data-testid="hud-close"><X size={20} /><span>Map</span></button>
         </div>
+        {camera && (
+          <div className="absolute left-2 right-2 bottom-[calc(max(8px,env(safe-area-inset-bottom))+80px)] pointer-events-auto bg-zinc-950/90 rounded-2xl p-3 border border-white/10 shadow-2xl max-h-[45vh] overflow-y-auto">
+            <FlyoverSettingsPanel />
+          </div>
+        )}
       </div>
     );
   }
@@ -77,15 +85,21 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
           className="px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 text-white hover:bg-white/10 disabled:opacity-60 disabled:hover:bg-transparent"
           onClick={() => void recordVideo([hole.id])}
           disabled={!!job}
-          title={`Record this hole's flyover as a video (${VIDEO_SIZES[video.resolution].label}, ${video.fps} fps; change it in the Export step)`}
+          title={`Record (${VIDEO_SIZES[video.resolution].label}, ${video.fps} fps)`}
           data-testid="hud-record"
         >
           <Clapperboard size={15} /> {job?.kind === "video" ? `Recording ${Math.round((job.progress ?? 0) * 100)}%` : "Record"}
         </button>
+        <button className={`px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 text-white ${camera ? "bg-white/15" : "hover:bg-white/10"}`} onClick={() => setCamera(c => !c)} aria-pressed={camera} data-testid="hud-camera"><Camera size={15} /> Camera</button>
         <button className="px-3 py-1.5 rounded-full text-sm font-semibold text-white hover:bg-white/10 flex items-center gap-1.5" onClick={() => ed.set({ teeView: null, flyover: false })} data-testid="hud-close"><X size={15} /> Back to map</button>
       </div>
+      {camera && (
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-[320px] pointer-events-auto bg-zinc-950/90 backdrop-blur rounded-2xl p-4 border border-white/10 shadow-2xl">
+          <FlyoverSettingsPanel />
+        </div>
+      )}
       <div className="absolute top-4 right-4 pointer-events-auto"><SceneButton /></div>
-      {!ed.flyover && <div className="absolute bottom-20 left-1/2 -translate-x-1/2 text-xs text-white/80 bg-black/40 rounded px-2 py-1">Drag to look around · scroll to zoom · ← → other holes · Esc back to the map</div>}
+      {!ed.flyover && !camera && <div className="absolute bottom-20 left-1/2 -translate-x-1/2 text-xs text-white/80 bg-black/40 rounded px-2 py-1">Drag to look around · scroll to zoom · ← → other holes · Esc back to the map</div>}
     </div>
   );
 }

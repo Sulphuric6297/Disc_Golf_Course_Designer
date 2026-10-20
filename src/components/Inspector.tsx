@@ -12,6 +12,7 @@ import { addHoleOb, deleteSelection, duplicateSelection, editWalks, select, setT
 import { changeDoc, moveHole, updateHole, updateItem, useCourse, useEditor } from "../state/course";
 import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, RoofKind, StructureKind, TeeSurface, TreeKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
+import { HoleFlight } from "./FlyoverSettings";
 import { getView } from "./MapViewport";
 import { Button, ColorInput, Field, NumberInput, Section, Segmented, Slider, Stat, TextInput, Toggle } from "./ui";
 
@@ -166,6 +167,11 @@ function HoleInspector({ hole }: { hole: Hole }) {
           ))}
         </ul>
       </Section>
+      {!ro && s.complete && (
+        <Section title="Flyover">
+          <HoleFlight hole={hole} />
+        </Section>
+      )}
     </>
   );
 }

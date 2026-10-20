@@ -168,6 +168,40 @@ export interface Hole {
   foliage?: "light" | "heavy";
   /** Notes for the tee sign and the hole sheet (hole rules: OB, mandos, drop zones). */
   notes?: string;
+  /** A flyover made by hand: the camera's keyframes, in order (two or more; unset: flown by itself). */
+  flyKeys?: FlyKey[];
+}
+
+/** One moment of a hand-made flyover: where the camera is and what it looks at. */
+export interface FlyKey {
+  /** Where the camera is (plan, ft). */
+  x: number;
+  y: number;
+  /** Its height above the ground there, ft. */
+  alt: number;
+  /** What it looks at (plan, ft; on the ground). */
+  lookX: number;
+  lookY: number;
+  /** Field of view here, degrees (unset: the course's). */
+  fov?: number;
+  /** Seconds from the keyframe before (unset: from the distance, at the course's speed). */
+  secs?: number;
+}
+
+/** How flyovers fly: on screen and in videos. */
+export interface FlyoverSettings {
+  /** Height above the ground, ft (higher where trees stand). */
+  height: number;
+  /** How fast it flies: 1 the usual pace (a hole takes 6 to 14 s), 2 twice as fast. */
+  speed: number;
+  /** Field of view, degrees. */
+  fov: number;
+  /** How far behind the tee it starts, ft. */
+  behind: number;
+  /** To the side of the line of play, ft (right, looking down the hole; negative: left). */
+  side: number;
+  /** How far down the hole it looks ahead, ft. */
+  lookAhead: number;
 }
 
 /** A layout picks which tee and pin each hole uses (e.g. "Blue", long tees to B pins). */
@@ -299,6 +333,8 @@ export interface CourseDoc {
   style: MapStyle;
   units: Units;
   rules: CourseRules;
+  /** How flyovers fly (unset: FLYOVER_DEFAULTS). */
+  flyover?: Partial<FlyoverSettings>;
 }
 
 /** Settings for the checks and the par estimate. */

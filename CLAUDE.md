@@ -65,7 +65,7 @@ design tools and the PDGA guidance the app follows.
 | `structures.spec.ts` | Built things: bridges, boardwalks, stairs, walls, buildings, shelters and decks drawn with the Build tool (S) or the Features list, inspector (kind, width, height, roof, name), undo/redo, corner and mid handles, moving, delete; their 3D models; deck heights over a creek's dip, boardwalk ramps, stair risers, gable and hip roofs (pure logic); drawn in every map style with legend lines, roofs lit by the map's sun; older courses still load |
 | `import-site.spec.ts` | Address search, framing the area, photo + elevation + trees + OpenStreetMap paths and water, elevation change per hole; stands of trees on the photo as woods areas (lone trees stay trees), ponds on the photo as water (not pools or courts, not twice with OpenStreetMap's), OpenStreetMap woods and grass (meadow, grassland, scrub, lawn) as areas |
 | `stats.spec.ts` | Hole math: PDGA effective length and par, doglegs, foliage, trees and OB in play (what counts as OB), safety checks, design checks, fairway width along the hole (pure logic) |
-| `views.spec.ts` | View from the tee, flyover (a slow frame doesn't skip it), back to the map |
+| `views.spec.ts` | View from the tee, flyover (a slow frame doesn't skip it), back to the map; the painted map on the ground from a tee and in flyovers (trees on its woods; Photo instead), flyover settings (height, speed, field of view: one undo step each), a hole's keyframes (on the map, dragged, set, added, removed, flown); the flight by itself over the trees, through keyframes (pure logic) |
 | `scene3d.spec.ts` | The 3D look: sky when tilted, the course's sun and brightness, grass blades (when shown, the setting kept, what grows where), woods of real trees (full detail near the camera, none on fairways, ponds, tees or baskets), landscapes (pine forest, the painted map's colors), water (level ponds never under the ground), quality that adapts to slow frames (however slow, within seconds), phone defaults, the map view resting while the Design page covers it |
 | `design.spec.ts` | Map designer: themes, colors, title block, legend, hole table, contours, turning the map; the Forest painting (tree cover from sparse to dense, winding creeks and trails, light and shadow settings), basket marks (five kinds, legend, older courses), marking colors (map or PDGA: OB, hazard, casual, out of play), elevation (relief exaggeration, contour heights, hills on the painting), painted water (light rim and shallows, deep middle), the page never freezing while the map paints, a phone's smaller preview; the printed map's and tee signs' contents |
 | `export.spec.ts` | Course map (SVG/PNG/PDF), tee signs, scorecard, GeoJSON, KML, GPX, CSV, stake-out list, parts list; hole by hole: a PDF page and a PNG per hole, one hole's PNG/SVG/GeoJSON (only its own features, plus the course's OB in play), the hole page's contents (pure logic) |
@@ -94,6 +94,8 @@ design tools and the PDGA guidance the app follows.
   - `teeSign.ts` (tee signs, hole sheets, scorecard) and `holePage.ts` (a yardage-book page per
     hole, on paper or as a square picture);
   - `video.ts`: flyover video sizes, codec strings and the frames of a recording;
+  - `flight.ts`: flyovers' camera paths (by itself over the trees, or through a hole's keyframes)
+    and their settings;
   - `share.ts`;
   - `geo/`: site import.
 - The map view engine is `src/viewport/CourseView.ts`, wrapped by `src/components/MapViewport.tsx`.
