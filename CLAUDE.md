@@ -57,6 +57,7 @@ design tools and the PDGA guidance the app follows.
 | `smoke.spec.ts` | Loads, welcome card, steps, 2D/3D, shortcuts dialog |
 | `holes.spec.ts` | New holes (tee then basket), live length and par, doglegs, fairway width, extra tees and pins, layouts, hole order, delete + undo |
 | `features.spec.ts` | Drawing OB areas and lines, hazards, water (click by click, or dragging a rectangle, circle or freehand shape), one-click OB along a hole or behind its basket, marking a road OB, mandos (passed on the line's side, direction), drop zones, trees, amenities (pictograms), labels, moving and reshaping shapes |
+| `structures.spec.ts` | Built things: bridges, boardwalks, stairs, walls, buildings, shelters and decks drawn with the Build tool (S) or the Features list, inspector (kind, width, height, roof, name), undo/redo, corner and mid handles, moving, delete; their 3D models; deck heights over a creek's dip, boardwalk ramps, stair risers, gable and hip roofs (pure logic); drawn in every map style with legend lines, roofs lit by the map's sun; older courses still load |
 | `import-site.spec.ts` | Address search, framing the area, photo + elevation + trees + OpenStreetMap paths and water, elevation change per hole |
 | `stats.spec.ts` | Hole math: PDGA effective length and par, doglegs, foliage, trees and OB in play (what counts as OB), safety checks, design checks (pure logic) |
 | `views.spec.ts` | View from the tee, flyover (a slow frame doesn't skip it), back to the map |
@@ -76,7 +77,9 @@ design tools and the PDGA guidance the app follows.
   - `geom.ts`;
   - `mapSvg.ts`: the printed map (vector shapes and labels);
   - `symbols.ts`: the symbols drawn the same on the printed map, tee signs, legend and the
-    editor's map (basket marks, mandos, drop zones, amenity pictograms);
+    editor's map (basket marks, mandos, drop zones, amenity pictograms, built things);
+  - `structures.ts`: built things' shapes (bridge decks, boardwalks, steps, roofs), shared by
+    the printed map, the Forest painting and the 3D models in `src/three/structures.ts`;
   - `forest.ts`: the Forest style's painted land (one picture: canopy height field lit from the
     top left, fairways, dirt, water, roads), cached by what it depends on;
   - `exports.ts`;

@@ -1,7 +1,7 @@
 // What the tools and menus do to the course.
 import { CIRCLE_ONE_FT, PIN_POSITIONS, TEE_ORDER, generateId } from "../constants";
 import {
-  createAmenity, createArea, createBasket, createDropZone, createLabel, createLine, createMando, createTee, createTree,
+  createAmenity, createArea, createBasket, createDropZone, createLabel, createLine, createMando, createStructure, createTee, createTree,
   holeBaskets, holeTees, itemHoleId, newHole, teeFor
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
@@ -126,10 +126,10 @@ export const placeAt = (mode: ToolMode, p: P) => {
   if (mode !== "add-tree") select(item.id);
 };
 
-/** An area or line drawn with the drawing tools. */
-export const addDrawn = (kind: "area" | "line", points: P[]) => {
+/** An area, line or built thing (bridge, building...) drawn with the drawing tools. */
+export const addDrawn = (kind: "area" | "line" | "structure", points: P[]) => {
   const ed = editor();
-  const item = kind === "area" ? createArea(ed.areaKind, points) : createLine(ed.lineKind, points);
+  const item = kind === "area" ? createArea(ed.areaKind, points) : kind === "structure" ? createStructure(ed.structureKind, points) : createLine(ed.lineKind, points);
   changeDoc(d => ({ items: [...d.items, item] }));
   select(item.id);
 };
@@ -176,7 +176,7 @@ export const duplicateSelection = () => {
   const item = doc.items.find(i => i.id === selectedId);
   if (!item) return;
   const copy = { ...item, id: generateId(), x: item.x + off, y: item.y + off, locked: false } as CourseItem;
-  if (copy.type === "area" || copy.type === "line") copy.points = copy.points.map(p => ({ x: p.x + off, y: p.y + off }));
+  if (copy.type === "area" || copy.type === "line" || copy.type === "structure") copy.points = copy.points.map(p => ({ x: p.x + off, y: p.y + off }));
   if (copy.type === "tee" || copy.type === "basket") {
     // Another tee or pin for the same hole (a free color or letter)
     if (copy.type === "tee") {
@@ -200,7 +200,7 @@ export const nudgeSelection = (dx: number, dy: number) => {
   const item = doc.items.find(i => i.id === selectedId);
   if (!item || item.locked) return;
   const patch: Partial<CourseItem> = { x: item.x + dx, y: item.y + dy };
-  if (item.type === "area" || item.type === "line") (patch as { points: P[] }).points = item.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
+  if (item.type === "area" || item.type === "line" || item.type === "structure") (patch as { points: P[] }).points = item.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
   changeDoc(d => ({ items: d.items.map(i => (i.id === item.id ? ({ ...i, ...patch } as CourseItem) : i)) }));
 };
 

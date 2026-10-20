@@ -1,8 +1,8 @@
 // Making course documents and items, and finding a hole's parts.
-import { DEFAULT_CANVAS, DEFAULT_FAIRWAY_FT, DEFAULT_PAD, PIN_POSITIONS, TEE_ORDER, TREE_COLORS, generateId } from "../constants";
+import { DEFAULT_CANVAS, DEFAULT_FAIRWAY_FT, DEFAULT_PAD, PIN_POSITIONS, STRUCTURE_KINDS, TEE_ORDER, TREE_COLORS, generateId } from "../constants";
 import type {
   AmenityItem, AmenityKind, AreaItem, AreaKind, BasketItem, CourseDoc, CourseItem, CourseRules, DropZoneItem, Hole, LabelItem,
-  Layout, LineItem, LineKind, MandoItem, MapStyle, P, PinPosition, TeeItem, TeeLevel, TreeItem
+  Layout, LineItem, LineKind, MandoItem, MapStyle, P, PinPosition, StructureItem, StructureKind, TeeItem, TeeLevel, TreeItem
 } from "../types";
 import { centroid } from "./geom";
 
@@ -90,7 +90,8 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
     style: { ...base.style, ...(raw.style && !raw.style.basketMark ? { basketMark: raw.style.theme === "forest" || !raw.style.theme ? "basket" : "target" } : {}), ...(raw.style ?? {}) },
     rules: { ...base.rules, ...(raw.rules ?? {}), prices: { ...base.rules.prices, ...(raw.rules?.prices ?? {}) } },
     holes: (raw.holes ?? []).map(h => ({ ...h, fairwayWidth: h.fairwayWidth ?? DEFAULT_FAIRWAY_FT, fairway: h.fairway ?? true, doglegs: h.doglegs ?? [] })),
-    items: Array.isArray(raw.items) ? raw.items : [],
+    // (A structure needs its points and a kind this version knows)
+    items: Array.isArray(raw.items) ? raw.items.filter(i => i.type !== "structure" || (Array.isArray(i.points) && i.kind in STRUCTURE_KINDS)) : [],
     layouts: raw.layouts?.length ? raw.layouts : base.layouts,
     terrainHeights: raw.terrainHeights ?? {},
     groundPaint: raw.groundPaint ?? {},
@@ -125,6 +126,11 @@ export const createArea = (kind: AreaKind, points: P[], holeId?: string): AreaIt
 export const createLine = (kind: LineKind, points: P[], holeId?: string): LineItem => {
   const c = points.length ? { x: points.reduce((s, p) => s + p.x, 0) / points.length, y: points.reduce((s, p) => s + p.y, 0) / points.length } : { x: 0, y: 0 };
   return { id: generateId(), type: "line", kind, points, holeId, x: c.x, y: c.y, rotation: 0 };
+};
+/** A bridge, boardwalk, stairs or wall along `points`, or a building, shelter or deck with that outline. */
+export const createStructure = (kind: StructureKind, points: P[], holeId?: string): StructureItem => {
+  const c = STRUCTURE_KINDS[kind].shape === "outline" ? centroid(points) : points.length ? { x: points.reduce((s, p) => s + p.x, 0) / points.length, y: points.reduce((s, p) => s + p.y, 0) / points.length } : { x: 0, y: 0 };
+  return { id: generateId(), type: "structure", kind, points, holeId, x: c.x, y: c.y, rotation: 0 };
 };
 
 // --- Finding a hole's parts ---
@@ -190,5 +196,6 @@ export const ITEM_LABELS: Record<CourseItem["type"], string> = {
   amenity: "Amenity",
   label: "Label",
   area: "Area",
-  line: "Line"
+  line: "Line",
+  structure: "Structure"
 };

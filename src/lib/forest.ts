@@ -2,12 +2,14 @@
 // dense canopy of small treetops of many sizes, lit from the top left, with fine leaf grain and
 // shadows cast onto the clearings; bright fairways with lighter middles; dirt trails between holes
 // and worn dirt at the tees; creeks and ponds in clear blue with dark banks; soft gray roads and
-// mown grass. It is one picture for the whole map, laid into the SVG under the symbols.
+// mown grass. It is one picture for the whole map, laid into the SVG under the symbols (built
+// things are drawn there too; the painting clears the trees from them and casts their shadows).
 import { CIRCLE_ONE_FT, LINE_KINDS } from "../constants";
-import type { AreaItem, CourseDoc, LineItem, MapStyle, P, TreeItem } from "../types";
+import type { AreaItem, CourseDoc, LineItem, MapStyle, P, StructureItem, TreeItem } from "../types";
 import { canopyMask } from "./geo/detect";
-import { corridor, dist, pathLength, pointAlong, smoothPath } from "./geom";
+import { boundsOf, corridor, dist, pathLength, pointAlong, pointInPolygon, smoothPath } from "./geom";
 import type { HoleStats } from "./holeStats";
+import { isLineKind, offsetPolygon, roofOf, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
 
 /** Where the photo shows trees, on a grid over the site (1 = canopy). */
 export type CanopyGrid = { cols: number; rows: number; ftPerCell: number; data: Uint8Array };
@@ -338,6 +340,11 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
         // Crowns lean over the banks a little
         line(CLEAR, pts, cw + (crownR * 1.4) / k);
       }
+    } else if (i.type === "structure") {
+      // No treetops over built things (a little lawn round them)
+      const st = i as StructureItem;
+      if (isLineKind(st.kind)) line(CLEAR, structurePath(st), structureWidth(st) + ftOf(3) + (crownR * (st.kind === "wall" ? 0.4 : 1.2)) / k);
+      else poly(CLEAR, offsetPolygon(st.points, 4 + ftOf(2) + (crownR * 1.2) / k));
     }
   }
   // Dirt trails from each basket to the next tee
@@ -513,6 +520,44 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
   const shadowK = Math.max(0, Math.min(1, s.shadows ?? 0.65));
   let tallest = 0;
   for (let i = 0; i < height.length; i++) if (height[i] > tallest) tallest = height[i];
+  // Built things stand up out of the ground too (in pixels, like the treetops), and cast shadows:
+  // a building's roof its own shape (a gable's end, a hip's slopes)
+  const built = new Float32Array(W * H);
+  const raise = (x: number, y: number, ft: number) => {
+    const i = y * W + x, v = ft * k * 0.85;
+    if (v > built[i]) built[i] = v;
+    if (v > tallest) tallest = v;
+  };
+  for (const st of doc.items.filter(i => i.type === "structure") as StructureItem[]) {
+    if (st.points.length < 2) continue;
+    const tall = structureHeight(st);
+    if (isLineKind(st.kind)) {
+      // Each piece of the line: the pixels within half its width
+      const path = structurePath(st).map(toScreen);
+      const half = (structureWidth(st) / 2) * k;
+      const top = st.kind === "bridge" ? tall + 3.5 : st.kind === "boardwalk" ? tall + 0.4 : st.kind === "stairs" ? 0.6 : tall;
+      for (let j = 1; j < path.length; j++) {
+        const a = path[j - 1], c = path[j], dx = c.x - a.x, dy = c.y - a.y, l2 = dx * dx + dy * dy || 1;
+        for (let y = Math.max(0, Math.floor(Math.min(a.y, c.y) - half)); y <= Math.min(H - 1, Math.ceil(Math.max(a.y, c.y) + half)); y++) {
+          for (let x = Math.max(0, Math.floor(Math.min(a.x, c.x) - half)); x <= Math.min(W - 1, Math.ceil(Math.max(a.x, c.x) + half)); x++) {
+            const t = Math.max(0, Math.min(1, ((x + 0.5 - a.x) * dx + (y + 0.5 - a.y) * dy) / l2));
+            if (Math.hypot(x + 0.5 - a.x - dx * t, y + 0.5 - a.y - dy * t) <= half) raise(x, y, top);
+          }
+        }
+      }
+      continue;
+    }
+    const roof = st.kind === "building" || st.kind === "shelter" ? roofOf(st.points, structureRoof(st), 1.5) : null;
+    const shape = roof ? roof.eaves : st.points;
+    const top = st.kind === "deck" ? tall + (tall > 2 ? 3 : 0) : tall;
+    const b = boundsOf(shape.map(toScreen));
+    for (let y = Math.max(0, Math.floor(b.minY)); y <= Math.min(H - 1, Math.ceil(b.maxY)); y++) {
+      for (let x = Math.max(0, Math.floor(b.minX)); x <= Math.min(W - 1, Math.ceil(b.maxX)); x++) {
+        const p = toPlan(x + 0.5, y + 0.5);
+        if (pointInPolygon(p, shape)) raise(x, y, roof ? tall + roof.pitch * roof.run(p) : top);
+      }
+    }
+  }
   const sdx: number[] = [], sdy: number[] = [], sup: number[] = [];
   for (let d = 1.5; d < tallest / rise + 2 && d < 400; d *= 1.3) {
     const dx = Math.round(sunX * d), dy = Math.round(sunY * d);
@@ -529,7 +574,7 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
       if (up >= tallest) break;
       const sx = x + sdx[j], sy = y + sdy[j];
       if (sx < 0 || sy < 0 || sx >= W || sy >= H) break;
-      const over = height[sy * W + sx] - up;
+      const over = Math.max(height[sy * W + sx], built[sy * W + sx]) - up;
       if (over > 0) {
         shade = Math.max(shade, over / soft);
         if (shade >= 1) return 0;

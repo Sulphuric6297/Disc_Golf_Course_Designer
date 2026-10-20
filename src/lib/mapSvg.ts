@@ -3,13 +3,14 @@
 // tees, baskets, mandos, drop zones, distances), labels, and the frame (title, legend, hole table,
 // north arrow, scale bar). The same renderer draws a single hole for tee signs, turned so the tee
 // is at the bottom.
-import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, TEE_LEVELS, TEE_ORDER } from "../constants";
-import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PaperSize, TeeItem, TreeItem } from "../types";
+import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
+import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
 import { activeLayout, holeBaskets, teeAim } from "./course";
 import { boundsOf, corridor, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath } from "./geom";
 import { courseTotals, holeStats, isOb, type HoleStats } from "./holeStats";
 import { forestCanvas, paintedLine, type CanopyGrid } from "./forest";
-import { BASKET_MARKS, RESTRICTED, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol } from "./symbols";
+import { BASKET_MARKS, RESTRICTED, STRUCTURE_INK, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol, structureLegend, structureSymbol, type StructureDraw, type StructureInk } from "./symbols";
+import { isLineKind, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
 import { chainContours, type Contours } from "./relief";
 import { fmtDist } from "./units";
 
@@ -67,6 +68,19 @@ export const palette = (s: MapStyle): Palette => {
     default: return { bg: s.rough, grass: s.rough, contour: "rgba(30,60,20,.28)", contourMajor: "rgba(30,60,20,.45)", ink: "#1f2a1c", inkSoft: "#566451", paper: "#f6f3e7", panel: "#fffdf6", panelInk: "#1f2a1c", line: "#ffffff", lineCasing: "rgba(25,45,20,.65)", label: "#ffffff", labelHalo: "rgba(20,35,15,.85)", road: "#9c9a92", building: "#e8dcc4", parking: "#bab6ab", grain: 0.07, treeShadow: 0.32 };
   }
 };
+
+/** How built things are colored in each style (weathered wood, stone, roofs). */
+export const structureInk = (theme: MapTheme): StructureInk => {
+  switch (theme) {
+    case "forest": return { ...STRUCTURE_INK, casing: "#1d160f", deck: "#c4a77c", seam: "#7f6345", rail: "#4f3a28", stone: "#aaa293", roof: "#8f6a52", shelter: "#5f7a5b", ridge: "#eadfca", shadow: "#060b04" };
+    case "night": return { ...STRUCTURE_INK, casing: "#05070a", deck: "#8a7558", seam: "#5a4835", rail: "#3a2c20", stone: "#6e6a62", joint: "#3e3b36", roof: "#6b5243", shelter: "#3f5a46", ridge: "#b8ad98", shadow: "#000000" };
+    case "minimal": return { ...STRUCTURE_INK, casing: "#3a3a3a", deck: "#ddd6ca", seam: "#aaa196", rail: "#7a7268", stone: "#d4cfc6", joint: "#9a958c", roof: "#c4bcb0", shelter: "#c3cbbd", ridge: "#ffffff", shadow: "#000000" };
+    case "topo": return { ...STRUCTURE_INK, casing: "#2b2118", deck: "#d7bd92", seam: "#9a7a52", rail: "#5c4430", stone: "#c4b9a5", joint: "#7a6c58", roof: "#a3694b", shelter: "#6f8a62", ridge: "#fbf3e2", shadow: "#2b2118" };
+    default: return STRUCTURE_INK;
+  }
+};
+/** Drop shadows under built things (the Forest painting casts its own). */
+const STRUCTURE_SHADOW: Record<MapTheme, number> = { forest: 0.35, illustrated: 0.32, satellite: 0.3, topo: 0.16, minimal: 0.1, night: 0.4 };
 
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const n = (v: number) => (Math.round(v * 100) / 100).toString();
@@ -269,6 +283,23 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     out.push(`<g fill="none" stroke="#bbf7d0" stroke-opacity="0.45" stroke-width="${n(px(0.8))}">${trees.map(t => `<circle cx="${n(t.x)}" cy="${n(t.y)}" r="${n(t.radius * (t.width ?? 1))}"/>`).join("")}</g>`);
   }
 
+  // Built things: bridges over the creeks, boardwalks, stairs, walls, buildings, shelters and decks
+  const structures = items.filter(i => i.type === "structure") as StructureItem[];
+  if (structures.length) {
+    const az = ((s.sunAngle ?? 315) * Math.PI) / 180;
+    const draw: StructureDraw = {
+      u: px(1), ft: 1, sun: rotatePoint({ x: Math.sin(az), y: -Math.cos(az) }, view.rotation), sunHeight: s.sunHeight ?? 38,
+      // (The Forest painting casts their shadows itself)
+      shadow: forest ? 0 : STRUCTURE_SHADOW[theme], blur: `url(#${uid}-soft)`, ink: structureInk(theme), id: uid
+    };
+    // Walls and stairs under decks and bridges; buildings on top
+    const order: StructureKind[] = ["wall", "stairs", "boardwalk", "deck", "bridge", "shelter", "building"];
+    for (const st of [...structures].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))) {
+      const shape = isLineKind(st.kind) ? structurePath(st) : st.points;
+      out.push(`<g opacity="${dim(st.holeId)}">${structureSymbol(st.kind, shape, structureWidth(st), structureHeight(st), structureRoof(st), { ...draw, id: `${uid}-s${st.id}` })}</g>`);
+    }
+  }
+
   // OB, hazards and no-go areas over the land: a soft band of color inside the edge, the edge
   // itself crisp on a white casing, and a tag saying what it is (when there is room)
   const tags: { at: P; text: string; bg: string; fg: string; o: number }[] = [];
@@ -384,6 +415,17 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
 
   // Area and line names
   for (const a of areas) if (a.label) sym.push(textLabel(toScreen(labelPoint(a.points)), a.label, 10 * ts, { color: a.kind === "water" && pal.label === "#ffffff" ? "#e0f2fe" : a.kind === "water" ? shade(s.water, -0.55) : pal.label, halo: a.kind === "water" && pal.label !== "#ffffff" ? shade(s.water, 0.6) : undefined, weight: 600 }));
+  for (const st of structures) if (st.label && st.points.length >= 2) {
+    if (isLineKind(st.kind)) {
+      const mid = pointAlong(st.points, pathLength(st.points) / 2);
+      let ang = (mid.angle * 180) / Math.PI - view.rotation;
+      while (ang > 90) ang -= 180;
+      while (ang < -90) ang += 180;
+      const off = (structureWidth(st) / 2) * k + 7 * ts;
+      const sp = toScreen(mid.point), nrm = { x: -Math.sin((ang * Math.PI) / 180), y: Math.cos((ang * Math.PI) / 180) };
+      sym.push(textLabel({ x: sp.x - nrm.x * off, y: sp.y - nrm.y * off }, st.label, 8.5 * ts, { weight: 600, angle: ang }));
+    } else sym.push(textLabel(toScreen(labelPoint(st.points)), st.label, 8.5 * ts, { weight: 600 }));
+  }
   for (const l of lines) if (l.label && l.points.length >= 2) {
     const mid = pointAlong(l.points, pathLength(l.points) / 2);
     let ang = (mid.angle * 180) / Math.PI - view.rotation;
@@ -491,7 +533,7 @@ const idOf = (o: object | null | undefined) => {
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
   const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
-  const shapes = doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as LineItem).width] : [i.type, Math.round(i.x), Math.round(i.y), (i as TreeItem).radius]));
+  const shapes = doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as LineItem).width] : i.type === "structure" ? [i.type, i.kind, i.points, i.width, i.height, i.roof] : [i.type, Math.round(i.x), Math.round(i.y), (i as TreeItem).radius]));
   const look = [s.forest, s.treeCover, s.trees, s.fairway, s.rough, s.water, s.path, s.nextTee, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint];
   const key = JSON.stringify([view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairway]), shapes, doc.canvas, doc.id]);
   const hit = forestCache.get(key);
@@ -885,6 +927,13 @@ const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal
   if (areaKinds.has("woods") || has(i => i.type === "tree")) entries.push({ sym: `<circle cx="${n(sw * 0.35)}" cy="${n(sh / 2)}" r="${n(sh * 0.48)}" fill="${s.trees}"/><circle cx="${n(sw * 0.7)}" cy="${n(sh / 2)}" r="${n(sh * 0.4)}" fill="${shade(s.trees, 0.1)}"/>`, text: "Trees" });
   if (lineKinds.has("path")) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${s.path}" stroke-width="${n(3 * ts)}" stroke-linecap="round"/>`, text: "Path" });
   if (lineKinds.has("road")) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${pal.road}" stroke-width="${n(5 * ts)}"/>`, text: "Road" });
+  // Built things, each drawn as on the map
+  const built = new Set(doc.items.filter(i => i.type === "structure").map(i => (i as StructureItem).kind));
+  for (const kd of STRUCTURE_ORDER) {
+    if (!built.has(kd)) continue;
+    const h = STRUCTURE_KINDS[kd].shape === "outline" ? sh * 1.3 : sh;
+    entries.push({ sym: `<g transform="translate(0 ${n((sh - h) / 2)})">${structureLegend(kd, sw, h, ts * 0.55, structureInk(s.theme), `lg-${kd}`)}</g>`, text: STRUCTURE_KINDS[kd].label });
+  }
   if (s.contours) entries.push({ sym: `<path d="M0 ${n(sh * 0.7)}Q${n(sw / 2)} ${n(-sh * 0.2)} ${n(sw)} ${n(sh * 0.7)}" fill="none" stroke="${pal.contourMajor === "rgba(255,255,255,.6)" ? "#666" : pal.contourMajor}" stroke-width="${n(1 * ts)}"/>`, text: "Contour line" });
   const kinds = new Set(doc.items.filter(i => i.type === "amenity").map(i => (i as AmenityItem).kind));
   kinds.forEach(kd => {

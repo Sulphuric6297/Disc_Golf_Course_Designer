@@ -1,4 +1,4 @@
-import type { AreaKind, CourseDoc, LineKind, P, ToolMode, DrawShape } from "../types";
+import type { AreaKind, CourseDoc, LineKind, P, ToolMode, DrawShape, StructureKind } from "../types";
 import type { HoleStats, SafetyIssue } from "../lib/holeStats";
 
 export type { P };
@@ -41,6 +41,8 @@ export type ViewTool = {
   mode: ToolMode;
   areaKind: AreaKind;
   lineKind: LineKind;
+  /** What the Build tool draws (along a line, or an outline). */
+  structureKind?: StructureKind;
   /** How areas and lines are drawn. */
   shape: DrawShape;
   /** Look only (a shared course): no editing gestures. */
@@ -64,8 +66,8 @@ export type ViewCallbacks = {
   onPlace: (mode: ToolMode, p: P) => void;
   /** A new hole: where its tee and basket go. */
   onHole: (tee: P, basket: P) => void;
-  /** An area or line finished drawing. */
-  onDrawn: (kind: "area" | "line", points: P[]) => void;
+  /** An area, line or built thing finished drawing. */
+  onDrawn: (kind: "area" | "line" | "structure", points: P[]) => void;
   /** Live edits while dragging (no undo step); onCommit ends the gesture. */
   onChange: (id: string, patch: Record<string, unknown>) => void;
   /** Live edits to a hole (doglegs, fairway width). */

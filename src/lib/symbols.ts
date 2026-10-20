@@ -1,8 +1,9 @@
 // The course's symbols, drawn the same way on the printed map, the tee signs, the legend and the
-// editor's map: basket marks, mandos, drop zones, and pictograms for benches, parking, restrooms
-// and the rest. Each returns SVG markup centered on a point; `u` is the size of one unit (a
-// symbol is about 13 to 16 units across).
-import type { AmenityKind, BasketMark, P } from "../types";
+// editor's map: basket marks, mandos, drop zones, pictograms for benches, parking, restrooms
+// and the rest, and built things (bridges, buildings...). Each returns SVG markup centered on a
+// point; `u` is the size of one unit (a symbol is about 13 to 16 units across).
+import type { AmenityKind, BasketMark, P, RoofKind, StructureKind } from "../types";
+import { offsetPolygon, orientedBox, roofOf } from "./structures";
 
 const n = (v: number) => (Math.round(v * 100) / 100).toString();
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -193,3 +194,194 @@ export const amenitySymbol = (kind: AmenityKind, p: P, u: number) => {
 /** A symbol as a standalone SVG element (for the editor's map and the panels). */
 export const symbolSvg = (inner: string, size: number, box = 16) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${-box / 2} ${-box / 2} ${box} ${box}" style="overflow:visible;display:block">${inner}</svg>`;
+
+// ------------------------------------------------------------------ built things
+
+/** The colors built things are drawn in (each map style picks its own). */
+export type StructureInk = {
+  casing: string; deck: string; seam: string; rail: string; stone: string; joint: string;
+  roof: string; shelter: string; ridge: string; shadow: string;
+};
+export const STRUCTURE_INK: StructureInk = {
+  casing: "#2a2018", deck: "#c9ad84", seam: "#86684a", rail: "#5b432f", stone: "#bab2a4", joint: "#6c655a",
+  roof: "#94603f", shelter: "#5a7c5c", ridge: "#f3e9d6", shadow: "#0a1306"
+};
+
+/** How to draw built things: drawing units per point (for widths that must stay visible) and per
+ * foot (for real sizes), the sun (a unit vector toward it, in drawing coordinates, and its height
+ * in degrees), the drop shadow's strength (0: none) and blur, the colors, and an id prefix for
+ * clip paths. */
+export type StructureDraw = { u: number; ft: number; sun: P; sunHeight: number; shadow: number; blur?: string; ink: StructureInk; id: string };
+
+/** Lighter (amount > 0) or darker (< 0) version of a hex color. */
+const tint = (hex: string, amount: number) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const v = parseInt(m[1], 16);
+  const ch = (c: number) => Math.round(Math.max(0, Math.min(255, amount >= 0 ? c + (255 - c) * amount : c * (1 + amount))));
+  return `#${((ch((v >> 16) & 255) << 16) | (ch((v >> 8) & 255) << 8) | ch(v & 255)).toString(16).padStart(6, "0")}`;
+};
+const dLine = (pts: P[]) => pts.map((q, i) => `${i ? "L" : "M"}${n(q.x)} ${n(q.y)}`).join("");
+const dPoly = (pts: P[]) => `${dLine(pts)}Z`;
+/** A polyline moved sideways by `off` (toward (-dy, dx) of its direction). */
+const sideways = (pts: P[], off: number) => pts.map((p, i) => {
+  const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+  const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  return { x: p.x - ((b.y - a.y) / l) * off, y: p.y + ((b.x - a.x) / l) * off };
+});
+const safeId = (id: string) => id.replace(/[^\w-]/g, "");
+const LINE_KINDS_BUILT: StructureKind[] = ["bridge", "boardwalk", "stairs", "wall"];
+
+/**
+ * A built thing on a map, drawn to scale: bridges as planked decks with dark casings, railings and
+ * the short ticks of their abutments at the banks; boardwalks as planks; stairs as hatched steps;
+ * walls as a thick stone line; buildings as their roofs (ridge and hips, the faces toward the sun
+ * lighter, a soft shadow); shelters as an open roof (dashed eaves); decks as planks. `pts` is the
+ * line from end to end, or the outline; `width` and `height` are in feet.
+ */
+export const structureSymbol = (kind: StructureKind, pts: P[], width: number, height: number, roofKind: RoofKind, d: StructureDraw): string => {
+  if (pts.length < 2) return "";
+  const { u, ft, ink } = d;
+  const el = (Math.max(10, Math.min(85, d.sunHeight)) * Math.PI) / 180;
+  const away = { x: -d.sun.x, y: -d.sun.y };
+  // How far a shadow falls from something `h` ft tall (shortened, as on drawn maps; at most `max` points)
+  const fall = (h: number, max: number) => {
+    const L = Math.min(max * u, Math.max(0.5 * u, ((h * ft) / Math.tan(el)) * 0.55));
+    return { x: away.x * L, y: away.y * L };
+  };
+  const shadowOf = (shape: (dx: number, dy: number) => string, v: P) => {
+    if (d.shadow <= 0) return "";
+    const copies = Array.from({ length: 6 }, (_, k) => shape((v.x * k) / 5, (v.y * k) / 5)).join("");
+    return `<g opacity="${n(d.shadow)}"${d.blur ? ` filter="${d.blur}"` : ""}>${copies}</g>`;
+  };
+  const tag = (body: string) => `<g data-structure="${kind}">${body}</g>`;
+
+  if (LINE_KINDS_BUILT.includes(kind)) {
+    const line = dLine(pts);
+    const stroke = (color: string, w: number, extra = "") => `<path d="${line}" fill="none" stroke="${color}" stroke-width="${n(w)}" stroke-linejoin="round"${extra}/>`;
+    const moved = (color: string, w: number) => (dx: number, dy: number) => `<path d="${line}" transform="translate(${n(dx)} ${n(dy)})" fill="none" stroke="${color}" stroke-width="${n(w)}" stroke-linejoin="round"/>`;
+    if (kind === "wall") {
+      const W = Math.max(width * ft, 2.4 * u);
+      const blocks = Math.max(1.8 * ft, 2.4 * u);
+      // The side toward the sun catches the light
+      const a = pts[0], b = pts[pts.length - 1];
+      const lit = (-(b.y - a.y) * d.sun.x + (b.x - a.x) * d.sun.y) >= 0 ? 1 : -1;
+      return tag(
+        shadowOf(moved(ink.shadow, W), fall(height, 3.5)) +
+        stroke(ink.casing, W + 1.2 * u, ` stroke-linecap="square"`) +
+        stroke(ink.stone, W, ` stroke-linecap="square"`) +
+        stroke(ink.joint, W, ` stroke-dasharray="${n(0.4 * u)} ${n(blocks)}"`) +
+        `<path d="${dLine(sideways(pts, lit * W * 0.26))}" fill="none" stroke="${tint(ink.stone, 0.5)}" stroke-opacity="0.75" stroke-width="${n(Math.min(W * 0.3, 0.5 * u))}" stroke-linejoin="round"/>`
+      );
+    }
+    if (kind === "stairs") {
+      const W = Math.max(width * ft, 3.6 * u);
+      const tread = Math.max(1.4 * ft, 1.7 * u);
+      return tag(
+        stroke(ink.casing, W + 1.1 * u, ` stroke-linecap="butt"`) +
+        stroke(ink.stone, W, ` stroke-linecap="butt"`) +
+        stroke(ink.casing, W, ` stroke-linecap="butt" stroke-dasharray="${n(0.5 * u)} ${n(tread - 0.5 * u)}"`)
+      );
+    }
+    // Bridges and boardwalks: a deck of boards across, between rails
+    const bridge = kind === "bridge";
+    const W = Math.max(width * ft, (bridge ? 4.6 : 3.8) * u);
+    const cas = (bridge ? 1.1 : 0.65) * u;
+    const pitch = Math.max(0.7 * ft, 1.25 * u);
+    const parts = [
+      shadowOf(moved(ink.shadow, W + 2 * cas), fall(height + (bridge ? 3.5 : 0.8), bridge ? 4 : 2.5)),
+      stroke(bridge ? ink.casing : ink.rail, W + 2 * cas, ` stroke-linecap="butt"`),
+      stroke(ink.deck, W, ` stroke-linecap="butt"`),
+      stroke(ink.seam, W - (bridge ? 1.2 * u : 0), ` stroke-linecap="butt" stroke-dasharray="${n(0.32 * u)} ${n(pitch - 0.32 * u)}"`)
+    ];
+    if (bridge) {
+      // Railings along both edges
+      for (const s of [-1, 1]) parts.push(`<path d="${dLine(sideways(pts, s * (W / 2 - 0.45 * u)))}" fill="none" stroke="${ink.rail}" stroke-width="${n(0.75 * u)}" stroke-linejoin="round"/>`);
+      // The abutments: short ticks flaring out at each end, onto the banks
+      const wing = 2.9 * u;
+      const ticks: string[] = [];
+      for (const [p, q] of [[pts[0], pts[1]], [pts[pts.length - 1], pts[pts.length - 2]]] as [P, P][]) {
+        const l = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+        const t = { x: (q.x - p.x) / l, y: (q.y - p.y) / l }, nn = { x: -t.y, y: t.x };
+        for (const s of [-1, 1]) {
+          const c = { x: p.x + nn.x * s * (W / 2 + cas * 0.5), y: p.y + nn.y * s * (W / 2 + cas * 0.5) };
+          ticks.push(`M${n(c.x)} ${n(c.y)}L${n(c.x + (-t.x + nn.x * s) * wing * 0.7071)} ${n(c.y + (-t.y + nn.y * s) * wing * 0.7071)}`);
+        }
+      }
+      parts.push(`<path d="${ticks.join("")}" fill="none" stroke="${ink.casing}" stroke-width="${n(1.15 * u)}" stroke-linecap="round"/>`);
+    }
+    return tag(parts.join(""));
+  }
+
+  // Outlines: buildings, shelters and decks
+  if (pts.length < 3) return "";
+  const cid = `${safeId(d.id)}-c`;
+  if (kind === "deck") {
+    const box = orientedBox(pts);
+    const pitch = Math.max(0.65 * ft, 1.3 * u);
+    const seams: string[] = [];
+    for (let t = -box.b + pitch; t < box.b; t += pitch) {
+      const a = { x: box.c.x + box.v.x * t - box.u.x * (box.a + 1), y: box.c.y + box.v.y * t - box.u.y * (box.a + 1) };
+      const b = { x: box.c.x + box.v.x * t + box.u.x * (box.a + 1), y: box.c.y + box.v.y * t + box.u.y * (box.a + 1) };
+      seams.push(`M${n(a.x)} ${n(a.y)}L${n(b.x)} ${n(b.y)}`);
+    }
+    const poly = dPoly(pts);
+    const rail = height > 2 ? `<path d="${dPoly(offsetPolygon(pts, -Math.max(0.5 * ft, 0.9 * u)))}" fill="none" stroke="${ink.rail}" stroke-width="${n(0.7 * u)}" stroke-linejoin="round"/>` : "";
+    return tag(
+      shadowOf((dx, dy) => `<path d="${poly}" transform="translate(${n(dx)} ${n(dy)})" fill="${ink.shadow}"/>`, fall(height + (height > 2 ? 3 : 0), 3.5)) +
+      `<clipPath id="${cid}"><path d="${poly}"/></clipPath><path d="${poly}" fill="${ink.deck}"/>` +
+      `<path d="${seams.join("")}" clip-path="url(#${cid})" fill="none" stroke="${ink.seam}" stroke-width="${n(0.32 * u)}"/>` +
+      rail + `<path d="${poly}" fill="none" stroke="${ink.casing}" stroke-width="${n(0.8 * u)}" stroke-linejoin="round"/>`
+    );
+  }
+  // Roofs: each face shaded by how squarely it faces the sun
+  const shelter = kind === "shelter";
+  const roof = roofOf(pts, roofKind, 1.5 * ft);
+  const slope = Math.atan(roof.pitch);
+  const sun3 = { x: d.sun.x * Math.cos(el), y: d.sun.y * Math.cos(el), z: Math.sin(el) };
+  const base = shelter ? ink.shelter : ink.roof;
+  const eaves = dPoly(roof.eaves);
+  const faces: string[] = [];
+  const texture: string[] = [];
+  roof.facets.forEach((f, i) => {
+    const lam = (f.out.x * sun3.x + f.out.y * sun3.y) * Math.sin(slope) + Math.cos(slope) * sun3.z;
+    const fill = tint(base, Math.max(-0.42, Math.min(0.3, (lam - sun3.z) * 1.25)));
+    const poly = dPoly(f.poly);
+    faces.push(`<path d="${poly}" fill="${fill}" stroke="${ink.ridge}" stroke-opacity="0.85" stroke-width="${n(0.55 * u)}" stroke-linejoin="round"/>`);
+    // Shingle courses along the eaves (a building), or the ribs of a metal roof down the slope (a shelter)
+    const id = `${cid}${i}`;
+    const along = shelter ? f.out : { x: -f.out.y, y: f.out.x };
+    const across = { x: -along.y, y: along.x };
+    const proj = (p: P, v: P) => p.x * v.x + p.y * v.y;
+    const ac = f.poly.map(p => proj(p, across)), al = f.poly.map(p => proj(p, along));
+    const lo = Math.min(...ac), hi = Math.max(...ac), a0 = Math.min(...al) - 1, a1 = Math.max(...al) + 1;
+    const gap = shelter ? Math.max(1.6 * ft, 1.6 * u) : Math.max(1.1 * ft, 1.25 * u);
+    const lines: string[] = [];
+    for (let c = lo + gap / 2; c < hi; c += gap) {
+      const p0 = { x: across.x * c + along.x * a0, y: across.y * c + along.y * a0 }, p1 = { x: across.x * c + along.x * a1, y: across.y * c + along.y * a1 };
+      lines.push(`M${n(p0.x)} ${n(p0.y)}L${n(p1.x)} ${n(p1.y)}`);
+    }
+    if (lines.length) texture.push(`<clipPath id="${id}"><path d="${poly}"/></clipPath><path d="${lines.join("")}" clip-path="url(#${id})" fill="none" stroke="#000" stroke-opacity="0.16" stroke-width="${n(0.32 * u)}"/>`);
+  });
+  const outline = shelter
+    ? `<path d="${eaves}" fill="none" stroke="${ink.casing}" stroke-width="${n(0.75 * u)}" stroke-dasharray="${n(1.6 * u)} ${n(0.9 * u)}" stroke-linejoin="round"/>`
+    : `<path d="${eaves}" fill="none" stroke="${ink.casing}" stroke-width="${n(0.8 * u)}" stroke-linejoin="round"/>`;
+  return tag(
+    shadowOf((dx, dy) => `<path d="${eaves}" transform="translate(${n(dx)} ${n(dy)})" fill="${ink.shadow}"/>`, fall(height + roof.rise / Math.max(1e-6, ft) / 2, 7)) +
+    faces.join("") + texture.join("") + outline
+  );
+};
+
+/** A built thing's sample for the legend and the tool chips, in a box `w` × `h` from (0, 0). */
+export const structureLegend = (kind: StructureKind, w: number, h: number, u: number, ink: StructureInk = STRUCTURE_INK, id = `lg-${kind}`) => {
+  const sun = { x: -0.7071, y: -0.7071 };
+  const look = (ft: number): StructureDraw => ({ u, ft, sun, sunHeight: 40, shadow: 0, ink, id });
+  if (LINE_KINDS_BUILT.includes(kind)) {
+    const width = kind === "bridge" ? 6 : kind === "boardwalk" ? 5 : kind === "stairs" ? 4 : 2;
+    return structureSymbol(kind, [{ x: w * 0.12, y: h / 2 }, { x: w * 0.88, y: h / 2 }], width, 1, "gable", look((h * (kind === "wall" ? 0.36 : 0.58)) / width));
+  }
+  const ft = h * 0.055;
+  const m = 1.5 * ft + 0.5 * u;
+  const rect = [{ x: m, y: m }, { x: w - m, y: m }, { x: w - m, y: h - m }, { x: m, y: h - m }];
+  return structureSymbol(kind, rect, 0, kind === "deck" ? 1 : 10, kind === "shelter" ? "hip" : "gable", look(ft));
+};

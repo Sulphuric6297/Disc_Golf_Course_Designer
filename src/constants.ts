@@ -1,4 +1,4 @@
-import type { AmenityKind, AreaKind, LineKind, PinPosition, TeeLevel, TeeSurface } from "./types";
+import type { AmenityKind, AreaKind, LineKind, PinPosition, RoofKind, StructureKind, TeeLevel, TeeSurface } from "./types";
 
 export const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -87,5 +87,18 @@ export const AMENITY_KINDS: Record<AmenityKind, { label: string; letter: string;
   picnic: { label: "Picnic table", letter: "PT", color: "#92400e" },
   here: { label: "\"You are here\" (on the map board)", letter: "★", color: "#ca8a04" }
 };
+
+/** Built things: drawn along a line from end to end, or as an outline. Widths and heights are the
+ * usual ones, in feet (each can be changed). */
+export const STRUCTURE_KINDS: Record<StructureKind, { label: string; shape: "line" | "outline"; width: number; height: number; heightLabel: string; roof?: RoofKind; color: string; help: string }> = {
+  bridge: { label: "Bridge", shape: "line", width: 6, height: 1, heightLabel: "Deck above the banks", color: "#9a7b55", help: "A footbridge: click one bank, then double-click the other. The deck spans straight between its ends, with railings." },
+  boardwalk: { label: "Boardwalk", shape: "line", width: 5, height: 1.5, heightLabel: "Deck above the ground", color: "#b49a74", help: "A low deck on posts over wet or soft ground, following the ground." },
+  stairs: { label: "Stairs", shape: "line", width: 4, height: 0, heightLabel: "", color: "#a39b8e", help: "Stone steps up a slope: click from one end to the other. The steps follow the ground." },
+  wall: { label: "Wall", shape: "line", width: 2, height: 3, heightLabel: "Wall height", color: "#8d877c", help: "A stone or retaining wall." },
+  building: { label: "Building", shape: "outline", width: 0, height: 12, heightLabel: "Wall height", roof: "gable", color: "#a8653f", help: "A clubhouse, restroom, barn or shed: walls and a roof. Drag a rectangle, or click its corners." },
+  shelter: { label: "Shelter", shape: "outline", width: 0, height: 9, heightLabel: "Eaves height", roof: "hip", color: "#4f7356", help: "An open pavilion: posts, a roof and picnic tables under it." },
+  deck: { label: "Deck", shape: "outline", width: 0, height: 2.5, heightLabel: "Deck above the ground", color: "#b8916a", help: "A raised wooden platform (a tee deck, a viewing deck)." }
+};
+export const STRUCTURE_ORDER: StructureKind[] = ["bridge", "boardwalk", "stairs", "wall", "building", "shelter", "deck"];
 
 export const TREE_COLORS = ["#4a7a3a", "#3d6b2f", "#5c8a3c", "#2f5d34", "#7a9a3a"];

@@ -77,7 +77,7 @@ function ShareDialog({ onClose }: { onClose: () => void }) {
 
 const SHORTCUTS: [string, string][] = [
   ["V", "Select and move"], ["H", "New hole (tee, then basket)"], ["T / B", "Another tee / pin for the hole"], ["M / Z", "Mando / drop zone"],
-  ["O / L", "Draw an area / a line"], ["R / A / K", "Tree / bench, sign… / label"], ["D", "Measure"],
+  ["O / L", "Draw an area / a line"], ["S", "Build: bridge, boardwalk, stairs, wall, building, shelter, deck"], ["R / A / K", "Tree / bench, sign… / label"], ["D", "Measure"],
   ["Enter", "Finish drawing · view from the selected hole's tee"], ["Esc", "Cancel · back to Select · close"], ["Backspace", "Remove the last point drawn"],
   ["Del", "Delete the selection"], ["Ctrl+D", "Duplicate"], ["Arrows", "Nudge 1 ft (Shift: 10 ft) · other holes in the tee view"],
   ["Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"], ["2 / 3", "Top-down / 3D"], ["0 / F", "Whole course / zoom to selection"], ["Q / E / N", "Turn left / right / north up"], ["+ / −", "Zoom"]

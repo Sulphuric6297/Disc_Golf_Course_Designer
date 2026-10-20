@@ -116,7 +116,28 @@ export interface LineItem extends BaseItem {
   importSource?: "osm";
 }
 
-export type CourseItem = TeeItem | BasketItem | MandoItem | DropZoneItem | TreeItem | AmenityItem | LabelItem | AreaItem | LineItem;
+/** Built things: drawn along a line (bridges, boardwalks, stairs, walls) or as an outline
+ * (buildings, shelters, decks). Real-scale models in 3D, drawn to scale on the printed map. */
+export type StructureKind = "bridge" | "boardwalk" | "stairs" | "wall" | "building" | "shelter" | "deck";
+export type RoofKind = "gable" | "hip";
+export interface StructureItem extends BaseItem {
+  type: "structure";
+  kind: StructureKind;
+  /** Along the line from one end to the other, or the outline (plan coordinates; x, y of the item
+   * is its middle). */
+  points: P[];
+  /** Width of a bridge, boardwalk or stairs, or a wall's thickness, ft (unset: the kind's usual). */
+  width?: number;
+  /** Ft (unset: the kind's usual): a building's walls, a shelter's posts, how high a deck or a
+   * boardwalk stands, a bridge's deck above its banks, a wall's height. */
+  height?: number;
+  /** Buildings and shelters (unset: gable for a building, hip for a shelter). */
+  roof?: RoofKind;
+  holeId?: string;
+  label?: string;
+}
+
+export type CourseItem = TeeItem | BasketItem | MandoItem | DropZoneItem | TreeItem | AmenityItem | LabelItem | AreaItem | LineItem | StructureItem;
 export type ItemType = CourseItem["type"];
 
 /** A hole. Its tees and baskets are items that point back to it; the order in `holes` is the
@@ -281,4 +302,5 @@ export type ToolMode =
   | "add-label"
   | "draw-area"
   | "draw-line"
+  | "draw-structure"
   | "measure";

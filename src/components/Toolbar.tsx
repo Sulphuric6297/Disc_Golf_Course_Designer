@@ -1,10 +1,14 @@
 // The tools along the bottom of the map, with the active tool's options and a hint above them.
 import type { ReactNode } from "react";
-import { Armchair, Circle, CircleDot, MousePointer2, PenLine, Pentagon, RectangleHorizontal, Redo2, Route, Ruler, Signpost, Spline, Square, Target, TreeDeciduous, Type, Undo2 } from "lucide-react";
-import { amenitySymbol, symbolSvg } from "../lib/symbols";
-import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, TEE_LEVELS, TEE_ORDER } from "../constants";
+import { Armchair, Circle, CircleDot, House, MousePointer2, PenLine, Pentagon, RectangleHorizontal, Redo2, Route, Ruler, Signpost, Spline, Square, Target, TreeDeciduous, Type, Undo2 } from "lucide-react";
+import { amenitySymbol, structureLegend, symbolSvg } from "../lib/symbols";
+import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import { useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaKind, DrawShape, LineKind, ToolMode, TreeKind } from "../types";
+import type { AmenityKind, AreaKind, DrawShape, LineKind, StructureKind, ToolMode, TreeKind } from "../types";
+
+/** A built thing's map symbol, small (for the tool's chips and the Features list). */
+export const structureIcon = (kind: StructureKind, size: number, id: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 16 16" style="overflow:visible;display:block">${structureLegend(kind, 16, 16, 0.9, undefined, id)}</svg>`;
 
 export const TOOLS: { mode: ToolMode; key: string; label: string; icon: ReactNode; group: number }[] = [
   { mode: "select", key: "V", label: "Select and move", icon: <MousePointer2 size={18} />, group: 0 },
@@ -15,6 +19,7 @@ export const TOOLS: { mode: ToolMode; key: string; label: string; icon: ReactNod
   { mode: "add-dropzone", key: "Z", label: "Drop zone", icon: <CircleDot size={18} />, group: 2 },
   { mode: "draw-area", key: "O", label: "Draw an area: OB, hazard, water, fairway, woods…", icon: <Pentagon size={18} />, group: 2 },
   { mode: "draw-line", key: "L", label: "Draw a line: OB line, path, road, fence, stream…", icon: <Spline size={18} />, group: 2 },
+  { mode: "draw-structure", key: "S", label: "Build: bridge, boardwalk, stairs, wall, building, shelter, deck", icon: <House size={18} />, group: 2 },
   { mode: "add-tree", key: "R", label: "Tree", icon: <TreeDeciduous size={18} />, group: 3 },
   { mode: "add-amenity", key: "A", label: "Bench, trash can, sign, parking…", icon: <Armchair size={18} />, group: 3 },
   { mode: "add-label", key: "K", label: "Text label", icon: <Type size={18} />, group: 3 },
@@ -29,6 +34,7 @@ const HINTS: Partial<Record<ToolMode, string>> = {
   "add-dropzone": "Click to place a drop zone",
   "draw-area": "Click the corners · double-click or Enter to finish · Backspace removes the last point · Esc cancels",
   "draw-line": "Click along the line · double-click or Enter to finish · Backspace removes the last point · Esc cancels",
+  "draw-structure": "Click along it, end to end · double-click or Enter to finish · Backspace removes the last point · Esc cancels",
   "add-tree": "Click to plant trees",
   "add-amenity": "Click to place it",
   "add-label": "Click to place a label, then type its text in the panel",
@@ -90,6 +96,16 @@ export function Toolbar() {
         return [shapes(["points", "box", "circle", "freehand"]), ...(Object.keys(AREA_KINDS) as AreaKind[]).map(k => <Chip key={k} active={ed.areaKind === k} color={AREA_KINDS[k].color} onClick={() => set({ areaKind: k })} testid={`area-kind-${k}`}>{AREA_KINDS[k].label.replace(/ \(.*\)/, "")}</Chip>)];
       case "draw-line":
         return [shapes(["points", "freehand"]), ...(Object.keys(LINE_KINDS) as LineKind[]).map(k => <Chip key={k} active={ed.lineKind === k} color={LINE_KINDS[k].color} onClick={() => set({ lineKind: k })} testid={`line-kind-${k}`}>{LINE_KINDS[k].label}</Chip>)];
+      case "draw-structure":
+        return [
+          shapes(STRUCTURE_KINDS[ed.structureKind].shape === "outline" ? ["points", "box", "circle", "freehand"] : ["points", "freehand"]),
+          ...STRUCTURE_ORDER.map(k => (
+            <Chip key={k} active={ed.structureKind === k} onClick={() => set({ structureKind: k })} testid={`structure-kind-${k}`}>
+              <span className="inline-block" dangerouslySetInnerHTML={{ __html: structureIcon(k, 16, `chip-${k}`) }} />
+              {STRUCTURE_KINDS[k].label}
+            </Chip>
+          ))
+        ];
       case "add-amenity":
         return (Object.keys(AMENITY_KINDS) as AmenityKind[]).map(k => (
           <Chip key={k} active={ed.amenityKind === k} testid={`amenity-kind-${k}`} onClick={() => set({ amenityKind: k })}>
@@ -108,9 +124,15 @@ export function Toolbar() {
         return null;
     }
   })();
-  const drawing = ed.tool === "draw-area" || ed.tool === "draw-line";
-  const shape = ed.tool === "draw-line" && (ed.drawShape === "box" || ed.drawShape === "circle") ? "freehand" : ed.drawShape;
-  const hint = ed.tool === "select" ? "Drag to pan · scroll or pinch to zoom · right-drag or Shift+drag to turn and tilt" : drawing && shape !== "points" ? SHAPE_HINTS[shape] : ed.tool === "add-mando" && ed.mandoKind === "gate" ? "Click on the hole's line where the gate is: two posts across it, the disc passes between" : HINTS[ed.tool];
+  const drawing = ed.tool === "draw-area" || ed.tool === "draw-line" || ed.tool === "draw-structure";
+  const lineDrawn = ed.tool === "draw-line" || (ed.tool === "draw-structure" && STRUCTURE_KINDS[ed.structureKind].shape === "line");
+  const shape = lineDrawn && (ed.drawShape === "box" || ed.drawShape === "circle") ? "freehand" : ed.drawShape;
+  const hint = ed.tool === "select" ? "Drag to pan · scroll or pinch to zoom · right-drag or Shift+drag to turn and tilt"
+    : drawing && shape !== "points" ? SHAPE_HINTS[shape]
+    : ed.tool === "add-mando" && ed.mandoKind === "gate" ? "Click on the hole's line where the gate is: two posts across it, the disc passes between"
+    : ed.tool === "draw-structure" && ed.structureKind === "bridge" ? "Click one bank, then double-click the other (or Enter) · Backspace removes the last point · Esc cancels"
+    : ed.tool === "draw-structure" && !lineDrawn ? "Click the corners · double-click or Enter to finish (or pick Rectangle above and drag) · Esc cancels"
+    : HINTS[ed.tool];
   return (
     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-20 max-w-[calc(100%-24px)]">
       {options && <div className="flex flex-wrap justify-center gap-1.5 max-w-[760px]" data-testid="tool-options">{options}</div>}
