@@ -6,6 +6,7 @@ import { holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
 import { useCourse, useEditor } from "../state/course";
 import { ElevationProfile } from "./ElevationProfile";
+import { SceneButton } from "./ScenePanel";
 
 export function TeeViewHud() {
   const doc = useCourse(s => s.doc);
@@ -40,6 +41,7 @@ export function TeeViewHud() {
         <button className="p-2 rounded-full hover:bg-white/10 text-white" aria-label="Next hole" title="Next hole (→)" onClick={() => go(1)}><ChevronRight size={18} /></button>
         <button className="px-3 py-1.5 rounded-full text-sm font-semibold text-white hover:bg-white/10 flex items-center gap-1.5" onClick={() => ed.set({ teeView: null, flyover: false })} data-testid="hud-close"><X size={15} /> Back to map</button>
       </div>
+      <div className="absolute top-4 right-4 pointer-events-auto"><SceneButton /></div>
       {!ed.flyover && <div className="absolute bottom-20 left-1/2 -translate-x-1/2 text-xs text-white/80 bg-black/40 rounded px-2 py-1">Drag to look around · scroll to zoom · ← → other holes · Esc back to the map</div>}
     </div>
   );

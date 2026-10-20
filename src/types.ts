@@ -200,6 +200,9 @@ export interface MapStyle {
   forest: "everywhere" | "photo" | "woods";
   /** Forest style: how thick the woods are, from a few scattered clumps (0.1) to solid canopy (1). */
   treeCover: number;
+  /** What the land is like (lib/landscapes): its natural colors in 3D, and on the painted map
+   * when picked. Unset: a wooded park. */
+  landscape?: "woods" | "park" | "pines" | "dry" | "autumn" | "desert";
   /** Light on the painted map: where the sun comes from (degrees clockwise from the top of the
    * page) and how high it is (degrees; low sun, long shadows). */
   sunAngle: number;

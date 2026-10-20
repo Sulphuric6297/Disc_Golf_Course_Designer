@@ -4,6 +4,7 @@ import { BASKET_MARKS, PAPER, THEME_COLORS, THEME_SHOWS, THEMES, basketMark, bes
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { AREA_KINDS } from "../constants";
 import { RESTRICTED } from "../lib/symbols";
+import { LandscapePicker } from "./LandscapePicker";
 import { useEffect, useRef, useState } from "react";
 import type { MapStyle, MapTheme, PaperSize } from "../types";
 import { Button, ColorInput, Field, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
@@ -12,7 +13,7 @@ export const setStyle = (patch: Partial<MapStyle>, history = true) => changeDoc(
 
 /** How thick the painted woods are. The map repaints when the slider is let go (painting takes a moment). */
 /** A slider for a style setting that repaints the map: it changes the map when let go. */
-function StyleSlider<K extends keyof MapStyle>({ k, value, label, min, max, step, format }: { k: K; value: number; label: string; min: number; max: number; step: number; format: (v: number) => string }) {
+export function StyleSlider<K extends keyof MapStyle>({ k, value, label, min, max, step, format }: { k: K; value: number; label: string; min: number; max: number; step: number; format: (v: number) => string }) {
   const [v, setV] = useState(value);
   // Only a slider that was moved commits (a key let go on it, like Ctrl+Z's, must not)
   const moved = useRef(false);
@@ -28,8 +29,8 @@ const TreeCover = ({ value }: { value: number }) => (
   <StyleSlider k="treeCover" value={value} label="Tree cover" min={0.1} max={1} step={0.05} format={x => `${x < 0.35 ? "Sparse" : x < 0.7 ? "Open woods" : x < 0.95 ? "Thick" : "Dense"} · ${Math.round(x * 100)}%`} />
 );
 
-const FROM = ["top", "top right", "right", "bottom right", "bottom", "bottom left", "left", "top left"];
-const signed = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.round(Math.abs(x) * 100)}%`;
+export const FROM = ["top", "top right", "right", "bottom right", "bottom", "bottom left", "left", "top left"];
+export const signed = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.round(Math.abs(x) * 100)}%`;
 
 /** Where the light comes from, how long and dark the shadows are, and the picture's tone. */
 function LightAndShadow({ s }: { s: MapStyle }) {
@@ -92,6 +93,10 @@ export function DesignPanel() {
         )}
         {s.theme === "satellite" && !doc.background && <p className="text-[11px] text-amber-300 mt-2">There is no satellite photo yet: bring in your park on the Site step.</p>}
         {s.theme === "satellite" && doc.background && <div className="mt-2"><Slider label="Photo strength" min={0.2} max={1} step={0.05} value={s.photo} onChange={v => setStyle({ photo: v })} format={v => `${Math.round(v * 100)}%`} /></div>}
+      </Section>
+      <Section title="Landscape">
+        <LandscapePicker />
+        <p className="text-[11px] text-zinc-500 mt-1.5">{s.theme === "forest" ? "Sets the painted map's colors and woods, and the 3D view's grass and trees." : "The 3D view's grass and trees (this style keeps its own colors)."}</p>
       </Section>
       {s.theme === "forest" && <LightAndShadow s={s} />}
       <Section title="Symbols">

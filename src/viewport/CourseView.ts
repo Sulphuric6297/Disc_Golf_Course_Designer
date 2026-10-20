@@ -12,20 +12,25 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, TEE_LEVELS, clamp } from "../constants";
 import { basketFor, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, corridor, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
+import { landscapeOf } from "../lib/landscapes";
 import { fmtArea, fmtDist, fmtElev } from "../lib/units";
 import { createAmenity, createBasket, createDropZone, createMando, createTeePad } from "../three/courseModels";
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
 import { createWoods } from "../three/woods";
+import { forestDetail, type Forest } from "../three/treeKit";
+import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import type { AmenityItem, AreaItem, BasketItem, CourseItem, Hole, LabelItem, LineItem, MandoItem, TeeItem, TeeLevel, TreeItem } from "../types";
 import { Ground } from "./ground";
+import { grassMaps, grassTerrain } from "./grassMaps";
 import type { P, ViewCallbacks, ViewDoc, ViewInfo, ViewTool } from "./types";
 
 CameraControls.install({ THREE });
@@ -39,7 +44,6 @@ const TILT_TOP = 8 * DEG;
 const DEFAULT_TILT = 55 * DEG;
 const MAX_TILT = 78 * DEG;
 const SELECT = "#22d3ee";
-const SKY_HAZE = "#dbe6ee";
 const LIFT = 0.45;
 
 type Drag = { move: (e: PointerEvent) => void; end: (e: PointerEvent) => void };
@@ -149,8 +153,19 @@ export class CourseView {
   private povHole: string | null = null;
   private povLook = { yaw: 0, pitch: 0 };
   private fly: { pts: THREE.Vector3[]; look: THREE.Vector3[]; t: number; dur: number; done?: () => void } | null = null;
-  private skyDome: THREE.Mesh;
-  private horizon: THREE.Mesh;
+  private skyBox: Sky;
+  /** Grass blades near the camera, in 3D (see three/grass). */
+  readonly grass = new Grass();
+  private grassInputs: unknown[] = [];
+  private grassBuilt = 0;
+  private grassTimer = 0;
+  private lastSky = false;
+  private grassTerrainRef: unknown = null;
+  private grassPhoto: unknown = null;
+  private grassSetting: GrassQuality | "auto" = "auto";
+  private wind = true;
+  /** Drawn without a graphics card (software rendering): the grass starts off. */
+  readonly software: boolean;
   private povMarker: HTMLDivElement | null = null;
 
   constructor(private container: HTMLDivElement, private cb: ViewCallbacks) {
@@ -197,29 +212,23 @@ export class CourseView {
       this.sky.colorSpace = THREE.SRGBColorSpace;
       this.scene.background = this.sky;
     }
-    // Daylight sky and the ground out to the horizon, for the view from a tee
+    // Daylight sky (a physical sky model lit by the course's sun) and the ground out to the
+    // horizon, for the tilted view and the view from a tee
     {
-      const geo = new THREE.SphereGeometry(1, 32, 16);
-      const pos = geo.getAttribute("position");
-      const colors = new Float32Array(pos.count * 3);
-      const zenith = new THREE.Color("#4f86c6");
-      const haze = new THREE.Color(SKY_HAZE);
-      const c = new THREE.Color();
-      for (let i = 0; i < pos.count; i++) {
-        const y = pos.getY(i);
-        c.copy(haze).lerp(zenith, y > 0 ? Math.pow(y, 0.55) : 0);
-        colors.set([c.r, c.g, c.b], i * 3);
-      }
-      geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-      this.skyDome = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false, toneMapped: false }));
-      this.skyDome.renderOrder = -10;
-      this.skyDome.visible = false;
-      this.skyDome.frustumCulled = false;
-      const hgeo = new THREE.CircleGeometry(1, 64);
-      hgeo.rotateX(-Math.PI / 2);
-      this.horizon = new THREE.Mesh(hgeo, new THREE.MeshLambertMaterial({ color: 0x6f8a5a }));
-      this.horizon.receiveShadow = true;
-      this.horizon.visible = false;
+      this.skyBox = new Sky();
+      const sm = this.skyBox.material as THREE.ShaderMaterial;
+      Object.assign(sm.uniforms, { turbidity: { value: 3.2 }, rayleigh: { value: 1.1 }, mieCoefficient: { value: 0.004 }, mieDirectionalG: { value: 0.82 } });
+      // The model is bright: brought down to the scene's exposure
+      sm.uniforms.uHaze = { value: new THREE.Color("#c4d0d9") };
+      // Brought down to the scene's exposure, and melting into the haze at the horizon (where the
+      // land fades into the same haze)
+      sm.fragmentShader = sm.fragmentShader
+        .replace("uniform vec3 up;", "uniform vec3 up;\nuniform vec3 uHaze;")
+        .replace("#include <tonemapping_fragment>", "gl_FragColor.rgb = mix( uHaze, gl_FragColor.rgb * 0.46, smoothstep( -0.02, 0.2, direction.y ) );\n#include <tonemapping_fragment>");
+      this.skyBox.renderOrder = -10;
+      this.skyBox.visible = false;
+      this.skyBox.frustumCulled = false;
+      this.skyBox.raycast = () => {};
     }
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.env = pmrem.fromScene(new RoomEnvironment()).texture;
@@ -253,7 +262,15 @@ export class CourseView {
     c.addEventListener("rest", () => { this.posePinned = false; });
 
     this.ground = new Ground(this.renderer, () => this.invalidate(true));
-    this.scene.add(this.ground.group, this.shapesGroup, this.arcsGroup, this.itemsGroup, this.fx, this.horizon, this.skyDome);
+    this.scene.add(this.ground.group, this.shapesGroup, this.arcsGroup, this.itemsGroup, this.fx, this.skyBox, this.grass.group);
+    {
+      const gl = this.renderer.getContext();
+      const info = gl.getExtension("WEBGL_debug_renderer_info");
+      const name = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
+      this.software = /swiftshader|llvmpipe|software|basic render/i.test(name);
+      // Without a graphics card, only the closest trees in full detail
+      if (this.software) forestDetail.nearFt = 70;
+    }
 
     const on = <K extends keyof HTMLElementEventMap>(el: HTMLElement | Window, type: K, fn: (e: HTMLElementEventMap[K]) => void, opts?: AddEventListenerOptions) => {
       el.addEventListener(type, fn as EventListener, opts);
@@ -526,6 +543,8 @@ export class CourseView {
 
   dispose() {
     cancelAnimationFrame(this.raf);
+    clearTimeout(this.grassTimer);
+    this.grass.dispose();
     this.ro.disconnect();
     this.disposers.forEach(d => d());
     this.endDragListeners?.();
@@ -630,20 +649,11 @@ export class CourseView {
     cam.far = span * 12;
     cam.near = 0.3;
     cam.updateProjectionMatrix();
-    // Sky, horizon and haze, only for this picture
-    this.skyDome.scale.setScalar(span * 5);
-    this.skyDome.position.copy(cam.position);
-    this.skyDome.visible = true;
-    this.horizon.scale.setScalar(span * 6);
-    this.horizon.position.set(doc.canvas.width / 2, this.minGround() - 0.3, doc.canvas.height / 2);
-    (this.horizon.material as THREE.MeshLambertMaterial).color.set(doc.groundColor).offsetHSL(0, -0.05, -0.04);
-    this.horizon.visible = true;
+    // Sky, the land out to the horizon, haze and grass, only for this picture
+    const restore = this.atmosphere(cam, true);
     this.ground.extras.visible = false;
-    const fog = new THREE.Fog(SKY_HAZE, span * 0.9, span * 5);
-    const prevFog = this.scene.fog;
-    const prevBg = this.scene.background;
-    this.scene.fog = fog;
-    this.scene.background = new THREE.Color(SKY_HAZE);
+    this.updateGrass(cam, true);
+    this.updateForests(cam.position);
     this.arcsGroup.visible = true;
     this.fx.visible = false;
     this.ground.detailActive(true);
@@ -657,10 +667,7 @@ export class CourseView {
     this.renderer.setScissorTest(true);
     this.renderer.render(this.scene, cam);
     this.renderer.setScissorTest(false);
-    this.scene.fog = prevFog;
-    this.scene.background = prevBg;
-    this.skyDome.visible = false;
-    this.horizon.visible = false;
+    restore();
     this.ground.extras.visible = true;
     this.fx.visible = true;
     this.placePovMarker(cam, rect);
@@ -714,6 +721,8 @@ export class CourseView {
       this.draftPending = false;
       this.drawDraft();
     }
+    // Grass swaying in the wind, from the tee
+    if (this.povHole && this.wind && this.grass.group.visible) this.dirty = true;
     if (!this.dirty || this.size.width <= 1) return;
     this.dirty = false;
     this.render();
@@ -741,9 +750,16 @@ export class CourseView {
       this.shadowsDirty = false;
     }
     this.camera.updateMatrixWorld();
-    this.arcsGroup.visible = this.controls.polarAngle > TILT_TOP;
+    const tilted = this.controls.polarAngle > TILT_TOP;
+    this.arcsGroup.visible = tilted;
     this.ground.detailActive(dist < 250);
+    // Tilted, the course is a place: sky, haze, land to the horizon and grass up close
+    this.lastSky = false;
+    const restore = tilted ? this.atmosphere(this.camera, false) : null;
+    this.updateGrass(this.camera, tilted);
+    this.updateForests(this.camera.position);
     this.renderer.render(this.scene, this.camera);
+    restore?.();
     this.layout();
     const info = this.viewInfo();
     const key = `${info.heading.toFixed(2)}|${info.tiltDeg.toFixed(2)}|${info.pxPerUnit.toFixed(5)}|${info.width}|${info.height}|${this.camera.position.x.toFixed(2)}|${this.camera.position.z.toFixed(2)}`;
@@ -781,6 +797,130 @@ export class CourseView {
     return this.doc ? Math.max(this.doc.canvas.width, this.doc.canvas.height) : 1500;
   }
 
+  /**
+   * Sky, haze and the land out to the horizon around a camera, for one picture (`eyeLevel`: seen
+   * from the ground, where the haze thickens sooner). Returns how to put the map's backdrop back.
+   */
+  private atmosphere(cam: THREE.PerspectiveCamera, eyeLevel: boolean) {
+    const span = this.siteSpan();
+    const sm = this.skyBox.material as THREE.ShaderMaterial;
+    this.skyBox.scale.setScalar(cam.far * 1.05);
+    this.skyBox.position.copy(cam.position);
+    this.skyBox.visible = true;
+    this.lastSky = true;
+    this.skyBox.updateMatrixWorld();
+    this.ground.landscape(true);
+    const prevFog = this.scene.fog;
+    const prevBg = this.scene.background;
+    const haze = sm.uniforms.uHaze.value as THREE.Color;
+    // Thin haze over the site, thick toward the horizon: distance reads as distance
+    this.scene.fog = new THREE.FogExp2(haze.getHex(THREE.LinearSRGBColorSpace), eyeLevel ? 0.8 / (span * 2.4) : 0.7 / (span * 3.2));
+    (this.scene.fog as THREE.FogExp2).color.copy(haze);
+    this.scene.background = haze;
+    return () => {
+      this.scene.fog = prevFog;
+      this.scene.background = prevBg;
+      this.skyBox.visible = false;
+      this.ground.landscape(false);
+    };
+  }
+
+  /** Grass blades near the camera: in 3D only (looking straight down they can't be seen). */
+  private updateGrass(cam: THREE.PerspectiveCamera, on: boolean) {
+    const doc = this.doc;
+    const q = this.grassQuality();
+    this.grass.setQuality(on && doc ? q : 0);
+    if (!doc || !on || !q) {
+      this.grass.group.visible = false;
+      return;
+    }
+    // What grows where: painted again when the course changed (at most a few times a second
+    // while something is dragged)
+    const key = [doc.course.items, doc.stats, doc.groundPaint, doc.course.style, doc.groundColor, doc.canvas, doc.course.holes];
+    if (key.some((k, i) => (this.grassInputs[i] ?? null) !== k)) {
+      const now = performance.now();
+      if (now - this.grassBuilt > 300 || !this.grassInputs.length) {
+        this.grassInputs = key;
+        this.grassBuilt = now;
+        const maps = grassMaps(doc);
+        if (maps) this.grass.setMaps(maps);
+      } else {
+        clearTimeout(this.grassTimer);
+        this.grassTimer = window.setTimeout(() => this.invalidate(), 320);
+      }
+    }
+    if (this.grassTerrainRef !== doc.heights) {
+      this.grassTerrainRef = doc.heights;
+      this.grass.setTerrain(grassTerrain(doc));
+    }
+    const photo = this.ground.photo && doc.background.opacity > 0.3 ? this.ground.photo : null;
+    if (this.grassPhoto !== photo) {
+      this.grassPhoto = photo;
+      this.grass.setPhoto(photo, doc.background.rect, 0.8);
+    }
+    const p = cam.position;
+    const t = this.clock.elapsedTime;
+    this.grass.update(p, this.h(clamp(p.x, 0, doc.canvas.width), clamp(p.z, 0, doc.canvas.height)), t, this.wind && this.povHole ? 0.14 : 0.05);
+  }
+
+  /** Woods: the trees near the camera in full detail. */
+  private updateForests(eye: THREE.Vector3) {
+    for (const o of this.itemsGroup.children) (o.userData.forest as Forest | undefined)?.update(eye);
+  }
+
+  /** How much grass to draw: as set, or (automatically) none without a graphics card. */
+  private grassQuality(): GrassQuality {
+    if (this.grassSetting !== "auto") return this.grassSetting;
+    return this.software ? 0 : 2;
+  }
+
+  /** Grass detail (0 off .. 3 high, or automatic) and whether it sways in the wind. */
+  setGrass(quality: GrassQuality | "auto", wind = this.wind) {
+    this.grassSetting = quality;
+    this.wind = wind;
+    this.invalidate();
+  }
+
+  /** Ground height at a plan point, ft (for tests and scripted views). */
+  groundHeight(x: number, y: number) {
+    return this.h(x, y);
+  }
+
+  /** For tests: how tall the 3D grass grows at plan points, ft (0: none grows there). */
+  grassHeights(pts: P[]) {
+    const maps = this.doc ? grassMaps(this.doc) : null;
+    if (!maps) return [];
+    const g = maps.field.getContext("2d", { willReadFrequently: true })!;
+    const kx = maps.field.width / maps.rect.width, ky = maps.field.height / maps.rect.height;
+    return pts.map(p => {
+      const d = g.getImageData(Math.floor((p.x - maps.rect.x) * kx), Math.floor((p.y - maps.rect.y) * ky), 1, 1).data;
+      return d[1] > 12 ? (d[0] / 255) * GRASS.max : 0;
+    });
+  }
+
+  /** For tests: trees in the woods, and how many are drawn in full detail (as seen from `eye`). */
+  forestInfo(eye?: { x: number; y: number; z: number }) {
+    if (eye) this.updateForests(new THREE.Vector3(eye.x, eye.y, eye.z));
+    let trees = 0, near = 0, conifers = 0;
+    for (const o of this.itemsGroup.children) {
+      const c = (o.userData.forest as Forest | undefined)?.counts();
+      if (c) { trees += c.trees; near += c.near; conifers += c.conifers; }
+    }
+    return { trees, near, conifers };
+  }
+
+  /** For tests: the last picture's sky, sun and grass. */
+  sceneInfo() {
+    const d = this.sun.position.clone().sub(this.sun.target.position).normalize();
+    return {
+      sky: this.lastSky,
+      sun: { x: d.x, y: d.y, z: d.z },
+      exposure: this.renderer.toneMappingExposure,
+      grass: { quality: this.grass.getQuality(), visible: this.grass.group.visible, blades: this.grass.blades },
+      software: this.software
+    };
+  }
+
   private placeSun() {
     const doc = this.doc;
     if (!doc) return;
@@ -793,8 +933,18 @@ export class CourseView {
       dir = new THREE.Vector3(Math.sin(az) * Math.cos(alt), Math.sin(alt), -Math.cos(az) * Math.cos(alt));
       strength = doc.sun.altitude <= 0 ? 0.08 : Math.min(1, 0.35 + doc.sun.altitude / 25);
     }
+    // Darker shadows: less light from the sky filling them in
+    const shadows = clamp(doc.sun?.shadows ?? 0.65, 0, 1);
     this.sun.intensity = SUN_INTENSITY * strength;
-    this.hemi.intensity = HEMI_INTENSITY * (0.45 + 0.55 * Math.min(1, strength * 1.2));
+    this.hemi.intensity = HEMI_INTENSITY * (0.45 + 0.55 * Math.min(1, strength * 1.2)) * (1.55 - 0.85 * shadows);
+    this.renderer.toneMappingExposure = 1.05 * Math.pow(2, (doc.sun?.light ?? 0) * 1.6);
+    // The sky's sun, and its haze: blue-grey at midday, warmer when the sun is low
+    {
+      const sm = this.skyBox.material as THREE.ShaderMaterial;
+      (sm.uniforms.sunPosition.value as THREE.Vector3).copy(dir);
+      const low = 1 - clamp((Math.asin(clamp(dir.y, -1, 1)) / DEG - 8) / 40, 0, 1);
+      (sm.uniforms.uHaze.value as THREE.Color).set("#c4d0d9").lerp(new THREE.Color("#dcc8ae"), low * 0.65);
+    }
     this.sun.position.copy(center).add(dir.multiplyScalar(span * 1.5));
     this.sun.target.position.copy(center);
     const cam = this.sun.shadow.camera;
@@ -872,14 +1022,6 @@ export class CourseView {
 
   private h(x: number, y: number) {
     return this.doc ? heightAt(this.doc.heights, this.doc.gridSize, x, y) : 0;
-  }
-
-  private minGround() {
-    const doc = this.doc;
-    if (!doc) return 0;
-    let min = 0;
-    for (const v of Object.values(doc.heights)) if (v < min) min = v;
-    return min;
   }
 
   private item(id: string | null): CourseItem | null {
@@ -1082,8 +1224,8 @@ export class CourseView {
         return g;
       });
       // Woods: trees standing in it (shadows and all)
-      if (a.kind === "woods") put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees]), () => {
-        const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees);
+      if (a.kind === "woods") put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape]), () => {
+        const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, landscapeOf(st).conifers);
         woods.traverse(o => { o.userData.itemId = a.id; });
         this.shadowsDirty = true;
         return woods;

@@ -8,6 +8,8 @@ import * as THREE from "three";
 export const disposeObjectDeep = (root: THREE.Object3D, keep: Set<THREE.Texture> = new Set()) => {
   root.traverse(child => {
     const mesh = child as THREE.Mesh;
+    // An instanced mesh's own per-instance buffers
+    if ((child as THREE.InstancedMesh).isInstancedMesh) (child as THREE.InstancedMesh).dispose();
     // Geometry and materials marked shared (one copy used by many models, e.g. a vehicle model)
     // stay: freeing them would only make the next model upload them again.
     if (mesh.geometry && !mesh.geometry.userData.shared) mesh.geometry.dispose();

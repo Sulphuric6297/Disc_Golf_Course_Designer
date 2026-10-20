@@ -60,6 +60,7 @@ design tools and the PDGA guidance the app follows.
 | `import-site.spec.ts` | Address search, framing the area, photo + elevation + trees + OpenStreetMap paths and water, elevation change per hole |
 | `stats.spec.ts` | Hole math: PDGA effective length and par, doglegs, foliage, trees and OB in play (what counts as OB), safety checks, design checks (pure logic) |
 | `views.spec.ts` | View from the tee, flyover (a slow frame doesn't skip it), back to the map |
+| `scene3d.spec.ts` | The 3D look: sky when tilted, the course's sun and brightness, grass blades (when shown, the setting kept, what grows where), woods of real trees (full detail near the camera), landscapes (pine forest, the painted map's colors) |
 | `design.spec.ts` | Map designer: themes, colors, title block, legend, hole table, contours, turning the map; the Forest painting (tree cover from sparse to dense, winding creeks and trails, light and shadow settings), basket marks (five kinds, legend, older courses), marking colors (map or PDGA: OB, hazard, casual, out of play); the printed map's and tee signs' contents |
 | `export.spec.ts` | Course map (SVG/PNG/PDF), tee signs, scorecard, GeoJSON, KML, GPX, CSV, stake-out list, parts list |
 | `share.spec.ts` | Share links: packing, opening (view only), photo and elevation downloaded again, "Make a copy" (saved before the link leaves the address bar), never overwriting your own course |
@@ -83,3 +84,10 @@ design tools and the PDGA guidance the app follows.
   - `share.ts`;
   - `geo/`: site import.
 - The map view engine is `src/viewport/CourseView.ts`, wrapped by `src/components/MapViewport.tsx`.
+- 3D look: `src/three/treeKit.ts` (tree shapes made once and shared: a branching skeleton and
+  leaf-spray cards; woods drawn instanced, full detail near the camera), `src/three/grass.ts`
+  (blades in two patches that travel with the camera, reading height, what grows where and color
+  from textures; `src/viewport/grassMaps.ts` paints what grows where), the sky and haze in
+  `CourseView.atmosphere`. The 3D view shows the course in its landscape's natural colors
+  (`src/lib/landscapes.ts`), whatever the printed map's style. Without a graphics card (software
+  rendering, as in the tests) grass starts off and fewer trees are drawn in full detail.

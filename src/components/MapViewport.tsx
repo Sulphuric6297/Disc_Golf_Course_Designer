@@ -12,12 +12,12 @@ import { niceScaleBar } from "../lib/view";
 import { centroid } from "../lib/geom";
 import { fmtElev } from "../lib/units";
 import type { P } from "../types";
+import { SceneButton } from "./ScenePanel";
+import { landscapeOf } from "../lib/landscapes";
 
 let current: CourseView | null = null;
 /** The live map view (for buttons elsewhere: fit, tee view, snapshots). */
 export const getView = () => current;
-
-export const themeGround = (theme: string, rough: string) => (theme === "night" ? "#24302a" : theme === "minimal" ? "#eef0e6" : rough);
 
 export function MapViewport({ onContextMenu }: { onContextMenu: (info: { clientX: number; clientY: number; itemId: string | null; ground: P | null }) => void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -69,12 +69,15 @@ export function MapViewport({ onContextMenu }: { onContextMenu: (info: { clientX
   const shadeUrl = useMemo(() => (ed.shading && terrain.relief > 1 ? hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height).toDataURL() : null), [ed.shading, terrain.relief, doc.terrainHeights, doc.gridSize, doc.canvas]);
   const issues = useMemo(() => (ed.step === "review" ? safetyIssues(doc, stats) : null), [ed.step, doc, stats]);
 
+  // The 3D view shows the course in its landscape's natural colors (whatever the map's style)
+  const natural = landscapeOf(doc.style);
+  const naturalStyle = useMemo(() => ({ ...doc.style, ...natural.colors }), [doc.style, natural]);
   const viewDoc: ViewDoc = useMemo(() => ({
-    course: doc,
+    course: { ...doc, style: naturalStyle },
     stats,
     activeHoleId: ed.activeHoleId,
     issues,
-    sun: null,
+    sun: { azimuth: doc.style.sunAngle ?? 315, altitude: doc.style.sunHeight ?? 38, shadows: doc.style.shadows ?? 0.65, light: doc.style.light ?? 0 },
     canvas: doc.canvas,
     unitsPerFoot: 1,
     gridSize: doc.gridSize,
@@ -87,8 +90,8 @@ export function MapViewport({ onContextMenu }: { onContextMenu: (info: { clientX
     shadeUrl,
     groundDetail: ed.groundDetail,
     groundPaint: doc.groundPaint,
-    groundColor: themeGround(doc.style.theme, doc.style.rough)
-  }), [doc, stats, ed.activeHoleId, issues, terrain, ed.photo, shadeUrl, contours, ed.groundDetail]);
+    groundColor: natural.colors.rough
+  }), [doc, stats, ed.activeHoleId, issues, terrain, ed.photo, shadeUrl, contours, ed.groundDetail, natural, naturalStyle]);
 
   useEffect(() => { view?.setDoc(viewDoc); }, [view, viewDoc]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
@@ -96,6 +99,7 @@ export function MapViewport({ onContextMenu }: { onContextMenu: (info: { clientX
     view?.setTool({ mode: ed.viewOnly ? "select" : ed.tool, areaKind: ed.areaKind, lineKind: ed.lineKind, shape: ed.drawShape, readOnly: ed.viewOnly }, ed.teeLevel);
   }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.drawShape, ed.viewOnly, ed.teeLevel]);
   useEffect(() => { view?.setPose(ed.view === "2d" ? "top" : "tilt"); }, [view, ed.view]);
+  useEffect(() => { view?.setGrass(ed.grass, ed.wind); }, [view, ed.grass, ed.wind]);
   useEffect(() => {
     if (!view) return;
     if (ed.flyover && ed.teeView) view.flyover(ed.teeView, () => useEditor.getState().set({ flyover: false }));
@@ -132,9 +136,12 @@ export function MapViewport({ onContextMenu }: { onContextMenu: (info: { clientX
               <button className={btn} title="Zoom out (−)" onClick={() => view?.zoomBy(1 / 1.4)}><Minus size={16} /></button>
               <button className={btn} title="Show the whole course (0)" onClick={() => view?.fitCourse()}><Maximize2 size={15} /></button>
             </div>
-            <div className="pointer-events-auto flex flex-col bg-zinc-900/85 backdrop-blur rounded-lg border border-zinc-700/60 shadow overflow-hidden">
-              <button className={btn} title="Turn left (Q)" onClick={() => view?.rotateBy(-30)}><RotateCcw size={15} /></button>
-              <button className={btn} title="Turn right (E)" onClick={() => view?.rotateBy(30)}><RotateCw size={15} /></button>
+            <div className="flex flex-col gap-2 items-end">
+              <div className="pointer-events-auto flex flex-col bg-zinc-900/85 backdrop-blur rounded-lg border border-zinc-700/60 shadow overflow-hidden">
+                <button className={btn} title="Turn left (Q)" onClick={() => view?.rotateBy(-30)}><RotateCcw size={15} /></button>
+                <button className={btn} title="Turn right (E)" onClick={() => view?.rotateBy(30)}><RotateCw size={15} /></button>
+              </div>
+              {ed.view === "3d" && <SceneButton />}
             </div>
           </div>
           {hover && (

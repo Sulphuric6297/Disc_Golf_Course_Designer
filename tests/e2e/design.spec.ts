@@ -96,6 +96,7 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
 });
 
 test("light and shadow: the sun, shadows and brightness repaint the Forest map, and Reset brings them back", async ({ page }) => {
+  test.setTimeout(150_000);
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");

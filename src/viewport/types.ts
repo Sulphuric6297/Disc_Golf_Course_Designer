@@ -33,7 +33,9 @@ export type ViewDoc = GroundDoc & {
   activeHoleId: string | null;
   /** Problems to pin on the map (Review step), or none. */
   issues: SafetyIssue[] | null;
-  sun: { azimuth: number; altitude: number } | null;
+  /** The course's sun (its light settings): compass direction it shines from, height above the
+   * horizon (degrees), how dark the shadows are (0..1) and the overall brightness (-0.3..0.3). */
+  sun: { azimuth: number; altitude: number; shadows?: number; light?: number } | null;
 };
 
 /** The active tool, as far as the map view cares. */

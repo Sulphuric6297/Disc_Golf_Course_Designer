@@ -20,6 +20,10 @@ export class Ground {
   private shade: THREE.Mesh | null = null;
   /** Map-only drawings on the ground (grid, site edge, contours, cut-away sides): hidden in camera views. */
   extras = new THREE.Group();
+  /** The cut-away sides of a sloped site (part of `extras`). */
+  sides: THREE.Object3D | null = null;
+  /** Land around the site out to the horizon, for the tilted and tee views (see `landscape`). */
+  skirt: THREE.Mesh | null = null;
   private key = "";
   private heightsRef: Record<string, number> | null = null;
   private overlayKey = "";
@@ -258,6 +262,8 @@ export class Ground {
   private rebuild(doc: ViewDoc) {
     disposeObjectDeep(this.group);
     this.group.clear();
+    this.skirt = null;
+    this.sides = null;
     this.extras = new THREE.Group();
     this.group.add(this.extras);
     const { width, height } = doc.canvas;
@@ -302,6 +308,69 @@ export class Ground {
     this.colorTerrain(doc);
     this.redrape(doc, this.mapPlane, MAP_OVERLAY_OFFSET);
     this.redrape(doc, this.shade, MAP_OVERLAY_OFFSET * 2);
+  }
+
+  /**
+   * Land around the site out to the horizon: the site's edge carried outward and eased to one
+   * level, so the course sits in a landscape instead of on a block. Hidden on the flat map.
+   */
+  private buildSkirt(doc: ViewDoc, corners: number[][], grid: number) {
+    const visible = this.skirt?.visible ?? false;
+    if (this.skirt) {
+      this.group.remove(this.skirt);
+      disposeObjectDeep(this.skirt);
+    }
+    const { width: w, height: d } = doc.canvas;
+    const span = Math.max(w, d);
+    const edge: { x: number; y: number; h: number }[] = [];
+    corners.forEach(([x1, y1], i) => {
+      const [x2, y2] = corners[(i + 1) % 4];
+      const steps = Math.max(1, Math.round(Math.hypot(x2 - x1, y2 - y1) / Math.max(grid, span / 160)));
+      for (let s = 0; s < steps; s++) {
+        const x = x1 + ((x2 - x1) * s) / steps, y = y1 + ((y2 - y1) * s) / steps;
+        edge.push({ x, y, h: this.h(doc, x, y) });
+      }
+    });
+    const level = edge.reduce((a, e) => a + e.h, 0) / Math.max(1, edge.length);
+    const cx = w / 2, cy = d / 2;
+    // Rings outward: the edge itself, a short easing, then flat out to far away
+    const rings = [{ out: 0, k: 1 }, { out: span * 0.12, k: 0.55 }, { out: span * 0.45, k: 0.12 }, { out: span * 1.6, k: 0 }, { out: span * 12, k: 0 }];
+    const pos: number[] = [];
+    for (const r of rings) {
+      for (const e of edge) {
+        const dx = e.x - cx, dy = e.y - cy, len = Math.hypot(dx, dy) || 1;
+        // Out from the middle, squared off along the straight edges
+        const ox = Math.abs(dx) / (w / 2) > Math.abs(dy) / (d / 2) - 1e-6 ? Math.sign(dx) : dx / len * 0.6;
+        const oy = Math.abs(dy) / (d / 2) > Math.abs(dx) / (w / 2) - 1e-6 ? Math.sign(dy) : dy / len * 0.6;
+        const ol = Math.hypot(ox, oy) || 1;
+        pos.push(e.x + (ox / ol) * r.out, level + (e.h - level) * r.k - (r.out > 0 ? 0.05 : 0.02), e.y + (oy / ol) * r.out);
+      }
+    }
+    const n = edge.length;
+    const index: number[] = [];
+    for (let r = 0; r < rings.length - 1; r++) {
+      for (let i = 0; i < n; i++) {
+        const a = r * n + i, b = r * n + ((i + 1) % n), c = (r + 1) * n + i, e = (r + 1) * n + ((i + 1) % n);
+        index.push(a, c, b, b, c, e);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(index);
+    geo.computeVertexNormals();
+    const skirt = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: new THREE.Color(doc.groundColor).offsetHSL(0, -0.04, -0.03), side: THREE.DoubleSide }));
+    skirt.name = "landscape";
+    skirt.receiveShadow = true;
+    skirt.visible = visible;
+    noRaycast(skirt);
+    this.skirt = skirt;
+    this.group.add(skirt);
+  }
+
+  /** The tilted and tee views: land out to the horizon instead of the map's cut-away block. */
+  landscape(on: boolean) {
+    if (this.skirt) this.skirt.visible = on;
+    if (this.sides) this.sides.visible = !on;
   }
 
   private updateOverlays(doc: ViewDoc) {
@@ -366,8 +435,10 @@ export class Ground {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
       geo.computeVertexNormals();
-      this.extras.add(noRaycast(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 1, side: THREE.DoubleSide }))));
-    }
+      this.sides = noRaycast(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 1, side: THREE.DoubleSide })));
+      this.extras.add(this.sides);
+    } else this.sides = null;
+    this.buildSkirt(doc, corners, grid);
 
     // Contour lines draped on the ground (every 5th brighter)
     if (doc.overlay !== "off" && doc.contours.segments.length) {

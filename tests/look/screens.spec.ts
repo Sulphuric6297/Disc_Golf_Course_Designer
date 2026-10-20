@@ -201,3 +201,45 @@ test("features close up", async ({ page }) => {
     await page.getByTestId("design-page").screenshot({ path: `look/16-print-${theme}.png` });
   }
 });
+
+test("3d scene: sky, grass and trees", async ({ page }) => {
+  test.setTimeout(240_000);
+  await importSite(page);
+  await seedCourse(page);
+  await page.evaluate(() => {
+    (window as any).__dgEditor().set({ grass: 2, areaKind: "rough" });
+    const d = (window as any).__dgCourse();
+    const W = d.canvas.width, H = d.canvas.height;
+    (window as any).__dgActions.addDrawn("area", [{ x: 0.33 * W, y: 0.8 * H }, { x: 0.4 * W, y: 0.78 * H }, { x: 0.42 * W, y: 0.86 * H }, { x: 0.35 * W, y: 0.9 * H }]);
+    (window as any).__dgEditor().set({ tool: "select" });
+  });
+  await page.keyboard.press("3");
+  await page.waitForTimeout(2000);
+  await shot(page, "17-3d-overview");
+  // Down low over the first hole's fairway
+  await page.evaluate(() => {
+    const v = (window as any).__dgView;
+    const d = (window as any).__dgCourse();
+    const W = d.canvas.width, H = d.canvas.height;
+    const tx = 0.3 * W, ty = 0.8 * H;
+    const h = (x: number, y: number) => v.groundHeight?.(x, y) ?? 0;
+    void v.controls.setLookAt(tx + 30, h(tx, ty) + 18, ty + 60, 0.24 * W, h(0.24 * W, 0.66 * H) + 4, 0.66 * H, false);
+  });
+  await page.waitForTimeout(2500);
+  await shot(page, "17-3d-low");
+  await page.getByTestId("hole-row").first().click();
+  await page.getByTestId("tee-view").click();
+  await page.waitForTimeout(2500);
+  await shot(page, "17-tee-grass");
+  // Looking right, at the tall grass beside the tee
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => {
+    const v = (window as any).__dgView;
+    const d = (window as any).__dgCourse();
+    const W = d.canvas.width, H = d.canvas.height;
+    const ex = 0.3 * W, ey = 0.88 * H;
+    void v.controls.setLookAt(ex, v.groundHeight(ex, ey) + 6, ey, 0.37 * W, v.groundHeight(0.37 * W, 0.84 * H) + 1, 0.84 * H, false);
+  });
+  await page.waitForTimeout(2500);
+  await shot(page, "17-tall-grass");
+});

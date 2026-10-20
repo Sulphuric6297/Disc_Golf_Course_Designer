@@ -64,13 +64,17 @@ been seen working in the browser.
   replicate the owner's reference course's painted maps in every way (looked up online):
   - really dark, speckled trees contrasted with the grass;
   - darker water colors;
-  - earth tones, less bright tones.
-- [ ] **Shadows and light are settings** that can be changed.
+  - earth tones, less bright tones;
+  - trees like the reference sign maker's other course maps: crisp, sponge-dabbed leaf clumps
+    with pale sunlit tops and near-black gaps, and a shade band where the woods meet the grass.
+- [x] **Shadows and light are settings** that can be changed (the painted map's Light and
+  shadow section, and the 3D view's Light and grass panel share one sun).
 - [ ] **Good for visualizing in 3D**, planning a course, and creating beautiful maps.
 - [ ] **Renders look really great, not cheesy 3D**; the 3D view is a true perspective.
-- [ ] **Grass is rendered as blades of grass in 3D**, from short greens up to tall grass.
+- [x] **Grass is rendered as blades of grass in 3D**, from short greens up to tall grass
+  (mown fairways, longer grass between holes, knee-high in the rough).
 - [ ] **Any type of terrain** is handled.
-- [ ] **Placing individual trees** is an option.
+- [x] **Placing individual trees** is an option (the Tree tool: leafy, pine, palm, bush).
 - [ ] **Buildings, bridges and any other infrastructure** are available.
 - [ ] **Industry-standard symbols**, after researching what official disc golf maps use.
 - [ ] **Record and export flyovers** (video); a robust export system.

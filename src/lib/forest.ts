@@ -85,40 +85,64 @@ const fbm = (x: number, y: number) =>
   noise(x * 1.62 - y * 1.22 + 17.1, x * 1.22 + y * 1.62 + 3.7) * 0.3 +
   noise(x * 2.05 + y * 3.57 + 41.3, -x * 3.57 + y * 2.05 + 9.2) * 0.15;
 
-/** Value noise that repeats every `period` units (for seamless tiles). */
-const noiseP = (x: number, y: number, period: number) => {
-  const xi = Math.floor(x), yi = Math.floor(y);
-  let u = x - xi, v = y - yi;
-  u = u * u * (3 - 2 * u);
-  v = v * v * (3 - 2 * v);
-  const w = (q: number) => ((q % period) + period) % period;
-  const x0 = w(xi) & 255, x1 = w(xi + 1) & 255, y0 = (w(yi) & 255) << 8, y1 = (w(yi + 1) & 255) << 8;
-  const a = NOISE[y0 + x0], b = NOISE[y0 + x1], c = NOISE[y1 + x0], d = NOISE[y1 + x1];
-  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-};
 
-// Fine grain (leaves, grass, grit, the curly speckle of sunlit leaves), made once: 512-pixel
+// Fine grain (leaves, grass, grit), made once: 512-pixel
 // squares that repeat without a seam (each noise repeats a whole number of times across the tile)
-let fine: { leaf: Float32Array; grain: Float32Array; grit: Float32Array; speck: Float32Array } | null = null;
+let fine: { leaf: Float32Array; grain: Float32Array; grit: Float32Array } | null = null;
 const fineGrain = () => {
   if (fine) return fine;
   const n = 512 * 512;
-  const leaf = new Float32Array(n), grain = new Float32Array(n), grit = new Float32Array(n), speck = new Float32Array(n);
+  const leaf = new Float32Array(n), grain = new Float32Array(n), grit = new Float32Array(n);
   for (let y = 0, i = 0; y < 512; y++) {
     for (let x = 0; x < 512; x++, i++) {
       leaf[i] = noise(x * 0.5, y * 0.5) * 0.6 + noise(x + 19, y + 5) * 0.4;
       grain[i] = noise(x + 101, y + 37) - 0.5;
       grit[i] = noise(x + 300, y + 70);
-      // Ridges of warped noise: thin, curly light marks like leaves catching the sun
-      // (lightly warped, so the curls don't line up into stripes) and lit blotches between them
-      const wx = (noiseP(x * 0.09375, y * 0.09375, 48) - 0.5) * 9, wy = (noiseP(x * 0.09375 + 9, y * 0.09375 + 4, 48) - 0.5) * 9;
-      const r1 = 1 - Math.abs(noiseP((x + wx) * 0.203125, (y + wy) * 0.203125, 104) * 2 - 1);
-      const r2 = 1 - Math.abs(noiseP((x - wy) * 0.40625 + 5, (y + wx) * 0.40625 + 9, 208) * 2 - 1);
-      const blot = noiseP(x * 0.25 + 3, y * 0.25 + 1, 128) * 0.6 + noiseP(x * 0.5 + 7, y * 0.5 + 2, 256) * 0.4;
-      speck[i] = Math.max(Math.pow(r1, 5) * 0.55 + Math.pow(r2, 5) * 0.35, smooth(0.56, 0.78, blot) * 0.75) + (noiseP(x, y, 512) - 0.5) * 0.18;
     }
   }
-  return (fine = { leaf, grain, grit, speck });
+  return (fine = { leaf, grain, grit });
+};
+
+// Leaf dabs: the frothy texture of painted treetops (hand-made course maps dab the leaves on
+// with a sponge): clusters of little domes, packed into bigger clumps with dark gaps between.
+// A 512-pixel height tile that repeats without a seam, with its slopes, lit later from the sun.
+let dabs: { h: Float32Array; gx: Float32Array; gy: Float32Array } | null = null;
+const leafDabs = () => {
+  if (dabs) return dabs;
+  const S = 512, n = S * S;
+  const clump = new Float32Array(n), small = new Float32Array(n);
+  const rnd = seeded(0x2f6e2b1);
+  /** A dome of radius r at (cx, cy), the higher one winning (wrapping round the tile). */
+  const dome = (f: Float32Array, cx: number, cy: number, r: number, top: number) => {
+    const R = Math.ceil(r);
+    for (let dy = -R; dy <= R; dy++) {
+      for (let dx = -R; dx <= R; dx++) {
+        const q = 1 - (dx * dx + dy * dy) / (r * r);
+        if (q <= 0) continue;
+        const j = (((Math.round(cy) + dy) & (S - 1)) << 9) | ((Math.round(cx) + dx) & (S - 1));
+        const v = top * Math.sqrt(q);
+        if (v > f[j]) f[j] = v;
+      }
+    }
+  };
+  // Clumps of leaves, then the dabs on them (a few in each little square, at random)
+  for (let gy = 0; gy < S; gy += 13) for (let gx = 0; gx < S; gx += 13) {
+    dome(clump, gx + rnd() * 13, gy + rnd() * 13, 6.5 + rnd() * 4, 0.75 + rnd() * 0.25);
+  }
+  for (let gy = 0; gy < S; gy += 4) for (let gx = 0; gx < S; gx += 4) {
+    dome(small, gx + rnd() * 4, gy + rnd() * 4, 2.1 + rnd() * 1.6, 0.6 + rnd() * 0.4);
+  }
+  const h = new Float32Array(n);
+  for (let i = 0; i < n; i++) h[i] = clump[i] > 0 ? clump[i] * 0.55 + small[i] * 0.45 : small[i] * 0.22;
+  const gx = new Float32Array(n), gy = new Float32Array(n);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const i = (y << 9) | x;
+      gx[i] = (h[(y << 9) | ((x + 1) & (S - 1))] - h[(y << 9) | ((x - 1) & (S - 1))]) * 0.5;
+      gy[i] = (h[(((y + 1) & (S - 1)) << 9) | x] - h[(((y - 1) & (S - 1)) << 9) | x]) * 0.5;
+    }
+  }
+  return (dabs = { h, gx, gy });
 };
 
 const smooth = (a: number, b: number, x: number) => {
@@ -386,7 +410,8 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
   const stands = coarse((u, v) => fbm(u * 0.018 + 5, v * 0.018 + 9));
   const treeEdge = coarse((u, v) => fbm(u * 0.09 + 31, v * 0.09 + 7));
   const clumps = coarse((u, v) => fbm(u * 0.035 + 61, v * 0.035 + 2));
-  const { leaf: LEAF, grain: GRAIN, grit: GRIT, speck: SPECK } = fineGrain();
+  const { leaf: LEAF, grain: GRAIN, grit: GRIT } = fineGrain();
+  const { h: DH, gx: DGX, gy: DGY } = leafDabs();
 
   // Wooded, cell by cell: drawn woods; or everywhere, or where the photo shows trees
   const site = (p: P) => p.x >= -doc.canvas.width * 0.5 && p.y >= -doc.canvas.height * 0.5 && p.x <= doc.canvas.width * 1.5 && p.y <= doc.canvas.height * 1.5;
@@ -555,7 +580,7 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
     o2.width = mw;
     o2.height = mh;
     const g2 = o2.getContext("2d", { willReadFrequently: true })!;
-    g2.filter = `blur(${3 * (pt / cell)}px)`;
+    g2.filter = `blur(${4.5 * (pt / cell)}px)`;
     g2.drawImage(cov, 0, 0);
     return g2.getImageData(0, 0, mw, mh).data;
   })();
@@ -566,7 +591,8 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
   // Every surface is a brightness, cut into a few tones of its own earthy palette (the
   // painted, cut-out look of hand-made course maps); `paint` 0 blends the tones smoothly
   const crisp = Math.max(0, Math.min(1, s.paint ?? 0.8));
-  const woods = palette(s.trees, [0.42, 0.58, 0.76, 0.94, 1.16, 1.5, 2.05], 6, 0.95);
+  // Near-black gaps up to pale, sunlit sage tops
+  const woods = palette(s.trees, [0.5, 0.64, 0.8, 0.96, 1.14, 1.4, 1.8, 2.4], 6, 0.82);
   const fair = palette(s.fairway, [0.56, 0.7, 0.84, 1, 1.14, 1.28], 4);
   const lawn = palette(s.rough, [0.6, 0.76, 0.9, 1.04, 1.18], 3);
   const floorPal = palette(s.trees, [0.3, 0.42, 0.56], 0);
@@ -593,6 +619,10 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
   };
   const thick = smooth(0.55, 1, cover);
   const bump = crownR * 0.75;
+  // Leaf dabs grow with the page's resolution (tile pixels per pixel); the crowns' own slope is
+  // softened so the dabs carry the texture
+  const dabK = 1 / Math.max(0.5, pt * 0.85);
+  const bumpK = 2.2;
   const img = ctx.createImageData(W, H);
   const o = img.data;
   let cr = 0, cg = 0, cb = 0;
@@ -623,13 +653,22 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
         const gx = (hr - hl) * 0.5, gy = (hd - hu) * 0.5;
         const lam = Math.max(0, (-gx * L.x - gy * L.y + L.z) / Math.sqrt(gx * gx + gy * gy + 1));
         const sun = sunlit(x, y, h);
-        // Dark leaves with curly light speckles where the sun catches them
-        const speck = SPECK[tr | (x & 511)];
-        // (the domes only shade a little: the leaves' speckle and the stands make the texture)
+        // Leaf dabs on the treetop, lit by the sun: pale froth on the sunny side of each clump,
+        // near-black gaps between them
+        const fx = x * dabK, fy = y * dabK;
+        const ix = fx | 0, iy = fy | 0, ax = fx - ix, ay = fy - iy;
+        const r0 = (iy & 511) << 9, r1 = ((iy + 1) & 511) << 9, c0x = ix & 511, c1x = (ix + 1) & 511;
+        const w00 = (1 - ax) * (1 - ay), w10 = ax * (1 - ay), w01 = (1 - ax) * ay, w11 = ax * ay;
+        const j00 = r0 | c0x, j10 = r0 | c1x, j01 = r1 | c0x, j11 = r1 | c1x;
+        const dh = DH[j00] * w00 + DH[j10] * w10 + DH[j01] * w01 + DH[j11] * w11;
+        const nx = gx / bumpK + (DGX[j00] * w00 + DGX[j10] * w10 + DGX[j01] * w01 + DGX[j11] * w11) * 3.5;
+        const ny = gy / bumpK + (DGY[j00] * w00 + DGY[j10] * w10 + DGY[j01] * w01 + DGY[j11] * w11) * 3.5;
+        const lit = Math.max(0, (-nx * L.x - ny * L.y + L.z) / Math.sqrt(nx * nx + ny * ny + 1));
+        const occ = smooth(0.04, 0.5, dh);
         const shade = 1 - shadowK * 0.9 * (1 - sun);
-        let v = (0.36 + 0.24 * lam) * shade;
-        v += (speck - 0.2) * 0.72 * (0.35 + 0.65 * sun) * (0.6 + 0.4 * lam);
-        v += at(stands, x, y) * 0.3 + ((kind[i] % 3) - 1) * 0.025;
+        let v = (0.17 + 0.6 * lit) * (0.52 + 0.48 * occ) * shade;
+        v += smooth(0.8, 0.97, lit) * occ * sun * 0.1;
+        v += at(stands, x, y) * 0.2 + ((kind[i] % 3) - 1) * 0.025 + (lam - 0.6) * 0.12;
         v *= 0.8 + 0.2 * rf;
         tone(woods, v);
         cr = tr0; cg = tg0; cb = tb0;
@@ -637,7 +676,8 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
         // The ground: grass, or the dark floor under the trees, then what is drawn on it
         const sun = groundSun[(y >> 1) * hw + (x >> 1)];
         const ao = near[m4] / 255;
-        const lit = (1 - shadowK * 0.75 * (1 - sun)) * (1 - 0.55 * shadowK * ao * ao) * rf;
+        // (the grass darkens in a band along the trees, as on painted maps)
+        const lit = (1 - shadowK * 0.75 * (1 - sun)) * (1 - 0.62 * shadowK * ao) * rf;
         const mott = at(mottle, x, y);
         const grain = GRAIN[tr | (x & 511)];
         if (wooded[m]) {

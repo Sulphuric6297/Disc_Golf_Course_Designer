@@ -1,0 +1,81 @@
+// The 3D view's light and grass: the course's sun (the same one that lights the painted map),
+// shadows and brightness, and how much grass to draw (a setting of this device).
+import { useState } from "react";
+import { Sun, X } from "lucide-react";
+import { useCourse, useEditor } from "../state/course";
+import { FROM, StyleSlider, setStyle, signed } from "./DesignPanel";
+import { Segmented, Toggle } from "./ui";
+import { LandscapePicker } from "./LandscapePicker";
+import { RotateCcw } from "lucide-react";
+
+export function SceneButton({ className = "" }: { className?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`relative pointer-events-auto ${className}`}>
+      <button
+        className={`bg-zinc-900/85 backdrop-blur rounded-lg w-8 h-8 flex items-center justify-center border shadow transition-colors ${open ? "border-orange-500 text-orange-300" : "border-zinc-700/60 text-amber-300 hover:text-amber-200"}`}
+        title="Light and grass"
+        aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+        data-testid="scene-button"
+      >
+        <Sun size={16} />
+      </button>
+      {open && <ScenePanel onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
+function ScenePanel({ onClose }: { onClose: () => void }) {
+  const s = useCourse(c => c.doc.style);
+  const ro = useEditor(e => e.viewOnly);
+  const grass = useEditor(e => e.grass);
+  const wind = useEditor(e => e.wind);
+  const set = useEditor(e => e.set);
+  return (
+    <div className="absolute right-0 top-10 w-72 rounded-xl bg-zinc-900/95 backdrop-blur border border-zinc-700 shadow-2xl p-3 z-30 text-left" data-testid="scene-panel">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm font-semibold text-zinc-100">Light and grass</div>
+        <div className="flex items-center gap-2">
+          {!ro && (
+            <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ sunAngle: 315, sunHeight: 38, shadows: 0.65, light: 0 })}>
+              <RotateCcw size={12} /> Reset
+            </button>
+          )}
+          <button className="text-zinc-400 hover:text-white" title="Close" onClick={onClose}><X size={15} /></button>
+        </div>
+      </div>
+      {!ro && (
+        <>
+          <StyleSlider k="sunAngle" value={s.sunAngle ?? 315} label="Sun from the" min={0} max={359} step={5} format={x => FROM[Math.round(x / 45) % 8]} />
+          <StyleSlider k="sunHeight" value={s.sunHeight ?? 38} label="Sun height" min={12} max={80} step={2} format={x => `${Math.round(x)}° · ${x < 25 ? "evening" : x < 50 ? "afternoon" : "midday"}`} />
+          <StyleSlider k="shadows" value={s.shadows ?? 0.65} label="Shadows" min={0} max={1} step={0.05} format={x => `${Math.round(x * 100)}%`} />
+          <StyleSlider k="light" value={s.light ?? 0} label="Brightness" min={-0.3} max={0.3} step={0.02} format={signed} />
+          <p className="text-[11px] text-zinc-500 mb-2">The same sun lights the painted course map.</p>
+        </>
+      )}
+      {!ro && (
+        <>
+          <div className="text-xs text-zinc-300 mb-1">Landscape</div>
+          <LandscapePicker />
+          <div className="h-2" />
+        </>
+      )}
+      <div className="text-xs text-zinc-300 mb-1">Grass blades</div>
+      <Segmented
+        label="Grass blades"
+        value={grass}
+        onChange={v => set({ grass: v })}
+        options={[
+          { value: "auto", label: "Auto", title: "On with a graphics card, off without one" },
+          { value: 0, label: "Off" },
+          { value: 1, label: "Low" },
+          { value: 2, label: "Medium" },
+          { value: 3, label: "High" }
+        ]}
+      />
+      <p className="text-[11px] text-zinc-500 mt-1 mb-2">Short on fairways, longer between holes, tall in the rough. Seen when the view is tilted and close to the ground.</p>
+      <Toggle label="Grass sways in the wind" checked={wind} onChange={v => set({ wind: v })} />
+    </div>
+  );
+}

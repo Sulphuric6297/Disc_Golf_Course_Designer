@@ -79,7 +79,7 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
         </Field>
       </Section>
       <Section title="Map display">
-        <Toggle label="Satellite photo" checked={ed.photo} onChange={v => ed.set({ photo: v })} hint={ed.photo ? undefined : "Showing the drawn map in the Design step's colors."} />
+        <Toggle label="Satellite photo" checked={ed.photo} onChange={v => ed.set({ photo: v })} hint={ed.photo ? undefined : "Showing the course in its landscape's natural colors (Design step)."} />
         <Toggle label="Contour lines" checked={ed.contours} onChange={v => ed.set({ contours: v })} />
         <Toggle label="Hill shading" checked={ed.shading} onChange={v => ed.set({ shading: v })} />
         <Toggle label="Ground texture up close" checked={ed.groundDetail} onChange={v => ed.set({ groundDetail: v })} />

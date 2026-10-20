@@ -126,11 +126,16 @@ type EditorStore = {
   contours: boolean;
   shading: boolean;
   groundDetail: boolean;
+  /** 3D grass blades: automatic (off without a graphics card), off, or low to high detail. */
+  grass: "auto" | 0 | 1 | 2 | 3;
+  /** Grass sways in the wind (from a tee and in flyovers). */
+  wind: boolean;
   set: (patch: Partial<Omit<EditorStore, "set">>) => void;
 };
 
 const DISPLAY_KEY = "dg.display";
-const savedDisplay = (): Partial<Pick<EditorStore, "photo" | "contours" | "shading" | "groundDetail">> => {
+const DISPLAY = ["photo", "contours", "shading", "groundDetail", "grass", "wind"] as const;
+const savedDisplay = (): Partial<Pick<EditorStore, (typeof DISPLAY)[number]>> => {
   try {
     return JSON.parse(localStorage.getItem(DISPLAY_KEY) ?? "{}");
   } catch {
@@ -161,12 +166,14 @@ export const useEditor = create<EditorStore>()(set => ({
   contours: true,
   shading: true,
   groundDetail: true,
+  grass: "auto",
+  wind: true,
   ...(typeof localStorage !== "undefined" ? savedDisplay() : {}),
   set: patch => {
     set(patch);
-    if (["photo", "contours", "shading", "groundDetail"].some(k => k in patch)) {
-      const { photo, contours, shading, groundDetail } = useEditor.getState();
-      try { localStorage.setItem(DISPLAY_KEY, JSON.stringify({ photo, contours, shading, groundDetail })); } catch { /* private mode */ }
+    if (DISPLAY.some(k => k in patch)) {
+      const s = useEditor.getState();
+      try { localStorage.setItem(DISPLAY_KEY, JSON.stringify(Object.fromEntries(DISPLAY.map(k => [k, s[k]])))); } catch { /* private mode */ }
     }
   }
 }));
