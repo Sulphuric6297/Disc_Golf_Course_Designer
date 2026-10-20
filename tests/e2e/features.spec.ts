@@ -418,3 +418,17 @@ test("a placed path made longer from either end with its + handles", async ({ pa
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === path.id).points.length).toBe(3);
 });
+
+test("a tree made taller keeps its shape: its crown grows with it, and in 3D it is never stretched thin", async ({ page }) => {
+  await blankCourse(page);
+  await page.keyboard.press("v");
+  await page.evaluate(() => (window as any).__dgActions.placeAt("add-tree", { x: 500, y: 500 }));
+  const tree = (await course(page)).items.find((i: any) => i.type === "tree");
+  await page.evaluate(id => (window as any).__dgActions.select(id), tree.id);
+  const h0 = tree.height ?? tree.radius * 2.6;
+  await page.getByRole("slider", { name: "Height" }).fill(String(Math.round(h0 * 2)));
+  await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === tree.id).height).toBe(Math.round(h0 * 2));
+  const r = (await course(page)).items.find((i: any) => i.id === tree.id).radius;
+  expect(r / tree.radius).toBeGreaterThan(1.8);
+  expect(r / tree.radius).toBeLessThan(2.2);
+});
