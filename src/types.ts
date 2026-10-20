@@ -473,6 +473,8 @@ export interface CourseDoc {
   rules: CourseRules;
   /** How flyovers fly (unset: FLYOVER_DEFAULTS). */
   flyover?: Partial<FlyoverSettings>;
+  /** Checks set aside (their ids: see SafetyIssue). */
+  ignoredChecks?: string[];
 }
 
 /** Settings for the checks and the par estimate. */

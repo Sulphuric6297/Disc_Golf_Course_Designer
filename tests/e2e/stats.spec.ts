@@ -2,7 +2,7 @@
 import { test, expect } from "@playwright/test";
 import { FAIRWAY_STATIONS, createArea, createBasket, createEmptyCourse, createLine, createTee, createTree, fairwayOutline, fairwayWidthAt, newHole } from "../../src/lib/course";
 import { corridor, pathLength, pointInPolygon, smoothPath } from "../../src/lib/geom";
-import { courseTotals, designChecks, holeStats, isOb, parForDistance, safetyIssues } from "../../src/lib/holeStats";
+import { courseTotals, designChecks, holeStats, isOb, openIssues, parForDistance, safetyIssues } from "../../src/lib/holeStats";
 import type { CourseDoc, P, TeeLevel } from "../../src/types";
 
 /** A course with holes from [tee, basket] pairs, on flat ground (or with `heights`). */
@@ -113,6 +113,23 @@ test.describe("safety and design checks", () => {
     // A set safe distance is used instead
     far.rules.safetyGapFt = 200;
     expect(safetyIssues(far).some(i => /apart \(200 ft recommended\)/.test(i.text))).toBe(true);
+  });
+
+  test("each check keeps its id as the course changes, and checks set aside are left out", () => {
+    const doc = make([[{ x: 100, y: 300 }, { x: 500, y: 300 }], [{ x: 500, y: 340 }, { x: 100, y: 340 }]]);
+    const near = safetyIssues(doc).find(i => /apart/.test(i.text))!;
+    // (the second hole moved a little: another gap in its text, the same check)
+    const moved = { ...doc, items: doc.items.map((it, k) => (k >= 2 ? { ...it, y: 330 } : it)) as CourseDoc["items"] };
+    const again = safetyIssues(moved).find(i => /apart/.test(i.text))!;
+    expect(again.text).not.toBe(near.text);
+    expect(again.id).toBe(near.id);
+    const ids = safetyIssues(doc).map(i => i.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    // Set aside: out of the open checks, in the ignored ones
+    const { open, ignored } = openIssues({ ignoredChecks: [near.id] }, safetyIssues(doc));
+    expect(open.some(i => i.id === near.id)).toBe(false);
+    expect(ignored.map(i => i.id)).toEqual([near.id]);
+    expect(openIssues({}, safetyIssues(doc)).open).toHaveLength(ids.length);
   });
 
   test("throwing across a road or a path, and over a parking lot", () => {

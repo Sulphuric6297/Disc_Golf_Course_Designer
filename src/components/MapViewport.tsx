@@ -5,7 +5,7 @@ import { CourseView } from "../viewport/CourseView";
 import type { ViewDoc, ViewInfo } from "../viewport/types";
 import { useCourse, useEditor, updateItem, updateHole, useCourse as courseStore } from "../state/course";
 import { addDrawn, addHole, boxSelect, moveGroup, placeAt, select } from "../state/actions";
-import { holeStats, safetyIssues } from "../lib/holeStats";
+import { holeStats, openIssues, safetyIssues } from "../lib/holeStats";
 import { contoursOf, hillshadeCanvas } from "../lib/relief";
 import { terrainStats, heightAt } from "../lib/terrainGrid";
 import { niceScaleBar } from "../lib/view";
@@ -78,7 +78,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const terrain = useMemo(() => terrainStats(doc.terrainHeights), [doc.terrainHeights]);
   const contours = useMemo(() => (ed.contours ? contoursOf(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height) : { segments: [], interval: 1 }), [ed.contours, doc.terrainHeights, doc.gridSize, doc.canvas]);
   const shadeUrl = useMemo(() => (ed.shading && terrain.relief > 1 && (doc.style.reliefScale ?? 1) > 0 ? hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, undefined, doc.style.reliefScale ?? 1).toDataURL() : null), [ed.shading, terrain.relief, doc.terrainHeights, doc.gridSize, doc.canvas, doc.style.reliefScale]);
-  const issues = useMemo(() => (ed.step === "review" ? safetyIssues(doc, stats) : null), [ed.step, doc, stats]);
+  const issues = useMemo(() => (ed.step === "review" ? openIssues(doc, safetyIssues(doc, stats)).open : null), [ed.step, doc, stats]);
   // From a tee and in flyovers: the ground in the Design look (the painted map), not the photo
   const paintedOn = !!ed.teeView && ed.flyLook === "painted" && !!doc.holes.length;
   const painted = usePaintedGround(paintedOn);

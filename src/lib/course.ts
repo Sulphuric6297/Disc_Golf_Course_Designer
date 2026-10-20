@@ -113,6 +113,7 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
     layouts: raw.layouts?.length ? raw.layouts : base.layouts,
     terrainHeights: raw.terrainHeights ?? {},
     groundPaint: raw.groundPaint ?? {},
+    ignoredChecks: Array.isArray(raw.ignoredChecks) ? raw.ignoredChecks.filter(x => typeof x === "string") : undefined,
     version: 1
   };
   if (!doc.layouts.some(l => l.id === doc.activeLayout)) doc.activeLayout = doc.layouts[0].id;

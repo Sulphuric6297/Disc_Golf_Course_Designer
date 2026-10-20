@@ -1,10 +1,10 @@
 // The side panel follows the steps: what to do now, and the lists for it. The map stays the one
 // canvas; the steps never lock anything.
 import { useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, CircleDot, ClipboardCheck, Download, Info, MapPinned, Palette, Pentagon, Plus, Route, Signpost, Spline, Trash2, TreeDeciduous, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowRight, CircleDot, ClipboardCheck, Download, Eye, EyeOff, Info, MapPinned, Palette, Pentagon, Plus, Route, Signpost, Spline, Trash2, TreeDeciduous, type LucideIcon } from "lucide-react";
 import { AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
 import { activeLayout, holeTees } from "../lib/course";
-import { courseTotals, holeStats, levelsOnCourse, safetyIssues, type SafetyIssue } from "../lib/holeStats";
+import { courseTotals, holeStats, levelsOnCourse, openIssues, safetyIssues, type SafetyIssue } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { select } from "../state/actions";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
@@ -288,7 +288,14 @@ function ReviewStep() {
   const doc = useCourse(s => s.doc);
   const stats = useMemo(() => doc.holes.map(h => holeStats(doc, h)), [doc]);
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
-  const issues = useMemo(() => safetyIssues(doc, stats), [doc, stats]);
+  const all = useMemo(() => safetyIssues(doc, stats), [doc, stats]);
+  const { open: issues, ignored } = openIssues(doc, all);
+  const ignore = (id: string, off: boolean) =>
+    changeDoc(d => {
+      const list = (d.ignoredChecks ?? []).filter(x => x !== id);
+      return { ignoredChecks: off ? [...list, id] : list.length ? list : undefined };
+    });
+  const [showIgnored, setShowIgnored] = useState(false);
   const u = doc.units;
   const layout = activeLayout(doc);
   const levels = levelsOnCourse(doc);
@@ -311,10 +318,10 @@ function ReviewStep() {
           <p className="text-xs text-emerald-300">No problems found.</p>
         ) : (
           <ul className="space-y-1">
-            {issues.map((issue, i) => (
-              <li key={i}>
+            {issues.map(issue => (
+              <li key={issue.id} className="flex items-start gap-1 group">
                 <button
-                  className="w-full flex gap-2 items-start text-left text-xs text-zinc-200 hover:bg-zinc-800 rounded px-1.5 py-1"
+                  className="flex-1 min-w-0 flex gap-2 items-start text-left text-xs text-zinc-200 hover:bg-zinc-800 rounded px-1.5 py-1"
                   data-testid="issue-row"
                   onClick={() => {
                     if (issue.holes[0]) select(issue.holes[0]);
@@ -324,9 +331,31 @@ function ReviewStep() {
                   <IssueIcon level={issue.level} />
                   {issue.text}
                 </button>
+                <button className="shrink-0 p-1 touch:p-2.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800" title="Ignore" aria-label="Ignore" data-testid="issue-ignore" onClick={() => ignore(issue.id, true)}>
+                  <EyeOff size={13} />
+                </button>
               </li>
             ))}
           </ul>
+        )}
+        {ignored.length > 0 && (
+          <div className="mt-2" data-testid="issues-ignored">
+            <button className="text-[11px] text-zinc-400 hover:text-zinc-200" aria-expanded={showIgnored} onClick={() => setShowIgnored(v => !v)}>
+              Ignored ({ignored.length})
+            </button>
+            {showIgnored && (
+              <ul className="space-y-1 mt-1">
+                {ignored.map(issue => (
+                  <li key={issue.id} className="flex items-start gap-1 text-xs text-zinc-500" data-testid="ignored-row">
+                    <span className="flex-1 min-w-0 flex gap-2 items-start px-1.5 py-1"><IssueIcon level={issue.level} />{issue.text}</span>
+                    <button className="shrink-0 p-1 touch:p-2.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800" title="Check again" aria-label="Check again" onClick={() => ignore(issue.id, false)}>
+                      <Eye size={13} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
         <div className="mt-3 border-t border-zinc-800 pt-2">
           <Field label="Safe distance between holes">
