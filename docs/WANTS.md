@@ -134,3 +134,48 @@ been seen working in the browser.
     upright phone, dialogs as sheets from the bottom, readable text;
   - "make sure mobile works performance perfectly": the sheet slides on the GPU, no frosted
     glass over the map, measured on a throttled phone profile (`docs/RESEARCH.md`).
+
+## Fourth round (after going live)
+
+The goal behind every item: beautiful, aesthetic course maps. Ticked only once done in full, seen
+working in the browser and tested.
+
+Site and import
+- [ ] **OpenStreetMap rivers, roads and paths actually come in** (busy servers, rivers and lakes
+  mapped in pieces, cut to the site; Try again when unreachable; update from the Site step).
+- [ ] **Imports bring large stretches of trees, water and grass in as areas** (Woods, Water, grass
+  areas), not just single trees.
+- [ ] **The map can be made bigger or smaller without losing the design** (holes and features
+  stay on the same ground).
+
+Editing
+- [ ] **Drag to select several items at once**, and work on them together.
+- [ ] **Several holes (their own numbers and tees) can share one basket.**
+- [ ] **Fairways bend**, not just straight lines.
+- [ ] **Walks from one hole to the next are fully editable**; a drawn walk replaces the
+  automatic one in the final design.
+- [ ] **Buildings are editable like in the Security Camera Planner.**
+- [ ] **Buildings and other shapes can be drawn as rectangles** (it only did points).
+- [ ] **Buildings needn't look like houses; a shelter can be a gazebo.**
+- [ ] **Trees placed on a fairway or in its rough show as placed**, not swallowed by or cleared
+  for the painted woods.
+- [ ] **A tree brush** (offered; not asked yet).
+
+Map design
+- [ ] **Forest is the only style**; the styles are variations of landscape and colors (the other
+  styles are gone). Landscape, light and shadow, symbols and the rest stay.
+- [ ] **No explainers anywhere** in the app or on what it prints (never add any).
+- [ ] **The legend can be moved anywhere on the map.**
+- [ ] **Elevation scaling is a setting** that can be fine-tuned.
+- [ ] **Map keys list only what is on that map** (the hole card's key).
+- [ ] **The hole card's whole style is editable** (colors and such).
+- [ ] **The tee sign's info column looks good** (it was sparse, with a "course map" of bare lines).
+- [ ] **Scorecards look like the Innova card** (Distance or Par, Name, 1–9, Front, 10–18, Back,
+  Total; Date, Par, Course), with a place to upload the course logo.
+
+3D and flyovers
+- [ ] **Flyovers are beautiful, in the Design look** (the ground rendered as designed, not the
+  satellite photo).
+- [ ] **Flyovers can be keyframed**; camera position, height, speed and field of view are
+  settings.
+- [ ] **The default flyover avoids trees.**
