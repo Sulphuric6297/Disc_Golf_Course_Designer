@@ -157,6 +157,8 @@ export type ItemType = CourseItem["type"];
  * order of play. */
 export interface Hole {
   id: string;
+  /** Its number, typed in (unset: the first number free, in course order). */
+  number?: number;
   /** Shown name, e.g. "The Gauntlet" (optional). */
   name?: string;
   /** Par set by hand; unset: worked out from the hole's length, elevation and shape. */

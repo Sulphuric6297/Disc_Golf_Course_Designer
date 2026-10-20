@@ -107,8 +107,9 @@ export function ExportPanel() {
       const s = await paintedForPrint(150, () => renderTeeSign(d, d.holes[i].id, signSize, relief));
       if (!s) continue;
       // UDisc takes tee sign pictures up to 5 MB
-      zip.file(`hole-${two(i + 1)}.png`, await pngUnder(s.svg, s.width, s.height, 4.8 * 1024 * 1024, 150));
-      zip.file(`hole-${two(i + 1)}.svg`, s.svg);
+      const no = two(holeNumber(d, d.holes[i].id));
+      zip.file(`hole-${no}.png`, await pngUnder(s.svg, s.width, s.height, 4.8 * 1024 * 1024, 150));
+      zip.file(`hole-${no}.svg`, s.svg);
     }
     download(await zip.generateAsync({ type: "blob" }), fileName(d, "-tee-signs.zip"));
   });

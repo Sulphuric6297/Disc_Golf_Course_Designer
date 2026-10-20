@@ -1,6 +1,6 @@
 // The panel for what is selected: a hole (par, fairway, notes, numbers, profile) or one item.
-import { useEffect, useMemo } from "react";
-import { ArrowDown, ArrowUp, Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
 import { autoWalks, CURVED_LINES, holeBaskets, holeNumber, holeTees, ITEM_LABELS, wholeHoles } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
@@ -9,7 +9,7 @@ import { STRUCTURE_INK } from "../lib/symbols";
 import { holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { addHoleOb, deleteSelection, duplicateSelection, editWalks, select, setTeeLevel, shareBasket } from "../state/actions";
-import { changeDoc, moveHole, updateHole, updateItem, useCourse, useEditor } from "../state/course";
+import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
 import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface, TreeKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { HoleFlight } from "./FlyoverSettings";
@@ -28,6 +28,37 @@ const bendHole = (line: P[], side: 1 | -1): P[] => {
   const off = (len / 6) * side;
   return [{ x: (a.x + b.x) / 2 - ((b.y - a.y) / len) * off, y: (a.y + b.y) / 2 + ((b.x - a.x) / len) * off }];
 };
+
+/** A hole's number, typed in (kept on Enter or when the field is left; Esc puts it back). */
+function HoleNumberInput({ holeId, value }: { holeId: string; value: number }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  const keep = () => {
+    const v = Math.round(Number(text));
+    if (Number.isFinite(v) && v >= 1 && v <= 999) setHoleNumber(holeId, v);
+    else setText(String(value));
+  };
+  return (
+    <label className="flex flex-col items-center gap-0.5 shrink-0">
+      <span className="text-[10px] uppercase tracking-wider text-zinc-400">No.</span>
+      <input
+        aria-label="Hole number"
+        data-testid="hole-number"
+        inputMode="numeric"
+        className="w-14 touch:w-16 h-8 touch:h-11 rounded-lg bg-zinc-800 border border-zinc-700 text-center text-sm touch:text-base font-bold text-zinc-50 focus:outline-none focus:border-orange-400"
+        value={text}
+        onChange={e => setText(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))}
+        onFocus={e => e.target.select()}
+        onBlur={keep}
+        onKeyDown={e => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          else if (e.key === "Escape") { setText(String(value)); (e.target as HTMLInputElement).blur(); }
+          e.stopPropagation();
+        }}
+      />
+    </label>
+  );
+}
 
 function HoleInspector({ hole }: { hole: Hole }) {
   const doc = useCourse(s => s.doc);
@@ -51,13 +82,9 @@ function HoleInspector({ hole }: { hole: Hole }) {
             <div className="text-sm font-bold text-zinc-50 truncate" data-testid="inspector-title">Hole {n}{hole.name ? ` · ${hole.name}` : ""}</div>
             <div className="text-xs text-zinc-400">{s.complete ? `${fmtDist(s.length, u)} · Par ${s.par} · ${shapeText[s.shape]}` : s.teeId ? "Needs a basket" : "Needs a tee"}</div>
           </div>
-          {!ro && (
-            <div className="flex flex-col">
-              <button className="text-zinc-400 hover:text-white disabled:opacity-30" title="Play it earlier" aria-label="Move hole earlier" disabled={n <= 1} onClick={() => moveHole(hole.id, n - 2)}><ArrowUp size={15} /></button>
-              <button className="text-zinc-400 hover:text-white disabled:opacity-30" title="Play it later" aria-label="Move hole later" disabled={n >= doc.holes.length} onClick={() => moveHole(hole.id, n)}><ArrowDown size={15} /></button>
-            </div>
-          )}
+          {!ro && <HoleNumberInput holeId={hole.id} value={n} />}
         </div>
+        {!ro && doc.holes.some(h => h.id !== hole.id && holeNumber(doc, h.id) === n) && <div className="text-xs text-amber-300 -mt-1 mb-2" data-testid="hole-number-taken">Another hole is also Hole {n}</div>}
         {s.complete && (
           <div className="grid grid-cols-3 gap-1.5" data-testid="hole-stats">
             <Stat label="Length" value={fmtDist(s.length, u)} />
@@ -230,7 +257,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
   const ro = useEditor(e => e.viewOnly);
   const u = doc.units;
   const set = (patch: Record<string, unknown>, history = true) => updateItem(item.id, patch as Partial<CourseItem>, history);
-  const holeOptions = [{ value: "", label: "Whole course" }, ...doc.holes.map((h, i) => ({ value: h.id, label: `Hole ${i + 1}` }))];
+  const holeOptions = [{ value: "", label: "Whole course" }, ...doc.holes.map(h => ({ value: h.id, label: `Hole ${holeNumber(doc, h.id)}` }))];
   const holePicker = (
     <Field label="Belongs to">
       <select aria-label="Belongs to hole" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={("holeId" in item && item.holeId) || ""} onChange={e => set({ holeId: e.target.value || undefined })}>

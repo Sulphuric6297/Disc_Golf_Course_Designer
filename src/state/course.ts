@@ -1,7 +1,7 @@
 // The open course (the saved document) with undo and redo, and the editor's own state.
 import { create } from "zustand";
 import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, PinPosition, DrawShape, StructureKind } from "../types";
-import { createEmptyCourse } from "../lib/course";
+import { byNumber, createEmptyCourse, holeNumber, holeNumbers } from "../lib/course";
 
 const HISTORY = 120;
 
@@ -87,15 +87,16 @@ export const removeHole = (holeId: string) =>
       })
   }));
 
-export const moveHole = (holeId: string, to: number) =>
+/** A hole's number, typed in: every other hole keeps the number it has (they all keep them from
+ * now on), and the holes go in the order of their numbers. */
+export const setHoleNumber = (holeId: string, n: number) => {
+  const doc = getDoc();
+  if (!doc.holes.some(h => h.id === holeId) || holeNumber(doc, holeId) === n) return;
   changeDoc(d => {
-    const holes = [...d.holes];
-    const from = holes.findIndex(h => h.id === holeId);
-    if (from < 0) return {};
-    const [h] = holes.splice(from, 1);
-    holes.splice(Math.max(0, Math.min(holes.length, to)), 0, h);
-    return { holes };
+    const nums = holeNumbers(d.holes);
+    return { holes: byNumber(d.holes.map(h => ({ ...h, number: h.id === holeId ? n : nums.get(h.id)! }))) };
   });
+};
 
 // --- Editor state (not saved with the course) ---
 

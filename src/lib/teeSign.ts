@@ -216,10 +216,10 @@ export const renderScorecard = (doc: CourseDoc, players = 5) => {
   type Col = { label: string; holes: number[]; total?: boolean; extra?: boolean };
   const cols: Col[] = [];
   const front = split ? Math.ceil(stats.length / 2) : stats.length;
-  for (let i = 0; i < front; i++) cols.push({ label: String(i + 1), holes: [i] });
+  for (let i = 0; i < front; i++) cols.push({ label: String(stats[i].number), holes: [i] });
   if (split) {
     cols.push({ label: "Front", holes: Array.from({ length: front }, (_, i) => i), total: true });
-    for (let i = front; i < stats.length; i++) cols.push({ label: String(i + 1), holes: [i] });
+    for (let i = front; i < stats.length; i++) cols.push({ label: String(stats[i].number), holes: [i] });
     cols.push({ label: "Back", holes: Array.from({ length: stats.length - front }, (_, i) => front + i), total: true });
   }
   cols.push({ label: "Total", holes: stats.map((_, i) => i), total: true });

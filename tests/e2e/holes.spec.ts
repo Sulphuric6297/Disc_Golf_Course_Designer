@@ -133,19 +133,40 @@ test("another tee and pin for a hole, and layouts pick between them", async ({ p
   await expect(page.getByTestId("hole-row")).toContainText("354 ft");
 });
 
-test("holes can be reordered and deleted (with undo)", async ({ page }) => {
+test("hole numbers typed in (any number, others keep theirs); deleted with undo", async ({ page }) => {
   await blankCourse(page);
   const a = await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
   const b = await addHole(page, { x: 600, y: 600 }, { x: 900, y: 600 });
+  const c = await addHole(page, { x: 200, y: 800 }, { x: 500, y: 800 });
+  await page.keyboard.press("Escape");
+  // The last one typed as 27 (more than there are holes): the others keep 1 and 2
+  await page.getByTestId("hole-row").nth(2).click();
+  await page.getByTestId("hole-number").fill("27");
+  await page.getByTestId("hole-number").press("Enter");
+  await expect.poll(async () => (await course(page)).holes.map((h: any) => [h.id, h.number])).toEqual([[a.id, 1], [b.id, 2], [c.id, 27]]);
+  await expect(page.getByTestId("inspector-title")).toHaveText("Hole 27");
+  // The second as 1: before the first now, which stays 1 too (shown, not renumbered)
+  await page.getByTestId("hole-row").nth(1).click();
+  await page.getByTestId("hole-number").fill("1");
+  await page.getByTestId("hole-number").press("Enter");
+  await expect.poll(async () => (await course(page)).holes.map((h: any) => [h.id, h.number])).toEqual([[a.id, 1], [b.id, 1], [c.id, 27]]);
+  await expect(page.getByTestId("hole-number-taken")).toBeVisible();
+  await page.getByTestId("hole-number").fill("3");
+  await page.getByTestId("hole-number").press("Enter");
+  await expect.poll(async () => (await course(page)).holes.map((h: any) => [h.id, h.number])).toEqual([[a.id, 1], [b.id, 3], [c.id, 27]]);
+  await expect(page.getByTestId("hole-number-taken")).toHaveCount(0);
+  // A new hole takes the first number free (2)
+  await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 100, minY: 100, maxX: 1000, maxY: 900 }, { animate: false }));
+  const d = await addHole(page, { x: 700, y: 200 }, { x: 950, y: 200 });
+  await expect.poll(async () => (await course(page)).holes.map((h: any) => [h.id, h.number])).toEqual([[a.id, 1], [d.id, 2], [b.id, 3], [c.id, 27]]);
+  // One undo step each; Delete with Undo
   await page.keyboard.press("Escape");
   await page.getByTestId("hole-row").nth(1).click();
-  await page.getByRole("button", { name: "Move hole earlier" }).click();
-  await expect.poll(async () => (await course(page)).holes.map((h: any) => h.id)).toEqual([b.id, a.id]);
   await page.keyboard.press("Delete");
-  await expect.poll(async () => (await course(page)).holes.length).toBe(1);
-  expect((await course(page)).items.filter((i: any) => i.holeId === b.id)).toHaveLength(0);
+  await expect.poll(async () => (await course(page)).holes.length).toBe(3);
+  expect((await course(page)).items.filter((i: any) => i.holeId === d.id)).toHaveLength(0);
   await page.getByRole("button", { name: "Undo" }).first().click();
-  await expect.poll(async () => (await course(page)).holes.length).toBe(2);
+  await expect.poll(async () => (await course(page)).holes.length).toBe(4);
 });
 
 test("dragging a tee moves it and the hole's length follows", async ({ page }) => {

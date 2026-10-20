@@ -8,14 +8,14 @@
 // buttons over the map (there is no Enter, Backspace or Esc on a phone), and holding a finger on
 // a thing opens its menu (the right-click).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Share2, Trash2, Undo2, Unlock, X } from "lucide-react";
+import { Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Share2, Trash2, Undo2, Unlock, X } from "lucide-react";
 import { STRUCTURE_KINDS } from "../../constants";
 import { holeNumber } from "../../lib/course";
 import { courseTotals, holeStats, safetyIssues } from "../../lib/holeStats";
 import { landscapeOf } from "../../lib/landscapes";
 import { fmtDist, fmtElev } from "../../lib/units";
 import { canPaste, copySelection, deleteSelection, duplicateSelection, pasteClipboard, select } from "../../state/actions";
-import { getDoc, moveHole, updateItem, useCourse, useEditor, type Step } from "../../state/course";
+import { getDoc, updateItem, useCourse, useEditor, type Step } from "../../state/course";
 import { deleteRecent, makeCopy, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../../state/files";
 import type { PlanMeta } from "../../lib/storage";
 import type { CourseItem, P } from "../../types";
@@ -333,8 +333,6 @@ export function ItemMenu({ itemId, onClose }: { itemId: string; onClose: () => v
   }
   a.push({ label: hole ? "Zoom to this hole" : "Zoom to it", icon: <Maximize2 size={18} />, run: () => (hole ? getView()?.fitHole(hole.id) : getView()?.reveal(itemId)) });
   if (!ro) {
-    if (hole && n > 1) a.push({ label: "Play it earlier", icon: <ArrowUp size={19} />, run: () => moveHole(hole.id, n - 2) });
-    if (hole && n < doc.holes.length) a.push({ label: "Play it later", icon: <ArrowDown size={19} />, run: () => moveHole(hole.id, n) });
     if (item && ((item.type === "area" && item.kind === "water") || (item.type === "line" && item.kind !== "ob" && item.kind !== "walk"))) {
       a.push({ label: item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)", run: () => updateItem(item.id, { ob: item.ob === true ? undefined : true } as Partial<CourseItem>), testid: "menu-ob" });
     }

@@ -102,7 +102,8 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
     holes: (raw.holes ?? []).map(h => {
       const shape = Array.isArray(h.fairwayShape) && h.fairwayShape.length === FAIRWAY_STATIONS.length && h.fairwayShape.every(v => typeof v === "number" && v > 0) ? h.fairwayShape : undefined;
       const shift = Array.isArray(h.fairwayShift) && h.fairwayShift.length === FAIRWAY_STATIONS.length && h.fairwayShift.every(v => Number.isFinite(v)) ? h.fairwayShift : undefined;
-      return { ...h, fairwayWidth: h.fairwayWidth ?? DEFAULT_FAIRWAY_FT, fairway: h.fairway ?? true, doglegs: h.doglegs ?? [], fairwayShape: shape, fairwayShift: shift };
+      const number = Number.isInteger(h.number) && h.number! > 0 ? h.number : undefined;
+      return { ...h, number, fairwayWidth: h.fairwayWidth ?? DEFAULT_FAIRWAY_FT, fairway: h.fairway ?? true, doglegs: h.doglegs ?? [], fairwayShape: shape, fairwayShift: shift };
     }),
     // (A structure needs its points and a kind this version knows)
     items: Array.isArray(raw.items) ? raw.items.filter(i => i.type !== "structure" || (Array.isArray(i.points) && i.kind in STRUCTURE_KINDS)) : [],
@@ -225,7 +226,47 @@ export const itemHoleId = (item: CourseItem | null | undefined): string | undefi
   item && "holeId" in item ? item.holeId : undefined;
 
 /** Hole numbers: their place in the order of play. */
-export const holeNumber = (doc: Pick<CourseDoc, "holes">, holeId: string) => doc.holes.findIndex(h => h.id === holeId) + 1;
+/** Each hole's number: its own (typed in), or else the first number free, in course order. */
+const numbered = new WeakMap<Hole[], Map<string, number>>();
+export const holeNumbers = (holes: Hole[]) => {
+  let m = numbered.get(holes);
+  if (m) return m;
+  m = new Map();
+  const taken = new Set(holes.map(h => h.number).filter((v): v is number => !!v));
+  let next = 1;
+  for (const h of holes) {
+    if (h.number) m.set(h.id, h.number);
+    else {
+      while (taken.has(next)) next++;
+      m.set(h.id, next);
+      taken.add(next);
+    }
+  }
+  numbered.set(holes, m);
+  return m;
+};
+export const holeNumber = (doc: Pick<CourseDoc, "holes">, holeId: string) => holeNumbers(doc.holes).get(holeId) ?? 0;
+
+/** Holes in the order of their numbers (the order they're played). */
+export const byNumber = (holes: Hole[]) => {
+  const m = holeNumbers(holes);
+  return [...holes].sort((a, b) => (m.get(a.id) ?? 0) - (m.get(b.id) ?? 0));
+};
+
+/** Holes with a new one put in at `at`; once holes have numbers of their own, the new one takes
+ * the first number free (no other hole's number changes) and goes where that number is played. */
+export const insertHole = (holes: Hole[], hole: Hole, at = holes.length): Hole[] => {
+  const fresh = { ...hole, number: undefined };
+  if (!holes.some(h => h.number)) {
+    const out = [...holes];
+    out.splice(Math.max(0, Math.min(out.length, at)), 0, fresh);
+    return out;
+  }
+  const taken = new Set(holeNumbers(holes).values());
+  let n = 1;
+  while (taken.has(n)) n++;
+  return byNumber([...holes, { ...fresh, number: n }]);
+};
 
 /** The direction (degrees, 0 = +x) a tee pad faces: toward the first point of its throw line. */
 export const teeAim = (doc: Pick<CourseDoc, "items" | "holes">, tee: TeeItem) => {

@@ -2,7 +2,7 @@
 import { CIRCLE_ONE_FT, PIN_POSITIONS, TEE_ORDER, generateId } from "../constants";
 import {
   createAmenity, createArea, createBasket, createDropZone, createLabel, createLine, createMando, createStructure, createTee, createTree,
-  autoWalks, basketHoles, holeBaskets, holeTees, itemHoleId, movedGroup, newHole, teeFor, wholeHoles
+  insertHole, autoWalks, basketHoles, holeBaskets, holeTees, itemHoleId, movedGroup, newHole, teeFor, wholeHoles
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { holeStats } from "../lib/holeStats";
@@ -111,8 +111,7 @@ export const addHole = (tee: P, basket: P, level: TeeLevel = editor().teeLevel) 
   const b = shared ? null : createBasket(hole.id, basket, "A");
   changeDoc(d => {
     const at = d.holes.findIndex(h => h.id === editor().activeHoleId);
-    const holes = [...d.holes];
-    holes.splice(at >= 0 && at < holes.length - 1 ? at + 1 : holes.length, 0, hole);
+    const holes = insertHole(d.holes, hole, at >= 0 && at < d.holes.length - 1 ? at + 1 : d.holes.length);
     const items = shared ? d.items.map(i => (i.id === shared.id && i.type === "basket" ? { ...i, alsoHoles: [...(i.alsoHoles ?? []), hole.id] } : i)) : [...d.items];
     return { holes, items: [...items, t, ...(b ? [b] : [])] };
   });
@@ -272,7 +271,7 @@ const placeParts = (parts: Parts, dx: number, dy: number) => {
   if (!copies.length) return false;
   const shift = (p: P) => ({ x: p.x + dx, y: p.y + dy });
   changeDoc(d => ({
-    holes: [...d.holes, ...parts.holes.map(h => ({ ...structuredClone(h), id: holeMap.get(h.id)!, doglegs: h.doglegs.map(shift), flyKeys: h.flyKeys?.map(k => ({ ...k, x: k.x + dx, y: k.y + dy, lookX: k.lookX + dx, lookY: k.lookY + dy })) }))],
+    holes: parts.holes.reduce((hs, h) => insertHole(hs, { ...structuredClone(h), id: holeMap.get(h.id)!, doglegs: h.doglegs.map(shift), flyKeys: h.flyKeys?.map(k => ({ ...k, x: k.x + dx, y: k.y + dy, lookX: k.lookX + dx, lookY: k.lookY + dy })) }), d.holes),
     items: [...d.items, ...copies]
   }));
   const holeIds = [...holeMap.values()];
@@ -351,11 +350,7 @@ export const duplicateSelection = () => {
     const copy: Hole = { ...hole, id: `hole-${generateId()}`, doglegs: hole.doglegs.map(p => ({ x: p.x + off, y: p.y + off })) };
     // (a basket it shares with other holes is copied as the copy's own)
     const parts = [...holeTees(doc, hole.id), ...holeBaskets(doc, hole.id)].map(i => ({ ...i, id: generateId(), holeId: copy.id, ...(i.type === "basket" ? { alsoHoles: undefined } : {}), x: i.x + off, y: i.y + off }) as CourseItem);
-    changeDoc(d => {
-      const holes = [...d.holes];
-      holes.splice(d.holes.indexOf(hole) + 1, 0, copy);
-      return { holes, items: [...d.items, ...parts] };
-    });
+    changeDoc(d => ({ holes: insertHole(d.holes, copy, d.holes.indexOf(hole) + 1), items: [...d.items, ...parts] }));
     select(copy.id);
     return;
   }

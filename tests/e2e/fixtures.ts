@@ -248,13 +248,13 @@ export async function blankCourse(page: Page) {
 }
 
 export async function addHole(page: Page, tee: { x: number; y: number }, basket: { x: number; y: number }) {
-  const before = (await course(page)).holes.length;
+  const had = new Set((await course(page)).holes.map((h: any) => h.id));
   if ((await editorState(page)).tool !== "add-hole") await page.keyboard.press("h");
   await clickPlan(page, tee.x, tee.y);
   await clickPlan(page, basket.x, basket.y);
-  await expect.poll(async () => (await course(page)).holes.length).toBe(before + 1);
-  const doc = await course(page);
-  return doc.holes[doc.holes.length - 1];
+  await expect.poll(async () => (await course(page)).holes.length).toBe(had.size + 1);
+  // (the new one: not always the last, once holes have numbers of their own)
+  return (await course(page)).holes.find((h: any) => !had.has(h.id));
 }
 
 /** Runs the whole site import against the stubs; returns the summary message. */
