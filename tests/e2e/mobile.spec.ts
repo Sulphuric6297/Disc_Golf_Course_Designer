@@ -3,6 +3,8 @@
 // screen, the tee view, a phone on its side, a tablet, and the desktop layout left as it was.
 import { test, expect, course, editorState, tapPlan, longPress, touchDrag, pinch, screenOf } from "./fixtures";
 import { devices, type Page } from "@playwright/test";
+import { writeFileSync } from "fs";
+import { createBasket, createEmptyCourse, createTee, newHole } from "../../src/lib/course";
 
 /** A Playwright device in Chromium (the device list's iPhones and iPads say WebKit). */
 const device = (name: string) => {
@@ -37,6 +39,25 @@ async function oneHole(page: Page) {
 
 test.describe("phone", () => {
   test.use(device("iPhone 13"));
+
+  test("a course file opens from the menu (which closes while the file is picked)", async ({ page }) => {
+    await openGround(page);
+    const doc = createEmptyCourse();
+    doc.name = "Pocket Course";
+    const h = newHole();
+    doc.holes.push(h);
+    doc.items.push(createTee(h.id, { x: 300, y: 500 }), createBasket(h.id, { x: 600, y: 500 }));
+    const path = test.info().outputPath("pocket.dgcourse.json");
+    writeFileSync(path, JSON.stringify(doc));
+    await page.getByTestId("app-menu-button").tap();
+    const choosing = page.waitForEvent("filechooser");
+    await page.getByRole("menuitem", { name: /Open a course file/ }).tap();
+    const chooser = await choosing;
+    await expect(page.getByTestId("app-menu")).toHaveCount(0);
+    await chooser.setFiles(path);
+    await expect.poll(async () => (await course(page)).name).toBe("Pocket Course");
+    expect((await course(page)).holes).toHaveLength(1);
+  });
 
   test("the step bar switches steps and the sheet shows each one; no desktop panels", async ({ page }) => {
     await expect(page.getByTestId("side-panel")).toHaveCount(0);

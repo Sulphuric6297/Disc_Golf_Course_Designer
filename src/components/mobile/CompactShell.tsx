@@ -353,21 +353,19 @@ export function ItemMenu({ itemId, onClose }: { itemId: string; onClose: () => v
 
 // ---------------------------------------------------------------------------------- app menu
 
-function AppMenu({ onClose, onShare, onHelp }: { onClose: () => void; onShare: () => void; onHelp: () => void }) {
+function AppMenu({ onClose, onShare, onHelp, onOpenFile }: { onClose: () => void; onShare: () => void; onHelp: () => void; onOpenFile: () => void }) {
   const [recent, setRecent] = useState<PlanMeta[]>([]);
-  const file = useRef<HTMLInputElement>(null);
   const name = useCourse(s => s.doc.name);
   useEffect(() => { void recentCourses().then(setRecent); }, []);
   const actions: SheetAction[] = [
     { label: "Share a link", icon: <Share2 size={19} />, run: onShare, testid: "menu-share" },
     { label: "New course", icon: <FilePlus size={19} />, run: () => void newCourse() },
-    { label: "Open a course file…", icon: <FolderOpen size={19} />, run: () => file.current?.click() },
+    { label: "Open a course file…", icon: <FolderOpen size={19} />, run: onOpenFile },
     { label: "Save as a file", icon: <Save size={19} />, run: () => saveCourseFile() },
     { label: "Help and gestures", icon: <HelpCircle size={19} />, run: onHelp, testid: "menu-help" }
   ];
   return (
     <>
-      <input ref={file} type="file" accept=".json,.dgcourse.json,application/json" className="hidden" aria-label="Open course file" onChange={e => { const f = e.target.files?.[0]; if (f) void openCourseFile(f); e.target.value = ""; }} />
       <ActionSheet title={name} subtitle="Disc Golf Course Designer" actions={actions} onClose={onClose} testid="app-menu">
         {recent.length > 0 && (
           <div className="border-b border-white/5">
@@ -477,9 +475,12 @@ function useMenus(onShare: () => void, onHelp: () => void) {
   const [appMenu, setAppMenu] = useState(false);
   const [more, setMore] = useState(false);
   const selectedId = useEditor(e => e.selectedId);
+  // (outside the menu: the menu closes while the file is being picked)
+  const file = useRef<HTMLInputElement>(null);
   const menus = (
     <>
-      {appMenu && <AppMenu onClose={() => setAppMenu(false)} onShare={onShare} onHelp={onHelp} />}
+      <input ref={file} type="file" className="hidden" aria-label="Open course file" onChange={e => { const f = e.target.files?.[0]; if (f) void openCourseFile(f); e.target.value = ""; }} />
+      {appMenu && <AppMenu onClose={() => setAppMenu(false)} onShare={onShare} onHelp={onHelp} onOpenFile={() => file.current?.click()} />}
       {more && selectedId && <ItemMenu itemId={selectedId} onClose={() => setMore(false)} />}
     </>
   );
