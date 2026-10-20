@@ -235,8 +235,112 @@ export const canopyMask = (img: DetectImage, opts: Opts) => {
   return { mask, luma, lawn, win, mpp, w, h, n };
 };
 
-export const detectTrees = (img: DetectImage, opts: Opts & { maxTrees?: number }): DetectedTree[] => {
-  const found = canopyMask(img, opts);
+export type Canopy = NonNullable<ReturnType<typeof canopyMask>>;
+
+/** A shape found on a photo: its outline (pixels, clockwise) and how many pixels it covers. */
+export type Region = { outline: { x: number; y: number }[]; areaPx: number };
+
+// The 8 neighbours, clockwise on the screen (y down): W, NW, N, NE, E, SE, S, SW
+const NX = [-1, -1, 0, 1, 1, 1, 0, -1];
+const NY = [0, -1, -1, -1, 0, 1, 1, 1];
+
+/** The outer edge of one connected shape (pixel centers, clockwise), by walking around it. */
+export const traceOutline = (w: number, h: number, comp: number[]): { x: number; y: number }[] => {
+  const inside = new Uint8Array(w * h);
+  let start = Infinity;
+  for (const k of comp) {
+    inside[k] = 1;
+    if (k < start) start = k;
+  }
+  const at = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && inside[y * w + x] === 1;
+  const sx = start % w, sy = (start - sx) / w;
+  const out: { x: number; y: number }[] = [];
+  // (the first pixel in reading order: the one to its left is outside)
+  let x = sx, y = sy, back = 0, first = -1;
+  for (let step = 0; step < comp.length * 4 + 16; step++) {
+    let found = -1;
+    for (let k = 1; k <= 8; k++) {
+      const d = (back + k) % 8;
+      if (at(x + NX[d], y + NY[d])) { found = d; break; }
+    }
+    if (found < 0) { out.push({ x: x + 0.5, y: y + 0.5 }); break; }
+    const nx = x + NX[found], ny = y + NY[found];
+    if (x === sx && y === sy) {
+      // Round once: leaving the start the same way again
+      if (first === ny * w + nx) break;
+      if (first < 0) first = ny * w + nx;
+    }
+    out.push({ x: x + 0.5, y: y + 0.5 });
+    // The outside pixel looked at just before, seen from the next one
+    const prev = (found + 7) % 8;
+    const bx = x + NX[prev] - nx, by = y + NY[prev] - ny;
+    x = nx;
+    y = ny;
+    back = NX.findIndex((v, i) => v === bx && NY[i] === by);
+    if (back < 0) back = 0;
+  }
+  return out;
+};
+
+/** Stands of trees: canopy patches (crowns a few meters apart joined) of at least `minAreaM2`. */
+export const woodsRegions = (canopy: Canopy, minAreaM2 = 400): Region[] => {
+  const { mask, mpp, w, h } = canopy;
+  let m = close(mask, w, h, Math.max(1, Math.round(2.5 / mpp)));
+  // (the rim of the crowns that the canopy mask leaves out)
+  m = morph(m, w, h, Math.max(1, Math.round(0.6 / mpp)), "grow");
+  return components(m, w, h, Math.ceil(minAreaM2 / (mpp * mpp))).map(c => ({ outline: traceOutline(w, h, c), areaPx: c.length }));
+};
+
+/** How much of its most snug box (turned every 5 degrees) a shape fills: about 1 for a rectangle
+ * (a pool, a court, a roof), about 0.79 for a round pond. */
+export const boxFill = (outline: { x: number; y: number }[], areaPx: number) => {
+  let best = Infinity;
+  for (let deg = 0; deg < 90; deg += 5) {
+    const c = Math.cos((deg * Math.PI) / 180), s = Math.sin((deg * Math.PI) / 180);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of outline) {
+      const u = p.x * c + p.y * s, v = -p.x * s + p.y * c;
+      if (u < x0) x0 = u;
+      if (u > x1) x1 = u;
+      if (v < y0) y0 = v;
+      if (v > y1) y1 = v;
+    }
+    best = Math.min(best, (x1 - x0 + 1) * (y1 - y0 + 1));
+  }
+  return best > 0 ? areaPx / best : 0;
+};
+
+/**
+ * Open water on a photo: clearly blue, smooth patches of at least `minAreaM2` that aren't
+ * rectangles (pools, painted courts and roofs are; ponds and rivers aren't).
+ */
+export const waterRegions = (img: DetectImage, opts: Opts & { minAreaM2?: number }): Region[] => {
+  const { width: w, height: h, data } = img;
+  const mpp = opts.metersPerPx;
+  const n = w * h;
+  const luma = new Float32Array(n);
+  const blue = new Uint8Array(n);
+  for (let i = 0, p = 0; i < n; i++, p += 4) {
+    const r = data[p], g = data[p + 1], b = data[p + 2];
+    luma[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+    const sum = r + g + b + 1;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    const sat = mx > 0 ? (mx - mn) / mx : 0;
+    if ((b - (r + g) / 2) / sum > 0.06 && sat > 0.22 && b >= g && !(opts.exclude && opts.exclude(i % w, (i / w) | 0))) blue[i] = 1;
+  }
+  // Water is smooth (ripples aside); a blue car or a tarp among busy surroundings isn't a pond
+  const { std } = localStats(luma, w, h, Math.max(1, Math.round(1 / mpp)));
+  for (let i = 0; i < n; i++) if (blue[i] && std[i] > 18) blue[i] = 0;
+  let m = open(blue, w, h, Math.max(1, Math.round(0.6 / mpp)));
+  m = close(m, w, h, Math.max(1, Math.round(1.5 / mpp)));
+  const minPx = Math.ceil((opts.minAreaM2 ?? 150) / (mpp * mpp));
+  return components(m, w, h, minPx)
+    .map(c => ({ outline: traceOutline(w, h, c), areaPx: c.length }))
+    .filter(r => boxFill(r.outline, r.areaPx) < 0.88);
+};
+
+export const detectTrees = (img: DetectImage, opts: Opts & { maxTrees?: number; canopy?: Canopy | null }): DetectedTree[] => {
+  const found = opts.canopy !== undefined ? opts.canopy : canopyMask(img, opts);
   if (!found) return [];
   const { mask, luma, lawn, win, mpp, w, h, n } = found;
   const dt = distanceTransform(mask, w, h);

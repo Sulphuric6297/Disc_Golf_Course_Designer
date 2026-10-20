@@ -2,14 +2,14 @@
 // what OpenStreetMap knows (paths, roads, water, parking, buildings). Everything comes from free
 // services with no keys, as in the Security Camera Planner.
 import { clamp } from "../constants";
-import type { AreaItem, CourseItem, Hole, LineItem, SiteInfo, TreeItem } from "../types";
+import type { AreaItem, CourseItem, Hole, LineItem, P, SiteInfo, TreeItem } from "../types";
 import { FEET_PER_METER, getGeoBounds, type GeoBounds, type SiteSelection } from "./geo/core";
-import { detectTrees } from "./geo/detect";
+import { canopyMask, detectTrees, waterRegions, woodsRegions } from "./geo/detect";
 import { fetchBestElevationGrid } from "./geo/elevation";
 import { creditHeightPx, fetchMapImagery, type MapImagerySource } from "./geo/imagery";
 import { fetchOsmFeatures } from "./geo/osm";
 import { createArea, createLine, createStructure, createTree } from "./course";
-import { clipPathToRect, clipPolygonToRect, polygonArea, simplify } from "./geom";
+import { centroid, clipPathToRect, clipPolygonToRect, pointInPolygon, polygonArea, simplify } from "./geom";
 import { reframe, toPlanXY, type GeoRef } from "./geoRef";
 
 export type ImportedSite = {
@@ -60,8 +60,20 @@ const loadImage = (url: string) =>
     img.src = url;
   });
 
-/** Tree crowns found on the photo, as trees on the plan. */
-export const treesFromPhoto = async (url: string, width: number, height: number): Promise<TreeItem[]> => {
+/** A traced outline (photo pixels) as a shape on the plan: simplified, its corners rounded once. */
+const outlineToPlan = (outline: { x: number; y: number }[], w: number, h: number, width: number, height: number, tolerance: number): P[] => {
+  const pts = simplify(outline.map(p => ({ x: (p.x / w) * width, y: (p.y / h) * height })), tolerance);
+  const out: P[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    out.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 }, { x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
+  }
+  return out.map(p => ({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 }));
+};
+
+/** What the satellite photo shows: stands of trees (as woods areas), the trees standing on their
+ * own (as trees) and open water (as water areas). */
+export const natureFromPhoto = async (url: string, width: number, height: number): Promise<{ trees: TreeItem[]; woods: AreaItem[]; water: AreaItem[] }> => {
   const img = await loadImage(url);
   const widthM = width / FEET_PER_METER;
   // About 30 cm per pixel: plenty for crowns, and quick
@@ -72,19 +84,32 @@ export const treesFromPhoto = async (url: string, width: number, height: number)
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return [];
+  if (!ctx) return { trees: [], woods: [], water: [] };
   ctx.drawImage(img, 0, 0, w, h);
   const creditTop = h - Math.ceil(creditHeightPx(img.naturalWidth) * (h / img.naturalHeight)) - 1;
   const mpp = widthM / w;
-  const found = detectTrees(ctx.getImageData(0, 0, w, h), { metersPerPx: mpp, exclude: (_x, y) => y >= creditTop, maxTrees: 400 });
-  return found.map(t => {
-    const radius = clamp(t.radiusPx * mpp * FEET_PER_METER, 5, 35);
-    return createTree({ x: (t.x / w) * width, y: (t.y / h) * height }, { radius, height: clamp(radius * 2.6, 15, 85), importSource: "photo" });
-  });
+  const pixels = ctx.getImageData(0, 0, w, h);
+  const opts = { metersPerPx: mpp, exclude: (_x: number, y: number) => y >= creditTop };
+  const canopy = canopyMask(pixels, opts);
+  const area = (kind: "woods" | "water", outline: { x: number; y: number }[], tolerance: number) => ({ ...createArea(kind, outlineToPlan(outline, w, h, width, height, tolerance)), importSource: "photo" as const }) as AreaItem;
+  const woods = canopy ? woodsRegions(canopy).map(r => area("woods", r.outline, 4)).filter(a => a.points.length >= 3) : [];
+  const water = waterRegions(pixels, opts).map(r => area("water", r.outline, 2)).filter(a => a.points.length >= 3);
+  // The trees in a stand are the woods now; the rest stand on their own
+  const trees = detectTrees(pixels, { ...opts, maxTrees: 400, canopy })
+    .map(t => {
+      const radius = clamp(t.radiusPx * mpp * FEET_PER_METER, 5, 35);
+      return createTree({ x: (t.x / w) * width, y: (t.y / h) * height }, { radius, height: clamp(radius * 2.6, 15, 85), importSource: "photo" });
+    })
+    .filter(t => !woods.some(a => pointInPolygon(t, a.points)) && !water.some(a => pointInPolygon(t, a.points)));
+  return { trees, woods, water };
 };
+
+/** Whether a thing was brought in by an import (found on the photo, or from OpenStreetMap). */
+export const isImported = (i: CourseItem) => (i.type === "tree" || i.type === "area" || i.type === "line" || i.type === "structure") && !!i.importSource;
 
 const OSM_NAMES: Record<string, [string, string]> = {
   path: ["path", "paths"], road: ["road", "roads"], stream: ["stream", "streams"], water: ["water area", "water areas"],
+  woods: ["wooded area", "wooded areas"], rough: ["grass area", "grass areas"],
   parking: ["parking lot", "parking lots"], building: ["building", "buildings"]
 };
 
@@ -186,14 +211,13 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   const reliefFt = (elev.max - elev.min) * FEET_PER_METER;
   notes.push(reliefFt < 1 ? "Nearly flat (under 1 ft of elevation change)." : `${Math.round(reliefFt)} ft of elevation change across the site.`);
 
-  let trees: TreeItem[] = [];
+  let found: { trees: TreeItem[]; woods: AreaItem[]; water: AreaItem[] } = { trees: [], woods: [], water: [] };
   if (opts.trees && background && opts.imagery === "satellite") {
-    opts.onStatus("Finding trees on the photo…");
-    trees = await treesFromPhoto(background, width, height).catch(err => {
+    opts.onStatus("Finding woods, trees and water on the photo…");
+    found = await natureFromPhoto(background, width, height).catch(err => {
       console.warn("Tree detection failed", err);
-      return [];
+      return { trees: [], woods: [], water: [] };
     });
-    if (trees.length) notes.push(`Placed ${trees.length} trees found on the photo; remove any that are wrong.`);
   }
 
   let mapped: CourseItem[] = [];
@@ -210,6 +234,17 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       osmFailed = true;
     }
   }
+
+  // What OpenStreetMap maps already (its woods and water) needn't come again from the photo
+  const mappedAs = (kind: string) => mapped.filter((m): m is AreaItem => m.type === "area" && m.kind === kind);
+  const inside = (p: P, kind: string) => mappedAs(kind).some(a => pointInPolygon(p, a.points));
+  const woods = found.woods.filter(a => !inside(centroid(a.points), "woods"));
+  const water = found.water.filter(a => !inside(centroid(a.points), "water"));
+  const trees = found.trees.filter(t => !inside(t, "woods") && !inside(t, "water"));
+  const counted = [[woods.length, "wooded area", "wooded areas"], [trees.length, "tree", "trees"], [water.length, "water area", "water areas"]] as const;
+  const said = counted.filter(([n]) => n > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
+  if (said.length) notes.push(`On the photo: ${said.join(", ")}.`);
+  mapped = [...mapped, ...woods, ...water];
 
   return {
     canvas: { width, height },

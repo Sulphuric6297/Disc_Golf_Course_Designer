@@ -209,6 +209,7 @@ function FeaturesStep() {
     <ToolCard key={mode} icon={icon} title={title} active={ed.tool === mode} onClick={() => ed.set({ tool: mode })} testid={`feature-${mode}`} />
   );
   const photoTrees = doc.items.filter(i => i.type === "tree" && i.importSource === "photo").length;
+  const photoAreas = doc.items.filter(i => i.type === "area" && i.importSource === "photo").length;
   const osm = doc.items.filter(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm").length;
   return (
     <>
@@ -253,12 +254,12 @@ function FeaturesStep() {
           {built("deck")}
         </div>
       </Section>
-      {(photoTrees > 0 || osm > 0) && (
+      {(photoTrees > 0 || photoAreas > 0 || osm > 0) && (
         <Section title="Brought in automatically">
-          {photoTrees > 0 && (
-            <div className="flex items-center justify-between text-xs text-zinc-300 mb-1.5">
-              {photoTrees} trees found on the photo
-              <Button small tone="danger" onClick={() => changeDoc(d => ({ items: d.items.filter(i => !(i.type === "tree" && i.importSource === "photo")) }))}>Remove all</Button>
+          {(photoTrees > 0 || photoAreas > 0) && (
+            <div className="flex items-center justify-between text-xs text-zinc-300 mb-1.5" data-testid="photo-found">
+              {[photoAreas ? `${photoAreas} area${photoAreas > 1 ? "s" : ""}` : "", photoTrees ? `${photoTrees} trees` : ""].filter(Boolean).join(" and ")} from the photo
+              <Button small tone="danger" onClick={() => changeDoc(d => ({ items: d.items.filter(i => !((i.type === "tree" || i.type === "area") && i.importSource === "photo")) }))}>Remove all</Button>
             </div>
           )}
           {osm > 0 && (

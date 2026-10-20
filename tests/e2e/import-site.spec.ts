@@ -1,8 +1,12 @@
 import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
-import { test, expect, addHole, course, geoAt, importSite } from "./fixtures";
+import { test, expect, addHole, course, geoAt, importSite, STAND } from "./fixtures";
 import { osmFeaturesFrom, overpassQuery } from "../../src/lib/geo/osm";
-import { clipPathToRect, clipPolygonToRect } from "../../src/lib/geom";
+import { clipPathToRect, clipPolygonToRect, pointInPolygon as inPoly, polygonArea as polyArea } from "../../src/lib/geom";
+import { boxFill, traceOutline, waterRegions, woodsRegions, type Canopy } from "../../src/lib/geo/detect";
 import { reframeDesign } from "../../src/lib/importSite";
+
+/** A point given in meters east and north of the site's center, on the plan (ft from its north-west corner). */
+const planOf = (doc: any, e: number, n: number) => ({ x: doc.canvas.width / 2 + e * 3.28084, y: doc.canvas.height / 2 - n * 3.28084 });
 
 /** OpenStreetMap's servers answer with these elements (or `fail` for a server that can't be reached). */
 const overpass = (page: Page, answer: (host: string) => object | "fail" | number, asked: string[] = []) =>
@@ -38,9 +42,22 @@ test("bringing in a site: photo, elevation, trees, and OpenStreetMap paths and w
   expect(kinds).toContain("area:parking");
   expect(doc.items.find((i: any) => i.type === "area" && i.kind === "water").label).toBe("Mill Pond");
   expect(doc.items.filter((i: any) => i.type === "tree").length).toBeGreaterThan(0);
+  // The stand of trees comes in as one wooded area, without trees of its own; the pond on the
+  // photo is OpenStreetMap's Mill Pond, so it isn't there twice
+  const woods = doc.items.filter((i: any) => i.type === "area" && i.kind === "woods" && i.importSource === "photo");
+  expect(woods).toHaveLength(1);
+  const stand = planOf(doc, STAND.e, STAND.n);
+  expect(inPoly(stand, woods[0].points)).toBe(true);
+  expect(Math.abs(polyArea(woods[0].points)) * 0.0929).toBeGreaterThan(900);
+  expect(doc.items.filter((i: any) => i.type === "tree" && inPoly(i, woods[0].points))).toHaveLength(0);
+  expect(doc.items.filter((i: any) => i.type === "area" && i.kind === "water")).toHaveLength(1);
+  expect(summary).toMatch(/On the photo: 1 wooded area, \d+ trees?\./);
   expect(doc.name).toBe("Springfield Park Disc Golf Course");
   // Straight on to laying out holes
   await expect(page.getByTestId("tool-hint")).toContainText("Click where the tee goes");
+  // Listed with what came in by itself, to take out at once
+  await page.getByRole("button", { name: /^3\s*Features$/ }).click();
+  await expect(page.getByTestId("photo-found")).toContainText(/^1 area and \d+ trees? from the photo/);
 });
 
 test("a hole up the hill: elevation change and par on the real terrain", async ({ page }) => {
@@ -265,4 +282,69 @@ plain("a smaller frame keeps everything on its ground and counts what is left ou
   plainExpect((out.items[2] as any).points[0].x).toBeCloseTo(3, 6);
   // The label west of the new frame
   plainExpect(out.outside).toBe(1);
+});
+
+plain("OpenStreetMap's woods, meadows, grassland, scrub and lawns come in as areas (pure logic)", () => {
+  const p = (lat: number, lon: number) => ({ lat, lon });
+  const ring = (o: number) => [p(o, o), p(o, o + 1), p(o + 1, o + 1), p(o + 1, o), p(o, o)];
+  const found = osmFeaturesFrom({
+    elements: [
+      { type: "way", tags: { landuse: "forest", name: "Oak Woods" }, geometry: ring(0) },
+      { type: "way", tags: { landuse: "meadow" }, geometry: ring(2) },
+      { type: "way", tags: { natural: "grassland" }, geometry: ring(4) },
+      { type: "way", tags: { natural: "scrub" }, geometry: ring(6) },
+      { type: "way", tags: { landuse: "grass" }, geometry: ring(8) },
+      { type: "relation", tags: { type: "multipolygon", natural: "wood" }, members: [{ type: "way", role: "outer", geometry: ring(10) }] },
+      // (the park itself is not one big area)
+      { type: "way", tags: { leisure: "park" }, geometry: ring(12) }
+    ]
+  });
+  plainExpect(found.map(f => `${f.geom}:${f.kind}`)).toEqual(["area:woods", "area:rough", "area:rough", "area:rough", "area:rough", "area:woods"]);
+  plainExpect(found[0].name).toBe("Oak Woods");
+  const q = overpassQuery({ south: 1, west: 2, north: 3, east: 4 } as any);
+  plainExpect(q).toContain("meadow");
+  plainExpect(q).toContain("grassland");
+});
+
+plain("tree stands and ponds traced into outlines; lone crowns, pools and courts left out (pure logic)", () => {
+  const w = 200, h = 160;
+  // A canopy mask: a stand of overlapping crowns, and a lone crown far off
+  const mask = new Uint8Array(w * h);
+  const disc = (m: Uint8Array, cx: number, cy: number, r: number) => {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) m[y * w + x] = 1;
+  };
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) disc(mask, 30 + i * 14, 30 + j * 14, 8);
+  disc(mask, 170, 130, 8);
+  const canopy = { mask, mpp: 0.3, w, h } as unknown as Canopy;
+  const stands = woodsRegions(canopy, 150);
+  plainExpect(stands).toHaveLength(1);
+  const o = stands[0].outline;
+  const xs = o.map(q => q.x), ys = o.map(q => q.y);
+  // Around the whole stand (and a little past the crowns' edges), not the lone crown
+  plainExpect(Math.min(...xs)).toBeLessThan(23);
+  plainExpect(Math.max(...xs)).toBeGreaterThan(80);
+  plainExpect(Math.max(...ys)).toBeGreaterThan(65);
+  plainExpect(Math.max(...xs)).toBeLessThan(110);
+  plainExpect(Math.abs(polyArea(o))).toBeGreaterThan(stands[0].areaPx * 0.85);
+  // The outline of a square: its corners, round once
+  const sq: number[] = [];
+  for (let y = 5; y < 15; y++) for (let x = 5; x < 15; x++) sq.push(y * w + x);
+  const edge = traceOutline(w, h, sq);
+  plainExpect(edge).toHaveLength(36);
+  plainExpect(boxFill(edge, sq.length)).toBeGreaterThan(0.95);
+  // A photo with a round blue pond, a blue rectangle (a pool or a court) and a small blue spot
+  const img = { width: w, height: h, data: new Uint8ClampedArray(w * h * 4) };
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    const pond = (x - 60) ** 2 + ((y - 80) * 1.3) ** 2 < 40 ** 2;
+    const pool = x > 130 && x < 185 && y > 20 && y < 70;
+    const spot = (x - 160) ** 2 + (y - 130) ** 2 < 5 ** 2;
+    const [r, g, b] = pond || pool || spot ? [40, 80, 125] : [92, 132, 64];
+    img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = b; img.data[i + 3] = 255;
+  }
+  const water = waterRegions(img, { metersPerPx: 0.3 });
+  plainExpect(water).toHaveLength(1);
+  const wx = water[0].outline.map(q => q.x);
+  plainExpect(Math.min(...wx)).toBeLessThan(28);
+  plainExpect(Math.max(...wx)).toBeLessThan(110);
 });

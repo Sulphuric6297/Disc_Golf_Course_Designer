@@ -97,8 +97,8 @@ export interface AreaItem extends BaseItem {
   label?: string;
   /** Out of bounds: water is unless set false; true also draws the red OB edge on the map. */
   ob?: boolean;
-  /** Brought in from OpenStreetMap (replaced on re-import). */
-  importSource?: "osm";
+  /** Brought in from OpenStreetMap, or found on the satellite photo (replaced on re-import). */
+  importSource?: "osm" | "photo";
 }
 
 /** Lines drawn on the map: OB lines (the line itself is OB), paths, roads, fences, streams. */

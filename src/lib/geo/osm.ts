@@ -1,4 +1,4 @@
-// Paths, roads, streams, water, parking, playgrounds and buildings from OpenStreetMap (free, no
+// Paths, roads, streams, water, woods, grass, parking, playgrounds and buildings from OpenStreetMap (free, no
 // key), so the map shows what is around the holes and the safety checks know about it.
 import type { GeoBounds } from "./core";
 
@@ -15,7 +15,7 @@ export const OVERPASS_TIMEOUT_MS = 35000;
 export type LatLon = { lat: number; lon: number };
 export type OsmFeature =
   | { geom: "line"; kind: "path" | "road" | "stream" | "fence"; points: LatLon[]; name?: string }
-  | { geom: "area"; kind: "water" | "parking" | "building" | "nogo" | "woods" | "sand"; points: LatLon[]; name?: string; building?: OsmBuilding };
+  | { geom: "area"; kind: "water" | "parking" | "building" | "nogo" | "woods" | "sand" | "rough"; points: LatLon[]; name?: string; building?: OsmBuilding };
 
 /** What OpenStreetMap says about a building's shape: its height (m) and roof. */
 export type OsmBuilding = { heightM?: number; roof?: "gable" | "hip" | "flat" | "shed" | "pyramid" };
@@ -34,6 +34,8 @@ export const osmBuilding = (tags: Record<string, string>): OsmBuilding => {
 
 const PATHS = new Set(["footway", "path", "track", "cycleway", "bridleway", "steps", "pedestrian"]);
 const ROADS = new Set(["residential", "service", "unclassified", "tertiary", "secondary", "primary", "trunk", "motorway", "living_street", "road", "tertiary_link", "secondary_link", "primary_link", "trunk_link", "motorway_link"]);
+const GRASS_NATURAL = new Set(["grassland", "scrub", "heath"]);
+const GRASS_LANDUSE = new Set(["meadow", "grass", "village_green"]);
 const STREAMS = new Set(["stream", "river", "brook", "ditch", "canal", "drain", "tidal_channel"]);
 
 /** What an OSM way is, for the course map (or null to skip it). */
@@ -45,6 +47,8 @@ export const classifyOsm = (tags: Record<string, string>, closed: boolean): { ge
   if (closed && (tags.leisure === "playground" || tags.leisure === "pitch" || tags.leisure === "swimming_pool" || tags.leisure === "garden" || tags.landuse === "residential")) return { geom: "area", kind: "nogo" };
   if (closed && (tags.natural === "wood" || tags.landuse === "forest")) return { geom: "area", kind: "woods" };
   if (closed && (tags.natural === "sand" || tags.natural === "beach" || tags.golf === "bunker")) return { geom: "area", kind: "sand" };
+  // Meadows, grassland, scrub and lawns: grass areas (rough)
+  if (closed && (GRASS_NATURAL.has(tags.natural ?? "") || GRASS_LANDUSE.has(tags.landuse ?? ""))) return { geom: "area", kind: "rough" };
   if (tags.waterway && STREAMS.has(tags.waterway)) return { geom: "line", kind: "stream" };
   if (tags.highway && PATHS.has(tags.highway)) return { geom: "line", kind: "path" };
   if (tags.highway && ROADS.has(tags.highway)) return { geom: "line", kind: "road" };
@@ -108,9 +112,9 @@ export const osmFeaturesFrom = (json: { elements?: any[] }): OsmFeature[] => {
 /** The Overpass query for a box: ways, and the multipolygons that lakes, rivers and woods are often mapped as. */
 export const overpassQuery = (bounds: GeoBounds) => {
   const box = `(${bounds.south},${bounds.west},${bounds.north},${bounds.east});`;
-  const ways = ['way["highway"]', 'way["waterway"]', 'way["natural"~"^(water|wood|sand|beach)$"]', 'way["landuse"~"^(reservoir|basin|forest)$"]', 'way["amenity"="parking"]', 'way["building"]', 'way["leisure"~"^(playground|pitch|swimming_pool|garden)$"]', 'way["barrier"~"^(fence|wall)$"]'];
+  const ways = ['way["highway"]', 'way["waterway"]', 'way["natural"~"^(water|wood|sand|beach|grassland|scrub|heath)$"]', 'way["landuse"~"^(reservoir|basin|forest|meadow|grass|village_green)$"]', 'way["amenity"="parking"]', 'way["building"]', 'way["leisure"~"^(playground|pitch|swimming_pool|garden)$"]', 'way["barrier"~"^(fence|wall)$"]'];
   const mp = 'relation["type"="multipolygon"]';
-  const relations = [`${mp}["natural"~"^(water|wood|sand|beach)$"]`, `${mp}["landuse"~"^(reservoir|basin|forest)$"]`, `${mp}["waterway"="riverbank"]`, `${mp}["amenity"="parking"]`];
+  const relations = [`${mp}["natural"~"^(water|wood|sand|beach|grassland|scrub|heath)$"]`, `${mp}["landuse"~"^(reservoir|basin|forest|meadow|grass)$"]`, `${mp}["waterway"="riverbank"]`, `${mp}["amenity"="parking"]`];
   return `[out:json][timeout:30];(${[...ways, ...relations].map(q => q + box).join("")});out geom;`;
 };
 

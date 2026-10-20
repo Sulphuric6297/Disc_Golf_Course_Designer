@@ -20,7 +20,11 @@ export const groundMeters = (lat: number, lon: number) => {
 
 // Photo features: a pond, a footpath and a few tree crowns
 export const POND = { e: -150, n: -60, r: 35 };
-export const PHOTO_TREES = [{ e: -40, n: 60, r: 5 }, { e: 40, n: -90, r: 6 }, { e: 170, n: -40, r: 5 }];
+export const PHOTO_TREES = [{ e: -40, n: 60, r: 5 }, { e: 40, n: -90, r: 6 }, { e: 170, n: -40, r: 5 },
+  // A stand of trees (crowns touching), about 40 m across: woods
+  ...Array.from({ length: 25 }, (_, k) => ({ e: 104 + (k % 5) * 8 + ((k / 5) | 0) % 2 * 3, n: 64 + ((k / 5) | 0) * 8, r: 5 }))];
+/** Where the stand of trees on the photo is (its middle, m east and north of the site's center). */
+export const STAND = { e: 121, n: 80 };
 
 const cors = { "access-control-allow-origin": "*" };
 const json = (body: unknown) => ({ status: 200, headers: { "content-type": "application/json", ...cors }, body: JSON.stringify(body) });
@@ -47,7 +51,7 @@ const terrariumTile = (z: number, x: number, y: number) => {
   return encode({ width: size, height: size, data, channels: 3, depth: 8 });
 };
 
-/** Imagery tile: textured grass with a pond, a footpath and tree crowns. */
+/** Imagery tile: textured grass with a pond, a footpath, tree crowns and a stand of trees. */
 const imageryTile = (z: number, tx: number, ty: number) => {
   const size = 256;
   const world = size * Math.pow(2, z);
