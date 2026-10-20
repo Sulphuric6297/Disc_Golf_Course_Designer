@@ -1,6 +1,6 @@
 import { test as plain, expect as plainExpect } from "@playwright/test";
 import { test, expect, addHole, blankCourse, course, editorState, importSite } from "./fixtures";
-import { areaPath, autoWalks, createAmenity, createArea, createBasket, createDropZone, createEmptyCourse, createLine, createMando, createTee, createTree, curves, drawnAreas, linePath, newHole, normalizeCourse } from "../../src/lib/course";
+import { areaPath, autoWalks, createAmenity, createArea, createBasket, createDropZone, createEmptyCourse, createLine, createMando, createTee, createTree, curves, drawnAreas, linePath, newHole, normalizeCourse, widthAlong, widthsWithEnd, widthsWithout, widthsWithPoint, widthVaries } from "../../src/lib/course";
 import { contourInterval, meander, paintedFrom, paintedLine } from "../../src/lib/forest";
 import { contoursOf, reliefExaggeration } from "../../src/lib/relief";
 import { dist, distanceToPath } from "../../src/lib/geom";
@@ -282,6 +282,29 @@ plain("lines curve through their points, painted exactly where drawn (no wobble)
   plainExpect(curves({ kind: "road" })).toBe(true);
   plainExpect(curves({ kind: "fence" })).toBe(true);
   plainExpect(curves({ kind: "fence", straight: true })).toBe(false);
+});
+
+plain("a creek's width along it: its factor at each point, eased between them; kept in step as points are added or taken out", () => {
+  const pts = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 200, y: 0 }];
+  const creek = { ...createLine("stream", pts), width: 10, widths: [1, 3, 1] };
+  plainExpect(widthVaries(creek)).toBe(true);
+  const w = widthAlong(creek);
+  plainExpect(w(0)).toBeCloseTo(10, 6);
+  plainExpect(w(0.5)).toBeCloseTo(30, 6);
+  plainExpect(w(1)).toBeCloseTo(10, 6);
+  // (halfway between: halfway in width; steady through each point)
+  plainExpect(w(0.25)).toBeCloseTo(20, 6);
+  plainExpect(Math.abs(w(0.49) - w(0.5))).toBeLessThan(0.05);
+  // Unset, or one factor per point missing: the same all along
+  plainExpect(widthAlong({ ...creek, widths: undefined })(0.5)).toBe(10);
+  plainExpect(widthAlong({ ...creek, widths: [1, 3] })(0.5)).toBe(10);
+  // A point put in after the first: between its neighbours; one at an end, as wide as that end
+  plainExpect(widthsWithPoint(creek, 0)).toEqual([1, 2, 3, 1]);
+  plainExpect(widthsWithEnd({ ...creek, widths: [2, 1, 1] }, 0)).toEqual([2, 2, 1, 1]);
+  plainExpect(widthsWithout(creek, 2)).toEqual([1, 3]);
+  // (the wide point taken out: the same all along again)
+  plainExpect(widthsWithout(creek, 1)).toBeUndefined();
+  plainExpect(widthsWithPoint({ ...creek, widths: undefined }, 0)).toBeUndefined();
 });
 
 plain("drawn areas curve round through their corners; rectangles, parking and buildings keep their corners", () => {

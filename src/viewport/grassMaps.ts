@@ -3,10 +3,10 @@
 // grass in the rough, a thin forest floor in the woods, and none on water, sand, paving, paths,
 // roads, creeks, tee pads or painted dirt.
 import { heightAt } from "../lib/terrainGrid";
-import { rectCorners, smoothPath } from "../lib/geom";
+import { corridor, rectCorners, smoothPath } from "../lib/geom";
 import { GROUND_MATERIALS, PAINT_CELL_FT } from "../lib/groundPaint";
 import { LINE_KINDS } from "../constants";
-import { drawnAreas, fairwayOutline, teeAim } from "../lib/course";
+import { drawnAreas, fairwayOutline, linePath, teeAim, widthAlong, widthVaries } from "../lib/course";
 import { landscapeOf } from "../lib/landscapes";
 import { GRASS, type GrassMaps, type GrassTerrain } from "../three/grass";
 import type { AreaItem, LineItem, P, TeeItem } from "../types";
@@ -84,7 +84,12 @@ export const grassMaps = (doc: ViewDoc): GrassMaps | null => {
   for (const a of areas) if (a.kind === "water" || a.kind === "sand" || a.kind === "parking" || a.kind === "building") poly(a.points, field(0, 0), null);
   for (const l of lines) {
     const w = l.width ?? LINE_KINDS[l.kind].width;
-    if (l.kind === "path" || l.kind === "road" || l.kind === "stream") stroke(l.kind === "stream" || l.kind === "path" ? smoothPath(l.points, 8) : l.points, w + 1, field(0, 0));
+    if (l.kind !== "path" && l.kind !== "road" && l.kind !== "stream") continue;
+    // (a creek wider or narrower along the way: its outline)
+    if (widthVaries(l)) {
+      const along = widthAlong(l, w);
+      poly(corridor(linePath(l), t => along(t) + 1, 8), field(0, 0), null);
+    } else stroke(linePath(l), w + 1, field(0, 0));
   }
   for (const tee of doc.course.items.filter(i => i.type === "tee") as TeeItem[]) {
     if (tee.surface === "natural") continue;

@@ -456,3 +456,60 @@ test("an OB line set to belong to two holes with the hole buttons; back to the w
   await picker.getByRole("button", { name: "Whole course" }).click();
   await expect.poll(async () => (await line()).holeId).toBeUndefined();
 });
+
+test("a creek wider in one stretch: drag the square on its bank; the Width slider sets it all along; double-click and Even width", async ({ page }) => {
+  await blankCourse(page);
+  await page.keyboard.press("v");
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__dgEditor().set({ lineKind: "stream" });
+    w.__dgActions.addDrawn("line", [{ x: 200, y: 500 }, { x: 500, y: 500 }, { x: 800, y: 500 }]);
+  });
+  const creek = async () => (await course(page)).items.find((i: any) => i.type === "line");
+  const c0 = await creek();
+  expect(c0.kind).toBe("stream");
+  expect(c0.widths).toBeUndefined();
+  await page.evaluate(id => (window as any).__dgActions.select(id), c0.id);
+  // A square on either bank at each point
+  await expect(page.locator('[data-handle="linewidth"]')).toHaveCount(6);
+  const square = page.locator('[data-handle="linewidth"][data-point="1"][data-side="1"]');
+  const center = async () => { const b = (await square.boundingBox())!; return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+  // (feet per pixel across the creek)
+  const a = await screenOf(page, 500, 500), b = await screenOf(page, 500, 600);
+  const ftPerPx = 100 / Math.hypot(b.x - a.x, b.y - a.y);
+  // Pulled out 30 px away from the creek's middle: only the middle point gets wider
+  const from = await center();
+  const dir = { x: (b.x - a.x) / Math.hypot(b.x - a.x, b.y - a.y), y: (b.y - a.y) / Math.hypot(b.x - a.x, b.y - a.y) };
+  await drag(page, from, { x: from.x + dir.x * 30, y: from.y + dir.y * 30 }, 6);
+  await expect.poll(async () => (await creek()).widths?.length).toBe(3);
+  const w1 = (await creek()).widths;
+  expect(w1[0]).toBe(1);
+  expect(w1[2]).toBe(1);
+  // (6 ft wide, each bank 30 px further out)
+  expect(w1[1] * 6).toBeCloseTo(6 + 2 * 30 * ftPerPx, -1);
+  expect((await creek()).width).toBeUndefined();
+  await expect(page.getByTestId("line-widths")).toBeVisible();
+  // The whole creek twice as wide: that stretch stays wider than the rest
+  await page.getByRole("slider", { name: "Width (all along)" }).fill("12");
+  await expect.poll(async () => (await creek()).width).toBe(12);
+  expect((await creek()).widths).toEqual(w1);
+  // A point put in between keeps the widths in step with the points
+  const mid = await handleCenter(page, "mid", 0);
+  await drag(page, mid, { x: mid.x, y: mid.y - 20 }, 4);
+  await expect.poll(async () => (await creek()).points.length).toBe(4);
+  const w2 = (await creek()).widths;
+  expect(w2).toHaveLength(4);
+  expect(w2[1]).toBeGreaterThan(1);
+  expect(w2[1]).toBeLessThan(w1[1]);
+  expect(w2[2]).toBe(w1[1]);
+  // Double-click the wide point's square: back to the creek's width there
+  await expect(page.locator('[data-handle="linewidth"]')).toHaveCount(8);
+  const wide = page.locator('[data-handle="linewidth"][data-point="2"][data-side="1"]');
+  const wb = (await wide.boundingBox())!;
+  await page.mouse.dblclick(wb.x + wb.width / 2, wb.y + wb.height / 2);
+  await expect.poll(async () => (await creek()).widths?.[2]).toBe(1);
+  // Even width: the same all along
+  await page.getByRole("button", { name: "Even width" }).click();
+  await expect.poll(async () => (await creek()).widths).toBeUndefined();
+  await expect(page.getByTestId("line-widths")).toHaveCount(0);
+});

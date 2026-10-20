@@ -398,11 +398,18 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   // Water, creeks, roads, fences and paths marked OB: a red edge along them (on both banks of a
   // creek or road, following the painted line in the Forest style)
   {
-    const offset = (line: P[], d: number) => line.map((p, i) => {
-      const a = line[Math.max(0, i - 1)], b = line[Math.min(line.length - 1, i + 1)];
-      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
-      return { x: p.x - (dy / len) * d, y: p.y + (dx / len) * d };
-    });
+    // (`d` ft to one side, or as far as `d(t)` along the way: a creek that widens)
+    const offset = (line: P[], d: number | ((t: number) => number)) => {
+      const along = [0];
+      for (let i = 1; i < line.length; i++) along.push(along[i - 1] + dist(line[i - 1], line[i]));
+      const total = along[along.length - 1] || 1;
+      return line.map((p, i) => {
+        const a = line[Math.max(0, i - 1)], b = line[Math.min(line.length - 1, i + 1)];
+        const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+        const off = typeof d === "number" ? d : d(along[i] / total);
+        return { x: p.x - (dy / len) * off, y: p.y + (dx / len) * off };
+      });
+    };
     const edge = (d: string, o: number) => out.push(`<path d="${d}" fill="none" stroke="${obCase}" stroke-opacity="0.9" stroke-width="${n(px(3.6))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/><path d="${d}" fill="none" stroke="${obCol}" stroke-width="${n(px(1.9))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/>`);
     for (const a of areas) if (a.ob === true && a.kind !== "ob" && a.points.length >= 3) edge(pathD(a.points, true), dim(a.holeId, a.alsoHoles));
     for (const l of lines) {
@@ -412,9 +419,11 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       const g = forest ? paintedLine(l, view.scale) : { points: linePath(l), width: Math.max(w, px(l.kind === "road" ? 3 : l.kind === "path" ? 2.2 : 2)) };
       if (l.kind === "fence" || l.kind === "walk") edge(pathD(g.points), o);
       else {
-        const off = (g.width / 2) * (forest && l.kind === "stream" ? 1.3 : 1) + px(1.6);
+        const k1 = forest && l.kind === "stream" ? 1.3 : 1;
+        const wAt = "widthAt" in g ? g.widthAt : undefined;
+        const off = wAt ? (t: number) => (wAt(t) / 2) * k1 + px(1.6) : (g.width / 2) * k1 + px(1.6);
         edge(pathD(offset(g.points, off)), o);
-        edge(pathD(offset(g.points, -off)), o);
+        edge(pathD(offset(g.points, typeof off === "number" ? -off : t => -off(t))), o);
       }
       const len = pathLength(g.points);
       // (Away from its name, which sits in the middle)

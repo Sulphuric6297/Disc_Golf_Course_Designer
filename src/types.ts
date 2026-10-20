@@ -117,6 +117,9 @@ export interface LineItem extends BaseItem {
   points: P[];
   /** Drawn width in feet (paths, roads and streams). */
   width?: number;
+  /** How much wider or narrower than `width` it is at each point (1: as wide; one per point; unset:
+   * the same width all along). */
+  widths?: number[];
   /** What a path or a walk is made of (unset: dirt). */
   surface?: PathSurface;
   /** Straight between its points (paths, walks, streams and roads curve through them unless set). */

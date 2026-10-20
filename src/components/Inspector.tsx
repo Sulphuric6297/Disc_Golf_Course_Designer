@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
-import { autoWalks, byNumber, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, parseHoleNumbers, wholeHoles } from "../lib/course";
+import { autoWalks, byNumber, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
@@ -369,7 +369,13 @@ function ItemInspector({ item }: { item: CourseItem }) {
               {(Object.keys(LINE_KINDS) as LineKind[]).map(k => <option key={k} value={k}>{LINE_KINDS[k].label}</option>)}
             </select>
           </Field>
-          {(LINE_KINDS[item.kind].width > 0 || item.kind === "walk") && <Slider label="Width" min={1} max={60} value={item.width ?? (LINE_KINDS[item.kind].width || 6)} onChange={v => set({ width: v })} format={v => fmtDist(v, u)} />}
+          {(LINE_KINDS[item.kind].width > 0 || item.kind === "walk") && <Slider label={widthVaries(item) ? "Width (all along)" : "Width"} min={1} max={item.kind === "stream" ? 200 : 60} value={item.width ?? (LINE_KINDS[item.kind].width || 6)} onChange={v => set({ width: v })} format={v => fmtDist(v, u)} />}
+          {item.kind === "stream" && widthVaries(item) && (
+            <div className="flex items-center justify-between gap-2 -mt-1 mb-2" data-testid="line-widths">
+              <p className="text-[11px] text-zinc-400 leading-snug">{fmtDist(Math.min(...widthFactors(item)) * (item.width ?? LINE_KINDS.stream.width), u)} to {fmtDist(Math.max(...widthFactors(item)) * (item.width ?? LINE_KINDS.stream.width), u)}</p>
+              <button className="shrink-0 text-xs text-orange-300 hover:text-orange-200" onClick={() => set({ widths: undefined })}>Even width</button>
+            </div>
+          )}
           {(item.kind === "path" || item.kind === "walk") && <SurfacePick value={item.surface} onChange={v => set({ surface: v })} />}
           <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />
           <Field label="Name on the map (optional)"><TextInput label="Line name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>

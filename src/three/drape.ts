@@ -86,7 +86,7 @@ export const drapedPoints = (pts: P[], groundAt: (x: number, y: number) => numbe
 };
 
 /** A ribbon of real width along a polyline, on the ground (paths, roads, streams). */
-export const drapedRibbon = (pts: P[], width: number, groundAt: (x: number, y: number) => number, step: number, lift: number) => {
+export const drapedRibbon = (pts: P[], width: number | ((t: number) => number), groundAt: (x: number, y: number) => number, step: number, lift: number) => {
   const pos: number[] = [];
   const dense: P[] = [];
   for (let i = 0; i < pts.length; i++) {
@@ -96,11 +96,15 @@ export const drapedRibbon = (pts: P[], width: number, groundAt: (x: number, y: n
     const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
     for (let k = 1; k < n; k++) dense.push({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n });
   }
-  const half = width / 2;
+  // (a width that changes along it: by how far along each point is)
+  const along = [0];
+  for (let i = 1; i < dense.length; i++) along.push(along[i - 1] + Math.hypot(dense[i].x - dense[i - 1].x, dense[i].y - dense[i - 1].y));
+  const total = along[along.length - 1] || 1;
   const side = dense.map((p, i) => {
     const a = dense[Math.max(0, i - 1)], b = dense[Math.min(dense.length - 1, i + 1)];
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
     const n = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
+    const half = (typeof width === "number" ? width : width(along[i] / total)) / 2;
     const l = { x: p.x + n.x * half, y: p.y + n.y * half }, r = { x: p.x - n.x * half, y: p.y - n.y * half };
     return { l: [l.x, groundAt(l.x, l.y) + lift, l.y], r: [r.x, groundAt(r.x, r.y) + lift, r.y] };
   });

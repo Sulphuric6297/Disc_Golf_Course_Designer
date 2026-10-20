@@ -8,7 +8,7 @@ import { CIRCLE_ONE_FT, LINE_KINDS, PATH_SURFACES } from "../constants";
 import type { AreaItem, CourseDoc, LineItem, MapStyle, P, PathSurface, StructureItem, TreeItem } from "../types";
 import { canopyMask } from "./geo/detect";
 import { boundsOf, corridor, dist, pathLength, pointInPolygon, smoothPath } from "./geom";
-import { autoWalks, drawnAreas, fairwayShiftAt, fairwayWidthAt, linePath } from "./course";
+import { autoWalks, drawnAreas, fairwayShiftAt, fairwayWidthAt, linePath, widthAlong, widthFactors, widthVaries } from "./course";
 import type { HoleStats } from "./holeStats";
 import { landscapeOf } from "./landscapes";
 import { reliefExaggeration } from "./relief";
@@ -203,17 +203,28 @@ const idSeed = (id: string) => {
  * and trails wind, and everything is at least wide enough to see. (The red OB edge of a creek
  * follows the same line.)
  */
-export const paintedLine = (l: LineItem, scale: number): { points: P[]; width: number } => {
+export const paintedLine = (l: LineItem, scale: number): { points: P[]; width: number; widthAt?: (t: number) => number } => {
   const w = l.width ?? LINE_KINDS[l.kind].width;
   const atLeast = (points: number) => Math.max(w, points / scale);
   if (l.kind === "stream") {
     const cw = atLeast(5.5);
-    return { points: l.straight ? l.points : smoothPath(meander(l.points, cw * 1.6, Math.max(50, cw * 11), idSeed(l.id)), 3), width: cw };
+    // (wider or narrower along the way where it was set: `width` is then the widest)
+    const along = widthAlong(l, w);
+    const widthAt = widthVaries(l) ? (t: number) => Math.max(along(t), 5.5 / scale) : undefined;
+    const widest = widthAt ? Math.max(cw, w * Math.max(...widthFactors(l))) : cw;
+    return { points: l.straight ? l.points : smoothPath(meander(l.points, cw * 1.6, Math.max(50, cw * 11), idSeed(l.id)), 3), width: widest, widthAt };
   }
   // (paths, walks and roads exactly where they were drawn)
   if (l.kind === "path" || l.kind === "walk") return { points: linePath(l), width: atLeast(3.6) };
   if (l.kind === "road") return { points: linePath(l), width: atLeast(3.5) };
   return { points: l.points, width: w };
+};
+
+/** How far along a polyline each of its points is. */
+const cumulative = (pts: P[]) => {
+  const out = [0];
+  for (let i = 1; i < pts.length; i++) out.push(out[i - 1] + dist(pts[i - 1], pts[i]));
+  return out;
 };
 
 export type ForestView = { cx: number; cy: number; rotation: number; scale: number; width: number; height: number };
@@ -297,21 +308,37 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     c.g.arc(p.x, p.y, r, 0, Math.PI * 2);
     c.g.fill();
   };
-  const line = (c: Ch, pts: P[], width: number) => {
+  /** A line `width` wide, or as wide as `width(t)` along the way (t: 0 at its start, 1 at its end),
+   * in short pieces. */
+  const line = (c: Ch, pts: P[], width: number | ((t: number) => number)) => {
     if (pts.length < 2) return;
     c.g.strokeStyle = c.color;
+    if (typeof width !== "number") {
+      const along = cumulative(pts), total = along[along.length - 1] || 1;
+      for (let i = 1; i < pts.length; i++) {
+        c.g.lineWidth = width((along[i - 1] + along[i]) / 2 / total);
+        c.g.beginPath();
+        c.g.moveTo(pts[i - 1].x, pts[i - 1].y);
+        c.g.lineTo(pts[i].x, pts[i].y);
+        c.g.stroke();
+      }
+      return;
+    }
     c.g.lineWidth = width;
     c.g.beginPath();
     pts.forEach((p, i) => (i ? c.g.lineTo(p.x, p.y) : c.g.moveTo(p.x, p.y)));
     c.g.stroke();
   };
-  /** A line of varying width (creeks): short pieces, each a little wider or narrower. */
-  const wobblyLine = (c: Ch, pts: P[], width: number, seed: number) => {
+  /** A line of varying width (creeks): short pieces, each a little wider or narrower (round the
+   * width it is set to there). */
+  const wobblyLine = (c: Ch, pts: P[], width: number | ((t: number) => number), seed: number) => {
     const rnd = seeded(seed);
-    let w = width;
+    const at = typeof width === "number" ? () => width : width;
+    const along = cumulative(pts), total = along[along.length - 1] || 1;
+    let f = 1;
     for (let i = 1; i < pts.length; i++) {
-      w = Math.max(width * 0.6, Math.min(width * 1.45, w + (rnd() - 0.5) * width * 0.35));
-      line(c, [pts[i - 1], pts[i]], w);
+      f = Math.max(0.6, Math.min(1.45, f + (rnd() - 0.5) * 0.35));
+      line(c, [pts[i - 1], pts[i]], at((along[i - 1] + along[i]) / 2 / total) * f);
     }
   };
 
@@ -359,7 +386,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       else if (a.kind === "woods") poly(WOODS, a.points);
     } else if (i.type === "line") {
       const l = i as LineItem;
-      const { points: pts, width: lw } = paintedLine(l, view.scale);
+      const { points: pts, width: lw, widthAt } = paintedLine(l, view.scale);
       if (l.kind === "road") {
         line(ROAD, pts, lw);
         line(CLEAR, pts, lw + ftOf(2));
@@ -367,10 +394,10 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         line(surfaceCh(l.surface), pts, lw);
         line(CLEAR, pts, lw + (crownR * 2.4) / k);
       } else if (l.kind === "stream") {
-        const cw = lw;
+        const cw = widthAt ?? lw;
         wobblyLine(WATER, pts, cw, idSeed(l.id) + 1);
         // Crowns lean over the banks a little
-        line(CLEAR, pts, cw + (crownR * 1.4) / k);
+        line(CLEAR, pts, typeof cw === "number" ? cw + (crownR * 1.4) / k : t => cw(t) + (crownR * 1.4) / k);
       }
     } else if (i.type === "structure") {
       // No treetops over built things (a little lawn round them)

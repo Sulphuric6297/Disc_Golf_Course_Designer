@@ -15,7 +15,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, drawnAreas, fairwayOutline, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { FAIRWAY_STATIONS, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, drawnAreas, fairwayOutline, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
@@ -102,6 +102,7 @@ const STYLE = `
 .dg-h[data-handle=mid]{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.6);border:2px solid #0891b2;cursor:copy}
 .dg-h[data-handle=mid][data-kind=line]{border-color:#f59e0b}
 .dg-h[data-handle=width]{width:13px;height:13px;border-radius:3px;background:#fff;border:2.5px solid #16a34a;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.dg-h[data-handle=linewidth]{width:12px;height:12px;border-radius:3px;background:#fff;border:2.5px solid #0284c7;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=widen]{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.85);border:1.5px solid #16a34a;cursor:copy;display:flex;align-items:center;justify-content:center;font:700 10px/1 Inter,sans-serif;color:#16a34a}.dg-h[data-handle=widen]::after{content:"+"}
 .dg-h[data-handle=rotate]{width:24px;height:24px;border-radius:50%;background:#fff;border:2.5px solid #2563eb;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;color:#2563eb;font:900 14px system-ui}
 .dg-h[data-handle=radius]{width:15px;height:15px;border-radius:50%;background:#16a34a;border:2.5px solid #fff;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
@@ -1719,7 +1720,7 @@ export class CourseView {
       }
       for (const it of course.items) {
         if (it.type === "area" && ["fairway", "green", "water", "parking", "building", "sand", "rough", "nogo"].includes(it.kind)) polys.push(it.points);
-        else if (it.type === "line" && it.kind !== "ob" && it.kind !== "fence") lines.push({ pts: it.points, half: (it.width ?? LINE_KINDS[it.kind].width) / 2 + 3 });
+        else if (it.type === "line" && it.kind !== "ob" && it.kind !== "fence") lines.push({ pts: it.points, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 + 3 });
         else if (it.type === "tee") discs.push({ p: it, r: Math.max(12, it.padLength) });
         else if (it.type === "basket") discs.push({ p: it, r: CIRCLE_ONE_FT * 0.6 });
         else if (it.type === "structure") lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 6 });
@@ -1824,14 +1825,16 @@ export class CourseView {
       const surfaced = (l.kind === "path" || l.kind === "walk") && l.surface && l.surface !== "dirt" ? PATH_SURFACES[l.surface].color : null;
       const c = l.kind === "ob" ? color("ob")! : surfaced ?? (l.kind === "path" || (l.kind === "walk" && l.width) ? st.path : l.kind === "stream" ? st.water : meta.color);
       const width = l.width ?? meta.width;
-      put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, hv, c, l.ob, l.kind === "stream" ? this.waterShore(l.points) : 0]), () => {
+      put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, l.widths, hv, c, l.ob, l.kind === "stream" ? this.waterShore(l.points) : 0]), () => {
         const g = new THREE.Group();
         const pts = linePath(l);
+        // (wider or narrower along the way: a creek that opens out)
+        const along = widthAlong(l, width);
         // Marked OB (a creek, a road): a red edge either side
         if (l.ob === true && l.kind !== "ob" && l.points.length >= 2) {
           if (width > 0) {
             const edge = new THREE.Mesh(
-              drapedRibbon(pts, width + 5, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.16),
+              drapedRibbon(pts, t => along(t) + 5, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.16),
               new THREE.MeshLambertMaterial({ color: color("ob")!, transparent: true, opacity: 0.95, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 })
             );
             edge.renderOrder = 1.9;
@@ -1840,7 +1843,7 @@ export class CourseView {
         }
         if (width > 0 && l.points.length >= 2) {
           const ribbon = new THREE.Mesh(
-            drapedRibbon(pts, width, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.18),
+            drapedRibbon(pts, along, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.18),
             l.kind === "stream" ? waterMaterial(c, ...this.waterShore(l.points)) : new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
           );
           // (walks to the next hole over every other path)
@@ -2268,6 +2271,7 @@ export class CourseView {
       this.pointHandles(sel.id, add);
       this.turnHandle(sel.id, add);
     }
+    if (sel.type === "line" && sel.kind === "stream") this.lineWidthHandles(sel.id, add);
     if (sel.type === "structure" && !isLineKind(sel.kind)) this.outlineHandles(sel.id, add);
     else if (sel.type === "tree") {
       const id = sel.id;
@@ -2573,7 +2577,7 @@ export class CourseView {
         if (e.altKey || (last && last.id === id && last.index === i && now - last.time < 400)) {
           this.lastCorner = null;
           if (cur.points.length > min) {
-            this.cb.onChange(id, { points: cur.points.filter((_, k) => k !== i) });
+            this.cb.onChange(id, { points: cur.points.filter((_, k) => k !== i), ...(cur.type === "line" ? { widths: widthsWithout(cur, i) } : {}) });
             this.cb.onCommit();
           }
           return null;
@@ -2591,7 +2595,7 @@ export class CourseView {
         if (!cur) return null;
         const a = cur.points[i], b = cur.points[(i + 1) % cur.points.length];
         const next = [...cur.points.slice(0, i + 1), { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, ...cur.points.slice(i + 1)];
-        this.cb.onChange(id, { points: next });
+        this.cb.onChange(id, { points: next, ...(cur.type === "line" ? { widths: widthsWithPoint(cur, i) } : {}) });
         return drag(i + 1, next);
       }, {
         index: i,
@@ -2619,9 +2623,73 @@ export class CourseView {
         const cur = it(), p = spot();
         if (!cur || !p) return null;
         const next = end ? [...cur.points, p] : [p, ...cur.points];
-        this.cb.onChange(id, { points: next });
+        this.cb.onChange(id, { points: next, ...(cur.type === "line" ? { widths: widthsWithEnd(cur, end) } : {}) });
         return drag(end ? next.length - 1 : 0, next);
       }, { index: end, title: "Drag to make it longer" });
+    }
+  }
+
+  /** A creek's width at each of its points: a square on either bank, dragged out or in (the rest of
+   * it keeps its width); double-click: back to the creek's width. */
+  private lineWidthHandles(id: string, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
+    const it = () => this.item(id) as LineItem | null;
+    const first = it();
+    if (!first || first.points.length < 2) return;
+    const n = first.points.length;
+    // (across the line at point i, from the points either side of it)
+    const across = (pts: P[], i: number) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      return { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
+    };
+    const base = (l: LineItem) => l.width ?? LINE_KINDS[l.kind].width;
+    for (let i = 0; i < n; i++) {
+      for (const side of [1, -1] as const) {
+        // (on the bank, or clear of the point's own handle on a narrow creek)
+        const pos = () => {
+          const l = it();
+          if (!l || l.points.length !== n) return null;
+          const p = l.points[i], nm = across(l.points, i), y = this.h(p.x, p.y);
+          const half = Math.max((base(l) * widthFactors(l)[i]) / 2, 16 * this.upp(new THREE.Vector3(p.x, y, p.y)));
+          const q = { x: p.x + nm.x * half * side, y: p.y + nm.y * half * side };
+          return new THREE.Vector3(q.x, this.h(q.x, q.y) + 0.3, q.y);
+        };
+        add("linewidth", pos, e => {
+          const l0 = it();
+          if (!l0 || l0.points.length !== n) return null;
+          const now = performance.now(), last = this.lastCorner;
+          this.lastCorner = { id: `${id}:lw`, index: i, time: now };
+          if (e.altKey || (last && last.id === `${id}:lw` && last.index === i && now - last.time < 400)) {
+            this.lastCorner = null;
+            const f = widthFactors(l0).map((v, k) => (k === i ? 1 : v));
+            this.cb.onChange(id, { widths: widthVaries({ points: l0.points, widths: f }) ? f : undefined });
+            this.cb.onCommit();
+            return null;
+          }
+          const p = l0.points[i], nm = across(l0.points, i), w0 = base(l0);
+          const y = this.h(p.x, p.y);
+          // (by how far it is pulled out or in from where it was taken)
+          const out = (x: number, z: number) => ((x - p.x) * nm.x + (z - p.y) * nm.y) * side;
+          const g0 = this.planeAt(e.clientX, e.clientY, y);
+          if (!g0) return null;
+          const from = out(g0.x, g0.z), half0 = (w0 * widthFactors(l0)[i]) / 2;
+          return {
+            move: ev => {
+              const hit = this.planeAt(ev.clientX, ev.clientY, y);
+              if (!hit || w0 <= 0) return;
+              const half = Math.max(0.5, half0 + out(hit.x, hit.z) - from);
+              const f = widthFactors(it() ?? l0).slice();
+              f[i] = Math.round((2 * half / w0) * 100) / 100;
+              this.cb.onChange(id, { widths: widthVaries({ points: l0.points, widths: f }) ? f : undefined });
+            },
+            end: () => this.cb.onCommit()
+          };
+        }, {
+          index: i * 2 + (side === 1 ? 0 : 1),
+          title: "Drag: wider or narrower here · double-click: back to the creek's width",
+          data: { point: String(i), side: String(side) }
+        });
+      }
     }
   }
 
