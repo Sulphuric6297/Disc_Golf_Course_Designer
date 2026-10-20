@@ -108,3 +108,11 @@ been seen working in the browser.
   with the width squares along the hole.
 - [ ] **Mobile friendly**, as a well thought out mobile navigation platform (not a strap-on),
   while working just as well on desktop.
+- [x] **A half wooded, half open course looks good either way** (tested on purpose: the painted
+  map with drawn woods only, with woods everywhere, in 3D and from a tee; 3D woods now keep off
+  the fairways and the pond).
+- [x] **Water looks better, not plain**: painted ponds with light shallows, a bright rim, faint
+  water lines and a deep middle; 3D water mirroring the sky and the treeline, with small waves.
+- [ ] **Mobile performs perfectly** (researched): the engine side is done and measured (never
+  freezes while the map paints, lighter 3D on phones, quality that adapts, the hidden map view
+  rests); the phone layout's own performance comes with the mobile layout.
