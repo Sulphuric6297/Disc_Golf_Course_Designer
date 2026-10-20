@@ -1,5 +1,5 @@
 // Small building blocks shared by the panels.
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 export const Section = ({ title, children, right, testid }: { title?: ReactNode; children: ReactNode; right?: ReactNode; testid?: string }) => (
   <section className="border-t border-zinc-800 first:border-t-0 px-4 py-3" data-testid={testid}>
@@ -33,24 +33,44 @@ export const TextInput = ({ value, onChange, placeholder, label, area }: { value
     <input aria-label={label} className={inputCls} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} />
   );
 
-export const NumberInput = ({ value, onChange, min, max, step = 1, label, unit }: { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; label?: string; unit?: string }) => (
-  <div className="flex items-center gap-1.5">
-    <input
-      aria-label={label}
-      type="number"
-      className={inputCls}
-      value={Number.isFinite(value) ? value : ""}
-      min={min}
-      max={max}
-      step={step}
-      onChange={e => {
-        const v = parseFloat(e.target.value);
-        if (Number.isFinite(v)) onChange(Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v)));
-      }}
-    />
-    {unit && <span className="text-xs text-zinc-400">{unit}</span>}
-  </div>
-);
+/** A number typed freely (cleared, part-typed): kept as typed while it is in range, kept within
+ * range when the field is left or Enter is pressed. */
+export function NumberInput({ value, onChange, min, max, step = 1, label, unit }: { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; label?: string; unit?: string }) {
+  const shown = Number.isFinite(value) ? String(value) : "";
+  const [text, setText] = useState(shown);
+  const editing = useRef(false);
+  useEffect(() => { if (!editing.current) setText(shown); }, [shown]);
+  const within = (v: number) => Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v));
+  const keep = () => {
+    editing.current = false;
+    const v = parseFloat(text);
+    if (Number.isFinite(v) && within(v) !== value) onChange(within(v));
+    setText(Number.isFinite(v) ? String(within(v)) : shown);
+  };
+  return (
+    <div className="flex items-center gap-1.5">
+      <input
+        aria-label={label}
+        type="number"
+        className={inputCls}
+        value={text}
+        min={min}
+        max={max}
+        step={step}
+        onFocus={() => { editing.current = true; }}
+        onChange={e => {
+          setText(e.target.value);
+          const v = parseFloat(e.target.value);
+          // (live while it's a number in range; the rest when the field is left)
+          if (Number.isFinite(v) && v === within(v)) onChange(v);
+        }}
+        onBlur={keep}
+        onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+      />
+      {unit && <span className="text-xs text-zinc-400">{unit}</span>}
+    </div>
+  );
+}
 
 export const Slider = ({ value, onChange, min, max, step = 1, label, format, onDone }: { value: number; onChange: (v: number) => void; min: number; max: number; step?: number; label: string; format?: (v: number) => string; onDone?: () => void }) => (
   <div className="mb-2.5">

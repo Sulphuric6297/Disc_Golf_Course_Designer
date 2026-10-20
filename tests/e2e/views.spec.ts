@@ -157,7 +157,13 @@ test("a hole's own flight through keyframes: shown on the map, dragged, set, add
   await drag(page, await handleCenter(page, "flykey", 1), await screenOf(page, 500, 450));
   await expect.poll(async () => Math.round((await keys())[1].y / 10)).toBe(45);
   // Its height, and keyframe 3's seconds
-  await page.getByRole("spinbutton", { name: "Keyframe 2 height" }).fill("120");
+  // (typed like any number: cleared first, then typed key by key)
+  const h2 = page.getByRole("spinbutton", { name: "Keyframe 2 height" });
+  await h2.click();
+  await h2.press("Control+a");
+  await h2.press("Backspace");
+  await h2.pressSequentially("120");
+  await h2.press("Enter");
   await page.getByRole("spinbutton", { name: "Keyframe 3 seconds" }).fill("4");
   await expect.poll(async () => (await keys())[1].alt).toBe(120);
   expect((await keys())[2].secs).toBe(4);
@@ -214,6 +220,17 @@ plain("the flight by itself: behind the tee, up over the trees in good time and 
   const side = autoFlight(line, { ...FLYOVER_DEFAULTS, side: 50, speed: 2 }, flat)!;
   plainExpect(at(side, 200).y).toBeCloseTo(50, 5);
   plainExpect(side.dur).toBeCloseTo(open.dur / 2, 5);
+  // Over bumpy ground and scattered trees it holds a steady line: up, then down (no bobbing)
+  const bumpy = (x: number) => 100 + 8 * Math.sin(x / 20);
+  const scattered = (p: { x: number }, reach: number) => ([60, 140, 230, 320].some(t => Math.abs(p.x - t) < reach + 10) ? 175 : -Infinity);
+  const steady = autoFlight(line, FLYOVER_DEFAULTS, x => bumpy(x), scattered)!;
+  let turns = 0;
+  for (let i = 2; i < steady.cam.length; i++) {
+    const a = steady.cam[i - 1].z - steady.cam[i - 2].z, b = steady.cam[i].z - steady.cam[i - 1].z;
+    if (Math.abs(a) > 0.05 && Math.abs(b) > 0.05 && Math.sign(a) !== Math.sign(b)) turns++;
+  }
+  plainExpect(turns).toBeLessThanOrEqual(2);
+  for (const c of steady.cam) plainExpect(c.z).toBeGreaterThanOrEqual(Math.max(bumpy(c.x) + 3, [60, 140, 230, 320].some(t => Math.abs(c.x - t) < 45) ? 193 : -Infinity) - 1e-6);
 });
 
 plain("a flight through keyframes: through each one on its seconds, the field of view between them (pure logic)", () => {

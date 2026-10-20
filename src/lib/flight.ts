@@ -40,7 +40,7 @@ export const autoFlight = (line: P[], set: FlyoverSettings, ground: (x: number, 
   // A sample about every 8 ft (at least 60)
   const n = Math.max(60, Math.ceil((len + behind) / 8));
   const step = (len - 25 + behind) / n;
-  const cam: Air[] = [], look: Air[] = [];
+  const cam: Air[] = [], look: Air[] = [], want: number[] = [], clear: number[] = [], floor: number[] = [];
   const reachAhead = Math.max(30, set.lookAhead) * Math.max(1, len / 350);
   for (let i = 0; i <= n; i++) {
     const t = i / n;
@@ -49,17 +49,41 @@ export const autoFlight = (line: P[], set: FlyoverSettings, ground: (x: number, 
     // Off to the side (right of the way it flies)
     const p = { x: at.point.x - Math.sin(at.angle) * set.side, y: at.point.y + Math.cos(at.angle) * set.side };
     const alt = set.height + Math.sin(Math.PI * Math.min(1, t * 1.1)) * Math.min(60, len * 0.12) - t * Math.min(25, set.height * 0.55);
-    const z = Math.max(ground(p.x, p.y) + Math.max(3, alt), obstacles(p, 35) + CLEARANCE);
-    cam.push({ ...p, z });
+    const g = ground(p.x, p.y);
+    want.push(g + Math.max(3, alt));
+    clear.push(obstacles(p, 35) + CLEARANCE);
+    floor.push(g + 3);
+    cam.push({ ...p, z: 0 });
     const ahead = pointAlong(line, Math.min(len, Math.max(0, d) + reachAhead)).point;
     const toward = t > 0.75 ? end : ahead;
     look.push({ ...toward, z: ground(toward.x, toward.y) + 3 });
   }
-  // Up over the trees in good time, and gently down after them (no sudden hops)
-  const climb = Math.max(1, step) * 0.5;
-  for (let i = cam.length - 2; i >= 0; i--) cam[i].z = Math.max(cam[i].z, cam[i + 1].z - climb);
-  for (let i = 1; i < cam.length; i++) cam[i].z = Math.max(cam[i].z, cam[i - 1].z - climb);
+  // A steady height, never bobbing over each bump of the ground or each treetop: the height asked,
+  // with the ground's bumps smoothed out; over trees and roofs, the highest it must clear over a
+  // long stretch around, smoothed (so it is up in good time and comes down gently); never under
+  // what it must clear
+  const w = Math.max(2, Math.round(Math.max(50, len * 0.12) / Math.max(1, step)));
+  const steady = smoothRun(want, w);
+  const over = smoothRun(clear.map((_, i) => Math.max(steady[i], ...clear.slice(Math.max(0, i - 3 * w), i + 3 * w + 1))), w);
+  cam.forEach((c, i) => (c.z = Math.max(steady[i], over[i], clear[i], floor[i])));
+  // (and what it looks at rises and falls gently with the ground)
+  const lz = smoothRun(look.map(l => l.z), w);
+  look.forEach((l, i) => (l.z = lz[i]));
   return { cam, look, fov: cam.map(() => set.fov), dur: autoSeconds(len, set) };
+};
+
+/** Values smoothed over `w` samples either side (three passes of a running mean). */
+const smoothRun = (v: number[], w: number) => {
+  let z = v;
+  for (let pass = 0; pass < 3; pass++) {
+    const sum = [0];
+    for (const x of z) sum.push(sum[sum.length - 1] + x);
+    z = z.map((_, i) => {
+      const a = Math.max(0, i - w), b = Math.min(z.length - 1, i + w);
+      return (sum[b + 1] - sum[a]) / (b - a + 1);
+    });
+  }
+  return z;
 };
 
 /** Seconds from each keyframe to the next. */
