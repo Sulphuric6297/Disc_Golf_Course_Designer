@@ -4,7 +4,7 @@ import type {
   AmenityItem, AmenityKind, AreaItem, AreaKind, BasketItem, CourseDoc, CourseItem, CourseRules, DropZoneItem, Hole, LabelItem,
   Layout, LineItem, LineKind, MandoItem, MapStyle, P, PinPosition, StructureItem, StructureKind, TeeItem, TeeLevel, TreeItem
 } from "../types";
-import { centroid } from "./geom";
+import { centroid, corridor } from "./geom";
 
 export const defaultStyle = (): MapStyle => ({
   theme: "forest",
@@ -89,7 +89,10 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
     // (Courses saved before there was a choice of basket marks keep the mark their style had)
     style: { ...base.style, ...(raw.style && !raw.style.basketMark ? { basketMark: raw.style.theme === "forest" || !raw.style.theme ? "basket" : "target" } : {}), ...(raw.style ?? {}) },
     rules: { ...base.rules, ...(raw.rules ?? {}), prices: { ...base.rules.prices, ...(raw.rules?.prices ?? {}) } },
-    holes: (raw.holes ?? []).map(h => ({ ...h, fairwayWidth: h.fairwayWidth ?? DEFAULT_FAIRWAY_FT, fairway: h.fairway ?? true, doglegs: h.doglegs ?? [] })),
+    holes: (raw.holes ?? []).map(h => {
+      const shape = Array.isArray(h.fairwayShape) && h.fairwayShape.length === FAIRWAY_STATIONS.length && h.fairwayShape.every(v => typeof v === "number" && v > 0) ? h.fairwayShape : undefined;
+      return { ...h, fairwayWidth: h.fairwayWidth ?? DEFAULT_FAIRWAY_FT, fairway: h.fairway ?? true, doglegs: h.doglegs ?? [], fairwayShape: shape };
+    }),
     // (A structure needs its points and a kind this version knows)
     items: Array.isArray(raw.items) ? raw.items.filter(i => i.type !== "structure" || (Array.isArray(i.points) && i.kind in STRUCTURE_KINDS)) : [],
     layouts: raw.layouts?.length ? raw.layouts : base.layouts,
@@ -99,6 +102,29 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
   };
   if (!doc.layouts.some(l => l.id === doc.activeLayout)) doc.activeLayout = doc.layouts[0].id;
   return doc;
+};
+
+/** Where along a hole its fairway can be made wider or narrower (0 = the tee, 1 = the basket):
+ * just off the tee, the two landing zones, and round the basket. */
+export const FAIRWAY_STATIONS = [0.15, 0.4, 0.65, 0.88];
+
+/** A hole's fairway width at a point along it (the share of the way from tee to basket), ft:
+ * its shape's widths at the stations, blended smoothly in between. */
+export const fairwayWidthAt = (hole: Pick<Hole, "fairwayWidth" | "fairwayShape">) => (t: number) => {
+  const f = hole.fairwayShape, S = FAIRWAY_STATIONS;
+  if (!f || f.length !== S.length) return hole.fairwayWidth;
+  if (t <= S[0]) return hole.fairwayWidth * f[0];
+  if (t >= S[S.length - 1]) return hole.fairwayWidth * f[f.length - 1];
+  let i = 0;
+  while (t > S[i + 1]) i++;
+  const u = (t - S[i]) / (S[i + 1] - S[i]), e = u * u * (3 - 2 * u);
+  return hole.fairwayWidth * (f[i] + (f[i + 1] - f[i]) * e);
+};
+
+/** A hole's fairway outline along its (smoothed) line, `extra` ft wider all along. */
+export const fairwayOutline = (hole: Pick<Hole, "fairwayWidth" | "fairwayShape">, line: P[], extra = 0, roundSteps = 12) => {
+  const w = fairwayWidthAt(hole);
+  return corridor(line, t => w(t) + extra, roundSteps);
 };
 
 export const newHole = (over: Partial<Hole> = {}): Hole => ({ id: `hole-${generateId()}`, doglegs: [], fairwayWidth: DEFAULT_FAIRWAY_FT, fairway: true, ...over });

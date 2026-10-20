@@ -2,8 +2,8 @@
 // positions), the hole list as CSV, the stake-out list, and the parts list with a cost estimate.
 import { AMENITY_KINDS, AREA_KINDS, FT_PER_M, LINE_KINDS, TEE_LEVELS, TEE_SURFACES } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, CourseItem, DropZoneItem, Hole, LineItem, MandoItem, P, TeeItem, TreeItem } from "../types";
-import { holeBaskets, holeNumber, holeTees } from "./course";
-import { corridor, pathTouchesPolygon, pointInPolygon, smoothPath } from "./geom";
+import { fairwayOutline, holeBaskets, holeNumber, holeTees } from "./course";
+import { pathTouchesPolygon, pointInPolygon, smoothPath } from "./geom";
 import { bearing, compassPoint, geoRefOf, toLatLon, type GeoRef } from "./geoRef";
 import { holeStats, isOb } from "./holeStats";
 import { heightAt } from "./terrainGrid";
@@ -88,7 +88,7 @@ export const holeGeoJSON = (doc: CourseDoc, holeId: string) => {
   if (!hole) throw new Error("That hole isn't in the course.");
   const s = holeStats(doc, hole);
   // In play: within the fairway and a little either side of it
-  const zone = s.complete ? corridor(smoothPath(s.line, 8), hole.fairwayWidth + 40, 8) : [];
+  const zone = s.complete ? fairwayOutline(hole, smoothPath(s.line, 8), 40, 8) : [];
   const inPlay = (pts: P[], area: boolean) => zone.length > 2 && (pathTouchesPolygon(area ? [...pts, pts[0]] : pts, zone) || (area && zone.some(p => pointInPolygon(p, pts))));
   const features = holeFeatures(doc, ref, hole);
   for (const i of doc.items) {

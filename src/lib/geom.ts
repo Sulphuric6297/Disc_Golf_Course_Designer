@@ -153,23 +153,40 @@ export const pointAlong = (pts: P[], d: number) => {
 
 /**
  * A corridor of the given width around a polyline: an outline with round ends and smooth turns
- * (a fairway along a throw line). Returned as one closed polygon.
+ * (a fairway along a throw line). The width can change along the way: a function of how far
+ * along the line (0 at its start, 1 at its end). Returned as one closed polygon.
  */
-export const corridor = (pts: P[], width: number, roundSteps = 10): P[] => {
-  const half = width / 2;
-  const line = pts.filter((p, i) => i === 0 || dist(p, pts[i - 1]) > 1e-6);
+export const corridor = (pts: P[], width: number | ((t: number) => number), roundSteps = 10): P[] => {
+  const widthAt = typeof width === "number" ? () => width : width;
+  let line = pts.filter((p, i) => i === 0 || dist(p, pts[i - 1]) > 1e-6);
+  // A width that changes: divide the line finely, so the outline follows it between the points
+  if (typeof width !== "number" && line.length >= 2) {
+    const len = line.slice(1).reduce((a, p, i) => a + dist(line[i], p), 0);
+    const step = Math.max(1, len / 80);
+    const fine: P[] = [line[0]];
+    for (let i = 1; i < line.length; i++) {
+      const a = line[i - 1], b = line[i], n = Math.max(1, Math.ceil(dist(a, b) / step));
+      for (let k = 1; k <= n; k++) fine.push({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n });
+    }
+    line = fine;
+  }
   if (line.length < 2) {
     const c = line[0] ?? { x: 0, y: 0 };
+    const half = widthAt(0) / 2;
     return Array.from({ length: 24 }, (_, i) => ({ x: c.x + Math.cos((i / 24) * Math.PI * 2) * half, y: c.y + Math.sin((i / 24) * Math.PI * 2) * half }));
   }
+  const along = [0];
+  for (let i = 1; i < line.length; i++) along.push(along[i - 1] + dist(line[i - 1], line[i]));
+  const total = along[along.length - 1] || 1;
+  const halves = along.map(d => widthAt(d / total) / 2);
   const normals = line.map((_, i) => {
     const a = line[Math.max(0, i - 1)], b = line[Math.min(line.length - 1, i + 1)];
     const len = dist(a, b) || 1;
     return { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
   });
-  const left = line.map((p, i) => ({ x: p.x + normals[i].x * half, y: p.y + normals[i].y * half }));
-  const right = line.map((p, i) => ({ x: p.x - normals[i].x * half, y: p.y - normals[i].y * half }));
-  const cap = (c: P, n: P, from: number): P[] => {
+  const left = line.map((p, i) => ({ x: p.x + normals[i].x * halves[i], y: p.y + normals[i].y * halves[i] }));
+  const right = line.map((p, i) => ({ x: p.x - normals[i].x * halves[i], y: p.y - normals[i].y * halves[i] }));
+  const cap = (c: P, n: P, from: number, half: number): P[] => {
     // Half a circle from one side to the other, bulging away from the line
     const a0 = Math.atan2(n.y, n.x);
     const out: P[] = [];
@@ -183,9 +200,9 @@ export const corridor = (pts: P[], width: number, roundSteps = 10): P[] => {
   // left side forward, round end cap (from +n to -n through the forward direction), right side back, start cap
   return [
     ...left,
-    ...cap(line[end], normals[end], -1),
+    ...cap(line[end], normals[end], -1, halves[end]),
     ...right.reverse(),
-    ...cap(line[0], { x: -normals[0].x, y: -normals[0].y }, -1)
+    ...cap(line[0], { x: -normals[0].x, y: -normals[0].y }, -1, halves[0])
   ];
 };
 

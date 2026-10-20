@@ -152,6 +152,9 @@ export interface Hole {
   doglegs: P[];
   /** Fairway width, ft (drawn along the throw line). */
   fairwayWidth: number;
+  /** The fairway wider or narrower in places: its width at each of FAIRWAY_STATIONS along the
+   * hole, as a share of `fairwayWidth` (unset: the same width all along). */
+  fairwayShape?: number[];
   /** Draw the fairway along the throw line (off: only a drawn fairway area, or none). */
   fairway: boolean;
   /** Heavy foliage makes a hole play longer (PDGA par guidelines). Unset: worked out from the trees. */

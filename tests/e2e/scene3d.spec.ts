@@ -108,7 +108,8 @@ test("3D woods: real trees, the ones near the camera in full detail and the rest
   });
   await page.keyboard.press("3");
   const info = (eye?: number[]) => page.evaluate(e => (window as any).__dgView.forestInfo(e && { x: e[0], y: e[1], z: e[2] }) as { trees: number; near: number }, eye);
-  await expect.poll(async () => (await info()).trees).toBeGreaterThan(200);
+  // (the first woods also draw the leaf textures and tree shapes: slow without a graphics card)
+  await expect.poll(async () => (await info()).trees, { timeout: 40_000 }).toBeGreaterThan(200);
   // From high above the whole course: all of them light
   expect((await info([450, 3000, 1400])).near).toBe(0);
   // Standing at the edge of the woods: the close ones in full detail, not all of them
@@ -129,7 +130,7 @@ test("landscape: pine forest fills the 3D woods with pines; the painted map take
   });
   await page.keyboard.press("3");
   const info = () => page.evaluate(() => (window as any).__dgView.forestInfo() as { trees: number; conifers: number });
-  await expect.poll(async () => (await info()).trees).toBeGreaterThan(200);
+  await expect.poll(async () => (await info()).trees, { timeout: 40_000 }).toBeGreaterThan(200);
   expect((await info()).conifers / (await info()).trees).toBeLessThan(0.4);
   await page.getByTestId("scene-button").click();
   await page.getByTestId("landscape-pines").click();

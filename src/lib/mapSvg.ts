@@ -5,8 +5,8 @@
 // is at the bottom.
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
-import { activeLayout, holeBaskets, teeAim } from "./course";
-import { boundsOf, corridor, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath } from "./geom";
+import { activeLayout, fairwayOutline, holeBaskets, teeAim } from "./course";
+import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath } from "./geom";
 import { courseTotals, holeStats, isOb, type HoleStats } from "./holeStats";
 import { forestCanvas, paintedLine, type CanopyGrid } from "./forest";
 import { BASKET_MARKS, RESTRICTED, STRUCTURE_INK, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol, structureLegend, structureSymbol, type StructureDraw, type StructureInk } from "./symbols";
@@ -252,7 +252,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     for (const st of layers.stats) {
       const hole = doc.holes.find(h => h.id === st.holeId);
       if (!hole?.fairway || !st.complete || forest) continue;
-      const poly = corridor(smoothPath(st.line, 10), hole.fairwayWidth, 12);
+      const poly = fairwayOutline(hole, smoothPath(st.line, 10), 0, 12);
       const o = dim(hole.id) * (photo ? 0.4 : theme === "minimal" ? 0.8 : 0.95);
       out.push(`<polygon points="${pts(poly)}" fill="${s.fairway}" opacity="${n(o)}" ${theme === "minimal" ? "" : `filter="url(#${uid}-soft)"`}/>`);
       if (photo) out.push(`<polygon points="${pts(poly)}" fill="none" stroke="${s.fairway}" stroke-width="${n(px(1.2))}" opacity="${n(dim(hole.id))}"/>`);
@@ -565,7 +565,7 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
   const shapes = doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as LineItem).width] : i.type === "structure" ? [i.type, i.kind, i.points, i.width, i.height, i.roof] : [i.type, Math.round(i.x), Math.round(i.y), (i as TreeItem).radius]));
   const look = [s.forest, s.treeCover, s.landscape, s.contours, s.trees, s.fairway, s.rough, s.water, s.path, s.nextTee, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint];
-  const key = JSON.stringify([view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairway]), shapes, doc.canvas, doc.id]);
+  const key = JSON.stringify([view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairwayShape, h.fairway]), shapes, doc.canvas, doc.id]);
   const hit = forestCache.get(key);
   if (hit) return hit;
   const canvas = forestCanvas(doc, view, layers.stats, { mode: s.forest ?? "everywhere", canopy, style: s, density: Math.min(3, Math.max(1.5, 2400 / Math.max(view.width, view.height))) });

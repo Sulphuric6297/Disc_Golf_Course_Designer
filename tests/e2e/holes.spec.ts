@@ -62,10 +62,24 @@ test("fairway width handle and par override in the inspector", async ({ page }) 
   await page.keyboard.press("Escape");
   await page.getByTestId("hole-row").click();
   await expect(page.getByTestId("inspector-title")).toHaveText("Hole 1");
-  const w = await handleCenter(page, "width");
-  const to = await screenOf(page, 533, 700 - 40);
+  // Four width squares along the fairway; the first (just off the tee, on the south side)
+  // widens it there only
+  await expect(page.locator('[data-handle="width"]')).toHaveCount(4);
+  const w = await handleCenter(page, "width", 0);
+  const to = await screenOf(page, 460, 700 + 40);
   await drag(page, w, to);
-  await expect.poll(async () => (await course(page)).holes[0].fairwayWidth).toBeGreaterThan(70);
+  await expect.poll(async () => { const h = (await course(page)).holes[0]; return h.fairwayShape?.[0] * h.fairwayWidth; }).toBeGreaterThan(70);
+  expect((await course(page)).holes[0].fairwayShape.slice(1)).toEqual([1, 1, 1]);
+  await expect(page.getByTestId("fairway-shape")).toContainText("Shaped");
+  // The width slider widens it all along, keeping the shape; Even width takes the shape off
+  const before = (await course(page)).holes[0].fairwayShape;
+  await page.getByRole("slider", { name: /Fairway width/ }).fill("60");
+  await expect.poll(async () => (await course(page)).holes[0].fairwayWidth).toBe(60);
+  expect((await course(page)).holes[0].fairwayShape).toEqual(before);
+  await page.getByTestId("fairway-shape").getByRole("button", { name: "Even width" }).click();
+  await expect.poll(async () => (await course(page)).holes[0].fairwayShape).toBeUndefined();
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await course(page)).holes[0].fairwayShape).toEqual(before);
   await page.getByRole("radiogroup", { name: "Par" }).getByRole("radio", { name: "4" }).click();
   await expect.poll(async () => (await course(page)).holes.find((h: any) => h.id === hole.id).par).toBe(4);
   await expect(page.getByTestId("hole-row")).toContainText("P4");

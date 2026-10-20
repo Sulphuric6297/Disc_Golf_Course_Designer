@@ -8,6 +8,7 @@ import { CIRCLE_ONE_FT, LINE_KINDS } from "../constants";
 import type { AreaItem, CourseDoc, LineItem, MapStyle, P, StructureItem, TreeItem } from "../types";
 import { canopyMask } from "./geo/detect";
 import { boundsOf, corridor, dist, pathLength, pointAlong, pointInPolygon, smoothPath } from "./geom";
+import { fairwayWidthAt } from "./course";
 import type { HoleStats } from "./holeStats";
 import { landscapeOf } from "./landscapes";
 import { reliefExaggeration } from "./relief";
@@ -319,11 +320,12 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
     const hole = doc.holes.find(h => h.id === st.holeId);
     if (!st.complete || !hole) continue;
     const path = smoothPath(st.line, 10);
-    const width = Math.max(18, hole.fairwayWidth * (hole.fairway ? 1 : 0.6));
+    const wAt = fairwayWidthAt(hole);
+    const width = (t: number) => Math.max(18, wAt(t) * (hole.fairway ? 1 : 0.6));
     poly(FAIR, corridor(path, width, 12));
     // Treetops lean in over the edges: keep their middles back so the fairway keeps its width
-    poly(CLEAR, corridor(path, width + (crownR * 1.2) / k, 12));
-    poly(MIDDLE, corridor(path, width * 0.4, 12));
+    poly(CLEAR, corridor(path, t => width(t) + (crownR * 1.2) / k, 12));
+    poly(MIDDLE, corridor(path, t => width(t) * 0.4, 12));
   }
   for (const i of doc.items) {
     if (i.type === "tee") {

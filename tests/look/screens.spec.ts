@@ -1,5 +1,5 @@
 // `npm run look`: screenshots of the main screens into look/, to see the real UI (not assertions).
-import { test, expect, importSite, addHole, course } from "../e2e/fixtures";
+import { test, expect, importSite, addHole, course, handleCenter, drag } from "../e2e/fixtures";
 import type { Page } from "@playwright/test";
 
 const shot = (page: Page, name: string) => page.screenshot({ path: `look/${name}.png` });
@@ -514,4 +514,35 @@ test("structures close up", async ({ page }) => {
       await page.screenshot({ path: `look/18-print-${theme}-${kind}.png`, clip: { x: 340, y: 105, width: 1260, height: 870 } });
     }
   }
+});
+
+test("fairway shaped along a hole", async ({ page }) => {
+  test.setTimeout(240_000);
+  await importSite(page);
+  await seedCourse(page);
+  // Hole 3, the long one: a wide landing zone and a pinched gap before the basket
+  await page.getByTestId("hole-row").nth(2).click();
+  await page.waitForTimeout(800);
+  // Out from the hole's line (its tee to its basket), k pixels (negative: in toward it)
+  const widen = async (i: number, k: number) => {
+    const h = await handleCenter(page, "width", i);
+    const [a, b] = await page.evaluate(() => {
+      const d = (window as any).__dgCourse();
+      const v = (window as any).__dgView;
+      const W = d.canvas.width, H = d.canvas.height;
+      return [v.toClient(0.16 * W, 0.24 * H), v.toClient(0.42 * W, 0.14 * H)];
+    });
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const n = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
+    const s = Math.sign((h.x - a.x) * n.x + (h.y - a.y) * n.y) || 1;
+    await drag(page, h, { x: h.x + n.x * s * k, y: h.y + n.y * s * k });
+  };
+  await widen(1, 40);
+  await widen(2, -12);
+  await page.waitForTimeout(800);
+  await shot(page, "19-fairway-shape-editor");
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
+  await page.waitForTimeout(2500);
+  await page.getByTestId("design-page").screenshot({ path: "look/19-fairway-shape-print.png" });
 });

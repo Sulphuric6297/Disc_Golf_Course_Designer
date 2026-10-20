@@ -15,8 +15,8 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { basketFor, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
-import { boundsOf, corridor, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
+import { FAIRWAY_STATIONS, basketFor, fairwayOutline, fairwayWidthAt, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
 import { landscapeOf } from "../lib/landscapes";
@@ -1301,9 +1301,9 @@ export class CourseView {
       const hole = course.holes.find(h => h.id === s.holeId);
       if (!hole || !s.complete || !hole.fairway) continue;
       const line = smoothPath(s.line, 10);
-      put(`fair:${hole.id}`, JSON.stringify([line, hole.fairwayWidth, hv, st.fairway, photo]), () => {
+      put(`fair:${hole.id}`, JSON.stringify([line, hole.fairwayWidth, hole.fairwayShape, hv, st.fairway, photo]), () => {
         const g = new THREE.Group();
-        const poly = corridor(line, hole.fairwayWidth, 12);
+        const poly = fairwayOutline(hole, line, 0, 12);
         const mesh = new THREE.Mesh(
           drapedPolygon(poly, (x, y) => this.h(x, y), doc.gridSize, 0.12),
           new THREE.MeshLambertMaterial({ color: st.fairway, transparent: true, opacity: photo ? 0.22 : 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 })
@@ -1538,7 +1538,7 @@ export class CourseView {
       const s = doc.stats.find(x => x.holeId === hole.id);
       if (!s || s.line.length < 2) return null;
       const line = smoothPath(s.line, 10);
-      g.add(this.fatLine(this.drapeLine(corridor(line, hole.fairwayWidth, 12), 0.5, true), color, 2, { opacity: opacity * 0.9, dashed: 5, order: 9 }));
+      g.add(this.fatLine(this.drapeLine(fairwayOutline(hole, line, 0, 12), 0.5, true), color, 2, { opacity: opacity * 0.9, dashed: 5, order: 9 }));
       return g;
     }
     const item = this.item(id);
@@ -1855,32 +1855,41 @@ export class CourseView {
         }
       });
     }
-    // Fairway width: a square on the side of the line, a third of the way along
-    const side = () => {
-      const s = stats();
-      if (!s || s.line.length < 2) return null;
-      const line = smoothPath(s.line, 10);
-      const { point, angle } = pointAlong(line, pathLength(line) * 0.33);
-      return { point, n: { x: -Math.sin(angle), y: Math.cos(angle) } };
-    };
-    add("width", () => {
-      const sd = side(), h = hole();
-      if (!sd || !h || !h.fairway) return null;
-      return at({ x: sd.point.x + sd.n.x * h.fairwayWidth / 2, y: sd.point.y + sd.n.y * h.fairwayWidth / 2 });
-    }, () => {
-      const sd = side();
-      if (!sd) return null;
-      const y = this.h(sd.point.x, sd.point.y);
-      return {
-        move: ev => {
-          const hit = this.planeAt(ev.clientX, ev.clientY, y);
-          if (!hit) return;
-          const w = clamp(2 * Math.abs((hit.x - sd.point.x) * sd.n.x + (hit.z - sd.point.y) * sd.n.y), 8, 200);
-          this.cb.onHoleChange(holeId, { fairwayWidth: Math.round(w) });
-        },
-        end: () => this.cb.onCommit()
+    // Fairway width: squares on the fairway's edges at points along the hole (just off the tee,
+    // the landing zones, round the basket), alternately left and right: each widens or narrows
+    // the fairway there, blending smoothly into the rest
+    FAIRWAY_STATIONS.forEach((t, i) => {
+      const flip = i % 2 ? -1 : 1;
+      const side = () => {
+        const s = stats();
+        if (!s || s.line.length < 2) return null;
+        const line = smoothPath(s.line, 10);
+        const { point, angle } = pointAlong(line, pathLength(line) * t);
+        return { point, n: { x: -Math.sin(angle) * flip, y: Math.cos(angle) * flip } };
       };
-    }, { title: "Drag to make the fairway wider or narrower" });
+      add("width", () => {
+        const sd = side(), h = hole();
+        if (!sd || !h || !h.fairway) return null;
+        const w = fairwayWidthAt(h)(t);
+        return at({ x: sd.point.x + (sd.n.x * w) / 2, y: sd.point.y + (sd.n.y * w) / 2 });
+      }, () => {
+        const sd = side(), h0 = hole();
+        if (!sd || !h0) return null;
+        const y = this.h(sd.point.x, sd.point.y);
+        return {
+          move: ev => {
+            const h = hole();
+            const hit = this.planeAt(ev.clientX, ev.clientY, y);
+            if (!hit || !h) return;
+            const w = clamp(2 * Math.abs((hit.x - sd.point.x) * sd.n.x + (hit.z - sd.point.y) * sd.n.y), 8, 300);
+            const shape = h.fairwayShape?.length === FAIRWAY_STATIONS.length ? [...h.fairwayShape] : FAIRWAY_STATIONS.map(() => 1);
+            shape[i] = Math.round((w / h.fairwayWidth) * 100) / 100;
+            this.cb.onHoleChange(holeId, { fairwayShape: shape });
+          },
+          end: () => this.cb.onCommit()
+        };
+      }, { index: i, title: "Drag to make the fairway wider or narrower here", data: { station: String(i) } });
+    });
   }
 
   /** An area's corners or a line's points: drag to move, double-click to remove, pull a mid dot to add one. */
@@ -2094,7 +2103,7 @@ export class CourseView {
     for (const s of doc.stats) {
       const hole = this.hole(s.holeId);
       if (!hole?.fairway || !s.complete) continue;
-      if (distanceToPath(p, smoothPath(s.line, 8)) < hole.fairwayWidth / 2) return hole.id;
+      if (pointInPolygon(p, fairwayOutline(hole, smoothPath(s.line, 8), 0, 8))) return hole.id;
     }
     return null;
   }

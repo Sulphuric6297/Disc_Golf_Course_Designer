@@ -2,8 +2,8 @@
 // shape, what is in the way, and safety checks between holes.
 import { CIRCLE_ONE_FT, CLEAR_IN_FRONT_FT, MIN_PAD, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AreaItem, CourseDoc, Hole, Layout, LineItem, P, TeeItem, TeeLevel, TreeItem } from "../types";
-import { activeLayout, basketFor, holeNumber, holeTees, teeAim, teeFor, throwLine } from "./course";
-import { corridor, dist, distanceToPath, lengthInside, pathLength, pathTouchesPolygon, segmentsIntersect, smoothPath, turnAngles } from "./geom";
+import { activeLayout, basketFor, fairwayOutline, holeNumber, holeTees, teeAim, teeFor, throwLine } from "./course";
+import { dist, distanceToPath, lengthInside, pathLength, pathTouchesPolygon, segmentsIntersect, smoothPath, turnAngles } from "./geom";
 import { heightAt, profileAlong } from "./terrainGrid";
 
 /**
@@ -133,7 +133,7 @@ export const holeStats = (doc: CourseDoc, hole: Hole, layout: Layout | undefined
       if (crossed) obCrossed++;
     }
   }
-  const fairwayPoly = complete ? corridor(smooth, hole.fairwayWidth) : [];
+  const fairwayPoly = complete ? fairwayOutline(hole, smooth, 0, 10) : [];
   const obInPlay = complete && (obCrossed > 0 || obAreas.some(a => pathTouchesPolygon(a.points, fairwayPoly)) || obLines.some(l => l.points.some(p => distanceToPath(p, smooth) < halfWidth)));
   const obNearBasket = !!basket && (obAreas.some(a => {
     const d = a.points.length >= 3 ? Math.min(...a.points.map((p, i) => distanceToPath(basket, [p, a.points[(i + 1) % a.points.length]]))) : Infinity;

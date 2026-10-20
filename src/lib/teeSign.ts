@@ -3,8 +3,8 @@
 // to the next tee.
 import { CIRCLE_ONE_FT, FT_PER_M, TEE_LEVELS } from "../constants";
 import type { AreaItem, BasketItem, CourseDoc, P } from "../types";
-import { activeLayout, holeBaskets, holeTees, throwLine } from "./course";
-import { boundsOf, corridor, dist, pointInPolygon, rotatePoint, smoothPath } from "./geom";
+import { activeLayout, fairwayOutline, holeBaskets, holeTees, throwLine } from "./course";
+import { boundsOf, dist, pointInPolygon, rotatePoint, smoothPath } from "./geom";
 import { holeStats } from "./holeStats";
 import { northArrow, palette, renderMapLayers, scaleBar, titleStack, wrapSvg, type MapView } from "./mapSvg";
 import type { CanopyGrid } from "./forest";
@@ -31,7 +31,7 @@ export const autoRules = (doc: CourseDoc, holeId: string) => {
   const s = holeStats(doc, hole);
   const out: string[] = [];
   if (!s.complete) return out;
-  const fairway = corridor(smoothPath(s.line, 8), hole.fairwayWidth + 20, 8);
+  const fairway = fairwayOutline(hole, smoothPath(s.line, 8), 20, 8);
   const near = (a: AreaItem) => (!a.holeId || a.holeId === holeId) && (a.points.some(p => pointInPolygon(p, fairway)) || fairway.some(p => pointInPolygon(p, a.points)));
   const areas = doc.items.filter(i => i.type === "area") as AreaItem[];
   const obLine = doc.items.some(i => i.type === "line" && i.kind === "ob" && (!i.holeId || i.holeId === holeId) && i.points.some(p => pointInPolygon(p, fairway)));
@@ -102,7 +102,7 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   const line = st.line.length >= 2 ? st.line : [{ x: hole.doglegs[0]?.x ?? 0, y: 0 }, { x: 0, y: 1 }];
   const a = Math.atan2(line[line.length - 1].y - line[0].y, line[line.length - 1].x - line[0].x) * 180 / Math.PI;
   const rotation = a + 90;
-  const pts: P[] = [...corridor(smoothPath(line, 8), hole.fairwayWidth + 30, 8), ...tees, ...holeBaskets(doc, holeId).map(b => ({ x: b.x + CIRCLE_ONE_FT, y: b.y })), ...holeBaskets(doc, holeId).map(b => ({ x: b.x - CIRCLE_ONE_FT, y: b.y - CIRCLE_ONE_FT }))];
+  const pts: P[] = [...fairwayOutline(hole, smoothPath(line, 8), 30, 8), ...tees, ...holeBaskets(doc, holeId).map(b => ({ x: b.x + CIRCLE_ONE_FT, y: b.y })), ...holeBaskets(doc, holeId).map(b => ({ x: b.x - CIRCLE_ONE_FT, y: b.y - CIRCLE_ONE_FT }))];
   doc.items.forEach(i => { if ((i.type === "mando" || i.type === "dropzone") && i.holeId === holeId) pts.push(i); });
   const rot = pts.map(p => rotatePoint(p, -rotation));
   const rb = boundsOf(rot);
@@ -241,7 +241,7 @@ export const holeMap = (doc: CourseDoc, holeId: string, box: { w: number; h: num
   const line = st.line.length >= 2 ? st.line : [{ x: 0, y: 1 }, { x: 0, y: 0 }];
   const a = (Math.atan2(line[line.length - 1].y - line[0].y, line[line.length - 1].x - line[0].x) * 180) / Math.PI;
   const rotation = a + 90;
-  const pts: P[] = [...corridor(smoothPath(line, 8), hole.fairwayWidth + 40, 8), ...tees];
+  const pts: P[] = [...fairwayOutline(hole, smoothPath(line, 8), 40, 8), ...tees];
   holeBaskets(doc, holeId).forEach(b => pts.push({ x: b.x + CIRCLE_ONE_FT * 1.5, y: b.y + CIRCLE_ONE_FT * 1.5 }, { x: b.x - CIRCLE_ONE_FT * 1.5, y: b.y - CIRCLE_ONE_FT * 1.5 }));
   doc.items.forEach(i => { if ((i.type === "mando" || i.type === "dropzone") && i.holeId === holeId) pts.push(i); });
   const rb = boundsOf(pts.map(p => rotatePoint(p, -rotation)));

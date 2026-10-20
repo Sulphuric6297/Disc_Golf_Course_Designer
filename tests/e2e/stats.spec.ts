@@ -1,6 +1,6 @@
 // Pure-logic tests (no browser page) for the hole and course numbers and the checks.
 import { test, expect } from "@playwright/test";
-import { createArea, createBasket, createEmptyCourse, createLine, createTee, createTree, newHole } from "../../src/lib/course";
+import { FAIRWAY_STATIONS, createArea, createBasket, createEmptyCourse, createLine, createTee, createTree, fairwayOutline, fairwayWidthAt, newHole } from "../../src/lib/course";
 import { corridor, pathLength, pointInPolygon, smoothPath } from "../../src/lib/geom";
 import { courseTotals, designChecks, holeStats, isOb, parForDistance, safetyIssues } from "../../src/lib/holeStats";
 import type { CourseDoc, P, TeeLevel } from "../../src/types";
@@ -186,4 +186,33 @@ test("what counts as OB: water unless marked otherwise; a road or fence only whe
   expect(isOb(creek)).toBe(true);
   creek.ob = false;
   expect(isOb(creek)).toBe(false);
+});
+
+test("a fairway shaped along the hole: wider at a landing zone, pinched at a gap, smooth in between", () => {
+  const hole = { ...newHole(), fairwayWidth: 30 };
+  const even = fairwayWidthAt(hole);
+  expect(even(0)).toBe(30);
+  expect(even(0.5)).toBe(30);
+  hole.fairwayShape = [1, 2.5, 0.6, 1];
+  const w = fairwayWidthAt(hole);
+  expect(w(FAIRWAY_STATIONS[1])).toBeCloseTo(75, 5);
+  expect(w(FAIRWAY_STATIONS[2])).toBeCloseTo(18, 5);
+  expect(w(0)).toBe(30);
+  expect(w(1)).toBe(30);
+  // In between: between its neighbours
+  const mid = w((FAIRWAY_STATIONS[1] + FAIRWAY_STATIONS[2]) / 2);
+  expect(mid).toBeGreaterThan(18);
+  expect(mid).toBeLessThan(75);
+  // The outline is as wide as the shape says, where it says (along a straight 400 ft line, its
+  // edges sit beside the line's own points)
+  const line = Array.from({ length: 101 }, (_, i) => ({ x: i * 4, y: 0 }));
+  const poly = fairwayOutline(hole, line, 0, 8);
+  const across = (x: number) => { const ys = poly.filter(p => Math.abs(p.x - x) < 1e-6).map(p => p.y); return Math.max(...ys) - Math.min(...ys); };
+  expect(across(160)).toBeCloseTo(75, 0);
+  expect(across(260)).toBeCloseTo(18, 0);
+  // A straight hole is just its tee and basket: the outline still follows the shape between them
+  const plain = fairwayOutline(hole, [{ x: 0, y: 0 }, { x: 400, y: 0 }], 0, 8);
+  const top = (x: number) => Math.max(...plain.filter(p => Math.abs(p.x - x) < 1e-6).map(p => p.y));
+  expect(top(160)).toBeCloseTo(37.5, 0);
+  expect(top(260)).toBeCloseTo(9, 0);
 });

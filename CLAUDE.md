@@ -55,11 +55,11 @@ design tools and the PDGA guidance the app follows.
 | Spec | Area |
 | --- | --- |
 | `smoke.spec.ts` | Loads, welcome card, steps, 2D/3D, shortcuts dialog |
-| `holes.spec.ts` | New holes (tee then basket), live length and par, doglegs, fairway width, extra tees and pins, layouts, hole order, delete + undo |
+| `holes.spec.ts` | New holes (tee then basket), live length and par, doglegs, fairway width (shaped along the hole with its four width squares, the overall slider, Even width), extra tees and pins, layouts, hole order, delete + undo |
 | `features.spec.ts` | Drawing OB areas and lines, hazards, water (click by click, or dragging a rectangle, circle or freehand shape), one-click OB along a hole or behind its basket, marking a road OB, mandos (passed on the line's side, direction), drop zones, trees, amenities (pictograms), labels, moving and reshaping shapes |
 | `structures.spec.ts` | Built things: bridges, boardwalks, stairs, walls, buildings, shelters and decks drawn with the Build tool (S) or the Features list, inspector (kind, width, height, roof, name), undo/redo, corner and mid handles, moving, delete; their 3D models; deck heights over a creek's dip, boardwalk ramps, stair risers, gable and hip roofs (pure logic); drawn in every map style with legend lines, roofs lit by the map's sun; older courses still load |
 | `import-site.spec.ts` | Address search, framing the area, photo + elevation + trees + OpenStreetMap paths and water, elevation change per hole |
-| `stats.spec.ts` | Hole math: PDGA effective length and par, doglegs, foliage, trees and OB in play (what counts as OB), safety checks, design checks (pure logic) |
+| `stats.spec.ts` | Hole math: PDGA effective length and par, doglegs, foliage, trees and OB in play (what counts as OB), safety checks, design checks, fairway width along the hole (pure logic) |
 | `views.spec.ts` | View from the tee, flyover (a slow frame doesn't skip it), back to the map |
 | `scene3d.spec.ts` | The 3D look: sky when tilted, the course's sun and brightness, grass blades (when shown, the setting kept, what grows where), woods of real trees (full detail near the camera), landscapes (pine forest, the painted map's colors) |
 | `design.spec.ts` | Map designer: themes, colors, title block, legend, hole table, contours, turning the map; the Forest painting (tree cover from sparse to dense, winding creeks and trails, light and shadow settings), basket marks (five kinds, legend, older courses), marking colors (map or PDGA: OB, hazard, casual, out of play); the printed map's and tee signs' contents |

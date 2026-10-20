@@ -89,7 +89,19 @@ function HoleInspector({ hole }: { hole: Hole }) {
             <Segmented label="Foliage" value={hole.foliage ?? "auto"} onChange={v => set({ foliage: v === "auto" ? undefined : (v as "light" | "heavy") })} options={[{ value: "auto", label: `Auto (${s.foliage})` }, { value: "light", label: "Light" }, { value: "heavy", label: "Heavy" }]} />
           </Field>
           <Toggle label="Draw the fairway" checked={hole.fairway} onChange={v => set({ fairway: v })} />
-          {hole.fairway && <Slider label="Fairway width" min={10} max={150} value={hole.fairwayWidth} onChange={v => set({ fairwayWidth: v })} format={v => fmtDist(v, u)} />}
+          {hole.fairway && (
+            <>
+              <Slider label={hole.fairwayShape ? "Fairway width (all along)" : "Fairway width"} min={10} max={150} value={hole.fairwayWidth} onChange={v => set({ fairwayWidth: v })} format={v => fmtDist(v, u)} />
+              <div className="flex items-center justify-between gap-2 -mt-1 mb-2" data-testid="fairway-shape">
+                <p className="text-[11px] text-zinc-400 leading-snug">
+                  {hole.fairwayShape
+                    ? `Shaped: ${hole.fairwayShape.map(f => fmtDist(f * hole.fairwayWidth, u)).join(" · ")} from tee to basket.`
+                    : "Drag the green squares on the fairway's edges to widen it in places (landing zones) or pinch it (gaps)."}
+                </p>
+                {hole.fairwayShape && <button className="shrink-0 text-xs text-orange-300 hover:text-orange-200" onClick={() => set({ fairwayShape: undefined })}>Even width</button>}
+              </div>
+            </>
+          )}
           <Field label="Name (optional)"><TextInput label="Hole name" value={hole.name ?? ""} placeholder="e.g. The Gauntlet" onChange={v => set({ name: v || undefined })} /></Field>
           <Field label="Notes and hole rules" hint="Shown on the tee sign and the hole sheet."><TextInput area label="Hole notes" value={hole.notes ?? ""} placeholder="e.g. OB left of the path. Mando right of the big oak; drop zone by the bench." onChange={v => set({ notes: v || undefined })} /></Field>
           {hole.doglegs.length > 0 && <Button small onClick={() => set({ doglegs: [] })}>Straighten the throw line</Button>}

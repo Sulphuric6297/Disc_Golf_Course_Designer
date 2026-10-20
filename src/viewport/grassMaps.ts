@@ -3,10 +3,10 @@
 // grass in the rough, a thin forest floor in the woods, and none on water, sand, paving, paths,
 // roads, creeks, tee pads or painted dirt.
 import { heightAt } from "../lib/terrainGrid";
-import { corridor, rectCorners, smoothPath } from "../lib/geom";
+import { rectCorners, smoothPath } from "../lib/geom";
 import { GROUND_MATERIALS, PAINT_CELL_FT } from "../lib/groundPaint";
 import { LINE_KINDS } from "../constants";
-import { teeAim } from "../lib/course";
+import { fairwayOutline, teeAim } from "../lib/course";
 import { landscapeOf } from "../lib/landscapes";
 import { GRASS, type GrassMaps, type GrassTerrain } from "../three/grass";
 import type { AreaItem, LineItem, P, TeeItem } from "../types";
@@ -77,7 +77,7 @@ export const grassMaps = (doc: ViewDoc): GrassMaps | null => {
   for (const s of doc.stats) {
     const hole = doc.course.holes.find(h => h.id === s.holeId);
     if (!hole?.fairway || !s.complete) continue;
-    poly(corridor(smoothPath(s.line, 10), hole.fairwayWidth, 12), field(GRASS.fairway, 1), fairTint);
+    poly(fairwayOutline(hole, smoothPath(s.line, 10), 0, 12), field(GRASS.fairway, 1), fairTint);
   }
   for (const a of areas) if (a.kind === "fairway" || a.kind === "green") poly(a.points, field(GRASS.fairway, 1), fairTint);
   // Nothing grows on water, sand, paving or in buildings
