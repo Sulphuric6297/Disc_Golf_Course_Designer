@@ -30,7 +30,7 @@ import { forestDetail, type Forest } from "../three/treeKit";
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createStructure } from "../three/structures";
-import { isLineKind, structureBounds, structurePath, structureWidth } from "../lib/structures";
+import { isLineKind, orientedBox, structureBounds, structureHeight, structurePath, structureWidth } from "../lib/structures";
 import type { AmenityItem, AreaItem, BasketItem, CourseItem, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
@@ -94,6 +94,7 @@ const STYLE = `
 .dg-h[data-handle=width]{width:13px;height:13px;border-radius:3px;background:#fff;border:2.5px solid #16a34a;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=rotate]{width:24px;height:24px;border-radius:50%;background:#fff;border:2.5px solid #2563eb;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;color:#2563eb;font:900 14px system-ui}
 .dg-h[data-handle=radius]{width:15px;height:15px;border-radius:50%;background:#16a34a;border:2.5px solid #fff;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.dg-h[data-handle=height]{width:16px;height:22px;border-radius:5px;background:#f59e0b;border:2.5px solid #fff;cursor:ns-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=draw]{width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #f59e0b;pointer-events:none}
 .dg-h[data-handle=draw][data-index="0"]{width:14px;height:14px;pointer-events:auto;cursor:pointer;border-width:3px}
 @media (pointer:coarse){.dg-h{transform-origin:center}.dg-h[data-handle]{scale:1.5}.dg-h[data-handle]::before{content:"";position:absolute;left:50%;top:50%;width:30px;height:30px;translate:-50% -50%;border-radius:50%}.dg-tee::before,.dg-basket::before,.dg-sym::before,.dg-chip::before{content:"";position:absolute;inset:-10px}}
@@ -2011,6 +2012,7 @@ export class CourseView {
 
   private itemHandles(sel: CourseItem, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
     if (sel.type === "area" || sel.type === "line" || sel.type === "structure") this.pointHandles(sel.id, add);
+    if (sel.type === "structure" && !isLineKind(sel.kind)) this.outlineHandles(sel.id, add);
     else if (sel.type === "tree") {
       const id = sel.id;
       add("radius", () => {
@@ -2226,6 +2228,66 @@ export class CourseView {
         }
       });
     }
+  }
+
+  /** A building's, shelter's or deck's own handles (as in the Security Camera Planner): turn it
+   * about its middle (Shift: 15° steps), and, in the tilted view, its height. */
+  private outlineHandles(id: string, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
+    const it = () => this.item(id) as StructureItem | null;
+    add("rotate", () => {
+      const st = it();
+      if (!st || st.points.length < 3) return null;
+      const box = orientedBox(st.points);
+      const reach = box.b + Math.max(6, 34 * this.upp(new THREE.Vector3(box.c.x, this.h(box.c.x, box.c.y), box.c.y)));
+      const p = { x: box.c.x - box.v.x * reach, y: box.c.y - box.v.y * reach };
+      return new THREE.Vector3(p.x, this.h(p.x, p.y) + 0.3, p.y);
+    }, e => {
+      const st0 = it();
+      if (!st0 || st0.locked) return null;
+      const c = orientedBox(st0.points).c;
+      const y = this.h(c.x, c.y);
+      const g0 = this.planeAt(e.clientX, e.clientY, y);
+      if (!g0) return null;
+      const a0 = Math.atan2(g0.z - c.y, g0.x - c.x);
+      const start = st0.points.map(p => ({ ...p }));
+      return {
+        move: ev => {
+          const hit = this.planeAt(ev.clientX, ev.clientY, y);
+          if (!hit) return;
+          let d = Math.atan2(hit.z - c.y, hit.x - c.x) - a0;
+          if (ev.shiftKey) d = Math.round(d / (15 * DEG)) * 15 * DEG;
+          const cs = Math.cos(d), sn = Math.sin(d);
+          this.cb.onChange(id, { points: start.map(p => ({ x: c.x + (p.x - c.x) * cs - (p.y - c.y) * sn, y: c.y + (p.x - c.x) * sn + (p.y - c.y) * cs })) });
+        },
+        end: () => this.cb.onCommit()
+      };
+    }, { title: "Drag to turn · Shift: 15° steps" });
+    add("height", () => {
+      const st = it();
+      if (!st || st.points.length < 3) return null;
+      const c = orientedBox(st.points).c;
+      return new THREE.Vector3(c.x, Math.max(...st.points.map(p => this.h(p.x, p.y))) + structureHeight(st), c.y);
+    }, e => {
+      const st0 = it();
+      if (!st0 || st0.locked) return null;
+      const c = orientedBox(st0.points).c;
+      const base = Math.max(...st0.points.map(p => this.h(p.x, p.y)));
+      // Up and down a wall through the middle, facing the camera
+      const at = new THREE.Vector3(c.x, base, c.y);
+      const facing = new THREE.Vector3().subVectors(this.camera.position, at).setY(0);
+      if (facing.lengthSq() < 1e-6) return null;
+      const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(facing.normalize(), at);
+      void e;
+      const max = st0.kind === "building" ? 40 : st0.kind === "shelter" ? 20 : 10;
+      return {
+        move: ev => {
+          const hit = new THREE.Vector3();
+          if (!this.ray(ev.clientX, ev.clientY).intersectPlane(plane, hit)) return;
+          this.cb.onChange(id, { height: Math.round(clamp(hit.y - base, st0.kind === "deck" ? 0.5 : 6, max) * 2) / 2 });
+        },
+        end: () => this.cb.onCommit()
+      };
+    }, { title: "Drag up or down for the height", visible: () => this.controls.polarAngle > 15 * DEG });
   }
 
   private planeDrag(e: PointerEvent, id: string, patch: (p: P, item: CourseItem, ev: PointerEvent) => Record<string, unknown> | null): Drag | null {
@@ -2866,6 +2928,8 @@ export class CourseView {
       return g ? { x: g.x, y: g.z } : null;
     };
     if (shape === "box") {
+      // (a few pixels each way at least: two clicks in a line make no rectangle)
+      if (Math.abs(to.x - from.x) < 4 || Math.abs(to.y - from.y) < 4) return null;
       const c = [[from.x, from.y], [to.x, from.y], [to.x, to.y], [from.x, to.y]].map(([x, y]) => ground(x, y));
       return c.every(Boolean) && dist(c[0]!, c[2]!) > 1 ? (c as P[]) : null;
     }

@@ -14,7 +14,7 @@ export const refreshOsm = async () => {
   toast("Looking up paths, roads and water on OpenStreetMap…", "info", false, undefined, 4000);
   try {
     const { items, summary } = await osmItems(d.site.bounds, d.canvas.width, d.canvas.height);
-    changeDoc(doc => ({ items: [...doc.items.filter(i => !((i.type === "area" || i.type === "line") && i.importSource === "osm")), ...items] }));
+    changeDoc(doc => ({ items: [...doc.items.filter(i => !((i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm")), ...items] }));
     toast(summary ? `From OpenStreetMap: ${summary}.` : "OpenStreetMap has no paths, roads or water mapped here.", "success", false, undefined, 8000);
   } catch (err) {
     console.warn("OpenStreetMap lookup failed", err);

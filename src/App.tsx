@@ -228,7 +228,7 @@ export default function App() {
     // What was designed stays on the same ground when the frame grows, shrinks or moves
     const d0 = getDoc();
     const from = geoRefOf(d0);
-    const designed = d0.items.filter(i => !(i.type === "tree" && i.importSource === "photo") && !((i.type === "area" || i.type === "line") && i.importSource === "osm"));
+    const designed = d0.items.filter(i => !(i.type === "tree" && i.importSource === "photo") && !((i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm"));
     const carried = from && site.site.bounds ? reframeDesign({ holes: d0.holes, items: designed }, from, { ...site.site.bounds, ...site.canvas }) : { holes: d0.holes, items: designed, outside: 0 };
     changeDoc(d => ({
       canvas: site.canvas,

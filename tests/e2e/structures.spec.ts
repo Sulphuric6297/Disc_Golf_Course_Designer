@@ -6,7 +6,7 @@ import { test, expect, blankCourse, clickPlan, course, drag, editorState, handle
 import { STRUCTURE_ORDER } from "../../src/constants";
 import { createArea, createBasket, createEmptyCourse, createStructure, createTee, newHole, normalizeCourse, createAmenity } from "../../src/lib/course";
 import { THEMES, renderPoster } from "../../src/lib/mapSvg";
-import { boardwalkDeck, bridgeDeck, roofOf, stairSteps } from "../../src/lib/structures";
+import { boardwalkDeck, bridgeDeck, gazeboOutline, roofOf, stairSteps } from "../../src/lib/structures";
 import type { MapTheme, StructureKind } from "../../src/types";
 
 const structures = async (page: import("@playwright/test").Page) => (await course(page)).items.filter((i: any) => i.type === "structure");
@@ -119,6 +119,8 @@ test("reshaping a building with its corner and mid handles, moving it, deleting 
   await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 340, minY: 340, maxX: 560, maxY: 520 }, { animate: false }));
   await page.keyboard.press("s");
   await page.getByTestId("structure-kind-building").click();
+  // (buildings start as rectangles: corner by corner here)
+  await page.getByTestId("draw-shape-points").click();
   for (const [x, y] of [[400, 400], [480, 400], [480, 460]] as const) await clickPlan(page, x, y);
   await clickPlan(page, 400, 460, { double: true });
   await expect.poll(async () => (await structures(page)).length).toBe(1);
@@ -140,7 +142,74 @@ test("reshaping a building with its corner and mid handles, moving it, deleting 
   await expect.poll(() => model(page, id)).toBeNull();
 });
 
+test("buildings like the Security Camera Planner's: looks, roofs, colors, turning, height; a shelter as a gazebo", async ({ page }) => {
+  await blankCourse(page);
+  await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 300, minY: 300, maxX: 700, maxY: 600 }, { animate: false }));
+  await page.getByRole("button", { name: "3 Features" }).click();
+  await page.getByTestId("feature-structure-building").click();
+  await clickPlan(page, 400, 400);
+  await clickPlan(page, 480, 450);
+  await expect.poll(async () => (await structures(page)).length).toBe(1);
+  const id = (await structures(page))[0].id;
+  await page.keyboard.press("Escape");
+  await page.evaluate(i => (window as any).__dgActions.select(i), id);
+  // Not every building is a house: a barn (red walls), restrooms (a flat roof)
+  await page.getByTestId("building-look-barn").click();
+  await expect.poll(async () => (await structures(page))[0].wallColor).toBe("#8e2f25");
+  await page.getByTestId("building-look-restrooms").click();
+  await expect.poll(async () => (await structures(page))[0].roof).toBe("flat");
+  for (const roof of ["Shed", "Pyramid", "Gable"]) {
+    await page.getByRole("radiogroup", { name: "Roof" }).getByRole("radio", { name: roof }).click();
+    await expect.poll(async () => (await structures(page))[0].roof).toBe(roof.toLowerCase());
+  }
+  // Turned with its round handle, about its middle
+  const before = (await structures(page))[0].points.map((p: any) => ({ ...p }));
+  const r = await handleCenter(page, "rotate");
+  const mid = await screenOf(page, 440, 425);
+  await drag(page, r, { x: mid.x + (mid.y - r.y), y: mid.y }, 12);
+  const after = (await structures(page))[0].points;
+  const angle = (p: any) => Math.atan2(p.y - 425, p.x - 440);
+  const turned = Math.abs(((angle(after[0]) - angle(before[0]) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+  expect(turned).toBeGreaterThan(0.5);
+  // Its height, with the handle above it in the tilted view
+  await expect(page.locator('[data-handle="height"]')).toBeHidden();
+  await page.keyboard.press("3");
+  await expect(page.locator('[data-handle="height"]')).toBeVisible({ timeout: 20_000 });
+  const h = await handleCenter(page, "height");
+  await drag(page, h, { x: h.x, y: h.y - 60 }, 8);
+  await expect.poll(async () => (await structures(page))[0].height ?? 12).toBeGreaterThan(14);
+  await page.keyboard.press("2");
+  // A shelter as a gazebo: eight sides and a pyramid roof
+  await page.getByLabel("Structure kind").selectOption("shelter");
+  await page.getByRole("radiogroup", { name: "Shelter shape" }).getByRole("radio", { name: "Gazebo" }).click();
+  await expect.poll(async () => (await structures(page))[0].points.length).toBe(8);
+  expect((await structures(page))[0].roof).toBe("pyramid");
+});
+
 // --- Pure logic
+
+plain("roofs that aren't a house's: flat, a single slope (shed), a pyramid over a gazebo's eight sides", () => {
+  const rect = [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 20 }, { x: 0, y: 20 }];
+  const flat = roofOf(rect, "flat");
+  plainExpect(flat.rise).toBe(0);
+  plainExpect(flat.facets).toHaveLength(1);
+  const shed = roofOf(rect, "shed");
+  plainExpect(shed.facets).toHaveLength(1);
+  plainExpect(shed.pitch).toBeLessThanOrEqual(0.25);
+  // Low along one long side, high along the other
+  plainExpect(Math.abs(shed.run({ x: 20, y: 0 }) - shed.run({ x: 20, y: 20 }))).toBeCloseTo(20, 5);
+  const octagon = gazeboOutline(rect);
+  plainExpect(octagon).toHaveLength(8);
+  const c = { x: 20, y: 10 };
+  for (const p of octagon) plainExpect(Math.hypot(p.x - c.x, p.y - c.y)).toBeCloseTo(15, 5);
+  const pyramid = roofOf(octagon, "pyramid");
+  plainExpect(pyramid.facets).toHaveLength(8);
+  // Highest in the middle, level along every side
+  plainExpect(pyramid.run(c)).toBeGreaterThan(pyramid.run({ x: (octagon[0].x + octagon[1].x) / 2, y: (octagon[0].y + octagon[1].y) / 2 }) + 10);
+  // A gable and a hip come out as they always did
+  plainExpect(roofOf(rect, "gable").facets).toHaveLength(2);
+  plainExpect(roofOf(rect, "hip").facets).toHaveLength(4);
+});
 
 plain("a bridge spans a creek's dip: its deck runs straight between its ends, never into the ground", () => {
   // Level banks at 10 ft, a creek 8 ft deep in the middle

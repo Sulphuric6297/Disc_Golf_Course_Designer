@@ -348,7 +348,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     const order: StructureKind[] = ["wall", "stairs", "boardwalk", "deck", "bridge", "shelter", "building"];
     for (const st of [...structures].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))) {
       const shape = isLineKind(st.kind) ? structurePath(st) : st.points;
-      out.push(`<g opacity="${dim(st.holeId)}">${structureSymbol(st.kind, shape, structureWidth(st), structureHeight(st), structureRoof(st), { ...draw, id: `${uid}-s${st.id}` })}</g>`);
+      out.push(`<g opacity="${dim(st.holeId)}">${structureSymbol(st.kind, shape, structureWidth(st), structureHeight(st), structureRoof(st), { ...draw, id: `${uid}-s${st.id}`, ink: st.roofColor ? { ...draw.ink, roof: st.roofColor, shelter: st.roofColor } : draw.ink })}</g>`);
     }
   }
 
@@ -841,7 +841,7 @@ export const renderPoster = (doc: CourseDoc, opts: PosterOptions) => {
   const sub = s.subtitle || [doc.site.location?.label, doc.designer ? `Designed by ${doc.designer}` : ""].filter(Boolean).join(" · ");
   const parts: string[] = [];
   parts.push(`<rect width="${n(W)}" height="${n(H)}" fill="${pal.paper}"/>`);
-  const credit = [s.footer, doc.site.imagerySource && s.theme === "satellite" ? "Imagery © Esri" : "", doc.items.some(i => (i.type === "area" || i.type === "line") && i.importSource === "osm") ? "Map data © OpenStreetMap contributors" : ""].filter(Boolean).join(" · ");
+  const credit = [s.footer, doc.site.imagerySource && s.theme === "satellite" ? "Imagery © Esri" : "", doc.items.some(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm") ? "Map data © OpenStreetMap contributors" : ""].filter(Boolean).join(" · ");
 
   if (full) {
     // The map fills the page; the course fits inside a margin

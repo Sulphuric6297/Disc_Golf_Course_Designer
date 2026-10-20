@@ -223,6 +223,38 @@ const material = (key: MatKey) => {
   return m;
 };
 
+const tints = new Map<string, THREE.Material>();
+
+/** A material in a color of its own, keeping its texture's grain (turned grey, so the color shows
+ * true rather than mixing with the texture's). */
+const tinted = (key: MatKey, color: string) => {
+  const id = `${key}|${color}`;
+  let m = tints.get(id);
+  if (m) return m;
+  const base = material(key) as THREE.MeshStandardMaterial;
+  const own = base.clone();
+  const src = base.map?.image as HTMLCanvasElement | undefined;
+  if (src && typeof document !== "undefined") {
+    const c = document.createElement("canvas");
+    c.width = src.width;
+    c.height = src.height;
+    const g = c.getContext("2d");
+    if (g) {
+      g.filter = "grayscale(1) brightness(1.45)";
+      g.drawImage(src, 0, 0);
+      const t = base.map!.clone();
+      t.image = c;
+      t.needsUpdate = true;
+      t.userData.shared = true;
+      own.map = t;
+    }
+  }
+  own.color = new THREE.Color(color);
+  own.userData.shared = true;
+  tints.set(id, own);
+  return own;
+};
+
 // ------------------------------------------------------------------ geometry
 
 /** Triangles for one material, merged into one geometry. Coordinates are world (x, y up, z). */
@@ -579,7 +611,11 @@ const building = (st: StructureItem, g: Ground, parts: Parts) => {
       }
     }
   }
-  roofFaces(roof, eave, (parts.shingle ??= new Mesher()), trim);
+  if (structureRoof(st) === "flat") {
+    // A flat roof: a membrane, and a low parapet round its edge
+    roofFaces(roof, eave, (parts.concrete ??= new Mesher()), trim);
+    sweep(stone, roof.eaves, roof.eaves.map(() => eave - 0.45), roof.eaves.map(() => eave + 1.1), 0, 0.28, true);
+  } else roofFaces(roof, eave, (parts.shingle ??= new Mesher()), trim);
   soffit(roof, outline, eave, 1.5, trim);
 };
 
@@ -652,7 +688,9 @@ export const createStructure = (st: StructureItem, groundAt: Ground) => {
   ({ bridge, boardwalk, stairs, wall, building, shelter, deck: deckModel })[st.kind](st, groundAt, parts);
   for (const [key, m] of Object.entries(parts) as [MatKey, Mesher][]) {
     if (m.empty) continue;
-    const mesh = new THREE.Mesh(m.geometry(), material(key));
+    // (its own roof and wall colors, where it has them)
+    const own = key === "shingle" || key === "metal" || (key === "concrete" && st.kind === "building") ? st.roofColor : key === "siding" ? st.wallColor : undefined;
+    const mesh = new THREE.Mesh(m.geometry(), own ? tinted(key, own) : material(key));
     mesh.name = key;
     mesh.castShadow = true;
     mesh.receiveShadow = true;

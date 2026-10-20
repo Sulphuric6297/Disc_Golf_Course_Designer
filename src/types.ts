@@ -119,7 +119,7 @@ export interface LineItem extends BaseItem {
 /** Built things: drawn along a line (bridges, boardwalks, stairs, walls) or as an outline
  * (buildings, shelters, decks). Real-scale models in 3D, drawn to scale on the printed map. */
 export type StructureKind = "bridge" | "boardwalk" | "stairs" | "wall" | "building" | "shelter" | "deck";
-export type RoofKind = "gable" | "hip";
+export type RoofKind = "gable" | "hip" | "flat" | "shed" | "pyramid";
 export interface StructureItem extends BaseItem {
   type: "structure";
   kind: StructureKind;
@@ -133,6 +133,11 @@ export interface StructureItem extends BaseItem {
   height?: number;
   /** Buildings and shelters (unset: gable for a building, hip for a shelter). */
   roof?: RoofKind;
+  /** Its own colors (unset: the map's): the roof, and a building's walls. */
+  roofColor?: string;
+  wallColor?: string;
+  /** Brought in from OpenStreetMap (re-importing replaces it). */
+  importSource?: "osm";
   holeId?: string;
   label?: string;
 }

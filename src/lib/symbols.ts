@@ -363,9 +363,11 @@ export const structureSymbol = (kind: StructureKind, pts: P[], width: number, he
     }
     if (lines.length) texture.push(`<clipPath id="${id}"><path d="${poly}"/></clipPath><path d="${lines.join("")}" clip-path="url(#${id})" fill="none" stroke="#000" stroke-opacity="0.16" stroke-width="${n(0.32 * u)}"/>`);
   });
-  const outline = shelter
+  // (a flat roof: a parapet just inside its edge)
+  const parapet = roofKind === "flat" ? `<path d="${dPoly(offsetPolygon(roof.eaves, -Math.max(1.1 * ft, 0.9 * u)))}" fill="none" stroke="${ink.ridge}" stroke-opacity="0.7" stroke-width="${n(0.5 * u)}" stroke-linejoin="round"/>` : "";
+  const outline = parapet + (shelter
     ? `<path d="${eaves}" fill="none" stroke="${ink.casing}" stroke-width="${n(0.75 * u)}" stroke-dasharray="${n(1.6 * u)} ${n(0.9 * u)}" stroke-linejoin="round"/>`
-    : `<path d="${eaves}" fill="none" stroke="${ink.casing}" stroke-width="${n(0.8 * u)}" stroke-linejoin="round"/>`;
+    : `<path d="${eaves}" fill="none" stroke="${ink.casing}" stroke-width="${n(0.8 * u)}" stroke-linejoin="round"/>`);
   return tag(
     shadowOf((dx, dy) => `<path d="${eaves}" transform="translate(${n(dx)} ${n(dy)})" fill="${ink.shadow}"/>`, fall(height + roof.rise / Math.max(1e-6, ft) / 2, 7)) +
     faces.join("") + texture.join("") + outline

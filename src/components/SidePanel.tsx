@@ -209,7 +209,7 @@ function FeaturesStep() {
     <ToolCard key={mode} icon={icon} title={title} active={ed.tool === mode} onClick={() => ed.set({ tool: mode })} testid={`feature-${mode}`} />
   );
   const photoTrees = doc.items.filter(i => i.type === "tree" && i.importSource === "photo").length;
-  const osm = doc.items.filter(i => (i.type === "area" || i.type === "line") && i.importSource === "osm").length;
+  const osm = doc.items.filter(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm").length;
   return (
     <>
       <Section title="Rules of play">
@@ -264,7 +264,7 @@ function FeaturesStep() {
           {osm > 0 && (
             <div className="flex items-center justify-between text-xs text-zinc-300">
               {osm} shapes from OpenStreetMap
-              <Button small tone="danger" onClick={() => changeDoc(d => ({ items: d.items.filter(i => !((i.type === "area" || i.type === "line") && i.importSource === "osm")) }))}>Remove all</Button>
+              <Button small tone="danger" onClick={() => changeDoc(d => ({ items: d.items.filter(i => !((i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm")) }))}>Remove all</Button>
             </div>
           )}
         </Section>

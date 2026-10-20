@@ -195,6 +195,30 @@ export const orientedBox = (pts: P[]): Box => {
   return box;
 };
 
+/** A gazebo's outline over the same ground as `pts`: a regular octagon, turned like it. */
+export const gazeboOutline = (pts: P[], sides = 8): P[] => {
+  const { c, u, a, b } = orientedBox(pts);
+  const r = (a + b) / 2;
+  const a0 = Math.atan2(u.y, u.x) + Math.PI / sides;
+  return Array.from({ length: sides }, (_, i) => ({ x: c.x + Math.cos(a0 + (i / sides) * Math.PI * 2) * r, y: c.y + Math.sin(a0 + (i / sides) * Math.PI * 2) * r }));
+};
+
+/** The rectangle closest around `pts`, as an outline. */
+export const boxOutline = (pts: P[]): P[] => {
+  const { c, u, v, a, b } = orientedBox(pts);
+  return [[-a, -b], [a, -b], [a, b], [-a, b]].map(([s, t]) => ({ x: c.x + u.x * s + v.x * t, y: c.y + u.y * s + v.y * t }));
+};
+
+/** Buildings that don't all look like houses: a roof and colors each (walls, roof). */
+export const BUILDING_LOOKS = [
+  { id: "house", label: "House", roof: "gable", wallColor: "#d9cbb2", roofColor: "#5e4232" },
+  { id: "barn", label: "Barn", roof: "gable", wallColor: "#8e2f25", roofColor: "#4a4f55" },
+  { id: "shed", label: "Shed", roof: "shed", wallColor: "#7d6a52", roofColor: "#6f7479" },
+  { id: "restrooms", label: "Restrooms", roof: "flat", wallColor: "#b9ae9c", roofColor: "#8d8b86" },
+  { id: "modern", label: "Modern", roof: "flat", wallColor: "#e7e3da", roofColor: "#5b5f63" },
+  { id: "lodge", label: "Lodge", roof: "hip", wallColor: "#6b4f35", roofColor: "#3f4a3a" }
+] as const;
+
 /** One sloping face of a roof: its outline on the plan, and the way it faces (level, outward). */
 export type RoofFacet = { poly: P[]; out: P };
 
@@ -214,40 +238,60 @@ export type Roof = {
   rise: number;
 };
 
-type Side = { k: number; al: number; be: number; out: (box: Box) => P };
+/** A side the roof drains to: how far in from it a point is (linear), and the way it faces. */
+type Side = { run: (p: P) => number; out: P };
 
 /**
- * A gable or hip roof over an outline, worked out on the outline's closest rectangle: each roof
- * face drains to one side of it (a gable's two faces to the long sides; a hip's four to all four),
- * and covers the part of the outline nearer that side than any other.
+ * A roof over an outline. Each face drains to one side and covers the part of the outline nearer
+ * that side than any other; a point is `pitch × run` above the top of the walls, its run being how
+ * far in it is from its side:
+ * - gable: the closest rectangle's two long sides (gable ends on the short ones);
+ * - hip: its four sides;
+ * - shed: one long side, rising to the other (a single slope, lower);
+ * - pyramid: every side of the outline itself, meeting in the middle (a gazebo's roof);
+ * - flat: no slope at all.
  */
 export const roofOf = (outline: P[], kind: RoofKind, overhang = 1.5, pitch0 = 0.5, maxRise = 12): Roof => {
   const box = orientedBox(outline);
   const { c, u, v, a, b } = box;
-  const sides: Side[] = [
-    { k: b, al: 0, be: -1, out: bx => bx.v },
-    { k: b, al: 0, be: 1, out: bx => ({ x: -bx.v.x, y: -bx.v.y }) },
-    ...(kind === "hip" ? [
-      { k: a, al: -1, be: 0, out: (bx: Box) => bx.u },
-      { k: a, al: 1, be: 0, out: (bx: Box) => ({ x: -bx.u.x, y: -bx.u.y }) }
-    ] : [])
-  ];
   const local = (p: P) => { const dx = p.x - c.x, dy = p.y - c.y; return { s: dx * u.x + dy * u.y, t: dx * v.x + dy * v.y }; };
-  const runOf = (sd: Side, p: P) => { const l = local(p); return sd.k + sd.al * l.s + sd.be * l.t; };
-  const run = (p: P) => Math.min(...sides.map(sd => runOf(sd, p)));
-  const pitch = Math.min(pitch0, maxRise / Math.max(1, b));
+  const boxSide = (k: number, al: number, be: number, out: P): Side => ({ run: p => { const l = local(p); return k + al * l.s + be * l.t; }, out });
+  const neg = (q: P) => ({ x: -q.x, y: -q.y });
+  let sides: Side[];
+  if (kind === "flat") sides = [];
+  else if (kind === "shed") sides = [boxSide(b, 0, -1, v)];
+  else if (kind === "pyramid") {
+    const h = hull(outline);
+    const sgn = signedArea(h) > 0 ? 1 : -1;
+    sides = h.map((p, i) => {
+      const q = h[(i + 1) % h.length];
+      const l = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+      // (the inward normal: a point's run is how far in from this side it is)
+      const inn = { x: (-sgn * (q.y - p.y)) / l, y: (sgn * (q.x - p.x)) / l };
+      return { run: (r: P) => (r.x - p.x) * inn.x + (r.y - p.y) * inn.y, out: neg(inn) };
+    });
+  } else sides = [
+    boxSide(b, 0, -1, v),
+    boxSide(b, 0, 1, neg(v)),
+    ...(kind === "hip" ? [boxSide(a, -1, 0, u), boxSide(a, 1, 0, neg(u))] : [])
+  ];
+  const run = (p: P) => (sides.length ? Math.min(...sides.map(sd => sd.run(p))) : 0);
+  // (a single slope runs the whole width: gentler, to stay as low as a shed's)
+  const span = kind === "shed" ? 2 * b : kind === "pyramid" ? Math.max(1, ...outline.map(run), run(c)) : b;
+  const pitch = kind === "flat" ? 0 : Math.min(kind === "shed" ? Math.min(pitch0, 0.25) : pitch0, maxRise / Math.max(1, span));
   const eaves = offsetPolygon(outline, overhang);
   const facets: RoofFacet[] = [];
+  if (!sides.length) facets.push({ poly: eaves, out: { x: 0, y: 0 } });
   sides.forEach((sd, i) => {
     let poly = eaves;
     sides.forEach((other, j) => {
       if (j === i || !poly.length) return;
       // Nearer this side than the other (ties go to the earlier side)
-      poly = clipHalf(poly, p => runOf(sd, p) - runOf(other, p) - (j < i ? 1e-9 : -1e-9));
+      poly = clipHalf(poly, p => sd.run(p) - other.run(p) - (j < i ? 1e-9 : -1e-9));
     });
-    if (poly.length >= 3 && Math.abs(signedArea(poly)) > 1e-6) facets.push({ poly, out: sd.out(box) });
+    if (poly.length >= 3 && Math.abs(signedArea(poly)) > 1e-6) facets.push({ poly, out: sd.out });
   });
-  return { box, eaves, facets, pitch, run, runs: sides.map(sd => (p: P) => runOf(sd, p)), rise: pitch * Math.max(0, ...outline.map(run), run(c)) };
+  return { box, eaves, facets, pitch, run, runs: sides.map(sd => sd.run), rise: pitch * Math.max(0, ...outline.map(run), run(c)) };
 };
 
 /** The part of a polygon where f(p) ≤ 0 (f linear). */

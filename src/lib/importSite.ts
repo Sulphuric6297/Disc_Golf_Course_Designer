@@ -8,7 +8,7 @@ import { detectTrees } from "./geo/detect";
 import { fetchBestElevationGrid } from "./geo/elevation";
 import { creditHeightPx, fetchMapImagery, type MapImagerySource } from "./geo/imagery";
 import { fetchOsmFeatures } from "./geo/osm";
-import { createArea, createLine, createTree } from "./course";
+import { createArea, createLine, createStructure, createTree } from "./course";
 import { clipPathToRect, clipPolygonToRect, polygonArea, simplify } from "./geom";
 import { reframe, toPlanXY, type GeoRef } from "./geoRef";
 
@@ -104,6 +104,15 @@ export const osmItems = async (bounds: GeoBounds, width: number, height: number,
     if (f.geom === "area") {
       const pts = simplify(clipPolygonToRect(plan, edge), 1);
       if (pts.length < 3 || Math.abs(polygonArea(pts)) < 4) continue;
+      if (f.kind === "building") {
+        // A building to edit like one drawn: walls, a roof, a height
+        const b = createStructure("building", pts);
+        if (f.building?.heightM) b.height = Math.round(Math.min(40, Math.max(8, f.building.heightM * FEET_PER_METER)) * 2) / 2;
+        if (f.building?.roof) b.roof = f.building.roof;
+        if (f.name) b.label = f.name;
+        items.push({ ...b, importSource: "osm" });
+        continue;
+      }
       const area = createArea(f.kind, pts) as AreaItem;
       if (f.name) area.label = f.name;
       items.push({ ...area, importSource: "osm" });

@@ -79,7 +79,7 @@ test("re-importing replaces the trees and shapes it brought in, and keeps the ho
   expect(after.items.filter((i: any) => i.type === "tree").length).toBe(before.items.filter((i: any) => i.type === "tree").length);
 });
 
-test("rivers and lakes mapped as outlines in pieces come in, and roads and rivers are cut to the site's edges", async ({ page }) => {
+test("rivers and lakes mapped as outlines in pieces come in, roads and rivers are cut to the site's edges, buildings come in as buildings", async ({ page }) => {
   // A wide river across the whole site, mapped as a multipolygon in two pieces (one drawn the
   // other way round), its center line, and a road running a mile on past the site each way
   await overpass(page, () => ({
@@ -89,11 +89,13 @@ test("rivers and lakes mapped as outlines in pieces come in, and roads and river
         { type: "way", role: "outer", geometry: [geoAt(-3000, 20), geoAt(-3000, 60), geoAt(3000, 60)] }
       ] },
       { type: "way", tags: { waterway: "river", name: "Big River" }, geometry: [geoAt(-3000, 40), geoAt(3000, 40)] },
-      { type: "way", tags: { highway: "primary", name: "County Rd" }, geometry: [geoAt(-1500, -100), geoAt(1800, -100)] }
+      { type: "way", tags: { highway: "primary", name: "County Rd" }, geometry: [geoAt(-1500, -100), geoAt(1800, -100)] },
+      // A clubhouse: two floors, a hipped roof
+      { type: "way", tags: { building: "yes", "building:levels": "2", "roof:shape": "hipped", name: "Clubhouse" }, geometry: [geoAt(100, -50), geoAt(120, -50), geoAt(120, -40), geoAt(100, -40), geoAt(100, -50)] }
     ]
   }));
   const summary = await importSite(page, { trees: false });
-  expect(summary).toMatch(/From OpenStreetMap: 1 road, 1 stream, 1 water area\./);
+  expect(summary).toMatch(/From OpenStreetMap: 1 road, 1 stream, 1 water area, 1 building\./);
   const doc = await course(page);
   const W = doc.canvas.width, H = doc.canvas.height;
   const onSite = (pts: { x: number; y: number }[]) => pts.every(p => p.x >= -21 && p.x <= W + 21 && p.y >= -21 && p.y <= H + 21);
@@ -111,6 +113,13 @@ test("rivers and lakes mapped as outlines in pieces come in, and roads and river
     expect(onSite(line.points), kind).toBe(true);
   }
   expect(doc.items.find((i: any) => i.kind === "road").label).toBe("County Rd");
+  // The building comes in as one to edit: walls, its roof, its height
+  const club = doc.items.find((i: any) => i.type === "structure");
+  expect(club.kind).toBe("building");
+  expect(club.roof).toBe("hip");
+  expect(club.height).toBe(19.5);
+  expect(club.label).toBe("Clubhouse");
+  expect(club.importSource).toBe("osm");
 });
 
 test("a busy OpenStreetMap server: the next one is asked", async ({ page }) => {

@@ -15,7 +15,22 @@ export const OVERPASS_TIMEOUT_MS = 35000;
 export type LatLon = { lat: number; lon: number };
 export type OsmFeature =
   | { geom: "line"; kind: "path" | "road" | "stream" | "fence"; points: LatLon[]; name?: string }
-  | { geom: "area"; kind: "water" | "parking" | "building" | "nogo" | "woods" | "sand"; points: LatLon[]; name?: string };
+  | { geom: "area"; kind: "water" | "parking" | "building" | "nogo" | "woods" | "sand"; points: LatLon[]; name?: string; building?: OsmBuilding };
+
+/** What OpenStreetMap says about a building's shape: its height (m) and roof. */
+export type OsmBuilding = { heightM?: number; roof?: "gable" | "hip" | "flat" | "shed" | "pyramid" };
+
+const ROOF_SHAPES: Record<string, OsmBuilding["roof"]> = { gabled: "gable", hipped: "hip", half_hipped: "hip", flat: "flat", skillion: "shed", lean_to: "shed", pyramidal: "pyramid", dome: "pyramid", onion: "pyramid" };
+
+/** A building's height (to the eaves, m) and roof from its tags, where mapped. */
+export const osmBuilding = (tags: Record<string, string>): OsmBuilding => {
+  const m = parseFloat(tags["building:height"] ?? tags.height ?? "");
+  const levels = parseFloat(tags["building:levels"] ?? "");
+  return {
+    heightM: Number.isFinite(levels) && levels > 0 ? levels * 3 : Number.isFinite(m) && m > 0 ? m : undefined,
+    roof: ROOF_SHAPES[tags["roof:shape"] ?? ""] ?? undefined
+  };
+};
 
 const PATHS = new Set(["footway", "path", "track", "cycleway", "bridleway", "steps", "pedestrian"]);
 const ROADS = new Set(["residential", "service", "unclassified", "tertiary", "secondary", "primary", "trunk", "motorway", "living_street", "road", "tertiary_link", "secondary_link", "primary_link", "trunk_link", "motorway_link"]);
@@ -79,7 +94,7 @@ export const osmFeaturesFrom = (json: { elements?: any[] }): OsmFeature[] => {
       const closed = pts.length >= 4 && pts[0].lat === pts[pts.length - 1].lat && pts[0].lon === pts[pts.length - 1].lon;
       const what = classifyOsm(tags, closed);
       if (!what) continue;
-      if (what.geom === "area") out.push({ geom: "area", kind: what.kind as any, points: pts.slice(0, -1), name: tags.name });
+      if (what.geom === "area") out.push({ geom: "area", kind: what.kind as any, points: pts.slice(0, -1), name: tags.name, ...(what.kind === "building" ? { building: osmBuilding(tags) } : {}) });
       else out.push({ geom: "line", kind: what.kind as any, points: pts, name: tags.name });
     } else if (el.type === "relation" && tags.type === "multipolygon") {
       const what = classifyOsm(tags, true);

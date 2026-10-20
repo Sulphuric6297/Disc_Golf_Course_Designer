@@ -4,7 +4,8 @@ import { ArrowDown, ArrowUp, Copy, Eye, Lock, Plane, Trash2, Unlock, X } from "l
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
 import { holeBaskets, holeNumber, holeTees, ITEM_LABELS } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
-import { structureHeight, structureRoof, structureWidth } from "../lib/structures";
+import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth } from "../lib/structures";
+import { STRUCTURE_INK } from "../lib/symbols";
 import { holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { addHoleOb, deleteSelection, duplicateSelection, select, setTeeLevel } from "../state/actions";
@@ -12,7 +13,7 @@ import { moveHole, updateHole, updateItem, useCourse, useEditor } from "../state
 import type { AmenityKind, AreaItem, AreaKind, CourseItem, Hole, LineItem, LineKind, RoofKind, StructureKind, TeeSurface, TreeKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { getView } from "./MapViewport";
-import { Button, Field, NumberInput, Section, Segmented, Slider, Stat, TextInput, Toggle } from "./ui";
+import { Button, ColorInput, Field, NumberInput, Section, Segmented, Slider, Stat, TextInput, Toggle } from "./ui";
 
 const shapeText = { straight: "Straight", left: "Turns left", right: "Turns right", "s-curve": "S-curve" };
 /** A small size to the half foot (or tenth of a meter): "2.5 ft". */
@@ -157,7 +158,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
   const doc = useCourse(s => s.doc);
   const ro = useEditor(e => e.viewOnly);
   const u = doc.units;
-  const set = (patch: Record<string, unknown>) => updateItem(item.id, patch as Partial<CourseItem>);
+  const set = (patch: Record<string, unknown>, history = true) => updateItem(item.id, patch as Partial<CourseItem>, history);
   const holeOptions = [{ value: "", label: "Whole course" }, ...doc.holes.map((h, i) => ({ value: h.id, label: `Hole ${i + 1}` }))];
   const holePicker = (
     <Field label="Belongs to">
@@ -257,10 +258,36 @@ function ItemInspector({ item }: { item: CourseItem }) {
           </Field>
           {line && <Slider label={item.kind === "wall" ? "Thickness" : "Width"} min={1} max={item.kind === "wall" ? 6 : 24} step={0.5} value={structureWidth(item)} onChange={v => set({ width: v })} format={v => fmtSize(v, u)} />}
           {meta.heightLabel && <Slider label={meta.heightLabel} min={item.kind === "building" || item.kind === "shelter" ? 6 : 0} max={item.kind === "building" ? 40 : item.kind === "shelter" ? 20 : item.kind === "wall" ? 12 : 10} step={0.5} value={structureHeight(item)} onChange={v => set({ height: v })} format={v => fmtSize(v, u)} />}
-          {(item.kind === "building" || item.kind === "shelter") && (
-            <Field label="Roof">
-              <Segmented label="Roof" value={structureRoof(item)} onChange={v => set({ roof: v as RoofKind })} options={[{ value: "gable", label: "Gable" }, { value: "hip", label: "Hip" }]} />
+          {item.kind === "building" && (
+            <Field label="Looks like">
+              <div className="grid grid-cols-3 gap-1" role="radiogroup" aria-label="Looks like" data-testid="building-looks">
+                {BUILDING_LOOKS.map(l => {
+                  const on = structureRoof(item) === l.roof && item.wallColor === l.wallColor && item.roofColor === l.roofColor;
+                  return (
+                    <button key={l.id} role="radio" aria-checked={on} data-testid={`building-look-${l.id}`} onClick={() => set({ roof: l.roof as RoofKind, wallColor: l.wallColor, roofColor: l.roofColor })} className={`rounded-md border px-1.5 py-1 flex items-center gap-1.5 text-[11px] font-semibold ${on ? "border-orange-500 bg-orange-500/10 text-zinc-100" : "border-zinc-700 text-zinc-300 hover:border-zinc-500"}`}>
+                      <span className="w-3 h-3 rounded-sm" style={{ background: `linear-gradient(135deg, ${l.roofColor} 50%, ${l.wallColor} 50%)` }} />
+                      {l.label}
+                    </button>
+                  );
+                })}
+              </div>
             </Field>
+          )}
+          {item.kind === "shelter" && (
+            <Field label="Shape">
+              <Segmented label="Shelter shape" value={structureRoof(item) === "pyramid" && item.points.length === 8 ? "gazebo" : "rectangle"} onChange={v => set(v === "gazebo" ? { points: gazeboOutline(item.points), roof: "pyramid" } : { points: boxOutline(item.points), roof: "hip" })} options={[{ value: "rectangle", label: "Pavilion" }, { value: "gazebo", label: "Gazebo" }]} />
+            </Field>
+          )}
+          {(item.kind === "building" || item.kind === "shelter") && (
+            <>
+              <Field label="Roof">
+                <Segmented label="Roof" value={structureRoof(item)} onChange={v => set({ roof: v as RoofKind })} options={[{ value: "gable", label: "Gable" }, { value: "hip", label: "Hip" }, { value: "pyramid", label: "Pyramid" }, { value: "shed", label: "Shed" }, { value: "flat", label: "Flat" }]} />
+              </Field>
+              <div className="grid grid-cols-2 gap-x-3">
+                <ColorInput label="Roof color" value={item.roofColor ?? (item.kind === "shelter" ? STRUCTURE_INK.shelter : STRUCTURE_INK.roof)} onChange={(v: string) => set({ roofColor: v }, false)} onDone={() => useCourse.getState().commit()} />
+                {item.kind === "building" && <ColorInput label="Wall color" value={item.wallColor ?? "#6e5036"} onChange={(v: string) => set({ wallColor: v }, false)} onDone={() => useCourse.getState().commit()} />}
+              </div>
+            </>
           )}
           <Field label="Name on the map (optional)"><TextInput label="Structure name" value={item.label ?? ""} placeholder={item.kind === "building" ? "e.g. Clubhouse" : item.kind === "bridge" ? "e.g. Mill Creek Bridge" : ""} onChange={v => set({ label: v || undefined })} /></Field>
           {holePicker}
