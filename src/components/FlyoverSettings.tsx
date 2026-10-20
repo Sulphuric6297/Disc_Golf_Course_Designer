@@ -10,7 +10,6 @@ import { changeDoc, updateHole, useCourse, useEditor } from "../state/course";
 import type { FlyKey, FlyoverSettings, FlyShow, Hole } from "../types";
 import { getView } from "./MapViewport";
 import { Button, NumberInput, Segmented, Slider, Toggle } from "./ui";
-import { setStyle } from "./DesignPanel";
 
 /** What a flyover can show, in the order the switches are listed. */
 const FLY_SHOW: [FlyShow, string][] = [
@@ -38,6 +37,8 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { ho
   const [scope, setScope] = useState<"hole" | "course">(hole ? "hole" : "course");
   const forHole = !!hole && (only || scope === "hole");
   const f = flyoverOf(doc, forHole ? hole : undefined);
+  // (keyframes are this hole's own: for all holes, every setting)
+  const keyed = !!keys && forHole;
   const u = doc.units;
   // (live while a slider moves; one undo step when it is let go)
   const set = (patch: Partial<FlyoverSettings>) =>
@@ -46,6 +47,15 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { ho
       : changeDoc(d => ({ flyover: { ...d.flyover, ...patch } }), false);
   const done = () => useCourse.getState().commit();
   const ft = (v: number) => fmtDist(v, u);
+  // A switch: one undo step. The disc's flight for all holes is the yellow lines everywhere too
+  // (the map's, the tee view's); for one hole, on brings the lines back
+  const showPart = (k: FlyShow, v: boolean) =>
+    changeDoc(d => {
+      const lines = k !== "discFlight" ? d.style : !forHole ? { ...d.style, discFlight: v ? undefined : false } : v ? { ...d.style, discFlight: undefined } : d.style;
+      return forHole
+        ? { style: lines, holes: d.holes.map(h => (h.id === hole!.id ? { ...h, flyover: { ...h.flyover, [k]: v } } : h)) }
+        : { style: lines, flyover: { ...d.flyover, [k]: v } };
+    });
   return (
     <div data-testid="flyover-settings">
       {ground && (
@@ -60,10 +70,10 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { ho
               <Segmented label="Settings for" value={scope} onChange={setScope} options={[{ value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }, { value: "course", label: "All holes" }]} />
             </div>
           )}
-          {!keys && <Slider label="Height" min={10} max={250} step={5} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />}
+          {!keyed && <Slider label="Height" min={10} max={250} step={5} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />}
           <Slider label="Speed" min={0.25} max={3} step={0.05} value={f.speed} onChange={v => set({ speed: v })} onDone={done} format={v => `${Math.round(v * 100) / 100}×`} />
           <Slider label="Field of view" min={20} max={100} value={f.fov} onChange={v => set({ fov: v })} onDone={done} format={v => `${v}°`} />
-          {!keys && (
+          {!keyed && (
             <>
               <Slider label="Start behind the tee" min={0} max={400} step={5} value={f.behind} onChange={v => set({ behind: v })} onDone={done} format={ft} />
               <Slider label="To the side" min={-200} max={200} step={5} value={f.side} onChange={v => set({ side: v })} onDone={done} format={v => (v === 0 ? "On the line" : `${ft(Math.abs(v))} ${v > 0 ? "right" : "left"}`)} />
@@ -73,7 +83,7 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { ho
           <div className="text-xs text-zinc-300 mt-2.5 mb-0.5">On screen</div>
           <div className="grid grid-cols-2 gap-x-2 mb-2" data-testid="flyover-show">
             {FLY_SHOW.map(([k, label]) => (
-              <Toggle key={k} label={label} checked={f[k] && (k !== "discFlight" || doc.style.discFlight !== false)} onChange={v => { set({ [k]: v }); done(); if (v && k === "discFlight" && doc.style.discFlight === false) setStyle({ discFlight: undefined }); }} />
+              <Toggle key={k} label={label} checked={f[k] && (k !== "discFlight" || doc.style.discFlight !== false)} onChange={v => showPart(k, v)} />
             ))}
           </div>
           {forHole ? (
@@ -102,7 +112,7 @@ export function HoleFlight({ hole }: { hole: Hole }) {
   return (
     <div data-testid="hole-flight">
       <Segmented label="Flyover" value={keys ? "keys" : "auto"} onChange={v => (v === "keys" ? byHand() : setKeys(undefined))} options={[{ value: "auto", label: "By itself" }, { value: "keys", label: "Keyframes" }]} />
-      <div className="mt-2.5"><FlyoverSettingsPanel holeId={hole.id} only keys={!!keys} ground={false} /></div>
+      <div className="mt-2.5"><FlyoverSettingsPanel holeId={hole.id} keys={!!keys} ground={false} /></div>
       {keys && (
         <div className="mt-2 space-y-1.5" data-testid="fly-keys">
           <div className="grid grid-cols-[22px_1fr_1fr_1fr_28px] gap-1 text-[10px] uppercase tracking-wide text-zinc-500 px-0.5">

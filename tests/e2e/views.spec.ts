@@ -217,6 +217,8 @@ test("flyover on-screen switches: off for all holes, back on for one; the disc f
   await sw("Disc flight").uncheck();
   await sw("Other holes").uncheck();
   await expect.poll(async () => { const f = (await course(page)).flyover; return [f?.pinDistance, f?.discFlight, f?.otherHoles]; }).toEqual([false, false, false]);
+  // (the disc's flight off for all holes: the yellow lines off everywhere too)
+  expect((await course(page)).style.discFlight).toBe(false);
   // One undo step each
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).flyover?.otherHoles).toBeUndefined();
@@ -230,6 +232,12 @@ test("flyover on-screen switches: off for all holes, back on for one; the disc f
   await own("Distance to the pin").check();
   await expect.poll(async () => (await course(page)).holes[0].flyover?.pinDistance).toBe(true);
   expect((await course(page)).flyover?.pinDistance).toBe(false);
+  // All holes from the hole's own panel too: the disc's flight back on for every hole
+  await page.getByTestId("hole-flight").getByRole("radio", { name: "All holes" }).click();
+  await own("Disc flight").check();
+  await expect.poll(async () => { const d = await course(page); return [d.flyover?.discFlight, d.style.discFlight]; }).toEqual([true, undefined]);
+  expect((await course(page)).holes[0].flyover?.discFlight).toBeUndefined();
+  await own("Disc flight").uncheck();
   // While hole 1 flies: its disc flight and the other hole's are hidden (shown again after)
   const hidden = await page.evaluate(id => {
     const v = (window as any).__dgView;
@@ -244,7 +252,11 @@ test("flyover on-screen switches: off for all holes, back on for one; the disc f
   await page.keyboard.press("Escape");
   await page.keyboard.press("3");
   await page.getByTestId("scene-button").click();
-  await page.getByTestId("scene-panel").getByRole("checkbox", { name: "Disc flight lines" }).uncheck();
+  const lines = page.getByTestId("scene-panel").getByRole("checkbox", { name: "Disc flight lines" });
+  await expect(lines).not.toBeChecked();
+  await lines.check();
+  await expect.poll(async () => (await course(page)).style.discFlight).toBeUndefined();
+  await lines.uncheck();
   await expect.poll(async () => (await course(page)).style.discFlight).toBe(false);
   await expect.poll(() => page.evaluate(k => (window as any).__dgView.scene.getObjectByName(k)?.children.length ?? -1, `arc:${h1.id}`)).toBe(0);
 });
