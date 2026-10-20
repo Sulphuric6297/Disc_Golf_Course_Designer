@@ -203,7 +203,7 @@ function FeaturesStep() {
     <ToolCard key={kind} icon={<Spline size={17} style={{ color: LINE_KINDS[kind].color }} />} title={LINE_KINDS[kind].label} active={ed.tool === "draw-line" && ed.lineKind === kind} onClick={() => ed.set({ tool: "draw-line", lineKind: kind })} testid={`feature-line-${kind}`} />
   );
   const built = (kind: StructureKind) => (
-    <ToolCard key={kind} icon={<span className="inline-block" dangerouslySetInnerHTML={{ __html: structureIcon(kind, 18, `card-${kind}`) }} />} title={STRUCTURE_KINDS[kind].label} active={ed.tool === "draw-structure" && ed.structureKind === kind} onClick={() => ed.set({ tool: "draw-structure", structureKind: kind, ...(STRUCTURE_KINDS[kind].shape === "line" && (ed.drawShape === "box" || ed.drawShape === "circle") ? { drawShape: "points" as const } : {}) })} testid={`feature-structure-${kind}`} />
+    <ToolCard key={kind} icon={<span className="inline-block" dangerouslySetInnerHTML={{ __html: structureIcon(kind, 18, `card-${kind}`) }} />} title={STRUCTURE_KINDS[kind].label} active={ed.tool === "draw-structure" && ed.structureKind === kind} onClick={() => ed.set({ tool: "draw-structure", structureKind: kind, drawShape: STRUCTURE_KINDS[kind].shape === "outline" ? "box" : "points" })} testid={`feature-structure-${kind}`} />
   );
   const tool = (mode: ToolMode, icon: ReactNode, title: string) => (
     <ToolCard key={mode} icon={icon} title={title} active={ed.tool === mode} onClick={() => ed.set({ tool: mode })} testid={`feature-${mode}`} />

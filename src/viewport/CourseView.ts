@@ -158,6 +158,8 @@ export class CourseView {
   private holeStart: P | null = null;
   private drawPts: P[] = [];
   private cursor: P | null = null;
+  /** A rectangle or circle being made with two clicks: where the first click was. */
+  private shapeAnchor: { x: number; y: number; shape: "box" | "circle" } | null = null;
   private draft: THREE.Object3D | null = null;
   private draftLabel: HTMLDivElement | null = null;
   // Tee view and flyover
@@ -369,7 +371,7 @@ export class CourseView {
     const leaving = tool.mode !== this.tool.mode || this.drawn(tool) !== this.drawn();
     this.teeLevel = teeLevel;
     if (leaving && this.tool.mode === "measure") this.clearMeasure();
-    if (leaving) this.cancelDrawing();
+    if (leaving || tool.shape !== this.tool.shape) this.cancelDrawing();
     this.tool = tool;
     if (tool.mode === "select") this.updateGhost(null);
     this.updateCursor();
@@ -2713,12 +2715,31 @@ export class CourseView {
       // A rectangle, circle or freehand shape is dragged out (clicking still adds points); with a
       // finger too, so the map stays put (two fingers still move it)
       const shape = this.drawn(tool) === "line" && (tool.shape === "box" || tool.shape === "circle") ? "freehand" : tool.shape;
-      const shaped = shape !== "points" && !this.drawPts.length;
+      const shaped = shape !== "points" && !this.drawPts.length && !this.shapeAnchor;
       if (shaped) e.stopPropagation();
       else stop();
       this.gesture(e, {
         drag: shaped ? s => this.shapeDrag(s, shape) : panOrNothing,
         click: groundClick(p0 => {
+          // A rectangle or a circle by clicks: one corner (or the middle), then the other corner
+          // (or the edge); dragging one out works too
+          if (shape === "box" || shape === "circle") {
+            const a = this.shapeAnchor;
+            if (!a) {
+              this.shapeAnchor = { x: e.clientX, y: e.clientY, shape };
+              this.drawPts = [];
+              this.cursor = null;
+              this.cb.onDrawProgress(1);
+              return;
+            }
+            this.shapeAnchor = null;
+            const pts = this.shapePoints(a.shape, a, { x: e.clientX, y: e.clientY });
+            if (pts) {
+              this.drawPts = pts;
+              if (!this.finishDrawing()) this.cancelDrawing();
+            }
+            return;
+          }
           const p = this.snap(p0);
           const last = this.drawPts[this.drawPts.length - 1];
           if (last && dist(last, p) < 1) return;
@@ -2810,14 +2831,10 @@ export class CourseView {
     // Freehand points every few pixels (in feet at this zoom)
     const step = Math.max(1.5, 6 / Math.max(0.01, this.viewInfo().pxPerUnit));
     const build = (ev: PointerEvent) => {
-      if (shape === "box") {
-        const c = [[start.clientX, start.clientY], [ev.clientX, start.clientY], [ev.clientX, ev.clientY], [start.clientX, ev.clientY]].map(([x, y]) => ground(x, y));
-        if (c.every(Boolean)) this.drawPts = c as P[];
-      } else if (shape === "circle") {
-        const b = ground(ev.clientX, ev.clientY);
-        if (!b) return;
-        const r = dist(a, b);
-        this.drawPts = Array.from({ length: 36 }, (_, i) => ({ x: a.x + Math.cos((i / 36) * Math.PI * 2) * r, y: a.y + Math.sin((i / 36) * Math.PI * 2) * r }));
+      if (shape === "box" || shape === "circle") {
+        const pts = this.shapePoints(shape, { x: start.clientX, y: start.clientY }, { x: ev.clientX, y: ev.clientY });
+        if (!pts) return;
+        this.drawPts = pts;
       } else {
         const b = ground(ev.clientX, ev.clientY);
         if (b && dist(free[free.length - 1], b) >= step) free.push(b);
@@ -2839,6 +2856,23 @@ export class CourseView {
         if (!this.finishDrawing()) this.cancelDrawing();
       }
     };
+  }
+
+  /** A rectangle (square to the screen) between two screen points, or a circle from its middle to
+   * its edge, on the ground. */
+  private shapePoints(shape: "box" | "circle", from: { x: number; y: number }, to: { x: number; y: number }): P[] | null {
+    const ground = (x: number, y: number) => {
+      const g = this.groundAt(x, y);
+      return g ? { x: g.x, y: g.z } : null;
+    };
+    if (shape === "box") {
+      const c = [[from.x, from.y], [to.x, from.y], [to.x, to.y], [from.x, to.y]].map(([x, y]) => ground(x, y));
+      return c.every(Boolean) && dist(c[0]!, c[2]!) > 1 ? (c as P[]) : null;
+    }
+    const a = ground(from.x, from.y), b = ground(to.x, to.y);
+    if (!a || !b || dist(a, b) < 1) return null;
+    const r = dist(a, b);
+    return Array.from({ length: 36 }, (_, i) => ({ x: a.x + Math.cos((i / 36) * Math.PI * 2) * r, y: a.y + Math.sin((i / 36) * Math.PI * 2) * r }));
   }
 
   /** Ends drawing an area or line (Enter, double-click, or clicking the first point). */
@@ -2871,8 +2905,9 @@ export class CourseView {
 
   /** Drops what is being drawn (Esc). Returns whether there was anything. */
   cancelDrawing() {
-    const had = !!this.holeStart || this.drawPts.length > 0;
+    const had = !!this.holeStart || this.drawPts.length > 0 || !!this.shapeAnchor;
     this.holeStart = null;
+    this.shapeAnchor = null;
     this.drawPts = [];
     this.clearDraft();
     if (had) {
@@ -3095,6 +3130,16 @@ export class CourseView {
         if (this.measurePts.length === 1 && g) {
           this.measureCursor = g;
           this.drawMeasure();
+        }
+        return;
+      }
+      if (this.shapeAnchor) {
+        const pts = this.shapePoints(this.shapeAnchor.shape, this.shapeAnchor, p);
+        if (pts) {
+          this.drawPts = pts;
+          this.cursor = null;
+          this.drawDraft();
+          this.drawPts = [];
         }
         return;
       }

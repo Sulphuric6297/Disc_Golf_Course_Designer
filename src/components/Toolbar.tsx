@@ -67,14 +67,14 @@ const SHAPES: Record<DrawShape, { label: string; title: string; icon: ReactNode 
 };
 const SHAPE_HINTS: Record<DrawShape, string> = {
   points: "",
-  box: "Drag a rectangle (clicks still add corners) · Esc cancels",
-  circle: "Drag from the middle out · Esc cancels",
+  box: "Click one corner, then the opposite corner (or drag) · Esc cancels",
+  circle: "Click the middle, then the edge (or drag) · Esc cancels",
   freehand: "Drag to draw; let go to finish · Esc cancels"
 };
 const TOUCH_SHAPE_HINTS: Record<DrawShape, string> = {
   points: "",
-  box: "Drag a rectangle with one finger (taps still add corners)",
-  circle: "Drag from the middle out with one finger",
+  box: "Tap one corner, then the opposite corner",
+  circle: "Tap the middle, then the edge",
   freehand: "Draw with one finger; lift it to finish"
 };
 
@@ -120,7 +120,7 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
         return [
           shapes(STRUCTURE_KINDS[ed.structureKind].shape === "outline" ? ["points", "box", "circle", "freehand"] : ["points", "freehand"]),
           ...STRUCTURE_ORDER.map(k => (
-            <Chip key={k} active={ed.structureKind === k} onClick={() => set({ structureKind: k })} testid={`structure-kind-${k}`}>
+            <Chip key={k} active={ed.structureKind === k} onClick={() => set({ structureKind: k, drawShape: STRUCTURE_KINDS[k].shape === "outline" ? "box" : "points" })} testid={`structure-kind-${k}`}>
               <span className="inline-block" dangerouslySetInnerHTML={{ __html: structureIcon(k, 16, `chip-${k}`) }} />
               {STRUCTURE_KINDS[k].label}
             </Chip>
@@ -154,14 +154,14 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
     return drawing && shape !== "points" ? TOUCH_SHAPE_HINTS[shape]
       : ed.tool === "add-mando" && ed.mandoKind === "gate" ? "Tap on the hole's line where the gate is: two posts across it, the disc passes between"
       : ed.tool === "draw-structure" && ed.structureKind === "bridge" ? "Tap one bank, then the other, then Done"
-      : ed.tool === "draw-structure" && !lineDrawn ? "Tap the corners, then Done (or pick Rectangle and drag one out)"
+      : ed.tool === "draw-structure" && !lineDrawn ? "Tap the corners, then Done"
       : TOUCH_HINTS[ed.tool];
   }
   return ed.tool === "select" ? "Drag to pan · scroll or pinch to zoom · right-drag or Shift+drag to turn and tilt"
     : drawing && shape !== "points" ? SHAPE_HINTS[shape]
     : ed.tool === "add-mando" && ed.mandoKind === "gate" ? "Click on the hole's line where the gate is: two posts across it, the disc passes between"
     : ed.tool === "draw-structure" && ed.structureKind === "bridge" ? "Click one bank, then double-click the other (or Enter) · Backspace removes the last point · Esc cancels"
-    : ed.tool === "draw-structure" && !lineDrawn ? "Click the corners · double-click or Enter to finish (or pick Rectangle above and drag) · Esc cancels"
+    : ed.tool === "draw-structure" && !lineDrawn ? "Click the corners · double-click or Enter to finish · Esc cancels"
     : HINTS[ed.tool];
 }
 

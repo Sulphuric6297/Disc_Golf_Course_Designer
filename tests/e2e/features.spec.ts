@@ -145,7 +145,7 @@ test("shapes by dragging: a rectangle and a circle", async ({ page }) => {
   await page.keyboard.press("o");
   await page.getByTestId("area-kind-hazard").click();
   await page.getByTestId("draw-shape-box").click();
-  await expect(page.getByTestId("tool-hint")).toContainText("Drag a rectangle");
+  await expect(page.getByTestId("tool-hint")).toContainText("Click one corner, then the opposite corner");
   await drag(page, await screenOf(page, 300, 300), await screenOf(page, 600, 500), 3);
   await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "area").length).toBe(1);
   const box = (await course(page)).items.find((i: any) => i.type === "area");
@@ -169,6 +169,41 @@ test("shapes by dragging: a rectangle and a circle", async ({ page }) => {
   await page.getByTestId("draw-shape-points").click();
   await drag(page, await screenOf(page, 300, 700), await screenOf(page, 500, 800), 3);
   expect((await course(page)).items.filter((i: any) => i.type === "area")).toHaveLength(2);
+});
+
+test("a building as a rectangle by two clicks (Rectangle comes first for buildings), and a circle the same way", async ({ page }) => {
+  await blankCourse(page);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "3 Features" }).click();
+  await page.getByTestId("feature-structure-building").click();
+  await expect(page.getByTestId("draw-shape-box")).toHaveAttribute("aria-checked", "true");
+  // One corner, then the opposite one (it once only ever added corner points)
+  await clickPlan(page, 300, 300);
+  expect((await course(page)).items.filter((i: any) => i.type === "structure")).toHaveLength(0);
+  await clickPlan(page, 420, 380);
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "structure").length).toBe(1);
+  const b = (await course(page)).items.find((i: any) => i.type === "structure");
+  expect(b.kind).toBe("building");
+  expect(b.points).toHaveLength(4);
+  const xs = b.points.map((p: any) => p.x), ys = b.points.map((p: any) => p.y);
+  expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(120, -1);
+  expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(80, -1);
+  // A circular hazard: the middle, then the edge
+  await page.keyboard.press("o");
+  await page.getByTestId("area-kind-hazard").click();
+  await page.getByTestId("draw-shape-circle").click();
+  await clickPlan(page, 700, 500);
+  await clickPlan(page, 760, 500);
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "area").length).toBe(1);
+  const c = (await course(page)).items.find((i: any) => i.type === "area");
+  for (const p of c.points) expect(Math.hypot(p.x - 700, p.y - 500)).toBeCloseTo(60, -1);
+  // Esc between the two clicks drops it
+  await page.getByTestId("draw-shape-box").click();
+  await clickPlan(page, 300, 700);
+  await page.keyboard.press("Escape");
+  await clickPlan(page, 400, 800);
+  await page.waitForTimeout(300);
+  expect((await course(page)).items.filter((i: any) => i.type === "area")).toHaveLength(1);
 });
 
 test("a freehand line, drawn by dragging", async ({ page }) => {
