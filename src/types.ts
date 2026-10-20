@@ -195,6 +195,8 @@ export interface MapStyle {
   legendAt?: { x: number; y: number };
   /** Tee signs' and hole cards' own look (unset: dark green header, light paper, Oswald). */
   card?: { header?: string; accent?: string; paper?: string; ink?: string; font?: string };
+  /** The course's logo (a small picture, as a data URL): on the scorecard. */
+  logo?: string;
   /** Title block. */
   title: string;
   subtitle: string;

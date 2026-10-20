@@ -40,7 +40,7 @@ test("the Design step shows the printed map; its styles are the painted map in e
   await expect(pageSvg).toContainText("PAR 3");
   await expect(pageSvg).toContainText("350");
   await page.getByRole("tab", { name: "Scorecard" }).click();
-  await expect(pageSvg).toContainText("PLAYER 1");
+  await expect(pageSvg).toContainText("Distance or Par");
 });
 
 test("turning the map to fill the page", async ({ page }) => {
@@ -218,11 +218,25 @@ plain("tee signs: wide and tall layouts, notes, next hole", () => {
   plainExpect(first.svg).toContain("HOLE 2 ·");
 });
 
-plain("scorecard: holes, par and each layout's lengths", () => {
-  const s = renderScorecard(sample());
-  plainExpect(s.svg).toContain("PLAYER 5");
-  plainExpect(s.svg).toContain("MAIN (ft)");
-  plainExpect(s.svg).toContain("GOLD (ft)");
+plain("scorecard like the classic course card: Date, Par, Course; par and lengths; Name and the holes; two to a page; the logo", () => {
+  const doc = sample();
+  const s = renderScorecard(doc);
+  for (const t of ["Distance or Par", "Name ↴", "Main (ft)", "Gold (ft)", ">Total<", "+/−", ">Date<", ">Par<", ">Course<", "The Hollow Disc Golf Course"]) plainExpect(s.svg, t).toContain(t);
+  plainExpect(s.svg).not.toContain("PLAYER");
+  // Two cards on the page, a cut line between
+  plainExpect(s.svg.match(/data-part="scorecard"/g)).toHaveLength(2);
+  plainExpect(s.svg).toContain('stroke-dasharray="6 5"');
+  // 18 holes: Front and Back
+  for (let i = 0; i < 16; i++) {
+    const h = newHole();
+    doc.holes.push(h);
+    doc.items.push(createTee(h.id, { x: 100 + i * 30, y: 100 }), createBasket(h.id, { x: 100 + i * 30, y: 400 }));
+  }
+  const s18 = renderScorecard(doc).svg;
+  for (const t of [">Front<", ">Back<", ">18<"]) plainExpect(s18, t).toContain(t);
+  // The course's logo in place of its name
+  doc.style.logo = "data:image/png;base64,iVBORw0KGgo=";
+  plainExpect(renderScorecard(doc).svg).toContain('<image href="data:image/png;base64,iVBORw0KGgo="');
 });
 
 plain("the best turn for a diagonal course is not north up", () => {

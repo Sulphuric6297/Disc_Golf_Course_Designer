@@ -22,6 +22,10 @@ plain("a course packs into a link and comes back the same (without photo and ter
   plainExpect(back.holes[0].notes).toBe("OB left");
   plainExpect(back.items.find(i => i.type === "tee")!.x).toBe(100.1);
   plainExpect("background" in shareable(doc)).toBe(false);
+  // Nor the course's logo (a picture: the link would be too long to send)
+  doc.style.logo = "data:image/png;base64,iVBORw0KGgo=";
+  plainExpect("logo" in shareable(doc).style).toBe(false);
+  plainExpect(doc.style.logo).toBeTruthy();
 });
 
 plain("a broken link says so", async () => {

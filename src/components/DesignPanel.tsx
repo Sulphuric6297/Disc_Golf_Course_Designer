@@ -50,6 +50,36 @@ function LightAndShadow({ s }: { s: MapStyle }) {
   );
 }
 
+/** The course's logo for the scorecard: a picture picked from the device, made small (at most
+ * 320 px across) so the course file stays light. */
+function LogoPicker({ logo }: { logo?: string }) {
+  const input = useRef<HTMLInputElement>(null);
+  const pick = async (file: File) => {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      const k = Math.min(1, 320 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(img.naturalWidth * k));
+      c.height = Math.max(1, Math.round(img.naturalHeight * k));
+      c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+      setStyle({ logo: c.toDataURL("image/png") });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+  return (
+    <div className="flex items-center gap-2">
+      {logo && <img src={logo} alt="Course logo" className="h-9 max-w-[120px] object-contain rounded bg-white/90 p-0.5" data-testid="logo-preview" />}
+      <input ref={input} type="file" accept="image/*" className="hidden" aria-label="Course logo file" data-testid="logo-input" onChange={e => { const f = e.target.files?.[0]; if (f) void pick(f); e.target.value = ""; }} />
+      <Button small onClick={() => input.current?.click()}>{logo ? "Change" : "Upload"}</Button>
+      {logo && <Button small onClick={() => setStyle({ logo: undefined })}>Remove</Button>}
+    </div>
+  );
+}
+
 export function DesignPanel() {
   const doc = useCourse(s => s.doc);
   const s = doc.style;
@@ -123,6 +153,9 @@ export function DesignPanel() {
             <ColorInput key={key} label={label} value={s.card?.[key] ?? CARD_DEFAULTS[key]} onChange={v => setStyle({ card: { ...s.card, [key]: v } }, false)} onDone={done} />
           ))}
         </div>
+        <Field label="Course logo">
+          <LogoPicker logo={s.logo} />
+        </Field>
         <Field label="Headings">
           <Segmented label="Card font" value={s.card?.font ?? CARD_DEFAULTS.font} onChange={v => setStyle({ card: { ...s.card, font: v } })} options={[{ value: "Oswald", label: <span style={{ fontFamily: "Oswald" }}>Oswald</span> }, { value: "Bitter", label: <span style={{ fontFamily: "Bitter" }}>Bitter</span> }, { value: "Inter", label: <span style={{ fontFamily: "Inter" }}>Inter</span> }, { value: "Script", label: <span style={{ fontFamily: "Kaushan Script" }}>Script</span> }]} />
         </Field>

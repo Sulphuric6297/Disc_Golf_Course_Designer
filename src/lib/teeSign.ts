@@ -200,56 +200,90 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   return { svg: wrapSvg(W, H, parts.join("")), width: W, height: H };
 };
 
-/** A printable scorecard: par and length per layout for every hole, totals, and rows for players. */
+/**
+ * A printable scorecard like the classic course card: the course's logo (or its name), Date, Par
+ * and Course; a row of each hole's par (and each layout's lengths), then Name and the holes 1–9,
+ * Front, 10–18, Back and Total, and rows for the players. Two cards to a letter page, with a cut
+ * line between them.
+ */
 export const renderScorecard = (doc: CourseDoc, players = 5) => {
   const W = 11 * 72, H = 8.5 * 72;
-  const m = 30;
-  const F = font(doc.style.font);
+  const cardH = H / 2;
+  const card = cardStyle(doc);
+  const sty = doc.style;
   const stats = doc.holes.map(h => holeStats(doc, h, activeLayout(doc)));
-  const n9 = stats.length > 9;
-  type Col = { label: string; holes: number[]; total?: boolean };
+  const split = stats.length > 9;
+  type Col = { label: string; holes: number[]; total?: boolean; extra?: boolean };
   const cols: Col[] = [];
-  const front = stats.slice(0, n9 ? Math.ceil(stats.length / 2) : stats.length);
-  front.forEach((_, i) => cols.push({ label: String(i + 1), holes: [i] }));
-  if (n9) {
-    cols.push({ label: "OUT", holes: front.map((_, i) => i), total: true });
-    stats.slice(front.length).forEach((_, i) => cols.push({ label: String(front.length + i + 1), holes: [front.length + i] }));
-    cols.push({ label: "IN", holes: stats.slice(front.length).map((_, i) => front.length + i), total: true });
+  const front = split ? Math.ceil(stats.length / 2) : stats.length;
+  for (let i = 0; i < front; i++) cols.push({ label: String(i + 1), holes: [i] });
+  if (split) {
+    cols.push({ label: "Front", holes: Array.from({ length: front }, (_, i) => i), total: true });
+    for (let i = front; i < stats.length; i++) cols.push({ label: String(i + 1), holes: [i] });
+    cols.push({ label: "Back", holes: Array.from({ length: stats.length - front }, (_, i) => front + i), total: true });
   }
-  cols.push({ label: "TOTAL", holes: stats.map((_, i) => i), total: true });
-  const labelW = 120;
-  const cw = (W - 2 * m - labelW) / cols.length;
-  const rowH = 26;
-  const parts: string[] = [`<rect width="${W}" height="${H}" fill="#ffffff"/>`];
-  parts.push(`<text x="${m}" y="${m + 18}" font-family="${F}" font-weight="700" font-size="24" fill="#111">${esc((doc.name || "Scorecard").toUpperCase())}</text>`);
-  parts.push(`<text x="${W - m}" y="${m + 16}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="10" fill="#444">Date ______________   Layout ______________</text>`);
-  if (doc.site.location) parts.push(`<text x="${m}" y="${m + 34}" font-family="Inter, Arial, sans-serif" font-size="9" fill="#555">${esc(doc.site.location.label)}</text>`);
-  let y = m + 52;
-  const row = (label: string, values: (string | number)[], opts: { fill?: string; ink?: string; bold?: boolean; dot?: string } = {}) => {
-    parts.push(`<rect x="${m}" y="${y}" width="${W - 2 * m}" height="${rowH}" fill="${opts.fill ?? "#ffffff"}" stroke="#222" stroke-width="0.8"/>`);
-    if (opts.dot) parts.push(`<circle cx="${m + 12}" cy="${y + rowH / 2}" r="5" fill="${opts.dot}" stroke="#333" stroke-width="0.6"/>`);
-    parts.push(`<text x="${m + (opts.dot ? 22 : 8)}" y="${y + rowH / 2}" dominant-baseline="central" font-family="${F}" font-weight="700" font-size="11" fill="${opts.ink ?? "#111"}">${esc(label)}</text>`);
-    cols.forEach((c, i) => {
-      const x = m + labelW + cw * i;
-      parts.push(`<line x1="${x}" y1="${y}" x2="${x}" y2="${y + rowH}" stroke="#222" stroke-width="${c.total ? 1.4 : 0.6}"/>`);
-      if (c.total) parts.push(`<rect x="${x}" y="${y}" width="${cw}" height="${rowH}" fill="#000" fill-opacity="0.06"/>`);
-      const v = values[i];
-      if (v !== "" && v !== undefined) parts.push(`<text x="${x + cw / 2}" y="${y + rowH / 2}" text-anchor="middle" dominant-baseline="central" font-family="${opts.bold ? F : "Inter, Arial, sans-serif"}" font-weight="${opts.bold ? 700 : 500}" font-size="${opts.bold ? 12 : 10}" fill="${opts.ink ?? "#111"}">${v}</text>`);
-    });
-    y += rowH;
+  cols.push({ label: "Total", holes: stats.map((_, i) => i), total: true });
+  cols.push({ label: "+/−", holes: [], extra: true });
+  const par = (c: Col) => c.holes.reduce((t, i) => t + (stats[i]?.complete ? stats[i].par : 0), 0);
+  const totalPar = stats.reduce((t, st) => t + (st.complete ? st.par : 0), 0);
+  const fill = (hex: string, a: number) => `${hex}${Math.round(a * 255).toString(16).padStart(2, "0")}`;
+  const one = (top: number) => {
+    const out: string[] = [];
+    const m = 26;
+    // Top: the logo or the name; Date, Par and Course to fill in; where the course is
+    const logoH = 50, logoW = 190;
+    if (sty.logo) out.push(`<image href="${sty.logo}" x="${m}" y="${n(top + 16)}" width="${logoW}" height="${logoH}" preserveAspectRatio="xMinYMid meet"/>`);
+    else {
+      const name = (sty.title || doc.name || "").replace(/\s+disc\s+golf(\s+course)?$/i, "").trim() || "Disc Golf";
+      const size = Math.min(30, (logoW / Math.max(4, name.length)) * (sty.font === "Script" ? 2.1 : 1.75));
+      out.push(`<text x="${m}" y="${n(top + 44)}" font-family="${titleStack(sty.font)}" font-weight="700" font-size="${n(size)}" fill="${card.header}">${esc(sty.font === "Script" ? name : name.toUpperCase())}</text>`);
+      out.push(`<text x="${m}" y="${n(top + 60)}" font-family="${card.body}" font-weight="800" font-size="7" letter-spacing="2" fill="${card.header}">DISC GOLF COURSE</text>`);
+    }
+    const fx = m + logoW + 30;
+    const field = (label: string, x: number, y: number, w: number, value = "") => {
+      out.push(`<text x="${n(x)}" y="${n(y)}" text-anchor="end" font-family="${card.body}" font-size="10" fill="${card.ink}">${esc(label)}</text>`);
+      out.push(`<rect x="${n(x + 6)}" y="${n(y - 12)}" width="${n(w)}" height="15" fill="${fill(card.header, 0.07)}"/><line x1="${n(x + 6)}" x2="${n(x + 6 + w)}" y1="${n(y + 3)}" y2="${n(y + 3)}" stroke="${card.ink}" stroke-width="0.8"/>`);
+      if (value) out.push(`<text x="${n(x + 10)}" y="${n(y)}" font-family="${card.body}" font-size="10" fill="${card.ink}">${esc(value)}</text>`);
+    };
+    field("Date", fx + 40, top + 34, 120);
+    field("Par", fx + 210, top + 34, 34, totalPar ? String(totalPar) : "");
+    field("Course", fx + 40, top + 58, 214, doc.name);
+    if (doc.site.location) out.push(`<text x="${W - m}" y="${n(top + 58)}" text-anchor="end" font-family="${card.head}" font-weight="700" font-size="15" fill="${card.header}">${esc(doc.site.location.label.split(",").slice(0, 2).join(",").trim())}</text>`);
+    // The grid
+    const labelW = 112, gx = m, gw = W - 2 * m;
+    const cw = (gw - labelW) / (cols.length + 0.4);
+    const colX = (i: number) => gx + labelW + cw * i;
+    let y = top + 78;
+    const rowH = 21;
+    const row = (label: string, values: (string | number)[], o: { head?: boolean; name?: boolean; small?: boolean; dot?: string } = {}) => {
+      out.push(`<rect x="${gx}" y="${n(y)}" width="${n(labelW)}" height="${rowH}" fill="${o.name ? fill(card.header, 0.09) : "#ffffff"}" stroke="${card.ink}" stroke-width="0.9"/>`);
+      if (o.dot) out.push(`<circle cx="${gx + 10}" cy="${n(y + rowH / 2)}" r="4.5" fill="${o.dot}" stroke="${card.ink}" stroke-width="0.6"/>`);
+      out.push(`<text x="${gx + (o.dot ? 20 : 6)}" y="${n(y + rowH / 2)}" dominant-baseline="central" font-family="${card.body}" font-size="${o.small ? 9 : 11}" fill="${card.ink}">${esc(label)}</text>`);
+      cols.forEach((c, i) => {
+        const x = colX(i), w = c.extra ? cw * 1.4 : cw;
+        out.push(`<rect x="${n(x)}" y="${n(y)}" width="${n(w)}" height="${rowH}" fill="${c.extra || (o.name && c.total) ? fill(card.header, 0.09) : "#ffffff"}" stroke="${card.ink}" stroke-width="${c.total ? 1.4 : 0.9}"/>`);
+        const v = values[i];
+        if (v !== "" && v !== undefined) out.push(`<text x="${n(x + w / 2)}" y="${n(y + rowH / 2)}" text-anchor="middle" dominant-baseline="central" font-family="${card.body}" font-size="${o.small ? 8.5 : c.total && !o.head ? 11 : 12}" font-weight="${o.head || c.total ? 600 : 400}" fill="${o.head ? card.ink : fill(card.ink, 0.75)}">${esc(String(v))}</text>`);
+      });
+      y += rowH;
+    };
+    row("Distance or Par", cols.map(c => (c.extra ? "" : par(c) || "")));
+    if (doc.layouts.length) for (const l of doc.layouts) {
+      const ls = doc.holes.map(h => holeStats(doc, h, l));
+      row(`${l.name} (${doc.units})`, cols.map(c => {
+        if (c.extra) return "";
+        const v = c.holes.reduce((t, i) => t + (ls[i]?.complete ? ls[i].length : 0), 0);
+        return v ? Math.round(doc.units === "m" ? v / FT_PER_M : v) : "";
+      }), { small: true, dot: TEE_LEVELS[l.tee].color });
+    }
+    row("Name ↴", cols.map(c => (c.extra ? "" : c.label)), { head: true });
+    for (let p = 0; p < players; p++) row("", cols.map(() => ""), { name: true });
+    return { svg: out.join(""), bottom: y };
   };
-  row("HOLE", cols.map(c => c.label), { fill: "#13311d", ink: "#ffffff", bold: true });
-  row("PAR", cols.map(c => c.holes.reduce((t, i) => t + (stats[i]?.complete ? stats[i].par : 0), 0) || "–"), { bold: true, fill: "#f0fdf4" });
-  for (const l of doc.layouts) {
-    const ls = doc.holes.map(h => holeStats(doc, h, l));
-    row(`${l.name.toUpperCase()} (${doc.units})`.slice(0, 18), cols.map(c => {
-      const v = c.holes.reduce((t, i) => t + (ls[i]?.complete ? ls[i].length : 0), 0);
-      return v ? Math.round(doc.units === "m" ? v / FT_PER_M : v) : "–";
-    }), { dot: TEE_LEVELS[l.tee].color });
-  }
-  y += 10;
-  for (let p = 0; p < players; p++) row(`PLAYER ${p + 1}`, cols.map(() => ""));
-  y += 14;
+  const parts: string[] = [`<rect width="${W}" height="${H}" fill="#ffffff"/>`];
+  parts.push(`<g data-part="scorecard">${one(0).svg}</g>`);
+  parts.push(`<line x1="0" x2="${W}" y1="${n(cardH)}" y2="${n(cardH)}" stroke="#9ca3af" stroke-width="0.8" stroke-dasharray="6 5"/>`);
+  parts.push(`<g data-part="scorecard">${one(cardH).svg}</g>`);
   return { svg: wrapSvg(W, H, parts.join("")), width: W, height: H };
 };
 

@@ -11,7 +11,10 @@ export const shareable = (doc: CourseDoc) => {
   const { background: _bg, terrainHeights: _t, ...rest } = doc;
   void _bg;
   void _t;
-  return rest;
+  // (the logo too: a picture would make the link too long to send)
+  const { logo: _logo, ...style } = rest.style;
+  void _logo;
+  return { ...rest, style };
 };
 
 const toBase64Url = (bytes: Uint8Array) => {
