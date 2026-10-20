@@ -2,6 +2,7 @@
 // (free, no key, served from a CDN), for when every Overpass server is busy. The tiles follow the
 // OpenMapTiles schema; this reads them (Mapbox Vector Tile protobufs) without a library.
 import type { GeoBounds } from "./core";
+import { clipPathToRect, clipPolygonToRect } from "../geom";
 import { osmBuilding, type LatLon, type OsmFeature } from "./osm";
 
 export const OPENFREEMAP_TILEJSON = "https://tiles.openfreemap.org/planet";
@@ -153,6 +154,8 @@ const GRASS_CLASSES = new Set(["grass"]);
 export const classifyTileFeature = (layer: string, f: TileFeature): { geom: "line" | "area"; kind: OsmFeature["kind"] } | null => {
   const cls = String(f.tags.class ?? ""), sub = String(f.tags.subclass ?? "");
   if (layer === "transportation" && f.type === 2) {
+    // (not indoors or underground, nor a parking lot's aisles)
+    if (f.tags.indoor === 1 || f.tags.indoor === true || f.tags.brunnel === "tunnel" || sub === "corridor" || sub === "platform" || f.tags.service === "parking_aisle" || f.tags.service === "drive_through") return null;
     if (cls === "path" || cls === "track") return { geom: "line", kind: "path" };
     if (ROAD_CLASSES.has(cls)) return { geom: "line", kind: "road" };
     return null;
@@ -169,11 +172,13 @@ export const classifyTileFeature = (layer: string, f: TileFeature): { geom: "lin
   return null;
 };
 
-/** The features of one tile (x, y at ZOOM), in latitude and longitude. */
+/** The features of one tile (x, y at ZOOM), in latitude and longitude: cut to the tile itself (a
+ * tile repeats a strip of its neighbours' past its edge, which would come in twice). */
 export const tileFeatures = (layers: TileLayer[], tx: number, ty: number, z = ZOOM): OsmFeature[] => {
   const n = 2 ** z;
   const out: OsmFeature[] = [];
   for (const layer of layers) {
+    const box = { x0: 0, y0: 0, x1: layer.extent, y1: layer.extent };
     const ll = (p: { x: number; y: number }): LatLon => {
       const px = tx + p.x / layer.extent, py = ty + p.y / layer.extent;
       return { lon: (px / n) * 360 - 180, lat: (Math.atan(Math.sinh(Math.PI * (1 - (2 * py) / n))) * 180) / Math.PI };
@@ -183,12 +188,14 @@ export const tileFeatures = (layers: TileLayer[], tx: number, ty: number, z = ZO
       if (!what) continue;
       const name = typeof f.tags.name === "string" ? f.tags.name : undefined;
       if (what.geom === "line") {
-        for (const r of f.rings) if (r.length >= 2) out.push({ geom: "line", kind: what.kind as "path", points: r.map(ll), name });
+        for (const r of f.rings) for (const piece of clipPathToRect(r, box)) out.push({ geom: "line", kind: what.kind as "path", points: piece.map(ll), name });
       } else {
         // Outer rings only (an island in a pond stays water on the course map)
         for (const r of f.rings) {
           if (r.length < 4 || ringArea(r) <= 0) continue;
-          const pts = r.slice(0, -1).map(ll);
+          const inside = clipPolygonToRect(r.slice(0, -1), box);
+          if (inside.length < 3) continue;
+          const pts = inside.map(ll);
           if (what.kind === "building") {
             const h = Number(f.tags.render_height);
             out.push({ geom: "area", kind: "building", points: pts, name, building: { ...osmBuilding({}), heightM: Number.isFinite(h) && h > 0 ? h : undefined } });
@@ -198,6 +205,29 @@ export const tileFeatures = (layers: TileLayer[], tx: number, ty: number, z = ZO
     }
   }
   return out;
+};
+
+/** Lines cut at the tiles' edges joined back up: pieces of the same kind and name that end where
+ * another starts (within about a metre). */
+export const joinLines = (features: OsmFeature[]): OsmFeature[] => {
+  const close = (a: LatLon, b: LatLon) => Math.abs(a.lat - b.lat) < 1e-5 && Math.abs(a.lon - b.lon) < 1e-5;
+  const lines = features.filter(f => f.geom === "line").map(f => ({ ...f, points: [...f.points] }));
+  for (let joined = true; joined; ) {
+    joined = false;
+    for (let i = 0; i < lines.length && !joined; i++) {
+      for (let j = 0; j < lines.length && !joined; j++) {
+        const a = lines[i], b = lines[j];
+        if (i === j || a.kind !== b.kind || a.name !== b.name) continue;
+        const aEnd = a.points[a.points.length - 1];
+        if (close(aEnd, b.points[0])) a.points.push(...b.points.slice(1));
+        else if (close(aEnd, b.points[b.points.length - 1])) a.points.push(...[...b.points].reverse().slice(1));
+        else continue;
+        lines.splice(j, 1);
+        joined = true;
+      }
+    }
+  }
+  return [...features.filter(f => f.geom !== "line"), ...lines];
 };
 
 /** The tiles (x, y at ZOOM) covering a box. */
@@ -227,7 +257,7 @@ export const fetchTileFeatures = async (bounds: GeoBounds, timeoutMs = 20000): P
       if (!res.ok) throw new Error(`OpenFreeMap ${res.status}`);
       out.push(...tileFeatures(decodeMvt(new Uint8Array(await res.arrayBuffer())), t.x, t.y));
     }
-    return out;
+    return joinLines(out);
   } finally {
     clearTimeout(timer);
   }

@@ -38,9 +38,19 @@ const GRASS_NATURAL = new Set(["grassland", "scrub", "heath"]);
 const GRASS_LANDUSE = new Set(["meadow", "grass", "village_green"]);
 const STREAMS = new Set(["stream", "river", "brook", "ditch", "canal", "drain", "tidal_channel"]);
 
+/** Ways that aren't walked or driven across the ground there: road crossings and sidewalks
+ * (drawn as part of the road), squares mapped as areas, ways indoors or underground, and the aisles
+ * of a parking lot (the lot itself comes in). */
+const notOnTheGround = (tags: Record<string, string>) =>
+  ["crossing", "sidewalk", "traffic_island", "access_aisle"].some(v => tags.footway === v || tags.cycleway === v || tags.path === v) ||
+  tags.area === "yes" || tags.indoor === "yes" || tags.indoor === "corridor" || tags.location === "underground" ||
+  (!!tags.tunnel && tags.tunnel !== "no" && !tags.waterway) ||
+  tags.service === "parking_aisle" || tags.service === "drive-through";
+
 /** What an OSM way is, for the course map (or null to skip it). */
 export const classifyOsm = (tags: Record<string, string>, closed: boolean): { geom: "line" | "area"; kind: OsmFeature["kind"] } | null => {
   if (tags.leisure === "disc_golf_course") return null;
+  if (tags.highway && notOnTheGround(tags)) return null;
   if (closed && (tags.natural === "water" || tags.landuse === "reservoir" || tags.landuse === "basin" || tags.water || tags.waterway === "riverbank")) return { geom: "area", kind: "water" };
   if (closed && tags.amenity === "parking") return { geom: "area", kind: "parking" };
   if (closed && tags.building) return { geom: "area", kind: "building" };

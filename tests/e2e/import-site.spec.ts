@@ -3,7 +3,7 @@ import { test, expect, addHole, course, geoAt, importSite, STAND } from "./fixtu
 import { osmFeaturesFrom, overpassQuery } from "../../src/lib/geo/osm";
 import { clipPathToRect, clipPolygonToRect, pointInPolygon as inPoly, polygonArea as polyArea } from "../../src/lib/geom";
 import { boxFill, traceOutline, waterRegions, woodsRegions, type Canopy } from "../../src/lib/geo/detect";
-import { decodeMvt, tileFeatures } from "../../src/lib/geo/vectorTiles";
+import { decodeMvt, joinLines, tileFeatures } from "../../src/lib/geo/vectorTiles";
 import { reframeDesign } from "../../src/lib/importSite";
 
 /** A point given in meters east and north of the site's center, on the plan (ft from its north-west corner). */
@@ -348,6 +348,51 @@ plain("tree stands and ponds traced into outlines; lone crowns, pools and courts
   const wx = water[0].outline.map(q => q.x);
   plainExpect(Math.min(...wx)).toBeLessThan(28);
   plainExpect(Math.max(...wx)).toBeLessThan(110);
+});
+
+plain("no stray paths from OpenStreetMap: road crossings, sidewalks, squares, indoor and underground ways, parking aisles left out (pure logic)", () => {
+  const p = (lat: number, lon: number) => ({ lat, lon });
+  const way = (tags: Record<string, string>, closed = false) => ({ type: "way", tags, geometry: closed ? [p(0, 0), p(0, 1), p(1, 1), p(0, 0)] : [p(0, 0), p(0, 1)] });
+  const found = osmFeaturesFrom({
+    elements: [
+      way({ highway: "footway" }),
+      way({ highway: "path", name: "Ridge Trail" }),
+      way({ highway: "service" }),
+      way({ highway: "footway", footway: "crossing" }),
+      way({ highway: "footway", footway: "sidewalk" }),
+      way({ highway: "cycleway", cycleway: "crossing" }),
+      way({ highway: "pedestrian", area: "yes" }, true),
+      way({ highway: "footway", indoor: "yes" }),
+      way({ highway: "footway", tunnel: "building_passage" }),
+      way({ highway: "service", service: "parking_aisle" }),
+      way({ highway: "service", service: "drive-through" }),
+      // (a stream through a culvert stays)
+      way({ waterway: "stream", tunnel: "culvert" })
+    ]
+  });
+  plainExpect(found.map(f => `${f.kind}${f.name ? `:${f.name}` : ""}`)).toEqual(["path", "path:Ridge Trail", "road", "stream"]);
+});
+
+plain("map tiles: a path over two tiles comes in once, joined at the tiles' edge (each tile repeats a strip of the next) (pure logic)", () => {
+  const E = 4096;
+  const tile = (pts: [number, number][]) => [{ name: "transportation", extent: E, features: [{ type: 2 as const, tags: { class: "path" }, rings: [pts.map(([x, y]) => ({ x, y }))] }] }];
+  // The path runs east from the middle of tile 100 to the middle of tile 101; each tile has it 80 units past its edge
+  const a = tileFeatures(tile([[2048, 1000], [E + 80, 1000]]), 100, 200);
+  const b = tileFeatures(tile([[-80, 1000], [2048, 1000]]), 101, 200);
+  const n = 2 ** 14, edgeLon = (101 / n) * 360 - 180;
+  plainExpect(a[0].points[a[0].points.length - 1].lon).toBeCloseTo(edgeLon, 9);
+  plainExpect(b[0].points[0].lon).toBeCloseTo(edgeLon, 9);
+  const joined = joinLines([...a, ...b]);
+  plainExpect(joined).toHaveLength(1);
+  const lons = joined[0].points.map(q => q.lon);
+  plainExpect(lons).toHaveLength(3);
+  plainExpect(lons[0]).toBeLessThan(lons[1]);
+  plainExpect(lons[1]).toBeLessThan(lons[2]);
+  // Indoors and parking aisles are left out
+  const skip = (tags: Record<string, string | number>) => tileFeatures([{ name: "transportation", extent: E, features: [{ type: 2, tags, rings: [[{ x: 0, y: 0 }, { x: 10, y: 10 }]] }] }], 100, 200);
+  plainExpect(skip({ class: "path", indoor: 1 })).toEqual([]);
+  plainExpect(skip({ class: "service", service: "parking_aisle" })).toEqual([]);
+  plainExpect(skip({ class: "path", brunnel: "tunnel" })).toEqual([]);
 });
 
 plain("OpenStreetMap from map tiles when Overpass is busy: a vector tile's paths, roads, streams, water, woods and buildings (pure logic)", () => {
