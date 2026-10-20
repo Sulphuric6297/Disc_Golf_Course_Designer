@@ -66,13 +66,30 @@ test("fairway width handle and par override in the inspector", async ({ page }) 
   await page.getByTestId("hole-row").click();
   await expect(page.getByTestId("inspector-title")).toHaveText("Hole 1");
   // Four width squares along the fairway; the first (just off the tee, on the south side)
-  // widens it there only
+  // widens it there only, and only on its own side: the north edge stays 15 ft off the line
   await expect(page.locator('[data-handle="width"]')).toHaveCount(4);
   const w = await handleCenter(page, "width", 0);
   const to = await screenOf(page, 460, 700 + 40);
   await drag(page, w, to);
-  await expect.poll(async () => { const h = (await course(page)).holes[0]; return h.fairwayShape?.[0] * h.fairwayWidth; }).toBeGreaterThan(70);
+  const across = async () => { const h = (await course(page)).holes[0]; const width = (h.fairwayShape?.[0] ?? 1) * h.fairwayWidth, mid = (h.fairwayShift?.[0] ?? 0) * h.fairwayWidth; return { width, south: mid + width / 2, north: mid - width / 2 }; };
+  await expect.poll(async () => (await across()).width).toBeGreaterThan(50);
+  expect((await across()).width).toBeLessThan(62);
+  expect(Math.abs((await across()).north + 15)).toBeLessThan(2);
+  expect(Math.abs((await across()).south - 40)).toBeLessThan(3);
   expect((await course(page)).holes[0].fairwayShape.slice(1)).toEqual([1, 1, 1]);
+  // With Shift both sides move alike (the middle stays)
+  const mid0 = (await across()).south - (await across()).width / 2;
+  const w2 = await handleCenter(page, "width", 0);
+  const to2 = await screenOf(page, 460, 700 + 60);
+  await page.mouse.move(w2.x, w2.y);
+  await page.mouse.down();
+  await page.keyboard.down("Shift");
+  for (let k = 1; k <= 8; k++) await page.mouse.move(w2.x + ((to2.x - w2.x) * k) / 8, w2.y + ((to2.y - w2.y) * k) / 8);
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  await expect.poll(async () => (await across()).south).toBeGreaterThan(55);
+  expect(Math.abs((await across()).south - (await across()).width / 2 - mid0)).toBeLessThan(1);
+  expect((await across()).north).toBeLessThan(-30);
   await expect(page.getByTestId("fairway-shape")).toContainText("Shaped");
   // The width slider widens it all along, keeping the shape; Even width takes the shape off
   const before = (await course(page)).holes[0].fairwayShape;

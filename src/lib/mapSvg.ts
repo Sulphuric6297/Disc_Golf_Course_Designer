@@ -663,7 +663,7 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
   const shapes = doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as LineItem).width, (i as LineItem).surface] : i.type === "structure" ? [i.type, i.kind, i.points, i.width, i.height, i.roof, i.roofColor, i.wallColor] : [i.type, Math.round(i.x), Math.round(i.y), (i as TreeItem).radius]));
   const look = [s.forest, s.treeCover, s.landscape, s.contours, s.trees, s.fairway, s.rough, s.water, s.path, s.nextTee, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale];
-  const key = JSON.stringify([paintLimit, printDensity, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairwayShape, h.fairway, h.walkOut, h.walkIn, h.walkWidth, h.walkSurface]), shapes, doc.canvas, doc.id]);
+  const key = JSON.stringify([paintLimit, printDensity, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairwayShape, h.fairwayShift, h.fairway, h.walkOut, h.walkIn, h.walkWidth, h.walkSurface]), shapes, doc.canvas, doc.id]);
   // (A live preview may show a picture made for print; a print never uses a live one, which is a
   // blob only this page can read)
   const hit = (paintLive && liveCache.get(key)) || forestCache.get(key);

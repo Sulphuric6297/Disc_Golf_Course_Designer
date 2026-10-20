@@ -156,11 +156,11 @@ export const pointAlong = (pts: P[], d: number) => {
  * (a fairway along a throw line). The width can change along the way: a function of how far
  * along the line (0 at its start, 1 at its end). Returned as one closed polygon.
  */
-export const corridor = (pts: P[], width: number | ((t: number) => number), roundSteps = 10): P[] => {
+export const corridor = (pts: P[], width: number | ((t: number) => number), roundSteps = 10, shift?: (t: number) => number): P[] => {
   const widthAt = typeof width === "number" ? () => width : width;
   let line = pts.filter((p, i) => i === 0 || dist(p, pts[i - 1]) > 1e-6);
   // A width that changes: divide the line finely, so the outline follows it between the points
-  if (typeof width !== "number" && line.length >= 2) {
+  if ((typeof width !== "number" || shift) && line.length >= 2) {
     const len = line.slice(1).reduce((a, p, i) => a + dist(line[i], p), 0);
     const step = Math.max(1, len / 80);
     const fine: P[] = [line[0]];
@@ -184,6 +184,8 @@ export const corridor = (pts: P[], width: number | ((t: number) => number), roun
     const len = dist(a, b) || 1;
     return { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
   });
+  // (its middle moved off the line, sideways)
+  if (shift) line = line.map((p, i) => { const d = shift(along[i] / total); return { x: p.x + normals[i].x * d, y: p.y + normals[i].y * d }; });
   const left = line.map((p, i) => ({ x: p.x + normals[i].x * halves[i], y: p.y + normals[i].y * halves[i] }));
   const right = line.map((p, i) => ({ x: p.x - normals[i].x * halves[i], y: p.y - normals[i].y * halves[i] }));
   const cap = (c: P, n: P, from: number, half: number): P[] => {

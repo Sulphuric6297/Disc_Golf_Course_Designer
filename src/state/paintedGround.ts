@@ -27,7 +27,7 @@ const paintKey = (doc: CourseDoc) =>
     doc.background?.length ?? 0,
     doc.canvas,
     doc.activeLayout,
-    doc.holes.map(h => [h.id, h.doglegs, h.fairwayWidth, h.fairwayShape, h.fairway, h.walkOut, h.walkIn, h.walkWidth, h.walkSurface]),
+    doc.holes.map(h => [h.id, h.doglegs, h.fairwayWidth, h.fairwayShape, h.fairwayShift, h.fairway, h.walkOut, h.walkIn, h.walkWidth, h.walkSurface]),
     doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "structure" ? [i.type, i.kind, i.points, i.width, i.height, i.roof, i.roofColor, i.wallColor] : i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as { width?: number }).width, (i as { surface?: string }).surface] : [i.type, Math.round(i.x), Math.round(i.y), (i as { radius?: number }).radius, (i as { holeId?: string }).holeId]))
   ]);
 

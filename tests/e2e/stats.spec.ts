@@ -216,3 +216,17 @@ test("a fairway shaped along the hole: wider at a landing zone, pinched at a gap
   expect(top(160)).toBeCloseTo(37.5, 0);
   expect(top(260)).toBeCloseTo(9, 0);
 });
+
+test("a fairway wider on one side only: its middle moved off the line, the other edge kept", () => {
+  // Line east along y = 0 (its left-hand normal points to +y); the first station 45 ft wide, all
+  // of it gained on the +y side (the -y edge stays 15 ft off the line)
+  const hole = { ...newHole(), fairwayWidth: 30, fairwayShape: [1.5, 1, 1, 1], fairwayShift: [0.25, 0, 0, 0] };
+  const line = Array.from({ length: 101 }, (_, i) => ({ x: i * 4, y: 0 }));
+  const poly = fairwayOutline(hole, line, 0, 8);
+  const ys = (x: number) => poly.filter(p => Math.abs(p.x - x) < 0.5).map(p => p.y);
+  expect(Math.max(...ys(60))).toBeCloseTo(30, 0);
+  expect(Math.min(...ys(60))).toBeCloseTo(-15, 0);
+  // Further on, centred again
+  expect(Math.max(...ys(300))).toBeCloseTo(15, 0);
+  expect(Math.min(...ys(300))).toBeCloseTo(-15, 0);
+});

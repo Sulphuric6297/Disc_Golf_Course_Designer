@@ -15,7 +15,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, autoWalks, basketFor, basketHoles, fairwayOutline, fairwayWidthAt, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { FAIRWAY_STATIONS, autoWalks, basketFor, basketHoles, fairwayOutline, fairwayShiftAt, fairwayWidthAt, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
@@ -1638,7 +1638,7 @@ export class CourseView {
       const hole = course.holes.find(h => h.id === s.holeId);
       if (!hole || !s.complete || !hole.fairway || painted) continue;
       const line = smoothPath(s.line, 10);
-      put(`fair:${hole.id}`, JSON.stringify([line, hole.fairwayWidth, hole.fairwayShape, hv, st.fairway, photo]), () => {
+      put(`fair:${hole.id}`, JSON.stringify([line, hole.fairwayWidth, hole.fairwayShape, hole.fairwayShift, hv, st.fairway, photo]), () => {
         const g = new THREE.Group();
         const poly = fairwayOutline(hole, line, 0, 12);
         const mesh = new THREE.Mesh(
@@ -2374,11 +2374,13 @@ export class CourseView {
         const { point, angle } = pointAlong(line, pathLength(line) * t);
         return { point, n: { x: -Math.sin(angle) * flip, y: Math.cos(angle) * flip } };
       };
+      // This side's edge: the middle (moved off the line, maybe) plus half the width
+      const edge = (h: Hole) => fairwayShiftAt(h)(t) * flip + fairwayWidthAt(h)(t) / 2;
       const pos = () => {
         const sd = side(), h = hole();
         if (!sd || !h || !h.fairway) return null;
-        const w = fairwayWidthAt(h)(t);
-        return at({ x: sd.point.x + (sd.n.x * w) / 2, y: sd.point.y + (sd.n.y * w) / 2 });
+        const e = edge(h);
+        return at({ x: sd.point.x + sd.n.x * e, y: sd.point.y + sd.n.y * e });
       };
       // Only where it stands clear of the tee, the basket and the hole's distance label on screen
       // (a short hole seen from far, or a touch screen's bigger handles: a square on the tee
@@ -2403,19 +2405,26 @@ export class CourseView {
         const sd = side(), h0 = hole();
         if (!sd || !h0) return null;
         const y = this.h(sd.point.x, sd.point.y);
+        // (across the hole, toward this square's side: the middle and the far edge when picked up)
+        const mid0 = fairwayShiftAt(h0)(t) * flip, far0 = mid0 - fairwayWidthAt(h0)(t) / 2;
         return {
           move: ev => {
             const h = hole();
             const hit = this.planeAt(ev.clientX, ev.clientY, y);
             if (!hit || !h) return;
-            const w = clamp(2 * Math.abs((hit.x - sd.point.x) * sd.n.x + (hit.z - sd.point.y) * sd.n.y), 8, 300);
+            const d = (hit.x - sd.point.x) * sd.n.x + (hit.z - sd.point.y) * sd.n.y;
+            // This side only (the other edge stays), or both sides alike with Shift
+            const w = ev.shiftKey ? clamp(2 * Math.abs(d - mid0), 8, 300) : clamp(d - far0, 8, 300);
+            const mid = ev.shiftKey ? mid0 : far0 + w / 2;
             const shape = h.fairwayShape?.length === FAIRWAY_STATIONS.length ? [...h.fairwayShape] : FAIRWAY_STATIONS.map(() => 1);
+            const shift = h.fairwayShift?.length === FAIRWAY_STATIONS.length ? [...h.fairwayShift] : FAIRWAY_STATIONS.map(() => 0);
             shape[i] = Math.round((w / h.fairwayWidth) * 100) / 100;
-            this.cb.onHoleChange(holeId, { fairwayShape: shape });
+            shift[i] = Math.round(((mid * flip) / h.fairwayWidth) * 100) / 100;
+            this.cb.onHoleChange(holeId, { fairwayShape: shape, fairwayShift: shift.some(v => v !== 0) ? shift : undefined });
           },
           end: () => this.cb.onCommit()
         };
-      }, { index: i, title: "Drag to make the fairway wider or narrower here", data: { station: String(i) }, visible: clear });
+      }, { index: i, title: "Drag: this side wider or narrower · Shift: both sides", data: { station: String(i) }, visible: clear });
     });
   }
 
