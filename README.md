@@ -62,6 +62,10 @@ and no API keys.
 - Tee signs, wide 18 × 12 in (as on painted-map signs) or tall: a PDF, or PNG pictures under
   5 MB for UDisc.
 - Hole sheets, a scorecard and a 3D picture.
+- Hole by hole: a yardage-book page per hole (Letter, A4, a 4 × 6 in card, or a square picture
+  for sharing) as one PDF or a ZIP of pictures, and one hole as PDF, PNG, SVG or its own GeoJSON.
+- Flyover videos of a hole or the whole course (720p to 4K, 30 or 60 fps), made frame by frame:
+  MP4 (H.264) where the browser can encode it, WebM otherwise.
 - GPS files: KML for Google Earth, GeoJSON, and GPX waypoints for staking out.
 - The hole list and a stake-out list as CSV.
 - A parts list with a cost estimate.

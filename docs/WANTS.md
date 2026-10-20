@@ -57,3 +57,15 @@ been seen working in the browser.
     tag in the tee color, the distance in big type ("305 FEET") and the hole notes;
   - the hole map on the right in the same painted-woods style, tee at the bottom;
   - the elevation change from the tee along the bottom.
+- [ ] **A record option to export flyovers** as video files:
+  - one hole, or the whole course in order, at 720p, 1080p, 1440p or 4K, 30 or 60 fps;
+  - smooth however slow the computer (made frame by frame, not filmed off the screen), as an MP4
+    where the browser can make one (WebM otherwise);
+  - the hole's number, par and length on screen, and the basket marked with the distance left;
+  - a Record button in the Export step (with progress and Cancel) and over the flyover itself.
+- [ ] **Per-hole exports too, not just the whole map**:
+  - a page per hole like a yardage book or a hole map in a scoring app: the hole's map with the
+    tee at the bottom, number, par, the length from each tee color, elevation change and "plays
+    like", the hole notes and a small elevation profile;
+  - Letter, A4, a 4 × 6 in card, or a square 1080 px picture for sharing;
+  - all holes as one PDF or a ZIP of pictures; one hole as PDF, PNG, SVG or its own GeoJSON.
