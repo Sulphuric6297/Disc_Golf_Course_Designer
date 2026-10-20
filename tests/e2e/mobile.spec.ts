@@ -266,9 +266,22 @@ test.describe("phone", () => {
     await expect(menu).toBeVisible();
     await expect(menu).toContainText("Blue tee");
     await page.getByTestId("action-sheet-cancel").tap();
-    // Zoomed in on the hole, all four squares are there
-    await page.evaluate(() => { const v = (window as any).__dgView; v.fitHole((window as any).__dgCourse().holes[0].id, false); v.zoomBy(2.5); });
-    await expect(page.locator('[data-handle="width"]:visible')).toHaveCount(4);
+    // At any zoom, no square on the tee, the basket or the hole's distance label; zoomed in on
+    // the hole, all four are there
+    const basket = (await course(page)).items.find((i: any) => i.type === "basket");
+    for (const zoom of [0.5, 0.7, 1, 1.4, 2.5]) {
+      // (At once, not animated: the squares and the label are checked where they come to rest)
+      await page.evaluate(z => { const v = (window as any).__dgView; v.fitHole((window as any).__dgCourse().holes[0].id, false); void v.controls.dollyTo(v.controls.distance / z, false); }, zoom);
+      await page.waitForTimeout(400);
+      const ends = [await screenOf(page, tee.x, tee.y, 1), await screenOf(page, basket.x, basket.y, 1)];
+      const label = await page.getByTestId("hole-distance").evaluateAll(els => els.filter(e => (e as HTMLElement).offsetParent).map(e => e.getBoundingClientRect().toJSON()));
+      const squares = await page.locator('[data-handle="width"]:visible').evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }));
+      for (const c of squares) {
+        for (const e of ends) expect(Math.hypot(c.x - e.x, c.y - e.y), `zoom ${zoom}`).toBeGreaterThanOrEqual(40);
+        for (const r of label) expect(c.x > r.left - 4 && c.x < r.right + 4 && c.y > r.top - 4 && c.y < r.bottom + 4, `zoom ${zoom}: a square on the label`).toBe(false);
+      }
+      if (zoom === 2.5) expect(squares.length).toBe(4);
+    }
   });
 
   test("two fingers pinch the map; they place nothing, even with the Hole tool", async ({ page }) => {

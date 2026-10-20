@@ -2116,14 +2116,20 @@ export class CourseView {
         const w = fairwayWidthAt(h)(t);
         return at({ x: sd.point.x + (sd.n.x * w) / 2, y: sd.point.y + (sd.n.y * w) / 2 });
       };
-      // Only where it stands clear of the tee and the basket on screen (a short hole seen from
-      // far, or a touch screen's bigger handles: a square on the tee would take the tee's taps
-      // and its long-press menu); zoomed in on the hole, all four are there
+      // Only where it stands clear of the tee, the basket and the hole's distance label on screen
+      // (a short hole seen from far, or a touch screen's bigger handles: a square on the tee
+      // would take the tee's taps and its long-press menu, one on the label would hide it);
+      // zoomed in on the hole, all four are there
       const clear = () => {
         const s = stats(), p = pos();
         const me = p && this.project(p);
         if (!s || !me || s.line.length < 2) return false;
         const room = COARSE ? 44 : 24;
+        const chip = this.overlays.get(`dist:${holeId}`);
+        const c = chip && chip.el.style.display !== "none" && chip.w && chip.h ? this.project(chip.anchor) : null;
+        // (the square on the label: within the label's box grown by the square's own half size)
+        const half = COARSE ? 11 : 6;
+        if (c && Math.abs(me.x - c.x) < chip!.w! / 2 + half && Math.abs(me.y - c.y - chip!.dy) < chip!.h! / 2 + half) return false;
         return [s.line[0], s.line[s.line.length - 1]].every(q => {
           const e = this.project(at(q));
           return !!e && Math.hypot(e.x - me.x, e.y - me.y) >= room;
