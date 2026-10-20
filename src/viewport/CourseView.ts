@@ -14,7 +14,7 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
-import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, TEE_LEVELS, clamp } from "../constants";
+import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
 import { basketFor, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, corridor, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
@@ -28,7 +28,9 @@ import { create3dTree, getTreeSignature } from "../three/trees";
 import { createWoods } from "../three/woods";
 import { forestDetail, type Forest } from "../three/treeKit";
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
-import type { AmenityItem, AreaItem, BasketItem, CourseItem, Hole, LabelItem, LineItem, MandoItem, TeeItem, TeeLevel, TreeItem } from "../types";
+import { createStructure } from "../three/structures";
+import { isLineKind, structureBounds, structurePath, structureWidth } from "../lib/structures";
+import type { AmenityItem, AreaItem, BasketItem, CourseItem, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
 import type { FlightFrames, FlyoverVideo, FrameInfo, RecordOptions } from "./flyoverVideo";
@@ -332,7 +334,7 @@ export class CourseView {
   }
 
   setTool(tool: ViewTool, teeLevel = this.teeLevel) {
-    const leaving = tool.mode !== this.tool.mode;
+    const leaving = tool.mode !== this.tool.mode || this.drawn(tool) !== this.drawn();
     this.teeLevel = teeLevel;
     if (leaving && this.tool.mode === "measure") this.clearMeasure();
     if (leaving) this.cancelDrawing();
@@ -480,6 +482,7 @@ export class CourseView {
     const item = doc.course.items.find(i => i.id === id);
     if (!item) return null;
     if (item.type === "area" || item.type === "line") return boundsOf(item.points);
+    if (item.type === "structure") return structureBounds(item);
     const r = item.type === "tree" ? item.radius : item.type === "tee" ? item.padLength / 2 : 4;
     return { minX: item.x - r, minY: item.y - r, maxX: item.x + r, maxY: item.y + r };
   }
@@ -1374,6 +1377,16 @@ export class CourseView {
         return g;
       });
     }
+    // Built things: bridges, boardwalks, stairs, walls, buildings, shelters and decks, as models
+    // at real size on the ground (each one rebuilt only when it or the ground changes)
+    for (const st of course.items.filter(i => i.type === "structure") as StructureItem[]) {
+      put(`struct:${st.id}`, JSON.stringify([st.kind, st.points, st.width, st.height, st.roof, hv]), () => {
+        const model = createStructure(st, (x, y) => this.h(x, y));
+        model.traverse(o => { o.userData.itemId = st.id; });
+        this.shadowsDirty = true;
+        return model;
+      }, this.itemsGroup);
+    }
     // Throw lines, flight arcs and putting circles
     const tees = new Map(doc.stats.map(s => [s.holeId, s]));
     for (const hole of course.holes) {
@@ -1530,7 +1543,17 @@ export class CourseView {
     }
     const item = this.item(id);
     if (!item || item.type === "label") return null;
-    if (item.type === "area") g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2, true), color, 3.5, { opacity, order: 9 }));
+    if (item.type === "structure") {
+      // Its outline (or both edges of a bridge or wall), seen through whatever stands over it
+      const pts = isLineKind(item.kind) ? structurePath(item) : item.points;
+      const w = isLineKind(item.kind) ? structureWidth(item) / 2 + 0.6 : 0;
+      const edge = (off: number) => pts.map((p, i) => {
+        const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        return { x: p.x - ((b.y - a.y) / l) * off, y: p.y + ((b.x - a.x) / l) * off };
+      });
+      const rings = w ? [[...edge(w), ...edge(-w).reverse()]] : [pts];
+      for (const r of rings) g.add(this.fatLine(this.drapeLine(r, LIFT + 0.3, true), color, 3, { opacity, order: 9, depthTest: false }));
+    } else if (item.type === "area") g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2, true), color, 3.5, { opacity, order: 9 }));
     else if (item.type === "line") g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2), color, 5, { opacity: opacity * 0.6, order: 9 }));
     else {
       const r = item.type === "tree" ? item.radius * (item.width ?? 1) * 1.05 : item.type === "tee" ? item.padLength * 0.62 : item.type === "basket" ? 3 : 3.5;
@@ -1646,7 +1669,7 @@ export class CourseView {
           el.textContent = l.text;
           return el;
         }, at(l, 0.5), 0);
-      } else if (item.type === "area" && item.label) {
+      } else if ((item.type === "area" || item.type === "structure") && item.label) {
         put(`area:${item.id}`, item.label, 4, () => {
           const el = document.createElement("div");
           el.className = "dg-area";
@@ -1704,8 +1727,8 @@ export class CourseView {
     const sel = editing ? this.item(this.selectedId) : null;
     const holeId = editing ? (this.hole(this.selectedId)?.id ?? doc.activeHoleId) : null;
     const hole = this.hole(holeId);
-    const drawing = this.tool.mode === "draw-area" || this.tool.mode === "draw-line" ? this.drawPts.length : -1;
-    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line") ? sel.points.length : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}` : ""}|${drawing}`;
+    const drawing = this.drawn() ? this.drawPts.length : -1;
+    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}` : ""}|${drawing}`;
     if (key === this.handleKey) return;
     this.handleKey = key;
     this.handles.forEach(h => h.el.remove());
@@ -1725,7 +1748,7 @@ export class CourseView {
       for (let i = 0; i < this.drawPts.length; i++) {
         add("draw", () => { const p = this.drawPts[i]; return p ? new THREE.Vector3(p.x, this.h(p.x, p.y), p.y) : null; }, () => {
           // Clicking the first point closes an area
-          if (i === 0 && this.tool.mode === "draw-area") this.finishDrawing();
+          if (i === 0 && this.drawn() === "area") this.finishDrawing();
           return null;
         }, { index: i, title: i === 0 ? "Click to close the shape" : undefined });
       }
@@ -1739,7 +1762,7 @@ export class CourseView {
   }
 
   private itemHandles(sel: CourseItem, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
-    if (sel.type === "area" || sel.type === "line") this.pointHandles(sel.id, add);
+    if (sel.type === "area" || sel.type === "line" || sel.type === "structure") this.pointHandles(sel.id, add);
     else if (sel.type === "tree") {
       const id = sel.id;
       add("radius", () => {
@@ -1862,11 +1885,11 @@ export class CourseView {
 
   /** An area's corners or a line's points: drag to move, double-click to remove, pull a mid dot to add one. */
   private pointHandles(id: string, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
-    const it = () => this.item(id) as AreaItem | LineItem | null;
+    const it = () => this.item(id) as AreaItem | LineItem | StructureItem | null;
     const at = (p: P) => new THREE.Vector3(p.x, this.h(p.x, p.y) + 0.3, p.y);
     const first = it();
     if (!first) return;
-    const closed = first.type === "area";
+    const closed = first.type === "area" || (first.type === "structure" && !isLineKind(first.kind));
     const min = closed ? 3 : 2;
     const drag = (index: number, start: P[]): Drag => {
       const pts = start.map(p => ({ ...p }));
@@ -2024,7 +2047,7 @@ export class CourseView {
     const sy = clientY - r.top;
     let best: { id: string; score: number } | null = null;
     for (const item of doc.course.items) {
-      if (item.type === "area" || item.type === "line" || item.type === "label") continue;
+      if (item.type === "area" || item.type === "line" || item.type === "label" || item.type === "structure") continue;
       const a = new THREE.Vector3(item.x, this.h(item.x, item.y) + 1, item.y);
       const s = this.project(a);
       if (!s) continue;
@@ -2043,8 +2066,17 @@ export class CourseView {
     const p = { x: g.x, y: g.z };
     const upp = this.upp(g);
     const tol = 7 * upp;
-    // Drawn lines, then throw lines
+    // Built things (they stand over what is drawn on the ground): on a bridge or wall, or inside a
+    // building's outline
     let near: { id: string; d: number } | null = null;
+    const built = doc.course.items.filter(i => i.type === "structure") as StructureItem[];
+    for (const st of built) {
+      // (Lines first: stairs up to a deck, a bridge by a shelter; then the smallest outline)
+      const d = isLineKind(st.kind) ? distanceToPath(p, structurePath(st)) - structureWidth(st) / 2 : st.points.length >= 3 && pointInPolygon(p, st.points) ? tol + polygonArea(st.points) * 1e-9 : Infinity;
+      if (d < tol * 1.01 + 1 && (!near || d < near.d)) near = { id: st.id, d };
+    }
+    if (near) return near.id;
+    // Drawn lines, then throw lines
     for (const l of doc.course.items.filter(i => i.type === "line") as LineItem[]) {
       const d = distanceToPath(p, l.points) - ((l.width ?? LINE_KINDS[l.kind].width) / 2);
       if (d < tol && (!near || d < near.d)) near = { id: l.id, d };
@@ -2152,7 +2184,7 @@ export class CourseView {
     const hit0 = this.planeAt(e.clientX, e.clientY, planeY);
     if (!hit0) return null;
     const start = { x: hit0.x, y: hit0.z };
-    const shape = item.type === "area" || item.type === "line" ? item.points.map(p => ({ ...p })) : null;
+    const shape = item.type === "area" || item.type === "line" || item.type === "structure" ? item.points.map(p => ({ ...p })) : null;
     const off = { x: item.x - hit0.x, y: item.y - hit0.z };
     return {
       move: ev => {
@@ -2278,10 +2310,10 @@ export class CourseView {
       });
       return;
     }
-    if (tool.mode === "draw-area" || tool.mode === "draw-line") {
+    if (this.drawn(tool)) {
       stop();
       // A rectangle, circle or freehand shape is dragged out (clicking still adds points)
-      const shape = tool.mode === "draw-line" && (tool.shape === "box" || tool.shape === "circle") ? "freehand" : tool.shape;
+      const shape = this.drawn(tool) === "line" && (tool.shape === "box" || tool.shape === "circle") ? "freehand" : tool.shape;
       this.gesture(e, {
         drag: shape !== "points" && !this.drawPts.length && !touch ? s => this.shapeDrag(s, shape) : panOrNothing,
         click: groundClick(p0 => {
@@ -2319,7 +2351,7 @@ export class CourseView {
     const item = this.item(hit);
     // Holes, areas and lines move only once selected (dragging across the map still pans);
     // a hole itself never moves (move its tee or basket); a locked item never moves
-    const big = !item || item.type === "area" || item.type === "line";
+    const big = !item || item.type === "area" || item.type === "line" || item.type === "structure";
     if ((big && hit !== this.selectedId) || !item || item.locked) {
       stop();
       this.gesture(e, { click: () => this.cb.onSelect(hit), drag: panOrNothing });
@@ -2337,6 +2369,15 @@ export class CourseView {
   private shaping = false;
   private draftPending = false;
 
+  /** What a drawing tool draws: an outline ("area": areas, buildings, shelters, decks), a line
+   * (lines, bridges, boardwalks, stairs, walls), or nothing. */
+  private drawn(tool = this.tool): "area" | "line" | null {
+    if (tool.mode === "draw-area") return "area";
+    if (tool.mode === "draw-line") return "line";
+    if (tool.mode === "draw-structure") return STRUCTURE_KINDS[tool.structureKind ?? "bridge"].shape === "outline" ? "area" : "line";
+    return null;
+  }
+
   /** A point being drawn, moved onto a corner of a shape already drawn when it is within a few
    * pixels of one (so OB lines and areas meet without gaps). */
   private snap(p: P): P {
@@ -2345,7 +2386,7 @@ export class CourseView {
     const tol = 9 * this.upp(new THREE.Vector3(p.x, this.h(p.x, p.y), p.y));
     let best: P | null = null, bd = tol;
     for (const i of doc.course.items) {
-      if (i.type !== "area" && i.type !== "line") continue;
+      if (i.type !== "area" && i.type !== "line" && i.type !== "structure") continue;
       for (const q of i.points) {
         const d = dist(p, q);
         if (d < bd) { bd = d; best = q; }
@@ -2400,14 +2441,13 @@ export class CourseView {
 
   /** Ends drawing an area or line (Enter, double-click, or clicking the first point). */
   finishDrawing() {
-    const mode = this.tool.mode;
+    const kind = this.drawn();
     const pts = this.drawPts;
-    const min = mode === "draw-area" ? 3 : 2;
-    if ((mode === "draw-area" || mode === "draw-line") && pts.length >= min) {
+    if (kind && pts.length >= (kind === "area" ? 3 : 2)) {
       this.drawPts = [];
       this.clearDraft();
       this.cb.onDrawProgress(0);
-      this.cb.onDrawn(mode === "draw-area" ? "area" : "line", pts);
+      this.cb.onDrawn(this.tool.mode === "draw-structure" ? "structure" : kind, pts);
       this.handleKey = "";
       this.syncHandles();
       return true;
@@ -2474,8 +2514,8 @@ export class CourseView {
     } else if (this.drawPts.length) {
       const pts = [...this.drawPts];
       if (this.cursor) pts.push(this.cursor);
-      const area = this.tool.mode === "draw-area";
-      const color = area ? AREA_KINDS[this.tool.areaKind].color : LINE_KINDS[this.tool.lineKind].color;
+      const area = this.drawn() === "area";
+      const color = this.tool.mode === "draw-structure" ? STRUCTURE_KINDS[this.tool.structureKind ?? "bridge"].color : area ? AREA_KINDS[this.tool.areaKind].color : LINE_KINDS[this.tool.lineKind].color;
       if (area && pts.length >= 3) {
         const mesh = new THREE.Mesh(drapedPolygon(pts, (x, y) => this.h(x, y), doc.gridSize, 0.3), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25, depthWrite: false, depthTest: false }));
         mesh.renderOrder = 19;
@@ -2625,7 +2665,7 @@ export class CourseView {
 
   private onDoubleClick(e: MouseEvent) {
     if (this.povHole) return;
-    if (this.tool.mode === "draw-area" || this.tool.mode === "draw-line") {
+    if (this.drawn()) {
       // The double-click's two clicks each added a point: drop the repeat, then finish
       if (this.drawPts.length >= 2 && dist(this.drawPts[this.drawPts.length - 1], this.drawPts[this.drawPts.length - 2]) < 3) this.drawPts.pop();
       this.finishDrawing();
@@ -2680,7 +2720,7 @@ export class CourseView {
     else if (t.mode !== "select") c = "crosshair";
     else if (this.hoverId) {
       const it = this.item(this.hoverId);
-      c = !it || ((it.type === "area" || it.type === "line") && this.hoverId !== this.selectedId) ? "pointer" : "move";
+      c = !it || ((it.type === "area" || it.type === "line" || it.type === "structure") && this.hoverId !== this.selectedId) ? "pointer" : "move";
     }
     this.container.style.cursor = c;
   }

@@ -345,3 +345,173 @@ test("landscapes and marking colors", async ({ page }) => {
   await page.waitForTimeout(4000);
   await shot(page, "18-pines-3d");
 });
+
+/** Built things round holes 7 and 8: a bridge over the creek in front of hole 8's tee, a
+ * boardwalk, stairs, a wall, a clubhouse, a picnic shelter and a tee deck. */
+export async function seedStructures(page: Page) {
+  return page.evaluate(() => {
+    const w = window as any, a = w.__dgActions, d = w.__dgCourse(), s = w.__dgEditor();
+    const W = d.canvas.width, H = d.canvas.height;
+    const at = (fx: number, fy: number) => ({ x: fx * W, y: fy * H });
+    const rect = (c: { x: number; y: number }, len: number, wid: number, deg: number) => {
+      const r = (deg * Math.PI) / 180, u = { x: Math.cos(r), y: Math.sin(r) }, v = { x: -u.y, y: u.x };
+      return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => ({ x: c.x + u.x * i * len / 2 + v.x * j * wid / 2, y: c.y + u.y * i * len / 2 + v.y * j * wid / 2 }));
+    };
+    // The bridge: square across the creek, on hole 8's line just in front of its tee
+    const s0 = at(0.52, 0.86), s1 = at(0.64, 0.9);
+    const sl = Math.hypot(s1.x - s0.x, s1.y - s0.y), sd = { x: (s1.x - s0.x) / sl, y: (s1.y - s0.y) / sl };
+    const tee = at(0.56, 0.9), basket = at(0.46, 0.66);
+    // Where hole 8's line crosses the creek
+    const den = (basket.x - tee.x) * sd.y - (basket.y - tee.y) * sd.x;
+    const t = ((s0.x - tee.x) * sd.y - (s0.y - tee.y) * sd.x) / den;
+    const cross = { x: tee.x + (basket.x - tee.x) * t, y: tee.y + (basket.y - tee.y) * t };
+    const hl = Math.hypot(basket.x - tee.x, basket.y - tee.y), hd = { x: (basket.x - tee.x) / hl, y: (basket.y - tee.y) / hl };
+    const make = (kind: string, pts: { x: number; y: number }[]) => { s.set({ structureKind: kind }); a.addDrawn("structure", pts); };
+    make("bridge", [{ x: cross.x - hd.x * 20, y: cross.y - hd.y * 20 }, { x: cross.x + hd.x * 20, y: cross.y + hd.y * 20 }]);
+    const b0 = at(0.6, 0.875);
+    make("boardwalk", [b0, { x: b0.x + 40, y: b0.y - 18 }, { x: b0.x + 85, y: b0.y - 20 }, { x: b0.x + 125, y: b0.y - 40 }]);
+    const st = at(0.5, 0.79);
+    make("stairs", [st, { x: st.x + 14, y: st.y - 22 }]);
+    const wl = at(0.47, 0.94);
+    make("wall", [wl, { x: wl.x + 60, y: wl.y + 8 }, { x: wl.x + 95, y: wl.y - 10 }]);
+    const club = at(0.43, 0.88);
+    make("building", rect({ x: club.x, y: club.y - 55 }, 46, 30, 12));
+    make("shelter", rect(at(0.505, 0.925), 32, 22, -8));
+    make("deck", rect(at(0.7, 0.68), 18, 14, 30));
+    a.select(null);
+    s.set({ tool: "select" });
+    return { cross, ids: w.__dgCourse().items.filter((i: any) => i.type === "structure").map((i: any) => i.id) };
+  });
+}
+
+test("structures", async ({ page }) => {
+  await importSite(page);
+  await seedCourse(page);
+  const { cross } = await seedStructures(page);
+  await page.getByRole("button", { name: "3 Features" }).click();
+  await page.evaluate(c => (window as any).__dgView.fitBounds({ minX: c.x - 260, minY: c.y - 200, maxX: c.x + 200, maxY: c.y + 120 }, { animate: false }), cross);
+  await page.waitForTimeout(1500);
+  await shot(page, "17-structures-editor");
+  // The clubhouse picked: its inspector and handles
+  const building = await page.evaluate(() => (window as any).__dgCourse().items.find((i: any) => i.kind === "building" && i.type === "structure").id);
+  await page.evaluate(id => (window as any).__dgActions.select(id), building);
+  await page.waitForTimeout(800);
+  await shot(page, "17-structures-selected");
+  await page.evaluate(() => (window as any).__dgActions.select(null));
+  await page.keyboard.press("s");
+  await page.waitForTimeout(400);
+  await shot(page, "17-structures-tool");
+  await page.keyboard.press("Escape");
+  // In 3D, close and tilted
+  await page.keyboard.press("3");
+  await page.waitForTimeout(2500);
+  await shot(page, "17-structures-3d");
+  await page.evaluate(c => { const v = (window as any).__dgView; v.fitBounds({ minX: c.x - 70, minY: c.y - 50, maxX: c.x + 40, maxY: c.y + 40 }, { animate: false }); }, cross);
+  await page.waitForTimeout(2500);
+  await shot(page, "17-structures-3d-close");
+  // From hole 8's tee: the bridge just ahead
+  const hole8 = await page.evaluate(() => (window as any).__dgCourse().holes[7].id);
+  await page.evaluate(id => (window as any).__dgEditor().set({ teeView: id, flyover: false }), hole8);
+  await page.waitForTimeout(2500);
+  await shot(page, "17-structures-tee");
+  await page.keyboard.press("Escape");
+  // The printed map: Forest, then Illustrated with its legend
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
+  await page.waitForTimeout(3000);
+  await page.getByTestId("design-page").screenshot({ path: "look/17-print-forest.png" });
+  const bar = page.getByRole("button", { name: "Fit the page" }).locator("..");
+  for (let i = 0; i < 5; i++) await bar.getByRole("button", { name: "Zoom in" }).click();
+  await page.waitForTimeout(1500);
+  await page.locator('[data-testid="design-page"] [data-structure="bridge"]').first().scrollIntoViewIfNeeded();
+  await page.waitForTimeout(500);
+  await shot(page, "17-print-forest-zoom");
+  await page.getByRole("tab", { name: "Tee sign" }).click();
+  await page.getByLabel("Hole for the tee sign").selectOption({ index: 7 });
+  await page.waitForTimeout(2500);
+  await page.getByTestId("design-page").screenshot({ path: "look/17-tee-sign.png" });
+  await page.getByRole("tab", { name: "Course map" }).click();
+  await page.getByTestId("theme-illustrated").click();
+  await page.waitForTimeout(2000);
+  await page.getByTestId("design-page").screenshot({ path: "look/17-print-illustrated.png" });
+  for (let i = 0; i < 5; i++) await bar.getByRole("button", { name: "Zoom in" }).click();
+  await page.waitForTimeout(1000);
+  await page.locator('[data-testid="design-page"] [data-structure="bridge"]').first().scrollIntoViewIfNeeded();
+  await page.waitForTimeout(500);
+  await shot(page, "17-print-illustrated-zoom");
+  for (const theme of ["topo", "night", "minimal"]) {
+    await page.getByTestId(`theme-${theme}`).click();
+    await page.waitForTimeout(1500);
+    await page.locator('[data-testid="design-page"] [data-structure="bridge"]').first().scrollIntoViewIfNeeded();
+    await page.waitForTimeout(400);
+    await shot(page, `17-print-${theme}-zoom`);
+  }
+});
+
+test("structures close up", async ({ page }) => {
+  await importSite(page, { trees: false });
+  // One of each on the hill's slope (south-west of its top), and a hole over the bridge
+  const spots = await page.evaluate(() => {
+    const w = window as any, a = w.__dgActions, s = w.__dgEditor(), d = w.__dgCourse();
+    const b = d.site.bounds, W = d.canvas.width, H = d.canvas.height;
+    const lat = 39.78073 + 120 / 111320, lon = -89.68103 + 120 / (111320 * Math.cos((39.78073 * Math.PI) / 180));
+    const c = { x: ((lon - b.west) / (b.east - b.west)) * W, y: ((b.north - lat) / (b.north - b.south)) * H };
+    const P = (dx: number, dy: number) => ({ x: c.x + dx, y: c.y + dy });
+    const rect = (m: { x: number; y: number }, len: number, wid: number, deg: number) => {
+      const r = (deg * Math.PI) / 180, u = { x: Math.cos(r), y: Math.sin(r) }, v = { x: -u.y, y: u.x };
+      return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => ({ x: m.x + u.x * i * len / 2 + v.x * j * wid / 2, y: m.y + u.y * i * len / 2 + v.y * j * wid / 2 }));
+    };
+    const make = (kind: string, pts: { x: number; y: number }[]) => { s.set({ structureKind: kind }); a.addDrawn("structure", pts); return w.__dgCourse().items.at(-1).id; };
+    const ids: Record<string, string> = {
+      stairs: make("stairs", [P(-205, 205), P(-178, 178)]),
+      deck: make("deck", rect(P(-150, 235), 22, 14, 35)),
+      building: make("building", rect(P(-270, 120), 44, 28, 20)),
+      shelter: make("shelter", rect(P(-110, 310), 30, 20, -10)),
+      boardwalk: make("boardwalk", [P(-330, 250), P(-290, 290), P(-250, 305), P(-215, 330)]),
+      wall: make("wall", [P(-235, 160), P(-215, 200), P(-185, 225)]),
+      bridge: make("bridge", [P(-360, 170), P(-330, 205)])
+    };
+    a.addHole(P(-375, 150), P(-250, 300), "blue");
+    a.select(null);
+    s.set({ tool: "select" });
+    const out: Record<string, { x: number; y: number }> = {};
+    for (const [k, id] of Object.entries(ids)) { const it = w.__dgCourse().items.find((i: any) => i.id === id); out[k] = { x: it.x, y: it.y }; }
+    return out;
+  });
+  await page.keyboard.press("3");
+  await page.waitForTimeout(1500);
+  for (const [kind, p] of Object.entries(spots)) {
+    await page.evaluate(p => {
+      const v = (window as any).__dgView;
+      // (The ground's height there)
+      const g = v.h(p.x, p.y);
+      void v.controls.setLookAt(p.x - 38, g + 28, p.y + 48, p.x, g + 2, p.y, false);
+      v.invalidate(true);
+    }, p);
+    await page.waitForTimeout(1800);
+    await page.screenshot({ path: `look/18-3d-${kind}.png`, clip: { x: 340, y: 56, width: 1260, height: 860 } });
+  }
+  const hole = await page.evaluate(() => (window as any).__dgCourse().holes[0].id);
+  await page.evaluate(id => (window as any).__dgEditor().set({ teeView: id }), hole);
+  await page.waitForTimeout(2500);
+  await page.screenshot({ path: "look/18-tee-bridge.png", clip: { x: 340, y: 56, width: 1260, height: 860 } });
+  await page.keyboard.press("Escape");
+  // The printed map up close, on open lawn (woods only where drawn)
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
+  await page.waitForTimeout(3000);
+  const bar = page.getByRole("button", { name: "Fit the page" }).locator("..");
+  for (let i = 0; i < 7; i++) await bar.getByRole("button", { name: "Zoom in" }).click();
+  await page.waitForTimeout(2000);
+  for (const theme of ["forest", "illustrated"]) {
+    if (theme !== "forest") {
+      await page.getByTestId(`theme-${theme}`).click();
+      await page.waitForTimeout(2000);
+    }
+    for (const kind of ["building", "bridge", "shelter"]) {
+      await page.locator(`[data-testid="design-page"] [data-structure="${kind}"]`).first().scrollIntoViewIfNeeded();
+      await page.waitForTimeout(600);
+      await page.screenshot({ path: `look/18-print-${theme}-${kind}.png`, clip: { x: 340, y: 105, width: 1260, height: 870 } });
+    }
+  }
+});

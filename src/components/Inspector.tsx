@@ -1,19 +1,22 @@
 // The panel for what is selected: a hole (par, fairway, notes, numbers, profile) or one item.
 import { useEffect, useMemo } from "react";
 import { ArrowDown, ArrowUp, Copy, Eye, Lock, Plane, Trash2, Unlock, X } from "lucide-react";
-import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PIN_POSITIONS, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
+import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
 import { holeBaskets, holeNumber, holeTees, ITEM_LABELS } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
+import { structureHeight, structureRoof, structureWidth } from "../lib/structures";
 import { holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { addHoleOb, deleteSelection, duplicateSelection, select, setTeeLevel } from "../state/actions";
 import { moveHole, updateHole, updateItem, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaItem, AreaKind, CourseItem, Hole, LineItem, LineKind, TeeSurface, TreeKind } from "../types";
+import type { AmenityKind, AreaItem, AreaKind, CourseItem, Hole, LineItem, LineKind, RoofKind, StructureKind, TeeSurface, TreeKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { getView } from "./MapViewport";
 import { Button, Field, NumberInput, Section, Segmented, Slider, Stat, TextInput, Toggle } from "./ui";
 
 const shapeText = { straight: "Straight", left: "Turns left", right: "Turns right", "s-curve": "S-curve" };
+/** A small size to the half foot (or tenth of a meter): "2.5 ft". */
+const fmtSize = (ft: number, units: "ft" | "m") => (units === "m" ? `${(ft / 3.28084).toFixed(1)} m` : `${Math.round(ft * 2) / 2} ft`);
 
 function HoleInspector({ hole }: { hole: Hole }) {
   const doc = useCourse(s => s.doc);
@@ -231,6 +234,33 @@ function ItemInspector({ item }: { item: CourseItem }) {
         </>
       );
       break;
+    case "structure": {
+      const meta = STRUCTURE_KINDS[item.kind];
+      const line = meta.shape === "line";
+      // (A line can only become another line, an outline another outline)
+      const kinds = STRUCTURE_ORDER.filter(k => STRUCTURE_KINDS[k].shape === meta.shape);
+      body = (
+        <>
+          <Field label="Kind">
+            <select aria-label="Structure kind" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as StructureKind })}>
+              {kinds.map(k => <option key={k} value={k}>{STRUCTURE_KINDS[k].label}</option>)}
+            </select>
+          </Field>
+          <p className="text-[11px] text-zinc-400 -mt-1 mb-2">{meta.help}</p>
+          {line && <Slider label={item.kind === "wall" ? "Thickness" : "Width"} min={1} max={item.kind === "wall" ? 6 : 24} step={0.5} value={structureWidth(item)} onChange={v => set({ width: v })} format={v => fmtSize(v, u)} />}
+          {meta.heightLabel && <Slider label={meta.heightLabel} min={item.kind === "building" || item.kind === "shelter" ? 6 : 0} max={item.kind === "building" ? 40 : item.kind === "shelter" ? 20 : item.kind === "wall" ? 12 : 10} step={0.5} value={structureHeight(item)} onChange={v => set({ height: v })} format={v => fmtSize(v, u)} />}
+          {(item.kind === "building" || item.kind === "shelter") && (
+            <Field label="Roof">
+              <Segmented label="Roof" value={structureRoof(item)} onChange={v => set({ roof: v as RoofKind })} options={[{ value: "gable", label: "Gable" }, { value: "hip", label: "Hip" }]} />
+            </Field>
+          )}
+          <Field label="Name on the map (optional)"><TextInput label="Structure name" value={item.label ?? ""} placeholder={item.kind === "building" ? "e.g. Clubhouse" : item.kind === "bridge" ? "e.g. Mill Creek Bridge" : ""} onChange={v => set({ label: v || undefined })} /></Field>
+          {holePicker}
+          <div className="text-xs text-zinc-400" data-testid="structure-size">{line ? `${fmtDist(pathLength(item.points), u)} long` : `${Math.round(polygonArea(item.points)).toLocaleString()} sq ft · ${item.points.length} corners`}</div>
+        </>
+      );
+      break;
+    }
     case "tree":
       body = (
         <>
@@ -265,7 +295,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
       break;
   }
   const holeId = "holeId" in item ? item.holeId : undefined;
-  const title = item.type === "tee" ? `${TEE_LEVELS[item.level].label} tee` : item.type === "basket" ? `Basket (pin ${item.position})` : item.type === "area" ? AREA_KINDS[item.kind].label : item.type === "line" ? LINE_KINDS[item.kind].label : item.type === "amenity" ? AMENITY_KINDS[item.kind].label : ITEM_LABELS[item.type];
+  const title = item.type === "tee" ? `${TEE_LEVELS[item.level].label} tee` : item.type === "basket" ? `Basket (pin ${item.position})` : item.type === "area" ? AREA_KINDS[item.kind].label : item.type === "line" ? LINE_KINDS[item.kind].label : item.type === "amenity" ? AMENITY_KINDS[item.kind].label : item.type === "structure" ? STRUCTURE_KINDS[item.kind].label : ITEM_LABELS[item.type];
   return (
     <>
       <Section>

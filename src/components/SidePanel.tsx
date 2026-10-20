@@ -2,14 +2,15 @@
 // canvas; the steps never lock anything.
 import { useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowRight, CircleDot, Info, MapPinned, Pentagon, Plus, Route, Signpost, Spline, Trash2, TreeDeciduous } from "lucide-react";
-import { AREA_KINDS, LINE_KINDS, TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
+import { AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
 import { activeLayout, holeTees } from "../lib/course";
 import { courseTotals, holeStats, levelsOnCourse, safetyIssues, type SafetyIssue } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { select } from "../state/actions";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
-import type { AreaKind, Layout, LineKind, PinPosition, TeeLevel, ToolMode } from "../types";
+import type { AreaKind, Layout, LineKind, PinPosition, StructureKind, TeeLevel, ToolMode } from "../types";
 import { getView } from "./MapViewport";
+import { structureIcon } from "./Toolbar";
 import { Button, Field, Section, Segmented, Stat, TextInput, Toggle } from "./ui";
 import { DesignPanel } from "./DesignPanel";
 import { ExportPanel } from "./ExportPanel";
@@ -17,7 +18,7 @@ import { ExportPanel } from "./ExportPanel";
 export const STEPS: { id: Step; label: string; title: string; blurb: string }[] = [
   { id: "site", label: "Site", title: "Your site", blurb: "The satellite photo, elevation, trees, paths and water for the land the course goes on." },
   { id: "holes", label: "Holes", title: "Holes", blurb: "Click a tee spot, then a basket spot. Bend the line with its dots; add more tees and pins." },
-  { id: "features", label: "Features", title: "OB, mandos and more", blurb: "Out of bounds, hazards, water, mandos, drop zones, paths, benches and signs." },
+  { id: "features", label: "Features", title: "OB, mandos and more", blurb: "Out of bounds, hazards, water, mandos, drop zones, paths, bridges, buildings, benches and signs." },
   { id: "review", label: "Review", title: "Review", blurb: "Par, lengths, elevation and safety checks for the whole course." },
   { id: "design", label: "Design", title: "Map design", blurb: "Make the course map beautiful: style, colors, labels and the title block." },
   { id: "export", label: "Export", title: "Export and share", blurb: "Course map, tee signs, scorecard, GPS files, and a link to share." }
@@ -185,6 +186,9 @@ function FeaturesStep() {
   const line = (kind: LineKind, text: string) => (
     <ToolCard key={kind} icon={<Spline size={17} style={{ color: LINE_KINDS[kind].color }} />} title={LINE_KINDS[kind].label} text={text} active={ed.tool === "draw-line" && ed.lineKind === kind} onClick={() => ed.set({ tool: "draw-line", lineKind: kind })} testid={`feature-line-${kind}`} />
   );
+  const built = (kind: StructureKind, text: string) => (
+    <ToolCard key={kind} icon={<span className="inline-block" dangerouslySetInnerHTML={{ __html: structureIcon(kind, 18, `card-${kind}`) }} />} title={STRUCTURE_KINDS[kind].label} text={text} active={ed.tool === "draw-structure" && ed.structureKind === kind} onClick={() => ed.set({ tool: "draw-structure", structureKind: kind, ...(STRUCTURE_KINDS[kind].shape === "line" && (ed.drawShape === "box" || ed.drawShape === "circle") ? { drawShape: "points" as const } : {}) })} testid={`feature-structure-${kind}`} />
+  );
   const tool = (mode: ToolMode, icon: ReactNode, title: string, text: string) => (
     <ToolCard key={mode} icon={icon} title={title} text={text} active={ed.tool === mode} onClick={() => ed.set({ tool: mode })} testid={`feature-${mode}`} />
   );
@@ -221,6 +225,17 @@ function FeaturesStep() {
           {line("fence", "Fences and walls.")}
           {area("parking", "Parking lots.")}
           {tool("add-amenity", <Info size={17} className="text-sky-400" />, "Benches, signs, parking… (A)", "Pick the kind in the bar above the tools.")}
+        </div>
+      </Section>
+      <Section title="Buildings and bridges (S)" testid="feature-structures">
+        <div className="space-y-1.5">
+          {built("bridge", "Across a creek: click one bank, then double-click the other.")}
+          {built("boardwalk", "A low deck on posts over wet ground.")}
+          {built("stairs", "Steps up a slope, end to end.")}
+          {built("wall", "A stone or retaining wall.")}
+          {built("building", "Clubhouse, restrooms, a barn: drag a rectangle or click its corners.")}
+          {built("shelter", "An open pavilion with picnic tables.")}
+          {built("deck", "A raised platform: a tee deck, a lookout.")}
         </div>
       </Section>
       {(photoTrees > 0 || osm > 0) && (

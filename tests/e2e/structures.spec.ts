@@ -1,0 +1,268 @@
+// Built things: bridges, boardwalks, stairs, walls, buildings, shelters and decks. Drawn with the
+// Build tool, edited in the inspector, reshaped with handles, real 3D models in the map view, and
+// drawn on the printed map (every style) with their legend lines.
+import { test as plain, expect as plainExpect } from "@playwright/test";
+import { test, expect, blankCourse, clickPlan, course, drag, editorState, handleCenter, screenOf } from "./fixtures";
+import { STRUCTURE_ORDER } from "../../src/constants";
+import { createArea, createBasket, createEmptyCourse, createStructure, createTee, newHole, normalizeCourse, createAmenity } from "../../src/lib/course";
+import { THEMES, renderPoster } from "../../src/lib/mapSvg";
+import { boardwalkDeck, bridgeDeck, roofOf, stairSteps } from "../../src/lib/structures";
+import type { MapTheme, StructureKind } from "../../src/types";
+
+const structures = async (page: import("@playwright/test").Page) => (await course(page)).items.filter((i: any) => i.type === "structure");
+/** The meshes of a structure's 3D model, by material ("deck", "timber", "stone", "shingle"...). */
+const model = (page: import("@playwright/test").Page, id: string) =>
+  page.evaluate(id => {
+    const g = (window as any).__dgView.scene.getObjectByName(`structure:${id}`);
+    return g ? { kind: g.userData.structure, parts: g.children.map((c: any) => c.name).sort(), cast: g.children.every((c: any) => c.castShadow) } : null;
+  }, id);
+
+test("a bridge drawn with the Build tool; the inspector sets its width, height and name; undo and redo", async ({ page }) => {
+  await blankCourse(page);
+  await page.keyboard.press("s");
+  expect((await editorState(page)).tool).toBe("draw-structure");
+  await page.getByTestId("structure-kind-bridge").click();
+  await expect(page.getByTestId("tool-hint")).toContainText("Click one bank");
+  await clickPlan(page, 400, 500);
+  await clickPlan(page, 440, 470);
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await structures(page)).length).toBe(1);
+  const bridge = (await structures(page))[0];
+  expect(bridge.kind).toBe("bridge");
+  expect(bridge.points).toHaveLength(2);
+  expect((await editorState(page)).tool).toBe("select");
+  expect((await editorState(page)).selectedId).toBe(bridge.id);
+  await expect(page.getByTestId("inspector-title")).toHaveText("Bridge");
+  await expect(page.getByTestId("structure-size")).toHaveText(/^\d+ ft long$/);
+  expect(Math.hypot(bridge.points[1].x - bridge.points[0].x, bridge.points[1].y - bridge.points[0].y)).toBeCloseTo(50, -1);
+  // A real model: deck boards, timber rails and beams, stone abutments
+  await expect.poll(() => model(page, bridge.id)).toEqual({ kind: "bridge", parts: ["deck", "stone", "timber"], cast: true });
+  // Inspector edits, one undo step each
+  await page.getByRole("slider", { name: "Width" }).fill("8");
+  await expect.poll(async () => (await structures(page))[0].width).toBe(8);
+  await page.getByRole("slider", { name: "Deck above the banks" }).fill("2.5");
+  await expect.poll(async () => (await structures(page))[0].height).toBe(2.5);
+  await page.getByLabel("Structure name").fill("Mill Creek Bridge");
+  await expect.poll(async () => (await structures(page))[0].label).toBe("Mill Creek Bridge");
+  // Its name shows on the map
+  await expect(page.getByTestId("plan").getByText("Mill Creek Bridge", { exact: true })).toBeVisible();
+  const undo = page.getByRole("button", { name: "Undo" });
+  await undo.click();
+  await expect.poll(async () => (await structures(page))[0].label).toBeUndefined();
+  expect((await structures(page))[0].height).toBe(2.5);
+  // Back past the edits to before it was drawn
+  for (let i = 0; i < 6 && (await structures(page)).length; i++) await undo.click();
+  await expect.poll(async () => (await structures(page)).length).toBe(0);
+  await expect.poll(() => model(page, bridge.id)).toBeNull();
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect.poll(async () => (await structures(page)).length).toBe(1);
+  await expect.poll(() => model(page, bridge.id)).not.toBeNull();
+});
+
+/** What each kind's model is made of (its meshes, one per material). */
+const MATERIALS: Record<StructureKind, string[]> = {
+  bridge: ["deck", "stone", "timber"], boardwalk: ["deck", "timber"], stairs: ["concrete", "timber"], wall: ["stone"],
+  building: ["door", "glass", "shingle", "siding", "stone", "trim"], shelter: ["concrete", "metal", "timber"], deck: ["deck", "timber"]
+};
+
+test("a boardwalk, stairs and a wall drawn from the Features list, click by click", async ({ page }) => {
+  await blankCourse(page);
+  await page.getByRole("button", { name: "3 Features" }).click();
+  await expect(page.getByTestId("feature-structures")).toBeVisible();
+  let x = 250;
+  for (const kind of ["boardwalk", "stairs", "wall"] as const) {
+    await page.getByTestId(`feature-structure-${kind}`).click();
+    await expect.poll(async () => (await editorState(page)).tool).toBe("draw-structure");
+    await clickPlan(page, x, 400);
+    await clickPlan(page, x + 40, 470, { double: true });
+    await expect.poll(async () => (await structures(page)).map((s: any) => s.kind)).toContain(kind);
+    x += 250;
+  }
+  const all = await structures(page);
+  expect(all.map((s: any) => s.kind)).toEqual(["boardwalk", "stairs", "wall"]);
+  for (const s of all) {
+    expect(s.points, s.kind).toHaveLength(2);
+    await expect.poll(async () => (await model(page, s.id))?.parts, s.kind).toEqual(MATERIALS[s.kind as StructureKind]);
+  }
+});
+
+test("a building, a shelter and a deck dragged out as rectangles; kind and roof in the inspector", async ({ page }) => {
+  await blankCourse(page);
+  await page.getByRole("button", { name: "3 Features" }).click();
+  let x = 250;
+  for (const kind of ["building", "shelter", "deck"] as const) {
+    await page.getByTestId(`feature-structure-${kind}`).click();
+    await page.getByTestId("draw-shape-box").click();
+    await drag(page, await screenOf(page, x, 400), await screenOf(page, x + 60, 440), 3);
+    await expect.poll(async () => (await structures(page)).map((s: any) => s.kind)).toContain(kind);
+    x += 250;
+  }
+  const all = await structures(page);
+  expect(all.map((s: any) => s.kind)).toEqual(["building", "shelter", "deck"]);
+  for (const s of all) {
+    expect(s.points, s.kind).toHaveLength(4);
+    await expect.poll(async () => (await model(page, s.id))?.parts, s.kind).toEqual(MATERIALS[s.kind as StructureKind]);
+  }
+  // The inspector offers kinds of the same shape, and a building's roof
+  await page.evaluate(id => (window as any).__dgActions.select(id), all[0].id);
+  await expect(page.getByTestId("inspector-title")).toHaveText("Building");
+  await expect(page.getByLabel("Structure kind").locator("option")).toHaveText(["Building", "Shelter", "Deck"]);
+  await page.getByRole("radiogroup", { name: "Roof" }).getByRole("radio", { name: "Hip" }).click();
+  await expect.poll(async () => (await structures(page))[0].roof).toBe("hip");
+  await page.getByLabel("Structure kind").selectOption("shelter");
+  await expect.poll(async () => (await structures(page))[0].kind).toBe("shelter");
+  await expect.poll(async () => (await model(page, all[0].id))?.parts).toEqual(MATERIALS.shelter);
+});
+
+test("reshaping a building with its corner and mid handles, moving it, deleting it", async ({ page }) => {
+  await blankCourse(page);
+  await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 340, minY: 340, maxX: 560, maxY: 520 }, { animate: false }));
+  await page.keyboard.press("s");
+  await page.getByTestId("structure-kind-building").click();
+  for (const [x, y] of [[400, 400], [480, 400], [480, 460]] as const) await clickPlan(page, x, y);
+  await clickPlan(page, 400, 460, { double: true });
+  await expect.poll(async () => (await structures(page)).length).toBe(1);
+  const id = (await structures(page))[0].id;
+  // Drag a corner out
+  await drag(page, await handleCenter(page, "corner", 0), await screenOf(page, 380, 380));
+  await expect.poll(async () => Math.round((await structures(page))[0].points[0].x)).toBeLessThan(390);
+  // Pull a mid dot: a fifth corner
+  await drag(page, await handleCenter(page, "mid", 1), await screenOf(page, 500, 430));
+  await expect.poll(async () => (await structures(page))[0].points.length).toBe(5);
+  // Drag the inside: it moves
+  const before = (await structures(page))[0].points[1].x;
+  await drag(page, await screenOf(page, 430, 430), await screenOf(page, 460, 430));
+  await expect.poll(async () => (await structures(page))[0].points[1].x).toBeGreaterThan(before + 15);
+  // The model followed (rebuilt), and Delete takes it away
+  await expect.poll(() => model(page, id)).not.toBeNull();
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect.poll(async () => (await structures(page)).length).toBe(0);
+  await expect.poll(() => model(page, id)).toBeNull();
+});
+
+// --- Pure logic
+
+plain("a bridge spans a creek's dip: its deck runs straight between its ends, never into the ground", () => {
+  // Level banks at 10 ft, a creek 8 ft deep in the middle
+  const ground = (x: number) => (Math.abs(x - 50) < 12 ? 2 : 10);
+  const deck = bridgeDeck([{ x: 20, y: 0 }, { x: 80, y: 0 }], x => ground(x), 1);
+  plainExpect(deck[0].top).toBeCloseTo(11, 5);
+  plainExpect(deck[deck.length - 1].top).toBeCloseTo(11, 5);
+  const middle = deck.find(d => Math.abs(d.x - 50) < 0.6)!;
+  // At the banks' height plus a slight camber, far above the creek bed
+  plainExpect(middle.top).toBeGreaterThan(11);
+  plainExpect(middle.top).toBeLessThan(13);
+  plainExpect(middle.top - middle.ground).toBeGreaterThan(8);
+  // A hump under it lifts the deck clear of the ground
+  const hump = bridgeDeck([{ x: 0, y: 0 }, { x: 40, y: 0 }], x => (Math.abs(x - 20) < 4 ? 20 : 0), 1);
+  plainExpect(Math.min(...hump.map(d => d.top - d.ground))).toBeGreaterThan(0.1);
+});
+
+plain("a boardwalk follows the ground at its height, ramping down at the ends; stairs climb the slope", () => {
+  const slope = (x: number) => x * 0.2;
+  const walk = boardwalkDeck([{ x: 0, y: 0 }, { x: 100, y: 0 }], x => slope(x), 1.5);
+  const mid = walk.find(d => Math.abs(d.x - 50) < 0.6)!;
+  plainExpect(mid.top - mid.ground).toBeCloseTo(1.5, 1);
+  plainExpect(walk[0].top - walk[0].ground).toBeLessThan(0.6);
+  const steps = stairSteps([{ x: 0, y: 0 }, { x: 20, y: 0 }], x => x * 0.5);
+  // Risers no higher than about 7 inches, each step above the ground under it
+  plainExpect(steps.length).toBeGreaterThanOrEqual(17);
+  for (let i = 1; i < steps.length; i++) plainExpect(steps[i].top - steps[i - 1].top).toBeLessThan(0.62);
+  for (const s of steps) plainExpect(s.top).toBeGreaterThanOrEqual(s.s1 * 0.5);
+});
+
+plain("roofs: a gable has two faces, a hip four, rising to the middle", () => {
+  const rect = [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 24 }, { x: 0, y: 24 }];
+  const gable = roofOf(rect, "gable", 1.5);
+  plainExpect(gable.facets).toHaveLength(2);
+  plainExpect(gable.run({ x: 20, y: 12 })).toBeCloseTo(12, 5);
+  plainExpect(gable.run({ x: 20, y: 0 })).toBeCloseTo(0, 5);
+  // The ridge runs the long way: along its line the run doesn't change
+  plainExpect(gable.run({ x: 2, y: 12 })).toBeCloseTo(12, 5);
+  const hip = roofOf(rect, "hip", 1.5);
+  plainExpect(hip.facets).toHaveLength(4);
+  plainExpect(hip.run({ x: 2, y: 12 })).toBeCloseTo(2, 5);
+  // The eaves overhang the walls
+  plainExpect(Math.min(...hip.eaves.map(p => p.x))).toBeCloseTo(-1.5, 5);
+});
+
+/** A course with one hole and one of every built thing. */
+const builtCourse = () => {
+  const doc = createEmptyCourse();
+  doc.name = "Springfield Park";
+  const h = newHole();
+  doc.holes.push(h);
+  doc.items.push(createTee(h.id, { x: 100, y: 500 }), createBasket(h.id, { x: 500, y: 500 }));
+  const rect = (x: number, y: number, w: number, d: number) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + d }, { x, y: y + d }];
+  doc.items.push(
+    createStructure("bridge", [{ x: 200, y: 480 }, { x: 240, y: 480 }]),
+    createStructure("boardwalk", [{ x: 250, y: 560 }, { x: 300, y: 580 }, { x: 360, y: 570 }]),
+    createStructure("stairs", [{ x: 380, y: 420 }, { x: 400, y: 400 }]),
+    createStructure("wall", [{ x: 120, y: 380 }, { x: 220, y: 390 }]),
+    createStructure("building", rect(300, 300, 44, 28)),
+    createStructure("shelter", rect(420, 600, 30, 20)),
+    createStructure("deck", rect(80, 520, 18, 14))
+  );
+  return doc;
+};
+
+plain("the printed map draws every built thing in every style, with a legend line for each kind there is", () => {
+  const doc = builtCourse();
+  for (const theme of Object.keys(THEMES) as MapTheme[]) {
+    doc.style.theme = theme;
+    const svg = renderPoster(doc, { contours: null, hillshade: null }).svg;
+    for (const kind of STRUCTURE_ORDER) plainExpect(svg, `${theme} ${kind}`).toContain(`data-structure="${kind}"`);
+  }
+  doc.style.theme = "illustrated";
+  doc.style.legend = true;
+  const svg = renderPoster(doc, { contours: null, hillshade: null }).svg;
+  const legend = svg.slice(svg.indexOf(">LEGEND<"));
+  for (const label of ["Bridge", "Boardwalk", "Stairs", "Wall", "Building", "Shelter", "Deck"]) plainExpect(legend).toContain(`>${label}<`);
+  // Only the kinds on the map
+  doc.items = doc.items.filter(i => i.type !== "structure" || i.kind === "bridge");
+  const fewer = renderPoster(doc, { contours: null, hillshade: null }).svg;
+  const fewerLegend = fewer.slice(fewer.indexOf(">LEGEND<"));
+  plainExpect(fewerLegend).toContain(">Bridge<");
+  plainExpect(fewerLegend).not.toContain(">Boardwalk<");
+  plainExpect(fewerLegend).not.toContain(">Building<");
+});
+
+plain("a roof's lit face follows the map's sun", () => {
+  const doc = builtCourse();
+  doc.items = doc.items.filter(i => i.type !== "structure" || i.kind === "building");
+  doc.style.theme = "illustrated";
+  const faces = (sunAngle: number) => {
+    doc.style.sunAngle = sunAngle;
+    const svg = renderPoster(doc, { contours: null, hillshade: null }).svg;
+    const roof = svg.slice(svg.indexOf('data-structure="building"'));
+    return [...roof.matchAll(/<path d="[^"]+Z" fill="(#[0-9a-f]{6})" stroke=/g)].slice(0, 2).map(m => m[1]);
+  };
+  // Sun from the top of the page (north): the north face is the lighter
+  const north = faces(0), south = faces(180);
+  plainExpect(north).toHaveLength(2);
+  plainExpect(north[0]).not.toBe(north[1]);
+  plainExpect(south).toEqual([north[1], north[0]]);
+});
+
+plain("older courses still load and draw: the building area, the bridge and shelter pictograms; a structure with defaults", () => {
+  const raw = {
+    holes: [],
+    items: [
+      createArea("building", [{ x: 0, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 20 }]),
+      createAmenity({ x: 50, y: 50 }, "bridge"),
+      createAmenity({ x: 80, y: 50 }, "shelter"),
+      { id: "s1", type: "structure", kind: "bridge", points: [{ x: 10, y: 80 }, { x: 40, y: 80 }], x: 25, y: 80, rotation: 0 },
+      // (Damaged: no points, or a kind this version doesn't know)
+      { id: "s2", type: "structure", kind: "bridge", x: 0, y: 0, rotation: 0 },
+      { id: "s3", type: "structure", kind: "castle", points: [], x: 0, y: 0, rotation: 0 }
+    ],
+    style: { theme: "illustrated" }
+  } as any;
+  const doc = normalizeCourse(raw);
+  plainExpect(doc.items.map(i => i.id)).toEqual([raw.items[0].id, raw.items[1].id, raw.items[2].id, "s1"]);
+  doc.style.legend = true;
+  const svg = renderPoster(doc, { contours: null, hillshade: null }).svg;
+  plainExpect(svg).toContain('data-symbol="bridge"');
+  plainExpect(svg).toContain('data-symbol="shelter"');
+  plainExpect(svg).toContain('data-structure="bridge"');
+});

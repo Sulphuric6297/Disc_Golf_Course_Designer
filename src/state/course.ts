@@ -1,6 +1,6 @@
 // The open course (the saved document) with undo and redo, and the editor's own state.
 import { create } from "zustand";
-import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, PinPosition, DrawShape } from "../types";
+import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, PinPosition, DrawShape, StructureKind } from "../types";
 import { createEmptyCourse } from "../lib/course";
 
 const HISTORY = 120;
@@ -106,6 +106,8 @@ type EditorStore = {
   pin: PinPosition;
   areaKind: AreaKind;
   lineKind: LineKind;
+  /** What the Build tool draws: a bridge, boardwalk, stairs, wall, building, shelter or deck. */
+  structureKind: StructureKind;
   /** How areas and lines are drawn (points, rectangle, circle, freehand). */
   drawShape: DrawShape;
   /** The mando tool places one post, or a gate of two (pass between them). */
@@ -153,6 +155,7 @@ export const useEditor = create<EditorStore>()(set => ({
   pin: "A",
   areaKind: "ob",
   lineKind: "ob",
+  structureKind: "bridge",
   drawShape: "points",
   mandoKind: "single",
   amenityKind: "bench",
