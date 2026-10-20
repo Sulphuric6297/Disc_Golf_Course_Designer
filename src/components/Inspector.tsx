@@ -140,7 +140,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
                     ? `Shaped: ${hole.fairwayShape.map(f => fmtDist(f * hole.fairwayWidth, u)).join(" · ")}`
                     : hole.fairwayShift ? "Shaped" : "Even width"}
                 </p>
-                {(hole.fairwayShape || hole.fairwayShift) && <button className="shrink-0 text-xs text-orange-300 hover:text-orange-200" onClick={() => set({ fairwayShape: undefined, fairwayShift: undefined })}>Even width</button>}
+                {(hole.fairwayShape || hole.fairwayShift) && <button className="shrink-0 text-xs text-orange-300 hover:text-orange-200" onClick={() => set({ fairwayShape: undefined, fairwayShift: undefined, fairwayStations: undefined })}>Even width</button>}
               </div>
             </>
           )}

@@ -173,6 +173,9 @@ export interface Hole {
   /** The fairway's middle moved off the throw line at each of FAIRWAY_STATIONS (toward the left of
    * the hole's normal, as a share of `fairwayWidth`): one side wider than the other (unset: centered). */
   fairwayShift?: number[];
+  /** Where along the hole (0 the tee, 1 the basket) the fairway's width and middle are set: the
+   * points `fairwayShape` and `fairwayShift` go with (unset: FAIRWAY_STATIONS). */
+  fairwayStations?: number[];
   /** Draw the fairway along the throw line (off: only a drawn fairway area, or none). */
   fairway: boolean;
   /** Heavy foliage makes a hole play longer (PDGA par guidelines). Unset: worked out from the trees. */

@@ -394,3 +394,27 @@ test("walks to the next hole are drawn over the paths they cross", async ({ page
   expect((await orders(`line:${path.id}`)).length).toBeGreaterThan(0);
   expect(Math.min(...(await orders(`line:${walk.id}`)))).toBeGreaterThan(Math.max(...(await orders(`line:${path.id}`))));
 });
+
+test("a placed path made longer from either end with its + handles", async ({ page }) => {
+  await blankCourse(page);
+  await page.keyboard.press("v");
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__dgEditor().set({ lineKind: "path" });
+    w.__dgActions.addDrawn("line", [{ x: 400, y: 500 }, { x: 600, y: 500 }]);
+  });
+  const path = (await course(page)).items.find((i: any) => i.kind === "path");
+  await expect(page.locator('[data-handle="extend"]')).toHaveCount(2);
+  // On from its end, then from its start
+  await drag(page, await handleCenter(page, "extend", 1), await screenOf(page, 750, 560));
+  await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === path.id).points.length).toBe(3);
+  let pts = (await course(page)).items.find((i: any) => i.id === path.id).points;
+  expect(Math.hypot(pts[2].x - 750, pts[2].y - 560)).toBeLessThan(8);
+  await drag(page, await handleCenter(page, "extend", 0), await screenOf(page, 300, 450));
+  await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === path.id).points.length).toBe(4);
+  pts = (await course(page)).items.find((i: any) => i.id === path.id).points;
+  expect(Math.hypot(pts[0].x - 300, pts[0].y - 450)).toBeLessThan(8);
+  // One undo step each
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === path.id).points.length).toBe(3);
+});

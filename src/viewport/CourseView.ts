@@ -15,7 +15,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, autoWalks, basketFor, basketHoles, curves, fairwayOutline, fairwayShiftAt, fairwayWidthAt, linePath, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { FAIRWAY_STATIONS, autoWalks, basketFor, basketHoles, curves, fairwayOutline, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
@@ -92,6 +92,7 @@ const STYLE = `
 .dg-h{position:absolute;left:0;top:0;pointer-events:auto;will-change:translate;box-sizing:border-box;touch-action:none}
 .dg-h[data-handle=corner],.dg-h[data-handle=dogleg]{width:14px;height:14px;border-radius:50%;background:#fff;border:2.5px solid #0891b2;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=dogleg]{border-color:#f59e0b}
+.dg-h[data-handle=extend]{width:15px;height:15px;border-radius:50%;background:#fff;border:2px solid #f97316;cursor:copy;display:flex;align-items:center;justify-content:center;font:700 12px/1 Inter,sans-serif;color:#f97316}.dg-h[data-handle=extend]::after{content:"+"}
 .dg-h[data-handle=walkout],.dg-h[data-handle=walkin]{width:13px;height:13px;border-radius:3px;background:#e2e8f0;border:2px dashed #475569;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=flykey]{width:20px;height:20px;border-radius:6px;background:#0284c7;border:2px solid #fff;color:#fff;font:800 11px/16px Inter,system-ui,sans-serif;text-align:center;cursor:grab;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .dg-h[data-handle=flykey]::after{content:attr(data-n)}
@@ -99,6 +100,7 @@ const STYLE = `
 .dg-h[data-handle=mid]{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.6);border:2px solid #0891b2;cursor:copy}
 .dg-h[data-handle=mid][data-kind=line]{border-color:#f59e0b}
 .dg-h[data-handle=width]{width:13px;height:13px;border-radius:3px;background:#fff;border:2.5px solid #16a34a;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.dg-h[data-handle=widen]{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.85);border:1.5px solid #16a34a;cursor:copy;display:flex;align-items:center;justify-content:center;font:700 10px/1 Inter,sans-serif;color:#16a34a}.dg-h[data-handle=widen]::after{content:"+"}
 .dg-h[data-handle=rotate]{width:24px;height:24px;border-radius:50%;background:#fff;border:2.5px solid #2563eb;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;color:#2563eb;font:900 14px system-ui}
 .dg-h[data-handle=radius]{width:15px;height:15px;border-radius:50%;background:#16a34a;border:2.5px solid #fff;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=height]{width:16px;height:22px;border-radius:5px;background:#f59e0b;border:2.5px solid #fff;cursor:ns-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
@@ -1639,7 +1641,7 @@ export class CourseView {
       const hole = course.holes.find(h => h.id === s.holeId);
       if (!hole || !s.complete || !hole.fairway || painted) continue;
       const line = smoothPath(s.line, 10);
-      put(`fair:${hole.id}`, JSON.stringify([line, hole.fairwayWidth, hole.fairwayShape, hole.fairwayShift, hv, st.fairway, photo]), () => {
+      put(`fair:${hole.id}`, JSON.stringify([line, hole.fairwayWidth, hole.fairwayShape, hole.fairwayShift, hole.fairwayStations, hv, st.fairway, photo]), () => {
         const g = new THREE.Group();
         const poly = fairwayOutline(hole, line, 0, 12);
         const mesh = new THREE.Mesh(
@@ -2174,7 +2176,7 @@ export class CourseView {
     const holeId = editing ? (this.hole(this.selectedId)?.id ?? doc.activeHoleId) : null;
     const hole = this.hole(holeId);
     const drawing = this.drawn() ? this.drawPts.length : -1;
-    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
+    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
     if (key === this.handleKey) return;
     this.handleKey = key;
     this.handles.forEach(h => h.el.remove());
@@ -2369,70 +2371,120 @@ export class CourseView {
         }
       });
     }
-    // Fairway width: squares on the fairway's edges at points along the hole (just off the tee,
-    // the landing zones, round the basket), alternately left and right: each widens or narrows
-    // the fairway there, blending smoothly into the rest
-    FAIRWAY_STATIONS.forEach((t, i) => {
-      const flip = i % 2 ? -1 : 1;
-      const side = () => {
-        const s = stats();
-        if (!s || s.line.length < 2) return null;
-        const line = smoothPath(s.line, 10);
-        const { point, angle } = pointAlong(line, pathLength(line) * t);
-        return { point, n: { x: -Math.sin(angle) * flip, y: Math.cos(angle) * flip } };
+    // Fairway width: squares on both edges at points along the hole (to start with: just off the
+    // tee, the landing zones, round the basket); each moves its own edge (Shift: both), blending
+    // smoothly into the rest; a + between them adds a point there, a double-click takes one out
+    const along = (t: number, flip: 1 | -1) => {
+      const s = stats();
+      if (!s || s.line.length < 2) return null;
+      const line = smoothPath(s.line, 10);
+      const { point, angle } = pointAlong(line, pathLength(line) * t);
+      return { point, n: { x: -Math.sin(angle) * flip, y: Math.cos(angle) * flip } };
+    };
+    // (this side's edge: the middle, moved off the line maybe, plus half the width)
+    const edgeAt = (h: Hole, t: number, flip: 1 | -1) => {
+      const sd = along(t, flip);
+      if (!sd || !h.fairway) return null;
+      const e = fairwayShiftAt(h)(t) * flip + fairwayWidthAt(h)(t) / 2;
+      return at({ x: sd.point.x + sd.n.x * e, y: sd.point.y + sd.n.y * e });
+    };
+    const widthDrag = (index: number, t: number, flip: 1 | -1, h0: Hole): Drag | null => {
+      const sd = along(t, flip);
+      if (!sd) return null;
+      const y = this.h(sd.point.x, sd.point.y);
+      // (across the hole, toward this side: the middle and the far edge when picked up)
+      const mid0 = fairwayShiftAt(h0)(t) * flip, far0 = mid0 - fairwayWidthAt(h0)(t) / 2;
+      return {
+        move: ev => {
+          const h = hole();
+          const hit = this.planeAt(ev.clientX, ev.clientY, y);
+          if (!hit || !h) return;
+          const d = (hit.x - sd.point.x) * sd.n.x + (hit.z - sd.point.y) * sd.n.y;
+          // This side only (the other edge stays), or both sides alike with Shift
+          const w = ev.shiftKey ? clamp(2 * Math.abs(d - mid0), 8, 300) : clamp(d - far0, 8, 300);
+          const mid = ev.shiftKey ? mid0 : far0 + w / 2;
+          const S = stationsOf(h);
+          const shape = h.fairwayShape?.length === S.length ? [...h.fairwayShape] : S.map(() => 1);
+          const shift = h.fairwayShift?.length === S.length ? [...h.fairwayShift] : S.map(() => 0);
+          shape[index] = Math.round((w / h.fairwayWidth) * 100) / 100;
+          shift[index] = Math.round(((mid * flip) / h.fairwayWidth) * 100) / 100;
+          this.cb.onHoleChange(holeId, { fairwayShape: shape, fairwayShift: shift.some(v => v !== 0) ? shift : undefined });
+        },
+        end: () => this.cb.onCommit()
       };
-      // This side's edge: the middle (moved off the line, maybe) plus half the width
-      const edge = (h: Hole) => fairwayShiftAt(h)(t) * flip + fairwayWidthAt(h)(t) / 2;
-      const pos = () => {
-        const sd = side(), h = hole();
-        if (!sd || !h || !h.fairway) return null;
-        const e = edge(h);
-        return at({ x: sd.point.x + sd.n.x * e, y: sd.point.y + sd.n.y * e });
-      };
-      // Only where it stands clear of the tee, the basket and the hole's distance label on screen
-      // (a short hole seen from far, or a touch screen's bigger handles: a square on the tee
-      // would take the tee's taps and its long-press menu, one on the label would hide it);
-      // zoomed in on the hole, all four are there
-      const clear = () => {
-        const s = stats(), p = pos();
-        const me = p && this.project(p);
-        if (!s || !me || s.line.length < 2) return false;
-        const room = COARSE ? 44 : 24;
-        const chip = this.overlays.get(`dist:${holeId}`);
-        const c = chip && chip.el.style.display !== "none" && chip.w && chip.h ? this.project(chip.anchor) : null;
-        // (the square on the label: within the label's box grown by the square's own half size)
-        const half = COARSE ? 11 : 6;
-        if (c && Math.abs(me.x - c.x) < chip!.w! / 2 + half && Math.abs(me.y - c.y - chip!.dy) < chip!.h! / 2 + half) return false;
-        return [s.line[0], s.line[s.line.length - 1]].every(q => {
-          const e = this.project(at(q));
-          return !!e && Math.hypot(e.x - me.x, e.y - me.y) >= room;
-        });
-      };
-      add("width", pos, () => {
-        const sd = side(), h0 = hole();
-        if (!sd || !h0) return null;
-        const y = this.h(sd.point.x, sd.point.y);
-        // (across the hole, toward this square's side: the middle and the far edge when picked up)
-        const mid0 = fairwayShiftAt(h0)(t) * flip, far0 = mid0 - fairwayWidthAt(h0)(t) / 2;
-        return {
-          move: ev => {
-            const h = hole();
-            const hit = this.planeAt(ev.clientX, ev.clientY, y);
-            if (!hit || !h) return;
-            const d = (hit.x - sd.point.x) * sd.n.x + (hit.z - sd.point.y) * sd.n.y;
-            // This side only (the other edge stays), or both sides alike with Shift
-            const w = ev.shiftKey ? clamp(2 * Math.abs(d - mid0), 8, 300) : clamp(d - far0, 8, 300);
-            const mid = ev.shiftKey ? mid0 : far0 + w / 2;
-            const shape = h.fairwayShape?.length === FAIRWAY_STATIONS.length ? [...h.fairwayShape] : FAIRWAY_STATIONS.map(() => 1);
-            const shift = h.fairwayShift?.length === FAIRWAY_STATIONS.length ? [...h.fairwayShift] : FAIRWAY_STATIONS.map(() => 0);
-            shape[i] = Math.round((w / h.fairwayWidth) * 100) / 100;
-            shift[i] = Math.round(((mid * flip) / h.fairwayWidth) * 100) / 100;
-            this.cb.onHoleChange(holeId, { fairwayShape: shape, fairwayShift: shift.some(v => v !== 0) ? shift : undefined });
-          },
-          end: () => this.cb.onCommit()
-        };
-      }, { index: i, title: "Drag: this side wider or narrower · Shift: both sides", data: { station: String(i) }, visible: clear });
+    };
+    // Only where it stands clear of the tee, the basket and the hole's distance label on screen
+    // (a short hole seen from far, or a touch screen's bigger handles: a square on the tee would
+    // take the tee's taps and its long-press menu, one on the label would hide it)
+    const clear = (p: THREE.Vector3 | null) => {
+      const s = stats();
+      const me = p && this.project(p);
+      if (!s || !me || s.line.length < 2) return false;
+      const room = COARSE ? 44 : 24;
+      const chip = this.overlays.get(`dist:${holeId}`);
+      const c = chip && chip.el.style.display !== "none" && chip.w && chip.h ? this.project(chip.anchor) : null;
+      // (the square on the label: within the label's box grown by the square's own half size)
+      const half = COARSE ? 11 : 6;
+      if (c && Math.abs(me.x - c.x) < chip!.w! / 2 + half && Math.abs(me.y - c.y - chip!.dy) < chip!.h! / 2 + half) return false;
+      return [s.line[0], s.line[s.line.length - 1]].every(q => {
+        const e = this.project(at(q));
+        return !!e && Math.hypot(e.x - me.x, e.y - me.y) >= room;
+      });
+    };
+    const h1 = hole();
+    const S0 = h1 ? stationsOf(h1) : FAIRWAY_STATIONS;
+    S0.forEach((_, i) => {
+      for (const flip of [1, -1] as const) {
+        const tOf = () => { const h = hole(); return h ? stationsOf(h)[i] : undefined; };
+        const pos = () => { const h = hole(), t = tOf(); return h && t !== undefined ? edgeAt(h, t, flip) : null; };
+        add("width", pos, e => {
+          const h0 = hole(), t = tOf();
+          if (!h0 || t === undefined) return null;
+          // (a double-click takes the point out)
+          const now = performance.now(), last = this.lastCorner;
+          this.lastCorner = { id: `${holeId}:w`, index: i, time: now };
+          if (e.altKey || (last && last.id === `${holeId}:w` && last.index === i && now - last.time < 400)) {
+            this.lastCorner = null;
+            this.cb.onHoleChange(holeId, withoutStation(h0, i));
+            this.cb.onCommit();
+            return null;
+          }
+          return widthDrag(i, t, flip, h0);
+        }, { index: i * 2 + (flip === 1 ? 0 : 1), title: "Drag: this side wider or narrower · Shift: both sides · double-click: remove", data: { station: String(i), side: String(flip) }, visible: () => clear(pos()) });
+      }
     });
+    // (between the points, and between them and the tee and the basket)
+    const gaps = [0, ...S0, 1];
+    for (let g = 0; g + 1 < gaps.length; g++) {
+      for (const flip of [1, -1] as const) {
+        const mid = () => {
+          const h = hole();
+          if (!h) return null;
+          const S = [0, ...stationsOf(h), 1];
+          return S.length === gaps.length ? (S[g] + S[g + 1]) / 2 : null;
+        };
+        const pos = () => { const h = hole(), t = mid(); return h && t !== null ? edgeAt(h, t, flip) : null; };
+        add("widen", pos, () => {
+          const h0 = hole(), t = mid();
+          if (!h0 || t === null) return null;
+          const { index, patch } = withStation(h0, t);
+          this.cb.onHoleChange(holeId, patch);
+          return widthDrag(index, t, flip, { ...h0, ...patch });
+        }, {
+          index: g * 2 + (flip === 1 ? 0 : 1),
+          title: "Drag to make the fairway wider or narrower here",
+          data: { side: String(flip) },
+          visible: () => {
+            const h = hole(), t = mid();
+            if (!h || t === null) return false;
+            const S = [0, ...stationsOf(h), 1];
+            const a = edgeAt(h, S[g], flip), b = edgeAt(h, S[g + 1], flip), me = pos();
+            const pa = a && this.project(a), pb = b && this.project(b);
+            return !!pa && !!pb && Math.hypot(pa.x - pb.x, pa.y - pb.y) > 70 && clear(me);
+          }
+        });
+      }
+    }
   }
 
   /** An area's corners or a line's points: drag to move, double-click to remove, pull a mid dot to add one. */
@@ -2497,6 +2549,25 @@ export class CourseView {
           return !!a && !!b && Math.hypot(a.x - b.x, a.y - b.y) > 40;
         }
       });
+    }
+    // A line goes on from either end: pull the + beyond an end for another point there
+    if (closed) return;
+    for (const end of [0, 1] as const) {
+      const spot = () => {
+        const pts = it()?.points;
+        if (!pts || pts.length < 2) return null;
+        const a = end ? pts[pts.length - 1] : pts[0], b = end ? pts[pts.length - 2] : pts[1];
+        const len = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        const reach = Math.max(4, 26 * this.upp(at(a)));
+        return { x: a.x + ((a.x - b.x) / len) * reach, y: a.y + ((a.y - b.y) / len) * reach };
+      };
+      add("extend", () => { const p = spot(); return p ? at(p) : null; }, () => {
+        const cur = it(), p = spot();
+        if (!cur || !p) return null;
+        const next = end ? [...cur.points, p] : [p, ...cur.points];
+        this.cb.onChange(id, { points: next });
+        return drag(end ? next.length - 1 : 0, next);
+      }, { index: end, title: "Drag to make it longer" });
     }
   }
 

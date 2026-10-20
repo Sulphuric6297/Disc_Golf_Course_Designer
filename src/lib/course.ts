@@ -100,10 +100,12 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
     style: forestStyle({ ...base.style, ...(raw.style && !raw.style.basketMark ? { basketMark: raw.style.theme === "forest" || !raw.style.theme ? "basket" : "target" } : {}), ...(raw.style ?? {}) }),
     rules: { ...base.rules, ...(raw.rules ?? {}), prices: { ...base.rules.prices, ...(raw.rules?.prices ?? {}) } },
     holes: (raw.holes ?? []).map(h => {
-      const shape = Array.isArray(h.fairwayShape) && h.fairwayShape.length === FAIRWAY_STATIONS.length && h.fairwayShape.every(v => typeof v === "number" && v > 0) ? h.fairwayShape : undefined;
-      const shift = Array.isArray(h.fairwayShift) && h.fairwayShift.length === FAIRWAY_STATIONS.length && h.fairwayShift.every(v => Number.isFinite(v)) ? h.fairwayShift : undefined;
+      const stations = Array.isArray(h.fairwayStations) && h.fairwayStations.length > 0 && h.fairwayStations.every((v, i, a) => Number.isFinite(v) && v > 0 && v < 1 && (i === 0 || v > a[i - 1])) ? h.fairwayStations : undefined;
+      const S = stations ?? FAIRWAY_STATIONS;
+      const shape = Array.isArray(h.fairwayShape) && h.fairwayShape.length === S.length && h.fairwayShape.every(v => typeof v === "number" && v > 0) ? h.fairwayShape : undefined;
+      const shift = Array.isArray(h.fairwayShift) && h.fairwayShift.length === S.length && h.fairwayShift.every(v => Number.isFinite(v)) ? h.fairwayShift : undefined;
       const number = Number.isInteger(h.number) && h.number! > 0 ? h.number : undefined;
-      return { ...h, number, fairwayWidth: h.fairwayWidth ?? DEFAULT_FAIRWAY_FT, fairway: h.fairway ?? true, doglegs: h.doglegs ?? [], fairwayShape: shape, fairwayShift: shift };
+      return { ...h, number, fairwayWidth: h.fairwayWidth ?? DEFAULT_FAIRWAY_FT, fairway: h.fairway ?? true, doglegs: h.doglegs ?? [], fairwayShape: shape, fairwayShift: shift, fairwayStations: stations && (shape || shift) ? stations : undefined };
     }),
     // (A structure needs its points and a kind this version knows)
     items: Array.isArray(raw.items) ? raw.items.filter(i => i.type !== "structure" || (Array.isArray(i.points) && i.kind in STRUCTURE_KINDS)) : [],
@@ -122,15 +124,17 @@ export const FAIRWAY_STATIONS = [0.15, 0.4, 0.65, 0.88];
 
 /** A hole's fairway width at a point along it (the share of the way from tee to basket), ft:
  * its shape's widths at the stations, blended smoothly in between. */
-export const fairwayWidthAt = (hole: Pick<Hole, "fairwayWidth" | "fairwayShape">) => (t: number) => hole.fairwayWidth * stationValue(hole.fairwayShape, 1, t);
+/** Where along a hole its fairway's width is set (0 = the tee, 1 = the basket). */
+export const stationsOf = (hole: Pick<Hole, "fairwayStations">) => (hole.fairwayStations?.length ? hole.fairwayStations : FAIRWAY_STATIONS);
+
+export const fairwayWidthAt = (hole: Pick<Hole, "fairwayWidth" | "fairwayShape" | "fairwayStations">) => (t: number) => hole.fairwayWidth * stationValue(hole.fairwayShape, 1, t, stationsOf(hole));
 
 /** How far a hole's fairway middle is moved off its line at a point along it, ft (toward the
  * left-hand normal of the line). */
-export const fairwayShiftAt = (hole: Pick<Hole, "fairwayWidth" | "fairwayShift">) => (t: number) => hole.fairwayWidth * stationValue(hole.fairwayShift, 0, t);
+export const fairwayShiftAt = (hole: Pick<Hole, "fairwayWidth" | "fairwayShift" | "fairwayStations">) => (t: number) => hole.fairwayWidth * stationValue(hole.fairwayShift, 0, t, stationsOf(hole));
 
-/** Values set at the FAIRWAY_STATIONS, blended smoothly in between (unset: `none` all along). */
-const stationValue = (f: number[] | undefined, none: number, t: number) => {
-  const S = FAIRWAY_STATIONS;
+/** Values set at points along the hole (`S`), blended smoothly in between (unset: `none` all along). */
+const stationValue = (f: number[] | undefined, none: number, t: number, S: readonly number[]) => {
   if (!f || f.length !== S.length) return none;
   if (t <= S[0]) return f[0];
   if (t >= S[S.length - 1]) return f[f.length - 1];
@@ -141,7 +145,32 @@ const stationValue = (f: number[] | undefined, none: number, t: number) => {
 };
 
 /** A hole's fairway outline along its (smoothed) line, `extra` ft wider all along. */
-export const fairwayOutline = (hole: Pick<Hole, "fairwayWidth" | "fairwayShape" | "fairwayShift">, line: P[], extra = 0, roundSteps = 12) => {
+/** A hole's fairway with one more width point at `t` (as wide there as it is now): its patch and
+ * the new point's index. */
+export const withStation = (hole: Hole, t: number) => {
+  const S = stationsOf(hole);
+  const r = (v: number) => Math.round(v * 1000) / 1000;
+  const i = S.findIndex(s => s > t), at = i < 0 ? S.length : i;
+  const put = <T,>(a: readonly T[], v: T) => [...a.slice(0, at), v, ...a.slice(at)];
+  return {
+    index: at,
+    patch: {
+      fairwayStations: put(S, r(t)),
+      fairwayShape: put(hole.fairwayShape ?? S.map(() => 1), r(stationValue(hole.fairwayShape, 1, t, S))),
+      fairwayShift: put(hole.fairwayShift ?? S.map(() => 0), r(stationValue(hole.fairwayShift, 0, t, S)))
+    } satisfies Partial<Hole>
+  };
+};
+
+/** A hole's fairway without its width point `i` (none left: the same width all along). */
+export const withoutStation = (hole: Hole, i: number): Partial<Hole> => {
+  const S = stationsOf(hole);
+  if (S.length <= 1) return { fairwayStations: undefined, fairwayShape: undefined, fairwayShift: undefined };
+  const drop = <T,>(a: readonly T[] | undefined) => a && a.filter((_, k) => k !== i);
+  return { fairwayStations: drop(S), fairwayShape: drop(hole.fairwayShape), fairwayShift: drop(hole.fairwayShift) };
+};
+
+export const fairwayOutline = (hole: Pick<Hole, "fairwayWidth" | "fairwayShape" | "fairwayShift" | "fairwayStations">, line: P[], extra = 0, roundSteps = 12) => {
   const w = fairwayWidthAt(hole);
   return corridor(line, t => w(t) + extra, roundSteps, hole.fairwayShift ? fairwayShiftAt(hole) : undefined);
 };
