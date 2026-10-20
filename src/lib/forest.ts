@@ -8,6 +8,7 @@ import type { AreaItem, CourseDoc, LineItem, MapStyle, P, TreeItem } from "../ty
 import { canopyMask } from "./geo/detect";
 import { corridor, dist, pathLength, pointAlong, smoothPath } from "./geom";
 import type { HoleStats } from "./holeStats";
+import { landscapeOf } from "./landscapes";
 
 /** Where the photo shows trees, on a grid over the site (1 = canopy). */
 export type CanopyGrid = { cols: number; rows: number; ftPerCell: number; data: Uint8Array };
@@ -446,6 +447,9 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
 
   // ---------------------------------------------------------------- the canopy (a height field)
   const cover = Math.max(0.1, Math.min(1, s.treeCover ?? 1));
+  // Pines among the trees where the landscape is mostly pines (a few pines in broadleaf woods
+  // don't show from above, as on painted maps)
+  const pines = Math.max(0, (landscapeOf(s).conifers - 0.3) / 0.7);
   const height = new Float32Array(W * H);
   const kind = new Uint8Array(W * H);
   /** A treetop: a lumpy dome, `top` high at the middle; the taller one wins where they overlap. */
@@ -461,6 +465,25 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
         const q = 1 - (dx * dx + dy2) * ir2 * (0.72 + LEAF[tr | (x & 511)] * 0.6);
         if (q <= 0) continue;
         const h = top - r + r * Math.sqrt(q);
+        if (h > height[i]) { height[i] = h; kind[i] = t; }
+      }
+    }
+  };
+  /** A pine seen from above: a pointed crown with a star of boughs, lit on one side. */
+  const pine = (cx: number, cy: number, r: number, top: number, t: number) => {
+    const x0 = Math.max(0, Math.floor(cx - r * 1.1)), x1 = Math.min(W - 1, Math.ceil(cx + r * 1.1));
+    const y0 = Math.max(0, Math.floor(cy - r * 1.1)), y1 = Math.min(H - 1, Math.ceil(cy + r * 1.1));
+    const boughs = 7 + (t % 3), turn = t * 1.7;
+    for (let y = y0; y <= y1; y++) {
+      const dy = y + 0.5 - cy, tr = (y & 511) << 9;
+      for (let x = x0, i = y * W + x0; x <= x1; x++, i++) {
+        const dx = x + 0.5 - cx;
+        const a = Math.atan2(dy, dx);
+        // The edge reaches out along each bough and in between them
+        const reach = r * (0.68 + 0.32 * Math.pow(Math.abs(Math.cos(((a + turn) * boughs) / 2)), 0.6)) * (0.9 + LEAF[tr | (x & 511)] * 0.2);
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d >= reach) continue;
+        const h = top - r * 1.6 * (d / reach);
         if (h > height[i]) { height[i] = h; kind[i] = t; }
       }
     }
@@ -495,7 +518,8 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
         const u = rnd();
         const r = crownR * (0.45 + u * u * 1.35) * grow;
         const t = 1 + Math.floor(rnd() * 6);
-        if (cover < 0.75 && rnd() < (0.75 - cover) * 0.8) clumpTree(x, y, r * 1.5, t);
+        if (rnd() < pines) pine(x, y, r * 0.95, r * (2.2 + rnd() * 0.9), t);
+        else if (cover < 0.75 && rnd() < (0.75 - cover) * 0.8) clumpTree(x, y, r * 1.5, t);
         else stamp(x, y, r, r * (1.9 + rnd() * 0.9), t);
       }
     }

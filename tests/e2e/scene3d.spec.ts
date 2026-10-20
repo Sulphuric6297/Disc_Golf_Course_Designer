@@ -143,3 +143,15 @@ test("landscape: pine forest fills the 3D woods with pines; the painted map take
   await expect.poll(async () => (await course(page)).style.landscape ?? "woods").toBe("woods");
   expect((await course(page)).style.trees).toBe("#354a2c");
 });
+
+test("3D is a real perspective: the lens widens as the view tilts, and narrows again looking straight down", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
+  await page.keyboard.press("Escape");
+  const fov = () => page.evaluate(() => (window as any).__dgView.camera.fov as number);
+  expect(await fov()).toBeCloseTo(30, 0);
+  await page.keyboard.press("3");
+  await expect.poll(fov, { timeout: 30_000 }).toBeGreaterThan(40);
+  await page.keyboard.press("2");
+  await expect.poll(fov, { timeout: 30_000 }).toBeLessThan(31);
+});

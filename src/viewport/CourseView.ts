@@ -43,7 +43,9 @@ const HEMI_INTENSITY = 0.9;
 const CLICK_PX = 4;
 const TILT_TOP = 8 * DEG;
 const DEFAULT_TILT = 55 * DEG;
-const MAX_TILT = 78 * DEG;
+const MAX_TILT = 84 * DEG;
+/** The map's lens: narrow looking straight down (map-like), wider tilted (a real perspective). */
+const FOV_TOP = 30, FOV_TILT = 45;
 const SELECT = "#22d3ee";
 const LIFT = 0.45;
 
@@ -831,6 +833,18 @@ export class CourseView {
       this.drawPov({ x: 0, y: 0, width: this.size.width, height: this.size.height });
       this.renderer.setViewport(0, 0, this.size.width, this.size.height);
       return;
+    }
+    // Tilting widens the lens; the camera moves in to keep the scale where it looks
+    {
+      const t = clamp((this.controls.polarAngle - TILT_TOP) / (55 * DEG - TILT_TOP), 0, 1);
+      const fov = FOV_TOP + (FOV_TILT - FOV_TOP) * t * t * (3 - 2 * t);
+      if (Math.abs(this.camera.fov - fov) > 0.05) {
+        const k = Math.tan((this.camera.fov * DEG) / 2) / Math.tan((fov * DEG) / 2);
+        this.camera.fov = fov;
+        this.camera.updateProjectionMatrix();
+        void this.controls.dollyTo(this.controls.distance * k, false);
+        this.controls.update(0);
+      }
     }
     const dist = this.controls.distance;
     const near = clamp(dist * 0.01, 0.05, 20);

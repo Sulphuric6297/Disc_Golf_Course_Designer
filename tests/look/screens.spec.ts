@@ -296,3 +296,43 @@ test("3d scene: sky, grass and trees", async ({ page }) => {
   await page.waitForTimeout(2500);
   await shot(page, "17-tall-grass");
 });
+
+test("landscapes and marking colors", async ({ page }) => {
+  test.setTimeout(300_000);
+  await importSite(page);
+  await seedCourse(page);
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
+  await page.waitForTimeout(2000);
+  await page.getByTestId("landscapes").screenshot({ path: "look/18-landscape-picker.png" });
+  for (const id of ["autumn", "desert", "pines", "park"]) {
+    await page.getByTestId(`landscape-${id}`).click();
+    await page.waitForTimeout(2500);
+    await page.getByTestId("design-page").screenshot({ path: `look/18-landscape-${id}.png` });
+  }
+  // PDGA marking colors on the painted map
+  await page.getByTestId("landscape-woods").click();
+  await page.getByTestId("markings-pdga").click();
+  await page.waitForTimeout(2500);
+  await page.getByTestId("design-page").screenshot({ path: "look/18-markings-pdga.png" });
+  // Pines in 3D
+  await page.getByTestId("landscape-pines").click();
+  await page.evaluate(() => {
+    const d = (window as any).__dgCourse();
+    const W = d.canvas.width, H = d.canvas.height;
+    (window as any).__dgEditor().set({ areaKind: "woods" });
+    (window as any).__dgActions.addDrawn("area", [{ x: 0.42 * W, y: 0.45 * H }, { x: 0.6 * W, y: 0.45 * H }, { x: 0.6 * W, y: 0.6 * H }, { x: 0.42 * W, y: 0.6 * H }]);
+    (window as any).__dgEditor().set({ tool: "select", step: "holes" });
+  });
+  await page.keyboard.press("3");
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => {
+    const v = (window as any).__dgView;
+    const d = (window as any).__dgCourse();
+    const W = d.canvas.width, H = d.canvas.height;
+    const ex = 0.51 * W, ey = 0.75 * H, tx = 0.51 * W, ty = 0.55 * H;
+    void v.controls.setLookAt(ex, v.groundHeight(ex, ey) + 30, ey, tx, v.groundHeight(tx, ty) + 25, ty, false);
+  });
+  await page.waitForTimeout(4000);
+  await shot(page, "18-pines-3d");
+});
