@@ -87,6 +87,42 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
       el.removeEventListener("touchcancel", onEnd);
     };
   }, [compact]);
+  // The wheel (or a trackpad's pinch) zooms about the pointer, the spot under it staying put
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!pageEl.current) return;
+      e.preventDefault();
+      const r = el.getBoundingClientRect(), pr = pageEl.current.getBoundingClientRect();
+      const step = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      const next = Math.min(6, Math.max(0.1, kRef.current * Math.exp(-step * (e.ctrlKey ? 0.01 : 0.0015))));
+      anchor.current = { fx: (e.clientX - pr.left) / pr.width, fy: (e.clientY - pr.top) / pr.height, vx: e.clientX - r.left, vy: e.clientY - r.top };
+      setZoom(next);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+  // A press and drag on the page's background, the map (not on a label), or around the page
+  // moves the zoomed page about (a finger scrolls it by itself)
+  const pan = useRef<{ x: number; y: number; sl: number; st: number; id: number } | null>(null);
+  const onBoxDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || e.pointerType === "touch" || !box.current) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    pan.current = { x: e.clientX, y: e.clientY, sl: box.current.scrollLeft, st: box.current.scrollTop, id: e.pointerId };
+  };
+  const onBoxMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const p = pan.current, el = box.current;
+    if (!p || p.id !== e.pointerId || !el) return;
+    el.scrollLeft = p.sl - (e.clientX - p.x);
+    el.scrollTop = p.st - (e.clientY - p.y);
+    el.style.cursor = "grabbing";
+  };
+  const onBoxUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (pan.current?.id !== e.pointerId) return;
+    pan.current = null;
+    if (box.current) box.current.style.cursor = "";
+  };
   useLayoutEffect(() => {
     const a = anchor.current, el = box.current, pg = pageEl.current;
     if (!a || !el || !pg) return;
@@ -278,7 +314,7 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
       </div>
       {/* (A phone: the zoom buttons float over the page, in the thumb's reach) */}
       {compact && <div className="absolute right-2 bottom-2 z-10 rounded-2xl bg-zinc-900/95 border border-white/10 shadow-lg p-0.5">{zoomGroup}</div>}
-      <div ref={box} className={`flex-1 overflow-auto ${compact ? "bg-zinc-800 dg-scroll" : ""}`}>
+      <div ref={box} className={`flex-1 overflow-auto ${compact ? "bg-zinc-800 dg-scroll" : ""} cursor-grab`} data-testid="design-scroll" onPointerDown={onBoxDown} onPointerMove={onBoxMove} onPointerUp={onBoxUp} onPointerCancel={onBoxUp}>
         <div className={`min-w-full min-h-full flex items-center justify-center ${compact ? "p-2.5" : "p-6"}`}>
           <div
             ref={pageEl}

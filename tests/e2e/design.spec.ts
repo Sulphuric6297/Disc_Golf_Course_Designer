@@ -800,3 +800,29 @@ test("the map stays put on the Design page; its labels are dragged, hidden and p
   await expect(num).toHaveCount(1);
   expect((await style()).page?.map).toBeUndefined();
 });
+
+test("the Design page zooms with the wheel and pans with a press and drag", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "5 Design" }).click();
+  const zoom = async () => parseInt((await page.getByTestId("design-zoom").textContent()) ?? "0");
+  await expect.poll(zoom).toBeGreaterThan(0);
+  const z0 = await zoom();
+  const scroller = page.getByTestId("design-scroll");
+  const area = (await scroller.boundingBox())!;
+  await page.mouse.move(area.x + area.width * 0.6, area.y + area.height * 0.4);
+  for (let i = 0; i < 6; i++) await page.mouse.wheel(0, -240);
+  await expect.poll(zoom).toBeGreaterThan(z0 * 1.6);
+  // Dragged on the map (away from its labels): the page moves under the pointer
+  const s0 = await scroller.evaluate(el => ({ x: el.scrollLeft, y: el.scrollTop }));
+  const from = { x: area.x + area.width * 0.5, y: area.y + area.height * 0.25 };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x - 160, from.y - 90, { steps: 8 });
+  await page.mouse.up();
+  const s1 = await scroller.evaluate(el => ({ x: el.scrollLeft, y: el.scrollTop }));
+  expect(s1.x - s0.x).toBeGreaterThan(100);
+  expect(s1.y - s0.y).toBeGreaterThan(50);
+  expect((await editorState(page)).designSel).toBeNull();
+});
