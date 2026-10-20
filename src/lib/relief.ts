@@ -54,7 +54,14 @@ export const chainContours = (segments: Contours["segments"]) => {
  * Hill shading as an image: light from several directions (north-west strongest, as on most maps),
  * shadows dark and lit slopes light, flat ground clear. `exaggerate` steepens the look.
  */
-export const hillshadeCanvas = (heights: Record<string, number>, grid: number, width: number, height: number, exaggerate = 2.5) => {
+/**
+ * How much to exaggerate a site's relief for hill shading, from its steeper slopes (the 90th
+ * percentile, rise over run): enough that a gentle course's rises show (those slopes shown at
+ * about 20 degrees), never so much that a steep one goes black.
+ */
+export const reliefExaggeration = (p90: number) => Math.max(1.5, Math.min(14, 0.36 / Math.max(1e-6, p90)));
+
+export const hillshadeCanvas = (heights: Record<string, number>, grid: number, width: number, height: number, exaggerate?: number) => {
   const ftPerPx = Math.max(2, Math.max(width, height) / 1200);
   const w = Math.max(2, Math.round(width / ftPerPx));
   const h = Math.max(2, Math.round(height / ftPerPx));
@@ -65,7 +72,17 @@ export const hillshadeCanvas = (heights: Record<string, number>, grid: number, w
   if (!ctx) return canvas;
   const img = ctx.createImageData(w, h);
   const z = new Float32Array(w * h);
-  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) z[j * w + i] = heightAt(heights, grid, (i + 0.5) * ftPerPx, (j + 0.5) * ftPerPx) * exaggerate;
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) z[j * w + i] = heightAt(heights, grid, (i + 0.5) * ftPerPx, (j + 0.5) * ftPerPx);
+  // Exaggerated just enough that a gentle course's rises show (the steeper slopes at about 20
+  // degrees) and a steep one's don't go black
+  if (exaggerate === undefined) {
+    const slopes: number[] = [];
+    for (let j = 1; j < h - 1; j += 3) for (let i = 1; i < w - 1; i += 3) slopes.push(Math.hypot(z[j * w + i + 1] - z[j * w + i - 1], z[(j + 1) * w + i] - z[(j - 1) * w + i]) / (2 * ftPerPx));
+    slopes.sort((a, b) => a - b);
+    const p90 = slopes[Math.floor(slopes.length * 0.9)] ?? 0;
+    exaggerate = p90 > 0.002 ? reliefExaggeration(p90) : 2.5;
+  }
+  for (let k = 0; k < z.length; k++) z[k] *= exaggerate;
   const lights = [
     { az: 315, w: 0.5 },
     { az: 270, w: 0.2 },
@@ -87,11 +104,13 @@ export const hillshadeCanvas = (heights: Record<string, number>, grid: number, w
       const d = shade - Math.sin(alt);
       const k = (j * w + i) * 4;
       if (d < 0) {
-        img.data[k] = 20; img.data[k + 1] = 26; img.data[k + 2] = 40;
-        img.data[k + 3] = Math.min(255, -d * 900);
+        // (a light, slightly violet gray, kept translucent: a hill reads as light and shade, never a
+        // smudge, on paper as on the painted map)
+        img.data[k] = 66; img.data[k + 1] = 70; img.data[k + 2] = 96;
+        img.data[k + 3] = Math.min(105, -d * 400);
       } else {
         img.data[k] = 255; img.data[k + 1] = 250; img.data[k + 2] = 225;
-        img.data[k + 3] = Math.min(200, d * 700);
+        img.data[k + 3] = Math.min(90, d * 360);
       }
     }
   }

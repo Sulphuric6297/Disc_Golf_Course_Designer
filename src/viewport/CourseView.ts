@@ -1335,7 +1335,8 @@ export class CourseView {
       });
       // Woods: trees standing in it (shadows and all)
       if (a.kind === "woods") put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape]), () => {
-        const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, landscapeOf(st).conifers);
+        const land = landscapeOf(st);
+        const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix);
         woods.traverse(o => { o.userData.itemId = a.id; });
         this.shadowsDirty = true;
         return woods;

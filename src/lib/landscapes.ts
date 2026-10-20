@@ -16,6 +16,8 @@ export type Landscape = {
   conifers: number;
   /** The grass between holes: blade height (ft) and how thick it grows (0..1). */
   grass: { lawn: number; density: number };
+  /** Treetops in several colors, tree by tree (autumn's oranges, reds and golds). */
+  mix?: string[];
 };
 
 export const LANDSCAPES: Record<LandscapeId, Landscape> = {
@@ -57,12 +59,13 @@ export const LANDSCAPES: Record<LandscapeId, Landscape> = {
     colors: { fairway: "#7a8e50", rough: "#6a7542", trees: "#7a4b26", water: "#2a5d73", path: "#6e5634" },
     treeCover: 0.95,
     conifers: 0.15,
-    grass: { lawn: 0.4, density: 1 }
+    grass: { lawn: 0.4, density: 1 },
+    mix: ["#7a4b26", "#8c6a24", "#6e2f20", "#80582a", "#3f4a2b", "#93782e"]
   },
   desert: {
     label: "Desert",
     blurb: "Sand, scrub and sparse grass",
-    colors: { fairway: "#a7a06c", rough: "#c0a878", trees: "#5a6a3c", water: "#3a7f8a", path: "#b08a5a" },
+    colors: { fairway: "#a9a374", rough: "#b9a682", trees: "#5a6a3c", water: "#3a7f8a", path: "#b08a5a" },
     treeCover: 0.15,
     conifers: 0.05,
     grass: { lawn: 0.5, density: 0.25 }

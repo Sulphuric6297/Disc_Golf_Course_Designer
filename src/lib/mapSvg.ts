@@ -162,13 +162,40 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   out.push(`<g transform="${g}">`);
 
   // Contours
-  if (s.contours && layers.contours?.segments.length) {
+  const contourLabels: { at: P; angle: number; text: string }[] = [];
+  // (The Forest style paints its contours into the land, under the treetops)
+  if (s.contours && !forest && layers.contours?.segments.length) {
     const lines = chainContours(layers.contours.segments);
     const iv = layers.contours.interval;
     const minor: string[] = [], major: string[] = [];
     for (const l of lines) (Math.abs(Math.round(l.level / iv)) % 5 === 0 ? major : minor).push(pathD(l.pts));
     if (minor.length) out.push(`<path d="${minor.join("")}" fill="none" stroke="${pal.contour}" stroke-width="${n(px(0.7))}" stroke-linejoin="round"/>`);
     if (major.length) out.push(`<path d="${major.join("")}" fill="none" stroke="${pal.contourMajor}" stroke-width="${n(px(1.3))}" stroke-linejoin="round"/>`);
+    // The heights on the bolder lines (on a small site with few of them, every line or every
+    // other one), set in the line along its run, upright, spaced out so they don't crowd
+    const levels = new Set(lines.map(l => Math.round(l.level / iv)));
+    const bold = [...levels].filter(v => v % 5 === 0).length;
+    const every = bold >= 3 ? 5 : levels.size > 10 ? 2 : 1;
+    for (const l of lines) {
+      if (Math.abs(Math.round(l.level / iv)) % every !== 0 || l.pts.length < 2) continue;
+      const len = pathLength(l.pts);
+      if (len * k < 140 * ts) continue;
+      // The middle, or failing that a spot further along that is clear of the other labels
+      let a: P | null = null, b: P | null = null;
+      for (const f of [0.5, 0.3, 0.7, 0.18, 0.82]) {
+        const p0 = toScreen(pointAlong(l.pts, len * f).point);
+        if (contourLabels.some(c => dist(c.at, p0) < 90 * ts)) continue;
+        a = p0;
+        b = toScreen(pointAlong(l.pts, Math.min(len, len * f + 2)).point);
+        break;
+      }
+      if (!a || !b) continue;
+      let angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+      if (angle > 90) angle -= 180;
+      if (angle < -90) angle += 180;
+      const ft = (doc.site?.baseElevationFt ?? 0) + l.level;
+      contourLabels.push({ at: a, angle, text: `${Math.round(doc.units === "m" ? ft / FT_PER_M : ft)}` });
+    }
   }
 
   const items = doc.items;
@@ -382,6 +409,9 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   const textLabel = (p: P, text: string, size: number, opts: { color?: string; halo?: string; weight?: number; anchor?: string; angle?: number; family?: string } = {}) =>
     `<text x="${n(p.x)}" y="${n(p.y)}" font-family="${opts.family ?? font}" font-size="${n(size)}" font-weight="${opts.weight ?? 700}" text-anchor="${opts.anchor ?? "middle"}" dominant-baseline="central" fill="${opts.color ?? pal.label}" stroke="${opts.halo ?? pal.labelHalo}" stroke-width="${n(size * 0.22)}" stroke-linejoin="round" paint-order="stroke"${opts.angle ? ` transform="rotate(${n(opts.angle)} ${n(p.x)} ${n(p.y)})"` : ""}>${esc(text)}</text>`;
 
+  // Contour heights (a halo of the ground's color breaks the line under them)
+  for (const c of contourLabels) sym.push(textLabel(c.at, c.text, 7 * ts, { color: pal.contourMajor.startsWith("rgba") ? pal.inkSoft : pal.contourMajor, halo: pal.bg, weight: 600, angle: c.angle }));
+
   // Area and line names
   for (const a of areas) if (a.label) sym.push(textLabel(toScreen(labelPoint(a.points)), a.label, 10 * ts, { color: a.kind === "water" && pal.label === "#ffffff" ? "#e0f2fe" : a.kind === "water" ? shade(s.water, -0.55) : pal.label, halo: a.kind === "water" && pal.label !== "#ffffff" ? shade(s.water, 0.6) : undefined, weight: 600 }));
   for (const l of lines) if (l.label && l.points.length >= 2) {
@@ -492,7 +522,7 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
   const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
   const shapes = doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as LineItem).width] : [i.type, Math.round(i.x), Math.round(i.y), (i as TreeItem).radius]));
-  const look = [s.forest, s.treeCover, s.landscape, s.trees, s.fairway, s.rough, s.water, s.path, s.nextTee, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint];
+  const look = [s.forest, s.treeCover, s.landscape, s.contours, s.trees, s.fairway, s.rough, s.water, s.path, s.nextTee, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint];
   const key = JSON.stringify([view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairway]), shapes, doc.canvas, doc.id]);
   const hit = forestCache.get(key);
   if (hit) return hit;

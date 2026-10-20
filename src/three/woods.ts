@@ -9,7 +9,7 @@ import { foliageTint } from "./trees";
 const MAX_TREES = 6000;
 
 /** Trees about every `spacing` feet inside the outline, standing on the ground. */
-export const createWoods = (outline: P[], groundAt: (x: number, y: number) => number, color: string, conifers = 0.22, spacing = 22) => {
+export const createWoods = (outline: P[], groundAt: (x: number, y: number) => number, color: string, conifers = 0.22, mix: string[] = [], spacing = 22) => {
   const spots: TreeSpot[] = [];
   if (outline.length >= 3) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -36,7 +36,7 @@ export const createWoods = (outline: P[], groundAt: (x: number, y: number) => nu
           shape,
           variant: Math.floor(rnd() * VARIANTS[shape]),
           // (conifers darker and bluer than the broadleaf trees)
-          tint: shape === "conifer" ? foliageTint(color, rnd).offsetHSL(0.03, -0.06, -0.08) : foliageTint(color, rnd),
+          tint: shape === "conifer" ? foliageTint(color, rnd).offsetHSL(0.03, -0.06, -0.08) : foliageTint(mix.length ? mix[Math.floor(rnd() * mix.length)] : color, rnd),
           turn: rnd() * Math.PI * 2,
           lean: (rnd() - 0.5) * 0.06
         });

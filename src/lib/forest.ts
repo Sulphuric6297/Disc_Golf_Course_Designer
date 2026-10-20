@@ -9,6 +9,7 @@ import { canopyMask } from "./geo/detect";
 import { corridor, dist, pathLength, pointAlong, smoothPath } from "./geom";
 import type { HoleStats } from "./holeStats";
 import { landscapeOf } from "./landscapes";
+import { reliefExaggeration } from "./relief";
 
 /** Where the photo shows trees, on a grid over the site (1 = canopy). */
 export type CanopyGrid = { cols: number; rows: number; ftPerCell: number; data: Uint8Array };
@@ -609,14 +610,20 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
     return g2.getImageData(0, 0, mw, mh).data;
   })();
   // The ground's relief (hill shading), from the terrain, lit from the same side
-  const relief = reliefGrid(doc, s.hillshade, W, H, toPlan, L);
+  const relief = reliefGrid(doc, s.hillshade || s.contours, W, H, toPlan, L);
+  // Contour lines painted in (when shown): a tidy interval for the course's rise and fall
+  const contourIv = s.contours && relief ? contourInterval(relief.hi - relief.lo) : 0;
+  const lxyL = Math.hypot(L.x, L.y) || 1;
 
   // ---------------------------------------------------------------- paint
   // Every surface is a brightness, cut into a few tones of its own earthy palette (the
   // painted, cut-out look of hand-made course maps); `paint` 0 blends the tones smoothly
   const crisp = Math.max(0, Math.min(1, s.paint ?? 0.8));
   // Near-black gaps up to pale, sunlit sage tops
-  const woods = palette(s.trees, [0.5, 0.64, 0.8, 0.96, 1.14, 1.4, 1.8, 2.4], 6, 0.82);
+  const woodsFactors = [0.54, 0.69, 0.86, 1.02, 1.2, 1.46, 1.86, 2.4];
+  const woods = palette(s.trees, woodsFactors, 6, 0.82);
+  // Treetops in several colors where the landscape has them (autumn), one color per tree
+  const mixPals = (landscapeOf(s).mix ?? []).map(c => palette(c, woodsFactors, 6, 0.9));
   const fair = palette(s.fairway, [0.56, 0.7, 0.84, 1, 1.14, 1.28], 4);
   const lawn = palette(s.rough, [0.6, 0.76, 0.9, 1.04, 1.18], 3);
   const floorPal = palette(s.trees, [0.3, 0.42, 0.56], 0);
@@ -665,7 +672,7 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
     for (let x = 0, i = y * W; x < W; x++, i++) {
       const o4 = i * 4;
       const m = my + Math.min(mw - 1, x >> 1), m4 = m * 4;
-      const rf = relief ? relief(x, y) : 1;
+      const rf = relief && s.hillshade ? relief.shade(x, y) : 1;
       const h = height[i];
       if (h > 0) {
         // Treetops: the slope of the leafy surface (neighbours outside the crowns count as level)
@@ -693,8 +700,9 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
         let v = (0.17 + 0.6 * lit) * (0.52 + 0.48 * occ) * shade;
         v += smooth(0.8, 0.97, lit) * occ * sun * 0.1;
         v += at(stands, x, y) * 0.2 + ((kind[i] % 3) - 1) * 0.025 + (lam - 0.6) * 0.12;
-        v *= 0.8 + 0.2 * rf;
-        tone(woods, v);
+        // (hills read through the trees: their shaded sides darker, as from the air)
+        v *= 0.58 + 0.42 * rf;
+        tone(mixPals.length ? mixPals[kind[i] % mixPals.length] : woods, v);
         cr = tr0; cg = tg0; cb = tb0;
       } else {
         // The ground: grass, or the dark floor under the trees, then what is drawn on it
@@ -742,6 +750,43 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
             lay(water, (0.15 + 0.6 * smooth(0.4, 0.8, w) + ripple * 0.1) * (0.55 + 0.45 * lit), smooth(0.4, 0.46, w));
           }
         }
+        // Illuminated contours on the open ground (never across the treetops or water): light
+        // where the slope faces the sun, dark where it faces away, every fifth a little bolder
+        if (contourIv > 0 && relief && w0 <= 0.3) {
+          const [gX, gY] = relief.slope(x, y);
+          const g = Math.hypot(gX, gY);
+          if (g > 1e-5) {
+            const k = relief.elev(x, y) / contourIv, near = Math.round(k);
+            const dpx = (Math.abs(k - near) * contourIv) / g;
+            const index = near % 5 === 0;
+            const half = (index ? 0.7 : 0.42) * pt;
+            if (dpx < half + 0.8) {
+              const a = (1 - smooth(half - 0.4, half + 0.8, dpx)) * (index ? 1 : 0.75);
+              const face = (-gX * L.x - gY * L.y) / (g * lxyL);
+              if (face > 0.15) {
+                const m = a * (0.12 + 0.4 * face);
+                cr += (250 - cr) * m; cg += (246 - cg) * m; cb += (222 - cb) * m;
+              } else {
+                const m = a * (0.22 + 0.4 * Math.max(0, -face));
+                cr += (14 - cr) * m; cg += (24 - cg) * m; cb += (12 - cb) * m;
+              }
+            }
+          }
+        }
+      }
+      // Relief in color, as on Swiss maps: slopes facing the sun a little warmer, slopes facing
+      // away a little cooler, high ground a touch lighter than low (half as much on treetops)
+      if (relief && s.hillshade) {
+        const tt = (rf - 1) * (h > 0 ? 0.8 : 1);
+        if (tt > 0) {
+          const k = Math.min(0.3, tt);
+          cr += (255 - cr) * k * 0.3; cg += (240 - cg) * k * 0.24; cb += (196 - cb) * k * 0.1;
+        } else {
+          const k = Math.min(0.35, -tt);
+          cr += (36 - cr) * k * 0.28; cg += (50 - cg) * k * 0.26; cb += (78 - cb) * k * 0.42;
+        }
+        const lift = ((relief.elev(x, y) - relief.lo) / (relief.hi - relief.lo) - 0.5) * 0.12;
+        cr *= 1 + lift; cg *= 1 + lift; cb *= 1 + lift * 0.7;
       }
       // The whole picture: brightness, contrast and color strength
       if (light !== 0 || contrast !== 0 || sat !== 1) {
@@ -822,13 +867,26 @@ const terrainGrid = (doc: CourseDoc) => {
 };
 
 /** Hill shading for the painting, as a function of the pixel (null when the ground is flat). */
+/** A tidy contour interval for a site's relief: about a dozen lines from lowest to highest. */
+export const contourInterval = (range: number) => {
+  const raw = range / 12;
+  for (const iv of [1, 2, 5, 10, 20, 25, 50, 100, 200]) if (iv >= raw) return iv;
+  return 500;
+};
+
+/**
+ * The ground's shape as the painting sees it, on a coarse grid of screen pixels (looked up
+ * smoothly in between): how it is lit, its height and its slope. The relief is exaggerated just
+ * enough that a gentle course's rises still show and a steep one's don't go black, and it is lit
+ * from the sun and two softer lights to either side (so slopes in line with the sun still show).
+ */
 const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (x: number, y: number) => P, L: { x: number; y: number; z: number }) => {
   const heights = doc.terrainHeights;
   if (!on || !heights || Object.keys(heights).length < 4) return null;
   const tg = terrainGrid(doc);
   const step = 8;
   const gw = Math.ceil(W / step) + 2, gh = Math.ceil(H / step) + 2;
-  const grid = new Float32Array(gw * gh);
+  const elev = new Float32Array(gw * gh), sx = new Float32Array(gw * gh), sy = new Float32Array(gw * gh), shade = new Float32Array(gw * gh);
   const e = Math.max(2, doc.gridSize / 2);
   // Beyond the measured ground the edge heights carry on (no cliff at the site's edge)
   const at = (p: P) => {
@@ -836,7 +894,8 @@ const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (
     const ix = fx | 0, iy = fy | 0, tx = fx - ix, ty = fy - iy, j = iy * tg.cols + ix, d = tg.data;
     return (d[j] * (1 - tx) + d[j + 1] * tx) * (1 - ty) + (d[j + tg.cols] * (1 - tx) + d[j + tg.cols + 1] * tx) * ty;
   };
-  let lo = Infinity, hi = -Infinity;
+  let lo = Infinity, hi = -Infinity, ftPerPx = 1;
+  const slopes: number[] = [];
   for (let gy = 0; gy < gh; gy++) {
     for (let gx = 0; gx < gw; gx++) {
       const p = toPlan(gx * step, gy * step);
@@ -844,23 +903,53 @@ const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (
       const px = toPlan(gx * step + 1, gy * step), py = toPlan(gx * step, gy * step + 1);
       const rx = { x: px.x - p.x, y: px.y - p.y }, ry = { x: py.x - p.x, y: py.y - p.y };
       const rl = Math.hypot(rx.x, rx.y) || 1;
+      ftPerPx = rl;
       const ux = { x: rx.x / rl, y: rx.y / rl }, uy = { x: ry.x / rl, y: ry.y / rl };
-      const exag = 2.5;
-      const dzx = ((at({ x: p.x + ux.x * e, y: p.y + ux.y * e }) - at({ x: p.x - ux.x * e, y: p.y - ux.y * e })) / (2 * e)) * exag;
-      const dzy = ((at({ x: p.x + uy.x * e, y: p.y + uy.y * e }) - at({ x: p.x - uy.x * e, y: p.y - uy.y * e })) / (2 * e)) * exag;
-      const shade = (-dzx * L.x - dzy * L.y + L.z) / Math.hypot(dzx, dzy, 1) / L.z;
-      const v = Math.max(0.6, Math.min(1.3, 1 + (shade - 1) * 0.7));
-      grid[gy * gw + gx] = v;
-      lo = Math.min(lo, v);
-      hi = Math.max(hi, v);
+      const j = gy * gw + gx;
+      const h = at(p);
+      elev[j] = h;
+      sx[j] = (at({ x: p.x + ux.x * e, y: p.y + ux.y * e }) - at({ x: p.x - ux.x * e, y: p.y - ux.y * e })) / (2 * e);
+      sy[j] = (at({ x: p.x + uy.x * e, y: p.y + uy.y * e }) - at({ x: p.x - uy.x * e, y: p.y - uy.y * e })) / (2 * e);
+      lo = Math.min(lo, h);
+      hi = Math.max(hi, h);
+      if ((gx & 3) === 0 && (gy & 3) === 0) slopes.push(Math.hypot(sx[j], sy[j]));
     }
   }
-  if (hi - lo < 0.01) return null;
-  return (x: number, y: number) => {
+  slopes.sort((a, b) => a - b);
+  const p90 = slopes[Math.floor(slopes.length * 0.9)] ?? 0;
+  if (hi - lo < 0.5 || p90 < 0.002) return null;
+  // Steep enough to read: the steeper slopes shown at about 20 degrees, whatever the course
+  const exag = reliefExaggeration(p90);
+  const lxy = Math.hypot(L.x, L.y) || 1;
+  const lights = [0, 50, -50].map((deg, k) => {
+    const a = (deg * Math.PI) / 180, c = Math.cos(a), s2 = Math.sin(a);
+    return { x: ((L.x * c - L.y * s2) / lxy) * Math.sqrt(1 - L.z * L.z), y: ((L.x * s2 + L.y * c) / lxy) * Math.sqrt(1 - L.z * L.z), z: L.z, w: k ? 0.2 : 0.6 };
+  });
+  for (let j = 0; j < elev.length; j++) {
+    const dzx = sx[j] * exag, dzy = sy[j] * exag, len = Math.hypot(dzx, dzy, 1);
+    let s = 0;
+    for (const l of lights) s += l.w * Math.max(0, (-dzx * l.x - dzy * l.y + l.z) / len) / l.z;
+    shade[j] = Math.max(0.5, Math.min(1.4, 1 + (s - 1) * 0.9));
+  }
+  let k00 = 0, k10 = 0, k01 = 0, k11 = 0;
+  const cell = (x: number, y: number) => {
     const fx = x / step, fy = y / step;
-    const ix = Math.floor(fx), iy = Math.floor(fy);
-    const tx = fx - ix, ty = fy - iy;
-    const j = iy * gw + ix;
-    return (grid[j] * (1 - tx) + grid[j + 1] * tx) * (1 - ty) + (grid[j + gw] * (1 - tx) + grid[j + gw + 1] * tx) * ty;
+    const ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy, j = iy * gw + ix;
+    k00 = (1 - tx) * (1 - ty); k10 = tx * (1 - ty); k01 = (1 - tx) * ty; k11 = tx * ty;
+    return j;
+  };
+  const look = (f: Float32Array, j: number) => f[j] * k00 + f[j + 1] * k10 + f[j + gw] * k01 + f[j + gw + 1] * k11;
+  return {
+    lo,
+    hi,
+    /** Light on the ground here (1 = level ground; more on slopes facing the sun). */
+    shade: (x: number, y: number) => look(shade, cell(x, y)),
+    /** Height, ft. */
+    elev: (x: number, y: number) => look(elev, cell(x, y)),
+    /** Rise per screen pixel, right and down (ft). */
+    slope: (x: number, y: number): [number, number] => {
+      const j = cell(x, y);
+      return [look(sx, j) * ftPerPx, look(sy, j) * ftPerPx];
+    }
   };
 };

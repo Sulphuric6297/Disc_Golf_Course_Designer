@@ -1,7 +1,8 @@
 import { test as plain, expect as plainExpect } from "@playwright/test";
-import { test, expect, addHole, blankCourse, course } from "./fixtures";
+import { test, expect, addHole, blankCourse, course, importSite } from "./fixtures";
 import { createAmenity, createArea, createBasket, createDropZone, createEmptyCourse, createLine, createMando, createTee, newHole, normalizeCourse } from "../../src/lib/course";
-import { meander } from "../../src/lib/forest";
+import { contourInterval, meander } from "../../src/lib/forest";
+import { contoursOf, reliefExaggeration } from "../../src/lib/relief";
 import { dist, distanceToPath } from "../../src/lib/geom";
 import { BASKET_MARKS, basketMark, bestRotation, renderPoster } from "../../src/lib/mapSvg";
 import { renderScorecard, renderTeeSign } from "../../src/lib/teeSign";
@@ -60,7 +61,7 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
   await page.getByRole("button", { name: "5 Design" }).click();
   await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
-  // How light the painted land is on average (dark canopy against lighter grass)
+  // How light the painted land is (dark canopy against lighter grass)
   const lightness = async () => {
     const href = await painting.getAttribute("href");
     return page.evaluate(async (url: string) => {
@@ -73,13 +74,16 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
       const g = c.getContext("2d")!;
       g.drawImage(img, 0, 0, 120, 80);
       const d = g.getImageData(0, 0, 120, 80).data;
-      let sum = 0;
-      for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i + 1] + d[i + 2]) / 3;
-      return sum / (d.length / 4);
+      const l: number[] = [];
+      for (let i = 0; i < d.length; i += 4) l.push((d[i] + d[i + 1] + d[i + 2]) / 3);
+      return l.sort((a, b) => a - b);
     }, href!);
   };
   await expect(painting).toHaveAttribute("href", /^data:image\/jpeg/);
   const dense = await lightness();
+  // (the share of the land lighter than all but a quarter of the thick woods)
+  const light = dense[Math.floor(dense.length * 0.75)];
+  const share = (l: number[]) => l.filter(v => v > light).length / l.length;
   const before = await painting.getAttribute("href");
   const slider = page.getByLabel("Tree cover");
   await expect(page.getByTestId("forest-options")).toContainText("Dense");
@@ -88,8 +92,8 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
   await expect.poll(async () => (await course(page)).style.treeCover).toBe(0.2);
   await expect(page.getByTestId("forest-options")).toContainText("Sparse");
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
-  // (The earthy lawn is darker than it was, so the step is smaller than it once was)
-  expect(await lightness()).toBeGreaterThan(dense + 8);
+  // Grass between the trees: far more of the land is lighter
+  expect(share(await lightness())).toBeGreaterThan(share(dense) + 0.2);
   // One undo step brings the thick woods back
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).style.treeCover).toBe(1);
@@ -367,4 +371,51 @@ test("choosing PDGA marking colors in the Design step", async ({ page }) => {
   await expect(page.getByTestId("markings-pdga")).toHaveAttribute("aria-checked", "true");
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).style.markings).toBe("map");
+});
+
+plain("elevation on the map: relief exaggerated to suit the course, tidy contour intervals, heights on the bolder contours", () => {
+  // A gentle course's rises still show; a steep one isn't overdone
+  plainExpect(reliefExaggeration(0.03)).toBeCloseTo(12, 0);
+  plainExpect(reliefExaggeration(0.5)).toBe(1.5);
+  plainExpect(reliefExaggeration(0.0001)).toBe(14);
+  plainExpect(contourInterval(30)).toBe(5);
+  plainExpect(contourInterval(110)).toBe(10);
+  plainExpect(contourInterval(8)).toBe(1);
+  // A slope rising to the east: the topographic style labels the bolder lines with their height
+  const doc = sample();
+  doc.style.theme = "topo";
+  doc.style.contours = true;
+  doc.site.baseElevationFt = 1000;
+  const heights: Record<string, number> = {};
+  for (let x = 0; x <= doc.canvas.width; x += doc.gridSize) for (let y = 0; y <= doc.canvas.height; y += doc.gridSize) heights[`${x},${y}`] = x * 0.1;
+  doc.terrainHeights = heights;
+  const contours = contoursOf(heights, doc.gridSize, doc.canvas.width, doc.canvas.height);
+  const svg = renderPoster(doc, { contours, hillshade: null }).svg;
+  const labels = [...svg.matchAll(/>(1\d{3})<\/text>/g)].map(m => Number(m[1]));
+  plainExpect(labels.length).toBeGreaterThan(1);
+  for (const l of labels) plainExpect(l % contours.interval).toBe(0);
+  // In meters when the course is
+  doc.units = "m";
+  plainExpect(renderPoster(doc, { contours, hillshade: null }).svg).toMatch(/>3\d\d<\/text>/);
+});
+
+test("elevation on the Forest map: hills shade the painting, and contour lines are painted in on request", async ({ page }) => {
+  test.setTimeout(150_000);
+  await importSite(page);
+  await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "5 Design" }).click();
+  const painting = page.getByTestId("design-page").locator("image").first();
+  await expect(painting).toHaveAttribute("href", /^data:image\/jpeg/);
+  const shaded = await painting.getAttribute("href");
+  // Hill shading off: a different picture (the hill's light and shade gone)
+  await page.getByLabel("Hill shading").uncheck();
+  await expect.poll(async () => painting.getAttribute("href")).not.toBe(shaded);
+  await page.getByLabel("Hill shading").check();
+  await expect.poll(async () => painting.getAttribute("href")).toBe(shaded);
+  // Contour lines: painted into the land, not drawn over it
+  await page.getByLabel("Contour lines").check();
+  await expect.poll(async () => (await course(page)).style.contours).toBe(true);
+  await expect.poll(async () => painting.getAttribute("href")).not.toBe(shaded);
+  expect(await page.getByTestId("design-page").locator("path[stroke-linejoin='round'][fill='none'][stroke^='rgba(20,40,10']").count()).toBe(0);
 });
