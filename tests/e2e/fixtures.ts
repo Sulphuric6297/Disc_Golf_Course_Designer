@@ -88,6 +88,8 @@ const cached = (key: string, make: () => Uint8Array) => {
   return tileCache.get(key)!;
 };
 const at = (e: number, n: number) => ({ lat: SITE.lat + n / M_PER_DEG, lon: SITE.lon + e / (M_PER_DEG * COS) });
+/** A point `e` meters east and `n` meters north of the made-up site's middle (for stubbed map data). */
+export const geoAt = at;
 
 export async function stubNetwork(page: Page) {
   // Anything not explicitly stubbed must not hit the internet.

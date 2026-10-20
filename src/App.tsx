@@ -16,6 +16,7 @@ import { useLayout, useTouch } from "./components/useLayout";
 import { CompactShell, ItemMenu } from "./components/mobile/CompactShell";
 import { useCourse, useEditor, getDoc, changeDoc, updateItem } from "./state/course";
 import { deleteSelection, duplicateSelection, nudgeSelection, select } from "./state/actions";
+import { osmFailedToast } from "./state/osm";
 import { makeCopy, openSharedLink, restoreAutosave, startAutosave } from "./state/files";
 import { toast, useToasts } from "./state/toast";
 import { holeStats } from "./lib/holeStats";
@@ -241,6 +242,7 @@ export default function App() {
     useEditor.getState().set({ step: "holes", tool: getDoc().holes.length ? "select" : "add-hole" });
     setTimeout(() => getView()?.fitSite(), 50);
     toast(`Site brought in. ${site.notes.join(" ")}`, "success", false, { label: "View in 3D", run: () => useEditor.getState().set({ view: "3d" }) }, 12000);
+    if (site.osmFailed) osmFailedToast();
   };
 
   // Keyboard shortcuts

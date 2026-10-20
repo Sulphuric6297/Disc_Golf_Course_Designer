@@ -232,6 +232,71 @@ export const simplify = (pts: P[], tolerance: number): P[] => {
   return [...simplify(pts.slice(0, index + 1), tolerance).slice(0, -1), ...simplify(pts.slice(index), tolerance)];
 };
 
+export type Rect = { x0: number; y0: number; x1: number; y1: number };
+
+/** The part of a segment inside a rectangle (Liang-Barsky), or null; its ends are a and b themselves where they are inside. */
+const clipSegment = (a: P, b: P, r: Rect): [P, P] | null => {
+  let t0 = 0, t1 = 1;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  for (const [p, q] of [[-dx, a.x - r.x0], [dx, r.x1 - a.x], [-dy, a.y - r.y0], [dy, r.y1 - a.y]]) {
+    if (p === 0) {
+      if (q < 0) return null;
+      continue;
+    }
+    const t = q / p;
+    if (p < 0) {
+      if (t > t1) return null;
+      if (t > t0) t0 = t;
+    } else {
+      if (t < t0) return null;
+      if (t < t1) t1 = t;
+    }
+  }
+  const at = (t: number) => (t === 0 ? a : t === 1 ? b : { x: a.x + t * dx, y: a.y + t * dy });
+  return t1 - t0 > 1e-9 ? [at(t0), at(t1)] : null;
+};
+
+/** The pieces of a path inside a rectangle (a path that leaves and comes back is two pieces). */
+export const clipPathToRect = (pts: P[], r: Rect): P[][] => {
+  const pieces: P[][] = [];
+  let cur: P[] = [];
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const seg = clipSegment(pts[i], pts[i + 1], r);
+    if (seg && cur.length && cur[cur.length - 1] === seg[0]) {
+      cur.push(seg[1]);
+      continue;
+    }
+    if (cur.length >= 2) pieces.push(cur);
+    cur = seg ? [seg[0], seg[1]] : [];
+  }
+  if (cur.length >= 2) pieces.push(cur);
+  return pieces;
+};
+
+/** A polygon cut to a rectangle (Sutherland-Hodgman: where it was cut, it runs along the rectangle's edge). */
+export const clipPolygonToRect = (poly: P[], r: Rect): P[] => {
+  const sides: [(p: P) => boolean, (a: P, b: P) => P][] = [
+    [p => p.x >= r.x0, (a, b) => ({ x: r.x0, y: a.y + ((b.y - a.y) * (r.x0 - a.x)) / (b.x - a.x) })],
+    [p => p.x <= r.x1, (a, b) => ({ x: r.x1, y: a.y + ((b.y - a.y) * (r.x1 - a.x)) / (b.x - a.x) })],
+    [p => p.y >= r.y0, (a, b) => ({ x: a.x + ((b.x - a.x) * (r.y0 - a.y)) / (b.y - a.y), y: r.y0 })],
+    [p => p.y <= r.y1, (a, b) => ({ x: a.x + ((b.x - a.x) * (r.y1 - a.y)) / (b.y - a.y), y: r.y1 })]
+  ];
+  let pts = poly;
+  for (const [inside, cut] of sides) {
+    const next: P[] = [];
+    pts.forEach((b, i) => {
+      const a = pts[(i + pts.length - 1) % pts.length];
+      if (inside(b)) {
+        if (!inside(a)) next.push(cut(a, b));
+        next.push(b);
+      } else if (inside(a)) next.push(cut(a, b));
+    });
+    pts = next;
+    if (pts.length < 3) return [];
+  }
+  return pts;
+};
+
 export const rotatePoint = (p: P, angleDeg: number) => {
   const rad = (angleDeg * Math.PI) / 180;
   const c = Math.cos(rad);

@@ -9,6 +9,7 @@ import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { select } from "../state/actions";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
 import type { AreaKind, Layout, LineKind, PinPosition, StructureKind, TeeLevel, ToolMode } from "../types";
+import { refreshOsm } from "../state/osm";
 import { getView } from "./MapViewport";
 import { structureIcon } from "./Toolbar";
 import { Button, Field, Section, Segmented, Stat, TextInput, Toggle } from "./ui";
@@ -84,7 +85,10 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
             {doc.site.elevationSource && <div>Elevation: {doc.site.elevationSource}</div>}
             {doc.site.imagerySource && <div>Photo: {doc.site.imagerySource}</div>}
           </div>
-          <div className="mt-2"><Button small onClick={onFindSite}>Change or re-import the site</Button></div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Button small onClick={onFindSite}>Change or re-import the site</Button>
+            <Button small onClick={() => void refreshOsm()} testid="refresh-osm" title="Look up OpenStreetMap again: what came from it before is replaced (Undo brings it back)">Update paths, roads and water</Button>
+          </div>
         </Section>
       )}
       <Section title="Course">
