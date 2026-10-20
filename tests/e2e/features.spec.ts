@@ -432,3 +432,24 @@ test("a tree made taller keeps its shape: its crown grows with it, and in 3D it 
   expect(r / tree.radius).toBeGreaterThan(1.8);
   expect(r / tree.radius).toBeLessThan(2.2);
 });
+
+test("an OB line set to belong to two holes with the hole buttons; back to the whole course", async ({ page }) => {
+  await blankCourse(page);
+  const a = await addHole(page, { x: 300, y: 400 }, { x: 700, y: 400 });
+  const b = await addHole(page, { x: 300, y: 600 }, { x: 700, y: 600 });
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("v");
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__dgEditor().set({ lineKind: "ob" });
+    w.__dgActions.addDrawn("line", [{ x: 500, y: 300 }, { x: 500, y: 700 }]);
+  });
+  const line = async () => (await course(page)).items.find((i: any) => i.type === "line");
+  const picker = page.getByTestId("belongs-to");
+  await picker.getByRole("button", { name: "Hole 1" }).click();
+  await picker.getByRole("button", { name: "Hole 2" }).click();
+  await expect.poll(async () => { const l = await line(); return [l.holeId, l.alsoHoles]; }).toEqual([a.id, [b.id]]);
+  await expect(picker.getByRole("button", { name: "Hole 2" })).toHaveAttribute("aria-pressed", "true");
+  await picker.getByRole("button", { name: "Whole course" }).click();
+  await expect.poll(async () => (await line()).holeId).toBeUndefined();
+});

@@ -229,6 +229,10 @@ const deleteGroup = (group: string[]) => {
         return [];
       }
       if (ids.has(i.id) && !i.locked) return [];
+      if ("alsoHoles" in i && i.alsoHoles?.length) {
+        const rest = [i.holeId, ...i.alsoHoles].filter((h): h is string => !!h && !holeIds.has(h));
+        return [{ ...i, holeId: rest[0], alsoHoles: rest.length > 1 ? rest.slice(1) : undefined } as CourseItem];
+      }
       return ["holeId" in i && i.holeId && holeIds.has(i.holeId) && i.type !== "tee" && i.type !== "basket" ? ({ ...i, holeId: undefined } as CourseItem) : i];
     })
   }));
@@ -265,7 +269,11 @@ const placeParts = (parts: Parts, dx: number, dy: number) => {
     else if (c.type === "basket") {
       c.holeId = holeMap.get(own[0])!;
       c.alsoHoles = own.length > 1 ? own.slice(1).map(h => holeMap.get(h)!) : undefined;
-    } else if ("holeId" in c && c.holeId) (c as { holeId?: string }).holeId = holeMap.get(c.holeId) ?? (getDoc().holes.some(h => h.id === c.holeId) ? c.holeId : undefined);
+    } else if ("holeId" in c && c.holeId) {
+      const keep = (h: string) => holeMap.get(h) ?? (getDoc().holes.some(x => x.id === h) ? h : undefined);
+      (c as { holeId?: string }).holeId = keep(c.holeId);
+      if ("alsoHoles" in c && c.alsoHoles) c.alsoHoles = c.alsoHoles.map(keep).filter((h): h is string => !!h);
+    }
     copies.push(c);
   }
   if (!copies.length) return false;

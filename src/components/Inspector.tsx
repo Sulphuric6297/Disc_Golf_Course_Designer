@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
-import { autoWalks, CURVED_LINES, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, parseHoleNumbers, wholeHoles } from "../lib/course";
+import { autoWalks, byNumber, CURVED_LINES, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, parseHoleNumbers, wholeHoles } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
@@ -276,7 +276,22 @@ function ItemInspector({ item }: { item: CourseItem }) {
   const u = doc.units;
   const set = (patch: Record<string, unknown>, history = true) => updateItem(item.id, patch as Partial<CourseItem>, history);
   const holeOptions = [{ value: "", label: "Whole course" }, ...doc.holes.map(h => ({ value: h.id, label: `Hole ${holeLabel(doc, h.id)}` }))];
-  const holePicker = (
+  // (shapes and built things can belong to several holes: an OB line along two fairways)
+  const shared = item.type === "area" || item.type === "line" || item.type === "structure";
+  const mine = "holeId" in item && item.holeId ? [item.holeId, ...((shared && item.alsoHoles) || [])] : [];
+  const setHoles = (ids: string[]) => set({ holeId: ids[0], alsoHoles: ids.length > 1 ? ids.slice(1) : undefined });
+  const chip = (on: boolean) => `px-2 py-1 touch:py-2 rounded-md text-xs font-semibold border ${on ? "bg-orange-500/20 border-orange-400 text-orange-100" : "border-zinc-700 text-zinc-300 hover:border-zinc-500"}`;
+  const holePicker = shared ? (
+    <Field label="Belongs to">
+      <div className="flex flex-wrap gap-1" role="group" aria-label="Belongs to holes" data-testid="belongs-to">
+        <button className={chip(!mine.length)} aria-pressed={!mine.length} onClick={() => setHoles([])}>Whole course</button>
+        {byNumber(doc.holes).map(h => {
+          const on = mine.includes(h.id);
+          return <button key={h.id} className={chip(on)} aria-pressed={on} aria-label={`Hole ${holeLabel(doc, h.id)}`} onClick={() => setHoles(on ? mine.filter(x => x !== h.id) : [...mine, h.id])}>{holeLabel(doc, h.id)}</button>;
+        })}
+      </div>
+    </Field>
+  ) : (
     <Field label="Belongs to">
       <select aria-label="Belongs to hole" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={("holeId" in item && item.holeId) || ""} onChange={e => set({ holeId: e.target.value || undefined })}>
         {holeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}

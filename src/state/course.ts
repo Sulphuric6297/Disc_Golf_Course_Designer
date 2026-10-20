@@ -83,6 +83,11 @@ export const removeHole = (holeId: string) =>
           const holes = [i.holeId, ...(i.alsoHoles ?? [])].filter(h => h !== holeId);
           return { ...i, holeId: holes[0], alsoHoles: holes.length > 1 ? holes.slice(1) : undefined };
         }
+        // (a shape shared by several holes stays theirs)
+        if ("alsoHoles" in i && i.alsoHoles?.length && (i.holeId === holeId || i.alsoHoles.includes(holeId))) {
+          const rest = [i.holeId, ...i.alsoHoles].filter((h): h is string => !!h && h !== holeId);
+          return { ...i, holeId: rest[0], alsoHoles: rest.length > 1 ? rest.slice(1) : undefined } as CourseItem;
+        }
         return "holeId" in i && i.holeId === holeId ? ({ ...i, holeId: undefined } as CourseItem) : i;
       })
   }));

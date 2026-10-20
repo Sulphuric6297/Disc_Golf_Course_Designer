@@ -3,7 +3,7 @@
 // to the next tee.
 import { CIRCLE_ONE_FT, FT_PER_M, TEE_LEVELS } from "../constants";
 import type { AreaItem, BasketItem, CourseDoc, CourseItem, P, SignPart } from "../types";
-import { activeLayout, fairwayOutline, holeBaskets, holeTees, throwLine } from "./course";
+import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, throwLine } from "./course";
 import { boundsOf, dist, pointInPolygon, rotatePoint, smoothPath } from "./geom";
 import { holeStats } from "./holeStats";
 import { markingsInView, northArrow, palette, renderMapLayers, scaleBar, titleStack, wrapSvg, type MapView } from "./mapSvg";
@@ -46,9 +46,9 @@ export const autoRules = (doc: CourseDoc, holeId: string) => {
   const out: string[] = [];
   if (!s.complete) return out;
   const fairway = fairwayOutline(hole, smoothPath(s.line, 8), 20, 8);
-  const near = (a: AreaItem) => (!a.holeId || a.holeId === holeId) && (a.points.some(p => pointInPolygon(p, fairway)) || fairway.some(p => pointInPolygon(p, a.points)));
+  const near = (a: AreaItem) => (!a.holeId || belongsTo(a, holeId)) && (a.points.some(p => pointInPolygon(p, fairway)) || fairway.some(p => pointInPolygon(p, a.points)));
   const areas = doc.items.filter(i => i.type === "area") as AreaItem[];
-  const obLine = doc.items.some(i => i.type === "line" && i.kind === "ob" && (!i.holeId || i.holeId === holeId) && i.points.some(p => pointInPolygon(p, fairway)));
+  const obLine = doc.items.some(i => i.type === "line" && i.kind === "ob" && (!i.holeId || belongsTo(i, holeId)) && i.points.some(p => pointInPolygon(p, fairway)));
   if (areas.some(a => a.kind === "ob" && near(a)) || obLine) out.push("OB in play.");
   if (areas.some(a => a.kind === "water" && near(a))) out.push("Water is OB.");
   if (areas.some(a => a.kind === "hazard" && near(a))) out.push("Hazard in play.");

@@ -252,6 +252,10 @@ export const holeLine = (doc: Pick<CourseDoc, "items" | "layouts" | "activeLayou
   throwLine(hole, teeFor(doc, hole.id, layout?.tee), basketFor(doc, hole.id, layout?.pin));
 
 /** Which hole an item belongs to (tees, baskets, mandos and drop zones; areas and lines can too). */
+/** Whether a thing belongs to a hole (its own, or one of the others it is shared with). */
+export const belongsTo = (item: CourseItem, holeId: string) =>
+  "holeId" in item && (item.holeId === holeId || (("alsoHoles" in item && item.alsoHoles) || []).includes(holeId));
+
 export const itemHoleId = (item: CourseItem | null | undefined): string | undefined =>
   item && "holeId" in item ? item.holeId : undefined;
 

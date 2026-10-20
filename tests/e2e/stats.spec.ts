@@ -230,3 +230,15 @@ test("a fairway wider on one side only: its middle moved off the line, the other
   expect(Math.max(...ys(300))).toBeCloseTo(15, 0);
   expect(Math.min(...ys(300))).toBeCloseTo(-15, 0);
 });
+
+test("an OB line belonging to two holes counts for both (and for neither of the others)", () => {
+  const doc = make([[{ x: 0, y: 0 }, { x: 400, y: 0 }], [{ x: 0, y: 60 }, { x: 400, y: 60 }], [{ x: 0, y: 120 }, { x: 400, y: 120 }]]);
+  const [h1, h2, h3] = doc.holes;
+  // Across all three holes' lines
+  const ob = createLine("ob", [{ x: 200, y: -50 }, { x: 200, y: 170 }]);
+  doc.items.push({ ...ob, holeId: h1.id, alsoHoles: [h2.id] });
+  const crossed = (h: typeof h1) => holeStats(doc, h).obCrossed;
+  expect(crossed(h1)).toBe(1);
+  expect(crossed(h2)).toBe(1);
+  expect(crossed(h3)).toBe(0);
+});

@@ -88,6 +88,8 @@ export interface LabelItem extends BaseItem {
 /** Areas drawn on the map. OB and hazards are what play cares about; the rest make the map read. */
 export type AreaKind = "ob" | "hazard" | "casual" | "water" | "fairway" | "green" | "woods" | "rough" | "nogo" | "parking" | "building" | "sand";
 export interface AreaItem extends BaseItem {
+  /** More holes it belongs to (an OB line along two fairways): with `holeId`, all of them. */
+  alsoHoles?: string[];
   type: "area";
   kind: AreaKind;
   /** Outline in plan coordinates (x, y of the item is its middle). */
@@ -106,6 +108,8 @@ export type LineKind = "ob" | "path" | "road" | "fence" | "stream" | "walk";
 /** What a path or a walk between holes is made of. */
 export type PathSurface = "dirt" | "gravel" | "woodchips" | "grass" | "paved";
 export interface LineItem extends BaseItem {
+  /** More holes it belongs to (an OB line along two fairways): with `holeId`, all of them. */
+  alsoHoles?: string[];
   type: "line";
   kind: LineKind;
   points: P[];
@@ -129,6 +133,8 @@ export interface LineItem extends BaseItem {
 export type StructureKind = "bridge" | "boardwalk" | "stairs" | "wall" | "building" | "shelter" | "deck";
 export type RoofKind = "gable" | "hip" | "flat" | "shed" | "pyramid";
 export interface StructureItem extends BaseItem {
+  /** More holes it belongs to (an OB line along two fairways): with `holeId`, all of them. */
+  alsoHoles?: string[];
   type: "structure";
   kind: StructureKind;
   /** Along the line from one end to the other, or the outline (plan coordinates; x, y of the item

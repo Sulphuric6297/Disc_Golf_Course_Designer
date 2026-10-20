@@ -2,7 +2,7 @@
 // positions), the hole list as CSV, the stake-out list, and the parts list with a cost estimate.
 import { AMENITY_KINDS, AREA_KINDS, FT_PER_M, LINE_KINDS, TEE_LEVELS, TEE_SURFACES } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, CourseItem, DropZoneItem, Hole, LineItem, MandoItem, P, TeeItem, TreeItem } from "../types";
-import { fairwayOutline, holeBaskets, holeNumber, holeTees } from "./course";
+import { belongsTo, fairwayOutline, holeBaskets, holeNumber, holeTees } from "./course";
 import { pathTouchesPolygon, pointInPolygon, smoothPath } from "./geom";
 import { bearing, compassPoint, geoRefOf, toLatLon, type GeoRef } from "./geoRef";
 import { holeStats, isOb } from "./holeStats";
@@ -93,7 +93,7 @@ export const holeGeoJSON = (doc: CourseDoc, holeId: string) => {
   const features = holeFeatures(doc, ref, hole);
   for (const i of doc.items) {
     if (i.type === "tee" || i.type === "basket") continue;
-    const own = "holeId" in i && i.holeId === holeId;
+    const own = belongsTo(i, holeId);
     const shared = !own && (i.type === "area" || i.type === "line") && !i.holeId && (isOb(i) || i.kind === "hazard") && inPlay(i.points, i.type === "area");
     if (!own && !shared) continue;
     const f = itemFeature(doc, ref, i);

@@ -159,7 +159,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   const out: string[] = [];
   const defs: string[] = [];
   const focus = layers.focusHole;
-  const dim = (holeId?: string) => (focus && holeId && holeId !== focus ? layers.fade ?? 0.35 : 1);
+  const dim = (holeId?: string, also?: string[]) => (focus && holeId && holeId !== focus && !also?.includes(focus) ? layers.fade ?? 0.35 : 1);
   const theme = s.theme;
   const photo = theme === "satellite" && !!doc.background;
   const forest = theme === "forest";
@@ -273,7 +273,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   for (const a of areas) {
     const fill = landFill(a);
     if (!fill || a.points.length < 3 || forest) continue;
-    const o = dim(a.holeId);
+    const o = dim(a.holeId, a.alsoHoles);
     if (a.kind === "water") {
       out.push(`<polygon points="${pts(a.points)}" fill="${fill}" opacity="${o}" stroke="${shade(fill, -0.25)}" stroke-width="${n(px(1.4))}" stroke-linejoin="round"/>`);
       out.push(`<polygon points="${pts(a.points)}" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="${n(px(3))}" stroke-linejoin="round" transform="translate(0 0)" style="paint-order:stroke"/>`);
@@ -304,7 +304,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     if (l.points.length < 2 || (forest && l.kind !== "fence")) continue;
     const meta = LINE_KINDS[l.kind];
     const w = l.width ?? meta.width;
-    const o = dim(l.holeId);
+    const o = dim(l.holeId, l.alsoHoles);
     // Creeks and trails wind: draw them as smooth curves through their points
     const d = pathD(linePath(l));
     if (l.kind === "road") {
@@ -363,7 +363,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     const order: StructureKind[] = ["wall", "stairs", "boardwalk", "deck", "bridge", "shelter", "building"];
     for (const st of [...structures].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))) {
       const shape = isLineKind(st.kind) ? structurePath(st) : st.points;
-      out.push(`<g opacity="${dim(st.holeId)}">${structureSymbol(st.kind, shape, structureWidth(st), structureHeight(st), structureRoof(st), { ...draw, id: `${uid}-s${st.id}`, ink: st.roofColor ? { ...draw.ink, roof: st.roofColor, shelter: st.roofColor } : draw.ink })}</g>`);
+      out.push(`<g opacity="${dim(st.holeId, st.alsoHoles)}">${structureSymbol(st.kind, shape, structureWidth(st), structureHeight(st), structureRoof(st), { ...draw, id: `${uid}-s${st.id}`, ink: st.roofColor ? { ...draw.ink, roof: st.roofColor, shelter: st.roofColor } : draw.ink })}</g>`);
     }
   }
 
@@ -376,7 +376,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     const pat = a.kind === "ob" ? `${uid}-ob` : a.kind === "hazard" ? `${uid}-hz` : a.kind === "casual" ? `${uid}-cs` : `${uid}-ng`;
     const col = a.kind === "ob" ? obCol : a.kind === "hazard" ? s.hazard : a.kind === "casual" ? casualCol : nogoCol;
     const casing = a.kind === "ob" ? obCase : "#ffffff";
-    const o = dim(a.holeId);
+    const o = dim(a.holeId, a.alsoHoles);
     const clip = `${uid}-in-${a.id.replace(/[^\w-]/g, "")}`;
     const poly = pts(a.points);
     defs.push(`<clipPath id="${clip}"><polygon points="${poly}"/></clipPath>`);
@@ -388,10 +388,10 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     }
   }
   for (const l of lines.filter(x => x.kind === "ob")) {
-    out.push(`<path d="${pathD(l.points)}" fill="none" stroke="${obCase}" stroke-width="${n(px(4.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(0.9 * dim(l.holeId))}"/>`);
-    out.push(`<path d="${pathD(l.points)}" fill="none" stroke="${obCol}" stroke-width="${n(px(2.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(dim(l.holeId))}"/>`);
+    out.push(`<path d="${pathD(l.points)}" fill="none" stroke="${obCase}" stroke-width="${n(px(4.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(0.9 * dim(l.holeId, l.alsoHoles))}"/>`);
+    out.push(`<path d="${pathD(l.points)}" fill="none" stroke="${obCol}" stroke-width="${n(px(2.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(dim(l.holeId, l.alsoHoles))}"/>`);
     const len = pathLength(l.points);
-    if (len * k > 70 * ts) tags.push({ id: `tag:${l.id}`, at: toScreen(pointAlong(l.points, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: obCol, fg: obInk, o: dim(l.holeId) });
+    if (len * k > 70 * ts) tags.push({ id: `tag:${l.id}`, at: toScreen(pointAlong(l.points, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: obCol, fg: obInk, o: dim(l.holeId, l.alsoHoles) });
   }
 
   // Water, creeks, roads, fences and paths marked OB: a red edge along them (on both banks of a
@@ -403,10 +403,10 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       return { x: p.x - (dy / len) * d, y: p.y + (dx / len) * d };
     });
     const edge = (d: string, o: number) => out.push(`<path d="${d}" fill="none" stroke="${obCase}" stroke-opacity="0.9" stroke-width="${n(px(3.6))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/><path d="${d}" fill="none" stroke="${obCol}" stroke-width="${n(px(1.9))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/>`);
-    for (const a of areas) if (a.ob === true && a.kind !== "ob" && a.points.length >= 3) edge(pathD(a.points, true), dim(a.holeId));
+    for (const a of areas) if (a.ob === true && a.kind !== "ob" && a.points.length >= 3) edge(pathD(a.points, true), dim(a.holeId, a.alsoHoles));
     for (const l of lines) {
       if (l.ob !== true || l.kind === "ob" || l.points.length < 2) continue;
-      const o = dim(l.holeId);
+      const o = dim(l.holeId, l.alsoHoles);
       const w = l.width ?? LINE_KINDS[l.kind].width;
       const g = forest ? paintedLine(l, view.scale) : { points: linePath(l), width: Math.max(w, px(l.kind === "road" ? 3 : l.kind === "path" ? 2.2 : 2)) };
       if (l.kind === "fence" || l.kind === "walk") edge(pathD(g.points), o);

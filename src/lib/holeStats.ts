@@ -2,7 +2,7 @@
 // shape, what is in the way, and safety checks between holes.
 import { CIRCLE_ONE_FT, CLEAR_IN_FRONT_FT, MIN_PAD, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AreaItem, CourseDoc, Hole, Layout, LineItem, P, TeeItem, TeeLevel, TreeItem } from "../types";
-import { activeLayout, basketFor, fairwayOutline, holeLabel, holeNumber, holeTees, teeAim, teeFor, throwLine } from "./course";
+import { activeLayout, basketFor, belongsTo, fairwayOutline, holeLabel, holeNumber, holeTees, teeAim, teeFor, throwLine } from "./course";
 import { dist, distanceToPath, lengthInside, pathLength, pathTouchesPolygon, segmentsIntersect, smoothPath, turnAngles } from "./geom";
 import { heightAt, profileAlong } from "./terrainGrid";
 
@@ -124,8 +124,8 @@ export const holeStats = (doc: CourseDoc, hole: Hole, layout: Layout | undefined
   const factor = doc.rules?.elevationFactor ?? 3;
   const playsLike = complete ? Math.max(0, (length + factor * elevationChange) * (1 + shapeExtra) * (foliage === "heavy" ? HEAVY_FOLIAGE : 1)) : 0;
   const parAuto = complete ? parForDistance(playsLike, level) : 3;
-  const obAreas = (doc.items.filter(i => i.type === "area" && isOb(i)) as AreaItem[]).filter(a => !a.holeId || a.holeId === hole.id);
-  const obLines = (doc.items.filter(i => i.type === "line" && isOb(i)) as LineItem[]).filter(l => !l.holeId || l.holeId === hole.id);
+  const obAreas = (doc.items.filter(i => i.type === "area" && isOb(i)) as AreaItem[]).filter(a => !a.holeId || belongsTo(a, hole.id));
+  const obLines = (doc.items.filter(i => i.type === "line" && isOb(i)) as LineItem[]).filter(l => !l.holeId || belongsTo(l, hole.id));
   let obCrossed = 0;
   if (complete) {
     obCrossed += obAreas.filter(a => lengthInside(smooth, a.points, 3) > 4).length;
