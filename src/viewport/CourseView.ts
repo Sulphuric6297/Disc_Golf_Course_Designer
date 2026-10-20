@@ -2110,12 +2110,26 @@ export class CourseView {
         const { point, angle } = pointAlong(line, pathLength(line) * t);
         return { point, n: { x: -Math.sin(angle) * flip, y: Math.cos(angle) * flip } };
       };
-      add("width", () => {
+      const pos = () => {
         const sd = side(), h = hole();
         if (!sd || !h || !h.fairway) return null;
         const w = fairwayWidthAt(h)(t);
         return at({ x: sd.point.x + (sd.n.x * w) / 2, y: sd.point.y + (sd.n.y * w) / 2 });
-      }, () => {
+      };
+      // Only where it stands clear of the tee and the basket on screen (a short hole seen from
+      // far, or a touch screen's bigger handles: a square on the tee would take the tee's taps
+      // and its long-press menu); zoomed in on the hole, all four are there
+      const clear = () => {
+        const s = stats(), p = pos();
+        const me = p && this.project(p);
+        if (!s || !me || s.line.length < 2) return false;
+        const room = COARSE ? 44 : 24;
+        return [s.line[0], s.line[s.line.length - 1]].every(q => {
+          const e = this.project(at(q));
+          return !!e && Math.hypot(e.x - me.x, e.y - me.y) >= room;
+        });
+      };
+      add("width", pos, () => {
         const sd = side(), h0 = hole();
         if (!sd || !h0) return null;
         const y = this.h(sd.point.x, sd.point.y);
@@ -2131,7 +2145,7 @@ export class CourseView {
           },
           end: () => this.cb.onCommit()
         };
-      }, { index: i, title: "Drag to make the fairway wider or narrower here", data: { station: String(i) } });
+      }, { index: i, title: "Drag to make the fairway wider or narrower here", data: { station: String(i) }, visible: clear });
     });
   }
 

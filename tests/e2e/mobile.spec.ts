@@ -250,6 +250,27 @@ test.describe("phone", () => {
     await expect(menu).toHaveCount(0);
   });
 
+  test("a selected hole's width squares stand clear of its tee: holding the tee still opens its menu", async ({ page }) => {
+    await oneHole(page);
+    // The hole selected and seen from far, short on the screen (a square once sat on the tee and
+    // took its long-press)
+    await page.evaluate(() => (window as any).__dgActions.select((window as any).__dgCourse().holes[0].id));
+    await page.evaluate(() => (window as any).__dgView.zoomBy(1 / 2.5));
+    await page.waitForTimeout(800);
+    const tee = (await course(page)).items.find((i: any) => i.type === "tee");
+    const at = await screenOf(page, tee.x, tee.y, 1);
+    const centers = await page.locator('[data-handle="width"]:visible').evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }));
+    for (const c of centers) expect(Math.hypot(c.x - at.x, c.y - at.y)).toBeGreaterThanOrEqual(40);
+    await longPress(page, at);
+    const menu = page.getByTestId("item-menu");
+    await expect(menu).toBeVisible();
+    await expect(menu).toContainText("Blue tee");
+    await page.getByTestId("action-sheet-cancel").tap();
+    // Zoomed in on the hole, all four squares are there
+    await page.evaluate(() => { const v = (window as any).__dgView; v.fitHole((window as any).__dgCourse().holes[0].id, false); v.zoomBy(2.5); });
+    await expect(page.locator('[data-handle="width"]:visible')).toHaveCount(4);
+  });
+
   test("two fingers pinch the map; they place nothing, even with the Hole tool", async ({ page }) => {
     await openGround(page);
     const scale = () => page.evaluate(() => (window as any).__dgView.viewInfo().pxPerUnit);
