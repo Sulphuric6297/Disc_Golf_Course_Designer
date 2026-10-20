@@ -383,3 +383,29 @@ test("automatic walks to the next hole turned off and on from the Holes step", a
   await expect.poll(async () => (await course(page)).style.nextTee).toBe(true);
   await expect.poll(walk).toBe(true);
 });
+
+test("one automatic walk picked on the map and removed (and added back), the others kept", async ({ page }) => {
+  await blankCourse(page);
+  const a = await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
+  const b = await addHole(page, { x: 800, y: 400 }, { x: 900, y: 700 });
+  await addHole(page, { x: 700, y: 900 }, { x: 400, y: 900 });
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("v");
+  await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 100, minY: 200, maxX: 1000, maxY: 1000 }, { animate: false }));
+  const walk = (id: string) => page.evaluate(i => !!(window as any).__dgView.scene.getObjectByName(`walk:${i}`), id);
+  await expect.poll(() => walk(a.id)).toBe(true);
+  // The walk from hole 1's basket to hole 2's tee, clicked in its middle (off the throw lines)
+  const s = await page.evaluate(() => {
+    const d = (window as any).__dgCourse();
+    const bk = d.items.find((i: any) => i.type === "basket" && i.holeId === d.holes[0].id), tee = d.items.find((i: any) => i.type === "tee" && i.holeId === d.holes[1].id);
+    return (window as any).__dgView.toClient((bk.x + tee.x) / 2, (bk.y + tee.y) / 2);
+  });
+  await page.mouse.click(s.x, s.y);
+  await expect.poll(async () => (await editorState(page)).selectedId).toBe(a.id);
+  await page.getByTestId("walk-remove").click();
+  await expect.poll(async () => (await course(page)).holes[0].walkOff).toBe(true);
+  await expect.poll(() => walk(a.id)).toBe(false);
+  expect(await walk(b.id)).toBe(true);
+  await page.getByTestId("walk-restore").click();
+  await expect.poll(() => walk(a.id)).toBe(true);
+});

@@ -336,12 +336,12 @@ export const ITEM_LABELS: Record<CourseItem["type"], string> = {
  * in a row, except where a walk line has been drawn from near the one hole's basket to near the
  * next hole's tee (either way round), which takes its place.
  */
-export const autoWalks = <S extends { holeId: string; complete: boolean; line: P[] }>(items: CourseItem[], stats: S[], holes: Pick<Hole, "id" | "walkOut" | "walkIn">[] = []) => {
+export const autoWalks = <S extends { holeId: string; complete: boolean; line: P[] }>(items: CourseItem[], stats: S[], holes: Pick<Hole, "id" | "walkOut" | "walkIn" | "walkOff">[] = []) => {
   const drawn = items.filter((i): i is LineItem => i.type === "line" && i.kind === "walk" && i.points.length >= 2);
   const out: { from: P; to: P; basket: P; tee: P; a: S; b: S }[] = [];
   for (let i = 0; i + 1 < stats.length; i++) {
     const a = stats[i], b = stats[i + 1];
-    if (!a.complete || !b.complete) continue;
+    if (!a.complete || !b.complete || holes.find(h => h.id === a.holeId)?.walkOff) continue;
     const basket = a.line[a.line.length - 1], tee = b.line[0];
     const reach = Math.max(60, dist(basket, tee) * 0.3);
     const near = (p: P, q: P) => dist(p, q) < reach;

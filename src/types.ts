@@ -161,6 +161,8 @@ export interface Hole {
   number?: number;
   /** More numbers it is played as (e.g. 12 as well as 3: "3/12"). */
   alsoNumbers?: number[];
+  /** No automatic walk from this hole on to the next. */
+  walkOff?: boolean;
   /** Shown name, e.g. "The Gauntlet" (optional). */
   name?: string;
   /** Par set by hand; unset: worked out from the hole's length, elevation and shape. */

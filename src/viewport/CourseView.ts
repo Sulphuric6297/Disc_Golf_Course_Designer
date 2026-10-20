@@ -2771,6 +2771,14 @@ export class CourseView {
       if (d < tol && (!near || d < near.d)) near = { id: l.id, d };
     }
     if (near) return near.id;
+    // An automatic walk to the next tee: its hole (whose panel can take it away)
+    if (doc.course.style.nextTee) {
+      for (const w of autoWalks(doc.course.items, doc.stats, doc.course.holes)) {
+        const d = distanceToPath(p, [w.from, w.to]);
+        if (d < tol && (!near || d < near.d)) near = { id: w.a.holeId, d };
+      }
+      if (near) return near.id;
+    }
     for (const s of doc.stats) {
       if (!s.complete) continue;
       const d = distanceToPath(p, smoothPath(s.line, 8));

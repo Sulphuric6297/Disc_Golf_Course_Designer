@@ -175,7 +175,13 @@ function HoleInspector({ hole }: { hole: Hole }) {
           <div className="flex flex-wrap gap-1.5">
             <Button small onClick={() => editWalks(hole.id)} testid="edit-walk">Edit the walk to hole {nextNo}</Button>
             {hole.walkOut && <Button small onClick={() => set({ walkOut: undefined })} testid="walk-out-reset">Start off the green again</Button>}
+            <Button small tone="danger" onClick={() => set({ walkOff: true })} testid="walk-remove"><Trash2 size={13} /> Remove this walk</Button>
           </div>
+        </Section>
+      )}
+      {!ro && hole.walkOff && doc.style.nextTee && (
+        <Section title="Walk to the next hole" testid="hole-walk-off">
+          <Button small onClick={() => set({ walkOff: undefined })} testid="walk-restore">Add the walk back</Button>
         </Section>
       )}
       {s.complete && (
