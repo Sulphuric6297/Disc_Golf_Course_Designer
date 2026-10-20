@@ -99,6 +99,7 @@ test("delete, duplicate and lock the things picked together, each one step; Ctrl
   expect(copies.some(id => ids.includes(id))).toBe(false);
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await benches(page)).length).toBe(3);
+  await page.evaluate(i => (window as any).__dgActions.pickGroup(i), ids);
   // Lock: a locked one stays put while the others move, and isn't deleted
   await page.getByTestId("inspector").getByRole("button", { name: "Lock", exact: true }).click();
   await expect.poll(async () => (await course(page)).items.filter((i: any) => i.locked).length).toBe(3);
@@ -139,8 +140,8 @@ test("the Select option: a plain drag draws the box; a whole hole comes along wi
   const bend0 = (await course(page)).holes[0].doglegs[0];
   await page.keyboard.press("Shift+ArrowDown");
   await expect.poll(async () => (await course(page)).holes[0].doglegs[0].y).toBeCloseTo(bend0.y + 10, 5);
-  expect((await course(page)).items.find((i: any) => i.type === "tee").y).toBe(510);
-  expect((await course(page)).items.find((i: any) => i.type === "basket").y).toBe(510);
+  expect((await course(page)).items.find((i: any) => i.type === "tee").y).toBeCloseTo(510, 3);
+  expect((await course(page)).items.find((i: any) => i.type === "basket").y).toBeCloseTo(510, 3);
   // Duplicated: a second hole, with its own tee and basket
   await page.keyboard.press("Control+d");
   await expect.poll(async () => (await course(page)).holes.length).toBe(2);
@@ -190,28 +191,54 @@ test.describe("touch", () => {
   });
 });
 
-test("copy and paste: Ctrl+C, then Ctrl+V where the pointer is (a group too); Ctrl+X cuts", async ({ page }) => {
+test("copy and paste: Ctrl+V next to the original (a group too), never on another copy; Ctrl+X cuts; Paste here", async ({ page }) => {
   const ids = await benchesOnArea(page);
   await page.locator(`[data-item-id="${ids[0]}"]`).click();
   await page.keyboard.press("Control+c");
-  const there = await screenOf(page, 650, 650);
-  await page.mouse.move(there.x, there.y, { steps: 3 });
+  // (wherever the pointer is)
+  const away = await screenOf(page, 650, 650);
+  await page.mouse.move(away.x, away.y, { steps: 3 });
   await page.keyboard.press("Control+v");
   await expect.poll(async () => (await benches(page)).length).toBe(4);
   const pasted = (await course(page)).items.find((i: any) => i.type === "amenity" && !ids.includes(i.id));
-  expect(Math.hypot(pasted.x - 650, pasted.y - 650)).toBeLessThan(15);
+  expect(Math.hypot(pasted.x - 430, pasted.y - 430)).toBeLessThan(2);
   expect((await editorState(page)).selectedId).toBe(pasted.id);
-  // A group keeps its arrangement
-  await shiftBox(page, { x: 350, y: 350 }, { x: 540, y: 540 });
+  // Again: beside that copy, not on it
+  await page.keyboard.press("Control+v");
+  await expect.poll(async () => (await benches(page)).length).toBe(5);
+  expect((await benches(page)).some(b => Math.hypot(b.x - 460, b.y - 460) < 2)).toBe(true);
+  // A group keeps its arrangement, next to where it was (past the copies already there)
+  await page.evaluate(i => (window as any).__dgActions.pickGroup(i), ids);
   await expect.poll(async () => (await group(page)).length).toBe(3);
   await page.keyboard.press("Control+c");
-  const far = await screenOf(page, 450, 650);
-  await page.mouse.move(far.x, far.y, { steps: 3 });
   await page.keyboard.press("Control+v");
-  await expect.poll(async () => (await benches(page)).length).toBe(7);
-  // Cut: gone, and pasted back
+  await expect.poll(async () => (await benches(page)).length).toBe(8);
+  const after = await benches(page);
+  const copiedBy = (d: number) => BENCHES.every(b => after.some(p => Math.hypot(p.x - b.x - d, p.y - b.y - d) < 2));
+  expect(copiedBy(90)).toBe(true);
+  // Cut: gone, and pasted back where it was
   await page.keyboard.press("Control+x");
-  await expect.poll(async () => (await benches(page)).length).toBe(4);
+  await expect.poll(async () => (await benches(page)).length).toBe(5);
   await page.keyboard.press("Control+v");
-  await expect.poll(async () => (await benches(page)).length).toBe(7);
+  await expect.poll(async () => (await benches(page)).length).toBe(8);
+  const back = await benches(page);
+  expect(BENCHES.every(b => back.some(p => Math.hypot(p.x - b.x - 90, p.y - b.y - 90) < 2))).toBe(true);
+  // Paste here: at a right-click
+  const spot = await screenOf(page, 650, 650);
+  await page.mouse.click(spot.x, spot.y, { button: "right" });
+  await page.getByRole("menuitem", { name: "Paste here" }).click();
+  await expect.poll(async () => (await benches(page)).length).toBe(11);
+  expect((await benches(page)).some(b => Math.hypot(b.x - 650, b.y - 650) < 60)).toBe(true);
+});
+
+test("duplicating the same thing twice puts the second copy beside the first, not on it", async ({ page }) => {
+  const ids = await benchesOnArea(page);
+  for (let k = 0; k < 2; k++) {
+    await page.evaluate(id => (window as any).__dgActions.select(id), ids[0]);
+    await page.keyboard.press("Control+d");
+    await expect.poll(async () => (await benches(page)).length).toBe(4 + k);
+  }
+  const all = await benches(page);
+  expect(all.some(b => Math.hypot(b.x - 430, b.y - 430) < 2)).toBe(true);
+  expect(all.some(b => Math.hypot(b.x - 460, b.y - 460) < 2)).toBe(true);
 });

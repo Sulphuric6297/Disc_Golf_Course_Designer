@@ -281,18 +281,24 @@ const placeParts = (parts: Parts, dx: number, dy: number) => {
   return true;
 };
 
+/** How far down and to the right copies go from what they copy (ft): the first place, `from`
+ * steps of 30 ft on, where no copy already sits (duplicating twice never stacks two copies). */
+const freeOffset = (items: CourseItem[], from = 1, step = 30) => {
+  const key = (i: CourseItem, d: number) => `${i.type}:${Math.round(i.x + d)}:${Math.round(i.y + d)}`;
+  const taken = new Set(getDoc().items.map(i => key(i, 0)));
+  for (let k = from; k < from + 30; k++) if (!items.some(i => taken.has(key(i, step * k)))) return step * k;
+  return step * from;
+};
+
 const duplicateGroup = (group: string[]) => {
-  placeParts(partsFrom(getDoc(), new Set(group)), 30, 30);
+  const parts = partsFrom(getDoc(), new Set(group));
+  const d = freeOffset(parts.items);
+  placeParts(parts, d, d);
 };
 
 // ------------------------------------------------------------------ copy and paste
 
 let clipboard: (Parts & { center: P }) | null = null;
-/** Where the pointer last was on the map (pastes go there). */
-let pastePoint: P | null = null;
-export const setPastePoint = (p: P | null) => {
-  if (p) pastePoint = p;
-};
 
 /** The selection's parts: a hole with its tees and baskets, a thing, or the things picked together. */
 const selectedParts = (): Parts | null => {
@@ -321,12 +327,13 @@ export const cutSelection = () => {
   if (copySelection()) deleteSelection();
 };
 
-/** Ctrl+V: what was copied, where the pointer is (or a little to the side of where it was). */
-export const pasteClipboard = (at: P | null = pastePoint) => {
+/** Ctrl+V: what was copied, next to where it was (where it was, after a cut), or at `at` ("Paste here"). */
+export const pasteClipboard = (at?: P | null) => {
   if (!clipboard) return false;
   const c = clipboard;
-  const to = at ?? { x: c.center.x + 30, y: c.center.y + 30 };
-  return placeParts(c, to.x - c.center.x, to.y - c.center.y);
+  if (at) return placeParts(c, at.x - c.center.x, at.y - c.center.y);
+  const d = freeOffset(c.items, 0);
+  return placeParts(c, d, d);
 };
 
 /** Whether anything was copied. */
@@ -337,8 +344,9 @@ export const duplicateSelection = () => {
   const { selectedId, group } = editor();
   if (group.length) return duplicateGroup(group);
   const doc = getDoc();
-  const off = 30;
   const hole = doc.holes.find(h => h.id === selectedId);
+  const item = hole ? null : doc.items.find(i => i.id === selectedId);
+  const off = hole ? freeOffset([...holeTees(doc, hole.id), ...holeBaskets(doc, hole.id)]) : item ? freeOffset([item]) : 30;
   if (hole) {
     const copy: Hole = { ...hole, id: `hole-${generateId()}`, doglegs: hole.doglegs.map(p => ({ x: p.x + off, y: p.y + off })) };
     // (a basket it shares with other holes is copied as the copy's own)
@@ -351,7 +359,6 @@ export const duplicateSelection = () => {
     select(copy.id);
     return;
   }
-  const item = doc.items.find(i => i.id === selectedId);
   if (!item) return;
   const copy = { ...item, id: generateId(), x: item.x + off, y: item.y + off, locked: false } as CourseItem;
   if (copy.type === "area" || copy.type === "line" || copy.type === "structure") copy.points = copy.points.map(p => ({ x: p.x + off, y: p.y + off }));
@@ -403,7 +410,7 @@ export const layoutTee = (holeId: string) => {
 export const withCentroid = <T extends { points: P[] }>(item: T): T & P => ({ ...item, ...centroid(item.points) });
 
 // For the automated tests and screenshots: build a course quickly without clicking every spot.
-if (typeof window !== "undefined") (window as any).__dgActions = { addHole, addDrawn, placeAt, select };
+if (typeof window !== "undefined") (window as any).__dgActions = { addHole, addDrawn, placeAt, select, pickGroup };
 
 /**
  * An OB line for a hole, ready to fine-tune with its handles: along the left or right of the
