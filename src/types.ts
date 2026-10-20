@@ -242,8 +242,65 @@ export type MapTheme = "forest" | "illustrated" | "satellite" | "topo" | "minima
 export type BasketMark = "basket" | "badge" | "flag" | "target" | "number";
 export type PaperSize = "letter" | "tabloid" | "18x24" | "24x36" | "36x48" | "a4" | "a3";
 
+/** What is on the course map's page besides the map, each one moved, sized, colored or hidden by
+ * hand in the Design step ("map" is the map itself: moved and zoomed on the page). */
+export type PageElementId = "map" | "title" | "holes" | "legend" | "north" | "scale" | "credit";
+export interface PageElementStyle {
+  /** Its top-left corner, as shares of the page's width and height (unset: where it goes by itself;
+   * for the map: how far it is moved, as shares of the page). */
+  x?: number;
+  y?: number;
+  /** Its size, times its own. */
+  scale?: number;
+  hidden?: boolean;
+  /** Its panel's color and how solid it is (0 none, 1 solid), and its text color. */
+  bg?: string;
+  bgOpacity?: number;
+  ink?: string;
+  /** The hole guide's columns (unset: par and each layout's length). */
+  columns?: ("par" | "lengths" | "elevation" | "names")[];
+  /** A heading over it (the hole guide, the legend; unset: none, or LEGEND). */
+  heading?: string;
+}
+/** Text put on the course map's page. */
+export interface PageText {
+  id: string;
+  text: string;
+  /** Top-left corner, as shares of the page. */
+  x: number;
+  y: number;
+  /** Letter size, points (on the page as printed). */
+  size: number;
+  color: string;
+  font?: MapStyle["font"];
+  bold?: boolean;
+  italic?: boolean;
+  align?: "start" | "middle" | "end";
+  /** A panel behind it. */
+  bg?: string;
+  bgOpacity?: number;
+  hidden?: boolean;
+}
+/** A picture put on the course map's page (a logo, a sponsor's sign, a photo). */
+export interface PageImage {
+  id: string;
+  /** The picture (a data URL). */
+  src: string;
+  x: number;
+  y: number;
+  /** Its width as a share of the page's, and its height to width. */
+  w: number;
+  aspect: number;
+  opacity?: number;
+  hidden?: boolean;
+}
+
 export interface MapStyle {
   theme: MapTheme;
+  /** The course map's page: the parts moved, sized, colored or hidden by hand. */
+  page?: Partial<Record<PageElementId, PageElementStyle>>;
+  texts?: PageText[];
+  images?: PageImage[];
   /** Hills: how strongly the ground's relief shows on the map, times the automatic (0: flat). */
   reliefScale?: number;
   /** Where the legend (and hole table) panel sits on the course map: its top-left corner as a

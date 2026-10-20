@@ -269,7 +269,7 @@ export default function App() {
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (s.viewOnly) return; if (e.shiftKey) useCourse.getState().redo(); else useCourse.getState().undo(); return; }
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); if (!s.viewOnly) useCourse.getState().redo(); return; }
-      if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (!s.viewOnly) duplicateSelection(); return; }
+      if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (!s.viewOnly && s.step !== "design") duplicateSelection(); return; }
       if (mod && e.key.toLowerCase() === "c" && !s.teeView && s.step !== "design") { if (copySelection()) e.preventDefault(); return; }
       if (mod && e.key.toLowerCase() === "x" && !s.teeView && s.step !== "design") { e.preventDefault(); if (!s.viewOnly) cutSelection(); return; }
       if (mod && e.key.toLowerCase() === "v" && !s.teeView && s.step !== "design") { e.preventDefault(); if (!s.viewOnly) { s.set({ tool: "select" }); pasteClipboard(); } return; }
@@ -299,6 +299,8 @@ export default function App() {
         if (hole && holeStats(d, hole).complete) s.set({ teeView: hole.id, flyover: false });
         return;
       }
+      // (on the Design page, these keys are the page's: the map's selection isn't seen there)
+      if (s.step === "design" && (e.key === "Backspace" || e.key === "Delete" || e.key.startsWith("Arrow"))) return;
       if (e.key === "Backspace" || e.key === "Delete") {
         if (e.key === "Backspace" && view?.undoPoint()) { e.preventDefault(); return; }
         if (!s.viewOnly && (s.selectedId || s.group.length)) { e.preventDefault(); deleteSelection(); }

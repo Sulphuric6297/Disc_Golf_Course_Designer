@@ -4,7 +4,7 @@
 // north arrow, scale bar). The same renderer draws a single hole for tee signs, turned so the tee
 // is at the bottom.
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
-import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
+import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
 import { activeLayout, fairwayOutline, holeBaskets, linePath, teeAim } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath } from "./geom";
 import { courseTotals, holeStats, isOb, type HoleStats } from "./holeStats";
@@ -23,6 +23,9 @@ export const PAPER: Record<PaperSize, { label: string; w: number; h: number }> =
   a4: { label: "A4", w: 8.27, h: 11.69 },
   a3: { label: "A3", w: 11.69, h: 16.54 }
 };
+
+/** The hole guide's and legend's panel on the course map, unless colored by hand. */
+export const PAGE_PANEL = { bg: "#080e07", opacity: 0.78, ink: "#f4f7ef" };
 
 export const THEMES: Record<MapTheme, { label: string; blurb: string }> = {
   forest: { label: "Forest", blurb: "Lush painted woods with the fairways cut through, like hand-made course maps." },
@@ -188,7 +191,14 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   if (forest && typeof document !== "undefined") {
     // (while the first painting of a live preview is under way: the grass color alone)
     const painted = forestPicture(doc, view, layers);
-    out.push(painted ? `</g><image href="${painted}" x="0" y="0" width="${n(view.width)}" height="${n(view.height)}" preserveAspectRatio="none"/><g transform="${g}">` : `</g><rect width="${n(view.width)}" height="${n(view.height)}" fill="${shade(s.rough, -0.25)}"/><g transform="${g}">`);
+    // (a painting made for another view of the same turn stands in where it falls in this one)
+    let at = { x: 0, y: 0, w: view.width, h: view.height };
+    if (painted && painted.view !== view) {
+      const v0 = painted.view, r = view.scale / v0.scale;
+      const c = Math.cos(-rot), sn = Math.sin(-rot), dx = v0.cx - view.cx, dy = v0.cy - view.cy;
+      at = { x: view.width / 2 + (dx * c - dy * sn) * k - (v0.width / 2) * r, y: view.height / 2 + (dx * sn + dy * c) * k - (v0.height / 2) * r, w: v0.width * r, h: v0.height * r };
+    }
+    out.push(painted ? `</g><image href="${painted.url}" x="${n(at.x)}" y="${n(at.y)}" width="${n(at.w)}" height="${n(at.h)}" preserveAspectRatio="none"/><g transform="${g}">` : `</g><rect width="${n(view.width)}" height="${n(view.height)}" fill="${shade(s.rough, -0.25)}"/><g transform="${g}">`);
   } else if (photo) {
     out.push(`<image href="${doc.background}" x="0" y="0" width="${doc.canvas.width}" height="${doc.canvas.height}" preserveAspectRatio="none" opacity="${n(s.photo)}"/>`);
   } else {
@@ -651,6 +661,8 @@ export const onPainted = (fn: () => void) => {
 let livePaint: { key: string; stop: AbortController } | null = null;
 /** The latest painting for each view of the live preview, standing in while a new one paints. */
 const lastForView = new Map<string, string>();
+/** The latest live painting of all, and the view it was made for (standing in for a new view). */
+let lastLive: { url: string; view: MapView; doc: string; limit: number } | null = null;
 /** Live paintings (blob URLs), kept apart from those made for print. */
 const liveCache = new Map<string, string>();
 /** The last live painting that failed (not tried again). */
@@ -670,8 +682,11 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const hit = (paintLive && liveCache.get(key)) || forestCache.get(key);
   const viewKey = JSON.stringify([paintLimit, view, doc.id]);
   if (hit) {
-    if (paintLive) lastForView.set(viewKey, hit);
-    return hit;
+    if (paintLive) {
+      lastForView.set(viewKey, hit);
+      lastLive = { url: hit, view, doc: doc.id ?? "", limit: paintLimit };
+    }
+    return { url: hit, view };
   }
   // (a print: its resolution, up to about 32 million pixels)
   const density = printDensity !== null ? Math.min(printDensity, Math.sqrt(32e6 / Math.max(1, view.width * view.height))) : Math.min(3, Math.max(paintLimit < 2400 ? 1 : 1.5, paintLimit / Math.max(view.width, view.height)));
@@ -681,7 +696,7 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
     const url = canvas.toDataURL("image/jpeg", 0.9);
     forestCache.set(key, url);
     if (forestCache.size > 6) forestCache.delete(forestCache.keys().next().value!);
-    return url;
+    return { url, view };
   };
   if (printJobs) {
     // (a print's first drawing: painted between frames, and finer JPEG, before it is drawn again)
@@ -717,10 +732,12 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
           const [oldKey, oldUrl] = liveCache.entries().next().value!;
           liveCache.delete(oldKey);
           for (const [v, u] of lastForView) if (u === oldUrl) lastForView.delete(v);
+          if (lastLive?.url === oldUrl) lastLive = null;
           URL.revokeObjectURL(oldUrl);
         }
         lastForView.set(viewKey, url);
         if (lastForView.size > 8) lastForView.delete(lastForView.keys().next().value!);
+        lastLive = { url, view, doc: doc.id ?? "", limit: paintLimit };
         if (livePaint === job) livePaint = null;
         paintedListeners.forEach(fn => fn());
       }, (err: unknown) => {
@@ -733,7 +750,9 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
         paintedListeners.forEach(fn => fn());
       });
   }
-  return lastForView.get(viewKey) ?? null;
+  const same = lastForView.get(viewKey);
+  if (same) return { url: same, view };
+  return lastLive && lastLive.doc === (doc.id ?? "") && lastLive.limit === paintLimit && lastLive.view.rotation === view.rotation ? { url: lastLive.url, view: lastLive.view } : null;
 };
 export const resetForestCache = () => {
   forestCache.clear();
@@ -742,6 +761,7 @@ export const resetForestCache = () => {
   for (const url of liveCache.values()) URL.revokeObjectURL(url);
   liveCache.clear();
   lastForView.clear();
+  lastLive = null;
   objectIds = new WeakMap();
 };
 
@@ -904,11 +924,27 @@ export const renderPoster = (doc: CourseDoc, opts: PosterOptions) => {
   const credit = [s.footer, doc.site.imagerySource && s.theme === "satellite" ? "Imagery © Esri" : "", doc.items.some(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm") ? "Map data © OpenStreetMap contributors" : ""].filter(Boolean).join(" · ");
 
   if (full) {
-    // The map fills the page; the course fits inside a margin
-    const scale = Math.min((W - 2 * m) / bw, (H - 2 * m) / bh);
-    const view: MapView = { cx: center.x, cy: center.y, rotation, scale, width: W, height: H };
+    // Everything on the page is an element of its own: put where it goes by itself, or where it
+    // was moved, sized and colored by hand (the Design step), or left out
+    const pageEls = s.page ?? {};
+    const el = (id: PageElementId): PageElementStyle => pageEls[id] ?? {};
+    type Box = { x: number; y: number; w: number; h: number };
+    const placed = (id: string, o: { x?: number; y?: number; scale?: number; hidden?: boolean }, box: Box, content: string) => {
+      if (o.hidden) return;
+      const k = o.scale ?? 1;
+      // (kept at least partly on the page)
+      const X = o.x !== undefined ? Math.max(10 - box.w * k, Math.min(W - 10, o.x * W)) : box.x;
+      const Y = o.y !== undefined ? Math.max(10 - box.h * k, Math.min(H - 10, o.y * H)) : box.y;
+      // (with a box to pick it by on the Design page, never drawn)
+      parts.push(`<g data-el="${id}" data-box="${n(X)} ${n(Y)} ${n(box.w * k)} ${n(box.h * k)}" transform="translate(${n(X)} ${n(Y)}) scale(${n(k)}) translate(${n(-box.x)} ${n(-box.y)})"><rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.w)}" height="${n(box.h)}" fill="none" pointer-events="all"/>${content}</g>`);
+    };
+    // The map fills the page; the course fits inside a margin (moved and zoomed on the page by hand)
+    const mapEl = el("map");
+    const scale = Math.min((W - 2 * m) / bw, (H - 2 * m) / bh) * (mapEl.scale ?? 1);
+    const shift = rotatePoint({ x: ((mapEl.x ?? 0) * W) / scale, y: ((mapEl.y ?? 0) * H) / scale }, rotation);
+    const view: MapView = { cx: center.x - shift.x, cy: center.y - shift.y, rotation, scale, width: W, height: H };
     const map = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy }, "pm");
-    parts.push(map.svg);
+    parts.push(`<g data-el="map" data-box="0 0 ${n(W)} ${n(H)}">${map.svg}</g>`);
     // The emptiest corner for the title
     const shown = pts.map(map.toScreen);
     const bw2 = W * 0.42, bh2 = H * 0.4;
@@ -916,59 +952,128 @@ export const renderPoster = (doc: CourseDoc, opts: PosterOptions) => {
     const busy = (c: P) => shown.filter(p => p.x >= c.x && p.x <= c.x + bw2 && p.y >= c.y && p.y <= c.y + bh2).length;
     const spot = spots.reduce((a, c) => (busy(c) < busy(a) ? c : a));
     const left = spot.x === 0, top = spot.y === 0;
-    const tx = left ? m : W - m, anchor = left ? "start" : "end";
-    let ty = top ? m + 6 * ts : H - bh2 + m;
-    const shadow = `filter="url(#title-shadow)"`;
-    parts.push(`<defs><filter id="title-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="${n(1.5 * ts)}" stdDeviation="${n(2.5 * ts)}" flood-color="#000" flood-opacity="0.65"/></filter><radialGradient id="title-glow" cx="${left ? 0 : 1}" cy="${top ? 0 : 1}" r="1"><stop offset="0" stop-color="#050b04" stop-opacity="0.55"/><stop offset="1" stop-color="#050b04" stop-opacity="0"/></radialGradient></defs>`);
-    parts.push(`<rect x="${n(spot.x)}" y="${n(spot.y)}" width="${n(bw2)}" height="${n(bh2)}" fill="url(#title-glow)"/>`);
-    // "The" small, the name big, "DISC GOLF COURSE" spaced out
-    let name = title.trim();
-    const the = /^the\s+/i.test(name);
-    if (the) name = name.replace(/^the\s+/i, "");
-    const course = /\s+disc\s+golf(\s+course)?$/i.test(name);
-    if (course) name = name.replace(/\s+disc\s+golf(\s+course)?$/i, "");
-    const big = Math.min(54 * ts, ((W * 0.4) / Math.max(4, name.length)) * (s.font === "Script" ? 2.1 : 1.9));
-    if (the) { parts.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="${font}" font-weight="700" font-style="italic" font-size="${n(13 * ts)}" fill="#fff" ${shadow}>THE</text>`); ty += 10 * ts; }
-    parts.push(`<text x="${n(tx)}" y="${n(ty + big * 0.95)}" text-anchor="${anchor}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(big)}" fill="#fff" ${shadow}>${esc(s.font === "Script" ? name : name.toUpperCase())}</text>`);
-    ty += big * 1.15;
-    parts.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="${n(12 * ts)}" letter-spacing="${n(3.2 * ts)}" fill="#fff" ${shadow}>${course || !/golf/i.test(title) ? "DISC GOLF COURSE" : ""}</text>`);
-    ty += 20 * ts;
-    if (sub) { parts.push(`<text x="${n(tx)}" y="${n(ty + 6 * ts)}" text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-weight="600" font-size="${n(6.5 * ts)}" letter-spacing="${n(1 * ts)}" fill="#e7f0e2" ${shadow}>${esc(sub.toUpperCase())}</text>`); ty += 14 * ts; }
-    // Layout chips: name with a rule in the tee color, then PAR | LENGTH on black
-    const chips = doc.layouts.slice(0, 3).map(l => {
-      const ls = doc.holes.map(h => holeStats(doc, h, l)).filter(x => x.complete);
-      return { l, par: ls.reduce((t, x) => t + x.par, 0), len: ls.reduce((t, x) => t + x.length, 0) };
-    }).filter(c => c.par > 0);
-    const cw = 104 * ts, chH = 20 * ts;
-    chips.forEach((c, i) => {
-      const x0 = left ? tx + i * (cw + 8 * ts) : tx - (chips.length - i) * (cw + 8 * ts) + 8 * ts;
-      const col = TEE_LEVELS[c.l.tee].color;
-      parts.push(`<text x="${n(x0)}" y="${n(ty + 8 * ts)}" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(7 * ts)}" fill="${col}" ${shadow}>${esc(`${c.l.name} layout`.toUpperCase())}</text>`);
-      parts.push(`<rect x="${n(x0 + 52 * ts)}" y="${n(ty + 5.5 * ts)}" width="${n(cw - 52 * ts)}" height="${n(1.4 * ts)}" fill="${col}"/>`);
-      parts.push(`<rect x="${n(x0)}" y="${n(ty + 12 * ts)}" width="${n(cw)}" height="${n(chH)}" fill="#0b0f0a" fill-opacity="0.88"/>`);
-      parts.push(`<text x="${n(x0 + cw / 2)}" y="${n(ty + 12 * ts + chH / 2)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(11 * ts)}" fill="${col === "#f8fafc" ? "#ffffff" : col}">PAR ${c.par} <tspan fill="#ffffff" fill-opacity="0.6">|</tspan> ${esc(fmtDist(c.len, doc.units, false))}${doc.units === "ft" ? "'" : " m"}</text>`);
-    });
-    // North arrow, scale bar, legend and table in the other corners
+    {
+      const te = el("title");
+      const ink = te.ink ?? "#ffffff";
+      const out: string[] = [];
+      const tx = left ? m : W - m, anchor = left ? "start" : "end";
+      const ty0 = top ? m + 6 * ts : H - bh2 + m;
+      let ty = ty0;
+      const shadow = `filter="url(#title-shadow)"`;
+      // "The" small, the name big, "DISC GOLF COURSE" spaced out
+      let name = title.trim();
+      const the = /^the\s+/i.test(name);
+      if (the) name = name.replace(/^the\s+/i, "");
+      const course = /\s+disc\s+golf(\s+course)?$/i.test(name);
+      if (course) name = name.replace(/\s+disc\s+golf(\s+course)?$/i, "");
+      const big = Math.min(54 * ts, ((W * 0.4) / Math.max(4, name.length)) * (s.font === "Script" ? 2.1 : 1.9));
+      let tw = name.length * big * (s.font === "Script" ? 0.48 : 0.6);
+      if (the) { out.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="${font}" font-weight="700" font-style="italic" font-size="${n(13 * ts)}" fill="${ink}" ${shadow}>THE</text>`); ty += 10 * ts; }
+      out.push(`<text x="${n(tx)}" y="${n(ty + big * 0.95)}" text-anchor="${anchor}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(big)}" fill="${ink}" ${shadow}>${esc(s.font === "Script" ? name : name.toUpperCase())}</text>`);
+      ty += big * 1.15;
+      const golf = course || !/golf/i.test(title) ? "DISC GOLF COURSE" : "";
+      out.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="${n(12 * ts)}" letter-spacing="${n(3.2 * ts)}" fill="${ink}" ${shadow}>${golf}</text>`);
+      tw = Math.max(tw, golf.length * (12 * 0.66 + 3.2) * ts);
+      ty += 20 * ts;
+      if (sub) {
+        out.push(`<text x="${n(tx)}" y="${n(ty + 6 * ts)}" text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-weight="600" font-size="${n(6.5 * ts)}" letter-spacing="${n(1 * ts)}" fill="${te.ink ?? "#e7f0e2"}" ${shadow}>${esc(sub.toUpperCase())}</text>`);
+        tw = Math.max(tw, sub.length * (6.5 * 0.66 + 1) * ts);
+        ty += 14 * ts;
+      }
+      // Layout chips: name with a rule in the tee color, then PAR | LENGTH on black
+      const chips = doc.layouts.slice(0, 3).map(l => {
+        const ls = doc.holes.map(h => holeStats(doc, h, l)).filter(x => x.complete);
+        return { l, par: ls.reduce((t, x) => t + x.par, 0), len: ls.reduce((t, x) => t + x.length, 0) };
+      }).filter(c => c.par > 0);
+      const cw = 104 * ts, chH = 20 * ts;
+      chips.forEach((c, i) => {
+        const x0 = left ? tx + i * (cw + 8 * ts) : tx - (chips.length - i) * (cw + 8 * ts) + 8 * ts;
+        const col = TEE_LEVELS[c.l.tee].color;
+        out.push(`<text x="${n(x0)}" y="${n(ty + 8 * ts)}" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(7 * ts)}" fill="${col}" ${shadow}>${esc(`${c.l.name} layout`.toUpperCase())}</text>`);
+        out.push(`<rect x="${n(x0 + 52 * ts)}" y="${n(ty + 5.5 * ts)}" width="${n(cw - 52 * ts)}" height="${n(1.4 * ts)}" fill="${col}"/>`);
+        out.push(`<rect x="${n(x0)}" y="${n(ty + 12 * ts)}" width="${n(cw)}" height="${n(chH)}" fill="#0b0f0a" fill-opacity="0.88"/>`);
+        out.push(`<text x="${n(x0 + cw / 2)}" y="${n(ty + 12 * ts + chH / 2)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(11 * ts)}" fill="${col === "#f8fafc" ? "#ffffff" : col}">PAR ${c.par} <tspan fill="#ffffff" fill-opacity="0.6">|</tspan> ${esc(fmtDist(c.len, doc.units, false))}${doc.units === "ft" ? "'" : " m"}</text>`);
+      });
+      if (chips.length) { tw = Math.max(tw, chips.length * (cw + 8 * ts)); ty += 12 * ts + chH; }
+      const box = { x: left ? tx : tx - tw, y: ty0, w: tw, h: ty - ty0 + 4 * ts };
+      // A soft dark glow behind it (its strength: the panel's solidness)
+      const glow = te.bgOpacity ?? 0.55;
+      parts.push(`<defs><filter id="title-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="${n(1.5 * ts)}" stdDeviation="${n(2.5 * ts)}" flood-color="#000" flood-opacity="0.65"/></filter><radialGradient id="title-glow"><stop offset="0" stop-color="${te.bg ?? "#050b04"}" stop-opacity="${n(glow)}"/><stop offset="1" stop-color="${te.bg ?? "#050b04"}" stop-opacity="0"/></radialGradient></defs>`);
+      if (glow > 0) out.unshift(`<ellipse pointer-events="none" cx="${n(box.x + box.w / 2)}" cy="${n(box.y + box.h / 2)}" rx="${n(box.w * 0.85 + 40 * ts)}" ry="${n(box.h * 0.95 + 30 * ts)}" fill="url(#title-glow)"/>`);
+      if (title || sub) placed("title", te, box, out.join(""));
+    }
+    // North arrow, scale bar, hole guide and legend in the other corners
     const other = spots.filter(c => c !== spot).sort((a, b) => busy(a) - busy(b));
     if (s.north) {
       const c = other[0];
-      parts.push(`<g transform="translate(${n(c.x === 0 ? m + 16 * ts : W - m - 16 * ts)} ${n(c.y === 0 ? m + 20 * ts : H - m - 30 * ts)}) rotate(${n(-rotation)})">${northArrow(0, 0, 15 * ts, pal)}</g>`);
+      const nx = c.x === 0 ? m + 16 * ts : W - m - 16 * ts, ny = c.y === 0 ? m + 20 * ts : H - m - 30 * ts;
+      placed("north", el("north"), { x: nx - 18 * ts, y: ny - 24 * ts, w: 36 * ts, h: 46 * ts }, `<g transform="translate(${n(nx)} ${n(ny)}) rotate(${n(-rotation)})">${northArrow(0, 0, 15 * ts, pal)}</g>`);
     }
-    if (s.scale) parts.push(scaleBar(left && !top ? W - m - 150 * ts : m, H - m * 0.9, scale, ts, { ...pal, panel: "rgba(8,14,7,.7)", ink: "#ffffff" }, doc.units));
-    if (s.legend || s.holeTable) {
-      const c = other[1] ?? other[0];
-      const w = 200 * ts, h = Math.min(H * 0.55, (s.holeTable ? 40 + stats.length * 12 : 0) * ts + (s.legend ? 170 : 0) * ts);
-      // Wherever it was put (kept on the page), or a free corner
-      const at = s.legendAt;
-      const x = at ? Math.max(0, Math.min(W - w, at.x * W)) : c.x === 0 ? m : W - m - w;
-      const y = at ? Math.max(0, Math.min(H - h, at.y * H)) : c.y === 0 ? m : H - m - h - 14 * ts;
-      const panel = [`<rect x="${n(x)}" y="${n(y)}" width="${n(w)}" height="${n(h)}" rx="${n(6 * ts)}" fill="${pal.panel}"/>`];
-      let yy = y + 14 * ts;
-      if (s.holeTable) { const t = holeTable(doc, stats, x + 10 * ts, yy, w - 20 * ts, ts * 0.9, pal, font, "vertical", h * (s.legend ? 0.6 : 0.95)); panel.push(t.svg); yy = t.bottom + 8 * ts; }
-      if (s.legend) panel.push(legend(doc, x + 10 * ts, yy, w - 20 * ts, ts * 0.9, pal, font));
-      parts.push(`<g data-panel="legend" data-x="${n(x / W)}" data-y="${n(y / H)}">${panel.join("")}</g>`);
+    if (s.scale) {
+      const sx = left && !top ? W - m - 150 * ts : m, sy = H - m * 0.9;
+      const sw = scaleBarWidth(scale, ts, doc.units);
+      placed("scale", el("scale"), { x: sx - 4 * ts, y: sy - 18 * ts, w: sw + 30 * ts, h: 18 * ts }, scaleBar(sx, sy, scale, ts, { ...pal, panel: "rgba(8,14,7,.7)", ink: "#ffffff" }, doc.units));
     }
-    parts.push(`<text x="${n(W - m * 0.6)}" y="${n(H - m * 0.35)}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="${n(6 * ts)}" fill="#ffffff" fill-opacity="0.75">${esc(credit)}</text>`);
+    const c = other[1] ?? other[0];
+    const pw = 190 * ts;
+    const px = c.x === 0 ? m : W - m - pw;
+    /** A panel's colors: its own where set. */
+    const panelOf = (e: PageElementStyle) => ({ fill: e.bg ?? PAGE_PANEL.bg, opacity: e.bgOpacity ?? PAGE_PANEL.opacity, pal: { ...pal, panelInk: e.ink ?? PAGE_PANEL.ink } });
+    // The hole guide
+    let holesBox: Box | null = null, holesSvg = "";
+    if (s.holeTable) {
+      const he = el("holes"), pc = panelOf(he);
+      const head = he.heading?.trim();
+      const y0 = 0;
+      const t = holeTable(doc, stats, px + 10 * ts, y0 + (head ? 30 : 14) * ts, pw - 20 * ts, ts * 0.9, pc.pal, font, "vertical", H * 0.6, he.columns);
+      const h = t.bottom - y0 + 6 * ts;
+      holesBox = { x: px, y: y0, w: pw, h };
+      holesSvg = `<rect x="${n(px)}" y="${n(y0)}" width="${n(pw)}" height="${n(h)}" rx="${n(6 * ts)}" fill="${pc.fill}" fill-opacity="${n(pc.opacity)}"/>${head ? `<text x="${n(px + 10 * ts)}" y="${n(y0 + 14 * ts)}" font-family="${font}" font-weight="700" font-size="${n(10 * ts)}" fill="${pc.pal.panelInk}">${esc(head.toUpperCase())}</text>` : ""}${t.svg}`;
+    }
+    // The legend
+    let legendBox: Box | null = null, legendSvg = "";
+    if (s.legend) {
+      const le = el("legend"), pc = panelOf(le);
+      const lg = legend(doc, px + 10 * ts, 14 * ts, pw - 20 * ts, ts * 0.9, pc.pal, font, le.heading);
+      const h = lg.bottom + 6 * ts;
+      legendBox = { x: px, y: 0, w: pw, h };
+      legendSvg = `<rect x="${n(px)}" y="0" width="${n(pw)}" height="${n(h)}" rx="${n(6 * ts)}" fill="${pc.fill}" fill-opacity="${n(pc.opacity)}"/>${lg.svg}`;
+    }
+    // Stacked in their corner (top down, or bottom up), the legend after the guide
+    const gap = 8 * ts;
+    const stack = [holesBox && { id: "holes", box: holesBox, svg: holesSvg }, legendBox && { id: "legend", box: legendBox, svg: legendSvg }].filter(Boolean) as { id: "holes" | "legend"; box: Box; svg: string }[];
+    let yy = c.y === 0 ? m : H - m - 14 * ts - stack.reduce((t, e) => t + e.box.h, 0) - gap * Math.max(0, stack.length - 1);
+    for (const e of stack) {
+      const natural = { ...e.box, y: yy };
+      const o = el(e.id);
+      // (an older course's legend position)
+      const legacy = e.id === "legend" || (e.id === "holes" && !s.legend) ? s.legendAt : undefined;
+      placed(e.id, o.x === undefined && legacy ? { ...o, x: legacy.x, y: legacy.y } : o, natural, `<g transform="translate(0 ${n(yy)})">${e.svg}</g>`);
+      yy += e.box.h + gap;
+    }
+    // The credit line
+    if (credit) {
+      const ce = el("credit");
+      const cx = W - m * 0.6, cy = H - m * 0.35, cwid = credit.length * 6 * ts * 0.55;
+      placed("credit", ce, { x: cx - cwid, y: cy - 7 * ts, w: cwid, h: 9 * ts }, `<text x="${n(cx)}" y="${n(cy)}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="${n(6 * ts)}" fill="${ce.ink ?? "#ffffff"}" fill-opacity="0.75">${esc(credit)}</text>`);
+    }
+    // Pictures and text put on the page
+    for (const im of s.images ?? []) {
+      if (im.hidden) continue;
+      const w = im.w * W, h = w * im.aspect, X = im.x * W, Y = im.y * H;
+      parts.push(`<g data-el="image:${im.id}" data-box="${n(X)} ${n(Y)} ${n(w)} ${n(h)}"><image href="${im.src}" x="${n(X)}" y="${n(Y)}" width="${n(w)}" height="${n(h)}" preserveAspectRatio="xMidYMid meet" opacity="${n(im.opacity ?? 1)}"/></g>`);
+    }
+    for (const t of s.texts ?? []) {
+      if (t.hidden || !t.text.trim()) continue;
+      const lines = t.text.split("\n");
+      const tw = Math.max(...lines.map(l => l.length)) * t.size * (t.bold ? 0.6 : 0.55), th = lines.length * t.size * 1.25;
+      const X = t.x * W, Y = t.y * H;
+      const ax = t.align === "middle" ? X + tw / 2 : t.align === "end" ? X + tw : X;
+      const pad = t.size * 0.4;
+      const bgRect = t.bg && (t.bgOpacity ?? 1) > 0 ? `<rect x="${n(X - pad)}" y="${n(Y - pad)}" width="${n(tw + pad * 2)}" height="${n(th + pad * 2)}" rx="${n(pad)}" fill="${t.bg}" fill-opacity="${n(t.bgOpacity ?? 1)}"/>` : "";
+      const body = lines.map((l, i) => `<text x="${n(ax)}" y="${n(Y + t.size * (0.95 + i * 1.25))}" text-anchor="${t.align ?? "start"}" font-family="${titleStack(t.font ?? s.font)}" font-weight="${t.bold ? 700 : 400}"${t.italic ? ` font-style="italic"` : ""} font-size="${n(t.size)}" fill="${t.color}">${esc(l)}</text>`).join("");
+      parts.push(`<g data-el="text:${t.id}" data-box="${n(X)} ${n(Y)} ${n(tw)} ${n(th)}"><rect x="${n(X)}" y="${n(Y)}" width="${n(tw)}" height="${n(th)}" fill="none" pointer-events="all"/>${bgRect}${body}</g>`);
+    }
     return { svg: wrapSvg(W, H, parts.join(""), opts.dpi), width: W, height: H, page };
   }
 
@@ -1005,7 +1110,7 @@ export const renderPoster = (doc: CourseDoc, opts: PosterOptions) => {
     if (s.legend) {
       const lx = !sideW && s.holeTable ? box.x + tableW + 4 * ts : box.x + 10 * ts;
       const ly = !sideW && s.holeTable ? box.y + 14 * ts : y;
-      parts.push(legend(doc, lx, ly, (sideW ? box.w : box.w - tableW) - 20 * ts, ts, pal, font));
+      parts.push(legend(doc, lx, ly, (sideW ? box.w : box.w - tableW) - 20 * ts, ts, pal, font).svg);
     }
   }
   parts.push(`<text x="${n(m)}" y="${n(H - m * 0.55)}" font-family="Inter, Arial, sans-serif" font-size="${n(7 * ts)}" fill="${pal.inkSoft}">${esc(credit)}</text>`);
@@ -1018,50 +1123,73 @@ export const wrapSvg = (W: number, H: number, body: string, dpi?: number, fontCs
 export const northArrow = (x: number, y: number, r: number, pal: Palette) =>
   `<g transform="translate(${n(x)} ${n(y)})"><circle r="${n(r)}" fill="${pal.panel}" fill-opacity="0.9" stroke="${pal.ink}" stroke-opacity="0.4"/><path d="M0 ${n(-r * 0.8)}L${n(r * 0.42)} ${n(r * 0.45)}L0 ${n(r * 0.18)}Z" fill="${pal.ink}"/><path d="M0 ${n(-r * 0.8)}L${n(-r * 0.42)} ${n(r * 0.45)}L0 ${n(r * 0.18)}Z" fill="${pal.ink}" fill-opacity="0.45"/><text y="${n(r * 0.78)}" text-anchor="middle" dominant-baseline="hanging" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="${n(r * 0.55)}" fill="${pal.ink}" transform="translate(0 ${n(-r * 1.95)})">N</text></g>`;
 
-/** A scale bar with round lengths in feet (and meters under it). */
-export const scaleBar = (x: number, y: number, pxPerFt: number, ts: number, pal: Palette, units: "ft" | "m") => {
+/** A scale bar's round length (in its units) and its width on the page. */
+const scaleBarSize = (pxPerFt: number, ts: number, units: "ft" | "m") => {
   const target = 110 * ts;
   const unitFt = units === "m" ? FT_PER_M : 1;
   const raw = target / pxPerFt / unitFt;
   const pow = Math.pow(10, Math.floor(Math.log10(raw)));
   const len = [1, 2, 5, 10].map(mm => mm * pow).reduce((a, c) => (Math.abs(c - raw) < Math.abs(a - raw) ? c : a));
-  const w = len * unitFt * pxPerFt;
+  return { len, w: len * unitFt * pxPerFt };
+};
+const scaleBarWidth = (pxPerFt: number, ts: number, units: "ft" | "m") => scaleBarSize(pxPerFt, ts, units).w;
+
+/** A scale bar with round lengths in feet (and meters under it). */
+export const scaleBar = (x: number, y: number, pxPerFt: number, ts: number, pal: Palette, units: "ft" | "m") => {
+  const { len, w } = scaleBarSize(pxPerFt, ts, units);
   const h = 4 * ts;
   const seg = (i: number) => `<rect x="${n(x + (w / 4) * i)}" y="${n(y - h)}" width="${n(w / 4)}" height="${n(h)}" fill="${i % 2 ? pal.panel : pal.ink}"/>`;
   return `<g><rect x="${n(x - 4 * ts)}" y="${n(y - h - 14 * ts)}" width="${n(w + 30 * ts)}" height="${n(h + 18 * ts)}" rx="${n(3 * ts)}" fill="${pal.panel}" fill-opacity="0.85"/>${[0, 1, 2, 3].map(seg).join("")}<rect x="${n(x)}" y="${n(y - h)}" width="${n(w)}" height="${n(h)}" fill="none" stroke="${pal.ink}" stroke-width="${n(0.6 * ts)}"/><text x="${n(x)}" y="${n(y - h - 4 * ts)}" font-family="Inter, Arial, sans-serif" font-size="${n(7.5 * ts)}" font-weight="600" fill="${pal.ink}">0</text><text x="${n(x + w)}" y="${n(y - h - 4 * ts)}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="${n(7.5 * ts)}" font-weight="600" fill="${pal.ink}">${len.toLocaleString()} ${units}</text></g>`;
 };
 
-/** The hole table: one row (or column, on a wide page) per hole with par and each layout's length. */
-const holeTable = (doc: CourseDoc, stats: HoleStats[], x: number, y: number, w: number, ts: number, pal: Palette, font: string, mode: "vertical" | "horizontal", maxH: number) => {
+/** The hole table: one row (or column, on a wide page) per hole with par and each layout's length
+ * (or the columns asked for: names, par, lengths, elevation). */
+const holeTable = (doc: CourseDoc, stats: HoleStats[], x: number, y: number, w: number, ts: number, pal: Palette, font: string, mode: "vertical" | "horizontal", maxH: number, columns?: PageElementStyle["columns"]) => {
   const layouts = doc.layouts;
   const lengths = layouts.map(l => doc.holes.map(h => holeStats(doc, h, l)));
   const rows: string[] = [];
   const fs = 8.5 * ts;
   if (mode === "vertical") {
-    const colW = (w - 26 * ts) / (1 + layouts.length);
+    const show = columns ?? ["par", "lengths"];
     const rowH = Math.min(14 * ts, (maxH - 30 * ts) / Math.max(1, stats.length + 1));
     const f = Math.min(fs, rowH * 0.7);
-    rows.push(`<text x="${n(x)}" y="${n(y)}" font-family="${font}" font-weight="700" font-size="${n(f * 1.15)}" fill="${pal.panelInk}">HOLE</text><text x="${n(x + 26 * ts + colW * 0.5)}" y="${n(y)}" text-anchor="middle" font-family="${font}" font-weight="700" font-size="${n(f * 1.15)}" fill="${pal.panelInk}">PAR</text>`);
-    layouts.forEach((l, i) => {
-      const cx = x + 26 * ts + colW * (1.5 + i);
-      const label = l.name.toUpperCase().slice(0, 8);
-      const half = label.length * f * 0.3;
-      rows.push(`<circle cx="${n(cx - half - f * 0.7)}" cy="${n(y - f * 0.35)}" r="${n(f * 0.38)}" fill="${TEE_LEVELS[l.tee].color}" stroke="#333" stroke-width="0.5"/><text x="${n(cx + f * 0.3)}" y="${n(y)}" text-anchor="middle" font-family="${font}" font-weight="700" font-size="${n(f * 1.05)}" fill="${pal.panelInk}">${esc(label)}</text>`);
+    const done = stats.filter(st => st.complete);
+    type Col = { head: string; dot?: string; weight: number; left?: boolean; cell: (r: number) => string; total: string };
+    const cols: Col[] = [];
+    if (show.includes("names")) cols.push({ head: "NAME", weight: 2.4, left: true, cell: r => doc.holes.find(h => h.id === stats[r].holeId)?.name ?? "", total: "" });
+    if (show.includes("par")) cols.push({ head: "PAR", weight: 1, cell: r => (stats[r].complete ? String(stats[r].par) : "–"), total: String(done.reduce((t, st) => t + st.par, 0)) });
+    if (show.includes("lengths")) layouts.forEach((l, i) => cols.push({
+      head: l.name.toUpperCase().slice(0, 8), dot: TEE_LEVELS[l.tee].color, weight: 1,
+      cell: r => (lengths[i][r].complete ? fmtDist(lengths[i][r].length, doc.units, false) : "–"),
+      total: fmtDist(lengths[i].filter(st => st.complete).reduce((t, st) => t + st.length, 0), doc.units, false)
+    }));
+    if (show.includes("elevation")) {
+      const elev = (ft: number) => { const v = Math.round(doc.units === "m" ? ft / FT_PER_M : ft); return v === 0 ? "0" : `${v > 0 ? "+" : "−"}${Math.abs(v)}`; };
+      cols.push({ head: "ELEV", weight: 1, cell: r => (stats[r].complete ? elev(stats[r].elevationChange) : "–"), total: "" });
+    }
+    const unit = (w - 26 * ts) / Math.max(1, cols.reduce((t, c) => t + c.weight, 0));
+    let cx0 = x + 26 * ts;
+    const placedCols = cols.map(c => { const at = { ...c, x0: cx0, cw: c.weight * unit }; cx0 += c.weight * unit; return at; });
+    const cellX = (c: (typeof placedCols)[number]) => (c.left ? c.x0 : c.x0 + c.cw / 2);
+    const clip = (t: string, c: (typeof placedCols)[number]) => { const most = Math.max(2, Math.floor(c.cw / (f * 0.52))); return t.length > most ? `${t.slice(0, most - 1)}…` : t; };
+    rows.push(`<text x="${n(x)}" y="${n(y)}" font-family="${font}" font-weight="700" font-size="${n(f * 1.15)}" fill="${pal.panelInk}">HOLE</text>`);
+    placedCols.forEach(c => {
+      if (c.dot) {
+        const half = c.head.length * f * 0.3;
+        const mid = c.x0 + c.cw / 2;
+        rows.push(`<circle cx="${n(mid - half - f * 0.7)}" cy="${n(y - f * 0.35)}" r="${n(f * 0.38)}" fill="${c.dot}" stroke="#333" stroke-width="0.5"/><text x="${n(mid + f * 0.3)}" y="${n(y)}" text-anchor="middle" font-family="${font}" font-weight="700" font-size="${n(f * 1.05)}" fill="${pal.panelInk}">${esc(c.head)}</text>`);
+      } else rows.push(`<text x="${n(cellX(c))}" y="${n(y)}" text-anchor="${c.left ? "start" : "middle"}" font-family="${font}" font-weight="700" font-size="${n(f * 1.15)}" fill="${pal.panelInk}">${c.head}</text>`);
     });
     stats.forEach((st, r) => {
       const yy = y + (r + 1) * rowH + 4 * ts;
       if (r % 2 === 0) rows.push(`<rect x="${n(x - 4 * ts)}" y="${n(yy - rowH * 0.72)}" width="${n(w + 8 * ts)}" height="${n(rowH)}" fill="${pal.panelInk}" fill-opacity="0.05"/>`);
       rows.push(`<text x="${n(x + 6 * ts)}" y="${n(yy)}" text-anchor="middle" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">${st.number}</text>`);
-      rows.push(`<text x="${n(x + 26 * ts + colW * 0.5)}" y="${n(yy)}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="${n(f)}" fill="${pal.panelInk}">${st.complete ? st.par : "–"}</text>`);
-      layouts.forEach((_, i) => {
-        const ls = lengths[i][r];
-        rows.push(`<text x="${n(x + 26 * ts + colW * (1.5 + i))}" y="${n(yy)}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="${n(f)}" fill="${pal.panelInk}">${ls.complete ? fmtDist(ls.length, doc.units, false) : "–"}</text>`);
-      });
+      placedCols.forEach(c => rows.push(`<text x="${n(cellX(c))}" y="${n(yy)}" text-anchor="${c.left ? "start" : "middle"}" font-family="Inter, Arial, sans-serif" font-size="${n(f)}" fill="${pal.panelInk}">${esc(clip(c.cell(r), c))}</text>`));
     });
     const yy = y + (stats.length + 1) * rowH + 8 * ts;
     rows.push(`<line x1="${n(x - 4 * ts)}" x2="${n(x + w + 4 * ts)}" y1="${n(yy - rowH * 0.8)}" y2="${n(yy - rowH * 0.8)}" stroke="${pal.panelInk}" stroke-opacity="0.4"/>`);
-    rows.push(`<text x="${n(x)}" y="${n(yy)}" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">TOTAL</text><text x="${n(x + 26 * ts + colW * 0.5)}" y="${n(yy)}" text-anchor="middle" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">${stats.filter(s => s.complete).reduce((t, s) => t + s.par, 0)}</text>`);
-    layouts.forEach((_, i) => rows.push(`<text x="${n(x + 26 * ts + colW * (1.5 + i))}" y="${n(yy)}" text-anchor="middle" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">${fmtDist(lengths[i].filter(s => s.complete).reduce((t, s) => t + s.length, 0), doc.units, false)}</text>`));
+    rows.push(`<text x="${n(x)}" y="${n(yy)}" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">TOTAL</text>`);
+    placedCols.forEach(c => { if (c.total) rows.push(`<text x="${n(cellX(c))}" y="${n(yy)}" text-anchor="${c.left ? "start" : "middle"}" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">${c.total}</text>`); });
     return { svg: rows.join(""), bottom: yy + 4 * ts };
   }
   // Horizontal: holes across, rows for par and each layout (two blocks of up to 9 or 12 holes)
@@ -1094,7 +1222,7 @@ const holeTable = (doc: CourseDoc, stats: HoleStats[], x: number, y: number, w: 
 };
 
 /** The legend: only what the map shows. */
-const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal: Palette, font: string) => {
+const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal: Palette, font: string, heading = "LEGEND") => {
   const s = doc.style;
   const entries: { sym: string; text: string }[] = [];
   const sw = 18 * ts, sh = 9 * ts;
@@ -1144,10 +1272,12 @@ const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal
   const cols = w > 260 * ts ? 2 : 1;
   const colW = w / cols;
   const rowH = 13 * ts;
-  const outParts = [`<text x="${n(x)}" y="${n(y)}" font-family="${font}" font-weight="700" font-size="${n(10 * ts)}" fill="${pal.panelInk}">LEGEND</text>`];
+  const head = heading.trim();
+  const outParts = head ? [`<text x="${n(x)}" y="${n(y)}" font-family="${font}" font-weight="700" font-size="${n(10 * ts)}" fill="${pal.panelInk}">${esc(head.toUpperCase())}</text>`] : [];
+  const top = head ? y + 8 * ts : y - 6 * ts;
   entries.forEach((e, i) => {
-    const cx = x + (i % cols) * colW, cy = y + 8 * ts + Math.floor(i / cols) * rowH;
+    const cx = x + (i % cols) * colW, cy = top + Math.floor(i / cols) * rowH;
     outParts.push(`<g transform="translate(${n(cx)} ${n(cy)})">${e.sym}<text x="${n(sw + 6 * ts)}" y="${n(sh / 2)}" dominant-baseline="central" font-family="Inter, Arial, sans-serif" font-size="${n(8 * ts)}" fill="${pal.panelInk}">${esc(e.text)}</text></g>`);
   });
-  return outParts.join("");
+  return { svg: outParts.join(""), bottom: top + Math.ceil(entries.length / cols) * rowH };
 };

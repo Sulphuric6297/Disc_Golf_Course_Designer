@@ -1,5 +1,5 @@
 import { test as plain, expect as plainExpect } from "@playwright/test";
-import { test, expect, addHole, blankCourse, course, importSite } from "./fixtures";
+import { test, expect, addHole, blankCourse, course, editorState, importSite } from "./fixtures";
 import { autoWalks, createAmenity, createArea, createBasket, createDropZone, createEmptyCourse, createLine, createMando, createTee, createTree, curves, linePath, newHole, normalizeCourse } from "../../src/lib/course";
 import { contourInterval, meander, paintedFrom, paintedLine } from "../../src/lib/forest";
 import { contoursOf, reliefExaggeration } from "../../src/lib/relief";
@@ -31,9 +31,9 @@ test("the Design step shows the printed map; its styles are the painted map in e
   // Title and toggles go straight onto the map
   await page.getByLabel("Map title").fill("Ridge Run");
   await expect(pageSvg).toContainText("Ridge Run");
-  await page.getByText("Legend", { exact: true }).click();
+  await page.getByRole("button", { name: "Show Legend" }).click();
   await expect(pageSvg).toContainText("LEGEND");
-  await page.getByText("Hole table").click();
+  await page.getByRole("button", { name: "Show Hole guide" }).click();
   await expect(pageSvg).toContainText("TOTAL");
   // Tee sign and scorecard previews
   await page.getByRole("tab", { name: "Tee sign" }).click();
@@ -684,36 +684,84 @@ test("trees placed on a fairway are painted where and as they were placed, and t
   expect(share).toBeGreaterThan(crown * 0.3);
 });
 
-test("the legend can be dragged anywhere on the course map, and back to a corner", async ({ page }) => {
+test("the course map's page edited like Canva: pick, drag, size, style, hide; text added, typed, moved, deleted", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
+  await page.getByTestId("hole-row").click();
   await page.getByRole("button", { name: "5 Design" }).click();
-  await page.getByText("Legend", { exact: true }).click();
-  const panel = page.getByTestId("design-page").locator('[data-panel="legend"]');
-  await expect(panel).toHaveCount(1);
-  const box = (await panel.boundingBox())!;
-  const pageBox = (await page.getByTestId("design-page").boundingBox())!;
-  // From its corner to the middle of the page
-  const from = { x: box.x + box.width / 2, y: box.y + 20 };
+  const svg = page.getByTestId("design-page");
+  const style = async () => (await course(page)).style;
+  // (Delete on the page with nothing picked never deletes the hole picked on the map)
+  await page.keyboard.press("Delete");
+  expect((await course(page)).holes).toHaveLength(1);
+  await page.getByRole("button", { name: "Show Legend" }).click();
+  const legend = svg.locator('[data-el="legend"]');
+  await expect(legend).toHaveCount(1);
+  const box = (await legend.boundingBox())!;
+  const pageBox = (await svg.boundingBox())!;
+  // Picked by a click: its settings in the panel
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect.poll(async () => (await editorState(page)).designSel).toBe("legend");
+  await expect(page.getByTestId("page-selection")).toBeVisible();
+  await expect(page.getByTestId("page-selected")).toContainText("Legend");
+  // Dragged to the middle of the page
   const to = { x: pageBox.x + pageBox.width / 2, y: pageBox.y + pageBox.height / 2 };
-  await page.mouse.move(from.x, from.y);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(to.x, to.y, { steps: 10 });
   await page.mouse.up();
-  await expect.poll(async () => (await course(page)).style.legendAt).toBeTruthy();
-  const at = (await course(page)).style.legendAt;
-  expect(at.x).toBeGreaterThan(0.2);
-  expect(at.x).toBeLessThan(0.6);
-  // Drawn there now (after the page is drawn again)
-  await expect.poll(async () => Number(await panel.getAttribute("data-x"))).toBeCloseTo(at.x, 2);
-  const moved = (await panel.boundingBox())!;
-  expect(Math.abs(moved.x + moved.width / 2 - to.x)).toBeLessThan(pageBox.width * 0.1);
-  // One undo step takes it back; and the button puts it in a corner again
+  await expect.poll(async () => (await style()).page?.legend?.x ?? 0).toBeGreaterThan(0.2);
+  expect((await style()).page.legend.x).toBeLessThan(0.7);
+  await expect.poll(async () => { const b = (await legend.boundingBox())!; return Math.abs(b.x + b.width / 2 - to.x); }).toBeLessThan(pageBox.width * 0.1);
+  // One undo step; then back in place
   await page.keyboard.press("Control+z");
-  await expect.poll(async () => (await course(page)).style.legendAt).toBeUndefined();
+  await expect.poll(async () => (await style()).page?.legend?.x).toBeUndefined();
   await page.keyboard.press("Control+y");
-  await expect.poll(async () => (await course(page)).style.legendAt).toBeTruthy();
-  await page.getByTestId("legend-corner").click();
-  await expect.poll(async () => (await course(page)).style.legendAt).toBeUndefined();
+  await expect.poll(async () => (await style()).page?.legend?.x).toBeTruthy();
+  await page.getByTestId("page-reset").click();
+  await expect.poll(async () => (await style()).page?.legend?.x).toBeUndefined();
+  // Sized with a corner square
+  const corner = page.getByTestId("page-corner").nth(3);
+  const c = (await corner.boundingBox())!;
+  await page.mouse.move(c.x + c.width / 2, c.y + c.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(c.x + 80, c.y + 80, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => (await style()).page?.legend?.scale ?? 1).toBeGreaterThan(1.1);
+  // Its heading and panel; then Delete hides it
+  await page.getByLabel("Legend heading").fill("Key");
+  await expect(svg).toContainText("KEY");
+  await page.keyboard.press("Escape");
+  await page.locator('[data-el="legend"]').click();
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await style()).legend).toBe(false);
+  // The hole guide's columns
+  await page.getByRole("button", { name: "Show Hole guide" }).click();
+  await page.getByTestId("page-element").filter({ hasText: "Hole guide" }).click();
+  await page.getByTestId("hole-guide-columns").getByText("Elevation").click();
+  await expect(svg).toContainText("ELEV");
+  // The title hidden from its panel
+  await page.getByTestId("page-element").filter({ hasText: "Title" }).click();
+  await page.getByTestId("page-hide").click();
+  await expect.poll(async () => (await style()).page?.title?.hidden).toBe(true);
+  await expect(svg.locator('[data-el="title"]')).toHaveCount(0);
+  // Text: added, typed, dragged, deleted
+  await page.getByTestId("page-add-text").click();
+  await expect.poll(async () => (await style()).texts?.length ?? 0).toBe(1);
+  await page.getByTestId("page-text").fill("Sponsored by Acme");
+  await page.getByTestId("page-text").blur();
+  await expect(svg).toContainText("Sponsored by Acme");
+  const t0 = (await style()).texts[0];
+  const tb = (await svg.locator(`[data-el="text:${t0.id}"]`).boundingBox())!;
+  await page.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(tb.x + tb.width / 2 - 100, tb.y + tb.height / 2 + 60, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => (await style()).texts[0].x).toBeLessThan(t0.x - 0.02);
+  await page.keyboard.press("Control+d");
+  await expect.poll(async () => (await style()).texts.length).toBe(2);
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await style()).texts.length).toBe(1);
+  expect((await course(page)).holes).toHaveLength(1);
 });

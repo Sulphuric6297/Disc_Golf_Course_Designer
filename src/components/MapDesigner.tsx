@@ -1,14 +1,14 @@
 // The Design step's preview: the printed course map (or a tee sign, a hole page, or the
 // scorecard) exactly as it will print, updating as the style changes.
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Minus, Plus, Scan } from "lucide-react";
+import { EyeOff, Minus, Plus, Scan, Trash2 } from "lucide-react";
 import { onPainted, renderPoster, withLivePaint } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
 import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
 import { useCourse, useEditor } from "../state/course";
 import { holeNumber } from "../lib/course";
 import { useCanopy, useRelief } from "./useRelief";
-import { setStyle } from "./DesignPanel";
+import { duplicateDesignSel, elementLabel, moveDesignEl, removeDesignSel, sizeDesignEl } from "./PageEditor";
 
 /** A phone or small tablet (touch first, small screen). */
 const PHONE = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches && typeof screen !== "undefined" && Math.min(screen.width, screen.height) < 900;
@@ -107,32 +107,112 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
     return renderPoster(doc, relief);
   }), [doc, relief, preview, holeId, signSize, pageSize, painted]);
 
-  // The legend's panel dragged anywhere on the course map (moved on screen while dragging, then
-  // kept, as a share of the page, in one undo step)
-  const legendDrag = useRef<{ el: SVGGElement; x0: number; y0: number; cx: number; cy: number; id: number; k: number; w: number; h: number } | null>(null);
+  // Everything on the course map's page picked, moved and sized like in Canva: a click picks
+  // (the map itself on a second press, so it isn't moved by mistake; a finger picks first, then
+  // drags), a drag moves, the corner squares size; one undo step each. Shown moving on the page
+  // while dragged, then kept as shares of the page.
   const viewOnly = useEditor(e => e.viewOnly);
+  const designSel = useEditor(e => e.designSel);
+  const setEd = useEditor(e => e.set);
+  const editing = preview === "map" && !viewOnly;
+  const svgHost = useRef<HTMLDivElement>(null);
+  type Box = { x: number; y: number; w: number; h: number };
+  const [selBox, setSelBox] = useState<Box | null>(null);
+  const drag = useRef<{ mode: "move" | "size"; id: string; el: SVGGElement; orig: string; cx: number; cy: number; pid: number; k: number; W: number; H: number; box: Box; anchor: { x: number; y: number }; corner: { x: number; y: number }; f: number; dx: number; dy: number } | null>(null);
+  const elOf = (id: string) => svgHost.current?.querySelector(`[data-el="${CSS.escape(id)}"]`) as SVGGElement | null;
+  const boxOf = (el: Element): Box => {
+    const [x, y, w, h] = (el.getAttribute("data-box") ?? "0 0 0 0").split(" ").map(Number);
+    return { x, y, w, h };
+  };
+  useLayoutEffect(() => {
+    const el = editing && designSel ? elOf(designSel) : null;
+    setSelBox(el ? boxOf(el) : null);
+  }, [page, designSel, editing]);
+  // (leaving the course map, or the Design step, lets go of what was picked)
+  useEffect(() => { if (!editing) setEd({ designSel: null }); }, [editing, setEd]);
+  useEffect(() => () => setEd({ designSel: null }), [setEd]);
   const onPageDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (viewOnly || preview !== "map" || !page) return;
-    const el = (e.target as Element).closest?.('[data-panel="legend"]') as SVGGElement | null;
+    if (!editing || !page || e.button !== 0) return;
+    // (a field in the panel lets go, so keys like Delete go to what's picked on the page)
+    const active = document.activeElement as HTMLElement | null;
+    if (active?.matches?.("input,textarea,select")) active.blur();
+    const corner = (e.target as HTMLElement).closest?.("[data-corner]") as HTMLElement | null;
+    if ((e.target as HTMLElement).closest?.("[data-page-bar]")) return;
+    const hit = (e.target as Element).closest?.("[data-el]") as SVGGElement | null;
+    const id = corner ? designSel : hit?.getAttribute("data-el") ?? null;
+    if (!id) { setEd({ designSel: null }); return; }
+    const el = elOf(id);
     if (!el) return;
+    const fresh = id !== designSel;
+    if (fresh) setEd({ designSel: id });
+    if (!corner && fresh && (id === "map" || e.pointerType === "touch")) return;
     e.preventDefault();
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
-    legendDrag.current = { el, x0: Number(el.dataset.x), y0: Number(el.dataset.y), cx: e.clientX, cy: e.clientY, id: e.pointerId, k: kRef.current, w: page.width, h: page.height };
+    const b = boxOf(el);
+    const [sx, sy] = (corner?.dataset.corner ?? "1,1").split(",").map(Number);
+    drag.current = {
+      mode: corner ? "size" : "move", id, el, orig: el.getAttribute("transform") ?? "", cx: e.clientX, cy: e.clientY, pid: e.pointerId, k: kRef.current, W: page.width, H: page.height, box: b,
+      corner: { x: b.x + sx * b.w, y: b.y + sy * b.h }, anchor: { x: b.x + (1 - sx) * b.w, y: b.y + (1 - sy) * b.h }, f: 1, dx: 0, dy: 0
+    };
   };
   const onPageMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const d = legendDrag.current;
-    if (!d || d.id !== e.pointerId) return;
-    d.el.setAttribute("transform", `translate(${(e.clientX - d.cx) / d.k} ${(e.clientY - d.cy) / d.k})`);
+    const d = drag.current;
+    if (!d || d.pid !== e.pointerId) return;
+    const dx = (e.clientX - d.cx) / d.k, dy = (e.clientY - d.cy) / d.k;
+    if (d.mode === "move") {
+      d.dx = dx;
+      d.dy = dy;
+      d.el.setAttribute("transform", `translate(${dx} ${dy}) ${d.orig}`);
+      setSelBox({ ...d.box, x: d.box.x + dx, y: d.box.y + dy });
+    } else {
+      const A = d.anchor, C = d.corner;
+      const v = { x: C.x - A.x, y: C.y - A.y }, w = { x: C.x + dx - A.x, y: C.y + dy - A.y };
+      const f = Math.max(0.1, Math.min(10, (v.x * w.x + v.y * w.y) / Math.max(1e-6, v.x * v.x + v.y * v.y)));
+      d.f = f;
+      d.el.setAttribute("transform", `translate(${A.x} ${A.y}) scale(${f}) translate(${-A.x} ${-A.y}) ${d.orig}`);
+      setSelBox({ x: A.x + (d.box.x - A.x) * f, y: A.y + (d.box.y - A.y) * f, w: d.box.w * f, h: d.box.h * f });
+    }
   };
   const onPageUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    const d = legendDrag.current;
-    if (!d || d.id !== e.pointerId) return;
-    legendDrag.current = null;
-    if (Math.abs(e.clientX - d.cx) + Math.abs(e.clientY - d.cy) < 3) { d.el.removeAttribute("transform"); return; }
-    const f = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 1000) / 1000;
-    setStyle({ legendAt: { x: f(d.x0 + (e.clientX - d.cx) / (d.w * d.k)), y: f(d.y0 + (e.clientY - d.cy) / (d.h * d.k)) } });
+    const d = drag.current;
+    if (!d || d.pid !== e.pointerId) return;
+    drag.current = null;
+    if (Math.abs(e.clientX - d.cx) + Math.abs(e.clientY - d.cy) < 3) {
+      d.el.setAttribute("transform", d.orig);
+      setSelBox(d.box);
+      return;
+    }
+    if (d.mode === "move") moveDesignEl(d.id, { x: d.box.x / d.W, y: d.box.y / d.H }, d.dx / d.W, d.dy / d.H);
+    else sizeDesignEl(d.id, d.f, { x: (d.anchor.x + (d.box.x - d.anchor.x) * d.f) / d.W, y: (d.anchor.y + (d.box.y - d.anchor.y) * d.f) / d.H });
   };
+  // Keys for what's picked: Delete hides it (text and pictures go), arrows nudge it (Shift: more),
+  // Ctrl+D copies text or a picture, Esc lets go. Before the course map's own keys hear them.
+  useEffect(() => {
+    if (!editing || !designSel) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest?.("input,textarea,select,[contenteditable=true]")) return;
+      const mod = e.ctrlKey || e.metaKey;
+      let used = true;
+      if (e.key === "Escape") setEd({ designSel: null });
+      else if (!mod && (e.key === "Delete" || e.key === "Backspace")) removeDesignSel();
+      else if (mod && e.key.toLowerCase() === "d") duplicateDesignSel();
+      else if (!mod && e.key.startsWith("Arrow") && page) {
+        const el = elOf(designSel);
+        if (!el) return;
+        const b = boxOf(el), step = e.shiftKey ? 10 : 1;
+        const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0, dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+        moveDesignEl(designSel, { x: b.x / page.width, y: b.y / page.height }, dx / page.width, dy / page.height);
+      } else used = false;
+      if (used) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editing, designSel, page, setEd]);
 
   if (!page) return null;
   const margin = compact ? 20 : 48;
@@ -180,15 +260,34 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
         <div className={`min-w-full min-h-full flex items-center justify-center ${compact ? "p-2.5" : "p-6"}`}>
           <div
             ref={pageEl}
-            data-testid="design-page"
-            className="shadow-2xl bg-white shrink-0 [&_[data-panel=legend]]:cursor-move"
+            className="relative shrink-0"
             onPointerDown={onPageDown}
             onPointerMove={onPageMove}
             onPointerUp={onPageUp}
             onPointerCancel={onPageUp}
             style={{ width: page.width * k, height: page.height * k, ...(pinchScale ? { transform: `scale(${pinchScale.s})`, transformOrigin: `${pinchScale.ox}px ${pinchScale.oy}px` } : {}) }}
-            dangerouslySetInnerHTML={{ __html: page.svg.replace(/^<svg([^>]*?) width="[^"]*" height="[^"]*"/, `<svg$1 width="${page.width * k}" height="${page.height * k}"`) }}
-          />
+          >
+            <div
+              ref={svgHost}
+              data-testid="design-page"
+              className={`shadow-2xl bg-white ${editing ? "[&_[data-el]]:cursor-pointer" : ""}`}
+              style={{ width: page.width * k, height: page.height * k }}
+              dangerouslySetInnerHTML={{ __html: page.svg.replace(/^<svg([^>]*?) width="[^"]*" height="[^"]*"/, `<svg$1 width="${page.width * k}" height="${page.height * k}"`) }}
+            />
+            {editing && designSel && <style>{`[data-testid=design-page] [data-el="${designSel.replace(/"/g, "")}"]{cursor:move;touch-action:none}`}</style>}
+            {editing && designSel && selBox && (
+              <div className="absolute pointer-events-none" data-testid="page-selection" style={{ left: selBox.x * k, top: selBox.y * k, width: selBox.w * k, height: selBox.h * k, outline: "2px solid #f97316", outlineOffset: designSel === "map" ? -3 : 2 }}>
+                {designSel !== "map" && ["0,0", "1,0", "0,1", "1,1"].map(c => {
+                  const [cx, cy] = c.split(",").map(Number);
+                  return <div key={c} data-corner={c} data-testid="page-corner" className="absolute w-3 h-3 touch:w-6 touch:h-6 bg-white border-2 border-orange-500 rounded-sm pointer-events-auto" style={{ left: `calc(${cx * 100}% - ${compact ? 12 : 6}px)`, top: `calc(${cy * 100}% - ${compact ? 12 : 6}px)`, cursor: cx === cy ? "nwse-resize" : "nesw-resize", touchAction: "none" }} />;
+                })}
+                <div data-page-bar className="absolute left-0 flex items-center gap-1 pointer-events-auto bg-zinc-900/95 border border-white/10 rounded-lg px-1.5 py-1 shadow-lg whitespace-nowrap" style={{ top: selBox.y * k > 40 ? -36 : undefined, bottom: selBox.y * k > 40 ? undefined : -36 }}>
+                  <span className="text-[11px] font-semibold text-zinc-200 px-1 max-w-[140px] truncate">{elementLabel(doc, designSel)}</span>
+                  {designSel !== "map" && <button className="p-1 rounded hover:bg-zinc-700 text-zinc-300" aria-label={designSel.includes(":") ? "Delete it" : "Hide it"} title={designSel.includes(":") ? "Delete" : "Hide"} onClick={removeDesignSel}>{designSel.includes(":") ? <Trash2 size={13} /> : <EyeOff size={13} />}</button>}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
       {doc.holes.length === 0 && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="bg-zinc-900/90 rounded-xl px-4 py-3 text-sm text-zinc-200">No holes yet.</div></div>}

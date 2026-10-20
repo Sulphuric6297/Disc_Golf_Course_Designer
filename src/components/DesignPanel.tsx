@@ -13,6 +13,7 @@ import { StylePicker } from "./LandscapePicker";
 import { useEffect, useRef, useState } from "react";
 import type { MapStyle, PaperSize } from "../types";
 import { Button, ColorInput, Field, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
+import { PageElementPanel, PageSection } from "./PageEditor";
 
 export const setStyle = (patch: Partial<MapStyle>, history = true) => changeDoc(d => ({ style: { ...d.style, ...patch } }), history);
 
@@ -92,6 +93,7 @@ export function DesignPanel() {
   if (ro) return null;
   return (
     <>
+      <PageElementPanel />
       <Section title="Style" testid="themes">
         <StylePicker />
         <div className="mt-3" data-testid="forest-options">
@@ -101,6 +103,7 @@ export function DesignPanel() {
           <TreeCover value={s.treeCover ?? 1} />
         </div>
       </Section>
+      <PageSection />
       <LightAndShadow s={s} />
       <Section title="Symbols">
         <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="Basket marks">
@@ -186,11 +189,6 @@ export function DesignPanel() {
         <Toggle label="Putting circle (10 m)" checked={s.circle} onChange={v => setStyle({ circle: v })} />
         <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />
         <Toggle label="Hill shading" checked={s.hillshade} onChange={v => setStyle({ hillshade: v })} />
-        <Toggle label="Legend" checked={s.legend} onChange={v => setStyle({ legend: v })} />
-        {s.legendAt && (s.legend || s.holeTable) && <div className="-mt-1 mb-1"><Button small onClick={() => setStyle({ legendAt: undefined })} testid="legend-corner">Legend back to a corner</Button></div>}
-        <Toggle label="Hole table" checked={s.holeTable} onChange={v => setStyle({ holeTable: v })} />
-        <Toggle label="North arrow" checked={s.north} onChange={v => setStyle({ north: v })} />
-        <Toggle label="Scale bar" checked={s.scale} onChange={v => setStyle({ scale: v })} />
       </Section>
       <Section title="Colors" right={<button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ ...THEME_COLORS.forest, ...landscapeOf(s).colors })}><RotateCcw size={12} /> Style colors</button>}>
         <div className="grid grid-cols-2 gap-x-3">

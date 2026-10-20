@@ -11,9 +11,10 @@ export const shareable = (doc: CourseDoc) => {
   const { background: _bg, terrainHeights: _t, ...rest } = doc;
   void _bg;
   void _t;
-  // (the logo too: a picture would make the link too long to send)
-  const { logo: _logo, ...style } = rest.style;
+  // (the logo and pictures on the map's page too: a picture would make the link too long to send)
+  const { logo: _logo, images: _images, ...style } = rest.style;
   void _logo;
+  void _images;
   return { ...rest, style };
 };
 
