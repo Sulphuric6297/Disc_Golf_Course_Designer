@@ -72,6 +72,7 @@ test("site and holes", async ({ page }) => {
 });
 
 test("course design and export", async ({ page }) => {
+  test.setTimeout(300_000);
   await importSite(page);
   await seedCourse(page);
   await page.waitForTimeout(800);
@@ -107,9 +108,61 @@ test("course design and export", async ({ page }) => {
   await page.getByRole("tab", { name: "Scorecard" }).click();
   await page.waitForTimeout(800);
   await shot(page, "11-scorecard");
+  await page.getByRole("tab", { name: "Hole page" }).click();
+  await page.getByLabel("Hole for the hole page").selectOption({ index: 3 });
+  await page.waitForTimeout(2000);
+  await shot(page, "10-hole-page");
+  await page.getByTestId("design-page").screenshot({ path: "look/10-hole-page-close.png" });
+  for (const size of ["square", "card"]) {
+    await page.getByLabel("Hole page size").selectOption(size);
+    await page.waitForTimeout(1500);
+    await page.getByTestId("design-page").screenshot({ path: `look/10-hole-page-${size}.png` });
+  }
   await page.getByRole("button", { name: "6 Export" }).click();
   await page.waitForTimeout(800);
   await shot(page, "12-export");
+  await page.getByTestId("hole-exports").scrollIntoViewIfNeeded();
+  await page.getByTestId("hole-exports").evaluate(el => el.scrollIntoView({ block: "start" }));
+  await page.waitForTimeout(300);
+  await shot(page, "12-export-holes-video");
+  // Recording (small, so it is quick), seen from another step and from the Export step
+  await page.evaluate(() => (window as any).__dgVideo().set({ size: { width: 320, height: 180 } }));
+  await page.getByTestId("video-record").click();
+  await expect(page.getByTestId("video-progress")).toBeVisible();
+  await page.waitForTimeout(1500);
+  await page.getByTestId("video-export").screenshot({ path: "look/12-export-recording.png" });
+  await page.getByRole("button", { name: "4 Review" }).click();
+  await page.waitForTimeout(800);
+  await shot(page, "12-recording-elsewhere");
+  await page.getByTestId("export-progress-cancel").click();
+});
+
+test("flyover video frames", async ({ page }) => {
+  test.setTimeout(300_000);
+  await importSite(page);
+  await seedCourse(page);
+  // A short video of hole 4, played back in the page and looked at a few moments in
+  await page.evaluate(async () => {
+    const w = window as any;
+    const id = w.__dgCourse().holes[3].id;
+    const video = await w.__dgView.recordFlyover([id], { width: 640, height: 360, fps: 30 });
+    const v = document.createElement("video");
+    v.muted = true;
+    v.src = URL.createObjectURL(video.blob);
+    v.style.cssText = "position:fixed;left:0;top:0;width:1280px;height:720px;z-index:9999;background:#000";
+    v.setAttribute("data-testid", "look-video");
+    document.body.appendChild(v);
+    await new Promise(r => (v.onloadeddata = r));
+  });
+  for (const [t, name] of [[0.3, "a-title"], [2.5, "b-flight"], [6.5, "c-basket"]] as const) {
+    await page.evaluate(async t => {
+      const v = document.querySelector("[data-testid=look-video]") as HTMLVideoElement;
+      v.currentTime = t;
+      await new Promise(r => (v.onseeked = r));
+    }, t);
+    await page.waitForTimeout(300);
+    await page.getByTestId("look-video").screenshot({ path: `look/17-video-${name}.png` });
+  }
 });
 
 test("forest map close up", async ({ page }) => {

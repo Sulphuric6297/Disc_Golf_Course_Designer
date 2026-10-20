@@ -31,6 +31,7 @@ import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import type { AmenityItem, AreaItem, BasketItem, CourseItem, Hole, LabelItem, LineItem, MandoItem, TeeItem, TeeLevel, TreeItem } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
+import type { FlightFrames, FlyoverVideo, FrameInfo, RecordOptions } from "./flyoverVideo";
 import type { P, ViewCallbacks, ViewDoc, ViewInfo, ViewTool } from "./types";
 
 CameraControls.install({ THREE });
@@ -167,6 +168,7 @@ export class CourseView {
   /** Drawn without a graphics card (software rendering): the grass starts off. */
   readonly software: boolean;
   private povMarker: HTMLDivElement | null = null;
+  private disposed = false;
 
   constructor(private container: HTMLDivElement, private cb: ViewCallbacks) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, powerPreference: "high-performance" });
@@ -542,6 +544,7 @@ export class CourseView {
   }
 
   dispose() {
+    this.disposed = true;
     cancelAnimationFrame(this.raf);
     clearTimeout(this.grassTimer);
     this.grass.dispose();
@@ -576,10 +579,18 @@ export class CourseView {
 
   /** Fly over a hole from behind the tee to the basket; `done` runs when it lands. */
   flyover(holeId: string, done?: () => void) {
-    const doc = this.doc;
-    const s = doc?.stats.find(x => x.holeId === holeId);
-    if (!doc || !s?.complete) return;
+    const path = this.flightPath(holeId);
+    if (!path) return;
     this.setTeeView(holeId);
+    this.fly = { ...path, t: 0, done };
+    this.invalidate();
+  }
+
+  /** The flight over a hole: camera and look-at points from behind the tee to the basket, and how
+   * long it takes (s). */
+  private flightPath(holeId: string): { pts: THREE.Vector3[]; look: THREE.Vector3[]; dur: number } | null {
+    const s = this.doc?.stats.find(x => x.holeId === holeId);
+    if (!s?.complete) return null;
     const line = smoothPath(s.line, 16);
     const len = pathLength(line);
     const start = line[0], end = line[line.length - 1];
@@ -599,8 +610,7 @@ export class CourseView {
       const toward = t > 0.75 ? end : ahead;
       look.push(new THREE.Vector3(toward.x, this.h(toward.x, toward.y) + 3, toward.y));
     }
-    this.fly = { pts, look, t: 0, dur: clamp(len / 70, 6, 14), done };
-    this.invalidate();
+    return { pts, look, dur: clamp(len / 70, 6, 14) };
   }
 
   stopFlyover() {
@@ -626,7 +636,8 @@ export class CourseView {
     return { eye, target: new THREE.Vector3(tx, eye.y + Math.tan(pitch) * d, ty) };
   }
 
-  private drawPov(rect: { x: number; y: number; width: number; height: number }) {
+  /** Draws the tee view or flyover into `rect` on screen, or (a recording) into all of `target`. */
+  private drawPov(rect: { x: number; y: number; width: number; height: number }, target?: THREE.WebGLRenderTarget) {
     const doc = this.doc;
     if (!doc) return;
     const cam = this.povCam;
@@ -662,15 +673,22 @@ export class CourseView {
       this.renderer.shadowMap.needsUpdate = true;
       this.shadowsDirty = false;
     }
-    this.renderer.setViewport(rect.x, rect.y, rect.width, rect.height);
-    this.renderer.setScissor(rect.x, rect.y, rect.width, rect.height);
-    this.renderer.setScissorTest(true);
-    this.renderer.render(this.scene, cam);
-    this.renderer.setScissorTest(false);
+    if (target) {
+      this.renderer.setRenderTarget(target);
+      this.renderer.clear();
+      this.renderer.render(this.scene, cam);
+      this.renderer.setRenderTarget(null);
+    } else {
+      this.renderer.setViewport(rect.x, rect.y, rect.width, rect.height);
+      this.renderer.setScissor(rect.x, rect.y, rect.width, rect.height);
+      this.renderer.setScissorTest(true);
+      this.renderer.render(this.scene, cam);
+      this.renderer.setScissorTest(false);
+    }
     restore();
     this.ground.extras.visible = true;
     this.fx.visible = true;
-    this.placePovMarker(cam, rect);
+    if (!target) this.placePovMarker(cam, rect);
   }
 
   /** In the tee view: a marker over the basket (too small to see from far away) with the distance. */
@@ -698,6 +716,84 @@ export class CourseView {
   /** Where the tee view is (for the HUD): progress of a flyover 0..1, or null. */
   flyProgress() {
     return this.fly ? clamp(this.fly.t / this.fly.dur, 0, 1) : null;
+  }
+
+  // ------------------------------------------------------------------ flyover videos
+
+  /** Records flyovers of the holes, one after another, to a video file: rendered offline, frame by
+   * frame at a steady 1/fps step, into an offscreen picture of the asked size (the view on screen
+   * keeps its size and goes on as before). See flyoverVideo.ts. */
+  async recordFlyover(holeIds: string[], opts: RecordOptions): Promise<FlyoverVideo> {
+    if (!this.doc || this.disposed) throw new Error("The map isn't ready yet.");
+    const doc = this.doc.course;
+    const { recordFlights } = await import("./flyoverVideo");
+    return recordFlights(this.flightFrames(opts.width, opts.height), doc, holeIds, opts);
+  }
+
+  /** Flights over holes drawn offscreen at a fixed size, one moment at a time (for a recording):
+   * like the flyover on screen, into a render target of its own. */
+  flightFrames(width: number, height: number): FlightFrames {
+    const gl = this.renderer.getContext();
+    if (Math.max(width, height) > Math.min(this.renderer.capabilities.maxTextureSize, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number)) {
+      throw new Error("This computer's graphics can't draw a video that big: pick a smaller size.");
+    }
+    // Smooth edges (fewer samples on very big pictures, where they matter less and cost the most)
+    const rt = new THREE.WebGLRenderTarget(width, height, { samples: width * height > 4e6 ? 2 : 4, type: THREE.UnsignedByteType });
+    // Rendered exactly like the screen (tone mapping, sRGB colors) and with the same shaders: three
+    // only does that for the screen and XR targets, so this target says it is one; its plain RGBA8
+    // storage then holds the finished sRGB colors
+    rt.texture.internalFormat = "RGBA8";
+    rt.texture.colorSpace = THREE.SRGBColorSpace;
+    (rt as unknown as { isXRRenderTarget: boolean }).isXRRenderTarget = true;
+    const raw = new Uint8Array(width * height * 4);
+    const paths = new Map<string, ReturnType<CourseView["flightPath"]>>();
+    const path = (id: string) => {
+      if (!paths.has(id)) paths.set(id, this.flightPath(id));
+      return paths.get(id) ?? null;
+    };
+    return {
+      duration: id => path(id)?.dur ?? 0,
+      draw: (id, t, out): FrameInfo => {
+        const p = path(id);
+        if (!p) throw new Error("That hole can't be flown over.");
+        if (this.disposed || !this.doc) throw new Error("The map view closed.");
+        const cam = this.povCam;
+        const saved = { fly: this.fly, hole: this.povHole, look: this.povLook, pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov, aspect: cam.aspect, near: cam.near, far: cam.far };
+        let info: FrameInfo = { basket: null, toBasket: 0 };
+        try {
+          this.fly = { ...p, t };
+          this.povHole = id;
+          this.povLook = { yaw: 0, pitch: 0 };
+          cam.fov = 62;
+          this.drawPov({ x: 0, y: 0, width, height }, rt);
+          this.renderer.readRenderTargetPixels(rt, 0, 0, width, height, raw);
+          const s = this.doc.stats.find(x => x.holeId === id);
+          if (s?.complete) {
+            const b = s.line[s.line.length - 1];
+            const q = new THREE.Vector3(b.x, this.h(b.x, b.y) + 5, b.y).project(cam);
+            const inside = q.z <= 1 && Math.abs(q.x) <= 1.05 && Math.abs(q.y) <= 1.05;
+            info = { basket: inside ? { x: ((q.x + 1) / 2) * width, y: ((1 - q.y) / 2) * height } : null, toBasket: dist({ x: cam.position.x, y: cam.position.z }, b) };
+          }
+        } finally {
+          this.fly = saved.fly;
+          this.povHole = saved.hole;
+          this.povLook = saved.look;
+          cam.position.copy(saved.pos);
+          cam.quaternion.copy(saved.quat);
+          Object.assign(cam, { fov: saved.fov, aspect: saved.aspect, near: saved.near, far: saved.far });
+          cam.updateProjectionMatrix();
+        }
+        // WebGL reads the bottom row first; the picture is opaque
+        const row = width * 4;
+        for (let y = 0; y < height; y++) out.set(raw.subarray((height - 1 - y) * row, (height - y) * row), y * row);
+        for (let i = 3; i < out.length; i += 4) out[i] = 255;
+        return info;
+      },
+      dispose: () => {
+        rt.dispose();
+        this.invalidate();
+      }
+    };
   }
 
   // ------------------------------------------------------------------ frame loop

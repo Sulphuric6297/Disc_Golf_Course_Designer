@@ -1,11 +1,11 @@
 // Data exports: GPS files (GeoJSON, KML for Google Earth, GPX for a phone or GPS when staking out
 // positions), the hole list as CSV, the stake-out list, and the parts list with a cost estimate.
 import { AMENITY_KINDS, AREA_KINDS, FT_PER_M, LINE_KINDS, TEE_LEVELS, TEE_SURFACES } from "../constants";
-import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LineItem, MandoItem, P, TeeItem, TreeItem } from "../types";
+import type { AmenityItem, AreaItem, BasketItem, CourseDoc, CourseItem, DropZoneItem, Hole, LineItem, MandoItem, P, TeeItem, TreeItem } from "../types";
 import { holeBaskets, holeNumber, holeTees } from "./course";
-import { smoothPath } from "./geom";
+import { corridor, pathTouchesPolygon, pointInPolygon, smoothPath } from "./geom";
 import { bearing, compassPoint, geoRefOf, toLatLon, type GeoRef } from "./geoRef";
-import { holeStats } from "./holeStats";
+import { holeStats, isOb } from "./holeStats";
 import { heightAt } from "./terrainGrid";
 
 const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
@@ -22,46 +22,84 @@ const needRef = (doc: CourseDoc) => {
 
 const elevationFt = (doc: CourseDoc, p: P) => r1(heightAt(doc.terrainHeights, doc.gridSize, p.x, p.y) + doc.site.baseElevationFt);
 
+type Feature = { type: "Feature"; geometry: { type: string; coordinates: unknown }; properties: Record<string, unknown> };
+
+/** A hole's tees, baskets and throw line (one per layout) as GeoJSON features. */
+const holeFeatures = (doc: CourseDoc, ref: GeoRef, hole: Hole): Feature[] => {
+  const features: Feature[] = [];
+  const point = (p: P, props: Record<string, unknown>) => features.push({ type: "Feature", geometry: { type: "Point", coordinates: ll(ref, p) }, properties: props });
+  const num = holeNumber(doc, hole.id);
+  for (const t of holeTees(doc, hole.id)) {
+    point(t, { kind: "tee", hole: num, tee: TEE_LEVELS[t.level].label, pad_ft: `${t.padWidth}x${t.padLength}`, surface: TEE_SURFACES[t.surface].label, elevation_ft: elevationFt(doc, t) });
+  }
+  for (const b of holeBaskets(doc, hole.id)) point(b, { kind: "basket", hole: num, pin: b.position, elevation_ft: elevationFt(doc, b) });
+  for (const layout of doc.layouts) {
+    const s = holeStats(doc, hole, layout);
+    if (!s.complete) continue;
+    features.push({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: s.line.map(p => ll(ref, p)) },
+      properties: {
+        kind: "hole", hole: num, name: hole.name ?? null, layout: layout.name, tee: TEE_LEVELS[s.level].label, par: s.par,
+        length_ft: Math.round(s.length), length_m: Math.round(s.length / FT_PER_M), elevation_change_ft: r1(s.elevationChange), plays_like_ft: Math.round(s.playsLike), notes: hole.notes ?? null,
+        // OpenStreetMap tags for a disc golf hole
+        disc_golf: "hole", ref: String(num), par_tag: String(s.par)
+      }
+    });
+  }
+  return features;
+};
+
+/** Mandos, drop zones, amenities, trees placed by hand, areas and lines as GeoJSON features. */
+const itemFeature = (doc: CourseDoc, ref: GeoRef, i: CourseItem): Feature | null => {
+  const point = (p: P, props: Record<string, unknown>): Feature => ({ type: "Feature", geometry: { type: "Point", coordinates: ll(ref, p) }, properties: props });
+  if (i.type === "mando") return point(i, { kind: "mando", hole: i.holeId ? holeNumber(doc, i.holeId) : null, pass: (i as MandoItem).side, direction_deg: Math.round(bearing(i, { x: i.x + Math.cos((i.rotation * Math.PI) / 180), y: i.y + Math.sin((i.rotation * Math.PI) / 180) })) });
+  if (i.type === "dropzone") return point(i, { kind: "drop_zone", hole: (i as DropZoneItem).holeId ? holeNumber(doc, (i as DropZoneItem).holeId!) : null });
+  if (i.type === "amenity") return point(i, { kind: (i as AmenityItem).kind, name: (i as AmenityItem).label ?? AMENITY_KINDS[(i as AmenityItem).kind].label });
+  if (i.type === "tree" && !(i as TreeItem).importSource) return point(i, { kind: "tree", crown_radius_ft: Math.round((i as TreeItem).radius) });
+  if (i.type === "area") {
+    const a = i as AreaItem;
+    return { type: "Feature", geometry: { type: "Polygon", coordinates: [[...a.points, a.points[0]].map(p => ll(ref, p))] }, properties: { kind: a.kind, label: AREA_KINDS[a.kind].label, name: a.label ?? null, hole: a.holeId ? holeNumber(doc, a.holeId) : null } };
+  }
+  if (i.type === "line") {
+    const l = i as LineItem;
+    return { type: "Feature", geometry: { type: "LineString", coordinates: l.points.map(p => ll(ref, p)) }, properties: { kind: `${l.kind}_line`, label: LINE_KINDS[l.kind].label, name: l.label ?? null, hole: l.holeId ? holeNumber(doc, l.holeId) : null } };
+  }
+  return null;
+};
+
 /** Everything with its real position, as a GeoJSON FeatureCollection. */
 export const toGeoJSON = (doc: CourseDoc) => {
   const ref = needRef(doc);
-  const features: unknown[] = [];
-  const point = (p: P, props: Record<string, unknown>) => features.push({ type: "Feature", geometry: { type: "Point", coordinates: ll(ref, p) }, properties: props });
-  for (const hole of doc.holes) {
-    const num = holeNumber(doc, hole.id);
-    for (const t of holeTees(doc, hole.id)) {
-      point(t, { kind: "tee", hole: num, tee: TEE_LEVELS[t.level].label, pad_ft: `${t.padWidth}x${t.padLength}`, surface: TEE_SURFACES[t.surface].label, elevation_ft: elevationFt(doc, t) });
-    }
-    for (const b of holeBaskets(doc, hole.id)) point(b, { kind: "basket", hole: num, pin: b.position, elevation_ft: elevationFt(doc, b) });
-    for (const layout of doc.layouts) {
-      const s = holeStats(doc, hole, layout);
-      if (!s.complete) continue;
-      features.push({
-        type: "Feature",
-        geometry: { type: "LineString", coordinates: s.line.map(p => ll(ref, p)) },
-        properties: {
-          kind: "hole", hole: num, name: hole.name ?? null, layout: layout.name, tee: TEE_LEVELS[s.level].label, par: s.par,
-          length_ft: Math.round(s.length), length_m: Math.round(s.length / FT_PER_M), elevation_change_ft: r1(s.elevationChange), plays_like_ft: Math.round(s.playsLike), notes: hole.notes ?? null,
-          // OpenStreetMap tags for a disc golf hole
-          disc_golf: "hole", ref: String(num), par_tag: String(s.par)
-        }
-      });
-    }
-  }
+  const features: Feature[] = doc.holes.flatMap(h => holeFeatures(doc, ref, h));
   for (const i of doc.items) {
-    if (i.type === "mando") point(i, { kind: "mando", hole: i.holeId ? holeNumber(doc, i.holeId) : null, pass: (i as MandoItem).side, direction_deg: Math.round(bearing(i, { x: i.x + Math.cos((i.rotation * Math.PI) / 180), y: i.y + Math.sin((i.rotation * Math.PI) / 180) })) });
-    else if (i.type === "dropzone") point(i, { kind: "drop_zone", hole: (i as DropZoneItem).holeId ? holeNumber(doc, (i as DropZoneItem).holeId!) : null });
-    else if (i.type === "amenity") point(i, { kind: (i as AmenityItem).kind, name: (i as AmenityItem).label ?? AMENITY_KINDS[(i as AmenityItem).kind].label });
-    else if (i.type === "tree" && !(i as TreeItem).importSource) point(i, { kind: "tree", crown_radius_ft: Math.round((i as TreeItem).radius) });
-    else if (i.type === "area") {
-      const a = i as AreaItem;
-      features.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [[...a.points, a.points[0]].map(p => ll(ref, p))] }, properties: { kind: a.kind, label: AREA_KINDS[a.kind].label, name: a.label ?? null, hole: a.holeId ? holeNumber(doc, a.holeId) : null } });
-    } else if (i.type === "line") {
-      const l = i as LineItem;
-      features.push({ type: "Feature", geometry: { type: "LineString", coordinates: l.points.map(p => ll(ref, p)) }, properties: { kind: `${l.kind}_line`, label: LINE_KINDS[l.kind].label, name: l.label ?? null, hole: l.holeId ? holeNumber(doc, l.holeId) : null } });
-    }
+    const f = itemFeature(doc, ref, i);
+    if (f) features.push(f);
   }
   return JSON.stringify({ type: "FeatureCollection", name: doc.name, features }, null, 1);
+};
+
+/** One hole as GeoJSON: its tees, baskets and throw line, its mandos and drop zones, the shapes
+ * that belong to it, and the course's OB, water and hazards that come into play on it (those are
+ * marked `in_play`). */
+export const holeGeoJSON = (doc: CourseDoc, holeId: string) => {
+  const ref = needRef(doc);
+  const hole = doc.holes.find(h => h.id === holeId);
+  if (!hole) throw new Error("That hole isn't in the course.");
+  const s = holeStats(doc, hole);
+  // In play: within the fairway and a little either side of it
+  const zone = s.complete ? corridor(smoothPath(s.line, 8), hole.fairwayWidth + 40, 8) : [];
+  const inPlay = (pts: P[], area: boolean) => zone.length > 2 && (pathTouchesPolygon(area ? [...pts, pts[0]] : pts, zone) || (area && zone.some(p => pointInPolygon(p, pts))));
+  const features = holeFeatures(doc, ref, hole);
+  for (const i of doc.items) {
+    if (i.type === "tee" || i.type === "basket") continue;
+    const own = "holeId" in i && i.holeId === holeId;
+    const shared = !own && (i.type === "area" || i.type === "line") && !i.holeId && (isOb(i) || i.kind === "hazard") && inPlay(i.points, i.type === "area");
+    if (!own && !shared) continue;
+    const f = itemFeature(doc, ref, i);
+    if (f) features.push(shared ? { ...f, properties: { ...f.properties, in_play: true } } : f);
+  }
+  return JSON.stringify({ type: "FeatureCollection", name: `${doc.name} · Hole ${holeNumber(doc, holeId)}`, features }, null, 1);
 };
 
 const xml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

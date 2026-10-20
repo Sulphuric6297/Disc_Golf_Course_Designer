@@ -20,9 +20,11 @@
     "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.482.0",
+    "mp4-muxer": "5.2.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "three": "^0.160.0",
+    "webm-muxer": "5.1.4",
     "zustand": "^4.5.5"
   },
   "devDependencies": {

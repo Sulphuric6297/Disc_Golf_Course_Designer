@@ -1,45 +1,61 @@
-// The Export step: printable maps, tee signs, scorecards and hole sheets, GPS and data files, the
-// parts list, and the share link.
+// The Export step: printable maps, tee signs, scorecards and hole sheets, hole-by-hole pages and
+// GPS files, flyover videos, GPS and data files, the parts list, and the share link.
 import { useState, type ReactNode } from "react";
-import { Box, FileDown, FileJson, Image as ImageIcon, Loader2, Map as MapIcon, Share2 } from "lucide-react";
+import { Box, Clapperboard, FileDown, FileJson, Image as ImageIcon, Map as MapIcon, Share2 } from "lucide-react";
 import JSZip from "jszip";
 import { PAPER, renderPoster } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
-import { holesCsv, partsCsv, partsList, stakeOutCsv, toGPX, toGeoJSON, toKML } from "../lib/exports";
+import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
+import { holeGeoJSON, holesCsv, partsCsv, partsList, stakeOutCsv, toGPX, toGeoJSON, toKML } from "../lib/exports";
 import { canvasBlob, pdfFromPages, pngUnder, svgToCanvas } from "../lib/raster";
 import { holeStats } from "../lib/holeStats";
+import { holeNumber } from "../lib/course";
+import { VIDEO_SIZES, VIDEO_HOLD, type VideoResolution } from "../lib/video";
 import { changeDoc, getDoc, useCourse, useEditor } from "../state/course";
 import { download, fileName, saveCourseFile } from "../state/files";
-import { toast } from "../state/toast";
-import type { CourseRules, PaperSize } from "../types";
+import { runExport, useExportJob, type JobControl } from "../state/exportJob";
+import { recordVideo, useVideoSettings } from "../state/video";
+import type { CourseDoc, CourseRules, PaperSize } from "../types";
 import { getView } from "./MapViewport";
 import { reliefOf } from "./useRelief";
 import { canopyFor } from "../lib/forest";
 import { setStyle } from "./DesignPanel";
-import { Button, Field, Section } from "./ui";
+import { ExportBanner, ProgressBar } from "./ExportProgress";
+import { Button, Field, Section, Segmented } from "./ui";
 
 const svgBlob = (svg: string) => new Blob([svg], { type: "image/svg+xml" });
+const two = (i: number) => String(i).padStart(2, "0");
+const selectCls = "bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs";
+
+/** Contours, hill shading and (Forest style) the photo's canopy, for drawing a page. */
+const art = async (d: CourseDoc) => ({ ...reliefOf(d), canopy: await canopyFor(d) });
+
+/** Holes with a tee and a basket, in the order of play. */
+const playable = (d: CourseDoc) => d.holes.filter(h => holeStats(d, h).complete);
+
+/** Seconds of video for the holes (the flight lasts its length / 70 ft a second, 6 to 14 s). */
+const videoSeconds = (d: CourseDoc, ids: string[]) =>
+  ids.reduce((t, id) => {
+    const h = d.holes.find(x => x.id === id);
+    return h ? t + Math.min(14, Math.max(6, holeStats(d, h).length / 70)) + VIDEO_HOLD.intro + VIDEO_HOLD.outro : t;
+  }, 0);
+const minSec = (s: number) => (s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s)} s`);
 
 export function ExportPanel() {
   const doc = useCourse(s => s.doc);
-  const [busy, setBusy] = useState<string | null>(null);
+  const job = useExportJob(s => s.job);
+  const busy = !!job;
   const [signSize, setSignSize] = useState<SignSize>("18x12");
+  const [pagePick, setPagePick] = useState<string>("all");
+  const [pageSize, setPageSize] = useState<HolePageSize>("letter");
+  const [videoPick, setVideoPick] = useState<string>("all");
+  const video = useVideoSettings();
   const geo = !!doc.site.bounds;
-  const complete = doc.holes.filter(h => holeStats(doc, h).complete);
+  const complete = playable(doc);
+  const pageHole = complete.find(h => h.id === pagePick) ?? null;
+  const videoHoles = videoPick === "all" ? complete.map(h => h.id) : complete.some(h => h.id === videoPick) ? [videoPick] : complete.map(h => h.id);
 
-  /** Contours, hill shading and (Forest style) the photo's canopy, for drawing a page. */
-  const art = async (d: typeof doc) => ({ ...reliefOf(d), canopy: await canopyFor(d) });
-  const run = (label: string, fn: () => Promise<void> | void) => async () => {
-    setBusy(label);
-    try {
-      await fn();
-    } catch (err) {
-      console.error(err);
-      toast(err instanceof Error ? err.message : "That export failed.", "error");
-    } finally {
-      setBusy(null);
-    }
-  };
+  const run = (label: string, fn: (job: JobControl) => Promise<void> | void) => () => void runExport(label, fn);
 
   const mapPdf = run("Course map PDF", async () => {
     const d = getDoc();
@@ -56,29 +72,29 @@ export function ExportPanel() {
     const d = getDoc();
     download(svgBlob(renderPoster(d, await art(d)).svg), fileName(d, "-map.svg"));
   });
-  const signsPdf = run("Tee signs PDF", async () => {
+  const signsPdf = run("Tee signs PDF", async job => {
     const d = getDoc();
     const relief = await art(d);
     const pages = [];
     for (const h of d.holes) {
       const s = renderTeeSign(d, h.id, signSize, relief);
       if (!s) continue;
-      setBusy(`Tee sign ${pages.length + 1} of ${d.holes.length}…`);
+      job.progress(pages.length / d.holes.length, `Tee sign ${pages.length + 1} of ${d.holes.length}`);
       pages.push({ canvas: await svgToCanvas(s.svg, s.width, s.height, signSize === "18x24" ? 100 : 130), widthPt: s.width, heightPt: s.height });
     }
     download(await pdfFromPages(pages), fileName(d, signSize === "letter" || signSize === "a4" ? "-hole-sheets.pdf" : "-tee-signs.pdf"));
   });
-  const signsZip = run("Tee sign pictures", async () => {
+  const signsZip = run("Tee sign pictures", async job => {
     const d = getDoc();
     const relief = await art(d);
     const zip = new JSZip();
     for (let i = 0; i < d.holes.length; i++) {
       const s = renderTeeSign(d, d.holes[i].id, signSize, relief);
       if (!s) continue;
-      setBusy(`Tee sign ${i + 1} of ${d.holes.length}…`);
+      job.progress(i / d.holes.length, `Tee sign ${i + 1} of ${d.holes.length}`);
       // UDisc takes tee sign pictures up to 5 MB
-      zip.file(`hole-${String(i + 1).padStart(2, "0")}.png`, await pngUnder(s.svg, s.width, s.height, 4.8 * 1024 * 1024, 120));
-      zip.file(`hole-${String(i + 1).padStart(2, "0")}.svg`, s.svg);
+      zip.file(`hole-${two(i + 1)}.png`, await pngUnder(s.svg, s.width, s.height, 4.8 * 1024 * 1024, 120));
+      zip.file(`hole-${two(i + 1)}.svg`, s.svg);
     }
     download(await zip.generateAsync({ type: "blob" }), fileName(d, "-tee-signs.zip"));
   });
@@ -94,6 +110,56 @@ export function ExportPanel() {
   });
   const text = (content: () => string, suffix: string, type: string) => run(suffix, () => download(new Blob([content()], { type }), fileName(getDoc(), suffix)));
 
+  // --- Hole by hole
+
+  /** The holes picked for the hole pages (all of them, or one), as they are now. */
+  const pickedPages = (d: CourseDoc) => (pagePick === "all" ? playable(d) : playable(d).filter(h => h.id === pagePick));
+  const holeSuffix = (d: CourseDoc, id: string) => `-hole-${holeNumber(d, id)}`;
+  const pagesPdf = run("Hole pages PDF", async job => {
+    const d = getDoc();
+    const holes = pickedPages(d);
+    if (!holes.length) throw new Error("No hole to export yet: a hole needs a tee and a basket.");
+    const relief = await art(d);
+    const pages = [];
+    for (const [i, h] of holes.entries()) {
+      job.progress(i / holes.length, `Hole page ${i + 1} of ${holes.length}`);
+      const p = renderHolePage(d, h.id, pageSize, relief)!;
+      pages.push({ canvas: await svgToCanvas(p.svg, p.width, p.height, Math.min(HOLE_PAGES[pageSize].dpi, 200)), widthPt: p.width, heightPt: p.height });
+    }
+    download(await pdfFromPages(pages), fileName(d, holes.length === 1 ? `${holeSuffix(d, holes[0].id)}.pdf` : "-hole-pages.pdf"));
+  });
+  const pagesZip = run("Hole pictures", async job => {
+    const d = getDoc();
+    const holes = pickedPages(d);
+    if (!holes.length) throw new Error("No hole to export yet: a hole needs a tee and a basket.");
+    const relief = await art(d);
+    const zip = new JSZip();
+    for (const [i, h] of holes.entries()) {
+      job.progress(i / holes.length, `Hole picture ${i + 1} of ${holes.length}`);
+      const p = renderHolePage(d, h.id, pageSize, relief)!;
+      zip.file(`hole-${two(holeNumber(d, h.id))}.png`, await canvasBlob(await svgToCanvas(p.svg, p.width, p.height, HOLE_PAGES[pageSize].dpi)));
+    }
+    download(await zip.generateAsync({ type: "blob" }), fileName(d, "-hole-pages.zip"));
+  });
+  const onePage = async (d: CourseDoc) => {
+    if (!pageHole) throw new Error("Pick a hole first.");
+    return renderHolePage(d, pageHole.id, pageSize, await art(d))!;
+  };
+  const pagePng = run("Hole picture", async () => {
+    const d = getDoc();
+    const p = await onePage(d);
+    download(await canvasBlob(await svgToCanvas(p.svg, p.width, p.height, HOLE_PAGES[pageSize].dpi)), fileName(d, `${holeSuffix(d, pageHole!.id)}.png`));
+  });
+  const pageSvg = run("Hole SVG", async () => {
+    const d = getDoc();
+    download(svgBlob((await onePage(d)).svg), fileName(d, `${holeSuffix(d, pageHole!.id)}.svg`));
+  });
+  const pageGeo = run("Hole GeoJSON", () => {
+    const d = getDoc();
+    if (!pageHole) throw new Error("Pick a hole first.");
+    download(new Blob([holeGeoJSON(d, pageHole.id)], { type: "application/geo+json" }), fileName(d, `${holeSuffix(d, pageHole.id)}.geojson`));
+  });
+
   const parts = partsList(doc);
   const setPrice = (key: keyof CourseRules["prices"], v: number) => changeDoc(d => ({ rules: { ...d.rules, prices: { ...d.rules.prices, [key]: v } } }));
 
@@ -105,54 +171,109 @@ export function ExportPanel() {
     </div>
   );
   const nothing = !complete.length;
+  const recording = job?.kind === "video" ? job : null;
   return (
     <>
-      {busy && (
-        <div className="mx-4 mt-2 flex items-center gap-2 text-sm text-orange-200 bg-orange-500/10 border border-orange-500/30 rounded-lg px-3 py-2" data-testid="export-busy">
-          <Loader2 size={15} className="animate-spin" /> {busy}
-        </div>
-      )}
+      <ExportBanner />
       <Section title="Share">
         <Button tone="primary" full onClick={() => useEditor.getState().set({ shareOpen: true })} testid="export-share"><Share2 size={15} /> Get a share link</Button>
         <p className="text-[11px] text-zinc-500 mt-1.5">Anyone with the link can explore the course and make their own copy.</p>
       </Section>
       <Section title="Print">
         <Row icon={<MapIcon size={15} className="text-orange-300" />} title="Course map" text="The whole course in the style from the Design step. Info boards are often 18 × 24 in.">
-          <select aria-label="Map paper" className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs" value={doc.style.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
+          <select aria-label="Map paper" className={selectCls} value={doc.style.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
             {(Object.keys(PAPER) as PaperSize[]).map(p => <option key={p} value={p}>{PAPER[p].label}</option>)}
           </select>
-          <Button small onClick={mapPdf} disabled={!!busy} testid="export-map-pdf"><FileDown size={13} /> PDF</Button>
-          <Button small onClick={mapPng} disabled={!!busy} testid="export-map-png"><ImageIcon size={13} /> PNG</Button>
-          <Button small onClick={mapSvg} disabled={!!busy} testid="export-map-svg">SVG</Button>
+          <Button small onClick={mapPdf} disabled={busy} testid="export-map-pdf"><FileDown size={13} /> PDF</Button>
+          <Button small onClick={mapPng} disabled={busy} testid="export-map-png"><ImageIcon size={13} /> PNG</Button>
+          <Button small onClick={mapSvg} disabled={busy} testid="export-map-svg">SVG</Button>
         </Row>
         <Row icon={<FileDown size={15} className="text-orange-300" />} title="Tee signs and hole sheets" text="One page per hole: number, par, distance from each tee, the hole map (tee at the bottom), elevation, rules and the way to the next tee.">
-          <select aria-label="Tee sign size" className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs" value={signSize} onChange={e => setSignSize(e.target.value as SignSize)}>
+          <select aria-label="Tee sign size" className={selectCls} value={signSize} onChange={e => setSignSize(e.target.value as SignSize)}>
             {(Object.keys(SIGN_SIZES) as SignSize[]).map(p => <option key={p} value={p}>{SIGN_SIZES[p].label}</option>)}
           </select>
-          <Button small onClick={signsPdf} disabled={!!busy || nothing} testid="export-signs-pdf"><FileDown size={13} /> PDF</Button>
-          <Button small onClick={signsZip} disabled={!!busy || nothing} testid="export-signs-zip" title="PNG pictures under 5 MB each (UDisc tee sign uploads), plus SVG"><ImageIcon size={13} /> Pictures (ZIP)</Button>
+          <Button small onClick={signsPdf} disabled={busy || nothing} testid="export-signs-pdf"><FileDown size={13} /> PDF</Button>
+          <Button small onClick={signsZip} disabled={busy || nothing} testid="export-signs-zip" title="PNG pictures under 5 MB each (UDisc tee sign uploads), plus SVG"><ImageIcon size={13} /> Pictures (ZIP)</Button>
         </Row>
         <Row icon={<FileDown size={15} className="text-orange-300" />} title="Scorecard" text="Par and length for each layout, totals, rows for five players.">
-          <Button small onClick={scorecardPdf} disabled={!!busy || nothing} testid="export-scorecard"><FileDown size={13} /> PDF</Button>
-          <Button small onClick={run("Scorecard SVG", () => download(svgBlob(renderScorecard(getDoc()).svg), fileName(getDoc(), "-scorecard.svg")))} disabled={!!busy || nothing}>SVG</Button>
+          <Button small onClick={scorecardPdf} disabled={busy || nothing} testid="export-scorecard"><FileDown size={13} /> PDF</Button>
+          <Button small onClick={run("Scorecard SVG", () => download(svgBlob(renderScorecard(getDoc()).svg), fileName(getDoc(), "-scorecard.svg")))} disabled={busy || nothing}>SVG</Button>
         </Row>
         <Row icon={<Box size={15} className="text-orange-300" />} title="3D picture" text="The map view as it is now (tilt it with 3).">
-          <Button small onClick={snapshot} disabled={!!busy} testid="export-3d"><ImageIcon size={13} /> PNG</Button>
+          <Button small onClick={snapshot} disabled={busy} testid="export-3d"><ImageIcon size={13} /> PNG</Button>
         </Row>
+      </Section>
+      <Section title="Hole by hole" testid="hole-exports">
+        <div className="text-[11px] text-zinc-400 mb-2">A page for each hole, like a yardage book: its map with the tee at the bottom, par, the length from each tee, the elevation change and how long it plays, the notes and the elevation profile. Or one hole on its own, with its GPS file.</div>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          <select aria-label="Hole to export" data-testid="hole-pick" className={selectCls} value={pageHole ? pageHole.id : "all"} onChange={e => setPagePick(e.target.value)} disabled={nothing}>
+            <option value="all">All holes{complete.length ? ` (${complete.length})` : ""}</option>
+            {complete.map(h => <option key={h.id} value={h.id}>Hole {holeNumber(doc, h.id)}{h.name ? ` · ${h.name}` : ""}</option>)}
+          </select>
+          <select aria-label="Hole page size" data-testid="hole-page-size" className={selectCls} value={pageSize} onChange={e => setPageSize(e.target.value as HolePageSize)}>
+            {(Object.keys(HOLE_PAGES) as HolePageSize[]).map(k => <option key={k} value={k}>{HOLE_PAGES[k].label}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <Button small onClick={pagesPdf} disabled={busy || nothing} testid="export-holes-pdf" title={pageHole ? "This hole's page" : "One page per hole"}><FileDown size={13} /> PDF</Button>
+          {!pageHole && <Button small onClick={pagesZip} disabled={busy || nothing} testid="export-holes-zip" title="A PNG picture of each hole's page"><ImageIcon size={13} /> Pictures (ZIP)</Button>}
+          {pageHole && (
+            <>
+              <Button small onClick={pagePng} disabled={busy} testid="export-hole-png"><ImageIcon size={13} /> PNG</Button>
+              <Button small onClick={pageSvg} disabled={busy} testid="export-hole-svg">SVG</Button>
+              <Button small onClick={pageGeo} disabled={busy || !geo} testid="export-hole-geojson" title={geo ? "The hole's tees, baskets, throw line, mandos, OB and hazards with real coordinates" : "GPS files need a real site"}>GeoJSON</Button>
+            </>
+          )}
+        </div>
+        {nothing && <p className="text-[11px] text-zinc-500 mt-1.5">Finish a hole (a tee and a basket) to export it.</p>}
+      </Section>
+      <Section title="Flyover video" testid="video-export">
+        <div className="text-[11px] text-zinc-400 mb-2">A flight over each hole from behind the tee to the basket, with its number, par and length on screen. It is made frame by frame, so it plays smoothly however long it takes to make.</div>
+        <Field label="Holes">
+          <select aria-label="Holes to fly over" data-testid="video-holes" className={`${selectCls} w-full`} value={videoHoles.length === 1 && videoPick !== "all" ? videoPick : "all"} onChange={e => setVideoPick(e.target.value)} disabled={nothing}>
+            <option value="all">The whole course, in order{complete.length ? ` (${complete.length} holes)` : ""}</option>
+            {complete.map(h => <option key={h.id} value={h.id}>Hole {holeNumber(doc, h.id)}{h.name ? ` · ${h.name}` : ""}</option>)}
+          </select>
+        </Field>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Size">
+            <select aria-label="Video size" data-testid="video-resolution" className={`${selectCls} w-full`} value={video.resolution} onChange={e => video.set({ resolution: e.target.value as VideoResolution })}>
+              {(Object.keys(VIDEO_SIZES) as VideoResolution[]).map(k => <option key={k} value={k}>{VIDEO_SIZES[k].label}</option>)}
+            </select>
+          </Field>
+          <Field label="Frame rate">
+            <Segmented label="Frame rate" value={video.fps} onChange={v => video.set({ fps: v })} options={[{ value: 30, label: "30 fps" }, { value: 60, label: "60 fps", title: "Smoother; takes twice as long to make" }]} />
+          </Field>
+        </div>
+        {recording ? (
+          <div className="mt-1" data-testid="video-progress-row">
+            <div className="flex items-center justify-between text-xs text-zinc-300 mb-1">
+              <span className="truncate">{recording.label}</span>
+              <span className="tabular-nums">{Math.round((recording.progress ?? 0) * 100)}%</span>
+            </div>
+            <ProgressBar value={recording.progress} testid="video-progress" label="Recording progress" />
+            <div className="mt-2"><Button small onClick={() => recording.cancel?.()} testid="video-cancel">Cancel</Button></div>
+          </div>
+        ) : (
+          <>
+            <Button tone="primary" full onClick={() => void recordVideo(videoHoles)} disabled={busy || nothing} testid="video-record"><Clapperboard size={15} /> Record {videoHoles.length === 1 ? `hole ${holeNumber(doc, videoHoles[0])}` : "the course"}</Button>
+            {!nothing && <p className="text-[11px] text-zinc-500 mt-1.5">About {minSec(videoSeconds(doc, videoHoles))} of video. MP4 (H.264) where the browser can make it, otherwise WebM.</p>}
+          </>
+        )}
       </Section>
       <Section title="GPS and data">
         {!geo && <p className="text-[11px] text-amber-300 mb-2">GPS files need a real site: bring in your park on the Site step.</p>}
         <Row icon={<FileJson size={15} className="text-sky-300" />} title="GPS files" text="Tees, baskets, mandos, drop zones, OB and throw lines with real coordinates. KML opens in Google Earth; GPX waypoints help find each spot with a phone.">
-          <Button small onClick={text(() => toKML(getDoc()), ".kml", "application/vnd.google-earth.kml+xml")} disabled={!!busy || !geo} testid="export-kml">KML</Button>
-          <Button small onClick={text(() => toGeoJSON(getDoc()), ".geojson", "application/geo+json")} disabled={!!busy || !geo} testid="export-geojson">GeoJSON</Button>
-          <Button small onClick={text(() => toGPX(getDoc()), ".gpx", "application/gpx+xml")} disabled={!!busy || !geo} testid="export-gpx">GPX</Button>
+          <Button small onClick={text(() => toKML(getDoc()), ".kml", "application/vnd.google-earth.kml+xml")} disabled={busy || !geo} testid="export-kml">KML</Button>
+          <Button small onClick={text(() => toGeoJSON(getDoc()), ".geojson", "application/geo+json")} disabled={busy || !geo} testid="export-geojson">GeoJSON</Button>
+          <Button small onClick={text(() => toGPX(getDoc()), ".gpx", "application/gpx+xml")} disabled={busy || !geo} testid="export-gpx">GPX</Button>
         </Row>
         <Row icon={<FileJson size={15} className="text-sky-300" />} title="Spreadsheets" text="The hole list (par, lengths, elevations, coordinates for each layout) and the stake-out list for installing it.">
-          <Button small onClick={text(() => holesCsv(getDoc()), "-holes.csv", "text/csv")} disabled={!!busy || nothing} testid="export-holes-csv">Holes CSV</Button>
-          <Button small onClick={text(() => stakeOutCsv(getDoc()), "-stake-out.csv", "text/csv")} disabled={!!busy || nothing} testid="export-stakeout">Stake-out CSV</Button>
+          <Button small onClick={text(() => holesCsv(getDoc()), "-holes.csv", "text/csv")} disabled={busy || nothing} testid="export-holes-csv">Holes CSV</Button>
+          <Button small onClick={text(() => stakeOutCsv(getDoc()), "-stake-out.csv", "text/csv")} disabled={busy || nothing} testid="export-stakeout">Stake-out CSV</Button>
         </Row>
         <Row icon={<FileJson size={15} className="text-sky-300" />} title="Course file" text="Everything, photo and elevation included, to open again here or send to someone.">
-          <Button small onClick={saveCourseFile} disabled={!!busy} testid="export-file">Save .dgcourse.json</Button>
+          <Button small onClick={saveCourseFile} disabled={busy} testid="export-file">Save .dgcourse.json</Button>
         </Row>
       </Section>
       <Section title="Parts list and budget" testid="parts">
@@ -182,7 +303,7 @@ export function ExportPanel() {
                 ))}
               </div>
             </details>
-            <div className="mt-2"><Button small onClick={text(() => partsCsv(getDoc()), "-parts.csv", "text/csv")} disabled={!!busy} testid="export-parts">Parts list CSV</Button></div>
+            <div className="mt-2"><Button small onClick={text(() => partsCsv(getDoc()), "-parts.csv", "text/csv")} disabled={busy} testid="export-parts">Parts list CSV</Button></div>
           </>
         )}
       </Section>

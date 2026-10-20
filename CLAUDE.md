@@ -62,7 +62,8 @@ design tools and the PDGA guidance the app follows.
 | `views.spec.ts` | View from the tee, flyover (a slow frame doesn't skip it), back to the map |
 | `scene3d.spec.ts` | The 3D look: sky when tilted, the course's sun and brightness, grass blades (when shown, the setting kept, what grows where), woods of real trees (full detail near the camera), landscapes (pine forest, the painted map's colors) |
 | `design.spec.ts` | Map designer: themes, colors, title block, legend, hole table, contours, turning the map; the Forest painting (tree cover from sparse to dense, winding creeks and trails, light and shadow settings), basket marks (five kinds, legend, older courses), marking colors (map or PDGA: OB, hazard, casual, out of play); the printed map's and tee signs' contents |
-| `export.spec.ts` | Course map (SVG/PNG/PDF), tee signs, scorecard, GeoJSON, KML, GPX, CSV, stake-out list, parts list |
+| `export.spec.ts` | Course map (SVG/PNG/PDF), tee signs, scorecard, GeoJSON, KML, GPX, CSV, stake-out list, parts list; hole by hole: a PDF page and a PNG per hole, one hole's PNG/SVG/GeoJSON (only its own features, plus the course's OB in play), the hole page's contents (pure logic) |
+| `video.spec.ts` | Flyover videos: recording a hole from the Export step (progress, a real WebM/MP4 that plays at the asked size and length), Cancel, going on when the step is left, Record over the flyover, the MediaRecorder fallback without WebCodecs, MP4 when H.264 can be encoded (stand-in encoder); codec levels and the frames of a recording (pure logic) |
 | `share.spec.ts` | Share links: packing, opening (view only), photo and elevation downloaded again, "Make a copy" (saved before the link leaves the address bar), never overwriting your own course |
 | `persistence.spec.ts` | Autosave restore, course files, New keeps the old course in Recent courses |
 
@@ -80,7 +81,10 @@ design tools and the PDGA guidance the app follows.
     editor's map (basket marks, mandos, drop zones, amenity pictograms);
   - `forest.ts`: the Forest style's painted land (one picture: canopy height field lit from the
     top left, fairways, dirt, water, roads), cached by what it depends on;
-  - `exports.ts`;
+  - `exports.ts` (the course's and one hole's GeoJSON, KML, GPX, CSV, parts list);
+  - `teeSign.ts` (tee signs, hole sheets, scorecard) and `holePage.ts` (a yardage-book page per
+    hole, on paper or as a square picture);
+  - `video.ts`: flyover video sizes, codec strings and the frames of a recording;
   - `share.ts`;
   - `geo/`: site import.
 - The map view engine is `src/viewport/CourseView.ts`, wrapped by `src/components/MapViewport.tsx`.
@@ -91,3 +95,8 @@ design tools and the PDGA guidance the app follows.
   `CourseView.atmosphere`. The 3D view shows the course in its landscape's natural colors
   (`src/lib/landscapes.ts`), whatever the printed map's style. Without a graphics card (software
   rendering, as in the tests) grass starts off and fewer trees are drawn in full detail.
+  Flyover videos are drawn by `CourseView.flightFrames` into an offscreen render target, one frame
+  at a time, and encoded in `src/viewport/flyoverVideo.ts` (WebCodecs + mp4-muxer/webm-muxer, or a
+  MediaRecorder in real time). Exports run one at a time through `src/state/exportJob.ts`, so they
+  go on (with their progress and Cancel shown over the map) when the Export step is left.
+- Tests can make small videos: `window.__dgVideo().set({ size: { width: 320, height: 180 } })`.
