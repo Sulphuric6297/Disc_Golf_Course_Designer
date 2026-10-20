@@ -4,6 +4,7 @@ import { test as plain, expect as plainExpect, type Page } from "@playwright/tes
 import { test, expect, addHole, importSite, course } from "./fixtures";
 import { createArea, createBasket, createEmptyCourse, createTee, newHole } from "../../src/lib/course";
 import { HOLE_PAGES, holeLengths, renderHolePage } from "../../src/lib/holePage";
+import { renderTeeSign } from "../../src/lib/teeSign";
 
 /** Clicks an export button and returns the downloaded file's name and contents. */
 const exported = async (page: Page, testid: string) => {
@@ -215,4 +216,23 @@ plain("a hole page's key lists only the markings on its map", () => {
   doc.items.push(createArea("ob", [{ x: 250, y: 530 }, { x: 450, y: 530 }, { x: 450, y: 560 }, { x: 250, y: 560 }]));
   doc.items.push(createArea("hazard", [{ x: 3000, y: 3000 }, { x: 3100, y: 3000 }, { x: 3100, y: 3100 }]));
   plainExpect(key(renderHolePage(doc, h.id, "letter", { contours: null, hillshade: null })!.svg)).toEqual(["OB"]);
+});
+
+plain("tee signs and hole cards take the course's own card style: header, lettering, paper, text, font", () => {
+  const doc = createEmptyCourse();
+  const h = newHole();
+  doc.holes.push(h);
+  doc.items.push(createTee(h.id, { x: 200, y: 500 }), createBasket(h.id, { x: 500, y: 500 }));
+  h.name = "The Chute";
+  const plainCard = renderHolePage(doc, h.id, "letter", { contours: null, hillshade: null })!.svg;
+  plainExpect(plainCard).toContain('fill="#13311d"');
+  doc.style.card = { header: "#1e3a5f", accent: "#fde68a", paper: "#fffaf0", ink: "#222222", font: "Bitter" };
+  for (const svg of [renderHolePage(doc, h.id, "letter", { contours: null, hillshade: null })!.svg, renderTeeSign(doc, h.id, "18x12", { contours: null, hillshade: null })!.svg, renderTeeSign(doc, h.id, "12x18", { contours: null, hillshade: null })!.svg]) {
+    plainExpect(svg).toContain('fill="#fffaf0"');
+    plainExpect(svg).not.toContain('fill="#f5f4ee"');
+  }
+  const card = renderHolePage(doc, h.id, "letter", { contours: null, hillshade: null })!.svg;
+  plainExpect(card).toContain('fill="#1e3a5f"');
+  plainExpect(card).toContain('fill="#fde68a"');
+  plainExpect(card).toContain("Bitter");
 });

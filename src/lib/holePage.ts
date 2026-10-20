@@ -9,7 +9,7 @@ import { activeLayout, holeBaskets, holeTees, throwLine } from "./course";
 import { dist, rotatePoint, smoothPath } from "./geom";
 import { holeStats } from "./holeStats";
 import { markingsInView, northArrow, palette, scaleBar, wrapSvg } from "./mapSvg";
-import { autoRules, holeMap, type SignArt } from "./teeSign";
+import { autoRules, cardStyle, holeMap, type SignArt } from "./teeSign";
 import { profileAlong } from "./terrainGrid";
 import { fmtDist, fmtElev } from "./units";
 
@@ -24,12 +24,6 @@ export const HOLE_PAGES: Record<HolePageSize, { label: string; w: number; h: num
 
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const n = (v: number) => (Math.round(v * 100) / 100).toString();
-const HEAD = "Oswald, 'Arial Narrow', Arial, sans-serif";
-const BODY = "Inter, Arial, sans-serif";
-const DARK = "#13311d";
-const PAPER = "#f5f4ee";
-const INK = "#0f1f12";
-const SOFT = "#4b5a48";
 
 /** "350 FT" / "107 M". */
 const big = (ft: number, units: Units) => `${Math.round(units === "m" ? ft / FT_PER_M : ft).toLocaleString()} ${units === "m" ? "M" : "FT"}`;
@@ -79,6 +73,7 @@ const profile = (doc: CourseDoc, line: P[], box: { x: number; y: number; w: numb
 
 /** One hole's page. Null for a hole that isn't there. */
 export const renderHolePage = (doc: CourseDoc, holeId: string, size: HolePageSize, art: SignArt) => {
+  const { header: DARK, paper: PAPER, ink: INK, soft: SOFT, head: HEAD, body: BODY, accent: ACCENT } = cardStyle(doc);
   const hole = doc.holes.find(h => h.id === holeId);
   if (!hole) return null;
   const page = HOLE_PAGES[size];
@@ -124,14 +119,14 @@ export const renderHolePage = (doc: CourseDoc, holeId: string, size: HolePageSiz
   const course = (sty.title || doc.name || "").toUpperCase();
   const room = right - tx - parSize * 3.2;
   const courseSize = Math.min(9.5 * u, (room / Math.max(1, course.length)) * 1.6);
-  if (course) parts.push(`<text x="${n(tx)}" y="${n(headH * 0.26)}" font-family="${BODY}" font-weight="600" font-size="${n(courseSize)}" letter-spacing="${n(courseSize * 0.12)}" fill="#bbf7d0">${esc(course)}</text>`);
+  if (course) parts.push(`<text x="${n(tx)}" y="${n(headH * 0.26)}" font-family="${BODY}" font-weight="600" font-size="${n(courseSize)}" letter-spacing="${n(courseSize * 0.12)}" fill="${ACCENT}">${esc(course)}</text>`);
   parts.push(`<text x="${n(tx)}" y="${n(headH * (hole.name ? 0.6 : 0.68))}" font-family="${HEAD}" font-weight="700" font-size="${n(32 * u)}" fill="#ffffff">HOLE ${st.number}</text>`);
   if (hole.name) {
     const nameSize = Math.min(13 * u, (room / Math.max(1, hole.name.length)) * 1.8);
-    parts.push(`<text x="${n(tx)}" y="${n(headH * 0.84)}" font-family="${HEAD}" font-weight="500" font-size="${n(nameSize)}" fill="#d9f99d">${esc(hole.name)}</text>`);
+    parts.push(`<text x="${n(tx)}" y="${n(headH * 0.84)}" font-family="${HEAD}" font-weight="500" font-size="${n(nameSize)}" fill="${ACCENT}">${esc(hole.name)}</text>`);
   }
   parts.push(`<text x="${n(right)}" y="${n(headH * 0.5)}" text-anchor="end" font-family="${HEAD}" font-weight="700" font-size="${n(parSize)}" fill="#ffffff">PAR ${done ? st.par : "–"}</text>`);
-  parts.push(`<text x="${n(right)}" y="${n(headH * 0.8)}" text-anchor="end" font-family="${HEAD}" font-weight="600" font-size="${n(15 * u)}" letter-spacing="${n(0.8 * u)}" fill="#d9f99d">${done ? big(st.length, units) : "UNFINISHED"}</text>`);
+  parts.push(`<text x="${n(right)}" y="${n(headH * 0.8)}" text-anchor="end" font-family="${HEAD}" font-weight="600" font-size="${n(15 * u)}" letter-spacing="${n(0.8 * u)}" fill="${ACCENT}">${done ? big(st.length, units) : "UNFINISHED"}</text>`);
 
   // Lengths from each tee (chips in the tee colors), the elevation change, how it plays, the pins
   const chips = (x0: number, y: number) => {

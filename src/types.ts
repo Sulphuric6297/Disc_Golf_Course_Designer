@@ -193,6 +193,8 @@ export interface MapStyle {
   /** Where the legend (and hole table) panel sits on the course map: its top-left corner as a
    * share of the page's width and height (unset: a free corner). */
   legendAt?: { x: number; y: number };
+  /** Tee signs' and hole cards' own look (unset: dark green header, light paper, Oswald). */
+  card?: { header?: string; accent?: string; paper?: string; ink?: string; font?: string };
   /** Title block. */
   title: string;
   subtitle: string;

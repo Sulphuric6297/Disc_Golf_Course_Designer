@@ -25,6 +25,20 @@ const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 const n = (v: number) => (Math.round(v * 100) / 100).toString();
 const font = (f: string) => (f === "Oswald" ? "Oswald, 'Arial Narrow', Arial, sans-serif" : f === "Bitter" ? "Bitter, Georgia, serif" : "Inter, Arial, sans-serif");
 
+/** The look of tee signs and hole cards (the course's own, or a dark green header on light paper):
+ * the header band, its light lettering (accent), the paper, the ink, a softer ink, the heading and
+ * body fonts. */
+export const CARD_DEFAULTS = { header: "#13311d", accent: "#d9f99d", paper: "#f5f4ee", ink: "#0f1f12", font: "Oswald" };
+export const cardStyle = (doc: Pick<CourseDoc, "style">) => {
+  const c = { ...CARD_DEFAULTS, ...(doc.style.card ?? {}) };
+  const mix = (a: string, b: string, t: number) => {
+    const p = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    const [x, y] = [p(a), p(b)];
+    return `#${x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("")}`;
+  };
+  return { header: c.header, accent: c.accent, paper: c.paper, ink: c.ink, soft: mix(c.ink, c.paper, 0.38), head: c.font === "Script" ? "'Kaushan Script', cursive" : font(c.font), body: "Inter, Arial, sans-serif" };
+};
+
 /** Rules written out from what is drawn on and around the hole (used when it has no notes of its own). */
 export const autoRules = (doc: CourseDoc, holeId: string) => {
   const hole = doc.holes.find(h => h.id === holeId)!;
@@ -68,9 +82,10 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   const tees = holeTees(doc, holeId);
   const mainTee = tees.find(t => t.id === st.teeId) ?? tees[0];
   const lvl = TEE_LEVELS[mainTee?.level ?? "blue"];
-  const dark = "#13311d";
+  const card = cardStyle(doc);
+  const dark = card.header;
 
-  parts.push(`<rect width="${n(W)}" height="${n(H)}" fill="${pal.paper}"/>`);
+  parts.push(`<rect width="${n(W)}" height="${n(H)}" fill="${card.paper}"/>`);
   // Header band
   parts.push(`<rect width="${n(W)}" height="${n(header.h)}" fill="${dark}"/>`);
   parts.push(`<rect y="${n(header.h - 6 * ts)}" width="${n(W)}" height="${n(6 * ts)}" fill="${lvl.color}"/>`);
@@ -83,7 +98,7 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   const nameSize = Math.min(10 * ts, ((W - tx - m) / Math.max(1, name.length)) * 1.55);
   parts.push(`<text x="${n(tx)}" y="${n(header.h * 0.2)}" font-family="Inter, Arial, sans-serif" font-weight="600" font-size="${n(nameSize)}" fill="#d1fae5" letter-spacing="${n(nameSize * 0.12)}">${esc(name)}</text>`);
   parts.push(`<text x="${n(tx)}" y="${n(header.h * 0.6)}" font-family="${F}" font-weight="700" font-size="${n(34 * ts)}" fill="#ffffff">PAR ${st.complete ? st.par : "–"}</text>`);
-  if (hole.name) parts.push(`<text x="${n(tx)}" y="${n(header.h * 0.83)}" font-family="${F}" font-weight="500" font-size="${n(13 * ts)}" fill="#bbf7d0">${esc(hole.name)}</text>`);
+  if (hole.name) parts.push(`<text x="${n(tx)}" y="${n(header.h * 0.83)}" font-family="${F}" font-weight="500" font-size="${n(13 * ts)}" fill="${card.accent}">${esc(hole.name)}</text>`);
   // Distances per tee (each tee to the layout's pin)
   const basket = holeBaskets(doc, holeId).find(b => b.position === layout?.pin) ?? holeBaskets(doc, holeId)[0];
   const rowsX = W - m;
@@ -274,8 +289,9 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
   const mainTee = tees.find(t => t.id === st.teeId) ?? tees[0];
   const lvl = TEE_LEVELS[mainTee?.level ?? "blue"];
   const parts: string[] = [];
-  const ink = "#0f1f12";
-  parts.push(`<rect width="${n(W)}" height="${n(H)}" fill="#f5f4ee"/>`);
+  const card = cardStyle(doc);
+  const ink = card.ink;
+  parts.push(`<rect width="${n(W)}" height="${n(H)}" fill="${card.paper}"/>`);
   // The map, with the elevation strip along its bottom
   parts.push(`<clipPath id="wide-map"><rect x="${n(mapBox.x)}" y="0" width="${n(mapBox.w)}" height="${n(H)}"/></clipPath>`);
   parts.push(`<g clip-path="url(#wide-map)"><g transform="translate(${n(mapBox.x)} 0)">${map.svg}</g></g>`);
