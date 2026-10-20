@@ -303,6 +303,14 @@ export class CourseView {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(this.mobile ? 1024 : 2048, this.mobile ? 1024 : 2048);
     this.scene.add(this.sun, this.sun.target);
+    // Two lines no one sees, kept for good: three.js drops a shader once nothing uses it, and a
+    // lone outline (a selected shape's, redrawn as it is dragged) would otherwise have the fat
+    // lines' shaders built again on every move, seconds each on a slow graphics chip
+    for (const dashed of [undefined, 1]) {
+      const keep = this.fatLine([new THREE.Vector3(0, -5000, 0), new THREE.Vector3(0.01, -5000, 0)], "#000000", 1, { dashed, opacity: 0 });
+      keep.frustumCulled = false;
+      this.scene.add(keep);
+    }
 
     this.camera = new THREE.PerspectiveCamera(30, 1, 0.5, 40000);
     this.controls = new CameraControls(this.camera, canvas);

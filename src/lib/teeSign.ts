@@ -276,7 +276,7 @@ export const renderScorecard = (doc: CourseDoc, players = 5) => {
         return v ? Math.round(doc.units === "m" ? v / FT_PER_M : v) : "";
       }), { small: true, dot: TEE_LEVELS[l.tee].color });
     }
-    row("Name ↴", cols.map(c => (c.extra ? "" : c.label)), { head: true });
+    row("Name ↴", cols.map(c => c.label), { head: true });
     for (let p = 0; p < players; p++) row("", cols.map(() => ""), { name: true });
     return { svg: out.join(""), bottom: y };
   };

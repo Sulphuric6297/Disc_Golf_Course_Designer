@@ -197,7 +197,8 @@ test("a building as a rectangle by two clicks (Rectangle comes first for buildin
   await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "area").length).toBe(1);
   const c = (await course(page)).items.find((i: any) => i.type === "area");
   for (const p of c.points) expect(Math.hypot(p.x - 700, p.y - 500)).toBeCloseTo(60, -1);
-  // Esc between the two clicks drops it
+  // Esc between the two clicks drops it (the Area tool again: a finished shape goes back to Select)
+  await page.keyboard.press("o");
   await page.getByTestId("draw-shape-box").click();
   await clickPlan(page, 300, 700);
   await page.keyboard.press("Escape");
