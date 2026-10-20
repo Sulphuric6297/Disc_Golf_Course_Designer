@@ -753,7 +753,10 @@ test("the course map's page edited like Canva: pick, drag, size, style, hide; te
   await page.getByTestId("page-text").blur();
   await expect(svg).toContainText("Sponsored by Acme");
   const t0 = (await style()).texts[0];
-  const tb = (await svg.locator(`[data-el="text:${t0.id}"]`).boundingBox())!;
+  const added = svg.locator(`[data-el="text:${t0.id}"]`);
+  await expect(added).toBeVisible();
+  await page.waitForTimeout(300);
+  const tb = (await added.boundingBox())!;
   await page.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
   await page.mouse.down();
   await page.mouse.move(tb.x + tb.width / 2 - 100, tb.y + tb.height / 2 + 60, { steps: 8 });
@@ -764,4 +767,36 @@ test("the course map's page edited like Canva: pick, drag, size, style, hide; te
   await page.keyboard.press("Delete");
   await expect.poll(async () => (await style()).texts.length).toBe(1);
   expect((await course(page)).holes).toHaveLength(1);
+});
+
+test("the map stays put on the Design page; its labels are dragged, hidden and put back", async ({ page }) => {
+  await blankCourse(page);
+  const hole = await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "5 Design" }).click();
+  const style = async () => (await course(page)).style;
+  // (the map isn't one of the things to pick)
+  await expect(page.getByTestId("page-element").filter({ hasText: /^Map$/ })).toHaveCount(0);
+  const num = page.getByTestId("design-page").locator(`[data-label="num:${hole.id}"]`);
+  await expect(num).toHaveCount(1);
+  const b = (await num.boundingBox())!;
+  const from = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 60, from.y + 40, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => (await style()).labelAt?.[`num:${hole.id}`]?.dx ?? 0).not.toBe(0);
+  expect((await editorState(page)).designSel).toBe(`label:num:${hole.id}`);
+  // Drawn there now
+  await expect.poll(async () => { const m = (await num.boundingBox())!; return Math.hypot(m.x + m.width / 2 - from.x - 60, m.y + m.height / 2 - from.y - 40); }).toBeLessThan(10);
+  // Back in place; hidden; shown again
+  await page.getByTestId("page-reset").click();
+  await expect.poll(async () => (await style()).labelAt?.[`num:${hole.id}`]).toBeUndefined();
+  await num.click();
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await style()).labelAt?.[`num:${hole.id}`]?.hidden).toBe(true);
+  await expect(num).toHaveCount(0);
+  await page.getByTestId("page-show-labels").click();
+  await expect(num).toHaveCount(1);
+  expect((await style()).page?.map).toBeUndefined();
 });

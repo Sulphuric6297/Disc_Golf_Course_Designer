@@ -10,7 +10,6 @@ import type { CourseDoc, MapStyle, PageElementId, PageElementStyle, PageImage, P
 import { Button, ColorInput, Field, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
 
 const BUILT_IN: { id: PageElementId; label: string }[] = [
-  { id: "map", label: "Map" },
   { id: "title", label: "Title" },
   { id: "holes", label: "Hole guide" },
   { id: "legend", label: "Legend" },
@@ -33,6 +32,7 @@ export const patchImage = (id: string, patch: Partial<PageImage>, history = true
 /** What a picked element is: a built-in one, a text or a picture. */
 export const elementOf = (doc: CourseDoc, sel: string | null) => {
   if (!sel) return null;
+  if (sel.startsWith("label:")) return { kind: "label", id: sel.slice(6) } as const;
   if (sel.startsWith("text:")) {
     const t = doc.style.texts?.find(x => x.id === sel.slice(5));
     return t ? ({ kind: "text", text: t } as const) : null;
@@ -50,7 +50,24 @@ export const elementLabel = (doc: CourseDoc, sel: string) => {
   if (!e) return "";
   if (e.kind === "text") return e.text.text.trim().split("\n")[0].slice(0, 28) || "Text";
   if (e.kind === "image") return "Picture";
+  if (e.kind === "label") return LABEL_KINDS[e.id.split(":")[0]] ?? "Label";
   return e.label;
+};
+
+const LABEL_KINDS: Record<string, string> = { num: "Hole number", dist: "Distance", name: "Name", tag: "OB tag", text: "Text label" };
+
+/** A label on the map moved by (dx, dy) feet on the ground, hidden, or put back (null). */
+export const patchLabel = (id: string, patch: { dx?: number; dy?: number; hidden?: boolean } | null) =>
+  style(s => {
+    const all = { ...s.labelAt };
+    if (patch === null) delete all[id];
+    else all[id] = { ...(all[id] ?? { dx: 0, dy: 0 }), ...patch };
+    return { labelAt: Object.keys(all).length ? all : undefined };
+  });
+export const moveLabel = (id: string, dx: number, dy: number) => {
+  const o = getDoc().style.labelAt?.[id];
+  const r = (v: number) => Math.round(v * 10) / 10;
+  patchLabel(id, { dx: r((o?.dx ?? 0) + dx), dy: r((o?.dy ?? 0) + dy) });
 };
 
 /** Whether an element shows on the page. */
@@ -59,6 +76,7 @@ export const isShown = (doc: CourseDoc, sel: string) => {
   if (!e) return false;
   if (e.kind === "text") return !e.text.hidden;
   if (e.kind === "image") return !e.image.hidden;
+  if (e.kind === "label") return !s.labelAt?.[e.id]?.hidden;
   switch (e.id) {
     case "holes": return s.holeTable;
     case "legend": return s.legend;
@@ -74,6 +92,7 @@ export const setShown = (sel: string, v: boolean) => {
   if (!e) return;
   if (e.kind === "text") return patchText(e.text.id, { hidden: v ? undefined : true });
   if (e.kind === "image") return patchImage(e.image.id, { hidden: v ? undefined : true });
+  if (e.kind === "label") return patchLabel(e.id, { hidden: v ? undefined : true });
   if (e.id === "holes") return style(() => ({ holeTable: v }));
   if (e.id === "legend") return style(() => ({ legend: v }));
   if (e.id === "north") return style(() => ({ north: v }));
@@ -89,8 +108,8 @@ export const removeDesignSel = () => {
   if (!e) return;
   if (e.kind === "text") style(s => ({ texts: (s.texts ?? []).filter(t => t.id !== e.text.id) }));
   else if (e.kind === "image") style(s => ({ images: (s.images ?? []).filter(t => t.id !== e.image.id) }));
-  else if (e.id === "map") return;
-  else setShown(designSel, false);
+  else if (e.kind === "label" || e.id !== "map") setShown(designSel, false);
+  else return;
   set({ designSel: null });
 };
 
@@ -98,7 +117,7 @@ export const removeDesignSel = () => {
 export const duplicateDesignSel = () => {
   const { designSel, set } = useEditor.getState();
   const e = designSel ? elementOf(getDoc(), designSel) : null;
-  if (!e || e.kind === "built") return;
+  if (!e || e.kind === "built" || e.kind === "label") return;
   const id = generateId();
   if (e.kind === "text") {
     style(s => ({ texts: [...(s.texts ?? []), { ...e.text, id, x: e.text.x + 0.02, y: e.text.y + 0.02 }] }));
@@ -113,7 +132,7 @@ export const duplicateDesignSel = () => {
 export const moveDesignEl = (sel: string, at: { x: number; y: number }, dx: number, dy: number) => {
   const doc = getDoc();
   const e = elementOf(doc, sel);
-  if (!e) return;
+  if (!e || e.kind === "label") return;
   const r = (v: number) => Math.round(v * 10000) / 10000;
   if (e.kind === "text") return patchText(e.text.id, { x: r(e.text.x + dx), y: r(e.text.y + dy) });
   if (e.kind === "image") return patchImage(e.image.id, { x: r(e.image.x + dx), y: r(e.image.y + dy) });
@@ -128,7 +147,7 @@ export const moveDesignEl = (sel: string, at: { x: number; y: number }, dx: numb
 export const sizeDesignEl = (sel: string, f: number, to: { x: number; y: number }) => {
   const doc = getDoc();
   const e = elementOf(doc, sel);
-  if (!e) return;
+  if (!e || e.kind === "label") return;
   const r = (v: number) => Math.round(v * 10000) / 10000;
   if (e.kind === "text") return patchText(e.text.id, { size: Math.round(Math.max(4, Math.min(400, e.text.size * f)) * 10) / 10, x: r(to.x), y: r(to.y) });
   if (e.kind === "image") return patchImage(e.image.id, { w: r(Math.max(0.02, Math.min(1.5, e.image.w * f))), x: r(to.x), y: r(to.y) });
@@ -210,6 +229,17 @@ export function PageElementPanel() {
       {e.kind !== "built" && <Button small tone="danger" onClick={removeDesignSel} testid="page-delete"><Trash2 size={13} /> Delete</Button>}
     </div>
   );
+  if (e.kind === "label") {
+    const o = s.labelAt?.[e.id];
+    return (
+      <Section title={title} testid="page-selected" right={close}>
+        <div className="flex flex-wrap gap-1.5">
+          {o && (o.dx || o.dy) ? <Button small onClick={() => patchLabel(e.id, o.hidden ? { dx: 0, dy: 0 } : null)} testid="page-reset"><RotateCcw size={13} /> Back in place</Button> : null}
+          <Button small onClick={() => setShown(sel, false)} testid="page-hide"><EyeOff size={13} /> Hide</Button>
+        </div>
+      </Section>
+    );
+  }
   if (e.kind === "text") {
     const t = e.text;
     return (
@@ -257,11 +287,7 @@ export function PageElementPanel() {
   );
   return (
     <Section title={title} testid="page-selected" right={close}>
-      {id === "map" ? (
-        <LiveSlider label="Zoom" value={o.scale ?? 1} min={0.4} max={4} step={0.05} format={v => `${Math.round(v * 100)}%`} onDone={v => patchPage("map", { scale: v })} />
-      ) : (
-        <LiveSlider label="Size" value={o.scale ?? 1} min={0.2} max={4} step={0.05} format={v => `${Math.round(v * 100)}%`} onDone={v => patchPage(id, { scale: v })} />
-      )}
+      <LiveSlider label="Size" value={o.scale ?? 1} min={0.2} max={4} step={0.05} format={v => `${Math.round(v * 100)}%`} onDone={v => patchPage(id, { scale: v })} />
       {id === "title" && (
         <>
           <Field label="Title"><TextInput label="Map title" value={s.title} placeholder={doc.name} onChange={v => style(() => ({ title: v }))} /></Field>
@@ -300,7 +326,7 @@ export function PageElementPanel() {
         </>
       )}
       <div className="flex flex-wrap gap-1.5 mt-1">
-        {moved && <Button small onClick={reset} testid="page-reset"><RotateCcw size={13} /> {id === "map" ? "Center" : "Back in place"}</Button>}
+        {moved && <Button small onClick={reset} testid="page-reset"><RotateCcw size={13} /> Back in place</Button>}
       </div>
       {actions}
     </Section>
@@ -335,6 +361,9 @@ export function PageSection() {
           );
         })}
       </ul>
+      {Object.values(s.labelAt ?? {}).some(o => o.hidden) && (
+        <div className="mb-2"><Button small onClick={() => style(st => ({ labelAt: Object.fromEntries(Object.entries(st.labelAt ?? {}).map(([k, o]) => [k, { ...o, hidden: undefined }])) }))} testid="page-show-labels"><Eye size={13} /> Show hidden labels ({Object.values(s.labelAt ?? {}).filter(o => o.hidden).length})</Button></div>
+      )}
       <div className="flex gap-1.5">
         <Button small onClick={addText} testid="page-add-text"><Type size={13} /> Add text</Button>
         <Button small onClick={() => file.current?.click()} testid="page-add-image"><ImagePlus size={13} /> Add picture</Button>

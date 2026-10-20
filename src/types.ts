@@ -309,6 +309,9 @@ export interface MapStyle {
   /** Where the legend (and hole table) panel sits on the course map: its top-left corner as a
    * share of the page's width and height (unset: a free corner). */
   legendAt?: { x: number; y: number };
+  /** Labels on the course map dragged on the Design page ("num:HOLE", "dist:HOLE", "name:ITEM",
+   * "tag:ITEM", "text:ITEM"): moved by (dx, dy) feet on the ground, or hidden. */
+  labelAt?: Record<string, { dx: number; dy: number; hidden?: boolean }>;
   /** Tee signs' and hole cards' own look (unset: dark green header, light paper, Oswald). */
   card?: { header?: string; accent?: string; paper?: string; ink?: string; font?: string };
   /** The course's logo (a small picture, as a data URL): on the scorecard. */

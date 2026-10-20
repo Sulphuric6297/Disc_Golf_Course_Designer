@@ -8,7 +8,7 @@ import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
 import { useCourse, useEditor } from "../state/course";
 import { holeNumber } from "../lib/course";
 import { useCanopy, useRelief } from "./useRelief";
-import { duplicateDesignSel, elementLabel, moveDesignEl, removeDesignSel, sizeDesignEl } from "./PageEditor";
+import { duplicateDesignSel, elementLabel, moveDesignEl, moveLabel, removeDesignSel, sizeDesignEl } from "./PageEditor";
 
 /** A phone or small tablet (touch first, small screen). */
 const PHONE = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches && typeof screen !== "undefined" && Math.min(screen.width, screen.height) < 900;
@@ -119,10 +119,24 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
   type Box = { x: number; y: number; w: number; h: number };
   const [selBox, setSelBox] = useState<Box | null>(null);
   const drag = useRef<{ mode: "move" | "size"; id: string; el: SVGGElement; orig: string; cx: number; cy: number; pid: number; k: number; W: number; H: number; box: Box; anchor: { x: number; y: number }; corner: { x: number; y: number }; f: number; dx: number; dy: number } | null>(null);
-  const elOf = (id: string) => svgHost.current?.querySelector(`[data-el="${CSS.escape(id)}"]`) as SVGGElement | null;
+  const elOf = (id: string) =>
+    svgHost.current?.querySelector(id.startsWith("label:") ? `[data-label="${CSS.escape(id.slice(6))}"]` : `[data-el="${CSS.escape(id)}"]`) as SVGGElement | null;
   const boxOf = (el: Element): Box => {
-    const [x, y, w, h] = (el.getAttribute("data-box") ?? "0 0 0 0").split(" ").map(Number);
-    return { x, y, w, h };
+    const box = el.getAttribute("data-box");
+    if (box) {
+      const [x, y, w, h] = box.split(" ").map(Number);
+      return { x, y, w, h };
+    }
+    // (a label on the map: where it is drawn)
+    const r = el.getBoundingClientRect(), host = svgHost.current!.getBoundingClientRect(), k = kRef.current;
+    return { x: (r.left - host.left) / k, y: (r.top - host.top) / k, w: r.width / k, h: r.height / k };
+  };
+  /** A move on the page as feet on the ground (the map's own scale and turn). */
+  const groundShift = (dx: number, dy: number) => {
+    const m = svgHost.current?.querySelector("[data-el=map]");
+    const k = Number(m?.getAttribute("data-k")) || 1, rot = ((Number(m?.getAttribute("data-rot")) || 0) * Math.PI) / 180;
+    const c = Math.cos(-rot), sn = Math.sin(-rot);
+    return { x: (dx * c + dy * sn) / k, y: (-dx * sn + dy * c) / k };
   };
   useLayoutEffect(() => {
     const el = editing && designSel ? elOf(designSel) : null;
@@ -138,14 +152,16 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
     if (active?.matches?.("input,textarea,select")) active.blur();
     const corner = (e.target as HTMLElement).closest?.("[data-corner]") as HTMLElement | null;
     if ((e.target as HTMLElement).closest?.("[data-page-bar]")) return;
+    // (a label on the map, else what's on the page; the map itself stays where it is)
+    const tag = (e.target as Element).closest?.("[data-label]") as SVGGElement | null;
     const hit = (e.target as Element).closest?.("[data-el]") as SVGGElement | null;
-    const id = corner ? designSel : hit?.getAttribute("data-el") ?? null;
-    if (!id) { setEd({ designSel: null }); return; }
+    const id = corner ? designSel : tag ? `label:${tag.getAttribute("data-label")}` : hit?.getAttribute("data-el") ?? null;
+    if (!id || id === "map") { setEd({ designSel: null }); return; }
     const el = elOf(id);
     if (!el) return;
     const fresh = id !== designSel;
     if (fresh) setEd({ designSel: id });
-    if (!corner && fresh && (id === "map" || e.pointerType === "touch")) return;
+    if (!corner && fresh && e.pointerType === "touch") return;
     e.preventDefault();
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -183,7 +199,10 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
       setSelBox(d.box);
       return;
     }
-    if (d.mode === "move") moveDesignEl(d.id, { x: d.box.x / d.W, y: d.box.y / d.H }, d.dx / d.W, d.dy / d.H);
+    if (d.mode === "move" && d.id.startsWith("label:")) {
+      const g = groundShift(d.dx, d.dy);
+      moveLabel(d.id.slice(6), g.x, g.y);
+    } else if (d.mode === "move") moveDesignEl(d.id, { x: d.box.x / d.W, y: d.box.y / d.H }, d.dx / d.W, d.dy / d.H);
     else sizeDesignEl(d.id, d.f, { x: (d.anchor.x + (d.box.x - d.anchor.x) * d.f) / d.W, y: (d.anchor.y + (d.box.y - d.anchor.y) * d.f) / d.H });
   };
   // Keys for what's picked: Delete hides it (text and pictures go), arrows nudge it (Shift: more),
@@ -203,7 +222,10 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
         if (!el) return;
         const b = boxOf(el), step = e.shiftKey ? 10 : 1;
         const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0, dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
-        moveDesignEl(designSel, { x: b.x / page.width, y: b.y / page.height }, dx / page.width, dy / page.height);
+        if (designSel.startsWith("label:")) {
+          const g = groundShift(dx, dy);
+          moveLabel(designSel.slice(6), g.x, g.y);
+        } else moveDesignEl(designSel, { x: b.x / page.width, y: b.y / page.height }, dx / page.width, dy / page.height);
       } else used = false;
       if (used) {
         e.preventDefault();
@@ -270,20 +292,20 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
             <div
               ref={svgHost}
               data-testid="design-page"
-              className={`shadow-2xl bg-white ${editing ? "[&_[data-el]]:cursor-pointer" : ""}`}
+              className={`shadow-2xl bg-white ${editing ? "[&_[data-el]:not([data-el=map])]:cursor-pointer" : ""}`}
               style={{ width: page.width * k, height: page.height * k }}
               dangerouslySetInnerHTML={{ __html: page.svg.replace(/^<svg([^>]*?) width="[^"]*" height="[^"]*"/, `<svg$1 width="${page.width * k}" height="${page.height * k}"`) }}
             />
-            {editing && designSel && <style>{`[data-testid=design-page] [data-el="${designSel.replace(/"/g, "")}"]{cursor:move;touch-action:none}`}</style>}
+            {editing && <style>{`[data-testid=design-page] [data-label]{cursor:move}${designSel ? `[data-testid=design-page] ${designSel.startsWith("label:") ? `[data-label="${designSel.slice(6).replace(/"/g, "")}"]` : `[data-el="${designSel.replace(/"/g, "")}"]`}{cursor:move;touch-action:none}` : ""}`}</style>}
             {editing && designSel && selBox && (
-              <div className="absolute pointer-events-none" data-testid="page-selection" style={{ left: selBox.x * k, top: selBox.y * k, width: selBox.w * k, height: selBox.h * k, outline: "2px solid #f97316", outlineOffset: designSel === "map" ? -3 : 2 }}>
-                {designSel !== "map" && ["0,0", "1,0", "0,1", "1,1"].map(c => {
+              <div className="absolute pointer-events-none" data-testid="page-selection" style={{ left: selBox.x * k, top: selBox.y * k, width: selBox.w * k, height: selBox.h * k, outline: "2px solid #f97316", outlineOffset: 2 }}>
+                {!designSel.startsWith("label:") && ["0,0", "1,0", "0,1", "1,1"].map(c => {
                   const [cx, cy] = c.split(",").map(Number);
                   return <div key={c} data-corner={c} data-testid="page-corner" className="absolute w-3 h-3 touch:w-6 touch:h-6 bg-white border-2 border-orange-500 rounded-sm pointer-events-auto" style={{ left: `calc(${cx * 100}% - ${compact ? 12 : 6}px)`, top: `calc(${cy * 100}% - ${compact ? 12 : 6}px)`, cursor: cx === cy ? "nwse-resize" : "nesw-resize", touchAction: "none" }} />;
                 })}
                 <div data-page-bar className="absolute left-0 flex items-center gap-1 pointer-events-auto bg-zinc-900/95 border border-white/10 rounded-lg px-1.5 py-1 shadow-lg whitespace-nowrap" style={{ top: selBox.y * k > 40 ? -36 : undefined, bottom: selBox.y * k > 40 ? undefined : -36 }}>
                   <span className="text-[11px] font-semibold text-zinc-200 px-1 max-w-[140px] truncate">{elementLabel(doc, designSel)}</span>
-                  {designSel !== "map" && <button className="p-1 rounded hover:bg-zinc-700 text-zinc-300" aria-label={designSel.includes(":") ? "Delete it" : "Hide it"} title={designSel.includes(":") ? "Delete" : "Hide"} onClick={removeDesignSel}>{designSel.includes(":") ? <Trash2 size={13} /> : <EyeOff size={13} />}</button>}
+                  {(() => { const gone = designSel.startsWith("text:") || designSel.startsWith("image:"); return <button className="p-1 rounded hover:bg-zinc-700 text-zinc-300" aria-label={gone ? "Delete it" : "Hide it"} title={gone ? "Delete" : "Hide"} onClick={removeDesignSel}>{gone ? <Trash2 size={13} /> : <EyeOff size={13} />}</button>; })()}
                 </div>
               </div>
             )}

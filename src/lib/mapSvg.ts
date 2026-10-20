@@ -129,6 +129,8 @@ export type MapLayers = {
   fontFamily: string;
   /** Forest style: where the photo shows trees. */
   canopy?: CanopyGrid | null;
+  /** Labels moved or hidden by hand (the course map's page): each one marked to be picked. */
+  labelAt?: MapStyle["labelAt"];
 };
 
 export const fontStack = (f: string) => (f === "Oswald" || f === "Script" ? "Oswald, 'Arial Narrow', Arial, sans-serif" : f === "Bitter" ? "Bitter, Georgia, serif" : "Inter, Arial, sans-serif");
@@ -365,7 +367,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
 
   // OB, hazards and no-go areas over the land: a soft band of color inside the edge, the edge
   // itself crisp on a white casing, and a tag saying what it is (when there is room)
-  const tags: { at: P; text: string; bg: string; fg: string; o: number }[] = [];
+  const tags: { id: string; at: P; text: string; bg: string; fg: string; o: number }[] = [];
   for (const a of areas) {
     if (a.kind !== "ob" && a.kind !== "hazard" && a.kind !== "nogo" && a.kind !== "casual") continue;
     if (a.points.length < 3) continue;
@@ -380,14 +382,14 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     out.push(`<g opacity="${o}"><polygon points="${poly}" fill="url(#${pat})" stroke="none"/><polygon points="${poly}" fill="none" stroke="${col}" stroke-opacity="0.38" stroke-width="${n(px(10))}" clip-path="url(#${clip})"/><polygon points="${poly}" fill="none" stroke="${casing}" stroke-opacity="0.9" stroke-width="${n(px(4.6))}" stroke-linejoin="round"/><polygon points="${poly}" fill="none" stroke="${col}" stroke-width="${n(px(2.5))}" stroke-linejoin="round" ${dash}/></g>`);
     const b = boundsOf(a.points);
     if (!a.label && Math.min(b.maxX - b.minX, b.maxY - b.minY) * k > 34 * ts) {
-      tags.push({ at: toScreen(labelPoint(a.points)), text: a.kind === "ob" ? "OB" : a.kind === "hazard" ? "HAZARD" : a.kind === "casual" ? "CASUAL" : "OUT OF PLAY", bg: col, fg: a.kind === "hazard" ? "#1b1d1a" : a.kind === "ob" ? obInk : "#ffffff", o });
+      tags.push({ id: `tag:${a.id}`, at: toScreen(labelPoint(a.points)), text: a.kind === "ob" ? "OB" : a.kind === "hazard" ? "HAZARD" : a.kind === "casual" ? "CASUAL" : "OUT OF PLAY", bg: col, fg: a.kind === "hazard" ? "#1b1d1a" : a.kind === "ob" ? obInk : "#ffffff", o });
     }
   }
   for (const l of lines.filter(x => x.kind === "ob")) {
     out.push(`<path d="${pathD(l.points)}" fill="none" stroke="${obCase}" stroke-width="${n(px(4.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(0.9 * dim(l.holeId))}"/>`);
     out.push(`<path d="${pathD(l.points)}" fill="none" stroke="${obCol}" stroke-width="${n(px(2.6))}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(dim(l.holeId))}"/>`);
     const len = pathLength(l.points);
-    if (len * k > 70 * ts) tags.push({ at: toScreen(pointAlong(l.points, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: obCol, fg: obInk, o: dim(l.holeId) });
+    if (len * k > 70 * ts) tags.push({ id: `tag:${l.id}`, at: toScreen(pointAlong(l.points, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: obCol, fg: obInk, o: dim(l.holeId) });
   }
 
   // Water, creeks, roads, fences and paths marked OB: a red edge along them (on both banks of a
@@ -413,7 +415,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       }
       const len = pathLength(g.points);
       // (Away from its name, which sits in the middle)
-      if (len * k > 70 * ts) tags.push({ at: toScreen(pointAlong(g.points, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: obCol, fg: obInk, o });
+      if (len * k > 70 * ts) tags.push({ id: `tag:${l.id}`, at: toScreen(pointAlong(g.points, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: obCol, fg: obInk, o });
     }
   }
 
@@ -476,11 +478,26 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   const textLabel = (p: P, text: string, size: number, opts: { color?: string; halo?: string; weight?: number; anchor?: string; angle?: number; family?: string } = {}) =>
     `<text x="${n(p.x)}" y="${n(p.y)}" font-family="${opts.family ?? font}" font-size="${n(size)}" font-weight="${opts.weight ?? 700}" text-anchor="${opts.anchor ?? "middle"}" dominant-baseline="central" fill="${opts.color ?? pal.label}" stroke="${opts.halo ?? pal.labelHalo}" stroke-width="${n(size * 0.22)}" stroke-linejoin="round" paint-order="stroke"${opts.angle ? ` transform="rotate(${n(opts.angle)} ${n(p.x)} ${n(p.y)})"` : ""}>${esc(text)}</text>`;
 
+  // Labels where they were dragged on the Design page (kept in feet from where they go by
+  // themselves, so they stay by their things), or hidden; each in a group to be picked by
+  const moved = layers.labelAt;
+  const place = (id: string, p: P): P | null => {
+    const o = moved?.[id];
+    if (!o) return p;
+    if (o.hidden) return null;
+    const c = Math.cos(-rot), sn = Math.sin(-rot);
+    return { x: p.x + (o.dx * c - o.dy * sn) * k, y: p.y + (o.dx * sn + o.dy * c) * k };
+  };
+  const label = (id: string, p: P, draw: (q: P) => string) => {
+    const q = place(id, p);
+    if (q) sym.push(moved ? `<g data-label="${id}">${draw(q)}</g>` : draw(q));
+  };
+
   // Contour heights (a halo of the ground's color breaks the line under them)
   for (const c of contourLabels) sym.push(textLabel(c.at, c.text, 7 * ts, { color: pal.contourMajor.startsWith("rgba") ? pal.inkSoft : pal.contourMajor, halo: pal.bg, weight: 600, angle: c.angle }));
 
   // Area and line names
-  for (const a of areas) if (a.label) sym.push(textLabel(toScreen(labelPoint(a.points)), a.label, 10 * ts, { color: a.kind === "water" && pal.label === "#ffffff" ? "#e0f2fe" : a.kind === "water" ? shade(s.water, -0.55) : pal.label, halo: a.kind === "water" && pal.label !== "#ffffff" ? shade(s.water, 0.6) : undefined, weight: 600 }));
+  for (const a of areas) if (a.label) label(`name:${a.id}`, toScreen(labelPoint(a.points)), q => textLabel(q, a.label!, 10 * ts, { color: a.kind === "water" && pal.label === "#ffffff" ? "#e0f2fe" : a.kind === "water" ? shade(s.water, -0.55) : pal.label, halo: a.kind === "water" && pal.label !== "#ffffff" ? shade(s.water, 0.6) : undefined, weight: 600 }));
   for (const st of structures) if (st.label && st.points.length >= 2) {
     if (isLineKind(st.kind)) {
       const mid = pointAlong(st.points, pathLength(st.points) / 2);
@@ -489,15 +506,15 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       while (ang < -90) ang += 180;
       const off = (structureWidth(st) / 2) * k + 7 * ts;
       const sp = toScreen(mid.point), nrm = { x: -Math.sin((ang * Math.PI) / 180), y: Math.cos((ang * Math.PI) / 180) };
-      sym.push(textLabel({ x: sp.x - nrm.x * off, y: sp.y - nrm.y * off }, st.label, 8.5 * ts, { weight: 600, angle: ang }));
-    } else sym.push(textLabel(toScreen(labelPoint(st.points)), st.label, 8.5 * ts, { weight: 600 }));
+      label(`name:${st.id}`, { x: sp.x - nrm.x * off, y: sp.y - nrm.y * off }, q => textLabel(q, st.label!, 8.5 * ts, { weight: 600, angle: ang }));
+    } else label(`name:${st.id}`, toScreen(labelPoint(st.points)), q => textLabel(q, st.label!, 8.5 * ts, { weight: 600 }));
   }
   for (const l of lines) if (l.label && l.points.length >= 2) {
     const mid = pointAlong(l.points, pathLength(l.points) / 2);
     let ang = (mid.angle * 180) / Math.PI - view.rotation;
     while (ang > 90) ang -= 180;
     while (ang < -90) ang += 180;
-    sym.push(textLabel(toScreen(mid.point), l.label, 9 * ts, { weight: 600, angle: ang }));
+    label(`name:${l.id}`, toScreen(mid.point), q => textLabel(q, l.label!, 9 * ts, { weight: 600, angle: ang }));
   }
 
   // Distance labels along each throw line
@@ -516,14 +533,14 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       const off = 9 * ts;
       const sp = toScreen(mid.point);
       const nrm = { x: -Math.sin((ang * Math.PI) / 180), y: Math.cos((ang * Math.PI) / 180) };
-      sym.push(textLabel({ x: sp.x - nrm.x * off, y: sp.y - nrm.y * off }, `${fmtDist(st.length, doc.units, false)}${doc.units === "ft" ? "'" : " m"}`, 10 * ts, { angle: ang, weight: 700 }));
+      label(`dist:${st.holeId}`, { x: sp.x - nrm.x * off, y: sp.y - nrm.y * off }, q => textLabel(q, `${fmtDist(st.length, doc.units, false)}${doc.units === "ft" ? "'" : " m"}`, 10 * ts, { angle: ang, weight: 700 }));
     }
   }
 
   // What the OB, hazard and out-of-play shapes are
   for (const t of tags) {
     const fs = 6.6 * ts, w = (t.text.length * 0.66 + 1.2) * fs, h = fs * 1.55;
-    sym.push(`<g opacity="${t.o}"><rect x="${n(t.at.x - w / 2)}" y="${n(t.at.y - h / 2)}" width="${n(w)}" height="${n(h)}" rx="${n(h / 2)}" fill="${t.bg}" stroke="#ffffff" stroke-width="${n(0.9 * ts)}"/><text x="${n(t.at.x)}" y="${n(t.at.y + 0.3 * ts)}" text-anchor="middle" dominant-baseline="central" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="${n(fs)}" letter-spacing="${n(0.4 * ts)}" fill="${t.fg}">${t.text}</text></g>`);
+    label(t.id, t.at, q => `<g opacity="${t.o}"><rect x="${n(q.x - w / 2)}" y="${n(q.y - h / 2)}" width="${n(w)}" height="${n(h)}" rx="${n(h / 2)}" fill="${t.bg}" stroke="#ffffff" stroke-width="${n(0.9 * ts)}"/><text x="${n(q.x)}" y="${n(q.y + 0.3 * ts)}" text-anchor="middle" dominant-baseline="central" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="${n(fs)}" letter-spacing="${n(0.4 * ts)}" fill="${t.fg}">${t.text}</text></g>`);
   }
   // Mandos and drop zones
   const mandos = items.filter(i => i.type === "mando") as MandoItem[];
@@ -576,13 +593,13 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       // Bold white italic numbers beside the tee, as on painted course maps
       const side = { x: -dir.y / dl, y: dir.x / dl };
       const p = { x: toScreen(tee).x + side.x * 14 * ts + (dir.x / dl) * 4 * ts, y: toScreen(tee).y + side.y * 14 * ts + (dir.y / dl) * 4 * ts };
-      sym.push(`<text x="${n(p.x)}" y="${n(p.y)}" font-family="${font}" font-size="${n(15 * ts)}" font-weight="700" font-style="italic" text-anchor="middle" dominant-baseline="central" fill="#ffffff" stroke="rgba(8,20,4,.75)" stroke-width="${n(2.6 * ts)}" stroke-linejoin="round" paint-order="stroke" opacity="${o}">${st.number}</text>`);
+      label(`num:${st.holeId}`, p, q => `<text x="${n(q.x)}" y="${n(q.y)}" font-family="${font}" font-size="${n(15 * ts)}" font-weight="700" font-style="italic" text-anchor="middle" dominant-baseline="central" fill="#ffffff" stroke="rgba(8,20,4,.75)" stroke-width="${n(2.6 * ts)}" stroke-linejoin="round" paint-order="stroke" opacity="${o}">${st.number}</text>`);
       continue;
     }
-    sym.push(`<g opacity="${o}"><circle cx="${n(at.x)}" cy="${n(at.y)}" r="${n(r)}" fill="${lvl.color}" stroke="${lvl.color === "#f8fafc" ? "#1f2937" : "#ffffff"}" stroke-width="${n(1.6 * ts)}"/>${textLabel({ x: at.x, y: at.y + 0.5 * ts }, String(st.number), 11.5 * ts, { color: lvl.ink, halo: lvl.color, weight: 700 })}</g>`);
+    label(`num:${st.holeId}`, at, q => `<g opacity="${o}"><circle cx="${n(q.x)}" cy="${n(q.y)}" r="${n(r)}" fill="${lvl.color}" stroke="${lvl.color === "#f8fafc" ? "#1f2937" : "#ffffff"}" stroke-width="${n(1.6 * ts)}"/>${textLabel({ x: q.x, y: q.y + 0.5 * ts }, String(st.number), 11.5 * ts, { color: lvl.ink, halo: lvl.color, weight: 700 })}</g>`);
   }
   // Text labels placed on the map
-  for (const l of items.filter(i => i.type === "label") as LabelItem[]) sym.push(textLabel(toScreen(l), l.text, l.fontSize * 0.8 * ts, { color: l.color, weight: 700 }));
+  for (const l of items.filter(i => i.type === "label") as LabelItem[]) label(`text:${l.id}`, toScreen(l), q => textLabel(q, l.text, l.fontSize * 0.8 * ts, { color: l.color, weight: 700 }));
 
   return { svg: `<defs>${defs.join("")}</defs>${out.join("")}${sym.join("")}`, toScreen };
 };
@@ -938,13 +955,12 @@ export const renderPoster = (doc: CourseDoc, opts: PosterOptions) => {
       // (with a box to pick it by on the Design page, never drawn)
       parts.push(`<g data-el="${id}" data-box="${n(X)} ${n(Y)} ${n(box.w * k)} ${n(box.h * k)}" transform="translate(${n(X)} ${n(Y)}) scale(${n(k)}) translate(${n(-box.x)} ${n(-box.y)})"><rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.w)}" height="${n(box.h)}" fill="none" pointer-events="all"/>${content}</g>`);
     };
-    // The map fills the page; the course fits inside a margin (moved and zoomed on the page by hand)
-    const mapEl = el("map");
-    const scale = Math.min((W - 2 * m) / bw, (H - 2 * m) / bh) * (mapEl.scale ?? 1);
-    const shift = rotatePoint({ x: ((mapEl.x ?? 0) * W) / scale, y: ((mapEl.y ?? 0) * H) / scale }, rotation);
-    const view: MapView = { cx: center.x - shift.x, cy: center.y - shift.y, rotation, scale, width: W, height: H };
-    const map = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy }, "pm");
-    parts.push(`<g data-el="map" data-box="0 0 ${n(W)} ${n(H)}">${map.svg}</g>`);
+    // The map fills the page; the course fits inside a margin. Its labels can be dragged on the
+    // Design page (the map's scale and turn say how far that is on the ground)
+    const scale = Math.min((W - 2 * m) / bw, (H - 2 * m) / bh);
+    const view: MapView = { cx: center.x, cy: center.y, rotation, scale, width: W, height: H };
+    const map = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy, labelAt: s.labelAt ?? {} }, "pm");
+    parts.push(`<g data-el="map" data-box="0 0 ${n(W)} ${n(H)}" data-k="${scale}" data-rot="${rotation}">${map.svg}</g>`);
     // The emptiest corner for the title
     const shown = pts.map(map.toScreen);
     const bw2 = W * 0.42, bh2 = H * 0.4;
