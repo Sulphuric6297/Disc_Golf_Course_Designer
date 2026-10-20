@@ -1,7 +1,7 @@
 import { test as plain, expect as plainExpect } from "@playwright/test";
 import { test, expect, addHole, blankCourse, course, importSite } from "./fixtures";
-import { autoWalks, createAmenity, createArea, createBasket, createDropZone, createEmptyCourse, createLine, createMando, createTee, curves, linePath, newHole, normalizeCourse } from "../../src/lib/course";
-import { contourInterval, meander, paintedLine } from "../../src/lib/forest";
+import { autoWalks, createAmenity, createArea, createBasket, createDropZone, createEmptyCourse, createLine, createMando, createTee, createTree, curves, linePath, newHole, normalizeCourse } from "../../src/lib/course";
+import { contourInterval, meander, paintedFrom, paintedLine } from "../../src/lib/forest";
 import { contoursOf, reliefExaggeration } from "../../src/lib/relief";
 import { dist, distanceToPath } from "../../src/lib/geom";
 import { BASKET_MARKS, basketMark, bestRotation, renderPoster } from "../../src/lib/mapSvg";
@@ -281,6 +281,23 @@ plain("paths curve through their points, painted exactly where drawn (no wobble)
   plainExpect(linePath(createLine("ob", pts))).toEqual(pts);
   plainExpect(curves({ kind: "road" })).toBe(true);
   plainExpect(curves({ kind: "fence" })).toBe(false);
+});
+
+plain("the painting is made again when anything painted changes (a tree's kind or size, a tee pad), not for a name", () => {
+  const doc = createEmptyCourse();
+  const h = newHole();
+  doc.holes.push(h);
+  const tee = createTee(h.id, { x: 100, y: 100 });
+  const tree = createTree({ x: 200, y: 200 });
+  doc.items.push(tee, tree);
+  const key = (d: typeof doc) => JSON.stringify(paintedFrom(d));
+  const k0 = key(doc);
+  const edit = (id: string, patch: object) => key({ ...doc, items: doc.items.map(i => (i.id === id ? { ...i, ...patch } : i)) as typeof doc.items });
+  plainExpect(edit(tree.id, { treeType: "conifer" })).not.toBe(k0);
+  plainExpect(edit(tree.id, { width: 1.5 })).not.toBe(k0);
+  plainExpect(edit(tree.id, { height: 70 })).not.toBe(k0);
+  plainExpect(edit(tee.id, { padLength: 14 })).not.toBe(k0);
+  plainExpect(key({ ...doc, holes: [{ ...h, name: "The Gauntlet", par: 4 }] })).toBe(k0);
 });
 
 plain("basket marks: five kinds, on the map and in the legend", () => {

@@ -2,7 +2,7 @@
 // whole site (the Forest painting, in the course's own colors), draped on the terrain in place of
 // the satellite photo. Painted a slice at a time, once per version of the course.
 import { useEffect, useState } from "react";
-import { canopyFor, forestCanvasAsync, woodedOf, type WoodedGrid } from "../lib/forest";
+import { canopyFor, forestCanvasAsync, paintedFrom, woodedOf, type WoodedGrid } from "../lib/forest";
 import { holeStats } from "../lib/holeStats";
 import type { CourseDoc } from "../types";
 import { useCourse } from "./course";
@@ -27,8 +27,7 @@ const paintKey = (doc: CourseDoc) =>
     doc.background?.length ?? 0,
     doc.canvas,
     doc.activeLayout,
-    doc.holes.map(h => [h.id, h.doglegs, h.fairwayWidth, h.fairwayShape, h.fairwayShift, h.fairway, h.walkOut, h.walkIn, h.walkWidth, h.walkSurface]),
-    doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "structure" ? [i.type, i.kind, i.points, i.width, i.height, i.roof, i.roofColor, i.wallColor] : i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as { width?: number }).width, (i as { surface?: string }).surface, (i as { straight?: boolean }).straight] : [i.type, Math.round(i.x), Math.round(i.y), (i as { radius?: number }).radius, (i as { holeId?: string }).holeId]))
+    paintedFrom(doc)
   ]);
 
 const made = new Map<string, Promise<PaintedGround | null>>();

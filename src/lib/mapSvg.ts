@@ -8,7 +8,7 @@ import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelI
 import { activeLayout, fairwayOutline, holeBaskets, linePath, teeAim } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath } from "./geom";
 import { courseTotals, holeStats, isOb, type HoleStats } from "./holeStats";
-import { forestCanvas, forestCanvasAsync, paintedLine, type CanopyGrid } from "./forest";
+import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, type CanopyGrid } from "./forest";
 import { BASKET_MARKS, RESTRICTED, STRUCTURE_INK, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol, structureLegend, structureSymbol, type StructureDraw, type StructureInk } from "./symbols";
 import { isLineKind, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
 import { chainContours, type Contours } from "./relief";
@@ -653,6 +653,8 @@ let livePaint: { key: string; stop: AbortController } | null = null;
 const lastForView = new Map<string, string>();
 /** Live paintings (blob URLs), kept apart from those made for print. */
 const liveCache = new Map<string, string>();
+/** The last live painting that failed (not tried again). */
+let failedPaint: string | null = null;
 
 /** For tests: whether a live painting is under way. */
 export const paintingNow = () => !!livePaint;
@@ -661,9 +663,8 @@ if (typeof window !== "undefined") (window as any).__dgPainting = paintingNow;
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
   const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
-  const shapes = doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as LineItem).width, (i as LineItem).surface, (i as LineItem).straight] : i.type === "structure" ? [i.type, i.kind, i.points, i.width, i.height, i.roof, i.roofColor, i.wallColor] : [i.type, Math.round(i.x), Math.round(i.y), (i as TreeItem).radius]));
   const look = [s.forest, s.treeCover, s.landscape, s.contours, s.trees, s.fairway, s.rough, s.water, s.path, s.nextTee, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale];
-  const key = JSON.stringify([paintLimit, printDensity, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairwayShape, h.fairwayShift, h.fairway, h.walkOut, h.walkIn, h.walkWidth, h.walkSurface]), shapes, doc.canvas, doc.id]);
+  const key = JSON.stringify([paintLimit, printDensity, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), paintedFrom(doc), doc.canvas, doc.id]);
   // (A live preview may show a picture made for print; a print never uses a live one, which is a
   // blob only this page can read)
   const hit = (paintLive && liveCache.get(key)) || forestCache.get(key);
@@ -702,7 +703,7 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   }
   if (!paintLive) return keep(forestCanvas(doc, view, layers.stats, opts));
   // Live: paint in the background (unless already under way), meanwhile the last picture
-  if (livePaint?.key !== key) {
+  if (livePaint?.key !== key && failedPaint !== key) {
     livePaint?.stop.abort();
     const job = { key, stop: new AbortController() };
     livePaint = job;
@@ -722,8 +723,14 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
         if (lastForView.size > 8) lastForView.delete(lastForView.keys().next().value!);
         if (livePaint === job) livePaint = null;
         paintedListeners.forEach(fn => fn());
-      }, () => {
+      }, (err: unknown) => {
         if (livePaint === job) livePaint = null;
+        // (stopped for a newer one: nothing to do; a painting that failed is said, and not tried
+        // again until the course changes)
+        if (job.stop.signal.aborted) return;
+        console.error("The map couldn't be painted:", err);
+        failedPaint = key;
+        paintedListeners.forEach(fn => fn());
       });
   }
   return lastForView.get(viewKey) ?? null;

@@ -993,6 +993,14 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
  * The painted land a slice at a time between frames (about 8 ms each), so the page stays smooth
  * while it paints, even on a phone. Stops (rejects) when `signal` is aborted.
  */
+/** Everything of the course the painting is made from (for knowing when to paint it again):
+ * every thing on the map in full but its name and lock (labels and mandos aren't painted), and
+ * the holes, in order, but their names, par, notes and flyovers. */
+export const paintedFrom = (doc: CourseDoc) => [
+  doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => ({ ...i, label: undefined, locked: undefined })),
+  doc.holes.map(h => ({ ...h, name: undefined, par: undefined, notes: undefined, flyKeys: undefined }))
+];
+
 export const forestCanvasAsync = async (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts, signal?: AbortSignal) => {
   const steps = forestSteps(doc, view, stats, opts);
   let start = performance.now();
