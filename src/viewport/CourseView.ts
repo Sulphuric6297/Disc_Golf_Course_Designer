@@ -190,6 +190,8 @@ export class CourseView {
   private lastRender = 0;
   /** The last tick drew a picture (two in a row: the gap between them is a real frame time). */
   private drewLastTick = false;
+  /** Recordings under way (their frames come first: the screen is drawn less often meanwhile). */
+  private recordings = 0;
   private adaptiveForced = false;
   private paused = false;
   private frames = 0;
@@ -810,6 +812,8 @@ export class CourseView {
     rt.texture.colorSpace = THREE.SRGBColorSpace;
     (rt as unknown as { isXRRenderTarget: boolean }).isXRRenderTarget = true;
     const raw = new Uint8Array(width * height * 4);
+    this.recordings++;
+    let open = true;
     const paths = new Map<string, ReturnType<CourseView["flightPath"]>>();
     const path = (id: string) => {
       if (!paths.has(id)) paths.set(id, this.flightPath(id));
@@ -855,6 +859,8 @@ export class CourseView {
       },
       dispose: () => {
         rt.dispose();
+        if (open) this.recordings--;
+        open = false;
         this.invalidate();
       }
     };
@@ -882,10 +888,13 @@ export class CourseView {
       this.drawDraft();
     }
     // Grass swaying and water rippling in the wind, from the tee (at most 30 frames a second on a
-    // phone when nothing else moves: the battery matters more than the breeze)
-    const breeze = !!this.povHole && this.wind;
+    // phone when nothing else moves: the battery matters more than the breeze; and still while a
+    // video records, whose frames would otherwise wait on the screen's)
+    const breeze = !!this.povHole && this.wind && this.recordings === 0;
     if (breeze && !(this.mobile && !this.dirty && performance.now() - this.lastRender < 33)) this.dirty = true;
-    if (!this.dirty || this.size.width <= 1 || this.paused) {
+    // (While a video records, the screen at most 8 times a second: on a slow device its pictures
+    // would take the recording's time, and the recording is what is being waited for)
+    if (!this.dirty || this.size.width <= 1 || this.paused || (this.recordings > 0 && performance.now() - this.lastRender < 125)) {
       this.drewLastTick = false;
       return;
     }
@@ -961,9 +970,9 @@ export class CourseView {
     if (!on) this.invalidate();
   }
 
-  /** For tests: whether the view is drawing, and how many pictures it has drawn. */
+  /** For tests: whether the view is drawing, how many pictures it has drawn, and whether a video records. */
   drawInfo() {
-    return { paused: this.paused, frames: this.frames };
+    return { paused: this.paused, frames: this.frames, recording: this.recordings > 0 };
   }
 
   /** For tests: the quality level now. */

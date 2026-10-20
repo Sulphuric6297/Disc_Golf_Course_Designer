@@ -266,8 +266,9 @@ test("3D woods leave the fairways, ponds, tees and baskets clear (as the painted
   expect(await near(760, 705, 40)).toBe(0);
   // Woods all round them
   expect(await near(475, 380, 40)).toBeGreaterThan(0);
-  // The hole taken out: the woods grow back over where its fairway was
-  await page.getByTestId("hole-row").click();
+  // The hole taken out: the woods grow back over where its fairway was (selected directly: a
+  // click on its row could miss while the panel moves under a busy page)
+  await page.evaluate(() => (window as any).__dgActions.select((window as any).__dgCourse().holes[0].id));
   await page.keyboard.press("Delete");
   await expect.poll(async () => (await course(page)).holes.length).toBe(0);
   await expect.poll(() => near(475, 500, 30), { timeout: 40_000 }).toBeGreaterThan(0);

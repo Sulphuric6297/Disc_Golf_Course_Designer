@@ -134,6 +134,32 @@ test("the Record button over a flyover records that hole", async ({ page }) => {
   expect((await editorState(page)).teeView).toBe(await page.evaluate(() => (window as any).__dgCourse().holes[1].id));
 });
 
+test("while a video records, the view from the tee holds still (the recording's frames come first)", async ({ page }) => {
+  test.setTimeout(180_000);
+  await twoHoles(page, [320, 180]);
+  await page.getByTestId("hole-row").nth(1).click();
+  await page.getByTestId("tee-view").click();
+  await expect(page.getByTestId("tee-view-hud")).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__dgEditor().wind)).toBe(true);
+  const info = () => page.evaluate(() => (window as any).__dgView.drawInfo() as { frames: number; recording: boolean });
+  const downloading = page.waitForEvent("download", { timeout: 150_000 });
+  await page.getByTestId("hud-record").click();
+  await expect.poll(async () => (await info()).recording).toBe(true);
+  await page.waitForTimeout(300);
+  // Nothing moves on screen but the breeze: it waits (it once kept redrawing the screen and took
+  // most of the recording's time on a slow computer)
+  const a = await info();
+  await page.waitForTimeout(1500);
+  const b = await info();
+  expect(a.recording && b.recording, "still recording while counted").toBe(true);
+  expect(b.frames - a.frames).toBeLessThanOrEqual(1);
+  await downloading;
+  // The breeze again afterwards
+  await expect.poll(async () => (await info()).recording).toBe(false);
+  const c = (await info()).frames;
+  await expect.poll(async () => (await info()).frames - c, { timeout: 20_000 }).toBeGreaterThan(1);
+});
+
 test("without WebCodecs, the flyover is recorded in real time with a MediaRecorder", async ({ page }) => {
   test.setTimeout(180_000);
   await page.addInitScript(() => {
