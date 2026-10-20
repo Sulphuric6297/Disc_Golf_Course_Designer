@@ -2098,13 +2098,13 @@ export class CourseView {
         return dragPoint(i, doglegs);
       }, {
         index: i,
-        title: "Drag to bend the throw line here",
+        title: "Drag to bend the hole here",
         data: { kind: "line" },
         visible: () => {
           const s = stats();
           if (!s || s.line.length !== n) return false;
           const a = this.project(at(s.line[i])), b = this.project(at(s.line[i + 1]));
-          return !!a && !!b && Math.hypot(a.x - b.x, a.y - b.y) > 70;
+          return !!a && !!b && Math.hypot(a.x - b.x, a.y - b.y) > 36;
         }
       });
     }

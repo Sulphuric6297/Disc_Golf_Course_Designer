@@ -164,3 +164,23 @@ test("the walk to the next tee becomes a line to reshape, in place of the automa
   await expect.poll(async () => (await course(page)).items.filter((i: any) => i.kind === "walk").length).toBe(0);
   await expect(page.getByTestId("edit-walks")).toBeVisible();
 });
+
+test("bending a hole: Bend left and Bend right curve it, Straighten undoes it", async ({ page }) => {
+  await blankCourse(page);
+  // East along y = 500
+  await addHole(page, { x: 300, y: 500 }, { x: 700, y: 500 });
+  await page.keyboard.press("Escape");
+  await page.getByTestId("hole-row").first().click();
+  const turn = async () => (await course(page)).holes[0].doglegs as { x: number; y: number }[];
+  // Left of the line of play (north, looking east) by a sixth of its length
+  await page.getByTestId("bend-left").click();
+  await expect.poll(async () => (await turn()).length).toBe(1);
+  expect((await turn())[0].x).toBeCloseTo(500, 0);
+  expect((await turn())[0].y).toBeCloseTo(500 - 400 / 6, 0);
+  await page.getByTestId("bend-right").click();
+  await expect.poll(async () => (await turn())[0]?.y).toBeCloseTo(500 + 400 / 6, 0);
+  // Longer to play than straight
+  await expect(page.getByTestId("hole-row")).not.toContainText("400 ft");
+  await page.getByRole("button", { name: "Straighten" }).click();
+  await expect.poll(async () => (await turn()).length).toBe(0);
+});

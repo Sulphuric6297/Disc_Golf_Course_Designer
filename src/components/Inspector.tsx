@@ -10,7 +10,7 @@ import { holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { addHoleOb, deleteSelection, duplicateSelection, editWalks, select, setTeeLevel } from "../state/actions";
 import { moveHole, updateHole, updateItem, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaItem, AreaKind, CourseItem, Hole, LineItem, LineKind, RoofKind, StructureKind, TeeSurface, TreeKind } from "../types";
+import type { AmenityKind, AreaItem, AreaKind, CourseItem, Hole, LineItem, LineKind, P, RoofKind, StructureKind, TeeSurface, TreeKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { getView } from "./MapViewport";
 import { Button, ColorInput, Field, NumberInput, Section, Segmented, Slider, Stat, TextInput, Toggle } from "./ui";
@@ -18,6 +18,15 @@ import { Button, ColorInput, Field, NumberInput, Section, Segmented, Slider, Sta
 const shapeText = { straight: "Straight", left: "Turns left", right: "Turns right", "s-curve": "S-curve" };
 /** A small size to the half foot (or tenth of a meter): "2.5 ft". */
 const fmtSize = (ft: number, units: "ft" | "m") => (units === "m" ? `${(ft / 3.28084).toFixed(1)} m` : `${Math.round(ft * 2) / 2} ft`);
+
+/** A gentle curve for a hole: one turn halfway along, off to the left (-1) or right (1) by a
+ * sixth of its length (its handle drags it on from there). */
+const bendHole = (line: P[], side: 1 | -1): P[] => {
+  const a = line[0], b = line[line.length - 1];
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const off = (len / 6) * side;
+  return [{ x: (a.x + b.x) / 2 - ((b.y - a.y) / len) * off, y: (a.y + b.y) / 2 + ((b.x - a.x) / len) * off }];
+};
 
 function HoleInspector({ hole }: { hole: Hole }) {
   const doc = useCourse(s => s.doc);
@@ -107,7 +116,13 @@ function HoleInspector({ hole }: { hole: Hole }) {
           )}
           <Field label="Name (optional)"><TextInput label="Hole name" value={hole.name ?? ""} placeholder="e.g. The Gauntlet" onChange={v => set({ name: v || undefined })} /></Field>
           <Field label="Notes and hole rules"><TextInput area label="Hole notes" value={hole.notes ?? ""} placeholder="e.g. OB left of the path. Mando right of the big oak; drop zone by the bench." onChange={v => set({ notes: v || undefined })} /></Field>
-          {hole.doglegs.length > 0 && <Button small onClick={() => set({ doglegs: [] })}>Straighten the throw line</Button>}
+          {s.complete && (
+            <div className="flex flex-wrap gap-1.5">
+              <Button small onClick={() => set({ doglegs: bendHole(s.line, -1) })} testid="bend-left">Bend left</Button>
+              <Button small onClick={() => set({ doglegs: bendHole(s.line, 1) })} testid="bend-right">Bend right</Button>
+              {hole.doglegs.length > 0 && <Button small onClick={() => set({ doglegs: [] })}>Straighten</Button>}
+            </div>
+          )}
           {walkNext && <div className="mt-1.5"><Button small onClick={() => editWalks(hole.id)} testid="edit-walk">Edit the walk to hole {n + 1}</Button></div>}
         </Section>
       )}
