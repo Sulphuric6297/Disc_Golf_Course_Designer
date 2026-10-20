@@ -90,3 +90,19 @@ been seen working in the browser.
   - Letter, A4, a 4 × 6 in card, or a square 1080 px picture for sharing;
   - all holes as one PDF or a ZIP of pictures; one hole as PDF, PNG, SVG or its own GeoJSON.
 
+
+## Phones and tablets
+
+- [ ] **Mobile friendly, "not a strap-on feature but a well thought out mobile navigation
+  platform", and just as good on desktop.** Researched first (`docs/RESEARCH.md`, "Phones and
+  tablets"). Seen in Chromium's phone and tablet emulation; still to check on a real phone:
+  - the map is the screen; the six steps in a bar at the bottom (a rail on the left with the
+    phone on its side); the desktop layout unchanged, tablets keep the side panel;
+  - the step's panel and the selection in a bottom sheet that rests at peek, half and full
+    height (drag, flick, tap its handle, arrow keys), never hiding the whole map;
+  - tools in a labelled row at the top of the sheet; drawing by taps with Undo, Cancel and Done;
+    holding a finger on a thing opens its menu; pinch, two-finger turns and the 44 px map buttons;
+  - the Design preview fitted to the screen (pinch or + and −), the tee view laid out for an
+    upright phone, dialogs as sheets from the bottom, readable text;
+  - "make sure mobile works performance perfectly": the sheet slides on the GPU, no frosted
+    glass over the map, measured on a throttled phone profile (`docs/RESEARCH.md`).
