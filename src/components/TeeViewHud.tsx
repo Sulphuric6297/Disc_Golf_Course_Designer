@@ -33,7 +33,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
     const bar = "flex-1 min-w-0 h-14 rounded-2xl flex flex-col items-center justify-center gap-1 text-[12px] font-semibold text-white active:bg-white/15 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400";
     return (
       <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui>
-        <div className="absolute left-2 right-2 top-[max(8px,env(safe-area-inset-top))] pointer-events-auto bg-zinc-950/80 rounded-2xl px-3 py-2.5 text-white shadow-2xl border border-white/10 max-w-[420px]" data-testid="tee-view-hud">
+        <div className={`absolute left-2 right-2 top-[max(8px,env(safe-area-inset-top))] pointer-events-auto bg-zinc-950/80 rounded-2xl px-3 py-2.5 text-white shadow-2xl border border-white/10 max-w-[420px] ${ed.flyover ? "hidden" : ""}`} data-testid="tee-view-hud">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-[22px] font-bold" style={{ background: lvl.color, color: lvl.ink, fontFamily: "Oswald, Inter" }}>{s.label}</div>
             <div className="flex-1 min-w-0">
@@ -57,7 +57,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
         </div>
         {camera && (
           <div className="absolute left-2 right-2 bottom-[calc(max(8px,env(safe-area-inset-bottom))+80px)] pointer-events-auto bg-zinc-950/90 rounded-2xl p-3 border border-white/10 shadow-2xl max-h-[45vh] overflow-y-auto">
-            <FlyoverSettingsPanel />
+            <FlyoverSettingsPanel holeId={hole.id} />
           </div>
         )}
       </div>
@@ -65,7 +65,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
   }
   return (
     <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui>
-      <div className="absolute top-4 left-4 pointer-events-auto bg-zinc-950/80 backdrop-blur rounded-2xl px-4 py-3 text-white shadow-2xl border border-white/10 w-[280px]" data-testid="tee-view-hud">
+      <div className={`absolute top-4 left-4 pointer-events-auto bg-zinc-950/80 backdrop-blur rounded-2xl px-4 py-3 text-white shadow-2xl border border-white/10 w-[280px] ${ed.flyover ? "hidden" : ""}`} data-testid="tee-view-hud">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full flex items-center justify-center text-2xl font-bold" style={{ background: lvl.color, color: lvl.ink, fontFamily: "Oswald, Inter" }}>{s.label}</div>
           <div>
@@ -95,7 +95,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
       </div>
       {camera && (
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-[320px] pointer-events-auto bg-zinc-950/90 backdrop-blur rounded-2xl p-4 border border-white/10 shadow-2xl">
-          <FlyoverSettingsPanel />
+          <FlyoverSettingsPanel holeId={hole.id} />
         </div>
       )}
       <div className="absolute top-4 right-4 pointer-events-auto"><SceneButton /></div>

@@ -2,38 +2,64 @@
 // camera's height, speed and field of view, where it starts and how far ahead it looks; and a
 // hole's own flight through keyframes.
 import { Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { flyoverOf, keyBetween } from "../lib/flight";
+import { holeLabel } from "../lib/course";
 import { fmtDist } from "../lib/units";
 import { changeDoc, updateHole, useCourse, useEditor } from "../state/course";
 import type { FlyKey, FlyoverSettings, Hole } from "../types";
 import { getView } from "./MapViewport";
 import { Button, NumberInput, Segmented, Slider } from "./ui";
 
-export function FlyoverSettingsPanel() {
+/** How flyovers fly: for one hole (`holeId`: its own settings, over the course's) or for all
+ * holes (the course's). `only`: this hole's, with no choice; `keys`: through keyframes (only the
+ * speed and field of view apply); `ground`: with the choice of ground. */
+export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { holeId?: string; only?: boolean; keys?: boolean; ground?: boolean }) {
   const doc = useCourse(s => s.doc);
   const ro = useEditor(e => e.viewOnly);
   const look = useEditor(e => e.flyLook);
   const setEd = useEditor(e => e.set);
-  const f = flyoverOf(doc);
+  const hole = holeId ? doc.holes.find(h => h.id === holeId) : undefined;
+  const [scope, setScope] = useState<"hole" | "course">(hole ? "hole" : "course");
+  const forHole = !!hole && (only || scope === "hole");
+  const f = flyoverOf(doc, forHole ? hole : undefined);
   const u = doc.units;
   // (live while a slider moves; one undo step when it is let go)
-  const set = (patch: Partial<FlyoverSettings>) => changeDoc(d => ({ flyover: { ...d.flyover, ...patch } }), false);
+  const set = (patch: Partial<FlyoverSettings>) =>
+    forHole
+      ? changeDoc(d => ({ holes: d.holes.map(h => (h.id === hole!.id ? { ...h, flyover: { ...h.flyover, ...patch } } : h)) }), false)
+      : changeDoc(d => ({ flyover: { ...d.flyover, ...patch } }), false);
   const done = () => useCourse.getState().commit();
   const ft = (v: number) => fmtDist(v, u);
   return (
     <div data-testid="flyover-settings">
-      <div className="mb-2.5">
-        <Segmented label="Ground" value={look} onChange={v => setEd({ flyLook: v })} options={[{ value: "painted", label: "Painted map" }, { value: "photo", label: "Photo" }]} />
-      </div>
+      {ground && (
+        <div className="mb-2.5">
+          <Segmented label="Ground" value={look} onChange={v => setEd({ flyLook: v })} options={[{ value: "painted", label: "Painted map" }, { value: "photo", label: "Photo" }]} />
+        </div>
+      )}
       {!ro && (
         <>
-          <Slider label="Height" min={10} max={250} step={5} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />
+          {hole && !only && (
+            <div className="mb-2.5">
+              <Segmented label="Settings for" value={scope} onChange={setScope} options={[{ value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }, { value: "course", label: "All holes" }]} />
+            </div>
+          )}
+          {!keys && <Slider label="Height" min={10} max={250} step={5} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />}
           <Slider label="Speed" min={0.25} max={3} step={0.05} value={f.speed} onChange={v => set({ speed: v })} onDone={done} format={v => `${Math.round(v * 100) / 100}×`} />
           <Slider label="Field of view" min={20} max={100} value={f.fov} onChange={v => set({ fov: v })} onDone={done} format={v => `${v}°`} />
-          <Slider label="Start behind the tee" min={0} max={400} step={5} value={f.behind} onChange={v => set({ behind: v })} onDone={done} format={ft} />
-          <Slider label="To the side" min={-200} max={200} step={5} value={f.side} onChange={v => set({ side: v })} onDone={done} format={v => (v === 0 ? "On the line" : `${ft(Math.abs(v))} ${v > 0 ? "right" : "left"}`)} />
-          <Slider label="Look ahead" min={30} max={500} step={10} value={f.lookAhead} onChange={v => set({ lookAhead: v })} onDone={done} format={ft} />
-          <Button small onClick={() => changeDoc(() => ({ flyover: undefined }))} disabled={!doc.flyover} testid="flyover-defaults">Default flight</Button>
+          {!keys && (
+            <>
+              <Slider label="Start behind the tee" min={0} max={400} step={5} value={f.behind} onChange={v => set({ behind: v })} onDone={done} format={ft} />
+              <Slider label="To the side" min={-200} max={200} step={5} value={f.side} onChange={v => set({ side: v })} onDone={done} format={v => (v === 0 ? "On the line" : `${ft(Math.abs(v))} ${v > 0 ? "right" : "left"}`)} />
+              <Slider label="Look ahead" min={30} max={500} step={10} value={f.lookAhead} onChange={v => set({ lookAhead: v })} onDone={done} format={ft} />
+            </>
+          )}
+          {forHole ? (
+            <Button small onClick={() => updateHole(hole!.id, { flyover: undefined })} disabled={!hole!.flyover} testid="flyover-same">Same as all holes</Button>
+          ) : (
+            <Button small onClick={() => changeDoc(() => ({ flyover: undefined }))} disabled={!doc.flyover} testid="flyover-defaults">Default flight</Button>
+          )}
         </>
       )}
     </div>
@@ -55,6 +81,7 @@ export function HoleFlight({ hole }: { hole: Hole }) {
   return (
     <div data-testid="hole-flight">
       <Segmented label="Flyover" value={keys ? "keys" : "auto"} onChange={v => (v === "keys" ? byHand() : setKeys(undefined))} options={[{ value: "auto", label: "By itself" }, { value: "keys", label: "Keyframes" }]} />
+      <div className="mt-2.5"><FlyoverSettingsPanel holeId={hole.id} only keys={!!keys} ground={false} /></div>
       {keys && (
         <div className="mt-2 space-y-1.5" data-testid="fly-keys">
           <div className="grid grid-cols-[22px_1fr_1fr_1fr_28px] gap-1 text-[10px] uppercase tracking-wide text-zinc-500 px-0.5">

@@ -27,7 +27,9 @@ import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
 import { createWoods, createWoodsWhere } from "../three/woods";
 import type { WoodedGrid } from "../lib/forest";
-import { autoFlight, flyoverOf, keyFlight, keysFromFlight, type Air } from "../lib/flight";
+import { autoFlight, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy } from "../lib/flight";
+import { VIDEO_HOLD, titleStrength } from "../lib/video";
+import { drawOverlay, holeTitle, type HoleTitle } from "./flyTitle";
 import { forestDetail, type Forest } from "../three/treeKit";
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
@@ -116,6 +118,8 @@ const COARSE = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse
 
 /** How high woods' trees reach, ft (the tallest of three/woods). */
 const WOODS_TOP_FT = 80;
+/** How close to a trunk counts, ft (flyovers ease around trunks). */
+const TRUNK_ROOM = 8;
 
 /** The painted map for the ground (a picture's URL) and where it shows woods. */
 export type PaintedLook = { url: string; wooded: WoodedGrid | null };
@@ -195,7 +199,7 @@ export class CourseView {
   private povCam = new THREE.PerspectiveCamera(62, 16 / 9, 0.3, 30000);
   private povHole: string | null = null;
   private povLook = { yaw: 0, pitch: 0 };
-  private fly: { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; t: number; dur: number; ease: boolean; done?: () => void } | null = null;
+  private fly: { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; t: number; dur: number; ease: boolean; done?: () => void; title?: HoleTitle } | null = null;
   /** A hole whose line is being plotted by hand, and its turns so far (from the tee). */
   private plotHole: string | null = null;
   private plotPts: P[] = [];
@@ -697,12 +701,14 @@ export class CourseView {
   }
 
   /** Fly over a hole from behind the tee to the basket; `done` runs when it lands. */
+  /** Flies over a hole just as a recording shows it: its title held a moment on the first
+   * picture, the flight (the title fading), a moment at the basket. */
   flyover(holeId: string, done?: () => void) {
     const path = this.flightPath(holeId);
-    if (!path) return;
+    if (!path || !this.doc) return;
     this.setTeeView(holeId);
     if (!this.fly) this.povFov = this.povCam.fov;
-    this.fly = { ...path, t: 0, done };
+    this.fly = { ...path, t: -VIDEO_HOLD.intro, done, title: holeTitle(this.doc.course, holeId) };
     this.invalidate();
   }
 
@@ -714,10 +720,10 @@ export class CourseView {
     const s = doc?.stats.find(x => x.holeId === holeId);
     if (!doc || !s?.complete) return null;
     const hole = doc.course.holes.find(h => h.id === holeId);
-    const set = flyoverOf(doc.course);
+    const set = flyoverOf(doc.course, hole);
     const ground = (x: number, y: number) => this.h(x, y);
     const byHand = !!hole?.flyKeys && hole.flyKeys.length >= 2;
-    const f = byHand ? keyFlight(hole!.flyKeys!, set, ground) : autoFlight(smoothPath(s.line, 16), set, ground, (p, r) => this.obstacleTop(p, r));
+    const f = byHand ? keyFlight(hole!.flyKeys!, set, ground) : autoFlight(smoothPath(s.line, 16), set, ground, (p, r) => this.canopyAt(p, r));
     if (!f) return null;
     const v = (a: Air) => new THREE.Vector3(a.x, a.z, a.y);
     return { pts: f.cam.map(v), look: f.look.map(v), fov: f.fov, dur: f.dur, ease: !byHand };
@@ -729,39 +735,47 @@ export class CourseView {
     const s = doc?.stats.find(x => x.holeId === holeId);
     if (!doc || !s?.complete) return null;
     const ground = (x: number, y: number) => this.h(x, y);
-    const f = autoFlight(smoothPath(s.line, 16), flyoverOf(doc.course), ground, (p, r) => this.obstacleTop(p, r));
+    const f = autoFlight(smoothPath(s.line, 16), flyoverOf(doc.course, doc.course.holes.find(h => h.id === holeId)), ground, (p, r) => this.canopyAt(p, r));
     return f ? keysFromFlight(f, ground) : null;
   }
 
-  /** How high what stands near a point reaches (treetops, woods, roofs), ft on the terrain's
-   * datum, or -Infinity. */
-  private obstacleTop(p: P, reach: number): number {
+  /** What stands over a point, within `reach` ft (for flyovers): where trees' leaves start (about
+   * a third of the way up a broadleaf, lower on a pine, at the ground for a bush) and their tops,
+   * their trunks close by; woods and buildings from the ground up. Ft on the terrain's datum. */
+  private canopyAt(p: P, reach: number): Canopy | null {
     const doc = this.doc;
-    if (!doc) return -Infinity;
-    let top = -Infinity;
+    if (!doc) return null;
+    let base = Infinity, top = -Infinity;
+    const trunks: P[] = [];
     const near = (pts: P[]) => {
       const b = boundsOf(pts);
       if (p.x < b.minX - reach || p.x > b.maxX + reach || p.y < b.minY - reach || p.y > b.maxY + reach) return false;
       return pointInPolygon(p, pts) || distanceToPath(p, [...pts, pts[0]]) < reach;
     };
+    const solid = (g: number, h: number) => { base = Math.min(base, g); top = Math.max(top, g + h); };
     for (const i of doc.course.items) {
       if (i.type === "tree") {
-        if (Math.hypot(i.x - p.x, i.y - p.y) < reach + i.radius * (i.width ?? 1)) top = Math.max(top, this.h(i.x, i.y) + (i.height ?? i.radius * 2.6));
+        const d = Math.hypot(i.x - p.x, i.y - p.y), crown = i.radius * (i.width ?? 1);
+        if (d < reach + crown) {
+          const g = this.h(i.x, i.y), h = i.height ?? i.radius * 2.6;
+          const low = i.treeType === "bush" ? 0 : i.treeType === "conifer" ? 0.18 : 0.34;
+          base = Math.min(base, g + h * low);
+          top = Math.max(top, g + h);
+        }
+        if (d < reach + TRUNK_ROOM) trunks.push({ x: i.x, y: i.y });
       } else if (i.type === "area" && i.kind === "woods") {
-        if (near(i.points)) top = Math.max(top, this.h(p.x, p.y) + WOODS_TOP_FT);
+        if (near(i.points)) solid(this.h(p.x, p.y), WOODS_TOP_FT);
       } else if (i.type === "structure" && !isLineKind(i.kind)) {
-        if (near(i.points)) top = Math.max(top, this.h(p.x, p.y) + structureHeight(i) + 10);
+        if (near(i.points)) solid(this.h(p.x, p.y), structureHeight(i) + 10);
       }
     }
     // The painted map's own woods, where trees stand on it
     const pw = this.ground.paintedTexture ? this.paintedWoods : null;
     if (pw) {
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const c = Math.floor((p.x + dx * reach - pw.x0) / pw.ftPerCell), r = Math.floor((p.y + dy * reach - pw.y0) / pw.ftPerCell);
-        if (c >= 0 && r >= 0 && c < pw.cols && r < pw.rows && pw.data[r * pw.cols + c] === 1) top = Math.max(top, this.h(p.x, p.y) + WOODS_TOP_FT);
-      }
+      const c = Math.floor((p.x - pw.x0) / pw.ftPerCell), r = Math.floor((p.y - pw.y0) / pw.ftPerCell);
+      if (c >= 0 && r >= 0 && c < pw.cols && r < pw.rows && pw.data[r * pw.cols + c] === 1) solid(this.h(p.x, p.y), WOODS_TOP_FT);
     }
-    return top;
+    return Number.isFinite(top) || trunks.length ? { base, top, trunks } : null;
   }
 
   stopFlyover() {
@@ -844,7 +858,46 @@ export class CourseView {
     restore();
     this.ground.extras.visible = true;
     this.fx.visible = true;
-    if (!target) this.placePovMarker(cam, rect);
+    if (!target) {
+      this.placePovMarker(cam, rect);
+      this.placeFlyOverlay(cam, rect);
+    }
+  }
+
+  private flyCanvas: HTMLCanvasElement | null = null;
+  /** Over a flyover on screen: what a recording shows over it (the hole's badge and title, the
+   * basket with the distance left, the course's name), drawn the same way. */
+  private placeFlyOverlay(cam: THREE.PerspectiveCamera, rect: { x: number; y: number; width: number; height: number }) {
+    const f = this.fly, doc = this.doc;
+    if (!f?.title || !doc || !this.povHole) {
+      if (this.flyCanvas) this.flyCanvas.style.display = "none";
+      return;
+    }
+    if (!this.flyCanvas) {
+      this.flyCanvas = document.createElement("canvas");
+      this.flyCanvas.setAttribute("data-testid", "fly-overlay");
+      this.flyCanvas.style.cssText = "position:absolute;pointer-events:none;z-index:1";
+      this.container.appendChild(this.flyCanvas);
+    }
+    const c = this.flyCanvas, dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = rect.width, h = rect.height;
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+      c.width = Math.round(w * dpr);
+      c.height = Math.round(h * dpr);
+    }
+    Object.assign(c.style, { display: "block", left: `${rect.x}px`, top: `${this.size.height - rect.y - h}px`, width: `${w}px`, height: `${h}px` });
+    const g = c.getContext("2d")!;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    const s = doc.stats.find(x => x.holeId === this.povHole);
+    let info: FrameInfo | null = null;
+    if (s?.complete) {
+      const b = s.line[s.line.length - 1];
+      const q = new THREE.Vector3(b.x, this.h(b.x, b.y) + 5, b.y).project(cam);
+      const inside = q.z <= 1 && Math.abs(q.x) <= 1.05 && Math.abs(q.y) <= 1.05;
+      info = { basket: inside ? { x: ((q.x + 1) / 2) * w, y: ((1 - q.y) / 2) * h } : null, toBasket: dist({ x: cam.position.x, y: cam.position.z }, b) };
+    }
+    drawOverlay(g, w, h, f.title, titleStrength(f.t), info, doc.course);
   }
 
   /** In the tee view: a marker over the basket (too small to see from far away) with the distance. */
@@ -858,7 +911,7 @@ export class CourseView {
       this.container.appendChild(this.povMarker);
     }
     const el = this.povMarker;
-    if (!doc || !s?.complete || rect.width !== this.size.width) { el.style.display = "none"; return; }
+    if (!doc || !s?.complete || rect.width !== this.size.width || this.fly?.title) { el.style.display = "none"; return; }
     const b = s.line[s.line.length - 1];
     const p = new THREE.Vector3(b.x, this.h(b.x, b.y) + 5, b.y).project(cam);
     if (p.z > 1 || p.x < -1.1 || p.x > 1.1 || p.y < -1.1 || p.y > 1.1) { el.style.display = "none"; return; }
@@ -1006,7 +1059,8 @@ export class CourseView {
       // background) must not skip the flight
       this.fly.t += Math.min(dt, 0.25);
       this.dirty = true;
-      if (this.fly.t >= this.fly.dur) {
+      // (a moment at the basket before it ends, as in a recording)
+      if (this.fly.t >= this.fly.dur + (this.fly.title ? VIDEO_HOLD.outro : 0)) {
         const done = this.fly.done;
         this.fly = null;
         this.povCam.fov = this.povFov;
@@ -1739,9 +1793,9 @@ export class CourseView {
     const flyHole = this.hole(this.selectedId);
     if (flyHole?.flyKeys && flyHole.flyKeys.length >= 2 && !this.povHole) {
       const keys = flyHole.flyKeys;
-      put(`flykeys:${flyHole.id}`, JSON.stringify([keys, hv, course.flyover]), () => {
+      put(`flykeys:${flyHole.id}`, JSON.stringify([keys, hv, course.flyover, flyHole.flyover]), () => {
         const g = new THREE.Group();
-        const f = keyFlight(keys, flyoverOf(course), (x, y) => this.h(x, y));
+        const f = keyFlight(keys, flyoverOf(course, flyHole), (x, y) => this.h(x, y));
         if (f) g.add(this.fatLine(this.drapeLine(f.cam.map(c => ({ x: c.x, y: c.y })), 0.6), "#38bdf8", 2.5, { order: 8, dashed: 8 }));
         for (const k of keys) g.add(this.fatLine(this.drapeLine([{ x: k.x, y: k.y }, { x: k.lookX, y: k.lookY }], 0.6), "#38bdf8", 1.5, { opacity: 0.7, order: 8 }));
         return g;

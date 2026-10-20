@@ -163,6 +163,8 @@ export interface Hole {
   alsoNumbers?: number[];
   /** No automatic walk from this hole on to the next. */
   walkOff?: boolean;
+  /** This hole's own flyover settings (over the course's). */
+  flyover?: Partial<FlyoverSettings>;
   /** Shown name, e.g. "The Gauntlet" (optional). */
   name?: string;
   /** Par set by hand; unset: worked out from the hole's length, elevation and shape. */

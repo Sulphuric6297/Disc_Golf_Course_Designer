@@ -58,6 +58,10 @@ export type TimelineFrame = { hole: number; t: number; render: boolean; title: n
 /** Seconds the title is held before each flight, and the basket after it. */
 export const VIDEO_HOLD = { intro: 0.8, outro: 0.6 };
 
+/** How strongly the hole's big title shows at a moment of its flight (s; before it starts: 1):
+ * it fades out over the first second. */
+export const titleStrength = (t: number) => Math.max(0, Math.min(1, 1 - (t - 0.3) / 0.7));
+
 /** The frames of a recording of flights lasting `durations` seconds, at a steady 1/fps step: for
  * each hole a moment on the first picture with its title, the flight, and a moment at the basket. */
 export const videoTimeline = (durations: number[], fps: number, hold = VIDEO_HOLD): TimelineFrame[] => {
@@ -69,7 +73,7 @@ export const videoTimeline = (durations: number[], fps: number, hold = VIDEO_HOL
     for (let i = 1; i <= n; i++) {
       const t = Math.min(dur, i / fps);
       // The title fades out over the first second of the flight
-      frames.push({ hole, t, render: true, title: Math.max(0, Math.min(1, 1 - (t - 0.3) / 0.7)), cut: intro === 0 && i === 1 });
+      frames.push({ hole, t, render: true, title: titleStrength(t), cut: intro === 0 && i === 1 });
     }
     for (let i = 0; i < outro; i++) frames.push({ hole, t: dur, render: false, title: 0, cut: false });
   });

@@ -60,7 +60,9 @@ export const paintedGround = (doc: CourseDoc): Promise<PaintedGround | null> => 
       URL.revokeObjectURL(old.url);
     }
     return { url, wooded: woodedOf(canvas) };
-  })().catch(() => {
+  })().catch((err: unknown) => {
+    // (stopped for a newer one: nothing to say; a failure is said)
+    if (!job.stop.signal.aborted) console.error("The ground couldn't be painted:", err);
     made.delete(key);
     return null;
   }).finally(() => {

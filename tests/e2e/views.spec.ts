@@ -101,7 +101,8 @@ test("from a tee and flying over, the ground is the painted map with trees on it
   await expect.poll(ground).toEqual({ painted: false, shown: false, trees: false });
 });
 
-test("flyover settings: height, speed and field of view change the flight, one undo step each", async ({ page }) => {
+test("flyover settings: height, speed and field of view change the flight, one undo step each; a hole's own", async ({ page }) => {
+  test.setTimeout(240_000);
   await blankCourse(page);
   const hole = await addHole(page, { x: 300, y: 600 }, { x: 800, y: 600 });
   await page.keyboard.press("Escape");
@@ -117,6 +118,8 @@ test("flyover settings: height, speed and field of view change the flight, one u
   const before = await flight();
   expect(before.dur).toBeCloseTo(500 / 70, 1);
   const slider = (name: string) => page.getByTestId("flyover-settings").getByRole("slider", { name });
+  // (for all holes; then this hole's own)
+  await page.getByTestId("flyover-settings").getByRole("radio", { name: "All holes" }).click();
   await slider("Height").focus();
   await page.keyboard.press("End");
   await expect.poll(async () => (await course(page)).flyover?.height).toBe(250);
@@ -139,6 +142,18 @@ test("flyover settings: height, speed and field of view change the flight, one u
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).flyover?.fov).toBeUndefined();
   expect((await course(page)).flyover?.height).toBe(250);
+  // This hole's own: lower than the rest, kept for it only; Same as all holes again
+  await page.getByTestId("hole-row").first().click();
+  await page.getByTestId("tee-view").click();
+  await page.getByTestId("hud-camera").click();
+  await page.getByTestId("flyover-settings").getByRole("radio", { name: /^Hole 1/ }).click();
+  await slider("Height").focus();
+  await page.keyboard.press("Home");
+  await expect.poll(async () => (await course(page)).holes[0].flyover?.height).toBe(10);
+  expect((await course(page)).flyover?.height).toBe(250);
+  expect((await flight()).alt).toBeLessThan(after.alt - 150);
+  await page.getByTestId("flyover-same").click();
+  await expect.poll(async () => (await course(page)).holes[0].flyover).toBeUndefined();
 });
 
 test("a hole's own flight through keyframes: shown on the map, dragged, set, added, removed, and flown", async ({ page }) => {
@@ -197,40 +212,45 @@ test("a hole's own flight through keyframes: shown on the map, dragged, set, add
   await expect(page.locator('[data-handle="flykey"]')).toHaveCount(0);
 });
 
-plain("the flight by itself: behind the tee, up over the trees in good time and gently down, to the side when asked (pure logic)", () => {
+plain("the flight by itself: a low glide from behind the tee, under a crown over the line, round its trunk, over a bush, never bobbing (pure logic)", () => {
   const line = [{ x: 0, y: 0 }, { x: 400, y: 0 }];
   const flat = () => 100;
-  // Woods 90 ft tall from 150 to 250 ft along the hole
-  const woods = (p: { x: number }, reach: number) => (p.x > 150 - reach && p.x < 250 + reach ? 190 : -Infinity);
   const open = autoFlight(line, FLYOVER_DEFAULTS, flat)!;
-  const over = autoFlight(line, FLYOVER_DEFAULTS, flat, woods)!;
   plainExpect(open.cam[0].x).toBeCloseTo(-60, 5);
   // (a short hole flies for 6 seconds)
   plainExpect(open.dur).toBe(6);
   const at = (f: typeof open, x: number) => f.cam.reduce((a, c) => (Math.abs(c.x - x) < Math.abs(a.x - x) ? c : a));
-  // Open ground: about the height asked; over the woods: clear of the treetops
-  plainExpect(at(open, 0).z - 100).toBeGreaterThan(40);
-  plainExpect(at(open, 0).z - 100).toBeLessThan(80);
-  for (const c of over.cam) if (c.x > 115 && c.x < 285) plainExpect(c.z).toBeGreaterThanOrEqual(190 + 18 - 1e-6);
+  // Low over open ground: about the height asked
+  plainExpect(at(open, 0).z - 100).toBeGreaterThan(15);
+  plainExpect(at(open, 0).z - 100).toBeLessThan(45);
+  // A big tree over the line at 200 ft (leaves from 30 to 70 ft up, its trunk on the line), a bush at 300 ft
+  const trees = (p: { x: number; y: number }, reach: number) => {
+    if (Math.hypot(p.x - 200, p.y) < reach + 25) return { base: 130, top: 170, trunks: Math.hypot(p.x - 200, p.y) < reach + 8 ? [{ x: 200, y: 0 }] : [] };
+    if (Math.hypot(p.x - 300, p.y) < reach + 10) return { base: 100, top: 125, trunks: [] };
+    return null;
+  };
+  const glide = autoFlight(line, FLYOVER_DEFAULTS, flat, trees)!;
+  // Under the big tree's leaves, and off to the side of its trunk
+  for (const c of glide.cam) if (Math.hypot(c.x - 200, c.y) < 26) plainExpect(c.z).toBeLessThanOrEqual(130 - 5 + 1e-6);
+  plainExpect(Math.min(...glide.cam.map(c => Math.hypot(c.x - 200, c.y)))).toBeGreaterThan(4);
+  // Over the bush (too low to pass under)
+  plainExpect(at(glide, 300).z).toBeGreaterThan(125);
   // Never a sudden hop: at most half a foot up or down per foot along
-  for (let i = 1; i < over.cam.length; i++) plainExpect(Math.abs(over.cam[i].z - over.cam[i - 1].z)).toBeLessThanOrEqual(Math.abs(over.cam[i].x - over.cam[i - 1].x) * 0.5 + 1e-6);
-  // Already up before the woods
-  plainExpect(at(over, 100).z).toBeGreaterThan(at(open, 100).z + 10);
+  for (let i = 1; i < glide.cam.length; i++) plainExpect(Math.abs(glide.cam[i].z - glide.cam[i - 1].z)).toBeLessThanOrEqual(Math.hypot(glide.cam[i].x - glide.cam[i - 1].x, glide.cam[i].y - glide.cam[i - 1].y) * 0.5 + 1e-6);
   // To the right of the line (south, flying east), and twice as fast
   const side = autoFlight(line, { ...FLYOVER_DEFAULTS, side: 50, speed: 2 }, flat)!;
   plainExpect(at(side, 200).y).toBeCloseTo(50, 5);
   plainExpect(side.dur).toBeCloseTo(open.dur / 2, 5);
-  // Over bumpy ground and scattered trees it holds a steady line: up, then down (no bobbing)
+  // Over bumpy ground it holds a steady line: up, then down (no bobbing)
   const bumpy = (x: number) => 100 + 8 * Math.sin(x / 20);
-  const scattered = (p: { x: number }, reach: number) => ([60, 140, 230, 320].some(t => Math.abs(p.x - t) < reach + 10) ? 175 : -Infinity);
-  const steady = autoFlight(line, FLYOVER_DEFAULTS, x => bumpy(x), scattered)!;
+  const steady = autoFlight(line, FLYOVER_DEFAULTS, x => bumpy(x))!;
   let turns = 0;
   for (let i = 2; i < steady.cam.length; i++) {
     const a = steady.cam[i - 1].z - steady.cam[i - 2].z, b = steady.cam[i].z - steady.cam[i - 1].z;
     if (Math.abs(a) > 0.05 && Math.abs(b) > 0.05 && Math.sign(a) !== Math.sign(b)) turns++;
   }
   plainExpect(turns).toBeLessThanOrEqual(2);
-  for (const c of steady.cam) plainExpect(c.z).toBeGreaterThanOrEqual(Math.max(bumpy(c.x) + 3, [60, 140, 230, 320].some(t => Math.abs(c.x - t) < 45) ? 193 : -Infinity) - 1e-6);
+  for (const c of steady.cam) plainExpect(c.z).toBeGreaterThanOrEqual(bumpy(c.x) + 4 - 1e-6);
 });
 
 plain("a flight through keyframes: through each one on its seconds, the field of view between them (pure logic)", () => {
