@@ -7,15 +7,30 @@ import { fetchPlaceSuggestions, resolveSiteLocation, type PlaceSuggestion } from
 import { SITE_MAX_WIDTH_FT, getGeoBounds, selectionFromBounds, type GeoBounds } from "../lib/geo/core";
 import type { MapImagerySource } from "../lib/geo/imagery";
 import { importSite, type ImportedSite } from "../lib/importSite";
+import { getDoc } from "../state/course";
 import { Button, Toggle } from "./ui";
 import { useLayout } from "./useLayout";
 
+/** The map's first view: the site already brought in (its frame to grow, shrink or move; the
+ * design goes along with it), or the whole country. */
+const startFrom = () => {
+  const site = getDoc().site;
+  const b = site.bounds;
+  if (!b) return { view: { lat: 39.5, lon: -98.35, zoom: 4, key: 0 }, selection: null, label: "" };
+  const lat = (b.north + b.south) / 2, lon = (b.east + b.west) / 2;
+  // Zoomed so the frame takes about half of a 1,000 px map
+  const widthM = (b.east - b.west) * 111320 * Math.cos((lat * Math.PI) / 180);
+  const zoom = Math.max(12, Math.min(18, Math.floor(Math.log2((156543 * Math.cos((lat * Math.PI) / 180) * 500) / Math.max(1, widthM)))));
+  return { view: { lat, lon, zoom, key: 1 }, selection: b, label: site.location?.label ?? "" };
+};
+
 export function SiteImportDialog({ onClose, onImported }: { onClose: () => void; onImported: (site: ImportedSite, opts: { trees: boolean; osm: boolean }) => void }) {
-  const [query, setQuery] = useState("");
+  const [start] = useState(startFrom);
+  const [query, setQuery] = useState(start.label);
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
-  const [view, setView] = useState({ lat: 39.5, lon: -98.35, zoom: 4, key: 0 });
-  const [selection, setSelection] = useState<GeoBounds | null>(null);
-  const [label, setLabel] = useState("");
+  const [view, setView] = useState(start.view);
+  const [selection, setSelection] = useState<GeoBounds | null>(start.selection);
+  const [label, setLabel] = useState(start.label);
   const [drawing, setDrawing] = useState(false);
   const [selectView, setSelectView] = useState(0);
   const [imagery, setImagery] = useState<MapImagerySource>("satellite");
@@ -25,7 +40,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   const layout = useLayout();
   const timer = useRef(0);
   /** The place just picked (its name in the search box asks for no more suggestions). */
-  const picked = useRef("");
+  const picked = useRef(start.label);
 
   useEffect(() => {
     window.clearTimeout(timer.current);
@@ -75,6 +90,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
       Area: {Math.round(dims.widthFt).toLocaleString()} × {Math.round(dims.heightFt).toLocaleString()} ft ({((dims.widthFt * dims.heightFt) / 43560).toFixed(1)} acres)
       {tooBig && <div className="text-xs mt-1">Keep it under {SITE_MAX_WIDTH_FT.toLocaleString()} ft each way.</div>}
       {!tooBig && <div className="text-xs text-zinc-400 mt-1">An 18-hole course usually needs 15–40 acres or more.</div>}
+      {!tooBig && start.selection && <div className="text-xs text-emerald-300 mt-1" data-testid="design-kept">Drag the corners to make it bigger or smaller: your holes and features stay where they are on the ground.</div>}
     </div>
   );
   const options = (

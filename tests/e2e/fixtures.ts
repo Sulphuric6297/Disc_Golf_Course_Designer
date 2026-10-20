@@ -261,7 +261,7 @@ export async function importSite(page: Page, opts: { trees?: boolean; osm?: bool
     await page.getByRole("button", { name: /^1\s*Site$/ }).click();
     const find = page.getByTestId("find-site");
     if (await find.isVisible()) await find.click();
-    else await page.getByRole("button", { name: "Change or re-import the site" }).click();
+    else await page.getByRole("button", { name: "Resize or re-import the site" }).click();
   }
   await page.getByLabel("Search address").fill("Springfield Park");
   await page.getByRole("button", { name: /Springfield Park/ }).first().click();

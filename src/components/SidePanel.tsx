@@ -86,7 +86,7 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
             {doc.site.imagerySource && <div>Photo: {doc.site.imagerySource}</div>}
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            <Button small onClick={onFindSite}>Change or re-import the site</Button>
+            <Button small onClick={onFindSite} title="Drag the frame's corners to make the site bigger or smaller, or move it: your holes and features stay where they are on the ground">Resize or re-import the site</Button>
             <Button small onClick={() => void refreshOsm()} testid="refresh-osm" title="Look up OpenStreetMap again: what came from it before is replaced (Undo brings it back)">Update paths, roads and water</Button>
           </div>
         </Section>

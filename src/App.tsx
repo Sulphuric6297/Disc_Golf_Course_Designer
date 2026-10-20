@@ -21,7 +21,8 @@ import { makeCopy, openSharedLink, restoreAutosave, startAutosave } from "./stat
 import { toast, useToasts } from "./state/toast";
 import { holeStats } from "./lib/holeStats";
 import { shareUrl } from "./lib/share";
-import type { ImportedSite } from "./lib/importSite";
+import { reframeDesign, type ImportedSite } from "./lib/importSite";
+import { geoRefOf } from "./lib/geoRef";
 import type { CourseItem, P } from "./types";
 
 function Toasts({ bottom }: { bottom?: number }) {
@@ -224,6 +225,11 @@ export default function App() {
   }, []);
 
   const onImported = (site: ImportedSite) => {
+    // What was designed stays on the same ground when the frame grows, shrinks or moves
+    const d0 = getDoc();
+    const from = geoRefOf(d0);
+    const designed = d0.items.filter(i => !(i.type === "tree" && i.importSource === "photo") && !((i.type === "area" || i.type === "line") && i.importSource === "osm"));
+    const carried = from && site.site.bounds ? reframeDesign({ holes: d0.holes, items: designed }, from, { ...site.site.bounds, ...site.canvas }) : { holes: d0.holes, items: designed, outside: 0 };
     changeDoc(d => ({
       canvas: site.canvas,
       gridSize: site.gridSize,
@@ -232,16 +238,14 @@ export default function App() {
       site: site.site,
       groundPaint: {},
       name: d.name === "New Disc Golf Course" && site.site.location ? `${site.site.location.label.split(",")[0]} Disc Golf Course` : d.name,
-      items: [
-        ...d.items.filter(i => !(i.type === "tree" && i.importSource === "photo") && !((i.type === "area" || i.type === "line") && i.importSource === "osm")),
-        ...site.mapped,
-        ...site.trees
-      ]
+      holes: carried.holes,
+      items: [...carried.items, ...site.mapped, ...site.trees]
     }));
     setFindSite(false);
     useEditor.getState().set({ step: "holes", tool: getDoc().holes.length ? "select" : "add-hole" });
     setTimeout(() => getView()?.fitSite(), 50);
-    toast(`Site brought in. ${site.notes.join(" ")}`, "success", false, { label: "View in 3D", run: () => useEditor.getState().set({ view: "3d" }) }, 12000);
+    const outside = carried.outside ? ` ${carried.outside} ${carried.outside === 1 ? "thing you drew is" : "things you drew are"} now past the site's edges: move ${carried.outside === 1 ? "it" : "them"} in or remove ${carried.outside === 1 ? "it" : "them"}.` : "";
+    toast(`Site brought in. ${site.notes.join(" ")}${outside}`, "success", false, { label: "View in 3D", run: () => useEditor.getState().set({ view: "3d" }) }, 12000);
     if (site.osmFailed) osmFailedToast();
   };
 

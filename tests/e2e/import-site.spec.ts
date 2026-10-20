@@ -2,6 +2,7 @@ import { test as plain, expect as plainExpect, type Page } from "@playwright/tes
 import { test, expect, addHole, course, geoAt, importSite } from "./fixtures";
 import { osmFeaturesFrom, overpassQuery } from "../../src/lib/geo/osm";
 import { clipPathToRect, clipPolygonToRect } from "../../src/lib/geom";
+import { reframeDesign } from "../../src/lib/importSite";
 
 /** OpenStreetMap's servers answer with these elements (or `fail` for a server that can't be reached). */
 const overpass = (page: Page, answer: (host: string) => object | "fail" | number, asked: string[] = []) =>
@@ -187,4 +188,71 @@ plain("cutting lines and shapes to the site (pure logic)", () => {
   const pond = [{ x: 10, y: 10 }, { x: 20, y: 10 }, { x: 20, y: 20 }];
   plainExpect(clipPolygonToRect(pond, r)).toEqual(pond);
   plainExpect(clipPolygonToRect(pond.map(q => ({ x: q.x + 500, y: q.y })), r)).toEqual([]);
+});
+
+test("making the site bigger keeps the design on the same ground", async ({ page }) => {
+  test.setTimeout(180_000);
+  await importSite(page, { trees: false, osm: false });
+  const first = await course(page);
+  const W = first.canvas.width, H = first.canvas.height;
+  await addHole(page, { x: W * 0.3, y: H * 0.5 }, { x: W * 0.6, y: H * 0.5 });
+  await page.keyboard.press("Escape");
+  await page.evaluate(([w, h]) => {
+    const a = (window as any).__dgActions, s = (window as any).__dgEditor();
+    s.set({ areaKind: "ob" });
+    a.addDrawn("area", [{ x: w * 0.2, y: h * 0.2 }, { x: w * 0.3, y: h * 0.2 }, { x: w * 0.3, y: h * 0.3 }]);
+    s.set({ tool: "select" });
+  }, [W, H]);
+  // Where each thing drawn is on the ground (feet north and east of a fixed point)
+  const ground = () => page.evaluate(() => {
+    const d = (window as any).__dgCourse();
+    const b = d.site.bounds, w = d.canvas.width, h = d.canvas.height;
+    // (from a fixed spot, at a fixed scale: the same for both frames)
+    const ftLon = 364000 * Math.cos((39.78 * Math.PI) / 180);
+    const geo = (p: { x: number; y: number }) => ({ n: (b.north - (p.y / h) * (b.north - b.south) - 39.78) * 364000, e: (b.west + (p.x / w) * (b.east - b.west) + 89.68) * ftLon });
+    return d.items.filter((i: any) => !i.importSource).map((i: any) => [geo(i), ...(i.points ?? []).map(geo)]);
+  });
+  const was = await ground();
+  expect(was.length).toBe(3);
+  // The site's frame opens as it is; its north-west corner dragged out
+  await page.getByRole("button", { name: /^1\s*Site$/ }).click();
+  await page.getByRole("button", { name: "Resize or re-import the site" }).click();
+  await expect(page.getByTestId("design-kept")).toBeVisible();
+  const corners = await page.locator(".site-handle-corner").evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }));
+  const nw = corners.reduce((a, b) => (b.x + b.y < a.x + a.y ? b : a));
+  await page.mouse.move(nw.x, nw.y);
+  await page.mouse.down();
+  await page.mouse.move(nw.x - 90, nw.y - 60, { steps: 10 });
+  await page.mouse.up();
+  await page.getByText("Trees found on the photo").click();
+  await page.getByText("Paths, water, roads and parking").click();
+  await page.getByTestId("import-site").click();
+  await expect.poll(async () => (await course(page)).canvas.width, { timeout: 90_000 }).toBeGreaterThan(W + 100);
+  expect((await course(page)).canvas.height).toBeGreaterThan(H + 50);
+  // Everything within a foot of where it was
+  const now = await ground();
+  expect(now.length).toBe(3);
+  now.forEach((pts: any[], i: number) => pts.forEach((p, k) => {
+    expect(Math.hypot(p.n - was[i][k].n, p.e - was[i][k].e), `thing ${i}, point ${k}`).toBeLessThan(1);
+  }));
+  expect((await course(page)).holes).toHaveLength(1);
+});
+
+plain("a smaller frame keeps everything on its ground and counts what is left outside (pure logic)", () => {
+  const from = { north: 40.01, south: 40, west: -90.01, east: -90, width: 2794, height: 3640 };
+  // The east half only
+  const to = { ...from, west: -90.005, width: 1397 };
+  const hole = { id: "h", doglegs: [{ x: 2000, y: 100 }], fairwayWidth: 30, fairway: true };
+  const items = [
+    { id: "a", type: "label", x: 2500, y: 1000, rotation: 0 },
+    { id: "b", type: "label", x: 200, y: 1000, rotation: 0 },
+    { id: "c", type: "area", kind: "ob", x: 1500, y: 500, rotation: 0, points: [{ x: 1400, y: 500 }, { x: 1600, y: 500 }, { x: 1500, y: 700 }] }
+  ] as any[];
+  const out = reframeDesign({ holes: [hole as any], items }, from, to);
+  plainExpect(out.items[0].x).toBeCloseTo(2500 - 1397, 6);
+  plainExpect(out.items[0].y).toBeCloseTo(1000, 6);
+  plainExpect(out.holes[0].doglegs[0].x).toBeCloseTo(2000 - 1397, 6);
+  plainExpect((out.items[2] as any).points[0].x).toBeCloseTo(3, 6);
+  // The label west of the new frame
+  plainExpect(out.outside).toBe(1);
 });

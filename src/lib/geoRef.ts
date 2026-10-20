@@ -18,6 +18,12 @@ export const toPlanXY = (ref: GeoRef, lat: number, lon: number): P => ({
   y: ((ref.north - lat) / (ref.north - ref.south)) * ref.height
 });
 
+/** Where a point on one frame's plan lands on another frame's plan (the same spot on the ground). */
+export const reframe = (from: GeoRef, to: GeoRef) => (p: P): P => {
+  const g = toLatLon(from, p);
+  return toPlanXY(to, g.lat, g.lon);
+};
+
 /** Compass bearing from a to b, degrees clockwise from north. */
 export const bearing = (a: P, b: P) => ((Math.atan2(b.x - a.x, -(b.y - a.y)) * 180) / Math.PI + 360) % 360;
 

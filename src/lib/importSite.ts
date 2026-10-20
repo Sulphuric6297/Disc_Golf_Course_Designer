@@ -2,7 +2,7 @@
 // what OpenStreetMap knows (paths, roads, water, parking, buildings). Everything comes from free
 // services with no keys, as in the Security Camera Planner.
 import { clamp } from "../constants";
-import type { AreaItem, CourseItem, LineItem, SiteInfo, TreeItem } from "../types";
+import type { AreaItem, CourseItem, Hole, LineItem, SiteInfo, TreeItem } from "../types";
 import { FEET_PER_METER, getGeoBounds, type GeoBounds, type SiteSelection } from "./geo/core";
 import { detectTrees } from "./geo/detect";
 import { fetchBestElevationGrid } from "./geo/elevation";
@@ -10,7 +10,7 @@ import { creditHeightPx, fetchMapImagery, type MapImagerySource } from "./geo/im
 import { fetchOsmFeatures } from "./geo/osm";
 import { createArea, createLine, createTree } from "./course";
 import { clipPathToRect, clipPolygonToRect, polygonArea, simplify } from "./geom";
-import { toPlanXY } from "./geoRef";
+import { reframe, toPlanXY, type GeoRef } from "./geoRef";
 
 export type ImportedSite = {
   canvas: { width: number; height: number };
@@ -125,6 +125,24 @@ export const osmItems = async (bounds: GeoBounds, width: number, height: number,
     .filter(Boolean)
     .join(", ");
   return { items, summary };
+};
+
+/**
+ * The design carried over to a new site frame (bigger, smaller or moved): every hole, tee, basket,
+ * shape and label stays on the same spot on the ground. `outside` counts the things that are now
+ * past the new frame's edges (kept, to move in or remove).
+ */
+export const reframeDesign = (design: { holes: Hole[]; items: CourseItem[] }, from: GeoRef, to: GeoRef) => {
+  const f = reframe(from, to);
+  const items = design.items.map(i => {
+    const at = f({ x: i.x, y: i.y });
+    const moved = { ...i, x: at.x, y: at.y } as CourseItem;
+    if (moved.type === "area" || moved.type === "line" || moved.type === "structure") moved.points = moved.points.map(f);
+    return moved;
+  });
+  const holes = design.holes.map(h => ({ ...h, doglegs: h.doglegs.map(f) }));
+  const outside = items.filter(i => i.x < 0 || i.y < 0 || i.x > to.width || i.y > to.height).length;
+  return { holes, items, outside };
 };
 
 /** Said when OpenStreetMap couldn't be reached. */
