@@ -57,7 +57,7 @@ const signTexture = (key: string, draw: (g: CanvasRenderingContext2D, w: number,
  * A tee pad: a slab facing +x (its length along x), the tee color painted at its front edge, and
  * the tee sign on a post behind it.
  */
-export const createTeePad = (tee: TeeItem, holeNumber: number) => {
+export const createTeePad = (tee: TeeItem, holeNumber: number | string) => {
   const g = new THREE.Group();
   const L = tee.padLength, W = tee.padWidth;
   const thick = tee.surface === "natural" ? 0.05 : 0.35;

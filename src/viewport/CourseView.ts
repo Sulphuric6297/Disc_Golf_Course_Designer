@@ -15,7 +15,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, autoWalks, basketFor, basketHoles, curves, fairwayOutline, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { FAIRWAY_STATIONS, autoWalks, basketFor, basketHoles, curves, fairwayOutline, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
@@ -1481,7 +1481,7 @@ export class CourseView {
   }
 
   private num(holeId: string | undefined) {
-    return holeId && this.doc ? holeNumber(this.doc.course, holeId) : 0;
+    return holeId && this.doc ? holeLabel(this.doc.course, holeId) : "";
   }
 
   // ------------------------------------------------------------------ fat lines
@@ -2065,7 +2065,7 @@ export class CourseView {
       } else if (item.type === "basket") {
         const b = item as BasketItem;
         // (a basket several holes play to: each one's number)
-        const n = basketHoles(b).map(h => this.num(h)).filter(Boolean).sort((x, y) => x - y).join(" & ");
+        const n = basketHoles(b).filter(h => this.num(h)).sort((x, y) => holeNumber(this.doc!.course, x) - holeNumber(this.doc!.course, y)).map(h => this.num(h)).join(" & ");
         const shared = !!b.alsoHoles?.length;
         const multi = holeBaskets(course, b.holeId).length > 1;
         const main = mainBaskets.has(b.id);

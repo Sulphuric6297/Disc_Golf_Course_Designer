@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
-import { autoWalks, CURVED_LINES, holeBaskets, holeNumber, holeTees, ITEM_LABELS, wholeHoles } from "../lib/course";
+import { autoWalks, CURVED_LINES, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, parseHoleNumbers, wholeHoles } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
@@ -30,13 +30,14 @@ const bendHole = (line: P[], side: 1 | -1): P[] => {
 };
 
 /** A hole's number, typed in (kept on Enter or when the field is left; Esc puts it back). */
-function HoleNumberInput({ holeId, value }: { holeId: string; value: number }) {
-  const [text, setText] = useState(String(value));
-  useEffect(() => setText(String(value)), [value]);
+function HoleNumberInput({ holeId, value }: { holeId: string; value: string }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  // (more than one number: "3/12")
   const keep = () => {
-    const v = Math.round(Number(text));
-    if (Number.isFinite(v) && v >= 1 && v <= 999) setHoleNumber(holeId, v);
-    else setText(String(value));
+    const [first, ...more] = parseHoleNumbers(text);
+    if (first) setHoleNumber(holeId, first, more);
+    else setText(value);
   };
   return (
     <label className="flex flex-col items-center gap-0.5 shrink-0">
@@ -45,9 +46,9 @@ function HoleNumberInput({ holeId, value }: { holeId: string; value: number }) {
         aria-label="Hole number"
         data-testid="hole-number"
         inputMode="numeric"
-        className="w-14 touch:w-16 h-8 touch:h-11 rounded-lg bg-zinc-800 border border-zinc-700 text-center text-sm touch:text-base font-bold text-zinc-50 focus:outline-none focus:border-orange-400"
+        className="w-16 touch:w-20 h-8 touch:h-11 rounded-lg bg-zinc-800 border border-zinc-700 text-center text-sm touch:text-base font-bold text-zinc-50 focus:outline-none focus:border-orange-400"
         value={text}
-        onChange={e => setText(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))}
+        onChange={e => setText(e.target.value.replace(/[^0-9/, &]/g, "").slice(0, 16))}
         onFocus={e => e.target.select()}
         onBlur={keep}
         onKeyDown={e => {
@@ -72,10 +73,10 @@ export const setAllWalks = (w: number, history = true) =>
 function HoleInspector({ hole }: { hole: Hole }) {
   const doc = useCourse(s => s.doc);
   const s = useMemo(() => holeStats(doc, hole), [doc, hole]);
-  const n = holeNumber(doc, hole.id);
+  const label = holeLabel(doc, hole.id);
   // The walk on to the next tee, while it is the automatic one
   const walkNext = useMemo(() => (doc.style.nextTee ? autoWalks(doc.items, doc.holes.map(h => holeStats(doc, h)), doc.holes).find(w => w.a.holeId === hole.id) ?? null : null), [doc, hole.id]);
-  const nextNo = walkNext ? holeNumber(doc, walkNext.b.holeId) : 0;
+  const nextNo = walkNext ? holeLabel(doc, walkNext.b.holeId) : "";
   const u = doc.units;
   const tees = holeTees(doc, hole.id);
   const baskets = holeBaskets(doc, hole.id);
@@ -87,14 +88,14 @@ function HoleInspector({ hole }: { hole: Hole }) {
     <>
       <Section>
         <div className="flex items-center gap-2 mb-2" data-insp-title>
-          <div className="w-10 h-10 rounded-full bg-orange-500 text-white flex items-center justify-center text-lg font-bold" style={{ fontFamily: "Oswald, Inter" }}>{n}</div>
+          <div className={`min-w-10 h-10 px-1.5 rounded-full bg-orange-500 text-white flex items-center justify-center ${label.length > 3 ? "text-sm" : "text-lg"} font-bold`} style={{ fontFamily: "Oswald, Inter" }}>{label}</div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-bold text-zinc-50 truncate" data-testid="inspector-title">Hole {n}{hole.name ? ` · ${hole.name}` : ""}</div>
+            <div className="text-sm font-bold text-zinc-50 truncate" data-testid="inspector-title">Hole {label}{hole.name ? ` · ${hole.name}` : ""}</div>
             <div className="text-xs text-zinc-400">{s.complete ? `${fmtDist(s.length, u)} · Par ${s.par} · ${shapeText[s.shape]}` : s.teeId ? "Needs a basket" : "Needs a tee"}</div>
           </div>
-          {!ro && <HoleNumberInput holeId={hole.id} value={n} />}
+          {!ro && <HoleNumberInput holeId={hole.id} value={label} />}
         </div>
-        {!ro && doc.holes.some(h => h.id !== hole.id && holeNumber(doc, h.id) === n) && <div className="text-xs text-amber-300 -mt-1 mb-2" data-testid="hole-number-taken">Another hole is also Hole {n}</div>}
+        {!ro && (() => { const mine = label.split("/"); const clash = doc.holes.filter(h => h.id !== hole.id).flatMap(h => holeLabel(doc, h.id).split("/")).find(v => mine.includes(v)); return clash ? <div className="text-xs text-amber-300 -mt-1 mb-2" data-testid="hole-number-taken">Another hole is also Hole {clash}</div> : null; })()}
         {s.complete && (
           <div className="grid grid-cols-3 gap-1.5" data-testid="hole-stats">
             <Stat label="Length" value={fmtDist(s.length, u)} />
@@ -191,7 +192,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
           <Field label="Basket">
             <select aria-label="Basket" data-testid="share-basket" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
               <option value="">Its own</option>
-              {doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => b.holeId === h.id)).map(h => <option key={h.id} value={h.id}>Hole {holeNumber(doc, h.id)}'s</option>)}
+              {doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => b.holeId === h.id)).map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}'s</option>)}
             </select>
           </Field>
         )}
@@ -268,7 +269,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
   const ro = useEditor(e => e.viewOnly);
   const u = doc.units;
   const set = (patch: Record<string, unknown>, history = true) => updateItem(item.id, patch as Partial<CourseItem>, history);
-  const holeOptions = [{ value: "", label: "Whole course" }, ...doc.holes.map(h => ({ value: h.id, label: `Hole ${holeNumber(doc, h.id)}` }))];
+  const holeOptions = [{ value: "", label: "Whole course" }, ...doc.holes.map(h => ({ value: h.id, label: `Hole ${holeLabel(doc, h.id)}` }))];
   const holePicker = (
     <Field label="Belongs to">
       <select aria-label="Belongs to hole" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={("holeId" in item && item.holeId) || ""} onChange={e => set({ holeId: e.target.value || undefined })}>
@@ -451,7 +452,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
         <div className="text-sm font-bold text-zinc-50" data-testid="inspector-title">{title}</div>
         {holeId && (
           <button className="text-xs text-orange-300 hover:text-orange-200" onClick={() => select(holeId)}>
-            Hole {holeNumber(doc, holeId)} →
+            Hole {holeLabel(doc, holeId)} →
           </button>
         )}
       </Section>
@@ -496,7 +497,7 @@ export function groupSummary(doc: CourseDoc, items: CourseItem[]) {
     counts.set(k, (counts.get(k) ?? 0) + 1);
   }
   return [
-    ...(holes.length === 1 ? [`Hole ${holeNumber(doc, holes[0].id)}`] : holes.length ? [`Holes ${holes.map(h => holeNumber(doc, h.id)).sort((a, b) => a - b).join(", ")}`] : []),
+    ...(holes.length === 1 ? [`Hole ${holeLabel(doc, holes[0].id)}`] : holes.length ? [`Holes ${holes.map(h => holeNumber(doc, h.id)).sort((a, b) => a - b).join(", ")}`] : []),
     ...[...counts].map(([k, n]) => (n > 1 ? `${k} ×${n}` : k))
   ];
 }

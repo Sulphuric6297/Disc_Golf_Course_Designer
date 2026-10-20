@@ -89,12 +89,14 @@ export const removeHole = (holeId: string) =>
 
 /** A hole's number, typed in: every other hole keeps the number it has (they all keep them from
  * now on), and the holes go in the order of their numbers. */
-export const setHoleNumber = (holeId: string, n: number) => {
+export const setHoleNumber = (holeId: string, n: number, also: number[] = []) => {
   const doc = getDoc();
-  if (!doc.holes.some(h => h.id === holeId) || holeNumber(doc, holeId) === n) return;
+  const hole = doc.holes.find(h => h.id === holeId);
+  const more = also.filter(v => v !== n);
+  if (!hole || (holeNumber(doc, holeId) === n && (hole.alsoNumbers ?? []).join() === more.join())) return;
   changeDoc(d => {
     const nums = holeNumbers(d.holes);
-    return { holes: byNumber(d.holes.map(h => ({ ...h, number: h.id === holeId ? n : nums.get(h.id)! }))) };
+    return { holes: byNumber(d.holes.map(h => (h.id === holeId ? { ...h, number: n, alsoNumbers: more.length ? more : undefined } : { ...h, number: nums.get(h.id)! }))) };
   });
 };
 

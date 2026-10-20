@@ -6,7 +6,7 @@ import { onPainted, renderPoster, withLivePaint } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
 import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
 import { useCourse, useEditor } from "../state/course";
-import { holeNumber } from "../lib/course";
+import { holeLabel } from "../lib/course";
 import { useCanopy, useRelief } from "./useRelief";
 import { duplicateDesignSel, elementLabel, moveDesignEl, moveLabel, removeDesignSel, sizeDesignEl } from "./PageEditor";
 
@@ -261,7 +261,7 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
         <div role="tablist" className={compact ? "w-full flex gap-1 overflow-x-auto dg-noscrollbar touch-pan-x" : "flex gap-1"}>{[tab("map", "Course map"), tab("sign", "Tee sign"), tab("page", "Hole page"), tab("scorecard", "Scorecard")]}</div>
         {(preview === "sign" || preview === "page") && doc.holes.length > 0 && (
           <select aria-label={preview === "sign" ? "Hole for the tee sign" : "Hole for the hole page"} className={`bg-zinc-800 border border-zinc-700 rounded-lg px-2 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={holeId ?? ""} onChange={e => setHole(e.target.value)}>
-            {doc.holes.map(h => <option key={h.id} value={h.id}>Hole {holeNumber(doc, h.id)}</option>)}
+            {doc.holes.map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}</option>)}
           </select>
         )}
         {preview === "sign" && (

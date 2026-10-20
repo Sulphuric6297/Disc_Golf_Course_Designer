@@ -2,7 +2,7 @@
 // shape, what is in the way, and safety checks between holes.
 import { CIRCLE_ONE_FT, CLEAR_IN_FRONT_FT, MIN_PAD, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AreaItem, CourseDoc, Hole, Layout, LineItem, P, TeeItem, TeeLevel, TreeItem } from "../types";
-import { activeLayout, basketFor, fairwayOutline, holeNumber, holeTees, teeAim, teeFor, throwLine } from "./course";
+import { activeLayout, basketFor, fairwayOutline, holeLabel, holeNumber, holeTees, teeAim, teeFor, throwLine } from "./course";
 import { dist, distanceToPath, lengthInside, pathLength, pathTouchesPolygon, segmentsIntersect, smoothPath, turnAngles } from "./geom";
 import { heightAt, profileAlong } from "./terrainGrid";
 
@@ -46,6 +46,8 @@ export type HoleShape = "straight" | "left" | "right" | "s-curve";
 export type HoleStats = {
   holeId: string;
   number: number;
+  /** Its numbers as shown ("3", or "3/12" for a hole played as both). */
+  label: string;
   /** The tee and basket used (the layout's), and the throw line between them. */
   teeId: string | null;
   basketId: string | null;
@@ -165,7 +167,7 @@ export const holeStats = (doc: CourseDoc, hole: Hole, layout: Layout | undefined
   const difficulty = Math.max(1, Math.min(5, Math.round(score - 0.4)));
 
   return {
-    holeId: hole.id, number: holeNumber(doc, hole.id), teeId: tee?.id ?? null, basketId: basket?.id ?? null, level, line,
+    holeId: hole.id, number: holeNumber(doc, hole.id), label: holeLabel(doc, hole.id), teeId: tee?.id ?? null, basketId: basket?.id ?? null, level, line,
     length, direct, teeElevation, basketElevation, elevationChange, playsLike, foliage, par, parAuto, shape, turn,
     treesOnLine, treesInFairway, obCrossed, obInPlay, obNearBasket, maxSlope, climb, descent, difficulty, complete
   };
@@ -250,7 +252,7 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
   const safeGap = (len: number) => (fixed && fixed > 0 ? fixed : defaultGap(len));
   const done = stats.filter(s => s.complete);
   const smooth = new Map(done.map(s => [s.holeId, smoothPath(s.line, 8)]));
-  const n = (s: HoleStats) => `Hole ${s.number}`;
+  const n = (s: HoleStats) => `Hole ${s.label}`;
   for (let i = 0; i < done.length; i++) {
     const a = done[i];
     const la = smooth.get(a.holeId)!;
@@ -304,7 +306,7 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
     if (d > 400) issues.push({ level: "info", text: `Long walk from ${n(a)}'s basket to ${n(b)}'s tee: ${Math.round(d)} ft.`, holes: [a.holeId, b.holeId], at: b.line[0] });
   }
   // Holes not finished
-  stats.filter(s => !s.complete).forEach(s => issues.push({ level: "info", text: `Hole ${s.number} needs ${s.teeId ? "a basket" : "a tee"}.`, holes: [s.holeId], at: s.line[0] ?? { x: 0, y: 0 } }));
+  stats.filter(s => !s.complete).forEach(s => issues.push({ level: "info", text: `Hole ${s.label} needs ${s.teeId ? "a basket" : "a tee"}.`, holes: [s.holeId], at: s.line[0] ?? { x: 0, y: 0 } }));
   issues.push(...designChecks(doc, stats));
   return issues;
 };
@@ -335,7 +337,7 @@ export const designChecks = (doc: CourseDoc, stats: HoleStats[]): SafetyIssue[] 
     if (blocker) issues.push({ level: "warning", text: `Hole ${num}: a tree stands within ${CLEAR_IN_FRONT_FT} ft in front of the ${TEE_LEVELS[tee.level].label.toLowerCase()} tee.`, holes: [tee.holeId], at: blocker });
   }
   for (const s of stats.filter(x => x.complete)) {
-    if (s.playsLike < MIN_HOLE_FT) issues.push({ level: "warning", text: `Hole ${s.number} plays ${Math.round(s.playsLike)} ft: shorter than the ${MIN_HOLE_FT} ft minimum.`, holes: [s.holeId], at: s.line[0] });
+    if (s.playsLike < MIN_HOLE_FT) issues.push({ level: "warning", text: `Hole ${s.label} plays ${Math.round(s.playsLike)} ft: shorter than the ${MIN_HOLE_FT} ft minimum.`, holes: [s.holeId], at: s.line[0] });
   }
   // Water carries from each hole's shortest tee
   const water = doc.items.filter(i => i.type === "area" && (i as AreaItem).kind === "water") as AreaItem[];
@@ -371,7 +373,7 @@ export const designChecks = (doc: CourseDoc, stats: HoleStats[]): SafetyIssue[] 
     const first = done[0].line[0];
     const last = done[done.length - 1].line[done[done.length - 1].line.length - 1];
     const near = (p: P) => Math.min(...parking.map(q => dist(p, q)));
-    if (near(first) > 500) issues.push({ level: "info", text: `Hole ${done[0].number}'s tee is ${Math.round(near(first))} ft from parking.`, holes: [done[0].holeId], at: first });
+    if (near(first) > 500) issues.push({ level: "info", text: `Hole ${done[0].label}'s tee is ${Math.round(near(first))} ft from parking.`, holes: [done[0].holeId], at: first });
     if (near(last) > 500) issues.push({ level: "info", text: `The last basket is ${Math.round(near(last))} ft from parking.`, holes: [done[done.length - 1].holeId], at: last });
   }
   return issues;

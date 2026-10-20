@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Share2, Trash2, Undo2, Unlock, X } from "lucide-react";
 import { STRUCTURE_KINDS } from "../../constants";
-import { holeNumber } from "../../lib/course";
+import { holeLabel, holeNumber } from "../../lib/course";
 import { courseTotals, holeStats, safetyIssues } from "../../lib/holeStats";
 import { landscapeOf } from "../../lib/landscapes";
 import { fmtDist, fmtElev } from "../../lib/units";
@@ -291,10 +291,10 @@ function SelectionHeader({ onMore }: { onMore: () => void }) {
   const s = useMemo(() => (hole ? holeStats(doc, hole) : null), [doc, hole]);
   const u = doc.units;
   const holeId = hole?.id ?? (item && "holeId" in item ? item.holeId : undefined);
-  const title = hole ? `Hole ${holeNumber(doc, hole.id)}${hole.name ? ` · ${hole.name}` : ""}` : item ? itemTitle(item) : group.length ? `${group.length} selected` : "";
+  const title = hole ? `Hole ${holeLabel(doc, hole.id)}${hole.name ? ` · ${hole.name}` : ""}` : item ? itemTitle(item) : group.length ? `${group.length} selected` : "";
   const sub = hole
     ? s?.complete ? `${fmtDist(s.length, u)} · Par ${s.par} · ${fmtElev(s.elevationChange, u)}` : s?.teeId ? "Needs a basket" : "Needs a tee"
-    : holeId ? `Hole ${holeNumber(doc, holeId)}` : item?.locked ? "Locked in place" : item ? "Whole course" : groupSummary(doc, group).join(" · ");
+    : holeId ? `Hole ${holeLabel(doc, holeId)}` : item?.locked ? "Locked in place" : item ? "Whole course" : groupSummary(doc, group).join(" · ");
   const back = STEPS.find(x => x.id === step)?.label ?? "the step";
   return (
     <div className="touch-none flex items-center gap-0.5 pl-1.5 pr-2 pb-2" data-testid="selection-header">
@@ -347,7 +347,7 @@ export function ItemMenu({ itemId, onClose }: { itemId: string; onClose: () => v
     a.push({ label: inGroup ? `Delete ${group.length}` : "Delete", icon: <Trash2 size={18} />, danger: true, run: () => { if (!inGroup) select(itemId); deleteSelection(); }, testid: "menu-delete" });
   }
   const title = hole ? `Hole ${n}${hole.name ? ` · ${hole.name}` : ""}` : itemTitle(item!);
-  const sub = holeId && !hole ? `Hole ${holeNumber(doc, holeId)}` : undefined;
+  const sub = holeId && !hole ? `Hole ${holeLabel(doc, holeId)}` : undefined;
   return <ActionSheet title={title} subtitle={sub} actions={a} onClose={onClose} testid="item-menu" />;
 }
 
@@ -460,7 +460,7 @@ function usePanel({ onFindSite, onShare, onMore }: { onFindSite: () => void; onS
   // What changed in the panel, said to screen readers (the panel changes without the focus moving)
   const doc = useCourse(s => s.doc);
   const said = mode === "selection" && selectedId
-    ? `${doc.holes.some(h => h.id === selectedId) ? `Hole ${holeNumber(doc, selectedId)}` : (() => { const it = doc.items.find(i => i.id === selectedId); return it ? itemTitle(it) : ""; })()} selected`
+    ? `${doc.holes.some(h => h.id === selectedId) ? `Hole ${holeLabel(doc, selectedId)}` : (() => { const it = doc.items.find(i => i.id === selectedId); return it ? itemTitle(it) : ""; })()} selected`
     : mode === "tool" ? `${TOOL_TITLES[tool] ?? tool}: ${toolHint(useEditor.getState(), true) ?? ""}`
     : `Step ${STEPS.findIndex(s => s.id === step) + 1}: ${meta.title}`;
   const announce = <div aria-live="polite" className="sr-only" data-testid="announce">{said}</div>;

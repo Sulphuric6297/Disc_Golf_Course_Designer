@@ -108,7 +108,7 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   parts.push(`<rect y="${n(header.h - 6 * ts)}" width="${n(W)}" height="${n(6 * ts)}" fill="${lvl.color}"/>`);
   const r = header.h * 0.36;
   parts.push(`<circle cx="${n(m + r)}" cy="${n(header.h * 0.5)}" r="${n(r)}" fill="${lvl.color}" stroke="#ffffff" stroke-width="${n(4 * ts)}"/>`);
-  parts.push(`<text x="${n(m + r)}" y="${n(header.h * 0.5 + r * 0.06)}" text-anchor="middle" dominant-baseline="central" font-family="${F}" font-weight="700" font-size="${n(r * 1.25)}" fill="${lvl.ink}">${st.number}</text>`);
+  parts.push(`<text x="${n(m + r)}" y="${n(header.h * 0.5 + r * 0.06)}" text-anchor="middle" dominant-baseline="central" font-family="${F}" font-weight="700" font-size="${n(r * 1.25)}" fill="${lvl.ink}">${st.label}</text>`);
   const tx = m + 2 * r + 16 * ts;
   // The course name across the top, the par under it on the left, the distances on the right
   const name = (doc.name || "").toUpperCase();
@@ -142,7 +142,7 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   const scale = Math.min(box.w / (rb.maxX - rb.minX + pad * 2), box.h / (rb.maxY - rb.minY + pad * 2));
   const c = rotatePoint({ x: (rb.minX + rb.maxX) / 2, y: (rb.minY + rb.maxY) / 2 }, rotation);
   const view: MapView = { cx: c.x, cy: c.y, rotation, scale, width: box.w, height: box.h };
-  const map = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, focusHole: holeId, textScale: ts * 0.75, fontFamily: st0.font, canopy: opts.canopy }, `ts${st.number}`);
+  const map = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, focusHole: holeId, textScale: ts * 0.75, fontFamily: st0.font, canopy: opts.canopy }, `ts${st.label}`);
   parts.push(`<clipPath id="sign-clip"><rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.w)}" height="${n(box.h)}" rx="${n(8 * ts)}"/></clipPath>`);
   parts.push(`<g clip-path="url(#sign-clip)"><g transform="translate(${n(box.x)} ${n(box.y)})">${map.svg}</g></g>`);
   parts.push(`<rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.w)}" height="${n(box.h)}" rx="${n(8 * ts)}" fill="none" stroke="${dark}" stroke-width="${n(2 * ts)}"/>`);
@@ -196,7 +196,7 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   const shown = markingsInView(doc, view);
   const legend = [shown.ob && `<tspan fill="${st0.ob}">■</tspan> OB`, shown.hazard && `<tspan fill="${st0.hazard}">■</tspan> Hazard`, shown.mando && `<tspan fill="#f97316">●</tspan> Mando / DZ`, `<tspan fill="${st0.basket}">●</tspan> Basket`].filter(Boolean).join("   ");
   parts.push(`<text x="${n(m)}" y="${n(by)}" font-family="Inter, Arial, sans-serif" font-size="${n(8 * ts)}" fill="${pal.inkSoft}">${legend}</text>`);
-  parts.push(`<text x="${n(W - m)}" y="${n(by)}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="${n(8 * ts)}" fill="${pal.inkSoft}">Hole ${st.number} of ${doc.holes.length}${layout && doc.layouts.length > 1 ? ` · ${esc(layout.name)} layout` : ""}</text>`);
+  parts.push(`<text x="${n(W - m)}" y="${n(by)}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="${n(8 * ts)}" fill="${pal.inkSoft}">Hole ${st.label} of ${doc.holes.length}${layout && doc.layouts.length > 1 ? ` · ${esc(layout.name)} layout` : ""}</text>`);
   return { svg: wrapSvg(W, H, parts.join("")), width: W, height: H };
 };
 
@@ -216,10 +216,10 @@ export const renderScorecard = (doc: CourseDoc, players = 5) => {
   type Col = { label: string; holes: number[]; total?: boolean; extra?: boolean };
   const cols: Col[] = [];
   const front = split ? Math.ceil(stats.length / 2) : stats.length;
-  for (let i = 0; i < front; i++) cols.push({ label: String(stats[i].number), holes: [i] });
+  for (let i = 0; i < front; i++) cols.push({ label: stats[i].label, holes: [i] });
   if (split) {
     cols.push({ label: "Front", holes: Array.from({ length: front }, (_, i) => i), total: true });
-    for (let i = front; i < stats.length; i++) cols.push({ label: String(stats[i].number), holes: [i] });
+    for (let i = front; i < stats.length; i++) cols.push({ label: stats[i].label, holes: [i] });
     cols.push({ label: "Back", holes: Array.from({ length: stats.length - front }, (_, i) => front + i), total: true });
   }
   cols.push({ label: "Total", holes: stats.map((_, i) => i), total: true });
@@ -380,7 +380,7 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
   let y = bandH + 34 * u;
   parts.push(`<text x="${n(cx)}" y="${n(y)}" text-anchor="middle" font-family="${card.head}" font-weight="700" font-size="${n(13 * u)}" letter-spacing="${n(3 * u)}" fill="${soft}">HOLE</text>`);
   const numSize = 132 * u;
-  parts.push(`<text x="${n(cx)}" y="${n(y + numSize * 0.86)}" text-anchor="middle" font-family="${card.head}" font-weight="700" font-size="${n(numSize)}" fill="${card.ink}">${st.number}</text>`);
+  parts.push(`<text x="${n(cx)}" y="${n(y + numSize * 0.86)}" text-anchor="middle" font-family="${card.head}" font-weight="700" font-size="${n(numSize)}" fill="${card.ink}">${st.label}</text>`);
   y += numSize * 0.86 + 14 * u;
   const tagW = 112 * u, tagH = 30 * u;
   parts.push(`<rect x="${n(cx - tagW / 2)}" y="${n(y)}" width="${n(tagW)}" height="${n(tagH)}" rx="${n(tagH / 2)}" fill="${lvl.color}" stroke="${lvl.color === "#f8fafc" ? card.ink : lvl.color}" stroke-width="${n(1.2 * u)}"/>`);
@@ -465,12 +465,12 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
     // You are here
     const here = st.line[0];
     const hx = ox + here.x * k, hy = oy + here.y * k;
-    parts.push(`<path d="M${n(hx)} ${n(hy)}c${n(-9 * u)} ${n(-12 * u)} ${n(-9 * u)} ${n(-24 * u)} 0 ${n(-24 * u)}s${n(9 * u)} ${n(12 * u)} 0 ${n(24 * u)}z" fill="#dc2626" stroke="#ffffff" stroke-width="${n(1.4 * u)}"/><text x="${n(hx)}" y="${n(hy - 15 * u)}" text-anchor="middle" dominant-baseline="central" font-family="${card.head}" font-weight="700" font-size="${n(8.5 * u)}" fill="#ffffff">${st.number}</text>`);
+    parts.push(`<path d="M${n(hx)} ${n(hy)}c${n(-9 * u)} ${n(-12 * u)} ${n(-9 * u)} ${n(-24 * u)} 0 ${n(-24 * u)}s${n(9 * u)} ${n(12 * u)} 0 ${n(24 * u)}z" fill="#dc2626" stroke="#ffffff" stroke-width="${n(1.4 * u)}"/><text x="${n(hx)}" y="${n(hy - 15 * u)}" text-anchor="middle" dominant-baseline="central" font-family="${card.head}" font-weight="700" font-size="${n(8.5 * u)}" fill="#ffffff">${st.label}</text>`);
     const tagX = Math.max(mbox.x + 40 * u, Math.min(mbox.x + mbox.w - 40 * u, hx));
     parts.push(`<rect x="${n(tagX - 38 * u)}" y="${n(Math.min(hy + 6 * u, mbox.y + mbox.h - 18 * u))}" width="${n(76 * u)}" height="${n(14 * u)}" rx="${n(7 * u)}" fill="#dc2626"/><text x="${n(tagX)}" y="${n(Math.min(hy + 6 * u, mbox.y + mbox.h - 18 * u) + 7 * u)}" text-anchor="middle" dominant-baseline="central" font-family="${card.body}" font-weight="800" font-size="${n(6.5 * u)}" letter-spacing="${n(1 * u)}" fill="#ffffff">YOU ARE HERE</text></g>`);
   }
   // Which hole of how many, and who designed the course
-  parts.push(`<text x="${n(mx)}" y="${n(H - 20 * u)}" font-family="${card.head}" font-weight="700" font-size="${n(9 * u)}" letter-spacing="${n(1.4 * u)}" fill="${soft}">HOLE ${st.number} OF ${doc.holes.length}</text>`);
+  parts.push(`<text x="${n(mx)}" y="${n(H - 20 * u)}" font-family="${card.head}" font-weight="700" font-size="${n(9 * u)}" letter-spacing="${n(1.4 * u)}" fill="${soft}">HOLE ${st.label} OF ${doc.holes.length}</text>`);
   if (doc.designer) parts.push(`<text x="${n(col.w - mx)}" y="${n(H - 20 * u)}" text-anchor="end" font-family="${card.body}" font-weight="600" font-size="${n(7.5 * u)}" letter-spacing="${n(0.8 * u)}" fill="${soft}">DESIGNED BY ${esc(doc.designer.toUpperCase())}</text>`);
   return { svg: wrapSvg(W, H, parts.join("")), width: W, height: H };
 };

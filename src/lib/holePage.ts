@@ -95,7 +95,7 @@ export const renderHolePage = (doc: CourseDoc, holeId: string, size: HolePageSiz
   const r = headH * 0.34;
   const cx = m + r, cy = headH * 0.48;
   parts.push(`<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(r)}" fill="${lvl.color}" stroke="#ffffff" stroke-width="${n(3.5 * u)}"/>`);
-  parts.push(`<text x="${n(cx)}" y="${n(cy + r * 0.04)}" text-anchor="middle" dominant-baseline="central" font-family="${HEAD}" font-weight="700" font-size="${n(r * 1.2)}" fill="${lvl.ink}">${st.number}</text>`);
+  parts.push(`<text x="${n(cx)}" y="${n(cy + r * 0.04)}" text-anchor="middle" dominant-baseline="central" font-family="${HEAD}" font-weight="700" font-size="${n(r * 1.2)}" fill="${lvl.ink}">${st.label}</text>`);
   const tx = cx + r + 16 * u;
   const right = W - m;
   const parSize = 34 * u;
@@ -103,7 +103,7 @@ export const renderHolePage = (doc: CourseDoc, holeId: string, size: HolePageSiz
   const room = right - tx - parSize * 3.2;
   const courseSize = Math.min(9.5 * u, (room / Math.max(1, course.length)) * 1.6);
   if (course) parts.push(`<text x="${n(tx)}" y="${n(headH * 0.26)}" font-family="${BODY}" font-weight="600" font-size="${n(courseSize)}" letter-spacing="${n(courseSize * 0.12)}" fill="${ACCENT}">${esc(course)}</text>`);
-  parts.push(`<text x="${n(tx)}" y="${n(headH * (hole.name ? 0.6 : 0.68))}" font-family="${HEAD}" font-weight="700" font-size="${n(32 * u)}" fill="#ffffff">HOLE ${st.number}</text>`);
+  parts.push(`<text x="${n(tx)}" y="${n(headH * (hole.name ? 0.6 : 0.68))}" font-family="${HEAD}" font-weight="700" font-size="${n(32 * u)}" fill="#ffffff">HOLE ${st.label}</text>`);
   if (hole.name) {
     const nameSize = Math.min(13 * u, (room / Math.max(1, hole.name.length)) * 1.8);
     parts.push(`<text x="${n(tx)}" y="${n(headH * 0.84)}" font-family="${HEAD}" font-weight="500" font-size="${n(nameSize)}" fill="${ACCENT}">${esc(hole.name)}</text>`);
@@ -174,7 +174,7 @@ export const renderHolePage = (doc: CourseDoc, holeId: string, size: HolePageSiz
     const key = [shown.ob && `<tspan fill="${sty.ob}">■</tspan> OB`, shown.hazard && `<tspan fill="${sty.hazard}">■</tspan> Hazard`, shown.mando && `<tspan fill="#f97316">●</tspan> Mando / DZ`].filter(Boolean).join("   ");
     parts.push(`<text x="${n(m)}" y="${n(by)}" font-family="${BODY}" font-size="${n(7.5 * u)}" fill="${SOFT}">${key}</text>`);
     const layout = activeLayout(doc);
-    parts.push(`<text x="${n(W - m)}" y="${n(by)}" text-anchor="end" font-family="${BODY}" font-size="${n(7.5 * u)}" fill="${SOFT}">Hole ${st.number} of ${doc.holes.length}${layout && doc.layouts.length > 1 ? ` · ${esc(layout.name)} layout` : ""}</text>`);
+    parts.push(`<text x="${n(W - m)}" y="${n(by)}" text-anchor="end" font-family="${BODY}" font-size="${n(7.5 * u)}" fill="${SOFT}">Hole ${st.label} of ${doc.holes.length}${layout && doc.layouts.length > 1 ? ` · ${esc(layout.name)} layout` : ""}</text>`);
   }
   return { svg: wrapSvg(W, H, parts.join("")), width: W, height: H };
 };

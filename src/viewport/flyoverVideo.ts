@@ -199,13 +199,13 @@ function recorderSink(canvas: HTMLCanvasElement, width: number, height: number, 
   };
 }
 
-type HoleTitle = { number: number; name: string; par: string; length: string; elevation: string; color: string; ink: string };
+type HoleTitle = { number: string; name: string; par: string; length: string; elevation: string; color: string; ink: string };
 
 const holeTitle = (doc: CourseDoc, holeId: string): HoleTitle => {
   const hole = doc.holes.find(h => h.id === holeId)!;
   const s = holeStats(doc, hole);
   const lvl = TEE_LEVELS[s.level];
-  return { number: s.number, name: hole.name ?? "", par: `PAR ${s.par}`, length: fmtDist(s.length, doc.units).toUpperCase(), elevation: Math.abs(s.elevationChange) >= 1 ? fmtElev(s.elevationChange, doc.units).toUpperCase() : "", color: lvl.color, ink: lvl.ink };
+  return { number: s.label, name: hole.name ?? "", par: `PAR ${s.par}`, length: fmtDist(s.length, doc.units).toUpperCase(), elevation: Math.abs(s.elevationChange) >= 1 ? fmtElev(s.elevationChange, doc.units).toUpperCase() : "", color: lvl.color, ink: lvl.ink };
 };
 
 const roundRect = (g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {

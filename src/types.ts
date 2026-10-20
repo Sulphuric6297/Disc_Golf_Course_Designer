@@ -159,6 +159,8 @@ export interface Hole {
   id: string;
   /** Its number, typed in (unset: the first number free, in course order). */
   number?: number;
+  /** More numbers it is played as (e.g. 12 as well as 3: "3/12"). */
+  alsoNumbers?: number[];
   /** Shown name, e.g. "The Gauntlet" (optional). */
   name?: string;
   /** Par set by hand; unset: worked out from the hole's length, elevation and shape. */

@@ -166,9 +166,9 @@ function HolesStep() {
                     onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
                     className={`w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${sel ? "bg-orange-500/15 ring-1 ring-orange-400/60" : "hover:bg-zinc-800"}`}
                   >
-                    <span className="w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink, fontFamily: "Oswald, Inter" }}>{s.number}</span>
+                    <span className="w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink, fontFamily: "Oswald, Inter" }}>{s.label}</span>
                     <span className="flex-1 min-w-0">
-                      <span className="block text-sm text-zinc-100 truncate">{hole.name || `Hole ${s.number}`}</span>
+                      <span className="block text-sm text-zinc-100 truncate">{hole.name || `Hole ${s.label}`}</span>
                       <span className="block text-[11px] text-zinc-400">
                         {s.complete ? <>{fmtDist(s.length, u)} · {fmtElev(s.elevationChange, u)}{tees.length > 1 ? ` · ${tees.length} tees` : ""}</> : "unfinished"}
                       </span>
@@ -337,7 +337,7 @@ function ReviewStep() {
           <tbody>
             {stats.map(s => (
               <tr key={s.holeId} className="hover:bg-zinc-800 cursor-pointer" onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}>
-                <td className="py-0.5">{s.number}</td>
+                <td className="py-0.5">{s.label}</td>
                 <td className="text-right">{s.par}</td>
                 <td className="text-right">{s.complete ? fmtDist(s.length, u, false) : "–"}</td>
                 <td className="text-right">{s.complete ? fmtDist(s.playsLike, u, false) : "–"}</td>

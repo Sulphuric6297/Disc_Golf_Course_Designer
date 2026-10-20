@@ -9,7 +9,7 @@ import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
 import { holeGeoJSON, holesCsv, partsCsv, partsList, stakeOutCsv, toGPX, toGeoJSON, toKML } from "../lib/exports";
 import { canvasBlob, pdfFromPages, pdfPage, pngUnder, printDpi, svgToCanvas } from "../lib/raster";
 import { holeStats } from "../lib/holeStats";
-import { holeNumber } from "../lib/course";
+import { holeLabel, holeNumber } from "../lib/course";
 import { VIDEO_SIZES, VIDEO_HOLD, type VideoResolution } from "../lib/video";
 import { autoSeconds, flyoverOf, keySeconds } from "../lib/flight";
 import { FlyoverSettingsPanel } from "./FlyoverSettings";
@@ -222,7 +222,7 @@ export function ExportPanel() {
         <div className="flex flex-wrap gap-1.5 mb-2">
           <select aria-label="Hole to export" data-testid="hole-pick" className={selectCls} value={pageHole ? pageHole.id : "all"} onChange={e => setPagePick(e.target.value)} disabled={nothing}>
             <option value="all">All holes{complete.length ? ` (${complete.length})` : ""}</option>
-            {complete.map(h => <option key={h.id} value={h.id}>Hole {holeNumber(doc, h.id)}{h.name ? ` · ${h.name}` : ""}</option>)}
+            {complete.map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}{h.name ? ` · ${h.name}` : ""}</option>)}
           </select>
           <select aria-label="Hole page size" data-testid="hole-page-size" className={selectCls} value={pageSize} onChange={e => setPageSize(e.target.value as HolePageSize)}>
             {(Object.keys(HOLE_PAGES) as HolePageSize[]).map(k => <option key={k} value={k}>{HOLE_PAGES[k].label}</option>)}
@@ -244,7 +244,7 @@ export function ExportPanel() {
         <Field label="Holes">
           <select aria-label="Holes to fly over" data-testid="video-holes" className={`${selectCls} w-full`} value={videoHoles.length === 1 && videoPick !== "all" ? videoPick : "all"} onChange={e => setVideoPick(e.target.value)} disabled={nothing}>
             <option value="all">The whole course, in order{complete.length ? ` (${complete.length} holes)` : ""}</option>
-            {complete.map(h => <option key={h.id} value={h.id}>Hole {holeNumber(doc, h.id)}{h.name ? ` · ${h.name}` : ""}</option>)}
+            {complete.map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}{h.name ? ` · ${h.name}` : ""}</option>)}
           </select>
         </Field>
         <div className="grid grid-cols-2 gap-2">

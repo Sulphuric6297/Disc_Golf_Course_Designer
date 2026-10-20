@@ -105,7 +105,8 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
       const shape = Array.isArray(h.fairwayShape) && h.fairwayShape.length === S.length && h.fairwayShape.every(v => typeof v === "number" && v > 0) ? h.fairwayShape : undefined;
       const shift = Array.isArray(h.fairwayShift) && h.fairwayShift.length === S.length && h.fairwayShift.every(v => Number.isFinite(v)) ? h.fairwayShift : undefined;
       const number = Number.isInteger(h.number) && h.number! > 0 ? h.number : undefined;
-      return { ...h, number, fairwayWidth: h.fairwayWidth ?? DEFAULT_FAIRWAY_FT, fairway: h.fairway ?? true, doglegs: h.doglegs ?? [], fairwayShape: shape, fairwayShift: shift, fairwayStations: stations && (shape || shift) ? stations : undefined };
+      const alsoNumbers = Array.isArray(h.alsoNumbers) ? h.alsoNumbers.filter(v => Number.isInteger(v) && v > 0) : [];
+      return { ...h, number, alsoNumbers: alsoNumbers.length ? alsoNumbers : undefined, fairwayWidth: h.fairwayWidth ?? DEFAULT_FAIRWAY_FT, fairway: h.fairway ?? true, doglegs: h.doglegs ?? [], fairwayShape: shape, fairwayShift: shift, fairwayStations: stations && (shape || shift) ? stations : undefined };
     }),
     // (A structure needs its points and a kind this version knows)
     items: Array.isArray(raw.items) ? raw.items.filter(i => i.type !== "structure" || (Array.isArray(i.points) && i.kind in STRUCTURE_KINDS)) : [],
@@ -261,7 +262,7 @@ export const holeNumbers = (holes: Hole[]) => {
   let m = numbered.get(holes);
   if (m) return m;
   m = new Map();
-  const taken = new Set(holes.map(h => h.number).filter((v): v is number => !!v));
+  const taken = new Set(holes.flatMap(h => [h.number, ...(h.alsoNumbers ?? [])]).filter((v): v is number => !!v));
   let next = 1;
   for (const h of holes) {
     if (h.number) m.set(h.id, h.number);
@@ -276,6 +277,16 @@ export const holeNumbers = (holes: Hole[]) => {
 };
 export const holeNumber = (doc: Pick<CourseDoc, "holes">, holeId: string) => holeNumbers(doc.holes).get(holeId) ?? 0;
 
+/** A hole's numbers as shown: its own, and any more it is played as ("3/12"). */
+export const holeLabel = (doc: Pick<CourseDoc, "holes">, holeId: string) => {
+  const also = doc.holes.find(h => h.id === holeId)?.alsoNumbers;
+  const n = holeNumber(doc, holeId);
+  return also?.length ? [n, ...also].join("/") : String(n);
+};
+
+/** The numbers typed for a hole ("3/12", "3, 12", "3 & 12"): its own first, then the others. */
+export const parseHoleNumbers = (text: string) => [...new Set((text.match(/\d+/g) ?? []).map(Number).filter(v => v >= 1 && v <= 999))];
+
 /** Holes in the order of their numbers (the order they're played). */
 export const byNumber = (holes: Hole[]) => {
   const m = holeNumbers(holes);
@@ -285,13 +296,13 @@ export const byNumber = (holes: Hole[]) => {
 /** Holes with a new one put in at `at`; once holes have numbers of their own, the new one takes
  * the first number free (no other hole's number changes) and goes where that number is played. */
 export const insertHole = (holes: Hole[], hole: Hole, at = holes.length): Hole[] => {
-  const fresh = { ...hole, number: undefined };
+  const fresh = { ...hole, number: undefined, alsoNumbers: undefined };
   if (!holes.some(h => h.number)) {
     const out = [...holes];
     out.splice(Math.max(0, Math.min(out.length, at)), 0, fresh);
     return out;
   }
-  const taken = new Set(holeNumbers(holes).values());
+  const taken = new Set([...holeNumbers(holes).values(), ...holes.flatMap(h => h.alsoNumbers ?? [])]);
   let n = 1;
   while (taken.has(n)) n++;
   return byNumber([...holes, { ...fresh, number: n }]);

@@ -572,7 +572,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     const o = Math.max(...[b.holeId, ...(b.alsoHoles ?? [])].map(h => Number(dim(h))));
     const multi = holeBaskets(doc, b.holeId).length > 1;
     // (a basket several holes play to carries each one's number)
-    const number = [b.holeId, ...(b.alsoHoles ?? [])].map(h => layers.stats.find(st => st.holeId === h)?.number).filter(Boolean).sort((x, y) => x! - y!).join("/");
+    const number = [b.holeId, ...(b.alsoHoles ?? [])].map(h => layers.stats.find(st => st.holeId === h)).filter((st): st is HoleStats => !!st).sort((x, y) => x.number - y.number).map(st => st.label).join("/");
     sym.push(`<g opacity="${o}">${basketMark(s.basketMark ?? "basket", p, 0.72 * ts, s.basket, number)}`);
     if (multi) sym.push(textLabel({ x: p.x + r * 1.6, y: p.y - r * 1.1 }, b.position, 7 * ts, { color: pal.label, weight: 800 }));
     sym.push(`</g>`);
@@ -593,10 +593,10 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       // Bold white italic numbers beside the tee, as on painted course maps
       const side = { x: -dir.y / dl, y: dir.x / dl };
       const p = { x: toScreen(tee).x + side.x * 14 * ts + (dir.x / dl) * 4 * ts, y: toScreen(tee).y + side.y * 14 * ts + (dir.y / dl) * 4 * ts };
-      label(`num:${st.holeId}`, p, q => `<text x="${n(q.x)}" y="${n(q.y)}" font-family="${font}" font-size="${n(15 * ts)}" font-weight="700" font-style="italic" text-anchor="middle" dominant-baseline="central" fill="#ffffff" stroke="rgba(8,20,4,.75)" stroke-width="${n(2.6 * ts)}" stroke-linejoin="round" paint-order="stroke" opacity="${o}">${st.number}</text>`);
+      label(`num:${st.holeId}`, p, q => `<text x="${n(q.x)}" y="${n(q.y)}" font-family="${font}" font-size="${n(15 * ts)}" font-weight="700" font-style="italic" text-anchor="middle" dominant-baseline="central" fill="#ffffff" stroke="rgba(8,20,4,.75)" stroke-width="${n(2.6 * ts)}" stroke-linejoin="round" paint-order="stroke" opacity="${o}">${st.label}</text>`);
       continue;
     }
-    label(`num:${st.holeId}`, at, q => `<g opacity="${o}"><circle cx="${n(q.x)}" cy="${n(q.y)}" r="${n(r)}" fill="${lvl.color}" stroke="${lvl.color === "#f8fafc" ? "#1f2937" : "#ffffff"}" stroke-width="${n(1.6 * ts)}"/>${textLabel({ x: q.x, y: q.y + 0.5 * ts }, String(st.number), 11.5 * ts, { color: lvl.ink, halo: lvl.color, weight: 700 })}</g>`);
+    label(`num:${st.holeId}`, at, q => `<g opacity="${o}"><circle cx="${n(q.x)}" cy="${n(q.y)}" r="${n(r)}" fill="${lvl.color}" stroke="${lvl.color === "#f8fafc" ? "#1f2937" : "#ffffff"}" stroke-width="${n(1.6 * ts)}"/>${textLabel({ x: q.x, y: q.y + 0.5 * ts }, st.label, 11.5 * ts, { color: lvl.ink, halo: lvl.color, weight: 700 })}</g>`);
   }
   // Text labels placed on the map
   for (const l of items.filter(i => i.type === "label") as LabelItem[]) label(`text:${l.id}`, toScreen(l), q => textLabel(q, l.text, l.fontSize * 0.8 * ts, { color: l.color, weight: 700 }));
@@ -1199,7 +1199,7 @@ const holeTable = (doc: CourseDoc, stats: HoleStats[], x: number, y: number, w: 
     stats.forEach((st, r) => {
       const yy = y + (r + 1) * rowH + 4 * ts;
       if (r % 2 === 0) rows.push(`<rect x="${n(x - 4 * ts)}" y="${n(yy - rowH * 0.72)}" width="${n(w + 8 * ts)}" height="${n(rowH)}" fill="${pal.panelInk}" fill-opacity="0.05"/>`);
-      rows.push(`<text x="${n(x + 6 * ts)}" y="${n(yy)}" text-anchor="middle" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">${st.number}</text>`);
+      rows.push(`<text x="${n(x + 6 * ts)}" y="${n(yy)}" text-anchor="middle" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">${st.label}</text>`);
       placedCols.forEach(c => rows.push(`<text x="${n(cellX(c))}" y="${n(yy)}" text-anchor="${c.left ? "start" : "middle"}" font-family="Inter, Arial, sans-serif" font-size="${n(f)}" fill="${pal.panelInk}">${esc(clip(c.cell(r), c))}</text>`));
     });
     const yy = y + (stats.length + 1) * rowH + 8 * ts;
@@ -1219,7 +1219,7 @@ const holeTable = (doc: CourseDoc, stats: HoleStats[], x: number, y: number, w: 
     const slice = stats.slice(bI * per, (bI + 1) * per);
     const cell = (i: number) => x + labelW + cellW * (i + 0.5);
     const rowsDef: { label: string; dot?: string; values: (string | number)[]; bold?: boolean }[] = [
-      { label: "HOLE", values: slice.map(s => s.number), bold: true },
+      { label: "HOLE", values: slice.map(s => s.label), bold: true },
       { label: "PAR", values: slice.map(s => (s.complete ? s.par : "–")) },
       ...layouts.map((l, i) => ({ label: l.name.toUpperCase().slice(0, 9), dot: TEE_LEVELS[l.tee].color, values: slice.map((_, j) => { const ls = lengths[i][bI * per + j]; return ls.complete ? fmtDist(ls.length, doc.units, false) : "–"; }) }))
     ];
