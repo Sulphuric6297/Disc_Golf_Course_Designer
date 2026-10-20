@@ -183,6 +183,8 @@ export class CourseView {
   private fastWindows = 0;
   private lastRender = 0;
   private adaptiveForced = false;
+  private paused = false;
+  private frames = 0;
   private povMarker: HTMLDivElement | null = null;
   private disposed = false;
 
@@ -848,12 +850,13 @@ export class CourseView {
     // phone when nothing else moves: the battery matters more than the breeze)
     const breeze = !!this.povHole && this.wind;
     if (breeze && !(this.mobile && !this.dirty && performance.now() - this.lastRender < 33)) this.dirty = true;
-    if (!this.dirty || this.size.width <= 1) return;
+    if (!this.dirty || this.size.width <= 1 || this.paused) return;
     this.dirty = false;
     const now = performance.now();
     // Frame after frame (something moving): how long each took, to keep the frame rate up
     if (now - this.lastRender < 250) this.perfSample(now - this.lastRender);
     this.lastRender = now;
+    this.frames++;
     this.render();
   };
 
@@ -900,6 +903,22 @@ export class CourseView {
     }
     forestDetail.nearFt = (this.software ? 70 : this.mobile ? 150 : 260) * (this.tier >= 3 ? 0.6 : 1);
     this.invalidate();
+  }
+
+  /**
+   * Covered by another screen (the Design step's page): draw nothing until shown again (it would
+   * only cost a phone its battery). Changes made meanwhile are drawn when it comes back.
+   */
+  setPaused(on: boolean) {
+    if (on === this.paused) return;
+    this.paused = on;
+    this.lastRender = 0;
+    if (!on) this.invalidate();
+  }
+
+  /** For tests: whether the view is drawing, and how many pictures it has drawn. */
+  drawInfo() {
+    return { paused: this.paused, frames: this.frames };
   }
 
   /** For tests: the quality level now. */

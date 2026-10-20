@@ -246,3 +246,24 @@ test("3D water: a pond on sloping ground lies level but never under the ground, 
   expect(r.vertices).toBeGreaterThan(10);
   expect(r.below).toBe(0);
 });
+
+test("the map view rests while the Design step's page covers it, and draws the changes when it comes back", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
+  await page.keyboard.press("Escape");
+  const info = () => page.evaluate(() => (window as any).__dgView.drawInfo() as { paused: boolean; frames: number });
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await expect.poll(async () => (await info()).paused).toBe(true);
+  const before = (await info()).frames;
+  // Changes to the course while it rests: nothing drawn
+  const slider = page.getByLabel("Tree cover");
+  await slider.fill("0.5");
+  await slider.dispatchEvent("pointerup");
+  await expect.poll(async () => (await course(page)).style.treeCover).toBe(0.5);
+  await page.waitForTimeout(500);
+  expect((await info()).frames).toBe(before);
+  // Back on the map: drawing again
+  await page.getByRole("button", { name: "2 Holes" }).click();
+  await expect.poll(async () => (await info()).paused).toBe(false);
+  await expect.poll(async () => (await info()).frames).toBeGreaterThan(before);
+});

@@ -114,6 +114,8 @@ test("cancel stops a recording, and leaving the Export step doesn't", async ({ p
 test("the Record button over a flyover records that hole", async ({ page }) => {
   test.setTimeout(180_000);
   await twoHoles(page, [160, 90]);
+  // (small, so it is quick: the size is the Export step's choice, tested there)
+  await page.evaluate(() => (window as any).__dgVideo().set({ size: { width: 320, height: 180 } }));
   await page.getByTestId("hole-row").nth(1).click();
   await page.getByTestId("flyover").click();
   await expect(page.getByTestId("hud-flyover")).toHaveText(/Flying/);

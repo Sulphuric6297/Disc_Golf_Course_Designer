@@ -161,3 +161,45 @@ The most common size is 12x18 in.
 8. Map styles: illustrated, satellite, topographic, minimal and night; contours and hillshade;
    trees with shadows; a title block, legend, hole table, north arrow and scale bar.
 9. A share link that carries the whole design.
+
+## Water, mixed terrain and performance (the map engine)
+
+**Painted water.** Cartographers draw still water with a light band just inside the shore and a
+few lines following the shore outward, closer together near the bank and fading away from it
+(the old nautical-chart look), over a tint that deepens toward the middle. The painted map does
+the same: lighter shallows and a bright rim, three faint water lines, the middle darker, and the
+odd glint of sun; creeks stay dark at the banks and light down the middle.
+
+**3D water.** Real water is a mirror at a glancing angle and see-through looking straight down
+(Fresnel). The water mirrors the view's own sky (made into an environment picture whenever the
+sun moves) and, low in the reflection, what stands on its banks: a dark treeline round a pond in
+the woods, a thin band of grass round one in a field. Two layers of small waves drift with the
+wind. Ponds lie level but never sink under the ground where the measured ground (every few
+yards) rises above the shore's lowest point.
+
+**Half wooded, half open.** Laying out such a course showed 3D woods standing on the fairways and
+in the pond. Woods now leave fairways, water, paths, tees, baskets and built things clear, as the
+painted map already did, and the woods' floor lies under the fairways through it.
+
+**Performance on phones.** Measured in Chrome with its CPU slowed 4x (a mid-range phone):
+
+| | Before | After |
+| --- | --- | --- |
+| Longest freeze while the map repaints (normal speed) | 0.5–1.8 s (the whole painting) | 44–69 ms |
+| Longest freeze while the map repaints (CPU 4x slower) | about 6.6 s | about 0.24 s |
+| Typical frame while it repaints (CPU 4x slower) | none (frozen) | 19 ms |
+
+What made the difference:
+- The painting is made in slices between frames (about 8 ms each); the last picture stays up
+  until the new one is ready, and it is encoded off the page's thread (`toBlob`). Prints and
+  exports are still painted whole, at full size.
+- The 3D map view rests while the Design step's page covers it (it was redrawing behind it on
+  every change: most of what was left of the freeze).
+- On a phone the live preview is painted at most 1500 px across (iOS limits a canvas to about
+  16.7 million pixels and 256 MB in all; the full 2400 px is kept for exports).
+- 3D on a phone: pixel ratio at most 1.5 (screens are 3x dense; every pixel costs), 1024 px
+  shadow maps (three.js guidance: 512–1024 on phones), low grass, fewer trees in full detail, no
+  kept drawing buffer (`preserveDrawingBuffer` costs frame rate on phone GPUs), and the breeze at
+  most 30 frames a second when nothing else moves (battery).
+- Frame times are watched while the view moves: under 30 frames a second it steps down (pixel
+  ratio, then grass, shadows and tree detail), and back up after a few smooth windows in a row.

@@ -2,7 +2,7 @@
 // scorecard) exactly as it will print, updating as the style changes.
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Minus, Plus, Scan } from "lucide-react";
-import { renderPoster, withPaintLimit } from "../lib/mapSvg";
+import { onPainted, renderPoster, withLivePaint } from "../lib/mapSvg";
 
 /** A phone or small tablet (touch first, small screen). */
 const PHONE = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches && typeof screen !== "undefined" && Math.min(screen.width, screen.height) < 900;
@@ -37,13 +37,16 @@ export function MapDesigner() {
     return () => ro.disconnect();
   }, []);
 
-  // On a phone the preview is painted smaller (it is seen small; quicker and lighter on memory)
-  const page = useMemo(() => withPaintLimit(PHONE ? 1500 : 2400, () => {
+  // The preview paints between frames (the page never freezes), smaller on a phone (it is seen
+  // small; quicker and lighter on memory), and is drawn again when a painting is ready
+  const [painted, setPainted] = useState(0);
+  useEffect(() => onPainted(() => setPainted(v => v + 1)), []);
+  const page = useMemo(() => withLivePaint(PHONE ? 1500 : 2400, () => {
     if (preview === "sign" && holeId) return renderTeeSign(doc, holeId, signSize, relief);
     if (preview === "page" && holeId) return renderHolePage(doc, holeId, pageSize, relief);
     if (preview === "scorecard") return renderScorecard(doc);
     return renderPoster(doc, relief);
-  }), [doc, relief, preview, holeId, signSize, pageSize]);
+  }), [doc, relief, preview, holeId, signSize, pageSize, painted]);
 
   if (!page) return null;
   const fit = Math.min((size.w - 48) / page.width, (size.h - 48) / page.height);

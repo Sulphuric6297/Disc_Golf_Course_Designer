@@ -100,6 +100,8 @@ export function MapViewport({ onContextMenu }: { onContextMenu: (info: { clientX
   }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.structureKind, ed.drawShape, ed.viewOnly, ed.teeLevel]);
   useEffect(() => { view?.setPose(ed.view === "2d" ? "top" : "tilt"); }, [view, ed.view]);
   useEffect(() => { view?.setGrass(ed.grass, ed.wind); }, [view, ed.grass, ed.wind]);
+  // Covered by the Design step's page: the map view rests
+  useEffect(() => { view?.setPaused(ed.step === "design" && !ed.teeView); }, [view, ed.step, ed.teeView]);
   useEffect(() => {
     if (!view) return;
     if (ed.flyover && ed.teeView) view.flyover(ed.teeView, () => useEditor.getState().set({ flyover: false }));

@@ -8,7 +8,7 @@ import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelI
 import { activeLayout, fairwayOutline, holeBaskets, teeAim } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath } from "./geom";
 import { courseTotals, holeStats, isOb, type HoleStats } from "./holeStats";
-import { forestCanvas, paintedLine, type CanopyGrid } from "./forest";
+import { forestCanvas, forestCanvasAsync, paintedLine, type CanopyGrid } from "./forest";
 import { BASKET_MARKS, RESTRICTED, STRUCTURE_INK, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol, structureLegend, structureSymbol, type StructureDraw, type StructureInk } from "./symbols";
 import { isLineKind, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
 import { chainContours, type Contours } from "./relief";
@@ -162,7 +162,9 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   out.push(`<g transform="${g}">`);
   // Ground: the photo, the painted land (Forest), or the drawn grass
   if (forest && typeof document !== "undefined") {
-    out.push(`</g><image href="${forestPicture(doc, view, layers)}" x="0" y="0" width="${n(view.width)}" height="${n(view.height)}" preserveAspectRatio="none"/><g transform="${g}">`);
+    // (while the first painting of a live preview is under way: the grass color alone)
+    const painted = forestPicture(doc, view, layers);
+    out.push(painted ? `</g><image href="${painted}" x="0" y="0" width="${n(view.width)}" height="${n(view.height)}" preserveAspectRatio="none"/><g transform="${g}">` : `</g><rect width="${n(view.width)}" height="${n(view.height)}" fill="${shade(s.rough, -0.25)}"/><g transform="${g}">`);
   } else if (photo) {
     out.push(`<image href="${doc.background}" x="0" y="0" width="${doc.canvas.width}" height="${doc.canvas.height}" preserveAspectRatio="none" opacity="${n(s.photo)}"/>`);
   } else {
@@ -562,20 +564,43 @@ const idOf = (o: object | null | undefined) => {
 };
 /** The painted land's longest side, pixels: full for prints and exports, less for a preview. */
 let paintLimit = 2400;
+/** A live preview: paint in slices between frames, showing the last picture until it's done. */
+let paintLive = false;
 
 /**
- * Draws pages with the painted land at most `px` pixels across (a phone's live preview: quicker
- * to paint and lighter on memory; what is exported stays full size).
+ * Draws pages for the live preview: the painted land at most `px` pixels across (less on a
+ * phone: quicker and lighter on memory), painted a slice at a time between frames so the page
+ * never freezes; until a new painting is ready the last one for the same view stands in, and
+ * `onPainted` listeners hear when to draw again. What is printed or exported is painted at full
+ * size, all at once.
  */
-export const withPaintLimit = <T>(px: number, draw: () => T): T => {
-  const was = paintLimit;
+export const withLivePaint = <T>(px: number, draw: () => T): T => {
+  const was = [paintLimit, paintLive] as const;
   paintLimit = px;
+  paintLive = true;
   try {
     return draw();
   } finally {
-    paintLimit = was;
+    [paintLimit, paintLive] = was;
   }
 };
+
+const paintedListeners = new Set<() => void>();
+/** Hear when a live painting is ready (draw the page again). */
+export const onPainted = (fn: () => void) => {
+  paintedListeners.add(fn);
+  return () => { paintedListeners.delete(fn); };
+};
+/** The painting under way for the live preview (one at a time: a newer one stops it). */
+let livePaint: { key: string; stop: AbortController } | null = null;
+/** The latest painting for each view of the live preview, standing in while a new one paints. */
+const lastForView = new Map<string, string>();
+/** Live paintings (blob URLs), kept apart from those made for print. */
+const liveCache = new Map<string, string>();
+
+/** For tests: whether a live painting is under way. */
+export const paintingNow = () => !!livePaint;
+if (typeof window !== "undefined") (window as any).__dgPainting = paintingNow;
 
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
@@ -583,16 +608,59 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const shapes = doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "area" || i.type === "line" ? [i.type, i.kind, i.points, (i as LineItem).width] : i.type === "structure" ? [i.type, i.kind, i.points, i.width, i.height, i.roof] : [i.type, Math.round(i.x), Math.round(i.y), (i as TreeItem).radius]));
   const look = [s.forest, s.treeCover, s.landscape, s.contours, s.trees, s.fairway, s.rough, s.water, s.path, s.nextTee, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint];
   const key = JSON.stringify([paintLimit, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), doc.holes.map(h => [h.id, h.fairwayWidth, h.fairwayShape, h.fairway]), shapes, doc.canvas, doc.id]);
-  const hit = forestCache.get(key);
-  if (hit) return hit;
-  const canvas = forestCanvas(doc, view, layers.stats, { mode: s.forest ?? "everywhere", canopy, style: s, density: Math.min(3, Math.max(paintLimit < 2400 ? 1 : 1.5, paintLimit / Math.max(view.width, view.height))) });
+  // (A live preview may show a picture made for print; a print never uses a live one, which is a
+  // blob only this page can read)
+  const hit = (paintLive && liveCache.get(key)) || forestCache.get(key);
+  const viewKey = JSON.stringify([paintLimit, view, doc.id]);
+  if (hit) {
+    if (paintLive) lastForView.set(viewKey, hit);
+    return hit;
+  }
+  const opts = { mode: s.forest ?? "everywhere", canopy, style: s, density: Math.min(3, Math.max(paintLimit < 2400 ? 1 : 1.5, paintLimit / Math.max(view.width, view.height))) } as const;
   // A photo-like picture: JPEG keeps it a tenth the size of a PNG
-  const url = canvas.toDataURL("image/jpeg", 0.9);
-  forestCache.set(key, url);
-  if (forestCache.size > 6) forestCache.delete(forestCache.keys().next().value!);
-  return url;
+  const keep = (canvas: HTMLCanvasElement) => {
+    const url = canvas.toDataURL("image/jpeg", 0.9);
+    forestCache.set(key, url);
+    if (forestCache.size > 6) forestCache.delete(forestCache.keys().next().value!);
+    return url;
+  };
+  if (!paintLive) return keep(forestCanvas(doc, view, layers.stats, opts));
+  // Live: paint in the background (unless already under way), meanwhile the last picture
+  if (livePaint?.key !== key) {
+    livePaint?.stop.abort();
+    const job = { key, stop: new AbortController() };
+    livePaint = job;
+    void forestCanvasAsync(doc, view, layers.stats, opts, job.stop.signal)
+      // (encoded off the page's thread, unlike toDataURL)
+      .then(canvas => new Promise<Blob>((res, rej) => canvas.toBlob(b => (b ? res(b) : rej(new Error("no picture"))), "image/jpeg", 0.9)))
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        liveCache.set(key, url);
+        if (liveCache.size > 6) {
+          const [oldKey, oldUrl] = liveCache.entries().next().value!;
+          liveCache.delete(oldKey);
+          for (const [v, u] of lastForView) if (u === oldUrl) lastForView.delete(v);
+          URL.revokeObjectURL(oldUrl);
+        }
+        lastForView.set(viewKey, url);
+        if (lastForView.size > 8) lastForView.delete(lastForView.keys().next().value!);
+        if (livePaint === job) livePaint = null;
+        paintedListeners.forEach(fn => fn());
+      }, () => {
+        if (livePaint === job) livePaint = null;
+      });
+  }
+  return lastForView.get(viewKey) ?? null;
 };
-export const resetForestCache = () => { forestCache.clear(); objectIds = new WeakMap(); };
+export const resetForestCache = () => {
+  forestCache.clear();
+  livePaint?.stop.abort();
+  livePaint = null;
+  for (const url of liveCache.values()) URL.revokeObjectURL(url);
+  liveCache.clear();
+  lastForView.clear();
+  objectIds = new WeakMap();
+};
 
 /** Lighter (amount > 0) or darker (< 0) version of a hex color. */
 export const shade = (hex: string, amount: number) => {

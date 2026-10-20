@@ -232,7 +232,7 @@ export type ForestOpts = {
  * The painted land over the map view, as a canvas `density` times the view's size (the view is
  * in page points; `view.scale` is points per foot).
  */
-export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts) => {
+function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts): Generator<void, HTMLCanvasElement, void> {
   const density = opts.density ?? 2;
   const s = opts.style;
   const W = Math.max(1, Math.round(view.width * density)), H = Math.max(1, Math.round(view.height * density));
@@ -375,6 +375,7 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
       else poly(CLEAR, offsetPolygon(st.points, 4 + ftOf(2) + (crownR * 1.2) / k));
     }
   }
+  yield;
   // Dirt trails from each basket to the next tee
   if (s.nextTee) {
     for (let i = 0; i + 1 < stats.length; i++) {
@@ -399,8 +400,15 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
     g.drawImage(c, 0, 0);
     return g.getImageData(0, 0, mw, mh).data;
   };
-  const a = read(A.c, 1.2 * (pt / cell)), b = read(B.c, 0.9 * (pt / cell)), c = read(C.c, 1 * (pt / cell));
+  yield;
+  const a = read(A.c, 1.2 * (pt / cell));
+  yield;
+  const b = read(B.c, 0.9 * (pt / cell));
+  yield;
+  const c = read(C.c, 1 * (pt / cell));
+  yield;
   const wet = read(A.c, 0.6 * (pt / cell));
+  yield;
   // How far into the water each cell is (pixels from the shore), and whether it is open water (a
   // pond, a lake) or a narrow creek: the shore's distance averaged round about stays small along
   // a creek and grows inside a pond
@@ -431,6 +439,7 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
     for (let m = 0; m < shore.length; m++) if (shore[m] >= 1e8) shore[m] = 0;
     for (let m = 0; m < shore.length; m++) shore[m] *= cell;
   }
+  yield;
   const openWater = (() => {
     // A wide box average (rows, then columns) of the shore distance
     const R = Math.max(2, Math.round((10 * pt) / cell));
@@ -453,7 +462,9 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
     }
     return out;
   })();
+  yield;
   const middle = read(C.c, 7 * (pt / cell));
+  yield;
 
   // Slow-changing noise on a coarse grid (every 8 pixels), read smoothly in between. In page
   // points, so a print looks like the screen.
@@ -471,11 +482,16 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
   };
   const mottle = coarse((u, v) => fbm(u * 0.05, v * 0.05));
   const fairMottle = coarse((u, v) => fbm(u * 0.07 + 20, v * 0.07));
+  yield;
   const stands = coarse((u, v) => fbm(u * 0.018 + 5, v * 0.018 + 9));
   const treeEdge = coarse((u, v) => fbm(u * 0.09 + 31, v * 0.09 + 7));
+  yield;
   const clumps = coarse((u, v) => fbm(u * 0.035 + 61, v * 0.035 + 2));
+  yield;
   const { leaf: LEAF, grain: GRAIN, grit: GRIT } = fineGrain();
+  yield;
   const { h: DH, gx: DGX, gy: DGY } = leafDabs();
+  yield;
 
   // Wooded, cell by cell: drawn woods; or everywhere, or where the photo shows trees
   const site = (p: P) => p.x >= -doc.canvas.width * 0.5 && p.y >= -doc.canvas.height * 0.5 && p.x <= doc.canvas.width * 1.5 && p.y <= doc.canvas.height * 1.5;
@@ -497,6 +513,7 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
   };
   const wooded = new Uint8Array(mw * mh);
   for (let y = 0; y < mh; y++) {
+    if ((y & 31) === 0) yield;
     for (let x = 0; x < mw; x++) {
       const m = y * mw + x;
       // A wobbly edge where the trees stop
@@ -568,6 +585,7 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
   const stepPx = crownR * 1.15;
   const grow = 1 + (1 - cover) * 0.7;
   for (let gy = -stepPx; gy < H + stepPx; gy += stepPx) {
+    yield;
     for (let gx = -stepPx; gx < W + stepPx; gx += stepPx) {
       const n = rnd() < 0.5 ? 2 : 1;
       for (let j = 0; j < n; j++) {
@@ -617,6 +635,7 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
     }
   }
 
+  yield;
   // ---------------------------------------------------------------- light
   // The sun comes from `sunAngle` (degrees clockwise from the top of the page) at `sunHeight`
   const az = ((s.sunAngle ?? 315) * Math.PI) / 180, el = (Math.max(10, Math.min(85, s.sunHeight ?? 38)) * Math.PI) / 180;
@@ -625,6 +644,7 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
   const shadowK = Math.max(0, Math.min(1, s.shadows ?? 0.65));
   let tallest = 0;
   for (let i = 0; i < height.length; i++) if (height[i] > tallest) tallest = height[i];
+  yield;
   // Built things stand up out of the ground too (in pixels, like the treetops), and cast shadows:
   // a building's roof its own shape (a gable's end, a hip's slopes)
   const built = new Float32Array(W * H);
@@ -663,6 +683,7 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
       }
     }
   }
+  yield;
   const sdx: number[] = [], sdy: number[] = [], sup: number[] = [];
   for (let d = 1.5; d < tallest / rise + 2 && d < 400; d *= 1.3) {
     const dx = Math.round(sunX * d), dy = Math.round(sunY * d);
@@ -690,7 +711,11 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
   // On the ground, every other pixel is enough (the shadows are soft)
   const hw = (W >> 1) + 1;
   const groundSun = new Float32Array(hw * ((H >> 1) + 1));
-  for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) groundSun[(y >> 1) * hw + (x >> 1)] = sunlit(x, y, 0);
+  for (let y = 0; y < H; y += 2) {
+    for (let x = 0; x < W; x += 2) groundSun[(y >> 1) * hw + (x >> 1)] = sunlit(x, y, 0);
+    if ((y & 15) === 0) yield;
+  }
+  yield;
   // The ground darkens near the woods, all round (the light under the trees' edges)
   const near = (() => {
     const cov = document.createElement("canvas");
@@ -709,12 +734,14 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
     g2.drawImage(cov, 0, 0);
     return g2.getImageData(0, 0, mw, mh).data;
   })();
+  yield;
   // The ground's relief (hill shading), from the terrain, lit from the same side
   const relief = reliefGrid(doc, s.hillshade || s.contours, W, H, toPlan, L);
   // Contour lines painted in (when shown): a tidy interval for the course's rise and fall
   const contourIv = s.contours && relief ? contourInterval(relief.hi - relief.lo) : 0;
   const lxyL = Math.hypot(L.x, L.y) || 1;
 
+  yield;
   // ---------------------------------------------------------------- paint
   // Every surface is a brightness, cut into a few tones of its own earthy palette (the
   // painted, cut-out look of hand-made course maps); `paint` 0 blends the tones smoothly
@@ -768,7 +795,9 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
     cb += (tb0 - cb) * alpha;
   };
   const light = s.light ?? 0, contrast = s.contrast ?? 0, sat = s.colorStrength ?? 1;
+  yield;
   for (let y = 0; y < H; y++) {
+    if ((y & 7) === 0) yield;
     const my = Math.min(mh - 1, y >> 1) * mw;
     const tr = (y & 511) << 9, tu = ((y - 1) & 511) << 9, td = ((y + 1) & 511) << 9;
     for (let x = 0, i = y * W; x < W; x++, i++) {
@@ -917,6 +946,33 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
   }
   ctx.putImageData(img, 0, 0);
   return canvas;
+}
+
+/** The painted land, all at once (for prints and exports). */
+export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts) => {
+  const steps = forestSteps(doc, view, stats, opts);
+  for (;;) {
+    const r = steps.next();
+    if (r.done) return r.value;
+  }
+};
+
+/**
+ * The painted land a slice at a time between frames (about 8 ms each), so the page stays smooth
+ * while it paints, even on a phone. Stops (rejects) when `signal` is aborted.
+ */
+export const forestCanvasAsync = async (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts, signal?: AbortSignal) => {
+  const steps = forestSteps(doc, view, stats, opts);
+  let start = performance.now();
+  for (;;) {
+    if (signal?.aborted) throw new DOMException("Painting stopped", "AbortError");
+    const r = steps.next();
+    if (r.done) return r.value;
+    if (performance.now() - start > 8) {
+      await new Promise<void>(res => setTimeout(res, 0));
+      start = performance.now();
+    }
+  }
 };
 
 /**

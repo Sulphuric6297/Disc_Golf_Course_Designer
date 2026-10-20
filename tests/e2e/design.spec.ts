@@ -79,7 +79,7 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
       return l.sort((a, b) => a - b);
     }, href!);
   };
-  await expect(painting).toHaveAttribute("href", /^data:image\/jpeg/);
+  await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
   const dense = await lightness();
   // (the share of the land lighter than all but a quarter of the thick woods)
   const light = dense[Math.floor(dense.length * 0.75)];
@@ -107,7 +107,7 @@ test("light and shadow: the sun, shadows and brightness repaint the Forest map, 
   await page.getByRole("button", { name: "5 Design" }).click();
   await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
-  await expect(painting).toHaveAttribute("href", /^data:image\/jpeg/);
+  await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
   const panel = page.getByTestId("light-shadow");
   await expect(panel).toBeVisible();
   const set = async (label: string, value: string) => {
@@ -406,7 +406,7 @@ test("elevation on the Forest map: hills shade the painting, and contour lines a
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "5 Design" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
-  await expect(painting).toHaveAttribute("href", /^data:image\/jpeg/);
+  await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
   const shaded = await painting.getAttribute("href");
   // Hill shading off: a different picture (the hill's light and shade gone)
   await page.getByLabel("Hill shading").uncheck();
@@ -435,7 +435,7 @@ test("painted water: a pond is lighter at its rim and in the shallows, deep and 
   await page.getByRole("button", { name: "5 Design" }).click();
   await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
-  await expect(painting).toHaveAttribute("href", /^data:image\/jpeg/);
+  await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
   await page.waitForTimeout(1500);
   // Along the row through the pond's middle (its widest): the water's edge against its middle
   const profile = await page.evaluate(async (url: string) => {
@@ -475,9 +475,45 @@ test.describe("on a phone", () => {
       (window as any).__dgEditor().set({ step: "design", tool: "select" });
     });
     const painting = page.getByTestId("design-page").locator("image").first();
-    await expect(painting).toHaveAttribute("href", /^data:image\/jpeg/, { timeout: 30_000 });
+    await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/, { timeout: 30_000 });
     const width = await page.evaluate(async (url: string) => { const img = new Image(); img.src = url; await img.decode(); return Math.max(img.width, img.height); }, (await painting.getAttribute("href"))!);
     expect(width).toBeLessThanOrEqual(1500);
     expect(width).toBeGreaterThan(1000);
   });
+});
+
+test("the page never freezes while the map paints: it paints between frames, the last picture standing in", async ({ page }) => {
+  test.setTimeout(150_000);
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
+  await addHole(page, { x: 700, y: 650 }, { x: 900, y: 350 });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "5 Design" }).click();
+  const painting = page.getByTestId("design-page").locator("image").first();
+  await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/, { timeout: 60_000 });
+  const before = await painting.getAttribute("href");
+  // Watch the frames while a new painting is made
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__gaps = [];
+    let last = performance.now();
+    const tick = () => {
+      const now = performance.now();
+      w.__gaps.push(now - last);
+      last = now;
+      if (!w.__stopTick) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  const slider = page.getByLabel("Tree cover");
+  await slider.fill("0.55");
+  await slider.dispatchEvent("pointerup");
+  // The old picture stays up while the new one paints
+  await expect.poll(() => page.evaluate(() => (window as any).__dgPainting())).toBe(true);
+  expect(await painting.getAttribute("href")).toBe(before);
+  await expect.poll(async () => painting.getAttribute("href"), { timeout: 60_000 }).not.toBe(before);
+  const gaps = await page.evaluate(() => { (window as any).__stopTick = true; return (window as any).__gaps as number[]; });
+  expect(gaps.length).toBeGreaterThan(20);
+  // No frame held up for long (a painting all at once took over a second here)
+  expect(Math.max(...gaps)).toBeLessThan(400);
 });
