@@ -443,9 +443,11 @@ export const variantOf = (id: string, shape: TreeShape) => {
   return h % VARIANTS[shape];
 };
 
-/** How much wider (or narrower) than its natural shape a tree is drawn: as asked, within what
- * still looks like a tree (a tall tree with a small crown grows a fuller crown, not a stretched one). */
-export const treeSpread = (asked: number) => Math.min(1.5, Math.max(0.72, asked));
+/** How much wider (or narrower) than its natural shape a tree is drawn: as asked, whatever its
+ * height (its crown as wide as set: a 2 ft crown on a 110 ft tree, a 40 ft one on a 10 ft tree). */
+export const treeSpread = (asked: number) => Math.min(50, Math.max(0.02, asked));
+/** The same for the trees of woods (made, not placed): kept to what looks like a natural tree. */
+const woodsSpread = (asked: number) => Math.min(1.5, Math.max(0.72, asked));
 
 /** One tree as meshes (shared shape and materials): `height` ft tall, `width` ft across the crown. */
 export const treeMeshes = (shape: TreeShape, variant: number, height: number, width: number, tint: THREE.Color, detail: Detail = "near") => {
@@ -519,7 +521,7 @@ export class Forest {
       const mats: THREE.Matrix4[] = [];
       list.forEach((s, i) => {
         const natural = s.shape === "conifer" ? 0.62 : s.shape === "bush" ? 1.3 : 0.75;
-        const sx = treeSpread(s.width / s.height / natural);
+        const sx = woodsSpread(s.width / s.height / natural);
         e.set(s.lean * Math.cos(s.turn), s.turn, s.lean * Math.sin(s.turn));
         m.compose(p.set(s.x, s.ground, s.y), q.setFromEuler(e), sc.set(s.height * sx, s.height, s.height * sx));
         mats.push(m.clone());

@@ -1,3 +1,5 @@
+import { test as plain, expect as plainExpect } from "@playwright/test";
+import { treeSpread } from "../../src/three/treeKit";
 import { test, expect, addHole, blankCourse, clickPlan, course, drag, editorState, handleCenter, screenOf } from "./fixtures";
 
 test("drawing an OB area: click corners, double-click to finish; Backspace and Esc", async ({ page }) => {
@@ -434,6 +436,18 @@ test("a tree made taller keeps its shape: its crown grows with it, and in 3D it 
   const r = (await course(page)).items.find((i: any) => i.id === tree.id).radius;
   expect(r / tree.radius).toBeGreaterThan(1.8);
   expect(r / tree.radius).toBeLessThan(2.2);
+});
+
+plain("a tree's crown is drawn as wide as set, whatever its height (all the way along both sliders)", () => {
+  for (const [shape, natural] of [["deciduous", 0.75], ["conifer", 0.62], ["palm", 0.75]] as const) {
+    for (const height of [3, 10, 40, 80, 110]) {
+      for (const radius of [2, 5, 10, 20, 40]) {
+        const drawn = height * natural * treeSpread((radius * 2) / height / natural);
+        plainExpect(drawn).toBeCloseTo(radius * 2, 6);
+      }
+    }
+    void shape;
+  }
 });
 
 test("an OB line set to belong to two holes with the hole buttons; back to the whole course", async ({ page }) => {
