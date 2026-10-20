@@ -261,3 +261,27 @@ export const autoWalks = <S extends { holeId: string; complete: boolean; line: P
 
 /** Every hole a basket is played to: its own, then the ones sharing it. */
 export const basketHoles = (b: Pick<BasketItem, "holeId" | "alsoHoles">) => [b.holeId, ...(b.alsoHoles ?? [])];
+
+/** Holes whose every tee and basket is among `ids` (they go with those things: moved, copied, deleted). */
+export const wholeHoles = (doc: Pick<CourseDoc, "items" | "holes">, ids: Set<string>) =>
+  doc.holes.filter(h => {
+    const parts = [...holeTees(doc, h.id), ...holeBaskets(doc, h.id)];
+    return parts.length > 0 && parts.every(p => ids.has(p.id));
+  });
+
+/** The things `ids` moved by (dx, dy) from where they are in `doc` (locked ones stay), with the
+ * bends of the holes that go along with them. */
+export const movedGroup = (doc: Pick<CourseDoc, "items" | "holes">, ids: string[], dx: number, dy: number): Pick<CourseDoc, "items" | "holes"> => {
+  const set = new Set(ids);
+  const shift = (p: P) => ({ x: p.x + dx, y: p.y + dy });
+  const whole = new Set(wholeHoles(doc, set).filter(h => [...holeTees(doc, h.id), ...holeBaskets(doc, h.id)].every(p => !p.locked)).map(h => h.id));
+  return {
+    items: doc.items.map(i => {
+      if (!set.has(i.id) || i.locked) return i;
+      const moved = { ...i, x: i.x + dx, y: i.y + dy } as CourseItem;
+      if (moved.type === "area" || moved.type === "line" || moved.type === "structure") moved.points = moved.points.map(shift);
+      return moved;
+    }),
+    holes: doc.holes.map(h => (whole.has(h.id) ? { ...h, doglegs: h.doglegs.map(shift) } : h))
+  };
+};

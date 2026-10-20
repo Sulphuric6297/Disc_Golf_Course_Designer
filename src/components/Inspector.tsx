@@ -2,15 +2,15 @@
 import { useEffect, useMemo } from "react";
 import { ArrowDown, ArrowUp, Copy, Eye, Lock, Plane, Trash2, Unlock, X } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
-import { autoWalks, holeBaskets, holeNumber, holeTees, ITEM_LABELS } from "../lib/course";
+import { autoWalks, holeBaskets, holeNumber, holeTees, ITEM_LABELS, wholeHoles } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
 import { holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { addHoleOb, deleteSelection, duplicateSelection, editWalks, select, setTeeLevel, shareBasket } from "../state/actions";
-import { moveHole, updateHole, updateItem, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaItem, AreaKind, CourseItem, Hole, LineItem, LineKind, P, RoofKind, StructureKind, TeeSurface, TreeKind } from "../types";
+import { changeDoc, moveHole, updateHole, updateItem, useCourse, useEditor } from "../state/course";
+import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, RoofKind, StructureKind, TeeSurface, TreeKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { getView } from "./MapViewport";
 import { Button, ColorInput, Field, NumberInput, Section, Segmented, Slider, Stat, TextInput, Toggle } from "./ui";
@@ -389,17 +389,52 @@ export function useSelection() {
   const selectedId = useEditor(e => e.selectedId);
   const teeView = useEditor(e => e.teeView);
   const tool = useEditor(e => e.tool);
+  const ids = useEditor(e => e.group);
   const hole = doc.holes.find(h => h.id === selectedId);
   const item = doc.items.find(i => i.id === selectedId);
-  return { hole, item, open: !!(hole || item) && !teeView && tool === "select" };
+  const group = useMemo(() => {
+    const set = new Set(ids);
+    return set.size ? doc.items.filter(i => set.has(i.id)) : [];
+  }, [doc.items, ids]);
+  return { hole, item, group, open: !!(hole || item || group.length) && !teeView && tool === "select" };
+}
+
+/** What things picked together are, by kind ("Tree ×12"), whole holes first. */
+export function groupSummary(doc: CourseDoc, items: CourseItem[]) {
+  const holes = wholeHoles(doc, new Set(items.map(i => i.id)));
+  const inHoles = new Set(holes.flatMap(h => [...holeTees(doc, h.id), ...holeBaskets(doc, h.id)].map(i => i.id)));
+  const counts = new Map<string, number>();
+  for (const i of items) {
+    if (inHoles.has(i.id)) continue;
+    const k = i.type === "basket" ? "Basket" : itemTitle(i);
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  return [
+    ...(holes.length === 1 ? [`Hole ${holeNumber(doc, holes[0].id)}`] : holes.length ? [`Holes ${holes.map(h => holeNumber(doc, h.id)).sort((a, b) => a - b).join(", ")}`] : []),
+    ...[...counts].map(([k, n]) => (n > 1 ? `${k} ×${n}` : k))
+  ];
+}
+
+/** Things picked together. */
+function GroupInspector({ items }: { items: CourseItem[] }) {
+  const doc = useCourse(s => s.doc);
+  const parts = useMemo(() => groupSummary(doc, items), [doc, items]);
+  return (
+    <Section>
+      <div className="text-sm font-bold text-zinc-50 mb-2" data-testid="inspector-title">{items.length} selected</div>
+      <div className="flex flex-wrap gap-1.5" data-testid="group-kinds">
+        {parts.map(p => <span key={p} className="px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 text-xs text-zinc-200">{p}</span>)}
+      </div>
+    </Section>
+  );
 }
 
 /** The selection's own content: the hole or the item, its numbers and settings. */
 export function InspectorBody() {
-  const { hole, item } = useSelection();
+  const { hole, item, group } = useSelection();
   return (
     <>
-      {hole ? <HoleInspector hole={hole} /> : item ? <ItemInspector item={item} /> : null}
+      {hole ? <HoleInspector hole={hole} /> : item ? <ItemInspector item={item} /> : group.length ? <GroupInspector items={group} /> : null}
       {hole && <div className="px-4 pb-3"><Button small full onClick={() => getView()?.fitHole(hole.id)}>Zoom to this hole</Button></div>}
     </>
   );
@@ -407,9 +442,17 @@ export function InspectorBody() {
 
 /** Lock, duplicate, delete and close; `big` for touch (44 px targets). */
 export function InspectorActions({ big = false, close = true }: { big?: boolean; close?: boolean }) {
-  const { item } = useSelection();
+  const { item, group } = useSelection();
   const ro = useEditor(e => e.viewOnly);
-  const locked = !!item?.locked;
+  // (things picked together: locked once every one of them is)
+  const locked = group.length ? group.every(i => i.locked) : !!item?.locked;
+  const lock = () => {
+    if (item) updateItem(item.id, { locked: !locked });
+    else if (group.length) {
+      const ids = new Set(group.map(i => i.id));
+      changeDoc(d => ({ items: d.items.map(i => (ids.has(i.id) ? { ...i, locked: !locked } : i)) }));
+    }
+  };
   const base = big ? "w-11 h-11 flex items-center justify-center rounded-xl text-zinc-300 hover:bg-zinc-800" : "p-1.5 rounded text-zinc-400 hover:bg-zinc-800";
   const b = `${base} hover:text-white`;
   const sz = big ? 19 : 15;
@@ -417,7 +460,7 @@ export function InspectorActions({ big = false, close = true }: { big?: boolean;
     <>
       {!ro && (
         <>
-          {item && <button className={b} title={locked ? "Unlock" : "Lock in place"} aria-label={locked ? "Unlock" : "Lock"} onClick={() => updateItem(item.id, { locked: !locked })}>{locked ? <Lock size={sz} /> : <Unlock size={sz} />}</button>}
+          {(item || group.length > 0) && <button className={b} title={locked ? "Unlock" : "Lock in place"} aria-label={locked ? "Unlock" : "Lock"} onClick={lock}>{locked ? <Lock size={sz} /> : <Unlock size={sz} />}</button>}
           <button className={b} title="Duplicate (Ctrl+D)" aria-label="Duplicate" onClick={duplicateSelection}><Copy size={sz} /></button>
           <button className={`${base} hover:text-red-400`} title="Delete (Del)" aria-label="Delete" onClick={deleteSelection}><Trash2 size={sz} /></button>
         </>

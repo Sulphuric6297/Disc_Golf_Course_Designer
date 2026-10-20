@@ -1,6 +1,6 @@
 // The tools along the bottom of the map, with the active tool's options and a hint above them.
 import type { ReactNode } from "react";
-import { Armchair, Circle, CircleDot, House, MousePointer2, PenLine, Pentagon, RectangleHorizontal, Redo2, Route, Ruler, Signpost, Spline, Square, Target, TreeDeciduous, Type, Undo2 } from "lucide-react";
+import { Armchair, BoxSelect, Circle, CircleDot, Hand, House, MousePointer2, PenLine, Pentagon, RectangleHorizontal, Redo2, Route, Ruler, Signpost, Spline, Square, Target, TreeDeciduous, Type, Undo2 } from "lucide-react";
 import { amenitySymbol, structureLegend, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import { useCourse, useEditor } from "../state/course";
@@ -109,6 +109,17 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
     </div>
   );
   switch (ed.tool) {
+      case "select":
+        // What a drag on the map does: move the map, or draw a box to select things
+        return [
+          <div key="drag" className="flex shrink-0 gap-0.5 bg-zinc-900/95 border border-zinc-700 rounded-full p-0.5" role="radiogroup" aria-label="Drag on the map">
+            {([[false, "Move the map", <Hand key="i" size={13} />, "drag-pan"], [true, "Select", <BoxSelect key="i" size={13} />, "drag-select"]] as const).map(([on, label, icon, id]) => (
+              <button key={id} role="radio" aria-checked={ed.dragSelect === on} data-testid={id} title={on ? "Drag a box around things to select them (Shift+drag)" : "Drag to move the map"} onClick={() => set({ dragSelect: on })} className={`flex items-center gap-1 px-2 py-0.5 touch:py-1.5 touch:px-2.5 touch:text-[13px] whitespace-nowrap rounded-full text-xs font-semibold ${ed.dragSelect === on ? "bg-orange-500 text-white" : "text-zinc-300 hover:bg-zinc-800"}`}>
+                {icon}{label}
+              </button>
+            ))}
+          </div>
+        ];
       case "add-hole":
       case "add-tee":
         return TEE_ORDER.map(l => <Chip key={l} active={ed.teeLevel === l} color={TEE_LEVELS[l].color} onClick={() => set({ teeLevel: l })} testid={`tee-level-${l}`}>{TEE_LEVELS[l].label}</Chip>);
@@ -155,9 +166,10 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
       : ed.tool === "add-mando" && ed.mandoKind === "gate" ? "Tap on the hole's line where the gate is: two posts across it, the disc passes between"
       : ed.tool === "draw-structure" && ed.structureKind === "bridge" ? "Tap one bank, then the other, then Done"
       : ed.tool === "draw-structure" && !lineDrawn ? "Tap the corners, then Done"
+      : ed.tool === "select" && ed.dragSelect ? "Drag a box around things · tap to add or take one out · two fingers move the map"
       : TOUCH_HINTS[ed.tool];
   }
-  return ed.tool === "select" ? "Drag to pan · scroll or pinch to zoom · right-drag or Shift+drag to turn and tilt"
+  return ed.tool === "select" ? (ed.dragSelect ? "Drag a box around things · Shift+click adds or takes one out · right-drag to turn and tilt" : "Drag to pan · Shift+drag to select · scroll or pinch to zoom · right-drag or Ctrl+drag to turn and tilt")
     : drawing && shape !== "points" ? SHAPE_HINTS[shape]
     : ed.tool === "add-mando" && ed.mandoKind === "gate" ? "Click on the hole's line where the gate is: two posts across it, the disc passes between"
     : ed.tool === "draw-structure" && ed.structureKind === "bridge" ? "Click one bank, then double-click the other (or Enter) · Backspace removes the last point · Esc cancels"

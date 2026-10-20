@@ -2,22 +2,67 @@
 import { CIRCLE_ONE_FT, PIN_POSITIONS, TEE_ORDER, generateId } from "../constants";
 import {
   createAmenity, createArea, createBasket, createDropZone, createLabel, createLine, createMando, createStructure, createTee, createTree,
-  autoWalks, holeBaskets, holeTees, itemHoleId, newHole, teeFor
+  autoWalks, basketHoles, holeBaskets, holeTees, itemHoleId, movedGroup, newHole, teeFor, wholeHoles
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { holeStats } from "../lib/holeStats";
-import type { BasketItem, CourseItem, Hole, P, TeeLevel, ToolMode } from "../types";
+import type { BasketItem, CourseDoc, CourseItem, Hole, P, TeeLevel, ToolMode } from "../types";
 import { changeDoc, editor, getDoc, removeHole, removeItems, useEditor } from "./course";
 import { toast } from "./toast";
 
 /** Selects an item or a hole; selecting a hole's part makes that hole the one being worked on. */
-export const select = (id: string | null) => {
+export const select = (id: string | null, add = false) => {
   const doc = getDoc();
+  if (add && id) {
+    // Shift+click: into the things picked together, or out of them (a hole with its tees and baskets)
+    const ed = editor();
+    const now = new Set(ed.group.length ? ed.group : partsOf(ed.selectedId));
+    const ids = partsOf(id);
+    const all = ids.every(x => now.has(x));
+    for (const x of ids) {
+      if (all) now.delete(x);
+      else now.add(x);
+    }
+    pickGroup([...now]);
+    return;
+  }
   const hole = doc.holes.find(h => h.id === id);
   const item = doc.items.find(i => i.id === id);
   const holeId = hole?.id ?? itemHoleId(item);
-  useEditor.getState().set({ selectedId: id, ...(holeId ? { activeHoleId: holeId } : {}) });
+  useEditor.getState().set({ selectedId: id, group: [], ...(holeId ? { activeHoleId: holeId } : {}) });
 };
+
+/** The things a selection stands for: a hole's tees and baskets, or the item. */
+const partsOf = (id: string | null) => {
+  if (!id) return [];
+  const doc = getDoc();
+  if (doc.holes.some(h => h.id === id)) return [...holeTees(doc, id), ...holeBaskets(doc, id)].map(i => i.id);
+  return doc.items.some(i => i.id === id) ? [id] : [];
+};
+
+/** Things picked together; one alone is simply selected. */
+export const pickGroup = (ids: string[]) => {
+  const doc = getDoc();
+  const live = [...new Set(ids)].filter(id => doc.items.some(i => i.id === id));
+  if (live.length <= 1) {
+    select(live[0] ?? null);
+    return;
+  }
+  useEditor.getState().set({ group: live, selectedId: null });
+};
+
+/** What a drag box took in, alone or (Shift) with what was picked already. */
+export const boxSelect = (ids: string[], add: boolean) => {
+  const ed = editor();
+  pickGroup([...(add ? (ed.group.length ? ed.group : partsOf(ed.selectedId)) : []), ...ids]);
+};
+
+/** Everything on the course that isn't locked (Ctrl+A). */
+export const selectAll = () => pickGroup(getDoc().items.filter(i => !i.locked).map(i => i.id));
+
+/** The things picked together, moved by (dx, dy) (one undo step unless `history` is false). */
+export const moveGroup = (base: CourseDoc, ids: string[], dx: number, dy: number, history = true) =>
+  changeDoc(() => movedGroup(base, ids, dx, dy), history);
 
 /** The hole the new tee, basket or mando goes with: the one being worked on. */
 const workingHole = (): Hole | null => {
@@ -141,7 +186,8 @@ export const addDrawn = (kind: "area" | "line" | "structure", points: P[]) => {
 };
 
 export const deleteSelection = () => {
-  const { selectedId } = editor();
+  const { selectedId, group } = editor();
+  if (group.length) return deleteGroup(group);
   if (!selectedId) return;
   const doc = getDoc();
   const hole = doc.holes.find(h => h.id === selectedId);
@@ -162,9 +208,73 @@ export const deleteSelection = () => {
   useEditor.getState().set({ selectedId: null });
 };
 
+/** Deletes the things picked together in one step (whole holes among them go as holes; a basket
+ * another hole still plays to stays, as that hole's). */
+const deleteGroup = (group: string[]) => {
+  const doc = getDoc();
+  const ids = new Set(group);
+  const picked = doc.items.filter(i => ids.has(i.id));
+  const gone = picked.filter(i => !i.locked);
+  if (!gone.length) {
+    toast(picked.length ? "They're locked. Unlock them first." : "Nothing to delete.", "info");
+    return;
+  }
+  const holeIds = new Set(wholeHoles(doc, new Set(gone.map(i => i.id))).map(h => h.id));
+  changeDoc(d => ({
+    holes: d.holes.filter(h => !holeIds.has(h.id)),
+    items: d.items.flatMap((i): CourseItem[] => {
+      if (i.type === "basket" && ids.has(i.id) && !i.locked) {
+        const holes = basketHoles(i);
+        const stay = holes.filter(h => !holeIds.has(h));
+        if (stay.length && stay.length < holes.length) return [{ ...i, holeId: stay[0], alsoHoles: stay.length > 1 ? stay.slice(1) : undefined }];
+        return [];
+      }
+      if (ids.has(i.id) && !i.locked) return [];
+      return ["holeId" in i && i.holeId && holeIds.has(i.holeId) && i.type !== "tee" && i.type !== "basket" ? ({ ...i, holeId: undefined } as CourseItem) : i];
+    })
+  }));
+  const n = holeIds.size;
+  const rest = gone.filter(i => !((i.type === "tee" || i.type === "basket") && basketOrTeeHoles(i).some(h => holeIds.has(h)))).length;
+  toast(`Deleted ${[n ? `${n} hole${n > 1 ? "s" : ""}` : "", rest ? `${rest} thing${rest > 1 ? "s" : ""}` : ""].filter(Boolean).join(" and ")}.`, "info", true);
+  useEditor.getState().set({ group: [], selectedId: null });
+};
+
+const basketOrTeeHoles = (i: CourseItem) => (i.type === "basket" ? basketHoles(i) : i.type === "tee" ? [i.holeId] : []);
+
+/** Copies of the things picked together, a little to the side; whole holes among them copy as new
+ * holes (a tee or pin on its own stays out). */
+const duplicateGroup = (group: string[]) => {
+  const doc = getDoc();
+  const off = 30;
+  const ids = new Set(group);
+  const holes = wholeHoles(doc, ids);
+  const holeMap = new Map(holes.map(h => [h.id, `hole-${generateId()}`]));
+  const copies: CourseItem[] = [];
+  for (const i of doc.items) {
+    if (!ids.has(i.id)) continue;
+    const own = basketOrTeeHoles(i).filter(h => holeMap.has(h));
+    if ((i.type === "tee" || i.type === "basket") && !own.length) continue;
+    const c = { ...i, id: generateId(), x: i.x + off, y: i.y + off, locked: false } as CourseItem;
+    if (c.type === "area" || c.type === "line" || c.type === "structure") c.points = c.points.map(p => ({ x: p.x + off, y: p.y + off }));
+    if (c.type === "tee") c.holeId = holeMap.get(own[0])!;
+    else if (c.type === "basket") {
+      c.holeId = holeMap.get(own[0])!;
+      c.alsoHoles = own.length > 1 ? own.slice(1).map(h => holeMap.get(h)!) : undefined;
+    } else if ("holeId" in c && c.holeId && holeMap.has(c.holeId)) (c as { holeId?: string }).holeId = holeMap.get(c.holeId);
+    copies.push(c);
+  }
+  if (!copies.length) return;
+  changeDoc(d => ({
+    holes: [...d.holes, ...holes.map(h => ({ ...h, id: holeMap.get(h.id)!, doglegs: h.doglegs.map(p => ({ x: p.x + off, y: p.y + off })) }))],
+    items: [...d.items, ...copies]
+  }));
+  pickGroup(copies.map(c => c.id));
+};
+
 /** A copy of the selection, a little to the side (a hole copies with its tees and baskets). */
 export const duplicateSelection = () => {
-  const { selectedId } = editor();
+  const { selectedId, group } = editor();
+  if (group.length) return duplicateGroup(group);
   const doc = getDoc();
   const off = 30;
   const hole = doc.holes.find(h => h.id === selectedId);
@@ -202,8 +312,9 @@ export const duplicateSelection = () => {
 
 /** Arrow keys: move the selection by `step` feet. */
 export const nudgeSelection = (dx: number, dy: number) => {
-  const { selectedId } = editor();
+  const { selectedId, group } = editor();
   const doc = getDoc();
+  if (group.length) return moveGroup(doc, group, dx, dy);
   const item = doc.items.find(i => i.id === selectedId);
   if (!item || item.locked) return;
   const patch: Partial<CourseItem> = { x: item.x + dx, y: item.y + dy };

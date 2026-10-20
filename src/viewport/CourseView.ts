@@ -96,6 +96,7 @@ const STYLE = `
 .dg-h[data-handle=rotate]{width:24px;height:24px;border-radius:50%;background:#fff;border:2.5px solid #2563eb;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;color:#2563eb;font:900 14px system-ui}
 .dg-h[data-handle=radius]{width:15px;height:15px;border-radius:50%;background:#16a34a;border:2.5px solid #fff;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=height]{width:16px;height:22px;border-radius:5px;background:#f59e0b;border:2.5px solid #fff;cursor:ns-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.dg-marquee{position:absolute;left:0;top:0;pointer-events:none;border:1.5px dashed #f59e0b;background:rgba(245,158,11,.12);border-radius:2px;z-index:5}
 .dg-h[data-handle=draw]{width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #f59e0b;pointer-events:none}
 .dg-h[data-handle=draw][data-index="0"]{width:14px;height:14px;pointer-events:auto;cursor:pointer;border-width:3px}
 @media (pointer:coarse){.dg-h{transform-origin:center}.dg-h[data-handle]{scale:1.5}.dg-h[data-handle]::before{content:"";position:absolute;left:50%;top:50%;width:30px;height:30px;translate:-50% -50%;border-radius:50%}.dg-tee::before,.dg-basket::before,.dg-sym::before,.dg-chip::before{content:"";position:absolute;inset:-10px}}
@@ -125,6 +126,10 @@ export class CourseView {
   private handles: Handle[] = [];
   private handleKey = "";
   private selectionFx: THREE.Object3D | null = null;
+  /** Things picked together (each outlined; dragging one moves them all). */
+  private group: string[] = [];
+  /** The box being drawn to pick things with. */
+  private marquee: HTMLDivElement | null = null;
   private hoverFx: THREE.Object3D | null = null;
   private ghost: THREE.Object3D | null = null;
   private ghostKey = "";
@@ -356,6 +361,14 @@ export class CourseView {
       this.fitCourse(false);
     }
     if (this.holeStart || this.drawPts.length) this.drawDraft();
+    this.invalidate();
+  }
+
+  setGroup(ids: string[]) {
+    if (ids.length === this.group.length && ids.every((x, i) => x === this.group[i])) return;
+    this.group = ids;
+    this.syncSelection();
+    this.syncOverlays();
     this.invalidate();
   }
 
@@ -1773,7 +1786,16 @@ export class CourseView {
       this.selectionFx = null;
     }
     const fx = this.outlineFor(this.selectedId, SELECT, 1);
-    if (fx) {
+    if (this.group.length) {
+      const g = new THREE.Group();
+      for (const id of this.group.slice(0, 400)) {
+        const o = this.outlineFor(id, SELECT, 1);
+        if (o) g.add(o);
+      }
+      if (fx) g.add(fx);
+      this.selectionFx = g;
+      this.fx.add(g);
+    } else if (fx) {
       this.selectionFx = fx;
       this.fx.add(fx);
     }
@@ -1822,7 +1844,7 @@ export class CourseView {
       disposeObjectDeep(this.hoverFx);
       this.hoverFx = null;
     }
-    if (id && id !== this.selectedId) {
+    if (id && id !== this.selectedId && !this.group.includes(id)) {
       this.hoverFx = this.outlineFor(id, "#ffffff", 0.5);
       if (this.hoverFx) this.fx.add(this.hoverFx);
     }
@@ -1854,8 +1876,9 @@ export class CourseView {
     const at = (p: P, lift = 0) => new THREE.Vector3(p.x, this.h(p.x, p.y) + lift, p.y);
     const mainTees = new Set(doc.stats.map(s => s.teeId));
     const mainBaskets = new Set(doc.stats.map(s => s.basketId));
+    const picked = new Set(this.group);
     for (const item of course.items) {
-      const sel = item.id === this.selectedId;
+      const sel = item.id === this.selectedId || picked.has(item.id);
       if (item.type === "tee") {
         const t = item as TeeItem;
         const lvl = TEE_LEVELS[t.level];
@@ -2580,6 +2603,8 @@ export class CourseView {
   /** A second finger on the map: the camera pinches, turns and tilts; nothing is placed or picked. */
   private secondFinger() {
     this.cancelLongPress();
+    this.marquee?.remove();
+    this.marquee = null;
     if (this.shaping) {
       this.shaping = false;
       this.draftPending = false;
@@ -2729,7 +2754,8 @@ export class CourseView {
       return;
     }
     if (e.button !== 0) return;
-    const modifierRotate = e.ctrlKey || e.metaKey || e.altKey || (e.shiftKey && this.tool.mode !== "measure");
+    // (Shift+drag in Select draws a box to pick things with)
+    const modifierRotate = e.ctrlKey || e.metaKey || e.altKey || (e.shiftKey && this.tool.mode !== "measure" && this.tool.mode !== "select");
     const domItem = (target.closest?.("[data-item-id]") as HTMLElement | null)?.dataset.itemId ?? null;
     if (modifierRotate && !domItem && !(this.tool.mode === "select" && this.pick(e.clientX, e.clientY))) {
       this.controls.mouseButtons.left = ACTION.ROTATE;
@@ -2840,23 +2866,118 @@ export class CourseView {
     }
     // Select mode
     const hit = domItem ?? this.pick(e.clientX, e.clientY);
+    // Shift (or the Drag to select option): a drag draws a box to pick things with; Shift+click
+    // adds a thing to the ones picked (or takes it out)
+    const add = e.shiftKey && !touch;
+    const boxing = add || !!tool.dragSelect;
     if (!hit) {
+      if (boxing) {
+        e.stopPropagation();
+        this.gesture(e, { click: () => { if (!add) this.cb.onSelect(null); }, drag: s => this.boxDrag(s, add) });
+        return;
+      }
       stop();
       this.gesture(e, { click: () => this.cb.onSelect(null), drag: panOrNothing });
       return;
     }
+    if (add) {
+      e.stopPropagation();
+      this.gesture(e, { click: () => this.cb.onSelect(hit, true), drag: s => this.boxDrag(s, true) });
+      return;
+    }
     const item = this.item(hit);
-    // Holes, areas and lines move only once selected (dragging across the map still pans);
-    // a hole itself never moves (move its tee or basket); a locked item never moves
+    // (with a finger, while Drag to select is on, a tap puts a thing in with the ones picked or
+    // takes it out)
+    const tapAdds = touch && !!tool.dragSelect;
+    // One of the things picked together: dragging it moves them all (a click picks it alone)
+    if (item && this.group.includes(hit)) {
+      e.stopPropagation();
+      this.gesture(e, { click: () => this.cb.onSelect(hit, tapAdds), drag: s => this.groupDrag(s, hit) });
+      return;
+    }
+    if (tapAdds) {
+      e.stopPropagation();
+      this.gesture(e, { click: () => this.cb.onSelect(hit, true), drag: s => this.boxDrag(s, false) });
+      return;
+    }
+    // Holes, areas and lines move only once selected (dragging across the map still pans, or
+    // draws a box); a hole itself never moves (move its tee or basket); a locked item never moves
     const big = !item || item.type === "area" || item.type === "line" || item.type === "structure";
     if ((big && hit !== this.selectedId) || !item || item.locked) {
-      stop();
-      this.gesture(e, { click: () => this.cb.onSelect(hit), drag: panOrNothing });
+      if (boxing) e.stopPropagation();
+      else stop();
+      this.gesture(e, { click: () => this.cb.onSelect(hit), drag: boxing ? s => this.boxDrag(s, false) : panOrNothing });
       return;
     }
     e.stopPropagation();
     if (hit !== this.selectedId) this.cb.onSelect(hit);
     this.gesture(e, { drag: s => this.itemDrag(s, hit) });
+  }
+
+  /** Draws a box on the screen; what lies inside it when let go is picked (a shape when all of it
+   * is inside, so a big area under everything doesn't come along). */
+  private boxDrag(start: PointerEvent, add: boolean): Drag | null {
+    const rect = this.container.getBoundingClientRect();
+    const x0 = start.clientX - rect.left, y0 = start.clientY - rect.top;
+    const box = document.createElement("div");
+    box.className = "dg-marquee";
+    box.setAttribute("data-testid", "select-box");
+    this.marquee?.remove();
+    this.marquee = box;
+    this.labelsLayer.appendChild(box);
+    let x1 = x0, y1 = y0;
+    const draw = () => {
+      box.style.transform = `translate(${Math.min(x0, x1)}px, ${Math.min(y0, y1)}px)`;
+      box.style.width = `${Math.abs(x1 - x0)}px`;
+      box.style.height = `${Math.abs(y1 - y0)}px`;
+    };
+    draw();
+    return {
+      move: ev => {
+        x1 = ev.clientX - rect.left;
+        y1 = ev.clientY - rect.top;
+        draw();
+      },
+      end: () => {
+        box.remove();
+        this.marquee = null;
+        const r = { l: Math.min(x0, x1), r: Math.max(x0, x1), t: Math.min(y0, y1), b: Math.max(y0, y1) };
+        if (r.r - r.l < 3 && r.b - r.t < 3) return;
+        this.cb.onBoxSelect(this.itemsIn(r), add);
+      }
+    };
+  }
+
+  /** The things inside a rectangle on the screen (container pixels). */
+  private itemsIn(r: { l: number; r: number; t: number; b: number }): string[] {
+    const doc = this.doc;
+    if (!doc) return [];
+    const inside = (p: P) => {
+      const s = this.project(new THREE.Vector3(p.x, this.h(p.x, p.y), p.y));
+      return !!s && s.x >= r.l && s.x <= r.r && s.y >= r.t && s.y <= r.b;
+    };
+    return doc.course.items
+      .filter(i => (i.type === "area" || i.type === "line" || i.type === "structure" ? i.points.length > 0 && i.points.every(inside) : inside(i)))
+      .map(i => i.id);
+  }
+
+  /** Drags the things picked together (and the bends of holes that go with them). */
+  private groupDrag(e: PointerEvent, id: string): Drag | null {
+    const item = this.item(id);
+    const doc = this.doc;
+    if (!item || !doc) return null;
+    const planeY = this.h(item.x, item.y);
+    const hit0 = this.planeAt(e.clientX, e.clientY, planeY);
+    if (!hit0) return null;
+    const base = doc.course;
+    const ids = [...this.group];
+    return {
+      move: ev => {
+        const hit = this.planeAt(ev.clientX, ev.clientY, planeY);
+        if (hit) this.cb.onMoveGroup(base, ids, hit.x - hit0.x, hit.z - hit0.z);
+      },
+      end: () => this.cb.onCommit()
+    };
   }
 
   // ------------------------------------------------------------------ drawing new holes, areas and lines
@@ -3239,13 +3360,13 @@ export class CourseView {
 
   private updateCursor() {
     const t = this.tool;
-    let c = "grab";
+    let c = t.dragSelect && t.mode === "select" && !t.readOnly ? "crosshair" : "grab";
     if (this.povHole) c = "move";
     else if (t.readOnly) c = this.hoverId ? "pointer" : "grab";
     else if (t.mode !== "select") c = "crosshair";
     else if (this.hoverId) {
       const it = this.item(this.hoverId);
-      c = !it || ((it.type === "area" || it.type === "line" || it.type === "structure") && this.hoverId !== this.selectedId) ? "pointer" : "move";
+      c = !it || ((it.type === "area" || it.type === "line" || it.type === "structure") && this.hoverId !== this.selectedId && !this.group.includes(this.hoverId)) ? "pointer" : "move";
     }
     this.container.style.cursor = c;
   }

@@ -105,6 +105,10 @@ type EditorStore = {
   step: Step;
   tool: ToolMode;
   selectedId: string | null;
+  /** Things picked together (a drag box, Shift+clicks); `selectedId` is empty while there are. */
+  group: string[];
+  /** A drag on the map draws a box to pick things with (instead of moving the map). */
+  dragSelect: boolean;
   /** The hole being worked on (its parts get handles; new tees, baskets and mandos join it). */
   activeHoleId: string | null;
   view: "2d" | "3d";
@@ -156,6 +160,8 @@ export const useEditor = create<EditorStore>()(set => ({
   step: "site",
   tool: "select",
   selectedId: null,
+  group: [],
+  dragSelect: false,
   activeHoleId: null,
   view: "2d",
   teeLevel: "blue",

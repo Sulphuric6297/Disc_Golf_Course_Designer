@@ -49,6 +49,8 @@ export type ViewTool = {
   shape: DrawShape;
   /** Look only (a shared course): no editing gestures. */
   readOnly: boolean;
+  /** Select: a drag on the map draws a box to pick things with (instead of moving the map). */
+  dragSelect?: boolean;
 };
 
 export type ViewInfo = {
@@ -63,7 +65,12 @@ export type ViewInfo = {
 };
 
 export type ViewCallbacks = {
-  onSelect: (id: string | null) => void;
+  /** A thing picked (or nothing); `add`: Shift+click, into or out of the things picked together. */
+  onSelect: (id: string | null, add?: boolean) => void;
+  /** What a drag box took in; `add`: with what was picked already. */
+  onBoxSelect: (ids: string[], add: boolean) => void;
+  /** Live: the things picked together moved by (dx, dy) from where they were in `base`. */
+  onMoveGroup: (base: CourseDoc, ids: string[], dx: number, dy: number) => void;
   /** A click with a placing tool (tee, basket, mando, drop zone, tree, amenity, label). */
   onPlace: (mode: ToolMode, p: P) => void;
   /** A new hole: where its tee and basket go. */

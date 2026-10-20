@@ -19,7 +19,7 @@ import { getDoc, moveHole, updateItem, useCourse, useEditor, type Step } from ".
 import { deleteRecent, makeCopy, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../../state/files";
 import type { PlanMeta } from "../../lib/storage";
 import type { CourseItem, P } from "../../types";
-import { InspectorBody, itemTitle, useSelection } from "../Inspector";
+import { InspectorBody, groupSummary, itemTitle, useSelection } from "../Inspector";
 import { MapViewport, getView } from "../MapViewport";
 import { MapDesigner } from "../MapDesigner";
 import { STEPS, STEP_ICONS, StepContent, touchWords } from "../SidePanel";
@@ -287,14 +287,14 @@ function SelectionHeader({ onMore }: { onMore: () => void }) {
   const doc = useCourse(s => s.doc);
   const ro = useEditor(e => e.viewOnly);
   const step = useEditor(e => e.step);
-  const { hole, item } = useSelection();
+  const { hole, item, group } = useSelection();
   const s = useMemo(() => (hole ? holeStats(doc, hole) : null), [doc, hole]);
   const u = doc.units;
   const holeId = hole?.id ?? (item && "holeId" in item ? item.holeId : undefined);
-  const title = hole ? `Hole ${holeNumber(doc, hole.id)}${hole.name ? ` · ${hole.name}` : ""}` : item ? itemTitle(item) : "";
+  const title = hole ? `Hole ${holeNumber(doc, hole.id)}${hole.name ? ` · ${hole.name}` : ""}` : item ? itemTitle(item) : group.length ? `${group.length} selected` : "";
   const sub = hole
     ? s?.complete ? `${fmtDist(s.length, u)} · Par ${s.par} · ${fmtElev(s.elevationChange, u)}` : s?.teeId ? "Needs a basket" : "Needs a tee"
-    : holeId ? `Hole ${holeNumber(doc, holeId)}` : item?.locked ? "Locked in place" : "Whole course";
+    : holeId ? `Hole ${holeNumber(doc, holeId)}` : item?.locked ? "Locked in place" : item ? "Whole course" : groupSummary(doc, group).join(" · ");
   const back = STEPS.find(x => x.id === step)?.label ?? "the step";
   return (
     <div className="touch-none flex items-center gap-0.5 pl-1.5 pr-2 pb-2" data-testid="selection-header">
@@ -308,8 +308,9 @@ function SelectionHeader({ onMore }: { onMore: () => void }) {
         )}
       </div>
       {hole && s?.complete && <button className={iconBtn} aria-label="View from the tee" title="View from the tee" onClick={() => useEditor.getState().set({ teeView: hole.id, flyover: false })}><Eye size={20} /></button>}
+      {!ro && group.length > 0 && <button className={iconBtn} aria-label="Duplicate" title="Duplicate" onClick={duplicateSelection}><Copy size={19} /></button>}
       {!ro && <button className={`${iconBtn} hover:text-red-400`} aria-label="Delete" title="Delete" onClick={deleteSelection} data-testid="selection-delete"><Trash2 size={19} /></button>}
-      <button className={iconBtn} aria-label="More actions" title="More actions" onClick={onMore} data-testid="selection-more"><Ellipsis size={22} /></button>
+      {!group.length && <button className={iconBtn} aria-label="More actions" title="More actions" onClick={onMore} data-testid="selection-more"><Ellipsis size={22} /></button>}
     </div>
   );
 }
@@ -337,9 +338,12 @@ export function ItemMenu({ itemId, onClose }: { itemId: string; onClose: () => v
     if (item && ((item.type === "area" && item.kind === "water") || (item.type === "line" && item.kind !== "ob" && item.kind !== "walk"))) {
       a.push({ label: item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)", run: () => updateItem(item.id, { ob: item.ob === true ? undefined : true } as Partial<CourseItem>), testid: "menu-ob" });
     }
-    a.push({ label: "Duplicate", icon: <Copy size={18} />, run: () => { select(itemId); duplicateSelection(); } });
-    if (item) a.push({ label: item.locked ? "Unlock" : "Lock in place", icon: item.locked ? <Unlock size={18} /> : <Lock size={18} />, run: () => updateItem(item.id, { locked: !item.locked } as Partial<CourseItem>) });
-    a.push({ label: "Delete", icon: <Trash2 size={18} />, danger: true, run: () => { select(itemId); deleteSelection(); }, testid: "menu-delete" });
+    // (on one of the things picked together: for all of them)
+    const group = useEditor.getState().group;
+    const inGroup = !!item && group.includes(item.id);
+    a.push({ label: inGroup ? `Duplicate ${group.length}` : "Duplicate", icon: <Copy size={18} />, run: () => { if (!inGroup) select(itemId); duplicateSelection(); } });
+    if (item && !inGroup) a.push({ label: item.locked ? "Unlock" : "Lock in place", icon: item.locked ? <Unlock size={18} /> : <Lock size={18} />, run: () => updateItem(item.id, { locked: !item.locked } as Partial<CourseItem>) });
+    a.push({ label: inGroup ? `Delete ${group.length}` : "Delete", icon: <Trash2 size={18} />, danger: true, run: () => { if (!inGroup) select(itemId); deleteSelection(); }, testid: "menu-delete" });
   }
   const title = hole ? `Hole ${n}${hole.name ? ` · ${hole.name}` : ""}` : itemTitle(item!);
   const sub = holeId && !hole ? `Hole ${holeNumber(doc, holeId)}` : undefined;

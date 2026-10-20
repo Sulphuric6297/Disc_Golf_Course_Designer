@@ -15,7 +15,7 @@ import { Button } from "./components/ui";
 import { useLayout, useTouch } from "./components/useLayout";
 import { CompactShell, ItemMenu } from "./components/mobile/CompactShell";
 import { useCourse, useEditor, getDoc, changeDoc, updateItem } from "./state/course";
-import { deleteSelection, duplicateSelection, nudgeSelection, select } from "./state/actions";
+import { deleteSelection, duplicateSelection, nudgeSelection, select, selectAll } from "./state/actions";
 import { osmFailedToast } from "./state/osm";
 import { makeCopy, openSharedLink, restoreAutosave, startAutosave } from "./state/files";
 import { toast, useToasts } from "./state/toast";
@@ -107,6 +107,7 @@ const SHORTCUTS: [string, string][] = [
   ["V", "Select and move"], ["H", "New hole (tee, then basket)"], ["T / B", "Another tee / pin for the hole"], ["M / Z", "Mando / drop zone"],
   ["O / L", "Draw an area / a line"], ["S", "Build: bridge, boardwalk, stairs, wall, building, shelter, deck"], ["R / A / K", "Tree / bench, sign… / label"], ["D", "Measure"],
   ["Enter", "Finish drawing · view from the selected hole's tee"], ["Esc", "Cancel · back to Select · close"], ["Backspace", "Remove the last point drawn"],
+  ["Shift+drag", "Select with a box"], ["Shift+click", "Add to the selection, or take out"], ["Ctrl+A", "Select everything"],
   ["Del", "Delete the selection"], ["Ctrl+D", "Duplicate"], ["Arrows", "Nudge 1 ft (Shift: 10 ft) · other holes in the tee view"],
   ["Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"], ["2 / 3", "Top-down / 3D"], ["0 / F", "Whole course / zoom to selection"], ["Q / E / N", "Turn left / right / north up"], ["+ / −", "Zoom"]
 ];
@@ -118,6 +119,7 @@ const GESTURES: [string, string][] = [
   ["Two fingers sideways", "Turn the map (or the turn buttons; the compass puts north up)"],
   ["Tap", "Select a hole or a thing; with a tool, place it"],
   ["Hold", "A thing's menu: view from the tee, mark OB, duplicate, lock, delete"],
+  ["Select, above the tools", "Drag a box around several things; tap one to add it or take it out"],
   ["Drag the panel", "Up for more, down for more map; tap its handle to step through"]
 ];
 
@@ -160,9 +162,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
           ))}
         </dl>
         <h3 className="font-bold text-zinc-100 mt-5 mb-1">Map navigation</h3>
-        <p className="text-sm text-zinc-400">Drag to pan, scroll or pinch to zoom at the cursor, right-drag (or Shift/Ctrl+drag) to turn and tilt, double-click to zoom in.</p>
-        <h3 className="font-bold text-zinc-100 mt-4 mb-1">How par is worked out</h3>
-        <p className="text-sm text-zinc-400">PDGA Par Guidelines: effective length = the length along the throw line + 3 × the climb from tee to basket (a drop counts the other way), a little longer for doglegs and heavy foliage, then the PDGA's table for the tee color. You can always set par by hand.</p>
+        <p className="text-sm text-zinc-400">Drag to pan, scroll or pinch to zoom at the cursor, right-drag (or Ctrl+drag) to turn and tilt, Shift+drag to select, double-click to zoom in.</p>
         <h3 className="font-bold text-zinc-100 mt-4 mb-1">Credits</h3>
         <p className="text-xs text-zinc-500">Imagery © Esri, Maxar, Earthstar Geographics. Map data © OpenStreetMap contributors. Elevation: USGS 3DEP and AWS Terrain Tiles (Mapzen). Built on the map engine of the Security Camera Planner.</p>
       </div>
@@ -186,6 +186,9 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
   const row = "w-full text-left px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800";
   const run = (fn: () => void) => () => { fn(); onClose(); };
   const holeId = hole?.id ?? (item && "holeId" in item ? item.holeId : undefined);
+  // (on one of the things picked together: for all of them)
+  const group = useEditor.getState().group;
+  const inGroup = !!item && group.includes(item.id);
   return (
     <div className="fixed z-50 w-52 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-1" style={{ left: x, top: y }} role="menu" onPointerDown={e => e.stopPropagation()}>
       {holeId && holeStats(doc, doc.holes.find(h => h.id === holeId)!).complete && (
@@ -197,9 +200,9 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
       {item && (item.type === "area" && item.kind === "water" || item.type === "line" && item.kind !== "ob" && item.kind !== "walk") && (
         <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, { ob: item.ob === true ? undefined : true } as Partial<CourseItem>))}>{item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)"}</button>
       )}
-      <button className={row} role="menuitem" onClick={run(() => { select(info.itemId); duplicateSelection(); })}>Duplicate</button>
-      {item && <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, { locked: !item.locked } as Partial<CourseItem>))}>{item.locked ? "Unlock" : "Lock in place"}</button>}
-      <button className={`${row} text-red-300`} role="menuitem" onClick={run(() => { select(info.itemId); deleteSelection(); })}>Delete</button>
+      <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); duplicateSelection(); })}>{inGroup ? `Duplicate ${group.length}` : "Duplicate"}</button>
+      {item && !inGroup && <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, { locked: !item.locked } as Partial<CourseItem>))}>{item.locked ? "Unlock" : "Lock in place"}</button>}
+      <button className={`${row} text-red-300`} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); deleteSelection(); })}>{inGroup ? `Delete ${group.length}` : "Delete"}</button>
     </div>
   );
 }
@@ -265,6 +268,7 @@ export default function App() {
       if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (s.viewOnly) return; if (e.shiftKey) useCourse.getState().redo(); else useCourse.getState().undo(); return; }
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); if (!s.viewOnly) useCourse.getState().redo(); return; }
       if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (!s.viewOnly) duplicateSelection(); return; }
+      if (mod && e.key.toLowerCase() === "a" && !s.teeView && s.step !== "design") { e.preventDefault(); if (!s.viewOnly) { s.set({ tool: "select" }); selectAll(); } return; }
       if (mod) return;
       if (s.teeView) {
         if (e.key === "Escape") s.set({ teeView: null, flyover: false });
@@ -280,7 +284,7 @@ export default function App() {
       if (e.key === "Escape") {
         if (view?.cancelDrawing()) return;
         if (s.tool !== "select") { s.set({ tool: "select" }); return; }
-        if (s.selectedId) { select(null); return; }
+        if (s.selectedId || s.group.length) { select(null); return; }
         return;
       }
       if (e.key === "Enter") {
@@ -292,10 +296,10 @@ export default function App() {
       }
       if (e.key === "Backspace" || e.key === "Delete") {
         if (e.key === "Backspace" && view?.undoPoint()) { e.preventDefault(); return; }
-        if (!s.viewOnly && s.selectedId) { e.preventDefault(); deleteSelection(); }
+        if (!s.viewOnly && (s.selectedId || s.group.length)) { e.preventDefault(); deleteSelection(); }
         return;
       }
-      if (e.key.startsWith("Arrow") && s.selectedId && !s.viewOnly) {
+      if (e.key.startsWith("Arrow") && (s.selectedId || s.group.length) && !s.viewOnly) {
         e.preventDefault();
         const step = e.shiftKey ? 10 : 1;
         nudgeSelection(e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0, e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0);

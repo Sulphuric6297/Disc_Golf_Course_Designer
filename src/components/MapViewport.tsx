@@ -1,10 +1,10 @@
 // The map view (2D and 3D are one view): the CourseView engine, fed from the course store.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Compass, Maximize2, Minus, Plus, RotateCcw, RotateCw } from "lucide-react";
+import { BoxSelect, Compass, Maximize2, Minus, Plus, RotateCcw, RotateCw } from "lucide-react";
 import { CourseView } from "../viewport/CourseView";
 import type { ViewDoc, ViewInfo } from "../viewport/types";
 import { useCourse, useEditor, updateItem, updateHole, useCourse as courseStore } from "../state/course";
-import { addDrawn, addHole, placeAt, select } from "../state/actions";
+import { addDrawn, addHole, boxSelect, moveGroup, placeAt, select } from "../state/actions";
 import { holeStats, safetyIssues } from "../lib/holeStats";
 import { contoursOf, hillshadeCanvas } from "../lib/relief";
 import { terrainStats, heightAt } from "../lib/terrainGrid";
@@ -39,7 +39,9 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => {
     if (!ref.current) return;
     const v = new CourseView(ref.current, {
-      onSelect: id => select(id),
+      onSelect: (id, add) => select(id, add),
+      onBoxSelect: (ids, add) => boxSelect(ids, add),
+      onMoveGroup: (base, ids, dx, dy) => moveGroup(base, ids, dx, dy, false),
       onPlace: (mode, p) => placeAt(mode, p),
       onHole: (tee, basket) => addHole(tee, basket),
       onDrawn: (kind, pts) => {
@@ -102,9 +104,10 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
 
   useEffect(() => { view?.setDoc(viewDoc); }, [view, viewDoc]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
+  useEffect(() => { view?.setGroup(ed.group); }, [view, ed.group]);
   useEffect(() => {
-    view?.setTool({ mode: ed.viewOnly ? "select" : ed.tool, areaKind: ed.areaKind, lineKind: ed.lineKind, structureKind: ed.structureKind, shape: ed.drawShape, readOnly: ed.viewOnly }, ed.teeLevel);
-  }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.structureKind, ed.drawShape, ed.viewOnly, ed.teeLevel]);
+    view?.setTool({ mode: ed.viewOnly ? "select" : ed.tool, areaKind: ed.areaKind, lineKind: ed.lineKind, structureKind: ed.structureKind, shape: ed.drawShape, readOnly: ed.viewOnly, dragSelect: ed.dragSelect && !ed.viewOnly }, ed.teeLevel);
+  }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.structureKind, ed.drawShape, ed.viewOnly, ed.teeLevel, ed.dragSelect]);
   useEffect(() => { view?.setPose(ed.view === "2d" ? "top" : "tilt"); }, [view, ed.view]);
   useEffect(() => { view?.setGrass(ed.grass, ed.wind); }, [view, ed.grass, ed.wind]);
   // Covered by the Design step's page: the map view rests
@@ -178,6 +181,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
 function TouchControls({ view, info, scale, units, phone, top, room, threeD }: { view: CourseView | null; info: ViewInfo | null; scale: { px: number; label: string; feet: number } | null; units: "ft" | "m"; phone: boolean; top: number; room: number; threeD: boolean }) {
   const set = useEditor(e => e.set);
   const mode = useEditor(e => e.view);
+  const boxing = useEditor(e => e.dragSelect);
+  const editing = useEditor(e => !e.viewOnly && e.step !== "design");
   const b = "w-11 h-11 flex items-center justify-center text-zinc-100 active:bg-zinc-700 focus:outline-none focus-visible:bg-zinc-700";
   const group = "pointer-events-auto flex flex-col bg-zinc-900/90 rounded-2xl border border-white/10 shadow-[0_6px_20px_rgba(0,0,0,0.35)] overflow-hidden divide-y divide-white/5";
   // Room for: compass 44, zoom 88, fit 44, turn 88 (+ the gaps); the turn buttons go first
@@ -208,6 +213,11 @@ function TouchControls({ view, info, scale, units, phone, top, room, threeD }: {
               <button className={b} aria-label="Zoom in" onClick={() => view?.zoomBy(1.4)}><Plus size={20} /></button>
               <button className={b} aria-label="Zoom out" onClick={() => view?.zoomBy(1 / 1.4)}><Minus size={20} /></button>
             </div>
+            {editing && (fit || !phone) && (
+              <button className={`${group} ${b} ${boxing ? "!bg-orange-500 !text-white" : ""}`} aria-label="Select with a box" title="Select with a box" aria-pressed={boxing} onClick={() => set({ dragSelect: !boxing, tool: "select" })} data-testid="touch-drag-select">
+                <BoxSelect size={19} />
+              </button>
+            )}
           </div>
           <div className="flex flex-col gap-2">
             {(fit || !phone) && <button className={`${group} ${b}`} aria-label="Show the whole course" onClick={() => view?.fitCourse()}><Maximize2 size={18} /></button>}
