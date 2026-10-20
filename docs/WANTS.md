@@ -5,20 +5,20 @@ been seen working in the browser.
 
 ## The original request
 
-- [ ] **Built from the Security Camera Planner's core engine**
+- [x] **Built from the Security Camera Planner's core engine**
   (https://github.com/Sulphuric6297/Security-Camera-Planner): the same map import, satellite
   imagery, elevation data and one 2D/3D map view, turned into a **disc golf course designer**.
-- [ ] **Research first**: look at other disc golf (and regular golf) course design software and
+- [x] **Research first**: look at other disc golf (and regular golf) course design software and
   use that research to design a really great disc golf course designer
   (findings: `docs/RESEARCH.md`).
-- [ ] **Course parts you can add**: fairways, OB (out of bounds), baskets, tees, and
+- [x] **Course parts you can add**: fairways, OB (out of bounds), baskets, tees, and
   "everything else you can think of" (mandos, drop zones, hazards, alternate pin positions,
   multiple tees per hole, walking paths, signs, benches, parking and so on).
-- [ ] **Elevation data, like the camera planner**: real terrain for the site, with elevation
+- [x] **Elevation data, like the camera planner**: real terrain for the site, with elevation
   change shown for each hole.
-- [ ] **A robust designer to make the map really beautiful**: map styles, colors, labels,
+- [x] **A robust designer to make the map really beautiful**: map styles, colors, labels,
   hole numbers, legend, title block, north arrow, scale bar, contours, trees and so on.
-- [ ] **Exportable in a way that makes sense**: for example a printable course map, tee signs,
+- [x] **Exportable in a way that makes sense**: for example a printable course map, tee signs,
   a scorecard, GPS files (GeoJSON / KML / GPX) and a hole list (CSV).
 
 ## Added while the work was under way
@@ -50,9 +50,9 @@ been seen working in the browser.
   - soft gray roads; small tee pads in their colors; small dark basket marks.
 - [x] **Trees can be sparse too**: a setting from a few scattered trees to solid woods.
 - [x] **Better basket ("pin") pictures, with several to choose from.**
-- [ ] **Mandos, OB, hazards and everything else**, rendered perfectly on the map and really easy
+- [x] **Mandos, OB, hazards and everything else**, rendered perfectly on the map and really easy
   to lay out.
-- [ ] **Tee signs like the owner's second example** (a wide sign on a post):
+- [x] **Tee signs like the owner's second example** (a wide sign on a post):
   - a light column on the left with the course name, the hole number big in a dark box, a PAR
     tag in the tee color, the distance in big type ("305 FEET") and the hole notes;
   - the hole map on the right in the same painted-woods style, tee at the bottom;
