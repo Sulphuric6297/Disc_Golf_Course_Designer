@@ -333,7 +333,7 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
       disc(FAIR, i, r);
       disc(CLEAR, i, r + 4);
       // Worn dirt around the pad
-      disc(ch(B, 0, 175), i, Math.max(7, i.padLength * 0.75));
+      disc(ch(B, 0, 175), i, Math.max(9, i.padLength * 1.05));
     } else if (i.type === "basket") {
       disc(FAIR, i, CIRCLE_ONE_FT * 0.75);
       disc(CLEAR, i, CIRCLE_ONE_FT * 0.8);
@@ -383,7 +383,8 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
       const from = a.line[a.line.length - 1], to = b.line[0];
       const d = dist(from, to);
       if (d < 40) continue;
-      const tw = Math.max(5, ftOf(3.6));
+      // (worn wide, as on painted course maps: a walk you can see from across the map)
+      const tw = Math.max(6, ftOf(6));
       const pts = smoothPath(meander([from, to], Math.min(d * 0.07, 30), Math.max(70, d * 0.55), idSeed(a.holeId + b.holeId)), 3);
       line(DIRT, pts, tw);
       line(CLEAR, pts, tw + (crownR * 2.4) / k);
@@ -675,7 +676,8 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
   const lawn = palette(s.rough, [0.6, 0.76, 0.9, 1.04, 1.18], 3);
   const floorPal = palette(s.trees, [0.3, 0.42, 0.56], 0);
   const water = palette(s.water, [0.42, 0.6, 0.8, 1, 1.22, 1.5], -6);
-  const dirtPal = palette(s.path, [0.62, 0.78, 0.92, 1.06, 1.22], 4);
+  // Worn dirt: an olive tan, lighter than the shade around it (it reads as open ground)
+  const dirtPal = palette(s.path, [0.86, 1.03, 1.19, 1.35, 1.54], -8, 0.85);
   const road = palette("#969a9d", [0.66, 0.8, 0.92, 1.02, 1.1], 0);
   const sandPal = palette("#b3a275", [0.78, 0.9, 1, 1.1], 0);
   const roof = palette("#77716a", [0.6, 0.8, 1, 1.18], 0);
@@ -783,7 +785,7 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
           const da = smooth(0.45, 0.55, d + (fbm(x / pt * 0.35 + 80, y / pt * 0.35) - 0.5) * 0.55);
           if (da > 0) {
             const grit = GRIT[tr | (x & 511)];
-            lay(dirtPal, (0.5 + (grit - 0.5) * 0.7 + mott * 0.3) * lit, da);
+            lay(dirtPal, (0.52 + (grit - 0.5) * 0.7 + mott * 0.3) * (0.45 + 0.55 * lit), da);
           }
         }
         const bd = c[m4] / 255;
