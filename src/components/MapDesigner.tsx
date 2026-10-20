@@ -291,14 +291,14 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
     </div>
   );
   const tab = (id: Preview, label: string) => (
-    <button key={id} role="tab" aria-selected={preview === id} onClick={() => { setPreview(id); setZoom(null); }} className={`${compact ? "shrink-0 h-10 px-3.5 rounded-xl text-[14px]" : "px-3 py-1.5 rounded-lg text-sm"} font-semibold ${preview === id ? "bg-zinc-100 text-zinc-900" : "text-zinc-300 hover:bg-zinc-800"}`}>
+    <button key={id} role="tab" aria-selected={preview === id} onClick={() => { setPreview(id); setZoom(null); }} className={`${compact ? "flex-1 min-w-0 h-10 px-1 rounded-xl text-[13px] truncate" : "px-3 py-1.5 rounded-lg text-sm"} font-semibold ${preview === id ? "bg-zinc-100 text-zinc-900" : "text-zinc-300 hover:bg-zinc-800"}`}>
       {label}
     </button>
   );
   return (
     <div className={`absolute inset-0 z-20 ${compact ? "bg-zinc-900" : "bg-zinc-800"} flex flex-col`} style={compact ? { paddingTop: topInset } : undefined} data-testid="map-designer">
       <div className={compact ? "flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2 py-2 bg-zinc-900 border-b border-zinc-800" : "flex items-center gap-2 px-3 py-2 bg-zinc-900 border-b border-zinc-800"}>
-        <div role="tablist" className={compact ? "w-full flex gap-1 overflow-x-auto dg-noscrollbar touch-pan-x" : "flex gap-1"}>{[tab("map", "Course map"), tab("sign", "Tee sign"), tab("page", "Hole page"), tab("scorecard", "Scorecard")]}</div>
+        <div role="tablist" className={compact ? "w-full flex gap-1" : "flex gap-1"}>{[tab("map", "Course map"), tab("sign", "Tee sign"), tab("page", "Hole page"), tab("scorecard", "Scorecard")]}</div>
         {(preview === "sign" || preview === "page") && doc.holes.length > 0 && (
           <select aria-label={preview === "sign" ? "Hole for the tee sign" : "Hole for the hole page"} className={`bg-zinc-800 border border-zinc-700 rounded-lg px-2 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={holeId ?? ""} onChange={e => setHole(e.target.value)}>
             {doc.holes.map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}</option>)}

@@ -359,12 +359,20 @@ test.describe("phone", () => {
     await expect.poll(scale).toBeLessThan(now * 0.85);
   });
 
-  test("the Design preview fits the phone's width; pinch and the buttons zoom it", async ({ page }) => {
+  test("the Design preview fits the phone's width (its four tabs too, whole); pinch and the buttons zoom it", async ({ page }) => {
     await oneHole(page);
     await nav(page).getByRole("button", { name: /Design/ }).tap();
     const pageBox = async () => (await page.getByTestId("design-page").boundingBox())!;
     await expect(page.getByTestId("design-page")).toBeVisible();
     const vw = page.viewportSize()!.width;
+    const tabs = page.getByRole("tablist").first().getByRole("tab");
+    await expect(tabs).toHaveCount(4);
+    for (let i = 0; i < 4; i++) {
+      const t = (await tabs.nth(i).boundingBox())!;
+      expect(t.x).toBeGreaterThanOrEqual(0);
+      expect(t.x + t.width).toBeLessThanOrEqual(vw);
+      expect(await tabs.nth(i).evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    }
     const b = await pageBox();
     expect(b.width).toBeGreaterThan(vw - 40);
     expect(b.width).toBeLessThanOrEqual(vw);
