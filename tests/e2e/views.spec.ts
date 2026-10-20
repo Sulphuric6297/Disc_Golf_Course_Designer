@@ -58,6 +58,7 @@ test("a slow frame doesn't skip the flyover", async ({ page }) => {
 });
 
 test("flyover runs from the tee to the basket and stops", async ({ page }) => {
+  test.setTimeout(150_000);
   await blankCourse(page);
   await addHole(page, { x: 400, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
@@ -65,8 +66,9 @@ test("flyover runs from the tee to the basket and stops", async ({ page }) => {
   await page.getByTestId("flyover").click();
   await expect(page.getByTestId("hud-flyover")).toHaveText(/Flying/);
   await expect.poll(() => page.evaluate(() => (window as any).__dgView.flyProgress()), { timeout: 5000 }).toBeGreaterThan(0.05);
-  // It lands by itself (a short hole flies for 6 seconds)
-  await expect(page.getByTestId("hud-flyover")).toHaveText(/Fly over/, { timeout: 30000 });
+  // It lands by itself (a short hole flies for 6 seconds and slows to a stop; a slow frame
+  // doesn't skip it, so drawn in software here it takes longer)
+  await expect(page.getByTestId("hud-flyover")).toHaveText(/Fly over/, { timeout: 90_000 });
   await page.getByTestId("hud-close").click();
   await expect(page.getByTestId("tee-view-hud")).toBeHidden();
 });
