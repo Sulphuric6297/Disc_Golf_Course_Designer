@@ -190,6 +190,9 @@ export interface MapStyle {
   theme: MapTheme;
   /** Hills: how strongly the ground's relief shows on the map, times the automatic (0: flat). */
   reliefScale?: number;
+  /** Where the legend (and hole table) panel sits on the course map: its top-left corner as a
+   * share of the page's width and height (unset: a free corner). */
+  legendAt?: { x: number; y: number };
   /** Title block. */
   title: string;
   subtitle: string;

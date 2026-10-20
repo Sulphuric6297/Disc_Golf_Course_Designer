@@ -623,3 +623,37 @@ test("trees placed on a fairway are painted where and as they were placed, and t
   const crown = (Math.PI * tree.radius * tree.radius) / (doc.canvas.width * doc.canvas.height);
   expect(share).toBeGreaterThan(crown * 0.3);
 });
+
+test("the legend can be dragged anywhere on the course map, and back to a corner", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByText("Legend", { exact: true }).click();
+  const panel = page.getByTestId("design-page").locator('[data-panel="legend"]');
+  await expect(panel).toHaveCount(1);
+  const box = (await panel.boundingBox())!;
+  const pageBox = (await page.getByTestId("design-page").boundingBox())!;
+  // From its corner to the middle of the page
+  const from = { x: box.x + box.width / 2, y: box.y + 20 };
+  const to = { x: pageBox.x + pageBox.width / 2, y: pageBox.y + pageBox.height / 2 };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(async () => (await course(page)).style.legendAt).toBeTruthy();
+  const at = (await course(page)).style.legendAt;
+  expect(at.x).toBeGreaterThan(0.2);
+  expect(at.x).toBeLessThan(0.6);
+  // Drawn there now (after the page is drawn again)
+  await expect.poll(async () => Number(await panel.getAttribute("data-x"))).toBeCloseTo(at.x, 2);
+  const moved = (await panel.boundingBox())!;
+  expect(Math.abs(moved.x + moved.width / 2 - to.x)).toBeLessThan(pageBox.width * 0.1);
+  // One undo step takes it back; and the button puts it in a corner again
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await course(page)).style.legendAt).toBeUndefined();
+  await page.keyboard.press("Control+y");
+  await expect.poll(async () => (await course(page)).style.legendAt).toBeTruthy();
+  await page.getByTestId("legend-corner").click();
+  await expect.poll(async () => (await course(page)).style.legendAt).toBeUndefined();
+});

@@ -898,11 +898,15 @@ export const renderPoster = (doc: CourseDoc, opts: PosterOptions) => {
     if (s.legend || s.holeTable) {
       const c = other[1] ?? other[0];
       const w = 200 * ts, h = Math.min(H * 0.55, (s.holeTable ? 40 + stats.length * 12 : 0) * ts + (s.legend ? 170 : 0) * ts);
-      const x = c.x === 0 ? m : W - m - w, y = c.y === 0 ? m : H - m - h - 14 * ts;
-      parts.push(`<rect x="${n(x)}" y="${n(y)}" width="${n(w)}" height="${n(h)}" rx="${n(6 * ts)}" fill="${pal.panel}"/>`);
+      // Wherever it was put (kept on the page), or a free corner
+      const at = s.legendAt;
+      const x = at ? Math.max(0, Math.min(W - w, at.x * W)) : c.x === 0 ? m : W - m - w;
+      const y = at ? Math.max(0, Math.min(H - h, at.y * H)) : c.y === 0 ? m : H - m - h - 14 * ts;
+      const panel = [`<rect x="${n(x)}" y="${n(y)}" width="${n(w)}" height="${n(h)}" rx="${n(6 * ts)}" fill="${pal.panel}"/>`];
       let yy = y + 14 * ts;
-      if (s.holeTable) { const t = holeTable(doc, stats, x + 10 * ts, yy, w - 20 * ts, ts * 0.9, pal, font, "vertical", h * (s.legend ? 0.6 : 0.95)); parts.push(t.svg); yy = t.bottom + 8 * ts; }
-      if (s.legend) parts.push(legend(doc, x + 10 * ts, yy, w - 20 * ts, ts * 0.9, pal, font));
+      if (s.holeTable) { const t = holeTable(doc, stats, x + 10 * ts, yy, w - 20 * ts, ts * 0.9, pal, font, "vertical", h * (s.legend ? 0.6 : 0.95)); panel.push(t.svg); yy = t.bottom + 8 * ts; }
+      if (s.legend) panel.push(legend(doc, x + 10 * ts, yy, w - 20 * ts, ts * 0.9, pal, font));
+      parts.push(`<g data-panel="legend" data-x="${n(x / W)}" data-y="${n(y / H)}">${panel.join("")}</g>`);
     }
     parts.push(`<text x="${n(W - m * 0.6)}" y="${n(H - m * 0.35)}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="${n(6 * ts)}" fill="#ffffff" fill-opacity="0.75">${esc(credit)}</text>`);
     return { svg: wrapSvg(W, H, parts.join(""), opts.dpi), width: W, height: H, page };

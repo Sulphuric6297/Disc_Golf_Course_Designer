@@ -7,6 +7,7 @@ import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../li
 import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
 import { useCourse, useEditor } from "../state/course";
 import { useCanopy, useRelief } from "./useRelief";
+import { setStyle } from "./DesignPanel";
 
 /** A phone or small tablet (touch first, small screen). */
 const PHONE = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches && typeof screen !== "undefined" && Math.min(screen.width, screen.height) < 900;
@@ -105,6 +106,33 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
     return renderPoster(doc, relief);
   }), [doc, relief, preview, holeId, signSize, pageSize, painted]);
 
+  // The legend's panel dragged anywhere on the course map (moved on screen while dragging, then
+  // kept, as a share of the page, in one undo step)
+  const legendDrag = useRef<{ el: SVGGElement; x0: number; y0: number; cx: number; cy: number; id: number; k: number; w: number; h: number } | null>(null);
+  const viewOnly = useEditor(e => e.viewOnly);
+  const onPageDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (viewOnly || preview !== "map" || !page) return;
+    const el = (e.target as Element).closest?.('[data-panel="legend"]') as SVGGElement | null;
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    legendDrag.current = { el, x0: Number(el.dataset.x), y0: Number(el.dataset.y), cx: e.clientX, cy: e.clientY, id: e.pointerId, k: kRef.current, w: page.width, h: page.height };
+  };
+  const onPageMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = legendDrag.current;
+    if (!d || d.id !== e.pointerId) return;
+    d.el.setAttribute("transform", `translate(${(e.clientX - d.cx) / d.k} ${(e.clientY - d.cy) / d.k})`);
+  };
+  const onPageUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = legendDrag.current;
+    if (!d || d.id !== e.pointerId) return;
+    legendDrag.current = null;
+    if (Math.abs(e.clientX - d.cx) + Math.abs(e.clientY - d.cy) < 3) { d.el.removeAttribute("transform"); return; }
+    const f = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 1000) / 1000;
+    setStyle({ legendAt: { x: f(d.x0 + (e.clientX - d.cx) / (d.w * d.k)), y: f(d.y0 + (e.clientY - d.cy) / (d.h * d.k)) } });
+  };
+
   if (!page) return null;
   const margin = compact ? 20 : 48;
   const fit = Math.min((size.w - margin) / page.width, (size.h - margin) / page.height);
@@ -152,7 +180,11 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
           <div
             ref={pageEl}
             data-testid="design-page"
-            className="shadow-2xl bg-white shrink-0"
+            className="shadow-2xl bg-white shrink-0 [&_[data-panel=legend]]:cursor-move"
+            onPointerDown={onPageDown}
+            onPointerMove={onPageMove}
+            onPointerUp={onPageUp}
+            onPointerCancel={onPageUp}
             style={{ width: page.width * k, height: page.height * k, ...(pinchScale ? { transform: `scale(${pinchScale.s})`, transformOrigin: `${pinchScale.ox}px ${pinchScale.oy}px` } : {}) }}
             dangerouslySetInnerHTML={{ __html: page.svg.replace(/^<svg([^>]*?) width="[^"]*" height="[^"]*"/, `<svg$1 width="${page.width * k}" height="${page.height * k}"`) }}
           />

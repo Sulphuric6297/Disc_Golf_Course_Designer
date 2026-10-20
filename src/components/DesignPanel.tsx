@@ -139,6 +139,7 @@ export function DesignPanel() {
         <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />
         <Toggle label="Hill shading" checked={s.hillshade} onChange={v => setStyle({ hillshade: v })} />
         <Toggle label="Legend" checked={s.legend} onChange={v => setStyle({ legend: v })} />
+        {s.legendAt && (s.legend || s.holeTable) && <div className="-mt-1 mb-1"><Button small onClick={() => setStyle({ legendAt: undefined })} testid="legend-corner">Legend back to a corner</Button></div>}
         <Toggle label="Hole table" checked={s.holeTable} onChange={v => setStyle({ holeTable: v })} />
         <Toggle label="North arrow" checked={s.north} onChange={v => setStyle({ north: v })} />
         <Toggle label="Scale bar" checked={s.scale} onChange={v => setStyle({ scale: v })} />
