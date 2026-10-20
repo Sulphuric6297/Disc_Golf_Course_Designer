@@ -13,18 +13,37 @@ const MAX_PX = 2048;
 /** The painting (a picture's URL) and where it shows woods. */
 export type PaintedGround = { url: string; wooded: WoodedGrid | null };
 
-const made = new WeakMap<CourseDoc, Promise<PaintedGround | null>>();
+const ids = new WeakMap<object, number>();
+let nextId = 1;
+const idOf = (o: object) => {
+  if (!ids.has(o)) ids.set(o, nextId++);
+  return ids.get(o)!;
+};
+/** What the painting depends on (not flyover settings, names, the logo and such). */
+const paintKey = (doc: CourseDoc) =>
+  JSON.stringify([
+    { ...doc.style, logo: undefined, card: undefined, legendAt: undefined },
+    idOf(doc.terrainHeights),
+    doc.background?.length ?? 0,
+    doc.canvas,
+    doc.activeLayout,
+    doc.holes.map(h => [h.id, h.doglegs, h.fairwayWidth, h.fairwayShape, h.fairway]),
+    doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => (i.type === "area" || i.type === "line" || i.type === "structure" ? [i.type, i.kind, i.points, (i as { width?: number }).width] : [i.type, Math.round(i.x), Math.round(i.y), (i as { radius?: number }).radius, (i as { holeId?: string }).holeId]))
+  ]);
+
+const made = new Map<string, Promise<PaintedGround | null>>();
 /** The latest paintings (blob URLs), oldest first; older ones are let go. */
-const kept: { doc: CourseDoc; url: string }[] = [];
-let under: { doc: CourseDoc; stop: AbortController } | null = null;
+const kept: { key: string; url: string }[] = [];
+let under: { key: string; stop: AbortController } | null = null;
 
 /** The painted ground of a course, or null when it can't be painted. */
 export const paintedGround = (doc: CourseDoc): Promise<PaintedGround | null> => {
-  const hit = made.get(doc);
+  const key = paintKey(doc);
+  const hit = made.get(key);
   if (hit) return hit;
   // (a newer version of the course: the one under way is no longer wanted)
-  if (under && under.doc !== doc) under.stop.abort();
-  const job = { doc, stop: new AbortController() };
+  if (under && under.key !== key) under.stop.abort();
+  const job = { key, stop: new AbortController() };
   under = job;
   const { width, height } = doc.canvas;
   const k = Math.min(4, MAX_PX / Math.max(width, height, 1));
@@ -35,20 +54,20 @@ export const paintedGround = (doc: CourseDoc): Promise<PaintedGround | null> => 
     const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, "image/jpeg", 0.9));
     if (!blob) return null;
     const url = URL.createObjectURL(blob);
-    kept.push({ doc, url });
+    kept.push({ key, url });
     while (kept.length > 3) {
       const old = kept.shift()!;
-      made.delete(old.doc);
+      made.delete(old.key);
       URL.revokeObjectURL(old.url);
     }
     return { url, wooded: woodedOf(canvas) };
   })().catch(() => {
-    made.delete(doc);
+    made.delete(key);
     return null;
   }).finally(() => {
     if (under === job) under = null;
   });
-  made.set(doc, work);
+  made.set(key, work);
   return work;
 };
 

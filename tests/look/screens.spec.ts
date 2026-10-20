@@ -577,6 +577,54 @@ test("half wooded, half open course: painted map, 3D and from a tee", async ({ p
   await shot(page, "20-tee-woods-edge");
 });
 
+test("fourth round: imported areas, several picked, a shared basket, painted flyovers, keyframes", async ({ page }) => {
+  test.setTimeout(300_000);
+  await importSite(page);
+  await page.waitForTimeout(1500);
+  await shot(page, "21-import-areas");
+  await seedCourse(page);
+  await page.waitForTimeout(800);
+  // Several picked with a box
+  const doc = await course(page);
+  const W = doc.canvas.width, H = doc.canvas.height;
+  const v = (x: number, y: number) => page.evaluate(([px, py]) => (window as any).__dgView.toClient(px, py), [x, y]);
+  await page.keyboard.down("Shift");
+  await drag(page, await v(0.45 * W, 0.05 * H), await v(0.98 * W, 0.5 * H));
+  await page.keyboard.up("Shift");
+  await page.waitForTimeout(600);
+  await shot(page, "21-group-selected");
+  await page.keyboard.press("Escape");
+  // A hole played to hole 1's basket
+  const b1 = doc.items.find((i: any) => i.type === "basket" && i.holeId === doc.holes[0].id);
+  await page.evaluate(([x, y]) => {
+    const a = (window as any).__dgActions;
+    a.addHole({ x: x + 220, y: y + 160 }, { x, y }, "red");
+    a.select(null);
+    (window as any).__dgEditor().set({ tool: "select" });
+  }, [b1.x, b1.y]);
+  await page.waitForTimeout(800);
+  await shot(page, "21-shared-basket");
+  // From a tee and flying over: the painted map on the ground
+  await page.getByTestId("hole-row").nth(3).click();
+  await page.getByTestId("tee-view").click();
+  await expect.poll(() => page.evaluate(() => !!(window as any).__dgView.ground.paintedTexture), { timeout: 60_000 }).toBe(true);
+  await page.waitForTimeout(2500);
+  await shot(page, "21-tee-painted");
+  await page.getByTestId("hud-flyover").click();
+  await expect.poll(() => page.evaluate(() => (window as any).__dgView.flyProgress() ?? 0), { timeout: 20_000 }).toBeGreaterThan(0.45);
+  await shot(page, "21-flyover-painted");
+  await page.getByTestId("hud-camera").click();
+  await page.waitForTimeout(400);
+  await shot(page, "21-flyover-camera");
+  await page.getByTestId("hud-close").click();
+  // A hole's keyframes on the map
+  await page.getByTestId("hole-row").nth(3).click();
+  await page.getByTestId("hole-flight").getByRole("radio", { name: "Keyframes" }).click();
+  await page.evaluate(id => (window as any).__dgView.fitHole(id), doc.holes[3].id);
+  await page.waitForTimeout(1200);
+  await shot(page, "21-keyframes");
+});
+
 // ---------------------------------------------------------------------------------------------
 // Phones and tablets: the bottom sheet and step bar (upright), the rail (on its side), tablets
 // ---------------------------------------------------------------------------------------------
