@@ -8,6 +8,7 @@ import { SITE_MAX_WIDTH_FT, getGeoBounds, selectionFromBounds, type GeoBounds } 
 import type { MapImagerySource } from "../lib/geo/imagery";
 import { importSite, type ImportedSite } from "../lib/importSite";
 import { Button, Toggle } from "./ui";
+import { useLayout } from "./useLayout";
 
 export function SiteImportDialog({ onClose, onImported }: { onClose: () => void; onImported: (site: ImportedSite, opts: { trees: boolean; osm: boolean }) => void }) {
   const [query, setQuery] = useState("");
@@ -21,12 +22,15 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   const [trees, setTrees] = useState(true);
   const [osm, setOsm] = useState(true);
   const [status, setStatus] = useState<{ state: "idle" | "searching" | "loading" | "error"; text: string }>({ state: "idle", text: "" });
+  const layout = useLayout();
   const timer = useRef(0);
+  /** The place just picked (its name in the search box asks for no more suggestions). */
+  const picked = useRef("");
 
   useEffect(() => {
     window.clearTimeout(timer.current);
     const text = query.trim();
-    if (text.length < 3) { setSuggestions([]); return; }
+    if (text.length < 3 || text === picked.current) { setSuggestions([]); return; }
     timer.current = window.setTimeout(() => {
       fetchPlaceSuggestions(text, { lat: view.lat, lon: view.lon }).then(setSuggestions).catch(() => setSuggestions([]));
     }, 250);
@@ -39,6 +43,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
       const text = s ? [s.text, s.detail].filter(Boolean).join(", ") : query;
       const loc = await resolveSiteLocation(text, { suggestion: s, near: { lat: view.lat, lon: view.lon } });
       setSuggestions([]);
+      picked.current = loc.label;
       setQuery(loc.label);
       setLabel(loc.label);
       setView({ lat: loc.lat, lon: loc.lon, zoom: 17, key: Date.now() });
@@ -64,6 +69,99 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
       setStatus({ state: "error", text: err instanceof Error ? err.message : "Couldn't bring in the site." });
     }
   };
+
+  const sizeEl = dims && (
+    <div className={`text-sm rounded-lg px-3 py-2 ${tooBig ? "bg-red-900/40 text-red-200" : "bg-zinc-800 text-zinc-200"}`} data-testid="site-size">
+      Area: {Math.round(dims.widthFt).toLocaleString()} × {Math.round(dims.heightFt).toLocaleString()} ft ({((dims.widthFt * dims.heightFt) / 43560).toFixed(1)} acres)
+      {tooBig && <div className="text-xs mt-1">Keep it under {SITE_MAX_WIDTH_FT.toLocaleString()} ft each way.</div>}
+      {!tooBig && <div className="text-xs text-zinc-400 mt-1">An 18-hole course usually needs 15–40 acres or more.</div>}
+    </div>
+  );
+  const options = (
+    <>
+      <Toggle label="Satellite photo" checked={imagery === "satellite"} onChange={v => setImagery(v ? "satellite" : "streets")} hint={imagery === "satellite" ? "Esri World Imagery" : "Street map instead (OpenStreetMap)"} />
+      <Toggle label="Trees found on the photo" checked={trees && imagery === "satellite"} onChange={setTrees} hint="Each crown becomes a tree you can move or remove." />
+      <Toggle label="Paths, water, roads and parking" checked={osm} onChange={setOsm} hint="From OpenStreetMap, for the map and the safety checks." />
+      <div className="text-[11px] text-zinc-500 mt-1">Elevation always comes in: USGS 3DEP lidar in the US, global terrain elsewhere.</div>
+    </>
+  );
+  const statusEl = status.text && (
+    <div className={`text-sm flex items-start gap-2 ${status.state === "error" ? "text-red-300" : "text-zinc-300"}`} data-testid="import-status">
+      {status.state === "loading" || status.state === "searching" ? <Loader2 size={15} className="animate-spin mt-0.5 shrink-0" /> : null}
+      {status.text}
+    </div>
+  );
+  const mapEl = (
+    <SitePickerMap
+      imagery={imagery}
+      view={view}
+      selection={selection}
+      drawing={drawing}
+      onDrawingChange={setDrawing}
+      onSelect={b => setSelection(b)}
+      selectViewSignal={selectView}
+    />
+  );
+
+  if (layout === "phone") {
+    // A phone: full screen, the search on top, the map in the middle, what comes in and the
+    // button at the bottom (in the thumb's reach)
+    return (
+      <div className="dg-compact fixed inset-0 z-50 bg-zinc-950 flex flex-col" role="dialog" aria-modal="true" aria-label="Find your course site">
+        <div className="flex items-center gap-1 pl-1 pr-3 pt-[max(6px,env(safe-area-inset-top))] pb-1">
+          <button className="w-11 h-11 flex items-center justify-center rounded-xl text-zinc-300 active:bg-zinc-800" onClick={onClose} aria-label="Close"><X size={22} /></button>
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-zinc-50 text-[17px] leading-tight">Find your course site</div>
+            <div className="text-[13px] text-zinc-400 truncate">Search, then frame the area the holes will use</div>
+          </div>
+        </div>
+        <div className="relative px-3 pb-2 flex gap-2 z-[1100]">
+          <div className="relative flex-1 min-w-0">
+            <Search size={17} className="absolute left-3 top-3.5 text-zinc-500" />
+            <input
+              aria-label="Search address"
+              className="w-full h-12 bg-zinc-800 border border-zinc-700 rounded-xl pl-9 pr-2 text-base focus:outline-none focus:border-orange-400"
+              placeholder="Park name, address or lat, lon"
+              enterKeyHint="search"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") void go(); }}
+            />
+            {suggestions.length > 0 && (
+              <div className="absolute z-10 left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden">
+                {suggestions.map((s, i) => (
+                  <button key={i} className="block w-full text-left px-3.5 py-3 border-t border-zinc-700/60 first:border-t-0 active:bg-zinc-700" onClick={() => void go(s)}>
+                    <div className="text-[15px] text-zinc-100">{s.text}</div>
+                    {s.detail && <div className="text-[13px] text-zinc-400">{s.detail}</div>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button className="h-12 px-4 rounded-xl bg-zinc-800 border border-zinc-700 text-[15px] font-semibold disabled:opacity-40" onClick={() => void go()} disabled={!query.trim() || status.state === "searching"}>Search</button>
+        </div>
+        <div className="relative flex-1 min-h-0">
+          {mapEl}
+          <div className="absolute left-2 right-2 top-2 z-[1000] flex gap-2 justify-center pointer-events-none">
+            <button className="pointer-events-auto h-10 px-3.5 rounded-full bg-zinc-900/95 border border-white/10 text-[14px] font-semibold shadow-lg active:bg-zinc-800" onClick={() => setDrawing(true)}>Draw the area</button>
+            <button className="pointer-events-auto h-10 px-3.5 rounded-full bg-zinc-900/95 border border-white/10 text-[14px] font-semibold shadow-lg active:bg-zinc-800" onClick={() => setSelectView(v => v + 1)}>Use this view</button>
+          </div>
+        </div>
+        <div className="border-t border-white/10 bg-zinc-900 px-3 pt-2.5 pb-[max(12px,env(safe-area-inset-bottom))] flex flex-col gap-2">
+          {dims ? sizeEl : <div className="text-[14px] text-zinc-400 px-1">Search for your park, or pan the map to it and tap Use this view.</div>}
+          <details className="group rounded-xl bg-zinc-800/60 px-3">
+            <summary className="list-none min-h-[44px] flex items-center justify-between text-[14px] text-zinc-200 cursor-pointer">
+              <span>Bring in: {[imagery === "satellite" ? "photo" : "street map", "elevation", trees && imagery === "satellite" ? "trees" : null, osm ? "paths and water" : null].filter(Boolean).join(", ")}</span>
+              <span className="text-orange-300 font-semibold group-open:hidden">Change</span>
+            </summary>
+            <div className="pb-2">{options}</div>
+          </details>
+          {statusEl}
+          <button className="h-12 rounded-xl bg-orange-500 text-white text-[16px] font-bold disabled:opacity-40 active:bg-orange-600" onClick={() => void run()} disabled={!selection || tooBig || status.state === "loading"} data-testid="import-site">Bring in this site</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" role="dialog" aria-label="Find your course site">
@@ -104,40 +202,18 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
               <Button small onClick={() => setDrawing(true)}>Draw the area</Button>
               <Button small onClick={() => setSelectView(v => v + 1)}>Use this view</Button>
             </div>
-            {dims && (
-              <div className={`text-sm rounded-lg px-3 py-2 ${tooBig ? "bg-red-900/40 text-red-200" : "bg-zinc-800 text-zinc-200"}`} data-testid="site-size">
-                Area: {Math.round(dims.widthFt).toLocaleString()} × {Math.round(dims.heightFt).toLocaleString()} ft ({((dims.widthFt * dims.heightFt) / 43560).toFixed(1)} acres)
-                {tooBig && <div className="text-xs mt-1">Keep it under {SITE_MAX_WIDTH_FT.toLocaleString()} ft each way.</div>}
-                {!tooBig && <div className="text-xs text-zinc-400 mt-1">An 18-hole course usually needs 15–40 acres or more.</div>}
-              </div>
-            )}
+            {dims && sizeEl}
             <div className="border-t border-zinc-800 pt-3">
               <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Bring in</div>
-              <Toggle label="Satellite photo" checked={imagery === "satellite"} onChange={v => setImagery(v ? "satellite" : "streets")} hint={imagery === "satellite" ? "Esri World Imagery" : "Street map instead (OpenStreetMap)"} />
-              <Toggle label="Trees found on the photo" checked={trees && imagery === "satellite"} onChange={setTrees} hint="Each crown becomes a tree you can move or remove." />
-              <Toggle label="Paths, water, roads and parking" checked={osm} onChange={setOsm} hint="From OpenStreetMap, for the map and the safety checks." />
-              <div className="text-[11px] text-zinc-500 mt-1">Elevation always comes in: USGS 3DEP lidar in the US, global terrain elsewhere.</div>
+              {options}
             </div>
             <div className="mt-auto flex flex-col gap-2">
-              {status.text && (
-                <div className={`text-sm flex items-start gap-2 ${status.state === "error" ? "text-red-300" : "text-zinc-300"}`} data-testid="import-status">
-                  {status.state === "loading" || status.state === "searching" ? <Loader2 size={15} className="animate-spin mt-0.5 shrink-0" /> : null}
-                  {status.text}
-                </div>
-              )}
+              {statusEl}
               <Button tone="primary" full onClick={() => void run()} disabled={!selection || tooBig || status.state === "loading"} testid="import-site">Bring in this site</Button>
             </div>
           </div>
           <div className="flex-1 relative">
-            <SitePickerMap
-              imagery={imagery}
-              view={view}
-              selection={selection}
-              drawing={drawing}
-              onDrawingChange={setDrawing}
-              onSelect={b => setSelection(b)}
-              selectViewSignal={selectView}
-            />
+            {mapEl}
           </div>
         </div>
       </div>

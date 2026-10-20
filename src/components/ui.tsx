@@ -17,13 +17,14 @@ export const Section = ({ title, children, right, testid }: { title?: ReactNode;
  * <label> would also name every button in a button group after the whole field). */
 export const Field = ({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) => (
   <div className="block mb-2.5" role="group" aria-label={label}>
-    <span className="block text-xs font-medium text-zinc-300 mb-1">{label}</span>
+    <span className="block text-xs touch:text-[13px] font-medium text-zinc-300 mb-1">{label}</span>
     {children}
     {hint && <span className="block text-[11px] text-zinc-500 mt-1">{hint}</span>}
   </div>
 );
 
-export const inputCls = "w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-orange-400";
+// (16 px text on touch screens: phones zoom into smaller text fields when they get the focus)
+export const inputCls = "w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-sm touch:py-2.5 touch:text-base text-zinc-100 focus:outline-none focus:border-orange-400";
 
 export const TextInput = ({ value, onChange, placeholder, label, area }: { value: string; onChange: (v: string) => void; placeholder?: string; label?: string; area?: boolean }) =>
   area ? (
@@ -57,7 +58,7 @@ export const Slider = ({ value, onChange, min, max, step = 1, label, format, onD
       <span className="font-medium text-zinc-300">{label}</span>
       <span className="text-zinc-400 tabular-nums">{format ? format(value) : value}</span>
     </div>
-    <input aria-label={label} type="range" className="w-full accent-orange-500" min={min} max={max} step={step} value={value} onChange={e => onChange(parseFloat(e.target.value))} onPointerUp={onDone} onKeyUp={onDone} onBlur={onDone} />
+    <input aria-label={label} type="range" className="w-full accent-orange-500 touch:h-7" min={min} max={max} step={step} value={value} onChange={e => onChange(parseFloat(e.target.value))} onPointerUp={onDone} onKeyUp={onDone} onBlur={onDone} />
   </div>
 );
 
@@ -71,7 +72,7 @@ export function Segmented<T extends string | number>({ value, options, onChange,
           aria-checked={value === o.value}
           title={o.title}
           onClick={() => onChange(o.value)}
-          className={`flex-1 min-w-[2.2rem] px-2 py-1 rounded-md text-xs font-semibold transition-colors ${value === o.value ? "bg-zinc-100 text-zinc-900" : "text-zinc-300 hover:bg-zinc-700"}`}
+          className={`flex-1 min-w-[2.2rem] px-2 py-1 touch:py-2.5 touch:text-[13px] rounded-md text-xs font-semibold transition-colors ${value === o.value ? "bg-zinc-100 text-zinc-900" : "text-zinc-300 hover:bg-zinc-700"}`}
         >
           {o.label}
         </button>
@@ -81,8 +82,8 @@ export function Segmented<T extends string | number>({ value, options, onChange,
 }
 
 export const Toggle = ({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) => (
-  <label className="flex items-start gap-2.5 py-1 cursor-pointer select-none">
-    <input type="checkbox" className="mt-0.5 accent-orange-500 w-4 h-4" checked={checked} onChange={e => onChange(e.target.checked)} />
+  <label className="flex items-start gap-2.5 py-1 touch:py-2.5 cursor-pointer select-none">
+    <input type="checkbox" className="mt-0.5 accent-orange-500 w-4 h-4 touch:w-5 touch:h-5 shrink-0" checked={checked} onChange={e => onChange(e.target.checked)} />
     <span>
       <span className="block text-sm text-zinc-200">{label}</span>
       {hint && <span className="block text-[11px] text-zinc-500">{hint}</span>}
@@ -103,7 +104,7 @@ export const Button = ({ children, onClick, tone = "default", disabled, title, t
       disabled={disabled}
       title={title}
       data-testid={testid}
-      className={`${full ? "w-full" : ""} inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold transition-colors disabled:opacity-40 disabled:pointer-events-none ${small ? "px-2.5 py-1 text-xs" : "px-3 py-2 text-sm"} ${tones[tone]}`}
+      className={`${full ? "w-full" : ""} inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold transition-colors disabled:opacity-40 disabled:pointer-events-none ${small ? "px-2.5 py-1 text-xs touch:py-2.5 touch:text-[13px]" : "px-3 py-2 text-sm touch:py-3"} ${tones[tone]}`}
     >
       {children}
     </button>
@@ -113,7 +114,7 @@ export const Button = ({ children, onClick, tone = "default", disabled, title, t
 export const ColorInput = ({ value, onChange, label, onDone }: { value: string; onChange: (v: string) => void; label: string; onDone?: () => void }) => (
   <label className="flex items-center justify-between gap-2 py-1">
     <span className="text-xs text-zinc-300">{label}</span>
-    <input aria-label={label} type="color" className="w-9 h-7 rounded border border-zinc-600 bg-transparent cursor-pointer" value={value} onChange={e => onChange(e.target.value)} onBlur={onDone} />
+    <input aria-label={label} type="color" className="w-9 h-7 touch:w-11 touch:h-9 rounded border border-zinc-600 bg-transparent cursor-pointer" value={value} onChange={e => onChange(e.target.value)} onBlur={onDone} />
   </label>
 );
 

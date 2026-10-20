@@ -6,6 +6,12 @@
   color-scheme: dark;
 }
 
+html,
+body {
+  /* No pull-to-refresh or rubber-banding: the map takes the drags */
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
   font-family: 'Inter', system-ui, sans-serif;
@@ -45,4 +51,69 @@ body {
   font-size: 16px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
   cursor: move;
+}
+
+/* Touch screens: small print a little bigger (it is read at arm's length, often outdoors) */
+@media (pointer: coarse) {
+  .text-\[10px\] { font-size: 11.5px; }
+  .text-\[11px\] { font-size: 12.5px; }
+}
+
+/* The phone and landscape layouts: the page never scrolls, controls never zoom it on a double tap */
+.dg-compact {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.dg-compact [data-testid="plan"] {
+  touch-action: none;
+}
+/* A bottom sheet's or rail's scrolling list scrolls itself, not the page */
+.dg-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.dg-noscrollbar {
+  scrollbar-width: none;
+}
+.dg-noscrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes dgfade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dgrise {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [class*="animate-[dg"] { animation: none !important; }
+}
+
+/* In the phone's sheet and the side panel the header above already names the selection */
+.dg-sheet [data-insp-title],
+.dg-side [data-insp-title],
+.dg-sheet [data-testid="item-title"],
+.dg-side [data-testid="item-title"] {
+  display: none;
+}
+/* A scrolling row fades out at its right edge (there is more to swipe to) */
+.dg-fade-r {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+/* Touch screens: no frosted glass over the map. A backdrop blur is redrawn behind every panel on
+   every frame the 3D map draws, which phone and tablet GPUs pay for in dropped frames */
+@media (pointer: coarse) {
+  .backdrop-blur,
+  .backdrop-blur-sm,
+  .backdrop-blur-md,
+  .backdrop-blur-xl {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    /* (Nearly opaque instead: map labels must not show through) */
+    background-color: rgb(24 24 27 / 0.97) !important;
+  }
 }

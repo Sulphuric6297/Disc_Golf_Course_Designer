@@ -11,7 +11,7 @@ import { VIDEO_SIZES } from "../lib/video";
 import { ElevationProfile } from "./ElevationProfile";
 import { SceneButton } from "./ScenePanel";
 
-export function TeeViewHud() {
+export function TeeViewHud({ compact = false }: { compact?: boolean }) {
   const doc = useCourse(s => s.doc);
   const ed = useEditor();
   const job = useExportJob(s => s.job);
@@ -26,6 +26,35 @@ export function TeeViewHud() {
     if (next) ed.set({ teeView: next.id, flyover: ed.flyover });
   };
   const lvl = TEE_LEVELS[s.level];
+  if (compact) {
+    // A phone: the hole's card across the top, big buttons along the bottom (thumb's reach)
+    const bar = "flex-1 min-w-0 h-14 rounded-2xl flex flex-col items-center justify-center gap-1 text-[12px] font-semibold text-white active:bg-white/15 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400";
+    return (
+      <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui>
+        <div className="absolute left-2 right-2 top-[max(8px,env(safe-area-inset-top))] pointer-events-auto bg-zinc-950/80 rounded-2xl px-3 py-2.5 text-white shadow-2xl border border-white/10 max-w-[420px]" data-testid="tee-view-hud">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-[22px] font-bold" style={{ background: lvl.color, color: lvl.ink, fontFamily: "Oswald, Inter" }}>{s.number}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[12px] uppercase tracking-wider text-zinc-300 truncate">{hole.name || `Hole ${s.number}`}</div>
+              <div className="text-[22px] font-bold leading-tight" style={{ fontFamily: "Oswald, Inter" }}>Par {s.par} · {fmtDist(s.length, doc.units)}</div>
+              <div className="text-[13px] text-zinc-300">{fmtElev(s.elevationChange, doc.units)} · plays like {fmtDist(s.playsLike, doc.units)}</div>
+            </div>
+            <SceneButton big />
+          </div>
+          <div className="mt-1.5"><ElevationProfile doc={doc} line={s.line} height={56} /></div>
+          {hole.notes && <p className="text-[13px] text-zinc-200 mt-1 line-clamp-2">{hole.notes}</p>}
+        </div>
+        {!ed.flyover && <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+92px)] left-1/2 -translate-x-1/2 text-[13px] text-white/90 bg-black/45 rounded-full px-3 py-1 whitespace-nowrap">Drag to look around</div>}
+        <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto flex items-center gap-1 bg-zinc-950/85 rounded-[22px] p-1.5 border border-white/10 shadow-2xl">
+          <button className={bar} onClick={() => go(-1)}><ChevronLeft size={22} /><span>Previous</span></button>
+          <button className={`${bar} ${ed.flyover ? "bg-orange-500" : ""}`} onClick={() => ed.set({ flyover: !ed.flyover })} data-testid="hud-flyover"><Plane size={20} /><span>{ed.flyover ? "Flying…" : "Fly over"}</span></button>
+          <button className={bar} onClick={() => go(1)}><ChevronRight size={22} /><span>Next</span></button>
+          <button className={bar} onClick={() => void recordVideo([hole.id])} disabled={!!job} data-testid="hud-record"><Clapperboard size={20} /><span>{job?.kind === "video" ? `${Math.round((job.progress ?? 0) * 100)}%` : "Record"}</span></button>
+          <button className={bar} onClick={() => ed.set({ teeView: null, flyover: false })} data-testid="hud-close"><X size={20} /><span>Map</span></button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui>
       <div className="absolute top-4 left-4 pointer-events-auto bg-zinc-950/80 backdrop-blur rounded-2xl px-4 py-3 text-white shadow-2xl border border-white/10 w-[280px]" data-testid="tee-view-hud">
