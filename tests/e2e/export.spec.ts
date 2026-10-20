@@ -1,7 +1,9 @@
 import { readFileSync } from "fs";
 import JSZip from "jszip";
-import type { Page } from "@playwright/test";
+import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
 import { test, expect, addHole, importSite, course } from "./fixtures";
+import { createBasket, createEmptyCourse, createTee, newHole } from "../../src/lib/course";
+import { HOLE_PAGES, holeLengths, renderHolePage } from "../../src/lib/holePage";
 
 /** Clicks an export button and returns the downloaded file's name and contents. */
 const exported = async (page: Page, testid: string) => {
@@ -92,4 +94,111 @@ test("printing: course map PDF and SVG, tee signs PDF and pictures, scorecard", 
   expect(png.length).toBeLessThan(5 * 1024 * 1024);
   const card = await exported(page, "export-scorecard");
   expect(card.data.subarray(0, 5).toString()).toBe("%PDF-");
+});
+
+/** A PNG's width and height (from its header). */
+const pngSize = (png: Uint8Array) => { const b = Buffer.from(png); return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) }; };
+/** Pages in a PDF ("/Type /Page", not "/Type /Pages"). */
+const pdfPages = (pdf: Buffer) => (pdf.toString("latin1").match(/\/Type \/Page[^s]/g) ?? []).length;
+
+test("hole by hole: a PDF page and a picture per hole, and one hole's PNG, SVG and GeoJSON", async ({ page }) => {
+  test.setTimeout(180_000);
+  const { W, H } = await setup(page);
+  // An OB line across hole 2 for the whole course, and an OB area that belongs to hole 1
+  await page.evaluate(([W, H]) => {
+    const a = (window as any).__dgActions;
+    (window as any).__dgEditor().set({ lineKind: "ob", areaKind: "ob" });
+    a.addDrawn("line", [{ x: W * 0.5, y: H * 0.5 }, { x: W * 0.6, y: H * 0.5 }]);
+    a.addDrawn("area", [{ x: W * 0.38, y: H * 0.73 }, { x: W * 0.42, y: H * 0.73 }, { x: W * 0.42, y: H * 0.76 }]);
+  }, [W, H]);
+  await page.getByLabel("Belongs to hole").selectOption({ label: "Hole 1" });
+  await page.keyboard.press("Escape");
+  const holes = page.getByTestId("hole-exports");
+  await expect(holes.getByTestId("hole-pick")).toHaveValue("all");
+  // All holes: one PDF page each, and a ZIP with a picture of each
+  const pdf = await exported(page, "export-holes-pdf");
+  expect(pdf.name).toBe("springfield-park-disc-golf-course-hole-pages.pdf");
+  expect(pdf.data.subarray(0, 5).toString()).toBe("%PDF-");
+  expect(pdfPages(pdf.data)).toBe(2);
+  const zip = await JSZip.loadAsync((await exported(page, "export-holes-zip")).data);
+  expect(Object.keys(zip.files).sort()).toEqual(["hole-01.png", "hole-02.png"]);
+  const letter = await zip.file("hole-01.png")!.async("uint8array");
+  expect(Buffer.from(letter.subarray(1, 4)).toString()).toBe("PNG");
+  expect(pngSize(letter)).toEqual({ width: 1275, height: 1650 });
+  // One hole: its page as a square picture for sharing, as SVG, and its GPS file
+  await holes.getByTestId("hole-pick").selectOption({ label: "Hole 2" });
+  await holes.getByTestId("hole-page-size").selectOption("square");
+  await expect(holes.getByTestId("export-holes-zip")).toBeHidden();
+  const one = await exported(page, "export-holes-pdf");
+  expect(one.name).toBe("springfield-park-disc-golf-course-hole-2.pdf");
+  expect(pdfPages(one.data)).toBe(1);
+  const png = await exported(page, "export-hole-png");
+  expect(png.name).toBe("springfield-park-disc-golf-course-hole-2.png");
+  expect(pngSize(png.data)).toEqual({ width: 1080, height: 1080 });
+  const svg = (await exported(page, "export-hole-svg")).data.toString();
+  expect(svg).toContain(">HOLE 2<");
+  expect(svg).toContain(">PAR 3<");
+  const geo = await exported(page, "export-hole-geojson");
+  expect(geo.name).toBe("springfield-park-disc-golf-course-hole-2.geojson");
+  const fc = JSON.parse(geo.data.toString());
+  const kinds = fc.features.map((f: any) => f.properties.kind);
+  expect(kinds.filter((k: string) => k === "tee")).toHaveLength(1);
+  expect(kinds.filter((k: string) => k === "basket")).toHaveLength(1);
+  expect(kinds).toContain("hole");
+  expect(kinds).toContain("mando");
+  // Nothing of hole 1's, nor the OB far away; the course's OB line across the hole is in play
+  expect(fc.features.filter((f: any) => f.properties.hole === 1)).toEqual([]);
+  expect(kinds).not.toContain("ob");
+  const ob = fc.features.filter((f: any) => f.properties.kind === "ob_line");
+  expect(ob).toHaveLength(1);
+  expect(ob[0].properties.in_play).toBe(true);
+  expect(fc.features.filter((f: any) => f.properties.kind !== "ob_line").every((f: any) => f.properties.hole === 2)).toBe(true);
+});
+
+plain("hole pages: number, par, the length from each tee, elevation, notes and the profile", () => {
+  const doc = createEmptyCourse();
+  doc.name = "The Hollow";
+  const h1 = newHole({ notes: "Creek & beyond OB", name: "Long Way Round" });
+  const h2 = newHole();
+  doc.holes.push(h1, h2);
+  doc.items.push(createTee(h1.id, { x: 100, y: 500 }, "gold"), createTee(h1.id, { x: 160, y: 500 }, "blue"), createBasket(h1.id, { x: 450, y: 500 }), createBasket(h1.id, { x: 450, y: 400 }, "B"));
+  doc.items.push(createTee(h2.id, { x: 500, y: 450 }), createBasket(h2.id, { x: 500, y: 150 }));
+  // The layout plays the blue tees to the A pins: 290 ft; the gold tee is 350 ft
+  plainExpect(holeLengths(doc, h1.id).tees.map(t => [t.level, Math.round(t.length)])).toEqual([["gold", 350], ["blue", 290]]);
+  const p = renderHolePage(doc, h1.id, "letter", { contours: null, hillshade: null })!;
+  plainExpect([p.width, p.height]).toEqual([8.5 * 72, 11 * 72]);
+  plainExpect(p.svg.startsWith("<svg")).toBe(true);
+  plainExpect(p.svg).toContain(">HOLE 1<");
+  plainExpect(p.svg).toContain(">Long Way Round<");
+  plainExpect(p.svg).toContain(">THE HOLLOW<");
+  plainExpect(p.svg).toContain(">PAR 3<");
+  plainExpect(p.svg).toContain(">290 FT<");
+  plainExpect(p.svg).toContain(">GOLD 350 FT<");
+  plainExpect(p.svg).toContain(">BLUE 290 FT<");
+  plainExpect(p.svg).toContain("ELEVATION LEVEL");
+  plainExpect(p.svg).toContain("PLAYS LIKE 290 FT");
+  plainExpect(p.svg).toMatch(/PINS A 290 · B 3\d\d/);
+  plainExpect(p.svg).toContain("Creek &amp; beyond OB");
+  plainExpect(p.svg).toContain('data-part="profile"');
+  plainExpect(p.svg).toContain('data-part="map"');
+  plainExpect(p.svg).toContain("HOLE 2 ·");
+  plainExpect(p.svg).toContain("Hole 1 of 2");
+  // Every size, in meters too
+  doc.units = "m";
+  for (const size of Object.keys(HOLE_PAGES) as (keyof typeof HOLE_PAGES)[]) {
+    const s = renderHolePage(doc, h1.id, size, { contours: null, hillshade: null })!;
+    plainExpect(s.width, size).toBe(HOLE_PAGES[size].w * 72);
+    plainExpect(s.svg, size).toContain(">GOLD 107 M<");
+    plainExpect(s.svg, size).toContain(">PAR 3<");
+    plainExpect(s.svg, size).toContain("Creek &amp; beyond OB");
+  }
+  plainExpect(HOLE_PAGES.square.w * HOLE_PAGES.square.dpi).toBe(1080);
+  // A hole without its basket yet
+  const h3 = newHole();
+  doc.holes.push(h3);
+  doc.items.push(createTee(h3.id, { x: 800, y: 800 }));
+  const open = renderHolePage(doc, h3.id, "card", { contours: null, hillshade: null })!;
+  plainExpect(open.svg).toContain("UNFINISHED");
+  plainExpect(open.svg).not.toContain('data-part="tee-length"');
+  plainExpect(renderHolePage(doc, "nope", "letter", { contours: null, hillshade: null })).toBeNull();
 });

@@ -10,6 +10,7 @@ import { Inspector } from "./components/Inspector";
 import { SiteImportDialog } from "./components/SiteImportDialog";
 import { TeeViewHud } from "./components/TeeViewHud";
 import { MapDesigner } from "./components/MapDesigner";
+import { ExportProgressPill } from "./components/ExportProgress";
 import { Button } from "./components/ui";
 import { useCourse, useEditor, getDoc, changeDoc, updateItem } from "./state/course";
 import { deleteSelection, duplicateSelection, nudgeSelection, select } from "./state/actions";
@@ -275,6 +276,7 @@ export default function App() {
           {ed.step !== "design" && <Toolbar />}
           {ed.step !== "design" && <Inspector />}
           {ed.teeView && <TeeViewHud />}
+          <ExportProgressPill />
           <Toasts />
           {ready && empty && ed.step === "site" && !ed.viewOnly && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">

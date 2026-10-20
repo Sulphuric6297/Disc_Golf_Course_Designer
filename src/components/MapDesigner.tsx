@@ -1,13 +1,14 @@
-// The Design step's preview: the printed course map (or a tee sign, or the scorecard) exactly as
-// it will print, updating as the style changes.
+// The Design step's preview: the printed course map (or a tee sign, a hole page, or the
+// scorecard) exactly as it will print, updating as the style changes.
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Minus, Plus, Scan } from "lucide-react";
 import { renderPoster } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
+import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
 import { useCourse, useEditor } from "../state/course";
 import { useCanopy, useRelief } from "./useRelief";
 
-type Preview = "map" | "sign" | "scorecard";
+type Preview = "map" | "sign" | "page" | "scorecard";
 
 export function MapDesigner() {
   const live = useCourse(s => s.doc);
@@ -18,6 +19,7 @@ export function MapDesigner() {
   const [preview, setPreview] = useState<Preview>("map");
   const [hole, setHole] = useState<string | null>(null);
   const [signSize, setSignSize] = useState<SignSize>("18x12");
+  const [pageSize, setPageSize] = useState<HolePageSize>("letter");
   const [zoom, setZoom] = useState<number | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -34,9 +36,10 @@ export function MapDesigner() {
 
   const page = useMemo(() => {
     if (preview === "sign" && holeId) return renderTeeSign(doc, holeId, signSize, relief);
+    if (preview === "page" && holeId) return renderHolePage(doc, holeId, pageSize, relief);
     if (preview === "scorecard") return renderScorecard(doc);
     return renderPoster(doc, relief);
-  }, [doc, relief, preview, holeId, signSize]);
+  }, [doc, relief, preview, holeId, signSize, pageSize]);
 
   if (!page) return null;
   const fit = Math.min((size.w - 48) / page.width, (size.h - 48) / page.height);
@@ -49,15 +52,20 @@ export function MapDesigner() {
   return (
     <div className="absolute inset-0 z-20 bg-zinc-800 flex flex-col" data-testid="map-designer">
       <div className="flex items-center gap-2 px-3 py-2 bg-zinc-900 border-b border-zinc-800">
-        <div role="tablist" className="flex gap-1">{[tab("map", "Course map"), tab("sign", "Tee sign"), tab("scorecard", "Scorecard")]}</div>
-        {preview === "sign" && doc.holes.length > 0 && (
-          <select aria-label="Hole for the tee sign" className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-sm" value={holeId ?? ""} onChange={e => setHole(e.target.value)}>
+        <div role="tablist" className="flex gap-1">{[tab("map", "Course map"), tab("sign", "Tee sign"), tab("page", "Hole page"), tab("scorecard", "Scorecard")]}</div>
+        {(preview === "sign" || preview === "page") && doc.holes.length > 0 && (
+          <select aria-label={preview === "sign" ? "Hole for the tee sign" : "Hole for the hole page"} className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-sm" value={holeId ?? ""} onChange={e => setHole(e.target.value)}>
             {doc.holes.map((h, i) => <option key={h.id} value={h.id}>Hole {i + 1}</option>)}
           </select>
         )}
         {preview === "sign" && (
           <select aria-label="Tee sign size" className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-sm" value={signSize} onChange={e => { setSignSize(e.target.value as SignSize); setZoom(null); }}>
             {(Object.keys(SIGN_SIZES) as SignSize[]).map(k => <option key={k} value={k}>{SIGN_SIZES[k].label}</option>)}
+          </select>
+        )}
+        {preview === "page" && (
+          <select aria-label="Hole page size" className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-sm" value={pageSize} onChange={e => { setPageSize(e.target.value as HolePageSize); setZoom(null); }}>
+            {(Object.keys(HOLE_PAGES) as HolePageSize[]).map(k => <option key={k} value={k}>{HOLE_PAGES[k].label}</option>)}
           </select>
         )}
         <div className="ml-auto flex items-center gap-1 text-zinc-300">

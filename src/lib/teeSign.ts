@@ -232,8 +232,8 @@ const wrap = (text: string, max: number) => {
   return out;
 };
 
-/** The hole drawn into a box with the tee at the bottom (for signs). */
-const holeMap = (doc: CourseDoc, holeId: string, box: { w: number; h: number }, opts: SignArt, ts: number, uid: string) => {
+/** The hole drawn into a box with the tee at the bottom (for signs and hole pages). */
+export const holeMap = (doc: CourseDoc, holeId: string, box: { w: number; h: number }, opts: SignArt, ts: number, uid: string) => {
   const hole = doc.holes.find(h => h.id === holeId)!;
   const stats = doc.holes.map(h => holeStats(doc, h, activeLayout(doc)));
   const st = stats.find(s => s.holeId === holeId)!;
