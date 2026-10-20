@@ -8,7 +8,7 @@ import { CIRCLE_ONE_FT, LINE_KINDS, PATH_SURFACES } from "../constants";
 import type { AreaItem, CourseDoc, LineItem, MapStyle, P, PathSurface, StructureItem, TreeItem } from "../types";
 import { canopyMask } from "./geo/detect";
 import { boundsOf, corridor, dist, pathLength, pointInPolygon, smoothPath } from "./geom";
-import { autoWalks, fairwayShiftAt, fairwayWidthAt, linePath } from "./course";
+import { autoWalks, drawnAreas, fairwayShiftAt, fairwayWidthAt, linePath } from "./course";
 import type { HoleStats } from "./holeStats";
 import { landscapeOf } from "./landscapes";
 import { reliefExaggeration } from "./relief";
@@ -331,7 +331,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     poly(CLEAR, corridor(path, t => width(t) + (crownR * 1.2) / k, 12, shift));
     poly(MIDDLE, corridor(path, t => width(t) * 0.4, 12, shift));
   }
-  for (const i of doc.items) {
+  for (const i of drawnAreas(doc.items)) {
     if (i.type === "tee") {
       const r = Math.max(12, i.padLength * 0.9);
       disc(FAIR, i, r);

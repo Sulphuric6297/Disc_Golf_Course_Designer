@@ -15,7 +15,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, autoWalks, basketFor, basketHoles, curves, fairwayOutline, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { FAIRWAY_STATIONS, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, drawnAreas, fairwayOutline, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
@@ -1741,7 +1741,7 @@ export class CourseView {
       return { test, key };
     })();
     // Areas: fill plus outline
-    const areas = (course.items.filter(i => i.type === "area") as AreaItem[]).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
+    const areas = (drawnAreas(course.items).filter(i => i.type === "area") as AreaItem[]).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
     areas.forEach((a, order) => {
       const meta = AREA_KINDS[a.kind];
       const c = color(a.kind) ?? meta.color;
@@ -3462,7 +3462,8 @@ export class CourseView {
       this.drawPts = [];
       this.clearDraft();
       this.cb.onDrawProgress(0);
-      this.cb.onDrawn(this.tool.mode === "draw-structure" ? "structure" : kind, pts);
+      // (a rectangle stays square-cornered)
+      this.cb.onDrawn(this.tool.mode === "draw-structure" ? "structure" : kind, pts, { straight: this.tool.shape === "box" });
       this.handleKey = "";
       this.syncHandles();
       return true;
@@ -3618,8 +3619,8 @@ export class CourseView {
         const tee = s.line[0], basket = s.line[s.line.length - 1];
         const done = [tee, ...this.plotPts];
         const reach = this.cursor ? [...done, this.cursor] : done;
-        g.add(this.fatLine(this.drapeLine(reach, LIFT + 0.2), "#fde68a", 3, { depthTest: false, order: 20 }));
-        g.add(this.fatLine(this.drapeLine([reach[reach.length - 1], basket], LIFT + 0.2), "#fde68a", 2, { dashed: 6, opacity: 0.8, depthTest: false, order: 20 }));
+        // (the curve the hole's line will take through the turns so far, on to the basket)
+        g.add(this.fatLine(this.drapeLine(smoothPath([...reach, basket], 10), LIFT + 0.2), "#fde68a", 3, { depthTest: false, order: 20 }));
         for (const p of this.plotPts) {
           const ring: P[] = [];
           for (let i = 0; i < 16; i++) ring.push({ x: p.x + Math.cos((i / 16) * Math.PI * 2) * 2.5, y: p.y + Math.sin((i / 16) * Math.PI * 2) * 2.5 });
@@ -3637,12 +3638,14 @@ export class CourseView {
       // (a path, walk, creek or road curves through its points as they are added)
       if (this.tool.mode === "draw-line" && curves({ kind: this.tool.lineKind })) pts = linePath({ kind: this.tool.lineKind, points: pts });
       const color = this.tool.mode === "draw-structure" ? STRUCTURE_KINDS[this.tool.structureKind ?? "bridge"].color : area ? AREA_KINDS[this.tool.areaKind].color : LINE_KINDS[this.tool.lineKind].color;
+      // (an area curves through its corners as they are added, but a rectangle)
+      const outline = area && pts.length >= 3 && this.tool.mode === "draw-area" && this.tool.shape !== "box" && areaCurves({ kind: this.tool.areaKind }) ? areaPath({ kind: this.tool.areaKind, points: pts }) : pts;
       if (area && pts.length >= 3) {
-        const mesh = new THREE.Mesh(drapedPolygon(pts, (x, y) => this.h(x, y), doc.gridSize, 0.3), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25, depthWrite: false, depthTest: false }));
+        const mesh = new THREE.Mesh(drapedPolygon(outline, (x, y) => this.h(x, y), doc.gridSize, 0.3), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25, depthWrite: false, depthTest: false }));
         mesh.renderOrder = 19;
         g.add(mesh);
       }
-      g.add(this.fatLine(this.drapeLine(area && pts.length >= 3 ? [...pts, pts[0]] : pts, LIFT + 0.2), color === "#ffffff" ? "#fde68a" : color, 3, { depthTest: false, order: 20 }));
+      g.add(this.fatLine(this.drapeLine(area && pts.length >= 3 ? [...outline, outline[0]] : pts, LIFT + 0.2), color === "#ffffff" ? "#fde68a" : color, 3, { depthTest: false, order: 20 }));
       const len = pathLength(pts);
       // (With a finger: the Done button finishes, so the label only counts)
       const finish = this.fingers ? "" : " · Enter or double-click to finish";

@@ -177,9 +177,10 @@ export const placeAt = (mode: ToolMode, p: P) => {
 };
 
 /** An area, line or built thing (bridge, building...) drawn with the drawing tools. */
-export const addDrawn = (kind: "area" | "line" | "structure", points: P[]) => {
+export const addDrawn = (kind: "area" | "line" | "structure", points: P[], opts: { straight?: boolean } = {}) => {
   const ed = editor();
-  const item = kind === "area" ? createArea(ed.areaKind, points) : kind === "structure" ? createStructure(ed.structureKind, points) : createLine(ed.lineKind, points);
+  const made = kind === "area" ? createArea(ed.areaKind, points) : kind === "structure" ? createStructure(ed.structureKind, points) : createLine(ed.lineKind, points);
+  const item = opts.straight && made.type !== "structure" ? { ...made, straight: true } : made;
   changeDoc(d => ({ items: [...d.items, item] }));
   select(item.id);
 };

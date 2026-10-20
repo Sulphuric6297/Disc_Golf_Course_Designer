@@ -151,6 +151,8 @@ test("shapes by dragging: a rectangle and a circle", async ({ page }) => {
   const box = (await course(page)).items.find((i: any) => i.type === "area");
   expect(box.kind).toBe("hazard");
   expect(box.points).toHaveLength(4);
+  // Keeps its corners (shapes drawn point by point curve)
+  expect(box.straight).toBe(true);
   const xs = box.points.map((p: any) => p.x), ys = box.points.map((p: any) => p.y);
   expect(Math.min(...xs)).toBeCloseTo(300, -1);
   expect(Math.max(...xs)).toBeCloseTo(600, -1);
@@ -164,6 +166,7 @@ test("shapes by dragging: a rectangle and a circle", async ({ page }) => {
   const circle = (await course(page)).items.filter((i: any) => i.type === "area")[1];
   expect(circle.points.length).toBeGreaterThan(20);
   for (const p of circle.points) expect(Math.hypot(p.x - 900, p.y - 400)).toBeCloseTo(100, -1);
+  expect(circle.straight).toBeUndefined();
   // Points again: a drag pans the map instead of drawing
   await page.keyboard.press("o");
   await page.getByTestId("draw-shape-points").click();

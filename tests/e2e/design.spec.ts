@@ -1,6 +1,6 @@
 import { test as plain, expect as plainExpect } from "@playwright/test";
 import { test, expect, addHole, blankCourse, course, editorState, importSite } from "./fixtures";
-import { autoWalks, createAmenity, createArea, createBasket, createDropZone, createEmptyCourse, createLine, createMando, createTee, createTree, curves, linePath, newHole, normalizeCourse } from "../../src/lib/course";
+import { areaPath, autoWalks, createAmenity, createArea, createBasket, createDropZone, createEmptyCourse, createLine, createMando, createTee, createTree, curves, drawnAreas, linePath, newHole, normalizeCourse } from "../../src/lib/course";
 import { contourInterval, meander, paintedFrom, paintedLine } from "../../src/lib/forest";
 import { contoursOf, reliefExaggeration } from "../../src/lib/relief";
 import { dist, distanceToPath } from "../../src/lib/geom";
@@ -264,7 +264,7 @@ plain("creeks and trails wind: straight stretches get bends, the ends stay put",
   plainExpect(moved).toBeLessThan(5);
 });
 
-plain("paths curve through their points, painted exactly where drawn (no wobble); OB lines and Straight ones go straight", () => {
+plain("lines curve through their points, painted exactly where drawn (no wobble); Straight ones go straight", () => {
   const pts = [{ x: 0, y: 0 }, { x: 100, y: 60 }, { x: 200, y: 0 }, { x: 300, y: 60 }];
   const path = createLine("path", pts);
   const curve = linePath(path);
@@ -276,11 +276,30 @@ plain("paths curve through their points, painted exactly where drawn (no wobble)
   plainExpect(mid.some(q => Math.abs(q.y - q.x * 0.6) > 2)).toBe(true);
   // The painting follows that curve
   plainExpect(paintedLine(path, 2).points).toEqual(curve);
-  // Straight on request; OB lines always
+  // Every kind of line curves (OB lines and fences too); straight on request
   plainExpect(linePath({ ...path, straight: true })).toEqual(pts);
-  plainExpect(linePath(createLine("ob", pts))).toEqual(pts);
+  plainExpect(linePath(createLine("ob", pts))).toEqual(curve);
   plainExpect(curves({ kind: "road" })).toBe(true);
-  plainExpect(curves({ kind: "fence" })).toBe(false);
+  plainExpect(curves({ kind: "fence" })).toBe(true);
+  plainExpect(curves({ kind: "fence", straight: true })).toBe(false);
+});
+
+plain("drawn areas curve round through their corners; rectangles, parking and buildings keep their corners", () => {
+  const pts = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
+  const water = createArea("water", pts);
+  const curve = areaPath(water);
+  plainExpect(curve.length).toBeGreaterThan(pts.length * 4);
+  for (const p of pts) plainExpect(Math.min(...curve.map(q => dist(p, q)))).toBeLessThan(0.01);
+  // Bulges out between the corners instead of running straight along the side
+  plainExpect(Math.min(...curve.map(q => q.y))).toBeLessThan(-2);
+  // What gets drawn and painted
+  const [drawn] = drawnAreas([water]);
+  plainExpect(drawn.type === "area" && drawn.points).toEqual(curve);
+  plainExpect(water.points).toEqual(pts);
+  for (const kept of [{ ...water, straight: true }, createArea("parking", pts), createArea("building", pts)]) {
+    plainExpect(areaPath(kept)).toEqual(pts);
+    plainExpect(drawnAreas([kept])[0]).toBe(kept);
+  }
 });
 
 plain("the painting is made again when anything painted changes (a tree's kind or size, a tee pad), not for a name", () => {

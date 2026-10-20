@@ -1,10 +1,10 @@
 // Making course documents and items, and finding a hole's parts.
-import { CIRCLE_ONE_FT, DEFAULT_CANVAS, DEFAULT_FAIRWAY_FT, DEFAULT_PAD, PIN_POSITIONS, STRUCTURE_KINDS, TEE_ORDER, TREE_COLORS, generateId } from "../constants";
+import { CIRCLE_ONE_FT, DEFAULT_CANVAS, DEFAULT_FAIRWAY_FT, DEFAULT_PAD, LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, TEE_ORDER, TREE_COLORS, generateId } from "../constants";
 import type {
   AmenityItem, AmenityKind, AreaItem, AreaKind, BasketItem, CourseDoc, CourseItem, CourseRules, DropZoneItem, Hole, LabelItem,
   Layout, LineItem, LineKind, MandoItem, MapStyle, P, PinPosition, StructureItem, StructureKind, TeeItem, TeeLevel, TreeItem
 } from "../types";
-import { centroid, corridor, dist, smoothPath } from "./geom";
+import { centroid, corridor, dist, smoothClosed, smoothPath } from "./geom";
 import { landscapeOf } from "./landscapes";
 
 export const defaultStyle = (): MapStyle => ({
@@ -176,9 +176,16 @@ export const fairwayOutline = (hole: Pick<Hole, "fairwayWidth" | "fairwayShape" 
   return corridor(line, t => w(t) + extra, roundSteps, hole.fairwayShift ? fairwayShiftAt(hole) : undefined);
 };
 
-/** Lines that curve through their points as drawn (OB lines and fences go straight). */
-export const CURVED_LINES: LineKind[] = ["path", "walk", "stream", "road"];
+/** Lines that curve through their points as drawn (every kind, unless set straight). */
+export const CURVED_LINES = Object.keys(LINE_KINDS) as LineKind[];
 export const curves = (l: Pick<LineItem, "kind" | "straight">) => !l.straight && CURVED_LINES.includes(l.kind);
+
+/** Areas that curve through their corners as drawn (all but parking lots and buildings, unless set straight). */
+export const areaCurves = (a: Pick<AreaItem, "kind" | "straight">) => !a.straight && a.kind !== "parking" && a.kind !== "building";
+/** An area's outline as it is drawn: a smooth closed curve through its corners, or the corners. */
+export const areaPath = (a: Pick<AreaItem, "kind" | "straight" | "points">) => (areaCurves(a) ? smoothClosed(a.points, a.points.length > 40 ? 2 : 6) : a.points);
+/** Areas with their outlines as drawn (for drawing them). */
+export const drawnAreas = <T extends CourseItem>(items: T[]): T[] => items.map(i => (i.type === "area" && areaCurves(i) ? ({ ...i, points: areaPath(i) } as T) : i));
 /** A line as it is drawn: a smooth curve through its points, or straight between them. */
 export const linePath = (l: Pick<LineItem, "kind" | "straight" | "points">, perSegment = 8) => (curves(l) ? smoothPath(l.points, l.points.length > 60 ? 3 : perSegment) : l.points);
 

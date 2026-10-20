@@ -45,8 +45,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       onMoveGroup: (base, ids, dx, dy) => moveGroup(base, ids, dx, dy, false),
       onPlace: (mode, p) => placeAt(mode, p),
       onHole: (tee, basket) => addHole(tee, basket),
-      onDrawn: (kind, pts) => {
-        addDrawn(kind, pts);
+      onDrawn: (kind, pts, opts) => {
+        addDrawn(kind, pts, opts);
         useEditor.getState().set({ tool: "select" });
       },
       onChange: (id, patch) => {

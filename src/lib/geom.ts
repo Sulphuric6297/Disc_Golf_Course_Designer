@@ -136,6 +136,29 @@ export const smoothPath = (pts: P[], perSegment = 12): P[] => {
   return out;
 };
 
+/** A smooth closed curve through a shape's corners (centripetal Catmull-Rom, all the way round). */
+export const smoothClosed = (pts: P[], perSegment = 6): P[] => {
+  const n = pts.length;
+  if (n < 3) return pts.map(p => ({ ...p }));
+  const out: P[] = [];
+  const tj = (a: P, b: P) => Math.max(1e-4, Math.sqrt(dist(a, b)));
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+    const t0 = 0, t1 = t0 + tj(p0, p1), t2 = t1 + tj(p1, p2), t3 = t2 + tj(p2, p3);
+    for (let k = 0; k < perSegment; k++) {
+      const t = t1 + ((t2 - t1) * k) / perSegment;
+      const lerp = (a: P, b: P, ta: number, tb: number) => {
+        const w = (t - ta) / (tb - ta);
+        return { x: a.x + (b.x - a.x) * w, y: a.y + (b.y - a.y) * w };
+      };
+      const a1 = lerp(p0, p1, t0, t1), a2 = lerp(p1, p2, t1, t2), a3 = lerp(p2, p3, t2, t3);
+      const b1 = lerp(a1, a2, t0, t2), b2 = lerp(a2, a3, t1, t3);
+      out.push(lerp(b1, b2, t1, t2));
+    }
+  }
+  return out;
+};
+
 /** Point and direction at a distance along a polyline. */
 export const pointAlong = (pts: P[], d: number) => {
   let acc = 0;

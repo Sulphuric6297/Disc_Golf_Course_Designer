@@ -5,7 +5,7 @@
 // is at the bottom.
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
-import { activeLayout, fairwayOutline, holeBaskets, linePath, teeAim } from "./course";
+import { activeLayout, drawnAreas, fairwayOutline, holeBaskets, linePath, teeAim } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath } from "./geom";
 import { courseTotals, holeStats, isOb, type HoleStats } from "./holeStats";
 import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, type CanopyGrid } from "./forest";
@@ -252,7 +252,8 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     }
   }
 
-  const items = doc.items;
+  // (areas with their outlines as drawn: smooth curves through their corners)
+  const items = drawnAreas(doc.items);
   const areas = (items.filter(i => i.type === "area") as AreaItem[]).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
   const lines = items.filter(i => i.type === "line") as LineItem[];
 

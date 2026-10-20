@@ -88,6 +88,8 @@ export interface LabelItem extends BaseItem {
 /** Areas drawn on the map. OB and hazards are what play cares about; the rest make the map read. */
 export type AreaKind = "ob" | "hazard" | "casual" | "water" | "fairway" | "green" | "woods" | "rough" | "nogo" | "parking" | "building" | "sand";
 export interface AreaItem extends BaseItem {
+  /** Straight between its corners (unset: a smooth curve through them, but parking and buildings). */
+  straight?: boolean;
   /** More holes it belongs to (an OB line along two fairways): with `holeId`, all of them. */
   alsoHoles?: string[];
   type: "area";

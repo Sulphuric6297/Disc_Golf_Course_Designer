@@ -6,7 +6,7 @@ import { heightAt } from "../lib/terrainGrid";
 import { rectCorners, smoothPath } from "../lib/geom";
 import { GROUND_MATERIALS, PAINT_CELL_FT } from "../lib/groundPaint";
 import { LINE_KINDS } from "../constants";
-import { fairwayOutline, teeAim } from "../lib/course";
+import { drawnAreas, fairwayOutline, teeAim } from "../lib/course";
 import { landscapeOf } from "../lib/landscapes";
 import { GRASS, type GrassMaps, type GrassTerrain } from "../three/grass";
 import type { AreaItem, LineItem, P, TeeItem } from "../types";
@@ -69,7 +69,7 @@ export const grassMaps = (doc: ViewDoc): GrassMaps | null => {
   f.g.fillRect(0, 0, width, height);
   t.g.fillStyle = lawnTint;
   t.g.fillRect(0, 0, width, height);
-  const areas = doc.course.items.filter(i => i.type === "area") as AreaItem[];
+  const areas = drawnAreas(doc.course.items).filter(i => i.type === "area") as AreaItem[];
   const lines = doc.course.items.filter(i => i.type === "line") as LineItem[];
   for (const a of areas) if (a.kind === "woods") poly(a.points, field(0.3, 0.22), floorTint);
   for (const a of areas) if (a.kind === "rough") poly(a.points, field(GRASS.rough, 0.9), roughTint);
