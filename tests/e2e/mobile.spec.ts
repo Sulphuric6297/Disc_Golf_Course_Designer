@@ -183,6 +183,29 @@ test.describe("phone", () => {
     expect((await course(page)).items.filter((i: any) => i.type === "line").length).toBe(0);
   });
 
+  test("the app never scrolls as a whole when something low in the sheet is brought into view", async ({ page }) => {
+    await oneHole(page);
+    await nav(page).getByRole("button", { name: /Features/ }).tap();
+    await settle(page);
+    expect(await detent(page)).toBe("peek");
+    const before = (await page.getByTestId("plan").boundingBox())!;
+    // The sheet's last button is below the screen while the sheet peeks; a keyboard, a screen
+    // reader or find in page brings it into view like this (it once scrolled the whole app up,
+    // map, sheet and step bar, with no way back)
+    const below = await sheet(page).evaluate(el => {
+      const b = [...el.querySelectorAll("button")].pop()!;
+      const top = b.getBoundingClientRect().top;
+      b.scrollIntoView();
+      b.focus();
+      return top - innerHeight;
+    });
+    expect(below).toBeGreaterThan(0);
+    await page.waitForTimeout(100);
+    expect(await page.locator('[data-layout="phone"]').evaluate(el => el.scrollTop)).toBe(0);
+    expect((await page.getByTestId("plan").boundingBox())!.y).toBe(before.y);
+    await expect(nav(page)).toBeInViewport({ ratio: 1 });
+  });
+
   test("tapping a hole puts its inspector in the sheet; Back returns to the step", async ({ page }) => {
     await oneHole(page);
     await tapPlan(page, 450, 500);

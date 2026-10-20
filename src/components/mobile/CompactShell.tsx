@@ -7,7 +7,7 @@
 // Tools are a row of labelled buttons at the top of the panel; drawing gets Undo, Cancel and Done
 // buttons over the map (there is no Enter, Backspace or Esc on a phone), and holding a finger on
 // a thing opens its menu (the right-click).
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { ArrowDown, ArrowUp, Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Share2, Trash2, Undo2, Unlock, X } from "lucide-react";
 import { STRUCTURE_KINDS } from "../../constants";
 import { holeNumber } from "../../lib/course";
@@ -47,6 +47,13 @@ const TOOL_TITLES: Record<string, string> = {
   "add-hole": "New hole", "add-tee": "Another tee", "add-basket": "Another pin", "add-mando": "Mando", "add-dropzone": "Drop zone",
   "draw-area": "Draw an area", "draw-line": "Draw a line", "draw-structure": "Build", "add-tree": "Trees", "add-amenity": "Benches, signs, parking",
   "add-label": "Text label", measure: "Measure"
+};
+
+/** The shell never scrolls (it can't with `overflow: clip`; older Safari only has `hidden`, which
+ * the browser can still scroll to bring something into view): put it back. */
+const keepPut = (e: UIEvent<HTMLElement>) => {
+  const el = e.currentTarget;
+  if (el.scrollTop || el.scrollLeft) el.scrollTo(0, 0);
 };
 
 /** How tall the sheet is when a step opens (the map first where the step is about the map). */
@@ -527,7 +534,7 @@ function PhoneShell({ onFindSite, onShare, onHelp, onContextMenu, welcome, toast
   const controlsRoom = welcome || design ? 0 : mainH - sheetH - top - 12 - (ed.drawPoints > 0 ? 64 : 0);
 
   return (
-    <div className="dg-compact fixed inset-0 flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden" data-layout="phone">
+    <div className="dg-compact fixed inset-0 flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden" data-layout="phone" onScroll={keepPut}>
       <main ref={main} className="relative flex-1 min-h-0">
         <MapViewport onContextMenu={onContextMenu} compact="phone" controlsTop={top} controlsRoom={immersive ? 0 : controlsRoom} />
         {design && (
@@ -574,7 +581,7 @@ function RailShell({ onFindSite, onShare, onHelp, onContextMenu, welcome, toasts
   };
   const design = ed.step === "design" && !ed.teeView;
   return (
-    <div className="dg-compact fixed inset-0 flex bg-zinc-950 text-zinc-100 overflow-hidden" data-layout="rail">
+    <div className="dg-compact fixed inset-0 flex bg-zinc-950 text-zinc-100 overflow-hidden" data-layout="rail" onScroll={keepPut}>
       {!immersive && <NavRail onStep={onStep} onMenu={openApp} panelOpen={open} onPanel={() => setOpen(o => !o)} />}
       {!immersive && open && (
         <aside className="dg-side w-[300px] [@media(min-height:600px)]:w-[340px] shrink-0 flex flex-col bg-zinc-900 border-r border-white/10 relative z-30" aria-label={panel.mode === "selection" ? "Selection" : "Step panel"} data-testid="side-sheet">

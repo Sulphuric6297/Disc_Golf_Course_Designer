@@ -93,13 +93,15 @@ design tools and the PDGA guidance the app follows.
   - `geo/`: site import.
 - The map view engine is `src/viewport/CourseView.ts`, wrapped by `src/components/MapViewport.tsx`.
 - Phones and tablets: `useLayout()` (`src/components/useLayout.ts`) picks the layout: `phone`
-  (under 768 px wide: a bottom sheet and a step bar), `landscape` (a short, wide screen: a step rail
-  and a side panel) or `desktop` (tablets and computers, unchanged). The phone layouts are in
+  (under 768 px wide: a bottom sheet and a step bar), `rail` (768 to 1023 px wide, such as a tablet
+  held upright, or a short, wide screen such as a phone on its side: a step rail and a side panel)
+  or `desktop` (1024 px and wider: computers and tablets on their side, unchanged). The phone layouts are in
   `src/components/mobile/` (`CompactShell.tsx`, `BottomSheet.tsx`, `ActionSheet.tsx`); the step
   panels and the inspector are shared with the desktop. `touch:` Tailwind classes apply where a
   finger is the main pointer (bigger targets, 16 px text fields). Every keyboard or right-click
   action needs a touch path (Done/Undo/Cancel while drawing, long-press menus, map buttons). No
-  backdrop blur over the map on touch screens (it costs frames on phone GPUs).
+  backdrop blur over the map on touch screens (it costs frames on phone GPUs). The shells never
+  scroll as a whole (`overflow: clip`): the bottom sheet reaches below the screen.
 - 3D look: `src/three/treeKit.ts` (tree shapes made once and shared: a branching skeleton and
   leaf-spray cards; woods drawn instanced, full detail near the camera), `src/three/grass.ts`
   (blades in two patches that travel with the camera, reading height, what grows where and color

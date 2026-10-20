@@ -64,6 +64,12 @@ body {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
+/* The phone shells never scroll as a whole. The bottom sheet reaches below the screen, and anything
+   brought into view down there (a focused button, a screen reader, find in page) would scroll the
+   whole app up with no way back; `clip` can't be scrolled at all, not even by the browser */
+.dg-compact[data-layout] {
+  overflow: clip;
+}
 .dg-compact [data-testid="plan"] {
   touch-action: none;
 }
