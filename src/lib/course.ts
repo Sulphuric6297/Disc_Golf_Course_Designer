@@ -300,6 +300,25 @@ export const throwLine = (hole: Hole, tee: P | null, basket: P | null): P[] => {
   return pts;
 };
 
+/**
+ * A hole's lines of play from each of its tees (the hole's own first) to its basket, through the
+ * turns still ahead of each tee: every tee has a fairway of its own (where they meet, they make
+ * one). `line` is the hole's main line, tee to basket.
+ */
+export const teeLines = (doc: Pick<CourseDoc, "items">, hole: Hole, line: P[], mainTeeId?: string | null): P[][] => {
+  if (line.length < 2) return [];
+  const basket = line[line.length - 1];
+  const out: P[][] = [line];
+  for (const tee of holeTees(doc, hole.id)) {
+    if (tee.id === mainTeeId || dist(tee, line[0]) < 1) continue;
+    // (turns the tee is already past are left out: a short tee ahead of the first turn)
+    let turns = hole.doglegs;
+    while (turns.length && dist(tee, turns[1] ?? basket) < dist(turns[0], turns[1] ?? basket)) turns = turns.slice(1);
+    out.push([{ x: tee.x, y: tee.y }, ...turns.map(p => ({ ...p })), { ...basket }]);
+  }
+  return out;
+};
+
 /** The main throw line (the layout's tee and pin). */
 export const holeLine = (doc: Pick<CourseDoc, "items" | "layouts" | "activeLayout">, hole: Hole, layout = activeLayout(doc)) =>
   throwLine(hole, teeFor(doc, hole.id, layout?.tee), basketFor(doc, hole.id, layout?.pin));

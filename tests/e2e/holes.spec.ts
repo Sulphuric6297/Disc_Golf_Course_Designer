@@ -1,6 +1,6 @@
 import { test as plainHoles, expect as plainHolesExpect } from "@playwright/test";
 import { test, expect, addHole, blankCourse, clickPlan, course, drag, editorState, handleCenter, screenOf } from "./fixtures";
-import { createTee, walkEnds, WALK_OUT_FT } from "../../src/lib/course";
+import { createTee, newHole, teeLines, walkEnds, WALK_OUT_FT } from "../../src/lib/course";
 import { createTeePad, fitTeePad } from "../../src/three/courseModels";
 import * as THREE from "three";
 import { CIRCLE_ONE_FT } from "../../src/constants";
@@ -482,4 +482,43 @@ test("walks leaving a basket that two holes share say which hole each goes to, o
   await page.keyboard.press("Delete");
   await expect.poll(async () => (await course(page)).holes.length).toBe(2);
   await expect(tags).toHaveCount(0);
+});
+
+plainHoles("each tee of a hole has a line of play of its own to the basket, past the turns it is already beyond", () => {
+  const hole = newHole({ doglegs: [{ x: 300, y: 100 }] });
+  const main = { ...createTee(hole.id, { x: 100, y: 100 }), level: "blue" as const };
+  const ahead = { ...createTee(hole.id, { x: 320, y: 140 }), level: "red" as const };
+  const beside = { ...createTee(hole.id, { x: 110, y: 160 }), level: "white" as const };
+  const basket = { x: 500, y: 300 };
+  const doc = { items: [main, ahead, beside] };
+  const lines = teeLines(doc, hole, [{ x: 100, y: 100 }, { x: 300, y: 100 }, basket], main.id);
+  plainHolesExpect(lines).toHaveLength(3);
+  plainHolesExpect(lines[0]).toEqual([{ x: 100, y: 100 }, { x: 300, y: 100 }, basket]);
+  // (a tee beyond the turn goes straight on; one beside the main tee through the turn)
+  const fromAhead = lines.find(l => l[0].x === 320)!;
+  plainHolesExpect(fromAhead).toEqual([{ x: 320, y: 140 }, basket]);
+  const fromBeside = lines.find(l => l[0].x === 110)!;
+  plainHolesExpect(fromBeside).toEqual([{ x: 110, y: 160 }, { x: 300, y: 100 }, basket]);
+});
+
+test("a hole with two tees has two fairways, drawn as one where they overlap", async ({ page }) => {
+  await blankCourse(page);
+  const hole = await addHole(page, { x: 300, y: 600 }, { x: 800, y: 600 });
+  await page.keyboard.press("Escape");
+  await page.evaluate(id => {
+    const w = window as any;
+    const d = w.__dgCourse();
+    const tee = d.items.find((i: any) => i.type === "tee" && i.holeId === id);
+    w.__dgEditor().set({ activeHoleId: id, teeLevel: "red" });
+    w.__dgActions.placeAt("add-tee", { x: tee.x + 120, y: tee.y + 40 });
+    w.__dgActions.select(null);
+  }, hole.id);
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "tee").length).toBe(2);
+  const fair = () => page.evaluate(id => {
+    const g = (window as any).__dgView.scene.getObjectByName(`fair:${id}`);
+    if (!g) return null;
+    const meshes = g.children.filter((c: any) => c.isMesh && !c.isLine2);
+    return { meshes: meshes.length, once: meshes.every((m: any) => m.material.stencilWrite && m.material.stencilFunc === 517) };
+  }, hole.id);
+  await expect.poll(fair).toEqual({ meshes: 2, once: true });
 });

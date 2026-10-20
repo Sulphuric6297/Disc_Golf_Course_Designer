@@ -182,3 +182,35 @@ Map design
 - [ ] **Flyovers can be keyframed**; camera position, height, speed and field of view are
   settings.
 - [ ] **The default flyover avoids trees.**
+
+Later requests (in the order asked)
+- [ ] **Widening a fairway on one side doesn't widen the other** (Shift widens both).
+- [ ] **Drawn buildings and other shapes can be turned.**
+- [ ] **Duplicate puts the copy next to the original.**
+- [ ] **Tees that share a basket each have their own fairway, merged where they meet.**
+- [ ] **Any hole number can be picked**, typed in, beyond the number of holes; a hole can have
+  more than one number (3/12).
+- [ ] **Several walks from a shared basket, each saying which hole it goes to.**
+- [ ] **Paths can be extended after they're placed**; every drawn line and shape curves through
+  its points (rectangles keep their corners).
+- [ ] **Everything on the Design page is editable** (text, labels moved, the map itself fixed).
+- [ ] **The Design preview always shows the latest changes**, with progress while it paints.
+- [ ] **A creek's width can be set as a whole and stretch by stretch.**
+- [ ] **The walk to the next hole is drawn over other paths**, with one width setting for all
+  walks, the automatic walks switchable, and a single walk removable.
+- [ ] **The fairway can be widened anywhere along a hole.**
+- [ ] **OB lines and areas can belong to several holes.**
+- [ ] **Flyovers: total control per hole** (height, speed, view, keyframes), smooth (no bobbing),
+  going under trees, as good-looking as the Design page, slowing gently to a stop at the end,
+  drawn farther in videos, and switches for everything on screen (title, badge, distance to the
+  pin, course name, disc flight, line of play, putting circle, OB, other holes, walks).
+- [ ] **The yellow disc flight lines can be switched off everywhere.**
+- [ ] **Settings for all holes can be set from any hole's panel, and one hole's settings applied
+  to the holes picked.**
+- [ ] **Tall trees don't stretch; a tree's crown is as wide as set at any height.**
+- [ ] **Tee signs: the featured hole stands out; every part shown or hidden, for all holes or one.**
+- [ ] **The Design page zooms with the wheel and pans by dragging.**
+- [ ] **Checks can be ignored** (and brought back).
+- [ ] **Better-looking grass in 3D.**
+- [ ] **Tee pads never cut through the ground; the tee sign has no pole through it.**
+- [ ] **Share links are shorter and lose nothing** (under 2,040 characters where possible).

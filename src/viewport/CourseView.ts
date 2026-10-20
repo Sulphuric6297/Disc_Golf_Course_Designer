@@ -15,7 +15,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, sharedWalks, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, drawnAreas, fairwayOutline, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { FAIRWAY_STATIONS, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, drawnAreas, fairwayOutline, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
@@ -27,7 +27,7 @@ import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
 import { createWoods, createWoodsWhere } from "../three/woods";
 import type { WoodedGrid } from "../lib/forest";
-import { autoFlight, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy } from "../lib/flight";
+import { autoFlight, flightClock, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy } from "../lib/flight";
 import { VIDEO_HOLD, titleStrength } from "../lib/video";
 import { drawOverlay, holeTitle, overlayShow, type HoleTitle } from "./flyTitle";
 import { forestDetail, type Forest } from "../three/treeKit";
@@ -202,7 +202,8 @@ export class CourseView {
   private povCam = new THREE.PerspectiveCamera(62, 16 / 9, 0.3, 30000);
   private povHole: string | null = null;
   private povLook = { yaw: 0, pitch: 0 };
-  private fly: { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; t: number; dur: number; ease: boolean; done?: () => void; title?: HoleTitle } | null = null;
+  /** A flight under way: `dur` s of path, played over `play` s (`at`: path time at a moment; see flightClock). */
+  private fly: { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; t: number; dur: number; play: number; at: (t: number) => number; done?: () => void; title?: HoleTitle } | null = null;
   /** A hole whose line is being plotted by hand, and its turns so far (from the tee). */
   private plotHole: string | null = null;
   private plotPts: P[] = [];
@@ -719,7 +720,7 @@ export class CourseView {
   /** The flight over a hole: camera and look-at points (by itself from behind the tee to the
    * basket, over the trees; or through the hole's keyframes), fields of view, and how long it
    * takes (s). */
-  private flightPath(holeId: string): { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; dur: number; ease: boolean } | null {
+  private flightPath(holeId: string): { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; dur: number; play: number; at: (t: number) => number } | null {
     const doc = this.doc;
     const s = doc?.stats.find(x => x.holeId === holeId);
     if (!doc || !s?.complete) return null;
@@ -730,7 +731,9 @@ export class CourseView {
     const f = byHand ? keyFlight(hole!.flyKeys!, set, ground) : autoFlight(smoothPath(s.line, 16), set, ground, (p, r) => this.canopyAt(p, r));
     if (!f) return null;
     const v = (a: Air) => new THREE.Vector3(a.x, a.z, a.y);
-    return { pts: f.cam.map(v), look: f.look.map(v), fov: f.fov, dur: f.dur, ease: !byHand };
+    // (slowing to a stop at the end; by itself, getting going gently too)
+    const clock = flightClock(f.dur, !byHand);
+    return { pts: f.cam.map(v), look: f.look.map(v), fov: f.fov, dur: f.dur, play: clock.play, at: clock.at };
   }
 
   /** Keyframes to start a hand-made flyover from: the flight it flies by itself, at a few moments. */
@@ -813,9 +816,8 @@ export class CourseView {
     const cam = this.povCam;
     if (this.fly) {
       const f = this.fly;
-      const k = clamp(f.t / f.dur, 0, 1);
-      // (by itself: easing in and out; through keyframes: on their seconds)
-      const e = !f.ease ? k : k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      // (where along the flight: its motion easing in and out; see flightClock)
+      const e = f.dur > 0 ? clamp(f.at(f.t) / f.dur, 0, 1) : 1;
       const idx = e * (f.pts.length - 1);
       const i0 = Math.floor(idx), i1 = Math.min(f.pts.length - 1, i0 + 1);
       cam.position.lerpVectors(f.pts[i0], f.pts[i1], idx - i0);
@@ -962,7 +964,7 @@ export class CourseView {
 
   /** Where the tee view is (for the HUD): progress of a flyover 0..1, or null. */
   flyProgress() {
-    return this.fly ? clamp(this.fly.t / this.fly.dur, 0, 1) : null;
+    return this.fly ? clamp(this.fly.t / this.fly.play, 0, 1) : null;
   }
 
   // ------------------------------------------------------------------ flyover videos
@@ -1059,6 +1061,7 @@ export class CourseView {
     (rt as unknown as { isXRRenderTarget: boolean }).isXRRenderTarget = true;
     const raw = new Uint8Array(width * height * 4);
     this.recordings++;
+    this.setVideoDetail(true);
     let open = true;
     const paths = new Map<string, ReturnType<CourseView["flightPath"]>>();
     const path = (id: string) => {
@@ -1066,7 +1069,7 @@ export class CourseView {
       return paths.get(id) ?? null;
     };
     return {
-      duration: id => path(id)?.dur ?? 0,
+      duration: id => path(id)?.play ?? 0,
       prepare: id => this.updateDetail(id),
       draw: (id, t, out): FrameInfo => {
         const p = path(id);
@@ -1108,6 +1111,7 @@ export class CourseView {
         rt.dispose();
         if (open) this.recordings--;
         open = false;
+        if (this.recordings === 0) this.setVideoDetail(false);
         this.invalidate();
       }
     };
@@ -1125,7 +1129,7 @@ export class CourseView {
       this.fly.t += Math.min(dt, 0.25);
       this.dirty = true;
       // (a moment at the basket before it ends, as in a recording)
-      if (this.fly.t >= this.fly.dur + (this.fly.title ? VIDEO_HOLD.outro : 0)) {
+      if (this.fly.t >= this.fly.play + (this.fly.title ? VIDEO_HOLD.outro : 0)) {
         const done = this.fly.done;
         this.fly = null;
         this.povCam.fov = this.povFov;
@@ -1197,6 +1201,8 @@ export class CourseView {
       this.renderer.setPixelRatio(ratio);
       this.renderer.setSize(this.size.width, this.size.height, false);
     }
+    // (a video records with its own: see setVideoDetail)
+    if (this.videoDetail) return this.invalidate();
     const shadow = this.tier >= 3 ? 512 : this.mobile || this.tier >= 2 ? 1024 : 2048;
     if (this.sun.shadow.mapSize.x !== shadow) {
       this.sun.shadow.mapSize.set(shadow, shadow);
@@ -1205,7 +1211,32 @@ export class CourseView {
       this.shadowsDirty = true;
     }
     forestDetail.nearFt = (this.software ? 70 : this.mobile ? 150 : 260) * (this.tier >= 3 ? 0.6 : 1);
+    forestDetail.version++;
     this.invalidate();
+  }
+
+  /** While a video records: drawn farther and finer than on screen (each frame can take its time):
+   * trees in full detail much farther out, the most grass, finer shadows, thinner haze. */
+  private videoDetail = false;
+  private setVideoDetail(on: boolean) {
+    if (on === this.videoDetail) return;
+    this.videoDetail = on;
+    if (!on) {
+      // (back to what this device draws on screen)
+      this.setTier(this.tier);
+      return;
+    }
+    // (without a graphics card, only the thinner haze: each frame is slow enough already)
+    if (this.software) return;
+    forestDetail.nearFt = this.mobile ? 400 : 700;
+    forestDetail.version++;
+    const shadow = Math.min(this.mobile ? 2048 : 4096, this.renderer.capabilities.maxTextureSize);
+    if (this.sun.shadow.mapSize.x !== shadow) {
+      this.sun.shadow.mapSize.set(shadow, shadow);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+      this.shadowsDirty = true;
+    }
   }
 
   /**
@@ -1226,7 +1257,7 @@ export class CourseView {
 
   /** For tests: the quality level now. */
   qualityInfo() {
-    return { tier: this.tier, pixelRatio: this.renderer.getPixelRatio(), shadow: this.sun.shadow.mapSize.x, nearFt: forestDetail.nearFt, grass: this.grassQuality(), mobile: this.mobile, software: this.software };
+    return { tier: this.tier, pixelRatio: this.renderer.getPixelRatio(), shadow: this.sun.shadow.mapSize.x, nearFt: forestDetail.nearFt, grass: this.grassQuality(), mobile: this.mobile, software: this.software, video: this.videoDetail, haze: this.videoDetail ? 0.5 : 1 };
   }
 
   /** For tests: let the frame-rate watch work under software rendering too (a fresh window). */
@@ -1334,7 +1365,9 @@ export class CourseView {
     const prevBg = this.scene.background;
     const haze = sm.uniforms.uHaze.value as THREE.Color;
     // Thin haze over the site, thick toward the horizon: distance reads as distance
-    this.scene.fog = new THREE.FogExp2(haze.getHex(THREE.LinearSRGBColorSpace), eyeLevel ? 0.8 / (span * 2.4) : 0.7 / (span * 3.2));
+    // (thinner in a video: it reaches farther)
+    const thin = this.videoDetail ? 0.5 : 1;
+    this.scene.fog = new THREE.FogExp2(haze.getHex(THREE.LinearSRGBColorSpace), (eyeLevel ? 0.8 / (span * 2.4) : 0.7 / (span * 3.2)) * thin);
     (this.scene.fog as THREE.FogExp2).color.copy(haze);
     this.scene.background = haze;
     return () => {
@@ -1427,6 +1460,8 @@ export class CourseView {
 
   /** How much grass to draw: as set, or (automatically) none without a graphics card. */
   private grassQuality(): GrassQuality {
+    // (a video: the most grass, but where there is no graphics card or it is switched off)
+    if (this.videoDetail && !this.software && this.grassSetting !== 0) return 3;
     if (this.grassSetting !== "auto") return this.grassSetting;
     // Automatic: off without a graphics card, low on a phone, and less while frames run slow
     const base = this.software ? 0 : this.mobile ? 1 : 2;
@@ -1758,22 +1793,41 @@ export class CourseView {
     const painted = !!this.ground.paintedTexture;
     this.shapesPainted = painted;
 
-    // Fairways (under everything else)
-    for (const s of doc.stats) {
+    // Fairways (under everything else): one from each tee of a hole, and where fairways meet (a
+    // hole's tees, holes sharing a basket) they make one: drawn once where they overlap, their
+    // edges only where they aren't inside another
+    const fairways = doc.stats.flatMap(s => {
       const hole = course.holes.find(h => h.id === s.holeId);
-      if (!hole || !s.complete || !hole.fairway || painted) continue;
-      const line = smoothPath(s.line, 10);
-      put(`fair:${hole.id}`, JSON.stringify([line, hole.fairwayWidth, hole.fairwayShape, hole.fairwayShift, hole.fairwayStations, hv, st.fairway, photo]), () => {
+      if (!hole || !s.complete || !hole.fairway || painted) return [];
+      return [{ hole, polys: teeLines(course, hole, s.line, s.teeId).map(l => fairwayOutline(hole, smoothPath(l, 10), 0, 12)) }];
+    });
+    const allFair = fairways.flatMap(f => f.polys.map(p => ({ p, box: boundsOf(p) })));
+    for (const { hole, polys } of fairways) {
+      const boxes = polys.map(boundsOf);
+      const near = allFair.filter(o => !polys.includes(o.p) && boxes.some(b => o.box.minX < b.maxX && o.box.maxX > b.minX && o.box.minY < b.maxY && o.box.maxY > b.minY));
+      put(`fair:${hole.id}`, JSON.stringify([polys, near.map(o => o.p), hv, st.fairway, photo]), () => {
         const g = new THREE.Group();
-        const poly = fairwayOutline(hole, line, 0, 12);
-        const mesh = new THREE.Mesh(
-          drapedPolygon(poly, (x, y) => this.h(x, y), doc.gridSize, 0.12),
-          new THREE.MeshLambertMaterial({ color: st.fairway, transparent: true, opacity: photo ? 0.22 : 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 })
-        );
-        mesh.renderOrder = 1;
-        mesh.receiveShadow = true;
-        g.add(mesh);
-        g.add(this.fatLine(this.drapeLine(poly, 0.2, true), st.fairway, 1.5, { opacity: photo ? 0.8 : 0.5, order: 2 }));
+        const mat = new THREE.MeshLambertMaterial({ color: st.fairway, transparent: true, opacity: photo ? 0.22 : 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
+        // (each spot drawn once, however many fairways cover it)
+        Object.assign(mat, { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc, stencilZPass: THREE.ReplaceStencilOp });
+        polys.forEach((poly, k) => {
+          const mesh = new THREE.Mesh(drapedPolygon(poly, (x, y) => this.h(x, y), doc.gridSize, 0.12), k ? mat.clone() : mat);
+          mesh.renderOrder = 1;
+          mesh.receiveShadow = true;
+          g.add(mesh);
+          // Its edge, but where it runs inside another fairway
+          const others = [...polys.filter((_, j) => j !== k), ...near.map(o => o.p)];
+          let run: P[] = [];
+          const flush = () => {
+            if (run.length >= 2) g.add(this.fatLine(this.drapeLine(run, 0.2), st.fairway, 1.5, { opacity: photo ? 0.8 : 0.5, order: 2 }));
+            run = [];
+          };
+          for (const p of [...poly, poly[0]]) {
+            if (others.some(o => pointInPolygon(p, o))) flush();
+            else run.push(p);
+          }
+          flush();
+        });
         return g;
       });
     }
@@ -1783,7 +1837,7 @@ export class CourseView {
       const polys: P[][] = [], lines: { pts: P[]; half: number }[] = [], discs: { p: P; r: number }[] = [];
       for (const s of doc.stats) {
         const hole = course.holes.find(h => h.id === s.holeId);
-        if (s.complete && hole) polys.push(fairwayOutline(hole, smoothPath(s.line, 8), hole.fairway ? 0 : -hole.fairwayWidth * 0.4, 6));
+        if (s.complete && hole) for (const l of teeLines(course, hole, s.line, s.teeId)) polys.push(fairwayOutline(hole, smoothPath(l, 8), hole.fairway ? 0 : -hole.fairwayWidth * 0.4, 6));
       }
       for (const it of course.items) {
         if (it.type === "area" && ["fairway", "green", "water", "parking", "building", "sand", "rough", "nogo"].includes(it.kind)) polys.push(it.points);

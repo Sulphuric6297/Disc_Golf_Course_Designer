@@ -6,7 +6,7 @@ import { heightAt } from "../lib/terrainGrid";
 import { corridor, rectCorners, smoothPath } from "../lib/geom";
 import { GROUND_MATERIALS, PAINT_CELL_FT } from "../lib/groundPaint";
 import { LINE_KINDS } from "../constants";
-import { drawnAreas, fairwayOutline, linePath, teeAim, widthAlong, widthVaries } from "../lib/course";
+import { drawnAreas, fairwayOutline, linePath, teeAim, teeLines, widthAlong, widthVaries } from "../lib/course";
 import { landscapeOf } from "../lib/landscapes";
 import { GRASS, type GrassMaps, type GrassTerrain } from "../three/grass";
 import type { AreaItem, LineItem, P, TeeItem } from "../types";
@@ -77,7 +77,7 @@ export const grassMaps = (doc: ViewDoc): GrassMaps | null => {
   for (const s of doc.stats) {
     const hole = doc.course.holes.find(h => h.id === s.holeId);
     if (!hole?.fairway || !s.complete) continue;
-    poly(fairwayOutline(hole, smoothPath(s.line, 10), 0, 12), field(GRASS.fairway, 1), fairTint);
+    for (const line of teeLines(doc.course, hole, s.line, s.teeId)) poly(fairwayOutline(hole, smoothPath(line, 10), 0, 12), field(GRASS.fairway, 1), fairTint);
   }
   for (const a of areas) if (a.kind === "fairway" || a.kind === "green") poly(a.points, field(GRASS.fairway, 1), fairTint);
   // Nothing grows on water, sand, paving or in buildings

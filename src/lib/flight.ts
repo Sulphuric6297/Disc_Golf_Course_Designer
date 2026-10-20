@@ -11,6 +11,32 @@ export const FLYOVER_DEFAULTS: FlyoverSettings = { height: 24, speed: 1, fov: 62
 /** A course's flyover settings, filled in (with a hole's own over them). */
 export const flyoverOf = (doc: Pick<CourseDoc, "flyover">, hole?: { flyover?: Partial<FlyoverSettings> } | null): FlyoverSettings => ({ ...FLYOVER_DEFAULTS, ...doc.flyover, ...hole?.flyover });
 
+/**
+ * How a flight of `dur` seconds plays: its motion slowing gently to a stop over the end (the last
+ * 2 s of it, at most a third, played over twice as long) and, by itself (`easeIn`), getting going
+ * gently too. `play` is how long it plays; `at(t)` is where along the flight (s of its own time)
+ * it is `t` s into playing. Speeds change smoothly: no jolt where the slowing starts or stops.
+ */
+export const flightClock = (dur: number, easeIn: boolean) => {
+  const out = Math.min(2, dur / 3), into = easeIn ? Math.min(1, dur * 0.15) : 0;
+  const cruise = dur - out - into;
+  const play = dur + out + into;
+  const at = (t: number) => {
+    if (t <= 0) return 0;
+    if (t >= play) return dur;
+    // Getting going: speed rising 0 to 1 over 2 * into
+    if (t < 2 * into) {
+      const u = t / (2 * into);
+      return 2 * into * (u / 2 - Math.sin(Math.PI * u) / (2 * Math.PI));
+    }
+    if (t < 2 * into + cruise) return into + (t - 2 * into);
+    // Slowing: speed falling 1 to 0 over 2 * out
+    const u = (t - 2 * into - cruise) / (2 * out);
+    return into + cruise + 2 * out * (u / 2 + Math.sin(Math.PI * u) / (2 * Math.PI));
+  };
+  return { play, at };
+};
+
 /** A point in the air: plan x, y and its height z (ft, the terrain's datum). */
 export type Air = { x: number; y: number; z: number };
 

@@ -11,7 +11,7 @@ import { canvasBlob, pdfFromPages, pdfPage, pngUnder, printDpi, svgToCanvas } fr
 import { holeStats } from "../lib/holeStats";
 import { holeLabel, holeNumber } from "../lib/course";
 import { VIDEO_SIZES, VIDEO_HOLD, type VideoResolution } from "../lib/video";
-import { autoSeconds, flyoverOf, keySeconds } from "../lib/flight";
+import { autoSeconds, flightClock, flyoverOf, keySeconds } from "../lib/flight";
 import { FlyoverSettingsPanel } from "./FlyoverSettings";
 import { changeDoc, getDoc, useCourse, useEditor } from "../state/course";
 import { download, fileName, saveCourseFile } from "../state/files";
@@ -40,9 +40,11 @@ const videoSeconds = (d: CourseDoc, ids: string[]) =>
   ids.reduce((t, id) => {
     const h = d.holes.find(x => x.id === id);
     if (!h) return t;
-    const set = flyoverOf(d);
-    const flight = h.flyKeys && h.flyKeys.length >= 2 ? keySeconds(h.flyKeys, set, () => 0).reduce((a, b) => a + b, 0) : autoSeconds(holeStats(d, h).length, set);
-    return t + flight + VIDEO_HOLD.intro + VIDEO_HOLD.outro;
+    const set = flyoverOf(d, h);
+    const keyed = !!h.flyKeys && h.flyKeys.length >= 2;
+    const flight = keyed ? keySeconds(h.flyKeys!, set, () => 0).reduce((a, b) => a + b, 0) : autoSeconds(holeStats(d, h).length, set);
+    // (as it plays: slowing to a stop at the end)
+    return t + flightClock(flight, !keyed).play + VIDEO_HOLD.intro + VIDEO_HOLD.outro;
   }, 0);
 const minSec = (s: number) => (s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s)} s`);
 

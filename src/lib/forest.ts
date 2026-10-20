@@ -8,7 +8,7 @@ import { CIRCLE_ONE_FT, LINE_KINDS, PATH_SURFACES } from "../constants";
 import type { AreaItem, CourseDoc, LineItem, MapStyle, P, PathSurface, StructureItem, TreeItem } from "../types";
 import { canopyMask } from "./geo/detect";
 import { boundsOf, corridor, dist, pathLength, pointInPolygon, smoothPath } from "./geom";
-import { autoWalks, drawnAreas, fairwayShiftAt, fairwayWidthAt, linePath, widthAlong, widthFactors, widthVaries } from "./course";
+import { autoWalks, drawnAreas, fairwayShiftAt, fairwayWidthAt, linePath, teeLines, widthAlong, widthFactors, widthVaries } from "./course";
 import type { HoleStats } from "./holeStats";
 import { landscapeOf } from "./landscapes";
 import { reliefExaggeration } from "./relief";
@@ -369,14 +369,17 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   for (const st of stats) {
     const hole = doc.holes.find(h => h.id === st.holeId);
     if (!st.complete || !hole) continue;
-    const path = smoothPath(st.line, 10);
     const wAt = fairwayWidthAt(hole);
     const width = (t: number) => Math.max(18, wAt(t) * (hole.fairway ? 1 : 0.6));
     const shift = hole.fairway && hole.fairwayShift ? fairwayShiftAt(hole) : undefined;
-    poly(FAIR, corridor(path, width, 12, shift));
-    // Treetops lean in over the edges: keep their middles back so the fairway keeps its width
-    poly(CLEAR, corridor(path, t => width(t) + (crownR * 1.2) / k, 12, shift));
-    poly(MIDDLE, corridor(path, t => width(t) * 0.4, 12, shift));
+    // (a fairway from each of the hole's tees: painted over each other, they make one)
+    for (const line of teeLines(doc, hole, st.line, st.teeId)) {
+      const path = smoothPath(line, 10);
+      poly(FAIR, corridor(path, width, 12, shift));
+      // Treetops lean in over the edges: keep their middles back so the fairway keeps its width
+      poly(CLEAR, corridor(path, t => width(t) + (crownR * 1.2) / k, 12, shift));
+      poly(MIDDLE, corridor(path, t => width(t) * 0.4, 12, shift));
+    }
   }
   for (const i of drawnAreas(doc.items)) {
     if (i.type === "tee") {

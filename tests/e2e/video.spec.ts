@@ -2,6 +2,7 @@ import { readFileSync } from "fs";
 import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
 import { test, expect, addHole, blankCourse, editorState } from "./fixtures";
 import { VIDEO_HOLD, avcCodec, videoBitrate, videoSuffix, videoTimeline, vp9Codec } from "../../src/lib/video";
+import { flightClock } from "../../src/lib/flight";
 
 // 3D renders in software here, so the videos in these tests are small (320 x 180 or less).
 const small = (page: Page, width = 320, height = 180) => page.evaluate(([width, height]) => (window as any).__dgVideo().set({ size: { width, height }, fps: 30 }), [width, height]);
@@ -46,21 +47,25 @@ const toasts = (page: Page) => page.evaluate(() => (((window as any).__toasts ??
 const kindOf = (data: Buffer) => (data.subarray(4, 8).toString("latin1") === "ftyp" ? "mp4" : data.subarray(0, 4).toString("hex") === "1a45dfa3" ? "webm" : "?");
 
 test("record a hole's flyover from the Export step: progress, then a real video file", async ({ page }) => {
-  test.setTimeout(240_000);
+  // (drawn in software here: a 10 s video takes minutes)
+  test.setTimeout(420_000);
   await twoHoles(page);
   await watchToasts(page);
   await page.getByRole("button", { name: "6 Export" }).click();
   const section = page.getByTestId("video-export");
   await section.getByTestId("video-holes").selectOption({ label: "Hole 1" });
   await expect(section.getByTestId("video-record")).toHaveText(/Record hole 1/);
-  const downloading = page.waitForEvent("download", { timeout: 200_000 });
+  const downloading = page.waitForEvent("download", { timeout: 380_000 });
   await section.getByTestId("video-record").click();
   // The progress bar moves while the frames are made, and only one export runs at a time
   await expect(section.getByTestId("video-progress")).toBeVisible();
   await expect(page.getByTestId("export-map-svg")).toBeDisabled();
-  await expect.poll(async () => Number(await section.getByTestId("video-progress").getAttribute("aria-valuenow")), { timeout: 60_000 }).toBeGreaterThan(5);
+  // (after the ground is painted: the whole site's, then the hole's sharper)
+  await expect.poll(async () => Number(await section.getByTestId("video-progress").getAttribute("aria-valuenow")), { timeout: 120_000 }).toBeGreaterThan(5);
   const download = await downloading;
-  await expect.poll(() => toasts(page), { timeout: 30_000 }).toContain("Flyover video saved: 7 s, 320 × 180, ");
+  // (a 6 s flight plays for longer: it gets going and slows to a stop gently)
+  const plays = flightClock(6, true).play;
+  await expect.poll(() => toasts(page), { timeout: 30_000 }).toContain(`Flyover video saved: ${Math.round(plays + VIDEO_HOLD.intro + VIDEO_HOLD.outro)} s, 320 × 180, `);
   const data = readFileSync((await download.path())!);
   const kind = kindOf(data);
   expect(["mp4", "webm"]).toContain(kind);
@@ -70,8 +75,8 @@ test("record a hole's flyover from the Export step: progress, then a real video 
   const video = await probe(page, data, kind === "mp4" ? "video/mp4" : "video/webm");
   expect(video.width).toBe(320);
   expect(video.height).toBe(180);
-  expect(video.duration).toBeGreaterThan(6 + VIDEO_HOLD.intro);
-  expect(video.duration).toBeLessThan(6 + VIDEO_HOLD.intro + VIDEO_HOLD.outro + 0.5);
+  expect(video.duration).toBeGreaterThan(plays + VIDEO_HOLD.intro);
+  expect(video.duration).toBeLessThan(plays + VIDEO_HOLD.intro + VIDEO_HOLD.outro + 0.5);
   // Done: the progress is gone, the Record button is back and the map view is as it was
   await expect(section.getByTestId("video-progress")).toBeHidden();
   await expect(section.getByTestId("video-record")).toBeEnabled();

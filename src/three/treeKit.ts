@@ -489,7 +489,7 @@ const tintedFoliage = (base: THREE.MeshStandardMaterial, tint: THREE.Color) => {
 export type TreeSpot = { x: number; y: number; ground: number; height: number; width: number; shape: TreeShape; variant: number; tint: THREE.Color; turn: number; lean: number };
 
 /** Trees nearer than this to the camera use the close shapes, ft (less without a graphics card). */
-export const forestDetail = { nearFt: 260 };
+export const forestDetail = { nearFt: 260, version: 0 };
 
 /**
  * Many trees, drawn instanced by shape: close ones in full detail, the rest in a lighter
@@ -499,6 +499,7 @@ export class Forest {
   readonly group = new THREE.Group();
   private sets: { spots: TreeSpot[]; near: THREE.InstancedMesh[]; far: THREE.InstancedMesh[] }[] = [];
   private last = new THREE.Vector3(Infinity, 0, 0);
+  private version = -1;
   private matrices: THREE.Matrix4[][] = [];
 
   constructor(spots: TreeSpot[]) {
@@ -546,7 +547,9 @@ export class Forest {
 
   /** Close trees in full detail, the rest lighter (only redone when the camera moved a fair way). */
   update(eye: THREE.Vector3) {
-    if (this.last.distanceToSquared(eye) < 30 * 30 && Number.isFinite(this.last.x)) return;
+    // (and again when the reach of full detail changed)
+    if (this.last.distanceToSquared(eye) < 30 * 30 && Number.isFinite(this.last.x) && this.version === forestDetail.version) return;
+    this.version = forestDetail.version;
     this.last.copy(eye);
     const r2 = forestDetail.nearFt * forestDetail.nearFt;
     this.sets.forEach((set, si) => {

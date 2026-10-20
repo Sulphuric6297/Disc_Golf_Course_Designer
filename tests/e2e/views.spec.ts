@@ -1,6 +1,6 @@
 import { test as plain, expect as plainExpect } from "@playwright/test";
 import { test, expect, addHole, blankCourse, course, drag, editorState, handleCenter, screenOf } from "./fixtures";
-import { autoFlight, FLYOVER_DEFAULTS, keyBetween, keyFlight, keysFromFlight } from "../../src/lib/flight";
+import { autoFlight, flightClock, FLYOVER_DEFAULTS, keyBetween, keyFlight, keysFromFlight } from "../../src/lib/flight";
 import { createEmptyCourse } from "../../src/lib/course";
 import { drawOverlay } from "../../src/viewport/flyTitle";
 import { detailArea } from "../../src/lib/forest";
@@ -131,6 +131,50 @@ test("from a tee, the hole's ground is painted sharper (over the whole site's pa
   await page.evaluate(() => (window as any).__dgView.setPaused(false));
   await page.getByTestId("hud-close").click();
   await expect.poll(sharp).toBeNull();
+});
+
+plain("a flight's motion slows smoothly to a stop at its end (and by itself gets going gently): no jolt anywhere", () => {
+  for (const [dur, easeIn] of [[8, true], [6, false], [2, true]] as const) {
+    const { play, at } = flightClock(dur, easeIn);
+    plainExpect(play).toBeGreaterThan(dur);
+    plainExpect(at(0)).toBe(0);
+    plainExpect(at(play)).toBeCloseTo(dur, 9);
+    const dt = 0.01;
+    const speed = (t: number) => (at(t + dt) - at(t - dt)) / (2 * dt);
+    // Stopped at the end, flying at full speed before the slowing, and never jumping
+    plainExpect(speed(play - dt)).toBeLessThan(0.01);
+    plainExpect(speed(play - Math.min(2, dur / 3) * 2 - 0.05)).toBeCloseTo(1, 2);
+    let last = speed(dt);
+    for (let t = 2 * dt; t < play - dt; t += dt) {
+      const v = speed(t);
+      plainExpect(v).toBeGreaterThanOrEqual(-1e-9);
+      plainExpect(Math.abs(v - last)).toBeLessThan(0.04);
+      last = v;
+    }
+    // By itself it starts from rest; through keyframes, straight away at their speed
+    if (easeIn) plainExpect(speed(dt)).toBeLessThan(0.05);
+    else plainExpect(at(1)).toBeCloseTo(1, 9);
+  }
+});
+
+test("a video is drawn farther and finer than the screen (thinner haze; with a graphics card, trees in full detail farther out), and the screen's back after", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
+  const info = () => page.evaluate(() => (window as any).__dgView.qualityInfo());
+  const screen = await info();
+  const during = await page.evaluate(() => {
+    const v = (window as any).__dgView;
+    const frames = v.flightFrames(64, 36);
+    const q = v.qualityInfo();
+    frames.dispose();
+    return q;
+  });
+  expect(during.video).toBe(true);
+  expect(during.haze).toBeLessThan(screen.haze);
+  // (drawn in software here, where only the haze changes)
+  if (!during.software) expect(during.nearFt).toBeGreaterThan(screen.nearFt * 1.5);
+  const after = await info();
+  expect([after.video, after.nearFt, after.haze, after.shadow]).toEqual([false, screen.nearFt, screen.haze, screen.shadow]);
 });
 
 plain("where a hole is painted sharper: round its line on the terrain's grid, at most 6 px a foot, none when no sharper than the whole site", () => {
