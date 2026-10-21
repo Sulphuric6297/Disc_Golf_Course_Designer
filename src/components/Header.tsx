@@ -5,6 +5,7 @@ import { STEPS } from "./SidePanel";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { deleteRecent, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../state/files";
 import type { PlanMeta } from "../lib/storage";
+import { AccountMenu } from "../auth/AccountMenu";
 
 const Logo = () => (
   <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden>
@@ -97,6 +98,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
         </div>
         <button onClick={onGoTo} className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800" aria-label="Go to" title="Go to (Ctrl+K)" data-testid="goto-button"><Search size={18} /></button>
         <button onClick={onHelp} className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800" aria-label="Keyboard shortcuts and help" title="Shortcuts and help (?)"><HelpCircle size={18} /></button>
+        <AccountMenu />
       </div>
     </header>
   );

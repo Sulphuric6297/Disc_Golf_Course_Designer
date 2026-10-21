@@ -7,8 +7,9 @@ import { readFileSync } from "fs";
 
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" });
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
-// Addresses that are fine to publish: no-reply ones and example domains
-const OK = /noreply|no-reply|@example\.(com|org|net)$/i;
+// Addresses that are fine to publish: no-reply ones and example domains. (user@ an IP address
+// is a login in a local database's address, not an email.)
+const OK = /noreply|no-reply|@example\.(com|org|net)$|@\d+\.\d+\.\d+\.\d+$/i;
 const problems = [];
 const emails = (text, where) => {
   for (const m of text.match(EMAIL) ?? []) if (!OK.test(m)) problems.push(`${where}: an email address (${m.replace(/^(.).*@/, "$1…@")})`);
