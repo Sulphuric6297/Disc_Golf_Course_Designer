@@ -118,3 +118,25 @@ test("signed out: no courses", async () => {
     assert.equal((await c.get("/api/people")).status, 401);
   } finally { await w.close(); }
 });
+
+test("the course list's picture: editors send it, members see it, as an image", async () => {
+  const w = await world();
+  try {
+    const { c: admin } = await adminSignedIn(w);
+    const { c: pat } = await memberSignedIn(w, admin, "pat");
+    const { c: sam } = await memberSignedIn(w, admin, "sam");
+    const { body: made } = await admin.post("/api/courses", { doc: doc() });
+    const url = `/api/courses/${made.id}/thumbnail`;
+    assert.equal((await admin.get(url)).status, 404);
+    assert.equal((await admin.req("PUT", url, { data: "data:text/html;base64,PHNjcmlwdD4=" })).status, 400);
+    assert.equal((await admin.req("PUT", url, { data: PNG })).status, 200);
+    assert.ok((await admin.get("/api/courses")).body[0].thumbAt > 0);
+    await admin.post(`/api/courses/${made.id}/members`, { username: "pat", role: "viewer" });
+    const res = await w.app.inject({ method: "GET", url, headers: { cookie: [...pat.cookies].map(([k, v]) => `${k}=${v}`).join("; ") } });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.headers["content-type"], "image/png");
+    assert.match(String(res.headers["cache-control"]), /^private/);
+    assert.equal((await pat.req("PUT", url, { data: PNG })).status, 403);
+    assert.equal((await sam.req("GET", url)).status, 404);
+  } finally { await w.close(); }
+});

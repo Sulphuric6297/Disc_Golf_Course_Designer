@@ -140,8 +140,12 @@ test("courses: a home page, shared as viewer (look only, or copy) then editor, a
   const card = admin.getByTestId("my-courses").getByTestId("course-card");
   await expect(card).toHaveCount(1);
   await expect(card).toContainText("1 hole · Par 4");
-  await expect(card.locator("svg polyline")).toHaveCount(1);
-  await admin.getByTestId("back-to-course").click();
+  // (its printed map, once made: the holes' lines until then)
+  await expect(card.locator("img")).toHaveJSProperty("complete", true, { timeout: 30_000 });
+  await admin.reload();
+  await expect(admin.getByTestId("my-courses").getByTestId("course-card").locator("img")).toBeVisible();
+  expect(await admin.getByTestId("my-courses").getByTestId("course-card").locator("img").evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(640);
+  await admin.getByTestId("my-courses").getByTestId("course-card").click();
 
   // Shared with Pat to look at
   await admin.getByTestId("share-button").click();

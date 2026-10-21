@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LayoutGrid, LogOut, Share2, UserRound, Users } from "lucide-react";
 import { SERVER, useAuth } from "./api";
-import { keepMine, reloadTheirs, saveNow, useServerCourse } from "./courses";
+import { keepMine, reloadTheirs, saveNow, thumbnailNow, useServerCourse } from "./courses";
 
 const signOut = async () => { await saveNow(); await useAuth.getState().signOut(); };
 
@@ -55,7 +55,7 @@ export function AccountMenu({ home = false }: { home?: boolean }) {
     <>
     {!home && <CourseStatus />}
     {!home && (
-      <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800" onClick={() => useAuth.getState().showHome(true)} data-testid="courses-button">
+      <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800" onClick={() => { useAuth.getState().showHome(true); void saveNow().then(thumbnailNow).then(() => useAuth.getState().bump()); }} data-testid="courses-button">
         <LayoutGrid size={15} /> Courses
       </button>
     )}
@@ -88,7 +88,7 @@ export function accountActions() {
   const user = session?.user;
   if (!SERVER || !user) return [];
   return [
-    { label: "Courses", icon: <LayoutGrid size={19} />, run: () => useAuth.getState().showHome(true) },
+    { label: "Courses", icon: <LayoutGrid size={19} />, run: () => { useAuth.getState().showHome(true); void saveNow().then(thumbnailNow).then(() => useAuth.getState().bump()); } },
     { label: "Share", icon: <Share2 size={19} />, run: () => open("share") },
     { label: "Account", icon: <UserRound size={19} />, run: () => open("account") },
     ...(user.isAdmin ? [{ label: "People", icon: <Users size={19} />, run: () => open("people") }] : []),

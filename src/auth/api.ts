@@ -32,6 +32,9 @@ export const useAuth = create<{
   /** The course list (the first page once signed in), over the app. */
   home: boolean;
   showHome: (on: boolean) => void;
+  /** Goes up when the course list should be read again (a course's picture just changed). */
+  listVersion: number;
+  bump: () => void;
   load: () => Promise<void>;
   signOut: () => Promise<void>;
   open: (d: Dialog) => void;
@@ -40,6 +43,8 @@ export const useAuth = create<{
   dialog: null,
   home: true,
   showHome: home => set({ home, dialog: null }),
+  listVersion: 0,
+  bump: () => set({ listVersion: get().listVersion + 1 }),
   load: async () => set({ session: await api<Session>("GET", "session") }),
   signOut: async () => {
     await api("POST", "logout").catch(() => {});

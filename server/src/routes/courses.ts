@@ -48,12 +48,13 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
       select c.id, c.name, c.holes, c.version, c.updated_at, c.summary, m.role, u.display_name as updated_by,
         (select o.display_name from course_members om join users o on o.id = om.user_id
           where om.course_id = c.id and om.role = 'owner' order by om.added_at limit 1) as owner,
-        (select count(*)::int from course_members x where x.course_id = c.id) as members
+        (select count(*)::int from course_members x where x.course_id = c.id) as members,
+        (select t.updated_at from course_thumbnails t where t.course_id = c.id) as thumb_at
       from course_members m join courses c on c.id = m.course_id left join users u on u.id = c.updated_by
       where m.user_id = ${a.user.id} order by c.updated_at desc`;
     return rows.map(r => ({
       id: r.id, name: r.name, holes: r.holes, version: r.version, updatedAt: r.updated_at, role: r.role, updatedBy: r.updated_by,
-      owner: r.owner, members: r.members, summary: r.summary
+      owner: r.owner, members: r.members, summary: r.summary, thumbAt: r.thumb_at ? r.thumb_at.getTime() : null
     }));
   });
 
@@ -74,8 +75,12 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
   app.get<Id>("/api/courses/:id", async req => {
     const { id } = parse(ids, req.params);
     const { role: r } = await role(req, id, "viewer");
-    const [c] = await sql`select c.doc, c.version, exists (select 1 from course_backgrounds b where b.course_id = c.id) as has_background from courses c where c.id = ${id}`;
-    return { id, version: c.version, role: r, doc: c.doc, hasBackground: c.has_background };
+    const [c] = await sql`
+      select c.doc, c.version,
+        exists (select 1 from course_backgrounds b where b.course_id = c.id) as has_background,
+        exists (select 1 from course_thumbnails t where t.course_id = c.id) as has_thumbnail
+      from courses c where c.id = ${id}`;
+    return { id, version: c.version, role: r, doc: c.doc, hasBackground: c.has_background, hasThumbnail: c.has_thumbnail };
   });
 
   app.put<Id>("/api/courses/:id", BIG, async req => {
@@ -115,6 +120,25 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
     const { data } = parse(z.object({ data: z.string().max(60 << 20).regex(IMAGE, "Not an image").nullable() }), req.body);
     if (data === null) await sql`delete from course_backgrounds where course_id = ${id}`;
     else await sql`insert into course_backgrounds (course_id, data) values (${id}, ${data}) on conflict (course_id) do update set data = excluded.data, updated_at = now()`;
+    return { ok: true };
+  });
+
+  // --- The list's picture of the course (its printed map, small)
+  app.get<Id>("/api/courses/:id/thumbnail", async (req, reply) => {
+    const { id } = parse(ids, req.params);
+    await role(req, id, "viewer");
+    const [t] = await sql`select data from course_thumbnails where course_id = ${id}`;
+    const m = t && /^data:(image\/(?:png|jpeg|webp));base64,(.*)$/.exec(t.data);
+    if (!m) throw new ApiError(404, "Not found");
+    // (the list asks with ?v=<when it changed>: the same address is always the same picture)
+    return reply.header("cache-control", "private, max-age=31536000, immutable").type(m[1]).send(Buffer.from(m[2], "base64"));
+  });
+
+  app.put<Id>("/api/courses/:id/thumbnail", { bodyLimit: 4 << 20 }, async req => {
+    const { id } = parse(ids, req.params);
+    await role(req, id, "editor");
+    const { data } = parse(z.object({ data: z.string().max(3 << 20).regex(IMAGE, "Not an image") }), req.body);
+    await sql`insert into course_thumbnails (course_id, data) values (${id}, ${data}) on conflict (course_id) do update set data = excluded.data, updated_at = now()`;
     return { ok: true };
   });
 

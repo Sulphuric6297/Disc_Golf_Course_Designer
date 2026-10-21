@@ -5,6 +5,10 @@ import { create } from "zustand";
 import { generateId } from "../constants";
 import { createEmptyCourse, normalizeCourse } from "../lib/course";
 import { courseStats, courseTotals, playsOf } from "../lib/holeStats";
+import { canopyFor } from "../lib/forest";
+import { paintedForPrint, renderPoster } from "../lib/mapSvg";
+import { canvasBlob, svgToCanvas } from "../lib/raster";
+import { reliefOf } from "../components/useRelief";
 import { safeDoc } from "../lib/safeDoc";
 import type { PlanMeta } from "../lib/storage";
 import { getDoc, useCourse, useEditor } from "../state/course";
@@ -15,7 +19,7 @@ import { api, ApiFail, useAuth } from "./api";
 
 export type Role = "owner" | "editor" | "viewer";
 export interface Summary { par: number; length: number; units: "ft" | "m"; canvas: { width: number; height: number }; lines: [number, number][][] }
-export type ServerPlan = PlanMeta & { role: Role; updatedBy: string | null; owner: string | null; members: number; summary: Partial<Summary> };
+export type ServerPlan = PlanMeta & { role: Role; updatedBy: string | null; owner: string | null; members: number; summary: Partial<Summary>; thumbAt: number | null };
 
 /** What the course list shows of a course: totals, and each hole's throw line for a small map. */
 const summaryOf = (doc: CourseDoc): Summary => {
@@ -72,11 +76,47 @@ async function save() {
       sentBackground = doc.background;
     }
     set({ status: getDoc() === doc ? "saved" : "unsaved" });
+    thumbnailSoon();
   } catch (e) {
     if (e instanceof ApiFail && e.status === 409) set({ status: "conflict", conflict: e.message });
     else { set({ status: "error" }); console.warn("Save failed", e); }
   }
 }
+
+// --- The course list's picture: the printed map, small, made after a save (at most every two
+// minutes while changing it, and when going back to the list)
+
+const THUMB_PX = 640;
+const THUMB_EVERY = 2 * 60_000;
+let thumbFor: CourseDoc | null = null;
+let thumbAt = 0;
+let thumbing: Promise<void> | null = null;
+
+async function makeThumbnail() {
+  const doc = getDoc();
+  const id = state().id;
+  if (!id || doc === thumbFor || !canSave() || !doc.holes.length) return;
+  thumbFor = doc;
+  thumbAt = Date.now();
+  try {
+    const art = { ...reliefOf(doc), canopy: await canopyFor(doc) };
+    const p = await paintedForPrint(page => (72 * THUMB_PX) / page.width, () => renderPoster(doc, art));
+    const canvas = await svgToCanvas(p.svg, p.width, p.height, (72 * THUMB_PX) / p.width);
+    const blob = await canvasBlob(canvas, "image/webp", 0.8);
+    const data = await new Promise<string>((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = bad; r.readAsDataURL(blob); });
+    if (state().id === id) await api("PUT", `courses/${id}/thumbnail`, { data });
+  } catch (e) {
+    console.warn("Couldn't make the course's picture", e);
+  }
+}
+
+/** The picture now (on the way back to the list), or soon after a save. */
+export const thumbnailNow = () => (thumbing ??= makeThumbnail().finally(() => { thumbing = null; }));
+const thumbnailSoon = () => {
+  if (Date.now() - thumbAt < THUMB_EVERY || thumbing) return;
+  const idle = (window as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => void }).requestIdleCallback;
+  (idle ? (f: () => void) => idle(f, { timeout: 10_000 }) : (f: () => void) => setTimeout(f, 3000))(() => void thumbnailNow());
+};
 
 /** Saves now (waiting for one already going). */
 export async function saveNow() {
@@ -105,15 +145,19 @@ export const startServerAutosave = () => {
 export async function openServerCourse(id: string, quiet = false) {
   if (state().id && state().id !== id) await saveNow();
   try {
-    const c = await api<{ id: string; version: number; role: Role; doc: CourseDoc; hasBackground: boolean }>("GET", `courses/${id}`);
+    const c = await api<{ id: string; version: number; role: Role; doc: CourseDoc; hasBackground: boolean; hasThumbnail: boolean }>("GET", `courses/${id}`);
     const background = c.hasBackground ? (await api<{ data: string | null }>("GET", `courses/${id}/background`)).data : null;
     const doc = normalizeCourse(safeDoc({ ...c.doc, background }));
     set({ id, version: c.version, role: c.role, status: "saved", conflict: "" });
+    thumbFor = null;
+    thumbAt = 0;
     sentBackground = doc.background;
     opened = doc;
     useCourse.setState({ readOnly: c.role === "viewer" });
     show(doc);
     remember(id);
+    // (a course from before the list had pictures: one now)
+    if (!c.hasThumbnail && c.role !== "viewer") thumbnailSoon();
     return true;
   } catch (e) {
     if (!quiet) toast(e instanceof Error ? e.message : "That course couldn't be opened.", "error");

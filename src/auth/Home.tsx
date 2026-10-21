@@ -52,6 +52,14 @@ const ROLE = {
   viewer: { label: "View only", cls: "bg-sky-500/15 text-sky-200", icon: Eye }
 };
 
+/** The course's printed map, or its holes' lines until it has one. */
+const Picture = ({ c }: { c: ServerPlan }) =>
+  c.thumbAt ? (
+    <div className="aspect-[16/10] bg-zinc-800 overflow-hidden">
+      <img src={`./api/courses/${c.id}/thumbnail?v=${c.thumbAt}`} alt="" loading="lazy" className="w-full h-full object-cover" />
+    </div>
+  ) : <MiniMap c={c} />;
+
 function Card({ c, onOpen, onRemove }: { c: ServerPlan; onOpen: () => void; onRemove: () => void }) {
   const r = ROLE[c.role];
   const s = c.summary;
@@ -59,7 +67,7 @@ function Card({ c, onOpen, onRemove }: { c: ServerPlan; onOpen: () => void; onRe
   return (
     <li className="group relative bg-zinc-900 border border-zinc-800 hover:border-zinc-600 rounded-2xl overflow-hidden transition-colors" data-testid="course-card">
       <button className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-2xl" onClick={onOpen}>
-        <MiniMap c={c} />
+        <Picture c={c} />
         <div className="p-3.5">
           <div className="flex items-start gap-2">
             <h3 className="flex-1 min-w-0 font-semibold text-zinc-50 truncate">{c.name || "Untitled course"}</h3>
@@ -89,8 +97,9 @@ export function Home() {
   const openId = useServerCourse(s => s.id);
   const openName = useCourse(s => s.doc.name);
 
+  const listVersion = useAuth(s => s.listVersion);
   const refresh = () => listServerCourses().then(setList, () => setList([]));
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => { void refresh(); }, [listVersion]);
 
   const shown = useMemo(() => (list ?? []).filter(c => !q.trim() || `${c.name} ${c.owner ?? ""}`.toLowerCase().includes(q.trim().toLowerCase())), [list, q]);
   const mine = shown.filter(c => c.role === "owner");
