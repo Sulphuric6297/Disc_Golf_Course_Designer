@@ -43,6 +43,10 @@ test("bending the throw line: pull the middle dot to add a dogleg, double-click 
   await page.keyboard.press("Escape");
   await page.evaluate(id => (window as any).__dgActions.select(id), hole.id);
   const mid = await handleCenter(page, "mid");
+  // (the hole's distance label clear of the dot)
+  const label = (await page.getByTestId("hole-distance").boundingBox())!;
+  expect(label).not.toBeNull();
+  expect(mid.x > label.x - 8 && mid.x < label.x + label.width + 8 && mid.y > label.y - 8 && mid.y < label.y + label.height + 8).toBe(false);
   const to = await screenOf(page, 600, 550);
   await drag(page, mid, to);
   await expect.poll(async () => (await course(page)).holes[0].doglegs.length).toBe(1);

@@ -7,7 +7,7 @@ import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
 import { courseStats, holeStats } from "../lib/holeStats";
-import { fmtDist, fmtElev, toUnits } from "../lib/units";
+import { fmtDist, fmtElev } from "../lib/units";
 import { addHoleOb, deleteSelection, duplicateSelection, editWalks, select, setTeeLevel, shareBasket } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
 import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface, TreeKind } from "../types";
@@ -125,7 +125,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
         <Section title="Elevation profile">
           <ElevationProfile doc={doc} line={s.line} />
           <div className="text-[11px] text-zinc-400 mt-1">
-            Tee {Math.round(toUnits(s.teeElevation, u))} {u} · basket {Math.round(toUnits(s.basketElevation, u))} {u} · steepest {Math.round(s.maxSlope)}%
+            Tee {fmtDist(s.teeElevation, u)} · basket {fmtDist(s.basketElevation, u)} · steepest {Math.round(s.maxSlope)}%
           </div>
         </Section>
       )}

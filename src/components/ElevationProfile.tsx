@@ -7,7 +7,7 @@ export function ElevationProfile({ doc, line, height = 90 }: { doc: CourseDoc; l
   if (line.length < 2) return null;
   const prof = profileAlong(doc.terrainHeights, doc.gridSize, line, 80);
   const base = doc.site.baseElevationFt;
-  const W = 300, H = height, pad = { l: 34, r: 8, t: 10, b: 18 };
+  const W = 300, H = height, pad = { l: 48, r: 8, t: 10, b: 18 };
   const hs = prof.map(p => p.h);
   const lo = Math.min(...hs), hi = Math.max(...hs);
   const span = Math.max(10, hi - lo);
@@ -19,7 +19,7 @@ export function ElevationProfile({ doc, line, height = 90 }: { doc: CourseDoc; l
   const path = prof.map((p, i) => `${i ? "L" : "M"}${X(p.d).toFixed(1)},${Y(p.h).toFixed(1)}`).join(" ");
   const fill = `${path} L${X(total)},${H - pad.b} L${X(0)},${H - pad.b} Z`;
   const u = doc.units;
-  const lab = (h: number) => `${Math.round(toUnits(h + base, u))}`;
+  const lab = (h: number) => fmtDist(h + base, u);
   const dh = prof[prof.length - 1].h - prof[0].h;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" data-testid="elevation-profile" role="img" aria-label={`Elevation profile: ${dh >= 0 ? "up" : "down"} ${Math.abs(Math.round(toUnits(dh, u)))} ${u}`}>

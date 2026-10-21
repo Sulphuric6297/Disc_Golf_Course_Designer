@@ -74,6 +74,8 @@ test("a hole up the hill: elevation change and par on the real terrain", async (
   await row.click();
   await expect(page.getByTestId("hole-stats")).toContainText("uphill");
   await expect(page.getByTestId("elevation-profile")).toBeVisible();
+  // (its heights with their unit: bare four-figure heights read as years)
+  await expect(page.getByTestId("elevation-profile").locator("text").first()).toHaveText(/^-?[\d,]+ ft$/);
   // The hover readout gives the real elevation above sea level (the mouse moved again while a busy
   // page catches up)
   let nudge = 0;
