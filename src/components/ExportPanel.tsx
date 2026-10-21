@@ -256,7 +256,7 @@ export function ExportPanel() {
             {complete.map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}{h.name ? ` · ${h.name}` : ""}</option>)}
           </select>
         </Field>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
           <Field label="Size">
             <select aria-label="Video size" data-testid="video-resolution" className={`${selectCls} w-full`} value={video.resolution} onChange={e => video.set({ resolution: e.target.value as VideoResolution })}>
               {(Object.keys(VIDEO_SIZES) as VideoResolution[]).map(k => <option key={k} value={k}>{VIDEO_SIZES[k].label}</option>)}
