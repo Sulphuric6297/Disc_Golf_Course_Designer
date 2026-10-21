@@ -25,7 +25,7 @@ function MiniMap({ c }: { c: ServerPlan }) {
   const lines = s.lines ?? [];
   const pts = lines.flat();
   if (!pts.length) {
-    return <div className="aspect-[16/10] bg-gradient-to-br from-emerald-950 to-zinc-900 flex items-center justify-center text-zinc-600 text-sm">No holes yet</div>;
+    return <div className="aspect-[16/10] bg-gradient-to-br from-emerald-950 to-zinc-900 flex items-center justify-center text-zinc-600 text-sm">{c.holes ? "" : "No holes yet"}</div>;
   }
   const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
   const pad = Math.max(40, (Math.max(...xs) - Math.min(...xs) + Math.max(...ys) - Math.min(...ys)) * 0.08);
