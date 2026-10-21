@@ -6,7 +6,7 @@ import { FOCUS } from "./ui";
 import { CourseView } from "../viewport/CourseView";
 import type { ViewDoc, ViewInfo } from "../viewport/types";
 import { changeDoc, useCourse, useEditor, updateItem, updateHole, useCourse as courseStore } from "../state/course";
-import { addDrawn, addHole, boxSelect, cutStretch, moveGroup, placeAt, select } from "../state/actions";
+import { addDrawn, addPatch, addHole, boxSelect, cutStretch, moveGroup, placeAt, select } from "../state/actions";
 import { courseIssues, courseStats, openIssues } from "../lib/holeStats";
 import { contoursOf, hillshadeCanvas } from "../lib/relief";
 import { terrainStats, heightAt } from "../lib/terrainGrid";
@@ -48,8 +48,11 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       onPlace: (mode, p) => placeAt(mode, p),
       onHole: (tee, basket) => addHole(tee, basket),
       onDrawn: (kind, pts, opts) => {
-        addDrawn(kind, pts, opts);
-        useEditor.getState().set({ tool: "select" });
+        // (drawn as a patch of a wood: no area of its own)
+        const { patchFor } = useEditor.getState();
+        if (patchFor && kind === "area") addPatch(patchFor, pts);
+        else addDrawn(kind, pts, opts);
+        useEditor.getState().set({ tool: "select", patchFor: null });
       },
       onChange: (id, patch) => {
         const next = { ...patch } as Record<string, unknown>;
@@ -142,6 +145,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     view?.setTool({ mode: ed.tool, areaKind: ed.areaKind, lineKind: ed.lineKind, structureKind: ed.structureKind, shape: ed.drawShape, dragSelect: ed.dragSelect }, ed.teeLevel);
   }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.structureKind, ed.drawShape, ed.teeLevel, ed.dragSelect]);
   useEffect(() => { view?.setPose(ed.view === "2d" ? "top" : "tilt"); }, [view, ed.view]);
+  // (a patch is drawn with the Area tool; leaving the tool drops the patch)
+  useEffect(() => { if (ed.tool !== "draw-area" && ed.patchFor) useEditor.getState().set({ patchFor: null }); }, [ed.tool, ed.patchFor]);
   useEffect(() => { view?.setGrass(ed.grass, ed.wind); }, [view, ed.grass, ed.wind]);
   // Covered by the Design step's page: the map view rests
   useEffect(() => { view?.setPaused(ed.step === "design" && !ed.teeView); }, [view, ed.step, ed.teeView]);

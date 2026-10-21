@@ -180,10 +180,7 @@ export const placeAt = (mode: ToolMode, p: P) => {
 export const addDrawn = (kind: "area" | "line" | "structure", points: P[], opts: { straight?: boolean } = {}) => {
   const ed = editor();
   const made = kind === "area" ? createArea(ed.areaKind, points) : kind === "structure" ? createStructure(ed.structureKind, points) : createLine(ed.lineKind, points);
-  // (a woods area on a course with measured trees: the trees the tool was set to)
-  const woods = made.type === "area" && made.kind === "woods" && getDoc().lidar?.trees.length && ed.woodsTrees !== "measured"
-    ? { trees: ed.woodsTrees, ...(ed.woodsTrees === "both" ? { fill: ed.woodsFill } : {}) } : {};
-  const item = { ...(opts.straight && made.type !== "structure" ? { ...made, straight: true } : made), ...woods };
+  const item = opts.straight && made.type !== "structure" ? { ...made, straight: true } : made;
   changeDoc(d => ({ items: [...d.items, item] }));
   select(item.id);
 };
@@ -525,4 +522,12 @@ export const cutStretch = (id: string, a: number, b: number) => {
   const parts = withoutStretch(l, a, b);
   changeDoc(d => ({ items: d.items.flatMap(i => (i.id === id ? parts : [i])) }));
   select(parts[0]?.id ?? null);
+};
+
+/** An outline drawn as a patch of a woods area (trees: custom): drawn trees fill it in, as
+ * thickly as the editor's `patchFill`. One undo step; the wood stays selected. */
+export const addPatch = (areaId: string, points: P[]) => {
+  const fill = editor().patchFill;
+  changeDoc(d => ({ items: d.items.map(i => (i.id === areaId && i.type === "area" ? { ...i, trees: "custom" as const, patches: [...(i.patches ?? []), { points, fill }] } : i)) }));
+  select(areaId);
 };

@@ -267,16 +267,38 @@ const holeChip = (on: boolean) => `px-2 py-1 touch:py-2 rounded-md text-xs font-
 /** A woods area's trees in 3D: measured from the air, drawn, or none (with measured trees only). */
 function WoodsTrees({ item }: { item: AreaItem }) {
   const measured = useCourse(s => !!s.doc.lidar?.trees.length);
+  const patchFill = useEditor(e => e.patchFill);
+  const drawing = useEditor(e => e.patchFor === item.id);
   if (!measured) return null;
+  const mode = item.trees ?? "measured";
+  const patches = item.patches ?? [];
+  const setPatches = (next: { points: P[]; fill: number }[], history = true) => updateItem(item.id, { patches: next.length ? next : undefined } as Partial<CourseItem>, history);
+  // A patch: drawn over the wood with the Area tool; it lands in this wood's patches
+  const draw = () => useEditor.getState().set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", patchFor: item.id });
   return (
     <>
-      <Field label="Trees" hint={item.trees === "both" ? "The measured trees, with drawn ones filling in where the survey saw none." : item.trees === "none" ? "No trees in here." : item.trees === "drawn" ? "The app's own trees only." : "The measured trees, cleared where the holes play."}>
-        <Segmented label="Trees" value={item.trees ?? "measured"} onChange={v => updateItem(item.id, { trees: v === "measured" ? undefined : v } as Partial<CourseItem>)}
-          options={[{ value: "measured", label: "Measured" }, { value: "both", label: "Measured + drawn", title: "Drawn trees fill in between the measured ones" }, { value: "drawn", label: "Drawn" }, { value: "none", label: "None" }]} />
+      <Field label="Trees" hint={mode === "custom" ? "The measured trees, plus drawn ones filling in the patches you draw." : mode === "none" ? "No trees in here." : mode === "drawn" ? "The app's own trees only." : "The measured trees, cleared where the holes play."}>
+        <Segmented label="Trees" value={mode} onChange={v => updateItem(item.id, { trees: v === "measured" ? undefined : v } as Partial<CourseItem>)}
+          options={[{ value: "measured", label: "Measured" }, { value: "custom", label: "Custom" }, { value: "drawn", label: "Drawn" }, { value: "none", label: "None" }]} />
       </Field>
-      {item.trees === "both" && (
-        <Slider label="Drawn trees filling in" min={0.1} max={1} step={0.1} value={item.fill ?? 0.5} format={v => `${Math.round(v * 100)}%`}
-          onChange={v => updateItem(item.id, { fill: v } as Partial<CourseItem>, false)} onDone={() => useCourse.getState().commit()} />
+      {mode === "custom" && (
+        <div className="mb-3" data-testid="woods-patches">
+          {patches.map((p, k) => (
+            <div key={k} className="flex items-center gap-2 mb-1" data-testid="woods-patch">
+              <span className="text-xs text-zinc-300 w-14 shrink-0">Patch {k + 1}</span>
+              <input type="range" aria-label={`Patch ${k + 1} density`} min={0.1} max={1} step={0.1} value={p.fill} className="flex-1 accent-orange-500"
+                onChange={e => setPatches(patches.map((q, m) => (m === k ? { ...q, fill: parseFloat(e.target.value) } : q)), false)} onPointerUp={() => useCourse.getState().commit()} onKeyUp={() => useCourse.getState().commit()} />
+              <span className="text-xs text-zinc-400 tabular-nums w-9 text-right">{Math.round(p.fill * 100)}%</span>
+              <button className="p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-zinc-800" aria-label={`Remove patch ${k + 1}`} title="Remove" onClick={() => setPatches(patches.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
+            </div>
+          ))}
+          {!patches.length && <div className="text-[11px] text-zinc-500 mb-1">No patches yet.</div>}
+          <Slider label="Density of the next patch" min={0.1} max={1} step={0.1} value={patchFill} format={v => `${Math.round(v * 100)}%`} onChange={v => useEditor.getState().set({ patchFill: v })} />
+          {drawing
+            ? <div className="text-xs text-orange-300">Draw the patch over the wood with the mouse held down; let go to finish (Esc cancels).</div>
+            : <Button small onClick={draw} testid="woods-draw-patch">Draw a patch</Button>}
+          <div className="text-[11px] text-zinc-500 mt-1">Drawn trees fill each patch in between the measured ones, as thickly as it says. The rest of the wood stays as it is.</div>
+        </div>
       )}
     </>
   );

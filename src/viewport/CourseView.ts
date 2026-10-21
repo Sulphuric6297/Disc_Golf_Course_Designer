@@ -2177,23 +2177,37 @@ export class CourseView {
       // Woods: trees standing in it (shadows and all)
       // (its own drawn trees: without measured ones, or when it asks for them, or filling in
       // between the measured ones as thickly as it asks; none when it says so)
-      const filling = measured && a.kind === "woods" && a.trees === "both";
-      if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn" || filling)) {
+      if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn")) {
         const here = clearings.near(boundsOf(a.points));
-        const fill = filling ? Math.min(1, Math.max(0.1, a.fill ?? 0.5)) : 1;
-        const standing = filling ? this.lidarState?.stand ?? [] : [];
-        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key, filling ? [fill, this.lidarKey] : 0]), () => {
+        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key]), () => {
           const land = landscapeOf(st);
           this.plantings++;
-          // (filling in: never under a measured tree's crown)
-          const box = boundsOf(a.points), trees = this.doc?.course.lidar?.trees ?? [];
-          const near = standing.map(k => trees[k]).filter(t => t && t[0] >= box.minX - 40 && t[0] <= box.maxX + 40 && t[1] >= box.minY - 40 && t[1] <= box.maxY + 40);
-          const keepOut = filling ? (p: P, reach: number) => here.test(p, reach) || near.some(t => Math.hypot(t[0] - p.x, t[1] - p.y) < t[3] * 0.8 + 4) : here.test;
-          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, keepOut, 22 / Math.sqrt(fill));
+          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, here.test);
           woods.traverse(o => { o.userData.itemId = a.id; });
           this.shadowsDirty = true;
           return woods;
         }, this.itemsGroup, true);
+      }
+      // Custom: the measured trees stand as usual, and each patch drawn inside is filled in with
+      // drawn trees as thickly as it says, never under a measured crown; outlined while picked
+      if (a.kind === "woods" && a.trees === "custom" && measured && a.patches?.length) {
+        const standing = this.lidarState?.stand ?? [], trees = this.doc?.course.lidar?.trees ?? [];
+        a.patches.forEach((patch, i) => {
+          const here = clearings.near(boundsOf(patch.points));
+          const fill = Math.min(1, Math.max(0.1, patch.fill));
+          put(`woods:${a.id}:patch:${i}`, JSON.stringify([patch.points, fill, hv, st.trees, st.landscape, here.key, this.lidarKey]), () => {
+            const land = landscapeOf(st);
+            this.plantings++;
+            const box = boundsOf(patch.points);
+            const near = standing.map(k => trees[k]).filter(t => t && t[0] >= box.minX - 40 && t[0] <= box.maxX + 40 && t[1] >= box.minY - 40 && t[1] <= box.maxY + 40);
+            const keepOut = (p: P, reach: number) => here.test(p, reach) || near.some(t => Math.hypot(t[0] - p.x, t[1] - p.y) < t[3] * 0.8 + 4);
+            const woods = createWoods(patch.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, keepOut, 22 / Math.sqrt(fill));
+            woods.traverse(o => { o.userData.itemId = a.id; });
+            this.shadowsDirty = true;
+            return woods;
+          }, this.itemsGroup, true);
+          if (a.id === this.selectedId) put(`woods:${a.id}:patchline:${i}`, JSON.stringify([patch.points, hv]), () => this.fatLine(this.drapeLine(patch.points, LIFT + 0.05, true), "#86efac", 1.5, { order: 5, dashed: 5 }));
+        });
       }
     });
     // A hand-made flyover of the selected hole: its path over the ground, and where each keyframe looks
