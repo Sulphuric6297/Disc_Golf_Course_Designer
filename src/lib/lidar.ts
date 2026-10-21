@@ -257,7 +257,8 @@ export const standingTrees = (lidar: NonNullable<CourseDoc["lidar"]>, cleared: (
     if (removed.has(k)) cut.push(k);
     // (cleared for play, or where no tree stands: in water, on a road or path, a building or
     // parking; a tree found there is a bridge, a car, a wire or noise in the survey)
-    else if (!kept.has(k) && (cleared(p, t[3] * 0.3) || nowhere(p))) cut.push(k);
+    // (and those smaller than the course wants: bushes, noise)
+    else if (!kept.has(k) && (cleared(p, t[3] * 0.3) || nowhere(p) || t[2] < (lidar.minHeight ?? 0))) cut.push(k);
     else stand.push(k);
   });
   return { stand, cut };

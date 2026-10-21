@@ -2031,7 +2031,8 @@ export class CourseView {
     const nowhereFor = () => {
       const polys: P[][] = [], lines: { pts: P[]; half: number }[] = [];
       for (const it of course.items) {
-        if (it.type === "area" && ["water", "parking", "building"].includes(it.kind)) polys.push(this.shapeOf(it).pts);
+        // (and woods given drawn trees or none: no measured ones there)
+        if (it.type === "area" && (["water", "parking", "building"].includes(it.kind) || (it.kind === "woods" && (it.trees === "drawn" || it.trees === "none")))) polys.push(this.shapeOf(it).pts);
         else if (it.type === "line" && ["road", "path", "walk", "stream"].includes(it.kind)) lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 });
         else if (it.type === "structure") lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 2 });
       }
@@ -2058,7 +2059,7 @@ export class CourseView {
       const forPlay = clearingsFor(true);
       const nowhere = nowhereFor();
       this.clearedAt = (p, reach) => forPlay.test(p, reach) || nowhere.test(p);
-      const fresh = JSON.stringify([lidar.kept, lidar.removed, forPlay.key, nowhere.key]);
+      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.minHeight ?? 0, forPlay.key, nowhere.key]);
       if (this.dragging && this.lidarKey && fresh !== this.lidarKey) this.afterDrag = true;
       else this.lidarKey = fresh;
       const state = this.keep("lidar", lidar.trees, this.lidarKey, () => {
@@ -2133,7 +2134,8 @@ export class CourseView {
         return g;
       });
       // Woods: trees standing in it (shadows and all)
-      if (a.kind === "woods" && !measured) {
+      // (its own drawn trees: without measured ones, or when it asks for them; none when it says so)
+      if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn")) {
         const here = clearings.near(boundsOf(a.points));
         put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key]), () => {
           const land = landscapeOf(st);

@@ -13,7 +13,7 @@ import { refreshOsm } from "../state/osm";
 import { measureLidar } from "../state/lidar";
 import { getView } from "./MapViewport";
 import { structureIcon } from "./Toolbar";
-import { Button, Field, Section, Segmented, Stat, TextInput, Toggle } from "./ui";
+import { Button, Field, Section, Segmented, Slider, Stat, TextInput, Toggle } from "./ui";
 import { DesignPanel } from "./DesignPanel";
 import { ExportPanel } from "./ExportPanel";
 import { useTouch } from "./useLayout";
@@ -99,6 +99,14 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
                 : <Button small onClick={() => void measureLidar()} testid="measure-lidar">{doc.lidar ? "Measure again" : "Measure trees and ground"}</Button>}
               {doc.lidar && ed.lidarBusy === null && <Button small tone="danger" onClick={() => changeDoc(() => ({ lidar: undefined }))} testid="remove-lidar">Remove the trees</Button>}
             </div>
+            {doc.lidar && doc.lidar.trees.length > 0 && (
+              <div className="mt-2" data-testid="lidar-min">
+                <Slider label="Smallest tree kept" min={0} max={60} step={1} value={doc.lidar.minHeight ?? 0}
+                  format={v => (v ? `${fmtElev(v, doc.units).replace(/^[+−-]/, "")} and up` : "All")}
+                  onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, minHeight: v || undefined } } : {}), false)} onDone={() => useCourse.getState().commit()} />
+                <div className="text-[11px] text-zinc-500">{(() => { const m = doc.lidar.minHeight ?? 0; const n = m ? doc.lidar.trees.filter(t => t[2] >= m).length : doc.lidar.trees.length; return `${n.toLocaleString()} of ${doc.lidar.trees.length.toLocaleString()} kept · woods: Measured, Drawn or None in each woods area`; })()}</div>
+              </div>
+            )}
           </div>
         </Section>
       )}

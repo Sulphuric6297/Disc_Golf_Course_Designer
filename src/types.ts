@@ -101,6 +101,9 @@ export interface AreaItem extends BaseItem {
   label?: string;
   /** Out of bounds: water is unless set false; true also draws the red OB edge on the map. */
   ob?: boolean;
+  /** Woods: which trees stand in it in 3D: those measured from the air (the default, when the
+   * course has them), the app's own drawn trees, or none (measured ones inside cut down). */
+  trees?: "measured" | "drawn" | "none";
   /** Brought in from OpenStreetMap, or found on the satellite photo (replaced on re-import). */
   importSource?: "osm" | "photo";
 }
@@ -477,7 +480,7 @@ export interface CourseDoc {
   gridSize: number;
   /** The site's trees measured from the air (LiDAR): those on fairways, tees and baskets' circles
    * are cut down unless `kept` (by index); `removed` ones taken out wherever they stand. */
-  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[] };
+  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[]; minHeight?: number };
   terrainHeights: Record<string, number>;
   /** Painted ground (lib/groundPaint): a material per painted square foot, keyed "i,j". */
   groundPaint: Record<string, number>;

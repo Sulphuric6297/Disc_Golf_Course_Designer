@@ -148,3 +148,10 @@ plain("measured trees never stand where no tree does (in water, on a road): cut,
   plainExpect(stand).toEqual([0, 2]);
   plainExpect(cut).toEqual([1]);
 });
+
+plain("measured trees smaller than the course keeps are cut, unless kept by hand (pure logic)", () => {
+  const lidar = { source: "test", trees: [[10, 10, 12, 6, 0], [100, 100, 40, 12, 0], [200, 200, 8, 4, 0]] as LidarTree[], kept: [2], minHeight: 15 };
+  const { stand, cut } = standingTrees(lidar, () => false);
+  plainExpect(stand).toEqual([1, 2]);
+  plainExpect(cut).toEqual([0]);
+});

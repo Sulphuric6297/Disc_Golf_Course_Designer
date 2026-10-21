@@ -268,6 +268,18 @@ const holeChip = (on: boolean) => `px-2 py-1 touch:py-2 rounded-md text-xs font-
 
 /** Whether water, a creek, a road, a fence or a path is out of bounds (and shown so on the map);
  * a line OB beyond it too, and along all of it or stretches of it. */
+/** A woods area's trees in 3D: measured from the air, drawn, or none (with measured trees only). */
+function WoodsTrees({ item }: { item: AreaItem }) {
+  const measured = useCourse(s => !!s.doc.lidar?.trees.length);
+  if (!measured) return null;
+  return (
+    <Field label="Trees">
+      <Segmented label="Trees" value={item.trees ?? "measured"} onChange={v => updateItem(item.id, { trees: v === "measured" ? undefined : v } as Partial<CourseItem>)}
+        options={[{ value: "measured", label: "Measured" }, { value: "drawn", label: "Drawn" }, { value: "none", label: "None" }]} />
+    </Field>
+  );
+}
+
 function ObChoice({ item }: { item: AreaItem | LineItem }) {
   const doc = useCourse(s => s.doc);
   const units = doc.units;
@@ -425,6 +437,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
           </Field>
           <Field label="Name on the map (optional)"><TextInput label="Area name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
           {item.kind === "water" && <ObChoice item={item} />}
+          {item.kind === "woods" && <WoodsTrees item={item} />}
           {(item.kind === "ob" || item.kind === "hazard") && holePicker}
           {item.kind !== "parking" && item.kind !== "building" && <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />}
           <TurnShape item={item} />

@@ -21,7 +21,7 @@ export function ViewerPanelBody() {
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
   const u = doc.units;
   const picked = stats.find(s => s.holeId === ed.selectedId || s.holeId === ed.activeHoleId) ?? null;
-  const mayCopy = useAllowed("copy"), mayStats = useAllowed("stats");
+  const mayCopy = useAllowed("copy"), mayStats = useAllowed("stats"), may3d = useAllowed("view3d"), mayFly = useAllowed("flyovers");
   const hole = picked ? doc.holes.find(h => h.id === picked.holeId) : null;
   return (
     <div data-testid="viewer-panel">
@@ -41,6 +41,14 @@ export function ViewerPanelBody() {
             <Stat label="Holes" value={holesOf(doc)} />
             <Stat label="Par" value={totals.par} />
             <Stat label="Length" value={fmtDist(totals.length, u)} />
+          </div>
+        </Section>
+      )}
+      {picked && hole && picked.complete && (may3d || mayFly) && (
+        <Section testid="viewer-views">
+          <div className="flex flex-wrap gap-2">
+            {may3d && <button className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 touch:py-2.5 text-sm font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700" onClick={() => useEditor.getState().set({ teeView: picked.holeId, flyover: false })} data-testid="viewer-tee">From the tee</button>}
+            {mayFly && <button className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 touch:py-2.5 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white" onClick={() => useEditor.getState().set({ view: "3d", teeView: picked.holeId, flyover: true })} data-testid="viewer-fly">▶ Fly over</button>}
           </div>
         </Section>
       )}
