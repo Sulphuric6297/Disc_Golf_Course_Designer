@@ -6,9 +6,9 @@ import { openServerCourse, useServerCourse } from "./courses";
 import { loadComments, openComments } from "./Comments";
 import { when } from "./parts";
 
-interface Notice { id: number; kind: "reply" | "mention" | "assigned"; at: string; read: boolean; courseId: string; course: string | null; by: string | null; body: string; threadId: string }
+interface Notice { id: number; kind: "reply" | "mention" | "assigned" | "declined"; at: string; read: boolean; courseId: string; course: string | null; by: string | null; body: string; threadId: string }
 
-const WHAT = { reply: "replied", mention: "mentioned you", assigned: "assigned you" } as const;
+const WHAT = { reply: "replied", mention: "mentioned you", assigned: "assigned you", declined: "asked for changes" } as const;
 
 export function NoticeBell() {
   const [list, setList] = useState<{ unread: number; items: Notice[] }>({ unread: 0, items: [] });
@@ -32,6 +32,7 @@ export function NoticeBell() {
     void api("POST", "notifications/read", { ids: [n.id] }).then(refresh);
     if (useServerCourse.getState().id !== n.courseId && !(await openServerCourse(n.courseId))) return;
     useAuth.getState().showHome(false);
+    if (!n.threadId) return;
     await loadComments();
     openComments(n.threadId);
   };

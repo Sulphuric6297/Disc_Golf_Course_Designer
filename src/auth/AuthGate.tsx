@@ -7,6 +7,7 @@ import { AccountDialog } from "./AccountDialog";
 import { PeopleDialog } from "./PeopleDialog";
 import { ShareDialog } from "./ShareDialog";
 import { Home } from "./Home";
+import { getView } from "../components/MapViewport";
 import { HistoryDialog, PreviewBar, PublishDialog, ReviewDialog, UpdateDialog } from "./ChangesDialogs";
 import { CommentLayer, CommentsPanel, loadComments, useCommentKeys, useComments } from "./Comments";
 import { useServerCourse } from "./courses";
@@ -28,6 +29,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => { load().catch(() => setFailed(true)); }, [load]);
+  // (the map behind the course list rests: it would draw for nothing)
+  useEffect(() => { getView()?.setPaused(home); }, [home]);
   const after = () => load();
 
   if (failed) return <Screen title="Can't reach the server"><button className="text-sm text-orange-300" onClick={() => location.reload()}>Try again</button></Screen>;

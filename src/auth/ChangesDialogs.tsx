@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, Check, History, RotateCcw, X } from "lucide-react";
 import { useAuth } from "./api";
 import {
-  acceptSubmission, declineSubmission, discardDraft, draftChanges, endPreview, listSubmissions, listVersions, prepareMerge, previewSubmission, previewVersion,
-  publishDraft, restoreVersion, updateDraft, useServerCourse, type Merge, type SubmissionRow, type VersionRow
+  acceptSubmission, compareWithNow, declineSubmission, discardDraft, draftChanges, endPreview, inDraft, listSubmissions, listVersions, prepareMerge, previewSubmission, previewVersion,
+  publishDraft, restoreVersion, submissionHoles, updateDraft, useServerCourse, versionToDraft, type Merge, type SubmissionRow, type VersionRow
 } from "./courses";
 import { Dialog, Form, when } from "./parts";
 import { inputCls } from "../components/ui";
@@ -74,19 +74,23 @@ export function UpdateDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-const KIND: Record<VersionRow["kind"], string> = { created: "Created", autosave: "Saved", publish: "Published", restore: "Restored" };
+const KIND: Record<VersionRow["kind"], string> = { created: "Created", autosave: "Saved", publish: "Published", restore: "Restored", draft: "Your draft" };
 
 export function HistoryDialog({ onClose }: { onClose: () => void }) {
   const { role, approval, version } = useServerCourse();
   const [rows, setRows] = useState<VersionRow[] | null>(null);
+  const [compared, setCompared] = useState<Record<number, string>>({});
+  const [named, setNamed] = useState(false);
   useEffect(() => { void listVersions().then(setRows, () => setRows([])); }, []);
+  const shown = (rows ?? []).filter(v => !named || v.kind === "publish" || v.kind === "restore" || v.kind === "created");
   const canRestore = role === "owner" || !approval;
   const label = (v: VersionRow) => `Version ${v.version} · ${KIND[v.kind]}${v.by ? ` by ${v.by}` : ""} · ${when(v.at)}`;
   return (
     <Dialog title="History" onClose={onClose} testid="history-dialog">
+      <label className="flex items-center gap-2 text-xs text-zinc-400 mb-2"><input type="checkbox" checked={named} onChange={e => setNamed(e.target.checked)} /> Published only</label>
       {rows === null ? <div className="h-24" aria-busy="true" /> : (
         <ol className="divide-y divide-zinc-800 -mx-1" data-testid="versions">
-          {rows.map(v => (
+          {shown.map(v => (
             <li key={v.id} className="py-2 px-1 flex items-start gap-3 text-sm">
               <div className="flex-1 min-w-0">
                 <div className="text-zinc-100">
@@ -95,12 +99,15 @@ export function HistoryDialog({ onClose }: { onClose: () => void }) {
                   {v.version === version && <span className="ml-2 text-[11px] text-emerald-300">Now</span>}
                 </div>
                 {v.note && <div className="text-zinc-300 text-[13px]">{v.note}</div>}
-                <div className="text-[12px] text-zinc-500">Version {v.version} · {when(v.at)}</div>
+                <div className="text-[12px] text-zinc-500">{v.kind === "draft" ? `From version ${v.version}` : `Version ${v.version}`} · {when(v.at)}</div>
+                {compared[v.id] && <div className="text-[12px] text-sky-300 mt-0.5" data-testid="compared">Since then: {compared[v.id]}</div>}
               </div>
-              {v.version !== version && (
-                <div className="flex gap-3 text-xs shrink-0 pt-0.5">
+              {(v.version !== version || v.kind === "draft") && (
+                <div className="flex flex-wrap justify-end gap-x-3 gap-y-1 text-xs shrink-0 pt-0.5 max-w-[45%]">
                   <button className="text-zinc-300 hover:text-white" onClick={() => { onClose(); void previewVersion(v, label(v)); }}>Look</button>
-                  {canRestore && <button className="text-orange-300 hover:text-orange-200" onClick={() => { if (confirm(`Restore version ${v.version}? The course as it is now stays in the history${useServerCourse.getState().draft ? ", and your draft is discarded" : ""}.`)) { onClose(); void restoreVersion(v.id); } }}>Restore</button>}
+                  <button className="text-zinc-300 hover:text-white" onClick={() => void compareWithNow(v.id).then(t => setCompared(c => ({ ...c, [v.id]: t })))} data-testid="compare">Compare</button>
+                  {(inDraft() || role === "owner") && <button className="text-zinc-300 hover:text-white" onClick={() => { onClose(); void versionToDraft(v.id); }} data-testid="to-draft">Into my draft</button>}
+                  {canRestore && v.kind !== "draft" && <button className="text-orange-300 hover:text-orange-200" onClick={() => { if (confirm(`Restore version ${v.version}? The course as it is now stays in the history${useServerCourse.getState().draft ? ", and your draft is discarded" : ""}.`)) { onClose(); void restoreVersion(v.id); } }}>Restore</button>}
                 </div>
               )}
             </li>
@@ -114,6 +121,8 @@ export function HistoryDialog({ onClose }: { onClose: () => void }) {
 export function ReviewDialog({ onClose }: { onClose: () => void }) {
   const [rows, setRows] = useState<SubmissionRow[] | null>(null);
   const [error, setError] = useState("");
+  const [picking, setPicking] = useState<{ sid: string; holes: { id: string; label: string }[] } | null>(null);
+  const [leaveOut, setLeaveOut] = useState(new Set<string>());
   const refresh = () => listSubmissions().then(setRows, () => setRows([]));
   useEffect(() => { void refresh(); }, []);
   const act = async (fn: () => Promise<void>) => {
@@ -133,12 +142,26 @@ export function ReviewDialog({ onClose }: { onClose: () => void }) {
               </div>
               <div className="flex gap-3 text-xs shrink-0 pt-0.5">
                 <button className="text-zinc-300 hover:text-white" onClick={() => { onClose(); void previewSubmission(s, `${s.by ?? "Someone"}'s changes${s.note ? `: ${s.note}` : ""}`); }}>Look</button>
-                <button className="text-emerald-300 hover:text-emerald-200" onClick={() => void act(() => acceptSubmission(s.id))}>Accept</button>
-                <button className="text-red-300 hover:text-red-200" onClick={() => void act(() => declineSubmission(s.id))}>Decline</button>
+                <button className="text-emerald-300 hover:text-emerald-200" onClick={() => void submissionHoles(s.id).then(h => { setPicking({ sid: s.id, holes: h }); setLeaveOut(new Set()); })} data-testid="accept-some">Accept…</button>
+                <button className="text-red-300 hover:text-red-200" onClick={() => { const note = prompt("Ask for changes (optional note):", ""); if (note !== null) void act(() => declineSubmission(s.id, note)); }} data-testid="ask-changes">Ask for changes</button>
               </div>
             </li>
           ))}
         </ul>
+      )}
+      {picking && (
+        <div className="mt-3 rounded-lg border border-emerald-700/50 bg-emerald-950/30 p-3" data-testid="accept-holes">
+          {picking.holes.length > 0 && <p className="text-sm text-zinc-200 mb-2">The holes it changes (untick to leave one as it is):</p>}
+          <ul className="space-y-1 mb-3">
+            {picking.holes.map(h => (
+              <li key={h.id}><label className="flex items-center gap-2 text-sm text-zinc-200"><input type="checkbox" checked={!leaveOut.has(h.id)} onChange={e => { const n = new Set(leaveOut); if (e.target.checked) n.delete(h.id); else n.add(h.id); setLeaveOut(n); }} /> {h.label}</label></li>
+            ))}
+          </ul>
+          <div className="flex gap-2 justify-end">
+            <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded-lg" onClick={() => setPicking(null)}>Cancel</button>
+            <button className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white" onClick={() => void act(() => acceptSubmission(picking.sid, leaveOut))} data-testid="accept">Accept</button>
+          </div>
+        </div>
       )}
       {error && <p role="alert" className="mt-2 text-sm text-red-300">{error}</p>}
     </Dialog>

@@ -10,7 +10,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Ctx } from "../app.js";
 import { ApiError, audit, parse } from "../http.js";
-import { keepCurrent, snapshot } from "../history.js";
+import { draftCheckpoint, keepCurrent, snapshot } from "../history.js";
 import { BIG, IMAGE, courseDoc, ids, roleOn, stored, summary, type Id } from "./courses.js";
 
 /** A photo sent with a change: a new one, none (null), or the course's own (left out). */
@@ -63,6 +63,7 @@ export async function versionRoutes(app: FastifyInstance, { sql }: Ctx) {
         where course_id = ${id} and user_id = ${a.user.id} returning course_id`;
       if (!done.length) throw new ApiError(409, "No draft to save into");
     }
+    await draftCheckpoint(sql, id, a.user.id);
     // (the course's version now: the app says when the course moved on since the draft started)
     const [c] = await sql`select version from courses where id = ${id}`;
     return { ok: true, version: c.version };
@@ -165,37 +166,62 @@ export async function versionRoutes(app: FastifyInstance, { sql }: Ctx) {
     // (the owner declines; whoever sent it can take it back)
     if (r !== "owner" && s.user_id !== a.user.id) throw new ApiError(404, "Not found");
     const status = s.user_id === a.user.id && r !== "owner" ? "withdrawn" : "declined";
-    await sql`update course_submissions set status = ${status}, decided_by = ${a.user.id}, decided_at = now() where id = ${sid}`;
+    const { note: said } = parse(z.object({ note: z.string().trim().max(1000).default("") }), req.body);
+    await sql`update course_submissions set status = ${status}, decided_by = ${a.user.id}, decided_at = now(), decision_note = ${said} where id = ${sid}`;
+    // (the sender hears of it, with what the owner said; their changes come back into their draft)
+    if (status === "declined" && s.user_id) {
+      await sql`insert into notifications (user_id, course_id, kind, by_id, text) values (${s.user_id}, ${id}, 'declined', ${a.user.id}, ${said || s.note})`;
+      await sql`
+        insert into course_drafts (course_id, user_id, doc, base_doc, base_version, photo, summary)
+        values (${id}, ${s.user_id}, ${sql.json(s.doc)}, ${sql.json(s.base_doc)}, ${s.base_version}, ${s.photo}, ${sql.json(s.summary)})
+        on conflict (course_id, user_id) do nothing`;
+    }
     await audit(sql, req, `course.${status}`, { course: id, submission: sid });
     return { ok: true };
   });
 
   // --- The history
-  type Ver = { Params: { id: string; vid: string } };
-  const verIds = z.object({ id: z.uuid("Not found"), vid: z.coerce.number().int().positive() });
 
   app.get<Id>("/api/courses/:id/versions", async req => {
     const { id } = parse(ids, req.params);
-    await role(req, id, "editor");
+    const { a } = await role(req, id, "editor");
     const rows = await sql`
       select v.id, v.version, v.kind, v.note, v.created_at, v.summary, u.display_name as by, ap.display_name as approved_by
       from course_versions v left join users u on u.id = v.by_user left join users ap on ap.id = v.approved_by
-      where v.course_id = ${id} order by v.id desc limit 300`;
+      where v.course_id = ${id} and (v.kind <> 'draft' or v.by_user = ${a.user.id}) order by v.id desc limit 300`;
     return rows.map(v => ({ id: Number(v.id), version: v.version, kind: v.kind, note: v.note, at: v.created_at, by: v.by, approvedBy: v.approved_by, summary: v.summary }));
   });
 
-  const findVersion = async (courseId: string, vid: number) => {
+  type Ver = { Params: { id: string; vid: string } };
+  const verIds = z.object({ id: z.uuid("Not found"), vid: z.coerce.number().int().positive() });
+  const findVersion = async (courseId: string, vid: number, userId: string) => {
     const [v] = await sql`
-      select v.version, v.doc, p.data as photo from course_versions v left join course_photos p on p.course_id = v.course_id and p.sha = v.photo_sha
+      select v.version, v.doc, v.kind, v.by_user, p.data as photo from course_versions v left join course_photos p on p.course_id = v.course_id and p.sha = v.photo_sha
       where v.id = ${vid} and v.course_id = ${courseId}`;
-    if (!v) throw new ApiError(404, "Not found");
+    // (someone else's draft is theirs alone)
+    if (!v || (v.kind === "draft" && v.by_user !== userId)) throw new ApiError(404, "Not found");
     return v;
   };
 
+  // Any version (or a checkpoint of your draft) into your own draft: it starts from the course as
+  // it is now, and Publish puts it in
+  app.post<Ver>("/api/courses/:id/versions/:vid/to-draft", async req => {
+    const { id, vid } = parse(verIds, req.params);
+    const { a } = await role(req, id, "editor");
+    const v = await findVersion(id, vid, a.user.id);
+    const [c] = await sql`select doc, version, summary from courses where id = ${id}`;
+    await sql`
+      insert into course_drafts (course_id, user_id, doc, base_doc, base_version, summary)
+      values (${id}, ${a.user.id}, ${sql.json(v.doc)}, ${sql.json(c.doc)}, ${c.version}, ${sql.json(c.summary)})
+      on conflict (course_id, user_id) do update set doc = excluded.doc, base_doc = excluded.base_doc, base_version = excluded.base_version, updated_at = now()`;
+    await audit(sql, req, "draft.from-version", { course: id, version: v.version });
+    return { ok: true };
+  });
+
   app.get<Ver>("/api/courses/:id/versions/:vid", async req => {
     const { id, vid } = parse(verIds, req.params);
-    await role(req, id, "editor");
-    const v = await findVersion(id, vid);
+    const { a } = await role(req, id, "editor");
+    const v = await findVersion(id, vid, a.user.id);
     return { version: v.version, doc: v.doc, photo: v.photo ?? null };
   });
 
@@ -204,7 +230,8 @@ export async function versionRoutes(app: FastifyInstance, { sql }: Ctx) {
     const { a, role: r } = await role(req, id, "editor");
     const [c] = await sql`select approval from courses where id = ${id}`;
     if (c.approval && r !== "owner") throw new ApiError(403, "Only an owner can do that");
-    const v = await findVersion(id, vid);
+    const v = await findVersion(id, vid, a.user.id);
+    if (v.kind === "draft") throw new ApiError(400, "Bring a draft's checkpoint into your draft instead");
     const version = await sql.begin(async tx => {
       await keepCurrent(tx, id);
       const [done] = await tx`

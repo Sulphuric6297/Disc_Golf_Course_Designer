@@ -8,7 +8,16 @@ import type { CourseDoc } from "../types";
 type Doc = Record<string, unknown>;
 type Entity = { id: string } & Record<string, unknown>;
 
-const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
+// (each object's JSON made once: the terrain and ground paint stay the same objects from one
+// change to the next, and are big)
+const json = new WeakMap<object, string>();
+const text = (v: unknown) => {
+  if (!v || typeof v !== "object") return JSON.stringify(v);
+  let t = json.get(v);
+  if (t === undefined) json.set(v, (t = JSON.stringify(v)));
+  return t;
+};
+const same = (a: unknown, b: unknown) => a === b || text(a) === text(b);
 
 /** The parts matched one by one. */
 const LISTS = ["holes", "items", "layouts"] as const;
@@ -117,6 +126,19 @@ export function describeChanges(before: object, after: object) {
     return bits.length ? `${what}: ${bits.join(", ")}` : "";
   };
   return [part(c.holes, "Holes"), part(c.items, "Features"), c.other.length ? "Course settings changed" : ""].filter(Boolean).join(" · ") || "No changes";
+}
+
+/** The merged course with the course's version kept for the holes picked (their tees and baskets
+ * too): an owner leaving holes out of a draft they accept. */
+export function keepCourseHoles(doc: CourseDoc, course: CourseDoc, holeIds: Set<string>): CourseDoc {
+  if (!holeIds.size) return doc;
+  const out = doc as unknown as Doc, theirs = course as unknown as Doc;
+  const mine = (holeId: unknown) => typeof holeId === "string" && holeIds.has(holeId);
+  const holes = ((out.holes ?? []) as Entity[]).filter(h => !holeIds.has(h.id));
+  for (const h of (theirs.holes ?? []) as Entity[]) if (holeIds.has(h.id)) holes.push(h);
+  const items = ((out.items ?? []) as Entity[]).filter(i => !mine(i.holeId) || (i.type !== "tee" && i.type !== "basket"));
+  for (const i of (theirs.items ?? []) as Entity[]) if (mine(i.holeId) && (i.type === "tee" || i.type === "basket")) items.push(i);
+  return { ...out, holes, items } as unknown as CourseDoc;
 }
 
 /** The holes a draft changes (their ids; a hole whose tee or basket moved counts). */
