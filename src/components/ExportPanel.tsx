@@ -185,9 +185,11 @@ export function ExportPanel() {
   const parts = partsList(doc);
   const setPrice = (key: keyof CourseRules["prices"], v: number) => changeDoc(d => ({ rules: { ...d.rules, prices: { ...d.rules.prices, [key]: v } } }));
 
-  const Row = ({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) => (
+  // (a size or hole to pick on its own line, the formats in a row under it)
+  const Row = ({ icon, title, pick, children }: { icon: ReactNode; title: string; pick?: ReactNode; children: ReactNode }) => (
     <div className="mb-3">
       <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100 mb-1.5">{icon}{title}</div>
+      {pick && <div className="mb-1.5">{pick}</div>}
       <div className="flex flex-wrap gap-1.5">{children}</div>
     </div>
   );
@@ -200,18 +202,20 @@ export function ExportPanel() {
         <Button tone="primary" full onClick={() => useEditor.getState().set({ shareOpen: true })} testid="export-share"><Share2 size={15} /> Get a share link</Button>
       </Section>
       <Section title="Print">
-        <Row icon={<MapIcon size={15} className="text-orange-300" />} title="Course map">
-          <select aria-label="Map paper" className={selectCls} value={doc.style.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
+        <Row icon={<MapIcon size={15} className="text-orange-300" />} title="Course map" pick={
+          <select aria-label="Map paper" className={`${selectCls} w-full`} value={doc.style.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
             {(Object.keys(PAPER) as PaperSize[]).map(p => <option key={p} value={p}>{PAPER[p].label}</option>)}
           </select>
+        }>
           <Button small onClick={mapPdf} disabled={busy} testid="export-map-pdf"><FileDown size={13} /> PDF</Button>
           <Button small onClick={mapPng} disabled={busy} testid="export-map-png"><ImageIcon size={13} /> PNG</Button>
           <Button small onClick={mapSvg} disabled={busy} testid="export-map-svg">SVG</Button>
         </Row>
-        <Row icon={<FileDown size={15} className="text-orange-300" />} title="Tee signs and hole sheets">
-          <select aria-label="Tee sign size" className={selectCls} value={signSize} onChange={e => setSignSize(e.target.value as SignSize)}>
+        <Row icon={<FileDown size={15} className="text-orange-300" />} title="Tee signs and hole sheets" pick={
+          <select aria-label="Tee sign size" className={`${selectCls} w-full`} value={signSize} onChange={e => setSignSize(e.target.value as SignSize)}>
             {(Object.keys(SIGN_SIZES) as SignSize[]).map(p => <option key={p} value={p}>{SIGN_SIZES[p].label}</option>)}
           </select>
+        }>
           <Button small onClick={signsPdf} disabled={busy || nothing} testid="export-signs-pdf"><FileDown size={13} /> PDF</Button>
           <Button small onClick={signsZip} disabled={busy || nothing} testid="export-signs-zip"><ImageIcon size={13} /> Pictures (ZIP)</Button>
         </Row>
@@ -224,12 +228,12 @@ export function ExportPanel() {
         </Row>
       </Section>
       <Section title="Hole by hole" testid="hole-exports">
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          <select aria-label="Hole to export" data-testid="hole-pick" className={selectCls} value={pageHole ? pageHole.id : "all"} onChange={e => setPagePick(e.target.value)} disabled={nothing}>
+        <div className="flex flex-col gap-1.5 mb-1.5">
+          <select aria-label="Hole to export" data-testid="hole-pick" className={`${selectCls} w-full`} value={pageHole ? pageHole.id : "all"} onChange={e => setPagePick(e.target.value)} disabled={nothing}>
             <option value="all">All holes{complete.length ? ` (${complete.length})` : ""}</option>
             {complete.map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}{h.name ? ` · ${h.name}` : ""}</option>)}
           </select>
-          <select aria-label="Hole page size" data-testid="hole-page-size" className={selectCls} value={pageSize} onChange={e => setPageSize(e.target.value as HolePageSize)}>
+          <select aria-label="Hole page size" data-testid="hole-page-size" className={`${selectCls} w-full`} value={pageSize} onChange={e => setPageSize(e.target.value as HolePageSize)}>
             {(Object.keys(HOLE_PAGES) as HolePageSize[]).map(k => <option key={k} value={k}>{HOLE_PAGES[k].label}</option>)}
           </select>
         </div>

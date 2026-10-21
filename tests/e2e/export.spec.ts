@@ -79,6 +79,18 @@ test("spreadsheets: the hole list, the stake-out list and the parts list", async
 test("printing: course map PDF and SVG, tee signs PDF and pictures, scorecard", async ({ page }) => {
   test.setTimeout(180_000);
   await setup(page);
+  // Each kind's formats in one row under its size (none left on a line of its own)
+  const tops = async (...ids: string[]) => Promise.all(ids.map(async id => Math.round((await page.getByTestId(id).boundingBox())!.y)));
+  expect(new Set(await tops("export-map-pdf", "export-map-png", "export-map-svg")).size).toBe(1);
+  expect(new Set(await tops("export-signs-pdf", "export-signs-zip")).size).toBe(1);
+  // The video sizes read in full in their box
+  const room = await page.getByTestId("video-resolution").evaluate((el: HTMLSelectElement) => {
+    const c = document.createElement("canvas").getContext("2d")!;
+    const cs = getComputedStyle(el);
+    c.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    return Math.min(...[...el.options].map(o => el.clientWidth - parseFloat(cs.paddingLeft) - c.measureText(o.text).width));
+  });
+  expect(room).toBeGreaterThan(22);
   const svg = await exported(page, "export-map-svg");
   expect(svg.name).toMatch(/-map\.svg$/);
   expect(svg.data.toString()).toContain("<svg");
