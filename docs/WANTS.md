@@ -226,3 +226,7 @@ Later requests (in the order asked)
 - [ ] **Real trees from LiDAR** (USGS, where a survey covers the site): each tree where it
   stands, as tall and wide as it is; trees on a hole's fairway cut down, with an easy way to bring
   them back (a stump to click, or all of a hole's at once) and to cut down others.
+- [ ] **OB and beyond for the holes picked**: drawn on their side of the road only (never both
+  sides at once unless holes on both sides are picked), in play and on the tee sign only for them.
+- [ ] **A stretch of a road (or any line) can be taken out**, marked with two clicks like an OB
+  stretch.

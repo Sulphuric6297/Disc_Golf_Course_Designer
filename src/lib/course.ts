@@ -4,7 +4,7 @@ import type {
   AmenityItem, AmenityKind, AreaItem, AreaKind, BasketItem, CourseDoc, CourseItem, CourseRules, DropZoneItem, Hole, LabelItem,
   Layout, LineItem, LineKind, MandoItem, MapStyle, P, PinPosition, StructureItem, StructureKind, TeeItem, TeeLevel, TreeItem
 } from "../types";
-import { centroid, corridor, dist, nearestOnSegment, pathLength, pointAlong, smoothClosed, smoothPath, subPath } from "./geom";
+import { centroid, corridor, dist, nearestAlong, nearestOnSegment, pathLength, pointAlong, smoothClosed, smoothPath, subPath } from "./geom";
 import { landscapeOf } from "./landscapes";
 
 export const defaultStyle = (): MapStyle => ({
@@ -110,10 +110,11 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
     }),
     // (A structure needs its points and a kind this version knows)
     items: Array.isArray(raw.items) ? raw.items.filter(i => i.type !== "structure" || (Array.isArray(i.points) && i.kind in STRUCTURE_KINDS)).map(i => {
-      // (a line's OB stretches: pairs of numbers, or none)
-      if (i.type !== "line" || i.obStretches === undefined) return i;
+      // (a line's OB stretches: pairs of numbers, or none; the holes it's OB for: holes on the course)
+      if (i.type !== "line" || (i.obStretches === undefined && i.obHoles === undefined)) return i;
       const ok = Array.isArray(i.obStretches) ? mergeStretches(i.obStretches.filter(st => Array.isArray(st) && st.length === 2 && st.every(v => Number.isFinite(v)))) : [];
-      return { ...i, obStretches: ok.length ? ok : undefined };
+      const holes = Array.isArray(i.obHoles) ? i.obHoles.filter(id => (raw.holes ?? []).some(h => h.id === id)) : [];
+      return { ...i, obStretches: ok.length ? ok : undefined, obHoles: holes.length ? holes : undefined };
     }) : [],
     layouts: raw.layouts?.length ? raw.layouts : base.layouts,
     terrainHeights: raw.terrainHeights ?? {},
@@ -211,25 +212,92 @@ export const mergeStretches = (list: [number, number][]): [number, number][] => 
   }
   return out.map(([a, b]) => [Math.round(a * 10000) / 10000, Math.round(b * 10000) / 10000]);
 };
+/**
+ * A line with a stretch of it taken out (from `a` to `b`, fractions of it as drawn): the pieces left
+ * either side (none under 2 ft), the first keeping its id. Each keeps its own points, a point where
+ * it was cut, and its share of the line's OB stretches and creek widths.
+ */
+export const withoutStretch = (l: LineItem, a: number, b: number, newId = generateId): LineItem[] => {
+  const drawn = linePath(l), total = pathLength(drawn);
+  const from = Math.max(0, Math.min(a, b)), to = Math.min(1, Math.max(a, b));
+  // (where each of its points is along it as drawn, in order)
+  const at: number[] = [];
+  for (const p of l.points) at.push(Math.max(at[at.length - 1] ?? 0, nearestAlong(drawn, p).t));
+  const f = widthFactors(l), varies = widthVaries(l);
+  const factorAt = (t: number) => {
+    const i = at.findIndex(x => x >= t);
+    if (i <= 0) return f[Math.max(0, i)];
+    const k = at[i] - at[i - 1] > 1e-9 ? (t - at[i - 1]) / (at[i] - at[i - 1]) : 0;
+    return f[i - 1] + (f[i] - f[i - 1]) * k;
+  };
+  const piece = (s: number, e: number, id: string): LineItem | null => {
+    if ((e - s) * total < 2) return null;
+    const cut = (t: number) => ({ p: pointAlong(drawn, t * total).point, w: factorAt(t) });
+    const inner = l.points.map((p, i) => ({ p, w: f[i], t: at[i] })).filter(o => o.t > s + 1e-4 && o.t < e - 1e-4);
+    const pts = [s <= 0 ? { p: l.points[0], w: f[0] } : cut(s), ...inner, e >= 1 ? { p: l.points[l.points.length - 1], w: f[f.length - 1] } : cut(e)];
+    const c = { x: pts.reduce((t, o) => t + o.p.x, 0) / pts.length, y: pts.reduce((t, o) => t + o.p.y, 0) / pts.length };
+    // (its OB stretches, as shares of this piece; along none of them: not OB)
+    const ob = l.ob === true && l.obStretches?.length ? mergeStretches(l.obStretches.map(([x, y]): [number, number] => [(Math.max(s, Math.min(x, y)) - s) / (e - s), (Math.min(e, Math.max(x, y)) - s) / (e - s)]).filter(([x, y]) => y > x)) : null;
+    const notOb = ob !== null && !ob.length;
+    return {
+      ...l, id, points: pts.map(o => o.p), x: c.x, y: c.y,
+      widths: varies ? pts.map(o => o.w) : undefined,
+      ...(ob ? (notOb ? { ob: undefined, obBeyond: undefined, obHoles: undefined, obStretches: undefined } : { obStretches: ob }) : {})
+    };
+  };
+  return [piece(0, from, l.id), piece(to, 1, newId())].filter((x): x is LineItem => !!x);
+};
 /** A line's out-of-bounds pieces as drawn: all of it, or each of its stretches. */
 export const obPieces = (l: Pick<LineItem, "kind" | "straight" | "points" | "obStretches">): P[][] => {
   const drawn = linePath(l);
   return obRanges(l).map(([a, b]) => subPath(drawn, a, b)).filter(p => p.length >= 2 && pathLength(p) > 0.5);
 };
-/** Which sides of a piece of line the holes' lines are on, within `reach` ft (1: right of the way it
- * runs, -1: left; neither near: both). Where it's OB "and beyond", OB starts at its edge on those sides. */
-export const obSides = (piece: P[], holeLines: P[][], reach = 300): (1 | -1)[] => {
-  const seen = new Set<1 | -1>();
-  const along = (line: P[]) => Array.from({ length: Math.floor(pathLength(line) / 20) + 1 }, (_, k) => pointAlong(line, k * 20).point);
-  for (const line of holeLines) for (const q of along(line)) {
+/** How closely a hole's line runs along a piece of line, on each side of it (1: right of the way it
+ * runs, -1: left): each bit of the hole within `reach` ft counts the closer it is, so a hole
+ * running along it outweighs one that only comes near at its tee. */
+const closeness = (piece: P[], line: P[], reach: number) => {
+  const weight = { 1: 0, [-1]: 0 } as Record<1 | -1, number>;
+  for (let k = 0; k <= Math.floor(pathLength(line) / 20); k++) {
+    const q = pointAlong(line, k * 20).point;
     let best = { d: Infinity, side: 1 as 1 | -1 };
     for (let i = 1; i < piece.length; i++) {
       const a = piece[i - 1], b = piece[i], n = nearestOnSegment(q, a, b);
       if (n.distance < best.d) best = { d: n.distance, side: (b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x) >= 0 ? 1 : -1 };
     }
-    if (best.d <= reach) seen.add(best.side);
+    if (best.d <= reach) weight[best.side] += (1 - best.d / reach) ** 2;
   }
-  return seen.size ? [...seen] : [1, -1];
+  return weight;
+};
+/** Which side of a piece of line the holes are on (1: right of the way it runs, -1: left), within
+ * `reach` ft (none near: both): each hole's side, or (`one`) only the side of the holes running
+ * closest along it. Where it's OB "and beyond", OB starts at its edge there. */
+export const obSides = (piece: P[], holeLines: P[][], reach = 300, one = false): (1 | -1)[] => {
+  const sides = new Set<1 | -1>(), total = { 1: 0, [-1]: 0 } as Record<1 | -1, number>;
+  for (const line of holeLines) {
+    const w = closeness(piece, line, reach);
+    if (w[1] + w[-1] > 0) sides.add(w[1] >= w[-1] ? 1 : -1);
+    total[1] += w[1];
+    total[-1] += w[-1];
+  }
+  if (!sides.size) return [1, -1];
+  return one ? [total[1] >= total[-1] ? 1 : -1] : [...sides];
+};
+/** The hole running closest along a piece of line, if any is within `reach` ft. */
+export const closestHole = (piece: P[], holes: { id: string; line: P[] }[], reach = 300) => {
+  let best: { id: string; w: number } | null = null;
+  for (const h of holes) {
+    const w = closeness(piece, h.line, reach), t = w[1] + w[-1];
+    if (t > 0 && (!best || t > best.w)) best = { id: h.id, w: t };
+  }
+  return best?.id ?? null;
+};
+/** The holes picked for a line marked OB that are still on the course. */
+export const obPicked = (doc: Pick<CourseDoc, "holes">, l: Pick<LineItem, "obHoles">) => l.obHoles?.filter(id => doc.holes.some(h => h.id === id)) ?? [];
+/** Whether a line marked OB is OB for a hole: one of the holes picked for it, or (none picked) any
+ * hole it belongs to. */
+export const obFor = (doc: Pick<CourseDoc, "holes">, l: LineItem, holeId: string) => {
+  const picked = obPicked(doc, l);
+  return picked.length ? picked.includes(holeId) : !l.holeId || belongsTo(l, holeId);
 };
 
 /** A line's width, ft: its own, or its kind's. */

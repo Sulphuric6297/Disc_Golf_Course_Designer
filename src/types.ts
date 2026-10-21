@@ -131,6 +131,9 @@ export interface LineItem extends BaseItem {
   ob?: boolean;
   /** Out of bounds beyond it too (the road and beyond): OB from its edge on the holes' side. */
   obBeyond?: boolean;
+  /** The holes it is OB for (unset: every hole it belongs to). OB and beyond starts at its edge
+   * on their side. */
+  obHoles?: string[];
   /** The stretches of it that are out of bounds, each from-to as fractions of it as drawn (0 its
    * start, 1 its end; unset: all of it). */
   obStretches?: [number, number][];

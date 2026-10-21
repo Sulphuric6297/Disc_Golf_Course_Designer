@@ -2,7 +2,7 @@
 // shape, what is in the way, and safety checks between holes.
 import { CIRCLE_ONE_FT, CLEAR_IN_FRONT_FT, MIN_PAD, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AreaItem, CourseDoc, Hole, Layout, LineItem, P, TeeItem, TeeLevel, TreeItem } from "../types";
-import { activeLayout, areaPath, basketFor, belongsTo, fairwayOutline, holeLabel, holeNumber, holeTees, linePath, obPieces, teeAim, teeFor, throwLine } from "./course";
+import { activeLayout, areaPath, basketFor, belongsTo, fairwayOutline, holeLabel, holeNumber, holeTees, linePath, obFor, obPieces, teeAim, teeFor, throwLine } from "./course";
 import { boundsGap, boundsOf, densify, dist, distanceToPath, lengthInside, pathLength, pathTouchesPolygon, pointBoundsGap, segmentsIntersect, smoothPath, turnAngles } from "./geom";
 import { heightAt, profileAlong } from "./terrainGrid";
 
@@ -136,7 +136,7 @@ export const holeStats = (doc: CourseDoc, hole: Hole, layout: Layout | undefined
   const parAuto = complete ? parForDistance(playsLike, level) : 3;
   const obAreas = (doc.items.filter(i => i.type === "area" && isOb(i)) as AreaItem[]).filter(a => !a.holeId || belongsTo(a, hole.id)).map(asDrawn);
   // (a line OB only along stretches of it: each stretch)
-  const obLines = (doc.items.filter(i => i.type === "line" && isOb(i)) as LineItem[]).filter(l => !l.holeId || belongsTo(l, hole.id)).flatMap(l => obPieces(l).map(points => ({ ...l, points })));
+  const obLines = (doc.items.filter(i => i.type === "line" && isOb(i)) as LineItem[]).filter(l => obFor(doc, l, hole.id)).flatMap(l => obPieces(l).map(points => ({ ...l, points })));
   let obCrossed = 0;
   if (complete) {
     obCrossed += obAreas.filter(a => lengthInside(smooth, a.points, 3) > 4).length;

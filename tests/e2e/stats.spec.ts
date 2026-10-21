@@ -1,6 +1,6 @@
 // Pure-logic tests (no browser page) for the hole and course numbers and the checks.
 import { test, expect } from "@playwright/test";
-import { FAIRWAY_STATIONS, areaPath, createArea, createBasket, createEmptyCourse, createLine, createTee, createTree, fairwayOutline, fairwayWidthAt, linePath, mergeStretches, newHole, normalizeCourse, obPieces, obSides } from "../../src/lib/course";
+import { FAIRWAY_STATIONS, areaPath, createArea, createBasket, createEmptyCourse, createLine, createTee, createTree, fairwayOutline, fairwayWidthAt, linePath, closestHole, mergeStretches, newHole, normalizeCourse, obPieces, obSides, withoutStretch } from "../../src/lib/course";
 import { corridor, lengthInside, pathLength, pathTouchesPolygon, pointInPolygon, smoothPath } from "../../src/lib/geom";
 import { courseIssues, courseStats, courseTotals, designChecks, holeStats, isOb, openIssues, parForDistance, safetyIssues } from "../../src/lib/holeStats";
 import type { CourseDoc, P, TeeLevel } from "../../src/types";
@@ -142,6 +142,76 @@ test("a road OB along a stretch of it, or OB and beyond: in play only there, sai
   // Opened from a file: stretches that aren't pairs of numbers left out
   const back = normalizeCourse({ ...doc, items: [{ ...road, obStretches: [[0.2, "x"], [0.5, 0.3], 7] as any }] });
   expect((back.items[0] as any).obStretches).toEqual([[0.3, 0.5]]);
+});
+
+test("OB and beyond for the holes picked: drawn on their side (one side when none are picked, with holes either side), in play and on the tee sign only for them", () => {
+  // Hole 1 running east 10 ft north of a road; hole 2 across the road, from 35 ft south of it
+  const doc = make([[{ x: 300, y: 300 }, { x: 700, y: 300 }], [{ x: 500, y: 345 }, { x: 500, y: 700 }]]);
+  const road = createLine("road", [{ x: 0, y: 310 }, { x: 1000, y: 310 }]);
+  road.ob = true;
+  road.obBeyond = true;
+  doc.items.push(road);
+  const [h1, h2] = doc.holes;
+  const piece = obPieces(road)[0], line = (h: typeof h1) => holeStats(doc, h).line;
+  // Each hole's side (hole 1 left of it, as it runs east); the one running along it is the closest
+  expect(obSides(piece, [line(h1), line(h2)])).toEqual([-1, 1]);
+  expect(obSides(piece, [line(h1), line(h2)], 300, true)).toEqual([-1]);
+  expect(closestHole(piece, doc.holes.map(h => ({ id: h.id, line: line(h) })))).toBe(h1.id);
+  const edges = () => [...renderPoster(doc, { contours: null, hillshade: null }).svg.matchAll(new RegExp(`<path d="([^"]+)" fill="none" stroke="${doc.style.ob}" stroke-width="[^"]+" stroke-linejoin`, "g"))].map(m => [...m[1].matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map(c => ({ x: +c[1], y: +c[2] })));
+  // None picked: one edge, on the side of the hole running along it (not one each side)
+  expect(edges()).toHaveLength(1);
+  expect(edges()[0].every(p => p.y < 310)).toBe(true);
+  expect(autoRules(doc, h2.id)).toContain("Road and beyond is OB.");
+  // For hole 2 only: its side; in play and on the tee sign for it, not for hole 1
+  road.obHoles = [h2.id];
+  expect(edges()).toHaveLength(1);
+  expect(edges()[0].every(p => p.y > 310)).toBe(true);
+  expect(autoRules(doc, h2.id)).toContain("Road and beyond is OB.");
+  expect(autoRules(doc, h1.id).join(" ")).not.toContain("Road");
+  expect(holeStats(doc, h1).obInPlay).toBe(false);
+  road.obHoles = [h1.id];
+  expect(holeStats(doc, h1).obInPlay).toBe(true);
+  // Both picked: an edge on each side
+  road.obHoles = [h1.id, h2.id];
+  expect(edges()).toHaveLength(2);
+  // From a file: holes no longer on the course left out
+  expect((normalizeCourse({ ...doc, items: [{ ...road, obHoles: ["gone", h2.id] }] }).items[0] as any).obHoles).toEqual([h2.id]);
+  expect((normalizeCourse({ ...doc, items: [{ ...road, obHoles: ["gone"] }] }).items[0] as any).obHoles).toBeUndefined();
+});
+
+test("a stretch taken out of a line: the pieces either side (the first keeping its id), each with its share of the OB stretches and a creek's widths; at an end, only shorter", () => {
+  const road = createLine("road", [{ x: 0, y: 0 }, { x: 500, y: 0 }, { x: 1000, y: 0 }]);
+  road.straight = true;
+  road.ob = true;
+  road.obStretches = [[0.1, 0.3], [0.6, 0.9]];
+  road.label = "Park Rd";
+  const [a, b] = withoutStretch(road, 0.4, 0.5, () => "new");
+  expect(a.id).toBe(road.id);
+  expect(b.id).toBe("new");
+  expect(a.points).toEqual([{ x: 0, y: 0 }, { x: 400, y: 0 }]);
+  expect(b.points).toEqual([{ x: 500, y: 0 }, { x: 1000, y: 0 }]);
+  expect(a.label).toBe("Park Rd");
+  // (OB 100 to 300 ft of the first 400; 600 to 900 of the last 500 from 500 ft)
+  expect(a.obStretches).toEqual([[0.25, 0.75]]);
+  expect(b.obStretches).toEqual([[0.2, 0.8]]);
+  // A piece along none of its OB stretches isn't OB
+  const [c] = withoutStretch(road, 0.5, 1);
+  expect(c.points).toEqual([{ x: 0, y: 0 }, { x: 500, y: 0 }]);
+  const [d] = withoutStretch(road, 0, 0.55);
+  expect(d.points[0]).toEqual({ x: 550, y: 0 });
+  expect(d.obStretches).toEqual([[1 / 9, 7 / 9].map(v => Math.round(v * 10000) / 10000) as [number, number]]);
+  road.obStretches = [[0.6, 0.9]];
+  const [e] = withoutStretch(road, 0.5, 1);
+  expect(e.ob).toBeUndefined();
+  // Nothing left: no pieces
+  expect(withoutStretch(road, 0, 1)).toEqual([]);
+  // A creek wider at its end keeps its widths along each piece
+  const creek = createLine("stream", [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 200, y: 0 }]);
+  creek.straight = true;
+  creek.widths = [1, 1, 3];
+  const [f, g] = withoutStretch(creek, 0.25, 0.75);
+  expect(f.widths).toEqual([1, 1]);
+  expect(g.widths).toEqual([2, 3]);
 });
 
 test("a hole with two numbers (3/4) is played twice: the course's par, length and holes count it twice, the scorecard has both", () => {

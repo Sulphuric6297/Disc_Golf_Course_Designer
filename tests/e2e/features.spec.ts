@@ -317,6 +317,13 @@ test("a stretch of a road marked OB with two clicks on it (or from its right-cli
   // OB and beyond, then one undo step back
   await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "OB and beyond" }).click();
   await expect.poll(async () => (await road()).obBeyond).toBe(true);
+  // For the hole beside it; then for all holes, and that hole picked again
+  const holeId = (await course(page)).holes[0].id;
+  await expect.poll(async () => (await road()).obHoles).toEqual([holeId]);
+  await page.getByTestId("ob-for").getByRole("button", { name: "All holes" }).click();
+  await expect.poll(async () => (await road()).obHoles).toBeUndefined();
+  await page.getByTestId("ob-for").getByRole("button", { name: "Hole 1" }).click();
+  await expect.poll(async () => (await road()).obHoles).toEqual([holeId]);
   // Another from the right-click menu: from here, then a click where it ends; Esc on a third
   await page.keyboard.press("Escape");
   const from = await screenOf(page, 200, 600);
@@ -337,6 +344,43 @@ test("a stretch of a road marked OB with two clicks on it (or from its right-cli
   await page.getByTestId("ob-all").click();
   await expect.poll(async () => (await road()).obStretches).toBeUndefined();
   expect((await road()).ob).toBe(true);
+});
+
+test("a stretch taken out of a road with two clicks on it (two roads left), or from its right-click menu to its end (only shorter); one undo step", async ({ page }) => {
+  await blankCourse(page);
+  await page.keyboard.press("l");
+  await page.getByTestId("line-kind-road").click();
+  await clickPlan(page, 100, 600);
+  await clickPlan(page, 900, 600);
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
+  const roads = () => course(page).then(c => c.items.filter((i: any) => i.type === "line"));
+  const id = (await roads())[0].id;
+  await page.evaluate(id => (window as any).__dgActions.select(id), id);
+  await page.getByTestId("line-cut").click();
+  await expect(page.getByTestId("ob-pick-bar")).toContainText("Remove a stretch");
+  // Where it starts, then where it ends (a click off the road does nothing)
+  await clickPlan(page, 400, 600);
+  await clickPlan(page, 500, 800);
+  await clickPlan(page, 600, 600);
+  await expect.poll(async () => (await roads()).length).toBe(2);
+  const [a, b] = await roads();
+  expect(a.id).toBe(id);
+  expect(Math.abs(a.points[a.points.length - 1].x - 400)).toBeLessThan(10);
+  expect(Math.abs(b.points[0].x - 600)).toBeLessThan(10);
+  expect(a.ob).toBeUndefined();
+  await expect(page.getByTestId("ob-pick-bar")).toBeHidden();
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await roads()).length).toBe(1);
+  // From its right-click menu, to its end
+  await page.keyboard.press("Escape");
+  const from = await screenOf(page, 750, 600);
+  await page.mouse.click(from.x, from.y, { button: "right" });
+  await page.getByRole("menuitem", { name: "Remove a stretch from here" }).click();
+  await clickPlan(page, 905, 600);
+  await expect.poll(async () => (await roads())[0].points.at(-1).x).toBeLessThan(760);
+  expect(await roads()).toHaveLength(1);
+  expect(await page.evaluate(() => (window as any).__dgEditor().obPick)).toBeNull();
 });
 
 test("a gate: two posts across the hole's line, passed between", async ({ page }) => {

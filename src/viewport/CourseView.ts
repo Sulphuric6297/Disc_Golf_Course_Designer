@@ -15,7 +15,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, belongsTo, curves, fairwayOutline, mergeStretches, obRanges, obSides, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { FAIRWAY_STATIONS, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, fairwayOutline, mergeStretches, obFor, obPicked, obRanges, obSides, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, dist, distanceToPath, inBounds, nearestAlong, offsetPath, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath, subPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
@@ -224,7 +224,7 @@ export class CourseView {
   /** A hole whose line is being plotted by hand, and its turns so far (from the tee). */
   private plotHole: string | null = null;
   /** Marking a stretch of OB along a line: the line, and where along it the stretch starts (0..1). */
-  private obPick: { id: string; from: number | null } | null = null;
+  private obPick: { id: string; from: number | null; cut: boolean } | null = null;
   /** The trees measured from the air that are cut down (cleared for play, or taken out), and those
    * kept standing where they would be (by index). */
   private lidarState: { stand: number[]; cut: number[]; kept: number[] } | null = null;
@@ -2063,7 +2063,7 @@ export class CourseView {
       // Marked OB: along all of it or its stretches; OB "and beyond" from its edge on the holes' side
       const obParts = l.ob === true && l.kind !== "ob" && l.points.length >= 2 ? obRanges(l).map(([a, b]) => {
         const piece = subPath(this.shapeOf(l).pts, a, b);
-        return { a, b, piece, sides: l.obBeyond ? obSides(piece, doc.stats.filter(st => st.complete && (!l.holeId || belongsTo(l, st.holeId))).map(st => st.line)) : null };
+        return { a, b, piece, sides: l.obBeyond ? obSides(piece, doc.stats.filter(st => st.complete && obFor(course, l, st.holeId)).map(st => st.line), 300, !obPicked(course, l).length) : null };
       }).filter(o => o.piece.length >= 2) : [];
       put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, l.widths, hv, c, l.ob, l.kind === "stream" ? this.waterShore(l.points) : 0, obParts.map(o => [o.a, o.b, o.sides])]), () => {
         const g = new THREE.Group();
@@ -2549,7 +2549,7 @@ export class CourseView {
     const hole = this.hole(holeId);
     const drawing = this.drawn() ? this.drawPts.length : -1;
     const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" || sel.type === "line" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
-    const obKey = `${sel?.type === "line" ? `${sel.ob}:${sel.obStretches?.length ?? 0}` : ""}|${this.obPick ? `${this.obPick.id}:${this.obPick.from}` : ""}`;
+    const obKey = `${sel?.type === "line" ? `${sel.ob}:${sel.obStretches?.length ?? 0}` : ""}|${this.obPick ? `${this.obPick.id}:${this.obPick.from}:${this.obPick.cut}` : ""}`;
     if (key + obKey === this.handleKey) return;
     this.handleKey = key + obKey;
     this.handles.forEach(h => h.el.remove());
@@ -3059,10 +3059,11 @@ export class CourseView {
     });
   }
 
-  /** Mark a stretch of OB along a line (a road, a path...): click where it starts, then where it ends. */
-  setObPick(id: string | null) {
-    if ((this.obPick?.id ?? null) === id) return;
-    this.obPick = id ? { id, from: null } : null;
+  /** Mark a stretch of OB along a line (a road, a path...), or (`cut`) a stretch to take out of it:
+   * click where it starts, then where it ends. */
+  setObPick(id: string | null, cut = false) {
+    if ((this.obPick?.id ?? null) === id && (this.obPick?.cut ?? false) === cut) return;
+    this.obPick = id ? { id, from: null, cut } : null;
     this.syncHandles();
     this.updateCursor();
     this.invalidate();
@@ -3070,10 +3071,10 @@ export class CourseView {
 
   /** Mark a stretch of OB along a line starting at a spot on it (from its right-click menu): then
    * a click where it ends. */
-  startObPick(id: string, from: P) {
+  startObPick(id: string, from: P, cut = false) {
     const l = this.item(id) as LineItem | null;
     if (l?.type !== "line") return;
-    this.obPick = { id, from: nearestAlong(this.shapeOf(l).pts, from).t };
+    this.obPick = { id, from: nearestAlong(this.shapeOf(l).pts, from).t, cut };
     this.syncHandles();
     this.updateCursor();
     this.invalidate();
@@ -3094,6 +3095,11 @@ export class CourseView {
       return;
     }
     if (Math.abs(near.t - pick.from) * pathLength(pts) < 2) return;
+    if (pick.cut) {
+      this.endObPick();
+      this.cb.onCutLine(l.id, pick.from, near.t);
+      return;
+    }
     // (only along its stretches from now: marked OB all along, it was OB everywhere)
     const had = l.ob === true ? l.obStretches ?? [] : [];
     this.cb.onChange(l.id, { ob: true, obStretches: mergeStretches([...had, [pick.from, near.t]]) });

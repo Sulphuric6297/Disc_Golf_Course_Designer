@@ -5,7 +5,7 @@
 // is at the bottom.
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
-import { activeLayout, belongsTo, drawnAreas, fairwayOutline, holeBaskets, linePath, obRanges, obSides, sharedWalks, teeAim, walkRoutes } from "./course";
+import { activeLayout, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, obSides, sharedWalks, teeAim, walkRoutes } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
 import { courseTotals, holeStats, isOb, playsOf, type HoleStats } from "./holeStats";
 import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, type CanopyGrid } from "./forest";
@@ -432,14 +432,14 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       const k1 = forest && l.kind === "stream" ? 1.3 : 1;
       const wAt = "widthAt" in g ? g.widthAt : undefined;
       // (the holes it's beside: OB "and beyond" from its edge on their side)
-      const holeLines = layers.stats.filter(st => st.complete && (!l.holeId || belongsTo(l, st.holeId))).map(st => st.line);
+      const holeLines = layers.stats.filter(st => st.complete && obFor(doc, l, st.holeId)).map(st => st.line);
       let longest: P[] = [];
       // Along all of it, or only its stretches marked OB
       for (const [a, b] of obRanges(l)) {
         const piece = subPath(g.points, a, b);
         if (piece.length < 2) continue;
         if (pathLength(piece) > pathLength(longest)) longest = piece;
-        const sides = l.obBeyond ? obSides(piece, holeLines) : null;
+        const sides = l.obBeyond ? obSides(piece, holeLines, 300, !obPicked(doc, l).length) : null;
         if (l.kind === "fence" || l.kind === "walk") {
           edge(pathD(piece), o);
           if (sides?.length === 1) ticks(piece, -sides[0], o);

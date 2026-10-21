@@ -14,7 +14,7 @@ import { holeLabel, holeNumber } from "../../lib/course";
 import { courseIssues, courseStats, courseTotals, holeStats, openIssues, playsOf } from "../../lib/holeStats";
 import { landscapeOf } from "../../lib/landscapes";
 import { fmtDist, fmtElev } from "../../lib/units";
-import { canPaste, copySelection, deleteSelection, duplicateSelection, pasteClipboard, select } from "../../state/actions";
+import { canPaste, copySelection, deleteSelection, duplicateSelection, markObBeyond, pasteClipboard, select } from "../../state/actions";
 import { getDoc, updateItem, useCourse, useEditor, type Step } from "../../state/course";
 import { deleteRecent, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../../state/files";
 import type { PlanMeta } from "../../lib/storage";
@@ -331,12 +331,13 @@ export function ItemMenu({ itemId, onClose }: { itemId: string; onClose: () => v
   }
   a.push({ label: hole ? "Zoom to this hole" : "Zoom to it", icon: <Maximize2 size={18} />, run: () => (hole ? getView()?.fitHole(hole.id) : getView()?.reveal(itemId)) });
   if (item && ((item.type === "area" && item.kind === "water") || (item.type === "line" && item.kind !== "ob" && item.kind !== "walk"))) {
-    a.push({ label: item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)", run: () => updateItem(item.id, (item.ob === true ? { ob: undefined, obBeyond: undefined, obStretches: undefined } : { ob: true }) as Partial<CourseItem>), testid: "menu-ob" });
+    a.push({ label: item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)", run: () => updateItem(item.id, (item.ob === true ? { ob: undefined, obBeyond: undefined, obHoles: undefined, obStretches: undefined } : { ob: true }) as Partial<CourseItem>), testid: "menu-ob" });
   }
   if (item?.type === "line" && item.kind !== "ob" && item.kind !== "walk") {
-    if (!(item.ob === true && item.obBeyond)) a.push({ label: "Mark as OB and beyond", run: () => updateItem(item.id, { ob: true, obBeyond: true } as Partial<CourseItem>), testid: "menu-ob-beyond" });
-    a.push({ label: "OB along a stretch", run: () => set({ obPick: item.id, tool: "select" }), testid: "menu-ob-stretch" });
+    if (!(item.ob === true && item.obBeyond)) a.push({ label: "Mark as OB and beyond", run: () => markObBeyond(item.id), testid: "menu-ob-beyond" });
+    a.push({ label: "OB along a stretch", run: () => set({ obPick: item.id, pickCut: false, tool: "select" }), testid: "menu-ob-stretch" });
   }
+  if (item?.type === "line" && !item.locked) a.push({ label: "Remove a stretch", run: () => set({ obPick: item.id, pickCut: true, tool: "select" }), testid: "menu-cut-stretch" });
   // (on one of the things picked together: for all of them)
   const group = useEditor.getState().group;
   const inGroup = !!item && group.includes(item.id);

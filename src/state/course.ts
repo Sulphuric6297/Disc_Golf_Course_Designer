@@ -121,6 +121,8 @@ type EditorStore = {
   plotLine: string | null;
   /** The line (a road, a path...) a stretch of OB is being marked along: where it starts, then ends. */
   obPick: string | null;
+  /** What that stretch is for: taken out of the line (instead of marked OB). */
+  pickCut: boolean;
   /** How far measuring the trees and ground from the air has got (0..1; null: not measuring). */
   lidarBusy: number | null;
   /** What is picked on the Design page's course map: "title", "legend"... or "text:ID", "image:ID". */
@@ -180,6 +182,7 @@ export const useEditor = create<EditorStore>()(set => ({
   dragSelect: false,
   plotLine: null,
   obPick: null,
+  pickCut: false,
   lidarBusy: null,
   designSel: null,
   designHole: null,

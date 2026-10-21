@@ -3,7 +3,7 @@
 // to the next tee.
 import { CIRCLE_ONE_FT, FT_PER_M, TEE_LEVELS } from "../constants";
 import type { AreaItem, BasketItem, CourseDoc, CourseItem, LineItem, P, SignPart } from "../types";
-import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, obPieces, throwLine } from "./course";
+import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, obFor, obPieces, throwLine } from "./course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, rotatePoint, smoothPath } from "./geom";
 import { holeStats, playedHoles } from "./holeStats";
 import { markingsInView, northArrow, palette, renderMapLayers, scaleBar, titleStack, wrapSvg, type MapView } from "./mapSvg";
@@ -56,7 +56,7 @@ export const autoRules = (doc: CourseDoc, holeId: string) => {
   const reach = hole.fairwayWidth / 2 + 40, line = smoothPath(s.line, 8);
   const close = (piece: P[]) => Array.from({ length: Math.ceil(pathLength(piece) / 10) + 1 }, (_, k) => pointAlong(piece, k * 10).point).some(p => distanceToPath(p, line) < reach);
   const said = new Set<string>();
-  for (const l of doc.items.filter(i => i.type === "line" && i.kind !== "ob" && i.kind !== "walk" && i.ob === true && (!i.holeId || belongsTo(i, holeId))) as LineItem[]) {
+  for (const l of doc.items.filter(i => i.type === "line" && i.kind !== "ob" && i.kind !== "walk" && i.ob === true && obFor(doc, i, holeId)) as LineItem[]) {
     if (!obPieces(l).some(close)) continue;
     const name = l.label?.trim() || { road: "Road", path: "Path", fence: "Fence", stream: "Creek", ob: "", walk: "" }[l.kind];
     const text = `${name}${l.obBeyond ? " and beyond" : ""} is OB.`;

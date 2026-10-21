@@ -2,14 +2,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
-import { areaPath, autoWalks, byNumber, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
+import { areaPath, autoWalks, byNumber, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, obPicked, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
 import { courseStats, holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
 import { fairwayTrees } from "../lib/lidar";
-import { addHoleOb, deleteSelection, duplicateSelection, editWalks, select, setTeeLevel, shareBasket } from "../state/actions";
+import { addHoleOb, deleteSelection, duplicateSelection, editWalks, markObBeyond, select, setTeeLevel, shareBasket } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
 import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface, TreeKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
@@ -263,20 +263,30 @@ function SurfacePick({ value, onChange }: { value?: PathSurface; onChange: (v: P
   );
 }
 
+/** A hole's chip in a pick of holes. */
+const holeChip = (on: boolean) => `px-2 py-1 touch:py-2 rounded-md text-xs font-semibold border ${on ? "bg-orange-500/20 border-orange-400 text-orange-100" : "border-zinc-700 text-zinc-300 hover:border-zinc-500"}`;
+
 /** Whether water, a creek, a road, a fence or a path is out of bounds (and shown so on the map);
  * a line OB beyond it too, and along all of it or stretches of it. */
 function ObChoice({ item }: { item: AreaItem | LineItem }) {
-  const units = useCourse(s => s.doc.units);
+  const doc = useCourse(s => s.doc);
+  const units = doc.units;
   const wet = item.kind === "water" || item.kind === "stream";
   const line = item.type === "line" ? item : null;
   const value = item.ob === true ? (line?.obBeyond ? "beyond" : "edge") : item.ob === false || !wet ? "no" : "yes";
   const options = [{ value: "no", label: "Not OB" }, ...(wet ? [{ value: "yes", label: "OB" }] : []), { value: "edge", label: "OB, red edge" }, ...(line ? [{ value: "beyond", label: "OB and beyond" }] : [])];
-  const pick = (v: string) => updateItem(item.id, {
-    ob: v === "edge" || v === "beyond" ? true : v === "no" ? (wet ? false : undefined) : undefined,
-    ...(line ? { obBeyond: v === "beyond" ? true : undefined, ...(v === "edge" || v === "beyond" ? {} : { obStretches: undefined }) } : {})
-  } as Partial<CourseItem>);
+  const pick = (v: string) => {
+    if (line && v === "beyond") return markObBeyond(item.id);
+    updateItem(item.id, {
+      ob: v === "edge" ? true : v === "no" ? (wet ? false : undefined) : undefined,
+      ...(line ? { obBeyond: undefined, ...(v === "edge" ? {} : { obStretches: undefined, obHoles: undefined }) } : {})
+    } as Partial<CourseItem>);
+  };
   const len = line ? pathLength(linePath(line)) : 0;
-  const markStretch = () => useEditor.getState().set({ obPick: item.id, tool: "select" });
+  const markStretch = () => useEditor.getState().set({ obPick: item.id, pickCut: false, tool: "select" });
+  // The holes it is OB for (none picked: all of them)
+  const picked = line ? obPicked(doc, line) : [];
+  const setObHoles = (ids: string[]) => updateItem(item.id, { obHoles: ids.length ? ids : undefined } as Partial<CourseItem>);
   return (
     <>
       <Field label="Out of bounds">
@@ -298,6 +308,17 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
               <Button small onClick={markStretch} testid="ob-mark-stretch">{line.obStretches?.length ? "Add a stretch" : "Only a stretch"}</Button>
               {!!line.obStretches?.length && <Button small onClick={() => updateItem(item.id, { obStretches: undefined } as Partial<CourseItem>)} testid="ob-all">All of it</Button>}
             </div>
+          </div>
+        </Field>
+      )}
+      {line && item.ob === true && (
+        <Field label="OB for">
+          <div className="flex flex-wrap gap-1" role="group" aria-label="OB for holes" data-testid="ob-for">
+            <button className={holeChip(!picked.length)} aria-pressed={!picked.length} onClick={() => setObHoles([])}>All holes</button>
+            {byNumber(doc.holes).map(h => {
+              const on = picked.includes(h.id);
+              return <button key={h.id} className={holeChip(on)} aria-pressed={on} aria-label={`Hole ${holeLabel(doc, h.id)}`} onClick={() => setObHoles(on ? picked.filter(x => x !== h.id) : [...picked, h.id])}>{holeLabel(doc, h.id)}</button>;
+            })}
           </div>
         </Field>
       )}
@@ -330,7 +351,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
   const shared = item.type === "area" || item.type === "line" || item.type === "structure";
   const mine = "holeId" in item && item.holeId ? [item.holeId, ...((shared && item.alsoHoles) || [])] : [];
   const setHoles = (ids: string[]) => set({ holeId: ids[0], alsoHoles: ids.length > 1 ? ids.slice(1) : undefined });
-  const chip = (on: boolean) => `px-2 py-1 touch:py-2 rounded-md text-xs font-semibold border ${on ? "bg-orange-500/20 border-orange-400 text-orange-100" : "border-zinc-700 text-zinc-300 hover:border-zinc-500"}`;
+  const chip = holeChip;
   const holePicker = shared ? (
     <Field label="Belongs to">
       <div className="flex flex-wrap gap-1" role="group" aria-label="Belongs to holes" data-testid="belongs-to">
@@ -432,6 +453,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
           {item.kind !== "ob" && item.kind !== "walk" && <ObChoice item={item} />}
           {item.kind === "ob" && holePicker}
           <TurnShape item={item} />
+          {!item.locked && <div className="mb-2"><Button small onClick={() => useEditor.getState().set({ obPick: item.id, pickCut: true, tool: "select" })} testid="line-cut">Remove a stretch</Button></div>}
           <div className="text-xs text-zinc-400">{fmtDist(pathLength(item.points), u)} long</div>
         </>
       );

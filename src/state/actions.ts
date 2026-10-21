@@ -2,12 +2,12 @@
 import { CIRCLE_ONE_FT, PIN_POSITIONS, TEE_ORDER, generateId } from "../constants";
 import {
   createAmenity, createArea, createBasket, createDropZone, createLabel, createLine, createMando, createStructure, createTee, createTree,
-  insertHole, autoWalks, basketHoles, holeBaskets, holeTees, itemHoleId, movedGroup, newHole, teeFor, wholeHoles
+  insertHole, autoWalks, basketHoles, belongsTo, closestHole, holeBaskets, holeTees, itemHoleId, movedGroup, newHole, obPicked, obPieces, teeFor, wholeHoles, withoutStretch
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { courseStats, holeStats } from "../lib/holeStats";
 import type { BasketItem, CourseDoc, CourseItem, Hole, P, TeeLevel, ToolMode } from "../types";
-import { changeDoc, editor, getDoc, removeHole, removeItems, useEditor } from "./course";
+import { changeDoc, editor, getDoc, removeHole, removeItems, updateItem, useEditor } from "./course";
 import { toast } from "./toast";
 
 /** Selects an item or a hole; selecting a hole's part makes that hole the one being worked on. */
@@ -500,4 +500,26 @@ export const shareBasket = (holeId: string, withHoleId: string | null) => {
     }
     return { items };
   });
+};
+
+/** A road, path, fence or creek made OB and beyond it too: for the hole running closest along it,
+ * unless holes were picked for it. */
+export const markObBeyond = (id: string) => {
+  const d = getDoc();
+  const l = d.items.find(i => i.id === id);
+  if (!l || l.type !== "line") return;
+  const piece = obPieces(l)[0];
+  const holes = courseStats(d).filter(st => st.complete && (!l.holeId || belongsTo(l, st.holeId))).map(st => ({ id: st.holeId, line: st.line }));
+  const near = !obPicked(d, l).length && piece ? closestHole(piece, holes) : null;
+  updateItem(id, { ob: true, obBeyond: true, ...(near ? { obHoles: [near] } : {}) } as Partial<CourseItem>);
+};
+
+/** A stretch taken out of a line (fractions of it as drawn): what is left either side stays (two
+ * lines where it was cut in the middle), the first still picked. One undo step. */
+export const cutStretch = (id: string, a: number, b: number) => {
+  const l = getDoc().items.find(i => i.id === id);
+  if (!l || l.type !== "line" || l.locked) return;
+  const parts = withoutStretch(l, a, b);
+  changeDoc(d => ({ items: d.items.flatMap(i => (i.id === id ? parts : [i])) }));
+  select(parts[0]?.id ?? null);
 };

@@ -90,6 +90,8 @@ export type ViewCallbacks = {
   onPlotEnd: () => void;
   /** Marking a stretch of OB along a line ended (marked or cancelled). */
   onObPickEnd: () => void;
+  /** A stretch of a line to take out (fractions of it as drawn). */
+  onCutLine: (id: string, a: number, b: number) => void;
   /** Trees measured from the air kept standing where they'd be cleared, or taken out (one undo step). */
   onLidar: (patch: { kept?: number[]; removed?: number[] }) => void;
 };
