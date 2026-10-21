@@ -114,7 +114,12 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
                     <button className="text-[12px] text-orange-300 hover:text-orange-200" onClick={() => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, growYears: yearsSince(d.lidar.source) } } : {}))} data-testid="grow-today">Grow to today ({yearsSince(doc.lidar.source)} years)</button>
                   )}
                 </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
+                <div className="mt-2" data-testid="lidar-clear">
+                  <Toggle label="Cut trees off the fairways" hint="Off: the measured trees stand where the holes play; cut by hand, or with an area below" checked={doc.lidar.clearFairways !== false}
+                    onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, clearFairways: v ? undefined : false } } : {}))} />
+                </div>
+                <div className="text-[11px] text-zinc-500 mt-1">Draw a loop round trees with the mouse held down (or a finger):</div>
+                <div className="mt-1 flex flex-wrap gap-1.5">
                   <Button small onClick={() => ed.set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", lidarLasso: "cut" })} testid="lasso-cut">Cut trees in an area</Button>
                   <Button small onClick={() => ed.set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", lidarLasso: "keep" })} testid="lasso-keep">Bring trees back in an area</Button>
                 </div>

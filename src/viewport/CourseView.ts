@@ -815,6 +815,7 @@ export class CourseView {
     this.fly = { ...path, t: -VIDEO_HOLD.intro, done, title: holeTitle(this.doc.course, holeId) };
     const wait: { since: number; loaded: boolean; frames: number } = { since: performance.now(), loaded: false, frames: 0 };
     this.flyWait = wait;
+    this.cb.onFlyWait(true);
     void (async () => {
       const left = () => performance.now() - wait.since < FLY_WAIT_MS;
       const pause = () => new Promise(r => setTimeout(r, 100));
@@ -1305,7 +1306,11 @@ export class CourseView {
       // must not skip the flight
       const w = this.flyWait;
       if (w && (w.loaded ? ++w.frames < 4 : true) && performance.now() - w.since < FLY_WAIT_MS) { /* waiting */ }
-      else { this.flyWait = null; this.fly.t += Math.min(dt, 0.25); }
+      else {
+        if (w) this.cb.onFlyWait(false);
+        this.flyWait = null;
+        this.fly.t += Math.min(dt, 0.25);
+      }
       this.dirty = true;
       // (a moment at the basket before it ends, as in a recording)
       if (this.fly.t >= this.fly.play + (this.fly.title ? VIDEO_HOLD.outro : 0)) {
@@ -2094,7 +2099,7 @@ export class CourseView {
       const forPlay = clearingsFor(true);
       const nowhere = nowhereFor();
       this.clearedAt = (p, reach) => forPlay.test(p, reach) || nowhere.test(p);
-      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.minHeight ?? 0, lidar.growYears ?? 0, forPlay.key, nowhere.key]);
+      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.minHeight ?? 0, lidar.growYears ?? 0, lidar.clearFairways !== false, forPlay.key, nowhere.key]);
       if (this.dragging && this.lidarKey && fresh !== this.lidarKey) this.afterDrag = true;
       else this.lidarKey = fresh;
       const state = this.keep("lidar", lidar.trees, this.lidarKey, () => {

@@ -56,6 +56,8 @@ plain("trees on a fairway are cut down unless kept; taken out anywhere; a hole's
   plainExpect(standingTrees(doc.lidar, cleared)).toEqual({ stand: [3], cut: [0, 1, 2] });
   doc.lidar = { ...doc.lidar, kept: [1], removed: [3] };
   plainExpect(standingTrees(doc.lidar, cleared)).toEqual({ stand: [1], cut: [0, 2, 3] });
+  // (fairways left alone: only what was taken out by hand is down)
+  plainExpect(standingTrees({ ...doc.lidar, clearFairways: false }, cleared)).toEqual({ stand: [0, 1, 2], cut: [3] });
   const hole = newHole({ fairwayWidth: 30 });
   plainExpect(fairwayTrees(doc, hole, [{ x: 50, y: 300 }, { x: 350, y: 300 }])).toEqual({ cut: [0, 2], kept: [1] });
 });
@@ -180,4 +182,32 @@ plain("saplings since the survey: none at once, more with the years, near the me
     plainExpect(near).toBe(true);
   }
   plainExpect(saplings(woods, 10)).toEqual(ten);
+});
+
+test("bring trees back in an area: a freehand loop round the stumps puts the measured trees back (one undo step)", async ({ page }) => {
+  test.setTimeout(240_000);
+  await withLidar(page);
+  await importSite(page);
+  const doc = await course(page);
+  const W2 = doc.canvas.width, H2 = doc.canvas.height;
+  const at = (e: number, n: number) => ({ x: W2 / 2 + e * FT, y: H2 / 2 - n * FT });
+  const nearest = (p: { x: number; y: number }) => doc.lidar.trees.findIndex((t: number[]) => Math.hypot(t[0] - p.x, t[1] - p.y) < 6);
+  const row = [-60, -40, -20, 0, 20].map(e => nearest(at(e, -40)));
+  await addHole(page, at(-75, -40), at(35, -40));
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await course(page)).lidar.kept).toBeUndefined();
+  // The Site step's button, then a loop drawn round the row with the mouse held down
+  await page.getByRole("button", { name: /Site/ }).click();
+  await page.getByTestId("lasso-keep").click();
+  const loop = [at(-75, -25), at(35, -25), at(35, -55), at(-75, -55), at(-75, -28)];
+  const s0 = await screenOf(page, loop[0].x, loop[0].y);
+  await page.mouse.move(s0.x, s0.y);
+  await page.mouse.down();
+  for (const p of loop.slice(1)) { const s = await screenOf(page, p.x, p.y); await page.mouse.move(s.x, s.y, { steps: 8 }); }
+  await page.mouse.up();
+  await expect.poll(async () => (await course(page)).lidar.kept).toEqual([...row].sort((a, b) => a - b));
+  // (no woods area was made)
+  expect((await course(page)).items.filter((i: any) => i.type === "area" && i.kind === "woods")).toHaveLength(0);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await course(page)).lidar.kept).toBeUndefined();
 });

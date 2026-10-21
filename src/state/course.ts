@@ -156,6 +156,8 @@ type EditorStore = {
   /** Looking from a tee down its hole (the hole's id), or flying over it. */
   teeView: string | null;
   flyover: boolean;
+  /** A flyover still waiting for its pictures (the loading screen shows). */
+  flyLoading: boolean;
   /** Points placed so far while drawing (for the hint). */
   drawPoints: number;
   /** Map display: the satellite photo, contour lines, hill shading, ground texture up close. */
@@ -208,6 +210,7 @@ export const useEditor = create<EditorStore>()(set => ({
   treeKind: "deciduous",
   teeView: null,
   flyover: false,
+  flyLoading: false,
   drawPoints: 0,
   photo: true,
   contours: true,

@@ -70,7 +70,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       onPlotEnd: () => useEditor.getState().set({ plotLine: null }),
       onObPickEnd: () => useEditor.getState().set({ obPick: null, pickCut: false }),
       onCutLine: (id, a, b) => cutStretch(id, a, b),
-      onLidar: patch => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, ...patch } } : {}))
+      onLidar: patch => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, ...patch } } : {})),
+      onFlyWait: waiting => useEditor.getState().set({ flyLoading: waiting })
     });
     current = v;
     (window as any).__dgView = v;
@@ -140,7 +141,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => {
     if (!view) return;
     if (ed.flyover && ed.teeView) view.flyover(ed.teeView, () => useEditor.getState().set({ flyover: false }));
-    else view.setTeeView(ed.teeView);
+    else { view.setTeeView(ed.teeView); useEditor.getState().set({ flyLoading: false }); }
   }, [view, ed.teeView, ed.flyover]);
 
   const scale = info ? niceScaleBar(info.pxPerUnit, 110) : null;

@@ -312,6 +312,8 @@ export const surveyYear = (name: string) => Math.max(0, ...(name.match(/(19|20)\
  * `cleared` says) are cut down unless kept; any taken out are gone. */
 export const standingTrees = (lidar: NonNullable<CourseDoc["lidar"]>, cleared: (p: P, reach: number) => boolean, nowhere: (p: P) => boolean = () => false) => {
   const kept = new Set(lidar.kept ?? []), removed = new Set(lidar.removed ?? []);
+  // (a course can keep its measured trees on the fairways and cut by hand only)
+  if (lidar.clearFairways === false) cleared = () => false;
   const stand: number[] = [], cut: number[] = [];
   lidar.trees.forEach((t, k) => {
     const p = { x: t[0], y: t[1] };
