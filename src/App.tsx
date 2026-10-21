@@ -18,7 +18,7 @@ import { Button } from "./components/ui";
 import { useLayout, useTouch } from "./components/useLayout";
 import { CompactShell, ItemMenu } from "./components/mobile/CompactShell";
 import { useCourse, useEditor, getDoc, changeDoc, updateItem } from "./state/course";
-import { canPaste, copySelection, cutSelection, deleteSelection, duplicateSelection, markObBeyond, nudgeSelection, pasteClipboard, select, selectAll } from "./state/actions";
+import { adoptLidarTree, adoptTreeAt, canPaste, copySelection, cutTreeAt, cutSelection, deleteSelection, duplicateSelection, markObBeyond, nudgeSelection, pasteClipboard, select, selectAll } from "./state/actions";
 import { osmFailedToast } from "./state/osm";
 import { restoreAutosave, startAutosave } from "./state/files";
 import { toast, useToasts } from "./state/toast";
@@ -146,8 +146,9 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
     return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc); };
   }, [onClose]);
   // (a tree measured from the air standing there)
-  const measuredTree = info.ground ? getView()?.lidarTreeAt(info.ground) ?? null : null;
-  if (!hole && !item && measuredTree === null && !(canPaste() && info.ground)) return null;
+  const tree = info.ground ? getView()?.treeAt(info.ground) ?? null : null;
+  const measuredTree = tree?.kind === "measured" ? tree.k : null;
+  if (!hole && !item && !tree && !(canPaste() && info.ground)) return null;
   const x = Math.min(info.clientX, window.innerWidth - 220), y = Math.min(info.clientY, window.innerHeight - 200);
   const row = "w-full text-left px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800";
   const run = (fn: () => void) => () => { fn(); onClose(); };
@@ -173,7 +174,20 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
         </>
       )}
       {item?.type === "line" && !item.locked && info.ground && <button className={row} role="menuitem" onClick={run(() => { getView()?.startObPick(item.id, info.ground!, true); useEditor.getState().set({ obPick: item.id, pickCut: true, tool: "select" }); })}>Remove a stretch from here</button>}
-      {measuredTree !== null && <button className={row} role="menuitem" onClick={run(() => getView()?.toggleLidarTree(measuredTree))}>Cut down this tree</button>}
+      {measuredTree !== null && (
+        <>
+          <div className="px-3 pt-1 pb-0.5 text-[11px] text-zinc-500">Measured tree</div>
+          <button className={row} role="menuitem" onClick={run(() => adoptLidarTree(measuredTree))} data-testid="tree-adopt">Edit this tree (height, place…)</button>
+          <button className={row} role="menuitem" onClick={run(() => getView()?.toggleLidarTree(measuredTree))}>Cut down this tree</button>
+        </>
+      )}
+      {tree?.kind === "spot" && (
+        <>
+          <div className="px-3 pt-1 pb-0.5 text-[11px] text-zinc-500">{tree.height < 25 ? "Sapling" : "Planted tree"} · {Math.round(tree.height)} ft</div>
+          <button className={row} role="menuitem" onClick={run(() => adoptTreeAt(tree))} data-testid="tree-adopt">Edit this tree (height, place…)</button>
+          <button className={row} role="menuitem" onClick={run(() => cutTreeAt(tree))} data-testid="tree-cut">Cut down this tree</button>
+        </>
+      )}
       {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); copySelection(); })}>{inGroup ? `Copy ${group.length}` : "Copy"}</button>}
       {canPaste() && info.ground && <button className={row} role="menuitem" onClick={run(() => pasteClipboard(info.ground))}>Paste here</button>}
       {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); duplicateSelection(); })}>{inGroup ? `Duplicate ${group.length}` : "Duplicate"}</button>}

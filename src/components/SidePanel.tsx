@@ -6,7 +6,7 @@ import { AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER, generat
 import { activeLayout, holeTees } from "../lib/course";
 import { courseIssues, courseStats, courseTotals, levelsOnCourse, openIssues, playsOf, swapped, type SafetyIssue } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
-import { select } from "../state/actions";
+import { select, uncutTrees } from "../state/actions";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
 import type { AreaKind, Layout, LineKind, PinPosition, StructureKind, TeeLevel, ToolMode } from "../types";
 import { refreshOsm } from "../state/osm";
@@ -114,6 +114,16 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
                     <button className="text-[12px] text-orange-300 hover:text-orange-200" onClick={() => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, growYears: yearsSince(d.lidar.source) } } : {}))} data-testid="grow-today">Grow to today ({yearsSince(doc.lidar.source)} years)</button>
                   )}
                 </div>
+                {(doc.cutTrees?.length ?? 0) > 0 && (
+                  <div className="mt-2 text-[11px] text-zinc-400" data-testid="cut-by-hand">{doc.cutTrees!.length} sapling{doc.cutTrees!.length === 1 ? "" : "s"} or planted tree{doc.cutTrees!.length === 1 ? "" : "s"} cut down by hand · <button className="text-orange-300 hover:text-orange-200" onClick={uncutTrees}>Bring them back</button></div>
+                )}
+                {(() => {
+                  // (trees drawn by hand standing on a measured one: the survey has them already)
+                  const doubled = doc.items.filter(i => i.type === "tree" && doc.lidar!.trees.some(t => Math.hypot(t[0] - i.x, t[1] - i.y) < Math.max(6, t[3] * 0.5)));
+                  return doubled.length > 0 ? (
+                    <div className="mt-2 text-[11px] text-zinc-400" data-testid="doubled-trees">{doubled.length} drawn tree{doubled.length === 1 ? "" : "s"} stand{doubled.length === 1 ? "s" : ""} on a measured one · <button className="text-orange-300 hover:text-orange-200" onClick={() => { const ids = new Set(doubled.map(i => i.id)); changeDoc(d => ({ items: d.items.filter(i => !ids.has(i.id)) })); }}>Remove the drawn ones</button></div>
+                  ) : null;
+                })()}
                 <div className="mt-2" data-testid="lidar-clear">
                   <Toggle label="Cut trees off the fairways" hint="Off: the measured trees stand where the holes play, cut by hand only" checked={doc.lidar.clearFairways !== false}
                     onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, clearFairways: v ? undefined : false } } : {}))} />

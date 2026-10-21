@@ -491,6 +491,9 @@ export interface CourseDoc {
   /** `growYears`: the measured trees grown that many years (the survey is older than today). */
   /** `clearFairways: false`: the measured trees stay where the holes play (cut by hand only). */
   lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number; clearFairways?: false };
+  /** Where trees were cut down by hand that have no list of their own: saplings grown since the
+   * survey and the trees the app plants in woods and patches. None stands within 4 ft of one. */
+  cutTrees?: P[];
   terrainHeights: Record<string, number>;
   /** Painted ground (lib/groundPaint): a material per painted square foot, keyed "i,j". */
   groundPaint: Record<string, number>;

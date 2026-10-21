@@ -381,7 +381,7 @@ export class CourseView {
     c.mouseButtons.right = ACTION.ROTATE;
     c.mouseButtons.wheel = ACTION.NONE;
     c.touches.one = ACTION.TOUCH_TRUCK;
-    c.touches.two = ACTION.TOUCH_DOLLY_ROTATE;
+    c.touches.two = ACTION.NONE; // (two fingers are handled here: see twoFingers)
     c.touches.three = ACTION.TOUCH_TRUCK;
     c.minPolarAngle = 0;
     c.maxPolarAngle = MAX_TILT;
@@ -2094,7 +2094,12 @@ export class CourseView {
     // Trees measured from the air: cut down where the course clears the ground for play, unless
     // kept (in place of the woods' made-up trees)
     // (grown to today, as many years as the course asks)
-    const lidar = course.lidar?.trees.length ? { ...course.lidar, trees: grownTrees(course.lidar) } : null;
+    // Where trees were cut down by hand (saplings, planted ones): nothing grows or is planted there
+    const cut = course.cutTrees ?? [];
+    const cutAt = (p: P) => cut.some(c => Math.hypot(c.x - p.x, c.y - p.y) < 4);
+    const cutKey = cut.length ? JSON.stringify(cut) : "";
+    const measuredCount = course.lidar?.trees.length ?? 0;
+    const lidar = course.lidar?.trees.length ? { ...course.lidar, trees: grownTrees(course.lidar).filter((t, k) => k < measuredCount || !cutAt({ x: t[0], y: t[1] })) } : null;
     const measured = !!lidar;
     this.lidarState = null;
     if (lidar) {
@@ -2102,7 +2107,7 @@ export class CourseView {
       const nowhere = nowhereFor();
       const cleared = forPlay.test;
       this.clearedAt = (p, reach) => cleared(p, reach) || nowhere.test(p);
-      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.minHeight ?? 0, lidar.growYears ?? 0, lidar.clearFairways !== false, forPlay.key, nowhere.key]);
+      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.minHeight ?? 0, lidar.growYears ?? 0, lidar.clearFairways !== false, forPlay.key, nowhere.key, cutKey]);
       if (this.dragging && this.lidarKey && fresh !== this.lidarKey) this.afterDrag = true;
       else this.lidarKey = fresh;
       const state = this.keep("lidar", lidar.trees, this.lidarKey, () => {
@@ -2181,10 +2186,10 @@ export class CourseView {
       // between the measured ones as thickly as it asks; none when it says so)
       if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn")) {
         const here = clearings.near(boundsOf(a.points));
-        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key]), () => {
+        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key, cutKey]), () => {
           const land = landscapeOf(st);
           this.plantings++;
-          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, here.test);
+          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, (p, r) => here.test(p, r) || cutAt(p));
           woods.traverse(o => { o.userData.itemId = a.id; });
           this.shadowsDirty = true;
           return woods;
@@ -2197,12 +2202,12 @@ export class CourseView {
         a.patches.forEach((patch, i) => {
           const here = clearings.near(boundsOf(patch.points));
           const fill = Math.min(1, Math.max(0.1, patch.fill));
-          put(`woods:${a.id}:patch:${i}`, JSON.stringify([patch.points, fill, hv, st.trees, st.landscape, here.key, this.lidarKey]), () => {
+          put(`woods:${a.id}:patch:${i}`, JSON.stringify([patch.points, fill, hv, st.trees, st.landscape, here.key, this.lidarKey, cutKey]), () => {
             const land = landscapeOf(st);
             this.plantings++;
             const box = boundsOf(patch.points);
             const near = standing.map(k => trees[k]).filter(t => t && t[0] >= box.minX - 40 && t[0] <= box.maxX + 40 && t[1] >= box.minY - 40 && t[1] <= box.maxY + 40);
-            const keepOut = (p: P, reach: number) => here.test(p, reach) || near.some(t => Math.hypot(t[0] - p.x, t[1] - p.y) < t[3] * 0.8 + 4);
+            const keepOut = (p: P, reach: number) => here.test(p, reach) || cutAt(p) || near.some(t => Math.hypot(t[0] - p.x, t[1] - p.y) < t[3] * 0.8 + 4);
             const woods = createWoods(patch.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, keepOut, 22 / Math.sqrt(fill));
             woods.traverse(o => { o.userData.itemId = a.id; });
             this.shadowsDirty = true;
@@ -2227,14 +2232,14 @@ export class CourseView {
     // The painted map's own woods: trees standing on it
     const pw = painted && !measured ? this.paintedWoods : null;
     if (pw) {
-      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, clearings.key]), () => {
+      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, clearings.key, cutKey]), () => {
         const land = landscapeOf(st);
         const inside = (p: P) => {
           const c = Math.floor((p.x - pw.x0) / pw.ftPerCell), r = Math.floor((p.y - pw.y0) / pw.ftPerCell);
           return c >= 0 && r >= 0 && c < pw.cols && r < pw.rows && pw.data[r * pw.cols + c] === 1;
         };
         // (as thick as the painting's tree cover)
-        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, clearings.test, 22 / Math.sqrt(Math.max(0.15, pw.cover)));
+        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, (p, r) => clearings.test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.15, pw.cover)));
         this.shadowsDirty = true;
         return woods;
       }, this.itemsGroup, true);
@@ -2717,6 +2722,25 @@ export class CourseView {
   }
 
   /** The measured tree standing at a spot (its trunk within reach), if any. */
+  /** Any tree standing at a spot that isn't an item of its own: a measured one (its index), or a
+   * sapling or planted tree (where it stands and its size). */
+  treeAt(p: P): { kind: "measured"; k: number } | { kind: "spot"; x: number; y: number; height: number; width: number; conifer: boolean } | null {
+    const k = this.lidarTreeAt(p);
+    if (k !== null) return { kind: "measured", k };
+    let best: TreeSpot | null = null, bestD = Infinity;
+    const look = (g: THREE.Object3D) => {
+      const spots = g.userData.spots as TreeSpot[] | undefined;
+      if (!spots) return;
+      for (const s of spots) {
+        const d = Math.hypot(s.x - p.x, s.y - p.y);
+        if (d < Math.max(4, s.width * 0.3) && d < bestD) { best = s; bestD = d; }
+      }
+    };
+    this.itemsGroup.children.forEach(look);
+    const b = best as TreeSpot | null;
+    return b ? { kind: "spot", x: b.x, y: b.y, height: b.height, width: b.width, conifer: b.shape === "conifer" } : null;
+  }
+
   lidarTreeAt(p: P): number | null {
     const lidar = this.doc?.course.lidar, ls = this.lidarState;
     if (!lidar || !ls) return null;
@@ -3661,8 +3685,48 @@ export class CourseView {
   /** Whether the last press was a finger (taps get a bigger reach for picking things). */
   private fingers = false;
 
+  /** Where each finger is now (screen px). */
+  private fingerAt = new Map<number, { x: number; y: number }>();
+  /** Two fingers on the map, as on Google Earth: a pinch zooms around the point between them, a
+   * twist turns the map around it (it stays under the fingers), a slide up or down tilts. */
+  private pinch: { d: number; a: number; cy: number } | null = null;
+  private readonly twoFingers = (e: PointerEvent) => {
+    const f = this.fingerAt.get(e.pointerId);
+    if (!f) return;
+    f.x = e.clientX; f.y = e.clientY;
+    if (this.touchIds.size !== 2 || !this.pinch) return;
+    const [p, q] = [...this.touchIds].map(id => this.fingerAt.get(id)!);
+    if (!p || !q) return;
+    const d = Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a = Math.atan2(q.y - p.y, q.x - p.x), cx = (p.x + q.x) / 2, cy = (p.y + q.y) / 2;
+    const was = this.pinch;
+    this.pinch = { d, a, cy };
+    // (the map turns with the fingers and stays under them: around the ground between them)
+    let da = a - was.a;
+    if (da > Math.PI) da -= 2 * Math.PI; else if (da < -Math.PI) da += 2 * Math.PI;
+    const under = this.groundAt(cx, cy);
+    if (under && Math.abs(da) > 1e-4) this.controls.setOrbitPoint(under.x, under.y, under.z);
+    if (Math.abs(da) > 1e-4) void this.controls.rotate(da, 0, false);
+    if (Math.abs(was.cy - cy) > 0.5) void this.controls.rotate(0, (was.cy - cy) * (MAX_TILT / Math.max(300, this.size.height * 0.6)), false);
+    if (Math.abs(d / was.d - 1) > 1e-3) this.zoomAt(cx, cy, was.d / d, false);
+    this.invalidate();
+  };
+  private startPinch() {
+    const [p, q] = [...this.touchIds].map(id => this.fingerAt.get(id)!);
+    if (!p || !q) return;
+    this.pinch = { d: Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a: Math.atan2(q.y - p.y, q.x - p.x), cy: (p.y + q.y) / 2 };
+  }
+  private endPinch() {
+    if (this.touchIds.size === 0) window.removeEventListener("pointermove", this.twoFingers);
+    if (!this.pinch) return;
+    this.pinch = null;
+    this.snapNorth();
+  }
+
   private touchUp(e: PointerEvent) {
+    this.fingerAt.delete(e.pointerId);
     if (this.touchIds.delete(e.pointerId) && this.touchIds.size >= 1) this.pinchAt = performance.now();
+    if (this.touchIds.size < 2) this.endPinch();
+    if (this.touchIds.size === 0) window.removeEventListener("pointermove", this.twoFingers);
     const lp = this.longPress;
     if (lp?.id !== e.pointerId) return;
     // (Held long enough, even if a busy page ran the timer late: still the long-press)
@@ -3768,9 +3832,13 @@ export class CourseView {
     this.fingers = e.pointerType === "touch";
     if (this.fingers) {
       this.touchIds.add(e.pointerId);
+      this.fingerAt.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.touchIds.size === 1) window.addEventListener("pointermove", this.twoFingers);
       if (this.touchIds.size > 1) {
         this.pinchAt = performance.now();
         this.secondFinger();
+        if (this.touchIds.size === 2) this.startPinch();
+        else this.endPinch();
         return;
       }
       // (Not on a handle that moves something: holding one still before dragging it slowly is no
@@ -3984,7 +4052,15 @@ export class CourseView {
         return;
       }
       stop();
-      this.gesture(e, { click: () => this.cb.onSelect(null), drag: panOrNothing });
+      this.gesture(e, {
+        click: ev => {
+          const g = this.groundAt(ev.clientX, ev.clientY);
+          const tree = g && ev.pointerType !== "touch" ? this.treeAt({ x: g.x, y: g.z }) : null;
+          if (tree) this.cb.onContextMenu({ clientX: ev.clientX, clientY: ev.clientY, itemId: null, ground: { x: g!.x, y: g!.z } });
+          else this.cb.onSelect(null);
+        },
+        drag: panOrNothing
+      });
       return;
     }
     if (add) {
@@ -4511,7 +4587,7 @@ export class CourseView {
   }
 
   /** Zoom keeping the ground point under the cursor fixed. */
-  private zoomAt(clientX: number, clientY: number, factor: number) {
+  private zoomAt(clientX: number, clientY: number, factor: number, smooth = true) {
     const pos = this.controls.getPosition(new THREE.Vector3(), true);
     const target = this.controls.getTarget(new THREE.Vector3(), true);
     const d = pos.distanceTo(target);
@@ -4520,7 +4596,7 @@ export class CourseView {
     const p = this.groundAt(clientX, clientY) ?? target.clone();
     const np = p.clone().add(pos.sub(p).multiplyScalar(f));
     const nt = p.clone().add(target.sub(p).multiplyScalar(f));
-    void this.controls.setLookAt(np.x, np.y, np.z, nt.x, nt.y, nt.z, true);
+    void this.controls.setLookAt(np.x, np.y, np.z, nt.x, nt.y, nt.z, smooth);
     this.controls.normalizeRotations();
     this.invalidate();
   }

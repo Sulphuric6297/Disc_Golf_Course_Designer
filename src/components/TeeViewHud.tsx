@@ -17,6 +17,9 @@ import { FlyoverSettingsPanel } from "./FlyoverSettings";
  * over the view (shown at once; it fades as the flight begins). */
 const STAGE = { map: "Painting the map", detail: "Sharpening the hole", textures: "Loading textures" } as const;
 function FlyoverLoading({ title, facts, on, stage }: { title: string; facts: string; on: boolean; stage: keyof typeof STAGE | null }) {
+  // (how long each stage takes: so a slow one can be told)
+  const [secs, setSecs] = useState(0);
+  useEffect(() => { setSecs(0); const t0 = performance.now(); const t = window.setInterval(() => setSecs(Math.round((performance.now() - t0) / 1000)), 1000); return () => window.clearInterval(t); }, [stage]);
   return (
     <div className={`absolute inset-0 z-30 flex flex-col items-center justify-center bg-zinc-950 pointer-events-auto transition-opacity duration-300 ${on ? "opacity-100" : "opacity-0"}`} data-testid="flyover-loading" role="status" aria-live="polite">
       <div className="text-xl font-semibold text-zinc-50 tracking-tight">{title}</div>
@@ -24,7 +27,7 @@ function FlyoverLoading({ title, facts, on, stage }: { title: string; facts: str
       <div className="mt-6 w-40 h-0.5 rounded-full bg-zinc-800 overflow-hidden">
         <div className="h-full w-1/3 rounded-full bg-orange-500 animate-[dgslide_1.2s_ease-in-out_infinite]" />
       </div>
-      <div className="mt-3 text-xs text-zinc-500" data-testid="flyover-loading-line">{stage ? STAGE[stage] : "Preparing the flyover"}</div>
+      <div className="mt-3 text-xs text-zinc-500" data-testid="flyover-loading-line">{stage ? STAGE[stage] : "Preparing the flyover"}{secs >= 2 ? ` · ${secs} s` : ""}</div>
     </div>
   );
 }
