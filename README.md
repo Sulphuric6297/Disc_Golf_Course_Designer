@@ -101,3 +101,9 @@ branch*, and the branch to `gh-pages` / `(root)`. The site then appears at
 - Map data © OpenStreetMap contributors.
 - Elevation: USGS 3DEP and AWS Terrain Tiles.
 - Par and design guidance: the PDGA's course design pages; see `docs/RESEARCH.md`.
+
+## License
+
+Free and open source under the [GNU Affero General Public License v3.0 or later](LICENSE).
+Anyone may use, change and host it; anyone who runs a changed copy for others must share
+their changed code with those users.
