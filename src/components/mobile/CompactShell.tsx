@@ -520,7 +520,8 @@ function PhoneShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: Shel
     prevMode.current = panel.mode;
   }, [panel.mode]);
   useLayoutEffect(() => {
-    if (ed.selectedId) setDetent(d => (d === "full" ? "half" : d));
+    // (view only: its numbers come up)
+    if (ed.selectedId) setDetent(d => (d === "full" ? "half" : readOnly && d === "peek" ? "half" : d));
   }, [ed.selectedId]);
 
   // Fitting holes and items keeps them clear of the sheet (set before the fit that follows a

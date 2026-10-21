@@ -152,6 +152,14 @@ const idOfGrid = (g: object) => {
   return gridIds.get(g)!;
 };
 
+/** The longest a flyover waits for the course to load before it flies anyway. */
+const FLY_WAIT_MS = 10_000;
+// Whether three.js's loaders still have textures on their way
+let loadingTextures = 0;
+THREE.DefaultLoadingManager.onStart = () => { loadingTextures++; };
+THREE.DefaultLoadingManager.onLoad = () => { loadingTextures = 0; };
+const texturesLoading = () => loadingTextures > 0;
+
 export class CourseView {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -222,6 +230,10 @@ export class CourseView {
   private povHole: string | null = null;
   private povLook = { yaw: 0, pitch: 0 };
   /** A flight under way: `dur` s of path, played over `play` s (`at`: path time at a moment; see flightClock). */
+  /** A flyover holds its first picture until the hole's detail and textures are in and a few
+   * frames are drawn (so it looks right from the start), ten seconds at most. */
+  private flyWait: { since: number; loaded: boolean; frames: number } | null = null;
+  private detailReady: Promise<unknown> = Promise.resolve();
   private fly: { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; t: number; dur: number; play: number; at: (t: number) => number; done?: () => void; title?: HoleTitle } | null = null;
   /** A hole whose line is being plotted by hand, and its turns so far (from the tee). */
   private plotHole: string | null = null;
@@ -781,7 +793,7 @@ export class CourseView {
     if (holeId === this.povHole) return;
     this.povHole = holeId;
     this.povLook = { yaw: 0, pitch: 0 };
-    void this.updateDetail();
+    this.detailReady = this.updateDetail().catch(() => {});
     this.controls.enabled = !holeId;
     this.labelsLayer.style.display = holeId ? "none" : "";
     this.handlesLayer.style.display = holeId ? "none" : "";
@@ -801,6 +813,14 @@ export class CourseView {
     this.setTeeView(holeId);
     if (!this.fly) this.povFov = this.povCam.fov;
     this.fly = { ...path, t: -VIDEO_HOLD.intro, done, title: holeTitle(this.doc.course, holeId) };
+    const wait: { since: number; loaded: boolean; frames: number } = { since: performance.now(), loaded: false, frames: 0 };
+    this.flyWait = wait;
+    void (async () => {
+      await this.detailReady;
+      // (the textures still on their way: the photo, the painted ground, the trees' leaves)
+      while (texturesLoading() && performance.now() - wait.since < FLY_WAIT_MS) await new Promise(r => setTimeout(r, 100));
+      wait.loaded = true;
+    })();
     this.invalidate();
   }
 
@@ -1269,9 +1289,12 @@ export class CourseView {
     const dt = this.clock.getDelta();
     if (this.controls.update(dt)) this.dirty = true;
     if (this.fly) {
-      // At most a quarter second per frame: a slow first frame (or a tab coming back from the
-      // background) must not skip the flight
-      this.fly.t += Math.min(dt, 0.25);
+      // Held on its first picture until everything's in (a few frames drawn after), then at most
+      // a quarter second per frame: a slow first frame (or a tab coming back from the background)
+      // must not skip the flight
+      const w = this.flyWait;
+      if (w && (w.loaded ? ++w.frames < 4 : true) && performance.now() - w.since < FLY_WAIT_MS) { /* waiting */ }
+      else { this.flyWait = null; this.fly.t += Math.min(dt, 0.25); }
       this.dirty = true;
       // (a moment at the basket before it ends, as in a recording)
       if (this.fly.t >= this.fly.play + (this.fly.title ? VIDEO_HOLD.outro : 0)) {

@@ -122,7 +122,7 @@ function Ticks({ parts, value, onChange }: { parts: readonly Part[]; value: Perm
 }
 
 interface Link { id: string; token: string; slug: string | null; label: string; perms: Perms; hasPassword: boolean; expiresAt: string | null; createdAt: string; revoked: boolean }
-const linkUrl = (l: { token: string; slug?: string | null }) => `${location.origin}${location.pathname}#site=${l.slug || l.token}`;
+const linkUrl = (l: { token: string; slug?: string | null }) => `${location.origin}/${l.slug || l.token}`;
 const partsOf = (p: Perms) => LINK_PARTS.filter(k => p[k]).map(k => PART_LABELS[k].replace(/ \(.*\)$/, "")).join(", ") || "Nothing";
 
 /** Public links (each with what it shows, a password, an end), and the public site they show. */
@@ -173,7 +173,7 @@ function PublicSection({ id }: { id: string }) {
                 <span className="flex-1 min-w-0 truncate text-zinc-100 font-medium">{l.label || "Public link"}{l.revoked ? " · off" : ""}{l.hasPassword ? " · password" : ""}{l.expiresAt ? ` · until ${new Date(l.expiresAt).toLocaleDateString()}` : ""}</span>
                 {!l.revoked && <CopyButton text={linkUrl(l)} label="Copy link" />}
               </div>
-              <div className="text-[12px] text-zinc-500 mt-1">{l.slug ? <span className="text-zinc-300">#site={l.slug} · </span> : null}{partsOf(l.perms)}</div>
+              <div className="text-[12px] text-zinc-500 mt-1">{l.slug ? <span className="text-zinc-300">/{l.slug} · </span> : null}{partsOf(l.perms)}</div>
               <div className="flex gap-3 mt-1.5 text-xs">
                 <button className="text-zinc-300 hover:text-white" onClick={() => { setEditing(l.id); setForm({ label: l.label, slug: l.slug ?? "", perms: l.perms, password: "", expires: l.expiresAt ? l.expiresAt.slice(0, 10) : "" }); }}>Change</button>
                 <button className="text-zinc-300 hover:text-white" onClick={() => void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { revoked: !l.revoked }))}>{l.revoked ? "Turn on" : "Turn off"}</button>
@@ -188,7 +188,7 @@ function PublicSection({ id }: { id: string }) {
           <div className="mt-3 rounded-lg border border-zinc-700 p-3 space-y-2" data-testid="link-form">
             <input className={inputCls} placeholder="Label (where it's shared)" value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} aria-label="Label" />
             <label className="block">
-              <span className="flex items-center gap-2"><span className="text-xs text-zinc-400 shrink-0">…#site=</span>
+              <span className="flex items-center gap-2"><span className="text-xs text-zinc-400 shrink-0">{location.host}/</span>
                 <input className={inputCls} placeholder="Its own name (optional), e.g. springfield-park" value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })} aria-label="Link name" data-testid="link-slug" /></span>
               {form.slug && <span className="block text-[11px] text-zinc-500 mt-1">Easy to guess: add a password if only some should see it.</span>}
             </label>

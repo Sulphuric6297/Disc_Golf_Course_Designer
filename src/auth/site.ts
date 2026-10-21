@@ -39,7 +39,11 @@ export async function publishSite(courseId: string, progress: (s: string) => voi
     totals: { holes: doc.holes.reduce((n, h) => n + playsOf(doc, h.id), 0), par: totals.par, length: Math.round(totals.length), climb: Math.round(totals.climb) },
     holes: stats.map(s => {
       const h = doc.holes.find(x => x.id === s.holeId)!;
-      return { id: s.holeId, label: holeLabel(doc, s.holeId), name: h.name ?? "", par: s.par, length: Math.round(s.length), elevation: Math.round(s.elevationChange), playsLike: Math.round(s.playsLike) };
+      return {
+        id: s.holeId, label: holeLabel(doc, s.holeId), name: h.name ?? "", par: s.par, length: Math.round(s.length), elevation: Math.round(s.elevationChange), playsLike: Math.round(s.playsLike),
+        teeElevation: Math.round(s.teeElevation), basketElevation: Math.round(s.basketElevation), climb: Math.round(s.climb), descent: Math.round(s.descent),
+        shape: s.shape, obInPlay: s.obInPlay, treesOnLine: s.treesOnLine, difficulty: s.difficulty, maxSlope: Math.round(s.maxSlope)
+      };
     })
   };
   const files: { name: string; data: string }[] = [];

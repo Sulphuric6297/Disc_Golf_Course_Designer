@@ -1,7 +1,7 @@
 // The public course page, for anyone with a link (#site=…): no account. It shows only what the
 // owner published and the link allows: the course map, its numbers and holes, tee signs, the
 // scorecard, downloads, and the course to look round in 3D when allowed.
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Download, Lock, Map as MapIcon, Mountain, X } from "lucide-react";
 import { normalizeCourse } from "../lib/course";
 import { safeDoc } from "../lib/safeDoc";
@@ -10,13 +10,14 @@ import { useCourse, useEditor } from "../state/course";
 import { show } from "../state/files";
 import type { CourseDoc, Units } from "../types";
 import { Logo } from "./parts";
+import { holeFacts, type HoleNumbers } from "./holeFacts";
 import { useServerCourse } from "./courses";
 
-// (a link's random address, or the name its owner gave it)
-export const SITE_TOKEN = /^#site=([A-Za-z0-9_-]{3,})$/.exec(location.hash)?.[1] ?? null;
+// (a link's random address or the name its owner gave it: …/springfield-park, or …#site=…)
+export const SITE_TOKEN = /^\/([a-z0-9][a-z0-9-]{2,39}|[A-Za-z0-9_-]{40,})\/?$/.exec(location.pathname)?.[1] ?? /^#site=([A-Za-z0-9_-]{3,})$/.exec(location.hash)?.[1] ?? null;
 
 interface Site {
-  info: { name: string; designer?: string; units?: Units; totals?: { holes: number; par: number; length: number; climb: number }; holes: { id?: string; label: string; name: string; par: number; length: number; elevation: number; playsLike: number }[] };
+  info: { name: string; designer?: string; units?: Units; totals?: { holes: number; par: number; length: number; climb: number }; holes: (HoleNumbers & { id?: string; label: string; name: string })[] };
   shown: Record<string, boolean>;
   publishedAt: string;
   hasCourse: boolean;
@@ -37,6 +38,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
   const [files, setFiles] = useState<Record<string, string>>({});
   const [explore, setExplore] = useState(false);
   const [big, setBig] = useState<string | null>(null);
+  const [openHole, setOpenHole] = useState<string | null>(null);
 
   const load = async (pw: string) => {
     const res = await get("", pw);
@@ -84,7 +86,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
     return (
       <>
         {children}
-        <button className="fixed top-2 right-2 z-50 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold bg-zinc-900/95 border border-zinc-700 text-zinc-100" onClick={() => setExplore(false)} data-testid="leave-3d"><X size={14} /> Back to the course page</button>
+        <button className="fixed z-50 left-3 bottom-[max(12px,env(safe-area-inset-bottom))] md:left-auto md:bottom-auto md:top-2 md:right-2 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 md:py-1.5 text-sm font-semibold bg-zinc-900/95 border border-zinc-700 text-zinc-100 shadow-lg" onClick={() => setExplore(false)} data-testid="leave-3d"><X size={14} /> Course page</button>
       </>
     );
   }
@@ -155,23 +157,28 @@ export function PublicSite({ children }: { children: ReactNode }) {
         {site.shown.stats && site.info.holes.length > 0 && (
           <section className="my-8">
             <h2 className="text-[12px] font-bold uppercase tracking-wider text-zinc-400 mb-3">Holes</h2>
-            <div className="overflow-x-auto rounded-xl border border-zinc-800">
-              <table className="w-full text-sm" data-testid="public-holes">
-                <thead className="bg-zinc-900 text-zinc-400 text-[12px] uppercase tracking-wider"><tr><th className="text-left p-2.5">Hole</th><th className="text-right p-2.5">Par</th><th className="text-right p-2.5">Length</th><th className="text-right p-2.5">Elevation</th><th className="text-right p-2.5 hidden sm:table-cell">Plays like</th>{flies && <th className="p-2.5" />}</tr></thead>
-                <tbody>
-                  {site.info.holes.map(h => (
-                    <tr key={h.label} className="border-t border-zinc-800">
-                      <td className="p-2.5"><span className="font-bold">{h.label}</span>{h.name && <span className="text-zinc-400"> · {h.name}</span>}</td>
-                      <td className="p-2.5 text-right tabular-nums">{h.par}</td>
-                      <td className="p-2.5 text-right tabular-nums">{fmtDist(h.length, u)}</td>
-                      <td className="p-2.5 text-right tabular-nums">{fmtElev(h.elevation, u)}</td>
-                      <td className="p-2.5 text-right tabular-nums hidden sm:table-cell">{fmtDist(h.playsLike, u)}</td>
-                      {flies && <td className="p-1.5 text-right">{h.id && <button className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold bg-orange-500 hover:bg-orange-400 text-white" onClick={() => void open3d(h.id)} data-testid="fly-hole">▶ Fly</button>}</td>}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ul className="rounded-xl border border-zinc-800 divide-y divide-zinc-800 overflow-hidden" data-testid="public-holes">
+              {site.info.holes.map(h => (
+                <li key={h.label} data-testid="public-hole">
+                  <button className="w-full flex items-center gap-3 px-3 py-3 text-left hover:bg-zinc-900" onClick={() => setOpenHole(openHole === h.label ? null : h.label)} aria-expanded={openHole === h.label}>
+                    <span className="w-8 h-8 rounded-full bg-sky-600 text-white font-bold flex items-center justify-center shrink-0">{h.label}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block font-semibold truncate">{h.name || `Hole ${h.label}`}</span>
+                      <span className="block text-sm text-zinc-400">Par {h.par} · {fmtDist(h.length, u)} · {fmtElev(h.elevation, u)}</span>
+                    </span>
+                    {flies && h.id && <span role="button" tabIndex={0} className="shrink-0 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white" onClick={e => { e.stopPropagation(); void open3d(h.id); }} onKeyDown={e => { if (e.key === "Enter") { e.stopPropagation(); void open3d(h.id); } }} data-testid="fly-hole">▶ Fly</span>}
+                    <span className={`text-zinc-500 transition-transform ${openHole === h.label ? "rotate-90" : ""}`}>›</span>
+                  </button>
+                  {openHole === h.label && (
+                    <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-3 pb-3" data-testid="hole-facts">
+                      {holeFacts(h, u).map(([k, v]) => (
+                        <div key={k} className="bg-zinc-900 rounded-lg p-2"><dt className="text-[11px] uppercase tracking-wider text-zinc-500 font-bold">{k}</dt><dd className="font-semibold">{v}</dd></div>
+                      ))}
+                    </dl>
+                  )}
+                </li>
+              ))}
+            </ul>
           </section>
         )}
 
@@ -196,11 +203,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
         <footer className="mt-12 flex items-center gap-2 text-[12px] text-zinc-600"><Logo size={18} /> HyzerLab · {new Date(site.publishedAt).toLocaleDateString()}</footer>
       </main>
 
-      {big && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-3" onClick={() => setBig(null)} role="dialog" aria-label="Picture">
-          <img src={big} alt="" className="max-w-full max-h-full object-contain" />
-        </div>
-      )}
+      {big && <Zoomable src={big} onClose={() => setBig(null)} />}
     </div>
   );
 }
@@ -213,3 +216,59 @@ const Plain = ({ children }: { children: ReactNode }) => (
     </div>
   </div>
 );
+
+/** A picture full screen: pinch, wheel or double-tap to zoom, drag to look round, tap or Esc to close. */
+function Zoomable({ src, onClose }: { src: string; onClose: () => void }) {
+  const [v, setV] = useState({ k: 1, x: 0, y: 0 });
+  const pts = useRef(new Map<number, { x: number; y: number }>());
+  const start = useRef<{ k: number; x: number; y: number; d: number; cx: number; cy: number; moved: boolean } | null>(null);
+  const lastTap = useRef(0);
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  const clamp = (k: number) => Math.max(1, Math.min(8, k));
+  const zoomAt = (k2: number, cx: number, cy: number) => setV(o => {
+    const k = clamp(k2);
+    const ox = cx - innerWidth / 2, oy = cy - innerHeight / 2;
+    return k === 1 ? { k: 1, x: 0, y: 0 } : { k, x: ox - ((ox - o.x) * k) / o.k, y: oy - ((oy - o.y) * k) / o.k };
+  });
+  const centre = () => { const a = [...pts.current.values()]; return { x: a.reduce((s, p) => s + p.x, 0) / a.length, y: a.reduce((s, p) => s + p.y, 0) / a.length, d: a.length > 1 ? Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) : 0 }; };
+  return (
+    <div className="fixed inset-0 z-50 bg-black/95 overflow-hidden touch-none select-none" role="dialog" aria-label="Picture" data-testid="zoomable"
+      onWheel={e => zoomAt(v.k * (e.deltaY < 0 ? 1.2 : 1 / 1.2), e.clientX, e.clientY)}
+      onPointerDown={e => {
+        (e.target as Element).setPointerCapture?.(e.pointerId);
+        pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const c = centre();
+        start.current = { ...v, d: c.d, cx: c.x, cy: c.y, moved: false };
+      }}
+      onPointerMove={e => {
+        if (!pts.current.has(e.pointerId) || !start.current) return;
+        pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const s0 = start.current, c = centre();
+        if (Math.hypot(c.x - s0.cx, c.y - s0.cy) > 6 || (c.d && s0.d && Math.abs(c.d - s0.d) > 6)) s0.moved = true;
+        if (c.d && s0.d) {
+          const k = clamp((s0.k * c.d) / s0.d);
+          const ox = s0.cx - innerWidth / 2, oy = s0.cy - innerHeight / 2;
+          setV({ k, x: ox - ((ox - s0.x) * k) / s0.k + (c.x - s0.cx), y: oy - ((oy - s0.y) * k) / s0.k + (c.y - s0.cy) });
+        } else if (s0.k > 1) setV({ k: s0.k, x: s0.x + (c.x - s0.cx), y: s0.y + (c.y - s0.cy) });
+      }}
+      onPointerUp={e => {
+        pts.current.delete(e.pointerId);
+        const s0 = start.current;
+        if (pts.current.size) { const c = centre(); start.current = { ...v, d: c.d, cx: c.x, cy: c.y, moved: true }; return; }
+        start.current = null;
+        if (s0?.moved) return;
+        // (a double tap zooms in there, or back out; a tap with nothing zoomed closes)
+        const now = Date.now();
+        if (now - lastTap.current < 300) { lastTap.current = 0; zoomAt(v.k > 1 ? 1 : 3, e.clientX, e.clientY); return; }
+        lastTap.current = now;
+        setTimeout(() => { if (lastTap.current === now && v.k === 1) onClose(); }, 320);
+      }}>
+      <img src={src} alt="" draggable={false} className="absolute inset-0 m-auto max-w-full max-h-full object-contain will-change-transform" style={{ transform: `translate(${v.x}px, ${v.y}px) scale(${v.k})`, transformOrigin: "center" }} />
+      <button className="absolute top-3 right-3 rounded-full w-10 h-10 bg-zinc-900/90 border border-zinc-700 text-zinc-100 flex items-center justify-center" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()} onClick={onClose} aria-label="Close"><X size={18} /></button>
+    </div>
+  );
+}

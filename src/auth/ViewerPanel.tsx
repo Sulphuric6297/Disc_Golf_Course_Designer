@@ -13,6 +13,7 @@ import { Section, Stat } from "../components/ui";
 import { copyCourse, holesOf } from "./courses";
 import { useAllowed } from "./perms";
 import { Downloads } from "./Downloads";
+import { holeFacts } from "./holeFacts";
 
 export function ViewerPanelBody() {
   const doc = useCourse(s => s.doc);
@@ -54,12 +55,13 @@ export function ViewerPanelBody() {
       )}
       {mayStats && picked && hole && (
         <Section title={hole.name || `Hole ${picked.label}`} testid="viewer-hole">
-          <div className="grid grid-cols-3 gap-1.5">
-            <Stat label="Par" value={picked.par} />
-            <Stat label="Length" value={picked.complete ? fmtDist(picked.length, u) : "—"} />
-            <Stat label="Elevation" value={picked.complete ? fmtElev(picked.elevationChange, u) : "—"} />
-          </div>
-          {picked.complete && picked.playsLike !== picked.length && <p className="text-xs text-zinc-400 mt-2">Plays like {fmtDist(picked.playsLike, u)}</p>}
+          {picked.complete ? (
+            <dl className="grid grid-cols-2 gap-1.5">
+              {holeFacts({ ...picked, elevation: picked.elevationChange }, u).map(([k, v]) => (
+                <div key={k} className="bg-zinc-800/60 rounded-lg px-2 py-1.5"><dt className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">{k}</dt><dd className="text-sm font-semibold text-zinc-100">{v}</dd></div>
+              ))}
+            </dl>
+          ) : <p className="text-xs text-zinc-400">Unfinished</p>}
         </Section>
       )}
       <Downloads />
