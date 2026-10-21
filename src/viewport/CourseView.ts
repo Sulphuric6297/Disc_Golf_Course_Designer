@@ -228,6 +228,11 @@ export class CourseView {
   /** The trees measured from the air that are cut down (cleared for play, or taken out), and those
    * kept standing where they would be (by index). */
   private lidarState: { stand: number[]; cut: number[]; kept: number[] } | null = null;
+  /** Slow things (woods planted round the clearings) put off while dragging: done at its end. */
+  private afterDrag = false;
+  /** Woods planted so far (for tests: none while dragging, only those near what moved). */
+  private plantings = 0;
+  private lidarKey = "";
   /** Where the course clears the ground for play (fairways, tees, baskets, water, paths). */
   private clearedAt: (p: P, reach: number) => boolean = () => false;
   private plotPts: P[] = [];
@@ -1602,7 +1607,7 @@ export class CourseView {
       const c = (o.userData.forest as Forest | undefined)?.counts();
       if (c) { trees += c.trees; near += c.near; conifers += c.conifers; }
     }
-    return { trees, near, conifers };
+    return { trees, near, conifers, plantings: this.plantings };
   }
 
   /** For tests: trees of the woods standing within `r` ft of a plan point. */
@@ -1868,10 +1873,12 @@ export class CourseView {
     const st = course.style;
     const seen = new Set<string>();
     const hv = this.heightsVersion;
-    const put = (key: string, sig: string, make: () => THREE.Object3D | null, group: THREE.Group = this.shapesGroup) => {
+    const put = (key: string, sig: string, make: () => THREE.Object3D | null, group: THREE.Group = this.shapesGroup, slow = false) => {
       seen.add(key);
       const entry = this.shapes.get(key);
       if (entry && entry.sig === sig) return;
+      // (slow to make, such as woods: kept as they are while dragging, made again at its end)
+      if (slow && entry && this.dragging) { this.afterDrag = true; return; }
       if (entry) {
         entry.obj.parent?.remove(entry.obj);
         disposeObjectDeep(entry.obj);
@@ -1947,21 +1954,38 @@ export class CourseView {
         else if (it.type === "basket") discs.push({ p: it, r: CIRCLE_ONE_FT * 0.6 });
         else if (it.type === "structure" && !play) lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 6 });
       }
-      const boxes = polys.map(boundsOf);
-      const test = (p: P, reach: number) => {
-        for (let i = 0; i < polys.length; i++) {
-          const b = boxes[i];
-          if (p.x < b.minX - reach || p.x > b.maxX + reach || p.y < b.minY - reach || p.y > b.maxY + reach) continue;
-          if (pointInPolygon(p, polys[i]) || (reach > 0 && distanceToPath(p, [...polys[i], polys[i][0]]) < reach)) return true;
-        }
-        for (const l of lines) if (l.pts.length > 1 && distanceToPath(p, l.pts) < l.half + reach) return true;
-        for (const d of discs) if (Math.hypot(p.x - d.p.x, p.y - d.p.y) < d.r + reach) return true;
-        return false;
-      };
-      // Rounded to a foot, so the woods are planted again only when a clearing really moved
+      type Box = { minX: number; minY: number; maxX: number; maxY: number };
+      const shapes = polys.filter(pp => pp.length >= 3).map(pts => ({ pts, closed: [...pts, pts[0]], box: boundsOf(pts) }));
+      const paths = lines.filter(l => l.pts.length > 1).map(l => ({ ...l, box: boundsOf(l.pts) }));
+      const meets = (b: Box, c: Box, m: number) => b.minX - m <= c.maxX && b.maxX + m >= c.minX && b.minY - m <= c.maxY && b.maxY + m >= c.minY;
       const r = (v: number) => Math.round(v);
-      const key = JSON.stringify([polys.map(pp => pp.map(q => [r(q.x), r(q.y)])), lines.map(l => [l.half, l.pts.map(q => [r(q.x), r(q.y)])]), discs.map(d => [r(d.p.x), r(d.p.y), d.r])]);
-      return { test, key };
+      /** The clearings near a box (all of them: none given): a test of a spot, and a key that
+       * changes only when one of them really moved (rounded to a foot). */
+      const near = (box?: Box) => {
+        // (a tree's crown reaches out: what's this far outside the box still matters)
+        const M = 80;
+        const ss = box ? shapes.filter(x => meets(x.box, box, M)) : shapes;
+        const ls = box ? paths.filter(x => meets(x.box, box, x.half + M)) : paths;
+        const ds = box ? discs.filter(d => d.p.x > box.minX - d.r - M && d.p.x < box.maxX + d.r + M && d.p.y > box.minY - d.r - M && d.p.y < box.maxY + d.r + M) : discs;
+        const test = (p: P, reach: number) => {
+          for (const x of ss) {
+            const b = x.box;
+            if (p.x < b.minX - reach || p.x > b.maxX + reach || p.y < b.minY - reach || p.y > b.maxY + reach) continue;
+            if (pointInPolygon(p, x.pts) || (reach > 0 && distanceToPath(p, x.closed) < reach)) return true;
+          }
+          for (const l of ls) {
+            const b = l.box, m = l.half + reach;
+            if (p.x < b.minX - m || p.x > b.maxX + m || p.y < b.minY - m || p.y > b.maxY + m) continue;
+            if (distanceToPath(p, l.pts) < m) return true;
+          }
+          for (const d of ds) if (Math.hypot(p.x - d.p.x, p.y - d.p.y) < d.r + reach) return true;
+          return false;
+        };
+        const key = JSON.stringify([ss.map(x => x.pts.map(q => [r(q.x), r(q.y)])), ls.map(l => [l.half, l.pts.map(q => [r(q.x), r(q.y)])]), ds.map(d => [r(d.p.x), r(d.p.y), d.r])]);
+        return { test, key };
+      };
+      const all = near();
+      return { test: all.test, key: all.key, near };
     };
     const clearings = clearingsFor(false);
     // Trees measured from the air: cut down where the course clears the ground for play, unless
@@ -1972,7 +1996,10 @@ export class CourseView {
     if (lidar) {
       const forPlay = clearingsFor(true);
       this.clearedAt = forPlay.test;
-      const state = this.keep("lidar", lidar.trees, JSON.stringify([lidar.kept, lidar.removed, forPlay.key]), () => {
+      const fresh = JSON.stringify([lidar.kept, lidar.removed, forPlay.key]);
+      if (this.dragging && this.lidarKey && fresh !== this.lidarKey) this.afterDrag = true;
+      else this.lidarKey = fresh;
+      const state = this.keep("lidar", lidar.trees, this.lidarKey, () => {
         const { stand, cut } = standingTrees(lidar, forPlay.test);
         const keptSet = new Set(lidar.kept ?? []);
         return { stand, cut, kept: stand.filter(k => keptSet.has(k) && forPlay.test({ x: lidar.trees[k][0], y: lidar.trees[k][1] }, lidar.trees[k][3] * 0.3)) };
@@ -1982,7 +2009,7 @@ export class CourseView {
         const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, landscapeOf(st).mix);
         this.shadowsDirty = true;
         return woods;
-      }, this.itemsGroup);
+      }, this.itemsGroup, true);
     }
     // Areas: fill plus outline
     const areas = (course.items.filter(i => i.type === "area") as AreaItem[]).map(a => ({ ...a, points: this.shapeOf(a).pts })).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
@@ -2025,13 +2052,17 @@ export class CourseView {
         return g;
       });
       // Woods: trees standing in it (shadows and all)
-      if (a.kind === "woods" && !measured) put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, clearings.key]), () => {
-        const land = landscapeOf(st);
-        const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, clearings.test);
-        woods.traverse(o => { o.userData.itemId = a.id; });
-        this.shadowsDirty = true;
-        return woods;
-      }, this.itemsGroup);
+      if (a.kind === "woods" && !measured) {
+        const here = clearings.near(boundsOf(a.points));
+        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key]), () => {
+          const land = landscapeOf(st);
+          this.plantings++;
+          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, here.test);
+          woods.traverse(o => { o.userData.itemId = a.id; });
+          this.shadowsDirty = true;
+          return woods;
+        }, this.itemsGroup, true);
+      }
     });
     // A hand-made flyover of the selected hole: its path over the ground, and where each keyframe looks
     const flyHole = this.hole(this.selectedId);
@@ -2058,7 +2089,7 @@ export class CourseView {
         const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, clearings.test, 22 / Math.sqrt(Math.max(0.15, pw.cover)));
         this.shadowsDirty = true;
         return woods;
-      }, this.itemsGroup);
+      }, this.itemsGroup, true);
     }
     // Lines
     for (const l of course.items.filter(i => i.type === "line") as LineItem[]) {
@@ -3412,6 +3443,7 @@ export class CourseView {
     if (!on) {
       this.handleKey = "";
       this.syncHandles();
+      if (this.afterDrag && this.doc) { this.afterDrag = false; this.syncShapes(); this.invalidate(); }
     }
     this.updateCursor();
   }

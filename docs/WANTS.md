@@ -230,3 +230,54 @@ Later requests (in the order asked)
   sides at once unless holes on both sides are picked), in play and on the tee sign only for them.
 - [ ] **A stretch of a road (or any line) can be taken out**, marked with two clicks like an OB
   stretch.
+
+## Your own server (HyzerLab)
+
+The owner's requests for the self-hosted version, in the order they came. Checked once seen
+working in the browser.
+
+**Open source, and hosted**
+- [x] **Stays open source, with no personal details in it** (AGPL-3.0).
+- [x] **Named HyzerLab.**
+- [ ] **Runs on the owner's own server, not only GitHub Pages**: a ready-to-run container
+  (app and server together), `docker compose`, versioned images, backups, a production address.
+  (A development server runs now.)
+- [ ] **GitHub Pages stays as a demo** with every feature it can have, kept up with the main app,
+  and a note saying what the hosted version adds.
+- [x] **Tests don't take forever for small changes** (once per push, split four ways).
+- [x] **Work on a branch, with a way back if something breaks** (`main` only through pull
+  requests; server snapshots).
+
+**Accounts**
+- [x] **Invite-only, the owner as the admin; its own users, permissions and boundary.**
+- [x] **As secure as possible, with two-factor sign-in for everyone.**
+
+**Courses and sharing**
+- [x] **Editors and viewers** (and owners), per course.
+- [x] **A page for the courses you have and the ones shared with you**, nicely designed (each
+  course as a card with its rendered map), to pick the course you want.
+- [x] **View only means view only**: no fields to change anything.
+- [x] **A viewer can copy a course** and change the copy.
+- [ ] **Granular view permissions**: what a viewer can see, chosen when sharing: the map, the 3D
+  view, flyovers, the rendered map, tee signs, the scorecard, hole stats, downloads, making a copy
+  (for example only the 3D view, or only rendered maps and flyovers).
+- [ ] **Public sharing**: a course shared with anyone (view only by default, with the same
+  permissions), and **a public course website** that shows the map, the 3D view, tee signs and
+  so on, only what the owner approved.
+- [ ] **Several courses on one map** (one park, its courses or layouts drawn on it together).
+
+**Editors' changes**
+- [x] **Editors' changes save as they go into a draft of their own**, and go into the course
+  only when they publish (submit) it.
+- [x] **The owner can turn on approval**: submitted drafts wait for the owner's OK (off: they
+  publish straight away).
+- [x] **A history of changes that can be reverted.**
+- [ ] **Comments.**
+
+**Fixes**
+- [ ] **Editing is fast**: dragging and changing things is laggy now (a bigger redesign is fine
+  if it's needed).
+- [ ] **LiDAR helps, never hinders**: no trees in rivers, on roads or anywhere else they don't
+  belong.
+- [ ] **The Search button never turns the screen black** (not seen again on a fresh build; a
+  failure now shows what went wrong).
