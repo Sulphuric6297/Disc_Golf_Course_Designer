@@ -1,6 +1,6 @@
 // The top bar: the course name, files (new, open, save, recent), the steps, 2D/3D and Share.
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, FilePlus, FolderOpen, HelpCircle, Save, Share2, Trash2 } from "lucide-react";
+import { ChevronDown, FilePlus, FolderOpen, HelpCircle, Save, Search, Share2, Trash2 } from "lucide-react";
 import { STEPS } from "./SidePanel";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { deleteRecent, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../state/files";
@@ -13,7 +13,7 @@ const Logo = () => (
   </svg>
 );
 
-export function Header({ onShare, onHelp }: { onShare: () => void; onHelp: () => void }) {
+export function Header({ onShare, onHelp, onGoTo }: { onShare: () => void; onHelp: () => void; onGoTo: () => void }) {
   const name = useCourse(s => s.doc.name);
   const ed = useEditor();
   const [menu, setMenu] = useState(false);
@@ -97,6 +97,7 @@ export function Header({ onShare, onHelp }: { onShare: () => void; onHelp: () =>
           ))}
         </div>
         <button onClick={onShare} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold" data-testid="share-button"><Share2 size={15} /> Share</button>
+        <button onClick={onGoTo} className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800" aria-label="Go to" title="Go to (Ctrl+K)" data-testid="goto-button"><Search size={18} /></button>
         <button onClick={onHelp} className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800" aria-label="Keyboard shortcuts and help" title="Shortcuts and help (?)"><HelpCircle size={18} /></button>
       </div>
     </header>

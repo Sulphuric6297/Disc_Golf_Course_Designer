@@ -58,7 +58,7 @@ design tools and the PDGA guidance the app follows.
 
 | Spec | Area |
 | --- | --- |
-| `smoke.spec.ts` | Loads, welcome card, steps, 2D/3D, shortcuts dialog |
+| `smoke.spec.ts` | Loads, welcome card, steps, 2D/3D, shortcuts dialog, Go to (Ctrl+K or /: a hole by number, a step, a named thing) |
 | `holes.spec.ts` | New holes (tee then basket), going from hole to hole (the panel's arrows, [ and ]), live length and par, doglegs, plotting the line by hand (clicks or freehand), walks off the green (pure logic), fairway width (shaped along the hole with its four width squares, the overall slider, Even width), extra tees and pins, layouts, hole order, delete + undo |
 | `features.spec.ts` | Drawing OB areas and lines, hazards, water (click by click, or dragging a rectangle, circle or freehand shape), one-click OB along a hole or behind its basket, marking a road OB, mandos (passed on the line's side, direction), drop zones, trees, amenities (pictograms), labels, moving and reshaping shapes |
 | `select.spec.ts` | Picking several things at once: Shift+drag or the Select option draws a box (a shape only when all of it is inside), Shift+click adds or takes out, Ctrl+A; moving, nudging, duplicating, locking and deleting them together (one undo step each), whole holes with their bends; a finger with the map's box button |

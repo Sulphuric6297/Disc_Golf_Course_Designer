@@ -8,6 +8,7 @@ import { MapViewport, getView } from "./components/MapViewport";
 import { Toolbar, TOOLS } from "./components/Toolbar";
 import { Inspector } from "./components/Inspector";
 import { stepHole } from "./components/HoleSteps";
+import { GoTo } from "./components/GoTo";
 import { SiteImportDialog } from "./components/SiteImportDialog";
 import { TeeViewHud } from "./components/TeeViewHud";
 import { MapDesigner } from "./components/MapDesigner";
@@ -108,7 +109,7 @@ const SHORTCUTS: [string, string][] = [
   ["Enter", "Finish drawing · view from the selected hole's tee"], ["Esc", "Cancel · back to Select · close"], ["Backspace", "Remove the last point drawn"],
   ["Shift+drag", "Select with a box"], ["Shift+click", "Add to the selection, or take out"], ["Ctrl+A", "Select everything"],
   ["Del", "Delete the selection"], ["Ctrl+D", "Duplicate"], ["Ctrl+C / X / V", "Copy / cut / paste (where the pointer is)"], ["Arrows", "Nudge 1 ft (Shift: 10 ft) · other holes in the tee view"],
-  ["Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"], ["2 / 3", "Top-down / 3D"], ["0 / F", "Whole course / zoom to selection"], ["[ / ]", "Previous / next hole"], ["Q / E / N", "Turn left / right / north up"], ["+ / −", "Zoom"]
+  ["Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"], ["2 / 3", "Top-down / 3D"], ["0 / F", "Whole course / zoom to selection"], ["[ / ]", "Previous / next hole"], ["Ctrl+K or /", "Go to a hole, step, tool or name"], ["Q / E / N", "Turn left / right / north up"], ["+ / −", "Zoom"]
 ];
 
 const GESTURES: [string, string][] = [
@@ -214,6 +215,7 @@ export default function App() {
   const doc = useCourse(s => s.doc);
   const [findSite, setFindSite] = useState(false);
   const [help, setHelp] = useState(false);
+  const [goTo, setGoTo] = useState(false);
   const [menu, setMenu] = useState<{ clientX: number; clientY: number; itemId: string | null; ground: P | null } | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -268,6 +270,7 @@ export default function App() {
       const s = useEditor.getState();
       const view = getView();
       const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); setGoTo(g => !g); return; }
       if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (s.viewOnly) return; if (e.shiftKey) useCourse.getState().redo(); else useCourse.getState().undo(); return; }
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); if (!s.viewOnly) useCourse.getState().redo(); return; }
       if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (!s.viewOnly && s.step !== "design") duplicateSelection(); return; }
@@ -314,6 +317,7 @@ export default function App() {
         return;
       }
       if (e.key === "?") { setHelp(h => !h); return; }
+      if (e.key === "/") { e.preventDefault(); setGoTo(true); return; }
       if ((e.key === "[" || e.key === "]") && s.step !== "design") { stepHole(e.key === "[" ? -1 : 1); return; }
       if (e.key === "2") { s.set({ view: "2d" }); return; }
       if (e.key === "3") { s.set({ view: "3d" }); return; }
@@ -351,6 +355,7 @@ export default function App() {
       {findSite && <SiteImportDialog onClose={() => setFindSite(false)} onImported={onImported} />}
       {ed.shareOpen && <ShareDialog onClose={() => useEditor.getState().set({ shareOpen: false })} />}
       {help && <HelpDialog onClose={() => setHelp(false)} />}
+      {goTo && <GoTo onClose={() => setGoTo(false)} onShare={() => useEditor.getState().set({ shareOpen: true })} onHelp={() => setHelp(true)} />}
     </>
   );
 
@@ -374,7 +379,7 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
-      <Header onShare={() => useEditor.getState().set({ shareOpen: true })} onHelp={() => setHelp(true)} />
+      <Header onShare={() => useEditor.getState().set({ shareOpen: true })} onHelp={() => setHelp(true)} onGoTo={() => setGoTo(true)} />
       {ed.viewOnly && (
         <div className="bg-emerald-900/70 border-b border-emerald-700 px-4 py-2 flex items-center gap-3 text-sm" data-testid="view-only-banner">
           <Eye size={16} className="text-emerald-300" />
