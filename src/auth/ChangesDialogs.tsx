@@ -100,7 +100,7 @@ export function HistoryDialog({ onClose }: { onClose: () => void }) {
               {v.version !== version && (
                 <div className="flex gap-3 text-xs shrink-0 pt-0.5">
                   <button className="text-zinc-300 hover:text-white" onClick={() => { onClose(); void previewVersion(v, label(v)); }}>Look</button>
-                  {canRestore && <button className="text-orange-300 hover:text-orange-200" onClick={() => { if (confirm(`Restore version ${v.version}? The course as it is now stays in the history.`)) { onClose(); void restoreVersion(v.id); } }}>Restore</button>}
+                  {canRestore && <button className="text-orange-300 hover:text-orange-200" onClick={() => { if (confirm(`Restore version ${v.version}? The course as it is now stays in the history${useServerCourse.getState().draft ? ", and your draft is discarded" : ""}.`)) { onClose(); void restoreVersion(v.id); } }}>Restore</button>}
                 </div>
               )}
             </li>

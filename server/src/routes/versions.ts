@@ -214,6 +214,8 @@ export async function versionRoutes(app: FastifyInstance, { sql }: Ctx) {
       if (v.photo) await tx`insert into course_backgrounds (course_id, data) values (${id}, ${v.photo}) on conflict (course_id) do update set data = excluded.data, updated_at = now()`;
       else await tx`delete from course_backgrounds where course_id = ${id}`;
       await snapshot(tx, id, "restore", `Restored version ${v.version}`, a.user.id);
+      // (your draft goes: it was on top of what was restored away)
+      await tx`delete from course_drafts where course_id = ${id} and user_id = ${a.user.id}`;
       return done.version as number;
     });
     await audit(sql, req, "course.restored", { course: id, from: v.version, version });

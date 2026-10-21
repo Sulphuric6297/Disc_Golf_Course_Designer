@@ -363,7 +363,7 @@ export class CourseView {
     const c = this.controls;
     void c.setLookAt(800, 2400, 550, 800, 0, 550, false);
     c.mouseButtons.left = ACTION.NONE;
-    c.mouseButtons.middle = ACTION.NONE;
+    c.mouseButtons.middle = ACTION.ROTATE;
     c.mouseButtons.right = ACTION.ROTATE;
     c.mouseButtons.wheel = ACTION.NONE;
     c.touches.one = ACTION.TOUCH_TRUCK;
@@ -2026,10 +2026,29 @@ export class CourseView {
           return g;
         }
         if (a.kind === "water") {
-          // Water lies level at its shore's lowest point, and where the ground (measured only every
-          // few yards) rises above that, it rides just over the ground instead of sinking under it
-          const level = Math.min(...a.points.map(p => this.h(p.x, p.y))) + 0.2;
-          const pond = new THREE.Mesh(drapedPolygon(a.points, (x, y) => Math.max(level, this.h(x, y) + 0.2), doc.gridSize / 2, 0), waterMaterial(c, ...this.waterShore(a.points)));
+          // Water lies at the level of its banks nearby (a pond level, a river sloping down its
+          // length), and never under the ground: over the highest corner of the ground's cell it's
+          // in (ground measured from the air is bumpy, and its triangles rise between samples)
+          const cell = doc.gridSize || 20;
+          const banks: { x: number; y: number; h: number }[] = [];
+          for (let i = 0; i < a.points.length; i++) {
+            const p = a.points[i], q = a.points[(i + 1) % a.points.length];
+            const n = Math.max(1, Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / 8));
+            for (let k = 0; k < n; k++) { const x = p.x + ((q.x - p.x) * k) / n, y = p.y + ((q.y - p.y) * k) / n; banks.push({ x, y, h: this.h(x, y) }); }
+          }
+          const lowest = Math.min(...banks.map(b => b.h));
+          const REACH = 90;
+          const bankLevel = (x: number, y: number) => {
+            let m = Infinity;
+            for (const b of banks) if (Math.abs(b.x - x) < REACH && Math.abs(b.y - y) < REACH && b.h < m) m = b.h;
+            return Number.isFinite(m) ? m : lowest;
+          };
+          const cellTop = (x: number, y: number) => {
+            const i = Math.floor(x / cell) * cell, j = Math.floor(y / cell) * cell;
+            return Math.max(this.h(i, j), this.h(i + cell, j), this.h(i, j + cell), this.h(i + cell, j + cell));
+          };
+          const surface = (x: number, y: number) => Math.max(bankLevel(x, y) + 0.2, cellTop(x, y) + 0.3);
+          const pond = new THREE.Mesh(drapedPolygon(a.points, surface, cell / 2, 0), waterMaterial(c, ...this.waterShore(a.points)));
           pond.renderOrder = 2;
           pond.receiveShadow = true;
           g.add(pond);
@@ -3673,16 +3692,19 @@ export class CourseView {
       return;
     }
     const touch = e.pointerType === "touch";
-    if (e.button === 1 || (this.spaceDown && e.button === 0)) {
+    if (this.spaceDown && e.button === 0) {
       e.stopPropagation();
       this.gesture(e, { drag: s => this.panDrag(s) });
       return;
     }
+    // Tilting and turning: the middle button, or Ctrl / Alt (Cmd) + drag, whatever is under the
+    // pointer (zoomed in, something always is); Shift + drag too, except where it draws a box
+    const held = e.ctrlKey || e.metaKey || e.altKey;
+    const shiftTurn = e.shiftKey && this.tool.mode !== "measure" && this.tool.mode !== "select";
+    // (the middle button: the camera's own, set to turn and tilt)
     if (e.button !== 0) return;
-    // (Shift+drag in Select draws a box to pick things with)
-    const modifierRotate = e.ctrlKey || e.metaKey || e.altKey || (e.shiftKey && this.tool.mode !== "measure" && this.tool.mode !== "select");
     const domItem = (target.closest?.("[data-item-id]") as HTMLElement | null)?.dataset.itemId ?? null;
-    if (modifierRotate && !domItem && !(this.tool.mode === "select" && this.pick(e.clientX, e.clientY))) {
+    if (held || (shiftTurn && !domItem && !(this.tool.mode === "select" && this.pick(e.clientX, e.clientY)))) {
       this.controls.mouseButtons.left = ACTION.ROTATE;
       const restore = () => {
         this.controls.mouseButtons.left = ACTION.NONE;

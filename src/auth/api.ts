@@ -8,7 +8,7 @@ export class ApiFail extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-export async function api<T = unknown>(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
+export async function api<T = unknown>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`./api/${path}`, {
     method,
     credentials: "same-origin",

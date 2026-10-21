@@ -1,5 +1,5 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { addHole, blankCourse, course } from "../e2e/fixtures";
+import { addHole, blankCourse, course, screenOf } from "../e2e/fixtures";
 import { stepAt, totp } from "../../server/src/crypto";
 import { SETUP_CODE } from "../../playwright.server.config";
 
@@ -135,9 +135,9 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await expect(admin.getByTestId("home")).toHaveCount(0);
   await blankCourse(admin);
   await addHole(admin, { x: 100, y: 200 }, { x: 650, y: 200 });
-  await expect(admin.getByTestId("save-status")).toHaveText("Saved");
+  await expect(admin.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
   // Back on the home page: the course, with its numbers
-  await admin.getByTestId("courses-button").click();
+  await admin.getByTestId("logo-home").click();
   const card = admin.getByTestId("my-courses").getByTestId("course-card");
   await expect(card).toHaveCount(1);
   await expect(card).toContainText("1 hole · Par 4");
@@ -184,13 +184,13 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
 
   // A copy is Pat's own to change
   await pat.getByTestId("copy-course").click();
-  await expect(pat.getByTestId("save-status")).toHaveText("Saved");
+  await expect(pat.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
   await expect(pat.getByTestId("viewer-panel")).toHaveCount(0);
   expect((await course(pat)).name).toMatch(/\(copy\)$/);
   await site(pat);
   await addHole(pat, { x: 100, y: 500 }, { x: 650, y: 500 });
-  await expect(pat.getByTestId("save-status")).toHaveText("Saved");
-  await pat.getByTestId("courses-button").click();
+  await expect(pat.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
+  await pat.getByTestId("logo-home").click();
   await expect(pat.getByTestId("my-courses").getByTestId("course-card")).toContainText("2 holes");
 
   // Now an editor of the original: Pat's changes go in a draft of Pat's own
@@ -202,15 +202,15 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await expect(pat.getByTestId("publish-button")).toHaveCount(0);
   await site(pat);
   await addHole(pat, { x: 100, y: 500 }, { x: 650, y: 500 });
-  await expect(pat.getByTestId("save-status")).toHaveText(/^Draft saved/);
+  await expect(pat.getByTestId("course-chip")).toHaveText(/^Draft · \d+ change/);
   // The owner doesn't see it, and keeps changing the course meanwhile
   await admin.reload();
   await admin.getByTestId("my-courses").getByTestId("course-card").click();
-  await expect(admin.getByTestId("save-status")).toHaveText("Saved");
+  await expect(admin.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
   await expect.poll(async () => (await course(admin)).holes.length).toBe(1);
   await site(admin);
   await addHole(admin, { x: 100, y: 800 }, { x: 650, y: 800 });
-  await expect(admin.getByTestId("save-status")).toHaveText("Saved");
+  await expect(admin.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
   // Pat's draft is kept across a reload, and published: both new holes are in the course
   await pat.reload();
   await pat.getByTestId("shared-courses").getByTestId("course-card").click();
@@ -226,6 +226,7 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await expect.poll(async () => (await course(admin)).holes.length).toBe(3);
 
   // The history: Pat's publish, with its note; an earlier version looked at, and restored
+  await admin.getByTestId("course-chip").click();
   await admin.getByTestId("history-button").click();
   const versions = admin.getByTestId("versions").locator("li");
   await expect(versions.first()).toContainText("Published by Pat");
@@ -247,7 +248,7 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await expect.poll(async () => (await course(pat)).holes.length).toBe(3);
   await site(pat);
   await addHole(pat, { x: 900, y: 200 }, { x: 900, y: 700 });
-  await expect(pat.getByTestId("save-status")).toHaveText(/^Draft saved/);
+  await expect(pat.getByTestId("course-chip")).toHaveText(/^Draft · \d+ change/);
   await pat.getByTestId("publish-button").click();
   await pat.getByTestId("publish-form").getByRole("button", { name: "Send to the owner" }).click();
   await expect(pat.getByTestId("publish-button")).toHaveCount(0);
@@ -255,19 +256,22 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await admin.reload();
   await expect(admin.getByTestId("my-courses").getByTestId("to-review")).toHaveText("1 to review");
   await admin.getByTestId("my-courses").getByTestId("course-card").click();
+  await admin.getByTestId("course-chip").click();
   await admin.getByTestId("review-button").click();
   await admin.getByTestId("submissions").getByRole("button", { name: "Look" }).click();
   await expect.poll(async () => (await course(admin)).holes.length).toBe(4);
   await admin.getByTestId("preview-bar").getByRole("button", { name: "Accept" }).click();
   await expect(admin.getByTestId("preview-bar")).toHaveCount(0);
   await expect.poll(async () => (await course(admin)).holes.length).toBe(4);
-  await expect(admin.getByTestId("review-button")).toHaveCount(0);
+  await expect(admin.getByTestId("review-count")).toHaveCount(0);
 
   // Restored: back to before Pat's holes; the history keeps everything
+  await admin.getByTestId("course-chip").click();
   await admin.getByTestId("history-button").click();
   admin.once("dialog", d => void d.accept());
   await versions.filter({ hasText: "Created" }).getByRole("button", { name: "Restore" }).click();
   await expect.poll(async () => (await course(admin)).holes.length).toBe(1);
+  await admin.getByTestId("course-chip").click();
   await admin.getByTestId("history-button").click();
   await expect(versions.first()).toContainText("Restored");
   await expect(versions.filter({ hasText: "OK'd by Admin" })).toHaveCount(1);
@@ -277,7 +281,7 @@ test("owners: a draft too, published to the official layout; a draft behind the 
   test.setTimeout(240_000);
   const admin = await as(browser, "admin");
   await admin.getByTestId("my-courses").getByTestId("course-card").click();
-  await expect(admin.getByTestId("edit-mode")).toHaveText("Official layout");
+  await expect(admin.getByTestId("course-chip")).toHaveText("Live");
   // (the editors' drafts publish straight away again)
   await admin.getByTestId("share-button").click();
   await admin.getByTestId("approval-toggle").uncheck();
@@ -285,16 +289,16 @@ test("owners: a draft too, published to the official layout; a draft behind the 
   const holes0 = (await course(admin)).holes.length;
 
   // The owner works in a draft: the official layout stays as it is meanwhile
-  await admin.getByTestId("edit-mode").click();
+  await admin.getByTestId("course-chip").click();
   await admin.getByTestId("mode-draft").click();
-  await expect(admin.getByTestId("edit-mode")).toHaveText("Draft (no changes)");
+  await expect(admin.getByTestId("course-chip")).toHaveText("Draft");
   await site(admin);
   await addHole(admin, { x: 900, y: 300 }, { x: 900, y: 800 });
-  await expect(admin.getByTestId("save-status")).toHaveText("Draft saved · Holes: 1 added");
+  await expect(admin.getByTestId("course-chip")).toHaveAttribute("title", "Holes: 1 added");
   await expect(admin.getByTestId("draft-dot")).toHaveCount(1);
   await admin.getByRole("textbox", { name: "Course name" }).first().fill("Admin's name");
   await admin.keyboard.press("Tab");
-  await expect(admin.getByTestId("save-status")).toContainText("Course settings changed");
+  await expect(admin.getByTestId("course-chip")).toHaveAttribute("title", /Course settings changed/);
 
   // Meanwhile Pat publishes a draft that renames the course too
   const pat = await as(browser, "pat");
@@ -302,7 +306,7 @@ test("owners: a draft too, published to the official layout; a draft behind the 
   await expect.poll(async () => (await course(pat)).holes.length).toBe(holes0);
   await pat.getByRole("textbox", { name: "Course name" }).first().fill("Pat's name");
   await pat.keyboard.press("Tab");
-  await expect(pat.getByTestId("save-status")).toContainText("Draft saved");
+  await expect(pat.getByTestId("course-chip")).toHaveText(/^Draft · \d+ change/);
   await pat.getByTestId("publish-button").click();
   await pat.getByTestId("publish-form").getByRole("button", { name: "Publish" }).click();
   await expect(pat.getByTestId("publish-button")).toHaveCount(0);
@@ -325,7 +329,8 @@ test("owners: a draft too, published to the official layout; a draft behind the 
   await expect(admin.getByTestId("draft-changes")).toHaveText("Holes: 1 added");
   await expect(admin.getByTestId("clashes")).toHaveCount(0);
   await admin.getByTestId("publish-form").getByRole("button", { name: "Publish" }).click();
-  await expect(admin.getByTestId("edit-mode")).toHaveText("Draft (no changes)");
+  await expect(admin.getByTestId("course-chip")).toHaveText("Draft");
+  await admin.getByTestId("course-chip").click();
   await admin.getByTestId("history-button").click();
   const top = admin.getByTestId("versions").locator("li").first();
   await expect(top).toContainText("Published by Admin");
@@ -333,8 +338,65 @@ test("owners: a draft too, published to the official layout; a draft behind the 
   await admin.keyboard.press("Escape");
 
   // Back to publishing as it goes
-  await admin.getByTestId("edit-mode").click();
+  await admin.getByTestId("course-chip").click();
   await admin.getByTestId("mode-live").click();
-  await expect(admin.getByTestId("edit-mode")).toHaveText("Official layout");
+  await expect(admin.getByTestId("course-chip")).toHaveText("Live");
   await expect.poll(async () => (await course(admin)).holes.length).toBe(holes0 + 1);
+});
+
+test("comments: pinned on a basket (moving with it), @mention, the bell, a reply, resolved", async ({ browser }) => {
+  test.setTimeout(240_000);
+  const admin = await as(browser, "admin");
+  await admin.getByTestId("my-courses").getByTestId("course-card").click();
+  await expect(admin.getByTestId("course-chip")).toHaveText("Live");
+  await site(admin);
+  const b = await admin.evaluate(() => { const d = (window as any).__dgCourse(); return d.items.find((i: any) => i.type === "basket"); });
+  const at = await screenOf(admin, b.x, b.y);
+  await admin.getByTestId("comments-button").click();
+  await expect(admin.getByTestId("threads")).toContainText("No comments yet.");
+  await admin.getByTestId("add-comment").click();
+  await admin.getByTestId("comment-placing").click({ position: { x: at.x - (await admin.getByTestId("comment-placing").boundingBox())!.x + 4, y: at.y - (await admin.getByTestId("comment-placing").boundingBox())!.y } });
+  await admin.getByTestId("comment-composer").getByLabel("Comment").fill("Move this basket back 10 ft @pat");
+  await admin.getByTestId("comment-composer").getByRole("button", { name: "Post" }).click();
+  const thread = admin.getByTestId("thread");
+  await expect(thread).toHaveCount(1);
+  await expect(thread).toContainText(/^1Basket of hole/);
+  await expect(admin.getByTestId("comment-pin")).toHaveCount(1);
+
+  // Pat hears of it, and goes straight to it
+  const pat = await as(browser, "pat");
+  await expect(pat.getByTestId("notice-count")).toHaveText("1");
+  await pat.getByTestId("notice-bell").click();
+  await expect(pat.getByTestId("notice")).toContainText("Admin mentioned you");
+  await pat.getByTestId("notice").click();
+  await expect(pat.getByTestId("comments-panel")).toBeVisible();
+  await expect(pat.getByTestId("thread")).toContainText("Move this basket back 10 ft @pat");
+  await pat.getByTestId("thread").getByLabel("Reply").fill("On it");
+  await pat.getByTestId("thread").getByLabel("Reply").press("Enter");
+  await expect(pat.getByTestId("thread")).toContainText("On it");
+  await expect(pat.getByTestId("notice-count")).toHaveCount(0);
+
+  // The admin sees the reply, and resolves the thread: its pin goes (until resolved ones are shown)
+  await admin.reload();
+  await admin.getByTestId("my-courses").getByTestId("course-card").click();
+  await expect(admin.getByTestId("notice-count")).toHaveText("1");
+  await admin.getByTestId("comments-button").click();
+  await expect(admin.getByTestId("thread")).toContainText("On it");
+  await admin.getByTestId("thread").getByTestId("resolve").click();
+  await expect(admin.getByTestId("threads")).toContainText("No open comments.");
+  await expect(admin.getByTestId("comment-pin")).toHaveCount(0);
+  await admin.getByTestId("comments-panel").getByLabel("Resolved").check();
+  await expect(admin.getByTestId("comment-pin")).toHaveCount(1);
+
+  // The basket moved: its pin goes with it
+  const pin0 = (await admin.getByTestId("comment-pin").boundingBox())!;
+  await admin.getByTestId("comments-panel").getByRole("button", { name: "Close" }).click();
+  await site(admin);
+  const from = await screenOf(admin, b.x, b.y);
+  await admin.mouse.move(from.x, from.y);
+  await admin.mouse.down();
+  await admin.mouse.move(from.x + 40, from.y + 30, { steps: 6 });
+  await admin.mouse.up();
+  await expect.poll(async () => (await admin.evaluate(id => (window as any).__dgCourse().items.find((i: any) => i.id === id).x, b.id))).toBeGreaterThan(b.x + 5);
+  await expect.poll(async () => (await admin.getByTestId("comment-pin").boundingBox())!.x).toBeGreaterThan(pin0.x + 10);
 });

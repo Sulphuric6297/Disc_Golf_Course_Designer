@@ -8,6 +8,8 @@ import { PeopleDialog } from "./PeopleDialog";
 import { ShareDialog } from "./ShareDialog";
 import { Home } from "./Home";
 import { HistoryDialog, PreviewBar, PublishDialog, ReviewDialog, UpdateDialog } from "./ChangesDialogs";
+import { CommentLayer, CommentsPanel, loadComments, useCommentKeys, useComments } from "./Comments";
+import { useServerCourse } from "./courses";
 
 const samePassword = (a: string, b: string) => { if (a !== b) throw new Error("The passwords don't match"); };
 
@@ -59,6 +61,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         {dialog === "history" && <HistoryDialog onClose={() => open(null)} />}
         {dialog === "review" && <ReviewDialog onClose={() => open(null)} />}
         {!home && <PreviewBar />}
+        {!home && <CourseComments />}
       </>
     );
   }
@@ -167,5 +170,26 @@ function CodeScreen({ onDone }: { onDone: () => Promise<void> }) {
       </Form>
       <button className="mt-3 text-xs text-zinc-400 hover:text-zinc-200" onClick={() => void signOut()}>Cancel</button>
     </Screen>
+  );
+}
+
+/** The open course's comments: loaded with it, pins over the map, the panel. */
+function CourseComments() {
+  const id = useServerCourse(s => s.id);
+  const preview = useServerCourse(s => s.preview);
+  useCommentKeys();
+  useEffect(() => {
+    useComments.setState({ threads: [], selected: null, placing: false, draftAt: null });
+    void loadComments();
+    // (others' comments: looked for now and then)
+    const t = window.setInterval(() => void loadComments(), 30_000);
+    return () => window.clearInterval(t);
+  }, [id]);
+  if (!id || preview) return null;
+  return (
+    <>
+      <CommentLayer />
+      <CommentsPanel />
+    </>
   );
 }
