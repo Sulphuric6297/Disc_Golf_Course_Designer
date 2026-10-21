@@ -15,7 +15,16 @@ body {
 body {
   margin: 0;
   font-family: 'Inter', system-ui, sans-serif;
-  @apply bg-zinc-950 text-slate-200 antialiased selection:bg-indigo-500/30 selection:text-indigo-200;
+  @apply bg-zinc-950 text-zinc-200 antialiased selection:bg-sky-500/30 selection:text-sky-100;
+}
+
+/* The keyboard's focus: one sky-blue ring everywhere (a mouse click shows none) */
+:where(button, a, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 1px;
+}
+:where(input, select, textarea):focus-visible {
+  outline: none;
 }
 
 /* Site picker: selected area size label */

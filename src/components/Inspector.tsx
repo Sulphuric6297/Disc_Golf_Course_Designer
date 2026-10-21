@@ -16,7 +16,7 @@ import { ElevationProfile } from "./ElevationProfile";
 import { HoleFlight } from "./FlyoverSettings";
 import { HoleSteps } from "./HoleSteps";
 import { getView } from "./MapViewport";
-import { Button, ColorInput, Field, NumberInput, Section, Segmented, Slider, Stat, TextInput, Toggle } from "./ui";
+import { Button, ColorInput, Field, NumberInput, Section, Segmented, Slider, Facts, TextInput, Toggle } from "./ui";
 
 const shapeText = { straight: "Straight", left: "Turns left", right: "Turns right", "s-curve": "S-curve" };
 /** A small size to the half foot (or tenth of a meter): "2.5 ft". */
@@ -48,7 +48,7 @@ function HoleNumberInput({ holeId, value }: { holeId: string; value: string }) {
         aria-label="Hole number"
         data-testid="hole-number"
         inputMode="numeric"
-        className="w-16 touch:w-20 h-8 touch:h-11 rounded-lg bg-zinc-800 border border-zinc-700 text-center text-sm touch:text-base font-bold text-zinc-50 focus:outline-none focus:border-orange-400"
+        className="w-16 touch:w-20 h-8 touch:h-11 rounded-lg bg-zinc-800 border border-zinc-700 text-center text-sm touch:text-base font-bold text-zinc-50 focus:outline-none focus:ring-2 focus:ring-sky-400/80"
         value={text}
         onChange={e => setText(e.target.value.replace(/[^0-9/, &]/g, "").slice(0, 16))}
         onFocus={e => e.target.select()}
@@ -110,7 +110,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
     <>
       <Section>
         <div className="flex items-center gap-2 mb-2" data-insp-title>
-          <div className={`min-w-10 h-10 px-1.5 rounded-full bg-orange-500 text-white flex items-center justify-center ${label.length > 3 ? "text-sm" : "text-lg"} font-bold`} style={{ fontFamily: "Oswald, Inter" }}>{label}</div>
+          <div className={`min-w-10 h-10 px-1.5 rounded-full bg-orange-500 text-zinc-950 flex items-center justify-center ${label.length > 3 ? "text-sm" : "text-lg"} font-bold`} style={{ fontFamily: "Oswald, Inter" }}>{label}</div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold text-zinc-50 truncate" data-testid="inspector-title">Hole {label}{hole.name ? ` · ${hole.name}` : ""}</div>
             <div className="text-xs text-zinc-400">{s.complete ? `${fmtDist(s.length, u)} · Par ${s.par} · ${shapeText[s.shape]}` : s.teeId ? "Needs a basket" : "Needs a tee"}</div>
@@ -119,11 +119,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
         </div>
         {(() => { const mine = label.split("/"); const clash = doc.holes.filter(h => h.id !== hole.id).flatMap(h => holeLabel(doc, h.id).split("/")).find(v => mine.includes(v)); return clash ? <div className="text-xs text-amber-300 -mt-1 mb-2" data-testid="hole-number-taken">Another hole is also Hole {clash}</div> : null; })()}
         {s.complete && (
-          <div className="grid grid-cols-3 gap-1.5" data-testid="hole-stats">
-            <Stat label="Length" value={fmtDist(s.length, u)} />
-            <Stat label="Elevation" value={fmtElev(s.elevationChange, u)} sub={s.elevationChange > 0 ? "uphill" : s.elevationChange < 0 ? "downhill" : undefined} />
-            <Stat label="Plays like" value={fmtDist(s.playsLike, u)} sub={s.foliage === "heavy" ? "heavy foliage" : undefined} />
-          </div>
+          <Facts testid="hole-stats" items={[["Length", fmtDist(s.length, u)], [s.elevationChange > 0 ? "Uphill" : s.elevationChange < 0 ? "Downhill" : "Elevation", fmtElev(s.elevationChange, u)], ["Plays like", `${fmtDist(s.playsLike, u)}${s.foliage === "heavy" ? " (heavy foliage)" : ""}`]]} />
         )}
         {s.complete && (
           <div className="flex gap-1.5 mt-2">
@@ -217,7 +213,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
       <Section title="Tees and pins">
         {doc.holes.length > 1 && (
           <Field label="Basket">
-            <select aria-label="Basket" data-testid="share-basket" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
+            <select aria-label="Basket" data-testid="share-basket" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
               <option value="">Its own</option>
               {doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => b.holeId === h.id)).map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}'s</option>)}
             </select>
@@ -256,7 +252,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
 function SurfacePick({ value, onChange }: { value?: PathSurface; onChange: (v: PathSurface | undefined) => void }) {
   return (
     <Field label="Surface">
-      <select aria-label="Surface" data-testid="path-surface" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={value ?? "dirt"} onChange={e => onChange(e.target.value === "dirt" ? undefined : (e.target.value as PathSurface))}>
+      <select aria-label="Surface" data-testid="path-surface" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={value ?? "dirt"} onChange={e => onChange(e.target.value === "dirt" ? undefined : (e.target.value as PathSurface))}>
         {(Object.keys(PATH_SURFACES) as PathSurface[]).map(k => <option key={k} value={k}>{PATH_SURFACES[k].label}</option>)}
       </select>
     </Field>
@@ -376,7 +372,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
     </Field>
   ) : (
     <Field label="Belongs to">
-      <select aria-label="Belongs to hole" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={("holeId" in item && item.holeId) || ""} onChange={e => set({ holeId: e.target.value || undefined })}>
+      <select aria-label="Belongs to hole" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={("holeId" in item && item.holeId) || ""} onChange={e => set({ holeId: e.target.value || undefined })}>
         {holeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </Field>
@@ -394,7 +390,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
             <Field label="Pad length"><NumberInput label="Pad length" value={item.padLength} min={4} max={30} step={0.5} unit="ft" onChange={v => set({ padLength: v })} /></Field>
           </div>
           <Field label="Surface">
-            <select aria-label="Tee surface" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={item.surface} onChange={e => set({ surface: e.target.value as TeeSurface })}>
+            <select aria-label="Tee surface" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.surface} onChange={e => set({ surface: e.target.value as TeeSurface })}>
               {(Object.keys(TEE_SURFACES) as TeeSurface[]).map(k => <option key={k} value={k}>{TEE_SURFACES[k].label}</option>)}
             </select>
           </Field>
@@ -431,7 +427,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
       body = (
         <>
           <Field label="Kind">
-            <select aria-label="Area kind" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as AreaKind })}>
+            <select aria-label="Area kind" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as AreaKind })}>
               {(Object.keys(AREA_KINDS) as AreaKind[]).map(k => <option key={k} value={k}>{AREA_KINDS[k].label}</option>)}
             </select>
           </Field>
@@ -449,7 +445,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
       body = (
         <>
           <Field label="Kind">
-            <select aria-label="Line kind" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as LineKind })}>
+            <select aria-label="Line kind" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as LineKind })}>
               {(Object.keys(LINE_KINDS) as LineKind[]).map(k => <option key={k} value={k}>{LINE_KINDS[k].label}</option>)}
             </select>
           </Field>
@@ -479,7 +475,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
       body = (
         <>
           <Field label="Kind">
-            <select aria-label="Structure kind" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as StructureKind })}>
+            <select aria-label="Structure kind" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as StructureKind })}>
               {kinds.map(k => <option key={k} value={k}>{STRUCTURE_KINDS[k].label}</option>)}
             </select>
           </Field>
@@ -540,7 +536,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
       body = (
         <>
           <Field label="Kind">
-            <select aria-label="Amenity kind" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as AmenityKind })}>
+            <select aria-label="Amenity kind" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as AmenityKind })}>
               {(Object.keys(AMENITY_KINDS) as AmenityKind[]).map(k => <option key={k} value={k}>{AMENITY_KINDS[k].label}</option>)}
             </select>
           </Field>
@@ -654,7 +650,7 @@ export function InspectorActions({ big = false, close = true }: { big?: boolean;
     }
   };
   const base = big ? "w-11 h-11 flex items-center justify-center rounded-xl text-zinc-300 hover:bg-zinc-800" : "p-1.5 rounded text-zinc-400 hover:bg-zinc-800";
-  const b = `${base} hover:text-white`;
+  const b = `${base} hover:text-zinc-50`;
   const sz = big ? 19 : 15;
   return (
     <>
@@ -674,7 +670,7 @@ export function Inspector() {
   }, [open]);
   if (!open) return null;
   return (
-    <aside className="absolute top-3 right-[150px] w-[300px] max-h-[calc(100%-120px)] overflow-y-auto bg-zinc-900/95 backdrop-blur border border-zinc-700/70 rounded-xl shadow-2xl z-20" data-testid="inspector" aria-label="Selection">
+    <aside className="absolute top-3 right-[150px] w-[300px] max-h-[calc(100%-120px)] overflow-y-auto bg-zinc-900/95 backdrop-blur rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 z-20" data-testid="inspector" aria-label="Selection">
       <div className="flex items-center gap-0.5 px-2 pt-2">
         {hole && <HoleSteps holeId={hole.id} />}
         <div className="flex-1" />

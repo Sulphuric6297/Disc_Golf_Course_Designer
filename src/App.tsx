@@ -38,7 +38,7 @@ function Toasts({ bottom }: { bottom?: number }) {
           <span className={bottom !== undefined ? "text-[13px] leading-snug line-clamp-3" : undefined}>{t.text}</span>
           {t.undo && <button className="font-bold text-orange-300 hover:text-orange-200 touch:min-h-[40px]" onClick={() => { undo(); dismiss(t.id); }}>Undo</button>}
           {t.action && <button className="font-bold text-orange-300 hover:text-orange-200 whitespace-nowrap touch:min-h-[40px]" onClick={() => { t.action!.run(); dismiss(t.id); }}>{t.action.label}</button>}
-          <button aria-label="Dismiss" className="text-zinc-400 hover:text-white touch:w-9 touch:h-9 touch:-mr-2 touch:flex touch:items-center touch:justify-center shrink-0" onClick={() => dismiss(t.id)}><X size={14} /></button>
+          <button aria-label="Dismiss" className="text-zinc-400 hover:text-zinc-50 touch:w-9 touch:h-9 touch:-mr-2 touch:flex touch:items-center touch:justify-center shrink-0" onClick={() => dismiss(t.id)}><X size={14} /></button>
         </div>
       ))}
     </div>
@@ -88,8 +88,8 @@ const GESTURES: [string, string][] = [
 ];
 
 /** A dialog's box: a sheet up from the bottom on a phone, a centered box from a tablet up. */
-const SHEET = "bg-zinc-900 border border-zinc-700 shadow-2xl w-full rounded-t-[22px] md:rounded-2xl max-h-[92dvh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] md:pb-5 animate-[dgrise_220ms_cubic-bezier(0.2,0.9,0.3,1)] md:animate-none";
-const CLOSE = "text-zinc-400 hover:text-white touch:w-11 touch:h-11 touch:-m-2.5 touch:flex touch:items-center touch:justify-center";
+const SHEET = "bg-zinc-900 shadow-2xl ring-1 ring-white/10 w-full rounded-t-[22px] md:rounded-2xl max-h-[92dvh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] md:pb-5 animate-[dgrise_220ms_cubic-bezier(0.2,0.9,0.3,1)] md:animate-none";
+const CLOSE = "text-zinc-400 hover:text-zinc-50 touch:w-11 touch:h-11 touch:-m-2.5 touch:flex touch:items-center touch:justify-center";
 
 function HelpDialog({ onClose }: { onClose: () => void }) {
   const touch = useTouch();
@@ -156,7 +156,7 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
   const group = useEditor.getState().group;
   const inGroup = !!item && group.includes(item.id);
   return (
-    <div className="fixed z-50 w-52 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-1" style={{ left: x, top: y }} role="menu" onPointerDown={e => e.stopPropagation()}>
+    <div className="fixed z-50 w-52 bg-zinc-900 rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 py-1" style={{ left: x, top: y }} role="menu" onPointerDown={e => e.stopPropagation()}>
       {holeId && holeStats(doc, doc.holes.find(h => h.id === holeId)!).complete && (
         <>
           <button className={row} role="menuitem" onClick={run(() => useEditor.getState().set({ teeView: holeId, flyover: false }))}>View from the tee</button>
@@ -319,7 +319,7 @@ export default function App() {
   const showWelcome = ready && empty && ed.step === "site";
   const onContextMenu = (i: { clientX: number; clientY: number; itemId: string | null; ground: P | null }) => setMenu(i);
   const welcome = (
-    <div className="pointer-events-auto bg-zinc-900/95 backdrop-blur border border-zinc-700 rounded-2xl shadow-2xl p-6 w-[440px] max-w-full text-center" data-testid="welcome">
+    <div className="pointer-events-auto bg-zinc-900/95 backdrop-blur rounded-2xl shadow-2xl ring-1 ring-white/10 p-6 w-[440px] max-w-full text-center" data-testid="welcome">
       <div className="w-12 h-12 rounded-xl bg-orange-500/15 text-orange-400 flex items-center justify-center mx-auto mb-3"><Route size={24} /></div>
       <h2 className="text-xl font-bold text-zinc-50">Design your disc golf course</h2>
       <div className="mt-4 flex flex-col gap-2">

@@ -14,7 +14,7 @@ import { measureLidar } from "../state/lidar";
 import { saplings, yearsSince } from "../lib/lidar";
 import { getView } from "./MapViewport";
 import { structureIcon } from "./Toolbar";
-import { Button, Field, Section, Segmented, Slider, Stat, TextInput, Toggle } from "./ui";
+import { Button, Facts, Field, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
 import { DesignPanel } from "./DesignPanel";
 import { ExportPanel } from "./ExportPanel";
 import { useTouch } from "./useLayout";
@@ -47,8 +47,8 @@ const NextButton = ({ step }: { step: Step }) => {
   const next = STEPS[i + 1];
   if (!next) return null;
   return (
-    <div className="px-4 py-3">
-      <Button full onClick={() => useEditor.getState().set({ step: next.id, tool: "select" })} testid="next-step">Next: {next.label} <ArrowRight size={15} /></Button>
+    <div className="px-4 py-3 flex justify-end">
+      <Button tone="ghost" onClick={() => useEditor.getState().set({ step: next.id, tool: "select" })} testid="next-step">Next: {next.label} <ArrowRight size={15} /></Button>
     </div>
   );
 };
@@ -56,8 +56,8 @@ const NextButton = ({ step }: { step: Step }) => {
 const ToolCard = ({ icon, title, onClick, active, testid }: { icon: ReactNode; title: string; onClick: () => void; active?: boolean; testid?: string }) => {
   const touch = useTouch();
   return (
-    <button onClick={onClick} data-testid={testid} className={`w-full text-left flex gap-3 items-start rounded-lg px-3 py-2 touch:py-2.5 border transition-colors ${active ? "border-orange-400 bg-orange-500/10" : "border-zinc-800 hover:border-zinc-600 bg-zinc-800/40"}`}>
-      <span className="mt-0.5 text-orange-300">{icon}</span>
+    <button onClick={onClick} data-testid={testid} className={`w-full text-left flex gap-3 items-center rounded-lg px-3 py-2 touch:py-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${active ? "bg-orange-500/10 ring-1 ring-orange-500/40" : "bg-zinc-800/60 hover:bg-zinc-800"}`}>
+      <span className={active ? "text-orange-300" : "text-zinc-400"}>{icon}</span>
       <span>
         <span className="block text-sm font-semibold text-zinc-100">{touch ? touchWords(title) : title}</span>
       </span>
@@ -223,11 +223,7 @@ function HolesStep() {
           </ol>
         )}
         {totals.complete > 0 && (
-          <div className="grid grid-cols-3 gap-1.5 mt-3" data-testid="course-totals">
-            <Stat label="Par" value={totals.par} />
-            <Stat label="Length" value={fmtDist(totals.length, u)} />
-            <Stat label="Walking" value={fmtDist(totals.walk, u)} sub="between holes" />
-          </div>
+          <div className="mt-3"><Facts testid="course-totals" items={[["Par", totals.par], ["Length", fmtDist(totals.length, u)], ["Walking", fmtDist(totals.walk, u)]]} /></div>
         )}
         {doc.holes.length > 1 && (
           <div className="mt-3" data-testid="auto-walks">
@@ -345,14 +341,8 @@ function ReviewStep() {
   return (
     <>
       <Section title={`Course · ${layout?.name ?? ""} layout`} testid="review-summary">
-        <div className="grid grid-cols-3 gap-1.5">
-          <Stat label="Holes" value={totals.complete} />
-          <Stat label="Par" value={totals.par} />
-          <Stat label="Length" value={fmtDist(totals.length, u)} sub={totals.complete ? `avg ${fmtDist(totals.length / totals.complete, u)}` : undefined} />
-          <Stat label="Walking" value={fmtDist(totals.walk, u)} />
-          <Stat label="Climb" value={fmtDist(totals.climb, u)} />
-          <Stat label="Par mix" value={<span className="text-sm">{Object.entries(totals.parCounts).map(([p, n]) => `${n}×${p}`).join(" ") || "–"}</span>} />
-        </div>
+        <Facts items={[["Holes", totals.complete], ["Par", totals.par], ["Length", fmtDist(totals.length, u)], ["Walking", fmtDist(totals.walk, u)], ["Climb", fmtDist(totals.climb, u)]]} />
+        <p className="text-xs text-zinc-500 mt-1">{totals.complete ? `Average hole ${fmtDist(totals.length / totals.complete, u)} · ` : ""}Par mix {Object.entries(totals.parCounts).map(([p, n]) => `${n}×${p}`).join(" ") || "–"}</p>
         {levels.length > 0 && <p className="text-[11px] text-zinc-500 mt-2">Tee colors on the course: {levels.map(l => TEE_LEVELS[l].label).join(", ")}.</p>}
       </Section>
       <Section title={`Checks (${issues.length})`} testid="issues">
@@ -449,10 +439,10 @@ export function SidePanel({ onFindSite }: { onFindSite: () => void }) {
   const i = STEPS.findIndex(s => s.id === step);
   const meta = STEPS[i];
   return (
-    <aside className="w-[340px] shrink-0 bg-zinc-900 border-r border-zinc-800 overflow-y-auto" aria-label="Step panel" data-testid="side-panel">
-      <div className="px-4 pt-4 pb-2">
-        <div className="text-[11px] font-bold tracking-wider text-orange-400 uppercase">Step {i + 1} of {STEPS.length}</div>
-        <h2 className="text-lg font-bold text-zinc-50">{meta.title}</h2>
+    <aside className="w-[340px] shrink-0 bg-zinc-900 overflow-y-auto" aria-label="Step panel" data-testid="side-panel">
+      <div className="px-4 pt-4 pb-1">
+        <div className="text-[11px] text-zinc-500">Step {i + 1} of {STEPS.length}</div>
+        <h2 className="text-base font-semibold text-zinc-50">{meta.title}</h2>
       </div>
       <StepContent onFindSite={onFindSite} />
     </aside>

@@ -82,8 +82,8 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => v
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center pt-[12vh] bg-black/50" onMouseDown={e => e.target === e.currentTarget && onClose()} data-testid="goto">
-      <div className="w-[520px] max-w-[calc(100%-24px)] bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl overflow-hidden" role="dialog" aria-label="Go to">
-        <div className="flex items-center gap-2 px-3 border-b border-zinc-800">
+      <div className="w-[520px] max-w-[calc(100%-24px)] bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-white/10 overflow-hidden" role="dialog" aria-label="Go to">
+        <div className="flex items-center gap-2 px-3 shadow-[0_1px_0_0_rgba(255,255,255,0.06)]">
           <Search size={16} className="text-zinc-500 shrink-0" />
           <input
             ref={input}

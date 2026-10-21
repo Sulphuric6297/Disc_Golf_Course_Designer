@@ -42,7 +42,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       <Screen title="Backup codes">
         <p className="text-sm text-zinc-300 mb-3">Each one signs you in once without your phone.</p>
         <BackupCodes codes={codes} />
-        <button className="mt-4 w-full rounded-lg font-semibold px-3 py-2 text-sm touch:py-3 bg-orange-500 hover:bg-orange-400 text-white" onClick={() => { setCodes(null); void load(); }} data-testid="codes-saved">
+        <button className="mt-4 w-full rounded-lg font-semibold px-3 py-2 text-sm touch:py-3 bg-orange-500 hover:bg-orange-400 text-zinc-950" onClick={() => { setCodes(null); void load(); }} data-testid="codes-saved">
           I've saved them
         </button>
       </Screen>

@@ -1,6 +1,8 @@
 // The map view (2D and 3D are one view): the CourseView engine, fed from the course store.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BoxSelect, Compass, Maximize2, Minus, Plus, RotateCcw, RotateCw } from "lucide-react";
+import { useAllowed } from "../auth/perms";
+import { FOCUS } from "./ui";
 import { CourseView } from "../viewport/CourseView";
 import type { ViewDoc, ViewInfo } from "../viewport/types";
 import { lassoTrees } from "../state/lidar";
@@ -143,7 +145,9 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
 
   const scale = info ? niceScaleBar(info.pxPerUnit, 110) : null;
   const elevation = hover ? heightAt(doc.terrainHeights, doc.gridSize, hover.x, hover.y) + doc.site.baseElevationFt : null;
-  const btn = "w-8 h-8 flex items-center justify-center text-zinc-300 hover:text-white hover:bg-zinc-700/70 transition-colors";
+  const btn = `w-8 h-8 flex items-center justify-center text-zinc-300 hover:text-zinc-50 hover:bg-zinc-700/70 transition-colors ${FOCUS} focus-visible:ring-inset`;
+  // (the floating controls share one surface)
+  const pad = "pointer-events-auto bg-zinc-900/90 backdrop-blur rounded-lg shadow-lg shadow-black/30 ring-1 ring-white/10";
 
   // (on a computer, clear of the Selection panel at the top right: 150 to 450 px from the edge)
   const obBar = ed.obPick && !ed.teeView && <ObPickBar view={view} cut={ed.pickCut} top={compact ? controlsTop + 8 : 12} right={!compact && ed.selectedId && ed.step !== "design" ? 462 : 8} />;
@@ -166,35 +170,33 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       {obBar}
       {!ed.teeView && (
         <>
-          <div className="absolute top-3 right-3 flex gap-2 items-start pointer-events-none">
-            {scale && (
-              <div className="pointer-events-auto bg-zinc-900/85 backdrop-blur rounded-lg px-2.5 py-1.5 border border-zinc-700/60 shadow" data-testid="scale-bar">
-                <div className="text-[11px] text-zinc-200 font-semibold mb-1">{doc.units === "m" ? `${Math.round(scale.feet / 3.28084)} m` : scale.label}</div>
-                <div className="h-1.5 border-x-2 border-b-2 border-white" style={{ width: scale.px }} />
+          <div className="absolute top-3 right-3 flex flex-col gap-2 items-end pointer-events-none">
+            <ViewToggle pad={pad} />
+            <div className="flex gap-2 items-start">
+              <button className={`${pad} w-11 h-11 flex flex-col items-center justify-center ${FOCUS}`} title="North up (N)" onClick={() => view?.resetNorth()} data-testid="compass">
+                <Compass size={18} className="text-red-400" style={{ transform: `rotate(${-(info?.heading ?? 0)}deg)` }} />
+                <span className="text-[9px] font-bold text-zinc-300">N</span>
+              </button>
+              <div className={`${pad} flex flex-col overflow-hidden`}>
+                <button className={btn} title="Zoom in (+)" onClick={() => view?.zoomBy(1.4)}><Plus size={16} /></button>
+                <button className={btn} title="Zoom out (−)" onClick={() => view?.zoomBy(1 / 1.4)}><Minus size={16} /></button>
+                <button className={btn} title="Show the whole course (0)" onClick={() => view?.fitCourse()}><Maximize2 size={15} /></button>
               </div>
-            )}
-            <button
-              className="pointer-events-auto bg-zinc-900/85 backdrop-blur rounded-lg w-11 h-11 flex flex-col items-center justify-center border border-zinc-700/60 shadow"
-              title="North up (N)"
-              onClick={() => view?.resetNorth()}
-              data-testid="compass"
-            >
-              <Compass size={18} className="text-red-400" style={{ transform: `rotate(${-(info?.heading ?? 0)}deg)` }} />
-              <span className="text-[9px] font-bold text-zinc-300">N</span>
-            </button>
-            <div className="pointer-events-auto flex flex-col bg-zinc-900/85 backdrop-blur rounded-lg border border-zinc-700/60 shadow overflow-hidden">
-              <button className={btn} title="Zoom in (+)" onClick={() => view?.zoomBy(1.4)}><Plus size={16} /></button>
-              <button className={btn} title="Zoom out (−)" onClick={() => view?.zoomBy(1 / 1.4)}><Minus size={16} /></button>
-              <button className={btn} title="Show the whole course (0)" onClick={() => view?.fitCourse()}><Maximize2 size={15} /></button>
-            </div>
-            <div className="flex flex-col gap-2 items-end">
-              <div className="pointer-events-auto flex flex-col bg-zinc-900/85 backdrop-blur rounded-lg border border-zinc-700/60 shadow overflow-hidden">
-                <button className={btn} title="Turn left (Q)" onClick={() => view?.rotateBy(-30)}><RotateCcw size={15} /></button>
-                <button className={btn} title="Turn right (E)" onClick={() => view?.rotateBy(30)}><RotateCw size={15} /></button>
+              <div className="flex flex-col gap-2 items-end">
+                <div className={`${pad} flex flex-col overflow-hidden`}>
+                  <button className={btn} title="Turn left (Q)" onClick={() => view?.rotateBy(-30)}><RotateCcw size={15} /></button>
+                  <button className={btn} title="Turn right (E)" onClick={() => view?.rotateBy(30)}><RotateCw size={15} /></button>
+                </div>
+                <SceneButton />
               </div>
-              {ed.view === "3d" && <SceneButton />}
             </div>
           </div>
+          {scale && (
+            <div className="absolute right-3 bottom-3 bg-zinc-900/80 rounded-md px-2 py-1 pointer-events-none" data-testid="scale-bar">
+              <div className="text-[11px] text-zinc-200 font-semibold mb-0.5">{doc.units === "m" ? `${Math.round(scale.feet / 3.28084)} m` : scale.label}</div>
+              <div className="h-1.5 border-x-2 border-b-2 border-white" style={{ width: scale.px }} />
+            </div>
+          )}
           {hover && (
             <div className="absolute left-3 bottom-3 text-[11px] text-zinc-200 bg-zinc-900/80 rounded-md px-2 py-1 pointer-events-none" data-testid="hover-readout">
               {doc.site.bounds ? `Elevation ${Math.round(doc.units === "m" ? elevation! / 3.28084 : elevation!)} ${doc.units}` : `Ground ${fmtElev(elevation!, doc.units)}`}
@@ -206,6 +208,24 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   );
 }
 
+/** Top-down or tilted: with the map's controls (a viewer sees only the views they may). */
+function ViewToggle({ pad }: { pad: string }) {
+  const view = useEditor(e => e.view), set = useEditor(e => e.set);
+  const may2d = useAllowed("map"), may3d = useAllowed("view3d");
+  const views = (["2d", "3d"] as const).filter(v => (v === "3d" ? may3d : may2d));
+  if (views.length < 2) return null;
+  return (
+    <div className={`${pad} flex p-0.5`} role="radiogroup" aria-label="View">
+      {views.map(v => (
+        <button key={v} role="radio" aria-checked={view === v} onClick={() => set({ view: v })} title={v === "2d" ? "Top-down map (2)" : "Tilted 3D view (3)"} data-testid={`view-${v}`}
+          className={`px-2.5 h-8 rounded-md text-xs font-bold transition-colors ${FOCUS} ${view === v ? "bg-zinc-100 text-zinc-900" : "text-zinc-300 hover:text-zinc-50 hover:bg-zinc-700/60"}`}>
+          {v.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** The map's controls for a finger: 44 px buttons (zoom and turn also work by pinching and
  * twisting; these are the one-finger way, and the way for anyone who can't pinch). */
 /** While a hole's line is plotted by hand: what to do, and Undo point, Done and Cancel (for a finger too). */
@@ -213,7 +233,7 @@ function ObPickBar({ view, cut, top, right }: { view: CourseView | null; cut: bo
   const b = "px-3 h-9 touch:h-11 rounded-lg text-sm font-semibold";
   return (
     <div className="absolute left-2 z-20 flex justify-center pointer-events-none" style={{ top, right }}>
-    <div className="pointer-events-auto flex items-center gap-2 bg-zinc-900/95 border border-zinc-700 rounded-xl shadow-2xl px-3 py-2 max-w-full" data-testid="ob-pick-bar">
+    <div className="pointer-events-auto flex items-center gap-2 bg-zinc-900/95 rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 px-3 py-2 max-w-full" data-testid="ob-pick-bar">
       <span className="text-sm text-zinc-100 font-semibold whitespace-nowrap">{cut ? "Remove a stretch" : "OB stretch"}</span>
       <span className="text-xs text-zinc-300 hidden sm:inline">Click where it starts, then where it ends</span>
       <button className={`${b} text-zinc-300 hover:bg-zinc-800`} onClick={() => view?.cancelDrawing()} data-testid="ob-pick-cancel">Cancel</button>
@@ -226,11 +246,11 @@ function PlotBar({ view, holeNumber, top, right }: { view: CourseView | null; ho
   const b = "px-3 h-9 touch:h-11 rounded-lg text-sm font-semibold";
   return (
     <div className="absolute left-2 z-20 flex justify-center pointer-events-none" style={{ top, right }}>
-    <div className="pointer-events-auto flex items-center gap-2 bg-zinc-900/95 border border-zinc-700 rounded-xl shadow-2xl px-3 py-2 max-w-full" data-testid="plot-bar">
+    <div className="pointer-events-auto flex items-center gap-2 bg-zinc-900/95 rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 px-3 py-2 max-w-full" data-testid="plot-bar">
       <span className="text-sm text-zinc-100 font-semibold whitespace-nowrap">Hole {holeNumber}</span>
       <span className="text-xs text-zinc-300 hidden sm:inline">Click along the line to the basket, or drag it</span>
       <button className={`${b} text-zinc-200 hover:bg-zinc-800`} onClick={() => view?.undoPoint()} data-testid="plot-undo">Undo point</button>
-      <button className={`${b} bg-orange-500 text-white hover:bg-orange-400`} onClick={() => view?.finishPlot()} data-testid="plot-done">Done</button>
+      <button className={`${b} bg-orange-500 text-zinc-950 hover:bg-orange-400`} onClick={() => view?.finishPlot()} data-testid="plot-done">Done</button>
       <button className={`${b} text-zinc-300 hover:bg-zinc-800`} onClick={() => view?.cancelDrawing()} data-testid="plot-cancel">Cancel</button>
     </div>
     </div>
@@ -269,7 +289,7 @@ function TouchControls({ view, info, scale, units, phone, top, room, threeD }: {
         {!phone && (
           <div className="pointer-events-auto flex flex-col bg-zinc-900/90 rounded-2xl border border-white/10 p-0.5" role="radiogroup" aria-label="View">
             {(["2d", "3d"] as const).map(v => (
-              <button key={v} role="radio" aria-checked={mode === v} onClick={() => set({ view: v })} className={`w-10 h-9 rounded-[12px] text-[13px] font-bold ${mode === v ? "bg-sky-600 text-white" : "text-zinc-300"}`}>{v.toUpperCase()}</button>
+              <button key={v} role="radio" aria-checked={mode === v} onClick={() => set({ view: v })} className={`w-10 h-9 rounded-[12px] text-[13px] font-bold ${mode === v ? "bg-zinc-100 text-zinc-900" : "text-zinc-300"}`}>{v.toUpperCase()}</button>
             ))}
           </div>
         )}
@@ -285,7 +305,7 @@ function TouchControls({ view, info, scale, units, phone, top, room, threeD }: {
               <button className={b} aria-label="Zoom out" onClick={() => view?.zoomBy(1 / 1.4)}><Minus size={20} /></button>
             </div>
             {box && (
-              <button className={`${group} ${b} ${boxing ? "!bg-orange-500 !text-white" : ""}`} aria-label="Select with a box" title="Select with a box" aria-pressed={boxing} onClick={() => set({ dragSelect: !boxing, tool: "select" })} data-testid="touch-drag-select">
+              <button className={`${group} ${b} ${boxing ? "!bg-orange-500 !text-zinc-950" : ""}`} aria-label="Select with a box" title="Select with a box" aria-pressed={boxing} onClick={() => set({ dragSelect: !boxing, tool: "select" })} data-testid="touch-drag-select">
                 <BoxSelect size={19} />
               </button>
             )}

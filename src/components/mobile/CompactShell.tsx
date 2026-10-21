@@ -69,7 +69,7 @@ const Logo = ({ size = 30 }: { size?: number }) => (
   </svg>
 );
 
-const iconBtn = "w-11 h-11 shrink-0 flex items-center justify-center rounded-xl text-zinc-300 active:bg-zinc-700 hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:opacity-30";
+const iconBtn = "w-11 h-11 shrink-0 flex items-center justify-center rounded-xl text-zinc-300 active:bg-zinc-700 hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 disabled:opacity-30";
 
 /** What the panel shows: the active tool, the selection, or the step. */
 function useMode() {
@@ -167,7 +167,7 @@ function StepHeader({ onFindSite }: { onFindSite: () => void }) {
   const meta = STEPS[i];
   const chip = (text: string) => <span className="shrink-0 text-[13px] font-semibold text-zinc-200 bg-zinc-800 rounded-full px-3 py-1.5 tabular-nums">{text}</span>;
   const right =
-    step === "site" ? (!site.bounds ? <button className="shrink-0 h-10 px-4 rounded-full bg-orange-500 text-white text-[14px] font-bold active:bg-orange-600" onClick={onFindSite}>Find your park</button> : site.bounds ? chip(`${((canvas.width * canvas.height) / 43560).toFixed(1)} acres`) : null)
+    step === "site" ? (!site.bounds ? <button className="shrink-0 h-10 px-4 rounded-full bg-orange-500 text-zinc-950 text-[14px] font-bold active:bg-orange-600" onClick={onFindSite}>Find your park</button> : site.bounds ? chip(`${((canvas.width * canvas.height) / 43560).toFixed(1)} acres`) : null)
     : step === "holes" || step === "features" ? (sum.holes ? chip(`${sum.holes} hole${sum.holes === 1 ? "" : "s"} · Par ${sum.par}`) : null)
     : step === "review" ? chip(sum.issues ? `${sum.issues} check${sum.issues === 1 ? "" : "s"}` : "No problems")
     : step === "design" ? chip(look)
@@ -220,7 +220,7 @@ function Tools() {
               aria-label={touchWords(t.label)}
               aria-pressed={on}
               onClick={() => pick(t.mode)}
-              className={`shrink-0 min-w-[56px] h-[54px] px-1.5 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${on ? "bg-orange-500 text-white shadow-lg shadow-orange-900/40" : "text-zinc-300 active:bg-zinc-700 bg-zinc-800/60"}`}
+              className={`shrink-0 min-w-[56px] h-[54px] px-1.5 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${on ? "bg-orange-500 text-zinc-950 shadow-lg shadow-orange-900/40" : "text-zinc-300 active:bg-zinc-700 bg-zinc-800/60"}`}
             >
               {t.icon}
               <span className="text-[11px] leading-none font-semibold whitespace-nowrap">{t.short}</span>
@@ -263,14 +263,14 @@ function DrawBar({ bottom }: { bottom: number }) {
   if (teeView) return null;
   const kind = tool === "draw-area" ? "area" : tool === "draw-line" ? "line" : tool === "draw-structure" ? (STRUCTURE_KINDS[structureKind].shape === "outline" ? "area" : "line") : null;
   const pill = "absolute left-1/2 -translate-x-1/2 z-30 w-max max-w-[calc(100%-16px)] flex items-center gap-1 p-1.5 rounded-full bg-zinc-900/95 border border-white/10 shadow-2xl transition-[bottom] duration-300";
-  const btn = "h-11 px-4 rounded-full flex items-center gap-1.5 text-[15px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400";
+  const btn = "h-11 px-4 rounded-full flex items-center gap-1.5 text-[15px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
   if (kind && n > 0) {
     const need = kind === "area" ? 3 : 2;
     return (
       <div className={pill} style={{ bottom }} role="toolbar" aria-label="Drawing" data-testid="draw-bar">
         <button className={`${btn} text-zinc-200 active:bg-zinc-700`} onClick={() => getView()?.undoPoint()} data-testid="draw-undo"><Undo2 size={18} /> Undo</button>
         <button className={`${btn} text-zinc-200 active:bg-zinc-700`} onClick={() => getView()?.cancelDrawing()} data-testid="draw-cancel"><X size={18} /> Cancel</button>
-        <button className={`${btn} bg-orange-500 text-white disabled:opacity-40 active:bg-orange-600`} disabled={n < need} onClick={() => getView()?.finishDrawing()} data-testid="draw-done">
+        <button className={`${btn} bg-orange-500 text-zinc-950 disabled:opacity-40 active:bg-orange-600`} disabled={n < need} onClick={() => getView()?.finishDrawing()} data-testid="draw-done">
           <Check size={18} strokeWidth={3} /> Done
           <span className="text-[13px] font-medium opacity-80 tabular-nums">{n < need ? `${n}/${need}` : n}</span>
         </button>
@@ -403,7 +403,7 @@ function ViewToggle({ vertical = false }: { vertical?: boolean }) {
   return (
     <div className={`flex ${vertical ? "flex-col" : ""} bg-zinc-800/90 rounded-xl p-0.5 shrink-0`} role="radiogroup" aria-label="View">
       {(["2d", "3d"] as const).map(v => (
-        <button key={v} role="radio" aria-checked={view === v} onClick={() => set({ view: v })} className={`${vertical ? "w-11 h-9" : "w-10 h-10"} rounded-[10px] text-[14px] font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${view === v ? "bg-sky-600 text-white" : "text-zinc-300"}`}>
+        <button key={v} role="radio" aria-checked={view === v} onClick={() => set({ view: v })} className={`${vertical ? "w-11 h-9" : "w-10 h-10"} rounded-[10px] text-[14px] font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${view === v ? "bg-zinc-100 text-zinc-900" : "text-zinc-300"}`}>
           {v.toUpperCase()}
         </button>
       ))}

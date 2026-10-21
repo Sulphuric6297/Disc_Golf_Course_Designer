@@ -244,7 +244,7 @@ export function PageElementPanel() {
     const t = e.text;
     return (
       <Section title={`Text: ${title}`} testid="page-selected" right={close}>
-        <textarea ref={textArea} aria-label="Text on the page" data-testid="page-text" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-orange-400 min-h-[64px]" value={t.text} onChange={ev => patchText(t.id, { text: ev.target.value }, false)} onBlur={done} />
+        <textarea ref={textArea} aria-label="Text on the page" data-testid="page-text" className="w-full bg-zinc-800 rounded-lg px-2.5 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80 min-h-[64px]" value={t.text} onChange={ev => patchText(t.id, { text: ev.target.value }, false)} onBlur={done} />
         <Field label="Font"><Segmented label="Text font" value={t.font ?? s.font} onChange={v => patchText(t.id, { font: v })} options={FONTS.map(f => ({ ...f }))} /></Field>
         <LiveSlider label="Size" value={t.size} min={4} max={200} step={1} format={v => `${Math.round(v)} pt`} onDone={v => patchText(t.id, { size: v })} />
         <div className="grid grid-cols-2 gap-x-3">

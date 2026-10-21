@@ -219,7 +219,7 @@ export function DesignPanel() {
       <TeeSignSettings />
       <Section title="Paper">
         <Field label="Size">
-          <select aria-label="Paper size" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={s.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
+          <select aria-label="Paper size" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={s.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
             {(Object.keys(PAPER) as PaperSize[]).map(p => <option key={p} value={p}>{PAPER[p].label}</option>)}
           </select>
         </Field>

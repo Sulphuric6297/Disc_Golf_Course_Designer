@@ -66,7 +66,7 @@ export function ActionSheet({ title, subtitle, actions, onClose, children, testi
             ))}
           </div>
         </div>
-        <button className="mt-2 w-full min-h-[52px] rounded-2xl bg-zinc-900 border border-white/10 text-[16px] font-semibold text-orange-300 active:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 shadow-2xl" onClick={e => !fresh(e) && onClose()} data-testid="action-sheet-cancel">
+        <button className="mt-2 w-full min-h-[52px] rounded-2xl bg-zinc-900 border border-white/10 text-[16px] font-semibold text-orange-300 active:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 shadow-2xl" onClick={e => !fresh(e) && onClose()} data-testid="action-sheet-cancel">
           Cancel
         </button>
       </div>

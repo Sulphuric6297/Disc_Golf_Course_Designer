@@ -27,7 +27,7 @@ import { Button, Field, Section, Segmented } from "./ui";
 
 const svgBlob = (svg: string) => new Blob([svg], { type: "image/svg+xml" });
 const two = (i: number) => String(i).padStart(2, "0");
-const selectCls = "bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs";
+const selectCls = "bg-zinc-800 rounded-lg px-2 py-1 text-xs";
 
 /** Contours, hill shading and (Forest style) the photo's canopy, for drawing a page. */
 const art = async (d: CourseDoc) => ({ ...reliefOf(d), canopy: await canopyFor(d) });
@@ -264,7 +264,7 @@ export function ExportPanel() {
           </Field>
         </div>
         <details className="mb-2 group" data-testid="video-camera">
-          <summary className="cursor-pointer text-xs font-semibold text-zinc-300 hover:text-white py-1 select-none">Camera</summary>
+          <summary className="cursor-pointer text-xs font-semibold text-zinc-300 hover:text-zinc-50 py-1 select-none">Camera</summary>
           <div className="pt-2"><FlyoverSettingsPanel /></div>
         </details>
         {recording ? (

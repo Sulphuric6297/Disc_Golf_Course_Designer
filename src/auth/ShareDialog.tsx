@@ -49,7 +49,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
                   <span className="sr-only">Username</span>
                   <input className={inputCls} list="share-people" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} autoCapitalize="none" spellCheck={false} aria-label="Username" />
                 </label>
-                <select className="shrink-0 w-28 bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm touch:py-2.5 text-zinc-100 focus:outline-none focus:border-orange-400" value={newRole} onChange={e => setNewRole(e.target.value as Role)} aria-label="Role">
+                <select className="shrink-0 w-28 bg-zinc-800 rounded-lg px-2 py-1.5 text-sm touch:py-2.5 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80" value={newRole} onChange={e => setNewRole(e.target.value as Role)} aria-label="Role">
                   {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
               </div>
@@ -84,7 +84,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
                   <span className="text-zinc-100">{m.displayName}</span> <span className="text-zinc-500">{m.username}{m.userId === me.id ? " · you" : ""}</span>
                 </div>
                 {owner ? (
-                  <select className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-100" value={m.role} aria-label={`Role for ${m.username}`}
+                  <select className="bg-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100" value={m.role} aria-label={`Role for ${m.username}`}
                     onChange={e => void change(() => api("POST", `courses/${id}/members`, { username: m.username, role: e.target.value }))}>
                     {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
@@ -160,7 +160,7 @@ function PublicSection({ id }: { id: string }) {
           <span className="flex-1 text-zinc-300" data-testid="site-state">
             {site ? <>Shows version {site.version} · {when(site.publishedAt)}{site.version < version ? <span className="text-amber-300"> · the course changed since</span> : null}</> : "Not published yet"}
           </span>
-          <button className="rounded-lg px-3 py-1.5 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white disabled:opacity-50" disabled={!!busy} onClick={() => void update()} data-testid="update-site">
+          <button className="rounded-lg px-3 py-1.5 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" disabled={!!busy} onClick={() => void update()} data-testid="update-site">
             {busy ? busy + "…" : site ? "Update site" : "Publish site"}
           </button>
         </div>
@@ -175,10 +175,10 @@ function PublicSection({ id }: { id: string }) {
               </div>
               <div className="text-[12px] text-zinc-500 mt-1">{l.slug ? <span className="text-zinc-300">/{l.slug} · </span> : null}{partsOf(l.perms)}</div>
               <div className="flex gap-3 mt-1.5 text-xs">
-                <button className="text-zinc-300 hover:text-white" onClick={() => { setEditing(l.id); setForm({ label: l.label, slug: l.slug ?? "", perms: l.perms, password: "", expires: l.expiresAt ? l.expiresAt.slice(0, 10) : "" }); }}>Change</button>
-                <button className="text-zinc-300 hover:text-white" onClick={() => void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { revoked: !l.revoked }))}>{l.revoked ? "Turn on" : "Turn off"}</button>
-                <button className="text-zinc-300 hover:text-white" onClick={() => { if (confirm("Give it a new address? The old one stops working.")) void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { newToken: true })); }}>New address</button>
-                {l.hasPassword && <button className="text-zinc-300 hover:text-white" onClick={() => void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { password: null }))}>No password</button>}
+                <button className="text-zinc-300 hover:text-zinc-50" onClick={() => { setEditing(l.id); setForm({ label: l.label, slug: l.slug ?? "", perms: l.perms, password: "", expires: l.expiresAt ? l.expiresAt.slice(0, 10) : "" }); }}>Change</button>
+                <button className="text-zinc-300 hover:text-zinc-50" onClick={() => void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { revoked: !l.revoked }))}>{l.revoked ? "Turn on" : "Turn off"}</button>
+                <button className="text-zinc-300 hover:text-zinc-50" onClick={() => { if (confirm("Give it a new address? The old one stops working.")) void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { newToken: true })); }}>New address</button>
+                {l.hasPassword && <button className="text-zinc-300 hover:text-zinc-50" onClick={() => void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { password: null }))}>No password</button>}
                 <button className="text-red-300 hover:text-red-200" onClick={() => { if (confirm("Delete this link?")) void act(() => api("DELETE", `courses/${id}/links/${l.id}`)); }}>Delete</button>
               </div>
             </li>
@@ -199,7 +199,7 @@ function PublicSection({ id }: { id: string }) {
             </div>
             <div className="flex gap-2 justify-end">
               <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded-lg" onClick={() => setEditing(null)}>Cancel</button>
-              <button className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-white disabled:opacity-50" disabled={!!busy} onClick={() => void save()} data-testid="save-link">{busy ? busy + "…" : editing === "new" ? "Make link" : "Save"}</button>
+              <button className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" disabled={!!busy} onClick={() => void save()} data-testid="save-link">{busy ? busy + "…" : editing === "new" ? "Make link" : "Save"}</button>
             </div>
           </div>
         ) : (
