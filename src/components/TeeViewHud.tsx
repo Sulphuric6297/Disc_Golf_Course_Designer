@@ -15,7 +15,8 @@ import { FlyoverSettingsPanel } from "./FlyoverSettings";
 
 /** While a flyover waits for its pictures: the hole's name and numbers and a thin moving bar,
  * over the view (shown at once; it fades as the flight begins). */
-function FlyoverLoading({ title, facts, on }: { title: string; facts: string; on: boolean }) {
+const STAGE = { map: "Painting the map", detail: "Sharpening the hole", textures: "Loading textures" } as const;
+function FlyoverLoading({ title, facts, on, stage }: { title: string; facts: string; on: boolean; stage: keyof typeof STAGE | null }) {
   return (
     <div className={`absolute inset-0 z-30 flex flex-col items-center justify-center bg-zinc-950 pointer-events-auto transition-opacity duration-300 ${on ? "opacity-100" : "opacity-0"}`} data-testid="flyover-loading" role="status" aria-live="polite">
       <div className="text-xl font-semibold text-zinc-50 tracking-tight">{title}</div>
@@ -23,7 +24,7 @@ function FlyoverLoading({ title, facts, on }: { title: string; facts: string; on
       <div className="mt-6 w-40 h-0.5 rounded-full bg-zinc-800 overflow-hidden">
         <div className="h-full w-1/3 rounded-full bg-orange-500 animate-[dgslide_1.2s_ease-in-out_infinite]" />
       </div>
-      <div className="mt-3 text-xs text-zinc-500">Preparing the flyover</div>
+      <div className="mt-3 text-xs text-zinc-500" data-testid="flyover-loading-line">{stage ? STAGE[stage] : "Preparing the flyover"}</div>
     </div>
   );
 }
@@ -64,7 +65,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
     return () => window.clearTimeout(t);
   }, [waiting]);
   if (!hole || !s) return null;
-  const loading = (showLoading || waiting) && ed.flyover ? <FlyoverLoading on={waiting} title={`Hole ${doc.holes.indexOf(hole) + 1}${hole.name ? ` · ${hole.name}` : ""}`} facts={`${fmtDist(s.length, doc.units)} · Par ${s.par}${s.elevationChange ? ` · ${fmtElev(s.elevationChange, doc.units)}` : ""}`} /> : null;
+  const loading = (showLoading || waiting) && ed.flyover ? <FlyoverLoading on={waiting} stage={ed.flyLoading} title={`Hole ${doc.holes.indexOf(hole) + 1}${hole.name ? ` · ${hole.name}` : ""}`} facts={`${fmtDist(s.length, doc.units)} · Par ${s.par}${s.elevationChange ? ` · ${fmtElev(s.elevationChange, doc.units)}` : ""}`} /> : null;
   const stats = courseStats(doc);
   const done = doc.holes.filter((_, k) => stats[k].complete);
   const i = done.findIndex(h => h.id === hole.id);

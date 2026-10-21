@@ -94,6 +94,6 @@ export type ViewCallbacks = {
   onCutLine: (id: string, a: number, b: number) => void;
   /** Trees measured from the air kept standing where they'd be cleared, or taken out (one undo step). */
   onLidar: (patch: { kept?: number[]; removed?: number[] }) => void;
-  /** A flyover waiting for everything to be drawn (true), then flying (false). */
-  onFlyWait: (waiting: boolean) => void;
+  /** A flyover waiting for everything to be drawn (what it waits on), then flying (null). */
+  onFlyWait: (waiting: "map" | "detail" | "textures" | null) => void;
 };

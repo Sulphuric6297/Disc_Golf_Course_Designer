@@ -156,7 +156,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => {
     if (!view) return;
     if (ed.flyover && ed.teeView) view.flyover(ed.teeView, () => useEditor.getState().set({ flyover: false }));
-    else { view.setTeeView(ed.teeView); useEditor.getState().set({ flyLoading: false }); }
+    else { view.setTeeView(ed.teeView); useEditor.getState().set({ flyLoading: null }); }
   }, [view, ed.teeView, ed.flyover]);
 
   const scale = info ? niceScaleBar(info.pxPerUnit, 110) : null;

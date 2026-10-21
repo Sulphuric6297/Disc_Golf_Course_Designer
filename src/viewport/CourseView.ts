@@ -815,7 +815,7 @@ export class CourseView {
     this.fly = { ...path, t: -VIDEO_HOLD.intro, done, title: holeTitle(this.doc.course, holeId) };
     const wait: { since: number; loaded: boolean; frames: number } = { since: performance.now(), loaded: false, frames: 0 };
     this.flyWait = wait;
-    this.cb.onFlyWait(true);
+    this.cb.onFlyWait("map");
     void (async () => {
       const left = () => performance.now() - wait.since < FLY_WAIT_MS;
       const pause = () => new Promise(r => setTimeout(r, 100));
@@ -823,7 +823,9 @@ export class CourseView {
       // still on their way: the photo, the trees' leaves)
       await new Promise(r => setTimeout(r, 150));
       while (this.paintedPending && left()) await pause();
+      if (this.flyWait === wait) this.cb.onFlyWait("detail");
       await this.detailReady;
+      if (this.flyWait === wait) this.cb.onFlyWait("textures");
       while (texturesLoading() && left()) await pause();
       wait.loaded = true;
     })();
@@ -1307,7 +1309,7 @@ export class CourseView {
       const w = this.flyWait;
       if (w && (w.loaded ? ++w.frames < 4 : true) && performance.now() - w.since < FLY_WAIT_MS) { /* waiting */ }
       else {
-        if (w) this.cb.onFlyWait(false);
+        if (w) this.cb.onFlyWait(null);
         this.flyWait = null;
         this.fly.t += Math.min(dt, 0.25);
       }
