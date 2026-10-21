@@ -375,6 +375,8 @@ export interface MapStyle {
   /** Colors. */
   fairway: string;
   rough: string;
+  /** Tall grass areas (unset: the grass color, lighter and straw yellow). */
+  tallGrass?: string;
   ob: string;
   hazard: string;
   water: string;

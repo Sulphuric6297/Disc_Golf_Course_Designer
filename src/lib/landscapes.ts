@@ -76,3 +76,14 @@ export const LANDSCAPE_ORDER: LandscapeId[] = ["woods", "park", "pines", "dry", 
 
 /** The course's landscape (older courses: the wooded park). */
 export const landscapeOf = (s: Pick<MapStyle, "landscape">): Landscape => LANDSCAPES[(s.landscape as LandscapeId) ?? "woods"] ?? LANDSCAPES.woods;
+
+/** The color of tall grass on the map: as set, or the grass's own, lighter and straw yellow. */
+export const tallGrassOf = (s: Pick<MapStyle, "rough" | "tallGrass">) => {
+  if (s.tallGrass) return s.tallGrass;
+  const m = /^#?([0-9a-f]{6})$/i.exec(s.rough);
+  if (!m) return "#a8a35a";
+  const v = parseInt(m[1], 16);
+  const to = (c: number, t: number) => Math.round(c + (t - c) * 0.55);
+  const r = to((v >> 16) & 255, 0xb8), g = to((v >> 8) & 255, 0xae), b = to(v & 255, 0x62);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
+};

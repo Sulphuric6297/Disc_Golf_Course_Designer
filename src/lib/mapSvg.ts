@@ -13,6 +13,7 @@ import { BASKET_MARKS, RESTRICTED, STRUCTURE_INK, amenitySymbol, basketMark, dro
 import { isLineKind, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
 import { chainContours, type Contours } from "./relief";
 import { fmtDist } from "./units";
+import { tallGrassOf } from "./landscapes";
 
 export const PAPER: Record<PaperSize, { label: string; w: number; h: number }> = {
   letter: { label: "Letter 8.5 × 11 in", w: 8.5, h: 11 },
@@ -264,7 +265,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       case "woods": return s.trees;
       case "fairway": return s.fairway;
       case "green": return s.fairway;
-      case "rough": return "#a8a35a";
+      case "rough": return tallGrassOf(s);
       case "parking": return pal.parking;
       case "building": return pal.building;
       case "sand": return "#e3cf98";
@@ -722,7 +723,7 @@ if (typeof window !== "undefined") (window as any).__dgPainting = paintingNow;
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
   const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
-  const look = [s.forest, s.treeCover, s.landscape, s.contours, s.trees, s.fairway, s.rough, s.water, s.path, s.nextTee, s.walkWidth, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale];
+  const look = [s.forest, s.treeCover, s.landscape, s.contours, s.trees, s.fairway, s.rough, s.tallGrass, s.water, s.path, s.nextTee, s.walkWidth, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale];
   const key = JSON.stringify([paintLimit, printDensity, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), paintedFrom(doc), doc.canvas, doc.id]);
   // (A live preview may show a picture made for print; a print never uses a live one, which is a
   // blob only this page can read)
@@ -1310,6 +1311,10 @@ const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal
   if (has(i => i.type === "mando" && !!i.pairId)) entries.push({ sym: gateSymbol({ x: sw / 2, y: sh * 0.12 }, { x: sw / 2, y: sh * 0.88 }, 0, sh / 17), text: "Mando gate" });
   if (has(i => i.type === "dropzone")) entries.push({ sym: dropZoneSymbol({ x: sw / 2, y: sh / 2 }, sh / 12.5), text: "Drop zone" });
   if (areaKinds.has("water") || lineKinds.has("stream")) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" rx="${n(2 * ts)}" fill="${s.water}"/>`, text: "Water" });
+  if (areaKinds.has("rough")) {
+    const tg = tallGrassOf(s), blades = [0.2, 0.42, 0.64, 0.86].map(f => `<path d="M${n(sw * f - 1.6 * ts)} ${n(sh * 0.82)}L${n(sw * f)} ${n(sh * 0.22)}L${n(sw * f + 1.6 * ts)} ${n(sh * 0.82)}" fill="none" stroke="${shade(tg, -0.35)}" stroke-width="${n(0.9 * ts)}" stroke-linejoin="round"/>`).join("");
+    entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" rx="${n(2 * ts)}" fill="${tg}"/>${blades}`, text: "Tall grass" });
+  }
   if (areaKinds.has("woods") || has(i => i.type === "tree")) entries.push({ sym: `<circle cx="${n(sw * 0.35)}" cy="${n(sh / 2)}" r="${n(sh * 0.48)}" fill="${s.trees}"/><circle cx="${n(sw * 0.7)}" cy="${n(sh / 2)}" r="${n(sh * 0.4)}" fill="${shade(s.trees, 0.1)}"/>`, text: "Trees" });
   if (lineKinds.has("path")) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${s.path}" stroke-width="${n(3 * ts)}" stroke-linecap="round"/>`, text: "Path" });
   if (lineKinds.has("road")) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${pal.road}" stroke-width="${n(5 * ts)}"/>`, text: "Road" });

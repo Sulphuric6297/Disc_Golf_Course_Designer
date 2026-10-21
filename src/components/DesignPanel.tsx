@@ -2,7 +2,7 @@
 import { ArrowRight, RotateCcw } from "lucide-react";
 import { ApplyToHoles } from "./ApplyToHoles";
 import { BASKET_MARKS, PAPER, THEME_COLORS, basketMark, bestRotation } from "../lib/mapSvg";
-import { landscapeOf } from "../lib/landscapes";
+import { landscapeOf, tallGrassOf } from "../lib/landscapes";
 import { autoWalks } from "../lib/course";
 import { holeStats } from "../lib/holeStats";
 import { editWalks } from "../state/actions";
@@ -242,10 +242,11 @@ export function DesignPanel() {
         <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />
         <Toggle label="Hill shading" checked={s.hillshade} onChange={v => setStyle({ hillshade: v })} />
       </Section>
-      <Section title="Colors" right={<button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ ...THEME_COLORS.forest, ...landscapeOf(s).colors })}><RotateCcw size={12} /> Style colors</button>}>
+      <Section title="Colors" right={<button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ ...THEME_COLORS.forest, ...landscapeOf(s).colors, tallGrass: undefined })}><RotateCcw size={12} /> Style colors</button>}>
         <div className="grid grid-cols-2 gap-x-3">
           <ColorInput label="Fairway" value={s.fairway} onChange={v => setStyle({ fairway: v }, false)} onDone={done} />
           <ColorInput label="Grass" value={s.rough} onChange={v => setStyle({ rough: v }, false)} onDone={done} />
+          <ColorInput label="Tall grass" value={tallGrassOf(s)} onChange={v => setStyle({ tallGrass: v }, false)} onDone={done} />
           <ColorInput label="Trees" value={s.trees} onChange={v => setStyle({ trees: v }, false)} onDone={done} />
           <ColorInput label="Water" value={s.water} onChange={v => setStyle({ water: v }, false)} onDone={done} />
           <ColorInput label="Paths" value={s.path} onChange={v => setStyle({ path: v }, false)} onDone={done} />

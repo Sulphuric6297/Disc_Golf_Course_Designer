@@ -10,7 +10,7 @@ import { canopyMask } from "./geo/detect";
 import { boundsOf, corridor, dist, pathLength, pointInPolygon, smoothPath } from "./geom";
 import { autoWalks, drawnAreas, fairwayShiftAt, fairwayWidthAt, linePath, teeLines, widthAlong, widthFactors, widthVaries } from "./course";
 import type { HoleStats } from "./holeStats";
-import { landscapeOf } from "./landscapes";
+import { landscapeOf, tallGrassOf } from "./landscapes";
 import { reliefExaggeration } from "./relief";
 import { isLineKind, offsetPolygon, roofOf, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
 
@@ -313,8 +313,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const FAIR = ch(A, 0), CLEAR = ch(A, 1), WATER = ch(A, 2);
   const DIRT = ch(B, 0), ROAD = ch(B, 1), WOODS = ch(B, 2);
   const BUILDING = ch(C, 0), SAND = ch(C, 1), MIDDLE = ch(C, 2);
-  //   D: gravel, wood chips
-  const GRAVEL = ch(D, 0), CHIPS = ch(D, 1);
+  //   D: gravel, wood chips, tall grass
+  const GRAVEL = ch(D, 0), CHIPS = ch(D, 1), TALL = ch(D, 2);
   /** Where a path or walk of this surface is painted (grass: as mown as a fairway; paved: as a road). */
   const surfaceCh = (surface: PathSurface | undefined) => (surface === "gravel" ? GRAVEL : surface === "woodchips" ? CHIPS : surface === "grass" ? FAIR : surface === "paved" ? ROAD : DIRT);
   const poly = (c: Ch, pts: P[]) => {
@@ -408,7 +408,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       else if (a.kind === "parking") { poly(ROAD, a.points); poly(CLEAR, a.points); }
       else if (a.kind === "building") { poly(BUILDING, a.points); poly(CLEAR, a.points); }
       else if (a.kind === "sand") { poly(SAND, a.points); poly(CLEAR, a.points); }
-      else if (a.kind === "rough" || a.kind === "nogo") poly(CLEAR, a.points);
+      else if (a.kind === "rough") { poly(TALL, a.points); poly(CLEAR, a.points); }
+      else if (a.kind === "nogo") poly(CLEAR, a.points);
       else if (a.kind === "woods") poly(WOODS, a.points);
     } else if (i.type === "line") {
       const l = i as LineItem;
@@ -834,6 +835,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const mixPals = (landscapeOf(s).mix ?? []).map(c => palette(c, woodsFactors, 6, 0.9));
   const fair = palette(s.fairway, [0.56, 0.7, 0.84, 1, 1.14, 1.28], 4);
   const lawn = palette(s.rough, [0.6, 0.76, 0.9, 1.04, 1.18], 3);
+  // Tall grass: lighter and straw yellow
+  const tallPal = palette(tallGrassOf(s), [0.62, 0.78, 0.92, 1.06, 1.2, 1.34], 6, 0.9);
   // (shaded green, never black: the gaps between treetops are where it shows)
   const floorPal = palette(s.trees, [0.5, 0.64, 0.8], 0, 0.9);
   // (the lightest tones toward teal: shallows and the rim)
@@ -934,6 +937,13 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         if (deep > 0) {
           if (thick > 0.5 && !opts.under) lay(floorPal, (0.5 + mott * 0.4 + grain * 0.2) * (0.35 + 0.65 * lit), deep);
           else lay(lawn, (0.45 + mott * 0.4 + grain * 0.2) * lit * 0.8, deep);
+        }
+        // Tall grass: in tufts, its blades streaked up and down, a soft ragged edge
+        const tg = dd[m4 + 2] / 255;
+        if (tg > 0.1) {
+          const tuft = noise(x / pt * 0.9 + 30, y / pt * 0.3) - 0.5;
+          const edge = (fbm(x / pt * 0.3 + 160, y / pt * 0.3) - 0.5) * 0.14;
+          lay(tallPal, (0.5 + tuft * 0.55 + (GRIT[tr | (x & 511)] - 0.5) * 0.3 + mott * 0.2) * lit, smooth(0.42, 0.55, tg + edge));
         }
         const f = a[m4] / 255, r = b[m4 + 1] / 255;
         const rag = f > 0.05 || r > 0.2 ? fbm(x / pt * 0.16 + 50, y / pt * 0.16) - 0.5 : 0;

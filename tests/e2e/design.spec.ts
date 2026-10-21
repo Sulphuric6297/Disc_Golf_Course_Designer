@@ -6,6 +6,7 @@ import { contoursOf, reliefExaggeration } from "../../src/lib/relief";
 import { dist, distanceToPath } from "../../src/lib/geom";
 import { BASKET_MARKS, basketMark, bestRotation, renderPoster } from "../../src/lib/mapSvg";
 import { renderScorecard, renderTeeSign } from "../../src/lib/teeSign";
+import { tallGrassOf } from "../../src/lib/landscapes";
 
 test("the Design step shows the printed map; its styles are the painted map in each landscape", async ({ page }) => {
   await blankCourse(page);
@@ -589,6 +590,57 @@ test("painted water: a pond is lighter at its rim and in the shallows, deep and 
   const rim = mean([...profile.slice(0, Math.round(n * 0.06)), ...profile.slice(n - Math.round(n * 0.06))]);
   const middle = mean(profile.slice(Math.round(n * 0.35), Math.round(n * 0.65)));
   expect(rim).toBeGreaterThan(middle + 12);
+});
+
+test("tall grass is painted its own way: lighter, straw-colored tufts, not the grass's dark green; in the legend; its own color", async ({ page }) => {
+  test.setTimeout(150_000);
+  await blankCourse(page);
+  await addHole(page, { x: 150, y: 950 }, { x: 450, y: 950 });
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => {
+    (window as any).__dgEditor().set({ areaKind: "rough" });
+    (window as any).__dgActions.addDrawn("area", [{ x: 150, y: 700 }, { x: 500, y: 700 }, { x: 500, y: 860 }, { x: 150, y: 860 }]);
+  });
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
+  const painting = page.getByTestId("design-page").locator("image").first();
+  await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
+  await page.waitForTimeout(1500);
+  // Straw-green pixels (red near green, both well over blue): the tall grass; the grass and the
+  // fairway are much greener
+  const straw = (url: string) => page.evaluate(async (u: string) => {
+    const img = new Image();
+    img.src = u;
+    await img.decode();
+    const c = document.createElement("canvas");
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext("2d")!;
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, img.width, img.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i] > d[i + 1] * 0.86 && d[i] < d[i + 1] * 1.02 && d[i + 1] > d[i + 2] + 25) n++;
+    return n / (d.length / 4);
+  }, url);
+  // (about a quarter of the page here; a few percent without it)
+  expect(await straw((await painting.getAttribute("href"))!)).toBeGreaterThan(0.1);
+  // Its own color, to set
+  await expect(page.getByLabel("Tall grass")).toBeVisible();
+});
+
+plain("tall grass: in the legend, its color the grass's made lighter and straw yellow unless set", () => {
+  const doc = createEmptyCourse();
+  doc.style.legend = true;
+  doc.items.push(createArea("rough", [{ x: 100, y: 100 }, { x: 300, y: 100 }, { x: 300, y: 200 }, { x: 100, y: 200 }]));
+  const svg = renderPoster(doc, { contours: null, hillshade: null }).svg;
+  plainExpect(svg).toContain(">Tall grass<");
+  const tg = tallGrassOf(doc.style);
+  plainExpect(tg).not.toBe(doc.style.rough);
+  const rgb = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const [r, g, b] = rgb(tg), [r0, g0] = rgb(doc.style.rough);
+  plainExpect(r + g + b).toBeGreaterThan(rgb(doc.style.rough).reduce((a, v) => a + v, 0));
+  plainExpect(r / g).toBeGreaterThan(r0 / g0);
+  plainExpect(tallGrassOf({ ...doc.style, tallGrass: "#123456" })).toBe("#123456");
 });
 
 test.describe("on a phone", () => {
