@@ -15,8 +15,8 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, drawnAreas, fairwayOutline, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
-import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
+import { FAIRWAY_STATIONS, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, fairwayOutline, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { boundsOf, dist, distanceToPath, inBounds, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
 import { landscapeOf } from "../lib/landscapes";
@@ -754,7 +754,31 @@ export class CourseView {
   /** What stands over a point, within `reach` ft (for flyovers): where trees' leaves start (about
    * a third of the way up a broadleaf, lower on a pine, at the ground for a bush) and their tops,
    * their trunks close by; woods and buildings from the ground up. Ft on the terrain's datum. */
-  private drawnWoods = new WeakMap<object, { pts: P[]; box: ReturnType<typeof boundsOf> }>();
+  // Drawn curves and outlines, kept while what they come from is the same (a course's items and
+  // holes are replaced when they change, never changed in place): hovering and redrawing after a
+  // change work them out again only for what changed
+  private drawnOf = new WeakMap<object, { pts: P[]; box: ReturnType<typeof boundsOf> }>();
+  private shapeOf(i: AreaItem | LineItem) {
+    let d = this.drawnOf.get(i);
+    if (!d) {
+      const pts = i.type === "area" ? areaPath(i) : linePath(i);
+      this.drawnOf.set(i, (d = { pts, box: boundsOf(pts) }));
+    }
+    return d;
+  }
+  private kept = new Map<string, { dep: unknown; key: string; val: unknown }>();
+  /** `make()`'s answer, kept in `slot` while `dep` is the same object and `key` the same text. */
+  private keep<T>(slot: string, dep: unknown, key: string, make: () => T): T {
+    const m = this.kept.get(slot);
+    if (m && m.dep === dep && m.key === key) return m.val as T;
+    const val = make();
+    this.kept.set(slot, { dep, key, val });
+    return val;
+  }
+  /** A hole's fairway round one of its throw lines (curved `per` points a leg), kept. */
+  private outline(hole: Hole, line: P[], slot: string, per: number, extra: number, steps: number) {
+    return this.keep(`fair:${hole.id}:${slot}:${per}:${extra}:${steps}`, hole, JSON.stringify(line), () => fairwayOutline(hole, smoothPath(line, per), extra, steps));
+  }
   private canopyAt(p: P, reach: number): Canopy | null {
     const doc = this.doc;
     if (!doc) return null;
@@ -777,11 +801,7 @@ export class CourseView {
         if (d < reach + TRUNK_ROOM) trunks.push({ x: i.x, y: i.y });
       } else if (i.type === "area" && i.kind === "woods") {
         // (its outline as drawn, bulging past its corners where it curves)
-        let drawn = this.drawnWoods.get(i);
-        if (!drawn) {
-          const pts = areaPath(i);
-          this.drawnWoods.set(i, (drawn = { pts, box: boundsOf(pts) }));
-        }
+        const drawn = this.shapeOf(i);
         if (near(drawn.pts, reach, drawn.box)) solid(this.h(p.x, p.y), WOODS_TOP_FT);
       } else if (i.type === "structure" && !isLineKind(i.kind)) {
         if (near(i.points)) solid(this.h(p.x, p.y), structureHeight(i) + 10);
@@ -1623,11 +1643,8 @@ export class CourseView {
 
   private groundAt(clientX: number, clientY: number): THREE.Vector3 | null {
     const ray = this.ray(clientX, clientY);
-    const terrain = this.ground.terrain;
-    if (terrain) {
-      const hit = this.raycaster.intersectObject(terrain, false)[0];
-      if (hit) return hit.point.clone();
-    }
+    const hit = this.ground.rayHit(ray);
+    if (hit) return hit;
     const out = new THREE.Vector3();
     return ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), out) ? out : null;
   }
@@ -1814,7 +1831,7 @@ export class CourseView {
     const fairways = doc.stats.flatMap(s => {
       const hole = course.holes.find(h => h.id === s.holeId);
       if (!hole || !s.complete || !hole.fairway || painted) return [];
-      return [{ hole, polys: teeLines(course, hole, s.line, s.teeId).map(l => fairwayOutline(hole, smoothPath(l, 10), 0, 12)) }];
+      return [{ hole, polys: teeLines(course, hole, s.line, s.teeId).map((l, k) => this.outline(hole, l, `tee${k}`, 10, 0, 12)) }];
     });
     const allFair = fairways.flatMap(f => f.polys.map(p => ({ p, box: boundsOf(p) })));
     for (const { hole, polys } of fairways) {
@@ -1852,11 +1869,11 @@ export class CourseView {
       const polys: P[][] = [], lines: { pts: P[]; half: number }[] = [], discs: { p: P; r: number }[] = [];
       for (const s of doc.stats) {
         const hole = course.holes.find(h => h.id === s.holeId);
-        if (s.complete && hole) for (const l of teeLines(course, hole, s.line, s.teeId)) polys.push(fairwayOutline(hole, smoothPath(l, 8), hole.fairway ? 0 : -hole.fairwayWidth * 0.4, 6));
+        if (s.complete && hole) teeLines(course, hole, s.line, s.teeId).forEach((l, k) => polys.push(this.outline(hole, l, `tee${k}`, 8, hole.fairway ? 0 : -hole.fairwayWidth * 0.4, 6)));
       }
       for (const it of course.items) {
-        if (it.type === "area" && ["fairway", "green", "water", "parking", "building", "sand", "rough", "nogo"].includes(it.kind)) polys.push(areaPath(it));
-        else if (it.type === "line" && it.kind !== "ob" && it.kind !== "fence") lines.push({ pts: linePath(it), half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 + 3 });
+        if (it.type === "area" && ["fairway", "green", "water", "parking", "building", "sand", "rough", "nogo"].includes(it.kind)) polys.push(this.shapeOf(it).pts);
+        else if (it.type === "line" && it.kind !== "ob" && it.kind !== "fence") lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 + 3 });
         else if (it.type === "tee") discs.push({ p: it, r: Math.max(12, it.padLength) });
         else if (it.type === "basket") discs.push({ p: it, r: CIRCLE_ONE_FT * 0.6 });
         else if (it.type === "structure") lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 6 });
@@ -1878,7 +1895,7 @@ export class CourseView {
       return { test, key };
     })();
     // Areas: fill plus outline
-    const areas = (drawnAreas(course.items).filter(i => i.type === "area") as AreaItem[]).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
+    const areas = (course.items.filter(i => i.type === "area") as AreaItem[]).map(a => ({ ...a, points: this.shapeOf(a).pts })).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
     areas.forEach((a, order) => {
       const meta = AREA_KINDS[a.kind];
       const c = color(a.kind) ?? meta.color;
@@ -1963,7 +1980,7 @@ export class CourseView {
       const width = l.width ?? meta.width;
       put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, l.widths, hv, c, l.ob, l.kind === "stream" ? this.waterShore(l.points) : 0]), () => {
         const g = new THREE.Group();
-        const pts = linePath(l);
+        const pts = this.shapeOf(l).pts;
         // (wider or narrower along the way: a creek that opens out)
         const along = widthAlong(l, width);
         // Marked OB (a creek, a road): a red edge either side
@@ -3040,13 +3057,15 @@ export class CourseView {
     if (near) return near.id;
     // Drawn lines, then throw lines
     for (const l of doc.course.items.filter(i => i.type === "line") as LineItem[]) {
-      const d = distanceToPath(p, linePath(l)) - ((l.width ?? LINE_KINDS[l.kind].width) / 2);
+      const drawn = this.shapeOf(l), half = (l.width ?? LINE_KINDS[l.kind].width) / 2;
+      if (pointBoundsGap(p, drawn.box) - half >= tol) continue;
+      const d = distanceToPath(p, drawn.pts) - half;
       if (d < tol && (!near || d < near.d)) near = { id: l.id, d };
     }
     if (near) return near.id;
     // An automatic walk to the next tee: its hole (whose panel can take it away)
     if (doc.course.style.nextTee) {
-      for (const w of autoWalks(doc.course.items, doc.stats, doc.course.holes)) {
+      for (const w of this.keep("walks", doc, "", () => autoWalks(doc.course.items, doc.stats, doc.course.holes))) {
         const d = distanceToPath(p, [w.from, w.to]);
         if (d < tol && (!near || d < near.d)) near = { id: w.a.holeId, d };
       }
@@ -3054,17 +3073,17 @@ export class CourseView {
     }
     for (const s of doc.stats) {
       if (!s.complete) continue;
-      const d = distanceToPath(p, smoothPath(s.line, 8));
+      const d = distanceToPath(p, this.keep(`line:${s.holeId}`, null, JSON.stringify(s.line), () => smoothPath(s.line, 8)));
       if (d < tol && (!near || d < near.d)) near = { id: s.holeId, d };
     }
     if (near) return near.id;
-    const areas = (drawnAreas(doc.course.items).filter(i => i.type === "area") as AreaItem[]).filter(a => pointInPolygon(p, a.points));
-    if (areas.length) return areas.sort((a, b) => polygonArea(a.points) - polygonArea(b.points))[0].id;
+    const areas = (doc.course.items.filter(i => i.type === "area") as AreaItem[]).map(a => ({ id: a.id, ...this.shapeOf(a) })).filter(a => inBounds(p, a.box) && pointInPolygon(p, a.pts));
+    if (areas.length) return areas.sort((a, b) => polygonArea(a.pts) - polygonArea(b.pts))[0].id;
     // Inside a fairway: its hole
     for (const s of doc.stats) {
       const hole = this.hole(s.holeId);
       if (!hole?.fairway || !s.complete) continue;
-      if (pointInPolygon(p, fairwayOutline(hole, smoothPath(s.line, 8), 0, 8))) return hole.id;
+      if (pointInPolygon(p, this.outline(hole, s.line, "line", 8, 0, 8))) return hole.id;
     }
     return null;
   }

@@ -1,4 +1,5 @@
 import { test, expect, addHole, blankCourse, course, editorState } from "./fixtures";
+import { createEmptyCourse } from "../../src/lib/course";
 
 test("loads with the welcome card and the six steps", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Design your disc golf course" })).toBeVisible();
@@ -25,6 +26,39 @@ test("2D and 3D switch the view's tilt, by button and by key", async ({ page }) 
   await expect.poll(tilt).toBeGreaterThan(30);
   await page.keyboard.press("2");
   await expect.poll(tilt).toBeLessThan(1);
+});
+
+test("the ground under the pointer on hills: the terrain's own triangles, looking down and tilted", async ({ page }) => {
+  // A course on rolling hills
+  const doc = createEmptyCourse();
+  for (let x = 0; x <= doc.canvas.width; x += doc.gridSize) for (let y = 0; y <= doc.canvas.height; y += doc.gridSize) doc.terrainHeights[`${x},${y}`] = 25 * Math.sin(x / 140) * Math.cos(y / 110) + 0.01 * x;
+  await page.getByLabel("Open course file").setInputFiles({ name: "hills.dgcourse.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(doc)) });
+  await expect.poll(() => page.evaluate(() => Object.keys((window as any).__dgCourse().terrainHeights).length)).toBeGreaterThan(100);
+  // Every triangle tested (as three.js does) against the walk over the cells under the ray
+  const compare = () => page.evaluate(() => {
+    const v = (window as any).__dgView;
+    const r = v.container.getBoundingClientRect();
+    let hits = 0, worst = 0;
+    for (let i = 0; i < 24; i++) for (let j = 0; j < 16; j++) {
+      const x = r.left + ((i + 0.37) / 24) * r.width, y = r.top + ((j + 0.61) / 16) * r.height;
+      const ray = v.ray(x, y);
+      const fast = v.ground.rayHit(ray);
+      const all = v.raycaster.intersectObject(v.ground.terrain, false)[0]?.point ?? null;
+      if (!fast !== !all) return { hits, worst: Infinity };
+      if (all) { hits++; worst = Math.max(worst, all.distanceTo(fast)); }
+    }
+    return { hits, worst };
+  });
+  await page.waitForTimeout(500);
+  const down = await compare();
+  expect(down.hits).toBeGreaterThan(100);
+  expect(down.worst).toBeLessThan(1e-3);
+  await page.getByRole("radio", { name: "3D" }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).__dgView.viewInfo().tiltDeg)).toBeGreaterThan(30);
+  await page.waitForTimeout(1000);
+  const tilted = await compare();
+  expect(tilted.hits).toBeGreaterThan(100);
+  expect(tilted.worst).toBeLessThan(1e-3);
 });
 
 test("tool shortcuts pick tools; Esc goes back to Select; ? shows the shortcuts", async ({ page }) => {

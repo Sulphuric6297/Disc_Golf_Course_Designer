@@ -321,6 +321,59 @@ export class Ground {
     mesh.geometry.computeBoundingBox();
   }
 
+  /** Where a ray first meets the terrain: the mesh's own triangles, but only those of the cells it
+   * passes over (testing every triangle took most of each pointer move on a big site). */
+  rayHit(worldRay: THREE.Ray): THREE.Vector3 | null {
+    const mesh = this.terrain;
+    if (!mesh) return null;
+    const geo = mesh.geometry as THREE.PlaneGeometry;
+    const pos = geo.getAttribute("position") as THREE.BufferAttribute;
+    const { widthSegments: nx, heightSegments: nz } = geo.parameters;
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    const bb = geo.boundingBox!;
+    mesh.updateMatrixWorld();
+    const ray = worldRay.clone().applyMatrix4(mesh.matrixWorld.clone().invert());
+    const o = ray.origin, dir = ray.direction;
+    // Along the ray: where it is over the site and between the lowest and highest ground
+    let t0 = 0, t1 = Infinity;
+    for (const [from, d, lo, hi] of [[o.x, dir.x, bb.min.x, bb.max.x], [o.y, dir.y, bb.min.y, bb.max.y], [o.z, dir.z, bb.min.z, bb.max.z]]) {
+      if (Math.abs(d) < 1e-12) {
+        if (from < lo || from > hi) return null;
+        continue;
+      }
+      const a = (lo - from) / d, b = (hi - from) / d;
+      t0 = Math.max(t0, Math.min(a, b));
+      t1 = Math.min(t1, Math.max(a, b));
+    }
+    if (t0 > t1) return null;
+    // Cell by cell under it (a grid walk), nearest first
+    const x0 = bb.min.x, z0 = bb.min.z, cw = (bb.max.x - x0) / nx, cd = (bb.max.z - z0) / nz;
+    const clamp = (v: number, n: number) => Math.max(0, Math.min(n - 1, v));
+    let ix = clamp(Math.floor((o.x + dir.x * t0 - x0) / cw), nx), iz = clamp(Math.floor((o.z + dir.z * t0 - z0) / cd), nz);
+    const sx = dir.x > 0 ? 1 : -1, sz = dir.z > 0 ? 1 : -1;
+    let nextX = Math.abs(dir.x) > 1e-12 ? (x0 + (ix + (sx > 0 ? 1 : 0)) * cw - o.x) / dir.x : Infinity;
+    let nextZ = Math.abs(dir.z) > 1e-12 ? (z0 + (iz + (sz > 0 ? 1 : 0)) * cd - o.z) / dir.z : Infinity;
+    const stepX = Math.abs(cw / dir.x), stepZ = Math.abs(cd / dir.z);
+    const cull = (mesh.material as THREE.Material).side === THREE.FrontSide;
+    const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), D = new THREE.Vector3();
+    const hit = new THREE.Vector3(), best = new THREE.Vector3();
+    for (;;) {
+      // (its two triangles, as the plane's geometry makes them)
+      const a = ix + (nx + 1) * iz, b = ix + (nx + 1) * (iz + 1), c = ix + 1 + (nx + 1) * (iz + 1), d = ix + 1 + (nx + 1) * iz;
+      A.fromBufferAttribute(pos, a); B.fromBufferAttribute(pos, b); C.fromBufferAttribute(pos, c); D.fromBufferAttribute(pos, d);
+      let found = false, near = Infinity;
+      for (const [p, q, r] of [[A, B, D], [B, C, D]]) {
+        if (!ray.intersectTriangle(p, q, r, cull, hit)) continue;
+        const t = hit.distanceToSquared(o);
+        if (t < near) { near = t; best.copy(hit); found = true; }
+      }
+      if (found) return best.applyMatrix4(mesh.matrixWorld);
+      if (Math.min(nextX, nextZ) > t1) return null;
+      if (nextX < nextZ) { ix += sx; nextX += stepX; } else { iz += sz; nextZ += stepZ; }
+      if (ix < 0 || iz < 0 || ix >= nx || iz >= nz) return null;
+    }
+  }
+
   private colorTerrain(doc: ViewDoc) {
     if (!this.terrain) return;
     const geo = this.terrain.geometry;
