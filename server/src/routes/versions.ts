@@ -63,7 +63,9 @@ export async function versionRoutes(app: FastifyInstance, { sql }: Ctx) {
         where course_id = ${id} and user_id = ${a.user.id} returning course_id`;
       if (!done.length) throw new ApiError(409, "No draft to save into");
     }
-    return { ok: true };
+    // (the course's version now: the app says when the course moved on since the draft started)
+    const [c] = await sql`select version from courses where id = ${id}`;
+    return { ok: true, version: c.version };
   });
 
   app.put<Id>("/api/courses/:id/draft/photo", BIG, async req => {

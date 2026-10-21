@@ -253,3 +253,30 @@ test("history: restoring a version makes a new one (with its photo), nothing is 
     assert.equal((await pat.post(`${url}/versions/${first.id}/restore`, {})).status, 403);
   } finally { await w.close(); }
 });
+
+test("how you edit: a course's maker publishes as they go; an owner can work in a draft instead (not with one waiting)", async () => {
+  const w = await world();
+  try {
+    const { c: admin } = await adminSignedIn(w);
+    const { c: pat } = await memberSignedIn(w, admin, "pat");
+    const { body: made } = await admin.post("/api/courses", { doc: doc() });
+    const url = `/api/courses/${made.id}`;
+    await admin.post(`${url}/members`, { username: "pat", role: "editor" });
+    assert.equal((await admin.get(url)).body.live, true);
+    assert.equal((await pat.get(url)).body.live, false);
+    assert.equal((await pat.post(`${url}/live`, { live: true })).status, 403);
+    await admin.post(`${url}/live`, { live: false });
+    assert.equal((await admin.get(url)).body.live, false);
+    // An owner's draft, publishing whatever the owner's OK switch says
+    await admin.post(`${url}/settings`, { approval: true });
+    const saved = await admin.req("PUT", `${url}/draft`, { doc: doc("Owner's draft", 3), base: { doc: doc(), version: 1 } });
+    assert.equal(saved.body.version, 1);
+    assert.equal((await admin.post(`${url}/live`, { live: true })).status, 409);
+    assert.equal((await admin.post(`${url}/publish`, { doc: doc("Owner's draft", 3), version: 1, note: "Holes: 1 added" })).body.version, 2);
+    // (a draft saved now says the course moved on)
+    await pat.req("PUT", `${url}/draft`, { doc: doc("Pat's"), base: { doc: doc(), version: 1 } });
+    assert.equal((await pat.req("PUT", `${url}/draft`, { doc: doc("Pat's, more") })).body.version, 2);
+    assert.equal((await admin.post(`${url}/live`, { live: true })).status, 200);
+    assert.equal((await admin.get(url)).body.live, true);
+  } finally { await w.close(); }
+});

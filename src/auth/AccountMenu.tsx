@@ -3,14 +3,48 @@
 import { useEffect, useRef, useState } from "react";
 import { History, Inbox, LayoutGrid, LogOut, Send, Share2, UserRound, Users } from "lucide-react";
 import { SERVER, useAuth } from "./api";
-import { keepMine, reloadTheirs, saveNow, thumbnailNow, useServerCourse } from "./courses";
+import { draftChanges, inDraft, keepMine, reloadTheirs, saveNow, setLive, thumbnailNow, useServerCourse } from "./courses";
+import { useCourse } from "../state/course";
 
 const signOut = async () => { await saveNow(); await useAuth.getState().signOut(); };
+
+/** An owner's choice: straight into the course as they go, or in a draft. */
+function EditMode() {
+  const { role, live, draft } = useServerCourse();
+  const [menu, setMenu] = useState(false);
+  const [error, setError] = useState("");
+  if (role !== "owner") return null;
+  const choose = async (on: boolean) => {
+    setError("");
+    try { await setLive(on); setMenu(false); } catch (e) { setError(e instanceof Error ? e.message : "Something went wrong"); }
+  };
+  const row = "w-full text-left px-3 py-2 text-sm hover:bg-zinc-800";
+  return (
+    <div className="relative">
+      <button className={`px-2 py-0.5 rounded-full text-[12px] font-semibold ${live ? "bg-emerald-500/15 text-emerald-200" : "bg-orange-500/15 text-orange-200"}`} onClick={() => setMenu(m => !m)} aria-haspopup="menu" aria-expanded={menu} data-testid="edit-mode">
+        {live ? "Official layout" : draft ? "Draft" : "Draft (no changes)"}
+      </button>
+      {menu && (
+        <div className="absolute right-0 top-full mt-1 w-72 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-1 z-50" role="menu">
+          <button className={`${row} ${live ? "text-emerald-200" : "text-zinc-200"}`} role="menuitemradio" aria-checked={live} onClick={() => void choose(true)} data-testid="mode-live">
+            Publish as I go<span className="block text-[12px] text-zinc-500">Changes go straight into the official layout</span>
+          </button>
+          <button className={`${row} ${!live ? "text-orange-200" : "text-zinc-200"}`} role="menuitemradio" aria-checked={!live} onClick={() => void choose(false)} data-testid="mode-draft">
+            Work in a draft<span className="block text-[12px] text-zinc-500">Publish when it's ready</span>
+          </button>
+          {error && <p role="alert" className="px-3 py-1.5 text-xs text-red-300">{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Saving, view only, or someone else saved meanwhile. */
 function CourseStatus() {
   const { status, role, conflict, preview } = useServerCourse();
   const [ask, setAsk] = useState(false);
+  // (in a draft: what it changes, kept up to date)
+  useCourse(s => s.doc);
   if (preview) return null;
   if (role === "viewer") return <span className="px-2 py-0.5 rounded-full bg-sky-900/60 text-sky-200 text-[12px] font-semibold" data-testid="view-only">View only</span>;
   if (status === "conflict") {
@@ -29,8 +63,8 @@ function CourseStatus() {
       </div>
     );
   }
-  const text = role === "editor"
-    ? { saved: "Draft saved", saving: "Saving draft…", unsaved: "Saving draft…", error: "Can't save", conflict: "" }[status]
+  const text = inDraft()
+    ? { saved: useServerCourse.getState().draft ? `Draft saved · ${draftChanges()}` : "Draft", saving: "Saving draft…", unsaved: "Saving draft…", error: "Can't save", conflict: "" }[status]
     : { saved: "Saved", saving: "Saving…", unsaved: "Saving…", error: "Can't save", conflict: "" }[status];
   return <span className={`text-[12px] ${status === "error" ? "text-red-300" : "text-zinc-500"}`} data-testid="save-status">{text}</span>;
 }
@@ -56,15 +90,16 @@ export function AccountMenu({ home = false }: { home?: boolean }) {
   const item = "w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 text-left";
   return (
     <>
+    {!home && <EditMode />}
     {!home && <CourseStatus />}
     {!home && (
       <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800" onClick={() => { useAuth.getState().showHome(true); void saveNow().then(thumbnailNow).then(() => useAuth.getState().bump()); }} data-testid="courses-button">
         <LayoutGrid size={15} /> Courses
       </button>
     )}
-    {!home && !preview && role === "editor" && draft && (
+    {!home && !preview && (role === "editor" || role === "owner") && inDraft() && draft && (
       <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white" onClick={() => open("publish")} data-testid="publish-button">
-        <Send size={14} /> {approval ? "Send" : "Publish"}
+        <Send size={14} /> {approval && role !== "owner" ? "Send" : "Publish"}
       </button>
     )}
     {!home && !preview && role === "owner" && pending > 0 && (
@@ -107,7 +142,7 @@ export function accountActions() {
   if (!SERVER || !user) return [];
   const c = useServerCourse.getState();
   const work = c.preview ? [] : [
-    ...(c.role === "editor" && c.draft ? [{ label: c.approval ? "Send your changes" : "Publish your changes", icon: <Send size={19} />, run: () => open("publish") }] : []),
+    ...(inDraft() && c.draft ? [{ label: c.approval && c.role !== "owner" ? "Send your changes" : "Publish your changes", icon: <Send size={19} />, run: () => open("publish") }] : []),
     ...(c.role === "owner" && c.pending ? [{ label: `${c.pending} to review`, icon: <Inbox size={19} />, run: () => open("review") }] : []),
     ...(c.id && (c.role === "owner" || c.role === "editor") ? [{ label: "History", icon: <History size={19} />, run: () => open("history") }] : [])
   ];

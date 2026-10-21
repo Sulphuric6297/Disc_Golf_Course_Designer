@@ -17,6 +17,8 @@ import { Button, Field, Section, Segmented, Stat, TextInput, Toggle } from "./ui
 import { DesignPanel } from "./DesignPanel";
 import { ExportPanel } from "./ExportPanel";
 import { useTouch } from "./useLayout";
+import { SERVER } from "../auth/api";
+import { draftHoles } from "../auth/courses";
 
 export const STEPS: { id: Step; label: string; title: string }[] = [
   { id: "site", label: "Site", title: "Your site" },
@@ -149,6 +151,8 @@ function LayoutEditor({ open, setOpen }: { open: boolean; setOpen: (f: (o: boole
 
 function HolesStep() {
   const doc = useCourse(s => s.doc);
+  // (in a draft on a HyzerLab server: the holes it changes)
+  const changed = useMemo(() => (SERVER ? draftHoles(doc) : new Set<string>()), [doc]);
   const ed = useEditor();
   const stats = courseStats(doc);
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
@@ -187,6 +191,7 @@ function HolesStep() {
                         {s.complete ? <>{fmtDist(s.length, u)} · {fmtElev(s.elevationChange, u)}{tees.length > 1 ? ` · ${tees.length} tees` : ""}</> : "unfinished"}
                       </span>
                     </span>
+                    {changed.has(s.holeId) && <span className="w-2 h-2 rounded-full bg-orange-400 shrink-0" title="Changed in your draft" data-testid="draft-dot" />}
                     <span className="text-sm font-bold text-zinc-200 tabular-nums">P{s.par}</span>
                   </button>
                 </li>
