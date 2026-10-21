@@ -3,7 +3,7 @@
 import { CIRCLE_ONE_FT, CLEAR_IN_FRONT_FT, MIN_PAD, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AreaItem, CourseDoc, Hole, Layout, LineItem, P, TeeItem, TeeLevel, TreeItem } from "../types";
 import { activeLayout, areaPath, basketFor, belongsTo, fairwayOutline, holeLabel, holeNumber, holeTees, linePath, teeAim, teeFor, throwLine } from "./course";
-import { dist, distanceToPath, lengthInside, pathLength, pathTouchesPolygon, segmentsIntersect, smoothPath, turnAngles } from "./geom";
+import { boundsGap, boundsOf, dist, distanceToPath, lengthInside, pathLength, pathTouchesPolygon, pointBoundsGap, segmentsIntersect, smoothPath, turnAngles } from "./geom";
 import { heightAt, profileAlong } from "./terrainGrid";
 
 /**
@@ -116,9 +116,17 @@ export const holeStats = (doc: CourseDoc, hole: Hole, layout: Layout | undefined
   // In the way
   const smooth = smoothPath(line, 10);
   const trees = doc.items.filter(i => i.type === "tree") as TreeItem[];
-  const treesOnLine = complete ? trees.filter(t => distanceToPath(t, smooth) < t.radius * (t.width ?? 1) * 0.8 && dist(t, line[0]) > 10).length : 0;
   const halfWidth = hole.fairwayWidth / 2;
-  const treesInFairway = complete ? trees.filter(t => distanceToPath(t, smooth) < halfWidth).length : 0;
+  // (anything farther from the line's bounds than it reaches is farther from the line too)
+  const box = boundsOf(smooth);
+  let treesOnLine = 0, treesInFairway = 0;
+  if (complete) for (const t of trees) {
+    const reach = t.radius * (t.width ?? 1) * 0.8;
+    if (pointBoundsGap(t, box) >= Math.max(reach, halfWidth)) continue;
+    const d = distanceToPath(t, smooth);
+    if (d < reach && dist(t, line[0]) > 10) treesOnLine++;
+    if (d < halfWidth) treesInFairway++;
+  }
   // Heavy foliage: trees all along it (about one per 60 ft of fairway), unless set by hand
   const foliage = hole.foliage ?? (complete && treesInFairway >= Math.max(3, length / 60) ? "heavy" : "light");
   // A bending hole plays longer than its line: the disc has to be shaped round the corner
@@ -133,13 +141,15 @@ export const holeStats = (doc: CourseDoc, hole: Hole, layout: Layout | undefined
     obCrossed += obAreas.filter(a => lengthInside(smooth, a.points, 3) > 4).length;
     for (const l of obLines) {
       let crossed = false;
+      if (boundsGap(box, boundsOf(l.points)) > 0) continue;
       for (let i = 1; i < smooth.length && !crossed; i++) for (let j = 1; j < l.points.length && !crossed; j++) crossed = segmentsIntersect(smooth[i - 1], smooth[i], l.points[j - 1], l.points[j]);
       if (crossed) obCrossed++;
     }
   }
   const fairwayPoly = complete ? fairwayOutline(hole, smooth, 0, 10) : [];
-  const obInPlay = complete && (obCrossed > 0 || obAreas.some(a => pathTouchesPolygon(a.points, fairwayPoly)) || obLines.some(l => l.points.some(p => distanceToPath(p, smooth) < halfWidth)));
+  const obInPlay = complete && (obCrossed > 0 || obAreas.some(a => pathTouchesPolygon(a.points, fairwayPoly)) || obLines.some(l => l.points.some(p => pointBoundsGap(p, box) < halfWidth && distanceToPath(p, smooth) < halfWidth)));
   const obNearBasket = !!basket && (obAreas.some(a => {
+    if (pointBoundsGap(basket, boundsOf(a.points)) >= CIRCLE_ONE_FT) return false;
     const d = a.points.length >= 3 ? Math.min(...a.points.map((p, i) => distanceToPath(basket, [p, a.points[(i + 1) % a.points.length]]))) : Infinity;
     return d < CIRCLE_ONE_FT;
   }) || obLines.some(l => distanceToPath(basket, l.points) < CIRCLE_ONE_FT));
@@ -269,16 +279,40 @@ const crossing = (a: P[], b: P[]): P | null => {
 
 /** Whether two holes play to the same basket (alternate tees: one waits on the other). */
 const sharesBasket = (a: HoleStats, b: HoleStats) => (!!a.basketId && a.basketId === b.basketId) || dist(a.line[a.line.length - 1], b.line[b.line.length - 1]) < 3;
+// The app never changes a course document in place, so the panels, the map and the step bar
+// share one working-out of each document's numbers and checks.
+const statsMemo = new WeakMap<CourseDoc, HoleStats[]>();
+const issuesMemo = new WeakMap<CourseDoc, SafetyIssue[]>();
+/** Every hole's numbers on the course's layout, worked out once for each document. */
+export const courseStats = (doc: CourseDoc) => {
+  let out = statsMemo.get(doc);
+  if (!out) statsMemo.set(doc, (out = doc.holes.map(h => holeStats(doc, h))));
+  return out;
+};
+/** The course's checks on its layout, worked out once for each document. */
+export const courseIssues = (doc: CourseDoc) => {
+  let out = issuesMemo.get(doc);
+  if (!out) issuesMemo.set(doc, (out = safetyIssues(doc, courseStats(doc))));
+  return out;
+};
+
 export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(h => holeStats(doc, h))): SafetyIssue[] => {
   const issues: SafetyIssue[] = [];
   const fixed = doc.rules?.safetyGapFt;
   const safeGap = (len: number) => (fixed && fixed > 0 ? fixed : defaultGap(len));
   const done = stats.filter(s => s.complete);
   const smooth = new Map(done.map(s => [s.holeId, smoothPath(s.line, 8)]));
+  const boxes = new Map([...smooth].map(([id, l]) => [id, boundsOf(l)]));
   const n = (s: HoleStats) => `Hole ${s.label}`;
+  const roads = (doc.items.filter(it => it.type === "line" && ((it as LineItem).kind === "road" || (it as LineItem).kind === "path")) as LineItem[]).map(l => {
+    const pts = linePath(l);
+    return { l, pts, box: boundsOf(pts) };
+  });
+  const keepOut = areasOf(doc, ["nogo", "parking", "building"]);
   for (let i = 0; i < done.length; i++) {
     const a = done[i];
     const la = smooth.get(a.holeId)!;
+    const boxA = boxes.get(a.holeId)!;
     const gapA = safeGap(a.length);
     for (let j = i + 1; j < done.length; j++) {
       const b = done[j];
@@ -287,13 +321,15 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
       if (sharesBasket(a, b)) continue;
       // (the same id whichever order the holes are in)
       const pair = [a.holeId, b.holeId].sort().join(":");
-      const x = crossing(la, lb);
+      const need = Math.min(gapA, safeGap(b.length));
+      const apart = boundsGap(boxA, boxes.get(b.holeId)!);
+      if (apart >= need) continue;
+      const x = apart > 0 ? null : crossing(la, lb);
       if (x) {
         issues.push({ id: `cross:${pair}`, level: "danger", text: `${n(a)} and ${n(b)}: the throw lines cross.`, holes: [a.holeId, b.holeId], at: x });
         continue;
       }
       const near = pathPathDistance(la, lb);
-      const need = Math.min(gapA, safeGap(b.length));
       if (near.d < need) {
         issues.push({ id: `close:${pair}`, level: near.d < need * 0.5 ? "danger" : "warning", text: `${n(a)} and ${n(b)}: throw lines only ${Math.round(near.d)} ft apart (${Math.round(need)} ft recommended).`, holes: [a.holeId, b.holeId], at: near.at });
       }
@@ -303,22 +339,22 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
       if (b.holeId === a.holeId || sharesBasket(a, b)) continue;
       const tee = b.line[0];
       const basket = b.line[b.line.length - 1];
-      const dTee = distanceToPath(tee, la);
+      const dTee = pointBoundsGap(tee, boxA) < gapA ? distanceToPath(tee, la) : Infinity;
       // The next hole's tee is expected near this hole's basket, so measure it from the line short of the basket
       if (dTee < gapA && dist(tee, la[la.length - 1]) > 30) {
         issues.push({ id: `tee-near:${a.holeId}:${b.holeId}`, level: dTee < gapA * 0.5 ? "danger" : "warning", text: `${n(b)}'s tee is ${Math.round(dTee)} ft from ${n(a)}'s throw line (${Math.round(gapA)} ft recommended).`, holes: [a.holeId, b.holeId], at: tee });
       }
-      const dBasket = distanceToPath(basket, la);
+      const dBasket = pointBoundsGap(basket, boxA) < gapA * 0.8 ? distanceToPath(basket, la) : Infinity;
       if (dBasket < gapA * 0.8 && dist(basket, la[0]) > 30) {
         issues.push({ id: `basket-near:${a.holeId}:${b.holeId}`, level: "warning", text: `${n(b)}'s basket is ${Math.round(dBasket)} ft from ${n(a)}'s throw line.`, holes: [a.holeId, b.holeId], at: basket });
       }
     }
     // Roads, paths, parking and out-of-play areas in the line of fire
-    for (const l of doc.items.filter(it => it.type === "line" && ((it as LineItem).kind === "road" || (it as LineItem).kind === "path")) as LineItem[]) {
-      const x2 = crossing(la, linePath(l));
+    for (const { l, pts, box } of roads) {
+      const x2 = boundsGap(boxA, box) > 0 ? null : crossing(la, pts);
       if (x2) issues.push({ id: `crosses:${a.holeId}:${l.id}`, level: l.kind === "road" ? "danger" : "warning", text: `${n(a)} throws across a ${l.kind === "road" ? "road" : "walking path"}.`, holes: [a.holeId], at: x2 });
     }
-    for (const ar of areasOf(doc, ["nogo", "parking", "building"])) {
+    for (const ar of keepOut) {
       if (pathTouchesPolygon(la, ar.points)) issues.push({ id: `over:${a.holeId}:${ar.id}`, level: "danger", text: `${n(a)} throws over ${ar.kind === "nogo" ? "an out-of-play area" : ar.kind === "parking" ? "a parking lot" : "a building"}.`, holes: [a.holeId], at: ar });
     }
     // Off the site

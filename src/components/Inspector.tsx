@@ -6,7 +6,7 @@ import { areaPath, autoWalks, byNumber, holeBaskets, holeLabel, holeNumber, hole
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
-import { holeStats } from "../lib/holeStats";
+import { courseStats, holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { addHoleOb, deleteSelection, duplicateSelection, editWalks, select, setTeeLevel, shareBasket } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
@@ -76,7 +76,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
   const s = useMemo(() => holeStats(doc, hole), [doc, hole]);
   const label = holeLabel(doc, hole.id);
   // The walk on to the next tee, while it is the automatic one
-  const walkNext = useMemo(() => (doc.style.nextTee ? autoWalks(doc.items, doc.holes.map(h => holeStats(doc, h)), doc.holes).find(w => w.a.holeId === hole.id) ?? null : null), [doc, hole.id]);
+  const walkNext = useMemo(() => (doc.style.nextTee ? autoWalks(doc.items, courseStats(doc), doc.holes).find(w => w.a.holeId === hole.id) ?? null : null), [doc, hole.id]);
   const nextNo = walkNext ? holeLabel(doc, walkNext.b.holeId) : "";
   const u = doc.units;
   const tees = holeTees(doc, hole.id);

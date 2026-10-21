@@ -8,7 +8,7 @@ import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../li
 import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
 import { holeGeoJSON, holesCsv, partsCsv, partsList, stakeOutCsv, toGPX, toGeoJSON, toKML } from "../lib/exports";
 import { canvasBlob, pdfFromPages, pdfPage, pngUnder, printDpi, svgToCanvas } from "../lib/raster";
-import { holeStats } from "../lib/holeStats";
+import { courseStats, holeStats } from "../lib/holeStats";
 import { holeLabel, holeNumber } from "../lib/course";
 import { VIDEO_SIZES, VIDEO_HOLD, type VideoResolution } from "../lib/video";
 import { autoSeconds, flightClock, flyoverOf, keySeconds } from "../lib/flight";
@@ -33,7 +33,10 @@ const selectCls = "bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-
 const art = async (d: CourseDoc) => ({ ...reliefOf(d), canopy: await canopyFor(d) });
 
 /** Holes with a tee and a basket, in the order of play. */
-const playable = (d: CourseDoc) => d.holes.filter(h => holeStats(d, h).complete);
+const playable = (d: CourseDoc) => {
+  const stats = courseStats(d);
+  return d.holes.filter((_, k) => stats[k].complete);
+};
 
 /** Seconds of video for the holes (each one's flight, by itself or through its keyframes). */
 const videoSeconds = (d: CourseDoc, ids: string[]) =>

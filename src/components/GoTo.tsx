@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Hash, MapPin, Search, Wrench, Zap } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS } from "../constants";
 import { holeLabel } from "../lib/course";
-import { holeStats } from "../lib/holeStats";
+import { courseStats } from "../lib/holeStats";
 import { fmtDist } from "../lib/units";
 import { select } from "../state/actions";
 import { useCourse, useEditor } from "../state/course";
@@ -12,8 +12,8 @@ import { STEPS } from "./SidePanel";
 import { TOOLS } from "./Toolbar";
 import type { CourseItem } from "../types";
 
-/** `find`: what typing matches (its name, not its figures); `rank`: before the rest. */
-type Entry = { key: string; text: string; find: string; sub?: string; icon: ReactNode; run: () => void; rank?: number };
+/** `find`: what typing matches (its name, not its figures); `nums`: a hole's numbers, first when typed. */
+type Entry = { key: string; text: string; find: string; sub?: string; icon: ReactNode; run: () => void; nums?: string[] };
 
 /** The map shows on every step but Design: going to something on it leaves the Design page. */
 const toMap = () => {
@@ -39,14 +39,15 @@ export function GoTo({ onClose, onShare, onHelp }: { onClose: () => void; onShar
 
   const all = useMemo<Entry[]>(() => {
     const out: Entry[] = [];
-    for (const h of doc.holes) {
-      const s = holeStats(doc, h), label = holeLabel(doc, h.id);
+    const stats = courseStats(doc);
+    doc.holes.forEach((h, k) => {
+      const s = stats[k], label = holeLabel(doc, h.id);
       out.push({
         key: `hole:${h.id}`, text: `Hole ${label}${h.name ? ` · ${h.name}` : ""}`, find: `hole ${label} ${h.name ?? ""}`, sub: s.complete ? `${fmtDist(s.length, doc.units)} · Par ${s.par}` : undefined, icon: <Hash size={15} />,
-        rank: label.split("/").includes(q.trim()) ? 2 : 0,
+        nums: label.split("/"),
         run: () => { toMap(); select(h.id); requestAnimationFrame(() => getView()?.fitHole(h.id)); }
       });
-    }
+    });
     STEPS.forEach((s, i) => out.push({ key: `step:${s.id}`, text: s.label, find: s.label, sub: `Step ${i + 1}`, icon: <MapPin size={15} />, run: () => useEditor.getState().set({ step: s.id, tool: "select", teeView: null, flyover: false }) }));
     for (const t of TOOLS) out.push({ key: `tool:${t.mode}`, text: t.short, find: t.short, sub: t.key, icon: <Wrench size={15} />, run: () => { toMap(); useEditor.getState().set({ tool: t.mode }); } });
     for (const i of doc.items) {
@@ -59,14 +60,15 @@ export function GoTo({ onClose, onShare, onHelp }: { onClose: () => void; onShar
       { key: "act:help", text: "Keyboard shortcuts", find: "keyboard shortcuts help", sub: "?", icon: <Zap size={15} />, run: onHelp }
     );
     return out;
-  }, [doc, q, onShare, onHelp]);
+  }, [doc, onShare, onHelp]);
 
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
     if (!t) return all.filter(e => e.key.startsWith("hole:") || e.key.startsWith("step:"));
+    const rank = (e: Entry) => +!!e.nums?.includes(t);
     return all
-      .filter(e => e.rank || e.find.toLowerCase().includes(t))
-      .sort((a, b) => (b.rank ?? 0) - (a.rank ?? 0) || +b.text.toLowerCase().startsWith(t) - +a.text.toLowerCase().startsWith(t))
+      .filter(e => rank(e) || e.find.toLowerCase().includes(t))
+      .sort((a, b) => rank(b) - rank(a) || +b.text.toLowerCase().startsWith(t) - +a.text.toLowerCase().startsWith(t))
       .slice(0, 40);
   }, [all, q]);
 

@@ -1,8 +1,8 @@
 // Pure-logic tests (no browser page) for the hole and course numbers and the checks.
 import { test, expect } from "@playwright/test";
 import { FAIRWAY_STATIONS, areaPath, createArea, createBasket, createEmptyCourse, createLine, createTee, createTree, fairwayOutline, fairwayWidthAt, linePath, newHole } from "../../src/lib/course";
-import { corridor, pathLength, pointInPolygon, smoothPath } from "../../src/lib/geom";
-import { courseTotals, designChecks, holeStats, isOb, openIssues, parForDistance, safetyIssues } from "../../src/lib/holeStats";
+import { corridor, lengthInside, pathLength, pathTouchesPolygon, pointInPolygon, smoothPath } from "../../src/lib/geom";
+import { courseIssues, courseStats, courseTotals, designChecks, holeStats, isOb, openIssues, parForDistance, safetyIssues } from "../../src/lib/holeStats";
 import type { CourseDoc, P, TeeLevel } from "../../src/types";
 import { renderPoster } from "../../src/lib/mapSvg";
 import { renderScorecard } from "../../src/lib/teeSign";
@@ -332,4 +332,31 @@ test("an OB line belonging to two holes counts for both (and for neither of the 
   expect(crossed(h1)).toBe(1);
   expect(crossed(h2)).toBe(1);
   expect(crossed(h3)).toBe(0);
+});
+
+test("the course's numbers and checks are worked out once for each version of the course", () => {
+  const doc = make([[{ x: 100, y: 500 }, { x: 400, y: 500 }], [{ x: 100, y: 540 }, { x: 400, y: 560 }], [{ x: 100, y: 900 }, { x: 400, y: 900 }]]);
+  const stats = courseStats(doc);
+  expect(courseStats(doc)).toBe(stats);
+  expect(stats).toEqual(doc.holes.map(h => holeStats(doc, h)));
+  expect(courseIssues(doc)).toBe(courseIssues(doc));
+  expect(courseIssues(doc)).toEqual(safetyIssues(doc));
+  expect(courseIssues(doc).filter(i => /apart/.test(i.text))).toHaveLength(1);
+  // A changed course is worked out again
+  const basket = doc.items.find(i => i.type === "basket" && i.holeId === doc.holes[1].id)!;
+  const moved = { ...doc, items: doc.items.map(i => (i === basket ? { ...i, y: 300 } : i)) };
+  expect(courseStats(moved)).not.toBe(stats);
+  expect(Math.round(courseStats(moved)[1].length)).toBe(Math.round(Math.hypot(300, 240)));
+  expect(courseIssues(moved).some(i => /cross/.test(i.text))).toBe(true);
+});
+
+test("shapes far from a line are passed over without changing what touches it", () => {
+  const square = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
+  // left of the square, level with it (a ray to the right crosses it twice)
+  expect(pathTouchesPolygon([{ x: -50, y: 20 }, { x: -10, y: 80 }], square)).toBe(false);
+  // a long leg straight across, both ends far outside
+  expect(pathTouchesPolygon([{ x: -500, y: 50 }, { x: 500, y: 50 }], square)).toBe(true);
+  expect(pathTouchesPolygon([{ x: -500, y: 300 }, { x: -400, y: 300 }, { x: 50, y: 50 }], square)).toBe(true);
+  expect(lengthInside([{ x: -500, y: 50 }, { x: 500, y: 50 }], square, 1)).toBeCloseTo(100, 0);
+  expect(lengthInside([{ x: -500, y: 150 }, { x: 500, y: 150 }], square, 1)).toBe(0);
 });

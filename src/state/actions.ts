@@ -5,7 +5,7 @@ import {
   insertHole, autoWalks, basketHoles, holeBaskets, holeTees, itemHoleId, movedGroup, newHole, teeFor, wholeHoles
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
-import { holeStats } from "../lib/holeStats";
+import { courseStats, holeStats } from "../lib/holeStats";
 import type { BasketItem, CourseDoc, CourseItem, Hole, P, TeeLevel, ToolMode } from "../types";
 import { changeDoc, editor, getDoc, removeHole, removeItems, useEditor } from "./course";
 import { toast } from "./toast";
@@ -459,7 +459,7 @@ export const addHoleOb = (holeId: string, where: "left" | "right" | "long") => {
  * to pull), in place of the automatic one; `holeId` null for every hole's. Selected when one. */
 export const editWalks = (holeId: string | null) => {
   const doc = getDoc();
-  const stats = doc.holes.map(h => holeStats(doc, h));
+  const stats = courseStats(doc);
   const lines = autoWalks(doc.items, stats, doc.holes)
     .filter(w => holeId === null || w.a.holeId === holeId)
     .map(({ from, to, a }) => {

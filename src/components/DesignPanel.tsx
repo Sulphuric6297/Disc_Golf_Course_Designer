@@ -4,7 +4,7 @@ import { ApplyToHoles } from "./ApplyToHoles";
 import { BASKET_MARKS, PAPER, THEME_COLORS, basketMark, bestRotation } from "../lib/mapSvg";
 import { landscapeOf, tallGrassOf } from "../lib/landscapes";
 import { autoWalks } from "../lib/course";
-import { holeStats } from "../lib/holeStats";
+import { courseStats } from "../lib/holeStats";
 import { editWalks } from "../state/actions";
 import { CARD_DEFAULTS, SIGN_PARTS, signOf } from "../lib/teeSign";
 import { holeLabel } from "../lib/course";
@@ -235,7 +235,7 @@ export function DesignPanel() {
         {s.nextTee && (
           <>
             <Slider label="Walk width" min={1} max={20} step={0.5} value={s.walkWidth ?? 6} onChange={v => setAllWalks(v, false)} onDone={done} format={v => fmtDist(v, doc.units)} />
-            {autoWalks(doc.items, doc.holes.map(h => holeStats(doc, h)), doc.holes).length > 0 && <div className="-mt-1 mb-1"><Button small onClick={() => editWalks(null)} testid="edit-walks">Edit the walks</Button></div>}
+            {autoWalks(doc.items, courseStats(doc), doc.holes).length > 0 && <div className="-mt-1 mb-1"><Button small onClick={() => editWalks(null)} testid="edit-walks">Edit the walks</Button></div>}
           </>
         )}
         <Toggle label="Putting circle (10 m)" checked={s.circle} onChange={v => setStyle({ circle: v })} />

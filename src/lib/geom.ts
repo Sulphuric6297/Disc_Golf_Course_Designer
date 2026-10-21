@@ -51,6 +51,13 @@ export const boundsOf = (pts: P[]) => {
   return { minX, minY, maxX, maxY };
 };
 
+export type Bounds = ReturnType<typeof boundsOf>;
+/** How far apart two bounds are (0 when they overlap): no point of one is nearer the other. */
+export const boundsGap = (a: Bounds, b: Bounds) => Math.hypot(Math.max(0, b.minX - a.maxX, a.minX - b.maxX), Math.max(0, b.minY - a.maxY, a.minY - b.maxY));
+export const inBounds = (p: P, b: Bounds) => p.x >= b.minX && p.x <= b.maxX && p.y >= b.minY && p.y <= b.maxY;
+/** How far a point is from bounds (0 inside them). */
+export const pointBoundsGap = (p: P, b: Bounds) => Math.hypot(Math.max(0, b.minX - p.x, p.x - b.maxX), Math.max(0, b.minY - p.y, p.y - b.maxY));
+
 /** Closest point on segment ab to p, with how far along (0..1) and the distance. */
 export const nearestOnSegment = (p: P, a: P, b: P) => {
   const dx = b.x - a.x, dy = b.y - a.y;
@@ -84,9 +91,13 @@ export const segmentsIntersect = (a: P, b: P, c: P, d: P) => {
 
 /** Whether a polyline crosses or enters a polygon. */
 export const pathTouchesPolygon = (pts: P[], poly: P[]) => {
-  if (poly.length < 3) return false;
-  if (pts.some(p => pointInPolygon(p, poly))) return true;
+  const box = boundsOf(poly);
+  if (poly.length < 3 || boundsGap(boundsOf(pts), box) > 0) return false;
+  // (nothing outside the polygon's bounds is in it or crosses it)
+  if (pts.some(p => inBounds(p, box) && pointInPolygon(p, poly))) return true;
   for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    if (Math.max(a.x, b.x) < box.minX || Math.min(a.x, b.x) > box.maxX || Math.max(a.y, b.y) < box.minY || Math.min(a.y, b.y) > box.maxY) continue;
     for (let j = 0; j < poly.length; j++) if (segmentsIntersect(pts[i - 1], pts[i], poly[j], poly[(j + 1) % poly.length])) return true;
   }
   return false;
@@ -95,13 +106,16 @@ export const pathTouchesPolygon = (pts: P[], poly: P[]) => {
 /** Length of a polyline that lies inside a polygon (sampled every `step` ft). */
 export const lengthInside = (pts: P[], poly: P[], step = 2) => {
   let inside = 0;
+  const box = boundsOf(poly);
+  if (poly.length < 3 || boundsGap(boundsOf(pts), box) > 0) return inside;
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1], b = pts[i];
     const len = dist(a, b);
     const n = Math.max(1, Math.ceil(len / step));
     for (let k = 0; k < n; k++) {
       const t = (k + 0.5) / n;
-      if (pointInPolygon({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, poly)) inside += len / n;
+      const q = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+      if (inBounds(q, box) && pointInPolygon(q, poly)) inside += len / n;
     }
   }
   return inside;

@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { Camera, ChevronLeft, ChevronRight, Clapperboard, Plane, X } from "lucide-react";
 import { TEE_LEVELS } from "../constants";
-import { holeStats } from "../lib/holeStats";
+import { courseStats, holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
 import { useCourse, useEditor } from "../state/course";
 import { useExportJob } from "../state/exportJob";
@@ -21,7 +21,8 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
   const s = useMemo(() => (hole ? holeStats(doc, hole) : null), [doc, hole]);
   const [camera, setCamera] = useState(false);
   if (!hole || !s) return null;
-  const done = doc.holes.filter(h => holeStats(doc, h).complete);
+  const stats = courseStats(doc);
+  const done = doc.holes.filter((_, k) => stats[k].complete);
   const i = done.findIndex(h => h.id === hole.id);
   const go = (d: number) => {
     const next = done[(i + d + done.length) % done.length];

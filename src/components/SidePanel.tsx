@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowRight, CircleDot, ClipboardCheck, Download, Eye, EyeOff, Info, MapPinned, Palette, Pentagon, Plus, Route, Signpost, Spline, Trash2, TreeDeciduous, type LucideIcon } from "lucide-react";
 import { AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
 import { activeLayout, holeTees } from "../lib/course";
-import { courseTotals, holeStats, levelsOnCourse, openIssues, playsOf, safetyIssues, swapped, type SafetyIssue } from "../lib/holeStats";
+import { courseIssues, courseStats, courseTotals, levelsOnCourse, openIssues, playsOf, swapped, type SafetyIssue } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { select } from "../state/actions";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
@@ -140,7 +140,7 @@ function LayoutEditor({ open, setOpen }: { open: boolean; setOpen: (f: (o: boole
 function HolesStep() {
   const doc = useCourse(s => s.doc);
   const ed = useEditor();
-  const stats = useMemo(() => doc.holes.map(h => holeStats(doc, h)), [doc]);
+  const stats = courseStats(doc);
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
   // (a hole with two numbers counts twice, as on the scorecard)
   const played = doc.holes.reduce((n, h) => n + playsOf(doc, h.id), 0);
@@ -290,9 +290,9 @@ const IssueIcon = ({ level }: { level: SafetyIssue["level"] }) => (
 
 function ReviewStep() {
   const doc = useCourse(s => s.doc);
-  const stats = useMemo(() => doc.holes.map(h => holeStats(doc, h)), [doc]);
+  const stats = courseStats(doc);
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
-  const all = useMemo(() => safetyIssues(doc, stats), [doc, stats]);
+  const all = courseIssues(doc);
   const { open: issues, ignored } = openIssues(doc, all);
   const ignore = (id: string, off: boolean) =>
     changeDoc(d => {
