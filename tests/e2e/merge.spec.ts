@@ -71,3 +71,20 @@ test("a version's name from what changed; the holes a draft changes (a moved bas
   expect([...holesChanged(before, after)].sort()).toEqual(["b", "c"]);
   expect(describeChanges(before, before)).toBe("No changes");
 });
+
+test("one ground for the park: a course takes another's ground where they overlap, its own elsewhere; its holes as they are (pure logic)", async () => {
+  const { withGround } = await import("../../src/lib/sharedGround");
+  const site = (west: number) => ({ location: null, bounds: { north: 40, south: 39.99, west, east: west + 0.01 }, baseElevationFt: 100 });
+  const from = { name: "A", holes: [], items: [], canvas: { width: 100, height: 100 }, gridSize: 50, site: site(-89), terrainHeights: { "0,0": 7, "50,0": 7, "100,0": 7, "0,50": 7, "50,50": 7, "100,50": 7, "0,100": 7, "50,100": 7, "100,100": 7 }, lidar: { source: "USGS 2017", trees: [[25, 25, 40, 10, 0]] } } as any;
+  // (B's site starts halfway across A's)
+  const to = { name: "B", holes: [{ id: "h" }], items: [{ id: "x" }], canvas: { width: 100, height: 100 }, gridSize: 50, site: { ...site(-88.995), baseElevationFt: 98 }, terrainHeights: { "0,0": 1, "100,0": 1 } } as any;
+  const out = withGround(to, from, true);
+  expect(out.terrainHeights["0,0"]).toBe(9);
+  expect(out.terrainHeights["100,0"]).toBe(1);
+  expect(out.holes).toEqual(to.holes);
+  expect(out.items).toEqual(to.items);
+  expect(out.lidar.trees).toEqual([]);
+  const back = withGround(from, to, true);
+  // (none measured there: this one keeps its own)
+  expect(back.lidar).toEqual(from.lidar);
+});

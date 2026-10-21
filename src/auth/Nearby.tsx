@@ -5,6 +5,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { create } from "zustand";
 import { courseStats } from "../lib/holeStats";
+import { normalizeCourse } from "../lib/course";
+import { safeDoc } from "../lib/safeDoc";
+import { withGround } from "../lib/sharedGround";
+import { getDoc } from "../state/course";
+import { toast } from "../state/toast";
 import { getView } from "../components/MapViewport";
 import { inputCls, Section } from "../components/ui";
 import { useCourse } from "../state/course";
@@ -85,12 +90,38 @@ function useConcerns() {
   }, [list, doc]);
 }
 
+// --- One ground for the park: this course's terrain (and measured trees) copied to others
+
+/** This course's ground into the others picked: straight in for an owner publishing as they go,
+ * else into their draft. */
+async function shareGround(ids: string[], trees: boolean) {
+  const from = getDoc();
+  let done = 0;
+  for (const id of ids) {
+    const c = await api<{ version: number; role: string; live: boolean; doc: CourseDoc }>("GET", `courses/${id}`);
+    if (c.role === "viewer") continue;
+    const to = withGround(normalizeCourse(safeDoc({ ...c.doc, background: null })), from, trees);
+    const doc = { ...to, background: null };
+    if (c.role === "owner" && c.live) await api("PUT", `courses/${id}`, { doc, version: c.version });
+    else {
+      const d = await api<{ draft: { doc: CourseDoc } | null }>("GET", `courses/${id}/draft`);
+      const draft = d.draft ? { ...withGround(normalizeCourse(safeDoc({ ...d.draft.doc, background: null })), from, trees), background: null } : doc;
+      await api("PUT", `courses/${id}/draft`, { doc: draft, base: d.draft ? undefined : { doc: { ...c.doc, background: null }, version: c.version } });
+    }
+    done++;
+  }
+  toast(done ? `This ground is in ${done} other course${done === 1 ? "" : "s"} now.` : "Nothing changed.", done ? "success" : "info");
+}
+
 /** The Site step: the park, and the other courses here (each with a switch). */
 export function NearbyCourses() {
   const { list, shown } = useNearby();
   const { id, role, park } = useServerCourse();
   const concerns = useConcerns();
   const [parks, setParks] = useState<string[]>([]);
+  const [sharing, setSharing] = useState<Set<string> | null>(null);
+  const [withTrees, setWithTrees] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [value, setValue] = useState(park);
   useEffect(() => setValue(park), [park]);
   useEffect(() => { if (role === "owner") void api<{ park: string }[]>("GET", "courses").then(l => setParks([...new Set(l.map(c => c.park).filter(Boolean))]), () => {}); }, [role]);
@@ -128,6 +159,25 @@ export function NearbyCourses() {
               </li>
             ))}
           </ul>
+          {sharing ? (
+            <div className="mt-3 rounded-lg border border-zinc-700 p-3 space-y-2" data-testid="share-ground">
+              <p className="text-sm text-zinc-200">This course's ground into:</p>
+              {list.filter(n => n.role !== "viewer").map(n => (
+                <label key={n.id} className="flex items-center gap-2 text-sm text-zinc-200">
+                  <input type="checkbox" checked={sharing.has(n.id)} onChange={e => { const s = new Set(sharing); if (e.target.checked) s.add(n.id); else s.delete(n.id); setSharing(s); }} /> {n.name}
+                </label>
+              ))}
+              <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={withTrees} onChange={e => setWithTrees(e.target.checked)} /> And the measured trees</label>
+              <p className="text-[11px] text-zinc-500">Their holes, OB and everything drawn stay as they are.</p>
+              <div className="flex gap-2 justify-end">
+                <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded-lg" onClick={() => setSharing(null)}>Cancel</button>
+                <button className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" disabled={busy || !sharing.size}
+                  onClick={() => { setBusy(true); void shareGround([...sharing], withTrees).finally(() => { setBusy(false); setSharing(null); }); }} data-testid="share-ground-go">{busy ? "Copying…" : "Copy the ground"}</button>
+              </div>
+            </div>
+          ) : list.some(n => n.role !== "viewer") && (
+            <button className="mt-3 text-sm text-orange-300 hover:text-orange-200" onClick={() => setSharing(new Set(list.filter(n => n.role !== "viewer" && n.samePark).map(n => n.id)))} data-testid="share-ground-open">Share this ground with them…</button>
+          )}
         </>
       )}
     </Section>
