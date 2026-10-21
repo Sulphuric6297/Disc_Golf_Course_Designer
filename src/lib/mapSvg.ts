@@ -5,8 +5,8 @@
 // is at the bottom.
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
-import { activeLayout, drawnAreas, fairwayOutline, holeBaskets, linePath, sharedWalks, teeAim, walkRoutes } from "./course";
-import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath } from "./geom";
+import { activeLayout, belongsTo, drawnAreas, fairwayOutline, holeBaskets, linePath, obRanges, obSides, sharedWalks, teeAim, walkRoutes } from "./course";
+import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
 import { courseTotals, holeStats, isOb, playsOf, type HoleStats } from "./holeStats";
 import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, type CanopyGrid } from "./forest";
 import { BASKET_MARKS, RESTRICTED, STRUCTURE_INK, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol, structureLegend, structureSymbol, type StructureDraw, type StructureInk } from "./symbols";
@@ -414,22 +414,47 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     };
     const edge = (d: string, o: number) => out.push(`<path d="${d}" fill="none" stroke="${obCase}" stroke-opacity="0.9" stroke-width="${n(px(3.6))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/><path d="${d}" fill="none" stroke="${obCol}" stroke-width="${n(px(1.9))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/>`);
     for (const a of areas) if (a.ob === true && a.kind !== "ob" && a.points.length >= 3) edge(pathD(a.points, true), dim(a.holeId, a.alsoHoles));
+    // (short ticks from an edge into the out-of-bounds side: a road and beyond)
+    const ticks = (line: P[], side: number, o: number) => {
+      const len = pathLength(line), step = px(9), out1: string[] = [];
+      for (let d = step / 2; d < len; d += step) {
+        const { point: p, angle } = pointAlong(line, d);
+        const q = { x: p.x - Math.sin(angle) * side * px(4.2), y: p.y + Math.cos(angle) * side * px(4.2) };
+        out1.push(`M${n(p.x)} ${n(p.y)}L${n(q.x)} ${n(q.y)}`);
+      }
+      if (out1.length) out.push(`<path d="${out1.join("")}" fill="none" stroke="${obCol}" stroke-width="${n(px(1.3))}" stroke-linecap="round" opacity="${n(o)}"/>`);
+    };
     for (const l of lines) {
       if (l.ob !== true || l.kind === "ob" || l.points.length < 2) continue;
       const o = dim(l.holeId, l.alsoHoles);
       const w = l.width ?? LINE_KINDS[l.kind].width;
       const g = forest ? paintedLine(l, view.scale) : { points: linePath(l), width: Math.max(w, px(l.kind === "road" ? 3 : l.kind === "path" ? 2.2 : 2)) };
-      if (l.kind === "fence" || l.kind === "walk") edge(pathD(g.points), o);
-      else {
-        const k1 = forest && l.kind === "stream" ? 1.3 : 1;
-        const wAt = "widthAt" in g ? g.widthAt : undefined;
-        const off = wAt ? (t: number) => (wAt(t) / 2) * k1 + px(1.6) : (g.width / 2) * k1 + px(1.6);
-        edge(pathD(offset(g.points, off)), o);
-        edge(pathD(offset(g.points, typeof off === "number" ? -off : t => -off(t))), o);
+      const k1 = forest && l.kind === "stream" ? 1.3 : 1;
+      const wAt = "widthAt" in g ? g.widthAt : undefined;
+      // (the holes it's beside: OB "and beyond" from its edge on their side)
+      const holeLines = layers.stats.filter(st => st.complete && (!l.holeId || belongsTo(l, st.holeId))).map(st => st.line);
+      let longest: P[] = [];
+      // Along all of it, or only its stretches marked OB
+      for (const [a, b] of obRanges(l)) {
+        const piece = subPath(g.points, a, b);
+        if (piece.length < 2) continue;
+        if (pathLength(piece) > pathLength(longest)) longest = piece;
+        const sides = l.obBeyond ? obSides(piece, holeLines) : null;
+        if (l.kind === "fence" || l.kind === "walk") {
+          edge(pathD(piece), o);
+          if (sides?.length === 1) ticks(piece, -sides[0], o);
+          continue;
+        }
+        const off = (u: number) => ((wAt ? wAt(a + (b - a) * u) : g.width) / 2) * k1 + px(1.6);
+        for (const side of sides ?? [1, -1]) {
+          const e = offset(piece, u => side * off(u));
+          edge(pathD(e), o);
+          if (sides) ticks(e, -side, o);
+        }
       }
-      const len = pathLength(g.points);
+      const len = pathLength(longest);
       // (Away from its name, which sits in the middle)
-      if (len * k > 70 * ts) tags.push({ id: `tag:${l.id}`, at: toScreen(pointAlong(g.points, len * (l.label ? 0.72 : 0.5)).point), text: "OB", bg: obCol, fg: obInk, o });
+      if (len * k > 70 * ts) tags.push({ id: `tag:${l.id}`, at: toScreen(pointAlong(longest, len * (l.label && longest.length === g.points.length ? 0.72 : 0.5)).point), text: "OB", bg: obCol, fg: obInk, o });
     }
   }
 

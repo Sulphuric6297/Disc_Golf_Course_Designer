@@ -2,7 +2,7 @@
 // positions), the hole list as CSV, the stake-out list, and the parts list with a cost estimate.
 import { AMENITY_KINDS, AREA_KINDS, FT_PER_M, LINE_KINDS, TEE_LEVELS, TEE_SURFACES } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, CourseItem, DropZoneItem, Hole, LineItem, MandoItem, P, TeeItem, TreeItem } from "../types";
-import { areaPath, belongsTo, fairwayOutline, holeBaskets, holeNumber, holeTees, linePath } from "./course";
+import { areaPath, belongsTo, fairwayOutline, holeBaskets, holeNumber, holeTees, linePath, obRanges } from "./course";
 import { pathLength, pathTouchesPolygon, pointInPolygon, smoothPath } from "./geom";
 import { bearing, compassPoint, geoRefOf, toLatLon, type GeoRef } from "./geoRef";
 import { holeStats, isOb } from "./holeStats";
@@ -63,7 +63,7 @@ const itemFeature = (doc: CourseDoc, ref: GeoRef, i: CourseItem): Feature | null
   }
   if (i.type === "line") {
     const l = i as LineItem;
-    return { type: "Feature", geometry: { type: "LineString", coordinates: linePath(l).map(p => ll(ref, p)) }, properties: { kind: `${l.kind}_line`, label: LINE_KINDS[l.kind].label, name: l.label ?? null, hole: l.holeId ? holeNumber(doc, l.holeId) : null } };
+    return { type: "Feature", geometry: { type: "LineString", coordinates: linePath(l).map(p => ll(ref, p)) }, properties: { kind: `${l.kind}_line`, label: LINE_KINDS[l.kind].label, name: l.label ?? null, hole: l.holeId ? holeNumber(doc, l.holeId) : null, ...(l.kind !== "ob" && l.ob === true ? { ob: l.obBeyond ? "and_beyond" : "yes", ...(l.obStretches?.length ? { ob_stretches: obRanges(l) } : {}) } : {}) } };
   }
   return null;
 };

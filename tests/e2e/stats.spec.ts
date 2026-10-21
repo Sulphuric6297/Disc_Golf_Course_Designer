@@ -1,11 +1,11 @@
 // Pure-logic tests (no browser page) for the hole and course numbers and the checks.
 import { test, expect } from "@playwright/test";
-import { FAIRWAY_STATIONS, areaPath, createArea, createBasket, createEmptyCourse, createLine, createTee, createTree, fairwayOutline, fairwayWidthAt, linePath, newHole } from "../../src/lib/course";
+import { FAIRWAY_STATIONS, areaPath, createArea, createBasket, createEmptyCourse, createLine, createTee, createTree, fairwayOutline, fairwayWidthAt, linePath, mergeStretches, newHole, normalizeCourse, obPieces, obSides } from "../../src/lib/course";
 import { corridor, lengthInside, pathLength, pathTouchesPolygon, pointInPolygon, smoothPath } from "../../src/lib/geom";
 import { courseIssues, courseStats, courseTotals, designChecks, holeStats, isOb, openIssues, parForDistance, safetyIssues } from "../../src/lib/holeStats";
 import type { CourseDoc, P, TeeLevel } from "../../src/types";
 import { renderPoster } from "../../src/lib/mapSvg";
-import { renderScorecard } from "../../src/lib/teeSign";
+import { autoRules, renderScorecard } from "../../src/lib/teeSign";
 const plainPar = expect;
 
 /** A course with holes from [tee, basket] pairs, on flat ground (or with `heights`). */
@@ -98,6 +98,50 @@ test.describe("par and effective length (PDGA)", () => {
     expect(Math.round(t.length)).toBe(600);
     expect(Math.round(t.walk)).toBe(50);
   });
+});
+
+test("a road OB along a stretch of it, or OB and beyond: in play only there, said on the tee sign, drawn on the hole's side", () => {
+  // A hole running east, a road 10 ft south of its line, 1,000 ft long
+  const doc = make([[{ x: 300, y: 300 }, { x: 700, y: 300 }]]);
+  const road = createLine("road", [{ x: 0, y: 310 }, { x: 1000, y: 310 }]);
+  road.ob = true;
+  doc.items.push(road);
+  expect(holeStats(doc, doc.holes[0]).obInPlay).toBe(true);
+  // Only a stretch far down the road: not in play
+  road.obStretches = [[0.85, 1]];
+  const [far] = obPieces(road);
+  expect(far[0].x).toBeCloseTo(850, 3);
+  expect(far[far.length - 1].x).toBeCloseTo(1000, 3);
+  expect(holeStats(doc, doc.holes[0]).obInPlay).toBe(false);
+  // A stretch beside the hole: in play again
+  road.obStretches = [[0.4, 0.6]];
+  expect(holeStats(doc, doc.holes[0]).obInPlay).toBe(true);
+  // Stretches put in order, overlapping ones joined, next to nothing left out
+  expect(mergeStretches([[0.6, 0.4], [0.5, 0.7], [0.9, 0.9005]])).toEqual([[0.4, 0.7]]);
+  // The hole is north of the road: left of it, as it runs east
+  expect(obSides(obPieces(road)[0], [holeStats(doc, doc.holes[0]).line])).toEqual([-1]);
+  expect(obSides(obPieces(road)[0], [])).toEqual([1, -1]);
+  // On the tee sign
+  expect(autoRules(doc, doc.holes[0].id)).toContain("Road is OB.");
+  road.obBeyond = true;
+  expect(autoRules(doc, doc.holes[0].id)).toContain("Road and beyond is OB.");
+  road.obStretches = [[0.85, 1]];
+  expect(autoRules(doc, doc.holes[0].id).join(" ")).not.toContain("Road");
+  road.obStretches = [[0.3, 0.7]];
+  // The printed map: one red edge, along the stretch only, on the hole's side of the road
+  const svg = renderPoster(doc, { contours: null, hillshade: null }).svg;
+  const edges = [...svg.matchAll(new RegExp(`<path d="([^"]+)" fill="none" stroke="${doc.style.ob}" stroke-width="[^"]+" stroke-linejoin`, "g"))].map(m => [...m[1].matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map(c => ({ x: +c[1], y: +c[2] })));
+  expect(edges).toHaveLength(1);
+  for (const p of edges[0]) {
+    expect(p.x).toBeGreaterThan(290);
+    expect(p.x).toBeLessThan(710);
+    expect(p.y).toBeLessThan(310);
+  }
+  // (with ticks into the road)
+  expect(svg).toMatch(new RegExp(`stroke="${doc.style.ob}" stroke-width="[^"]+" stroke-linecap="round" opacity`));
+  // Opened from a file: stretches that aren't pairs of numbers left out
+  const back = normalizeCourse({ ...doc, items: [{ ...road, obStretches: [[0.2, "x"], [0.5, 0.3], 7] as any }] });
+  expect((back.items[0] as any).obStretches).toEqual([[0.3, 0.5]]);
 });
 
 test("a hole with two numbers (3/4) is played twice: the course's par, length and holes count it twice, the scorecard has both", () => {

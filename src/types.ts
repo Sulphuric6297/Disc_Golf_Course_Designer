@@ -129,6 +129,11 @@ export interface LineItem extends BaseItem {
   /** Out of bounds: a stream is unless set false; a road, fence or path is when true (and then
    * its red OB edge is drawn on the map). */
   ob?: boolean;
+  /** Out of bounds beyond it too (the road and beyond): OB from its edge on the holes' side. */
+  obBeyond?: boolean;
+  /** The stretches of it that are out of bounds, each from-to as fractions of it as drawn (0 its
+   * start, 1 its end; unset: all of it). */
+  obStretches?: [number, number][];
   /** Brought in from OpenStreetMap (replaced on re-import). */
   importSource?: "osm";
 }

@@ -285,6 +285,60 @@ test("a road marked OB from its right-click menu", async ({ page }) => {
   await expect.poll(async () => (await course(page)).items[0].ob).toBeUndefined();
 });
 
+test("a stretch of a road marked OB with two clicks on it (or from its right-click menu), its ends dragged along it; OB and beyond", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 500 }, { x: 800, y: 500 });
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("l");
+  await page.getByTestId("line-kind-road").click();
+  await clickPlan(page, 150, 600);
+  await clickPlan(page, 950, 600);
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "line").length).toBe(1);
+  await page.keyboard.press("Escape");
+  const road = () => course(page).then(c => c.items.find((i: any) => i.type === "line"));
+  await page.evaluate(id => (window as any).__dgActions.select(id), (await road()).id);
+  // Only a stretch: where it starts, then where it ends (a click off the road does nothing)
+  await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "OB, red edge" }).click();
+  await page.getByTestId("ob-mark-stretch").click();
+  await expect(page.getByTestId("ob-pick-bar")).toBeVisible();
+  await clickPlan(page, 400, 600);
+  await clickPlan(page, 550, 800);
+  await clickPlan(page, 700, 600);
+  await expect.poll(async () => (await road()).obStretches?.length ?? 0).toBe(1);
+  const [[a, b]] = (await road()).obStretches;
+  expect(a).toBeCloseTo(250 / 800, 1);
+  expect(b).toBeCloseTo(550 / 800, 1);
+  await expect(page.getByTestId("ob-pick-bar")).toBeHidden();
+  await expect(page.getByTestId("ob-stretch")).toHaveText(/250 to 550 ft/);
+  // Its end dragged along the road
+  await drag(page, await handleCenter(page, "obend", 1), await screenOf(page, 850, 610));
+  await expect.poll(async () => Math.round((await road()).obStretches[0][1] * 800)).toBeGreaterThan(680);
+  // OB and beyond, then one undo step back
+  await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "OB and beyond" }).click();
+  await expect.poll(async () => (await road()).obBeyond).toBe(true);
+  // Another from the right-click menu: from here, then a click where it ends; Esc on a third
+  await page.keyboard.press("Escape");
+  const from = await screenOf(page, 200, 600);
+  await page.mouse.click(from.x, from.y, { button: "right" });
+  await page.getByRole("menuitem", { name: "OB stretch from here" }).click();
+  await clickPlan(page, 300, 600);
+  await expect.poll(async () => (await road()).obStretches?.length ?? 0).toBe(2);
+  expect((await road()).obStretches[0][0]).toBeCloseTo(50 / 800, 1);
+  await page.mouse.click(from.x, from.y, { button: "right" });
+  await page.getByRole("menuitem", { name: "OB stretch from here" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("ob-pick-bar")).toBeHidden();
+  expect(await page.evaluate(() => (window as any).__dgEditor().obPick)).toBeNull();
+  await clickPlan(page, 120, 600);
+  expect((await road()).obStretches).toHaveLength(2);
+  // All of it again
+  await page.evaluate(id => (window as any).__dgActions.select(id), (await road()).id);
+  await page.getByTestId("ob-all").click();
+  await expect.poll(async () => (await road()).obStretches).toBeUndefined();
+  expect((await road()).ob).toBe(true);
+});
+
 test("a gate: two posts across the hole's line, passed between", async ({ page }) => {
   await blankCourse(page);
   // A hole running east

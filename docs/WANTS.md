@@ -223,3 +223,6 @@ Later requests (in the order asked)
   turning gently, the speed changing smoothly through each keyframe.
 - [ ] **The basket looks like a real disc golf basket in 3D** (colored band, chains hanging to a
   collar, wire tray).
+- [ ] **Stretches of a road (or path, fence, creek) can be OB**, marked with two clicks on it, and
+  a road (or path) can be OB and beyond (OB from its edge on the hole's side).
+- [ ] **Zoomed in on the Design page, every edge of the map can be reached.**

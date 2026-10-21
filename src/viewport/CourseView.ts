@@ -15,8 +15,8 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, fairwayOutline, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
-import { boundsOf, dist, distanceToPath, inBounds, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath } from "../lib/geom";
+import { FAIRWAY_STATIONS, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, belongsTo, curves, fairwayOutline, mergeStretches, obRanges, obSides, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { boundsOf, dist, distanceToPath, inBounds, nearestAlong, offsetPath, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath, subPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
 import { landscapeOf } from "../lib/landscapes";
@@ -108,6 +108,8 @@ const STYLE = `
 .dg-h[data-handle=radius]{width:15px;height:15px;border-radius:50%;background:#16a34a;border:2.5px solid #fff;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=height]{width:16px;height:22px;border-radius:5px;background:#f59e0b;border:2.5px solid #fff;cursor:ns-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-marquee{position:absolute;left:0;top:0;pointer-events:none;border:1.5px dashed #f59e0b;background:rgba(245,158,11,.12);border-radius:2px;z-index:5}
+.dg-h[data-handle=obend]{width:13px;height:13px;border-radius:3px;background:#fff;border:3px solid #dc2626;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.dg-h[data-handle=obmark]{width:13px;height:13px;border-radius:50%;background:#dc2626;border:2.5px solid #fff;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=draw]{width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #f59e0b;pointer-events:none}
 .dg-h[data-handle=draw][data-index="0"]{width:14px;height:14px;pointer-events:auto;cursor:pointer;border-width:3px}
 @media (pointer:coarse){.dg-h{transform-origin:center}.dg-h[data-handle]{scale:1.5}.dg-h[data-handle]::before{content:"";position:absolute;left:50%;top:50%;width:30px;height:30px;translate:-50% -50%;border-radius:50%}.dg-tee::before,.dg-basket::before,.dg-sym::before,.dg-chip::before{content:"";position:absolute;inset:-10px}}
@@ -217,6 +219,8 @@ export class CourseView {
   private fly: { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; t: number; dur: number; play: number; at: (t: number) => number; done?: () => void; title?: HoleTitle } | null = null;
   /** A hole whose line is being plotted by hand, and its turns so far (from the tee). */
   private plotHole: string | null = null;
+  /** Marking a stretch of OB along a line: the line, and where along it the stretch starts (0..1). */
+  private obPick: { id: string; from: number | null } | null = null;
   private plotPts: P[] = [];
   private lastPlotClick: { x: number; y: number; time: number } | null = null;
   /** The last press on a walk's end (a second one soon after resets it). */
@@ -443,7 +447,12 @@ export class CourseView {
     const leaving = tool.mode !== this.tool.mode || this.drawn(tool) !== this.drawn();
     this.teeLevel = teeLevel;
     if (leaving && this.tool.mode === "measure") this.clearMeasure();
-    if (leaving || tool.shape !== this.tool.shape) this.cancelDrawing();
+    if (leaving || tool.shape !== this.tool.shape) {
+      if (this.plotHole) this.endPlot();
+      // (marking a stretch of OB goes on in Select, which it starts in)
+      if (this.obPick && tool.mode !== "select") this.endObPick();
+      this.clearDrawing();
+    }
     this.tool = tool;
     if (tool.mode === "select") this.updateGhost(null);
     this.updateCursor();
@@ -2019,21 +2028,31 @@ export class CourseView {
       const surfaced = (l.kind === "path" || l.kind === "walk") && l.surface && l.surface !== "dirt" ? PATH_SURFACES[l.surface].color : null;
       const c = l.kind === "ob" ? color("ob")! : surfaced ?? (l.kind === "path" || (l.kind === "walk" && l.width) ? st.path : l.kind === "stream" ? st.water : meta.color);
       const width = l.width ?? meta.width;
-      put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, l.widths, hv, c, l.ob, l.kind === "stream" ? this.waterShore(l.points) : 0]), () => {
+      // Marked OB: along all of it or its stretches; OB "and beyond" from its edge on the holes' side
+      const obParts = l.ob === true && l.kind !== "ob" && l.points.length >= 2 ? obRanges(l).map(([a, b]) => {
+        const piece = subPath(this.shapeOf(l).pts, a, b);
+        return { a, b, piece, sides: l.obBeyond ? obSides(piece, doc.stats.filter(st => st.complete && (!l.holeId || belongsTo(l, st.holeId))).map(st => st.line)) : null };
+      }).filter(o => o.piece.length >= 2) : [];
+      put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, l.widths, hv, c, l.ob, l.kind === "stream" ? this.waterShore(l.points) : 0, obParts.map(o => [o.a, o.b, o.sides])]), () => {
         const g = new THREE.Group();
         const pts = this.shapeOf(l).pts;
         // (wider or narrower along the way: a creek that opens out)
         const along = widthAlong(l, width);
-        // Marked OB (a creek, a road): a red edge either side
-        if (l.ob === true && l.kind !== "ob" && l.points.length >= 2) {
-          if (width > 0) {
-            const edge = new THREE.Mesh(
-              drapedRibbon(pts, t => along(t) + 5, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.16),
-              new THREE.MeshLambertMaterial({ color: color("ob")!, transparent: true, opacity: 0.95, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 })
-            );
+        // Marked OB (a creek, a road): a red edge either side (or on the holes' side only)
+        const obMat = () => new THREE.MeshLambertMaterial({ color: color("ob")!, transparent: true, opacity: 0.95, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
+        for (const { a, b, piece, sides } of obParts) {
+          const at = (u: number) => along(a + (b - a) * u);
+          if (width > 0 && !sides) {
+            const edge = new THREE.Mesh(drapedRibbon(piece, u => at(u) + 5, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.16), obMat());
             edge.renderOrder = 1.9;
             g.add(edge);
-          } else g.add(this.fatLine(this.drapeLine(pts), color("ob")!, 5, { order: 4.9 }));
+          } else if (width > 0 && sides) {
+            for (const side of sides) {
+              const edge = new THREE.Mesh(drapedRibbon(offsetPath(piece, u => side * (at(u) / 2 + 2)), () => 4, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.16), obMat());
+              edge.renderOrder = 1.9;
+              g.add(edge);
+            }
+          } else g.add(this.fatLine(this.drapeLine(piece), color("ob")!, 5, { order: 4.9 }));
         }
         if (width > 0 && l.points.length >= 2) {
           const ribbon = new THREE.Mesh(
@@ -2445,8 +2464,9 @@ export class CourseView {
     const hole = this.hole(holeId);
     const drawing = this.drawn() ? this.drawPts.length : -1;
     const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" || sel.type === "line" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
-    if (key === this.handleKey) return;
-    this.handleKey = key;
+    const obKey = `${sel?.type === "line" ? `${sel.ob}:${sel.obStretches?.length ?? 0}` : ""}|${this.obPick ? `${this.obPick.id}:${this.obPick.from}` : ""}`;
+    if (key + obKey === this.handleKey) return;
+    this.handleKey = key + obKey;
     this.handles.forEach(h => h.el.remove());
     this.handles = [];
     const add = (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts: { index?: number; title?: string; data?: Record<string, string>; visible?: () => boolean } = {}) => {
@@ -2460,6 +2480,14 @@ export class CourseView {
       this.handlesLayer.appendChild(el);
       this.handles.push({ el, kind, index: opts.index, world, start, visible: opts.visible });
     };
+    // Marking a stretch of OB: where it starts, once clicked
+    const pick = this.obPick, picked = pick && pick.from !== null ? (this.item(pick.id) as LineItem | null) : null;
+    if (pick && picked?.type === "line") {
+      add("obmark", () => {
+        const pts = this.shapeOf(picked).pts, p = pointAlong(pts, (pick.from ?? 0) * pathLength(pts)).point;
+        return new THREE.Vector3(p.x, this.h(p.x, p.y) + 0.3, p.y);
+      }, () => null);
+    }
     if (drawing > 0) {
       for (let i = 0; i < this.drawPts.length; i++) {
         add("draw", () => { const p = this.drawPts[i]; return p ? new THREE.Vector3(p.x, this.h(p.x, p.y), p.y) : null; }, () => {
@@ -2483,6 +2511,7 @@ export class CourseView {
       this.turnHandle(sel.id, add);
     }
     if (sel.type === "line" && sel.kind === "stream") this.lineWidthHandles(sel.id, add);
+    if (sel.type === "line" && sel.ob === true && sel.obStretches?.length && !sel.locked) this.obStretchHandles(sel.id, add);
     if (sel.type === "structure" && !isLineKind(sel.kind)) this.outlineHandles(sel.id, add);
     else if (sel.type === "tree") {
       const id = sel.id;
@@ -2902,6 +2931,98 @@ export class CourseView {
         });
       }
     }
+  }
+
+  /** The ends of a line's OB stretches: each dragged along the line (a stretch dragged to nothing
+   * goes). */
+  private obStretchHandles(id: string, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
+    const it = () => this.item(id) as LineItem | null;
+    const first = it();
+    if (!first?.obStretches) return;
+    const at = (l: LineItem, t: number) => {
+      const pts = this.shapeOf(l).pts;
+      return pointAlong(pts, t * pathLength(pts)).point;
+    };
+    first.obStretches.forEach((_, k) => {
+      for (const end of [0, 1] as const) {
+        add("obend", () => {
+          const l = it(), st = l?.obStretches?.[k];
+          if (!l || !st) return null;
+          const p = at(l, st[end]);
+          return new THREE.Vector3(p.x, this.h(p.x, p.y) + 0.3, p.y);
+        }, () => {
+          const l0 = it();
+          if (!l0?.obStretches?.[k]) return null;
+          return {
+            move: ev => {
+              const l = it(), g = this.groundAt(ev.clientX, ev.clientY);
+              if (!l?.obStretches?.[k] || !g) return;
+              const t = nearestAlong(this.shapeOf(l).pts, { x: g.x, y: g.z }).t;
+              this.cb.onChange(id, { obStretches: l.obStretches.map((st, j) => (j === k ? (end ? [st[0], t] : [t, st[1]]) : st)) });
+            },
+            end: () => {
+              const l = it();
+              if (l?.obStretches) {
+                const kept = mergeStretches(l.obStretches);
+                this.cb.onChange(id, kept.length ? { obStretches: kept } : { obStretches: undefined, ob: undefined });
+              }
+              this.cb.onCommit();
+            }
+          };
+        }, { index: k * 2 + end, title: "Drag along it", data: { stretch: String(k), end: String(end) } });
+      }
+    });
+  }
+
+  /** Mark a stretch of OB along a line (a road, a path...): click where it starts, then where it ends. */
+  setObPick(id: string | null) {
+    if ((this.obPick?.id ?? null) === id) return;
+    this.obPick = id ? { id, from: null } : null;
+    this.syncHandles();
+    this.updateCursor();
+    this.invalidate();
+  }
+
+  /** Mark a stretch of OB along a line starting at a spot on it (from its right-click menu): then
+   * a click where it ends. */
+  startObPick(id: string, from: P) {
+    const l = this.item(id) as LineItem | null;
+    if (l?.type !== "line") return;
+    this.obPick = { id, from: nearestAlong(this.shapeOf(l).pts, from).t };
+    this.syncHandles();
+    this.updateCursor();
+    this.invalidate();
+  }
+
+  /** A click while marking a stretch of OB: on the line, its start, then its end (then done). */
+  private obPickClick(p: P) {
+    const pick = this.obPick, l = pick ? (this.item(pick.id) as LineItem | null) : null;
+    if (!pick || l?.type !== "line") return this.endObPick();
+    const pts = this.shapeOf(l).pts, near = nearestAlong(pts, p);
+    // (near the line: within its width, a few steps, or a few pixels of it)
+    const reach = Math.max((l.width ?? LINE_KINDS[l.kind].width) / 2 + 12, 20 * this.upp(new THREE.Vector3(p.x, this.h(p.x, p.y), p.y)));
+    if (near.distance > reach) return;
+    if (pick.from === null) {
+      this.obPick = { ...pick, from: near.t };
+      this.syncHandles();
+      this.invalidate();
+      return;
+    }
+    if (Math.abs(near.t - pick.from) * pathLength(pts) < 2) return;
+    // (only along its stretches from now: marked OB all along, it was OB everywhere)
+    const had = l.ob === true ? l.obStretches ?? [] : [];
+    this.cb.onChange(l.id, { ob: true, obStretches: mergeStretches([...had, [pick.from, near.t]]) });
+    this.cb.onCommit();
+    this.endObPick();
+  }
+
+  private endObPick() {
+    if (!this.obPick) return;
+    this.obPick = null;
+    this.syncHandles();
+    this.updateCursor();
+    this.cb.onObPickEnd();
+    this.invalidate();
   }
 
   /** A drawn shape's round handle (an area, a line, anything built): turn it about its middle
@@ -3449,6 +3570,11 @@ export class CourseView {
       this.gesture(e, { click: ev => { const g = this.groundAt(ev.clientX, ev.clientY); if (g) this.addMeasurePoint(g, ev.shiftKey); }, drag: panOrNothing });
       return;
     }
+    if (this.obPick && !tool.readOnly) {
+      stop();
+      this.gesture(e, { click: groundClick(p => this.obPickClick(p)), drag: panOrNothing });
+      return;
+    }
     if (this.plotHole && !tool.readOnly) {
       // Plotting a hole's line: clicks add turns; a drag draws it freehand
       e.stopPropagation();
@@ -3857,6 +3983,15 @@ export class CourseView {
       this.endPlot();
       return true;
     }
+    if (this.obPick) {
+      this.endObPick();
+      return true;
+    }
+    return this.clearDrawing();
+  }
+
+  /** Whatever is half drawn let go of. */
+  private clearDrawing() {
     const had = !!this.holeStart || this.drawPts.length > 0 || !!this.shapeAnchor;
     this.holeStart = null;
     this.shapeAnchor = null;
@@ -4139,6 +4274,7 @@ export class CourseView {
     const t = this.tool;
     let c = t.dragSelect && t.mode === "select" && !t.readOnly ? "crosshair" : "grab";
     if (this.povHole) c = "move";
+    else if (this.obPick) c = "crosshair";
     else if (t.readOnly) c = this.hoverId ? "pointer" : "grab";
     else if (t.mode !== "select") c = "crosshair";
     else if (this.hoverId) {

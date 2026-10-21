@@ -119,6 +119,8 @@ type EditorStore = {
   dragSelect: boolean;
   /** The hole whose line is being plotted by hand, point by point. */
   plotLine: string | null;
+  /** The line (a road, a path...) a stretch of OB is being marked along: where it starts, then ends. */
+  obPick: string | null;
   /** What is picked on the Design page's course map: "title", "legend"... or "text:ID", "image:ID". */
   designSel: string | null;
   /** The hole whose tee sign or hole page the Design step shows. */
@@ -179,6 +181,7 @@ export const useEditor = create<EditorStore>()(set => ({
   group: [],
   dragSelect: false,
   plotLine: null,
+  obPick: null,
   designSel: null,
   designHole: null,
   activeHoleId: null,

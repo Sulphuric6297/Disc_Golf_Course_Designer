@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
-import { areaPath, autoWalks, byNumber, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
+import { areaPath, autoWalks, byNumber, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
@@ -243,15 +243,45 @@ function SurfacePick({ value, onChange }: { value?: PathSurface; onChange: (v: P
   );
 }
 
-/** Whether water, a creek, a road, a fence or a path is out of bounds (and shown so on the map). */
+/** Whether water, a creek, a road, a fence or a path is out of bounds (and shown so on the map);
+ * a line OB beyond it too, and along all of it or stretches of it. */
 function ObChoice({ item }: { item: AreaItem | LineItem }) {
+  const units = useCourse(s => s.doc.units);
   const wet = item.kind === "water" || item.kind === "stream";
-  const value = item.ob === true ? "edge" : item.ob === false || !wet ? "no" : "yes";
-  const options = [{ value: "no", label: "Not OB" }, ...(wet ? [{ value: "yes", label: "OB" }] : []), { value: "edge", label: "OB, red edge" }];
+  const line = item.type === "line" ? item : null;
+  const value = item.ob === true ? (line?.obBeyond ? "beyond" : "edge") : item.ob === false || !wet ? "no" : "yes";
+  const options = [{ value: "no", label: "Not OB" }, ...(wet ? [{ value: "yes", label: "OB" }] : []), { value: "edge", label: "OB, red edge" }, ...(line ? [{ value: "beyond", label: "OB and beyond" }] : [])];
+  const pick = (v: string) => updateItem(item.id, {
+    ob: v === "edge" || v === "beyond" ? true : v === "no" ? (wet ? false : undefined) : undefined,
+    ...(line ? { obBeyond: v === "beyond" ? true : undefined, ...(v === "edge" || v === "beyond" ? {} : { obStretches: undefined }) } : {})
+  } as Partial<CourseItem>);
+  const len = line ? pathLength(linePath(line)) : 0;
+  const markStretch = () => useEditor.getState().set({ obPick: item.id, tool: "select" });
   return (
-    <Field label="Out of bounds">
-      <Segmented label="Out of bounds" value={value} onChange={v => updateItem(item.id, { ob: v === "edge" ? true : v === "no" ? (wet ? false : undefined) : undefined } as Partial<CourseItem>)} options={options} />
-    </Field>
+    <>
+      <Field label="Out of bounds">
+        <Segmented label="Out of bounds" value={value} onChange={pick} options={options} />
+      </Field>
+      {line && item.ob === true && (
+        <Field label="OB along">
+          <div className="flex flex-col gap-1.5" data-testid="ob-stretches">
+            {line.obStretches?.length ? line.obStretches.map(([a, b], k) => (
+              <div key={k} className="flex items-center gap-2 text-sm text-zinc-200" data-testid="ob-stretch">
+                <span className="flex-1 tabular-nums">{fmtDist(Math.min(a, b) * len, units, false)} to {fmtDist(Math.max(a, b) * len, units)}</span>
+                <button className="p-1 rounded hover:bg-zinc-800 text-zinc-400" aria-label={`Remove stretch ${k + 1}`} onClick={() => {
+                  const rest = line.obStretches!.filter((_, j) => j !== k);
+                  updateItem(item.id, (rest.length ? { obStretches: rest } : { obStretches: undefined, ob: undefined }) as Partial<CourseItem>);
+                }}><X size={14} /></button>
+              </div>
+            )) : <span className="text-sm text-zinc-200">All of it</span>}
+            <div className="flex gap-1.5">
+              <Button small onClick={markStretch} testid="ob-mark-stretch">{line.obStretches?.length ? "Add a stretch" : "Only a stretch"}</Button>
+              {!!line.obStretches?.length && <Button small onClick={() => updateItem(item.id, { obStretches: undefined } as Partial<CourseItem>)} testid="ob-all">All of it</Button>}
+            </div>
+          </div>
+        </Field>
+      )}
+    </>
   );
 }
 

@@ -61,7 +61,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       onTeeView: id => useEditor.getState().set({ teeView: id }),
       onContextMenu: i => menuRef.current(i),
       onDrawProgress: n => useEditor.getState().set({ drawPoints: n }),
-      onPlotEnd: () => useEditor.getState().set({ plotLine: null })
+      onPlotEnd: () => useEditor.getState().set({ plotLine: null }),
+      onObPickEnd: () => useEditor.getState().set({ obPick: null })
     });
     current = v;
     (window as any).__dgView = v;
@@ -116,6 +117,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
   useEffect(() => { view?.setGroup(ed.group); }, [view, ed.group]);
   useEffect(() => { view?.setPlotLine(ed.plotLine); }, [view, ed.plotLine]);
+  useEffect(() => { view?.setObPick(ed.obPick); }, [view, ed.obPick]);
   useEffect(() => {
     view?.setTool({ mode: ed.viewOnly ? "select" : ed.tool, areaKind: ed.areaKind, lineKind: ed.lineKind, structureKind: ed.structureKind, shape: ed.drawShape, readOnly: ed.viewOnly, dragSelect: ed.dragSelect && !ed.viewOnly }, ed.teeLevel);
   }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.structureKind, ed.drawShape, ed.viewOnly, ed.teeLevel, ed.dragSelect]);
@@ -134,12 +136,14 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const btn = "w-8 h-8 flex items-center justify-center text-zinc-300 hover:text-white hover:bg-zinc-700/70 transition-colors";
 
   // (on a computer, clear of the Selection panel at the top right: 150 to 450 px from the edge)
+  const obBar = ed.obPick && !ed.teeView && <ObPickBar view={view} top={compact ? controlsTop + 8 : 12} right={!compact && ed.selectedId && ed.step !== "design" ? 462 : 8} />;
   const plotBar = ed.plotLine && !ed.teeView && <PlotBar view={view} holeNumber={doc.holes.findIndex(h => h.id === ed.plotLine) + 1} top={compact ? controlsTop + 8 : 12} right={!compact && ed.selectedId && ed.step !== "design" ? 462 : 8} />;
   if (compact) {
     return (
       <div className="absolute inset-0">
         <div ref={ref} data-testid="plan" className="absolute inset-0 overflow-hidden touch-none" />
         {plotBar}
+        {obBar}
         {!ed.teeView && controlsRoom > 0 && <TouchControls view={view} info={info} scale={info ? niceScaleBar(info.pxPerUnit, 72) : null} units={doc.units} phone={compact === "phone"} top={controlsTop} room={controlsRoom} threeD={ed.view === "3d"} />}
       </div>
     );
@@ -149,6 +153,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     <div className="absolute inset-0">
       <div ref={ref} data-testid="plan" className="absolute inset-0 overflow-hidden touch-none" />
       {plotBar}
+      {obBar}
       {!ed.teeView && (
         <>
           <div className="absolute top-3 right-3 flex gap-2 items-start pointer-events-none">
@@ -194,6 +199,19 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
 /** The map's controls for a finger: 44 px buttons (zoom and turn also work by pinching and
  * twisting; these are the one-finger way, and the way for anyone who can't pinch). */
 /** While a hole's line is plotted by hand: what to do, and Undo point, Done and Cancel (for a finger too). */
+function ObPickBar({ view, top, right }: { view: CourseView | null; top: number; right: number }) {
+  const b = "px-3 h-9 touch:h-11 rounded-lg text-sm font-semibold";
+  return (
+    <div className="absolute left-2 z-20 flex justify-center pointer-events-none" style={{ top, right }}>
+    <div className="pointer-events-auto flex items-center gap-2 bg-zinc-900/95 border border-zinc-700 rounded-xl shadow-2xl px-3 py-2 max-w-full" data-testid="ob-pick-bar">
+      <span className="text-sm text-zinc-100 font-semibold whitespace-nowrap">OB stretch</span>
+      <span className="text-xs text-zinc-300 hidden sm:inline">Click where it starts, then where it ends</span>
+      <button className={`${b} text-zinc-300 hover:bg-zinc-800`} onClick={() => view?.cancelDrawing()} data-testid="ob-pick-cancel">Cancel</button>
+    </div>
+    </div>
+  );
+}
+
 function PlotBar({ view, holeNumber, top, right }: { view: CourseView | null; holeNumber: number; top: number; right: number }) {
   const b = "px-3 h-9 touch:h-11 rounded-lg text-sm font-semibold";
   return (

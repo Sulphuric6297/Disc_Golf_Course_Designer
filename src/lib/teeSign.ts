@@ -2,9 +2,9 @@
 // the hole drawn with the tee at the bottom, its elevation profile, the hole's rules, and an arrow
 // to the next tee.
 import { CIRCLE_ONE_FT, FT_PER_M, TEE_LEVELS } from "../constants";
-import type { AreaItem, BasketItem, CourseDoc, CourseItem, P, SignPart } from "../types";
-import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, throwLine } from "./course";
-import { boundsOf, dist, pointInPolygon, rotatePoint, smoothPath } from "./geom";
+import type { AreaItem, BasketItem, CourseDoc, CourseItem, LineItem, P, SignPart } from "../types";
+import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, obPieces, throwLine } from "./course";
+import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, rotatePoint, smoothPath } from "./geom";
 import { holeStats, playedHoles } from "./holeStats";
 import { markingsInView, northArrow, palette, renderMapLayers, scaleBar, titleStack, wrapSvg, type MapView } from "./mapSvg";
 import type { CanopyGrid } from "./forest";
@@ -52,6 +52,17 @@ export const autoRules = (doc: CourseDoc, holeId: string) => {
   if (areas.some(a => a.kind === "ob" && near(a)) || obLine) out.push("OB in play.");
   if (areas.some(a => a.kind === "water" && near(a))) out.push("Water is OB.");
   if (areas.some(a => a.kind === "hazard" && near(a))) out.push("Hazard in play.");
+  // Roads, paths, fences and creeks marked OB near the hole (all along them or a stretch)
+  const reach = hole.fairwayWidth / 2 + 40, line = smoothPath(s.line, 8);
+  const close = (piece: P[]) => Array.from({ length: Math.ceil(pathLength(piece) / 10) + 1 }, (_, k) => pointAlong(piece, k * 10).point).some(p => distanceToPath(p, line) < reach);
+  const said = new Set<string>();
+  for (const l of doc.items.filter(i => i.type === "line" && i.kind !== "ob" && i.kind !== "walk" && i.ob === true && (!i.holeId || belongsTo(i, holeId))) as LineItem[]) {
+    if (!obPieces(l).some(close)) continue;
+    const name = l.label?.trim() || { road: "Road", path: "Path", fence: "Fence", stream: "Creek", ob: "", walk: "" }[l.kind];
+    const text = `${name}${l.obBeyond ? " and beyond" : ""} is OB.`;
+    if (!said.has(text)) out.push(text);
+    said.add(text);
+  }
   const mandos = doc.items.filter(i => i.type === "mando" && i.holeId === holeId);
   const dz = doc.items.filter(i => i.type === "dropzone" && i.holeId === holeId);
   if (mandos.length) out.push(mandos.length === 1 ? `Mando: pass ${(mandos[0] as { side: string }).side}.` : `${mandos.length} mandos.`);

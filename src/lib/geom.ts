@@ -188,6 +188,55 @@ export const pointAlong = (pts: P[], d: number) => {
   return { point: pts[0] ?? { x: 0, y: 0 }, angle: 0 };
 };
 
+/** The part of a polyline from `a` to `b` of the way along it (0 its start, 1 its end). */
+export const subPath = (pts: P[], a: number, b: number): P[] => {
+  const total = pathLength(pts);
+  if (pts.length < 2 || total <= 0) return pts.slice();
+  const d0 = Math.max(0, Math.min(a, b)) * total, d1 = Math.min(1, Math.max(a, b)) * total;
+  const out: P[] = [pointAlong(pts, d0).point];
+  let acc = 0;
+  for (let i = 1; i < pts.length; i++) {
+    acc += dist(pts[i - 1], pts[i]);
+    if (acc > d0 && acc < d1) out.push(pts[i]);
+  }
+  out.push(pointAlong(pts, d1).point);
+  return out;
+};
+
+/** A polyline moved `d(t)` ft to its right (left when negative), `t` how far along it (0..1). */
+export const offsetPath = (pts: P[], d: (t: number) => number): P[] => {
+  const along = [0];
+  for (let i = 1; i < pts.length; i++) along.push(along[i - 1] + dist(pts[i - 1], pts[i]));
+  const total = along[along.length - 1] || 1;
+  return pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, off = d(along[i] / total);
+    return { x: p.x - (dy / len) * off, y: p.y + (dx / len) * off };
+  });
+};
+
+/** A polyline with points put in between, at most `step` ft apart. */
+export const densify = (pts: P[], step: number): P[] => {
+  const out: P[] = pts.length ? [pts[0]] : [];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], n = Math.max(1, Math.ceil(dist(a, b) / step));
+    for (let k = 1; k <= n; k++) out.push({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n });
+  }
+  return out;
+};
+
+/** The point of a polyline nearest p: how far along it that is (0..1), and how far from p. */
+export const nearestAlong = (pts: P[], p: P) => {
+  const total = pathLength(pts) || 1;
+  let best = { t: 0, distance: Infinity }, acc = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const len = dist(pts[i - 1], pts[i]), n = nearestOnSegment(p, pts[i - 1], pts[i]);
+    if (n.distance < best.distance) best = { t: (acc + n.t * len) / total, distance: n.distance };
+    acc += len;
+  }
+  return best;
+};
+
 /**
  * A corridor of the given width around a polyline: an outline with round ends and smooth turns
  * (a fairway along a throw line). The width can change along the way: a function of how far

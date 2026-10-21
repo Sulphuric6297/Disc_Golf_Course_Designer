@@ -337,7 +337,11 @@ export function ItemMenu({ itemId, onClose }: { itemId: string; onClose: () => v
   a.push({ label: hole ? "Zoom to this hole" : "Zoom to it", icon: <Maximize2 size={18} />, run: () => (hole ? getView()?.fitHole(hole.id) : getView()?.reveal(itemId)) });
   if (!ro) {
     if (item && ((item.type === "area" && item.kind === "water") || (item.type === "line" && item.kind !== "ob" && item.kind !== "walk"))) {
-      a.push({ label: item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)", run: () => updateItem(item.id, { ob: item.ob === true ? undefined : true } as Partial<CourseItem>), testid: "menu-ob" });
+      a.push({ label: item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)", run: () => updateItem(item.id, (item.ob === true ? { ob: undefined, obBeyond: undefined, obStretches: undefined } : { ob: true }) as Partial<CourseItem>), testid: "menu-ob" });
+    }
+    if (item?.type === "line" && item.kind !== "ob" && item.kind !== "walk") {
+      if (!(item.ob === true && item.obBeyond)) a.push({ label: "Mark as OB and beyond", run: () => updateItem(item.id, { ob: true, obBeyond: true } as Partial<CourseItem>), testid: "menu-ob-beyond" });
+      a.push({ label: "OB along a stretch", run: () => set({ obPick: item.id, tool: "select" }), testid: "menu-ob-stretch" });
     }
     // (on one of the things picked together: for all of them)
     const group = useEditor.getState().group;

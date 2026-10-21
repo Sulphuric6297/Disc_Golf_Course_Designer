@@ -198,7 +198,13 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
         </>
       )}
       {item && (item.type === "area" && item.kind === "water" || item.type === "line" && item.kind !== "ob" && item.kind !== "walk") && (
-        <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, { ob: item.ob === true ? undefined : true } as Partial<CourseItem>))}>{item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)"}</button>
+        <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, (item.ob === true ? { ob: undefined, obBeyond: undefined, obStretches: undefined } : { ob: true }) as Partial<CourseItem>))}>{item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)"}</button>
+      )}
+      {item?.type === "line" && item.kind !== "ob" && item.kind !== "walk" && (
+        <>
+          {!(item.ob === true && item.obBeyond) && <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, { ob: true, obBeyond: true } as Partial<CourseItem>))}>Mark as OB and beyond</button>}
+          {info.ground && <button className={row} role="menuitem" onClick={run(() => { getView()?.startObPick(item.id, info.ground!); useEditor.getState().set({ obPick: item.id, tool: "select" }); })}>OB stretch from here</button>}
+        </>
       )}
       {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); copySelection(); })}>{inGroup ? `Copy ${group.length}` : "Copy"}</button>}
       {canPaste() && info.ground && <button className={row} role="menuitem" onClick={run(() => pasteClipboard(info.ground))}>Paste here</button>}

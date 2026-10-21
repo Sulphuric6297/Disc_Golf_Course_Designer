@@ -4,7 +4,7 @@ import type {
   AmenityItem, AmenityKind, AreaItem, AreaKind, BasketItem, CourseDoc, CourseItem, CourseRules, DropZoneItem, Hole, LabelItem,
   Layout, LineItem, LineKind, MandoItem, MapStyle, P, PinPosition, StructureItem, StructureKind, TeeItem, TeeLevel, TreeItem
 } from "../types";
-import { centroid, corridor, dist, smoothClosed, smoothPath } from "./geom";
+import { centroid, corridor, dist, nearestOnSegment, pathLength, pointAlong, smoothClosed, smoothPath, subPath } from "./geom";
 import { landscapeOf } from "./landscapes";
 
 export const defaultStyle = (): MapStyle => ({
@@ -109,7 +109,12 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
       return { ...h, number, alsoNumbers: alsoNumbers.length ? alsoNumbers : undefined, fairwayWidth: h.fairwayWidth ?? DEFAULT_FAIRWAY_FT, fairway: h.fairway ?? true, doglegs: h.doglegs ?? [], fairwayShape: shape, fairwayShift: shift, fairwayStations: stations && (shape || shift) ? stations : undefined };
     }),
     // (A structure needs its points and a kind this version knows)
-    items: Array.isArray(raw.items) ? raw.items.filter(i => i.type !== "structure" || (Array.isArray(i.points) && i.kind in STRUCTURE_KINDS)) : [],
+    items: Array.isArray(raw.items) ? raw.items.filter(i => i.type !== "structure" || (Array.isArray(i.points) && i.kind in STRUCTURE_KINDS)).map(i => {
+      // (a line's OB stretches: pairs of numbers, or none)
+      if (i.type !== "line" || i.obStretches === undefined) return i;
+      const ok = Array.isArray(i.obStretches) ? mergeStretches(i.obStretches.filter(st => Array.isArray(st) && st.length === 2 && st.every(v => Number.isFinite(v)))) : [];
+      return { ...i, obStretches: ok.length ? ok : undefined };
+    }) : [],
     layouts: raw.layouts?.length ? raw.layouts : base.layouts,
     terrainHeights: raw.terrainHeights ?? {},
     groundPaint: raw.groundPaint ?? {},
@@ -189,6 +194,42 @@ export const areaPath = (a: Pick<AreaItem, "kind" | "straight" | "points">) => (
 export const drawnAreas = <T extends CourseItem>(items: T[]): T[] => items.map(i => (i.type === "area" && areaCurves(i) ? ({ ...i, points: areaPath(i) } as T) : i));
 /** A line as it is drawn: a smooth curve through its points, or straight between them. */
 export const linePath = (l: Pick<LineItem, "kind" | "straight" | "points">, perSegment = 8) => (curves(l) ? smoothPath(l.points, l.points.length > 60 ? 3 : perSegment) : l.points);
+
+/** Where along a line it is out of bounds, as fractions of it as drawn (in order): its stretches,
+ * or all of it. */
+export const obRanges = (l: Pick<LineItem, "obStretches">): [number, number][] =>
+  l.obStretches?.length ? l.obStretches.map(([a, b]): [number, number] => [Math.max(0, Math.min(a, b)), Math.min(1, Math.max(a, b))]).sort((x, y) => x[0] - y[0]) : [[0, 1]];
+/** Stretches put in order, overlapping ones joined and any next to nothing left out. */
+export const mergeStretches = (list: [number, number][]): [number, number][] => {
+  const out: [number, number][] = [];
+  for (const [a, b] of list.map(([a, b]): [number, number] => [Math.max(0, Math.min(a, b)), Math.min(1, Math.max(a, b))]).sort((x, y) => x[0] - y[0])) {
+    if (b - a < 0.002) continue;
+    const last = out[out.length - 1];
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+    else out.push([a, b]);
+  }
+  return out.map(([a, b]) => [Math.round(a * 10000) / 10000, Math.round(b * 10000) / 10000]);
+};
+/** A line's out-of-bounds pieces as drawn: all of it, or each of its stretches. */
+export const obPieces = (l: Pick<LineItem, "kind" | "straight" | "points" | "obStretches">): P[][] => {
+  const drawn = linePath(l);
+  return obRanges(l).map(([a, b]) => subPath(drawn, a, b)).filter(p => p.length >= 2 && pathLength(p) > 0.5);
+};
+/** Which sides of a piece of line the holes' lines are on, within `reach` ft (1: right of the way it
+ * runs, -1: left; neither near: both). Where it's OB "and beyond", OB starts at its edge on those sides. */
+export const obSides = (piece: P[], holeLines: P[][], reach = 300): (1 | -1)[] => {
+  const seen = new Set<1 | -1>();
+  const along = (line: P[]) => Array.from({ length: Math.floor(pathLength(line) / 20) + 1 }, (_, k) => pointAlong(line, k * 20).point);
+  for (const line of holeLines) for (const q of along(line)) {
+    let best = { d: Infinity, side: 1 as 1 | -1 };
+    for (let i = 1; i < piece.length; i++) {
+      const a = piece[i - 1], b = piece[i], n = nearestOnSegment(q, a, b);
+      if (n.distance < best.d) best = { d: n.distance, side: (b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x) >= 0 ? 1 : -1 };
+    }
+    if (best.d <= reach) seen.add(best.side);
+  }
+  return seen.size ? [...seen] : [1, -1];
+};
 
 /** A line's width, ft: its own, or its kind's. */
 export const lineWidth = (l: Pick<LineItem, "kind" | "width">) => l.width ?? LINE_KINDS[l.kind].width;

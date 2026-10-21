@@ -90,4 +90,6 @@ export type ViewCallbacks = {
   onDrawProgress: (points: number) => void;
   /** Plotting a hole's line by hand ended (finished or cancelled). */
   onPlotEnd: () => void;
+  /** Marking a stretch of OB along a line ended (marked or cancelled). */
+  onObPickEnd: () => void;
 };
