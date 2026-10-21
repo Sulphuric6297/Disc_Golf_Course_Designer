@@ -2,7 +2,10 @@
 // overlap, by where both are on the earth (they can be framed differently); its own elsewhere.
 // Its holes, OB and everything drawn stay as they are.
 import { heightAt } from "./terrainGrid";
-import type { CourseDoc, LidarTree, P } from "../types";
+import type { CourseDoc, LidarTree, P, TreeItem } from "../types";
+
+/** What comes across with the ground. */
+export type GroundShare = { /** the measured trees */ trees: boolean; /** the trees planted by hand */ planted: boolean };
 
 /** A plan point of course `to` on course `from`'s plan (by where both are on the earth). */
 const across = (x: number, y: number, to: CourseDoc, from: CourseDoc): P | null => {
@@ -31,8 +34,13 @@ const samePlaces = (picks: number[] | undefined, was: LidarTree[], now: LidarTre
  * trees on its ground if asked. Its holes, OB and everything drawn: as they are. So are its own
  * decisions about trees: the ones it cut down or kept stay so (found by where they stand), while
  * `from`'s cuts and keeps are its own and don't come across. A tree on one course's fairway is only
- * cleared there: each course clears its own fairways when drawn. */
-export function withGround(to: CourseDoc, from: CourseDoc, trees: boolean): CourseDoc {
+ * cleared there: each course clears its own fairways when drawn.
+ *
+ * The trees planted by hand come across too if asked (the same tree has the same id on both),
+ * except the ones `to` already has and the ones it cut down after an earlier share: a tree
+ * deleted off one course's fairway stands on the other. */
+export function withGround(to: CourseDoc, from: CourseDoc, share: boolean | GroundShare): CourseDoc {
+  const { trees, planted } = typeof share === "boolean" ? { trees: share, planted: false } : share;
   const g = to.gridSize || 20;
   const heights = { ...to.terrainHeights };
   const shift = (from.site.baseElevationFt ?? 0) - (to.site.baseElevationFt ?? 0);
@@ -56,6 +64,20 @@ export function withGround(to: CourseDoc, from: CourseDoc, trees: boolean): Cour
       minHeight: to.lidar?.minHeight ?? from.lidar.minHeight, growYears: to.lidar?.growYears ?? from.lidar.growYears,
     };
   }
-  return { ...to, terrainHeights: heights, lidar, site: { ...to.site, elevationSource: from.site.elevationSource ?? to.site.elevationSource } };
+  let items = to.items, sharedTrees = to.site.sharedTrees;
+  if (planted) {
+    const have = new Set(to.items.map(i => i.id)), cleared = new Set((to.site.sharedTrees ?? []).filter(id => !have.has(id)));
+    const added: TreeItem[] = [];
+    for (const i of from.items) {
+      if (i.type !== "tree" || have.has(i.id) || cleared.has(i.id)) continue;
+      const q = across(i.x, i.y, from, to);
+      if (q && q.x >= 0 && q.y >= 0 && q.x <= to.canvas.width && q.y <= to.canvas.height) added.push({ ...i, x: Math.round(q.x * 10) / 10, y: Math.round(q.y * 10) / 10 });
+    }
+    if (added.length) {
+      items = [...to.items, ...added];
+      sharedTrees = [...new Set([...(to.site.sharedTrees ?? []), ...added.map(i => i.id)])];
+    }
+  }
+  return { ...to, items, terrainHeights: heights, lidar, site: { ...to.site, sharedTrees, elevationSource: from.site.elevationSource ?? to.site.elevationSource } };
 }
 

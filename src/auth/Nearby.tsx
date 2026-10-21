@@ -7,7 +7,7 @@ import { create } from "zustand";
 import { courseStats } from "../lib/holeStats";
 import { normalizeCourse } from "../lib/course";
 import { safeDoc } from "../lib/safeDoc";
-import { withGround } from "../lib/sharedGround";
+import { withGround, type GroundShare } from "../lib/sharedGround";
 import { getDoc } from "../state/course";
 import { toast } from "../state/toast";
 import { getView } from "../components/MapViewport";
@@ -94,7 +94,7 @@ function useConcerns() {
 
 /** This course's ground into the others picked: straight in for an owner publishing as they go,
  * else into their draft. */
-async function shareGround(ids: string[], trees: boolean) {
+async function shareGround(ids: string[], trees: GroundShare) {
   const from = getDoc();
   let done = 0;
   for (const id of ids) {
@@ -121,6 +121,7 @@ export function NearbyCourses() {
   const [parks, setParks] = useState<string[]>([]);
   const [sharing, setSharing] = useState<Set<string> | null>(null);
   const [withTrees, setWithTrees] = useState(true);
+  const [withPlanted, setWithPlanted] = useState(true);
   const [busy, setBusy] = useState(false);
   const [value, setValue] = useState(park);
   useEffect(() => setValue(park), [park]);
@@ -168,11 +169,12 @@ export function NearbyCourses() {
                 </label>
               ))}
               <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={withTrees} onChange={e => setWithTrees(e.target.checked)} /> And the measured trees</label>
-              <p className="text-[11px] text-zinc-500">Their holes, OB and everything drawn stay as they are.</p>
+              <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={withPlanted} onChange={e => setWithPlanted(e.target.checked)} data-testid="share-planted" /> And the trees planted by hand</label>
+              <p className="text-[11px] text-zinc-500">Their holes, OB and everything drawn stay as they are. A tree cut down on one course stays on the others.</p>
               <div className="flex gap-2 justify-end">
                 <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded-lg" onClick={() => setSharing(null)}>Cancel</button>
                 <button className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" disabled={busy || !sharing.size}
-                  onClick={() => { setBusy(true); void shareGround([...sharing], withTrees).finally(() => { setBusy(false); setSharing(null); }); }} data-testid="share-ground-go">{busy ? "Copying…" : "Copy the ground"}</button>
+                  onClick={() => { setBusy(true); void shareGround([...sharing], { trees: withTrees, planted: withPlanted }).finally(() => { setBusy(false); setSharing(null); }); }} data-testid="share-ground-go">{busy ? "Copying…" : "Copy the ground"}</button>
               </div>
             </div>
           ) : list.some(n => n.role !== "viewer") && (

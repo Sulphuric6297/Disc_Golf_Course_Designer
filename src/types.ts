@@ -459,6 +459,9 @@ export interface SiteInfo {
   baseElevationFt: number;
   imagerySource?: string;
   elevationSource?: string;
+  /** Trees planted by hand that came from another course sharing this ground (by id). One of
+   * them no longer among the items was cut down here: sharing the ground again leaves it out. */
+  sharedTrees?: string[];
 }
 
 /** A tree measured from the air: where it stands (plan ft), how tall and how far its crown

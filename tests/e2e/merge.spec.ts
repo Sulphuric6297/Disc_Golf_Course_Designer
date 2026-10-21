@@ -102,3 +102,21 @@ test("one ground for the park: each course's own tree decisions stay its own (pu
   expect(out.lidar.kept).toEqual([2]);
   expect(out.lidar.removed).not.toContain(0);
 });
+
+test("one ground for the park: the trees planted by hand come across; one cut down on a course stays cut there (pure logic)", async () => {
+  const { withGround } = await import("../../src/lib/sharedGround");
+  const site = { location: null, bounds: { north: 40, south: 39.99, west: -89, east: -88.99 }, baseElevationFt: 100 };
+  const tree = (id: string, x: number) => ({ id, type: "tree", x, y: 50, rotation: 0, radius: 12, color: "#1a5" });
+  const from = { name: "A", holes: [], items: [tree("t1", 10), tree("t2", 20), { id: "ob", type: "area", kind: "ob", x: 0, y: 0, rotation: 0, points: [] }], canvas: { width: 100, height: 100 }, gridSize: 50, site, terrainHeights: {} } as any;
+  const to = { name: "B", holes: [], items: [], canvas: { width: 100, height: 100 }, gridSize: 50, site, terrainHeights: {} } as any;
+  const once = withGround(to, from, { trees: false, planted: true });
+  expect(once.items.map((i: any) => i.id)).toEqual(["t1", "t2"]);
+  expect(once.site.sharedTrees).toEqual(["t1", "t2"]);
+  // B cuts t1 down (it's on B's fairway); A shares the ground again: t1 stays cut on B, t2 stands
+  const cut = { ...once, items: once.items.filter((i: any) => i.id !== "t1") };
+  const again = withGround(cut, from, { trees: false, planted: true });
+  expect(again.items.map((i: any) => i.id)).toEqual(["t2"]);
+  // A cuts t2 down: B keeps its own
+  const aCut = { ...from, items: from.items.filter((i: any) => i.id !== "t2") };
+  expect(withGround(cut, aCut, { trees: false, planted: true }).items.map((i: any) => i.id)).toEqual(["t2"]);
+});
