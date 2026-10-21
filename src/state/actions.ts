@@ -180,7 +180,10 @@ export const placeAt = (mode: ToolMode, p: P) => {
 export const addDrawn = (kind: "area" | "line" | "structure", points: P[], opts: { straight?: boolean } = {}) => {
   const ed = editor();
   const made = kind === "area" ? createArea(ed.areaKind, points) : kind === "structure" ? createStructure(ed.structureKind, points) : createLine(ed.lineKind, points);
-  const item = opts.straight && made.type !== "structure" ? { ...made, straight: true } : made;
+  // (a woods area on a course with measured trees: the trees the tool was set to)
+  const woods = made.type === "area" && made.kind === "woods" && getDoc().lidar?.trees.length && ed.woodsTrees !== "measured"
+    ? { trees: ed.woodsTrees, ...(ed.woodsTrees === "both" ? { fill: ed.woodsFill } : {}) } : {};
+  const item = { ...(opts.straight && made.type !== "structure" ? { ...made, straight: true } : made), ...woods };
   changeDoc(d => ({ items: [...d.items, item] }));
   select(item.id);
 };

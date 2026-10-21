@@ -123,8 +123,25 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
       case "add-hole":
       case "add-tee":
         return TEE_ORDER.map(l => <Chip key={l} active={ed.teeLevel === l} color={TEE_LEVELS[l].color} onClick={() => set({ teeLevel: l })} testid={`tee-level-${l}`}>{TEE_LEVELS[l].label}</Chip>);
-      case "draw-area":
-        return [shapes(["points", "box", "circle", "freehand"]), ...(Object.keys(AREA_KINDS) as AreaKind[]).map(k => <Chip key={k} active={ed.areaKind === k} color={AREA_KINDS[k].color} onClick={() => set({ areaKind: k })} testid={`area-kind-${k}`}>{AREA_KINDS[k].label.replace(/ \(.*\)/, "")}</Chip>)];
+      case "draw-area": {
+        const kinds = (Object.keys(AREA_KINDS) as AreaKind[]).map(k => <Chip key={k} active={ed.areaKind === k} color={AREA_KINDS[k].color} onClick={() => set({ areaKind: k })} testid={`area-kind-${k}`}>{AREA_KINDS[k].label.replace(/ \(.*\)/, "")}</Chip>);
+        // Woods on a course with measured trees: which trees the new woods gets, and how thickly
+        // drawn ones fill in
+        const woods = ed.areaKind === "woods" && !!useCourse.getState().doc.lidar?.trees.length ? (
+          <div key="woods-trees" className="basis-full flex flex-wrap justify-center items-center gap-1.5" data-testid="woods-trees">
+            {([["measured", "Measured"], ["both", "Measured + drawn"], ["drawn", "Drawn"], ["none", "None"]] as const).map(([v, label]) => (
+              <Chip key={v} active={ed.woodsTrees === v} onClick={() => set({ woodsTrees: v })} testid={`woods-trees-${v}`}>{label}</Chip>
+            ))}
+            {ed.woodsTrees === "both" && (
+              <label className="flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold bg-zinc-900/90 text-zinc-300 ring-1 ring-white/10">
+                Density <input type="range" aria-label="Density of the drawn trees" min={0.1} max={1} step={0.1} value={ed.woodsFill} onChange={e => set({ woodsFill: parseFloat(e.target.value) })} className="w-24 accent-orange-500" data-testid="woods-fill" />
+                <span className="tabular-nums w-8 text-right">{Math.round(ed.woodsFill * 100)}%</span>
+              </label>
+            )}
+          </div>
+        ) : null;
+        return [shapes(["points", "box", "circle", "freehand"]), ...kinds, ...(woods ? [woods] : [])];
+      }
       case "draw-line":
         return [shapes(["points", "freehand"]), ...(Object.keys(LINE_KINDS) as LineKind[]).map(k => <Chip key={k} active={ed.lineKind === k} color={LINE_KINDS[k].color} onClick={() => set({ lineKind: k })} testid={`line-kind-${k}`}>{LINE_KINDS[k].label}</Chip>)];
       case "draw-structure":

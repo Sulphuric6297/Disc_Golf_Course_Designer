@@ -5,7 +5,6 @@ import { useAllowed } from "../auth/perms";
 import { FOCUS } from "./ui";
 import { CourseView } from "../viewport/CourseView";
 import type { ViewDoc, ViewInfo } from "../viewport/types";
-import { lassoTrees } from "../state/lidar";
 import { changeDoc, useCourse, useEditor, updateItem, updateHole, useCourse as courseStore } from "../state/course";
 import { addDrawn, addHole, boxSelect, cutStretch, moveGroup, placeAt, select } from "../state/actions";
 import { courseIssues, courseStats, openIssues } from "../lib/holeStats";
@@ -49,11 +48,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       onPlace: (mode, p) => placeAt(mode, p),
       onHole: (tee, basket) => addHole(tee, basket),
       onDrawn: (kind, pts, opts) => {
-        // (drawn to cut measured trees in, or bring them back: no area made)
-        const lasso = useEditor.getState().lidarLasso;
-        if (lasso && kind === "area") lassoTrees(pts, lasso);
-        else addDrawn(kind, pts, opts);
-        useEditor.getState().set({ tool: "select", lidarLasso: null });
+        addDrawn(kind, pts, opts);
+        useEditor.getState().set({ tool: "select" });
       },
       onChange: (id, patch) => {
         const next = { ...patch } as Record<string, unknown>;

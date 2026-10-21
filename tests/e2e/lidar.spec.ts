@@ -4,7 +4,7 @@ import { createLazPerf } from "laz-perf";
 import { test, expect, addHole, importSite, course, editorState, screenOf, withLidar, SITE } from "./fixtures";
 import { createEmptyCourse, newHole } from "../../src/lib/course";
 import { getGeoBounds } from "../../src/lib/geo/core";
-import { emptyPoints, exceptInside, grownTree, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesOver, depthFor, type LazReader } from "../../src/lib/lidar";
+import { emptyPoints, grownTree, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesOver, depthFor, type LazReader } from "../../src/lib/lidar";
 import type { LidarTree } from "../../src/types";
 
 const FT = 3.28084;
@@ -182,13 +182,4 @@ plain("saplings since the survey: none at once, more with the years, near the me
     plainExpect(near).toBe(true);
   }
   plainExpect(saplings(woods, 10)).toEqual(ten);
-});
-
-plain("woods set to all standing: nothing cleared for play inside them, the clearing as before outside (pure logic)", () => {
-  const cleared = (p: { x: number; y: number }) => p.y > 40 && p.y < 60; // a fairway across the middle
-  const inWoods = exceptInside(cleared, [[{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 100 }, { x: 0, y: 100 }]]);
-  plainExpect(inWoods({ x: 25, y: 50 }, 3)).toBe(false);
-  plainExpect(inWoods({ x: 75, y: 50 }, 3)).toBe(true);
-  plainExpect(inWoods({ x: 75, y: 10 }, 3)).toBe(false);
-  plainExpect(exceptInside(cleared, [])).toBe(cleared);
 });

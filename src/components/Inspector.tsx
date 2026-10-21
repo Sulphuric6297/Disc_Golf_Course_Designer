@@ -269,10 +269,16 @@ function WoodsTrees({ item }: { item: AreaItem }) {
   const measured = useCourse(s => !!s.doc.lidar?.trees.length);
   if (!measured) return null;
   return (
-    <Field label="Trees" hint={item.trees === "standing" ? "Every measured tree in here stands, fairways included." : item.trees === "none" ? "No trees in here." : item.trees === "drawn" ? "The app's own trees, where it plants them." : "The measured trees, cleared where the holes play."}>
-      <Segmented label="Trees" value={item.trees ?? "measured"} onChange={v => updateItem(item.id, { trees: v === "measured" ? undefined : v } as Partial<CourseItem>)}
-        options={[{ value: "measured", label: "Measured", title: "Cleared where the holes play" }, { value: "standing", label: "All standing", title: "Nothing cleared in here" }, { value: "drawn", label: "Drawn" }, { value: "none", label: "None" }]} />
-    </Field>
+    <>
+      <Field label="Trees" hint={item.trees === "both" ? "The measured trees, with drawn ones filling in where the survey saw none." : item.trees === "none" ? "No trees in here." : item.trees === "drawn" ? "The app's own trees only." : "The measured trees, cleared where the holes play."}>
+        <Segmented label="Trees" value={item.trees ?? "measured"} onChange={v => updateItem(item.id, { trees: v === "measured" ? undefined : v } as Partial<CourseItem>)}
+          options={[{ value: "measured", label: "Measured" }, { value: "both", label: "Measured + drawn", title: "Drawn trees fill in between the measured ones" }, { value: "drawn", label: "Drawn" }, { value: "none", label: "None" }]} />
+      </Field>
+      {item.trees === "both" && (
+        <Slider label="Drawn trees filling in" min={0.1} max={1} step={0.1} value={item.fill ?? 0.5} format={v => `${Math.round(v * 100)}%`}
+          onChange={v => updateItem(item.id, { fill: v } as Partial<CourseItem>, false)} onDone={() => useCourse.getState().commit()} />
+      )}
+    </>
   );
 }
 

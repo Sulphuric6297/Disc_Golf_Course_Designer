@@ -26,7 +26,7 @@ import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
 import { createMeasuredWoods, createWoods, createWoodsWhere } from "../three/woods";
-import { exceptInside, standingTrees, grownTrees } from "../lib/lidar";
+import { standingTrees, grownTrees } from "../lib/lidar";
 import type { WoodedGrid } from "../lib/forest";
 import { autoFlight, flightClock, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy, type Crown } from "../lib/flight";
 import { VIDEO_HOLD, titleStrength } from "../lib/video";
@@ -2098,11 +2098,9 @@ export class CourseView {
     if (lidar) {
       const forPlay = clearingsFor(true);
       const nowhere = nowhereFor();
-      // (woods set to all standing: nothing cleared for play inside them)
-      const standingWoods = course.items.flatMap(it => (it.type === "area" && it.kind === "woods" && it.trees === "standing" ? [this.shapeOf(it).pts] : []));
-      const cleared = exceptInside(forPlay.test, standingWoods);
+      const cleared = forPlay.test;
       this.clearedAt = (p, reach) => cleared(p, reach) || nowhere.test(p);
-      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.minHeight ?? 0, lidar.growYears ?? 0, lidar.clearFairways !== false, forPlay.key, nowhere.key, standingWoods]);
+      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.minHeight ?? 0, lidar.growYears ?? 0, lidar.clearFairways !== false, forPlay.key, nowhere.key]);
       if (this.dragging && this.lidarKey && fresh !== this.lidarKey) this.afterDrag = true;
       else this.lidarKey = fresh;
       const state = this.keep("lidar", lidar.trees, this.lidarKey, () => {
@@ -2177,13 +2175,21 @@ export class CourseView {
         return g;
       });
       // Woods: trees standing in it (shadows and all)
-      // (its own drawn trees: without measured ones, or when it asks for them; none when it says so)
-      if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn")) {
+      // (its own drawn trees: without measured ones, or when it asks for them, or filling in
+      // between the measured ones as thickly as it asks; none when it says so)
+      const filling = measured && a.kind === "woods" && a.trees === "both";
+      if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn" || filling)) {
         const here = clearings.near(boundsOf(a.points));
-        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key]), () => {
+        const fill = filling ? Math.min(1, Math.max(0.1, a.fill ?? 0.5)) : 1;
+        const standing = filling ? this.lidarState?.stand ?? [] : [];
+        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key, filling ? [fill, this.lidarKey] : 0]), () => {
           const land = landscapeOf(st);
           this.plantings++;
-          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, here.test);
+          // (filling in: never under a measured tree's crown)
+          const box = boundsOf(a.points), trees = this.doc?.course.lidar?.trees ?? [];
+          const near = standing.map(k => trees[k]).filter(t => t && t[0] >= box.minX - 40 && t[0] <= box.maxX + 40 && t[1] >= box.minY - 40 && t[1] <= box.maxY + 40);
+          const keepOut = filling ? (p: P, reach: number) => here.test(p, reach) || near.some(t => Math.hypot(t[0] - p.x, t[1] - p.y) < t[3] * 0.8 + 4) : here.test;
+          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, keepOut, 22 / Math.sqrt(fill));
           woods.traverse(o => { o.userData.itemId = a.id; });
           this.shadowsDirty = true;
           return woods;
@@ -3670,7 +3676,7 @@ export class CourseView {
   /** A finger on a handle: it moves once the finger does (a handle's hit area is big for a finger,
    * so a tap on a hole's line often lands on one); a tap selects what the handle belongs to. */
   private fingerOnHandle(e: PointerEvent, h: Handle) {
-    const x0 = e.clientX, y0 = e.clientY, id = e.pointerId;
+    const x0 = e.clientX, y0 = e.clientY, id = e.pointerId, began = performance.now();
     let drag: Drag | null = null, moved = false;
     const move = (ev: PointerEvent) => {
       if (ev.pointerId !== id) return;
@@ -3687,10 +3693,11 @@ export class CourseView {
     const up = (ev: PointerEvent) => {
       if (ev.pointerId !== id) return;
       cleanup();
+      const pinched = this.touchIds.size > 0 || this.pinchAt >= began - 50 || performance.now() - this.pinchAt < 350;
       if (drag) {
         drag.end(ev);
         this.setDragging(false);
-      } else if (!moved && ev.type === "pointerup") {
+      } else if (!moved && !pinched && ev.type === "pointerup") {
         const owner = this.selectedId ?? this.doc?.activeHoleId ?? null;
         if (owner && owner !== this.selectedId) this.cb.onSelect(owner);
       }
@@ -3700,10 +3707,14 @@ export class CourseView {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
+      this.endDragListeners = null;
     };
+    // (a second finger ends this: see secondFinger)
+    this.endDragListeners?.();
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
+    this.endDragListeners = cleanup;
   }
 
   /** Holding a finger still on an item opens its menu, like a right-click. */
@@ -3783,14 +3794,23 @@ export class CourseView {
     }
     const handleEl = target.closest?.("[data-handle]") as HTMLElement | null;
     if (handleEl && e.button === 0) {
-      e.stopPropagation();
-      e.preventDefault();
       const h = this.handles.find(x => x.el === handleEl);
       if (!h) return;
       if (e.pointerType === "touch" && h.kind !== "draw") {
+        // (the handles of the hole in hand while it isn't picked: a tap picks it, a drag moves
+        // the map, not the hole; nothing moves by accident while panning or pinching)
+        const owner = this.selectedId ?? this.doc?.activeHoleId ?? null;
+        if (owner !== this.selectedId) {
+          this.gesture(e, { click: () => { if (owner) this.cb.onSelect(owner); } });
+          return;
+        }
+        e.stopPropagation();
+        e.preventDefault();
         this.fingerOnHandle(e, h);
         return;
       }
+      e.stopPropagation();
+      e.preventDefault();
       const drag = h.start(e);
       if (!drag) { this.invalidate(); return; }
       const id = e.pointerId;
@@ -3973,7 +3993,8 @@ export class CourseView {
     }
     // Holes, areas and lines move only once selected (dragging across the map still pans, or
     // draws a box); a hole itself never moves (move its tee or basket); a locked item never moves
-    const big = !item || item.type === "area" || item.type === "line" || item.type === "structure";
+    // With a finger, everything moves only once picked: a drag across a thing pans the map
+    const big = !item || item.type === "area" || item.type === "line" || item.type === "structure" || touch;
     if ((big && hit !== this.selectedId) || !item || item.locked) {
       if (boxing) e.stopPropagation();
       else stop();

@@ -118,7 +118,10 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
                   <Toggle label="Cut trees off the fairways" hint="Off: the measured trees stand where the holes play, cut by hand only" checked={doc.lidar.clearFairways !== false}
                     onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, clearFairways: v ? undefined : false } } : {}))} />
                 </div>
-                <div className="text-[11px] text-zinc-500 mt-1">In one place: draw a woods area over it and set its trees (Measured, All standing, Drawn or None). A tree by itself: click it, or its stump.</div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <Button small onClick={() => ed.set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", woodsTrees: "both" })} testid="fill-trees">Fill in trees in an area</Button>
+                </div>
+                <div className="text-[11px] text-zinc-500 mt-1">Draw a patch (any size, inside a wood or not): drawn trees fill it in between the measured ones, as thickly as you set. Each patch keeps its own setting. A tree by itself: click it, or its stump.</div>
               </div>
             )}
           </div>

@@ -102,10 +102,12 @@ export interface AreaItem extends BaseItem {
   /** Out of bounds: water is unless set false; true also draws the red OB edge on the map. */
   ob?: boolean;
   /** Woods: which trees stand in it in 3D: those measured from the air (the default, when the
-   * course has them; cleared where the holes play), the same but all standing (nothing cleared
-   * inside: a wooded hole keeps its woods), the app's own drawn trees, or none (measured ones
-   * inside cut down). */
-  trees?: "measured" | "standing" | "drawn" | "none";
+   * course has them), the measured ones with the app's own drawn trees filling in between them
+   * (where the survey missed trees, or they've grown since), drawn trees only, or none (measured
+   * ones inside cut down). */
+  trees?: "measured" | "both" | "drawn" | "none";
+  /** With "both": how thickly the drawn trees fill in, 0.1 to 1 (half by default). */
+  fill?: number;
   /** Brought in from OpenStreetMap, or found on the satellite photo (replaced on re-import). */
   importSource?: "osm" | "photo";
 }
