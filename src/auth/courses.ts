@@ -20,6 +20,7 @@ import { isEmpty, show } from "../state/files";
 import { toast } from "../state/toast";
 import type { CourseDoc } from "../types";
 import { api, ApiFail, useAuth } from "./api";
+import type { Perms } from "./perms";
 
 export type Role = "owner" | "editor" | "viewer";
 export interface Summary { par: number; length: number; units: "ft" | "m"; canvas: { width: number; height: number }; lines: [number, number][][] }
@@ -59,7 +60,9 @@ export const useServerCourse = create<{
   preview: Preview | null;
   /** Drafts waiting for the owner's OK (for the owner). */
   pending: number;
-}>(() => ({ id: null, version: 0, role: null, status: "saved", conflict: "", draft: false, live: true, behind: false, approval: false, preview: null, pending: 0 }));
+  /** What a viewer may see (null: the default). */
+  perms: Perms | null;
+}>(() => ({ id: null, version: 0, role: null, status: "saved", conflict: "", draft: false, live: true, behind: false, approval: false, preview: null, pending: 0, perms: null }));
 const state = () => useServerCourse.getState();
 const set = (s: Partial<ReturnType<typeof state>>) => useServerCourse.setState(s);
 
@@ -166,14 +169,21 @@ export const startServerAutosave = () => {
     window.clearTimeout(timer);
     timer = window.setTimeout(() => void saveNow(), 1500);
   });
-  // View only: always the Select tool on the holes (look and pick, nothing to draw or place)
+  // View only: always the Select tool on the holes (look and pick, nothing to draw or place), and
+  // only the views the viewer may see
   const keepSelect = useEditor.subscribe(e => {
-    if (useCourse.getState().readOnly && (e.tool !== "select" || e.step !== "holes")) e.set({ tool: "select", step: "holes" });
+    if (!useCourse.getState().readOnly) return;
+    if (e.tool !== "select" || e.step !== "holes") e.set({ tool: "select", step: "holes" });
+    const may = (k: keyof Perms) => state().role !== "viewer" || ((state().perms ?? {})[k] ?? k !== "downloads");
+    if (e.view === "3d" && !may("view3d")) e.set({ view: "2d" });
+    else if (e.view === "2d" && !may("map") && may("view3d")) e.set({ view: "3d" });
+    if (e.teeView && !may("view3d") && !may("flyovers")) e.set({ teeView: null });
+    if (e.flyover && !may("flyovers")) e.set({ flyover: false });
   });
   return () => { stopSaving(); keepSelect(); };
 };
 
-type CourseRead = { id: string; version: number; role: Role; approval: boolean; live: boolean; doc: CourseDoc; hasBackground: boolean; hasThumbnail: boolean };
+type CourseRead = { id: string; version: number; role: Role; approval: boolean; live: boolean; perms: Perms | null; doc: CourseDoc; hasBackground: boolean; hasThumbnail: boolean };
 const readCourse = (id: string) => api<CourseRead>("GET", `courses/${id}`);
 const readPhoto = async (id: string, has: boolean) => (has ? (await api<{ data: string | null }>("GET", `courses/${id}/background`)).data : null);
 
@@ -203,7 +213,7 @@ export async function openServerCourse(id: string, quiet = false) {
         if (d.hasPhoto) shown = (await api<{ data: string | null }>("GET", `courses/${id}/draft/photo`)).data;
       } else base = { doc: usable(c.doc), version: c.version, photo };
     }
-    set({ id, version: c.version, role: c.role, approval: c.approval, live: c.live, behind: !!base && c.version > base.version, status: "saved", conflict: "", draft, preview: null, pending: 0 });
+    set({ id, version: c.version, role: c.role, approval: c.approval, live: c.live, perms: c.perms, behind: !!base && c.version > base.version, status: "saved", conflict: "", draft, preview: null, pending: 0 });
     thumbFor = null;
     thumbAt = 0;
     sentBackground = shown;
@@ -224,7 +234,7 @@ const reopen = () => { const id = state().id; return id ? openServerCourse(id) :
 /** A course not on the server yet: saved there (yours) once something is on it. */
 export async function startUnsaved(doc: CourseDoc) {
   if (state().id) await saveNow();
-  set({ id: null, version: 0, role: "owner", status: "saved", conflict: "", draft: false, live: true, behind: false, approval: false, preview: null, pending: 0 });
+  set({ id: null, version: 0, role: "owner", status: "saved", conflict: "", draft: false, live: true, behind: false, approval: false, preview: null, pending: 0, perms: null });
   sentBackground = null;
   base = null;
   opened = null;

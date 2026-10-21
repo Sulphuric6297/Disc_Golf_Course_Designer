@@ -6,6 +6,8 @@ import { changeDoc, useCourse, useEditor } from "../state/course";
 import { deleteRecent, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../state/files";
 import type { PlanMeta } from "../lib/storage";
 import { AccountMenu, goHome } from "../auth/AccountMenu";
+import { useAllowed } from "../auth/perms";
+import { SITE_TOKEN } from "../auth/PublicSite";
 import { SERVER } from "../auth/api";
 
 const Logo = () => (
@@ -19,6 +21,8 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
   const name = useCourse(s => s.doc.name);
   // (view only: the name as text, and no steps)
   const readOnly = useCourse(s => s.readOnly);
+  // (a viewer: only the views and files they may have)
+  const may2d = useAllowed("map"), may3d = useAllowed("view3d"), mayFiles = useAllowed("downloads");
   const ed = useEditor();
   const [menu, setMenu] = useState(false);
   const [recent, setRecent] = useState<PlanMeta[]>([]);
@@ -47,7 +51,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
           onChange={e => changeDoc(() => ({ name: e.target.value }), false)}
           onBlur={() => useCourse.getState().commit()}
         />}
-        <div className="relative" ref={menuRef}>
+        {!SITE_TOKEN && <div className="relative" ref={menuRef}>
           <button className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm text-zinc-300 hover:bg-zinc-800" onClick={() => setMenu(m => !m)} aria-haspopup="menu" aria-expanded={menu} data-testid="file-menu">
             File <ChevronDown size={14} />
           </button>
@@ -55,7 +59,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
             <div className="absolute left-0 top-full mt-1 w-72 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-1 z-50" role="menu">
               <button className={item} role="menuitem" onClick={() => { setMenu(false); void newCourse(); }}><FilePlus size={15} /> New course</button>
               <button className={item} role="menuitem" onClick={() => { setMenu(false); fileRef.current?.click(); }}><FolderOpen size={15} /> Open a course file…</button>
-              <button className={item} role="menuitem" onClick={() => { setMenu(false); saveCourseFile(); }}><Save size={15} /> Save as a file</button>
+              {mayFiles && <button className={item} role="menuitem" onClick={() => { setMenu(false); saveCourseFile(); }}><Save size={15} /> Save as a file</button>}
               <div className="border-t border-zinc-800 my-1" />
               <div className="px-3 py-1 text-[10px] uppercase tracking-wider font-bold text-zinc-500">{SERVER ? "Courses" : "Recent courses"}</div>
               {recent.length === 0 && <div className="px-3 py-1.5 text-xs text-zinc-500">None yet.</div>}
@@ -70,7 +74,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
               ))}
             </div>
           )}
-        </div>
+        </div>}
         <input ref={fileRef} type="file" accept=".json,.dgcourse.json,application/json" className="hidden" aria-label="Open course file" onChange={e => { const f = e.target.files?.[0]; if (f) void openCourseFile(f); e.target.value = ""; }} />
       </div>
 
@@ -93,7 +97,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
 
       <div className="flex items-center gap-2">
         <div className="flex bg-zinc-900 border border-zinc-800 rounded-xl p-1" role="radiogroup" aria-label="View">
-          {(["2d", "3d"] as const).map(v => (
+          {(["2d", "3d"] as const).filter(v => (v === "3d" ? may3d : may2d)).map(v => (
             <button key={v} role="radio" aria-checked={ed.view === v} onClick={() => ed.set({ view: v })} title={v === "2d" ? "Top-down map (2)" : "Tilted 3D view (3)"} className={`px-3 py-1 rounded-lg text-sm font-bold ${ed.view === v ? "bg-sky-600 text-white" : "text-zinc-300 hover:bg-zinc-800"}`}>
               {v.toUpperCase()}
             </button>

@@ -400,3 +400,50 @@ test("comments: pinned on a basket (moving with it), @mention, the bell, a reply
   await expect.poll(async () => (await admin.evaluate(id => (window as any).__dgCourse().items.find((i: any) => i.id === id).x, b.id))).toBeGreaterThan(b.x + 5);
   await expect.poll(async () => (await admin.getByTestId("comment-pin").boundingBox())!.x).toBeGreaterThan(pin0.x + 10);
 });
+
+test("a public link: the site with what it allows (pictures, numbers), 3D when allowed; no account", async ({ browser }) => {
+  test.setTimeout(240_000);
+  const admin = await as(browser, "admin");
+  await admin.getByTestId("my-courses").getByTestId("course-card").click();
+  await admin.getByTestId("share-button").click();
+  await admin.getByTestId("new-link").click();
+  await admin.getByTestId("link-form").getByLabel("Label").fill("Club website");
+  await admin.getByTestId("save-link").click();
+  await expect(admin.getByTestId("link")).toHaveCount(1, { timeout: 120_000 });
+  await expect(admin.getByTestId("site-state")).toContainText("Shows version", { timeout: 120_000 });
+  const token = await admin.evaluate(async () => {
+    const id = JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith("hyzerlab:last:"))!) ?? "null") ?? localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith("hyzerlab:last:"))!);
+    const links = await (await fetch(`./api/courses/${id}/links`)).json();
+    return links[0].token as string;
+  }).catch(async () => {
+    const id = await admin.evaluate(() => localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith("hyzerlab:last:"))!));
+    return admin.evaluate(async id => (await (await fetch(`./api/courses/${id}/links`)).json())[0].token as string, id);
+  });
+
+  // Anyone with it: no account
+  const anon = await browser.newContext();
+  await offline(anon);
+  const page = await anon.newPage();
+  await page.goto(`/#site=${token}`);
+  await expect(page.getByTestId("public-site")).toBeVisible();
+  await expect(page.getByTestId("public-totals")).toBeVisible();
+  const holes = (await course(admin)).holes.length;
+  await expect(page.getByTestId("public-holes").locator("tbody tr")).toHaveCount(holes);
+  await expect(page.getByTestId("public-signs").locator("img")).toHaveCount(holes);
+  await expect(page.getByRole("img", { name: /^Map of/ })).toBeVisible();
+  await expect(page.getByTestId("explore")).toHaveCount(0);
+
+  // 3D allowed: the course to look round, view only, no files
+  await admin.getByTestId("link").getByRole("button", { name: "Change" }).click();
+  await admin.getByTestId("link-form").getByTestId("part-view3d").check();
+  await admin.getByTestId("save-link").click();
+  await expect(admin.getByTestId("link")).toContainText("3D", { timeout: 120_000 });
+  await expect(admin.getByTestId("update-site")).toHaveText(/Update site/, { timeout: 120_000 });
+  await page.reload();
+  await page.getByTestId("explore").click();
+  await expect(page.getByTestId("viewer-panel")).toBeVisible();
+  await expect(page.getByTestId("file-menu")).toHaveCount(0);
+  await expect(page.getByTestId("copy-course")).toHaveCount(0);
+  await expect.poll(async () => (await course(page)).holes.length).toBe(holes);
+  await anon.close();
+});

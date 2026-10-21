@@ -31,6 +31,8 @@ export const summary = z.object({
 }).optional();
 
 export type Id = { Params: { id: string } };
+/** What a viewer may see (see public.ts: the same parts as a link). */
+const viewerPerms = z.record(z.string().max(20), z.boolean());
 export const ids = z.object({ id: z.uuid("Not found") });
 
 /** Your role on the course, at least `min`: else not found (or not allowed, for a member). */
@@ -85,13 +87,13 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
   app.get<Id>("/api/courses/:id", async req => {
     const { id } = parse(ids, req.params);
     const { a, role: r } = await role(req, id, "viewer");
-    const [m] = await sql`select live from course_members where course_id = ${id} and user_id = ${a.user.id}`;
+    const [m] = await sql`select live, perms from course_members where course_id = ${id} and user_id = ${a.user.id}`;
     const [c] = await sql`
       select c.doc, c.version, c.approval,
         exists (select 1 from course_backgrounds b where b.course_id = c.id) as has_background,
         exists (select 1 from course_thumbnails t where t.course_id = c.id) as has_thumbnail
       from courses c where c.id = ${id}`;
-    return { id, version: c.version, role: r, approval: c.approval, live: r === "owner" && m.live, doc: c.doc, hasBackground: c.has_background, hasThumbnail: c.has_thumbnail };
+    return { id, version: c.version, role: r, approval: c.approval, live: r === "owner" && m.live, perms: r === "viewer" ? m.perms : null, doc: c.doc, hasBackground: c.has_background, hasThumbnail: c.has_thumbnail };
   });
 
   // The owner's own changes, as they go (editors change a draft, and publish it)
@@ -184,9 +186,9 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
     const { id } = parse(ids, req.params);
     await role(req, id, "viewer");
     const rows = await sql`
-      select u.id, u.username, u.display_name, m.role from course_members m join users u on u.id = m.user_id
+      select u.id, u.username, u.display_name, m.role, m.perms from course_members m join users u on u.id = m.user_id
       where m.course_id = ${id} order by case m.role when 'owner' then 0 when 'editor' then 1 else 2 end, lower(u.username)`;
-    return rows.map(r => ({ userId: r.id, username: r.username, displayName: r.display_name, role: r.role }));
+    return rows.map(r => ({ userId: r.id, username: r.username, displayName: r.display_name, role: r.role, perms: r.perms }));
   });
 
   /** Would the course still have an owner without this person as one? */
@@ -198,11 +200,13 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
   app.post<Id>("/api/courses/:id/members", async req => {
     const { id } = parse(ids, req.params);
     await role(req, id, "owner");
-    const b = parse(z.object({ username: z.string().trim().max(64), role: z.enum(["owner", "editor", "viewer"]) }), req.body);
+    // (what a viewer may see: null, everything but downloads)
+    const b = parse(z.object({ username: z.string().trim().max(64), role: z.enum(["owner", "editor", "viewer"]), perms: viewerPerms.nullable().optional() }), req.body);
     const [u] = await sql`select id, username from users where lower(username) = lower(${b.username}) and not disabled`;
     if (!u) throw new ApiError(404, "No one by that username");
     if (b.role !== "owner" && !(await ownersBesides(id, u.id))) throw new ApiError(400, "A course needs an owner");
-    await sql`insert into course_members (course_id, user_id, role) values (${id}, ${u.id}, ${b.role}) on conflict (course_id, user_id) do update set role = excluded.role`;
+    await sql`insert into course_members (course_id, user_id, role, perms) values (${id}, ${u.id}, ${b.role}, ${b.perms ? sql.json(b.perms as never) : null})
+      on conflict (course_id, user_id) do update set role = excluded.role, perms = case when ${b.perms === undefined} then course_members.perms else excluded.perms end`;
     await audit(sql, req, "course.shared", { course: id, username: u.username, role: b.role });
     return { ok: true };
   });

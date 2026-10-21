@@ -2,6 +2,7 @@
 // HyzerLab server (SERVER) the courses are kept there instead (src/auth/courses.ts).
 import { generateId } from "../constants";
 import { SERVER } from "../auth/api";
+import { SITE_TOKEN } from "../auth/PublicSite";
 import { listServerCourses, newServerCourse, openServerCourse, removeServerCourse, restoreServer, startServerAutosave, startUnsaved } from "../auth/courses";
 import { createEmptyCourse, normalizeCourse } from "../lib/course";
 import { AUTOSAVE_KEY, idbGet, idbSet, listPlans, loadPlan, removePlan, storePlan, type PlanMeta } from "../lib/storage";
@@ -116,6 +117,8 @@ export const startAutosave = () =>
   });
 
 export const restoreAutosave = async () => {
+  // (a public course page: the course it shows is open already)
+  if (SERVER && SITE_TOKEN) return true;
   if (SERVER) return restoreServer();
   try {
     const data = await idbGet(AUTOSAVE_KEY);
