@@ -212,22 +212,41 @@ export const tileFeatures = (layers: TileLayer[], tx: number, ty: number, z = ZO
 export const joinLines = (features: OsmFeature[]): OsmFeature[] => {
   const close = (a: LatLon, b: LatLon) => Math.abs(a.lat - b.lat) < 1e-5 && Math.abs(a.lon - b.lon) < 1e-5;
   const lines = features.filter(f => f.geom === "line").map(f => ({ ...f, points: [...f.points] }));
-  for (let joined = true; joined; ) {
-    joined = false;
-    for (let i = 0; i < lines.length && !joined; i++) {
-      for (let j = 0; j < lines.length && !joined; j++) {
-        const a = lines[i], b = lines[j];
-        if (i === j || a.kind !== b.kind || a.name !== b.name) continue;
-        const aEnd = a.points[a.points.length - 1];
-        if (close(aEnd, b.points[0])) a.points.push(...b.points.slice(1));
-        else if (close(aEnd, b.points[b.points.length - 1])) a.points.push(...[...b.points].reverse().slice(1));
-        else continue;
-        lines.splice(j, 1);
-        joined = true;
+  // Each line's first and last points filed by kind, name and a 1e-5° grid cell (one pass, not a
+  // scan of every pair after every join: a tile can hold thousands of pieces)
+  const key = (f: OsmFeature, p: LatLon, dy = 0, dx = 0) => `${f.kind}|${f.name ?? ""}|${Math.round(p.lat / 1e-5) + dy}|${Math.round(p.lon / 1e-5) + dx}`;
+  const starts = new Map<string, number[]>(), ends = new Map<string, number[]>();
+  const file = (to: Map<string, number[]>, i: number, p: LatLon) => {
+    const k = key(lines[i], p);
+    const at = to.get(k);
+    if (at) at.push(i); else to.set(k, [i]);
+  };
+  const first = (l: OsmFeature) => l.points[0], last = (l: OsmFeature) => l.points[l.points.length - 1];
+  lines.forEach((l, i) => { file(starts, i, first(l)); file(ends, i, last(l)); });
+  const gone = new Set<number>();
+  // A piece starting (or else ending) where line i ends
+  const next = (i: number) => {
+    const a = lines[i], end = last(a);
+    for (const [from, reversed] of [[starts, false], [ends, true]] as const) {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        for (const j of from.get(key(a, end, dy, dx)) ?? []) {
+          const b = lines[j];
+          if (j !== i && !gone.has(j) && b.kind === a.kind && b.name === a.name && close(end, reversed ? last(b) : first(b))) return { j, reversed };
+        }
       }
     }
-  }
-  return [...features.filter(f => f.geom !== "line"), ...lines];
+    return null;
+  };
+  lines.forEach((a, i) => {
+    if (gone.has(i)) return;
+    for (let n = next(i); n; n = next(i)) {
+      const b = lines[n.j];
+      a.points.push(...(n.reversed ? [...b.points].reverse() : b.points).slice(1));
+      gone.add(n.j);
+      file(ends, i, last(a));
+    }
+  });
+  return [...features.filter(f => f.geom !== "line"), ...lines.filter((_, i) => !gone.has(i))];
 };
 
 /** The tiles (x, y at ZOOM) covering a box. */

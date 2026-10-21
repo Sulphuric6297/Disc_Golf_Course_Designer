@@ -745,21 +745,22 @@ export class CourseView {
     if (!doc || !s?.complete) return null;
     const ground = (x: number, y: number) => this.h(x, y);
     const set = flyoverOf(doc.course, doc.course.holes.find(h => h.id === holeId));
-    const f = autoFlight(smoothPath(s.line, 16), set, ground, (p, r) => this.canopyAt(p, r));
-    // (each at the flyover's height)
-    return f ? keysFromFlight(f, ground, 4, set.height) : null;
+    const canopy = (p: P, r: number) => this.canopyAt(p, r);
+    const f = autoFlight(smoothPath(s.line, 16), set, ground, canopy);
+    // (each at the flyover's height, out of the trees)
+    return f ? keysFromFlight(f, ground, 4, set.height, canopy) : null;
   }
 
   /** What stands over a point, within `reach` ft (for flyovers): where trees' leaves start (about
    * a third of the way up a broadleaf, lower on a pine, at the ground for a bush) and their tops,
    * their trunks close by; woods and buildings from the ground up. Ft on the terrain's datum. */
+  private drawnWoods = new WeakMap<object, { pts: P[]; box: ReturnType<typeof boundsOf> }>();
   private canopyAt(p: P, reach: number): Canopy | null {
     const doc = this.doc;
     if (!doc) return null;
     let base = Infinity, top = -Infinity;
     const trunks: P[] = [];
-    const near = (pts: P[], within = reach) => {
-      const b = boundsOf(pts);
+    const near = (pts: P[], within = reach, b = boundsOf(pts)) => {
       if (p.x < b.minX - within || p.x > b.maxX + within || p.y < b.minY - within || p.y > b.maxY + within) return false;
       return pointInPolygon(p, pts) || distanceToPath(p, [...pts, pts[0]]) < within;
     };
@@ -775,8 +776,13 @@ export class CourseView {
         }
         if (d < reach + TRUNK_ROOM) trunks.push({ x: i.x, y: i.y });
       } else if (i.type === "area" && i.kind === "woods") {
-        // (its outline as drawn, once it is close)
-        if (near(i.points, reach + 30) && near(areaPath(i))) solid(this.h(p.x, p.y), WOODS_TOP_FT);
+        // (its outline as drawn, bulging past its corners where it curves)
+        let drawn = this.drawnWoods.get(i);
+        if (!drawn) {
+          const pts = areaPath(i);
+          this.drawnWoods.set(i, (drawn = { pts, box: boundsOf(pts) }));
+        }
+        if (near(drawn.pts, reach, drawn.box)) solid(this.h(p.x, p.y), WOODS_TOP_FT);
       } else if (i.type === "structure" && !isLineKind(i.kind)) {
         if (near(i.points)) solid(this.h(p.x, p.y), structureHeight(i) + 10);
       }

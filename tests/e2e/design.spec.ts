@@ -306,6 +306,12 @@ plain("a creek's width along it: its factor at each point, eased between them; k
   // (the wide point taken out: the same all along again)
   plainExpect(widthsWithout(creek, 1)).toBeUndefined();
   plainExpect(widthsWithPoint({ ...creek, widths: undefined }, 0)).toBeUndefined();
+  // Made a path for a while: the same path all along, its creek widths kept in step as it is edited
+  const path = { ...creek, kind: "path" as const };
+  plainExpect(widthVaries(path)).toBe(false);
+  plainExpect(widthsWithPoint(path, 0)).toEqual([1, 2, 3, 1]);
+  plainExpect(widthsWithEnd(path, 1)).toEqual([1, 3, 1, 1]);
+  plainExpect(widthsWithout(path, 0)).toEqual([3, 1]);
 });
 
 plain("drawn areas curve round through their corners; rectangles, parking and buildings keep their corners", () => {

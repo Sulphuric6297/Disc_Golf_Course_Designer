@@ -388,6 +388,18 @@ plain("map tiles: a path over two tiles comes in once, joined at the tiles' edge
   plainExpect(lons).toHaveLength(3);
   plainExpect(lons[0]).toBeLessThan(lons[1]);
   plainExpect(lons[1]).toBeLessThan(lons[2]);
+  // Thousands of pieces in any order join at once (a busy tile; checking every pair after every join froze the page)
+  // (800 paths, each in four pieces)
+  const pieces = Array.from({ length: 3200 }, (_, k) => {
+    const lat = 40 + Math.floor(k / 4) * 1e-3, lon = (k % 4) * 1e-3;
+    return { geom: "line" as const, kind: "path" as const, points: [{ lat, lon }, { lat: lat + 3e-4, lon: lon + 5e-4 }, { lat, lon: lon + 1e-3 }] };
+  });
+  for (let k = pieces.length - 1; k > 0; k--) { const r = (k * 7919) % (k + 1); [pieces[k], pieces[r]] = [pieces[r], pieces[k]]; }
+  const t0 = performance.now();
+  const paths = joinLines(pieces);
+  plainExpect(performance.now() - t0).toBeLessThan(2000);
+  plainExpect(paths).toHaveLength(800);
+  for (const p of paths) plainExpect(p.points).toHaveLength(4 * 2 + 1);
   // Indoors and parking aisles are left out
   const skip = (tags: Record<string, string | number>) => tileFeatures([{ name: "transportation", extent: E, features: [{ type: 2, tags, rings: [[{ x: 0, y: 0 }, { x: 10, y: 10 }]] }] }], 100, 200);
   plainExpect(skip({ class: "path", indoor: 1 })).toEqual([]);

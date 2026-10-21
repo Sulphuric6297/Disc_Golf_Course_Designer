@@ -180,12 +180,17 @@ export const keyFlight = (keys: FlyKey[], set: FlyoverSettings, ground: (x: numb
 };
 
 /** Keyframes to start from: the flight it flies by itself, at a few moments (to change by hand),
- * each `alt` ft up (the flyover's height; unset: as high as that flight is there). */
-export const keysFromFlight = (f: Flight, ground: (x: number, y: number) => number, count = 4, alt?: number): FlyKey[] =>
+ * each `alt` ft up (the flyover's height; unset: as high as that flight is there), under or over
+ * the leaves of what stands there as the flight itself goes. */
+export const keysFromFlight = (f: Flight, ground: (x: number, y: number) => number, count = 4, alt?: number, obstacles: Obstacles = () => null): FlyKey[] =>
   Array.from({ length: count }, (_, k) => {
     const i = Math.round((k / (count - 1)) * (f.cam.length - 1));
     const c = f.cam[i], l = f.look[i];
-    return { x: round1(c.x), y: round1(c.y), alt: round1(alt ?? c.z - ground(c.x, c.y)), lookX: round1(l.x), lookY: round1(l.y) };
+    const g = ground(c.x, c.y);
+    let up = alt ?? c.z - g;
+    const o = alt === undefined ? null : obstacles(c, 4);
+    if (o && g + up + LEAVES > o.base && g + up - LEAVES < o.top) up = o.base - LEAVES >= g + 6 ? o.base - LEAVES - g : o.top + LEAVES + 3 - g;
+    return { x: round1(c.x), y: round1(c.y), alt: round1(up), lookX: round1(l.x), lookY: round1(l.y) };
   });
 
 /** A keyframe halfway between two (to add one). */

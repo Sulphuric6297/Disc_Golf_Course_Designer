@@ -405,6 +405,9 @@ test("from hole to hole: the panel's arrows and [ ] go to the previous and next 
   await expect.poll(sel).toBe(c.id);
   await page.getByTestId("hole-prev").click();
   await expect.poll(sel).toBe(b.id);
+  // AltGr types [ and ] on many keyboards (Ctrl+Alt on Windows)
+  await page.keyboard.press("Control+Alt+BracketRight");
+  await expect.poll(sel).toBe(c.id);
 });
 
 test("automatic walks to the next hole turned off and on from the Holes step", async ({ page }) => {

@@ -217,23 +217,24 @@ export const widthAlong = (l: Pick<LineItem, "kind" | "width" | "widths" | "poin
     return base * (f[i - 1] + (f[i] - f[i - 1]) * e);
   };
 };
-/** A line's factors with a point put in after `index` (its factor between its neighbours'), or
- * taken out: kept in step with its points. */
+/** A line's factors kept in step with its points as one is put in after `index` (its factor
+ * between its neighbours'), added at an end or taken out: whatever kind it is now, so a creek made
+ * a path for a while is the same creek again. */
+const storedWidths = (l: Pick<LineItem, "widths" | "points">) => (l.widths && l.widths.length === l.points.length && l.widths.some(v => Math.abs(v - 1) > 1e-3) ? l.widths : null);
 export const widthsWithPoint = (l: Pick<LineItem, "kind" | "widths" | "points">, index: number): number[] | undefined => {
-  if (!widthVaries(l)) return undefined;
-  const f = widthFactors(l);
+  const f = storedWidths(l);
+  if (!f) return undefined;
   const next = f[Math.min(f.length - 1, index + 1)];
   return [...f.slice(0, index + 1), index + 1 < f.length ? (f[index] + next) / 2 : f[index], ...f.slice(index + 1)];
 };
 export const widthsWithEnd = (l: Pick<LineItem, "kind" | "widths" | "points">, end: 0 | 1): number[] | undefined => {
-  if (!widthVaries(l)) return undefined;
-  const f = widthFactors(l);
+  const f = storedWidths(l);
+  if (!f) return undefined;
   return end ? [...f, f[f.length - 1]] : [f[0], ...f];
 };
 export const widthsWithout = (l: Pick<LineItem, "kind" | "widths" | "points">, index: number): number[] | undefined => {
-  if (!widthVaries(l)) return undefined;
-  const f = widthFactors(l).filter((_, k) => k !== index);
-  return f.some(v => Math.abs(v - 1) > 1e-3) ? f : undefined;
+  const f = storedWidths(l)?.filter((_, k) => k !== index);
+  return f?.some(v => Math.abs(v - 1) > 1e-3) ? f : undefined;
 };
 
 export const newHole = (over: Partial<Hole> = {}): Hole => ({ id: `hole-${generateId()}`, doglegs: [], fairwayWidth: DEFAULT_FAIRWAY_FT, fairway: true, ...over });

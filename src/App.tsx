@@ -21,7 +21,7 @@ import { canPaste, copySelection, cutSelection, deleteSelection, duplicateSelect
 import { osmFailedToast } from "./state/osm";
 import { makeCopy, openSharedLink, restoreAutosave, startAutosave } from "./state/files";
 import { toast, useToasts } from "./state/toast";
-import { holeStats } from "./lib/holeStats";
+import { courseStats, holeStats } from "./lib/holeStats";
 import { shareUrl } from "./lib/share";
 import { isImported, reframeDesign, type ImportedSite } from "./lib/importSite";
 import { geoRefOf } from "./lib/geoRef";
@@ -269,7 +269,8 @@ export default function App() {
       if (input?.type === "range" && /^(Arrow|Home|End|Page)/.test(e.key)) return;
       const s = useEditor.getState();
       const view = getView();
-      const mod = e.ctrlKey || e.metaKey;
+      // (AltGr, which types [ and ] on many keyboards, comes as Ctrl+Alt on Windows: not a shortcut)
+      const mod = (e.ctrlKey || e.metaKey) && !(e.ctrlKey && e.altKey) && !e.getModifierState?.("AltGraph");
       if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); setGoTo(g => !g); return; }
       if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (s.viewOnly) return; if (e.shiftKey) useCourse.getState().redo(); else useCourse.getState().undo(); return; }
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); if (!s.viewOnly) useCourse.getState().redo(); return; }
@@ -283,7 +284,8 @@ export default function App() {
         if (e.key === "Escape") s.set({ teeView: null, flyover: false });
         if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
           const d = getDoc();
-          const done = d.holes.filter(h => holeStats(d, h).complete);
+          const stats = courseStats(d);
+          const done = d.holes.filter((_, k) => stats[k].complete);
           const i = done.findIndex(h => h.id === s.teeView);
           const next = done[(i + (e.key === "ArrowLeft" ? -1 : 1) + done.length) % done.length];
           if (next) s.set({ teeView: next.id });

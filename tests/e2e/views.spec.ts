@@ -505,6 +505,18 @@ plain("the flight by itself: a low glide from behind the tee, under a crown over
   for (const c of steady.cam) plainExpect(c.z).toBeGreaterThanOrEqual(bumpy(c.x) + 4 - 1e-6);
 });
 
+test("woods with few corners stand where their curve bulges past the corners (flyovers go over them there)", async ({ page }) => {
+  await blankCourse(page);
+  await page.evaluate(() => {
+    (window as any).__dgEditor().set({ areaKind: "woods" });
+    (window as any).__dgActions.addDrawn("area", [{ x: 300, y: 300 }, { x: 700, y: 300 }, { x: 700, y: 700 }, { x: 300, y: 700 }]);
+  });
+  // 42 ft out from the middle of a side: inside the curve drawn, beyond the corners' square
+  const top = (y: number) => page.evaluate(y => (window as any).__dgView.canopyAt({ x: 500, y }, 4)?.top ?? null, y);
+  await expect.poll(() => top(258)).toBeGreaterThan(50);
+  expect(await top(200)).toBeNull();
+});
+
 plain("a flight through keyframes: through each one on its seconds, the field of view between them (pure logic)", () => {
   const flat = () => 0;
   const keys = [
@@ -526,4 +538,10 @@ plain("a flight through keyframes: through each one on its seconds, the field of
   const from = keysFromFlight(f, flat, 3);
   plainExpect(from.map(k => Math.round(k.x))).toEqual([0, Math.round(f.cam[Math.round((f.cam.length - 1) / 2)].x), 200]);
   plainExpect(keyBetween(keys[0], keys[2])).toEqual({ x: 100, y: 0, alt: 40, lookX: 200, lookY: 0 });
+  // At the flyover's height, but over woods (no room under them) and under a tall tree's crown
+  const woods = (p: { x: number }) => (p.x > 180 ? { base: 0, top: 45, trunks: [] } : p.x < 20 ? { base: 40, top: 70, trunks: [] } : null);
+  const level = keysFromFlight(f, flat, 3, 10, woods);
+  plainExpect(level.map(k => k.alt)).toEqual([10, 10, 45 + 5 + 3]);
+  const low = keysFromFlight(f, flat, 3, 38, woods);
+  plainExpect(low.map(k => k.alt)).toEqual([35, 38, 53]);
 });
