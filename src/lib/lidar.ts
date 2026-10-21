@@ -249,12 +249,15 @@ export const surveyYear = (name: string) => Math.max(0, ...(name.match(/(19|20)\
 
 /** Which measured trees stand: those on a fairway, a tee or a basket's circle (as
  * `cleared` says) are cut down unless kept; any taken out are gone. */
-export const standingTrees = (lidar: NonNullable<CourseDoc["lidar"]>, cleared: (p: P, reach: number) => boolean) => {
+export const standingTrees = (lidar: NonNullable<CourseDoc["lidar"]>, cleared: (p: P, reach: number) => boolean, nowhere: (p: P) => boolean = () => false) => {
   const kept = new Set(lidar.kept ?? []), removed = new Set(lidar.removed ?? []);
   const stand: number[] = [], cut: number[] = [];
   lidar.trees.forEach((t, k) => {
+    const p = { x: t[0], y: t[1] };
     if (removed.has(k)) cut.push(k);
-    else if (!kept.has(k) && cleared({ x: t[0], y: t[1] }, t[3] * 0.3)) cut.push(k);
+    // (cleared for play, or where no tree stands: in water, on a road or path, a building or
+    // parking; a tree found there is a bridge, a car, a wire or noise in the survey)
+    else if (!kept.has(k) && (cleared(p, t[3] * 0.3) || nowhere(p))) cut.push(k);
     else stand.push(k);
   });
   return { stand, cut };

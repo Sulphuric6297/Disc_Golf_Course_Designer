@@ -1988,6 +1988,29 @@ export class CourseView {
       return { test: all.test, key: all.key, near };
     };
     const clearings = clearingsFor(false);
+    // Where no tree stands, whatever the survey found: in water, on roads, paths, creeks and walks,
+    // on buildings, parking and built things (a trunk there is a bridge, a car, a wire or noise)
+    const nowhereFor = () => {
+      const polys: P[][] = [], lines: { pts: P[]; half: number }[] = [];
+      for (const it of course.items) {
+        if (it.type === "area" && ["water", "parking", "building"].includes(it.kind)) polys.push(this.shapeOf(it).pts);
+        else if (it.type === "line" && ["road", "path", "walk", "stream"].includes(it.kind)) lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 });
+        else if (it.type === "structure") lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 2 });
+      }
+      const shapes = polys.filter(pp => pp.length >= 3).map(pts => ({ pts, box: boundsOf(pts) }));
+      const paths = lines.filter(l => l.pts.length > 1).map(l => ({ ...l, box: boundsOf(l.pts) }));
+      const test = (p: P) => {
+        for (const x of shapes) if (p.x >= x.box.minX && p.x <= x.box.maxX && p.y >= x.box.minY && p.y <= x.box.maxY && pointInPolygon(p, x.pts)) return true;
+        for (const l of paths) {
+          const b = l.box, m = l.half;
+          if (p.x < b.minX - m || p.x > b.maxX + m || p.y < b.minY - m || p.y > b.maxY + m) continue;
+          if (distanceToPath(p, l.pts) < m) return true;
+        }
+        return false;
+      };
+      const r = (v: number) => Math.round(v);
+      return { test, key: JSON.stringify([shapes.map(x => x.pts.map(q => [r(q.x), r(q.y)])), paths.map(l => [r(l.half), l.pts.map(q => [r(q.x), r(q.y)])])]) };
+    };
     // Trees measured from the air: cut down where the course clears the ground for play, unless
     // kept (in place of the woods' made-up trees)
     const lidar = course.lidar?.trees.length ? course.lidar : null;
@@ -1995,12 +2018,13 @@ export class CourseView {
     this.lidarState = null;
     if (lidar) {
       const forPlay = clearingsFor(true);
-      this.clearedAt = forPlay.test;
-      const fresh = JSON.stringify([lidar.kept, lidar.removed, forPlay.key]);
+      const nowhere = nowhereFor();
+      this.clearedAt = (p, reach) => forPlay.test(p, reach) || nowhere.test(p);
+      const fresh = JSON.stringify([lidar.kept, lidar.removed, forPlay.key, nowhere.key]);
       if (this.dragging && this.lidarKey && fresh !== this.lidarKey) this.afterDrag = true;
       else this.lidarKey = fresh;
       const state = this.keep("lidar", lidar.trees, this.lidarKey, () => {
-        const { stand, cut } = standingTrees(lidar, forPlay.test);
+        const { stand, cut } = standingTrees(lidar, forPlay.test, nowhere.test);
         const keptSet = new Set(lidar.kept ?? []);
         return { stand, cut, kept: stand.filter(k => keptSet.has(k) && forPlay.test({ x: lidar.trees[k][0], y: lidar.trees[k][1] }, lidar.trees[k][3] * 0.3)) };
       });

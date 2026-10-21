@@ -139,3 +139,12 @@ test("an existing course measured from the air from the Site step (Undo takes it
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).lidar).toBeUndefined();
 });
+
+plain("measured trees never stand where no tree does (in water, on a road): cut, unless kept (pure logic)", () => {
+  const lidar = { source: "test", trees: [[10, 10, 40, 12, 0], [100, 100, 40, 12, 0], [200, 200, 40, 12, 0]] as LidarTree[], kept: [2] };
+  // (the second is in a river, the third on a road but kept by hand)
+  const inRiverOrRoad = (p: { x: number; y: number }) => p.x > 50;
+  const { stand, cut } = standingTrees(lidar, () => false, inRiverOrRoad);
+  plainExpect(stand).toEqual([0, 2]);
+  plainExpect(cut).toEqual([1]);
+});
