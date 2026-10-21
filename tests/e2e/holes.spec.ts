@@ -412,6 +412,10 @@ test("from hole to hole: the panel's arrows and [ ] go to the previous and next 
   // AltGr types [ and ] on many keyboards (Ctrl+Alt on Windows)
   await page.keyboard.press("Control+Alt+BracketRight");
   await expect.poll(sel).toBe(c.id);
+  // (and what else it types is no shortcut: the hole stays)
+  await page.keyboard.press("Control+Alt+Backspace");
+  await page.waitForTimeout(300);
+  expect((await course(page)).holes).toHaveLength(3);
 });
 
 test("automatic walks to the next hole turned off and on from the Holes step", async ({ page }) => {

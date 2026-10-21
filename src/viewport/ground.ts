@@ -345,7 +345,8 @@ export class Ground {
       t0 = Math.max(t0, Math.min(a, b));
       t1 = Math.min(t1, Math.max(a, b));
     }
-    if (t0 > t1) return null;
+    // (not a number: a map with no size yet)
+    if (!(t0 <= t1)) return null;
     // Cell by cell under it (a grid walk), nearest first
     const x0 = bb.min.x, z0 = bb.min.z, cw = (bb.max.x - x0) / nx, cd = (bb.max.z - z0) / nz;
     const clamp = (v: number, n: number) => Math.max(0, Math.min(n - 1, v));
@@ -357,7 +358,7 @@ export class Ground {
     const cull = (mesh.material as THREE.Material).side === THREE.FrontSide;
     const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), D = new THREE.Vector3();
     const hit = new THREE.Vector3(), best = new THREE.Vector3();
-    for (;;) {
+    for (let n = nx + nz + 2; n > 0; n--) {
       // (its two triangles, as the plane's geometry makes them)
       const a = ix + (nx + 1) * iz, b = ix + (nx + 1) * (iz + 1), c = ix + 1 + (nx + 1) * (iz + 1), d = ix + 1 + (nx + 1) * iz;
       A.fromBufferAttribute(pos, a); B.fromBufferAttribute(pos, b); C.fromBufferAttribute(pos, c); D.fromBufferAttribute(pos, d);
@@ -368,10 +369,13 @@ export class Ground {
         if (t < near) { near = t; best.copy(hit); found = true; }
       }
       if (found) return best.applyMatrix4(mesh.matrixWorld);
-      if (Math.min(nextX, nextZ) > t1) return null;
+      if (Math.min(nextX, nextZ) > t1) break;
       if (nextX < nextZ) { ix += sx; nextX += stepX; } else { iz += sz; nextZ += stepZ; }
-      if (ix < 0 || iz < 0 || ix >= nx || iz >= nz) return null;
+      if (ix < 0 || iz < 0 || ix >= nx || iz >= nz) break;
     }
+    // Over the ground but nothing met: every triangle, as three.js does (a ray straight through a
+    // corner of the grid can slip between the cells walked)
+    return new THREE.Raycaster(worldRay.origin, worldRay.direction).intersectObject(mesh, false)[0]?.point ?? null;
   }
 
   private colorTerrain(doc: ViewDoc) {

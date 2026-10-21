@@ -280,6 +280,8 @@ export default function App() {
       if (mod && e.key.toLowerCase() === "v" && !s.teeView && s.step !== "design") { e.preventDefault(); if (!s.viewOnly) { s.set({ tool: "select" }); pasteClipboard(); } return; }
       if (mod && e.key.toLowerCase() === "a" && !s.teeView && s.step !== "design") { e.preventDefault(); if (!s.viewOnly) { s.set({ tool: "select" }); selectAll(); } return; }
       if (mod) return;
+      // (AltGr types characters: only the [ and ] it types go on to the shortcuts)
+      if (((e.ctrlKey && e.altKey) || e.getModifierState?.("AltGraph")) && e.key !== "[" && e.key !== "]") return;
       if (s.teeView) {
         if (e.key === "Escape") s.set({ teeView: null, flyover: false });
         if (e.key === "ArrowLeft" || e.key === "ArrowRight") {

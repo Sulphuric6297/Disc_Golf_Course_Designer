@@ -59,6 +59,29 @@ test("the ground under the pointer on hills: the terrain's own triangles, lookin
   const tilted = await compare();
   expect(tilted.hits).toBeGreaterThan(100);
   expect(tilted.worst).toBeLessThan(1e-3);
+  const edge = await page.evaluate(() => {
+    const v = (window as any).__dgView;
+    const ray = v.raycaster.ray.clone();
+    // Straight at the grid's corners (between cells): the same as every triangle tested
+    const pos = v.ground.terrain.geometry.getAttribute("position");
+    let differ = 0, tried = 0;
+    for (let i = 0; i < pos.count; i += 3) {
+      const at = ray.origin.clone().set(pos.getX(i), pos.getY(i), pos.getZ(i));
+      ray.origin.copy(v.camera.position);
+      ray.direction.copy(at).sub(ray.origin).normalize();
+      v.raycaster.set(ray.origin, ray.direction);
+      const all = v.raycaster.intersectObject(v.ground.terrain, false)[0]?.point ?? null;
+      const fast = v.ground.rayHit(ray);
+      tried++;
+      if (!all !== !fast || (all && all.distanceTo(fast) > 1e-3)) differ++;
+    }
+    // A ray that isn't a number (a map with no size yet): nothing, at once
+    ray.direction.set(NaN, NaN, NaN);
+    return { differ, tried, nan: v.ground.rayHit(ray) };
+  });
+  expect(edge.tried).toBeGreaterThan(500);
+  expect(edge.differ).toBe(0);
+  expect(edge.nan).toBeNull();
 });
 
 test("tool shortcuts pick tools; Esc goes back to Select; ? shows the shortcuts", async ({ page }) => {
