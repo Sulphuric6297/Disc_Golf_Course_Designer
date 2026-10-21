@@ -332,7 +332,7 @@ export const standingTrees = (lidar: NonNullable<CourseDoc["lidar"]>, cleared: (
 export const fairwayTrees = (doc: Pick<CourseDoc, "lidar">, hole: Hole, line: P[]) => {
   const out = { cut: [] as number[], kept: [] as number[] };
   const lidar = doc.lidar;
-  if (!lidar?.trees.length || line.length < 2) return out;
+  if (!lidar?.trees.length || line.length < 2 || lidar.clearFairways === false) return out;
   const poly = fairwayOutline(hole, smoothPath(line, 8), hole.fairway ? 0 : -hole.fairwayWidth * 0.4, 6);
   const box = boundsOf(poly), kept = new Set(lidar.kept ?? []);
   lidar.trees.forEach(([x, y, , r], k) => {

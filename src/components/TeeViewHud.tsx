@@ -43,24 +43,18 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
   // (view only: no camera settings to change; a video only for those who may have downloads)
   const readOnly = useCourse(c => c.readOnly);
   const mayRecord = useAllowed("downloads");
-  // The loading screen from the very moment a flyover is asked for (before the view has even
-  // said it's waiting), until the flight has begun; then a beat longer, fading out
-  const [began, setBegan] = useState(false);
-  const wasFlying = useRef(false);
-  if (ed.flyover !== wasFlying.current) { wasFlying.current = ed.flyover; if (ed.flyover && began) setBegan(false); }
-  const sawWait = useRef(false);
+  // The loading screen while the view says the flight is waiting, and from the very moment a
+  // flyover is asked for until the view has said anything (two seconds at most)
+  const [bridge, setBridge] = useState(false);
+  const wasFlying = useRef<string | null>(null);
+  const flightKey = ed.flyover ? ed.teeView : null;
+  if (flightKey !== wasFlying.current) { wasFlying.current = flightKey; if (flightKey && !bridge) setBridge(true); }
   useEffect(() => {
-    if (!ed.flyover) { sawWait.current = false; return; }
-    if (ed.flyLoading) { sawWait.current = true; return; }
-    if (sawWait.current) { sawWait.current = false; setBegan(true); }
-  }, [ed.flyover, ed.flyLoading]);
-  // (never stuck: the view gives up waiting after 15 s)
-  useEffect(() => {
-    if (!ed.flyover || began) return;
-    const t = window.setTimeout(() => setBegan(true), 16_000);
+    if (!ed.flyover || ed.flyLoading) { setBridge(false); return; }
+    const t = window.setTimeout(() => setBridge(false), 2000);
     return () => window.clearTimeout(t);
-  }, [ed.flyover, began]);
-  const waiting = ed.flyover && !began;
+  }, [ed.flyover, ed.flyLoading]);
+  const waiting = ed.flyover && (ed.flyLoading !== null || bridge);
   const [showLoading, setShowLoading] = useState(false);
   useEffect(() => {
     if (waiting) { setShowLoading(true); return; }

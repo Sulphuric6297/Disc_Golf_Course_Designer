@@ -528,6 +528,7 @@ export const cutStretch = (id: string, a: number, b: number) => {
 /** An outline drawn as a patch of a woods area (trees: custom): drawn trees fill it in, as
  * thickly as the wood's last patch (half, for the first). One undo step; the wood stays selected. */
 export const addPatch = (areaId: string, points: P[]) => {
+  if (!getDoc().items.some(i => i.id === areaId && i.type === "area")) { toast("That wood is gone: draw the patch again on another.", "info"); return; }
   changeDoc(d => ({ items: d.items.map(i => (i.id === areaId && i.type === "area" ? { ...i, trees: "custom" as const, patches: [...(i.patches ?? []), { points, fill: i.patches?.[i.patches.length - 1]?.fill ?? 0.5 }] } : i)) }));
   select(areaId);
 };

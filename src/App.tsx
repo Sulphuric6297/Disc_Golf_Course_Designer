@@ -363,6 +363,7 @@ export default function App() {
         />
         {dialogs}
         {menu?.itemId && <ItemMenu itemId={menu.itemId} onClose={() => setMenu(null)} />}
+        {menu && !menu.itemId && menu.ground && <ContextMenu info={menu} onClose={() => setMenu(null)} />}
       </>
     );
   }

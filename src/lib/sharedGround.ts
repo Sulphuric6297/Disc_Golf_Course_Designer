@@ -58,10 +58,15 @@ export function withGround(to: CourseDoc, from: CourseDoc, share: boolean | Grou
       if (q && q.x >= 0 && q.y >= 0 && q.x <= to.canvas.width && q.y <= to.canvas.height) moved.push([Math.round(q.x * 10) / 10, Math.round(q.y * 10) / 10, t[2], t[3], t[4]]);
     }
     const own = to.lidar?.trees ?? [];
+    // (its own measured trees stay where `from` doesn't reach, as the heights do)
+    for (const t of own) {
+      const p = across(t[0], t[1], to, from);
+      if (!p || p.x < 0 || p.y < 0 || p.x > from.canvas.width || p.y > from.canvas.height) moved.push(t);
+    }
     lidar = {
       source: from.lidar.source, trees: moved,
       removed: samePlaces(to.lidar?.removed, own, moved), kept: samePlaces(to.lidar?.kept, own, moved),
-      minHeight: to.lidar?.minHeight ?? from.lidar.minHeight, growYears: to.lidar?.growYears ?? from.lidar.growYears,
+      minHeight: to.lidar?.minHeight ?? from.lidar.minHeight, growYears: to.lidar?.growYears ?? from.lidar.growYears, clearFairways: to.lidar?.clearFairways,
     };
   }
   let items = to.items, sharedTrees = to.site.sharedTrees;

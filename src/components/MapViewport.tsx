@@ -95,11 +95,11 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const [restingDoc, setRestingDoc] = useState(doc);
   useEffect(() => { const t = window.setTimeout(() => setRestingDoc(doc), 1500); return () => window.clearTimeout(t); }, [doc]);
   const warmHole = ed.selectedId && doc.holes.some(h => h.id === ed.selectedId) ? ed.selectedId : ed.activeHoleId;
-  const warm = !ed.teeView && ed.flyLook === "painted" && restingDoc === doc && !!warmHole && ed.step !== "design";
-  const painted = usePaintedGround(paintedOn || warm);
+  const warm = !ed.teeView && ed.flyLook === "painted" && restingDoc === doc && doc.holes.length > 0 && ed.step !== "design";
+  const [painted, paintedFresh] = usePaintedGround(paintedOn || warm);
   useEffect(() => {
     if (!warm || !warmHole || !painted) return;
-    const id = window.setTimeout(() => void paintedDetail(doc, warmHole, 3072), 50);
+    const id = window.setTimeout(() => void paintedDetail(doc, warmHole, view?.detailPx() ?? 3072), 50);
     return () => window.clearTimeout(id);
   }, [warm, warmHole, painted, doc]);
 
@@ -132,12 +132,12 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { view?.setDoc(viewDoc); }, [view, viewDoc]);
   useEffect(() => { void view?.setPaintedGround(paintedOn ? painted : null); }, [view, paintedOn, painted]);
   // (a flyover waits for the painting it will fly over)
-  useEffect(() => { view?.setPaintedPending(paintedOn && !painted); }, [view, paintedOn, painted]);
+  useEffect(() => { view?.setPaintedPending(paintedOn && !paintedFresh); }, [view, paintedOn, paintedFresh]);
   // (and a sharper painting round the hole looked at, flown over or filmed)
   useEffect(() => { view?.setDetailPainter((holeId, maxPx) => paintedDetail(doc, holeId, maxPx)); }, [view, doc]);
   // (the close-up doesn't need the whole map painted first: both at once, from the moment a tee
   // view or flyover opens)
-  useEffect(() => { if (paintedOn && ed.teeView) void paintedDetail(doc, ed.teeView, 3072); }, [paintedOn, ed.teeView, doc]);
+  useEffect(() => { if (paintedOn && ed.teeView) void paintedDetail(doc, ed.teeView, view?.detailPx() ?? 3072); }, [view, paintedOn, ed.teeView, doc]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
   const readOnly = useCourse(s => s.readOnly);
   useEffect(() => { view?.setReadOnly(readOnly); }, [view, readOnly]);
