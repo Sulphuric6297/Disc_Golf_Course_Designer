@@ -39,8 +39,10 @@ const shareTexture = (c: HTMLCanvasElement, repeat = false) => {
 };
 
 /**
- * Leaf clusters: four sprays of leaves on twigs (2 x 2 cells), light gray-green so each tree's
- * own color tints them, every leaf a little lighter or darker than the next, with a midrib.
+ * Leaf clusters: four sprays of leaves on twigs (2 x 2 cells), light gray-green so each tree's own
+ * color tints them. The leaves are small (a few inches on a grown tree) and many, each a little
+ * lighter, darker, yellower or bluer than the next, darker toward the middle of the spray where
+ * they shade each other: up close a crown reads as leaves, not as cards.
  */
 const getLeafAtlas = () => {
   if (leafAtlas || typeof document === "undefined") return leafAtlas;
@@ -53,55 +55,60 @@ const getLeafAtlas = () => {
     g.beginPath();
     g.rect(ox, oy, S, S);
     g.clip();
-    // Twigs fanning up and out from the bottom middle
-    const twigs: { x: number; y: number; a: number; len: number }[] = [];
-    const n = 5 + Math.floor(rnd() * 3);
-    for (let i = 0; i < n; i++) twigs.push({ x: ox + S / 2 + (rnd() - 0.5) * 40, y: oy + S * 0.92, a: -Math.PI / 2 + (i / (n - 1) - 0.5) * 2.3 + (rnd() - 0.5) * 0.3, len: S * (0.32 + rnd() * 0.18) });
-    g.strokeStyle = "rgb(92,78,60)";
+    const cx = ox + S / 2;
+    // Twigs fanning up and out from the bottom middle, each with side twiglets
+    const twigs: { x: number; y: number; ex: number; ey: number }[] = [];
+    const n = 7 + Math.floor(rnd() * 3);
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI / 2 + (i / (n - 1) - 0.5) * 2.6 + (rnd() - 0.5) * 0.3, len = S * (0.36 + rnd() * 0.12);
+      const x = cx + (rnd() - 0.5) * 30, y = oy + S * 0.95;
+      twigs.push({ x, y, ex: x + Math.cos(a) * len, ey: y + Math.sin(a) * len });
+      for (let k = 0.3; k < 0.95; k += 0.2 + rnd() * 0.1) {
+        const bx = x + (Math.cos(a) * len) * k, by = y + (Math.sin(a) * len) * k;
+        const side = rnd() < 0.5 ? -1 : 1, b = a + side * (0.5 + rnd() * 0.4), bl = len * (0.22 + rnd() * 0.15);
+        twigs.push({ x: bx, y: by, ex: bx + Math.cos(b) * bl, ey: by + Math.sin(b) * bl });
+      }
+    }
+    g.strokeStyle = "rgb(84,72,56)";
     g.lineCap = "round";
-    const leaves: { x: number; y: number; a: number; s: number }[] = [];
     for (const t of twigs) {
-      g.lineWidth = 5;
+      g.lineWidth = 2.5;
       g.beginPath();
       g.moveTo(t.x, t.y);
-      const ex = t.x + Math.cos(t.a) * t.len, ey = t.y + Math.sin(t.a) * t.len;
-      g.quadraticCurveTo(t.x + Math.cos(t.a) * t.len * 0.5 + (rnd() - 0.5) * 30, t.y + Math.sin(t.a) * t.len * 0.5, ex, ey);
+      g.lineTo(t.ex, t.ey);
       g.stroke();
-      // Leaves along the twig, alternating sides, and a bunch at the tip
-      for (let k = 0.25; k <= 1.0001; k += 0.11 + rnd() * 0.05) {
-        const px = t.x + (ex - t.x) * k, py = t.y + (ey - t.y) * k;
-        for (const side of [-1, 1]) leaves.push({ x: px, y: py, a: t.a + side * (0.6 + rnd() * 0.5), s: 0.8 + rnd() * 0.5 });
-      }
-      for (let k = 0; k < 4; k++) leaves.push({ x: ex, y: ey, a: t.a + (rnd() - 0.5) * 1.6, s: 0.9 + rnd() * 0.4 });
     }
-    // Back to front: leaves farther down drawn first
-    leaves.sort((a, b) => b.y - a.y);
+    // Leaves all along the twigs and thick at their tips
+    const leaves: { x: number; y: number; a: number; s: number }[] = [];
+    for (const t of twigs) {
+      const a = Math.atan2(t.ey - t.y, t.ex - t.x), len = Math.hypot(t.ex - t.x, t.ey - t.y);
+      for (let k = 0.15; k <= 1.0001; k += 18 / len) {
+        for (const side of [-1, 1]) leaves.push({ x: t.x + (t.ex - t.x) * k, y: t.y + (t.ey - t.y) * k, a: a + side * (0.5 + rnd() * 0.7), s: 0.8 + rnd() * 0.45 });
+      }
+      for (let k = 0; k < 5; k++) leaves.push({ x: t.ex + (rnd() - 0.5) * 14, y: t.ey + (rnd() - 0.5) * 14, a: a + (rnd() - 0.5) * 2.2, s: 0.85 + rnd() * 0.35 });
+    }
+    // Back to front: leaves lower in the spray drawn first
+    leaves.sort((p, q) => q.y - p.y);
     for (const l of leaves) {
-      const len = 62 * l.s, w = 24 * l.s;
-      const lum = 0.62 + rnd() * 0.38;
+      const len = 30 * l.s, w = 12 * l.s;
+      // (darker toward the middle of the spray and its bottom, where leaves shade each other)
+      const inner = Math.min(1, Math.hypot(l.x - cx, l.y - (oy + S * 0.55)) / (S * 0.45));
+      const lum = (0.62 + rnd() * 0.34) * (0.8 + 0.2 * inner) + (rnd() < 0.12 ? 0.14 : 0);
+      const warm = (rnd() - 0.5) * 0.16;
+      const r = Math.round(Math.min(255, 186 * lum * (1 + warm))), gg = Math.round(Math.min(255, 220 * lum)), b = Math.round(Math.min(255, 160 * lum * (1 - warm)));
       g.save();
       g.translate(l.x, l.y);
       g.rotate(l.a + Math.PI / 2);
       const grad = g.createLinearGradient(-w, 0, w, 0);
-      const r = Math.round(196 * lum), gg = Math.round(222 * lum), b = Math.round(170 * lum);
-      grad.addColorStop(0, `rgb(${Math.round(r * 0.72)},${Math.round(gg * 0.72)},${Math.round(b * 0.72)})`);
-      grad.addColorStop(0.55, `rgb(${r},${gg},${b})`);
-      grad.addColorStop(1, `rgb(${Math.round(r * 0.85)},${Math.round(gg * 0.85)},${Math.round(b * 0.85)})`);
+      grad.addColorStop(0, `rgb(${Math.round(r * 0.74)},${Math.round(gg * 0.74)},${Math.round(b * 0.74)})`);
+      grad.addColorStop(0.5, `rgb(${r},${gg},${b})`);
+      grad.addColorStop(1, `rgb(${Math.round(r * 0.88)},${Math.round(gg * 0.88)},${Math.round(b * 0.88)})`);
       g.fillStyle = grad;
       g.beginPath();
       g.moveTo(0, 0);
-      g.bezierCurveTo(w, -len * 0.25, w * 0.7, -len * 0.8, 0, -len);
-      g.bezierCurveTo(-w * 0.7, -len * 0.8, -w, -len * 0.25, 0, 0);
+      g.bezierCurveTo(w, -len * 0.22, w * 0.75, -len * 0.78, 0, -len);
+      g.bezierCurveTo(-w * 0.75, -len * 0.78, -w, -len * 0.22, 0, 0);
       g.fill();
-      g.strokeStyle = "rgba(30,40,20,0.35)";
-      g.lineWidth = 1.5;
-      g.stroke();
-      g.strokeStyle = `rgba(255,255,235,${0.25 * lum})`;
-      g.lineWidth = 1.5;
-      g.beginPath();
-      g.moveTo(0, -2);
-      g.lineTo(0, -len * 0.85);
-      g.stroke();
       g.restore();
     }
     g.restore();
@@ -121,28 +128,29 @@ const getNeedleAtlas = () => {
     g.beginPath();
     g.rect(ox, oy, S, S);
     g.clip();
-    // One branchlet from the left middle to the right, with side twigs
+    // One branchlet from the left middle to the right, with side shoots, each thick with short,
+    // fine needles (darker toward the stem, where they shade each other)
     const stems: { x: number; y: number; a: number; len: number }[] = [{ x: ox + 20, y: oy + S / 2, a: (rnd() - 0.5) * 0.2, len: S * 0.9 }];
-    for (let i = 0; i < 6; i++) {
-      const k = 0.15 + i * 0.13;
-      stems.push({ x: ox + 20 + S * 0.9 * k, y: oy + S / 2, a: (i % 2 ? 1 : -1) * (0.55 + rnd() * 0.3), len: S * (0.32 - k * 0.15) });
+    for (let i = 0; i < 10; i++) {
+      const k = 0.1 + i * 0.085;
+      stems.push({ x: ox + 20 + S * 0.9 * k, y: oy + S / 2, a: (i % 2 ? 1 : -1) * (0.5 + rnd() * 0.35), len: S * (0.3 - k * 0.14) * (0.85 + rnd() * 0.3) });
     }
     for (const st of stems) {
       const ex = st.x + Math.cos(st.a) * st.len, ey = st.y + Math.sin(st.a) * st.len;
-      g.strokeStyle = "rgb(84,70,52)";
-      g.lineWidth = 4;
+      g.strokeStyle = "rgb(78,64,48)";
+      g.lineWidth = 3;
       g.beginPath();
       g.moveTo(st.x, st.y);
       g.lineTo(ex, ey);
       g.stroke();
-      for (let k = 0.03; k < 1; k += 0.015) {
+      for (let k = 0.02; k < 1; k += 0.009) {
         const px = st.x + (ex - st.x) * k, py = st.y + (ey - st.y) * k;
         for (const side of [-1, 1]) {
-          const a = st.a + side * (0.75 + rnd() * 0.35);
-          const len = (42 + rnd() * 26) * (1 - k * 0.35);
-          const lum = 0.55 + rnd() * 0.45;
-          g.strokeStyle = `rgb(${Math.round(176 * lum)},${Math.round(214 * lum)},${Math.round(178 * lum)})`;
-          g.lineWidth = 3.4;
+          const a = st.a + side * (0.7 + rnd() * 0.45);
+          const len = (22 + rnd() * 14) * (1 - k * 0.3);
+          const lum = (0.55 + rnd() * 0.4) * (rnd() < 0.4 ? 0.85 : 1) + (rnd() < 0.08 ? 0.15 : 0);
+          g.strokeStyle = `rgb(${Math.round(160 * lum)},${Math.round(206 * lum)},${Math.round(176 * lum)})`;
+          g.lineWidth = 2;
           g.beginPath();
           g.moveTo(px, py);
           g.lineTo(px + Math.cos(a) * len, py + Math.sin(a) * len + len * 0.12);
@@ -361,17 +369,17 @@ const broadleaf = (variant: number, detail: Detail, bush: boolean): TreeProto =>
     const radial = v3((p.x - crown.cx) / crown.rx, (p.y - crown.cy) / crown.ry, (p.z - crown.cz) / crown.rx).normalize();
     return radial.multiplyScalar(0.8).addScaledVector(facing, 0.2).normalize();
   };
-  const size = (near ? 0.15 : 0.27) * (bush ? 1.3 : 1) * (crown.rx / 0.36);
+  const size = (near ? 0.13 : 0.27) * (bush ? 1.3 : 1) * (crown.rx / 0.36);
   const place = (p: V3, s: number) => {
     const out = p.clone().sub(center).normalize();
     const facing = out.add(v3(rnd() - 0.5, rnd() - 0.3, rnd() - 0.5).multiplyScalar(1.1)).normalize();
     card(leaves, p, facing, s * (0.75 + rnd() * 0.5), rnd() * Math.PI * 2, normalAt(p, facing), shadeAt(p), Math.floor(rnd() * 4));
   };
-  const perTip = near ? 7 : 2;
+  const perTip = near ? 8 : 2;
   for (const t of tips) {
     for (let k = 0; k < perTip; k++) place(t.clone().add(v3(rnd() - 0.5, rnd() - 0.4, rnd() - 0.5).multiplyScalar(crown.rx * 0.4)), size);
   }
-  const shell = near ? 110 : 34;
+  const shell = near ? 130 : 34;
   for (let k = 0; k < shell; k++) {
     const u = rnd() * 2 - 1, th = rnd() * Math.PI * 2, rr = Math.sqrt(1 - u * u);
     // Bumpy outline: lobes where the shell pushes out
@@ -411,12 +419,18 @@ const conifer = (variant: number, detail: Detail): TreeProto => {
         const p = from.clone().lerp(to, f);
         const out = v3(p.x, 0, p.z).normalize();
         const facing = v3(0, 1, 0).addScaledVector(out, 0.35 + rnd() * 0.3).add(v3(rnd() - 0.5, 0, rnd() - 0.5).multiplyScalar(0.5)).normalize();
-        const s = near ? Math.max(0.07, Math.min(0.19, L * 0.85)) : Math.max(0.1, Math.min(0.3, L * 1.5));
+        const s = near ? Math.max(0.065, Math.min(0.17, L * 0.78)) : Math.max(0.1, Math.min(0.3, L * 1.5));
         const radial = v3(p.x / width, (p.y - 0.5) * 0.6, p.z / width);
         const normal = radial.lengthSq() > 1e-6 ? radial.normalize().multiplyScalar(0.6).add(v3(0, 0.55, 0)).normalize() : v3(0, 1, 0);
         const inner = smooth(0, 1, Math.hypot(p.x, p.z) / Math.max(0.03, L));
         const shade = Math.max(0.2, (0.35 + 0.65 * inner) * (0.7 + 0.3 * t));
-        card(leaves, p, facing, s * (0.85 + rnd() * 0.3), Math.atan2(to.z - from.z, to.x - from.x) + (rnd() - 0.5) * 0.4, normal, shade, Math.floor(rnd() * 4));
+        const spin = Math.atan2(to.z - from.z, to.x - from.x) + (rnd() - 0.5) * 0.4;
+        card(leaves, p, facing, s * (0.85 + rnd() * 0.3), spin, normal, shade, Math.floor(rnd() * 4));
+        // (and one across it, tilted down the branch, so a branch has depth seen from the side)
+        if (near && k % 2 === 0) {
+          const across = facing.clone().cross(v3(Math.cos(spin), 0, Math.sin(spin))).normalize().lerp(out, 0.4).normalize();
+          card(leaves, p, across, s * (0.7 + rnd() * 0.25), spin + Math.PI / 2 * (rnd() < 0.5 ? 1 : -1), normal, shade * 0.92, Math.floor(rnd() * 4));
+        }
       }
     }
   }

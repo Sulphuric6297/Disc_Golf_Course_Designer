@@ -214,3 +214,8 @@ Later requests (in the order asked)
 - [ ] **Better-looking grass in 3D.**
 - [ ] **Tee pads never cut through the ground; the tee sign has no pole through it.**
 - [ ] **Share links are shorter and lose nothing** (under 2,040 characters where possible).
+- [ ] **Flyovers stay 10 ft over the ground the whole way** (by default), round, under or (only
+  where they must) over the trees standing there, never through them; keyframed flights keep
+  their height over the ground between keyframes.
+- [ ] **The basket is its real size in 3D.**
+- [ ] **3D trees don't look cheap** (small leaves, fine needles, pines darker than leafy trees).

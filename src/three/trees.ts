@@ -33,7 +33,10 @@ export const create3dTree = (item: TreeItem): THREE.Group => {
   if (treeType !== "palm") {
     const shape: TreeShape = treeType === "conifer" ? "conifer" : treeType === "bush" ? "bush" : "broadleaf";
     const height = shape === "bush" ? Math.min(treeHeight, Math.max(3, item.radius * 1.2)) : treeHeight;
-    group = treeMeshes(shape, variantOf(item.id, shape), height, item.radius * 2 * widthMultiplier, foliageTint(item.color, next));
+    // (a pine darker and bluer than the leaves of the same color, as in woods)
+    const tint = foliageTint(item.color, next);
+    if (shape === "conifer") tint.offsetHSL(0.03, -0.06, -0.08);
+    group = treeMeshes(shape, variantOf(item.id, shape), height, item.radius * 2 * widthMultiplier, tint);
   } else {
     group = new THREE.Group();
     const base = foliageTint(item.color, next);

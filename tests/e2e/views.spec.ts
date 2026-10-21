@@ -1,7 +1,7 @@
 import { test as plain, expect as plainExpect } from "@playwright/test";
 import { test, expect, addHole, blankCourse, course, drag, editorState, handleCenter, screenOf } from "./fixtures";
 import { autoFlight, flightClock, FLYOVER_DEFAULTS, keyBetween, keyFlight, keysFromFlight } from "../../src/lib/flight";
-import { createEmptyCourse } from "../../src/lib/course";
+import { createArea, createBasket, createEmptyCourse, createTee, newHole } from "../../src/lib/course";
 import { drawOverlay } from "../../src/viewport/flyTitle";
 import { detailArea } from "../../src/lib/forest";
 
@@ -470,11 +470,9 @@ plain("the flight by itself: a low glide from behind the tee, under a crown over
   // (a short hole flies for 6 seconds)
   plainExpect(open.dur).toBe(6);
   const at = (f: typeof open, x: number) => f.cam.reduce((a, c) => (Math.abs(c.x - x) < Math.abs(a.x - x) ? c : a));
-  // Low over open ground: about the height asked (10 ft by default, rising by at most half that)
+  // Low over open ground: the height asked the whole way (10 ft by default)
   plainExpect(FLYOVER_DEFAULTS.height).toBe(10);
-  plainExpect(at(open, 0).z - 100).toBeGreaterThan(6);
-  plainExpect(at(open, 0).z - 100).toBeLessThan(16);
-  plainExpect(Math.max(...open.cam.map(c => c.z)) - 100).toBeLessThanOrEqual(15 + 1e-6);
+  for (const c of open.cam) plainExpect(Math.abs(c.z - 110)).toBeLessThan(0.2);
   // A big tree over the line at 200 ft (leaves from 30 to 70 ft up, its trunk on the line), a bush at 300 ft
   const trees = (p: { x: number; y: number }, reach: number) => {
     if (Math.hypot(p.x - 200, p.y) < reach + 25) return { base: 130, top: 170, trunks: Math.hypot(p.x - 200, p.y) < reach + 8 ? [{ x: 200, y: 0 }] : [] };
@@ -493,16 +491,31 @@ plain("the flight by itself: a low glide from behind the tee, under a crown over
   const side = autoFlight(line, { ...FLYOVER_DEFAULTS, side: 50, speed: 2 }, flat)!;
   plainExpect(at(side, 200).y).toBeCloseTo(50, 5);
   plainExpect(side.dur).toBeCloseTo(open.dur / 2, 5);
-  // Over bumpy ground it holds a steady line: up, then down (no bobbing)
+  // Over rolling ground it keeps its height over the ground (rising and falling with it)
   const bumpy = (x: number) => 100 + 8 * Math.sin(x / 20);
   const steady = autoFlight(line, FLYOVER_DEFAULTS, x => bumpy(x))!;
-  let turns = 0;
-  for (let i = 2; i < steady.cam.length; i++) {
-    const a = steady.cam[i - 1].z - steady.cam[i - 2].z, b = steady.cam[i].z - steady.cam[i - 1].z;
-    if (Math.abs(a) > 0.05 && Math.abs(b) > 0.05 && Math.sign(a) !== Math.sign(b)) turns++;
+  for (const c of steady.cam) plainExpect(Math.abs(c.z - bumpy(c.x) - 10)).toBeLessThan(2);
+});
+
+test("a hole cut through woods is flown at its height down the fairway, between the woods' own trees", async ({ page }) => {
+  const doc = createEmptyCourse();
+  const h = newHole({ fairwayWidth: 40 });
+  doc.holes.push(h);
+  doc.items.push(createTee(h.id, { x: 250, y: 500 }, "blue"), createBasket(h.id, { x: 650, y: 470 }));
+  // (the woods drawn over the whole hole: its trees stand either side of the fairway)
+  doc.items.push(createArea("woods", [{ x: 150, y: 300 }, { x: 800, y: 300 }, { x: 800, y: 700 }, { x: 150, y: 700 }]));
+  await page.getByLabel("Open course file").setInputFiles({ name: "woods.dgcourse.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(doc)) });
+  await expect.poll(() => page.evaluate(() => (window as any).__dgCourse().holes.length), { timeout: 30_000 }).toBe(1);
+  const above = () => page.evaluate(() => {
+    const v = (window as any).__dgView;
+    const path = v.flightPath((window as any).__dgCourse().holes[0].id);
+    return path.pts.map((q: any) => q.y - v.h(q.x, q.z));
+  });
+  await expect.poll(async () => (await above()).length).toBeGreaterThan(30);
+  for (const a of await above()) {
+    expect(a).toBeGreaterThan(9);
+    expect(a).toBeLessThan(11);
   }
-  plainExpect(turns).toBeLessThanOrEqual(2);
-  for (const c of steady.cam) plainExpect(c.z).toBeGreaterThanOrEqual(bumpy(c.x) + 4 - 1e-6);
 });
 
 test("woods with few corners stand where their curve bulges past the corners (flyovers go over them there)", async ({ page }) => {
@@ -515,6 +528,62 @@ test("woods with few corners stand where their curve bulges past the corners (fl
   const top = (y: number) => page.evaluate(y => (window as any).__dgView.canopyAt({ x: 500, y }, 4)?.top ?? null, y);
   await expect.poll(() => top(258)).toBeGreaterThan(50);
   expect(await top(200)).toBeNull();
+});
+
+plain("the flight round the trees standing there: at its height through woods, aside round a pine on the line, a little under a low crown, over a wall it can't get round, from past trees behind the tee (pure logic)", () => {
+  const line = [{ x: 0, y: 0 }, { x: 600, y: 0 }];
+  const flat = () => 0;
+  type C = { x: number; y: number; r: number; base: number; top: number };
+  const standing = (crowns: C[]) => (p: { x: number; y: number }, reach: number) => {
+    const near = crowns.filter(c => Math.hypot(c.x - p.x, c.y - p.y) < reach + c.r);
+    const trunks = crowns.filter(c => Math.hypot(c.x - p.x, c.y - p.y) < reach + 8).map(c => ({ x: c.x, y: c.y }));
+    if (!near.length && !trunks.length) return null;
+    return { base: Math.min(...near.map(c => c.base)), top: Math.max(-Infinity, ...near.map(c => c.top)), trunks, crowns: near };
+  };
+  // Woods on both sides of a 70 ft fairway: broadleaf crowns and pines down to the ground
+  const woods: C[] = [];
+  for (let x = 0; x <= 600; x += 22) for (const side of [-1, 1]) {
+    woods.push({ x, y: side * 48, r: 18, base: 15, top: 55 });
+    woods.push({ x: x + 11, y: side * 40, r: 8, base: 4, top: 45 });
+  }
+  const through = autoFlight(line, FLYOVER_DEFAULTS, flat, standing(woods))!;
+  for (const c of through.cam) plainExpect(Math.abs(c.z - 10)).toBeLessThan(0.5);
+  // A pine on the line: round it at its height, never more than 15 ft aside
+  const pine = { x: 300, y: 0, r: 8, base: 3, top: 45 };
+  const round = autoFlight(line, FLYOVER_DEFAULTS, flat, standing([pine]))!;
+  for (const c of round.cam) {
+    plainExpect(Math.abs(c.z - 10)).toBeLessThan(0.5);
+    plainExpect(Math.hypot(c.x - 300, c.y)).toBeGreaterThanOrEqual(pine.r + 4);
+    plainExpect(Math.abs(c.y)).toBeLessThanOrEqual(15.01);
+  }
+  // A broad crown hanging low over the line: just under its leaves, then back to its height
+  const low = autoFlight(line, FLYOVER_DEFAULTS, flat, standing([{ x: 200, y: 0, r: 20, base: 13, top: 60 }]))!;
+  const by = (f: typeof low, x: number) => f.cam.reduce((a, c) => (Math.abs(c.x - x) < Math.abs(a.x - x) ? c : a));
+  plainExpect(by(low, 200).z).toBeLessThanOrEqual(8 + 1e-6);
+  plainExpect(Math.abs(by(low, 270).z - 10)).toBeLessThan(0.3);
+  // A wall of pines across the line, wider than it can go round: over it, and down again after
+  const wall: C[] = [];
+  for (let y = -80; y <= 80; y += 12) wall.push({ x: 400, y, r: 8, base: 3, top: 40 });
+  const over = autoFlight(line, FLYOVER_DEFAULTS, flat, standing(wall))!;
+  plainExpect(by(over, 400).z).toBeGreaterThanOrEqual(48 - 1e-6);
+  plainExpect(Math.abs(by(over, 100).z - 10)).toBeLessThan(0.3);
+  plainExpect(Math.abs(over.cam[over.cam.length - 1].z - 10)).toBeLessThan(0.3);
+  // Pines just behind the tee: it starts past them, at its height
+  const behind = autoFlight(line, FLYOVER_DEFAULTS, flat, standing([{ x: -40, y: 0, r: 8, base: 3, top: 40 }, { x: -40, y: 14, r: 8, base: 3, top: 40 }, { x: -40, y: -14, r: 8, base: 3, top: 40 }]))!;
+  plainExpect(behind.cam[0].x).toBeGreaterThan(-40 + 8);
+  plainExpect(Math.abs(behind.cam[0].z - 10)).toBeLessThan(0.3);
+});
+
+plain("a flight through keyframes keeps their height over the ground between them, and clear of the trees (pure logic)", () => {
+  const bumpy = (x: number) => 100 + 8 * Math.sin(x / 20);
+  const keys = [{ x: 0, y: 0, alt: 10, lookX: 100, lookY: 0 }, { x: 200, y: 0, alt: 10, lookX: 300, lookY: 0 }, { x: 400, y: 0, alt: 10, lookX: 500, lookY: 0 }];
+  const f = keyFlight(keys, FLYOVER_DEFAULTS, x => bumpy(x))!;
+  for (const c of f.cam) plainExpect(Math.abs(c.z - bumpy(c.x) - 10)).toBeLessThan(2);
+  // A wall of low trees between two keyframes: over it
+  const wall = (p: { x: number; y: number }, reach: number) => (Math.abs(p.x - 300) < reach + 8 ? { base: 103, top: 140, trunks: [] } : null);
+  const g = keyFlight(keys, FLYOVER_DEFAULTS, x => bumpy(x), wall)!;
+  const at300 = g.cam.reduce((a, c) => (Math.abs(c.x - 300) < Math.abs(a.x - 300) ? c : a));
+  plainExpect(at300.z).toBeGreaterThanOrEqual(148 - 1e-6);
 });
 
 plain("a flight through keyframes: through each one on its seconds, the field of view between them (pure logic)", () => {

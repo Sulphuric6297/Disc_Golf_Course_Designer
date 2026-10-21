@@ -1,5 +1,6 @@
 import { test, expect, addHole, blankCourse, course, importSite } from "./fixtures";
-import type { Page } from "@playwright/test";
+import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
+import { create3dTree } from "../../src/three/trees";
 
 const grassSetting = (page: import("@playwright/test").Page) => page.evaluate(() => (window as any).__dgEditor().grass);
 
@@ -343,4 +344,39 @@ test("the map view rests while the Design step's page covers it, and draws the c
   await page.getByRole("button", { name: "2 Holes" }).click();
   await expect.poll(async () => (await info()).paused).toBe(false);
   await expect.poll(async () => (await info()).frames).toBeGreaterThan(before);
+});
+
+test("in 3D a basket close enough to see is drawn at its real size, not as a badge; farther off, its badge", async ({ page }) => {
+  await blankCourse(page);
+  const hole = await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
+  await page.keyboard.press("Escape");
+  const badge = page.getByTestId("basket-badge");
+  await expect(badge).toBeVisible();
+  await page.getByRole("radio", { name: "3D" }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).__dgView.viewInfo().tiltDeg)).toBeGreaterThan(30);
+  const toBasket = (distance: number) => page.evaluate(([id, distance]) => {
+    const v = (window as any).__dgView;
+    const b = (window as any).__dgCourse().items.find((i: any) => i.type === "basket" && i.holeId === id);
+    void v.controls.moveTo(b.x, v.h(b.x, b.y), b.y, false);
+    void v.controls.dollyTo(distance, false);
+    v.invalidate();
+  }, [hole.id, distance] as const);
+  // Close: the basket itself, at least two dozen pixels tall
+  await toBasket(25);
+  await expect(badge).toBeHidden();
+  // Far: its badge again
+  await toBasket(1500);
+  await expect(badge).toBeVisible();
+});
+
+plain("a placed pine is darker and bluer than a broadleaf tree of the same color, as in woods (pure logic)", () => {
+  const leaves = (treeType: string) => {
+    const g = create3dTree({ id: "t1", type: "tree", x: 0, y: 0, radius: 10, height: 40, color: "#4f8a3c", treeType } as any);
+    const hsl = { h: 0, s: 0, l: 0 };
+    (g.children[1] as any).material.color.getHSL(hsl);
+    return hsl;
+  };
+  const pine = leaves("conifer"), broad = leaves("deciduous");
+  plainExpect(pine.l).toBeLessThan(broad.l - 0.04);
+  plainExpect(pine.h).toBeGreaterThan(broad.h);
 });

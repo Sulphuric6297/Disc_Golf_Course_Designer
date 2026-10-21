@@ -27,10 +27,10 @@ import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
 import { createWoods, createWoodsWhere } from "../three/woods";
 import type { WoodedGrid } from "../lib/forest";
-import { autoFlight, flightClock, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy } from "../lib/flight";
+import { autoFlight, flightClock, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy, type Crown } from "../lib/flight";
 import { VIDEO_HOLD, titleStrength } from "../lib/video";
 import { drawOverlay, holeTitle, overlayShow, type HoleTitle } from "./flyTitle";
-import { forestDetail, type Forest } from "../three/treeKit";
+import { forestDetail, type Forest, type TreeSpot } from "../three/treeKit";
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createStructure } from "../three/structures";
@@ -69,7 +69,7 @@ type Handle = {
   start: (e: PointerEvent) => Drag | null;
   visible?: () => boolean;
 };
-type Overlay = { el: HTMLDivElement; anchor: THREE.Vector3; dy: number; sig: string; rank: number; w?: number; h?: number; minPx?: number };
+type Overlay = { el: HTMLDivElement; anchor: THREE.Vector3; dy: number; sig: string; rank: number; w?: number; h?: number; minPx?: number; key?: string };
 
 const STYLE = `
 .dg-layer{position:absolute;inset:0;pointer-events:none;overflow:hidden}
@@ -118,9 +118,12 @@ const lineMats = new Set<LineMaterial>();
 const COARSE = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
 
 /** How high woods' trees reach, ft (the tallest of three/woods). */
-const WOODS_TOP_FT = 80;
 /** How close to a trunk counts, ft (flyovers ease around trunks). */
 const TRUNK_ROOM = 8;
+/** A basket's height, ft, and how tall it shows on screen (px) once its badge gives way to it in 3D. */
+const BASKET_FT = 4.6, BASKET_SEEN_PX = 24;
+/** Squares the trees are filed by for flyovers, ft. */
+const CROWN_CELL = 40;
 
 /** The painted map for the ground (a picture's URL) and where it shows woods. */
 export type PaintedLook = { url: string; wooded: WoodedGrid | null };
@@ -730,7 +733,8 @@ export class CourseView {
     const set = flyoverOf(doc.course, hole);
     const ground = (x: number, y: number) => this.h(x, y);
     const byHand = !!hole?.flyKeys && hole.flyKeys.length >= 2;
-    const f = byHand ? keyFlight(hole!.flyKeys!, set, ground) : autoFlight(smoothPath(s.line, 16), set, ground, (p, r) => this.canopyAt(p, r));
+    const trees = (p: P, r: number) => this.canopyAt(p, r);
+    const f = byHand ? keyFlight(hole!.flyKeys!, set, ground, trees) : autoFlight(smoothPath(s.line, 16), set, ground, trees);
     if (!f) return null;
     const v = (a: Air) => new THREE.Vector3(a.x, a.z, a.y);
     // (slowing to a stop at the end; by itself, getting going gently too)
@@ -751,9 +755,6 @@ export class CourseView {
     return f ? keysFromFlight(f, ground, 4, set.height, canopy) : null;
   }
 
-  /** What stands over a point, within `reach` ft (for flyovers): where trees' leaves start (about
-   * a third of the way up a broadleaf, lower on a pine, at the ground for a bush) and their tops,
-   * their trunks close by; woods and buildings from the ground up. Ft on the terrain's datum. */
   // Drawn curves and outlines, kept while what they come from is the same (a course's items and
   // holes are replaced when they change, never changed in place): hovering and redrawing after a
   // change work them out again only for what changed
@@ -779,41 +780,67 @@ export class CourseView {
   private outline(hole: Hole, line: P[], slot: string, per: number, extra: number, steps: number) {
     return this.keep(`fair:${hole.id}:${slot}:${per}:${extra}:${steps}`, hole, JSON.stringify(line), () => fairwayOutline(hole, smoothPath(line, per), extra, steps));
   }
+  /** Every tree standing on the course as a crown (placed ones, and those of the woods and of the
+   * painted map), filed by 40 ft squares; made again when they change. */
+  private crownFile: { key: unknown[]; cells: Map<string, Crown[]>; widest: number } | null = null;
+  private crownsFiled() {
+    const doc = this.doc!;
+    const forests = [...this.shapes].filter(([k]) => k.startsWith("woods:") || k === "painted-woods").map(([, e]) => e.obj);
+    const key = [doc.course.items, this.heightsVersion, ...forests];
+    const f = this.crownFile;
+    if (f && f.key.length === key.length && f.key.every((k, i) => k === key[i])) return f;
+    const cells = new Map<string, Crown[]>();
+    let widest = 0;
+    const add = (c: Crown) => {
+      const k = `${Math.floor(c.x / CROWN_CELL)},${Math.floor(c.y / CROWN_CELL)}`;
+      const list = cells.get(k);
+      if (list) list.push(c); else cells.set(k, [c]);
+      widest = Math.max(widest, c.r);
+    };
+    // (leaves from about a third of the way up a broadleaf, lower on a pine, the ground for a bush)
+    const low = (shape?: string) => (shape === "bush" ? 0 : shape === "conifer" ? 0.12 : 0.3);
+    for (const i of doc.course.items) {
+      if (i.type !== "tree") continue;
+      const g = this.h(i.x, i.y), h = i.height ?? i.radius * 2.6;
+      add({ x: i.x, y: i.y, r: i.radius * (i.width ?? 1), base: g + h * low(i.treeType), top: g + h });
+    }
+    for (const obj of forests) for (const t of (obj.userData.spots ?? []) as TreeSpot[]) add({ x: t.x, y: t.y, r: t.width / 2, base: t.ground + t.height * low(t.shape), top: t.ground + t.height });
+    return (this.crownFile = { key, cells, widest });
+  }
+
+  /** What stands over a point, within `reach` ft (for flyovers): the trees whose leaves reach that
+   * near (each one's crown, its trunk close by) and built things from the ground up. Ft on the
+   * terrain's datum. */
   private canopyAt(p: P, reach: number): Canopy | null {
     const doc = this.doc;
     if (!doc) return null;
     let base = Infinity, top = -Infinity;
-    const trunks: P[] = [];
-    const near = (pts: P[], within = reach, b = boundsOf(pts)) => {
-      if (p.x < b.minX - within || p.x > b.maxX + within || p.y < b.minY - within || p.y > b.maxY + within) return false;
-      return pointInPolygon(p, pts) || distanceToPath(p, [...pts, pts[0]]) < within;
-    };
-    const solid = (g: number, h: number) => { base = Math.min(base, g); top = Math.max(top, g + h); };
-    for (const i of doc.course.items) {
-      if (i.type === "tree") {
-        const d = Math.hypot(i.x - p.x, i.y - p.y), crown = i.radius * (i.width ?? 1);
-        if (d < reach + crown) {
-          const g = this.h(i.x, i.y), h = i.height ?? i.radius * 2.6;
-          const low = i.treeType === "bush" ? 0 : i.treeType === "conifer" ? 0.18 : 0.34;
-          base = Math.min(base, g + h * low);
-          top = Math.max(top, g + h);
+    const trunks: P[] = [], crowns: Crown[] = [];
+    const { cells, widest } = this.crownsFiled();
+    const R = reach + Math.max(widest, TRUNK_ROOM);
+    for (let cx = Math.floor((p.x - R) / CROWN_CELL); cx <= Math.floor((p.x + R) / CROWN_CELL); cx++) {
+      for (let cy = Math.floor((p.y - R) / CROWN_CELL); cy <= Math.floor((p.y + R) / CROWN_CELL); cy++) {
+        for (const c of cells.get(`${cx},${cy}`) ?? []) {
+          const d = Math.hypot(c.x - p.x, c.y - p.y);
+          if (d < reach + c.r) {
+            base = Math.min(base, c.base);
+            top = Math.max(top, c.top);
+            crowns.push(c);
+          }
+          if (d < reach + TRUNK_ROOM) trunks.push({ x: c.x, y: c.y });
         }
-        if (d < reach + TRUNK_ROOM) trunks.push({ x: i.x, y: i.y });
-      } else if (i.type === "area" && i.kind === "woods") {
-        // (its outline as drawn, bulging past its corners where it curves)
-        const drawn = this.shapeOf(i);
-        if (near(drawn.pts, reach, drawn.box)) solid(this.h(p.x, p.y), WOODS_TOP_FT);
-      } else if (i.type === "structure" && !isLineKind(i.kind)) {
-        if (near(i.points)) solid(this.h(p.x, p.y), structureHeight(i) + 10);
       }
     }
-    // The painted map's own woods, where trees stand on it
-    const pw = this.ground.paintedTexture ? this.paintedWoods : null;
-    if (pw) {
-      const c = Math.floor((p.x - pw.x0) / pw.ftPerCell), r = Math.floor((p.y - pw.y0) / pw.ftPerCell);
-      if (c >= 0 && r >= 0 && c < pw.cols && r < pw.rows && pw.data[r * pw.cols + c] === 1) solid(this.h(p.x, p.y), WOODS_TOP_FT);
+    for (const i of doc.course.items) {
+      if (i.type !== "structure" || isLineKind(i.kind)) continue;
+      const b = boundsOf(i.points);
+      if (p.x < b.minX - reach || p.x > b.maxX + reach || p.y < b.minY - reach || p.y > b.maxY + reach) continue;
+      if (pointInPolygon(p, i.points) || distanceToPath(p, [...i.points, i.points[0]]) < reach) {
+        base = Math.min(base, this.h(p.x, p.y));
+        top = Math.max(top, this.h(p.x, p.y) + structureHeight(i) + 10);
+      }
     }
-    return Number.isFinite(top) || trunks.length ? { base, top, trunks } : null;
+    return Number.isFinite(top) || trunks.length ? { base, top, trunks, crowns } : null;
   }
 
   stopFlyover() {
@@ -2245,7 +2272,7 @@ export class CourseView {
         const el = make();
         el.classList.add("dg-ov");
         this.labelsLayer.appendChild(el);
-        o = { el, anchor, dy, sig, rank, minPx };
+        o = { el, anchor, dy, sig, rank, minPx, key };
         this.overlays.set(key, o);
       }
       o.anchor = anchor;
@@ -2951,11 +2978,17 @@ export class CourseView {
     const taken: { x0: number; y0: number; x1: number; y1: number }[] = [];
     const hits = (r: { x0: number; y0: number; x1: number; y1: number }) => taken.some(t => r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0);
     const doc = this.doc;
+    const tilted = this.controls.polarAngle > 15 * DEG;
     for (const o of list) {
       const s = this.project(o.anchor);
       if (!s || s.x < -60 || s.y < -60 || s.x > this.size.width + 60 || s.y > this.size.height + 60) {
         o.el.style.display = "none";
         continue;
+      }
+      // In 3D, a basket close enough to see is itself (at its real size), not its badge
+      if (tilted && o.key?.startsWith("basket:")) {
+        const foot = o.anchor.clone().setY(o.anchor.y - 2), top = this.project(foot.clone().setY(foot.y + BASKET_FT)), low = this.project(foot);
+        if (top && low && Math.hypot(top.x - low.x, top.y - low.y) >= BASKET_SEEN_PX) { o.el.style.display = "none"; continue; }
       }
       // Distance chips only when their hole is long enough on screen
       if (o.minPx && doc) {

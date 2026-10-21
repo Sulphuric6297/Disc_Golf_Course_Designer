@@ -57,5 +57,7 @@ export const createWoodsWhere = (bounds: { minX: number; minY: number; maxX: num
   const forest = new Forest(spots);
   forest.group.name = "woods";
   forest.group.userData.forest = forest;
+  // (where each tree stands and how big it is: flyovers keep clear of them)
+  forest.group.userData.spots = spots;
   return forest.group;
 };
