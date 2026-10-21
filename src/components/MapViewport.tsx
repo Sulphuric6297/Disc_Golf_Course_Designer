@@ -117,6 +117,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   // (and a sharper painting round the hole looked at, flown over or filmed)
   useEffect(() => { view?.setDetailPainter((holeId, maxPx) => paintedDetail(doc, holeId, maxPx)); }, [view, doc]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
+  const readOnly = useCourse(s => s.readOnly);
+  useEffect(() => { view?.setReadOnly(readOnly); }, [view, readOnly]);
   useEffect(() => { view?.setGroup(ed.group); }, [view, ed.group]);
   useEffect(() => { view?.setPlotLine(ed.plotLine); }, [view, ed.plotLine]);
   useEffect(() => { view?.setObPick(ed.obPick, ed.pickCut); }, [view, ed.obPick, ed.pickCut]);

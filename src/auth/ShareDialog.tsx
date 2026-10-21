@@ -1,8 +1,7 @@
 // Who has the open course, and (for its owners) sharing it: viewers look, editors change, owners
 // also share and delete.
 import { useEffect, useState } from "react";
-import { Section } from "../components/ui";
-import { inputCls } from "../components/ui";
+import { inputCls, Section } from "../components/ui";
 import { api, useAuth } from "./api";
 import { useServerCourse, type Role } from "./courses";
 import { Dialog, Form } from "./parts";
@@ -37,17 +36,17 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
       <div className="-mx-4">
         {owner && (
           <Section title="Add someone">
-            <Form submit="Share" testid="share-add" onSubmit={async () => {
+            <Form compact submit="Share" testid="share-add" onSubmit={async () => {
               await api("POST", `courses/${id}/members`, { username, role: newRole });
               setUsername("");
               await refresh();
             }}>
               <div className="flex gap-2">
-                <label className="flex-1">
+                <label className="flex-1 min-w-0">
                   <span className="sr-only">Username</span>
                   <input className={inputCls} list="share-people" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} autoCapitalize="none" spellCheck={false} aria-label="Username" />
                 </label>
-                <select className={`${inputCls} w-28`} value={newRole} onChange={e => setNewRole(e.target.value as Role)} aria-label="Role">
+                <select className="shrink-0 w-28 bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm touch:py-2.5 text-zinc-100 focus:outline-none focus:border-orange-400" value={newRole} onChange={e => setNewRole(e.target.value as Role)} aria-label="Role">
                   {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
               </div>

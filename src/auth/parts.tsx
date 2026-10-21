@@ -11,8 +11,9 @@ export const Logo = ({ size = 40 }: { size?: number }) => (
   </svg>
 );
 
-/** A form that shows what went wrong and is busy while it sends. */
-export function Form({ onSubmit, submit, children, testid }: { onSubmit: () => Promise<void>; submit: string; children: ReactNode; testid?: string }) {
+/** A form that shows what went wrong and is busy while it sends. `compact`: a small button (in
+ * dialogs), not the full-width one of the sign-in screens. */
+export function Form({ onSubmit, submit, children, testid, compact }: { onSubmit: () => Promise<void>; submit: string; children: ReactNode; testid?: string; compact?: boolean }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const go = async (e: FormEvent) => {
@@ -26,7 +27,7 @@ export function Form({ onSubmit, submit, children, testid }: { onSubmit: () => P
     <form onSubmit={go} className="space-y-3" data-testid={testid} noValidate>
       {children}
       {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
-      <button type="submit" disabled={busy} className="w-full inline-flex items-center justify-center rounded-lg font-semibold px-3 py-2 text-sm touch:py-3 bg-orange-500 hover:bg-orange-400 text-white shadow disabled:opacity-50">
+      <button type="submit" disabled={busy} className={`inline-flex items-center justify-center rounded-lg font-semibold text-sm text-white disabled:opacity-50 ${compact ? "px-3 py-1.5 touch:py-2.5 bg-zinc-700 hover:bg-orange-500" : "w-full px-3 py-2 touch:py-3 bg-orange-500 hover:bg-orange-400 shadow"}`}>
         {submit}
       </button>
     </form>

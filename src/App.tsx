@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MapPinned, Route, X } from "lucide-react";
 import { Header } from "./components/Header";
+import { ViewerPanel } from "./auth/ViewerPanel";
 import { SidePanel } from "./components/SidePanel";
 import { MapViewport, getView } from "./components/MapViewport";
 import { Toolbar, TOOLS } from "./components/Toolbar";
@@ -184,6 +185,8 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
 
 export default function App() {
   const ed = useEditor();
+  // (view only: no tools to change the course with)
+  const readOnly = useCourse(s => s.readOnly);
   const layout = useLayout();
   const doc = useCourse(s => s.doc);
   const [findSite, setFindSite] = useState(false);
@@ -354,12 +357,12 @@ export default function App() {
     <div className="h-screen w-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
       <Header onHelp={() => setHelp(true)} onGoTo={() => setGoTo(true)} />
       <div className="flex-1 flex min-h-0">
-        <SidePanel onFindSite={() => setFindSite(true)} />
+        {readOnly ? <ViewerPanel /> : <SidePanel onFindSite={() => setFindSite(true)} />}
         <main className="flex-1 relative min-w-0">
           <MapViewport onContextMenu={onContextMenu} />
           {ed.step === "design" && !ed.teeView && <MapDesigner />}
-          {ed.step !== "design" && <Toolbar />}
-          {ed.step !== "design" && <Inspector />}
+          {ed.step !== "design" && !readOnly && <Toolbar />}
+          {ed.step !== "design" && !readOnly && <Inspector />}
           {ed.teeView && <TeeViewHud />}
           <ExportProgressPill />
           <Toasts />

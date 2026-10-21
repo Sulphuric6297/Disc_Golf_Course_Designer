@@ -2,17 +2,33 @@
 // the File menu lists the courses shared with you, and a save made over someone else's newer one
 // is stopped and asked about.
 import { create } from "zustand";
+import { generateId } from "../constants";
 import { createEmptyCourse, normalizeCourse } from "../lib/course";
+import { courseStats, courseTotals, playsOf } from "../lib/holeStats";
 import { safeDoc } from "../lib/safeDoc";
 import type { PlanMeta } from "../lib/storage";
-import { getDoc, useCourse } from "../state/course";
+import { getDoc, useCourse, useEditor } from "../state/course";
 import { isEmpty, show } from "../state/files";
 import { toast } from "../state/toast";
 import type { CourseDoc } from "../types";
 import { api, ApiFail, useAuth } from "./api";
 
 export type Role = "owner" | "editor" | "viewer";
-export type ServerPlan = PlanMeta & { role: Role; updatedBy: string | null };
+export interface Summary { par: number; length: number; units: "ft" | "m"; canvas: { width: number; height: number }; lines: [number, number][][] }
+export type ServerPlan = PlanMeta & { role: Role; updatedBy: string | null; owner: string | null; members: number; summary: Partial<Summary> };
+
+/** What the course list shows of a course: totals, and each hole's throw line for a small map. */
+const summaryOf = (doc: CourseDoc): Summary => {
+  const stats = courseStats(doc);
+  const t = courseTotals(doc, stats);
+  // (long lines thinned to 64 points: plenty for a picture)
+  const thin = (l: { x: number; y: number }[]) => l.filter((_, i) => l.length <= 64 || i % Math.ceil(l.length / 63) === 0 || i === l.length - 1).slice(0, 64);
+  return {
+    par: t.par, length: Math.round(t.length), units: doc.units, canvas: doc.canvas,
+    lines: stats.filter(s => s.complete).slice(0, 200).map(s => thin(s.line).map(p => [Math.round(p.x), Math.round(p.y)] as [number, number]))
+  };
+};
+export const holesOf = (doc: CourseDoc) => doc.holes.reduce((n, h) => n + playsOf(doc, h.id), 0);
 
 type Status = "saved" | "saving" | "unsaved" | "conflict" | "error";
 
@@ -41,13 +57,14 @@ async function save() {
   set({ status: "saving" });
   try {
     const body = { ...doc, background: null };
+    const summary = summaryOf(doc);
     if (!state().id) {
-      const r = await api<{ id: string; version: number; role: Role }>("POST", "courses", { doc: body });
+      const r = await api<{ id: string; version: number; role: Role }>("POST", "courses", { doc: body, summary });
       set({ id: r.id, version: r.version, role: r.role });
       sentBackground = null;
       remember(r.id);
     } else {
-      const r = await api<{ version: number }>("PUT", `courses/${state().id}`, { doc: body, version: state().version });
+      const r = await api<{ version: number }>("PUT", `courses/${state().id}`, { doc: body, version: state().version, summary });
       set({ version: r.version });
     }
     if (doc.background !== sentBackground) {
@@ -70,13 +87,19 @@ export async function saveNow() {
   if (again) { again = false; await saveNow(); }
 }
 
-export const startServerAutosave = () =>
-  useCourse.subscribe((s, prev) => {
+export const startServerAutosave = () => {
+  const stopSaving = useCourse.subscribe((s, prev) => {
     if (s.doc === prev.doc || s.doc === opened || !canSave()) return;
     if (state().status === "saved") set({ status: "unsaved" });
     window.clearTimeout(timer);
     timer = window.setTimeout(() => void saveNow(), 1500);
   });
+  // View only: always the Select tool on the holes (look and pick, nothing to draw or place)
+  const keepSelect = useEditor.subscribe(e => {
+    if (useCourse.getState().readOnly && (e.tool !== "select" || e.step !== "holes")) e.set({ tool: "select", step: "holes" });
+  });
+  return () => { stopSaving(); keepSelect(); };
+};
 
 /** Opens a course from the server. */
 export async function openServerCourse(id: string, quiet = false) {
@@ -88,6 +111,7 @@ export async function openServerCourse(id: string, quiet = false) {
     set({ id, version: c.version, role: c.role, status: "saved", conflict: "" });
     sentBackground = doc.background;
     opened = doc;
+    useCourse.setState({ readOnly: c.role === "viewer" });
     show(doc);
     remember(id);
     return true;
@@ -103,11 +127,20 @@ export async function startUnsaved(doc: CourseDoc) {
   set({ id: null, version: 0, role: "owner", status: "saved", conflict: "" });
   sentBackground = null;
   opened = null;
+  useCourse.setState({ readOnly: false });
   show(doc);
   remember(null);
 }
 
 export const newServerCourse = () => startUnsaved(createEmptyCourse());
+
+/** A copy of the open course, yours to change (the one shared with you stays as it is). */
+export async function copyCourse() {
+  const doc = getDoc();
+  await startUnsaved({ ...doc, id: generateId(), seed: doc.seed ?? doc.id, name: `${doc.name || "Untitled course"} (copy)` });
+  await saveNow();
+  if (state().id) toast("Copied. This copy is yours.", "success");
+}
 
 export async function restoreServer() {
   let last: string | null = null;
@@ -118,8 +151,7 @@ export async function restoreServer() {
 }
 
 export const listServerCourses = async (): Promise<ServerPlan[]> =>
-  (await api<{ id: string; name: string; holes: number; updatedAt: string; role: Role; updatedBy: string | null }[]>("GET", "courses"))
-    .map(c => ({ id: c.id, name: c.name, holes: c.holes, updatedAt: new Date(c.updatedAt).getTime(), role: c.role, updatedBy: c.updatedBy }));
+  (await api<(Omit<ServerPlan, "updatedAt"> & { updatedAt: string })[]>("GET", "courses")).map(c => ({ ...c, updatedAt: new Date(c.updatedAt).getTime() }));
 
 /** Deletes a course you own; takes one shared with you off your list. */
 export async function removeServerCourse(id: string) {

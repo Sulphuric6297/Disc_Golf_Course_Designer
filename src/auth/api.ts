@@ -29,16 +29,21 @@ type Dialog = null | "account" | "people" | "share";
 export const useAuth = create<{
   session: Session | null;
   dialog: Dialog;
+  /** The course list (the first page once signed in), over the app. */
+  home: boolean;
+  showHome: (on: boolean) => void;
   load: () => Promise<void>;
   signOut: () => Promise<void>;
   open: (d: Dialog) => void;
 }>((set, get) => ({
   session: null,
   dialog: null,
+  home: true,
+  showHome: home => set({ home, dialog: null }),
   load: async () => set({ session: await api<Session>("GET", "session") }),
   signOut: async () => {
     await api("POST", "logout").catch(() => {});
-    set({ dialog: null });
+    set({ dialog: null, home: true });
     await get().load();
   },
   open: dialog => set({ dialog })

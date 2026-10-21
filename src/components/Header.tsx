@@ -17,6 +17,8 @@ const Logo = () => (
 
 export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => void }) {
   const name = useCourse(s => s.doc.name);
+  // (view only: the name as text, and no steps)
+  const readOnly = useCourse(s => s.readOnly);
   const ed = useEditor();
   const [menu, setMenu] = useState(false);
   const [recent, setRecent] = useState<PlanMeta[]>([]);
@@ -38,13 +40,13 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
     <header className="h-14 shrink-0 bg-zinc-950 border-b border-zinc-800 flex items-center gap-3 px-3 z-30">
       <Logo />
       <div className="flex items-center gap-1 min-w-0">
-        <input
+        {readOnly ? <span className="text-zinc-50 font-bold text-[15px] px-1.5 py-1 max-w-[230px] truncate" data-testid="course-title">{name}</span> : <input
           aria-label="Course name"
           className="bg-transparent text-zinc-50 font-bold text-[15px] px-1.5 py-1 rounded hover:bg-zinc-900 focus:bg-zinc-900 focus:outline-none w-[160px] xl:w-[230px] truncate"
           value={name}
           onChange={e => changeDoc(() => ({ name: e.target.value }), false)}
           onBlur={() => useCourse.getState().commit()}
-        />
+        />}
         <div className="relative" ref={menuRef}>
           <button className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm text-zinc-300 hover:bg-zinc-800" onClick={() => setMenu(m => !m)} aria-haspopup="menu" aria-expanded={menu} data-testid="file-menu">
             File <ChevronDown size={14} />
@@ -72,7 +74,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
         <input ref={fileRef} type="file" accept=".json,.dgcourse.json,application/json" className="hidden" aria-label="Open course file" onChange={e => { const f = e.target.files?.[0]; if (f) void openCourseFile(f); e.target.value = ""; }} />
       </div>
 
-      <nav aria-label="Steps" className="flex-1 flex justify-center">
+      {readOnly ? <div className="flex-1" /> : <nav aria-label="Steps" className="flex-1 flex justify-center">
         <ol className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl p-1 gap-0.5">
           {STEPS.map((s, i) => (
             <li key={s.id}>
@@ -87,7 +89,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
             </li>
           ))}
         </ol>
-      </nav>
+      </nav>}
 
       <div className="flex items-center gap-2">
         <div className="flex bg-zinc-900 border border-zinc-800 rounded-xl p-1" role="radiogroup" aria-label="View">

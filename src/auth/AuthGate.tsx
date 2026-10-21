@@ -6,6 +6,7 @@ import { BackupCodes, CopyButton, Form, Input, Screen } from "./parts";
 import { AccountDialog } from "./AccountDialog";
 import { PeopleDialog } from "./PeopleDialog";
 import { ShareDialog } from "./ShareDialog";
+import { Home } from "./Home";
 
 const samePassword = (a: string, b: string) => { if (a !== b) throw new Error("The passwords don't match"); };
 
@@ -17,7 +18,7 @@ const linkToken = () => {
 const clearLink = () => history.replaceState(null, "", location.pathname + location.search);
 
 export function AuthGate({ children }: { children: ReactNode }) {
-  const { session, load, dialog, open } = useAuth();
+  const { session, load, dialog, open, home } = useAuth();
   const [token, setToken] = useState(linkToken);
   const [codes, setCodes] = useState<string[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -48,6 +49,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return (
       <>
         {children}
+        {home && <Home />}
         {dialog === "account" && <AccountDialog onClose={() => open(null)} />}
         {dialog === "people" && session.user.isAdmin && <PeopleDialog onClose={() => open(null)} />}
         {dialog === "share" && <ShareDialog onClose={() => open(null)} />}

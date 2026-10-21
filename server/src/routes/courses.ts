@@ -18,6 +18,14 @@ const courseDoc = z.looseObject({
 // (the aerial photo: an image as a data URL, nothing else)
 const IMAGE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/;
 const BIG = { bodyLimit: 64 << 20 };
+/** The course list's summary of a course (from the app): small, numbers and short text only. */
+const summary = z.object({
+  par: z.number().int().min(0).max(10_000),
+  length: z.number().min(0).max(10_000_000),
+  units: z.enum(["ft", "m"]),
+  canvas: z.object({ width: z.number().positive().max(1e7), height: z.number().positive().max(1e7) }),
+  lines: z.array(z.array(z.tuple([z.number(), z.number()])).max(64)).max(200)
+}).optional();
 
 type Id = { Params: { id: string } };
 const ids = z.object({ id: z.uuid("Not found") });
@@ -37,19 +45,25 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
   app.get("/api/courses", async req => {
     const a = need(req);
     const rows = await sql`
-      select c.id, c.name, c.holes, c.version, c.updated_at, m.role, u.display_name as updated_by
+      select c.id, c.name, c.holes, c.version, c.updated_at, c.summary, m.role, u.display_name as updated_by,
+        (select o.display_name from course_members om join users o on o.id = om.user_id
+          where om.course_id = c.id and om.role = 'owner' order by om.added_at limit 1) as owner,
+        (select count(*)::int from course_members x where x.course_id = c.id) as members
       from course_members m join courses c on c.id = m.course_id left join users u on u.id = c.updated_by
       where m.user_id = ${a.user.id} order by c.updated_at desc`;
-    return rows.map(r => ({ id: r.id, name: r.name, holes: r.holes, version: r.version, updatedAt: r.updated_at, role: r.role, updatedBy: r.updated_by }));
+    return rows.map(r => ({
+      id: r.id, name: r.name, holes: r.holes, version: r.version, updatedAt: r.updated_at, role: r.role, updatedBy: r.updated_by,
+      owner: r.owner, members: r.members, summary: r.summary
+    }));
   });
 
   app.post("/api/courses", BIG, async req => {
     const a = need(req);
-    const { doc } = parse(z.object({ doc: courseDoc }), req.body);
+    const { doc, summary: sum } = parse(z.object({ doc: courseDoc, summary }), req.body);
     const course = await sql.begin(async tx => {
       const [c] = await tx`
-        insert into courses (name, holes, doc, created_by, updated_by)
-        values (${doc.name}, ${doc.holes.length}, ${tx.json(stored(doc) as never)}, ${a.user.id}, ${a.user.id}) returning id, version`;
+        insert into courses (name, holes, doc, summary, created_by, updated_by)
+        values (${doc.name}, ${doc.holes.length}, ${tx.json(stored(doc) as never)}, ${tx.json((sum ?? {}) as never)}, ${a.user.id}, ${a.user.id}) returning id, version`;
       await tx`insert into course_members (course_id, user_id, role) values (${c.id}, ${a.user.id}, 'owner')`;
       return c;
     });
@@ -67,9 +81,9 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
   app.put<Id>("/api/courses/:id", BIG, async req => {
     const { id } = parse(ids, req.params);
     const { a } = await role(req, id, "editor");
-    const b = parse(z.object({ doc: courseDoc, version: z.number().int() }), req.body);
+    const b = parse(z.object({ doc: courseDoc, version: z.number().int(), summary }), req.body);
     const [done] = await sql`
-      update courses set doc = ${sql.json(stored(b.doc) as never)}, name = ${b.doc.name}, holes = ${b.doc.holes.length},
+      update courses set doc = ${sql.json(stored(b.doc) as never)}, summary = ${sql.json((b.summary ?? {}) as never)}, name = ${b.doc.name}, holes = ${b.doc.holes.length},
         version = version + 1, updated_by = ${a.user.id}, updated_at = now()
       where id = ${id} and version = ${b.version} returning version`;
     if (!done) {

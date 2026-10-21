@@ -32,14 +32,14 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
     <Dialog title="Account" onClose={onClose} testid="account-dialog">
       <div className="-mx-4">
         <Section title="Name">
-          <Form submit="Save" onSubmit={async () => { await api("POST", "me", { displayName: name }); await load(); }}>
+          <Form compact submit="Save" onSubmit={async () => { await api("POST", "me", { displayName: name }); await load(); }}>
             <Input label={`Shown to others · signed in as ${user.username}`} value={name} onChange={setName} auto="name" />
           </Form>
         </Section>
 
         <Section title="Password">
           {pwDone ? <p className="text-sm text-emerald-300">Password changed. Signed out everywhere else.</p> : (
-            <Form submit="Change password" testid="change-password" onSubmit={async () => {
+            <Form compact submit="Change password" testid="change-password" onSubmit={async () => {
               if (pw.next !== pw.again) throw new Error("The new passwords don't match");
               await api("POST", "me/password", { current: pw.current, next: pw.next, code: pw.code });
               setPwDone(true);
@@ -55,7 +55,7 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
 
         <Section title="Backup codes">
           {codes ? <BackupCodes codes={codes} /> : (
-            <Form submit="New backup codes" onSubmit={async () => { setCodes((await api<{ backupCodes: string[] }>("POST", "me/backup-codes", { code: codesCode })).backupCodes); void refresh(); }}>
+            <Form compact submit="New backup codes" onSubmit={async () => { setCodes((await api<{ backupCodes: string[] }>("POST", "me/backup-codes", { code: codesCode })).backupCodes); void refresh(); }}>
               <p className="text-sm text-zinc-300">{list ? `${list.backupCodesLeft} left` : "…"}</p>
               <Input label="Code from your app" value={codesCode} onChange={setCodesCode} auto="one-time-code" mono />
             </Form>

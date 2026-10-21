@@ -10,6 +10,9 @@ test.describe.configure({ mode: "serial" });
 const offline = (c: BrowserContext) => c.route(url => !/^http:\/\/localhost:4175\//.test(url.href), r => r.abort());
 test.beforeEach(async ({ context }) => { await offline(context); });
 
+/** The whole site in view, at once (a hole picked earlier leaves the map zoomed to it). */
+const site = (page: Page) => page.evaluate(() => (window as any).__dgView.fitSite(false));
+
 /** Signed in, as saved at the end of the first test. */
 const signedIn: Record<string, Awaited<ReturnType<BrowserContext["storageState"]>>> = {};
 async function as(browser: Browser, who: string) {
@@ -17,7 +20,7 @@ async function as(browser: Browser, who: string) {
   await offline(c);
   const page = await c.newPage();
   await page.goto("/");
-  await expect(page.getByTestId("account-menu")).toBeVisible();
+  await expect(page.getByTestId("home")).toBeVisible();
   return page;
 }
 
@@ -37,7 +40,7 @@ async function setUp2fa(page: Page) {
   await expect(page.getByTestId("backup-codes").locator("li")).toHaveCount(10);
   const backup = (await page.getByTestId("backup-codes").locator("li").allTextContents()).map(s => s.trim());
   await page.getByTestId("codes-saved").click();
-  await expect(page.getByTestId("account-menu")).toBeVisible();
+  await expect(page.getByTestId("home")).toBeVisible();
   return { secret, backup };
 }
 
@@ -59,7 +62,7 @@ test("the admin, an invite, signing in again with a backup code", async ({ page,
   await expect(page.getByRole("heading", { name: "Set up two-factor sign-in" })).toBeVisible();
   await expect(page.getByRole("img", { name: "QR code for the authenticator app" })).toBeVisible();
   const admin = await setUp2fa(page);
-  await expect(page.getByRole("textbox", { name: "Course name" }).first()).toBeVisible();
+  await expect(page.getByTestId("home").getByRole("heading", { name: "No courses yet" })).toBeVisible();
 
   // An invite link
   await page.getByTestId("account-menu").click();
@@ -113,7 +116,7 @@ test("the admin, an invite, signing in again with a backup code", async ({ page,
   await expect(page.getByRole("alert")).toHaveText("Wrong code");
   await page.getByLabel(/Code from your app/).fill(admin.backup[0]);
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByTestId("account-menu")).toBeVisible();
+  await expect(page.getByTestId("home")).toBeVisible();
 
   // Account: both of the admin's sign-ins listed (this one marked)
   await page.getByTestId("account-menu").click();
@@ -125,14 +128,20 @@ test("the admin, an invite, signing in again with a backup code", async ({ page,
   await other.close();
 });
 
-test("courses: kept on the server, shared as viewer then editor, a save over a newer one asked about", async ({ browser }) => {
+test("courses: a home page, shared as viewer (look only, or copy) then editor, a save over a newer one asked about", async ({ browser }) => {
   const admin = await as(browser, "admin");
+  await admin.getByTestId("new-course").click();
+  await expect(admin.getByTestId("home")).toHaveCount(0);
   await blankCourse(admin);
   await addHole(admin, { x: 100, y: 200 }, { x: 650, y: 200 });
   await expect(admin.getByTestId("save-status")).toHaveText("Saved");
-  await admin.getByTestId("file-menu").click();
-  await expect(admin.getByTestId("recent-course")).toHaveCount(1);
-  await admin.keyboard.press("Escape");
+  // Back on the home page: the course, with its numbers
+  await admin.getByTestId("courses-button").click();
+  const card = admin.getByTestId("my-courses").getByTestId("course-card");
+  await expect(card).toHaveCount(1);
+  await expect(card).toContainText("1 hole · Par 4");
+  await expect(card.locator("svg polyline")).toHaveCount(1);
+  await admin.getByTestId("back-to-course").click();
 
   // Shared with Pat to look at
   await admin.getByTestId("share-button").click();
@@ -140,34 +149,63 @@ test("courses: kept on the server, shared as viewer then editor, a save over a n
   await admin.getByTestId("share-add").getByLabel("Role").selectOption("viewer");
   await admin.getByTestId("share-add").getByRole("button", { name: "Share" }).click();
   await expect(admin.getByTestId("members").locator("li")).toHaveCount(2);
+  await admin.keyboard.press("Escape");
 
   const pat = await as(browser, "pat");
-  expect((await course(pat)).holes.length).toBe(0);
-  await pat.getByTestId("file-menu").click();
-  await pat.getByTestId("recent-course").first().click();
+  const sharedCard = pat.getByTestId("shared-courses").getByTestId("course-card");
+  await expect(sharedCard).toHaveCount(1);
+  await expect(sharedCard).toContainText("View only");
+  await expect(sharedCard).toContainText("Admin's");
+  await sharedCard.click();
+  // View only: nothing to change it with
+  await expect(pat.getByTestId("viewer-panel")).toBeVisible();
   await expect(pat.getByTestId("view-only")).toBeVisible();
-  expect((await course(pat)).holes.length).toBe(1);
+  await expect(pat.getByRole("navigation", { name: "Steps" })).toHaveCount(0);
+  await expect(pat.getByRole("textbox", { name: "Course name" })).toHaveCount(0);
   await expect(pat.getByTestId("share-button")).toHaveCount(0);
-  // A viewer's changes stay theirs alone
-  await addHole(pat, { x: 100, y: 500 }, { x: 650, y: 500 });
-  await pat.waitForTimeout(2500);
-  await pat.reload();
-  await expect(pat.getByTestId("view-only")).toBeVisible();
-  await expect.poll(async () => (await course(pat)).holes.length).toBe(1);
+  expect((await course(pat)).holes.length).toBe(1);
+  await pat.getByTestId("hole-row").click();
+  await expect(pat.getByTestId("viewer-hole")).toContainText("550 ft");
+  await expect(pat.getByTestId("inspector")).toHaveCount(0);
+  await expect(pat.locator(".dg-h")).toHaveCount(0);
+  await pat.keyboard.press("h");
+  const p = await pat.evaluate(() => (window as any).__dgView.toClient(300, 500, 0));
+  await pat.mouse.click(p.x, p.y);
+  await pat.mouse.click(p.x + 200, p.y);
+  await pat.keyboard.press("Delete");
+  await pat.keyboard.press("Control+z");
+  expect((await course(pat)).holes.length).toBe(1);
+  expect(await pat.evaluate(() => (window as any).__dgEditor().tool)).toBe("select");
 
-  // Now an editor: Pat's changes save
+  // A copy is Pat's own to change
+  await pat.getByTestId("copy-course").click();
+  await expect(pat.getByTestId("save-status")).toHaveText("Saved");
+  await expect(pat.getByTestId("viewer-panel")).toHaveCount(0);
+  expect((await course(pat)).name).toMatch(/\(copy\)$/);
+  await site(pat);
+  await addHole(pat, { x: 100, y: 500 }, { x: 650, y: 500 });
+  await expect(pat.getByTestId("save-status")).toHaveText("Saved");
+  await pat.getByTestId("courses-button").click();
+  await expect(pat.getByTestId("my-courses").getByTestId("course-card")).toContainText("2 holes");
+
+  // Now an editor of the original: Pat's changes save
+  await admin.getByTestId("share-button").click();
   await admin.getByLabel("Role for pat").selectOption("editor");
   await admin.keyboard.press("Escape");
-  await pat.reload();
+  await sharedCard.click();
   await expect(pat.getByTestId("save-status")).toHaveText("Saved");
+  await site(pat);
   await addHole(pat, { x: 100, y: 500 }, { x: 650, y: 500 });
   await expect(pat.getByTestId("save-status")).toHaveText("Saved");
   await admin.reload();
+  await admin.getByTestId("my-courses").getByTestId("course-card").click();
   await expect.poll(async () => (await course(admin)).holes.length).toBe(2);
+  await site(admin);
 
   // Both change it: the later save, from the older version, is stopped
   await addHole(admin, { x: 100, y: 800 }, { x: 650, y: 800 });
   await expect(admin.getByTestId("save-status")).toHaveText("Saved");
+  await site(pat);
   await addHole(pat, { x: 900, y: 200 }, { x: 900, y: 700 });
   await expect(pat.getByTestId("save-conflict")).toBeVisible();
   await pat.getByTestId("save-conflict").click();

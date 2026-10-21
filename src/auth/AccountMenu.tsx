@@ -1,7 +1,7 @@
 // The account button in the top bar, with the open course's saving and Share (nothing in the
 // browser-only demo), and the same choices for the phone's app menu.
 import { useEffect, useRef, useState } from "react";
-import { LogOut, Share2, UserRound, Users } from "lucide-react";
+import { LayoutGrid, LogOut, Share2, UserRound, Users } from "lucide-react";
 import { SERVER, useAuth } from "./api";
 import { keepMine, reloadTheirs, saveNow, useServerCourse } from "./courses";
 
@@ -32,10 +32,13 @@ function CourseStatus() {
   return <span className={`text-[12px] ${status === "error" ? "text-red-300" : "text-zinc-500"}`} data-testid="save-status">{text}</span>;
 }
 
-export function AccountMenu() {
+/** `home`: on the course list (no open course's saving or Share; no Courses button). */
+export function AccountMenu({ home = false }: { home?: boolean }) {
   const user = useAuth(s => s.session?.user);
   const open = useAuth(s => s.open);
   const role = useServerCourse(s => s.role);
+  // (the course list covers the app: only its own menu then)
+  const covered = useAuth(s => s.home) && !home;
   const [menu, setMenu] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -46,12 +49,17 @@ export function AccountMenu() {
     window.addEventListener("keydown", esc);
     return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc); };
   }, [menu]);
-  if (!SERVER || !user) return null;
+  if (!SERVER || !user || covered) return null;
   const item = "w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 text-left";
   return (
     <>
-    <CourseStatus />
-    {role === "owner" && (
+    {!home && <CourseStatus />}
+    {!home && (
+      <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800" onClick={() => useAuth.getState().showHome(true)} data-testid="courses-button">
+        <LayoutGrid size={15} /> Courses
+      </button>
+    )}
+    {!home && role === "owner" && (
       <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800 border border-zinc-700" onClick={() => open("share")} data-testid="share-button">
         <Share2 size={15} /> Share
       </button>
@@ -80,6 +88,7 @@ export function accountActions() {
   const user = session?.user;
   if (!SERVER || !user) return [];
   return [
+    { label: "Courses", icon: <LayoutGrid size={19} />, run: () => useAuth.getState().showHome(true) },
     { label: "Share", icon: <Share2 size={19} />, run: () => open("share") },
     { label: "Account", icon: <UserRound size={19} />, run: () => open("account") },
     ...(user.isAdmin ? [{ label: "People", icon: <Users size={19} />, run: () => open("people") }] : []),

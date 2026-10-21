@@ -11,6 +11,8 @@ type CourseStore = {
   future: CourseDoc[];
   /** The document before the gesture now under way (dragging), for its single undo step. */
   gestureStart: CourseDoc | null;
+  /** View only (a course shared with you to look at): nothing changes it but opening another. */
+  readOnly: boolean;
   /** Changes the document. With history (the default) it is one undo step. */
   change: (fn: (doc: CourseDoc) => Partial<CourseDoc>, history?: boolean) => void;
   /** Ends a gesture of live changes as one undo step. */
@@ -26,8 +28,10 @@ export const useCourse = create<CourseStore>()((set, get) => ({
   past: [],
   future: [],
   gestureStart: null,
+  readOnly: false,
   change: (fn, history = true) => {
-    const { doc, past, gestureStart } = get();
+    const { doc, past, gestureStart, readOnly } = get();
+    if (readOnly) return;
     const next = { ...doc, ...fn(doc) };
     if (history) set({ doc: next, past: [...past.slice(-HISTORY + 1), gestureStart ?? doc], future: [], gestureStart: null });
     else set({ doc: next, gestureStart: gestureStart ?? doc });
@@ -39,13 +43,15 @@ export const useCourse = create<CourseStore>()((set, get) => ({
     set({ past: [...past.slice(-HISTORY + 1), gestureStart], future: [], gestureStart: null });
   },
   undo: () => {
-    const { past, future, doc, gestureStart } = get();
+    const { past, future, doc, gestureStart, readOnly } = get();
+    if (readOnly) return;
     const base = gestureStart ?? doc;
     if (!past.length) return;
     set({ doc: past[past.length - 1], past: past.slice(0, -1), future: [base, ...future], gestureStart: null });
   },
   redo: () => {
-    const { past, future, doc } = get();
+    const { past, future, doc, readOnly } = get();
+    if (readOnly) return;
     if (!future.length) return;
     set({ doc: future[0], future: future.slice(1), past: [...past, doc], gestureStart: null });
   },
