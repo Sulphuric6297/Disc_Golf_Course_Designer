@@ -35,7 +35,7 @@ const Row = ({ icon, children, onClick, testid, danger }: { icon?: ReactNode; ch
 );
 
 /** The open course: how it's being changed, and what can be done about it. */
-function CourseChip() {
+export function CourseChip() {
   const { status, role, conflict, preview, draft, approval, pending, id } = useServerCourse();
   const open = useAuth(s => s.open);
   useCourse(s => s.doc); // (what the draft changes, kept up to date)
