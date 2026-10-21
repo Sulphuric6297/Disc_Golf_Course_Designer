@@ -2639,7 +2639,10 @@ export class CourseView {
     const lidar = course.lidar, ls = this.lidarState;
     if (lidar && ls) {
       const mark = (k: number, kept: boolean) => {
-        const [x, y] = lidar.trees[k];
+        // (a sapling grown since the survey isn't in the list: no stump for it)
+        const t = lidar.trees[k];
+        if (!t) return;
+        const [x, y] = t;
         put(`stump:${k}`, String(kept), 4, () => {
           const el = document.createElement("div");
           el.className = kept ? "dg-stump kept" : "dg-stump";
@@ -2689,7 +2692,9 @@ export class CourseView {
     if (!lidar || !ls) return null;
     let best: number | null = null, bestD = Infinity;
     for (const k of ls.stand) {
-      const [x, y, , r] = lidar.trees[k], d = Math.hypot(x - p.x, y - p.y);
+      const t = lidar.trees[k];
+      if (!t) continue; // (a sapling since the survey: not one to cut by hand)
+      const [x, y, , r] = t, d = Math.hypot(x - p.x, y - p.y);
       if (d < Math.max(4, r * 0.6) && d < bestD) { best = k; bestD = d; }
     }
     return best;
