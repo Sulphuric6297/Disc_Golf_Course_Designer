@@ -85,7 +85,7 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
     const e = err as { statusCode?: number; code?: string };
     if (e.statusCode === 413) return reply.status(413).send({ error: "Too big to save" });
     if (e.statusCode === 429) return reply.status(429).send({ error: "Too many tries. Wait a minute" });
-    if (e.code === "23505") return reply.status(409).send({ error: "That's taken" });
+    if (e.code === "23505") return reply.status(409).send({ error: "That name is taken" });
     if (e.statusCode && e.statusCode < 500) return reply.status(e.statusCode).send({ error: "Invalid request" });
     req.log.error(err);
     return reply.status(500).send({ error: "Something went wrong" });

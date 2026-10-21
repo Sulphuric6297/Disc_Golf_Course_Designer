@@ -12,7 +12,8 @@ import type { CourseDoc, Units } from "../types";
 import { Logo } from "./parts";
 import { useServerCourse } from "./courses";
 
-export const SITE_TOKEN = /^#site=([A-Za-z0-9_-]{20,})$/.exec(location.hash)?.[1] ?? null;
+// (a link's random address, or the name its owner gave it)
+export const SITE_TOKEN = /^#site=([A-Za-z0-9_-]{3,})$/.exec(location.hash)?.[1] ?? null;
 
 interface Site {
   info: { name: string; designer?: string; units?: Units; totals?: { holes: number; par: number; length: number; climb: number }; holes: { id?: string; label: string; name: string; par: number; length: number; elevation: number; playsLike: number }[] };
