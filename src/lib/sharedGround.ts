@@ -12,8 +12,26 @@ const across = (x: number, y: number, to: CourseDoc, from: CourseDoc): P | null 
   return { x: ((lon - b.west) / (b.east - b.west)) * from.canvas.width, y: ((b.north - lat) / (b.north - b.south)) * from.canvas.height };
 };
 
+/** The same trees in a new list: each of `picks` (indices into `was`) as the index of the tree
+ * standing where it stood in `now`, within `reach` ft; those with none there are dropped. */
+const samePlaces = (picks: number[] | undefined, was: LidarTree[], now: LidarTree[], reach = 3) => {
+  if (!picks?.length) return undefined;
+  const out: number[] = [];
+  for (const k of picks) {
+    const t = was[k];
+    if (!t) continue;
+    let best = -1, d = reach * reach;
+    now.forEach((u, j) => { const dd = (u[0] - t[0]) ** 2 + (u[1] - t[1]) ** 2; if (dd < d) { d = dd; best = j; } });
+    if (best >= 0) out.push(best);
+  }
+  return out.length ? out.sort((a, b) => a - b) : undefined;
+};
+
 /** Course `to` with `from`'s ground where they overlap (its own elsewhere), and `from`'s measured
- * trees on its ground if asked. Its holes, OB and everything drawn: as they are. */
+ * trees on its ground if asked. Its holes, OB and everything drawn: as they are. So are its own
+ * decisions about trees: the ones it cut down or kept stay so (found by where they stand), while
+ * `from`'s cuts and keeps are its own and don't come across. A tree on one course's fairway is only
+ * cleared there: each course clears its own fairways when drawn. */
 export function withGround(to: CourseDoc, from: CourseDoc, trees: boolean): CourseDoc {
   const g = to.gridSize || 20;
   const heights = { ...to.terrainHeights };
@@ -31,7 +49,12 @@ export function withGround(to: CourseDoc, from: CourseDoc, trees: boolean): Cour
       const q = across(t[0], t[1], from, to);
       if (q && q.x >= 0 && q.y >= 0 && q.x <= to.canvas.width && q.y <= to.canvas.height) moved.push([Math.round(q.x * 10) / 10, Math.round(q.y * 10) / 10, t[2], t[3], t[4]]);
     }
-    lidar = { source: from.lidar.source, trees: moved, minHeight: from.lidar.minHeight, growYears: from.lidar.growYears };
+    const own = to.lidar?.trees ?? [];
+    lidar = {
+      source: from.lidar.source, trees: moved,
+      removed: samePlaces(to.lidar?.removed, own, moved), kept: samePlaces(to.lidar?.kept, own, moved),
+      minHeight: to.lidar?.minHeight ?? from.lidar.minHeight, growYears: to.lidar?.growYears ?? from.lidar.growYears,
+    };
   }
   return { ...to, terrainHeights: heights, lidar, site: { ...to.site, elevationSource: from.site.elevationSource ?? to.site.elevationSource } };
 }

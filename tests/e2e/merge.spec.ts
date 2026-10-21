@@ -88,3 +88,17 @@ test("one ground for the park: a course takes another's ground where they overla
   // (none measured there: this one keeps its own)
   expect(back.lidar).toEqual(from.lidar);
 });
+
+test("one ground for the park: each course's own tree decisions stay its own (pure logic)", async () => {
+  const { withGround } = await import("../../src/lib/sharedGround");
+  const site = { location: null, bounds: { north: 40, south: 39.99, west: -89, east: -88.99 }, baseElevationFt: 100 };
+  const base = { holes: [], items: [], canvas: { width: 100, height: 100 }, gridSize: 50, site, terrainHeights: {} };
+  // A cut tree 0 down and kept tree 1 (on its fairway); B, framed the same, cut tree 1 down and kept tree 2
+  const from = { ...base, name: "A", lidar: { source: "USGS 2017", trees: [[10, 10, 40, 10, 0], [20, 20, 50, 12, 0], [30, 30, 60, 14, 1]], removed: [0], kept: [1] } } as any;
+  const to = { ...base, name: "B", lidar: { source: "old", trees: [[20.4, 19.8, 45, 11, 0], [30, 30, 55, 13, 1], [90, 90, 20, 5, 0]], removed: [0], kept: [1] } } as any;
+  const out = withGround(to, from, true);
+  expect(out.lidar.trees).toHaveLength(3);
+  expect(out.lidar.removed).toEqual([1]);
+  expect(out.lidar.kept).toEqual([2]);
+  expect(out.lidar.removed).not.toContain(0);
+});
