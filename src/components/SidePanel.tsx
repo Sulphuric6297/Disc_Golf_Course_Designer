@@ -19,7 +19,7 @@ import { ExportPanel } from "./ExportPanel";
 import { useTouch } from "./useLayout";
 import { SERVER } from "../auth/api";
 import { draftHoles } from "../auth/courses";
-import { NearbyCourses } from "../auth/Nearby";
+import { NearbyCourses, NearbySafety } from "../auth/Nearby";
 
 export const STEPS: { id: Step; label: string; title: string }[] = [
   { id: "site", label: "Site", title: "Your site" },
@@ -402,6 +402,7 @@ function ReviewStep() {
           </tbody>
         </table>
       </Section>
+      {SERVER && <NearbySafety />}
       <NextButton step="review" />
     </>
   );

@@ -453,7 +453,23 @@ export class CourseView {
    * coordinates) in its color. */
   setNearby(courses: { color: string; lines: P[][] }[]) {
     for (const o of [...this.nearbyGroup.children]) { this.nearbyGroup.remove(o); disposeObjectDeep(o); }
+    // (a hole's number, beside its tee, in the course's color)
+    const number = (n: number, color: string, p: P) => {
+      const cv = document.createElement("canvas");
+      cv.width = cv.height = 64;
+      const g = cv.getContext("2d")!;
+      g.fillStyle = color;
+      g.beginPath(); g.arc(32, 32, 30, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#111"; g.font = "bold 34px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText(String(n), 32, 34);
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false, transparent: true }));
+      s.scale.set(16, 16, 1);
+      s.position.set(p.x, this.h(p.x, p.y) + 10, p.y);
+      s.renderOrder = 8;
+      return s;
+    };
     for (const c of courses) {
+      c.lines.forEach((l, i) => { if (l.length >= 2) this.nearbyGroup.add(number(i + 1, c.color, l[0])); });
       for (const l of c.lines) {
         if (l.length < 2) continue;
         this.nearbyGroup.add(this.fatLine(this.drapeLine(l, LIFT + 0.3), c.color, 3, { dashed: 10, opacity: 0.9, order: 6 }));

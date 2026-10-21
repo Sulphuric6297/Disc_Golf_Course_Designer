@@ -15,7 +15,7 @@ import { useServerCourse } from "./courses";
 export const SITE_TOKEN = /^#site=([A-Za-z0-9_-]{20,})$/.exec(location.hash)?.[1] ?? null;
 
 interface Site {
-  info: { name: string; designer?: string; units?: Units; totals?: { holes: number; par: number; length: number; climb: number }; holes: { label: string; name: string; par: number; length: number; elevation: number; playsLike: number }[] };
+  info: { name: string; designer?: string; units?: Units; totals?: { holes: number; par: number; length: number; climb: number }; holes: { id?: string; label: string; name: string; par: number; length: number; elevation: number; playsLike: number }[] };
   shown: Record<string, boolean>;
   publishedAt: string;
   hasCourse: boolean;
@@ -55,7 +55,8 @@ export function PublicSite({ children }: { children: ReactNode }) {
   };
   useEffect(() => { void load(""); }, []);
 
-  const open3d = async () => {
+  /** The course to look round (and a hole's flyover, when one is asked for). */
+  const open3d = async (flyHole?: string) => {
     const res = await get("/course", password);
     if (!res.ok) return;
     const { doc } = await res.json() as { doc: CourseDoc };
@@ -74,6 +75,8 @@ export function PublicSite({ children }: { children: ReactNode }) {
     show(d);
     useEditor.getState().set({ view: site!.shown.view3d && !site!.shown.map ? "3d" : "2d" });
     setExplore(true);
+    // (straight down the hole from its tee)
+    if (flyHole && d.holes.some(h => h.id === flyHole)) setTimeout(() => useEditor.getState().set({ view: "3d", teeView: flyHole, flyover: true }), 400);
   };
 
   if (explore) {
@@ -100,6 +103,8 @@ export function PublicSite({ children }: { children: ReactNode }) {
   if (!site) return <div className="min-h-[100dvh] bg-zinc-950" aria-busy="true" />;
 
   const u = site.info.units ?? "ft";
+  // (each hole's flyover, when the link shows flyovers and the course)
+  const flies = site.hasCourse && !!site.shown.flyovers;
   const t = site.info.totals;
   const signs = Object.keys(files).filter(n => n.startsWith("sign-")).sort((a, b) => parseInt(a.slice(5)) - parseInt(b.slice(5)));
   const map = files["map.webp"] ?? files["map.png"];
@@ -151,7 +156,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
             <h2 className="text-[12px] font-bold uppercase tracking-wider text-zinc-400 mb-3">Holes</h2>
             <div className="overflow-x-auto rounded-xl border border-zinc-800">
               <table className="w-full text-sm" data-testid="public-holes">
-                <thead className="bg-zinc-900 text-zinc-400 text-[12px] uppercase tracking-wider"><tr><th className="text-left p-2.5">Hole</th><th className="text-right p-2.5">Par</th><th className="text-right p-2.5">Length</th><th className="text-right p-2.5">Elevation</th><th className="text-right p-2.5 hidden sm:table-cell">Plays like</th></tr></thead>
+                <thead className="bg-zinc-900 text-zinc-400 text-[12px] uppercase tracking-wider"><tr><th className="text-left p-2.5">Hole</th><th className="text-right p-2.5">Par</th><th className="text-right p-2.5">Length</th><th className="text-right p-2.5">Elevation</th><th className="text-right p-2.5 hidden sm:table-cell">Plays like</th>{flies && <th className="p-2.5" />}</tr></thead>
                 <tbody>
                   {site.info.holes.map(h => (
                     <tr key={h.label} className="border-t border-zinc-800">
@@ -160,6 +165,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
                       <td className="p-2.5 text-right tabular-nums">{fmtDist(h.length, u)}</td>
                       <td className="p-2.5 text-right tabular-nums">{fmtElev(h.elevation, u)}</td>
                       <td className="p-2.5 text-right tabular-nums hidden sm:table-cell">{fmtDist(h.playsLike, u)}</td>
+                      {flies && <td className="p-1.5 text-right">{h.id && <button className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold bg-orange-500 hover:bg-orange-400 text-white" onClick={() => void open3d(h.id)} data-testid="fly-hole">▶ Fly</button>}</td>}
                     </tr>
                   ))}
                 </tbody>

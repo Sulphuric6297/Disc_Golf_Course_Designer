@@ -26,7 +26,7 @@ export type Role = "owner" | "editor" | "viewer";
 export interface Summary { par: number; length: number; units: "ft" | "m"; canvas: { width: number; height: number }; lines: [number, number][][] }
 export type ServerPlan = PlanMeta & {
   role: Role; updatedBy: string | null; owner: string | null; members: number; summary: Partial<Summary>; thumbAt: number | null;
-  hasDraft: boolean; toReview: number;
+  hasDraft: boolean; toReview: number; park: string;
 };
 
 /** What the course list shows of a course: totals, and each hole's throw line for a small map. */
@@ -62,7 +62,9 @@ export const useServerCourse = create<{
   pending: number;
   /** What a viewer may see (null: the default). */
   perms: Perms | null;
-}>(() => ({ id: null, version: 0, role: null, status: "saved", conflict: "", draft: false, live: true, behind: false, approval: false, preview: null, pending: 0, perms: null }));
+  /** The park it's in (its owner names it; "" none). */
+  park: string;
+}>(() => ({ id: null, version: 0, role: null, status: "saved", conflict: "", draft: false, live: true, behind: false, approval: false, preview: null, pending: 0, perms: null, park: "" }));
 const state = () => useServerCourse.getState();
 const set = (s: Partial<ReturnType<typeof state>>) => useServerCourse.setState(s);
 
@@ -189,7 +191,7 @@ export const startServerAutosave = () => {
   return () => { stopSaving(); keepSelect(); };
 };
 
-type CourseRead = { id: string; version: number; role: Role; approval: boolean; live: boolean; perms: Perms | null; doc: CourseDoc; hasBackground: boolean; hasThumbnail: boolean };
+type CourseRead = { id: string; version: number; role: Role; approval: boolean; live: boolean; park: string; perms: Perms | null; doc: CourseDoc; hasBackground: boolean; hasThumbnail: boolean };
 const readCourse = (id: string) => api<CourseRead>("GET", `courses/${id}`);
 const readPhoto = async (id: string, has: boolean) => (has ? (await api<{ data: string | null }>("GET", `courses/${id}/background`)).data : null);
 
@@ -219,7 +221,7 @@ export async function openServerCourse(id: string, quiet = false) {
         if (d.hasPhoto) shown = (await api<{ data: string | null }>("GET", `courses/${id}/draft/photo`)).data;
       } else base = { doc: usable(c.doc), version: c.version, photo };
     }
-    set({ id, version: c.version, role: c.role, approval: c.approval, live: c.live, perms: c.perms, behind: !!base && c.version > base.version, status: "saved", conflict: "", draft, preview: null, pending: 0 });
+    set({ id, version: c.version, role: c.role, approval: c.approval, live: c.live, perms: c.perms, park: c.park ?? "", behind: !!base && c.version > base.version, status: "saved", conflict: "", draft, preview: null, pending: 0 });
     thumbFor = null;
     thumbAt = 0;
     sentBackground = shown;
@@ -240,7 +242,7 @@ const reopen = () => { const id = state().id; return id ? openServerCourse(id) :
 /** A course not on the server yet: saved there (yours) once something is on it. */
 export async function startUnsaved(doc: CourseDoc) {
   if (state().id) await saveNow();
-  set({ id: null, version: 0, role: "owner", status: "saved", conflict: "", draft: false, live: true, behind: false, approval: false, preview: null, pending: 0, perms: null });
+  set({ id: null, version: 0, role: "owner", status: "saved", conflict: "", draft: false, live: true, behind: false, approval: false, preview: null, pending: 0, perms: null, park: "" });
   sentBackground = null;
   base = null;
   opened = null;
