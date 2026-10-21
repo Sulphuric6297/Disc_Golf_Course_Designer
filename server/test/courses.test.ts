@@ -280,3 +280,19 @@ test("how you edit: a course's maker publishes as they go; an owner can work in 
     assert.equal((await admin.get(url)).body.live, true);
   } finally { await w.close(); }
 });
+
+test("other courses on the same ground: those you're on whose site overlaps, with their holes' lines", async () => {
+  const w = await world();
+  try {
+    const { c: admin } = await adminSignedIn(w);
+    const site = (west: number) => ({ location: null, bounds: { north: 40, south: 39.99, west, east: west + 0.01 }, baseElevationFt: 0 });
+    const sum = { par: 3, length: 300, units: "ft", canvas: { width: 1000, height: 1000 }, lines: [[[10, 10], [300, 10]]] };
+    const a = (await admin.post("/api/courses", { doc: { ...doc("Red course"), site: site(-89) }, summary: sum })).body.id;
+    const b = (await admin.post("/api/courses", { doc: { ...doc("Blue course"), site: site(-88.995) }, summary: sum })).body.id;
+    await admin.post("/api/courses", { doc: { ...doc("Far away"), site: site(-80) }, summary: sum });
+    const near = (await admin.get(`/api/courses/${a}/nearby`)).body;
+    assert.deepEqual(near.map((n: { name: string }) => n.name), ["Blue course"]);
+    assert.equal(near[0].id, b);
+    assert.deepEqual(near[0].lines, sum.lines);
+  } finally { await w.close(); }
+});

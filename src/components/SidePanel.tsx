@@ -19,6 +19,7 @@ import { ExportPanel } from "./ExportPanel";
 import { useTouch } from "./useLayout";
 import { SERVER } from "../auth/api";
 import { draftHoles } from "../auth/courses";
+import { NearbyCourses } from "../auth/Nearby";
 
 export const STEPS: { id: Step; label: string; title: string }[] = [
   { id: "site", label: "Site", title: "Your site" },
@@ -114,6 +115,7 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
         <Toggle label="Hill shading" checked={ed.shading} onChange={v => ed.set({ shading: v })} />
         <Toggle label="Ground texture up close" checked={ed.groundDetail} onChange={v => ed.set({ groundDetail: v })} />
       </Section>
+      {SERVER && <NearbyCourses />}
       <NextButton step="site" />
     </>
   );
