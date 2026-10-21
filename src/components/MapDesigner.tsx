@@ -344,7 +344,8 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
       {/* (A phone: the zoom buttons float over the page, in the thumb's reach) */}
       {compact && <div className="absolute right-2 bottom-2 z-10 rounded-2xl bg-zinc-900/95 border border-white/10 shadow-lg p-0.5">{zoomGroup}</div>}
       <div ref={box} className={`flex-1 overflow-auto ${compact ? "bg-zinc-800 dg-scroll" : ""} cursor-grab`} data-testid="design-scroll" onPointerDown={onBoxDown} onPointerMove={onBoxMove} onPointerUp={onBoxUp} onPointerCancel={onBoxUp}>
-        <div className={`min-w-full min-h-full flex items-center justify-center ${compact ? "p-2.5" : "p-6"}`}>
+        {/* (as wide as the page when zoomed in past the window, so all of it scrolls into view) */}
+        <div className={`w-max min-w-full min-h-full flex items-center justify-center ${compact ? "p-2.5" : "p-6"}`}>
           <div
             ref={pageEl}
             className="relative shrink-0"

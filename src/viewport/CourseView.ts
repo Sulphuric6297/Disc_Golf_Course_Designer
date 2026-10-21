@@ -125,6 +125,14 @@ const BASKET_FT = 4.6, BASKET_SEEN_PX = 24;
 /** Squares the trees are filed by for flyovers, ft. */
 const CROWN_CELL = 40;
 
+/** A point on a smooth curve (Catmull-Rom) through points, `u` (0..1) of the way from point i to the next. */
+const curveBetween = (pts: THREE.Vector3[], i: number, u: number, out: THREE.Vector3) => {
+  const n = pts.length - 1;
+  const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n, i)], c = pts[Math.min(n, i + 1)], d = pts[Math.min(n, i + 2)];
+  const f = (p0: number, p1: number, p2: number, p3: number) => p1 + 0.5 * u * (p2 - p0 + u * (2 * p0 - 5 * p1 + 4 * p2 - p3 + u * (3 * (p1 - p2) + p3 - p0)));
+  return out.set(f(a.x, b.x, c.x, d.x), f(a.y, b.y, c.y, d.y), f(a.z, b.z, c.z, d.z));
+};
+
 /** The painted map for the ground (a picture's URL) and where it shows woods. */
 export type PaintedLook = { url: string; wooded: WoodedGrid | null };
 /** A sharper painting of part of the site (see state/paintedGround: paintedDetail). */
@@ -543,6 +551,11 @@ export class CourseView {
     const animate = opts.animate ?? true;
     void this.controls.moveTo(cx, this.h(cx, cy), cy, animate);
     void this.controls.dollyTo(dist, animate);
+    // (not animated: there at once, not at the next frame)
+    if (!animate) {
+      this.controls.update(0);
+      this.camera.updateMatrixWorld();
+    }
     this.invalidate();
   }
 
@@ -878,8 +891,9 @@ export class CourseView {
       const e = f.dur > 0 ? clamp(f.at(f.t) / f.dur, 0, 1) : 1;
       const idx = e * (f.pts.length - 1);
       const i0 = Math.floor(idx), i1 = Math.min(f.pts.length - 1, i0 + 1);
-      cam.position.lerpVectors(f.pts[i0], f.pts[i1], idx - i0);
-      cam.lookAt(new THREE.Vector3().lerpVectors(f.look[i0], f.look[i1], idx - i0));
+      // (on a smooth curve through the flight's points, not straight from one to the next)
+      curveBetween(f.pts, i0, idx - i0, cam.position);
+      cam.lookAt(curveBetween(f.look, i0, idx - i0, new THREE.Vector3()));
       cam.fov = f.fov[i0] + (f.fov[i1] - f.fov[i0]) * (idx - i0);
     } else {
       const pose = this.povPose();

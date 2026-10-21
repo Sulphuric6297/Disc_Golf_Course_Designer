@@ -28,6 +28,26 @@ test("2D and 3D switch the view's tilt, by button and by key", async ({ page }) 
   await expect.poll(tilt).toBeLessThan(1);
 });
 
+test("a fit without animation is in place at once: the plan's points are on screen where they'll be drawn", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
+  await page.keyboard.press("Escape");
+  // (in the same moment as the fit, before any frame is drawn)
+  const at = await page.evaluate(() => {
+    const v = (window as any).__dgView;
+    v.fitBounds({ minX: 700, minY: 600, maxX: 900, maxY: 800 }, { animate: false });
+    return v.toClient(800, 700);
+  });
+  const box = (await page.getByTestId("plan").boundingBox())!;
+  expect(at.x).toBeGreaterThan(box.x);
+  expect(at.x).toBeLessThan(box.x + box.width);
+  expect(at.y).toBeGreaterThan(box.y);
+  expect(at.y).toBeLessThan(box.y + box.height);
+  await page.waitForTimeout(300);
+  const later = await page.evaluate(() => (window as any).__dgView.toClient(800, 700));
+  expect(Math.hypot(later.x - at.x, later.y - at.y)).toBeLessThan(2);
+});
+
 test("the ground under the pointer on hills: the terrain's own triangles, looking down and tilted", async ({ page }) => {
   // A course on rolling hills
   const doc = createEmptyCourse();

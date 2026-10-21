@@ -1,6 +1,8 @@
 import { test, expect, addHole, blankCourse, course, importSite } from "./fixtures";
 import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
+import * as THREE from "three";
 import { create3dTree } from "../../src/three/trees";
+import { BASKET_NEAR, createBasket } from "../../src/three/courseModels";
 
 const grassSetting = (page: import("@playwright/test").Page) => page.evaluate(() => (window as any).__dgEditor().grass);
 
@@ -367,6 +369,38 @@ test("in 3D a basket close enough to see is drawn at its real size, not as a bad
   // Far: its badge again
   await toBasket(1500);
   await expect(badge).toBeVisible();
+});
+
+plain("a basket in 3D is built like a real one: its band on top, chains hanging from under it to a collar over a wire tray, at real size (pure logic)", () => {
+  const lod = createBasket("#e11d48").children[0] as THREE.LOD;
+  const [near, far] = lod.levels;
+  const part = (level: { object: THREE.Object3D }, name: string) => {
+    const mesh = level.object.getObjectByName(name) as THREE.Mesh;
+    mesh.geometry.computeBoundingBox();
+    return { box: mesh.geometry.boundingBox!, mesh };
+  };
+  // About 4.6 ft to the top of its band, which is about 2 ft across and painted the band color
+  const all = new THREE.Box3().setFromObject(near.object);
+  plainExpect(all.max.y).toBeGreaterThan(4.5);
+  plainExpect(all.max.y).toBeLessThan(4.8);
+  const band = part(near, "band");
+  plainExpect(band.box.max.y).toBeCloseTo(4.6, 1);
+  plainExpect(band.box.max.x - band.box.min.x).toBeGreaterThan(2);
+  plainExpect((band.mesh.material as THREE.MeshStandardMaterial).color.getHexString()).toBe("e11d48");
+  // The chains: solid links of chain (not lines), from under the band down to a collar just over the tray
+  const chains = part(near, "chains");
+  plainExpect(chains.mesh.isMesh).toBe(true);
+  plainExpect(chains.box.max.y).toBeCloseTo(4.3, 1);
+  plainExpect(chains.box.min.y).toBeGreaterThan(2.7);
+  plainExpect(chains.box.min.y).toBeLessThan(3);
+  // The tray: its rim about 2.6 ft up and 2.2 ft across, its bottom about 1.85 ft up
+  const wires = part(near, "wires");
+  plainExpect(wires.box.max.x - wires.box.min.x).toBeGreaterThan(2.2);
+  plainExpect(wires.box.max.x - wires.box.min.x).toBeLessThan(2.4);
+  plainExpect(part(near, "tray-bottom").box.max.y).toBeCloseTo(1.87, 1);
+  // Farther off, a lighter one (no thin wires to glitter)
+  plainExpect(lod.levels[1].distance).toBe(BASKET_NEAR);
+  plainExpect(far.object.getObjectByName("wires")).toBeUndefined();
 });
 
 plain("a placed pine is darker and bluer than a broadleaf tree of the same color, as in woods (pure logic)", () => {

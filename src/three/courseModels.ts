@@ -1,6 +1,7 @@
 // 3D models of the course's furniture at real size (feet): tee pads, baskets, mando and drop
 // zone signs, benches, cans, kiosks and so on. Built from simple shapes; materials are shared.
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { AMENITY_KINDS, TEE_LEVELS, TEE_SURFACES } from "../constants";
 import type { AmenityKind, TeeItem } from "../types";
 
@@ -157,44 +158,93 @@ export const fitTeePad = (obj: THREE.Object3D, tee: Pick<TeeItem, "x" | "y" | "p
   pad.sign.position.y = at(pad.sign.position.x, pad.sign.position.z) - g0;
 };
 
-/** A basket at real size (about 4.5 ft tall): pole, tray, chains and a colored top band. */
-export const createBasket = (bandColor: string) => {
-  const g = new THREE.Group();
-  const steel = std("#b8bec4", 0.35, 0.8);
-  const zinc = std("#9aa1a8", 0.45, 0.7);
-  g.add(cyl(0.085, 0.085, 4.6, steel, 0, 0, 0, 10));
-  // Tray: a shallow open cylinder with a bottom, rim about 2.7 ft up
-  const tray = cyl(1.0, 1.12, 0.75, zinc, 0, 1.95, 0, 24, true);
-  (tray.material as THREE.Material).side = THREE.DoubleSide;
-  g.add(tray);
-  const bottom = new THREE.Mesh(new THREE.CircleGeometry(1.0, 24), zinc);
-  bottom.rotation.x = -Math.PI / 2;
-  bottom.position.y = 1.96;
-  g.add(bottom);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(1.12, 0.05, 6, 32), steel);
-  rim.rotation.x = Math.PI / 2;
-  rim.position.y = 2.7;
-  g.add(rim);
-  // Chains: from the top band down and in to the pole above the tray
-  const chainPts: number[] = [];
-  for (let i = 0; i < 24; i++) {
-    const a = (i / 24) * Math.PI * 2;
-    const outer = i % 2 === 0;
-    const r = outer ? 0.98 : 0.6;
-    chainPts.push(Math.cos(a) * r, 4.25, Math.sin(a) * r, Math.cos(a) * 0.12, 2.75, Math.sin(a) * 0.12);
+/** A basket's shapes (ft, its foot at 0), the same for every basket: made once. Up close: a
+ * steel pole, a wire tray (rolled rim, rings and bars, a solid bottom), two rings of chains hanging
+ * from under the band to a collar above the tray, the band held by spokes, a cap on the pole.
+ * Farther off, where thin wires would only glitter: the chains as a see-through cone, the tray
+ * solid. */
+let basketShapes: ReturnType<typeof makeBasketShapes> | null = null;
+const makeBasketShapes = () => {
+  const up = new THREE.Vector3(0, 1, 0);
+  // A rod from a to b
+  const rod = (a: THREE.Vector3, b: THREE.Vector3, r: number, seg = 5) => {
+    const d = b.clone().sub(a);
+    const g = new THREE.CylinderGeometry(r, r, d.length(), seg, 1, true);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up, d.clone().normalize()));
+    return g.translate((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+  };
+  const ring = (r: number, tube: number, y: number, seg = 48) => new THREE.TorusGeometry(r, tube, 6, seg).rotateX(Math.PI / 2).translate(0, y, 0);
+  const at = (a: number, r: number, y: number) => new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r);
+  const shared = (g: THREE.BufferGeometry) => {
+    g.userData.shared = true;
+    return g;
+  };
+  // Heights (ft): tray bottom and rim, chains' collar, band
+  const TRAY = 1.85, RIM = 2.62, COLLAR = 2.86, BAND = 4.28, TOP = 4.6;
+  const pole = new THREE.CylinderGeometry(0.07, 0.07, TOP + 0.3, 12).translate(0, (TOP + 0.3) / 2 - 0.3, 0);
+  const steel: THREE.BufferGeometry[] = [ring(1.1, 0.045, RIM), ring(1.03, 0.022, 2.24), ring(0.96, 0.03, TRAY + 0.02), ring(0.2, 0.035, COLLAR, 16), ring(0.62, 0.02, BAND, 32), ring(0.98, 0.02, BAND, 48)];
+  for (let i = 0; i < 32; i++) {
+    const a = (i / 32) * Math.PI * 2;
+    steel.push(rod(at(a, 0.96, TRAY + 0.02), at(a, 1.1, RIM), 0.016));
   }
-  const chainGeo = new THREE.BufferGeometry();
-  chainGeo.setAttribute("position", new THREE.Float32BufferAttribute(chainPts, 3));
-  g.add(new THREE.LineSegments(chainGeo, mat("chains", () => new THREE.LineBasicMaterial({ color: 0xd4d8dc }))));
-  // Faint "curtain" so the chains read from far away and cast a shadow
-  const curtain = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 0.15, 1.5, 24, 1, true), mat("curtain", () => new THREE.MeshStandardMaterial({ color: 0xc9ced3, metalness: 0.6, roughness: 0.4, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false })));
-  curtain.position.y = 3.5;
-  curtain.castShadow = true;
-  g.add(curtain);
-  const band = cyl(1.02, 1.02, 0.35, std(bandColor, 0.5), 0, 4.2, 0, 24, true);
-  (band.material as THREE.Material).side = THREE.DoubleSide;
-  g.add(band);
-  g.add(cyl(0.2, 0.2, 0.15, std(bandColor, 0.5), 0, 4.55, 0, 12));
+  // (spokes from the pole out to the band, and the band's rings)
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    steel.push(rod(at(a, 0.07, TOP - 0.06), at(a, 1.05, TOP - 0.06), 0.022));
+  }
+  // Chains: an outer ring of 16 and an inner of 12, each a little slack and twisted round
+  const chains: THREE.BufferGeometry[] = [];
+  for (const [n, r0, twist] of [[16, 0.98, 0.35], [12, 0.62, -0.3]] as const) {
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + (r0 < 0.9 ? Math.PI / n : 0);
+      const curve = new THREE.CatmullRomCurve3([at(a, r0, BAND), at(a + twist * 0.45, r0 * 0.78 + 0.06, (BAND + COLLAR) / 2 + 0.1), at(a + twist, 0.21, COLLAR + 0.02)]);
+      chains.push(new THREE.TubeGeometry(curve, 10, 0.018, 4, false));
+    }
+  }
+  const band = new THREE.CylinderGeometry(1.06, 1.06, TOP - BAND, 48, 1, true).translate(0, (BAND + TOP) / 2, 0);
+  const lips = mergeGeometries([ring(1.06, 0.03, TOP), ring(1.06, 0.03, BAND), new THREE.SphereGeometry(0.11, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, TOP + 0.02, 0)])!;
+  const bottom = new THREE.CircleGeometry(0.96, 32).rotateX(-Math.PI / 2).translate(0, TRAY + 0.02, 0);
+  return {
+    pole: shared(pole),
+    steel: shared(mergeGeometries(steel)!),
+    chains: shared(mergeGeometries(chains)!),
+    band: shared(band),
+    lips: shared(lips),
+    bottom: shared(bottom),
+    // (farther off)
+    cone: shared(new THREE.CylinderGeometry(0.98, 0.21, BAND - COLLAR, 24, 1, true).translate(0, (BAND + COLLAR) / 2, 0)),
+    tray: shared(new THREE.CylinderGeometry(1.1, 0.96, RIM - TRAY, 24, 1, true).translate(0, (RIM + TRAY) / 2, 0)),
+    rim: shared(ring(1.1, 0.045, RIM, 24))
+  };
+};
+
+/** How near (ft) a basket is drawn in full detail. */
+export const BASKET_NEAR = 70;
+
+/** A basket at real size (about 4.6 ft tall): pole, wire tray, chains and a colored top band. */
+export const createBasket = (bandColor: string) => {
+  const shapes = (basketShapes ??= makeBasketShapes());
+  const steel = std("#c3c8cc", 0.35, 0.85);
+  const chain = std("#dfe3e6", 0.28, 0.95);
+  const zinc = mat("basket:tray", () => new THREE.MeshStandardMaterial({ color: "#a3aab0", roughness: 0.5, metalness: 0.75, side: THREE.DoubleSide }));
+  const color = mat(`basket:band:${bandColor}`, () => new THREE.MeshStandardMaterial({ color: bandColor, roughness: 0.45, metalness: 0.15, side: THREE.DoubleSide }));
+  const mesh = (name: string, g: THREE.BufferGeometry, m: THREE.Material, shadow = true) => {
+    const o = new THREE.Mesh(g, m);
+    o.name = name;
+    o.castShadow = shadow;
+    o.receiveShadow = true;
+    return o;
+  };
+  const near = new THREE.Group();
+  near.add(mesh("pole", shapes.pole, steel), mesh("wires", shapes.steel, steel, false), mesh("chains", shapes.chains, chain, false), mesh("band", shapes.band, color), mesh("band-lips", shapes.lips, color), mesh("tray-bottom", shapes.bottom, zinc));
+  const far = new THREE.Group();
+  const veil = mat("basket:chains-far", () => new THREE.MeshStandardMaterial({ color: "#d4d8dc", roughness: 0.4, metalness: 0.6, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }));
+  far.add(mesh("pole", shapes.pole, steel), mesh("chains", shapes.cone, veil), mesh("tray", shapes.tray, zinc), mesh("rim", shapes.rim, steel), mesh("band", shapes.band, color), mesh("band-lips", shapes.lips, color), mesh("tray-bottom", shapes.bottom, zinc));
+  const lod = new THREE.LOD();
+  lod.addLevel(near, 0);
+  lod.addLevel(far, BASKET_NEAR);
+  const g = new THREE.Group();
+  g.add(lod);
   return g;
 };
 

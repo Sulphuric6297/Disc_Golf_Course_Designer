@@ -219,3 +219,7 @@ Later requests (in the order asked)
   their height over the ground between keyframes.
 - [ ] **The basket is its real size in 3D.**
 - [ ] **3D trees don't look cheap** (small leaves, fine needles, pines darker than leafy trees).
+- [ ] **Flyovers never shake or jolt** (round trees, between keyframes): smooth curves, the view
+  turning gently, the speed changing smoothly through each keyframe.
+- [ ] **The basket looks like a real disc golf basket in 3D** (colored band, chains hanging to a
+  collar, wire tray).

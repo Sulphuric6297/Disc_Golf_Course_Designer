@@ -473,10 +473,10 @@ plain("the flight by itself: a low glide from behind the tee, under a crown over
   // Low over open ground: the height asked the whole way (10 ft by default)
   plainExpect(FLYOVER_DEFAULTS.height).toBe(10);
   for (const c of open.cam) plainExpect(Math.abs(c.z - 110)).toBeLessThan(0.2);
-  // A big tree over the line at 200 ft (leaves from 30 to 70 ft up, its trunk on the line), a bush at 300 ft
+  // A big tree over the line at 200 ft (leaves from 30 to 70 ft up, its trunk on the line), a bush at 340 ft
   const trees = (p: { x: number; y: number }, reach: number) => {
     if (Math.hypot(p.x - 200, p.y) < reach + 25) return { base: 130, top: 170, trunks: Math.hypot(p.x - 200, p.y) < reach + 8 ? [{ x: 200, y: 0 }] : [] };
-    if (Math.hypot(p.x - 300, p.y) < reach + 10) return { base: 100, top: 125, trunks: [] };
+    if (Math.hypot(p.x - 340, p.y) < reach + 10) return { base: 100, top: 125, trunks: [] };
     return null;
   };
   const glide = autoFlight(line, FLYOVER_DEFAULTS, flat, trees)!;
@@ -484,7 +484,7 @@ plain("the flight by itself: a low glide from behind the tee, under a crown over
   for (const c of glide.cam) if (Math.hypot(c.x - 200, c.y) < 26) plainExpect(c.z).toBeLessThanOrEqual(130 - 5 + 1e-6);
   plainExpect(Math.min(...glide.cam.map(c => Math.hypot(c.x - 200, c.y)))).toBeGreaterThan(4);
   // Over the bush (too low to pass under)
-  plainExpect(at(glide, 300).z).toBeGreaterThan(125);
+  plainExpect(at(glide, 340).z).toBeGreaterThan(125);
   // Never a sudden hop: at most half a foot up or down per foot along
   for (let i = 1; i < glide.cam.length; i++) plainExpect(Math.abs(glide.cam[i].z - glide.cam[i - 1].z)).toBeLessThanOrEqual(Math.hypot(glide.cam[i].x - glide.cam[i - 1].x, glide.cam[i].y - glide.cam[i - 1].y) * 0.5 + 1e-6);
   // To the right of the line (south, flying east), and twice as fast
@@ -560,13 +560,13 @@ plain("the flight round the trees standing there: at its height through woods, a
   const low = autoFlight(line, FLYOVER_DEFAULTS, flat, standing([{ x: 200, y: 0, r: 20, base: 13, top: 60 }]))!;
   const by = (f: typeof low, x: number) => f.cam.reduce((a, c) => (Math.abs(c.x - x) < Math.abs(a.x - x) ? c : a));
   plainExpect(by(low, 200).z).toBeLessThanOrEqual(8 + 1e-6);
-  plainExpect(Math.abs(by(low, 270).z - 10)).toBeLessThan(0.3);
+  plainExpect(Math.abs(by(low, 300).z - 10)).toBeLessThan(0.3);
   // A wall of pines across the line, wider than it can go round: over it, and down again after
   const wall: C[] = [];
-  for (let y = -80; y <= 80; y += 12) wall.push({ x: 400, y, r: 8, base: 3, top: 40 });
+  for (let y = -80; y <= 80; y += 12) wall.push({ x: 320, y, r: 8, base: 3, top: 40 });
   const over = autoFlight(line, FLYOVER_DEFAULTS, flat, standing(wall))!;
-  plainExpect(by(over, 400).z).toBeGreaterThanOrEqual(48 - 1e-6);
-  plainExpect(Math.abs(by(over, 100).z - 10)).toBeLessThan(0.3);
+  plainExpect(by(over, 320).z).toBeGreaterThanOrEqual(48 - 1e-6);
+  plainExpect(Math.abs(over.cam[0].z - 10)).toBeLessThan(0.3);
   plainExpect(Math.abs(over.cam[over.cam.length - 1].z - 10)).toBeLessThan(0.3);
   // Pines just behind the tee: it starts past them, at its height
   const behind = autoFlight(line, FLYOVER_DEFAULTS, flat, standing([{ x: -40, y: 0, r: 8, base: 3, top: 40 }, { x: -40, y: 14, r: 8, base: 3, top: 40 }, { x: -40, y: -14, r: 8, base: 3, top: 40 }]))!;
@@ -584,6 +584,57 @@ plain("a flight through keyframes keeps their height over the ground between the
   const g = keyFlight(keys, FLYOVER_DEFAULTS, x => bumpy(x), wall)!;
   const at300 = g.cam.reduce((a, c) => (Math.abs(c.x - 300) < Math.abs(a.x - 300) ? c : a));
   plainExpect(at300.z).toBeGreaterThanOrEqual(148 - 1e-6);
+});
+
+plain("a flight never jolts: round the trees by itself, and through keyframes at their own speeds (pure logic)", () => {
+  const flat = () => 0;
+  type C = { x: number; y: number; r: number; base: number; top: number };
+  const crowns: C[] = [];
+  for (let x = 0; x <= 600; x += 22) for (const side of [-1, 1]) crowns.push({ x, y: side * (44 + (x % 3) * 4), r: 12 + (x % 5), base: 6 + (x % 4) * 3, top: 50 });
+  crowns.push({ x: 150, y: 4, r: 8, base: 3, top: 40 }, { x: 300, y: -6, r: 16, base: 14, top: 50 }, { x: 450, y: 30, r: 14, base: 4, top: 45 });
+  const trees = (p: { x: number; y: number }, reach: number) => {
+    const near = crowns.filter(c => Math.hypot(c.x - p.x, c.y - p.y) < reach + c.r);
+    const trunks = crowns.filter(c => Math.hypot(c.x - p.x, c.y - p.y) < reach + 8).map(c => ({ x: c.x, y: c.y }));
+    return near.length || trunks.length ? { base: Math.min(...near.map(c => c.base)), top: Math.max(-Infinity, ...near.map(c => c.top)), trunks, crowns: near } : null;
+  };
+  // Played as the map view plays it (30 frames a second, eased in and out, on a curve through its points):
+  // how hard it's thrown sideways or up and down (ft/s²) and how suddenly its view starts or stops turning (°/s²)
+  const jolts = (f: NonNullable<ReturnType<typeof autoFlight>>, easeIn: boolean) => {
+    const clock = flightClock(f.dur, easeIn);
+    const curve = (a: { x: number; y: number; z: number }[], e: number) => {
+      const idx = e * (a.length - 1), i = Math.min(a.length - 2, Math.floor(idx)), u = idx - i;
+      const [p0, p1, p2, p3] = [a[Math.max(0, i - 1)], a[i], a[i + 1], a[Math.min(a.length - 1, i + 2)]];
+      const c = (k: "x" | "y" | "z") => p1[k] + 0.5 * u * (p2[k] - p0[k] + u * (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k] + u * (3 * (p1[k] - p2[k]) + p3[k] - p0[k])));
+      return [c("x"), c("y"), c("z")];
+    };
+    const frames: { p: number[]; d: number[] }[] = [];
+    for (let t = 0; t <= clock.play; t += 1 / 30) {
+      const e = clock.at(t) / f.dur, p = curve(f.cam, e), l = curve(f.look, e);
+      const d = l.map((v, i) => v - p[i]), n = Math.hypot(...d);
+      frames.push({ p, d: d.map(v => v / n) });
+    }
+    let side = 0, turn = 0;
+    const angle = (a: number[], b: number[]) => Math.acos(Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]));
+    for (let k = 2; k < frames.length; k++) {
+      const v1 = frames[k - 1].p.map((v, i) => (v - frames[k - 2].p[i]) * 30), v2 = frames[k].p.map((v, i) => (v - frames[k - 1].p[i]) * 30);
+      const a = v2.map((v, i) => (v - v1[i]) * 30), sp = Math.hypot(...v2);
+      if (sp < 1) continue;
+      const along = a.reduce((s, x, i) => s + (x * v2[i]) / sp, 0);
+      side = Math.max(side, Math.hypot(...a.map((x, i) => x - (along * v2[i]) / sp)));
+      turn = Math.max(turn, Math.abs(angle(frames[k].d, frames[k - 1].d) - angle(frames[k - 1].d, frames[k - 2].d)) * 900 * 180 / Math.PI);
+    }
+    return { side, turn };
+  };
+  const auto = jolts(autoFlight([{ x: 0, y: 0 }, { x: 600, y: 0 }], FLYOVER_DEFAULTS, flat, trees)!, true);
+  plainExpect(auto.side).toBeLessThan(80);
+  plainExpect(auto.turn).toBeLessThan(25);
+  // Through keyframes, each stretch at its own speed (faster, slower, faster)
+  const keys = [{ x: -40, y: 0, alt: 10, lookX: 120, lookY: 10 }, { x: 150, y: 15, alt: 12, lookX: 320, lookY: 20, secs: 2 }, { x: 300, y: 25, alt: 9, lookX: 450, lookY: 5, secs: 4 }, { x: 560, y: 5, alt: 10, lookX: 620, lookY: 0, secs: 2.5 }];
+  for (const obstacles of [undefined, trees]) {
+    const by = jolts(keyFlight(keys, FLYOVER_DEFAULTS, flat, obstacles)!, false);
+    plainExpect(by.side).toBeLessThan(80);
+    plainExpect(by.turn).toBeLessThan(25);
+  }
 });
 
 plain("a flight through keyframes: through each one on its seconds, the field of view between them (pure logic)", () => {

@@ -927,6 +927,33 @@ test("the Design page zooms with the wheel and pans with a press and drag", asyn
   expect((await editorState(page)).designSel).toBeNull();
 });
 
+test("zoomed in on the Design page, every edge of the page can be reached: the far left and top too", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "5 Design" }).click();
+  await expect.poll(async () => parseInt((await page.getByTestId("design-zoom").textContent()) ?? "0")).toBeGreaterThan(0);
+  for (let i = 0; i < 6; i++) await page.getByTestId("map-designer").getByRole("button", { name: "Zoom in", exact: true }).click();
+  const scroller = page.getByTestId("design-scroll");
+  const edges = async (to: "start" | "end") => {
+    await scroller.evaluate((el, to) => {
+      el.scrollLeft = to === "start" ? 0 : el.scrollWidth;
+      el.scrollTop = to === "start" ? 0 : el.scrollHeight;
+    }, to);
+    const area = (await scroller.evaluate(el => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.left + el.clientWidth, bottom: r.top + el.clientHeight }; }));
+    const sheet = (await page.getByTestId("design-page").boundingBox())!;
+    return { area, sheet };
+  };
+  // Scrolled all the way left and up: the page's left and top edges in view
+  const start = await edges("start");
+  expect(start.sheet.x).toBeGreaterThanOrEqual(start.area.left - 0.5);
+  expect(start.sheet.y).toBeGreaterThanOrEqual(start.area.top - 0.5);
+  // All the way right and down: its right and bottom edges
+  const end = await edges("end");
+  expect(end.sheet.x + end.sheet.width).toBeLessThanOrEqual(end.area.right + 0.5);
+  expect(end.sheet.y + end.sheet.height).toBeLessThanOrEqual(end.area.bottom + 0.5);
+});
+
 plain("tee signs: other holes faded, left out or shown; each part shown or left out, for all holes or one hole's own", () => {
   const doc = sample();
   const [h1, h2] = doc.holes;

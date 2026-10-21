@@ -55,6 +55,9 @@ export type Obstacles = (p: P, reach: number) => Canopy | null;
 /** Seconds a hole of this length takes to fly over by itself. */
 export const autoSeconds = (length: number, set: FlyoverSettings) => Math.min(14, Math.max(6, length / 70)) / Math.max(0.1, set.speed);
 
+/** Samples a second of flight. */
+const RATE = 30;
+
 /** How far it keeps from leaves (ft) and from trunks; how far it slips sideways round a crown it
  * can't pass under (more than that: over it). */
 const LEAVES = 5, TRUNKS = 7, AROUND = 15;
@@ -74,62 +77,97 @@ const limitsAt = (p: P, g: number, z: number, alt: number, obstacles: Obstacles)
 };
 
 /** How steeply it climbs or comes down round what's in the way (ft up per ft along), and how
- * sharply it slips aside (ft aside per ft along). */
-const CLIMB = 0.35, SLIP = 0.2;
+ * sharply it slips aside (ft aside per ft along); how long (s) each bend into and out of them is
+ * eased over (three times). */
+const CLIMB = 0.3, SLIP = 0.2, EASE = 0.15;
+
+/** How far apart a way's spots are (ft, from the one before). */
+const steps = (spots: P[]) => spots.map((p, i) => (i ? Math.hypot(p.x - spots[i - 1].x, p.y - spots[i - 1].y) : 0));
 
 /**
- * Heights along a camera's way: `alt[i]` ft over the ground under it (the ground's small bumps
- * smoothed, about `stepFt` between spots), under the leaves it passes beneath when there's room
- * (a dip only as deep as needed), over the ones it can't and never nearer the ground than 4 ft:
- * climbing and coming down in good time round each, then straight back to its height.
+ * How far off its way the camera goes (ft, up or aside) to give each spot what it `need`s there:
+ * that much for a moment either side of it, sloping off beyond (`slope` ft per ft along, at least
+ * `least` ft a spot), its bends eased over `w` spots either side three times. Never less than
+ * needed where it's needed (each held for as long as the easing reaches), and no sudden jolts.
  */
-const holdHeights = (spots: P[], alt: number[], stepFt: number, ground: (x: number, y: number) => number, obstacles: Obstacles) => {
+const swerve = (need: number[], ds: number[], slope: number, least: number, w: number) => {
+  const n = need.length, hold = 3 * w;
+  const env = need.map(() => 0);
+  if (!need.some(v => v > 0)) return env;
+  need.forEach((v, j) => {
+    if (v > 0) for (let i = Math.max(0, j - hold); i <= Math.min(n - 1, j + hold); i++) env[i] = Math.max(env[i], v);
+  });
+  for (let i = 1; i < n; i++) env[i] = Math.max(env[i], env[i - 1] - Math.max(least, slope * ds[i]));
+  for (let i = n - 2; i >= 0; i--) env[i] = Math.max(env[i], env[i + 1] - Math.max(least, slope * ds[i + 1]));
+  // (held as it is past both ends: no bend where the easing meets them)
+  let z = env;
+  for (let pass = 0; pass < 3; pass++) {
+    const ext = [...Array(w).fill(z[0]), ...z, ...Array(w).fill(z[n - 1])];
+    z = smoothRun(ext, w, 1).slice(w, w + n);
+  }
+  return z;
+};
+
+/**
+ * Heights along a camera's way, `rate` spots a second: `alt[i]` ft over the ground under it (the
+ * ground's small bumps smoothed), under the leaves it passes beneath when there's room (a dip only
+ * as deep as needed), over the ones it can't and never nearer the ground than 4 ft: climbing and
+ * coming down in good time round each in smooth curves, then back to its height.
+ */
+const holdHeights = (spots: P[], alt: number[], rate: number, ground: (x: number, y: number) => number, obstacles: Obstacles) => {
   const g = spots.map(p => ground(p.x, p.y));
-  const step = Math.max(0.5, stepFt);
-  // (the ground carried on past both ends as it runs there, so it isn't pulled down or up at them)
-  const w = Math.max(1, Math.round(12 / step)), pad = Math.min(g.length - 1, 2 * w);
-  const ext = [...g.slice(1, pad + 1).reverse().map(v => 2 * g[0] - v), ...g, ...g.slice(-pad - 1, -1).reverse().map(v => 2 * g[g.length - 1] - v)];
-  const want = smoothRun(ext, w, 2).slice(pad, pad + g.length).map((v, i) => v + alt[i]);
+  const ds = steps(spots);
+  const step = Math.max(0.5, ds.reduce((a, b) => a + b, 0) / Math.max(1, spots.length - 1));
+  const want = smoothEnds(g, Math.max(1, Math.round(8 / step)), 3).map((v, i) => v + alt[i]);
   const lim = spots.map((p, i) => limitsAt(p, g[i], want[i], alt[i], obstacles));
-  // Off its height only near what it must clear: a slope up to each crown it goes over and down
-  // after, and the same into and out of each dip. Where it climbs anyway it goes over the crowns
-  // there too, rather than dropping under them between climbs
-  const reach = Math.ceil(80 / step);
-  const cone = (amount: (j: number) => number) => {
-    const out = want.map(() => 0);
-    lim.forEach((_, j) => {
-      const a = amount(j);
-      if (a > 0) for (let i = Math.max(0, j - reach); i <= Math.min(want.length - 1, j + reach); i++) out[i] = Math.max(out[i], a - CLIMB * Math.abs(i - j) * step);
-    });
-    return out;
+  const w = Math.max(1, Math.round(EASE * rate)), least = 6 / rate;
+  const over = (i: number, above = lim[i].above) => {
+    lim[i] = { lo: Math.max(lim[i].lo, above), hi: Infinity, above: Math.max(lim[i].above, above) };
   };
-  let up = cone(j => lim[j].lo - want[j]);
-  for (let round = 0; round < 8; round++) {
-    let more = false;
+  let z = want;
+  for (let round = 0; round < 12; round++) {
+    const up = swerve(lim.map((l, i) => l.lo - want[i]), ds, CLIMB, least, w);
+    const down = swerve(lim.map((l, i) => want[i] - l.hi), ds, CLIMB, least, w);
+    z = want.map((v, i) => v + up[i] - down[i]);
+    let changed = false;
     lim.forEach((l, i) => {
-      if (up[i] > 0 && Number.isFinite(l.hi)) {
-        lim[i] = { lo: Math.max(l.lo, l.above), hi: Infinity, above: l.above };
-        more = true;
+      // Where it climbs anyway it goes over the crowns there too, rather than dropping under them
+      // between climbs; and over the ones whose dip would pull it under what it must go over
+      if (Number.isFinite(l.hi) && up[i] > 1e-6) {
+        over(i);
+        changed = true;
+      } else if (z[i] < l.lo - 1e-6) {
+        for (const dir of [-1, 1]) for (let k = dir < 0 ? i : i + 1; k >= 0 && k < z.length && down[k] > 1e-6; k += dir) {
+          if (Number.isFinite(lim[k].hi)) {
+            over(k);
+            changed = true;
+          }
+        }
       }
     });
-    if (!more) break;
-    up = cone(j => lim[j].lo - want[j]);
+    // (and over the leaves of anything at the height it now flies: climbing over a bush into a
+    // tall tree's crown, say)
+    if (!changed) spots.forEach((p, i) => {
+      const at = limitsAt(p, g[i], z[i], alt[i], obstacles);
+      if (at.above > z[i] + 1e-6 && (at.lo > z[i] + 1e-6 || at.hi < z[i] - 1e-6)) {
+        over(i, at.above);
+        changed = true;
+      }
+    });
+    if (!changed) break;
   }
-  const down = cone(j => want[j] - lim[j].hi);
-  // (corners rounded, then each limit held exactly)
-  const e = smoothRun(want.map((_, i) => (up[i] > 0 ? up[i] : -down[i])), Math.max(1, Math.round(6 / step)), 2);
-  return want.map((v, i) => Math.max(Math.min(v + e[i], lim[i].hi), lim[i].lo));
+  return z.map((v, i) => Math.max(Math.min(v, lim[i].hi), lim[i].lo));
 };
 
 /** The camera's way and heights: straight on, or slipped aside round what's in the way, whichever
  * keeps nearer its height over the ground all along (ducking under a crown, say, rather than
  * slipping aside into others it would have to climb over). */
-const flyAlong = (spots: P[], alt: number[], step: number, ground: (x: number, y: number) => number, obstacles: Obstacles) => {
+const flyAlong = (spots: P[], alt: number[], rate: number, ground: (x: number, y: number) => number, obstacles: Obstacles) => {
   const off = (way: P[], z: number[]) => way.reduce((t, p, i) => t + Math.abs(z[i] - ground(p.x, p.y) - alt[i]), 0);
-  const straight = { way: spots, z: holdHeights(spots, alt, step, ground, obstacles) };
-  const moved = slipAside(spots, alt, step, ground, obstacles);
+  const straight = { way: spots, z: holdHeights(spots, alt, rate, ground, obstacles) };
+  const moved = slipAside(spots, alt, rate, ground, obstacles);
   if (moved === spots) return straight;
-  const aside = { way: moved, z: holdHeights(moved, alt, step, ground, obstacles) };
+  const aside = { way: moved, z: holdHeights(moved, alt, rate, ground, obstacles) };
   return off(aside.way, aside.z) <= off(straight.way, straight.z) ? aside : straight;
 };
 
@@ -137,13 +175,13 @@ const flyAlong = (spots: P[], alt: number[], step: number, ground: (x: number, y
  * A camera's way moved aside round what's in the way at its height (`alt[i]` ft over the ground),
  * at most 15 ft: crowns whose leaves it would fly into (rather than duck under or climb over them)
  * and trunks of the trees it passes beneath. Aside in good time, as far as each needs, easing back
- * after; the corners rounded. Where there's no way round it stays put (to go under or over).
+ * after, in smooth curves. Where there's no way round it stays put (to go under or over).
  */
-const slipAside = (spots: P[], alt: number[], stepFt: number, ground: (x: number, y: number) => number, obstacles: Obstacles): P[] => {
-  const step = Math.max(0.5, stepFt);
-  // (right of the way it flies)
+const slipAside = (spots: P[], alt: number[], rate: number, ground: (x: number, y: number) => number, obstacles: Obstacles): P[] => {
+  const w = Math.max(1, Math.round(EASE * rate)), least = 3 / rate;
+  // (right of the way it flies, turning smoothly with it)
   const nrm = spots.map((_, i) => {
-    const a = spots[Math.max(0, i - 1)], b = spots[Math.min(spots.length - 1, i + 1)];
+    const a = spots[Math.max(0, i - w)], b = spots[Math.min(spots.length - 1, i + w)];
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
     return { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
   });
@@ -168,26 +206,21 @@ const slipAside = (spots: P[], alt: number[], stepFt: number, ground: (x: number
     }
     return side;
   });
-  const reaches = (v: number, i: number, j: number) => Math.abs(v) - SLIP * Math.abs(i - j) * step;
+  if (push.every(v => !v)) return spots;
+  const ds = steps(spots);
+  const step = Math.max(0.5, ds.reduce((a, b) => a + b, 0) / Math.max(1, spots.length - 1));
   const place = () => {
-    const env = push.map(() => 0);
-    push.forEach((v, j) => {
-      if (!v) return;
-      for (let i = 0; i < env.length; i++) {
-        const m = reaches(v, i, j);
-        if (m > Math.abs(env[i])) env[i] = Math.sign(v) * m;
-      }
-    });
-    const sway = smoothRun(env, Math.max(1, Math.round(8 / step)), 2).map((v, i) => (push[i] && Math.abs(v) < Math.abs(push[i]) ? push[i] : v));
-    return spots.map((p, i) => ({ x: p.x + nrm[i].x * sway[i], y: p.y + nrm[i].y * sway[i] }));
+    const right = swerve(push.map(v => Math.max(0, v)), ds, SLIP, least, w), left = swerve(push.map(v => Math.max(0, -v)), ds, SLIP, least, w);
+    return spots.map((p, i) => ({ x: p.x + nrm[i].x * (right[i] - left[i]), y: p.y + nrm[i].y * (right[i] - left[i]) }));
   };
+  // (how many spots a push moves it over, either side)
+  const reaches = (v: number) => 6 * w + Math.ceil(Math.abs(v) / (SLIP * step));
   // (never aside into trees it would have to climb over where it went straight past them: then it
   // keeps its way there, to duck under what it slipped round)
   const over = (p: P, i: number) => {
     const g = ground(p.x, p.y);
     return limitsAt(p, g, g + alt[i], alt[i], obstacles).lo > g + alt[i] + 1e-6;
   };
-  if (push.every(v => !v)) return spots;
   const was = spots.map(over);
   for (let round = 0; round < 12; round++) {
     const moved = place();
@@ -195,7 +228,7 @@ const slipAside = (spots: P[], alt: number[], stepFt: number, ground: (x: number
     moved.forEach((q, i) => {
       if (was[i] || !over(q, i)) return;
       push.forEach((v, j) => {
-        if (v && reaches(v, i, j) > 0) {
+        if (v && Math.abs(i - j) <= reaches(v)) {
           push[j] = 0;
           changed = true;
         }
@@ -207,12 +240,40 @@ const slipAside = (spots: P[], alt: number[], stepFt: number, ground: (x: number
   return spots;
 };
 
+/** Eased from 0 (at `a`) to 1 (at `b`), no sudden start or stop. */
+const smoothstep = (a: number, b: number, t: number) => {
+  const u = Math.min(1, Math.max(0, (t - a) / (b - a)));
+  return u * u * (3 - 2 * u);
+};
+
+/** The view along a flight turning smoothly: what it looks at from each spot the same, its turns
+ * (left and right, up and down) eased over about a third of a second. */
+const finish = (cam: Air[], look: Air[], fov: number[], dur: number, rate: number): Flight => {
+  const w = Math.max(1, Math.round(0.12 * rate));
+  const yaw: number[] = [], pitch: number[] = [], far: number[] = [];
+  look.forEach((l, i) => {
+    const dx = l.x - cam[i].x, dy = l.y - cam[i].y, dz = l.z - cam[i].z;
+    let a = Math.atan2(dy, dx);
+    // (no jump where it turns past straight back)
+    if (i) a += Math.round((yaw[i - 1] - a) / (2 * Math.PI)) * 2 * Math.PI;
+    yaw.push(a);
+    pitch.push(Math.atan2(dz, Math.hypot(dx, dy)));
+    far.push(Math.max(1, Math.hypot(dx, dy, dz)));
+  });
+  const ys = smoothEnds(yaw, w, 3), ps = smoothEnds(pitch, w, 3);
+  const seen = cam.map((c, i) => {
+    const flat = Math.cos(ps[i]) * far[i];
+    return { x: c.x + Math.cos(ys[i]) * flat, y: c.y + Math.sin(ys[i]) * flat, z: c.z + Math.sin(ps[i]) * far[i] };
+  });
+  return { cam, look: seen, fov, dur };
+};
+
 /**
  * The flight over a hole by itself, a low cinematic glide along its (smoothed) line of play, down
  * the fairway between the trees: from `behind` ft behind the tee, `side` ft off the line, `height`
- * ft over the ground the whole way, looking `lookAhead` ft down the hole, then at the basket. A
- * crown in its way it slips round (15 ft aside at most), else ducks under when there is room, else
- * rises over; it eases round trunks; all in smooth curves, back to its height after.
+ * ft over the ground the whole way, looking `lookAhead` ft down the hole, then (turning gently) at
+ * the basket. A crown in its way it slips round (15 ft aside at most), else ducks under when there
+ * is room, else rises over; it eases round trunks; all in smooth curves, back to its height after.
  */
 export const autoFlight = (line: P[], set: FlyoverSettings, ground: (x: number, y: number) => number, obstacles: Obstacles = () => null): Flight | null => {
   if (line.length < 2) return null;
@@ -232,32 +293,37 @@ export const autoFlight = (line: P[], set: FlyoverSettings, ground: (x: number, 
     const b = back(d);
     if (b.lo > b.g + H + 1e-6) behind = Math.max(0, -d - 8);
   }
-  // A sample about every 8 ft (at least 60)
-  const n = Math.max(60, Math.ceil((len + behind) / 8));
-  const step = (len - 25 + behind) / n;
+  const dur = autoSeconds(len, set);
+  const n = Math.max(60, Math.ceil(dur * RATE));
+  // (to a few steps short of the basket: big in the picture at the end)
+  const short = Math.min(16, len / 4);
+  const step = (len - short + behind) / n;
   const reachAhead = Math.max(30, set.lookAhead) * Math.max(1, len / 350);
   const spots: P[] = [];
   const look: Air[] = [];
   for (let i = 0; i <= n; i++) {
     const t = i / n;
-    const d = -behind + t * (len - 25 + behind);
+    const d = -behind + t * (len - short + behind);
     const at = d < 0 ? { point: { x: start.x + Math.cos(a0) * d, y: start.y + Math.sin(a0) * d }, angle: a0 } : pointAlong(line, d);
     // Off to the side (right of the way it flies)
     const nrm = { x: -Math.sin(at.angle), y: Math.cos(at.angle) };
     const p = { x: at.point.x + nrm.x * set.side, y: at.point.y + nrm.y * set.side };
     spots.push(p);
+    // (down the hole, then turning gently to the basket)
     const ahead = pointAlong(line, Math.min(len, Math.max(0, d) + reachAhead)).point;
-    const toward = t > 0.75 ? end : ahead;
+    const b = smoothstep(0.55, 0.9, t);
+    const toward = { x: ahead.x + (end.x - ahead.x) * b, y: ahead.y + (end.y - ahead.y) * b };
     look.push({ ...toward, z: ground(toward.x, toward.y) + 3 });
   }
+  // (the line's corners rounded off)
+  const sw = Math.max(1, Math.round(0.1 * RATE)), sx = smoothEnds(spots.map(p => p.x), sw, 3), sy = smoothEnds(spots.map(p => p.y), sw, 3);
   // Round what's in the way, then the height over the ground there
-  const w = Math.max(2, Math.round(Math.max(40, len * 0.1) / Math.max(1, step)));
-  const { way, z } = flyAlong(spots, spots.map(() => H), step, ground, obstacles);
+  const { way, z } = flyAlong(spots.map((_, i) => ({ x: sx[i], y: sy[i] })), spots.map(() => H), n / dur, ground, obstacles);
   const cam: Air[] = way.map((p, i) => ({ ...p, z: z[i] }));
   // (and what it looks at rises and falls gently with the ground)
-  const lz = smoothRun(look.map(l => l.z), w);
+  const lz = smoothEnds(look.map(l => l.z), Math.max(2, Math.round(Math.max(40, len * 0.1) / Math.max(1, step))), 3);
   look.forEach((l, i) => (l.z = lz[i]));
-  return { cam, look, fov: cam.map(() => set.fov), dur: autoSeconds(len, set) };
+  return finish(cam, look, cam.map(() => set.fov), dur, n / dur);
 };
 
 /** Values smoothed over `w` samples either side (`passes` of a running mean). */
@@ -274,6 +340,21 @@ const smoothRun = (v: number[], w: number, passes = 3) => {
   return z;
 };
 
+/** The same, carried on past both ends as they run there (so the ends stay where they are and
+ * aren't pulled up or down). */
+const smoothEnds = (v: number[], w: number, passes = 3) => {
+  const n = v.length;
+  if (n < 3) return v.slice();
+  const pad = Math.min(n - 1, w);
+  let z = v;
+  for (let pass = 0; pass < passes; pass++) {
+    const first = z[0], last = z[n - 1];
+    const ext = [...z.slice(1, pad + 1).reverse().map(x => 2 * first - x), ...z, ...z.slice(n - 1 - pad, n - 1).reverse().map(x => 2 * last - x)];
+    z = smoothRun(ext, w, 1).slice(pad, pad + n);
+  }
+  return z;
+};
+
 /** Seconds from each keyframe to the next. */
 export const keySeconds = (keys: FlyKey[], set: FlyoverSettings, ground: (x: number, y: number) => number) =>
   keys.slice(1).map((k, i) => {
@@ -284,36 +365,100 @@ export const keySeconds = (keys: FlyKey[], set: FlyoverSettings, ground: (x: num
     return Math.max(0.5, (d / 70) * 1.6 / Math.max(0.1, set.speed));
   });
 
-/** A smooth curve through points (Catmull-Rom), at `u` (0..1) between points i and i + 1. */
-const through = (pts: Air[], i: number, u: number): Air => {
-  const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[Math.min(pts.length - 1, i + 1)], p3 = pts[Math.min(pts.length - 1, i + 2)];
-  const u2 = u * u, u3 = u2 * u;
-  const f = (a: number, b: number, c: number, d: number) => 0.5 * (2 * b + (-a + c) * u + (2 * a - 5 * b + 4 * c - d) * u2 + (-a + 3 * b - 3 * c + d) * u3);
-  return { x: f(p0.x, p1.x, p2.x, p3.x), y: f(p0.y, p1.y, p2.y, p3.y), z: f(p0.z, p1.z, p2.z, p3.z) };
+/** A smooth curve through values `ys` at `xs` (rising) that never overshoots between them
+ * (Steffen's monotone cubic): its value at `x`. */
+const monotone = (xs: number[], ys: number[]) => {
+  const n = xs.length;
+  const h = xs.slice(1).map((x, i) => x - xs[i]);
+  const s = h.map((hi, i) => (ys[i + 1] - ys[i]) / hi);
+  const sign = Math.sign;
+  const d = ys.map((_, i) => {
+    if (n < 3) return s[0];
+    if (i === 0 || i === n - 1) {
+      const [a, b, ha, hb] = i === 0 ? [s[0], s[1], h[0], h[1]] : [s[n - 2], s[n - 3], h[n - 2], h[n - 3]];
+      const p = a * (1 + ha / (ha + hb)) - (b * ha) / (ha + hb);
+      return p * a <= 0 ? 0 : Math.abs(p) > 2 * Math.abs(a) ? 2 * a : p;
+    }
+    const p = (s[i - 1] * h[i] + s[i] * h[i - 1]) / (h[i - 1] + h[i]);
+    return (sign(s[i - 1]) + sign(s[i])) * Math.min(Math.abs(s[i - 1]), Math.abs(s[i]), 0.5 * Math.abs(p));
+  });
+  return (x: number) => {
+    let k = 0;
+    while (k < n - 2 && x > xs[k + 1]) k++;
+    const u = Math.min(1, Math.max(0, (x - xs[k]) / h[k])), u2 = u * u, u3 = u2 * u;
+    return (2 * u3 - 3 * u2 + 1) * ys[k] + (u3 - 2 * u2 + u) * h[k] * d[k] + (-2 * u3 + 3 * u2) * ys[k + 1] + (u3 - u2) * h[k] * d[k + 1];
+  };
 };
 
-/** The flight through keyframes made by hand: a smooth curve through the camera's spots and
- * through what it looks at, each stretch taking its keyframe's seconds. */
+/** A point on a smooth curve through points (centripetal Catmull-Rom: no loops or kinks where they
+ * bunch up), `u` (0..1) of the way from point i to point i + 1. */
+const curveAt = (pts: P[], i: number, u: number): P => {
+  const p1 = pts[i], p2 = pts[i + 1];
+  // (past the ends: carried on straight)
+  const p0 = i > 0 ? pts[i - 1] : { x: 2 * p1.x - p2.x, y: 2 * p1.y - p2.y };
+  const p3 = i + 2 < pts.length ? pts[i + 2] : { x: 2 * p2.x - p1.x, y: 2 * p2.y - p1.y };
+  const knot = (a: P, b: P) => Math.max(1e-3, Math.sqrt(Math.hypot(b.x - a.x, b.y - a.y)));
+  const t1 = knot(p0, p1), t2 = t1 + knot(p1, p2), t3 = t2 + knot(p2, p3);
+  const t = t1 + u * (t2 - t1);
+  const mix = (a: P, b: P, ta: number, tb: number) => {
+    const f = (t - ta) / (tb - ta);
+    return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+  };
+  const a1 = mix(p0, p1, 0, t1), a2 = mix(p1, p2, t1, t2), a3 = mix(p2, p3, t2, t3);
+  return mix(mix(a1, a2, 0, t2), mix(a2, a3, t1, t3), t1, t2);
+};
+
+/** Travelling along a smooth curve through points, at each at its moment (`at`, s), the speed
+ * changing smoothly through them: where it is at time t. */
+const timed = (pts: P[], at: number[]) => {
+  const m = 160;
+  const curve: P[] = [pts[0]], along = [0];
+  for (let i = 0; i < pts.length - 1; i++) for (let k = 1; k <= m; k++) {
+    const q = k === m ? pts[i + 1] : curveAt(pts, i, k / m), last = curve[curve.length - 1];
+    along.push(along[along.length - 1] + Math.hypot(q.x - last.x, q.y - last.y));
+    curve.push(q);
+  }
+  const travel = monotone(at, pts.map((_, i) => along[i * m]));
+  return (t: number): P => {
+    const s = travel(t);
+    let lo = 0, hi = along.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (along[mid] <= s) lo = mid;
+      else hi = mid;
+    }
+    const f = along[hi] > along[lo] ? (s - along[lo]) / (along[hi] - along[lo]) : 0;
+    if (f >= 1) return curve[hi];
+    if (f <= 0) return curve[lo];
+    return { x: curve[lo].x + (curve[hi].x - curve[lo].x) * f, y: curve[lo].y + (curve[hi].y - curve[lo].y) * f };
+  };
+};
+
+/** The flight through keyframes made by hand: a smooth curve through the camera's spots and one
+ * through what it looks at, at each keyframe on its seconds, the speed changing smoothly through
+ * them; its height and field of view eased from one to the next. */
 export const keyFlight = (keys: FlyKey[], set: FlyoverSettings, ground: (x: number, y: number) => number, obstacles: Obstacles = () => null): Flight | null => {
   if (keys.length < 2) return null;
-  // (the camera's spots with their height over the ground: between two it keeps to the ground's
-  // rise and fall, as high over it as they are, and clear of the trees on the way)
-  const spots = keys.map(k => ({ x: k.x, y: k.y, z: k.alt }));
-  const looks = keys.map(k => ({ x: k.lookX, y: k.lookY, z: ground(k.lookX, k.lookY) + 3 }));
   const secs = keySeconds(keys, set, ground);
-  const dur = secs.reduce((a, b) => a + b, 0);
-  const n = Math.max(60, Math.ceil(dur * 30));
-  const way: Air[] = [], look: Air[] = [], fov: number[] = [];
+  const at = [0];
+  for (const s of secs) at.push(at[at.length - 1] + s);
+  const dur = at[at.length - 1];
+  const n = Math.max(60, Math.ceil(dur * RATE));
+  const camAt = timed(keys.map(k => ({ x: k.x, y: k.y })), at), lookAt = timed(keys.map(k => ({ x: k.lookX, y: k.lookY })), at);
+  // (the camera's height over the ground: between two keyframes it keeps to the ground's rise and
+  // fall, as high over it as they are, and clear of the trees on the way)
+  const altAt = monotone(at, keys.map(k => k.alt)), fovAt = monotone(at, keys.map(k => k.fov ?? set.fov));
+  const lookZ = monotone(at, keys.map(k => ground(k.lookX, k.lookY) + 3));
+  const way: P[] = [], alts: number[] = [], look: Air[] = [], fov: number[] = [];
   for (let j = 0; j <= n; j++) {
-    let t = (j / n) * dur, i = 0;
-    while (i < secs.length - 1 && t > secs[i]) t -= secs[i++];
-    const u = Math.min(1, Math.max(0, t / secs[i]));
-    way.push(through(spots, i, u));
-    look.push(through(looks, i, u));
-    fov.push((keys[i].fov ?? set.fov) * (1 - u) + (keys[i + 1].fov ?? set.fov) * u);
+    const t = (j / n) * dur;
+    way.push(camAt(t));
+    alts.push(altAt(t));
+    look.push({ ...lookAt(t), z: lookZ(t) });
+    fov.push(fovAt(t));
   }
-  const flown = flyAlong(way, way.map(w => w.z), pathLength(way) / n, ground, obstacles);
-  return { cam: flown.way.map((w, j) => ({ x: w.x, y: w.y, z: flown.z[j] })), look, fov, dur };
+  const flown = flyAlong(way, alts, n / dur, ground, obstacles);
+  return finish(flown.way.map((w, j) => ({ x: w.x, y: w.y, z: flown.z[j] })), look, fov, dur, n / dur);
 };
 
 /** Keyframes to start from: the flight it flies by itself, at a few moments (to change by hand),
