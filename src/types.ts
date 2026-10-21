@@ -455,6 +455,10 @@ export interface SiteInfo {
   elevationSource?: string;
 }
 
+/** A tree measured from the air: where it stands (plan ft), how tall and how far its crown
+ * spreads (ft), and 1 for a conifer. */
+export type LidarTree = [x: number, y: number, height: number, radius: number, conifer: 0 | 1];
+
 export interface CourseDoc {
   version: 1;
   /** Stable name for the course library. */
@@ -468,6 +472,9 @@ export interface CourseDoc {
   canvas: { width: number; height: number };
   /** Terrain grid spacing, ft; heights are keyed "x,y" at grid points. */
   gridSize: number;
+  /** The site's trees measured from the air (LiDAR): those on fairways, tees and baskets' circles
+   * are cut down unless `kept` (by index); `removed` ones taken out wherever they stand. */
+  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[] };
   terrainHeights: Record<string, number>;
   /** Painted ground (lib/groundPaint): a material per painted square foot, keyed "i,j". */
   groundPaint: Record<string, number>;

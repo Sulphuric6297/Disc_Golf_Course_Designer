@@ -25,9 +25,7 @@ been seen working in the browser.
 
 - [ ] **Hosted on GitHub**: a static site on GitHub Pages, like the camera planner. No backend
   and no API keys.
-- [ ] **A share link for a course**: send a link that opens the course for anyone (view it,
-  and make their own copy to edit). With no server, the course goes inside the link and the
-  map and elevation load again for that location.
+- ~~**A share link for a course**~~: taken out at the owner's request, to come back in another way.
 - [ ] **Course maps that look like professionally painted course maps** (the owner's example:
   a course map from UDisc). What that look is made of:
   - dense, lush painted woods, with the fairways cut through as bright mown clearings;
@@ -213,7 +211,6 @@ Later requests (in the order asked)
 - [ ] **Checks can be ignored** (and brought back).
 - [ ] **Better-looking grass in 3D.**
 - [ ] **Tee pads never cut through the ground; the tee sign has no pole through it.**
-- [ ] **Share links are shorter and lose nothing** (under 2,040 characters where possible).
 - [ ] **Flyovers stay 10 ft over the ground the whole way** (by default), round, under or (only
   where they must) over the trees standing there, never through them; keyframed flights keep
   their height over the ground between keyframes.
@@ -226,3 +223,6 @@ Later requests (in the order asked)
 - [ ] **Stretches of a road (or path, fence, creek) can be OB**, marked with two clicks on it, and
   a road (or path) can be OB and beyond (OB from its edge on the hole's side).
 - [ ] **Zoomed in on the Design page, every edge of the map can be reached.**
+- [ ] **Real trees from LiDAR** (USGS, where a survey covers the site): each tree where it
+  stands, as tall and wide as it is; trees on a hole's fairway cut down, with an easy way to bring
+  them back (a stump to click, or all of a hole's at once) and to cut down others.

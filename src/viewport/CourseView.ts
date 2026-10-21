@@ -25,7 +25,8 @@ import { createAmenity, createBasket, createDropZone, createMando, createTeePad,
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
-import { createWoods, createWoodsWhere } from "../three/woods";
+import { createMeasuredWoods, createWoods, createWoodsWhere } from "../three/woods";
+import { standingTrees } from "../lib/lidar";
 import type { WoodedGrid } from "../lib/forest";
 import { autoFlight, flightClock, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy, type Crown } from "../lib/flight";
 import { VIDEO_HOLD, titleStrength } from "../lib/video";
@@ -108,6 +109,9 @@ const STYLE = `
 .dg-h[data-handle=radius]{width:15px;height:15px;border-radius:50%;background:#16a34a;border:2.5px solid #fff;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=height]{width:16px;height:22px;border-radius:5px;background:#f59e0b;border:2.5px solid #fff;cursor:ns-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-marquee{position:absolute;left:0;top:0;pointer-events:none;border:1.5px dashed #f59e0b;background:rgba(245,158,11,.12);border-radius:2px;z-index:5}
+.dg-stump{width:12px;height:12px;border-radius:50%;background:#8b5e3c;border:2.5px solid #f3dfc1;box-shadow:0 1px 3px rgba(0,0,0,.55);cursor:pointer;pointer-events:auto}
+.dg-stump:hover{transform:scale(1.25)}
+.dg-stump.kept{background:rgba(34,197,94,.35);border-color:#22c55e}
 .dg-h[data-handle=obend]{width:13px;height:13px;border-radius:3px;background:#fff;border:3px solid #dc2626;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=obmark]{width:13px;height:13px;border-radius:50%;background:#dc2626;border:2.5px solid #fff;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=draw]{width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #f59e0b;pointer-events:none}
@@ -181,7 +185,7 @@ export class CourseView {
   private heightsRef: unknown = null;
   private selectedId: string | null = null;
   private hoverId: string | null = null;
-  private tool: ViewTool = { mode: "select", areaKind: "ob", lineKind: "ob", shape: "points", readOnly: false };
+  private tool: ViewTool = { mode: "select", areaKind: "ob", lineKind: "ob", shape: "points" };
   private teeLevel: TeeLevel = "blue";
   private raycaster = new THREE.Raycaster();
   private dirty = true;
@@ -221,6 +225,11 @@ export class CourseView {
   private plotHole: string | null = null;
   /** Marking a stretch of OB along a line: the line, and where along it the stretch starts (0..1). */
   private obPick: { id: string; from: number | null } | null = null;
+  /** The trees measured from the air that are cut down (cleared for play, or taken out), and those
+   * kept standing where they would be (by index). */
+  private lidarState: { stand: number[]; cut: number[]; kept: number[] } | null = null;
+  /** Where the course clears the ground for play (fairways, tees, baskets, water, paths). */
+  private clearedAt: (p: P, reach: number) => boolean = () => false;
   private plotPts: P[] = [];
   private lastPlotClick: { x: number; y: number; time: number } | null = null;
   /** The last press on a walk's end (a second one soon after resets it). */
@@ -1915,18 +1924,20 @@ export class CourseView {
     }
     // Where woods have no trees: fairways, water, open areas, paths, roads, creeks, tees, baskets
     // and built things (as on the painted map)
-    const clearings = (() => {
+    // (`play`: only what's cleared for play, fairways, tees and baskets: the trees measured from the
+    // air are real, and a crown over a path or a road doesn't stand on it)
+    const clearingsFor = (play: boolean) => {
       const polys: P[][] = [], lines: { pts: P[]; half: number }[] = [], discs: { p: P; r: number }[] = [];
       for (const s of doc.stats) {
         const hole = course.holes.find(h => h.id === s.holeId);
         if (s.complete && hole) teeLines(course, hole, s.line, s.teeId).forEach((l, k) => polys.push(this.outline(hole, l, `tee${k}`, 8, hole.fairway ? 0 : -hole.fairwayWidth * 0.4, 6)));
       }
       for (const it of course.items) {
-        if (it.type === "area" && ["fairway", "green", "water", "parking", "building", "sand", "rough", "nogo"].includes(it.kind)) polys.push(this.shapeOf(it).pts);
-        else if (it.type === "line" && it.kind !== "ob" && it.kind !== "fence") lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 + 3 });
+        if (it.type === "area" && (play ? ["fairway", "green"] : ["fairway", "green", "water", "parking", "building", "sand", "rough", "nogo"]).includes(it.kind)) polys.push(this.shapeOf(it).pts);
+        else if (it.type === "line" && !play && it.kind !== "ob" && it.kind !== "fence") lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 + 3 });
         else if (it.type === "tee") discs.push({ p: it, r: Math.max(12, it.padLength) });
         else if (it.type === "basket") discs.push({ p: it, r: CIRCLE_ONE_FT * 0.6 });
-        else if (it.type === "structure") lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 6 });
+        else if (it.type === "structure" && !play) lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 6 });
       }
       const boxes = polys.map(boundsOf);
       const test = (p: P, reach: number) => {
@@ -1943,7 +1954,28 @@ export class CourseView {
       const r = (v: number) => Math.round(v);
       const key = JSON.stringify([polys.map(pp => pp.map(q => [r(q.x), r(q.y)])), lines.map(l => [l.half, l.pts.map(q => [r(q.x), r(q.y)])]), discs.map(d => [r(d.p.x), r(d.p.y), d.r])]);
       return { test, key };
-    })();
+    };
+    const clearings = clearingsFor(false);
+    // Trees measured from the air: cut down where the course clears the ground for play, unless
+    // kept (in place of the woods' made-up trees)
+    const lidar = course.lidar?.trees.length ? course.lidar : null;
+    const measured = !!lidar;
+    this.lidarState = null;
+    if (lidar) {
+      const forPlay = clearingsFor(true);
+      this.clearedAt = forPlay.test;
+      const state = this.keep("lidar", lidar.trees, JSON.stringify([lidar.kept, lidar.removed, forPlay.key]), () => {
+        const { stand, cut } = standingTrees(lidar, forPlay.test);
+        const keptSet = new Set(lidar.kept ?? []);
+        return { stand, cut, kept: stand.filter(k => keptSet.has(k) && forPlay.test({ x: lidar.trees[k][0], y: lidar.trees[k][1] }, lidar.trees[k][3] * 0.3)) };
+      });
+      this.lidarState = state;
+      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), state.cut, hv, st.trees, st.landscape]), () => {
+        const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, landscapeOf(st).mix);
+        this.shadowsDirty = true;
+        return woods;
+      }, this.itemsGroup);
+    }
     // Areas: fill plus outline
     const areas = (course.items.filter(i => i.type === "area") as AreaItem[]).map(a => ({ ...a, points: this.shapeOf(a).pts })).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
     areas.forEach((a, order) => {
@@ -1985,7 +2017,7 @@ export class CourseView {
         return g;
       });
       // Woods: trees standing in it (shadows and all)
-      if (a.kind === "woods") put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, clearings.key]), () => {
+      if (a.kind === "woods" && !measured) put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, clearings.key]), () => {
         const land = landscapeOf(st);
         const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, clearings.test);
         woods.traverse(o => { o.userData.itemId = a.id; });
@@ -2006,7 +2038,7 @@ export class CourseView {
       });
     }
     // The painted map's own woods: trees standing on it
-    const pw = painted ? this.paintedWoods : null;
+    const pw = painted && !measured ? this.paintedWoods : null;
     if (pw) {
       put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, clearings.key]), () => {
         const land = landscapeOf(st);
@@ -2445,6 +2477,24 @@ export class CourseView {
         return el;
       }, at(issue.at, 2), -18);
     });
+    // Trees measured from the air that are cut down: a stump to bring each back; those kept where
+    // they'd be cut, a ring to cut them down after all
+    const lidar = course.lidar, ls = this.lidarState;
+    if (lidar && ls) {
+      const mark = (k: number, kept: boolean) => {
+        const [x, y] = lidar.trees[k];
+        put(`stump:${k}`, String(kept), 4, () => {
+          const el = document.createElement("div");
+          el.className = kept ? "dg-stump kept" : "dg-stump";
+          el.dataset.stump = String(k);
+          el.setAttribute("data-testid", kept ? "kept-tree" : "stump");
+          el.title = kept ? "Cut down" : "Bring back";
+          return el;
+        }, at({ x, y }, 0.5), 0);
+      };
+      ls.cut.forEach(k => mark(k, false));
+      ls.kept.forEach(k => mark(k, true));
+    }
     for (const [key, o] of this.overlays) {
       if (!seen.has(key)) {
         o.el.remove();
@@ -2453,12 +2503,47 @@ export class CourseView {
     }
   }
 
+  /** Whether a stump (or a kept tree's ring) shows: close enough to see, or on the hole picked. */
+  private stumpShown(o: Overlay, picked: { line: P[]; half: number } | null) {
+    if (1 / this.upp(o.anchor) >= 0.8) return true;
+    return !!picked && distanceToPath({ x: o.anchor.x, y: o.anchor.z }, picked.line) < picked.half;
+  }
+
+  /** A measured tree cut down (taken out, or cleared for play) or brought back, one undo step. */
+  toggleLidarTree(k: number) {
+    const lidar = this.doc?.course.lidar, ls = this.lidarState;
+    if (!lidar || !ls || !lidar.trees[k]) return;
+    const kept = new Set(lidar.kept ?? []), removed = new Set(lidar.removed ?? []);
+    const [x, y, , r] = lidar.trees[k];
+    if (ls.stand.includes(k)) {
+      if (kept.has(k)) kept.delete(k);
+      else removed.add(k);
+    } else {
+      removed.delete(k);
+      if (this.clearedAt({ x, y }, r * 0.3)) kept.add(k);
+    }
+    const list = (set: Set<number>) => (set.size ? [...set].sort((a, b) => a - b) : undefined);
+    this.cb.onLidar({ kept: list(kept), removed: list(removed) });
+  }
+
+  /** The measured tree standing at a spot (its trunk within reach), if any. */
+  lidarTreeAt(p: P): number | null {
+    const lidar = this.doc?.course.lidar, ls = this.lidarState;
+    if (!lidar || !ls) return null;
+    let best: number | null = null, bestD = Infinity;
+    for (const k of ls.stand) {
+      const [x, y, , r] = lidar.trees[k], d = Math.hypot(x - p.x, y - p.y);
+      if (d < Math.max(4, r * 0.6) && d < bestD) { best = k; bestD = d; }
+    }
+    return best;
+  }
+
   // ------------------------------------------------------------------ handles
 
   private syncHandles() {
     const doc = this.doc;
     if (!doc) return;
-    const editing = this.tool.mode === "select" && !this.tool.readOnly;
+    const editing = this.tool.mode === "select";
     const sel = editing ? this.item(this.selectedId) : null;
     const holeId = editing ? (this.hole(this.selectedId)?.id ?? doc.activeHoleId) : null;
     const hole = this.hole(holeId);
@@ -3114,9 +3199,12 @@ export class CourseView {
     const hits = (r: { x0: number; y0: number; x1: number; y1: number }) => taken.some(t => r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0);
     const doc = this.doc;
     const tilted = this.controls.polarAngle > 15 * DEG;
+    // (the hole picked: the stumps on its fairway show however far out)
+    const pickedHole = this.hole(this.selectedId), pickedStats = pickedHole && doc?.stats.find(x => x.holeId === pickedHole.id);
+    const picked = pickedHole && pickedStats?.complete ? { line: pickedStats.line, half: pickedHole.fairwayWidth / 2 + 25 } : null;
     for (const o of list) {
       const s = this.project(o.anchor);
-      if (!s || s.x < -60 || s.y < -60 || s.x > this.size.width + 60 || s.y > this.size.height + 60) {
+      if (!s || s.x < -60 || s.y < -60 || s.x > this.size.width + 60 || s.y > this.size.height + 60 || (o.key?.startsWith("stump:") && !this.stumpShown(o, picked))) {
         o.el.style.display = "none";
         continue;
       }
@@ -3478,7 +3566,7 @@ export class CourseView {
       // (Not on a handle that moves something: holding one still before dragging it slowly is no
       // menu; a line's middle dot is fine, it is where a finger lands to hold a hole)
       const handle = (target.closest?.("[data-handle]") as HTMLElement | null)?.dataset.handle;
-      if (!this.povHole && !this.tool.readOnly && this.tool.mode === "select" && e.button === 0 && (!handle || handle === "mid")) this.startLongPress(e, target);
+      if (!this.povHole && this.tool.mode === "select" && e.button === 0 && (!handle || handle === "mid")) this.startLongPress(e, target);
     }
     if (this.povHole) {
       if (e.button !== 0 || target.closest?.("button,input,select,[data-pov-ui]")) return;
@@ -3499,6 +3587,14 @@ export class CourseView {
         }
       };
       window.addEventListener("pointerup", up, true);
+      return;
+    }
+    // A stump: the tree back (or a kept tree's ring: cut down after all)
+    const stumpEl = target.closest?.("[data-stump]") as HTMLElement | null;
+    if (stumpEl && e.button === 0) {
+      e.stopPropagation();
+      e.preventDefault();
+      this.gesture(e, { click: () => this.toggleLidarTree(Number(stumpEl.dataset.stump)) });
       return;
     }
     const handleEl = target.closest?.("[data-handle]") as HTMLElement | null;
@@ -3559,23 +3655,17 @@ export class CourseView {
       const g = this.groundAt(ev.clientX, ev.clientY);
       if (g) fn({ x: g.x, y: g.z }, ev);
     };
-    if (tool.readOnly) {
-      const hit = domItem ?? this.pick(e.clientX, e.clientY);
-      stop();
-      this.gesture(e, { click: () => this.cb.onSelect(hit), drag: panOrNothing });
-      return;
-    }
     if (tool.mode === "measure") {
       stop();
       this.gesture(e, { click: ev => { const g = this.groundAt(ev.clientX, ev.clientY); if (g) this.addMeasurePoint(g, ev.shiftKey); }, drag: panOrNothing });
       return;
     }
-    if (this.obPick && !tool.readOnly) {
+    if (this.obPick) {
       stop();
       this.gesture(e, { click: groundClick(p => this.obPickClick(p)), drag: panOrNothing });
       return;
     }
-    if (this.plotHole && !tool.readOnly) {
+    if (this.plotHole) {
       // Plotting a hole's line: clicks add turns; a drag draws it freehand
       e.stopPropagation();
       this.gesture(e, { click: groundClick((p, ev) => this.plotClick(p, ev)), drag: s => this.plotDrag(s) });
@@ -4260,7 +4350,7 @@ export class CourseView {
         return;
       }
       const target = document.elementFromPoint(p.x, p.y) as HTMLElement | null;
-      if (this.tool.mode === "select" || this.tool.readOnly) {
+      if (this.tool.mode === "select") {
         const dom = (target?.closest?.("[data-item-id]") as HTMLElement | null)?.dataset.itemId ?? null;
         this.setHover(dom ?? (target?.closest?.("[data-handle]") ? null : this.pick(p.x, p.y)));
       } else {
@@ -4272,10 +4362,9 @@ export class CourseView {
 
   private updateCursor() {
     const t = this.tool;
-    let c = t.dragSelect && t.mode === "select" && !t.readOnly ? "crosshair" : "grab";
+    let c = t.dragSelect && t.mode === "select" ? "crosshair" : "grab";
     if (this.povHole) c = "move";
     else if (this.obPick) c = "crosshair";
-    else if (t.readOnly) c = this.hoverId ? "pointer" : "grab";
     else if (t.mode !== "select") c = "crosshair";
     else if (this.hoverId) {
       const it = this.item(this.hoverId);

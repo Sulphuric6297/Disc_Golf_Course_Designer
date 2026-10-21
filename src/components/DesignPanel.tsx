@@ -133,10 +133,8 @@ function TeeSignSettings() {
 export function DesignPanel() {
   const doc = useCourse(s => s.doc);
   const s = doc.style;
-  const ro = useEditor(e => e.viewOnly);
   // Color pickers change the map live while dragging; the change is one undo step when it ends
   const done = () => useCourse.getState().commit();
-  if (ro) return null;
   return (
     <>
       <PageElementPanel />

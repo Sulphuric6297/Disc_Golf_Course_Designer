@@ -1,7 +1,7 @@
 // The app: header with the steps, the step panel, the map (2D and 3D in one view), the tools, the
 // inspector for the selection, and the dialogs.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Eye, MapPinned, Route, Share2, X } from "lucide-react";
+import { MapPinned, Route, X } from "lucide-react";
 import { Header } from "./components/Header";
 import { SidePanel } from "./components/SidePanel";
 import { MapViewport, getView } from "./components/MapViewport";
@@ -19,10 +19,9 @@ import { CompactShell, ItemMenu } from "./components/mobile/CompactShell";
 import { useCourse, useEditor, getDoc, changeDoc, updateItem } from "./state/course";
 import { canPaste, copySelection, cutSelection, deleteSelection, duplicateSelection, nudgeSelection, pasteClipboard, select, selectAll } from "./state/actions";
 import { osmFailedToast } from "./state/osm";
-import { makeCopy, openSharedLink, restoreAutosave, startAutosave } from "./state/files";
+import { restoreAutosave, startAutosave } from "./state/files";
 import { toast, useToasts } from "./state/toast";
 import { courseStats, holeStats } from "./lib/holeStats";
-import { shareUrl } from "./lib/share";
 import { isImported, reframeDesign, type ImportedSite } from "./lib/importSite";
 import { geoRefOf } from "./lib/geoRef";
 import type { CourseItem, P } from "./types";
@@ -65,42 +64,6 @@ function useModal(onClose: () => void) {
     };
   }, []);
   return box;
-}
-
-function ShareDialog({ onClose }: { onClose: () => void }) {
-  const box = useModal(onClose);
-  const doc = useCourse(s => s.doc);
-  const [url, setUrl] = useState("");
-  const [copied, setCopied] = useState(false);
-  useEffect(() => { void shareUrl(doc).then(setUrl); }, [doc]);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-    } catch {
-      (document.getElementById("share-url") as HTMLInputElement | null)?.select();
-    }
-  };
-  const canShare = typeof navigator !== "undefined" && "share" in navigator;
-  return (
-    <div ref={box} className="fixed inset-0 z-50 bg-black/60 flex items-end md:items-center justify-center p-0 md:p-4" role="dialog" aria-modal="true" aria-label="Share this course" onClick={onClose}>
-      <div className={`${SHEET} md:max-w-lg p-5`} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-2 mb-3">
-          <Share2 size={18} className="text-emerald-400" />
-          <h2 className="font-bold text-zinc-50 text-lg flex-1">Share this course</h2>
-          <button aria-label="Close" className={CLOSE} onClick={onClose}><X size={18} /></button>
-        </div>
-        <div className="flex gap-2">
-          <input id="share-url" aria-label="Share link" readOnly value={url} className="flex-1 min-w-0 bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-2 text-xs text-zinc-200 font-mono" onFocus={e => e.target.select()} />
-          <Button tone="primary" onClick={() => void copy()} testid="copy-link"><Copy size={15} /> {copied ? "Copied" : "Copy"}</Button>
-        </div>
-        <div className="flex items-center justify-between mt-3 text-xs text-zinc-500">
-          <span data-testid="share-size">{url ? `${(url.length / 1024).toFixed(1)} KB link` : "Packing the course…"}</span>
-          {canShare && url && <button className="text-emerald-300 hover:text-emerald-200 font-semibold touch:text-sm touch:min-h-[44px] touch:px-2" onClick={() => void navigator.share({ title: doc.name, url }).catch(() => {})}>Share with an app…</button>}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 const SHORTCUTS: [string, string][] = [
@@ -181,7 +144,9 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
     window.addEventListener("keydown", esc);
     return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc); };
   }, [onClose]);
-  if (!hole && !item && !(canPaste() && info.ground)) return null;
+  // (a tree measured from the air standing there)
+  const measuredTree = info.ground ? getView()?.lidarTreeAt(info.ground) ?? null : null;
+  if (!hole && !item && measuredTree === null && !(canPaste() && info.ground)) return null;
   const x = Math.min(info.clientX, window.innerWidth - 220), y = Math.min(info.clientY, window.innerHeight - 200);
   const row = "w-full text-left px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800";
   const run = (fn: () => void) => () => { fn(); onClose(); };
@@ -206,6 +171,7 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
           {info.ground && <button className={row} role="menuitem" onClick={run(() => { getView()?.startObPick(item.id, info.ground!); useEditor.getState().set({ obPick: item.id, tool: "select" }); })}>OB stretch from here</button>}
         </>
       )}
+      {measuredTree !== null && <button className={row} role="menuitem" onClick={run(() => getView()?.toggleLidarTree(measuredTree))}>Cut down this tree</button>}
       {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); copySelection(); })}>{inGroup ? `Copy ${group.length}` : "Copy"}</button>}
       {canPaste() && info.ground && <button className={row} role="menuitem" onClick={run(() => pasteClipboard(info.ground))}>Paste here</button>}
       {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); duplicateSelection(); })}>{inGroup ? `Duplicate ${group.length}` : "Duplicate"}</button>}
@@ -228,12 +194,10 @@ export default function App() {
   useEffect(() => {
     const stop = startAutosave();
     void (async () => {
-      if (!(await openSharedLink())) await restoreAutosave();
+      await restoreAutosave();
       setReady(true);
     })();
-    const onHash = () => void openSharedLink();
-    window.addEventListener("hashchange", onHash);
-    return () => { stop(); window.removeEventListener("hashchange", onHash); };
+    return stop;
   }, []);
 
   const onImported = (site: ImportedSite) => {
@@ -253,7 +217,8 @@ export default function App() {
       groundPaint: {},
       name: d.name === "New Disc Golf Course" && site.site.location ? `${site.site.location.label.split(",")[0]} Disc Golf Course` : d.name,
       holes: carried.holes,
-      items: [...carried.items, ...site.mapped, ...site.trees]
+      items: [...carried.items, ...site.mapped, ...site.trees],
+      lidar: site.lidar
     }));
     setFindSite(false);
     useEditor.getState().set({ step: "holes", tool: getDoc().holes.length ? "select" : "add-hole" });
@@ -278,13 +243,13 @@ export default function App() {
       // (AltGr, which types [ and ] on many keyboards, comes as Ctrl+Alt on Windows: not a shortcut)
       const mod = (e.ctrlKey || e.metaKey) && !(e.ctrlKey && e.altKey) && !e.getModifierState?.("AltGraph");
       if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); setGoTo(g => !g); return; }
-      if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (s.viewOnly) return; if (e.shiftKey) useCourse.getState().redo(); else useCourse.getState().undo(); return; }
-      if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); if (!s.viewOnly) useCourse.getState().redo(); return; }
-      if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (!s.viewOnly && s.step !== "design") duplicateSelection(); return; }
+      if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) useCourse.getState().redo(); else useCourse.getState().undo(); return; }
+      if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); useCourse.getState().redo(); return; }
+      if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (s.step !== "design") duplicateSelection(); return; }
       if (mod && e.key.toLowerCase() === "c" && !s.teeView && s.step !== "design") { if (copySelection()) e.preventDefault(); return; }
-      if (mod && e.key.toLowerCase() === "x" && !s.teeView && s.step !== "design") { e.preventDefault(); if (!s.viewOnly) cutSelection(); return; }
-      if (mod && e.key.toLowerCase() === "v" && !s.teeView && s.step !== "design") { e.preventDefault(); if (!s.viewOnly) { s.set({ tool: "select" }); pasteClipboard(); } return; }
-      if (mod && e.key.toLowerCase() === "a" && !s.teeView && s.step !== "design") { e.preventDefault(); if (!s.viewOnly) { s.set({ tool: "select" }); selectAll(); } return; }
+      if (mod && e.key.toLowerCase() === "x" && !s.teeView && s.step !== "design") { e.preventDefault(); cutSelection(); return; }
+      if (mod && e.key.toLowerCase() === "v" && !s.teeView && s.step !== "design") { e.preventDefault(); s.set({ tool: "select" }); pasteClipboard(); return; }
+      if (mod && e.key.toLowerCase() === "a" && !s.teeView && s.step !== "design") { e.preventDefault(); s.set({ tool: "select" }); selectAll(); return; }
       if (mod) return;
       // (AltGr types characters: only the [ and ] it types go on to the shortcuts)
       if (((e.ctrlKey && e.altKey) || e.getModifierState?.("AltGraph")) && e.key !== "[" && e.key !== "]") return;
@@ -317,10 +282,10 @@ export default function App() {
       if (s.step === "design" && (e.key === "Backspace" || e.key === "Delete" || e.key.startsWith("Arrow"))) return;
       if (e.key === "Backspace" || e.key === "Delete") {
         if (e.key === "Backspace" && view?.undoPoint()) { e.preventDefault(); return; }
-        if (!s.viewOnly && (s.selectedId || s.group.length)) { e.preventDefault(); deleteSelection(); }
+        if (s.selectedId || s.group.length) { e.preventDefault(); deleteSelection(); }
         return;
       }
-      if (e.key.startsWith("Arrow") && (s.selectedId || s.group.length) && !s.viewOnly) {
+      if (e.key.startsWith("Arrow") && (s.selectedId || s.group.length)) {
         e.preventDefault();
         const step = e.shiftKey ? 10 : 1;
         nudgeSelection(e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0, e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0);
@@ -339,7 +304,6 @@ export default function App() {
       if (k === "Q") { view?.rotateBy(-30); return; }
       if (k === "E") { view?.rotateBy(30); return; }
       if (k === "N") { view?.resetNorth(); return; }
-      if (s.viewOnly) return;
       const tool = TOOLS.find(t => t.key === k);
       if (tool) s.set({ tool: tool.mode });
     };
@@ -348,8 +312,8 @@ export default function App() {
   }, []);
 
   const empty = useMemo(() => !doc.background && !doc.holes.length && !doc.items.length, [doc]);
-  const showWelcome = ready && empty && ed.step === "site" && !ed.viewOnly;
-  const onContextMenu = (i: { clientX: number; clientY: number; itemId: string | null; ground: P | null }) => !useEditor.getState().viewOnly && setMenu(i);
+  const showWelcome = ready && empty && ed.step === "site";
+  const onContextMenu = (i: { clientX: number; clientY: number; itemId: string | null; ground: P | null }) => setMenu(i);
   const welcome = (
     <div className="pointer-events-auto bg-zinc-900/95 backdrop-blur border border-zinc-700 rounded-2xl shadow-2xl p-6 w-[440px] max-w-full text-center" data-testid="welcome">
       <div className="w-12 h-12 rounded-xl bg-orange-500/15 text-orange-400 flex items-center justify-center mx-auto mb-3"><Route size={24} /></div>
@@ -363,9 +327,8 @@ export default function App() {
   const dialogs = (
     <>
       {findSite && <SiteImportDialog onClose={() => setFindSite(false)} onImported={onImported} />}
-      {ed.shareOpen && <ShareDialog onClose={() => useEditor.getState().set({ shareOpen: false })} />}
       {help && <HelpDialog onClose={() => setHelp(false)} />}
-      {goTo && <GoTo onClose={() => setGoTo(false)} onShare={() => useEditor.getState().set({ shareOpen: true })} onHelp={() => setHelp(true)} />}
+      {goTo && <GoTo onClose={() => setGoTo(false)} onHelp={() => setHelp(true)} />}
     </>
   );
 
@@ -375,7 +338,6 @@ export default function App() {
         <CompactShell
           layout={layout}
           onFindSite={() => setFindSite(true)}
-          onShare={() => useEditor.getState().set({ shareOpen: true })}
           onHelp={() => setHelp(true)}
           onContextMenu={onContextMenu}
           welcome={showWelcome ? welcome : null}
@@ -389,14 +351,7 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
-      <Header onShare={() => useEditor.getState().set({ shareOpen: true })} onHelp={() => setHelp(true)} onGoTo={() => setGoTo(true)} />
-      {ed.viewOnly && (
-        <div className="bg-emerald-900/70 border-b border-emerald-700 px-4 py-2 flex items-center gap-3 text-sm" data-testid="view-only-banner">
-          <Eye size={16} className="text-emerald-300" />
-          <span className="flex-1 text-emerald-50">Shared course: view only</span>
-          <Button small tone="primary" onClick={() => void makeCopy()} testid="make-copy">Make a copy to edit</Button>
-        </div>
-      )}
+      <Header onHelp={() => setHelp(true)} onGoTo={() => setGoTo(true)} />
       <div className="flex-1 flex min-h-0">
         <SidePanel onFindSite={() => setFindSite(true)} />
         <main className="flex-1 relative min-w-0">

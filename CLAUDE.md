@@ -71,8 +71,8 @@ design tools and the PDGA guidance the app follows.
 | `design.spec.ts` | Map designer: themes, colors, title block, legend, hole table, contours, turning the map; the Forest painting (tree cover from sparse to dense, winding creeks and trails, light and shadow settings), basket marks (five kinds, legend, older courses), marking colors (map or PDGA: OB, hazard, casual, out of play), elevation (relief exaggeration, contour heights, hills on the painting), painted water (light rim and shallows, deep middle), tall grass (straw-colored tufts, its own color, in the legend), the page never freezing while the map paints, a phone's smaller preview, zoomed in with every edge of the page in reach; the printed map's and tee signs' contents |
 | `export.spec.ts` | Course map (SVG/PNG/PDF), tee signs, scorecard, GeoJSON, KML, GPX, CSV, stake-out list, parts list; hole by hole: a PDF page and a PNG per hole, one hole's PNG/SVG/GeoJSON (only its own features, plus the course's OB in play), the hole page's contents (pure logic) |
 | `video.spec.ts` | Flyover videos: recording a hole from the Export step (progress, a real WebM/MP4 that plays at the asked size and length), Cancel, going on when the step is left, Record over the flyover, the view from the tee holding still while a video records, the MediaRecorder fallback without WebCodecs (getting the next hole ready left out of the video), MP4 when H.264 can be encoded (stand-in encoder); codec levels and the frames of a recording (pure logic) |
-| `share.spec.ts` | Share links: packing (every id kept), opening (view only, the woods painted the same), photo and elevation downloaded again, "Make a copy" (saved before the link leaves the address bar), never overwriting your own course |
 | `persistence.spec.ts` | Autosave restore, course files (painted the same when opened), New keeps the old course in Recent courses |
+| `lidar.spec.ts` | Trees and ground measured from the air (USGS LiDAR): reading a tile, each tree as tall and wide as it stands (conifers told apart), the ground; on import or from the Site step (Undo takes it back); trees on fairways, tees and baskets cut down, a stump to bring each back, a hole's Bring all back / Cut all down, a tree cut down from its right-click menu; flyovers keep clear of the trees standing |
 | `mobile.spec.ts` | Phones and tablets (device emulation, touch): opening a course file from the menu, the map's buttons above the panel (compass once turned), the selected hole's header stepping to the next hole, the step bar, the bottom sheet's three heights (drag, tap, keys), a hole and an area laid out with taps (Undo, Cancel, Done), the selection in the sheet, long-press menus (width squares never over the tee), pinch without placing, the app never scrolling as a whole, the Design preview fitted to the screen (a pinch while it paints still ends), the tee view, 44 px targets, a phone on its side (rail + panel), a tablet, and the desktop layout unchanged at 1600 × 1000 |
 
 ## Project conventions
@@ -97,8 +97,10 @@ design tools and the PDGA guidance the app follows.
   - `video.ts`: flyover video sizes, codec strings and the frames of a recording;
   - `flight.ts`: flyovers' camera paths (by itself over the trees, or through a hole's keyframes)
     and their settings;
-  - `share.ts`;
-  - `geo/`: site import.
+  - `lidar.ts`: trees and ground from LiDAR points (canopy height, single trees, the ground on the
+    plan's grid), and which measured trees stand (cut down on fairways unless kept);
+  - `geo/`: site import (`geo/lidarFetch.ts` reads the newest USGS survey over a site from AWS,
+    picked from `public/lidar-index.json`, made by `scripts/lidar-index.mjs`).
 - The map view engine is `src/viewport/CourseView.ts`, wrapped by `src/components/MapViewport.tsx`.
 - Phones and tablets: `useLayout()` (`src/components/useLayout.ts`) picks the layout: `phone`
   (under 768 px wide: a bottom sheet and a step bar), `rail` (768 to 1023 px wide, such as a tablet

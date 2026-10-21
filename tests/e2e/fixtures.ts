@@ -1,5 +1,6 @@
 import { test as base, expect, Page } from "@playwright/test";
 import { encode } from "fast-png";
+import { readFileSync } from "fs";
 
 // ---------------------------------------------------------------------------------------------
 // Offline stubs for every external service the app uses, so tests are fast and deterministic.
@@ -145,7 +146,7 @@ export const course = (page: Page) => page.evaluate(() => {
 });
 export const editorState = (page: Page) => page.evaluate(() => {
   const s = (window as any).__dgEditor();
-  return { step: s.step, tool: s.tool, selectedId: s.selectedId, group: s.group, dragSelect: s.dragSelect, designSel: s.designSel, activeHoleId: s.activeHoleId, view: s.view, teeView: s.teeView, viewOnly: s.viewOnly, flyLook: s.flyLook };
+  return { step: s.step, tool: s.tool, selectedId: s.selectedId, group: s.group, dragSelect: s.dragSelect, designSel: s.designSel, activeHoleId: s.activeHoleId, view: s.view, teeView: s.teeView, flyLook: s.flyLook };
 });
 
 /** Where a plan point (on the ground) is on screen. */
@@ -211,6 +212,19 @@ export async function tapPlan(page: Page, x: number, y: number) {
   const p = await screenOf(page, x, y);
   await page.touchscreen.tap(p.x, p.y);
   await page.waitForTimeout(80);
+}
+
+/** LiDAR from the air over the test site: a made-up survey (tests/fixtures/lidar, see make.py)
+ * served for whichever survey is asked for. */
+export async function withLidar(page: Page) {
+  const dir = new URL("../fixtures/lidar/", import.meta.url);
+  const file = (name: string) => readFileSync(new URL(name, dir));
+  await page.route(/s3-us-west-2\.amazonaws\.com\/usgs-lidar-public\/[^/]+\/(.+)$/, route => {
+    const rest = route.request().url().match(/usgs-lidar-public\/[^/]+\/(.+)$/)![1];
+    if (rest === "ept.json" || rest === "ept-hierarchy/0-0-0-0.json") return route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: file(rest) });
+    if (rest === "ept-data/0-0-0-0.laz") return route.fulfill({ status: 200, contentType: "application/octet-stream", headers: { "access-control-allow-origin": "*" }, body: file(rest) });
+    return route.fulfill({ status: 404, headers: { "access-control-allow-origin": "*" }, body: "" });
+  });
 }
 
 /** Holds a finger still at a point (a long-press). */

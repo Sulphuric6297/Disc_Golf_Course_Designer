@@ -2,10 +2,12 @@
 // what OpenStreetMap knows (paths, roads, water, parking, buildings). Everything comes from free
 // services with no keys, as in the Security Camera Planner.
 import { clamp } from "../constants";
-import type { AreaItem, CourseItem, Hole, LineItem, P, SiteInfo, TreeItem } from "../types";
+import type { AreaItem, CourseDoc, CourseItem, Hole, LineItem, P, SiteInfo, TreeItem } from "../types";
 import { FEET_PER_METER, getGeoBounds, type GeoBounds, type SiteSelection } from "./geo/core";
 import { canopyMask, detectTrees, waterRegions, woodsRegions } from "./geo/detect";
 import { fetchBestElevationGrid } from "./geo/elevation";
+import { fetchLidar } from "./geo/lidarFetch";
+import { groundOnGrid } from "./lidar";
 import { creditHeightPx, fetchMapImagery, type MapImagerySource } from "./geo/imagery";
 import { fetchOsmFeatures } from "./geo/osm";
 import { fetchTileFeatures } from "./geo/vectorTiles";
@@ -24,12 +26,16 @@ export type ImportedSite = {
   notes: string[];
   /** OpenStreetMap was asked for and couldn't be reached (the import offers to try again). */
   osmFailed?: boolean;
+  /** The trees measured from the air (where a LiDAR survey covers the site). */
+  lidar?: CourseDoc["lidar"];
 };
 
 export type ImportOptions = {
   imagery: MapImagerySource | "none";
   trees: boolean;
   osm: boolean;
+  /** Trees and ground measured from the air (LiDAR), where a survey covers the site. */
+  lidar?: boolean;
   /** What it is doing: step `step` of `of`, and how far along that step is (0..1) where known. */
   onStatus: (text: string, progress?: { step: number; of: number; fraction?: number }) => void;
 };
@@ -205,7 +211,7 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   const bounds = getGeoBounds(location, width, height);
   const notes: string[] = [];
   // The steps it takes, to say which one it is on
-  const steps = [opts.imagery !== "none" ? "photo" : "", "elevation", opts.trees && opts.imagery === "satellite" ? "nature" : "", opts.osm ? "osm" : ""].filter(Boolean);
+  const steps = [opts.imagery !== "none" ? "photo" : "", "elevation", opts.lidar ? "lidar" : "", opts.trees && opts.imagery === "satellite" ? "nature" : "", opts.osm ? "osm" : ""].filter(Boolean);
   const status = (step: string, text: string, fraction?: number) => opts.onStatus(text, { step: steps.indexOf(step) + 1, of: steps.length, fraction });
 
   let background: string | null = null;
@@ -224,8 +230,28 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   const samplesX = clamp(Math.round(width / spacing) + 1, 2, 800);
   const samplesY = clamp(Math.round(height / spacing) + 1, 2, 800);
   const elev = await fetchBestElevationGrid(location, width, height, samplesX, samplesY);
-  const terrainHeights = heightsFromSamples(elev.values, samplesX, samplesY, elev.min, width, height, grid);
-  const reliefFt = (elev.max - elev.min) * FEET_PER_METER;
+  let terrainHeights = heightsFromSamples(elev.values, samplesX, samplesY, elev.min, width, height, grid);
+  let baseFt = elev.min * FEET_PER_METER, reliefFt = (elev.max - elev.min) * FEET_PER_METER, elevationSource = elev.source;
+
+  // Trees and ground measured from the air, where a survey covers it
+  let lidar: CourseDoc["lidar"];
+  if (opts.lidar) {
+    const what = "Measuring trees and ground from the air (LiDAR)…";
+    status("lidar", what, 0);
+    const got = await fetchLidar({ ...bounds, width, height }, f => status("lidar", what, f)).catch(err => {
+      console.warn("LiDAR failed", err);
+      return null;
+    });
+    if (got) {
+      const g = groundOnGrid(got.measured, width, height, grid);
+      terrainHeights = g.heights;
+      baseFt = g.min;
+      reliefFt = g.max - g.min;
+      elevationSource = got.source;
+      lidar = { source: got.source, trees: got.trees };
+      notes.push(`${got.trees.length.toLocaleString()} trees measured from the air (${got.source}).`);
+    }
+  }
   notes.push(reliefFt < 1 ? "Nearly flat (under 1 ft of elevation change)." : `${Math.round(reliefFt)} ft of elevation change across the site.`);
 
   let found: { trees: TreeItem[]; woods: AreaItem[]; water: AreaItem[] } = { trees: [], woods: [], water: [] };
@@ -255,9 +281,10 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   // What OpenStreetMap maps already (its woods and water) needn't come again from the photo
   const mappedAs = (kind: string) => mapped.filter((m): m is AreaItem => m.type === "area" && m.kind === kind);
   const inside = (p: P, kind: string) => mappedAs(kind).some(a => pointInPolygon(p, a.points));
-  const woods = found.woods.filter(a => !inside(centroid(a.points), "woods"));
+  // (with the trees measured from the air, none guessed from the photo)
+  const woods = lidar ? [] : found.woods.filter(a => !inside(centroid(a.points), "woods"));
   const water = found.water.filter(a => !inside(centroid(a.points), "water"));
-  const trees = found.trees.filter(t => !inside(t, "woods") && !inside(t, "water"));
+  const trees = lidar ? [] : found.trees.filter(t => !inside(t, "woods") && !inside(t, "water"));
   const counted = [[woods.length, "wooded area", "wooded areas"], [trees.length, "tree", "trees"], [water.length, "water area", "water areas"]] as const;
   const said = counted.filter(([n]) => n > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
   if (said.length) notes.push(`On the photo: ${said.join(", ")}.`);
@@ -271,14 +298,15 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     site: {
       location,
       bounds,
-      baseElevationFt: Math.round(elev.min * FEET_PER_METER * 10) / 10,
+      baseElevationFt: Math.round(baseFt * 10) / 10,
       imagerySource,
-      elevationSource: elev.source
+      elevationSource
     },
     trees,
     mapped,
     notes,
-    osmFailed
+    osmFailed,
+    lidar
   };
 };
 

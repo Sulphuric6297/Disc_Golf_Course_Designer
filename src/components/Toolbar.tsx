@@ -185,7 +185,7 @@ export function Toolbar() {
   const undo = useCourse(s => s.undo);
   const redo = useCourse(s => s.redo);
   const touch = useTouch();
-  if (ed.viewOnly || ed.teeView) return null;
+  if (ed.teeView) return null;
   const set = ed.set;
   const options = toolOptions(ed);
   const hint = toolHint(ed, touch);

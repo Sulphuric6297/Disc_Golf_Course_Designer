@@ -1,7 +1,7 @@
 // The Export step: printable maps, tee signs, scorecards and hole sheets, hole-by-hole pages and
-// GPS files, flyover videos, GPS and data files, the parts list, and the share link.
+// GPS files, flyover videos, GPS and data files, and the parts list.
 import { useState, type ReactNode } from "react";
-import { Box, Clapperboard, FileDown, FileJson, Image as ImageIcon, Map as MapIcon, Share2 } from "lucide-react";
+import { Box, Clapperboard, FileDown, FileJson, Image as ImageIcon, Map as MapIcon } from "lucide-react";
 import JSZip from "jszip";
 import { PAPER, paintedForPrint, renderPoster } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
@@ -13,7 +13,7 @@ import { holeLabel, holeNumber } from "../lib/course";
 import { VIDEO_SIZES, VIDEO_HOLD, type VideoResolution } from "../lib/video";
 import { autoSeconds, flightClock, flyoverOf, keySeconds } from "../lib/flight";
 import { FlyoverSettingsPanel } from "./FlyoverSettings";
-import { changeDoc, getDoc, useCourse, useEditor } from "../state/course";
+import { changeDoc, getDoc, useCourse } from "../state/course";
 import { download, fileName, saveCourseFile } from "../state/files";
 import { runExport, useExportJob, type JobControl } from "../state/exportJob";
 import { recordVideo, useVideoSettings } from "../state/video";
@@ -198,9 +198,6 @@ export function ExportPanel() {
   return (
     <>
       <ExportBanner />
-      <Section title="Share">
-        <Button tone="primary" full onClick={() => useEditor.getState().set({ shareOpen: true })} testid="export-share"><Share2 size={15} /> Get a share link</Button>
-      </Section>
       <Section title="Print">
         <Row icon={<MapIcon size={15} className="text-orange-300" />} title="Course map" pick={
           <select aria-label="Map paper" className={`${selectCls} w-full`} value={doc.style.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>

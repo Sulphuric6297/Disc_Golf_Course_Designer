@@ -28,7 +28,6 @@ export function SceneButton({ className = "", big = false }: { className?: strin
 
 function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
   const s = useCourse(c => c.doc.style);
-  const ro = useEditor(e => e.viewOnly);
   const grass = useEditor(e => e.grass);
   const wind = useEditor(e => e.wind);
   const set = useEditor(e => e.set);
@@ -37,29 +36,19 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-semibold text-zinc-100">Light and grass</div>
         <div className="flex items-center gap-2">
-          {!ro && (
-            <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ sunAngle: 315, sunHeight: 38, shadows: 0.65, light: 0 })}>
-              <RotateCcw size={12} /> Reset
-            </button>
-          )}
+          <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ sunAngle: 315, sunHeight: 38, shadows: 0.65, light: 0 })}>
+            <RotateCcw size={12} /> Reset
+          </button>
           <button className={`text-zinc-400 hover:text-white ${big ? "w-9 h-9 -m-2 flex items-center justify-center" : ""}`} title="Close" aria-label="Close" onClick={onClose}><X size={15} /></button>
         </div>
       </div>
-      {!ro && (
-        <>
-          <StyleSlider k="sunAngle" value={s.sunAngle ?? 315} label="Sun from the" min={0} max={359} step={5} format={x => FROM[Math.round(x / 45) % 8]} />
-          <StyleSlider k="sunHeight" value={s.sunHeight ?? 38} label="Sun height" min={12} max={80} step={2} format={x => `${Math.round(x)}° · ${x < 25 ? "evening" : x < 50 ? "afternoon" : "midday"}`} />
-          <StyleSlider k="shadows" value={s.shadows ?? 0.65} label="Shadows" min={0} max={1} step={0.05} format={x => `${Math.round(x * 100)}%`} />
-          <StyleSlider k="light" value={s.light ?? 0} label="Brightness" min={-0.3} max={0.3} step={0.02} format={signed} />
-        </>
-      )}
-      {!ro && (
-        <>
-          <div className="text-xs text-zinc-300 mb-1">Landscape</div>
-          <LandscapePicker />
-          <div className="h-2" />
-        </>
-      )}
+      <StyleSlider k="sunAngle" value={s.sunAngle ?? 315} label="Sun from the" min={0} max={359} step={5} format={x => FROM[Math.round(x / 45) % 8]} />
+      <StyleSlider k="sunHeight" value={s.sunHeight ?? 38} label="Sun height" min={12} max={80} step={2} format={x => `${Math.round(x)}° · ${x < 25 ? "evening" : x < 50 ? "afternoon" : "midday"}`} />
+      <StyleSlider k="shadows" value={s.shadows ?? 0.65} label="Shadows" min={0} max={1} step={0.05} format={x => `${Math.round(x * 100)}%`} />
+      <StyleSlider k="light" value={s.light ?? 0} label="Brightness" min={-0.3} max={0.3} step={0.02} format={signed} />
+      <div className="text-xs text-zinc-300 mb-1">Landscape</div>
+      <LandscapePicker />
+      <div className="h-2" />
       <div className="text-xs text-zinc-300 mb-1">Grass blades</div>
       <Segmented
         label="Grass blades"
@@ -74,7 +63,7 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
         ]}
       />
       <Toggle label="Grass sways in the wind" checked={wind} onChange={v => set({ wind: v })} />
-      {!ro && <Toggle label="Disc flight lines" checked={s.discFlight !== false} onChange={v => setStyle({ discFlight: v ? undefined : false })} />}
+      <Toggle label="Disc flight lines" checked={s.discFlight !== false} onChange={v => setStyle({ discFlight: v ? undefined : false })} />
     </div>
   );
 }

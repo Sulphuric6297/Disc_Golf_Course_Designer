@@ -101,7 +101,7 @@ test.describe("phone", () => {
     await expect(page.getByRole("toolbar", { name: "Tools" })).toHaveCount(0);
     // (A course with a hole: an empty one shows the welcome card on the Site step instead)
     await oneHole(page);
-    const titles: Record<string, string> = { Site: "Your site", Holes: "Holes", Features: "OB, mandos and more", Review: "Review", Design: "Map design", Export: "Export and share" };
+    const titles: Record<string, string> = { Site: "Your site", Holes: "Holes", Features: "OB, mandos and more", Review: "Review", Design: "Map design", Export: "Export" };
     for (const [label, title] of Object.entries(titles)) {
       await nav(page).getByRole("button", { name: new RegExp(label) }).tap();
       await expect.poll(async () => (await editorState(page)).step).toBe(label.toLowerCase());

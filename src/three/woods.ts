@@ -1,7 +1,7 @@
 // Woods in 3D: a drawn woods area filled with real-looking trees (see treeKit), drawn instanced
 // so thousands stay quick: mostly broadleaf canopy trees with some conifers, a few smaller trees
 // beneath them, each its own height, crown, lean and shade of green.
-import type { P } from "../types";
+import type { LidarTree, P } from "../types";
 import { pointInPolygon } from "../lib/geom";
 import { Forest, VARIANTS, type TreeSpot } from "./treeKit";
 import { foliageTint } from "./trees";
@@ -58,6 +58,32 @@ export const createWoodsWhere = (bounds: { minX: number; minY: number; maxX: num
   forest.group.name = "woods";
   forest.group.userData.forest = forest;
   // (where each tree stands and how big it is: flyovers keep clear of them)
+  forest.group.userData.spots = spots;
+  return forest.group;
+};
+
+/** Trees measured from the air, each where it stands, as tall and as wide as measured. */
+export const createMeasuredWoods = (trees: { tree: LidarTree; index: number }[], groundAt: (x: number, y: number) => number, color: string, mix: string[] = []) => {
+  const spots: TreeSpot[] = trees.map(({ tree: [x, y, height, radius, conifer], index }) => {
+    // (each its own look, the same every time it's drawn)
+    let seed = (index * 7919 + 13) % 2147483646 + 1;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const shape = conifer ? "conifer" : "broadleaf";
+    return {
+      x, y,
+      ground: groundAt(x, y),
+      height,
+      width: radius * 2,
+      shape,
+      variant: Math.floor(rnd() * VARIANTS[shape]),
+      tint: conifer ? foliageTint(color, rnd).offsetHSL(0.03, -0.06, -0.08) : foliageTint(mix.length ? mix[Math.floor(rnd() * mix.length)] : color, rnd),
+      turn: rnd() * Math.PI * 2,
+      lean: (rnd() - 0.5) * 0.06
+    };
+  });
+  const forest = new Forest(spots);
+  forest.group.name = "woods";
+  forest.group.userData.forest = forest;
   forest.group.userData.spots = spots;
   return forest.group;
 };

@@ -121,6 +121,8 @@ type EditorStore = {
   plotLine: string | null;
   /** The line (a road, a path...) a stretch of OB is being marked along: where it starts, then ends. */
   obPick: string | null;
+  /** How far measuring the trees and ground from the air has got (0..1; null: not measuring). */
+  lidarBusy: number | null;
   /** What is picked on the Design page's course map: "title", "legend"... or "text:ID", "image:ID". */
   designSel: string | null;
   /** The hole whose tee sign or hole page the Design step shows. */
@@ -144,12 +146,8 @@ type EditorStore = {
   /** Looking from a tee down its hole (the hole's id), or flying over it. */
   teeView: string | null;
   flyover: boolean;
-  /** Opened from a share link: look, don't touch (until "Make a copy"). */
-  viewOnly: boolean;
   /** Points placed so far while drawing (for the hint). */
   drawPoints: number;
-  /** The share dialog is open. */
-  shareOpen: boolean;
   /** Map display: the satellite photo, contour lines, hill shading, ground texture up close. */
   photo: boolean;
   contours: boolean;
@@ -182,6 +180,7 @@ export const useEditor = create<EditorStore>()(set => ({
   dragSelect: false,
   plotLine: null,
   obPick: null,
+  lidarBusy: null,
   designSel: null,
   designHole: null,
   activeHoleId: null,
@@ -197,9 +196,7 @@ export const useEditor = create<EditorStore>()(set => ({
   treeKind: "deciduous",
   teeView: null,
   flyover: false,
-  viewOnly: false,
   drawPoints: 0,
-  shareOpen: false,
   photo: true,
   contours: true,
   shading: true,

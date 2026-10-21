@@ -31,7 +31,6 @@ const FLY_SHOW: [FlyShow, string][] = [
  * speed and field of view apply); `ground`: with the choice of ground. */
 export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { holeId?: string; only?: boolean; keys?: boolean; ground?: boolean }) {
   const doc = useCourse(s => s.doc);
-  const ro = useEditor(e => e.viewOnly);
   const look = useEditor(e => e.flyLook);
   const setEd = useEditor(e => e.set);
   const hole = holeId ? doc.holes.find(h => h.id === holeId) : undefined;
@@ -64,40 +63,36 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { ho
           <Segmented label="Ground" value={look} onChange={v => setEd({ flyLook: v })} options={[{ value: "painted", label: "Painted map" }, { value: "photo", label: "Photo" }]} />
         </div>
       )}
-      {!ro && (
+      {hole && !only && (
+        <div className="mb-2.5">
+          <Segmented label="Settings for" value={scope} onChange={setScope} options={[{ value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }, { value: "course", label: "All holes" }]} />
+        </div>
+      )}
+      {!keyed && <Slider label="Height" min={10} max={250} step={5} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />}
+      <Slider label="Speed" min={0.25} max={3} step={0.05} value={f.speed} onChange={v => set({ speed: v })} onDone={done} format={v => `${Math.round(v * 100) / 100}×`} />
+      <Slider label="Field of view" min={20} max={100} value={f.fov} onChange={v => set({ fov: v })} onDone={done} format={v => `${v}°`} />
+      {!keyed && (
         <>
-          {hole && !only && (
-            <div className="mb-2.5">
-              <Segmented label="Settings for" value={scope} onChange={setScope} options={[{ value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }, { value: "course", label: "All holes" }]} />
-            </div>
-          )}
-          {!keyed && <Slider label="Height" min={10} max={250} step={5} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />}
-          <Slider label="Speed" min={0.25} max={3} step={0.05} value={f.speed} onChange={v => set({ speed: v })} onDone={done} format={v => `${Math.round(v * 100) / 100}×`} />
-          <Slider label="Field of view" min={20} max={100} value={f.fov} onChange={v => set({ fov: v })} onDone={done} format={v => `${v}°`} />
-          {!keyed && (
-            <>
-              <Slider label="Start behind the tee" min={0} max={400} step={5} value={f.behind} onChange={v => set({ behind: v })} onDone={done} format={ft} />
-              <Slider label="To the side" min={-200} max={200} step={5} value={f.side} onChange={v => set({ side: v })} onDone={done} format={v => (v === 0 ? "On the line" : `${ft(Math.abs(v))} ${v > 0 ? "right" : "left"}`)} />
-              <Slider label="Look ahead" min={30} max={500} step={10} value={f.lookAhead} onChange={v => set({ lookAhead: v })} onDone={done} format={ft} />
-            </>
-          )}
-          <div className="text-xs text-zinc-300 mt-2.5 mb-0.5">On screen</div>
-          <div className="grid grid-cols-2 gap-x-2 mb-2" data-testid="flyover-show">
-            {FLY_SHOW.map(([k, label]) => (
-              <Toggle key={k} label={label} checked={f[k] && (k !== "discFlight" || doc.style.discFlight !== false)} onChange={v => showPart(k, v)} />
-            ))}
-          </div>
-          {/* (from a hole: its settings to the holes picked; for all holes: the picked holes follow them) */}
-          <div className="flex flex-wrap items-start gap-2">
-            <ApplyToHoles
-              fromId={forHole ? hole!.id : undefined}
-              testid="flyover-apply"
-              apply={ids => changeDoc(d => ({ holes: d.holes.map(h => (ids.includes(h.id) ? { ...h, flyover: forHole && hole!.flyover ? { ...hole!.flyover } : undefined } : h)) }))}
-            />
-            {!forHole && <Button small onClick={() => changeDoc(() => ({ flyover: undefined }))} disabled={!doc.flyover} testid="flyover-defaults">Default flight</Button>}
-          </div>
+          <Slider label="Start behind the tee" min={0} max={400} step={5} value={f.behind} onChange={v => set({ behind: v })} onDone={done} format={ft} />
+          <Slider label="To the side" min={-200} max={200} step={5} value={f.side} onChange={v => set({ side: v })} onDone={done} format={v => (v === 0 ? "On the line" : `${ft(Math.abs(v))} ${v > 0 ? "right" : "left"}`)} />
+          <Slider label="Look ahead" min={30} max={500} step={10} value={f.lookAhead} onChange={v => set({ lookAhead: v })} onDone={done} format={ft} />
         </>
       )}
+      <div className="text-xs text-zinc-300 mt-2.5 mb-0.5">On screen</div>
+      <div className="grid grid-cols-2 gap-x-2 mb-2" data-testid="flyover-show">
+        {FLY_SHOW.map(([k, label]) => (
+          <Toggle key={k} label={label} checked={f[k] && (k !== "discFlight" || doc.style.discFlight !== false)} onChange={v => showPart(k, v)} />
+        ))}
+      </div>
+      {/* (from a hole: its settings to the holes picked; for all holes: the picked holes follow them) */}
+      <div className="flex flex-wrap items-start gap-2">
+        <ApplyToHoles
+          fromId={forHole ? hole!.id : undefined}
+          testid="flyover-apply"
+          apply={ids => changeDoc(d => ({ holes: d.holes.map(h => (ids.includes(h.id) ? { ...h, flyover: forHole && hole!.flyover ? { ...hole!.flyover } : undefined } : h)) }))}
+        />
+        {!forHole && <Button small onClick={() => changeDoc(() => ({ flyover: undefined }))} disabled={!doc.flyover} testid="flyover-defaults">Default flight</Button>}
+      </div>
     </div>
   );
 }

@@ -1,9 +1,6 @@
-// Keeping courses: the autosave, the library of earlier courses, course files, and opening a
-// shared link (the photo and elevation are downloaded again for its site).
+// Keeping courses: the autosave, the library of earlier courses, and course files.
 import { generateId } from "../constants";
 import { createEmptyCourse, normalizeCourse } from "../lib/course";
-import { importSite } from "../lib/importSite";
-import { courseInHash, decodeCourse } from "../lib/share";
 import { AUTOSAVE_KEY, idbGet, idbSet, listPlans, loadPlan, removePlan, storePlan, type PlanMeta } from "../lib/storage";
 import type { CourseDoc } from "../types";
 import { getDoc, useCourse, useEditor } from "./course";
@@ -13,10 +10,10 @@ export const isEmpty = (doc: CourseDoc) => !doc.holes.length && !doc.items.lengt
 
 const metaOf = (doc: CourseDoc): PlanMeta => ({ id: doc.id ?? generateId(), name: doc.name || "Untitled course", updatedAt: Date.now(), holes: doc.holes.length });
 
-/** Puts the open course in the library (unless it is empty or only being looked at). */
+/** Puts the open course in the library (unless it is empty). */
 export const archiveCurrent = async () => {
   const doc = getDoc();
-  if (isEmpty(doc) || useEditor.getState().viewOnly) return null;
+  if (isEmpty(doc)) return null;
   const meta = metaOf(doc);
   await storePlan(meta, { ...doc, id: meta.id });
   return meta;
@@ -25,9 +22,8 @@ export const archiveCurrent = async () => {
 /** The course under a new id, looking the same. */
 const renamed = (doc: CourseDoc): CourseDoc => ({ ...doc, seed: doc.seed ?? doc.id, id: generateId() });
 
-const show = (doc: CourseDoc, opts: { viewOnly?: boolean } = {}) => {
-  // View-only first: the autosave must never see a shared course as yours
-  useEditor.getState().set({ selectedId: null, activeHoleId: null, tool: "select", teeView: null, flyover: false, viewOnly: !!opts.viewOnly, step: doc.holes.length ? "holes" : "site" });
+const show = (doc: CourseDoc) => {
+  useEditor.getState().set({ selectedId: null, activeHoleId: null, tool: "select", teeView: null, flyover: false, step: doc.holes.length ? "holes" : "site" });
   useCourse.getState().load(doc);
 };
 
@@ -102,10 +98,9 @@ export const openCourseFile = async (file: File) => {
 let saveTimer = 0;
 export const startAutosave = () =>
   useCourse.subscribe((state, prev) => {
-    if (state.doc === prev.doc || useEditor.getState().viewOnly) return;
+    if (state.doc === prev.doc) return;
     window.clearTimeout(saveTimer);
     saveTimer = window.setTimeout(() => {
-      if (useEditor.getState().viewOnly) return;
       const doc = getDoc();
       void idbSet(AUTOSAVE_KEY, doc.id ? doc : { ...doc, id: generateId() }).catch(err => console.warn("Autosave failed", err));
     }, 600);
@@ -122,61 +117,4 @@ export const restoreAutosave = async () => {
     console.warn("Couldn't read the autosave", err);
   }
   return false;
-};
-
-// --- Shared links ---
-
-/** Opens the course in this page's link, if there is one. */
-export const openSharedLink = async (hash = location.hash) => {
-  const packed = courseInHash(hash);
-  if (!packed) return false;
-  try {
-    const doc = await decodeCourse(packed);
-    show(renamed(doc), { viewOnly: true });
-    useEditor.getState().set({ step: "review" });
-    void refetchSite();
-    return true;
-  } catch (err) {
-    toast(err instanceof Error ? err.message : "That link couldn't be opened.", "error");
-    return false;
-  }
-};
-
-/** A shared course arrives without its photo and elevation: download them for its site. */
-export const refetchSite = async () => {
-  const doc = getDoc();
-  const loc = doc.site.location;
-  if (!loc || !doc.site.bounds) return;
-  try {
-    const site = await importSite(
-      { center: loc, widthFt: doc.canvas.width, heightFt: doc.canvas.height },
-      { imagery: doc.site.imagerySource?.startsWith("OpenStreetMap") ? "streets" : "satellite", trees: false, osm: false, onStatus: () => {} }
-    );
-    // Only if the same course is still open
-    if (getDoc().id !== doc.id) return;
-    useCourse.setState(s => ({ doc: { ...s.doc, background: site.background, terrainHeights: site.terrainHeights, gridSize: site.gridSize } }));
-  } catch (err) {
-    console.warn("Couldn't download the shared course's map", err);
-    toast("The map photo and elevation couldn't be downloaded.", "info");
-  }
-};
-
-/** Keeps a shared course as your own: it becomes the open course, autosaved and editable. */
-export const makeCopy = async () => {
-  const shared = getDoc();
-  // Saved first, and only then the link leaves the address bar: a reload in between still finds
-  // the shared course (a course with its photo takes a moment to save)
-  const own = await idbGet(AUTOSAVE_KEY).catch(() => null);
-  if (own && Array.isArray(own.holes) && (own.holes.length || own.items?.length)) {
-    // Your own course from before goes to the library
-    const meta: PlanMeta = { id: own.id ?? generateId(), name: own.name || "Untitled course", updatedAt: Date.now(), holes: own.holes.length };
-    await storePlan(meta, { ...own, id: meta.id });
-  }
-  const copy = { ...renamed(getDoc()), name: shared.name.endsWith("(copy)") ? shared.name : `${shared.name} (copy)` };
-  await idbSet(AUTOSAVE_KEY, copy);
-  history.replaceState(null, "", location.pathname + location.search);
-  useEditor.getState().set({ viewOnly: false });
-  useCourse.getState().load(copy);
-  useEditor.getState().set({ step: "holes" });
-  toast("Made a copy.", "success");
 };

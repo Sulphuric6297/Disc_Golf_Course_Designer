@@ -8,6 +8,7 @@ import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRo
 import { STRUCTURE_INK } from "../lib/symbols";
 import { courseStats, holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
+import { fairwayTrees } from "../lib/lidar";
 import { addHoleOb, deleteSelection, duplicateSelection, editWalks, select, setTeeLevel, shareBasket } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
 import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface, TreeKind } from "../types";
@@ -62,6 +63,27 @@ function HoleNumberInput({ holeId, value }: { holeId: string; value: string }) {
   );
 }
 
+/** The measured trees on a hole's fairway: how many are cut down and kept, and all of them back
+ * or down at once. */
+function FairwayTrees({ hole, line }: { hole: Hole; line: P[] }) {
+  const lidar = useCourse(s => s.doc.lidar);
+  const { cut, kept } = useMemo(() => fairwayTrees({ lidar }, hole, line), [lidar, hole, line]);
+  if (!cut.length && !kept.length) return null;
+  const setLidar = (patch: { kept?: number[]; removed?: number[] }) => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, ...patch } } : {}));
+  const list = (v: number[]) => (v.length ? [...new Set(v)].sort((a, b) => a - b) : undefined);
+  return (
+    <Field label="Trees on the fairway">
+      <div className="flex items-center justify-between gap-2" data-testid="fairway-trees">
+        <span className="text-sm text-zinc-200">{[cut.length ? `${cut.length} cut down` : "", kept.length ? `${kept.length} kept` : ""].filter(Boolean).join(" · ")}</span>
+        <div className="flex gap-1.5">
+          {cut.length > 0 && <Button small onClick={() => setLidar({ kept: list([...(lidar?.kept ?? []), ...cut]), removed: list((lidar?.removed ?? []).filter(k => !cut.includes(k))) })} testid="trees-back">Bring all back</Button>}
+          {kept.length > 0 && <Button small onClick={() => setLidar({ kept: list((lidar?.kept ?? []).filter(k => !kept.includes(k))) })} testid="trees-down">Cut all down</Button>}
+        </div>
+      </div>
+    </Field>
+  );
+}
+
 /** Every walk to the next tee this wide (holes' own widths let go). */
 export const setAllWalks = (w: number, history = true) =>
   changeDoc(d => ({
@@ -84,7 +106,6 @@ function HoleInspector({ hole }: { hole: Hole }) {
   // The hole whose basket this one plays to, when it shares one
   const sharing = baskets.find(b => b.holeId !== hole.id)?.holeId ?? null;
   const set = (patch: Partial<Hole>) => updateHole(hole.id, patch);
-  const ro = useEditor(e => e.viewOnly);
   return (
     <>
       <Section>
@@ -94,9 +115,9 @@ function HoleInspector({ hole }: { hole: Hole }) {
             <div className="text-sm font-bold text-zinc-50 truncate" data-testid="inspector-title">Hole {label}{hole.name ? ` · ${hole.name}` : ""}</div>
             <div className="text-xs text-zinc-400">{s.complete ? `${fmtDist(s.length, u)} · Par ${s.par} · ${shapeText[s.shape]}` : s.teeId ? "Needs a basket" : "Needs a tee"}</div>
           </div>
-          {!ro && <HoleNumberInput holeId={hole.id} value={label} />}
+          <HoleNumberInput holeId={hole.id} value={label} />
         </div>
-        {!ro && (() => { const mine = label.split("/"); const clash = doc.holes.filter(h => h.id !== hole.id).flatMap(h => holeLabel(doc, h.id).split("/")).find(v => mine.includes(v)); return clash ? <div className="text-xs text-amber-300 -mt-1 mb-2" data-testid="hole-number-taken">Another hole is also Hole {clash}</div> : null; })()}
+        {(() => { const mine = label.split("/"); const clash = doc.holes.filter(h => h.id !== hole.id).flatMap(h => holeLabel(doc, h.id).split("/")).find(v => mine.includes(v)); return clash ? <div className="text-xs text-amber-300 -mt-1 mb-2" data-testid="hole-number-taken">Another hole is also Hole {clash}</div> : null; })()}
         {s.complete && (
           <div className="grid grid-cols-3 gap-1.5" data-testid="hole-stats">
             <Stat label="Length" value={fmtDist(s.length, u)} />
@@ -110,7 +131,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
             <Button small onClick={() => useEditor.getState().set({ teeView: hole.id, flyover: true })} testid="flyover"><Plane size={14} /> Fly over</Button>
           </div>
         )}
-        {s.complete && !ro && (
+        {s.complete && (
           <div className="mt-3">
             <div className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wide mb-1">Add OB</div>
             <div className="flex gap-1.5" role="group" aria-label="Add OB">
@@ -129,46 +150,45 @@ function HoleInspector({ hole }: { hole: Hole }) {
           </div>
         </Section>
       )}
-      {!ro && (
-        <Section title="Par and play">
-          <Field label="Par">
-            <Segmented
-              label="Par"
-              value={hole.par ?? 0}
-              onChange={v => set({ par: v === 0 ? undefined : v })}
-              options={[{ value: 0, label: `Auto (${s.parAuto})` }, ...[2, 3, 4, 5, 6].map(p => ({ value: p, label: String(p) }))]}
-            />
-          </Field>
-          <Field label="Foliage">
-            <Segmented label="Foliage" value={hole.foliage ?? "auto"} onChange={v => set({ foliage: v === "auto" ? undefined : (v as "light" | "heavy") })} options={[{ value: "auto", label: `Auto (${s.foliage})` }, { value: "light", label: "Light" }, { value: "heavy", label: "Heavy" }]} />
-          </Field>
-          <Toggle label="Draw the fairway" checked={hole.fairway} onChange={v => set({ fairway: v })} />
-          {hole.fairway && (
-            <>
-              <Slider label={hole.fairwayShape ? "Fairway width (all along)" : "Fairway width"} min={10} max={150} value={hole.fairwayWidth} onChange={v => set({ fairwayWidth: v })} format={v => fmtDist(v, u)} />
-              <div className="flex items-center justify-between gap-2 -mt-1 mb-2" data-testid="fairway-shape">
-                <p className="text-[11px] text-zinc-400 leading-snug">
-                  {hole.fairwayShape
-                    ? `Shaped: ${hole.fairwayShape.map(f => fmtDist(f * hole.fairwayWidth, u)).join(" · ")}`
-                    : hole.fairwayShift ? "Shaped" : "Even width"}
-                </p>
-                {(hole.fairwayShape || hole.fairwayShift) && <button className="shrink-0 text-xs text-orange-300 hover:text-orange-200" onClick={() => set({ fairwayShape: undefined, fairwayShift: undefined, fairwayStations: undefined })}>Even width</button>}
-              </div>
-            </>
-          )}
-          <Field label="Name (optional)"><TextInput label="Hole name" value={hole.name ?? ""} placeholder="e.g. The Gauntlet" onChange={v => set({ name: v || undefined })} /></Field>
-          <Field label="Notes and hole rules"><TextInput area label="Hole notes" value={hole.notes ?? ""} placeholder="e.g. OB left of the path. Mando right of the big oak; drop zone by the bench." onChange={v => set({ notes: v || undefined })} /></Field>
-          {s.complete && (
-            <div className="flex flex-wrap gap-1.5">
-              <Button small tone="primary" onClick={() => useEditor.getState().set({ plotLine: hole.id, tool: "select" })} testid="plot-line">Plot the line</Button>
-              <Button small onClick={() => set({ doglegs: bendHole(s.line, -1) })} testid="bend-left">Bend left</Button>
-              <Button small onClick={() => set({ doglegs: bendHole(s.line, 1) })} testid="bend-right">Bend right</Button>
-              {hole.doglegs.length > 0 && <Button small onClick={() => set({ doglegs: [] })}>Straighten</Button>}
+      <Section title="Par and play">
+        <Field label="Par">
+          <Segmented
+            label="Par"
+            value={hole.par ?? 0}
+            onChange={v => set({ par: v === 0 ? undefined : v })}
+            options={[{ value: 0, label: `Auto (${s.parAuto})` }, ...[2, 3, 4, 5, 6].map(p => ({ value: p, label: String(p) }))]}
+          />
+        </Field>
+        <Field label="Foliage">
+          <Segmented label="Foliage" value={hole.foliage ?? "auto"} onChange={v => set({ foliage: v === "auto" ? undefined : (v as "light" | "heavy") })} options={[{ value: "auto", label: `Auto (${s.foliage})` }, { value: "light", label: "Light" }, { value: "heavy", label: "Heavy" }]} />
+        </Field>
+        <Toggle label="Draw the fairway" checked={hole.fairway} onChange={v => set({ fairway: v })} />
+        {hole.fairway && (
+          <>
+            <Slider label={hole.fairwayShape ? "Fairway width (all along)" : "Fairway width"} min={10} max={150} value={hole.fairwayWidth} onChange={v => set({ fairwayWidth: v })} format={v => fmtDist(v, u)} />
+            <div className="flex items-center justify-between gap-2 -mt-1 mb-2" data-testid="fairway-shape">
+              <p className="text-[11px] text-zinc-400 leading-snug">
+                {hole.fairwayShape
+                  ? `Shaped: ${hole.fairwayShape.map(f => fmtDist(f * hole.fairwayWidth, u)).join(" · ")}`
+                  : hole.fairwayShift ? "Shaped" : "Even width"}
+              </p>
+              {(hole.fairwayShape || hole.fairwayShift) && <button className="shrink-0 text-xs text-orange-300 hover:text-orange-200" onClick={() => set({ fairwayShape: undefined, fairwayShift: undefined, fairwayStations: undefined })}>Even width</button>}
             </div>
-          )}
-        </Section>
-      )}
-      {!ro && walkNext && (
+          </>
+        )}
+        {doc.lidar && s.complete && <FairwayTrees hole={hole} line={s.line} />}
+        <Field label="Name (optional)"><TextInput label="Hole name" value={hole.name ?? ""} placeholder="e.g. The Gauntlet" onChange={v => set({ name: v || undefined })} /></Field>
+        <Field label="Notes and hole rules"><TextInput area label="Hole notes" value={hole.notes ?? ""} placeholder="e.g. OB left of the path. Mando right of the big oak; drop zone by the bench." onChange={v => set({ notes: v || undefined })} /></Field>
+        {s.complete && (
+          <div className="flex flex-wrap gap-1.5">
+            <Button small tone="primary" onClick={() => useEditor.getState().set({ plotLine: hole.id, tool: "select" })} testid="plot-line">Plot the line</Button>
+            <Button small onClick={() => set({ doglegs: bendHole(s.line, -1) })} testid="bend-left">Bend left</Button>
+            <Button small onClick={() => set({ doglegs: bendHole(s.line, 1) })} testid="bend-right">Bend right</Button>
+            {hole.doglegs.length > 0 && <Button small onClick={() => set({ doglegs: [] })}>Straighten</Button>}
+          </div>
+        )}
+      </Section>
+      {walkNext && (
         <Section title={`Walk to hole ${nextNo}`} testid="hole-walk">
           <Slider label="Width" min={1} max={20} step={0.5} value={hole.walkWidth ?? doc.style.walkWidth ?? 6} onChange={v => set({ walkWidth: v })} format={v => fmtDist(v, u)} />
           <Slider label="All walks" min={1} max={20} step={0.5} value={doc.style.walkWidth ?? 6} onChange={v => setAllWalks(v, false)} onDone={() => useCourse.getState().commit()} format={v => fmtDist(v, u)} />
@@ -180,7 +200,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
           </div>
         </Section>
       )}
-      {!ro && hole.walkOff && doc.style.nextTee && (
+      {hole.walkOff && doc.style.nextTee && (
         <Section title="Walk to the next hole" testid="hole-walk-off">
           <Button small onClick={() => set({ walkOff: undefined })} testid="walk-restore">Add the walk back</Button>
         </Section>
@@ -195,7 +215,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
         </Section>
       )}
       <Section title="Tees and pins">
-        {!ro && doc.holes.length > 1 && (
+        {doc.holes.length > 1 && (
           <Field label="Basket">
             <select aria-label="Basket" data-testid="share-basket" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
               <option value="">Its own</option>
@@ -223,7 +243,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
           ))}
         </ul>
       </Section>
-      {!ro && s.complete && (
+      {s.complete && (
         <Section title="Flyover">
           <HoleFlight hole={hole} />
         </Section>
@@ -303,7 +323,6 @@ function TurnShape({ item }: { item: AreaItem | LineItem | StructureItem }) {
 
 function ItemInspector({ item }: { item: CourseItem }) {
   const doc = useCourse(s => s.doc);
-  const ro = useEditor(e => e.viewOnly);
   const u = doc.units;
   const set = (patch: Record<string, unknown>, history = true) => updateItem(item.id, patch as Partial<CourseItem>, history);
   const holeOptions = [{ value: "", label: "Whole course" }, ...doc.holes.map(h => ({ value: h.id, label: `Hole ${holeLabel(doc, h.id)}` }))];
@@ -516,7 +535,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
           </button>
         )}
       </Section>
-      {!ro && <Section>{body}</Section>}
+      <Section>{body}</Section>
     </>
   );
 }
@@ -590,7 +609,6 @@ export function InspectorBody() {
 /** Lock, duplicate, delete and close; `big` for touch (44 px targets). */
 export function InspectorActions({ big = false, close = true }: { big?: boolean; close?: boolean }) {
   const { item, group } = useSelection();
-  const ro = useEditor(e => e.viewOnly);
   // (things picked together: locked once every one of them is)
   const locked = group.length ? group.every(i => i.locked) : !!item?.locked;
   const lock = () => {
@@ -605,13 +623,9 @@ export function InspectorActions({ big = false, close = true }: { big?: boolean;
   const sz = big ? 19 : 15;
   return (
     <>
-      {!ro && (
-        <>
-          {(item || group.length > 0) && <button className={b} title={locked ? "Unlock" : "Lock in place"} aria-label={locked ? "Unlock" : "Lock"} onClick={lock}>{locked ? <Lock size={sz} /> : <Unlock size={sz} />}</button>}
-          <button className={b} title="Duplicate (Ctrl+D)" aria-label="Duplicate" onClick={duplicateSelection}><Copy size={sz} /></button>
-          <button className={`${base} hover:text-red-400`} title="Delete (Del)" aria-label="Delete" onClick={deleteSelection}><Trash2 size={sz} /></button>
-        </>
-      )}
+      {(item || group.length > 0) && <button className={b} title={locked ? "Unlock" : "Lock in place"} aria-label={locked ? "Unlock" : "Lock"} onClick={lock}>{locked ? <Lock size={sz} /> : <Unlock size={sz} />}</button>}
+      <button className={b} title="Duplicate (Ctrl+D)" aria-label="Duplicate" onClick={duplicateSelection}><Copy size={sz} /></button>
+      <button className={`${base} hover:text-red-400`} title="Delete (Del)" aria-label="Delete" onClick={deleteSelection}><Trash2 size={sz} /></button>
       {close && <button className={b} title="Close (Esc)" aria-label="Close" onClick={() => select(null)}><X size={sz} /></button>}
     </>
   );

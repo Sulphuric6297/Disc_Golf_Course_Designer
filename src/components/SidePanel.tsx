@@ -10,6 +10,7 @@ import { select } from "../state/actions";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
 import type { AreaKind, Layout, LineKind, PinPosition, StructureKind, TeeLevel, ToolMode } from "../types";
 import { refreshOsm } from "../state/osm";
+import { measureLidar } from "../state/lidar";
 import { getView } from "./MapViewport";
 import { structureIcon } from "./Toolbar";
 import { Button, Field, Section, Segmented, Stat, TextInput, Toggle } from "./ui";
@@ -23,7 +24,7 @@ export const STEPS: { id: Step; label: string; title: string }[] = [
   { id: "features", label: "Features", title: "OB, mandos and more" },
   { id: "review", label: "Review", title: "Review" },
   { id: "design", label: "Design", title: "Map design" },
-  { id: "export", label: "Export", title: "Export and share" }
+  { id: "export", label: "Export", title: "Export" }
 ];
 
 /** The steps' icons (the phone's step bar and rail). */
@@ -86,6 +87,15 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
           <div className="mt-2 flex flex-wrap gap-1.5">
             <Button small onClick={onFindSite}>Resize or re-import the site</Button>
             <Button small onClick={() => void refreshOsm()} testid="refresh-osm">Update paths, roads and water</Button>
+          </div>
+          <div className="mt-3 pt-2 border-t border-white/10" data-testid="lidar-info">
+            <div className="text-xs text-zinc-400 mb-1.5">{doc.lidar ? `${doc.lidar.trees.length.toLocaleString()} trees measured from the air · ${doc.lidar.source}` : "Trees and ground from LiDAR"}</div>
+            <div className="flex flex-wrap gap-1.5">
+              {ed.lidarBusy !== null
+                ? <span className="text-xs text-zinc-300" data-testid="lidar-busy">Measuring… {Math.round(ed.lidarBusy * 100)}%</span>
+                : <Button small onClick={() => void measureLidar()} testid="measure-lidar">{doc.lidar ? "Measure again" : "Measure trees and ground"}</Button>}
+              {doc.lidar && ed.lidarBusy === null && <Button small tone="danger" onClick={() => changeDoc(() => ({ lidar: undefined }))} testid="remove-lidar">Remove the trees</Button>}
+            </div>
           </div>
         </Section>
       )}
@@ -393,11 +403,10 @@ function ReviewStep() {
 /** The step's own content (lists, settings and tools), under its heading. */
 export function StepContent({ onFindSite }: { onFindSite: () => void }) {
   const step = useEditor(e => e.step);
-  const viewOnly = useEditor(e => e.viewOnly);
   return (
     <>
       {step === "site" && <SiteStep onFindSite={onFindSite} />}
-      {step === "holes" && (viewOnly ? <ReviewStep /> : <HolesStep />)}
+      {step === "holes" && <HolesStep />}
       {step === "features" && <FeaturesStep />}
       {step === "review" && <ReviewStep />}
       {step === "design" && <DesignPanel />}

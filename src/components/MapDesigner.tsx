@@ -173,10 +173,9 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
   // (the map itself on a second press, so it isn't moved by mistake; a finger picks first, then
   // drags), a drag moves, the corner squares size; one undo step each. Shown moving on the page
   // while dragged, then kept as shares of the page.
-  const viewOnly = useEditor(e => e.viewOnly);
   const designSel = useEditor(e => e.designSel);
   const setEd = useEditor(e => e.set);
-  const editing = preview === "map" && !viewOnly;
+  const editing = preview === "map";
   const svgHost = useRef<HTMLDivElement>(null);
   type Box = { x: number; y: number; w: number; h: number };
   const [selBox, setSelBox] = useState<Box | null>(null);

@@ -1,8 +1,7 @@
 # Disc Golf Course Designer
 
 Design a disc golf course on your park's real satellite photo and elevation, see it in 3D and
-from every tee, then print beautiful course maps, tee signs and scorecards, export GPS files, and
-share it with a link. It runs entirely in the browser: a static site with no accounts, no server
+from every tee, then print beautiful course maps, tee signs and scorecards, and export GPS files. It runs entirely in the browser: a static site with no accounts, no server
 and no API keys.
 
 ## What it does
@@ -70,10 +69,6 @@ and no API keys.
 - The hole list and a stake-out list as CSV.
 - A parts list with a cost estimate.
 - The course file.
-
-**Share**
-- A link that holds the whole design. Whoever opens it can explore the map, the 3D view and every
-  tee, and can make their own copy to edit.
 
 ## Run it
 

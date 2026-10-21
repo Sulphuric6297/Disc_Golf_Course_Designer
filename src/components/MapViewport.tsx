@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BoxSelect, Compass, Maximize2, Minus, Plus, RotateCcw, RotateCw } from "lucide-react";
 import { CourseView } from "../viewport/CourseView";
 import type { ViewDoc, ViewInfo } from "../viewport/types";
-import { useCourse, useEditor, updateItem, updateHole, useCourse as courseStore } from "../state/course";
+import { changeDoc, useCourse, useEditor, updateItem, updateHole, useCourse as courseStore } from "../state/course";
 import { addDrawn, addHole, boxSelect, moveGroup, placeAt, select } from "../state/actions";
 import { courseIssues, courseStats, openIssues } from "../lib/holeStats";
 import { contoursOf, hillshadeCanvas } from "../lib/relief";
@@ -62,7 +62,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       onContextMenu: i => menuRef.current(i),
       onDrawProgress: n => useEditor.getState().set({ drawPoints: n }),
       onPlotEnd: () => useEditor.getState().set({ plotLine: null }),
-      onObPickEnd: () => useEditor.getState().set({ obPick: null })
+      onObPickEnd: () => useEditor.getState().set({ obPick: null }),
+      onLidar: patch => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, ...patch } } : {}))
     });
     current = v;
     (window as any).__dgView = v;
@@ -119,8 +120,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { view?.setPlotLine(ed.plotLine); }, [view, ed.plotLine]);
   useEffect(() => { view?.setObPick(ed.obPick); }, [view, ed.obPick]);
   useEffect(() => {
-    view?.setTool({ mode: ed.viewOnly ? "select" : ed.tool, areaKind: ed.areaKind, lineKind: ed.lineKind, structureKind: ed.structureKind, shape: ed.drawShape, readOnly: ed.viewOnly, dragSelect: ed.dragSelect && !ed.viewOnly }, ed.teeLevel);
-  }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.structureKind, ed.drawShape, ed.viewOnly, ed.teeLevel, ed.dragSelect]);
+    view?.setTool({ mode: ed.tool, areaKind: ed.areaKind, lineKind: ed.lineKind, structureKind: ed.structureKind, shape: ed.drawShape, dragSelect: ed.dragSelect }, ed.teeLevel);
+  }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.structureKind, ed.drawShape, ed.teeLevel, ed.dragSelect]);
   useEffect(() => { view?.setPose(ed.view === "2d" ? "top" : "tilt"); }, [view, ed.view]);
   useEffect(() => { view?.setGrass(ed.grass, ed.wind); }, [view, ed.grass, ed.wind]);
   // Covered by the Design step's page: the map view rests
@@ -231,7 +232,7 @@ function TouchControls({ view, info, scale, units, phone, top, room, threeD }: {
   const set = useEditor(e => e.set);
   const mode = useEditor(e => e.view);
   const boxing = useEditor(e => e.dragSelect);
-  const editing = useEditor(e => !e.viewOnly && e.step !== "design");
+  const editing = useEditor(e => e.step !== "design");
   const b = "w-11 h-11 flex items-center justify-center text-zinc-100 active:bg-zinc-700 focus:outline-none focus-visible:bg-zinc-700";
   const group = "pointer-events-auto flex flex-col bg-zinc-900/90 rounded-2xl border border-white/10 shadow-[0_6px_20px_rgba(0,0,0,0.35)] overflow-hidden divide-y divide-white/5";
   // On a phone the compass only once the map is turned (as in map apps), and only what fits above

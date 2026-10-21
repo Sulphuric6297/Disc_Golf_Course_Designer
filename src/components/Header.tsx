@@ -1,6 +1,6 @@
-// The top bar: the course name, files (new, open, save, recent), the steps, 2D/3D and Share.
+// The top bar: the course name, files (new, open, save, recent), the steps and 2D/3D.
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, FilePlus, FolderOpen, HelpCircle, Save, Search, Share2, Trash2 } from "lucide-react";
+import { ChevronDown, FilePlus, FolderOpen, HelpCircle, Save, Search, Trash2 } from "lucide-react";
 import { STEPS } from "./SidePanel";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { deleteRecent, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../state/files";
@@ -13,7 +13,7 @@ const Logo = () => (
   </svg>
 );
 
-export function Header({ onShare, onHelp, onGoTo }: { onShare: () => void; onHelp: () => void; onGoTo: () => void }) {
+export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => void }) {
   const name = useCourse(s => s.doc.name);
   const ed = useEditor();
   const [menu, setMenu] = useState(false);
@@ -40,7 +40,6 @@ export function Header({ onShare, onHelp, onGoTo }: { onShare: () => void; onHel
           aria-label="Course name"
           className="bg-transparent text-zinc-50 font-bold text-[15px] px-1.5 py-1 rounded hover:bg-zinc-900 focus:bg-zinc-900 focus:outline-none w-[160px] xl:w-[230px] truncate"
           value={name}
-          disabled={ed.viewOnly}
           onChange={e => changeDoc(() => ({ name: e.target.value }), false)}
           onBlur={() => useCourse.getState().commit()}
         />
@@ -96,7 +95,6 @@ export function Header({ onShare, onHelp, onGoTo }: { onShare: () => void; onHel
             </button>
           ))}
         </div>
-        <button onClick={onShare} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold" data-testid="share-button"><Share2 size={15} /> Share</button>
         <button onClick={onGoTo} className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800" aria-label="Go to" title="Go to (Ctrl+K)" data-testid="goto-button"><Search size={18} /></button>
         <button onClick={onHelp} className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800" aria-label="Keyboard shortcuts and help" title="Shortcuts and help (?)"><HelpCircle size={18} /></button>
       </div>

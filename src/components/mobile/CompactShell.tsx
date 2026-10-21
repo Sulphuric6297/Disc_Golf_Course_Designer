@@ -1,6 +1,6 @@
 // The app on a phone (and a phone turned on its side). The map is the screen; everything else
 // is within reach of a thumb:
-// - upright: a floating top bar (name, 2D/3D, share, menu), map controls on the right, a bottom
+// - upright: a floating top bar (name, 2D/3D, menu), map controls on the right, a bottom
 //   sheet with the step's panel, the selection or the active tool, and the six steps along the
 //   bottom;
 // - on its side: the steps in a rail on the left, the panel beside it, the map on the right.
@@ -8,7 +8,7 @@
 // buttons over the map (there is no Enter, Backspace or Esc on a phone), and holding a finger on
 // a thing opens its menu (the right-click).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
-import { Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Share2, Trash2, Undo2, Unlock, X } from "lucide-react";
+import { Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Trash2, Undo2, Unlock, X } from "lucide-react";
 import { STRUCTURE_KINDS } from "../../constants";
 import { holeLabel, holeNumber } from "../../lib/course";
 import { courseIssues, courseStats, courseTotals, holeStats, openIssues, playsOf } from "../../lib/holeStats";
@@ -16,7 +16,7 @@ import { landscapeOf } from "../../lib/landscapes";
 import { fmtDist, fmtElev } from "../../lib/units";
 import { canPaste, copySelection, deleteSelection, duplicateSelection, pasteClipboard, select } from "../../state/actions";
 import { getDoc, updateItem, useCourse, useEditor, type Step } from "../../state/course";
-import { deleteRecent, makeCopy, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../../state/files";
+import { deleteRecent, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../../state/files";
 import type { PlanMeta } from "../../lib/storage";
 import type { CourseItem, P } from "../../types";
 import { HoleSteps } from "../HoleSteps";
@@ -35,7 +35,6 @@ export type MenuInfo = { clientX: number; clientY: number; itemId: string | null
 type ShellProps = {
   layout: "phone" | "rail";
   onFindSite: () => void;
-  onShare: () => void;
   onHelp: () => void;
   onContextMenu: (info: MenuInfo) => void;
   /** The welcome card for an empty course, when it shows. */
@@ -72,9 +71,8 @@ const iconBtn = "w-11 h-11 shrink-0 flex items-center justify-center rounded-xl 
 /** What the panel shows: the active tool, the selection, or the step. */
 function useMode() {
   const tool = useEditor(e => e.tool);
-  const viewOnly = useEditor(e => e.viewOnly);
   const { open } = useSelection();
-  return tool !== "select" && !viewOnly ? "tool" : open ? "selection" : "step";
+  return tool !== "select" ? "tool" : open ? "selection" : "step";
 }
 
 /** The course's one-line summary: holes and par. */
@@ -134,7 +132,7 @@ function NavRail({ onStep, onMenu, panelOpen, onPanel }: { onStep: (s: Step) => 
   const step = useEditor(e => e.step);
   return (
     <nav aria-label="Steps" className="w-[72px] shrink-0 relative z-40 flex flex-col items-center bg-zinc-950 border-r border-white/10 pl-[env(safe-area-inset-left)] py-1 box-content" data-testid="nav-rail">
-      <button className={`${iconBtn} [@media(max-height:400px)]:h-10`} aria-label="Menu: files, share, help" onClick={onMenu} data-testid="app-menu-button"><Logo size={28} /></button>
+      <button className={`${iconBtn} [@media(max-height:400px)]:h-10`} aria-label="Menu: files, help" onClick={onMenu} data-testid="app-menu-button"><Logo size={28} /></button>
       <ol className="flex-1 min-h-0 flex flex-col justify-center w-full">
         {STEPS.map((s, i) => {
           const Icon = STEP_ICONS[s.id];
@@ -156,9 +154,8 @@ function NavRail({ onStep, onMenu, panelOpen, onPanel }: { onStep: (s: Step) => 
   );
 }
 
-function StepHeader({ onFindSite, onShare }: { onFindSite: () => void; onShare: () => void }) {
+function StepHeader({ onFindSite }: { onFindSite: () => void }) {
   const step = useEditor(e => e.step);
-  const viewOnly = useEditor(e => e.viewOnly);
   const site = useCourse(s => s.doc.site);
   const canvas = useCourse(s => s.doc.canvas);
   const look = useCourse(s => landscapeOf(s.doc.style).label);
@@ -167,7 +164,7 @@ function StepHeader({ onFindSite, onShare }: { onFindSite: () => void; onShare: 
   const meta = STEPS[i];
   const chip = (text: string) => <span className="shrink-0 text-[13px] font-semibold text-zinc-200 bg-zinc-800 rounded-full px-3 py-1.5 tabular-nums">{text}</span>;
   const right =
-    step === "site" ? (!site.bounds && !viewOnly ? <button className="shrink-0 h-10 px-4 rounded-full bg-orange-500 text-white text-[14px] font-bold active:bg-orange-600" onClick={onFindSite}>Find your park</button> : site.bounds ? chip(`${((canvas.width * canvas.height) / 43560).toFixed(1)} acres`) : null)
+    step === "site" ? (!site.bounds ? <button className="shrink-0 h-10 px-4 rounded-full bg-orange-500 text-white text-[14px] font-bold active:bg-orange-600" onClick={onFindSite}>Find your park</button> : site.bounds ? chip(`${((canvas.width * canvas.height) / 43560).toFixed(1)} acres`) : null)
     : step === "holes" || step === "features" ? (sum.holes ? chip(`${sum.holes} hole${sum.holes === 1 ? "" : "s"} · Par ${sum.par}`) : null)
     : step === "review" ? chip(sum.issues ? `${sum.issues} check${sum.issues === 1 ? "" : "s"}` : "No problems")
     : step === "design" ? chip(look)
@@ -287,7 +284,6 @@ function DrawBar({ bottom }: { bottom: number }) {
 
 function SelectionHeader({ onMore }: { onMore: () => void }) {
   const doc = useCourse(s => s.doc);
-  const ro = useEditor(e => e.viewOnly);
   const step = useEditor(e => e.step);
   const { hole, item, group } = useSelection();
   const s = useMemo(() => (hole ? holeStats(doc, hole) : null), [doc, hole]);
@@ -311,8 +307,8 @@ function SelectionHeader({ onMore }: { onMore: () => void }) {
       </div>
       {hole && <HoleSteps holeId={hole.id} big />}
       {hole && s?.complete && <button className={iconBtn} aria-label="View from the tee" title="View from the tee" onClick={() => useEditor.getState().set({ teeView: hole.id, flyover: false })}><Eye size={20} /></button>}
-      {!ro && group.length > 0 && <button className={iconBtn} aria-label="Duplicate" title="Duplicate" onClick={duplicateSelection}><Copy size={19} /></button>}
-      {!ro && <button className={`${iconBtn} hover:text-red-400`} aria-label="Delete" title="Delete" onClick={deleteSelection} data-testid="selection-delete"><Trash2 size={19} /></button>}
+      {group.length > 0 && <button className={iconBtn} aria-label="Duplicate" title="Duplicate" onClick={duplicateSelection}><Copy size={19} /></button>}
+      <button className={`${iconBtn} hover:text-red-400`} aria-label="Delete" title="Delete" onClick={deleteSelection} data-testid="selection-delete"><Trash2 size={19} /></button>
       {!group.length && <button className={iconBtn} aria-label="More actions" title="More actions" onClick={onMore} data-testid="selection-more"><Ellipsis size={22} /></button>}
     </div>
   );
@@ -321,7 +317,6 @@ function SelectionHeader({ onMore }: { onMore: () => void }) {
 /** A hole's or an item's menu (long-press on the map, or "More" on the selection). */
 export function ItemMenu({ itemId, onClose }: { itemId: string; onClose: () => void }) {
   const doc = getDoc();
-  const ro = useEditor.getState().viewOnly;
   const hole = doc.holes.find(h => h.id === itemId);
   const item = doc.items.find(i => i.id === itemId);
   if (!hole && !item) return null;
@@ -335,24 +330,22 @@ export function ItemMenu({ itemId, onClose }: { itemId: string; onClose: () => v
     a.push({ label: "Fly over the hole", icon: <Plane size={19} />, run: () => set({ teeView: holeId, flyover: true }) });
   }
   a.push({ label: hole ? "Zoom to this hole" : "Zoom to it", icon: <Maximize2 size={18} />, run: () => (hole ? getView()?.fitHole(hole.id) : getView()?.reveal(itemId)) });
-  if (!ro) {
-    if (item && ((item.type === "area" && item.kind === "water") || (item.type === "line" && item.kind !== "ob" && item.kind !== "walk"))) {
-      a.push({ label: item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)", run: () => updateItem(item.id, (item.ob === true ? { ob: undefined, obBeyond: undefined, obStretches: undefined } : { ob: true }) as Partial<CourseItem>), testid: "menu-ob" });
-    }
-    if (item?.type === "line" && item.kind !== "ob" && item.kind !== "walk") {
-      if (!(item.ob === true && item.obBeyond)) a.push({ label: "Mark as OB and beyond", run: () => updateItem(item.id, { ob: true, obBeyond: true } as Partial<CourseItem>), testid: "menu-ob-beyond" });
-      a.push({ label: "OB along a stretch", run: () => set({ obPick: item.id, tool: "select" }), testid: "menu-ob-stretch" });
-    }
-    // (on one of the things picked together: for all of them)
-    const group = useEditor.getState().group;
-    const inGroup = !!item && group.includes(item.id);
-    a.push({ label: inGroup ? `Copy ${group.length}` : "Copy", icon: <Copy size={18} />, run: () => { if (!inGroup) select(itemId); copySelection(); } });
-    const here = item ? { x: item.x + 30, y: item.y + 30 } : null;
-    if (canPaste() && here) a.push({ label: "Paste next to it", icon: <Copy size={18} />, run: () => pasteClipboard(here) });
-    a.push({ label: inGroup ? `Duplicate ${group.length}` : "Duplicate", icon: <Copy size={18} />, run: () => { if (!inGroup) select(itemId); duplicateSelection(); } });
-    if (item && !inGroup) a.push({ label: item.locked ? "Unlock" : "Lock in place", icon: item.locked ? <Unlock size={18} /> : <Lock size={18} />, run: () => updateItem(item.id, { locked: !item.locked } as Partial<CourseItem>) });
-    a.push({ label: inGroup ? `Delete ${group.length}` : "Delete", icon: <Trash2 size={18} />, danger: true, run: () => { if (!inGroup) select(itemId); deleteSelection(); }, testid: "menu-delete" });
+  if (item && ((item.type === "area" && item.kind === "water") || (item.type === "line" && item.kind !== "ob" && item.kind !== "walk"))) {
+    a.push({ label: item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)", run: () => updateItem(item.id, (item.ob === true ? { ob: undefined, obBeyond: undefined, obStretches: undefined } : { ob: true }) as Partial<CourseItem>), testid: "menu-ob" });
   }
+  if (item?.type === "line" && item.kind !== "ob" && item.kind !== "walk") {
+    if (!(item.ob === true && item.obBeyond)) a.push({ label: "Mark as OB and beyond", run: () => updateItem(item.id, { ob: true, obBeyond: true } as Partial<CourseItem>), testid: "menu-ob-beyond" });
+    a.push({ label: "OB along a stretch", run: () => set({ obPick: item.id, tool: "select" }), testid: "menu-ob-stretch" });
+  }
+  // (on one of the things picked together: for all of them)
+  const group = useEditor.getState().group;
+  const inGroup = !!item && group.includes(item.id);
+  a.push({ label: inGroup ? `Copy ${group.length}` : "Copy", icon: <Copy size={18} />, run: () => { if (!inGroup) select(itemId); copySelection(); } });
+  const here = item ? { x: item.x + 30, y: item.y + 30 } : null;
+  if (canPaste() && here) a.push({ label: "Paste next to it", icon: <Copy size={18} />, run: () => pasteClipboard(here) });
+  a.push({ label: inGroup ? `Duplicate ${group.length}` : "Duplicate", icon: <Copy size={18} />, run: () => { if (!inGroup) select(itemId); duplicateSelection(); } });
+  if (item && !inGroup) a.push({ label: item.locked ? "Unlock" : "Lock in place", icon: item.locked ? <Unlock size={18} /> : <Lock size={18} />, run: () => updateItem(item.id, { locked: !item.locked } as Partial<CourseItem>) });
+  a.push({ label: inGroup ? `Delete ${group.length}` : "Delete", icon: <Trash2 size={18} />, danger: true, run: () => { if (!inGroup) select(itemId); deleteSelection(); }, testid: "menu-delete" });
   const title = hole ? `Hole ${n}${hole.name ? ` · ${hole.name}` : ""}` : itemTitle(item!);
   const sub = holeId && !hole ? `Hole ${holeLabel(doc, holeId)}` : undefined;
   return <ActionSheet title={title} subtitle={sub} actions={a} onClose={onClose} testid="item-menu" />;
@@ -360,12 +353,11 @@ export function ItemMenu({ itemId, onClose }: { itemId: string; onClose: () => v
 
 // ---------------------------------------------------------------------------------- app menu
 
-function AppMenu({ onClose, onShare, onHelp, onOpenFile }: { onClose: () => void; onShare: () => void; onHelp: () => void; onOpenFile: () => void }) {
+function AppMenu({ onClose, onHelp, onOpenFile }: { onClose: () => void; onHelp: () => void; onOpenFile: () => void }) {
   const [recent, setRecent] = useState<PlanMeta[]>([]);
   const name = useCourse(s => s.doc.name);
   useEffect(() => { void recentCourses().then(setRecent); }, []);
   const actions: SheetAction[] = [
-    { label: "Share a link", icon: <Share2 size={19} />, run: onShare, testid: "menu-share" },
     { label: "New course", icon: <FilePlus size={19} />, run: () => void newCourse() },
     { label: "Open a course file…", icon: <FolderOpen size={19} />, run: onOpenFile },
     { label: "Save as a file", icon: <Save size={19} />, run: () => saveCourseFile() },
@@ -409,29 +401,20 @@ function ViewToggle({ vertical = false }: { vertical?: boolean }) {
   );
 }
 
-function PhoneTopBar({ onMenu, onShare }: { onMenu: () => void; onShare: () => void }) {
+function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
   const name = useCourse(s => s.doc.name);
-  const viewOnly = useEditor(e => e.viewOnly);
   const sum = useSummary();
-  const sub = viewOnly ? "Shared course · view only" : sum.complete ? `${sum.complete} hole${sum.complete === 1 ? "" : "s"} · Par ${sum.par} · ${fmtDist(sum.length, sum.units)}` : "Disc Golf Course Designer";
+  const sub = sum.complete ? `${sum.complete} hole${sum.complete === 1 ? "" : "s"} · Par ${sum.par} · ${fmtDist(sum.length, sum.units)}` : "Disc Golf Course Designer";
   return (
     <div className="absolute left-0 right-0 top-0 z-30 px-2 pt-[max(8px,env(safe-area-inset-top))] pointer-events-none" data-testid="top-bar">
       <div className="pointer-events-auto flex items-center gap-1 h-[56px] pl-1 pr-1 rounded-2xl bg-zinc-900/90 border border-white/10 shadow-[0_8px_30px_rgba(0,0,0,0.35)]">
-        <button className={iconBtn} aria-label="Menu: files, share, help" onClick={onMenu} data-testid="app-menu-button"><Logo /></button>
+        <button className={iconBtn} aria-label="Menu: files, help" onClick={onMenu} data-testid="app-menu-button"><Logo /></button>
         <div className="flex-1 min-w-0 pl-0.5">
           <div className="text-[15px] font-bold text-zinc-50 truncate leading-tight" data-testid="course-name">{name}</div>
           <div className="text-[12px] text-zinc-400 truncate tabular-nums">{sub}</div>
         </div>
         <ViewToggle />
-        <button className={iconBtn} aria-label="Share" onClick={onShare} data-testid="share-button"><Share2 size={19} /></button>
       </div>
-      {viewOnly && (
-        <div className="pointer-events-auto mt-2 flex items-center gap-2 rounded-2xl bg-emerald-950/95 border border-emerald-700/70 pl-3.5 pr-1.5 py-1.5 shadow-xl" data-testid="view-only-banner">
-          <Eye size={16} className="text-emerald-300 shrink-0" />
-          <span className="flex-1 text-[13px] text-emerald-50 leading-snug">Shared course: view only</span>
-          <button className="shrink-0 h-10 px-3 rounded-xl bg-orange-500 text-white text-[14px] font-bold" onClick={() => void makeCopy()} data-testid="make-copy">Make a copy</button>
-        </div>
-      )}
     </div>
   );
 }
@@ -439,18 +422,17 @@ function PhoneTopBar({ onMenu, onShare }: { onMenu: () => void; onShare: () => v
 // ---------------------------------------------------------------------------------- the panel
 
 /** The panel's header and content, for the bottom sheet and the side panel. */
-function usePanel({ onFindSite, onShare, onMore }: { onFindSite: () => void; onShare: () => void; onMore: () => void }) {
+function usePanel({ onFindSite, onMore }: { onFindSite: () => void; onMore: () => void }) {
   const mode = useMode();
   const step = useEditor(e => e.step);
   const tool = useEditor(e => e.tool);
-  const viewOnly = useEditor(e => e.viewOnly);
   const selectedId = useEditor(e => e.selectedId);
   const meta = STEPS.find(s => s.id === step)!;
-  const tools = !viewOnly && (step === "holes" || step === "features" || mode === "tool");
+  const tools = step === "holes" || step === "features" || mode === "tool";
   const header = (
     <>
       {tools && <ToolStrip />}
-      {mode === "tool" ? <ToolHeader /> : mode === "selection" ? <SelectionHeader onMore={onMore} /> : <StepHeader onFindSite={onFindSite} onShare={onShare} />}
+      {mode === "tool" ? <ToolHeader /> : mode === "selection" ? <SelectionHeader onMore={onMore} /> : <StepHeader onFindSite={onFindSite} />}
     </>
   );
   const body = mode === "selection" ? (
@@ -478,7 +460,7 @@ export function CompactShell(props: ShellProps) {
   return props.layout === "phone" ? <PhoneShell {...props} /> : <RailShell {...props} />;
 }
 
-function useMenus(onShare: () => void, onHelp: () => void) {
+function useMenus(onHelp: () => void) {
   const [appMenu, setAppMenu] = useState(false);
   const [more, setMore] = useState(false);
   const selectedId = useEditor(e => e.selectedId);
@@ -487,21 +469,21 @@ function useMenus(onShare: () => void, onHelp: () => void) {
   const menus = (
     <>
       <input ref={file} type="file" className="hidden" aria-label="Open course file" onChange={e => { const f = e.target.files?.[0]; if (f) void openCourseFile(f); e.target.value = ""; }} />
-      {appMenu && <AppMenu onClose={() => setAppMenu(false)} onShare={onShare} onHelp={onHelp} onOpenFile={() => file.current?.click()} />}
+      {appMenu && <AppMenu onClose={() => setAppMenu(false)} onHelp={onHelp} onOpenFile={() => file.current?.click()} />}
       {more && selectedId && <ItemMenu itemId={selectedId} onClose={() => setMore(false)} />}
     </>
   );
   return { menus, openApp: () => setAppMenu(true), openMore: () => setMore(true) };
 }
 
-function PhoneShell({ onFindSite, onShare, onHelp, onContextMenu, welcome, toasts }: ShellProps) {
+function PhoneShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: ShellProps) {
   const ed = useEditor();
   const [detent, setDetent] = useState<Detent>(() => STEP_DETENT[useEditor.getState().step]);
   const [restH, setRestH] = useState(180);
   const [mainH, setMainH] = useState(700);
   const main = useRef<HTMLDivElement>(null);
-  const { menus, openApp, openMore } = useMenus(onShare, onHelp);
-  const panel = usePanel({ onFindSite, onShare, onMore: openMore });
+  const { menus, openApp, openMore } = useMenus(onHelp);
+  const panel = usePanel({ onFindSite, onMore: openMore });
   const immersive = !!ed.teeView;
   // (No sheet under the welcome card: it is the first step's panel, with the same two choices)
   const sheet = !immersive && !welcome;
@@ -554,8 +536,8 @@ function PhoneShell({ onFindSite, onShare, onHelp, onContextMenu, welcome, toast
             <MapDesigner compact topInset={top} />
           </div>
         )}
-        {!immersive && <PhoneTopBar onMenu={openApp} onShare={onShare} />}
-        {!immersive && !ed.viewOnly && <DrawBar bottom={sheetH + 12} />}
+        {!immersive && <PhoneTopBar onMenu={openApp} />}
+        {!immersive && <DrawBar bottom={sheetH + 12} />}
         {ed.teeView && <TeeViewHud compact />}
         <ExportProgressPill top={immersive ? undefined : top + 4} />
         {toasts(immersive ? 96 : sheetH + 12)}
@@ -575,11 +557,11 @@ function PhoneShell({ onFindSite, onShare, onHelp, onContextMenu, welcome, toast
   );
 }
 
-function RailShell({ onFindSite, onShare, onHelp, onContextMenu, welcome, toasts }: ShellProps) {
+function RailShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: ShellProps) {
   const ed = useEditor();
   const [open, setOpen] = useState(true);
-  const { menus, openApp, openMore } = useMenus(onShare, onHelp);
-  const panel = usePanel({ onFindSite, onShare, onMore: openMore });
+  const { menus, openApp, openMore } = useMenus(onHelp);
+  const panel = usePanel({ onFindSite, onMore: openMore });
   const immersive = !!ed.teeView;
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => { body.current?.scrollTo({ top: 0 }); }, [panel.key]);
@@ -604,18 +586,11 @@ function RailShell({ onFindSite, onShare, onHelp, onContextMenu, welcome, toasts
       <main className="relative flex-1 min-w-0">
         <MapViewport onContextMenu={onContextMenu} compact="rail" controlsTop={8} controlsRoom={immersive || design ? 0 : 999} />
         {design && <div className="absolute inset-0 z-20"><MapDesigner compact topInset={0} /></div>}
-        {!immersive && !ed.viewOnly && <DrawBar bottom={12} />}
+        {!immersive && <DrawBar bottom={12} />}
         {ed.teeView && <TeeViewHud compact />}
         <ExportProgressPill />
         {toasts(16)}
         {welcome && !immersive && <div className="absolute inset-0 z-10 flex items-center justify-center px-3 pointer-events-none">{welcome}</div>}
-        {ed.viewOnly && !immersive && (
-          <div className="absolute left-2 bottom-2 z-30 flex items-center gap-2 rounded-2xl bg-emerald-950/95 border border-emerald-700/70 pl-3 pr-1.5 py-1.5 shadow-xl" data-testid="view-only-banner">
-            <Eye size={16} className="text-emerald-300 shrink-0" />
-            <span className="text-[13px] text-emerald-50">Shared course: view only</span>
-            <button className="h-10 px-3 rounded-xl bg-orange-500 text-white text-[14px] font-bold" onClick={() => void makeCopy()} data-testid="make-copy">Make a copy</button>
-          </div>
-        )}
       </main>
       {panel.announce}
       {menus}

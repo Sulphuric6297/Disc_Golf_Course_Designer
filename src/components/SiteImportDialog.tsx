@@ -40,6 +40,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   const [selectView, setSelectView] = useState(0);
   const [imagery, setImagery] = useState<MapImagerySource>("satellite");
   const [trees, setTrees] = useState(true);
+  const [lidar, setLidar] = useState(true);
   const [osm, setOsm] = useState(true);
   const [status, setStatus] = useState<{ state: "idle" | "searching" | "loading" | "error"; text: string; progress?: { step: number; of: number; fraction?: number } }>({ state: "idle", text: "" });
   // How long the import has been going (a big site takes a while: it shows it is still working)
@@ -93,7 +94,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     setStarted(Date.now());
     setStatus({ state: "loading", text: "Starting…" });
     try {
-      const site = await importSite(selectionFromBounds(selection, label || query || "Course site"), { imagery, trees, osm, onStatus: (text, progress) => setStatus({ state: "loading", text, progress }) });
+      const site = await importSite(selectionFromBounds(selection, label || query || "Course site"), { imagery, trees, osm, lidar, onStatus: (text, progress) => setStatus({ state: "loading", text, progress }) });
       // (closed meanwhile: left as it was)
       if (open.current) onImported(site, { trees, osm });
     } catch (err) {
@@ -113,6 +114,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   const options = (
     <>
       <Toggle label="Satellite photo" checked={imagery === "satellite"} onChange={v => setImagery(v ? "satellite" : "streets")} hint={imagery === "satellite" ? "Esri World Imagery" : "OpenStreetMap"} />
+      <Toggle label="Trees and ground from LiDAR" checked={lidar} onChange={setLidar} hint="USGS" />
       <Toggle label="Trees found on the photo" checked={trees && imagery === "satellite"} onChange={setTrees} />
       <Toggle label="Paths, water, roads and parking" checked={osm} onChange={setOsm} />
     </>
@@ -193,7 +195,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
           {dims ? sizeEl : <div className="text-[14px] text-zinc-400 px-1">Search for your park, or pan the map to it and tap Use this view.</div>}
           <details className="group rounded-xl bg-zinc-800/60 px-3">
             <summary className="list-none min-h-[44px] flex items-center justify-between text-[14px] text-zinc-200 cursor-pointer">
-              <span>Bring in: {[imagery === "satellite" ? "photo" : "street map", "elevation", trees && imagery === "satellite" ? "trees" : null, osm ? "paths and water" : null].filter(Boolean).join(", ")}</span>
+              <span>Bring in: {[imagery === "satellite" ? "photo" : "street map", "elevation", lidar ? "LiDAR" : null, trees && imagery === "satellite" ? "trees" : null, osm ? "paths and water" : null].filter(Boolean).join(", ")}</span>
               <span className="text-orange-300 font-semibold group-open:hidden">Change</span>
             </summary>
             <div className="pb-2">{options}</div>

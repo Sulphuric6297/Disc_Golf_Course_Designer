@@ -29,7 +29,7 @@ const named = (i: CourseItem): { name: string; kind: string } | null => {
   return { name: i.label, kind };
 };
 
-export function GoTo({ onClose, onShare, onHelp }: { onClose: () => void; onShare: () => void; onHelp: () => void }) {
+export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => void }) {
   const doc = useCourse(s => s.doc);
   const [q, setQ] = useState("");
   const [at, setAt] = useState(0);
@@ -56,11 +56,10 @@ export function GoTo({ onClose, onShare, onHelp }: { onClose: () => void; onShar
     }
     out.push(
       { key: "act:fit", text: "Whole course", find: "whole course fit", sub: "0", icon: <Zap size={15} />, run: () => { toMap(); requestAnimationFrame(() => getView()?.fitCourse()); } },
-      { key: "act:share", text: "Share a link", find: "share a link", icon: <Zap size={15} />, run: onShare },
       { key: "act:help", text: "Keyboard shortcuts", find: "keyboard shortcuts help", sub: "?", icon: <Zap size={15} />, run: onHelp }
     );
     return out;
-  }, [doc, onShare, onHelp]);
+  }, [doc, onHelp]);
 
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();

@@ -47,8 +47,6 @@ export type ViewTool = {
   structureKind?: StructureKind;
   /** How areas and lines are drawn. */
   shape: DrawShape;
-  /** Look only (a shared course): no editing gestures. */
-  readOnly: boolean;
   /** Select: a drag on the map draws a box to pick things with (instead of moving the map). */
   dragSelect?: boolean;
 };
@@ -92,4 +90,6 @@ export type ViewCallbacks = {
   onPlotEnd: () => void;
   /** Marking a stretch of OB along a line ended (marked or cancelled). */
   onObPickEnd: () => void;
+  /** Trees measured from the air kept standing where they'd be cleared, or taken out (one undo step). */
+  onLidar: (patch: { kept?: number[]; removed?: number[] }) => void;
 };
