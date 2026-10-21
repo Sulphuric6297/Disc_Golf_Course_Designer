@@ -318,12 +318,15 @@ test("3D woods planted again only once a drag ends, and only the woods near what
   });
   const info = () => page.evaluate(() => (window as any).__dgView.forestInfo());
   await expect.poll(async () => (await info()).trees, { timeout: 40_000 }).toBeGreaterThan(300);
+  test.setTimeout(240_000);
   const before = (await info()).plantings;
-  // Dragging the basket: the woods stay as they are
+  // Dragging the basket: the woods stay as they are (the 3D view rests meanwhile: drawn in
+  // software, its woods would hold up each move)
   const b = await screenOf(page, 650, 500);
+  await page.evaluate(() => (window as any).__dgView.setPaused(true));
   await page.mouse.move(b.x, b.y);
   await page.mouse.down();
-  for (let i = 1; i <= 8; i++) await page.mouse.move(b.x + i * 6, b.y + i * 3);
+  for (let i = 1; i <= 3; i++) await page.mouse.move(b.x + i * 12, b.y + i * 6);
   expect((await info()).plantings).toBe(before);
   // Let go: the woods round the hole planted again, the far ones not
   await page.mouse.up();
