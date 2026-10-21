@@ -73,6 +73,56 @@ test("flyover runs from the tee to the basket and stops", async ({ page }) => {
   await expect(page.getByTestId("tee-view-hud")).toBeHidden();
 });
 
+test("leaving a flyover part way leaves nothing of it over the map (its title, badge, distance)", async ({ page }) => {
+  test.setTimeout(120_000);
+  await blankCourse(page);
+  await addHole(page, { x: 400, y: 700 }, { x: 650, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.getByTestId("hole-row").click();
+  await page.getByTestId("flyover").click();
+  await expect(page.getByTestId("fly-overlay")).toBeVisible();
+  await page.getByTestId("hud-close").click();
+  await expect(page.getByTestId("tee-view-hud")).toBeHidden();
+  await expect(page.getByTestId("fly-overlay")).toBeHidden();
+  await expect(page.getByTestId("pov-basket")).toBeHidden();
+  // (and after a while on the map too)
+  await page.mouse.move(700, 500);
+  await page.mouse.wheel(0, -200);
+  await page.waitForTimeout(800);
+  await expect(page.getByTestId("fly-overlay")).toBeHidden();
+});
+
+test("under the 3D trees the painted ground is grass, not painted treetops (the trees still stand on its woods)", async ({ page }) => {
+  test.setTimeout(240_000);
+  await blankCourse(page);
+  await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.getByTestId("hole-row").first().click();
+  await page.getByTestId("tee-view").click();
+  // (the 3D view rests while it paints: drawn in software, its frames would starve the painting)
+  await page.evaluate(() => (window as any).__dgView.setPaused(true));
+  await expect.poll(() => page.evaluate(() => { const v = (window as any).__dgView; return !!v.ground.paintedTexture && v.shapes.has("painted-woods"); }), { timeout: 150_000 }).toBe(true);
+  // How much the brightness varies over 40 ft squares in the woods: treetops lit and shaded vary
+  // a lot, grass little
+  const spread = await page.evaluate(() => {
+    const v = (window as any).__dgView, img = v.ground.paintedTexture.image, doc = (window as any).__dgCourse();
+    const c = document.createElement("canvas");
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext("2d")!;
+    g.drawImage(img, 0, 0);
+    const k = img.width / doc.canvas.width;
+    return [[150, 200], [1000, 300]].map(([x, y]) => {
+      const d = g.getImageData(Math.round((x - 20) * k), Math.round((y - 20) * k), Math.round(40 * k), Math.round(40 * k)).data;
+      let n = 0, sum = 0, sq = 0;
+      for (let i = 0; i < d.length; i += 4) { const l = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]; sum += l; sq += l * l; n++; }
+      return Math.sqrt(sq / n - (sum / n) ** 2);
+    });
+  });
+  for (const sd of spread) expect(sd).toBeLessThan(10);
+  await page.getByTestId("hud-close").click();
+});
+
 test("Enter on a selected hole opens its tee view", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 400, y: 700 }, { x: 650, y: 700 });
@@ -361,9 +411,10 @@ test("a hole's own flight through keyframes: shown on the map, dragged, set, add
   await page.keyboard.press("Escape");
   await page.getByTestId("hole-row").first().click();
   await page.getByTestId("hole-flight").getByRole("radio", { name: "Keyframes" }).click();
-  // Four to start from: the flight it flies by itself
+  // Four to start from: the flight it flies by itself, each at the flyover's height (10 ft)
   await expect(page.getByTestId("fly-key")).toHaveCount(4);
   const keys = async () => (await course(page)).holes[0].flyKeys as any[];
+  expect((await keys()).map(k => k.alt)).toEqual([10, 10, 10, 10]);
   expect((await keys())[0].x).toBeLessThan(300);
   await expect(page.locator('[data-handle="flykey"]')).toHaveCount(4);
   await expect(page.locator('[data-handle="flylook"]')).toHaveCount(4);
@@ -419,9 +470,11 @@ plain("the flight by itself: a low glide from behind the tee, under a crown over
   // (a short hole flies for 6 seconds)
   plainExpect(open.dur).toBe(6);
   const at = (f: typeof open, x: number) => f.cam.reduce((a, c) => (Math.abs(c.x - x) < Math.abs(a.x - x) ? c : a));
-  // Low over open ground: about the height asked
-  plainExpect(at(open, 0).z - 100).toBeGreaterThan(15);
-  plainExpect(at(open, 0).z - 100).toBeLessThan(45);
+  // Low over open ground: about the height asked (10 ft by default, rising by at most half that)
+  plainExpect(FLYOVER_DEFAULTS.height).toBe(10);
+  plainExpect(at(open, 0).z - 100).toBeGreaterThan(6);
+  plainExpect(at(open, 0).z - 100).toBeLessThan(16);
+  plainExpect(Math.max(...open.cam.map(c => c.z)) - 100).toBeLessThanOrEqual(15 + 1e-6);
   // A big tree over the line at 200 ft (leaves from 30 to 70 ft up, its trunk on the line), a bush at 300 ft
   const trees = (p: { x: number; y: number }, reach: number) => {
     if (Math.hypot(p.x - 200, p.y) < reach + 25) return { base: 130, top: 170, trunks: Math.hypot(p.x - 200, p.y) < reach + 8 ? [{ x: 200, y: 0 }] : [] };

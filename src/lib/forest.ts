@@ -255,6 +255,9 @@ export type ForestOpts = {
   style: MapStyle;
   /** Pixels per page point. */
   density?: number;
+  /** The ground under the trees, for the 3D views (where the trees stand in 3D): grass in the
+   * woods, no treetops. */
+  under?: boolean;
 };
 
 /**
@@ -657,7 +660,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // Sparse woods keep fewer, in clumps, and the trees stand bigger on their own.
   const stepPx = crownR * 1.15;
   const grow = 1 + (1 - cover) * 0.7;
-  for (let gy = -stepPx; gy < H + stepPx; gy += stepPx) {
+  for (let gy = -stepPx; gy < H + stepPx && !opts.under; gy += stepPx) {
     yield 0.15 + 0.35 * ((gy + stepPx) / (H + 2 * stepPx));
     for (let gx = -stepPx; gx < W + stepPx; gx += stepPx) {
       const n = rnd() < 0.5 ? 2 : 1;
@@ -680,7 +683,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   }
   // Trees placed on the map (or found on the photo): each where it stands, at its own size and
   // height and of its own kind, wherever it is (on a fairway too), apart from the woods
-  for (const t of doc.items.filter(i => i.type === "tree") as TreeItem[]) {
+  for (const t of opts.under ? [] : (doc.items.filter(i => i.type === "tree") as TreeItem[])) {
     const sp = toScreen(t);
     const r = Math.max(2.2 * pt, t.radius * (t.width ?? 1) * k);
     if (sp.x < -r || sp.y < -r || sp.x > W + r || sp.y > H + r) continue;
@@ -929,7 +932,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         // The floor under the trees, well inside the woods (fading out toward their edges)
         const deep = smooth(0.55, 0.95, inWoods[m4] / 255);
         if (deep > 0) {
-          if (thick > 0.5) lay(floorPal, (0.5 + mott * 0.4 + grain * 0.2) * (0.35 + 0.65 * lit), deep);
+          if (thick > 0.5 && !opts.under) lay(floorPal, (0.5 + mott * 0.4 + grain * 0.2) * (0.35 + 0.65 * lit), deep);
           else lay(lawn, (0.45 + mott * 0.4 + grain * 0.2) * lit * 0.8, deep);
         }
         const f = a[m4] / 255, r = b[m4 + 1] / 255;

@@ -700,7 +700,9 @@ export class CourseView {
     this.controls.enabled = !holeId;
     this.labelsLayer.style.display = holeId ? "none" : "";
     this.handlesLayer.style.display = holeId ? "none" : "";
+    // (back on the map: nothing of the tee view or a flight left over it)
     if (!holeId && this.povMarker) this.povMarker.style.display = "none";
+    if (!holeId && this.flyCanvas) this.flyCanvas.style.display = "none";
     this.updateCursor();
     this.invalidate();
   }
@@ -742,8 +744,10 @@ export class CourseView {
     const s = doc?.stats.find(x => x.holeId === holeId);
     if (!doc || !s?.complete) return null;
     const ground = (x: number, y: number) => this.h(x, y);
-    const f = autoFlight(smoothPath(s.line, 16), flyoverOf(doc.course, doc.course.holes.find(h => h.id === holeId)), ground, (p, r) => this.canopyAt(p, r));
-    return f ? keysFromFlight(f, ground) : null;
+    const set = flyoverOf(doc.course, doc.course.holes.find(h => h.id === holeId));
+    const f = autoFlight(smoothPath(s.line, 16), set, ground, (p, r) => this.canopyAt(p, r));
+    // (each at the flyover's height)
+    return f ? keysFromFlight(f, ground, 4, set.height) : null;
   }
 
   /** What stands over a point, within `reach` ft (for flyovers): where trees' leaves start (about

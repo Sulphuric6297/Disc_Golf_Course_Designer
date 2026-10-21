@@ -49,7 +49,7 @@ export const paintedGround = (doc: CourseDoc): Promise<PaintedGround | null> => 
   const view = { cx: width / 2, cy: height / 2, rotation: 0, scale: k, width: width * k, height: height * k };
   const work = (async () => {
     const canopy = doc.style.forest === "photo" ? await canopyFor(doc) : null;
-    const canvas = await forestCanvasAsync(doc, view, doc.holes.map(h => holeStats(doc, h)), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1 }, job.stop.signal);
+    const canvas = await forestCanvasAsync(doc, view, doc.holes.map(h => holeStats(doc, h)), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1, under: true }, job.stop.signal);
     const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, "image/jpeg", 0.9));
     if (!blob) return null;
     const url = URL.createObjectURL(blob);
@@ -102,7 +102,7 @@ export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Pro
   const view = { cx: rect.x + rect.width / 2, cy: rect.y + rect.height / 2, rotation: 0, scale: k, width: rect.width * k, height: rect.height * k };
   const work = (async () => {
     const canopy = doc.style.forest === "photo" ? await canopyFor(doc) : null;
-    const canvas = await forestCanvasAsync(doc, view, doc.holes.map(h => holeStats(doc, h)), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1 }, job.stop.signal);
+    const canvas = await forestCanvasAsync(doc, view, doc.holes.map(h => holeStats(doc, h)), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1, under: true }, job.stop.signal);
     // Its edges fade into the painting of the whole site (none where it meets the site's edge)
     const c = canvas.getContext("2d")!;
     const f = DETAIL_FADE * k;

@@ -4,7 +4,7 @@
 import type { CourseDoc, FlyKey, FlyoverSettings, P } from "../types";
 import { pathLength, pointAlong } from "./geom";
 
-export const FLYOVER_DEFAULTS: FlyoverSettings = { height: 24, speed: 1, fov: 62, behind: 60, side: 0, lookAhead: 120,
+export const FLYOVER_DEFAULTS: FlyoverSettings = { height: 10, speed: 1, fov: 62, behind: 60, side: 0, lookAhead: 120,
   title: true, badge: true, pinDistance: true, courseName: true, discFlight: true, playLine: true, circle: true, ob: true, otherHoles: true, walks: true
 };
 
@@ -84,7 +84,8 @@ export const autoFlight = (line: P[], set: FlyoverSettings, ground: (x: number, 
     const nrm = { x: -Math.sin(at.angle), y: Math.cos(at.angle) };
     const p = { x: at.point.x + nrm.x * set.side, y: at.point.y + nrm.y * set.side };
     const g = ground(p.x, p.y);
-    const alt = set.height + Math.sin(Math.PI * Math.min(1, t * 1.1)) * Math.min(20, len * 0.05) - t * Math.min(15, set.height * 0.4);
+    // (rising a little mid-hole, by at most half the height asked)
+    const alt = set.height + Math.sin(Math.PI * Math.min(1, t * 1.1)) * Math.min(20, len * 0.05, set.height * 0.5) - t * Math.min(15, set.height * 0.4);
     const z = g + Math.max(4, alt);
     want.push(z);
     floor.push(g + 4);
@@ -178,12 +179,13 @@ export const keyFlight = (keys: FlyKey[], set: FlyoverSettings, ground: (x: numb
   return { cam, look, fov, dur };
 };
 
-/** Keyframes to start from: the flight it flies by itself, at a few moments (to change by hand). */
-export const keysFromFlight = (f: Flight, ground: (x: number, y: number) => number, count = 4): FlyKey[] =>
+/** Keyframes to start from: the flight it flies by itself, at a few moments (to change by hand),
+ * each `alt` ft up (the flyover's height; unset: as high as that flight is there). */
+export const keysFromFlight = (f: Flight, ground: (x: number, y: number) => number, count = 4, alt?: number): FlyKey[] =>
   Array.from({ length: count }, (_, k) => {
     const i = Math.round((k / (count - 1)) * (f.cam.length - 1));
     const c = f.cam[i], l = f.look[i];
-    return { x: round1(c.x), y: round1(c.y), alt: round1(c.z - ground(c.x, c.y)), lookX: round1(l.x), lookY: round1(l.y) };
+    return { x: round1(c.x), y: round1(c.y), alt: round1(alt ?? c.z - ground(c.x, c.y)), lookX: round1(l.x), lookY: round1(l.y) };
   });
 
 /** A keyframe halfway between two (to add one). */
