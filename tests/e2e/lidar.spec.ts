@@ -4,7 +4,7 @@ import { createLazPerf } from "laz-perf";
 import { test, expect, addHole, importSite, course, editorState, screenOf, withLidar, SITE } from "./fixtures";
 import { createEmptyCourse, newHole } from "../../src/lib/course";
 import { getGeoBounds } from "../../src/lib/geo/core";
-import { emptyPoints, grownTree, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesOver, depthFor, type LazReader } from "../../src/lib/lidar";
+import { emptyPoints, exceptInside, grownTree, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesOver, depthFor, type LazReader } from "../../src/lib/lidar";
 import type { LidarTree } from "../../src/types";
 
 const FT = 3.28084;
@@ -184,30 +184,11 @@ plain("saplings since the survey: none at once, more with the years, near the me
   plainExpect(saplings(woods, 10)).toEqual(ten);
 });
 
-test("bring trees back in an area: a freehand loop round the stumps puts the measured trees back (one undo step)", async ({ page }) => {
-  test.setTimeout(240_000);
-  await withLidar(page);
-  await importSite(page);
-  const doc = await course(page);
-  const W2 = doc.canvas.width, H2 = doc.canvas.height;
-  const at = (e: number, n: number) => ({ x: W2 / 2 + e * FT, y: H2 / 2 - n * FT });
-  const nearest = (p: { x: number; y: number }) => doc.lidar.trees.findIndex((t: number[]) => Math.hypot(t[0] - p.x, t[1] - p.y) < 6);
-  const row = [-60, -40, -20, 0, 20].map(e => nearest(at(e, -40)));
-  await addHole(page, at(-75, -40), at(35, -40));
-  await page.keyboard.press("Escape");
-  await expect.poll(async () => (await course(page)).lidar.kept).toBeUndefined();
-  // The Site step's button, then a loop drawn round the row with the mouse held down
-  await page.getByRole("button", { name: /Site/ }).click();
-  await page.getByTestId("lasso-keep").click();
-  const loop = [at(-75, -25), at(35, -25), at(35, -55), at(-75, -55), at(-75, -28)];
-  const s0 = await screenOf(page, loop[0].x, loop[0].y);
-  await page.mouse.move(s0.x, s0.y);
-  await page.mouse.down();
-  for (const p of loop.slice(1)) { const s = await screenOf(page, p.x, p.y); await page.mouse.move(s.x, s.y, { steps: 8 }); }
-  await page.mouse.up();
-  await expect.poll(async () => (await course(page)).lidar.kept).toEqual([...row].sort((a, b) => a - b));
-  // (no woods area was made)
-  expect((await course(page)).items.filter((i: any) => i.type === "area" && i.kind === "woods")).toHaveLength(0);
-  await page.keyboard.press("Control+z");
-  await expect.poll(async () => (await course(page)).lidar.kept).toBeUndefined();
+plain("woods set to all standing: nothing cleared for play inside them, the clearing as before outside (pure logic)", () => {
+  const cleared = (p: { x: number; y: number }) => p.y > 40 && p.y < 60; // a fairway across the middle
+  const inWoods = exceptInside(cleared, [[{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 100 }, { x: 0, y: 100 }]]);
+  plainExpect(inWoods({ x: 25, y: 50 }, 3)).toBe(false);
+  plainExpect(inWoods({ x: 75, y: 50 }, 3)).toBe(true);
+  plainExpect(inWoods({ x: 75, y: 10 }, 3)).toBe(false);
+  plainExpect(exceptInside(cleared, [])).toBe(cleared);
 });

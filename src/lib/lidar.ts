@@ -308,6 +308,15 @@ export const yearsSince = (name: string) => { const y = surveyYear(name); return
 
 export const surveyYear = (name: string) => Math.max(0, ...(name.match(/(19|20)\d\d/g) ?? []).map(Number));
 
+/** A clearing test that leaves alone what's inside `polys` (woods set to all standing): the
+ * trees there are never cleared for play, wherever the holes run. */
+export const exceptInside = (cleared: (p: P, reach: number) => boolean, polys: P[][]) => {
+  const shapes = polys.filter(pp => pp.length >= 3).map(pts => ({ pts, box: boundsOf(pts) }));
+  if (!shapes.length) return cleared;
+  const inside = (p: P) => shapes.some(x => p.x >= x.box.minX && p.x <= x.box.maxX && p.y >= x.box.minY && p.y <= x.box.maxY && pointInPolygon(p, x.pts));
+  return (p: P, reach: number) => !inside(p) && cleared(p, reach);
+};
+
 /** Which measured trees stand: those on a fairway, a tee or a basket's circle (as
  * `cleared` says) are cut down unless kept; any taken out are gone. */
 export const standingTrees = (lidar: NonNullable<CourseDoc["lidar"]>, cleared: (p: P, reach: number) => boolean, nowhere: (p: P) => boolean = () => false) => {

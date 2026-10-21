@@ -115,14 +115,10 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
                   )}
                 </div>
                 <div className="mt-2" data-testid="lidar-clear">
-                  <Toggle label="Cut trees off the fairways" hint="Off: the measured trees stand where the holes play; cut by hand, or with an area below" checked={doc.lidar.clearFairways !== false}
+                  <Toggle label="Cut trees off the fairways" hint="Off: the measured trees stand where the holes play, cut by hand only" checked={doc.lidar.clearFairways !== false}
                     onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, clearFairways: v ? undefined : false } } : {}))} />
                 </div>
-                <div className="text-[11px] text-zinc-500 mt-1">Draw a loop round trees with the mouse held down (or a finger):</div>
-                <div className="mt-1 flex flex-wrap gap-1.5">
-                  <Button small onClick={() => ed.set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", lidarLasso: "cut" })} testid="lasso-cut">Cut trees in an area</Button>
-                  <Button small onClick={() => ed.set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", lidarLasso: "keep" })} testid="lasso-keep">Bring trees back in an area</Button>
-                </div>
+                <div className="text-[11px] text-zinc-500 mt-1">In one place: draw a woods area over it and set its trees (Measured, All standing, Drawn or None). A tree by itself: click it, or its stump.</div>
               </div>
             )}
           </div>

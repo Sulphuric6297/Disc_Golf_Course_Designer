@@ -13,43 +13,17 @@ import { ElevationProfile } from "./ElevationProfile";
 import { SceneButton } from "./ScenePanel";
 import { FlyoverSettingsPanel } from "./FlyoverSettings";
 
-const READYING = ["Painting the fairway…", "Growing the trees…", "Raking the tee pad…", "Checking the wind…", "Hanging the chains…", "Lining up the throw…"];
-
-/** While a flyover waits for its pictures: a disc flying the hole over and over, the hole's
- * numbers, and a line about what's being readied (something to watch, so the wait is kept). */
-function FlyoverLoading({ title, facts }: { title: string; facts: string }) {
-  const [n, setN] = useState(0);
-  useEffect(() => { const t = window.setInterval(() => setN(k => k + 1), 1400); return () => window.clearInterval(t); }, []);
+/** While a flyover waits for its pictures: the hole's name and numbers and a thin moving bar,
+ * over the view (shown at once; it fades as the flight begins). */
+function FlyoverLoading({ title, facts, on }: { title: string; facts: string; on: boolean }) {
   return (
-    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-zinc-950 pointer-events-auto" data-testid="flyover-loading" role="status" aria-live="polite">
-      <svg viewBox="0 0 320 120" className="w-[320px] max-w-[80vw] h-auto" aria-hidden>
-        <defs>
-          <path id="fl-line" d="M 24 92 C 90 20, 200 20, 296 60" />
-        </defs>
-        {/* the fairway's line, the tee and the basket */}
-        <use href="#fl-line" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="2" strokeDasharray="4 6" />
-        <rect x="14" y="84" width="20" height="14" rx="2" fill="#38bdf8" />
-        <g transform="translate(296 60)">
-          <line x1="0" y1="-26" x2="0" y2="18" stroke="#e4e4e7" strokeWidth="2" />
-          <path d="M-12 -14 h24 M-10 -14 v16 M10 -14 v16 M-10 2 h20" stroke="#e4e4e7" strokeWidth="2" fill="none" strokeLinecap="round" />
-        </g>
-        {/* the disc */}
-        <g>
-          <ellipse rx="11" ry="4.5" fill="#f97316" stroke="#fdba74" strokeWidth="1.5">
-            <animateMotion dur="2.4s" repeatCount="indefinite" rotate="auto" keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines="0.3 0 0.6 1">
-              <mpath href="#fl-line" />
-            </animateMotion>
-          </ellipse>
-          <ellipse rx="11" ry="4.5" fill="rgba(0,0,0,0.25)" transform="translate(0 30) scale(1 0.5)">
-            <animateMotion dur="2.4s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines="0.3 0 0.6 1">
-              <mpath href="#fl-line" />
-            </animateMotion>
-          </ellipse>
-        </g>
-      </svg>
-      <div className="mt-3 text-lg font-semibold text-zinc-50">{title}</div>
-      <div className="text-sm text-zinc-400">{facts}</div>
-      <div className="mt-4 h-5 text-sm text-orange-300" data-testid="flyover-loading-line">{READYING[n % READYING.length]}</div>
+    <div className={`absolute inset-0 z-30 flex flex-col items-center justify-center bg-zinc-950 pointer-events-auto transition-opacity duration-300 ${on ? "opacity-100" : "opacity-0"}`} data-testid="flyover-loading" role="status" aria-live="polite">
+      <div className="text-xl font-semibold text-zinc-50 tracking-tight">{title}</div>
+      <div className="mt-1 text-sm text-zinc-400">{facts}</div>
+      <div className="mt-6 w-40 h-0.5 rounded-full bg-zinc-800 overflow-hidden">
+        <div className="h-full w-1/3 rounded-full bg-orange-500 animate-[dgslide_1.2s_ease-in-out_infinite]" />
+      </div>
+      <div className="mt-3 text-xs text-zinc-500">Preparing the flyover</div>
     </div>
   );
 }
@@ -65,16 +39,16 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
   // (view only: no camera settings to change; a video only for those who may have downloads)
   const readOnly = useCourse(c => c.readOnly);
   const mayRecord = useAllowed("downloads");
-  // (the loading screen only once a wait is noticeable: no flash when all is in)
+  // (the loading screen from the first moment, kept a beat longer to fade out)
   const waiting = ed.flyover && ed.flyLoading;
   const [showLoading, setShowLoading] = useState(false);
   useEffect(() => {
-    if (!waiting) { setShowLoading(false); return; }
-    const t = window.setTimeout(() => setShowLoading(true), 350);
+    if (waiting) { setShowLoading(true); return; }
+    const t = window.setTimeout(() => setShowLoading(false), 320);
     return () => window.clearTimeout(t);
   }, [waiting]);
   if (!hole || !s) return null;
-  const loading = showLoading && waiting ? <FlyoverLoading title={`Hole ${doc.holes.indexOf(hole) + 1}${hole.name ? ` · ${hole.name}` : ""}`} facts={`${fmtDist(s.length, doc.units)} · Par ${s.par}${s.elevationChange ? ` · ${fmtElev(s.elevationChange, doc.units)}` : ""}`} /> : null;
+  const loading = showLoading && ed.flyover ? <FlyoverLoading on={waiting} title={`Hole ${doc.holes.indexOf(hole) + 1}${hole.name ? ` · ${hole.name}` : ""}`} facts={`${fmtDist(s.length, doc.units)} · Par ${s.par}${s.elevationChange ? ` · ${fmtElev(s.elevationChange, doc.units)}` : ""}`} /> : null;
   const stats = courseStats(doc);
   const done = doc.holes.filter((_, k) => stats[k].complete);
   const i = done.findIndex(h => h.id === hole.id);

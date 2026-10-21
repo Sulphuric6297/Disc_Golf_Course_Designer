@@ -132,3 +132,9 @@ body {
     background-color: rgb(24 24 27 / 0.97) !important;
   }
 }
+
+/* The loading bar's slide */
+@keyframes dgslide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}

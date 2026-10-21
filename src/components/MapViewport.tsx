@@ -91,7 +91,18 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const issues = useMemo(() => (ed.step === "review" ? openIssues(doc, courseIssues(doc)).open : null), [ed.step, doc]);
   // From a tee and in flyovers: the ground in the Design look (the painted map), not the photo
   const paintedOn = !!ed.teeView && ed.flyLook === "painted" && !!doc.holes.length;
-  const painted = usePaintedGround(paintedOn);
+  // (painted ahead while the course rests with a hole picked, so a flyover has less to wait for;
+  // not while it's being changed: that would paint it over and over)
+  const [restingDoc, setRestingDoc] = useState(doc);
+  useEffect(() => { const t = window.setTimeout(() => setRestingDoc(doc), 1500); return () => window.clearTimeout(t); }, [doc]);
+  const warmHole = ed.selectedId && doc.holes.some(h => h.id === ed.selectedId) ? ed.selectedId : ed.activeHoleId;
+  const warm = !ed.teeView && ed.flyLook === "painted" && restingDoc === doc && !!warmHole && ed.step !== "design";
+  const painted = usePaintedGround(paintedOn || warm);
+  useEffect(() => {
+    if (!warm || !warmHole || !painted) return;
+    const id = window.setTimeout(() => void paintedDetail(doc, warmHole, 3072), 50);
+    return () => window.clearTimeout(id);
+  }, [warm, warmHole, painted, doc]);
 
   // The 3D view shows the course in its landscape's natural colors (whatever the map's style)
   const natural = landscapeOf(doc.style);

@@ -269,9 +269,9 @@ function WoodsTrees({ item }: { item: AreaItem }) {
   const measured = useCourse(s => !!s.doc.lidar?.trees.length);
   if (!measured) return null;
   return (
-    <Field label="Trees">
+    <Field label="Trees" hint={item.trees === "standing" ? "Every measured tree in here stands, fairways included." : item.trees === "none" ? "No trees in here." : item.trees === "drawn" ? "The app's own trees, where it plants them." : "The measured trees, cleared where the holes play."}>
       <Segmented label="Trees" value={item.trees ?? "measured"} onChange={v => updateItem(item.id, { trees: v === "measured" ? undefined : v } as Partial<CourseItem>)}
-        options={[{ value: "measured", label: "Measured" }, { value: "drawn", label: "Drawn" }, { value: "none", label: "None" }]} />
+        options={[{ value: "measured", label: "Measured", title: "Cleared where the holes play" }, { value: "standing", label: "All standing", title: "Nothing cleared in here" }, { value: "drawn", label: "Drawn" }, { value: "none", label: "None" }]} />
     </Field>
   );
 }

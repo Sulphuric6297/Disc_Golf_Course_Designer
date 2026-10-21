@@ -26,7 +26,7 @@ import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
 import { createMeasuredWoods, createWoods, createWoodsWhere } from "../three/woods";
-import { standingTrees, grownTrees } from "../lib/lidar";
+import { exceptInside, standingTrees, grownTrees } from "../lib/lidar";
 import type { WoodedGrid } from "../lib/forest";
 import { autoFlight, flightClock, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy, type Crown } from "../lib/flight";
 import { VIDEO_HOLD, titleStrength } from "../lib/video";
@@ -2098,12 +2098,15 @@ export class CourseView {
     if (lidar) {
       const forPlay = clearingsFor(true);
       const nowhere = nowhereFor();
-      this.clearedAt = (p, reach) => forPlay.test(p, reach) || nowhere.test(p);
-      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.minHeight ?? 0, lidar.growYears ?? 0, lidar.clearFairways !== false, forPlay.key, nowhere.key]);
+      // (woods set to all standing: nothing cleared for play inside them)
+      const standingWoods = course.items.flatMap(it => (it.type === "area" && it.kind === "woods" && it.trees === "standing" ? [this.shapeOf(it).pts] : []));
+      const cleared = exceptInside(forPlay.test, standingWoods);
+      this.clearedAt = (p, reach) => cleared(p, reach) || nowhere.test(p);
+      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.minHeight ?? 0, lidar.growYears ?? 0, lidar.clearFairways !== false, forPlay.key, nowhere.key, standingWoods]);
       if (this.dragging && this.lidarKey && fresh !== this.lidarKey) this.afterDrag = true;
       else this.lidarKey = fresh;
       const state = this.keep("lidar", lidar.trees, this.lidarKey, () => {
-        const { stand, cut } = standingTrees(lidar, forPlay.test, nowhere.test);
+        const { stand, cut } = standingTrees(lidar, cleared, nowhere.test);
         const keptSet = new Set(lidar.kept ?? []);
         return { stand, cut, kept: stand.filter(k => keptSet.has(k) && forPlay.test({ x: lidar.trees[k][0], y: lidar.trees[k][1] }, lidar.trees[k][3] * 0.3)) };
       });
@@ -3769,9 +3772,10 @@ export class CourseView {
       window.addEventListener("pointerup", up, true);
       return;
     }
-    // A stump: the tree back (or a kept tree's ring: cut down after all)
+    // A stump: the tree back (or a kept tree's ring: cut down after all). Not while an area or
+    // line is being drawn: a loop round the stumps starts on one as often as not
     const stumpEl = target.closest?.("[data-stump]") as HTMLElement | null;
-    if (stumpEl && e.button === 0) {
+    if (stumpEl && e.button === 0 && !this.drawn(this.tool)) {
       e.stopPropagation();
       e.preventDefault();
       this.gesture(e, { click: () => this.toggleLidarTree(Number(stumpEl.dataset.stump)) });
