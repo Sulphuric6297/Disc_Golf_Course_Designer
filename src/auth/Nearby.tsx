@@ -1,5 +1,6 @@
 // Other courses on the same ground (a park with several courses, each its own course): their
-// holes drawn on this course's map, each in its color, switched on and off in the Site step.
+// holes drawn on this course's map, each in its color, when switched on in the Site step (off at
+// first).
 import { useEffect, useMemo } from "react";
 import { courseStats } from "../lib/holeStats";
 import { create } from "zustand";
@@ -34,7 +35,7 @@ export function NearbyLayer() {
   const doc = useCourse(s => s.doc);
   useEffect(() => {
     useNearby.setState({ list: [], shown: [] });
-    if (id) void api<Near[]>("GET", `courses/${id}/nearby`).then(l => useNearby.setState({ list: l, shown: l.map(x => x.id) }), () => {});
+    if (id) void api<Near[]>("GET", `courses/${id}/nearby`).then(l => useNearby.setState({ list: l, shown: [] }), () => {});
   }, [id]);
   useEffect(() => {
     const v = getView();
