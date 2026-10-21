@@ -480,7 +480,8 @@ export interface CourseDoc {
   gridSize: number;
   /** The site's trees measured from the air (LiDAR): those on fairways, tees and baskets' circles
    * are cut down unless `kept` (by index); `removed` ones taken out wherever they stand. */
-  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[]; minHeight?: number };
+  /** `growYears`: the measured trees grown that many years (the survey is older than today). */
+  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number };
   terrainHeights: Record<string, number>;
   /** Painted ground (lib/groundPaint): a material per painted square foot, keyed "i,j". */
   groundPaint: Record<string, number>;

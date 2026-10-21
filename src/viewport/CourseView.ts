@@ -26,7 +26,7 @@ import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
 import { createMeasuredWoods, createWoods, createWoodsWhere } from "../three/woods";
-import { standingTrees } from "../lib/lidar";
+import { standingTrees, grownTrees } from "../lib/lidar";
 import type { WoodedGrid } from "../lib/forest";
 import { autoFlight, flightClock, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy, type Crown } from "../lib/flight";
 import { VIDEO_HOLD, titleStrength } from "../lib/video";
@@ -153,7 +153,7 @@ const idOfGrid = (g: object) => {
 };
 
 /** The longest a flyover waits for the course to load before it flies anyway. */
-const FLY_WAIT_MS = 10_000;
+const FLY_WAIT_MS = 15_000;
 // Whether three.js's loaders still have textures on their way
 let loadingTextures = 0;
 THREE.DefaultLoadingManager.onStart = () => { loadingTextures++; };
@@ -816,9 +816,14 @@ export class CourseView {
     const wait: { since: number; loaded: boolean; frames: number } = { since: performance.now(), loaded: false, frames: 0 };
     this.flyWait = wait;
     void (async () => {
+      const left = () => performance.now() - wait.since < FLY_WAIT_MS;
+      const pause = () => new Promise(r => setTimeout(r, 100));
+      // (the painted ground still being painted, then its sharp close-up, then any textures
+      // still on their way: the photo, the trees' leaves)
+      await new Promise(r => setTimeout(r, 150));
+      while (this.paintedPending && left()) await pause();
       await this.detailReady;
-      // (the textures still on their way: the photo, the painted ground, the trees' leaves)
-      while (texturesLoading() && performance.now() - wait.since < FLY_WAIT_MS) await new Promise(r => setTimeout(r, 100));
+      while (texturesLoading() && left()) await pause();
       wait.loaded = true;
     })();
     this.invalidate();
@@ -1156,8 +1161,14 @@ export class CourseView {
    * woods (null: the photo). */
   setPaintedGround(look: PaintedLook | null) {
     this.paintedScreen = look;
-    return this.applyPainted();
+    const done = this.applyPainted();
+    this.detailReady = done.catch(() => {});
+    return done;
   }
+
+  /** A painted ground on its way (the tee view's Design look being painted): a flyover waits. */
+  private paintedPending = false;
+  setPaintedPending(on: boolean) { this.paintedPending = on; }
 
   private paintedScreen: PaintedLook | null = null;
   /** While recording: the ground the video shows (undefined: as on screen). */
@@ -1198,7 +1209,7 @@ export class CourseView {
     await this.ground.setPainted(look?.url ?? null);
     if (this.disposed) return;
     if (!look) this.ground.setPaintedDetail(null);
-    else void this.updateDetail();
+    else await this.updateDetail();
     const woods = this.ground.paintedTexture ? look?.wooded ?? null : null;
     if (woods !== this.paintedWoods || this.shapesPainted !== !!this.ground.paintedTexture) {
       this.paintedWoods = woods;
@@ -2075,14 +2086,15 @@ export class CourseView {
     };
     // Trees measured from the air: cut down where the course clears the ground for play, unless
     // kept (in place of the woods' made-up trees)
-    const lidar = course.lidar?.trees.length ? course.lidar : null;
+    // (grown to today, as many years as the course asks)
+    const lidar = course.lidar?.trees.length ? { ...course.lidar, trees: grownTrees(course.lidar) } : null;
     const measured = !!lidar;
     this.lidarState = null;
     if (lidar) {
       const forPlay = clearingsFor(true);
       const nowhere = nowhereFor();
       this.clearedAt = (p, reach) => forPlay.test(p, reach) || nowhere.test(p);
-      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.minHeight ?? 0, forPlay.key, nowhere.key]);
+      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.minHeight ?? 0, lidar.growYears ?? 0, forPlay.key, nowhere.key]);
       if (this.dragging && this.lidarKey && fresh !== this.lidarKey) this.afterDrag = true;
       else this.lidarKey = fresh;
       const state = this.keep("lidar", lidar.trees, this.lidarKey, () => {
@@ -2091,7 +2103,7 @@ export class CourseView {
         return { stand, cut, kept: stand.filter(k => keptSet.has(k) && forPlay.test({ x: lidar.trees[k][0], y: lidar.trees[k][1] }, lidar.trees[k][3] * 0.3)) };
       });
       this.lidarState = state;
-      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), state.cut, hv, st.trees, st.landscape]), () => {
+      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, state.cut, hv, st.trees, st.landscape]), () => {
         const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, landscapeOf(st).mix);
         this.shadowsDirty = true;
         return woods;
@@ -3500,6 +3512,8 @@ export class CourseView {
   // ------------------------------------------------------------------ pointer input
 
   private endDragListeners: (() => void) | null = null;
+  /** When two fingers were last on the map (a pinch): a tap then is no tap. */
+  private pinchAt = 0;
 
   /** Press that becomes a click (no movement) or a drag. */
   private gesture(e: PointerEvent, h: { click?: (ev: PointerEvent) => void; drag?: (start: PointerEvent) => Drag | null }) {
@@ -3507,6 +3521,7 @@ export class CourseView {
     const sy = e.clientY;
     const id = e.pointerId;
     const slop = e.pointerType === "touch" ? TOUCH_SLOP : CLICK_PX;
+    const began = performance.now();
     let drag: Drag | null = null;
     let moved = false;
     const move = (ev: PointerEvent) => {
@@ -3524,10 +3539,12 @@ export class CourseView {
     const up = (ev: PointerEvent) => {
       if (ev.pointerId !== id) return;
       cleanup();
+      // (a finger that was part of a pinch, or lifted just after one, taps nothing)
+      const pinched = ev.pointerType === "touch" && (this.touchIds.size > 0 || this.pinchAt >= began - 50 || performance.now() - this.pinchAt < 350);
       if (drag) {
         drag.end(ev);
         this.setDragging(false);
-      } else if (!moved) h.click?.(ev);
+      } else if (!moved && !pinched) h.click?.(ev);
       this.invalidate();
     };
     const cleanup = () => {
@@ -3610,7 +3627,7 @@ export class CourseView {
   private fingers = false;
 
   private touchUp(e: PointerEvent) {
-    this.touchIds.delete(e.pointerId);
+    if (this.touchIds.delete(e.pointerId) && this.touchIds.size >= 1) this.pinchAt = performance.now();
     const lp = this.longPress;
     if (lp?.id !== e.pointerId) return;
     // (Held long enough, even if a busy page ran the timer late: still the long-press)
@@ -3712,6 +3729,7 @@ export class CourseView {
     if (this.fingers) {
       this.touchIds.add(e.pointerId);
       if (this.touchIds.size > 1) {
+        this.pinchAt = performance.now();
         this.secondFinger();
         return;
       }

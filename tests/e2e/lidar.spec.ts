@@ -4,7 +4,7 @@ import { createLazPerf } from "laz-perf";
 import { test, expect, addHole, importSite, course, editorState, screenOf, withLidar, SITE } from "./fixtures";
 import { createEmptyCourse, newHole } from "../../src/lib/course";
 import { getGeoBounds } from "../../src/lib/geo/core";
-import { emptyPoints, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesOver, depthFor, type LazReader } from "../../src/lib/lidar";
+import { emptyPoints, grownTree, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesOver, depthFor, type LazReader } from "../../src/lib/lidar";
 import type { LidarTree } from "../../src/types";
 
 const FT = 3.28084;
@@ -154,4 +154,14 @@ plain("measured trees smaller than the course keeps are cut, unless kept by hand
   const { stand, cut } = standingTrees(lidar, () => false);
   plainExpect(stand).toEqual([1, 2]);
   plainExpect(cut).toEqual([0]);
+});
+
+plain("measured trees grown since the survey: small ones the most, tall ones hardly, crowns with them (pure logic)", () => {
+  const small = grownTree([0, 0, 10, 4, 0], 9), mid = grownTree([0, 0, 50, 15, 0], 9), tall = grownTree([0, 0, 95, 25, 0], 9);
+  plainExpect(small[2] - 10).toBeGreaterThan(mid[2] - 50);
+  plainExpect(mid[2] - 50).toBeGreaterThan(tall[2] - 95);
+  plainExpect(small[2]).toBeGreaterThan(25);
+  plainExpect(tall[2]).toBeLessThan(100);
+  plainExpect(mid[3]).toBeGreaterThan(15);
+  plainExpect(grownTree([0, 0, 40, 12, 1], 0)).toEqual([0, 0, 40, 12, 1]);
 });

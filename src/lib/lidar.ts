@@ -245,6 +245,36 @@ export const groundOnGrid = (m: { nx: number; ny: number; cell: number; ground: 
 };
 
 /** A survey's year, from its name (the latest four-figure year in it). */
+/** A measured tree grown `years` years: each year it grows less the nearer it is to a tree's full
+ * height (small trees fastest, about 2 to 2½ ft a year; tall ones hardly), its crown widening
+ * with it. Conifers grow a little slower, and taller. */
+export const grownTree = (t: LidarTree, years: number): LidarTree => {
+  const [x, y, h0, r0, conifer] = t;
+  const full = conifer ? 120 : 100, fast = conifer ? 2.2 : 2.6;
+  let h = h0, r = r0;
+  for (let i = 0; i < Math.round(years); i++) {
+    const h2 = h + fast * Math.max(0, 1 - h / full) ** 1.5;
+    r *= (h2 / Math.max(1, h)) ** 0.8;
+    h = h2;
+  }
+  return [x, y, Math.round(h * 10) / 10, Math.round(r * 10) / 10, conifer];
+};
+
+const grown = new WeakMap<LidarTree[], { years: number; out: LidarTree[] }>();
+/** The course's measured trees, grown as many years as it asks (the same list when none). */
+export const grownTrees = (lidar: NonNullable<CourseDoc["lidar"]>) => {
+  const years = lidar.growYears ?? 0;
+  if (!years) return lidar.trees;
+  const hit = grown.get(lidar.trees);
+  if (hit?.years === years) return hit.out;
+  const out = lidar.trees.map(t => grownTree(t, years));
+  grown.set(lidar.trees, { years, out });
+  return out;
+};
+
+/** Years since a survey (by the year in its name), or 0. */
+export const yearsSince = (name: string) => { const y = surveyYear(name); return y ? Math.max(0, new Date().getFullYear() - y) : 0; };
+
 export const surveyYear = (name: string) => Math.max(0, ...(name.match(/(19|20)\d\d/g) ?? []).map(Number));
 
 /** Which measured trees stand: those on a fairway, a tee or a basket's circle (as

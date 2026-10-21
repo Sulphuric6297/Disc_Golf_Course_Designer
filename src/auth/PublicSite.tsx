@@ -39,6 +39,8 @@ export function PublicSite({ children }: { children: ReactNode }) {
   const [explore, setExplore] = useState(false);
   const [big, setBig] = useState<string | null>(null);
   const [openHole, setOpenHole] = useState<string | null>(null);
+  // (from a tee or in a flyover the view's own bar has Map: the way back waits)
+  const teeView = useEditor(e => e.teeView);
 
   const load = async (pw: string) => {
     const res = await get("", pw);
@@ -86,7 +88,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
     return (
       <>
         {children}
-        <button className="fixed z-50 left-3 bottom-[max(12px,env(safe-area-inset-bottom))] md:left-auto md:bottom-auto md:top-2 md:right-2 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 md:py-1.5 text-sm font-semibold bg-zinc-900/95 border border-zinc-700 text-zinc-100 shadow-lg" onClick={() => setExplore(false)} data-testid="leave-3d"><X size={14} /> Course page</button>
+        {!teeView && <button className="fixed z-50 left-1/2 -translate-x-1/2 top-[76px] md:translate-x-0 md:left-auto md:top-2 md:right-2 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 md:py-1.5 text-sm font-semibold bg-zinc-900/95 border border-zinc-700 text-zinc-100 shadow-lg" onClick={() => setExplore(false)} data-testid="leave-3d"><X size={14} /> Course page</button>}
       </>
     );
   }

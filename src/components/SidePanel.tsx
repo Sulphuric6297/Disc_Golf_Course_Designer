@@ -11,6 +11,7 @@ import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
 import type { AreaKind, Layout, LineKind, PinPosition, StructureKind, TeeLevel, ToolMode } from "../types";
 import { refreshOsm } from "../state/osm";
 import { measureLidar } from "../state/lidar";
+import { yearsSince } from "../lib/lidar";
 import { getView } from "./MapViewport";
 import { structureIcon } from "./Toolbar";
 import { Button, Field, Section, Segmented, Slider, Stat, TextInput, Toggle } from "./ui";
@@ -104,7 +105,19 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
                 <Slider label="Smallest tree kept" min={0} max={60} step={1} value={doc.lidar.minHeight ?? 0}
                   format={v => (v ? `${fmtElev(v, doc.units).replace(/^[+−-]/, "")} and up` : "All")}
                   onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, minHeight: v || undefined } } : {}), false)} onDone={() => useCourse.getState().commit()} />
-                <div className="text-[11px] text-zinc-500">{(() => { const m = doc.lidar.minHeight ?? 0; const n = m ? doc.lidar.trees.filter(t => t[2] >= m).length : doc.lidar.trees.length; return `${n.toLocaleString()} of ${doc.lidar.trees.length.toLocaleString()} kept · woods: Measured, Drawn or None in each woods area`; })()}</div>
+                <div className="text-[11px] text-zinc-500">{(() => { const m = doc.lidar.minHeight ?? 0; const n = m ? doc.lidar.trees.filter(t => t[2] >= m).length : doc.lidar.trees.length; return `${n.toLocaleString()} of ${doc.lidar.trees.length.toLocaleString()} kept`; })()}</div>
+                <div className="mt-2" data-testid="lidar-grow">
+                  <Slider label="Grown since the survey" min={0} max={25} step={1} value={doc.lidar.growYears ?? 0}
+                    format={v => (v ? `${v} year${v === 1 ? "" : "s"}` : "As measured")}
+                    onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, growYears: v || undefined } } : {}), false)} onDone={() => useCourse.getState().commit()} />
+                  {yearsSince(doc.lidar.source) > 0 && (doc.lidar.growYears ?? 0) !== yearsSince(doc.lidar.source) && (
+                    <button className="text-[12px] text-orange-300 hover:text-orange-200" onClick={() => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, growYears: yearsSince(d.lidar.source) } } : {}))} data-testid="grow-today">Grow to today ({yearsSince(doc.lidar.source)} years)</button>
+                  )}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <Button small onClick={() => ed.set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", lidarLasso: "cut" })} testid="lasso-cut">Cut trees in an area</Button>
+                  <Button small onClick={() => ed.set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", lidarLasso: "keep" })} testid="lasso-keep">Bring trees back in an area</Button>
+                </div>
               </div>
             )}
           </div>
