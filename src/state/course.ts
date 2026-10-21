@@ -131,9 +131,8 @@ type EditorStore = {
   pickCut: boolean;
   /** How far measuring the trees and ground from the air has got (0..1; null: not measuring). */
   lidarBusy: number | null;
-  /** Drawing a patch of drawn trees inside this woods area (its id), as thick as `patchFill`. */
+  /** Drawing a patch of drawn trees inside this woods area (its id). */
   patchFor: string | null;
-  patchFill: number;
   /** What is picked on the Design page's course map: "title", "legend"... or "text:ID", "image:ID". */
   designSel: string | null;
   /** The hole whose tee sign or hole page the Design step shows. */
@@ -196,7 +195,6 @@ export const useEditor = create<EditorStore>()(set => ({
   pickCut: false,
   lidarBusy: null,
   patchFor: null,
-  patchFill: 0.5,
   designSel: null,
   designHole: null,
   activeHoleId: null,

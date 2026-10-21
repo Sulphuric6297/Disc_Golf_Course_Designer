@@ -525,9 +525,8 @@ export const cutStretch = (id: string, a: number, b: number) => {
 };
 
 /** An outline drawn as a patch of a woods area (trees: custom): drawn trees fill it in, as
- * thickly as the editor's `patchFill`. One undo step; the wood stays selected. */
+ * thickly as the wood's last patch (half, for the first). One undo step; the wood stays selected. */
 export const addPatch = (areaId: string, points: P[]) => {
-  const fill = editor().patchFill;
-  changeDoc(d => ({ items: d.items.map(i => (i.id === areaId && i.type === "area" ? { ...i, trees: "custom" as const, patches: [...(i.patches ?? []), { points, fill }] } : i)) }));
+  changeDoc(d => ({ items: d.items.map(i => (i.id === areaId && i.type === "area" ? { ...i, trees: "custom" as const, patches: [...(i.patches ?? []), { points, fill: i.patches?.[i.patches.length - 1]?.fill ?? 0.5 }] } : i)) }));
   select(areaId);
 };

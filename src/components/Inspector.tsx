@@ -267,7 +267,6 @@ const holeChip = (on: boolean) => `px-2 py-1 touch:py-2 rounded-md text-xs font-
 /** A woods area's trees in 3D: measured from the air, drawn, or none (with measured trees only). */
 function WoodsTrees({ item }: { item: AreaItem }) {
   const measured = useCourse(s => !!s.doc.lidar?.trees.length);
-  const patchFill = useEditor(e => e.patchFill);
   const drawing = useEditor(e => e.patchFor === item.id);
   if (!measured) return null;
   const mode = item.trees ?? "measured";
@@ -293,11 +292,10 @@ function WoodsTrees({ item }: { item: AreaItem }) {
             </div>
           ))}
           {!patches.length && <div className="text-[11px] text-zinc-500 mb-1">No patches yet.</div>}
-          <Slider label="Density of the next patch" min={0.1} max={1} step={0.1} value={patchFill} format={v => `${Math.round(v * 100)}%`} onChange={v => useEditor.getState().set({ patchFill: v })} />
           {drawing
             ? <div className="text-xs text-orange-300">Draw the patch over the wood with the mouse held down; let go to finish (Esc cancels).</div>
             : <Button small onClick={draw} testid="woods-draw-patch">Draw a patch</Button>}
-          <div className="text-[11px] text-zinc-500 mt-1">Drawn trees fill each patch in between the measured ones, as thickly as it says. The rest of the wood stays as it is.</div>
+          <div className="text-[11px] text-zinc-500 mt-1">Drawn trees fill each patch in between the measured ones; its slider sets how many. The rest of the wood stays as it is.</div>
         </div>
       )}
     </>
