@@ -32,7 +32,7 @@ export function StyleSlider<K extends keyof MapStyle>({ k, value, label, min, ma
   const [v, setV] = useState(value);
   // Only a slider that was moved commits (a key let go on it, like Ctrl+Z's, must not)
   const moved = useRef(false);
-  useEffect(() => setV(value), [value]);
+  useEffect(() => { setV(value); }, [value]);
   const done = () => {
     if (live) { if (moved.current) useCourse.getState().commit(); }
     else if (moved.current && v !== value) setStyle({ [k]: v } as Partial<MapStyle>);

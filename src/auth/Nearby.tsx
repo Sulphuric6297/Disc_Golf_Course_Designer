@@ -124,7 +124,7 @@ export function NearbyCourses() {
   const [withPlanted, setWithPlanted] = useState(true);
   const [busy, setBusy] = useState(false);
   const [value, setValue] = useState(park);
-  useEffect(() => setValue(park), [park]);
+  useEffect(() => { setValue(park); }, [park]);
   useEffect(() => { if (role === "owner") void api<{ park: string }[]>("GET", "courses").then(l => setParks([...new Set(l.map(c => c.park).filter(Boolean))]), () => {}); }, [role]);
   const savePark = async () => {
     if (!id || value.trim() === park) return;

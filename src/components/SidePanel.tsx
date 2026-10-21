@@ -11,7 +11,7 @@ import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
 import type { AreaKind, Layout, LineKind, PinPosition, StructureKind, TeeLevel, ToolMode } from "../types";
 import { refreshOsm } from "../state/osm";
 import { measureLidar } from "../state/lidar";
-import { yearsSince } from "../lib/lidar";
+import { saplings, yearsSince } from "../lib/lidar";
 import { getView } from "./MapViewport";
 import { structureIcon } from "./Toolbar";
 import { Button, Field, Section, Segmented, Slider, Stat, TextInput, Toggle } from "./ui";
@@ -108,7 +108,7 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
                 <div className="text-[11px] text-zinc-500">{(() => { const m = doc.lidar.minHeight ?? 0; const n = m ? doc.lidar.trees.filter(t => t[2] >= m).length : doc.lidar.trees.length; return `${n.toLocaleString()} of ${doc.lidar.trees.length.toLocaleString()} kept`; })()}</div>
                 <div className="mt-2" data-testid="lidar-grow">
                   <Slider label="Grown since the survey" min={0} max={25} step={1} value={doc.lidar.growYears ?? 0}
-                    format={v => (v ? `${v} year${v === 1 ? "" : "s"}` : "As measured")}
+                    format={v => (v ? `${v} year${v === 1 ? "" : "s"} · ${saplings(doc.lidar!.trees, v).length.toLocaleString()} new` : "As measured")}
                     onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, growYears: v || undefined } } : {}), false)} onDone={() => useCourse.getState().commit()} />
                   {yearsSince(doc.lidar.source) > 0 && (doc.lidar.growYears ?? 0) !== yearsSince(doc.lidar.source) && (
                     <button className="text-[12px] text-orange-300 hover:text-orange-200" onClick={() => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, growYears: yearsSince(d.lidar.source) } } : {}))} data-testid="grow-today">Grow to today ({yearsSince(doc.lidar.source)} years)</button>

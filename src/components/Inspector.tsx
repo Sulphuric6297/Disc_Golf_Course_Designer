@@ -34,7 +34,7 @@ const bendHole = (line: P[], side: 1 | -1): P[] => {
 /** A hole's number, typed in (kept on Enter or when the field is left; Esc puts it back). */
 function HoleNumberInput({ holeId, value }: { holeId: string; value: string }) {
   const [text, setText] = useState(value);
-  useEffect(() => setText(value), [value]);
+  useEffect(() => { setText(value); }, [value]);
   // (more than one number: "3/12")
   const keep = () => {
     const [first, ...more] = parseHoleNumbers(text);

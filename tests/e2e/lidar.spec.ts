@@ -4,7 +4,7 @@ import { createLazPerf } from "laz-perf";
 import { test, expect, addHole, importSite, course, editorState, screenOf, withLidar, SITE } from "./fixtures";
 import { createEmptyCourse, newHole } from "../../src/lib/course";
 import { getGeoBounds } from "../../src/lib/geo/core";
-import { emptyPoints, grownTree, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesOver, depthFor, type LazReader } from "../../src/lib/lidar";
+import { emptyPoints, grownTree, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesOver, depthFor, type LazReader } from "../../src/lib/lidar";
 import type { LidarTree } from "../../src/types";
 
 const FT = 3.28084;
@@ -164,4 +164,20 @@ plain("measured trees grown since the survey: small ones the most, tall ones har
   plainExpect(tall[2]).toBeLessThan(100);
   plainExpect(mid[3]).toBeGreaterThan(15);
   plainExpect(grownTree([0, 0, 40, 12, 1], 0)).toEqual([0, 0, 40, 12, 1]);
+});
+
+plain("saplings since the survey: none at once, more with the years, near the measured trees, fast and narrow (pure logic)", () => {
+  const woods: [number, number, number, number, 0 | 1][] = Array.from({ length: 200 }, (_, k) => [(k % 20) * 30, Math.floor(k / 20) * 30, 50, 15, 0]);
+  plainExpect(saplings(woods, 0)).toEqual([]);
+  const ten = saplings(woods, 10), twenty = saplings(woods, 20);
+  plainExpect(ten.length).toBeGreaterThan(10);
+  plainExpect(twenty.length).toBeGreaterThan(ten.length);
+  for (const s of ten) {
+    plainExpect(s[2]).toBeGreaterThanOrEqual(6);
+    plainExpect(s[2]).toBeLessThan(40);
+    plainExpect(s[3] / s[2]).toBeLessThan(15 / 50);
+    const near = woods.some(t => Math.hypot(t[0] - s[0], t[1] - s[1]) <= 15 * 2.4);
+    plainExpect(near).toBe(true);
+  }
+  plainExpect(saplings(woods, 10)).toEqual(ten);
 });

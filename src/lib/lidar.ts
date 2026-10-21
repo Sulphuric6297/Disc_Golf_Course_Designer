@@ -248,26 +248,57 @@ export const groundOnGrid = (m: { nx: number; ny: number; cell: number; ground: 
 /** A measured tree grown `years` years: each year it grows less the nearer it is to a tree's full
  * height (small trees fastest, about 2 to 2½ ft a year; tall ones hardly), its crown widening
  * with it. Conifers grow a little slower, and taller. */
-export const grownTree = (t: LidarTree, years: number): LidarTree => {
+export const grownTree = (t: LidarTree, years: number, young = false): LidarTree => {
   const [x, y, h0, r0, conifer] = t;
-  const full = conifer ? 120 : 100, fast = conifer ? 2.2 : 2.6;
+  // (a sapling shoots up faster and stays narrow: a crown fills out later)
+  const full = conifer ? 120 : 100, fast = (conifer ? 2.2 : 2.6) * (young ? 1.4 : 1), widen = young ? 0.55 : 0.8;
   let h = h0, r = r0;
   for (let i = 0; i < Math.round(years); i++) {
     const h2 = h + fast * Math.max(0, 1 - h / full) ** 1.5;
-    r *= (h2 / Math.max(1, h)) ** 0.8;
+    r *= (h2 / Math.max(1, h)) ** widen;
     h = h2;
   }
   return [x, y, Math.round(h * 10) / 10, Math.round(r * 10) / 10, conifer];
 };
 
+/** A number in [0, 1) from a tree's index and a salt: the same every time, so saplings stand
+ * where they stood (no library, no state). */
+const spread = (k: number, salt: number) => {
+  let n = (k + 1) * 2654435761 + salt * 40503;
+  n = Math.imul(n ^ (n >>> 15), 2246822519);
+  n = Math.imul(n ^ (n >>> 13), 3266489917);
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+};
+
+/** The trees the survey couldn't see that would stand `years` later: saplings that came up at
+ * the woods' edges and in their gaps (where the light gets in), one for a share of the measured
+ * trees rising with the years, each born some year since and grown from a 2 ft shoot, fast and
+ * narrow. Only those tall enough to count (6 ft) are returned. */
+export const saplings = (trees: LidarTree[], years: number): LidarTree[] => {
+  const out: LidarTree[] = [];
+  if (years < 2) return out;
+  const share = Math.min(0.45, years * 0.03);
+  trees.forEach((t, k) => {
+    if (spread(k, 1) >= share) return;
+    const [x, y, , r, conifer] = t;
+    const a = spread(k, 2) * Math.PI * 2, d = r * (1.1 + spread(k, 3) * 1.2);
+    const born = spread(k, 4) * (years - 1);
+    const g = grownTree([x + Math.cos(a) * d, y + Math.sin(a) * d, 2, 0.8, conifer], years - born, true);
+    if (g[2] >= 6) out.push([Math.round(g[0] * 10) / 10, Math.round(g[1] * 10) / 10, g[2], g[3], conifer]);
+  });
+  return out;
+};
+
 const grown = new WeakMap<LidarTree[], { years: number; out: LidarTree[] }>();
-/** The course's measured trees, grown as many years as it asks (the same list when none). */
+/** The course's measured trees, grown as many years as it asks (the same list when none), with
+ * the saplings that came up since after them (so the measured trees keep their places in the
+ * list: what was cut down or kept by index stays so). */
 export const grownTrees = (lidar: NonNullable<CourseDoc["lidar"]>) => {
   const years = lidar.growYears ?? 0;
   if (!years) return lidar.trees;
   const hit = grown.get(lidar.trees);
   if (hit?.years === years) return hit.out;
-  const out = lidar.trees.map(t => grownTree(t, years));
+  const out = [...lidar.trees.map(t => grownTree(t, years)), ...saplings(lidar.trees, years)];
   grown.set(lidar.trees, { years, out });
   return out;
 };
