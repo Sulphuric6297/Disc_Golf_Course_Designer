@@ -135,6 +135,9 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { view?.setPaintedPending(paintedOn && !painted); }, [view, paintedOn, painted]);
   // (and a sharper painting round the hole looked at, flown over or filmed)
   useEffect(() => { view?.setDetailPainter((holeId, maxPx) => paintedDetail(doc, holeId, maxPx)); }, [view, doc]);
+  // (the close-up doesn't need the whole map painted first: both at once, from the moment a tee
+  // view or flyover opens)
+  useEffect(() => { if (paintedOn && ed.teeView) void paintedDetail(doc, ed.teeView, 3072); }, [paintedOn, ed.teeView, doc]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
   const readOnly = useCourse(s => s.readOnly);
   useEffect(() => { view?.setReadOnly(readOnly); }, [view, readOnly]);
