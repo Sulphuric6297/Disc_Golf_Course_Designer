@@ -387,6 +387,29 @@ test.describe("phone", () => {
     await expect.poll(zoom).toBeGreaterThan(fit);
   });
 
+  test("a pinch on the Design preview while the map paints still ends (the painting goes in once the fingers lift)", async ({ page }) => {
+    await oneHole(page);
+    await nav(page).getByRole("button", { name: /Design/ }).tap();
+    await expect(page.getByTestId("design-page")).toBeVisible();
+    const painting = () => page.evaluate(() => (window as any).__dgPainting());
+    const zoom = async () => parseInt((await page.getByTestId("design-zoom").textContent()) ?? "0", 10);
+    const fit = await zoom();
+    const b = (await page.getByTestId("design-page").boundingBox())!;
+    const at = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    const fingers = (gap: number) => [{ x: at.x - gap / 2, y: at.y, id: 0 }, { x: at.x + gap / 2, y: at.y, id: 1 }];
+    const cdp = await page.context().newCDPSession(page);
+    // Two fingers down while it paints; the painting done while they rest; then the pinch
+    expect(await painting()).toBe(true);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: fingers(60) });
+    await expect.poll(painting, { timeout: 60_000 }).toBe(false);
+    for (let i = 1; i <= 10; i++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: fingers(60 + 12 * i) });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await cdp.detach();
+    await expect.poll(zoom).toBeGreaterThan(fit * 1.8);
+    // (and the new painting is shown then)
+    await expect(page.getByTestId("design-page").locator("image").first()).toBeAttached();
+  });
+
   test("the view from the tee on a phone: the hole's card, big buttons along the bottom, back to the map", async ({ page }) => {
     await oneHole(page);
     await tapPlan(page, 450, 500);
@@ -435,6 +458,9 @@ test.describe("phone on its side", () => {
     // A step brings the panel back
     await nav(page).getByRole("button", { name: /Holes/ }).tap();
     await expect(side).toBeVisible();
+    // (the map back at its width before the hole is tapped where it shows)
+    await expect.poll(mapW).toBeLessThan(w + 2);
+    await page.waitForTimeout(300);
     await tapPlan(page, 450, 500);
     await expect(side.getByTestId("inspector")).toBeVisible();
   });

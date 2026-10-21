@@ -42,6 +42,28 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
     return () => ro.disconnect();
   }, []);
 
+  // While a finger is on the page its picture stays as it is: a new painting put in under the finger
+  // takes away what it touched, and the gesture never hears the finger lift (a pinch stuck scaled)
+  const [held, setHeld] = useState<string | null>(null);
+  const htmlRef = useRef("");
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const down = () => {
+      const now = htmlRef.current;
+      setHeld(h => h ?? now);
+    };
+    const up = (e: TouchEvent) => { if (!e.touches.length) setHeld(null); };
+    el.addEventListener("touchstart", down, { passive: true });
+    window.addEventListener("touchend", up);
+    window.addEventListener("touchcancel", up);
+    return () => {
+      el.removeEventListener("touchstart", down);
+      window.removeEventListener("touchend", up);
+      window.removeEventListener("touchcancel", up);
+    };
+  }, []);
+
   // Pinching the page (a phone): scaled live, then drawn at the new zoom with the pinched spot kept
   const pageEl = useRef<HTMLDivElement>(null);
   const [pinchScale, setPinchScale] = useState<{ s: number; ox: number; oy: number } | null>(null);
@@ -281,6 +303,8 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
   const fit = Math.min((size.w - margin) / page.width, (size.h - margin) / page.height);
   const k = zoom ?? fit;
   kRef.current = k;
+  const html = page.svg.replace(/^<svg([^>]*?) width="[^"]*" height="[^"]*"/, `<svg$1 width="${page.width * k}" height="${page.height * k}"`);
+  htmlRef.current = html;
   const zb = compact ? "w-10 h-10 flex items-center justify-center rounded-xl active:bg-zinc-700 hover:bg-zinc-800" : "p-1.5 rounded hover:bg-zinc-800";
   const zoomGroup = (
     <div className="ml-auto flex items-center gap-1 text-zinc-300">
@@ -335,7 +359,7 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
               data-testid="design-page"
               className={`shadow-2xl bg-white ${editing ? "[&_[data-el]:not([data-el=map])]:cursor-pointer" : ""}`}
               style={{ width: page.width * k, height: page.height * k }}
-              dangerouslySetInnerHTML={{ __html: page.svg.replace(/^<svg([^>]*?) width="[^"]*" height="[^"]*"/, `<svg$1 width="${page.width * k}" height="${page.height * k}"`) }}
+              dangerouslySetInnerHTML={{ __html: held ?? html }}
             />
             {editing && <style>{`[data-testid=design-page] [data-label]{cursor:move}${designSel ? `[data-testid=design-page] ${designSel.startsWith("label:") ? `[data-label="${designSel.slice(6).replace(/"/g, "")}"]` : `[data-el="${designSel.replace(/"/g, "")}"]`}{cursor:move;touch-action:none}` : ""}`}</style>}
             {editing && designSel && selBox && (
