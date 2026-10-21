@@ -7,6 +7,7 @@ import { deleteRecent, newCourse, openCourseFile, openRecent, recentCourses, sav
 import type { PlanMeta } from "../lib/storage";
 import { AccountMenu, goHome } from "../auth/AccountMenu";
 import { useAllowed } from "../auth/perms";
+import { DemoNote } from "./DemoNote";
 import { SITE_TOKEN } from "../auth/PublicSite";
 import { SERVER } from "../auth/api";
 
@@ -105,7 +106,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
         </div>
         <button onClick={onGoTo} className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800" aria-label="Go to" title="Go to (Ctrl+K)" data-testid="goto-button"><Search size={18} /></button>
         <button onClick={onHelp} className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800" aria-label="Keyboard shortcuts and help" title="Shortcuts and help (?)"><HelpCircle size={18} /></button>
-        <AccountMenu />
+        {SERVER ? <AccountMenu /> : <DemoNote />}
       </div>
     </header>
   );

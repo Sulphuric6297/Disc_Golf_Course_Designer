@@ -1,0 +1,58 @@
+# HyzerLab on your own server: the app, its database, and a backup of the database every night.
+#   cp .env.example .env    # then fill it in
+#   docker compose up -d
+#   docker compose logs app # the setup code for the first account (the admin)
+# The app answers on 127.0.0.1:${PORT}; put it on the internet with a tunnel or a reverse proxy
+# (it must be reached over https: sign-in cookies need it).
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hyzerlab
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      POSTGRES_DB: hyzerlab
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hyzerlab"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    image: ghcr.io/sulphuric6297/hyzerlab:${HYZERLAB_VERSION:-latest}
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://hyzerlab:${DB_PASSWORD}@db:5432/hyzerlab
+      APP_SECRET: ${APP_SECRET:?set APP_SECRET in .env}
+      APP_ORIGINS: ${APP_ORIGINS:?set APP_ORIGINS in .env}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    ports:
+      - "127.0.0.1:${PORT:-8080}:8080"
+
+  # A dump of the database every night, the last 14 kept, in ./backups
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./backups:/backups
+    entrypoint: >
+      sh -c 'while true; do
+        pg_dump -h db -U hyzerlab hyzerlab | gzip > /backups/hyzerlab-$$(date +%F).sql.gz;
+        find /backups -name "hyzerlab-*.sql.gz" -mtime +14 -delete;
+        sleep 86400; done'
+
+volumes:
+  db:
