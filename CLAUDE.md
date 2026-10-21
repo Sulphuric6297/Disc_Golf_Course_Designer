@@ -48,6 +48,15 @@ design tools and the PDGA guidance the app follows.
   (changes), viewer (looks). Someone else's course answers 404. Each save names the version it
   was made from; an older one is refused (409, saying who saved). A course needs an owner; a
   removed person's courses that only they owned pass to the admin removing them.
+- Drafts and history (`server/src/routes/versions.ts`, `server/src/history.ts`): owners save
+  straight into the course; editors save into a draft of their own (`course_drafts`, with what it
+  started from). Publish merges the draft into the course as it is now (`src/lib/merge.ts`, three
+  ways, by hole, feature and layout id) and sends it with the version it merged with. With the
+  owner's switch on (`courses.approval`), editors send drafts (`course_submissions`) and the owner
+  accepts or declines. Every publish, restore and the owner's own changes every ten minutes go in
+  `course_versions`; before anything replaces the course, its current state goes there too.
+  Restoring makes a new version. Compare documents only in the app's own form (`normalizeCourse`
+  of `safeDoc`).
 - A course from the server is cleaned by `src/lib/safeDoc.ts` before it's shown (pictures must be
   image data URLs; only free text may hold < > " or `): parts of the map are built as markup
   from the course's values. Keep it in step when a new kind of text or picture field is added.
@@ -113,6 +122,7 @@ changes.
 | `design.spec.ts` | Map designer: themes, colors, title block, legend, hole table, contours, turning the map; the Forest painting (tree cover from sparse to dense, winding creeks and trails, light and shadow settings), basket marks (five kinds, legend, older courses), marking colors (map or PDGA: OB, hazard, casual, out of play), elevation (relief exaggeration, contour heights, hills on the painting), painted water (light rim and shallows, deep middle), tall grass (straw-colored tufts, its own color, in the legend), the page never freezing while the map paints, a phone's smaller preview, zoomed in with every edge of the page in reach; the printed map's and tee signs' contents |
 | `export.spec.ts` | Course map (SVG/PNG/PDF), tee signs, scorecard, GeoJSON, KML, GPX, CSV, stake-out list, parts list; hole by hole: a PDF page and a PNG per hole, one hole's PNG/SVG/GeoJSON (only its own features, plus the course's OB in play), the hole page's contents (pure logic) |
 | `video.spec.ts` | Flyover videos: recording a hole from the Export step (progress, a real WebM/MP4 that plays at the asked size and length), Cancel, going on when the step is left, Record over the flyover, the view from the tee holding still while a video records, the MediaRecorder fallback without WebCodecs (getting the next hole ready left out of the video), MP4 when H.264 can be encoded (stand-in encoder); codec levels and the frames of a recording (pure logic) |
+| `merge.spec.ts` | Putting a draft into a course that changed meanwhile: what only one side changed kept, both: the draft's (listed), removed holes, the photo never merged, what a draft changes counted (pure logic) |
 | `persistence.spec.ts` | Autosave restore, course files (painted the same when opened), New keeps the old course in Recent courses |
 | `lidar.spec.ts` | Trees and ground measured from the air (USGS LiDAR): reading a tile, each tree as tall and wide as it stands (conifers told apart), the ground; on import or from the Site step (Undo takes it back); trees on fairways, tees and baskets cut down, a stump to bring each back, a hole's Bring all back / Cut all down, a tree cut down from its right-click menu; flyovers keep clear of the trees standing |
 | `mobile.spec.ts` | Phones and tablets (device emulation, touch): opening a course file from the menu, the map's buttons above the panel (compass once turned), the selected hole's header stepping to the next hole, the step bar, the bottom sheet's three heights (drag, tap, keys), a hole and an area laid out with taps (Undo, Cancel, Done), the selection in the sheet, long-press menus (width squares never over the tee), pinch without placing, the app never scrolling as a whole, the Design preview fitted to the screen (a pinch while it paints still ends), the tee view, 44 px targets, a phone on its side (rail + panel), a tablet, and the desktop layout unchanged at 1600 × 1000 |

@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import { inputCls, Section } from "../components/ui";
 import { api, useAuth } from "./api";
-import { useServerCourse, type Role } from "./courses";
+import { setApproval, useServerCourse, type Role } from "./courses";
 import { Dialog, Form } from "./parts";
 
 interface Member { userId: string; username: string; displayName: string; role: Role }
 const ROLES: { value: Role; label: string }[] = [{ value: "viewer", label: "Viewer" }, { value: "editor", label: "Editor" }, { value: "owner", label: "Owner" }];
 
 export function ShareDialog({ onClose }: { onClose: () => void }) {
-  const { id, role } = useServerCourse();
+  const { id, role, approval } = useServerCourse();
   const me = useAuth(s => s.session!.user!);
   const [members, setMembers] = useState<Member[]>([]);
   const [people, setPeople] = useState<{ username: string; displayName: string }[]>([]);
@@ -52,6 +52,14 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
               </div>
               <datalist id="share-people">{others.map(p => <option key={p.username} value={p.username}>{p.displayName}</option>)}</datalist>
             </Form>
+          </Section>
+        )}
+        {owner && (
+          <Section title="Editors' changes">
+            <label className="flex items-center gap-2 text-sm text-zinc-200">
+              <input type="checkbox" checked={approval} onChange={e => void change(() => setApproval(e.target.checked))} data-testid="approval-toggle" />
+              Need my OK before they go in
+            </label>
           </Section>
         )}
         <Section title="Has it">

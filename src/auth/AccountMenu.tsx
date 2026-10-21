@@ -1,7 +1,7 @@
 // The account button in the top bar, with the open course's saving and Share (nothing in the
 // browser-only demo), and the same choices for the phone's app menu.
 import { useEffect, useRef, useState } from "react";
-import { LayoutGrid, LogOut, Share2, UserRound, Users } from "lucide-react";
+import { History, Inbox, LayoutGrid, LogOut, Send, Share2, UserRound, Users } from "lucide-react";
 import { SERVER, useAuth } from "./api";
 import { keepMine, reloadTheirs, saveNow, thumbnailNow, useServerCourse } from "./courses";
 
@@ -9,8 +9,9 @@ const signOut = async () => { await saveNow(); await useAuth.getState().signOut(
 
 /** Saving, view only, or someone else saved meanwhile. */
 function CourseStatus() {
-  const { status, role, conflict } = useServerCourse();
+  const { status, role, conflict, preview } = useServerCourse();
   const [ask, setAsk] = useState(false);
+  if (preview) return null;
   if (role === "viewer") return <span className="px-2 py-0.5 rounded-full bg-sky-900/60 text-sky-200 text-[12px] font-semibold" data-testid="view-only">View only</span>;
   if (status === "conflict") {
     return (
@@ -28,7 +29,9 @@ function CourseStatus() {
       </div>
     );
   }
-  const text = { saved: "Saved", saving: "Saving…", unsaved: "Saving…", error: "Can't save", conflict: "" }[status];
+  const text = role === "editor"
+    ? { saved: "Draft saved", saving: "Saving draft…", unsaved: "Saving draft…", error: "Can't save", conflict: "" }[status]
+    : { saved: "Saved", saving: "Saving…", unsaved: "Saving…", error: "Can't save", conflict: "" }[status];
   return <span className={`text-[12px] ${status === "error" ? "text-red-300" : "text-zinc-500"}`} data-testid="save-status">{text}</span>;
 }
 
@@ -36,7 +39,7 @@ function CourseStatus() {
 export function AccountMenu({ home = false }: { home?: boolean }) {
   const user = useAuth(s => s.session?.user);
   const open = useAuth(s => s.open);
-  const role = useServerCourse(s => s.role);
+  const { role, draft, approval, pending, preview, id: courseId } = useServerCourse();
   // (the course list covers the app: only its own menu then)
   const covered = useAuth(s => s.home) && !home;
   const [menu, setMenu] = useState(false);
@@ -59,7 +62,22 @@ export function AccountMenu({ home = false }: { home?: boolean }) {
         <LayoutGrid size={15} /> Courses
       </button>
     )}
-    {!home && role === "owner" && (
+    {!home && !preview && role === "editor" && draft && (
+      <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white" onClick={() => open("publish")} data-testid="publish-button">
+        <Send size={14} /> {approval ? "Send" : "Publish"}
+      </button>
+    )}
+    {!home && !preview && role === "owner" && pending > 0 && (
+      <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-semibold bg-amber-500/20 text-amber-200 hover:bg-amber-500/30" onClick={() => open("review")} data-testid="review-button">
+        <Inbox size={14} /> {pending} to review
+      </button>
+    )}
+    {!home && !preview && courseId && (role === "owner" || role === "editor") && (
+      <button className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800" aria-label="History" title="History" onClick={() => open("history")} data-testid="history-button">
+        <History size={18} />
+      </button>
+    )}
+    {!home && !preview && role === "owner" && (
       <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800 border border-zinc-700" onClick={() => open("share")} data-testid="share-button">
         <Share2 size={15} /> Share
       </button>
@@ -87,7 +105,14 @@ export function accountActions() {
   const { session, open } = useAuth.getState();
   const user = session?.user;
   if (!SERVER || !user) return [];
+  const c = useServerCourse.getState();
+  const work = c.preview ? [] : [
+    ...(c.role === "editor" && c.draft ? [{ label: c.approval ? "Send your changes" : "Publish your changes", icon: <Send size={19} />, run: () => open("publish") }] : []),
+    ...(c.role === "owner" && c.pending ? [{ label: `${c.pending} to review`, icon: <Inbox size={19} />, run: () => open("review") }] : []),
+    ...(c.id && (c.role === "owner" || c.role === "editor") ? [{ label: "History", icon: <History size={19} />, run: () => open("history") }] : [])
+  ];
   return [
+    ...work,
     { label: "Courses", icon: <LayoutGrid size={19} />, run: () => { useAuth.getState().showHome(true); void saveNow().then(thumbnailNow).then(() => useAuth.getState().bump()); } },
     { label: "Share", icon: <Share2 size={19} />, run: () => open("share") },
     { label: "Account", icon: <UserRound size={19} />, run: () => open("account") },
