@@ -5,6 +5,7 @@ import { api, useAuth } from "./api";
 import { BackupCodes, CopyButton, Form, Input, Screen } from "./parts";
 import { AccountDialog } from "./AccountDialog";
 import { PeopleDialog } from "./PeopleDialog";
+import { ShareDialog } from "./ShareDialog";
 
 const samePassword = (a: string, b: string) => { if (a !== b) throw new Error("The passwords don't match"); };
 
@@ -49,6 +50,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         {children}
         {dialog === "account" && <AccountDialog onClose={() => open(null)} />}
         {dialog === "people" && session.user.isAdmin && <PeopleDialog onClose={() => open(null)} />}
+        {dialog === "share" && <ShareDialog onClose={() => open(null)} />}
       </>
     );
   }

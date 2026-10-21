@@ -30,6 +30,7 @@ import { ExportProgressPill } from "../ExportProgress";
 import { ActionSheet, type SheetAction } from "./ActionSheet";
 import { BottomSheet, type Detent } from "./BottomSheet";
 import { accountActions } from "../../auth/AccountMenu";
+import { SERVER } from "../../auth/api";
 
 export type MenuInfo = { clientX: number; clientY: number; itemId: string | null; ground: P | null };
 
@@ -371,7 +372,7 @@ function AppMenu({ onClose, onHelp, onOpenFile }: { onClose: () => void; onHelp:
       <ActionSheet title={name} subtitle="Disc Golf Course Designer" actions={actions} onClose={onClose} testid="app-menu">
         {recent.length > 0 && (
           <div className="border-b border-white/5">
-            <div className="px-4 pt-2.5 pb-1 text-[12px] uppercase tracking-wider font-bold text-zinc-500">Recent courses</div>
+            <div className="px-4 pt-2.5 pb-1 text-[12px] uppercase tracking-wider font-bold text-zinc-500">{SERVER ? "Courses" : "Recent courses"}</div>
             <div className="flex gap-2 overflow-x-auto dg-noscrollbar px-4 pb-3 touch-pan-x">
               {recent.map(r => (
                 <div key={r.id} className="shrink-0 flex items-center bg-zinc-800 rounded-xl" data-testid="recent-course">

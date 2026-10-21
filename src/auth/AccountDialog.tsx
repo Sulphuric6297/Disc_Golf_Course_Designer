@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Section } from "../components/ui";
 import { api, useAuth } from "./api";
 import { BackupCodes, Dialog, Form, Input, when } from "./parts";
+import { saveNow } from "./courses";
 
 interface SessionRow { id: string; current: boolean; createdAt: string; lastSeenAt: string; ip: string | null; userAgent: string | null }
 
@@ -15,7 +16,7 @@ const device = (ua: string | null) => {
 };
 
 export function AccountDialog({ onClose }: { onClose: () => void }) {
-  const { session, load, signOut } = useAuth();
+  const { session, load } = useAuth();
   const user = session!.user!;
   const [name, setName] = useState(user.displayName);
   const [list, setList] = useState<{ sessions: SessionRow[]; backupCodesLeft: number } | null>(null);
@@ -73,7 +74,7 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
               </li>
             ))}
           </ul>
-          <button className="mt-4 text-sm text-red-300 hover:text-red-200" onClick={() => void signOut()} data-testid="sign-out">Sign out</button>
+          <button className="mt-4 text-sm text-red-300 hover:text-red-200" onClick={() => void saveNow().then(() => useAuth.getState().signOut())} data-testid="sign-out">Sign out</button>
         </Section>
       </div>
     </Dialog>

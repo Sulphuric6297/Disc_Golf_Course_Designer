@@ -12,6 +12,7 @@ import { loadAuth, type Auth } from "./sessions.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { meRoutes } from "./routes/me.js";
+import { courseRoutes } from "./routes/courses.js";
 
 declare module "fastify" {
   interface FastifyRequest { auth: Auth | null }
@@ -77,8 +78,9 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
   });
 
   app.setErrorHandler((err, req, reply) => {
-    if (err instanceof ApiError) return reply.status(err.status).send({ error: err.message });
+    if (err instanceof ApiError) return reply.status(err.status).send({ ...err.extra, error: err.message });
     const e = err as { statusCode?: number; code?: string };
+    if (e.statusCode === 413) return reply.status(413).send({ error: "Too big to save" });
     if (e.statusCode === 429) return reply.status(429).send({ error: "Too many tries. Wait a minute" });
     if (e.code === "23505") return reply.status(409).send({ error: "That's taken" });
     if (e.statusCode && e.statusCode < 500) return reply.status(e.statusCode).send({ error: "Invalid request" });
@@ -89,6 +91,7 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
   await app.register(async a => authRoutes(a, ctx));
   await app.register(async a => adminRoutes(a, ctx));
   await app.register(async a => meRoutes(a, ctx));
+  await app.register(async a => courseRoutes(a, ctx));
   app.get("/api/health", async () => ({ ok: true }));
   app.all("/api/*", async () => { throw new ApiError(404, "Not found"); });
 

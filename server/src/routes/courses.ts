@@ -1,0 +1,157 @@
+// Courses on the server, and sharing them. Everyone sees only the courses they're a member of:
+// viewers look, editors change, owners also share and delete. Someone else's course answers
+// "not found", the same as one that doesn't exist.
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import { z } from "zod";
+import type { Ctx } from "../app.js";
+import { ApiError, audit, need, parse } from "../http.js";
+
+export type Role = "owner" | "editor" | "viewer";
+const RANK: Record<Role, number> = { viewer: 1, editor: 2, owner: 3 };
+
+/** A course document: what the server needs of it; the rest is kept as sent. */
+const courseDoc = z.looseObject({
+  name: z.string().max(200),
+  holes: z.array(z.unknown()).max(500),
+  items: z.array(z.unknown()).max(50_000)
+});
+// (the aerial photo: an image as a data URL, nothing else)
+const IMAGE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/;
+const BIG = { bodyLimit: 64 << 20 };
+
+type Id = { Params: { id: string } };
+const ids = z.object({ id: z.uuid("Not found") });
+
+export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
+  /** Your role on the course, at least `min`: else not found (or not allowed, for a member). */
+  const role = async (req: FastifyRequest, courseId: string, min: Role) => {
+    const a = need(req);
+    const [m] = await sql`select role from course_members where course_id = ${courseId} and user_id = ${a.user.id}`;
+    if (!m) throw new ApiError(404, "Not found");
+    if (RANK[m.role as Role] < RANK[min]) throw new ApiError(403, min === "owner" ? "Only an owner can do that" : "View only");
+    return { a, role: m.role as Role };
+  };
+  // (what's stored: the document without its photo, which is kept apart)
+  const stored = (doc: z.infer<typeof courseDoc>) => ({ ...doc, background: null });
+
+  app.get("/api/courses", async req => {
+    const a = need(req);
+    const rows = await sql`
+      select c.id, c.name, c.holes, c.version, c.updated_at, m.role, u.display_name as updated_by
+      from course_members m join courses c on c.id = m.course_id left join users u on u.id = c.updated_by
+      where m.user_id = ${a.user.id} order by c.updated_at desc`;
+    return rows.map(r => ({ id: r.id, name: r.name, holes: r.holes, version: r.version, updatedAt: r.updated_at, role: r.role, updatedBy: r.updated_by }));
+  });
+
+  app.post("/api/courses", BIG, async req => {
+    const a = need(req);
+    const { doc } = parse(z.object({ doc: courseDoc }), req.body);
+    const course = await sql.begin(async tx => {
+      const [c] = await tx`
+        insert into courses (name, holes, doc, created_by, updated_by)
+        values (${doc.name}, ${doc.holes.length}, ${tx.json(stored(doc) as never)}, ${a.user.id}, ${a.user.id}) returning id, version`;
+      await tx`insert into course_members (course_id, user_id, role) values (${c.id}, ${a.user.id}, 'owner')`;
+      return c;
+    });
+    await audit(sql, req, "course.created", { course: course.id, name: doc.name });
+    return { id: course.id, version: course.version, role: "owner" };
+  });
+
+  app.get<Id>("/api/courses/:id", async req => {
+    const { id } = parse(ids, req.params);
+    const { role: r } = await role(req, id, "viewer");
+    const [c] = await sql`select c.doc, c.version, exists (select 1 from course_backgrounds b where b.course_id = c.id) as has_background from courses c where c.id = ${id}`;
+    return { id, version: c.version, role: r, doc: c.doc, hasBackground: c.has_background };
+  });
+
+  app.put<Id>("/api/courses/:id", BIG, async req => {
+    const { id } = parse(ids, req.params);
+    const { a } = await role(req, id, "editor");
+    const b = parse(z.object({ doc: courseDoc, version: z.number().int() }), req.body);
+    const [done] = await sql`
+      update courses set doc = ${sql.json(stored(b.doc) as never)}, name = ${b.doc.name}, holes = ${b.doc.holes.length},
+        version = version + 1, updated_by = ${a.user.id}, updated_at = now()
+      where id = ${id} and version = ${b.version} returning version`;
+    if (!done) {
+      const [c] = await sql`select c.version, u.display_name from courses c left join users u on u.id = c.updated_by where c.id = ${id}`;
+      throw new ApiError(409, `${c.display_name ?? "Someone"} saved this course since you opened it`, { version: c.version });
+    }
+    return { version: done.version };
+  });
+
+  app.delete<Id>("/api/courses/:id", async req => {
+    const { id } = parse(ids, req.params);
+    await role(req, id, "owner");
+    const [c] = await sql`delete from courses where id = ${id} returning name`;
+    await audit(sql, req, "course.deleted", { course: id, name: c.name });
+    return { ok: true };
+  });
+
+  // --- The aerial photo
+  app.get<Id>("/api/courses/:id/background", async req => {
+    const { id } = parse(ids, req.params);
+    await role(req, id, "viewer");
+    const [b] = await sql`select data from course_backgrounds where course_id = ${id}`;
+    return { data: b?.data ?? null };
+  });
+
+  app.put<Id>("/api/courses/:id/background", BIG, async req => {
+    const { id } = parse(ids, req.params);
+    await role(req, id, "editor");
+    const { data } = parse(z.object({ data: z.string().max(60 << 20).regex(IMAGE, "Not an image").nullable() }), req.body);
+    if (data === null) await sql`delete from course_backgrounds where course_id = ${id}`;
+    else await sql`insert into course_backgrounds (course_id, data) values (${id}, ${data}) on conflict (course_id) do update set data = excluded.data, updated_at = now()`;
+    return { ok: true };
+  });
+
+  // --- Sharing
+  app.get<Id>("/api/courses/:id/members", async req => {
+    const { id } = parse(ids, req.params);
+    await role(req, id, "viewer");
+    const rows = await sql`
+      select u.id, u.username, u.display_name, m.role from course_members m join users u on u.id = m.user_id
+      where m.course_id = ${id} order by case m.role when 'owner' then 0 when 'editor' then 1 else 2 end, lower(u.username)`;
+    return rows.map(r => ({ userId: r.id, username: r.username, displayName: r.display_name, role: r.role }));
+  });
+
+  /** Would the course still have an owner without this person as one? */
+  const ownersBesides = async (courseId: string, userId: string) => {
+    const [{ n }] = await sql`select count(*)::int as n from course_members where course_id = ${courseId} and role = 'owner' and user_id <> ${userId}`;
+    return n;
+  };
+
+  app.post<Id>("/api/courses/:id/members", async req => {
+    const { id } = parse(ids, req.params);
+    await role(req, id, "owner");
+    const b = parse(z.object({ username: z.string().trim().max(64), role: z.enum(["owner", "editor", "viewer"]) }), req.body);
+    const [u] = await sql`select id, username from users where lower(username) = lower(${b.username}) and not disabled`;
+    if (!u) throw new ApiError(404, "No one by that username");
+    if (b.role !== "owner" && !(await ownersBesides(id, u.id))) throw new ApiError(400, "A course needs an owner");
+    await sql`insert into course_members (course_id, user_id, role) values (${id}, ${u.id}, ${b.role}) on conflict (course_id, user_id) do update set role = excluded.role`;
+    await audit(sql, req, "course.shared", { course: id, username: u.username, role: b.role });
+    return { ok: true };
+  });
+
+  app.delete<{ Params: { id: string; userId: string } }>("/api/courses/:id/members/:userId", async req => {
+    const { id, userId } = parse(z.object({ id: z.uuid("Not found"), userId: z.uuid("Not found") }), req.params);
+    const a = need(req);
+    // (owners take anyone off; anyone can leave)
+    if (userId !== a.user.id) await role(req, id, "owner");
+    else await role(req, id, "viewer");
+    if (!(await ownersBesides(id, userId))) {
+      const [m] = await sql`select role from course_members where course_id = ${id} and user_id = ${userId}`;
+      if (m?.role === "owner") throw new ApiError(400, "A course needs an owner");
+    }
+    const gone = await sql`delete from course_members where course_id = ${id} and user_id = ${userId} returning user_id`;
+    if (!gone.length) throw new ApiError(404, "Not found");
+    await audit(sql, req, "course.unshared", { course: id, user: userId });
+    return { ok: true };
+  });
+
+  // Who a course can be shared with
+  app.get("/api/people", async req => {
+    need(req);
+    const rows = await sql`select username, display_name from users where not disabled order by lower(username)`;
+    return rows.map(r => ({ username: r.username, displayName: r.display_name }));
+  });
+}

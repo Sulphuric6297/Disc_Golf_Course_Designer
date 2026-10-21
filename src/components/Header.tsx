@@ -6,6 +6,7 @@ import { changeDoc, useCourse, useEditor } from "../state/course";
 import { deleteRecent, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../state/files";
 import type { PlanMeta } from "../lib/storage";
 import { AccountMenu } from "../auth/AccountMenu";
+import { SERVER } from "../auth/api";
 
 const Logo = () => (
   <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden>
@@ -54,7 +55,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
               <button className={item} role="menuitem" onClick={() => { setMenu(false); fileRef.current?.click(); }}><FolderOpen size={15} /> Open a course file…</button>
               <button className={item} role="menuitem" onClick={() => { setMenu(false); saveCourseFile(); }}><Save size={15} /> Save as a file</button>
               <div className="border-t border-zinc-800 my-1" />
-              <div className="px-3 py-1 text-[10px] uppercase tracking-wider font-bold text-zinc-500">Recent courses</div>
+              <div className="px-3 py-1 text-[10px] uppercase tracking-wider font-bold text-zinc-500">{SERVER ? "Courses" : "Recent courses"}</div>
               {recent.length === 0 && <div className="px-3 py-1.5 text-xs text-zinc-500">None yet.</div>}
               {recent.map(r => (
                 <div key={r.id} className="flex items-center hover:bg-zinc-800" data-testid="recent-course">

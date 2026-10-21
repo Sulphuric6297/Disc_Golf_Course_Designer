@@ -8,7 +8,7 @@ export class ApiFail extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-export async function api<T = unknown>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<T> {
+export async function api<T = unknown>(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`./api/${path}`, {
     method,
     credentials: "same-origin",
@@ -24,7 +24,7 @@ export type Stage = "mfa" | "mfa-setup" | "full";
 export interface User { id: string; username: string; displayName: string; isAdmin: boolean; totpEnabled: boolean }
 export interface Session { needsSetup: boolean; stage: Stage | null; user: User | null }
 
-type Dialog = null | "account" | "people";
+type Dialog = null | "account" | "people" | "share";
 
 export const useAuth = create<{
   session: Session | null;
