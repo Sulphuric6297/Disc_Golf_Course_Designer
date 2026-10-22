@@ -100,7 +100,14 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
   expect(share(await lightness())).toBeGreaterThan(share(dense) + 0.2);
   // One undo step brings the thick woods back
   await page.keyboard.press("Control+z");
-  await expect.poll(async () => (await course(page)).style.treeCover).toBe(1);
+  await expect.poll(async () => (await course(page)).style.treeCover).toBe(1);  // Natural treetops (the 3D trees as seen from above) repaint it; Classic again is as it was
+  const classic = await painting.getAttribute("href");
+  const tops = page.getByTestId("forest-options").getByRole("radiogroup", { name: "Treetops" });
+  await tops.getByRole("radio", { name: "Natural" }).click();
+  await expect.poll(async () => (await course(page)).style.treeLook).toBe("natural");
+  await expect.poll(async () => painting.getAttribute("href")).not.toBe(classic);
+  await tops.getByRole("radio", { name: "Classic" }).click();
+  await expect.poll(async () => (await course(page)).style.treeLook).toBeUndefined();
 });
 
 test("light and shadow: the sun, shadows and brightness repaint the Forest map, and Reset brings them back", async ({ page }) => {

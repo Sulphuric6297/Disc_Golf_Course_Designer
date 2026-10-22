@@ -656,15 +656,61 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       stamp(cx + Math.cos(a) * d, cy + Math.sin(a) * d, r, (R * 1.25 + r * 0.4 - d * 0.3) * tall, t);
     }
   };
+  // Natural treetops (as the 3D trees look from above): a broadleaf's crown is leaf clusters at
+  // the ends of its limbs, the middle highest and gaps between them where the floor shows; a
+  // pine is tiers of boughs, each a star a little smaller and higher than the one below it
+  const natural = s.treeLook === "natural";
+  const leafy = (cx: number, cy: number, R: number, top: number, t: number, clusters = 0) => {
+    const tr = seeded(Math.round(cx * 7.3 + cy * 13.1) ^ 0x2c1b3c6d);
+    const n = clusters || 5 + Math.round(tr() * 3 + Math.min(4, R / crownR));
+    const turn = tr() * Math.PI * 2;
+    stamp(cx + (tr() - 0.5) * R * 0.15, cy + (tr() - 0.5) * R * 0.15, R * 0.4, top, t);
+    for (let j = 0; j < n; j++) {
+      const a = turn + (j / n) * Math.PI * 2 + (tr() - 0.5) * 0.7;
+      const d = R * (0.4 + tr() * 0.28);
+      const r = R * (0.27 + tr() * 0.17);
+      stamp(cx + Math.cos(a) * d, cy + Math.sin(a) * d, r, top - d * 0.45 - tr() * r * 0.3, t);
+    }
+  };
+  const whorls = (cx: number, cy: number, R: number, top: number, t: number) => {
+    const x0 = Math.max(0, Math.floor(cx - R * 1.05)), x1 = Math.min(W - 1, Math.ceil(cx + R * 1.05));
+    const y0 = Math.max(0, Math.floor(cy - R * 1.05)), y1 = Math.min(H - 1, Math.ceil(cy + R * 1.05));
+    const boughs = 7 + (t % 3), turn = t * 1.7;
+    const tiers = R > crownR * 0.9 ? 3 : 2;
+    for (let y = y0; y <= y1; y++) {
+      const dy = y + 0.5 - cy, tr = (y & 511) << 9;
+      for (let x = x0, i = y * W + x0; x <= x1; x++, i++) {
+        const dx = x + 0.5 - cx;
+        const a = Math.atan2(dy, dx), d = Math.sqrt(dx * dx + dy * dy);
+        const grain = 0.88 + LEAF[tr | (x & 511)] * 0.24;
+        let best = 0;
+        for (let k = 0; k < tiers; k++) {
+          // (each tier turned a little from the one below, its boughs sharper at the tips)
+          const rk = R * (1 - k * (0.62 / tiers));
+          const reach = rk * (0.5 + 0.5 * Math.pow(Math.abs(Math.cos(((a + turn + k * 0.55) * boughs) / 2)), 1.6)) * grain;
+          if (d >= reach) continue;
+          const h = top - R * 1.1 * (1 - k / tiers) - R * 0.5 * (d / reach) + R * 0.25;
+          if (h > best) best = h;
+        }
+        if (best > height[i]) { height[i] = best; kind[i] = t; }
+      }
+    }
+  };
   const rnd = seeded(idSeed(doc.seed ?? doc.id ?? doc.name) ^ 0x5bd1e995);
   // Stratified at random (no grid shows): one or two treetops in each small square, all sizes.
   // Sparse woods keep fewer, in clumps, and the trees stand bigger on their own.
-  const stepPx = crownR * 1.15;
+  // (natural: trees at about their real size and spacing, as the 3D woods stand, about 15 ft
+  // apart and 14 to 30 ft across, never smaller than the classic treetops; the landscape's share
+  // of pines. Their shadows as long as the classic treetops' are: a map, not a photo at sunset)
+  const realStep = 15 * k, realR = (f: number) => Math.max(crownR * 0.9, (7 + f * 8) * k);
+  const realTop = (r: number) => crownR * (1.9 + rnd() * 0.9) + r * 0.35;
+  const stepPx = natural ? Math.max(crownR * 1.15, realStep) : crownR * 1.15;
+  const pineShare = natural ? landscapeOf(s).conifers : pines;
   const grow = 1 + (1 - cover) * 0.7;
   for (let gy = -stepPx; gy < H + stepPx && !opts.under; gy += stepPx) {
     yield 0.15 + 0.35 * ((gy + stepPx) / (H + 2 * stepPx));
     for (let gx = -stepPx; gx < W + stepPx; gx += stepPx) {
-      const n = rnd() < 0.5 ? 2 : 1;
+      const n = natural ? 1 : rnd() < 0.5 ? 2 : 1;
       for (let j = 0; j < n; j++) {
         const x = gx + rnd() * stepPx, y = gy + rnd() * stepPx;
         const mx = Math.min(mw - 1, Math.max(0, Math.floor(x / cell))), my = Math.min(mh - 1, Math.max(0, Math.floor(y / cell)));
@@ -674,8 +720,14 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
           if (rnd() > (Math.pow(cover, 2.5) * (0.15 + 1.85 * clump)) / (grow * grow)) continue;
         }
         const u = rnd();
-        const r = crownR * (0.45 + u * u * 1.35) * grow;
         const t = 1 + Math.floor(rnd() * 6);
+        if (natural) {
+          const r = realR(u) * grow;
+          if (rnd() < pineShare) whorls(x, y, r * 0.62, realTop(r) * 1.15, t);
+          else leafy(x, y, r, realTop(r), t);
+          continue;
+        }
+        const r = crownR * (0.45 + u * u * 1.35) * grow;
         if (rnd() < pines) pine(x, y, r * 0.95, r * (2.2 + rnd() * 0.9), t);
         else if (cover < 0.75 && rnd() < (0.75 - cover) * 0.8) clumpTree(x, y, r * 1.5, t);
         else stamp(x, y, r, r * (1.9 + rnd() * 0.9), t);
@@ -690,8 +742,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     if (sp.x < -r || sp.y < -r || sp.x > W + r || sp.y > H + r) continue;
     const top = Math.max(r * 1.2, (t.height ?? t.radius * 2.6) * k);
     const tone = 1 + (idSeed(t.id) % 6);
-    if (t.treeType === "conifer") pine(sp.x, sp.y, r, top, tone);
-    else if (t.treeType === "bush") stamp(sp.x, sp.y, r, Math.min(top, r * 1.1), tone);
+    if (t.treeType === "conifer") (natural ? whorls : pine)(sp.x, sp.y, r, top, tone);
+    else if (t.treeType === "bush") natural ? leafy(sp.x, sp.y, r, Math.min(top, r * 1.1), tone, 4) : stamp(sp.x, sp.y, r, Math.min(top, r * 1.1), tone);
+    else if (natural) leafy(sp.x, sp.y, r, top, tone);
     else if (r > crownR * 1.4) clumpTree(sp.x, sp.y, r, tone, top);
     else stamp(sp.x, sp.y, r, top, tone);
   }

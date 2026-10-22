@@ -465,6 +465,9 @@ export interface MapStyle {
   forest: "everywhere" | "photo" | "woods";
   /** Forest style: how thick the woods are, from a few scattered clumps (0.1) to solid canopy (1). */
   treeCover: number;
+  /** Forest style: the treetops as painted maps have them (unset), or natural ones, as the 3D
+   * trees are seen from above: leaf clusters with gaps between, pines in tiers of boughs. */
+  treeLook?: "classic" | "natural";
   /** What the land is like (lib/landscapes): its natural colors in 3D, and on the painted map
    * when picked. Unset: a wooded park. */
   landscape?: "woods" | "park" | "pines" | "dry" | "autumn" | "desert";

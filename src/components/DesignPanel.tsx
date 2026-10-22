@@ -151,6 +151,9 @@ export function DesignPanel() {
             <Segmented label="Woods" value={s.forest} onChange={v => setStyle({ forest: v })} options={[{ value: "photo", label: "From the photo" }, { value: "everywhere", label: "Everywhere" }, { value: "woods", label: "Drawn only" }]} />
           </Field>
           <TreeCover value={s.treeCover ?? 1} />
+          <Field label="Treetops" hint="Classic, as painted park maps have them, or natural: the 3D trees as seen from above.">
+            <Segmented label="Treetops" value={s.treeLook ?? "classic"} onChange={v => setStyle({ treeLook: v === "classic" ? undefined : v })} options={[{ value: "classic", label: "Classic" }, { value: "natural", label: "Natural" }]} />
+          </Field>
         </div>
       </Section>
       <PageSection />
