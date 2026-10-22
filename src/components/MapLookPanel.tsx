@@ -1,12 +1,15 @@
 // The Design step's map style: pick one of the styles, then change any part of the map on its own
-// (its trees, grass, fairways, paths and roads, water and light). A part changed shows a dot, and
-// the style card says "Mixed"; each part goes back to its style's own in one click.
+// (the landscape it shows, its trees, grass, fairways, paths and roads, water and light). A part
+// changed shows a dot, and the style card says "Mixed"; each part goes back to its style's own in
+// one click. (The landscape is the course's, not the style's: kept when the style changes.)
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight, RotateCcw } from "lucide-react";
+import { LANDSCAPES, type LandscapeId } from "../lib/landscapes";
 import { LIGHT_MODES, LOOK_THEMES, PART_CHOICES, compassName, latitudeOf, lightOf, lookParts, partChanged, sunArc, sunFromOf, themeOf, type LookPart, type LookParts } from "../lib/mapLook";
 import { useCourse } from "../state/course";
 import type { MapStyle, PathTier } from "../types";
-import { setStyle } from "./DesignPanel";
+import { setStyle, WoodsOptions } from "./DesignPanel";
+import { StylePicker } from "./LandscapePicker";
 import { Segmented, Slider } from "./ui";
 
 /** A slider that changes the map when let go (painting takes a moment). */
@@ -65,13 +68,15 @@ function PathOrder({ s }: { s: MapStyle }) {
   );
 }
 
-const PART_LABEL: Record<LookPart | "light", string> = { trees: "Trees", grass: "Grass", fairway: "Fairways", paths: "Paths and roads", water: "Water", light: "Light and shadow" };
+type Part = LookPart | "light" | "landscape";
+const PART_LABEL: Record<Part, string> = { landscape: "Landscape", trees: "Trees", grass: "Grass", fairway: "Fairways", paths: "Paths and roads", water: "Water", light: "Light and shadow" };
 
 export function MapLookPanel() {
   const s = useCourse(c => c.doc.style);
-  const [open, setOpen] = useState<LookPart | "light" | null>(null);
+  // (the landscape open to start with: the first thing to pick)
+  const [open, setOpen] = useState<Part | null>("landscape");
   const theme = themeOf(s), parts = lookParts(s), lt = lightOf(s);
-  const mixed = (Object.keys(PART_LABEL) as (LookPart | "light")[]).some(p => (p === "light" ? !!s.lightMode || s.goldenSun !== undefined : partChanged(s, p)));
+  const mixed = (Object.keys(PART_LABEL) as Part[]).some(p => p !== "landscape" && (p === "light" ? !!s.lightMode || s.goldenSun !== undefined : partChanged(s, p)));
   /** One part's setting changed (kept apart from its style's own). */
   const setPart = <K extends LookPart>(part: K, patch: Partial<LookParts[K]>) => setStyle({ lookParts: { ...s.lookParts, [part]: { ...s.lookParts?.[part], ...patch } } });
   const resetPart = (part: LookPart | "light") => {
@@ -81,8 +86,8 @@ export function MapLookPanel() {
     setStyle({ lookParts: Object.keys(own).length ? own : undefined, ...(part === "paths" ? { pathOrder: undefined } : {}) });
   };
   const pickTheme = (id: string) => setStyle({ mapLook: id === "classic" ? undefined : (id as MapStyle["mapLook"]), lookParts: undefined, lightMode: undefined, goldenSun: undefined });
-  const current = (p: LookPart | "light") => (p === "light" ? LIGHT_MODES.find(m => m.id === lt.mode)!.label : (PART_CHOICES[p] as { id: string; label: string }[]).find(c => c.id === parts[p].style)?.label ?? "");
-  const changed = (p: LookPart | "light") => (p === "light" ? !!s.lightMode || s.goldenSun !== undefined || s.sunFrom !== undefined : partChanged(s, p) || (p === "paths" && !!s.pathOrder));
+  const current = (p: Part) => (p === "landscape" ? LANDSCAPES[(s.landscape ?? "woods") as LandscapeId]?.label ?? "" : p === "light" ? LIGHT_MODES.find(m => m.id === lt.mode)!.label : (PART_CHOICES[p] as { id: string; label: string }[]).find(c => c.id === parts[p].style)?.label ?? "");
+  const changed = (p: Part) => (p === "landscape" ? false : p === "light" ? !!s.lightMode || s.goldenSun !== undefined || s.sunFrom !== undefined : partChanged(s, p) || (p === "paths" && !!s.pathOrder));
   const base = import.meta.env.BASE_URL;
 
   return (
@@ -106,7 +111,7 @@ export function MapLookPanel() {
         <div className="text-xs font-semibold text-zinc-400">Parts of the map</div>
         {mixed && <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => pickTheme(theme.id)}><RotateCcw size={12} /> Reset all</button>}
       </div>
-      {(Object.keys(PART_LABEL) as (LookPart | "light")[]).map(p => {
+      {(Object.keys(PART_LABEL) as Part[]).map(p => {
         const isOpen = open === p;
         return (
           <div key={p} className="rounded-lg bg-zinc-800/70 mb-1.5" data-testid={`look-part-${p}`}>
@@ -118,7 +123,13 @@ export function MapLookPanel() {
             </button>
             {isOpen && (
               <div className="px-2.5 pb-3">
-                {p === "light" ? (
+                {p === "landscape" ? (
+                  <>
+                    <StylePicker />
+                    <WoodsOptions s={s} />
+                    <div className="text-[11px] text-zinc-500 mt-2">Also the 3D view's grass and trees.</div>
+                  </>
+                ) : p === "light" ? (
                   <>
                     <Segmented label="Light" value={lt.mode} onChange={v => setStyle({ lightMode: v })} options={LIGHT_MODES.map(m => ({ value: m.id, label: m.label }))} />
                     <div className="h-2" />
@@ -156,7 +167,7 @@ export function MapLookPanel() {
                     {p === "paths" && <PathOrder s={s} />}
                   </>
                 )}
-                {changed(p) && <button className="mt-2 text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => resetPart(p)}><RotateCcw size={12} /> Back to the style's own</button>}
+                {p !== "landscape" && changed(p) && <button className="mt-2 text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => resetPart(p)}><RotateCcw size={12} /> Back to the style's own</button>}
               </div>
             )}
           </div>

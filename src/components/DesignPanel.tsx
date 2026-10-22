@@ -11,7 +11,6 @@ import { holeLabel } from "../lib/course";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { AREA_KINDS } from "../constants";
 import { RESTRICTED } from "../lib/symbols";
-import { StylePicker } from "./LandscapePicker";
 import { MapLookPanel } from "./MapLookPanel";
 import { useEffect, useRef, useState } from "react";
 import type { MapStyle, PaperSize, SignSettings } from "../types";
@@ -45,6 +44,18 @@ export function StyleSlider<K extends keyof MapStyle>({ k, value, label, min, ma
 const TreeCover = ({ value }: { value: number }) => (
   <StyleSlider k="treeCover" value={value} label="Tree cover" min={0.1} max={1} step={0.05} format={x => `${x < 0.35 ? "Sparse" : x < 0.7 ? "Open woods" : x < 0.95 ? "Thick" : "Dense"} · ${Math.round(x * 100)}%`} />
 );
+
+/** Where the painted map has woods, and how thick (the map style's Landscape part). */
+export function WoodsOptions({ s }: { s: MapStyle }) {
+  return (
+    <div className="mt-3" data-testid="forest-options">
+      <Field label="Where to paint the woods">
+        <Segmented label="Woods" value={s.forest} onChange={v => setStyle({ forest: v })} options={[{ value: "photo", label: "From the photo" }, { value: "everywhere", label: "Everywhere" }, { value: "woods", label: "Drawn only" }]} />
+      </Field>
+      <TreeCover value={s.treeCover ?? 1} />
+    </div>
+  );
+}
 
 export const FROM = ["top", "top right", "right", "bottom right", "bottom", "bottom left", "left", "top left"];
 export const signed = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.round(Math.abs(x) * 100)}%`;
@@ -144,15 +155,6 @@ export function DesignPanel() {
       <PageElementPanel />
       <Section title="Map style" testid="map-style">
         <MapLookPanel />
-      </Section>
-      <Section title="Landscape" testid="themes">
-        <StylePicker />
-        <div className="mt-3" data-testid="forest-options">
-          <Field label="Where to paint the woods">
-            <Segmented label="Woods" value={s.forest} onChange={v => setStyle({ forest: v })} options={[{ value: "photo", label: "From the photo" }, { value: "everywhere", label: "Everywhere" }, { value: "woods", label: "Drawn only" }]} />
-          </Field>
-          <TreeCover value={s.treeCover ?? 1} />
-        </div>
       </Section>
       <PageSection />
       <LightAndShadow s={s} />
