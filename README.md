@@ -79,11 +79,28 @@ npm run check      # typecheck, build and the full test suite
 npm run look       # screenshots of the main screens into look/
 ```
 
-## Your own server (in progress)
+## Your own server (HyzerLab)
 
-HyzerLab can also run on your own server, for a group that works on courses together. It is
-invite-only: you're the admin, and you invite everyone else with a link. Two-factor sign-in is
-required for everyone. The server is in `server/`; a ready-to-run container is coming.
+The demo keeps courses in your browser. On your own server, HyzerLab adds what a group needs:
+
+- accounts, invite-only, with two-factor sign-in for everyone (you're the admin);
+- courses kept on the server, shared as owner, editor or viewer (and what each viewer sees);
+- drafts that editors publish (or send for your OK), and a history to go back to;
+- comments pinned on the map, with replies and mentions;
+- public course pages, with what each link shows (the map, 3D, tee signs, scorecard…);
+- several courses on one park's map.
+
+To run it (Docker):
+
+```
+cp .env.example .env          # and fill it in (openssl rand -base64 32 for the secrets)
+docker compose up -d
+docker compose logs app       # the setup code for the first account, the admin
+```
+
+Then open it (over https: a tunnel or a reverse proxy in front of `127.0.0.1:8080`), enter the
+setup code, and set up two-factor sign-in. The database is backed up every night into
+`./backups` (the last 14 kept). New versions: `docker compose pull && docker compose up -d`.
 
 ## Hosting on GitHub Pages
 

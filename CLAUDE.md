@@ -83,6 +83,8 @@ design tools and the PDGA guidance the app follows.
   explains why something works the way it does or how it works (e.g. "Par from the PDGA par
   guidelines", "Play safe: wait until the fairway ahead is clear", "Made with Disc Golf Course
   Designer", helper paragraphs under settings). Labels, values and short tool prompts only.
+  One exception, at the owner's request: the demo's **Demo** note (`src/components/DemoNote.tsx`),
+  saying what the hosted version adds.
 
 ## Testing
 
