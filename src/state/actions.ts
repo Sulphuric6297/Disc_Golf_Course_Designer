@@ -7,8 +7,8 @@ import {
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { courseStats, holeStats } from "../lib/holeStats";
-import type { BasketItem, CourseDoc, CourseItem, Hole, P, TeeLevel, ToolMode } from "../types";
-import { changeDoc, editor, getDoc, removeHole, removeItems, updateItem, useEditor } from "./course";
+import type { BasketItem, CourseDoc, CourseItem, Hole, P, TeeLevel, ToolMode, TreeItem } from "../types";
+import { changeDoc, editor, getDoc, removeHole, removeItems, updateItem, useEditor, useCourse } from "./course";
 import { toast } from "./toast";
 
 /** Selects an item or a hole; selecting a hole's part makes that hole the one being worked on. */
@@ -533,19 +533,49 @@ export const addPatch = (areaId: string, points: P[]) => {
   select(areaId);
 };
 
-/** A measured tree made the course's own: a tree item where it stands, as tall and wide as it was
- * measured (grown as the course asks), to drag and set like any other; the measured one is cut
- * down under it. One undo step; the new tree is picked. */
-export const adoptLidarTree = (k: number) => {
-  const doc = getDoc();
-  const t = doc.lidar?.trees[k];
-  if (!doc.lidar || !t) return;
-  const [x, y, h, r, conifer] = grownTree(t, doc.lidar.growYears ?? 0);
-  const tree = createTree({ x, y }, { height: Math.round(h), radius: Math.round(r), treeType: conifer ? "conifer" : "deciduous" });
-  const removed = [...new Set([...(doc.lidar.removed ?? []), k])].sort((a, b) => a - b);
-  changeDoc(d => ({ items: [...d.items, tree], lidar: d.lidar ? { ...d.lidar, removed, kept: (d.lidar.kept ?? []).filter(i => i !== k) } : d.lidar }));
-  select(tree.id);
+type TreeLook = { variant: number; rotation: number; leaf: string } | null;
+type AnyTree = { kind: "measured"; k: number } | { kind: "spot"; x: number; y: number; height: number; width: number; conifer: boolean };
+
+// A tree made the course's own by a click only (to look at it, or change it): when it's let go
+// without a change, that's undone, so looking at a tree isn't an edit
+let lookedAt: { id: string; doc: CourseDoc } | null = null;
+const letGoUntouched = () => {
+  const l = lookedAt;
+  lookedAt = null;
+  if (l && useCourse.getState().doc === l.doc) useCourse.getState().undo();
 };
+if (typeof window !== "undefined") {
+  useEditor.subscribe((s, prev) => { if (lookedAt && prev.selectedId === lookedAt.id && s.selectedId !== lookedAt.id) letGoUntouched(); });
+}
+
+/** Any tree that isn't an item of its own (measured, a sapling grown since the survey, planted in
+ * a wood or a patch) made the course's own: a tree item where it stands, as tall and wide, its
+ * shape and leaf color as they were, picked to move and set like any other. Where it stood is
+ * cut (a measured one taken out, a planted one's spot kept clear). One undo step. */
+export const adoptTree = (tree: AnyTree, look: TreeLook = null, quiet = true) => {
+  if (lookedAt) letGoUntouched();
+  const doc = getDoc();
+  let made: TreeItem | null = null, patch: Partial<CourseDoc> = {};
+  if (tree.kind === "measured") {
+    const t = doc.lidar?.trees[tree.k];
+    if (!doc.lidar || !t) return;
+    const [x, y, h, r, conifer] = grownTree(t, doc.lidar.growYears ?? 0);
+    made = createTree({ x, y }, { height: Math.round(h), radius: Math.round(r), treeType: conifer ? "conifer" : "deciduous" });
+    const k = tree.k;
+    patch = { lidar: { ...doc.lidar, removed: [...new Set([...(doc.lidar.removed ?? []), k])].sort((a, b) => a - b), kept: (doc.lidar.kept ?? []).filter(i => i !== k) } };
+  } else {
+    made = createTree({ x: tree.x, y: tree.y }, { height: Math.round(tree.height), radius: Math.round(tree.width / 2), treeType: tree.conifer ? "conifer" : "deciduous" });
+    patch = { cutTrees: [...(doc.cutTrees ?? []), { x: tree.x, y: tree.y }] };
+  }
+  const item: TreeItem = look ? { ...made, variant: look.variant, rotation: look.rotation, leaf: look.leaf } : made;
+  changeDoc(d => ({ ...patch, items: [...d.items, item] }));
+  select(item.id);
+  if (quiet) lookedAt = { id: item.id, doc: useCourse.getState().doc };
+  return item.id;
+};
+
+/** A measured tree made the course's own (see adoptTree). */
+export const adoptLidarTree = (k: number, look: TreeLook = null) => adoptTree({ kind: "measured", k }, look, false);
 
 /** A sapling or planted tree cut down by hand: nothing stands there from now on. One undo step. */
 export const cutTreeAt = (p: P) => {
@@ -553,13 +583,8 @@ export const cutTreeAt = (p: P) => {
   toast("Tree cut down.", "success", true);
 };
 
-/** A sapling or planted tree made the course's own: a tree item where it stood, its size, to drag
- * and set like any other; the spot is cut under it. One undo step; the new tree is picked. */
-export const adoptTreeAt = (spot: { x: number; y: number; height: number; width: number; conifer: boolean }) => {
-  const tree = createTree({ x: spot.x, y: spot.y }, { height: Math.round(spot.height), radius: Math.round(spot.width / 2), treeType: spot.conifer ? "conifer" : "deciduous" });
-  changeDoc(d => ({ items: [...d.items, tree], cutTrees: [...(d.cutTrees ?? []), { x: spot.x, y: spot.y }] }));
-  select(tree.id);
-};
+/** A sapling or planted tree made the course's own (see adoptTree). */
+export const adoptTreeAt = (spot: { x: number; y: number; height: number; width: number; conifer: boolean }, look: TreeLook = null) => adoptTree({ kind: "spot", ...spot }, look, false);
 
 /** The trees cut down by hand (saplings, planted ones) all back. */
 export const uncutTrees = () => changeDoc(() => ({ cutTrees: undefined }));

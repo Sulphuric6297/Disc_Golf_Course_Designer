@@ -65,6 +65,9 @@ export type ViewInfo = {
 export type ViewCallbacks = {
   /** A thing picked (or nothing); `add`: Shift+click, into or out of the things picked together. */
   onSelect: (id: string | null, add?: boolean) => void;
+  /** A tree that isn't an item (measured, a sapling, planted in a wood) clicked: made the course's
+   * own and picked, looking as it did. */
+  onAdoptTree: (tree: { kind: "measured"; k: number } | { kind: "spot"; x: number; y: number; height: number; width: number; conifer: boolean }, look: { variant: number; rotation: number; leaf: string } | null) => void;
   /** What a drag box took in; `add`: with what was picked already. */
   onBoxSelect: (ids: string[], add: boolean) => void;
   /** Live: the things picked together moved by (dx, dy) from where they were in `base`. */

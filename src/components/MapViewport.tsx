@@ -6,7 +6,7 @@ import { FOCUS } from "./ui";
 import { CourseView } from "../viewport/CourseView";
 import type { ViewDoc, ViewInfo } from "../viewport/types";
 import { changeDoc, useCourse, useEditor, updateItem, updateHole, useCourse as courseStore } from "../state/course";
-import { addDrawn, addPatch, addHole, boxSelect, cutStretch, moveGroup, placeAt, select } from "../state/actions";
+import { addDrawn, addPatch, adoptTree, addHole, boxSelect, cutStretch, moveGroup, placeAt, select } from "../state/actions";
 import { courseIssues, courseStats, openIssues } from "../lib/holeStats";
 import { contoursOf, hillshadeCanvas } from "../lib/relief";
 import { terrainStats, heightAt } from "../lib/terrainGrid";
@@ -43,6 +43,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     if (!ref.current) return;
     const v = new CourseView(ref.current, {
       onSelect: (id, add) => select(id, add),
+      onAdoptTree: (tree, look) => adoptTree(tree, look),
       onBoxSelect: (ids, add) => boxSelect(ids, add),
       onMoveGroup: (base, ids, dx, dy) => moveGroup(base, ids, dx, dy, false),
       onPlace: (mode, p) => placeAt(mode, p),

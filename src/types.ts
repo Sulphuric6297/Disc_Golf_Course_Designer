@@ -67,6 +67,10 @@ export interface TreeItem extends BaseItem {
   width?: number;
   treeType?: TreeKind;
   color: string;
+  /** Its shape among the kind's variants, and its exact leaf color: a tree made the course's own
+   * from a wood or the survey keeps the look it had there. */
+  variant?: number;
+  leaf?: string;
   /** Found on the imported aerial photo (replaced on re-import). */
   importSource?: "photo";
 }

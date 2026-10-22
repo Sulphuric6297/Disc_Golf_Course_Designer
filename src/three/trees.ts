@@ -7,7 +7,7 @@ import type { TreeItem } from "../types";
 import { treeMeshes, variantOf, type TreeShape } from "./treeKit";
 
 export const getTreeSignature = (item: TreeItem) =>
-  `${item.radius}|${item.height ?? 30}|${item.width ?? 1}|${item.treeType ?? 'deciduous'}|${item.color}`;
+  `${item.radius}|${item.height ?? 30}|${item.width ?? 1}|${item.treeType ?? 'deciduous'}|${item.color}|${item.variant ?? ""}|${item.leaf ?? ""}`;
 
 /** Leaf color for a tree from its (map) color: lifted to a real crown's lightness, varied a little. */
 export const foliageTint = (color: string, rand: () => number) => {
@@ -17,7 +17,11 @@ export const foliageTint = (color: string, rand: () => number) => {
   return c.setHSL(hsl.h + (rand() - 0.5) * 0.04, clamp(hsl.s * (0.9 + rand() * 0.25), 0.22, 0.62), clamp(hsl.l * 1.3 + 0.07 + (rand() - 0.5) * 0.08, 0.2, 0.5));
 };
 
-export const create3dTree = (item: TreeItem): THREE.Group => {
+/** The course's tree colors (its landscape's): the color, and the mix the woods vary through. A
+ * tree placed by hand takes them like the woods and the measured trees do, each its own pick. */
+export type TreeLook = { color: string; mix: string[] };
+
+export const create3dTree = (item: TreeItem, look?: TreeLook): THREE.Group => {
   const treeHeight = item.height ?? 30;
   const widthMultiplier = item.width ?? 1;
   const treeType = item.treeType ?? "deciduous";
@@ -33,13 +37,18 @@ export const create3dTree = (item: TreeItem): THREE.Group => {
   if (treeType !== "palm") {
     const shape: TreeShape = treeType === "conifer" ? "conifer" : treeType === "bush" ? "bush" : "broadleaf";
     const height = shape === "bush" ? Math.min(treeHeight, Math.max(3, item.radius * 1.2)) : treeHeight;
-    // (a pine darker and bluer than the leaves of the same color, as in woods)
-    const tint = foliageTint(item.color, next);
-    if (shape === "conifer") tint.offsetHSL(0.03, -0.06, -0.08);
-    group = treeMeshes(shape, variantOf(item.id, shape), height, item.radius * 2 * widthMultiplier, tint);
+    // (the landscape's colors, one of its mix per tree as in the woods; a pine darker and bluer)
+    let tint: THREE.Color;
+    if (item.leaf) tint = new THREE.Color(item.leaf);
+    else {
+      const leaf = look ? (look.mix.length && shape !== "conifer" ? look.mix[Math.floor(next() * look.mix.length)] : look.color) : item.color;
+      tint = foliageTint(leaf, next);
+      if (shape === "conifer") tint.offsetHSL(0.03, -0.06, -0.08);
+    }
+    group = treeMeshes(shape, item.variant ?? variantOf(item.id, shape), height, item.radius * 2 * widthMultiplier, tint);
   } else {
     group = new THREE.Group();
-    const base = foliageTint(item.color, next);
+    const base = foliageTint(look?.color ?? item.color, next);
     const add = (m: THREE.Object3D) => { group.add(m); return m; };
       // Palm: a tall, slightly leaning ringed trunk and drooping fronds.
       const trunkRadius = clamp(item.radius * 0.08, 0.35, 1.2);

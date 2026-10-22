@@ -191,7 +191,7 @@ plain("saplings since the survey: none at once, more with the years, in the gaps
   plainExpect(saplings(dense, 10).filter(s => s[0] > 215 && s[0] < 293 && s[1] > 215 && s[1] < 293)).toEqual([]);
 });
 
-test("any tree the app planted in a wood: clicked, it's made the course's own (to move and size) or cut down", async ({ page }) => {
+test("any tree the app planted in a wood acts like a tree placed by hand: picked by a click, the same panel, deleted; a look only is no change", async ({ page }) => {
   test.setTimeout(180_000);
   await blankCourse(page);
   await page.evaluate(() => {
@@ -202,29 +202,40 @@ test("any tree the app planted in a wood: clicked, it's made the course's own (t
   await page.keyboard.press("Escape");
   const forest = () => page.evaluate(() => (window as any).__dgView.forestInfo().trees as number);
   await expect.poll(forest, { timeout: 40_000 }).toBeGreaterThan(50);
-  // (a planted tree near the middle, by where it stands, and the screen point on its crown)
   const spot = async (cx: number, cy: number) => page.evaluate(([cx, cy]) => {
     const v = (window as any).__dgView;
     const spots = v.itemsGroup.children.flatMap((g: any) => g.userData.spots ?? []);
     const s = spots.sort((a: any, b: any) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy))[0];
-    return { x: s.x, y: s.y, at: v.toClient(s.x, s.y, s.height * 0.6) };
+    return { x: s.x, y: s.y, height: s.height, at: v.toClient(s.x, s.y, s.height * 0.6) };
   }, [cx, cy]);
+  const trees = async () => (await course(page)).items.filter((i: any) => i.type === "tree");
   const before = await forest();
+  // A click: the tree is picked, with the Tree panel, where it stood and as tall
   const a = await spot(550, 500);
   await page.mouse.click(a.at.x, a.at.y);
-  await expect(page.getByTestId("tree-menu-tree").first()).toContainText(/Planted tree|Sapling/);
-  await page.getByTestId("tree-adopt").first().click();
-  // (a tree item where it stood, picked; the planted one gone)
-  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "tree").length).toBe(1);
-  const item = (await course(page)).items.find((i: any) => i.type === "tree");
+  await expect.poll(async () => (await trees()).length).toBe(1);
+  const item = (await trees())[0];
   expect(Math.hypot(item.x - a.x, item.y - a.y)).toBeLessThan(0.5);
+  expect(Math.abs(item.height - a.height)).toBeLessThanOrEqual(0.5);
   expect((await editorState(page)).selectedId).toBe(item.id);
+  await expect(page.getByTestId("inspector")).toContainText("Tree");
   await expect.poll(forest).toBe(before - 1);
-  // Another, away from the first, cut down: it stays down
+  // Let go without a change: as it was (looking isn't an edit)
   await page.keyboard.press("Escape");
+  await expect.poll(async () => (await trees()).length).toBe(0);
+  await expect.poll(forest).toBe(before);
+  // Picked and deleted: it stays gone
+  await page.mouse.click(a.at.x, a.at.y);
+  await expect.poll(async () => (await trees()).length).toBe(1);
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await trees()).length).toBe(0);
+  await expect.poll(forest).toBe(before - 1);
+  await expect.poll(async () => (await course(page)).cutTrees?.length ?? 0).toBe(1);
+  // Picked and made taller: kept, as a tree of the course's own
   const b = await spot(380, 380);
   await page.mouse.click(b.at.x, b.at.y);
-  await page.getByTestId("tree-cut").first().click();
-  await expect.poll(async () => (await course(page)).cutTrees?.length ?? 0).toBe(2);
-  await expect.poll(forest).toBe(before - 2);
+  await expect.poll(async () => (await trees()).length).toBe(1);
+  await page.getByRole("slider", { name: "Height" }).fill("60");
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await trees()).map((t: any) => t.height)).toEqual([60]);
 });

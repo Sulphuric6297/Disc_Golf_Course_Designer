@@ -186,7 +186,7 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
         return (
           <div key={n} className={n ? "border-t border-zinc-800 mt-1 pt-1" : ""} data-testid="tree-menu-tree">
             <div className="px-3 pt-1 pb-0.5 text-[11px] text-zinc-500">{n === 0 && trees.length > 1 ? `${label} · in front` : label}</div>
-            <button className={row} role="menuitem" onClick={run(() => (t.kind === "measured" ? adoptLidarTree(t.k) : adoptTreeAt(t)))} data-testid="tree-adopt">Edit this tree (height, place…)</button>
+            <button className={row} role="menuitem" onClick={run(() => { const look = getView()?.lookOf(t) ?? null; if (t.kind === "measured") adoptLidarTree(t.k, look); else adoptTreeAt(t, look); })} data-testid="tree-adopt">Edit this tree (height, place…)</button>
             <button className={row} role="menuitem" onClick={run(() => (t.kind === "measured" ? getView()?.toggleLidarTree(t.k) : cutTreeAt(t)))} data-testid="tree-cut">Cut down this tree</button>
           </div>
         );

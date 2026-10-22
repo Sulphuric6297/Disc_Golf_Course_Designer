@@ -1868,7 +1868,7 @@ export class CourseView {
       case "basket": return doc.course.style.basket;
       case "mando": return item.side;
       case "dropzone": return "dz";
-      case "tree": return getTreeSignature(item as TreeItem) + item.id;
+      case "tree": return getTreeSignature(item as TreeItem) + item.id + (this.doc ? `|${this.doc.course.style.trees}|${this.doc.course.style.landscape ?? ""}` : "");
       case "amenity": return item.kind;
       default: return "";
     }
@@ -1881,7 +1881,7 @@ export class CourseView {
       case "basket": return createBasket(doc.course.style.basket);
       case "mando": return createMando(item.side);
       case "dropzone": return createDropZone();
-      case "tree": return create3dTree(item);
+      case "tree": { const st = doc.course.style; return create3dTree(item, { color: st.trees, mix: landscapeOf(st).mix ?? [] }); }
       case "amenity": return createAmenity(item.kind);
       default: return null;
     }
@@ -2783,6 +2783,19 @@ export class CourseView {
       });
     }
     return hits.sort((p, q) => p.t - q.t).slice(0, max).map(h => h.tree);
+  }
+
+  /** How a tree looks where it stands (its shape variant, turn and leaf color), so a tree made the
+   * course's own looks just the same. */
+  lookOf(tree: NonNullable<ReturnType<CourseView["treeAt"]>>): { variant: number; rotation: number; leaf: string } | null {
+    for (const g of this.itemsGroup.children) {
+      const spots = g.userData.spots as TreeSpot[] | undefined;
+      if (!spots) continue;
+      const indexOf = g.userData.indexes as number[] | undefined;
+      const i = tree.kind === "measured" ? (g.userData.measured && indexOf ? indexOf.indexOf(tree.k) : -1) : spots.findIndex(s => Math.abs(s.x - tree.x) < 0.05 && Math.abs(s.y - tree.y) < 0.05);
+      if (i >= 0) { const s = spots[i]; return { variant: s.variant, rotation: Math.round((-s.turn / DEG) * 10) / 10, leaf: `#${s.tint.getHexString()}` }; }
+    }
+    return null;
   }
 
   /** The nearest tree under the pointer (see treesAtScreen). */
@@ -4135,10 +4148,8 @@ export class CourseView {
         const moves = !!hitItem && hit === this.selectedId && !hitItem.locked;
         if (moves) e.stopPropagation(); else stop();
         this.gesture(e, {
-          click: ev => {
-            const g = this.groundAt(ev.clientX, ev.clientY);
-            this.cb.onContextMenu({ clientX: ev.clientX, clientY: ev.clientY, itemId: null, ground: g ? { x: g.x, y: g.z } : null, under: hit });
-          },
+          // (picked like any tree: the same panel, moved once picked, deleted with Del)
+          click: () => this.cb.onAdoptTree(tree, this.lookOf(tree)),
           drag: moves ? s => this.itemDrag(s, hit!) : panOrNothing
         });
         return;
@@ -4184,7 +4195,7 @@ export class CourseView {
     // Holes, areas and lines move only once selected (dragging across the map still pans, or
     // draws a box); a hole itself never moves (move its tee or basket); a locked item never moves
     // With a finger, everything moves only once picked: a drag across a thing pans the map
-    const big = !item || item.type === "area" || item.type === "line" || item.type === "structure" || touch;
+    const big = !item || item.type === "area" || item.type === "line" || item.type === "structure" || item.type === "tree" || touch;
     if ((big && hit !== this.selectedId) || !item || item.locked) {
       if (boxing) e.stopPropagation();
       else stop();
