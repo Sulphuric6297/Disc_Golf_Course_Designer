@@ -85,5 +85,7 @@ export const createMeasuredWoods = (trees: { tree: LidarTree; index: number }[],
   forest.group.name = "woods";
   forest.group.userData.forest = forest;
   forest.group.userData.spots = spots;
+  forest.group.userData.measured = true;
+  forest.group.userData.indexes = trees.map(t => t.index);
   return forest.group;
 };

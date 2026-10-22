@@ -84,7 +84,8 @@ export type ViewCallbacks = {
   onPose: (pose: "top" | "tilt") => void;
   /** Tee view: moved to another hole with the arrow keys, or closed. */
   onTeeView: (holeId: string | null) => void;
-  onContextMenu: (info: { clientX: number; clientY: number; itemId: string | null; ground: P | null }) => void;
+  /** `under`: an area or line under a tree that was clicked (to select it from the tree's menu). */
+  onContextMenu: (info: { clientX: number; clientY: number; itemId: string | null; ground: P | null; under?: string | null }) => void;
   onDrawProgress: (points: number) => void;
   /** Plotting a hole's line by hand ended (finished or cancelled). */
   onPlotEnd: () => void;

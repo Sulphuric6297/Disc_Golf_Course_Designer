@@ -33,7 +33,7 @@ import { accountActions, CourseChip } from "../../auth/AccountMenu";
 import { ViewerPanelBody } from "../../auth/ViewerPanel";
 import { SERVER } from "../../auth/api";
 
-export type MenuInfo = { clientX: number; clientY: number; itemId: string | null; ground: P | null };
+export type MenuInfo = { clientX: number; clientY: number; itemId: string | null; ground: P | null; under?: string | null };
 
 type ShellProps = {
   layout: "phone" | "rail";

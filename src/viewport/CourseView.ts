@@ -26,7 +26,7 @@ import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
 import { createMeasuredWoods, createWoods, createWoodsWhere } from "../three/woods";
-import { standingTrees, grownTrees } from "../lib/lidar";
+import { standingTrees, grownTree, grownTrees } from "../lib/lidar";
 import type { WoodedGrid } from "../lib/forest";
 import { autoFlight, flightClock, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy, type Crown } from "../lib/flight";
 import { VIDEO_HOLD, titleStrength } from "../lib/video";
@@ -2734,6 +2734,62 @@ export class CourseView {
   }
 
   /** The measured tree standing at a spot (its trunk within reach), if any. */
+  /** The trees under the pointer, nearest the eye first, by the shapes they're drawn with: a
+   * trunk, and a crown round its upper part (a crown seen from the side or tilted is far from the
+   * ground behind it). Measured trees, the saplings grown since the survey and the trees planted in
+   * woods; not the tree items (they're picked as items). A sapling under a big crown is in the list
+   * too, after the big tree. */
+  treesAtScreen(clientX: number, clientY: number, max = 6): NonNullable<ReturnType<CourseView["treeAt"]>>[] {
+    const ray = this.ray(clientX, clientY).clone();
+    const hits: { t: number; tree: NonNullable<ReturnType<CourseView["treeAt"]>> }[] = [];
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), onRay = new THREE.Vector3(), c = new THREE.Vector3(), o = new THREE.Vector3(), d = new THREE.Vector3();
+    // (a crown: an ellipsoid round the upper part; at least 3 ft across, so a sprout can be hit)
+    const crownHit = (x: number, y: number, ground: number, height: number, radius: number) => {
+      const rx = Math.max(1.5, radius), ry = Math.max(1.5, height * 0.34);
+      c.set(x, ground + height * 0.64, y);
+      o.copy(ray.origin).sub(c); d.copy(ray.direction);
+      o.x /= rx; o.z /= rx; o.y /= ry; d.x /= rx; d.z /= rx; d.y /= ry;
+      const A = d.dot(d), B = 2 * o.dot(d), C = o.dot(o) - 1, disc = B * B - 4 * A * C;
+      if (disc < 0) return Infinity;
+      const t = (-B - Math.sqrt(disc)) / (2 * A);
+      return t > 0 ? t : Infinity;
+    };
+    const test = (x: number, y: number, ground: number, height: number, radius: number, tree: NonNullable<ReturnType<CourseView["treeAt"]>>) => {
+      let t = crownHit(x, y, ground, height, radius);
+      // (its trunk, below the crown)
+      a.set(x, ground, y); b.set(x, ground + height * 0.4, y);
+      const r = Math.max(1, radius * 0.12);
+      if (ray.distanceSqToSegment(a, b, onRay) <= r * r) t = Math.min(t, onRay.distanceTo(ray.origin));
+      if (t < Infinity) hits.push({ t, tree });
+    };
+    const lidar = this.doc?.course.lidar, ls = this.lidarState;
+    if (lidar && ls) {
+      for (const k of ls.stand) {
+        const tr = lidar.trees[k];
+        if (!tr) continue;
+        const [x, y, h, r] = grownTree(tr, lidar.growYears ?? 0);
+        test(x, y, this.h(x, y), h, r, { kind: "measured", k });
+      }
+    }
+    for (const g of this.itemsGroup.children) {
+      const spots = g.userData.spots as TreeSpot[] | undefined;
+      if (!spots) continue;
+      // (the measured forest: its measured trees are tested above by index; its saplings here)
+      const measuredCount = g.userData.measured ? (lidar?.trees.length ?? 0) : 0;
+      const indexOf = g.userData.indexes as number[] | undefined;
+      spots.forEach((s, i) => {
+        if (measuredCount && indexOf && indexOf[i] < measuredCount) return;
+        test(s.x, s.y, s.ground, s.height, s.width / 2, { kind: "spot", x: s.x, y: s.y, height: s.height, width: s.width, conifer: s.shape === "conifer" });
+      });
+    }
+    return hits.sort((p, q) => p.t - q.t).slice(0, max).map(h => h.tree);
+  }
+
+  /** The nearest tree under the pointer (see treesAtScreen). */
+  treeAtScreen(clientX: number, clientY: number): ReturnType<CourseView["treeAt"]> {
+    return this.treesAtScreen(clientX, clientY, 1)[0] ?? null;
+  }
+
   /** Any tree standing at a spot that isn't an item of its own: a measured one (its index), or a
    * sapling or planted tree (where it stands and its size). */
   treeAt(p: P): { kind: "measured"; k: number } | { kind: "spot"; x: number; y: number; height: number; width: number; conifer: boolean } | null {
@@ -3838,8 +3894,7 @@ export class CourseView {
       this.cancelLongPress();
       const domItem = (target.closest?.("[data-item-id]") as HTMLElement | null)?.dataset.itemId ?? null;
       const itemId = domItem ?? this.pick(x, y);
-      const ground = this.groundAt(x, y);
-      if (!itemId && !(ground && this.treeAt({ x: ground.x, y: ground.z }))) return;
+      if (!itemId && !this.treeAtScreen(x, y)) return;
       // The press is now the menu's: no tap, no drag, and the map stops following the finger
       this.endDragListeners?.();
       this.setDragging(false);
@@ -4068,6 +4123,27 @@ export class CourseView {
     }
     // Select mode
     const hit = domItem ?? this.pick(e.clientX, e.clientY);
+    // A tree under the pointer, over nothing or over an area or line (most trees stand in a wood):
+    // a click opens the tree's menu (cut it, make it the course's own, or select the wood)
+    const hitItem = hit ? this.item(hit) : null;
+    // (over a hole's line or fairway too: a tree stands above it; tees, baskets, signs and the
+    // course's own trees still come first)
+    const overBig = !hit || (!!hitItem && (hitItem.type === "area" || hitItem.type === "line" || hitItem.type === "structure")) || (!hitItem && !!this.hole(hit));
+    if (overBig && !e.shiftKey && !tool.dragSelect && !this.readOnly) {
+      const tree = this.treeAtScreen(e.clientX, e.clientY);
+      if (tree) {
+        const moves = !!hitItem && hit === this.selectedId && !hitItem.locked;
+        if (moves) e.stopPropagation(); else stop();
+        this.gesture(e, {
+          click: ev => {
+            const g = this.groundAt(ev.clientX, ev.clientY);
+            this.cb.onContextMenu({ clientX: ev.clientX, clientY: ev.clientY, itemId: null, ground: g ? { x: g.x, y: g.z } : null, under: hit });
+          },
+          drag: moves ? s => this.itemDrag(s, hit!) : panOrNothing
+        });
+        return;
+      }
+    }
     // Shift (or the Drag to select option): a drag draws a box to pick things with; Shift+click
     // adds a thing to the ones picked (or takes it out)
     const add = e.shiftKey && !touch;
@@ -4080,12 +4156,7 @@ export class CourseView {
       }
       stop();
       this.gesture(e, {
-        click: ev => {
-          const g = this.groundAt(ev.clientX, ev.clientY);
-          const tree = g && ev.pointerType !== "touch" ? this.treeAt({ x: g.x, y: g.z }) : null;
-          if (tree) this.cb.onContextMenu({ clientX: ev.clientX, clientY: ev.clientY, itemId: null, ground: { x: g!.x, y: g!.z } });
-          else this.cb.onSelect(null);
-        },
+        click: () => this.cb.onSelect(null),
         drag: panOrNothing
       });
       return;

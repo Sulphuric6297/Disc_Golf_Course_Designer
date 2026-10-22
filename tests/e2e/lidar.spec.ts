@@ -1,7 +1,7 @@
 import { test as plain, expect as plainExpect } from "@playwright/test";
 import { readFileSync } from "fs";
 import { createLazPerf } from "laz-perf";
-import { test, expect, addHole, importSite, course, editorState, screenOf, withLidar, SITE } from "./fixtures";
+import { test, expect, addHole, blankCourse, importSite, course, editorState, screenOf, withLidar, SITE } from "./fixtures";
 import { createEmptyCourse, newHole } from "../../src/lib/course";
 import { getGeoBounds } from "../../src/lib/geo/core";
 import { emptyPoints, grownTree, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesOver, depthFor, type LazReader } from "../../src/lib/lidar";
@@ -168,18 +168,63 @@ plain("measured trees grown since the survey: small ones the most, tall ones har
   plainExpect(grownTree([0, 0, 40, 12, 1], 0)).toEqual([0, 0, 40, 12, 1]);
 });
 
-plain("saplings since the survey: none at once, more with the years, near the measured trees, fast and narrow (pure logic)", () => {
-  const woods: [number, number, number, number, 0 | 1][] = Array.from({ length: 200 }, (_, k) => [(k % 20) * 30, Math.floor(k / 20) * 30, 50, 15, 0]);
+plain("saplings since the survey: none at once, more with the years, in the gaps (never under or against a crown), fast and narrow (pure logic)", () => {
+  // (a wood with gaps: trees 50 ft apart, crowns 15 ft round)
+  const woods: [number, number, number, number, 0 | 1][] = Array.from({ length: 200 }, (_, k) => [(k % 20) * 50, Math.floor(k / 20) * 50, 50, 15, 0]);
   plainExpect(saplings(woods, 0)).toEqual([]);
   const ten = saplings(woods, 10), twenty = saplings(woods, 20);
   plainExpect(ten.length).toBeGreaterThan(10);
   plainExpect(twenty.length).toBeGreaterThan(ten.length);
+  const grownWoods = woods.map(t => grownTree(t, 10));
   for (const s of ten) {
     plainExpect(s[2]).toBeGreaterThanOrEqual(6);
     plainExpect(s[2]).toBeLessThan(40);
     plainExpect(s[3] / s[2]).toBeLessThan(15 / 50);
-    const near = woods.some(t => Math.hypot(t[0] - s[0], t[1] - s[1]) <= 15 * 2.4);
-    plainExpect(near).toBe(true);
+    // (clear of every crown, and near the wood it grows from)
+    for (const t of grownWoods) plainExpect(Math.hypot(t[0] - s[0], t[1] - s[1])).toBeGreaterThanOrEqual(t[3] + 3 - 0.2);
+    plainExpect(grownWoods.some(t => Math.hypot(t[0] - s[0], t[1] - s[1]) <= t[3] * 2 + 18.5)).toBe(true);
+    for (const q of ten) if (q !== s) plainExpect(Math.hypot(q[0] - s[0], q[1] - s[1])).toBeGreaterThanOrEqual(8 - 0.2);
   }
   plainExpect(saplings(woods, 10)).toEqual(ten);
+  // (a wood with no gaps: none)
+  const dense: [number, number, number, number, 0 | 1][] = Array.from({ length: 100 }, (_, k) => [(k % 10) * 12 + 200, Math.floor(k / 10) * 12 + 200, 50, 15, 0]);
+  plainExpect(saplings(dense, 10).filter(s => s[0] > 215 && s[0] < 293 && s[1] > 215 && s[1] < 293)).toEqual([]);
+});
+
+test("any tree the app planted in a wood: clicked, it's made the course's own (to move and size) or cut down", async ({ page }) => {
+  test.setTimeout(180_000);
+  await blankCourse(page);
+  await page.evaluate(() => {
+    (window as any).__dgEditor().set({ areaKind: "woods" });
+    (window as any).__dgActions.addDrawn("area", [{ x: 300, y: 300 }, { x: 800, y: 300 }, { x: 800, y: 700 }, { x: 300, y: 700 }]);
+  });
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  const forest = () => page.evaluate(() => (window as any).__dgView.forestInfo().trees as number);
+  await expect.poll(forest, { timeout: 40_000 }).toBeGreaterThan(50);
+  // (a planted tree near the middle, by where it stands, and the screen point on its crown)
+  const spot = async (cx: number, cy: number) => page.evaluate(([cx, cy]) => {
+    const v = (window as any).__dgView;
+    const spots = v.itemsGroup.children.flatMap((g: any) => g.userData.spots ?? []);
+    const s = spots.sort((a: any, b: any) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy))[0];
+    return { x: s.x, y: s.y, at: v.toClient(s.x, s.y, s.height * 0.6) };
+  }, [cx, cy]);
+  const before = await forest();
+  const a = await spot(550, 500);
+  await page.mouse.click(a.at.x, a.at.y);
+  await expect(page.getByTestId("tree-menu-tree").first()).toContainText(/Planted tree|Sapling/);
+  await page.getByTestId("tree-adopt").first().click();
+  // (a tree item where it stood, picked; the planted one gone)
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "tree").length).toBe(1);
+  const item = (await course(page)).items.find((i: any) => i.type === "tree");
+  expect(Math.hypot(item.x - a.x, item.y - a.y)).toBeLessThan(0.5);
+  expect((await editorState(page)).selectedId).toBe(item.id);
+  await expect.poll(forest).toBe(before - 1);
+  // Another, away from the first, cut down: it stays down
+  await page.keyboard.press("Escape");
+  const b = await spot(380, 380);
+  await page.mouse.click(b.at.x, b.at.y);
+  await page.getByTestId("tree-cut").first().click();
+  await expect.poll(async () => (await course(page)).cutTrees?.length ?? 0).toBe(2);
+  await expect.poll(forest).toBe(before - 2);
 });

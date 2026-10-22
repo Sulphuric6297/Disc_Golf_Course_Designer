@@ -23,7 +23,9 @@ import { osmFailedToast } from "./state/osm";
 import { restoreAutosave, startAutosave } from "./state/files";
 import { toast, useToasts } from "./state/toast";
 import { courseStats, holeStats } from "./lib/holeStats";
+import { grownTree } from "./lib/lidar";
 import { isImported, reframeDesign, type ImportedSite } from "./lib/importSite";
+import { holeLabel } from "./lib/course";
 import { geoRefOf } from "./lib/geoRef";
 import type { CourseItem, P } from "./types";
 
@@ -134,7 +136,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: number; itemId: string | null; ground: P | null }; onClose: () => void }) {
+function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: number; itemId: string | null; ground: P | null; under?: string | null }; onClose: () => void }) {
   const doc = getDoc();
   const hole = doc.holes.find(h => h.id === info.itemId);
   const item = doc.items.find(i => i.id === info.itemId);
@@ -146,8 +148,12 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
     return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc); };
   }, [onClose]);
   // (a tree measured from the air standing there)
-  const tree = info.ground ? getView()?.treeAt(info.ground) ?? null : null;
-  const measuredTree = tree?.kind === "measured" ? tree.k : null;
+  // (every tree the click passed through, nearest first: a sprout under a big crown is there too)
+  const trees = getView()?.treesAtScreen(info.clientX, info.clientY) ?? [];
+  if (!trees.length && info.ground) { const t = getView()?.treeAt(info.ground); if (t) trees.push(t); }
+  const tree = trees[0] ?? null;
+  const under = info.under ? doc.items.find(i => i.id === info.under) : undefined;
+  const underHole = info.under ? doc.holes.find(h => h.id === info.under) : undefined;
   if (!hole && !item && !tree && !(canPaste() && info.ground)) return null;
   const x = Math.min(info.clientX, window.innerWidth - 220), y = Math.min(info.clientY, window.innerHeight - 200);
   const row = "w-full text-left px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800";
@@ -174,20 +180,19 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
         </>
       )}
       {item?.type === "line" && !item.locked && info.ground && <button className={row} role="menuitem" onClick={run(() => { getView()?.startObPick(item.id, info.ground!, true); useEditor.getState().set({ obPick: item.id, pickCut: true, tool: "select" }); })}>Remove a stretch from here</button>}
-      {measuredTree !== null && (
-        <>
-          <div className="px-3 pt-1 pb-0.5 text-[11px] text-zinc-500">Measured tree</div>
-          <button className={row} role="menuitem" onClick={run(() => adoptLidarTree(measuredTree))} data-testid="tree-adopt">Edit this tree (height, place…)</button>
-          <button className={row} role="menuitem" onClick={run(() => getView()?.toggleLidarTree(measuredTree))}>Cut down this tree</button>
-        </>
-      )}
-      {tree?.kind === "spot" && (
-        <>
-          <div className="px-3 pt-1 pb-0.5 text-[11px] text-zinc-500">{tree.height < 25 ? "Sapling" : "Planted tree"} · {Math.round(tree.height)} ft</div>
-          <button className={row} role="menuitem" onClick={run(() => adoptTreeAt(tree))} data-testid="tree-adopt">Edit this tree (height, place…)</button>
-          <button className={row} role="menuitem" onClick={run(() => cutTreeAt(tree))} data-testid="tree-cut">Cut down this tree</button>
-        </>
-      )}
+      {trees.map((t, n) => {
+        const label = t.kind === "measured" ? (() => { const g = doc.lidar?.trees[t.k]; const h = g ? grownTree(g, doc.lidar?.growYears ?? 0)[2] : 0; return `Measured tree · ${Math.round(h)} ft`; })()
+          : `${t.height < 25 ? "Sapling" : "Planted tree"} · ${Math.round(t.height)} ft`;
+        return (
+          <div key={n} className={n ? "border-t border-zinc-800 mt-1 pt-1" : ""} data-testid="tree-menu-tree">
+            <div className="px-3 pt-1 pb-0.5 text-[11px] text-zinc-500">{n === 0 && trees.length > 1 ? `${label} · in front` : label}</div>
+            <button className={row} role="menuitem" onClick={run(() => (t.kind === "measured" ? adoptLidarTree(t.k) : adoptTreeAt(t)))} data-testid="tree-adopt">Edit this tree (height, place…)</button>
+            <button className={row} role="menuitem" onClick={run(() => (t.kind === "measured" ? getView()?.toggleLidarTree(t.k) : cutTreeAt(t)))} data-testid="tree-cut">Cut down this tree</button>
+          </div>
+        );
+      })}
+      {tree && under && <button className={`${row} border-t border-zinc-800`} role="menuitem" onClick={run(() => select(under.id))} data-testid="tree-select-under">Select the {under.type === "area" ? (under.kind === "woods" ? "woods" : "area") : under.type === "line" ? "line" : "structure"}</button>}
+      {tree && underHole && <button className={`${row} border-t border-zinc-800`} role="menuitem" onClick={run(() => select(underHole.id))} data-testid="tree-select-under">Select hole {holeLabel(doc, underHole.id)}</button>}
       {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); copySelection(); })}>{inGroup ? `Copy ${group.length}` : "Copy"}</button>}
       {canPaste() && info.ground && <button className={row} role="menuitem" onClick={run(() => pasteClipboard(info.ground))}>Paste here</button>}
       {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); duplicateSelection(); })}>{inGroup ? `Duplicate ${group.length}` : "Duplicate"}</button>}
@@ -206,7 +211,7 @@ export default function App() {
   const [findSite, setFindSite] = useState(false);
   const [help, setHelp] = useState(false);
   const [goTo, setGoTo] = useState(false);
-  const [menu, setMenu] = useState<{ clientX: number; clientY: number; itemId: string | null; ground: P | null } | null>(null);
+  const [menu, setMenu] = useState<{ clientX: number; clientY: number; itemId: string | null; ground: P | null; under?: string | null } | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -331,7 +336,7 @@ export default function App() {
 
   const empty = useMemo(() => !doc.background && !doc.holes.length && !doc.items.length, [doc]);
   const showWelcome = ready && empty && ed.step === "site";
-  const onContextMenu = (i: { clientX: number; clientY: number; itemId: string | null; ground: P | null }) => setMenu(i);
+  const onContextMenu = (i: { clientX: number; clientY: number; itemId: string | null; ground: P | null; under?: string | null }) => setMenu(i);
   const welcome = (
     <div className="pointer-events-auto bg-zinc-900/95 backdrop-blur rounded-2xl shadow-2xl ring-1 ring-white/10 p-6 w-[440px] max-w-full text-center" data-testid="welcome">
       <div className="w-12 h-12 rounded-xl bg-orange-500/15 text-orange-400 flex items-center justify-center mx-auto mb-3"><Route size={24} /></div>
