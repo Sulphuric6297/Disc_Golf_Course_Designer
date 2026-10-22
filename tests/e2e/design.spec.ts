@@ -172,6 +172,8 @@ test("picking a basket mark changes the map's baskets", async ({ page }) => {
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "3 Map" }).click();
   const pageSvg = page.getByTestId("design-page");
+  // (the marks are shared by every page: the General tab)
+  await page.getByRole("tab", { name: "General" }).click();
   await expect(page.getByTestId("basket-mark-basket")).toHaveAttribute("aria-checked", "true");
   await expect(pageSvg.locator('[data-mark="basket"]')).toHaveCount(1);
   await page.getByTestId("basket-mark-flag").click();
@@ -183,6 +185,7 @@ test("picking a basket mark changes the map's baskets", async ({ page }) => {
   await expect.poll(async () => (await course(page)).style.basketMark).toBe("number");
   await expect(pageSvg.locator('[data-mark="number"]')).toContainText("1");
   // Another color keeps the mark chosen
+  await page.getByRole("tab", { name: "Course map" }).click();
   await page.getByTestId("colors-trees-deep").click();
   await expect.poll(async () => (await course(page)).style.trees).toBe("#2a3d2e");
   expect((await course(page)).style.basketMark).toBe("number");
@@ -548,6 +551,7 @@ test("choosing PDGA marking colors in the Design step", async ({ page }) => {
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "3 Map" }).click();
+  await page.getByRole("tab", { name: "General" }).click();
   await expect(page.getByTestId("markings-map")).toHaveAttribute("aria-checked", "true");
   await page.getByTestId("markings-pdga").click();
   await expect.poll(async () => (await course(page)).style.markings).toBe("pdga");
