@@ -1,8 +1,9 @@
 // The painted map's trees in the newer looks (lib/mapLook), drawn as shapes over the painted
-// ground, smooth at any size: Summer (one big rounded crown lit as a whole), Deep woods (dry-brushed
-// leaf dabs, bright where the sun catches the edge), Golden (many leaf clumps lit from the sun's
-// side, sunlit speckles) and Mountain pines (tiers of star-shaped boughs). Their shadows lie soft on
-// the grass before them; mist, the color grade and night are laid over the whole picture after.
+// ground, smooth at any size: Brushwood (painted leaf clusters), Storybook (scalloped cloud crowns),
+// Gouache (flat painted layers), Hollow (dry-brushed leaf dabs, bright where the sun catches the
+// edge) and Golden hour (many leaf clumps lit from the sun's side). Their pines: tufted (Brushwood,
+// Storybook, Gouache) or star-shaped boughs (Hollow, Golden hour). Their shadows lie soft on the
+// grass before them; mist, the color grade and night are laid over the whole picture after.
 import type { TreeStyle, paintLight } from "./mapLook";
 
 type RGB = [number, number, number];
@@ -126,35 +127,23 @@ const gouacheCrown = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => num
   blobPath(g, t.x + Lx * r * 0.3, t.y + Ly * r * 0.3, r * 0.42, R, 0.3); g.fillStyle = css(mix(mul(c, 1.35), [215, 230, 150], 0.25)); g.fill();
   for (let i = 0; i < 6; i++) { const a = R() * 6.28, d = R() * r * 0.8; circle(g, t.x + Math.cos(a) * d, t.y + Math.sin(a) * d, r * (0.05 + R() * 0.05), css(mul(c, R() > 0.5 ? 1.5 : 0.6), 0.7)); }
 };
-/** Feathered pine (Brushwood, Gouache): rings of soft curved boughs, light tips on the sun side. */
-const featherPine = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => number) => {
-  const r = t.r, c = mix(t.col, [40, 75, 70], 0.35);
-  circle(g, t.x, t.y, r * 0.8, css(mix(mul(c, 0.4), [10, 26, 30], 0.3)));
-  for (let ring = 0; ring < 3; ring++) {
-    const rr = r * (1 - ring * 0.27), n = 14 - ring * 3;
+/** Tufted pine (Brushwood, Storybook, Gouache): rings of rounded needle tufts round a dark core,
+ * deeper and bluer than the broadleaf trees, the tufts' tips lit on the sun's side. */
+const tuftedPine = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => number) => {
+  const r = t.r, c = mix(t.col, [38, 78, 72], 0.38), dark = mix(mul(c, 0.42), [8, 24, 26], 0.3);
+  circle(g, t.x, t.y, r * 0.82, css(dark));
+  for (const [ring, n, len, wid] of [[0, 9, 1, 0.3], [1, 7, 0.68, 0.27], [2, 5, 0.4, 0.22]] as const) {
+    const ph = R() * 6.28;
     for (let i = 0; i < n; i++) {
-      const a = (i / n) * 6.283 + ring * 0.4 + R() * 0.2, lit = clamp(Math.cos(a) * Lx + Math.sin(a) * Ly, -1, 1);
-      const tipx = t.x + Math.cos(a) * rr, tipy = t.y + Math.sin(a) * rr, bx = t.x + Math.cos(a) * rr * 0.25, by = t.y + Math.sin(a) * rr * 0.25, w = rr * 0.22, nx = -Math.sin(a) * w, ny = Math.cos(a) * w;
-      const gr = g.createLinearGradient(bx, by, tipx, tipy);
-      gr.addColorStop(0, css(mul(c, 0.55 + ring * 0.1))); gr.addColorStop(1, css(mix(mul(c, 0.9 + 0.5 * Math.max(0, lit) + ring * 0.1), [205, 225, 170], Math.max(0, lit) * 0.2)));
-      g.beginPath(); g.moveTo(bx, by); g.quadraticCurveTo((bx + tipx) / 2 + nx, (by + tipy) / 2 + ny, tipx, tipy); g.quadraticCurveTo((bx + tipx) / 2 - nx * 0.4, (by + tipy) / 2 - ny * 0.4, bx, by); g.fillStyle = gr; g.fill();
+      const a = (i / n) * 6.283 + ph + (R() - 0.5) * 0.3, lit = clamp(Math.cos(a) * Lx + Math.sin(a) * Ly, -1, 1);
+      const L = r * len * (0.9 + R() * 0.15), cx = t.x + Math.cos(a) * L * 0.55, cy = t.y + Math.sin(a) * L * 0.55;
+      const gr = g.createLinearGradient(t.x, t.y, t.x + Math.cos(a) * L, t.y + Math.sin(a) * L);
+      gr.addColorStop(0, css(mul(c, 0.55 + ring * 0.12)));
+      gr.addColorStop(1, css(mix(mul(c, 0.85 + ring * 0.12 + 0.45 * Math.max(0, lit)), [205, 228, 180], Math.max(0, lit) * 0.18)));
+      g.beginPath(); g.ellipse(cx, cy, L * 0.5, r * wid, a, 0, 6.283); g.fillStyle = gr; g.fill();
     }
   }
-  circle(g, t.x, t.y, r * 0.1, css(mul(c, 0.45)));
-};
-/** Rosette pine (Storybook): rounded scalloped tiers, lit from the sun's side. */
-const rosettePine = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => number) => {
-  const r = t.r, c = mix(t.col, [40, 90, 70], 0.3);
-  for (let k = 0; k < 3; k++) {
-    const rr = r * (1 - k * 0.3), n = 9 - k * 2, ph = R() * 6.28;
-    const gr = g.createRadialGradient(t.x + Lx * rr * 0.45, t.y + Ly * rr * 0.45, 0, t.x, t.y, rr);
-    gr.addColorStop(0, css(mix(mul(c, 1.25 + k * 0.15), [200, 225, 170], 0.15))); gr.addColorStop(0.7, css(mul(c, 0.85 + k * 0.1))); gr.addColorStop(1, css(mul(c, 0.5)));
-    g.beginPath();
-    for (let i = 0; i < n; i++) { const a = (i / n) * 6.283 + ph; g.moveTo(t.x + Math.cos(a) * rr * 0.72 + rr * 0.33, t.y + Math.sin(a) * rr * 0.72); g.arc(t.x + Math.cos(a) * rr * 0.72, t.y + Math.sin(a) * rr * 0.72, rr * 0.33, 0, 6.283); }
-    g.moveTo(t.x + rr * 0.72, t.y); g.arc(t.x, t.y, rr * 0.72, 0, 6.283);
-    g.fillStyle = gr; g.fill();
-    if (k < 2) { g.strokeStyle = css(mul(c, 0.45), 0.5); g.lineWidth = Math.max(0.6, r * 0.05); g.beginPath(); g.arc(t.x, t.y, rr * 0.7, 0, 6.283); g.stroke(); }
-  }
+  circle(g, t.x, t.y, r * 0.12, css(mul(c, 0.5)));
 };
 /** Deep woods: a dark mass, its edge ragged, then many leaf dabs over it, darkest in the shade,
  * bright yellow-green where the sun catches the edge. */
@@ -203,8 +192,7 @@ export const drawTrees = (g: Ctx, trees: PaintTree[], style: Exclude<TreeStyle, 
     const R = seeded(Math.floor(t.seed * 1e6) + 1);
     if (t.pine) {
       if (t.r < 3) circle(g, t.x, t.y, t.r, css(mul(t.col, 0.8)));
-      else if (style === "cluster" || style === "gouache") featherPine(g, t, Lx, Ly, R);
-      else if (style === "cloud") rosettePine(g, t, Lx, Ly, R);
+      else if (style === "cluster" || style === "cloud" || style === "gouache") tuftedPine(g, t, Lx, Ly, R);
       else pine(g, t, Lx, Ly, false, lt.warm);
       continue;
     }

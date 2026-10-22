@@ -764,7 +764,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
           // (a crown that would reach over a fairway, path or water nearby: smaller, so the clearing stays clear)
           const clearAt = (dx: number, dy: number) => { const cx = Math.min(mw - 1, Math.max(0, Math.floor((x + dx) / cell))), cy = Math.min(mh - 1, Math.max(0, Math.floor((y + dy) / cell))); return a[(cy * mw + cx) * 4 + 1] > 90; };
           for (let tries = 0; tries < 2; tries++) { const q = r * 0.75; if (clearAt(q, 0) || clearAt(-q, 0) || clearAt(0, q) || clearAt(0, -q)) r *= 0.72; else break; }
-          vtrees.push({ x, y, r, h: r * (1.6 + rnd() * 0.8), pine: rnd() < Math.max(look.trees.pines, pines * 0.5), col: treeColor(rnd()), seed: rnd() });
+          vtrees.push({ x, y, r, h: r * (1.6 + rnd() * 0.8), pine: rnd() < Math.max(look.trees.pines, pines * 0.9), col: treeColor(rnd()), seed: rnd() });
           continue;
         }
         if (natural) {
@@ -1002,12 +1002,14 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // The grass's own looks (Painted: the tone bands above): each from the course's grass color,
   // lighter and sunnier, its patterns in feet so they stay put however the map is framed
   const grassBase = rgbToHsl(hexRgb(s.rough));
+  const lightLift = Math.max(0, Math.min(1, (0.85 - grassBase[2]) / 0.5));
   const gshift = (dl: number, dh: number, ds: number): RGB => hslToRgb(grassBase[0] + dh, Math.max(0, Math.min(1, grassBase[1] + ds)), Math.max(0.04, Math.min(0.92, grassBase[2] + dl)));
   const G = {
     meadow: [gshift(0.13, -6, 0.06), gshift(0.29, -14, 0.08), gshift(0.03, 0, 0.02)],
     field: [gshift(0.06, -22, 0.02), gshift(0.2, -34, 0.08), gshift(0.0, -12, 0.02)],
     mown: [gshift(0.08, -2, 0.04), gshift(0.14, -6, 0.06), gshift(0.02, 0, 0)],
-    storybook: [gshift(0.2, -4, 0.16), gshift(0.26, -8, 0.18), gshift(0.33, -14, 0.12)]
+    // (lifted less where the land is already light: sand stays sand, not white)
+    storybook: [gshift(0.2 * lightLift, -4, 0.16), gshift(0.26 * lightLift, -8, 0.18), gshift(0.33 * lightLift, -14, 0.12)]
   };
   const blend = (p: RGB, q: RGB, t: number): RGB => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
   // (the patterns are broad: a sample every other pixel, read between, is as good and a quarter the work)
