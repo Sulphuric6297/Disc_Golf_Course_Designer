@@ -142,6 +142,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
   const readOnly = useCourse(s => s.readOnly);
   useEffect(() => { view?.setReadOnly(readOnly); }, [view, readOnly]);
+  useEffect(() => { view?.setShowStumps(ed.stumps); }, [view, ed.stumps]);
   useEffect(() => { view?.setGroup(ed.group); }, [view, ed.group]);
   useEffect(() => { view?.setPlotLine(ed.plotLine); }, [view, ed.plotLine]);
   useEffect(() => { view?.setObPick(ed.obPick, ed.pickCut); }, [view, ed.obPick, ed.pickCut]);

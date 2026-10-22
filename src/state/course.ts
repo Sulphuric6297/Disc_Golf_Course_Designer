@@ -171,6 +171,8 @@ type EditorStore = {
   grass: "auto" | 0 | 1 | 2 | 3;
   /** Grass sways in the wind (from a tee and in flyovers). */
   wind: boolean;
+  /** The stumps of the measured trees cut down, everywhere (not only on the hole picked). */
+  stumps: boolean;
   /** The ground from a tee, in flyovers and videos: the painted map (the Design look) or the photo. */
   flyLook: "painted" | "photo";
   set: (patch: Partial<Omit<EditorStore, "set">>) => void;
@@ -221,6 +223,7 @@ export const useEditor = create<EditorStore>()(set => ({
   groundDetail: true,
   grass: "auto",
   wind: true,
+  stumps: false,
   flyLook: "painted",
   ...(typeof localStorage !== "undefined" ? savedDisplay() : {}),
   set: patch => {

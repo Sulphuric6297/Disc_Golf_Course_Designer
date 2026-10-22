@@ -42,6 +42,8 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
   const s = useCourse(c => c.doc.style);
   const grass = useEditor(e => e.grass);
   const wind = useEditor(e => e.wind);
+  const stumps = useEditor(e => e.stumps);
+  const measured = useCourse(c => !!c.doc.lidar?.trees.length && !c.readOnly);
   const set = useEditor(e => e.set);
   return (
     <div className={`absolute ${big ? "right-[52px] top-0 max-h-[min(70vh,calc(100dvh-140px))] overflow-y-auto dg-scroll" : "right-0 top-10"} w-72 ${POPOVER} p-3 z-30 text-left`} data-testid="scene-panel">
@@ -75,6 +77,7 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
         ]}
       />
       <Toggle label="Grass sways in the wind" checked={wind} onChange={v => set({ wind: v })} />
+      {measured && <Toggle label="Stumps of cut-down trees" hint="Everywhere close by, to bring trees back (always on the hole picked)." checked={stumps} onChange={v => set({ stumps: v })} />}
       <div className="h-2" />
       <div className="text-xs text-zinc-400 mb-1">Basket band</div>
       <div className="flex gap-1.5" role="radiogroup" aria-label="Basket band" data-testid="basket-band">
