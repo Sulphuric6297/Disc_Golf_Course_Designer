@@ -1,4 +1,5 @@
 // The map view (2D and 3D are one view): the CourseView engine, fed from the course store.
+import { latitudeOf, paintLight, sunFromOf } from "../lib/mapLook";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BoxSelect, Compass, Maximize2, Minus, Plus, RotateCcw, RotateCw } from "lucide-react";
 import { useAllowed } from "../auth/perms";
@@ -113,7 +114,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     stats,
     activeHoleId: ed.activeHoleId,
     issues,
-    sun: { azimuth: doc.style.sunAngle ?? 315, altitude: doc.style.sunHeight ?? 38, shadows: doc.style.shadows ?? 0.65, light: doc.style.light ?? 0 },
+    // (the sun where it really is: by the compass, at the height the map's light gives it)
+    sun: { azimuth: sunFromOf(doc.style, latitudeOf(doc.site)), altitude: paintLight(doc.style).height, shadows: doc.style.shadows ?? 0.65, light: doc.style.light ?? 0 },
     canvas: doc.canvas,
     unitsPerFoot: 1,
     gridSize: doc.gridSize,

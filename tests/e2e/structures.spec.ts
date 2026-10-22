@@ -300,17 +300,18 @@ plain("a roof's lit face follows the map's sun", () => {
   const doc = builtCourse();
   doc.items = doc.items.filter(i => i.type !== "structure" || i.kind === "building");
   doc.style.theme = "illustrated";
-  const faces = (sunAngle: number) => {
-    doc.style.sunAngle = sunAngle;
+  const faces = (sunFrom: number) => {
+    doc.style.sunFrom = sunFrom;
     const svg = renderPoster(doc, { contours: null, hillshade: null }).svg;
     const roof = svg.slice(svg.indexOf('data-structure="building"'));
     return [...roof.matchAll(/<path d="[^"]+Z" fill="(#[0-9a-f]{6})" stroke=/g)].slice(0, 2).map(m => m[1]);
   };
-  // Sun from the top of the page (north): the north face is the lighter
-  const north = faces(0), south = faces(180);
-  plainExpect(north).toHaveLength(2);
-  plainExpect(north[0]).not.toBe(north[1]);
-  plainExpect(south).toEqual([north[1], north[0]]);
+  // The sun from the south: the south face is the lighter; low in the north-east (a summer morning,
+  // as far north as the sun goes here): the north face is (the sun never shines from due north)
+  const lum = (h: string) => parseInt(h.slice(1, 3), 16) + parseInt(h.slice(3, 5), 16) + parseInt(h.slice(5, 7), 16);
+  const fromSouth = faces(180), fromNorthEast = faces(60);
+  plainExpect(fromSouth).toHaveLength(2);
+  plainExpect(lum(fromSouth[0]) > lum(fromSouth[1])).not.toBe(lum(fromNorthEast[0]) > lum(fromNorthEast[1]));
 });
 
 plain("older courses still load and draw: the building area, the bridge and shelter pictograms; a structure with defaults", () => {

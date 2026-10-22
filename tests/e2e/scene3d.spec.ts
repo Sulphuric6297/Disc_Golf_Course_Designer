@@ -20,10 +20,10 @@ test("3D: a sky when tilted (none looking straight down), lit by the course's su
   await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
   await page.keyboard.press("Escape");
   await expect.poll(async () => (await scene(page)).sky).toBe(false);
-  // The default sun: from the north-west (the top left of the map), as on the painted map
+  // The default sun: the afternoon's, from the south-west (the sun never shines from the north here)
   const sun0 = (await scene(page)).sun;
   expect(sun0.x).toBeLessThan(0);
-  expect(sun0.z).toBeLessThan(0);
+  expect(sun0.z).toBeGreaterThan(0);
   expect(sun0.y).toBeGreaterThan(0.5);
   await page.keyboard.press("3");
   await expect.poll(async () => (await scene(page)).sky).toBe(true);
@@ -35,8 +35,9 @@ test("3D: a sky when tilted (none looking straight down), lit by the course's su
     await slider.fill(value);
     await slider.dispatchEvent("pointerup");
   };
-  await set("Sun from the", "90");
-  await expect.poll(async () => (await course(page)).style.sunAngle).toBe(90);
+  // (the slider runs along the sun's arc, east through south to west: -90 is the east)
+  await set("Sun from the", "-90");
+  await expect.poll(async () => (await course(page)).style.sunFrom).toBe(90);
   await set("Sun height", "20");
   await set("Brightness", "0.2");
   await expect.poll(async () => (await scene(page)).sun.x).toBeGreaterThan(0.8);

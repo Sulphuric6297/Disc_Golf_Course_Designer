@@ -100,14 +100,17 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
   expect(share(await lightness())).toBeGreaterThan(share(dense) + 0.2);
   // One undo step brings the thick woods back
   await page.keyboard.press("Control+z");
-  await expect.poll(async () => (await course(page)).style.treeCover).toBe(1);  // Natural treetops (the 3D trees as seen from above) repaint it; Classic again is as it was
-  const classic = await painting.getAttribute("href");
-  const tops = page.getByTestId("forest-options").getByRole("radiogroup", { name: "Treetops" });
-  await tops.getByRole("radio", { name: "Natural" }).click();
-  await expect.poll(async () => (await course(page)).style.treeLook).toBe("natural");
-  await expect.poll(async () => painting.getAttribute("href")).not.toBe(classic);
-  await tops.getByRole("radio", { name: "Classic" }).click();
-  await expect.poll(async () => (await course(page)).style.treeLook).toBeUndefined();
+  await expect.poll(async () => (await course(page)).style.treeCover).toBe(1);
+  // Each map style repaints it; Classic again is as it was
+  const styles = page.getByTestId("map-styles");
+  for (const [name, id] of [["Parkland", "parkland"], ["Hollow", "hollow"], ["Golden hour", "golden"], ["Highland", "highland"]]) {
+    const before = await painting.getAttribute("href");
+    await styles.getByRole("radio", { name }).click();
+    await expect.poll(async () => (await course(page)).style.mapLook).toBe(id);
+    await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
+  }
+  await styles.getByRole("radio", { name: "Classic" }).click();
+  await expect.poll(async () => (await course(page)).style.mapLook).toBeUndefined();
 });
 
 test("light and shadow: the sun, shadows and brightness repaint the Forest map, and Reset brings them back", async ({ page }) => {
@@ -119,28 +122,39 @@ test("light and shadow: the sun, shadows and brightness repaint the Forest map, 
   await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
-  const panel = page.getByTestId("light-shadow");
-  await expect(panel).toBeVisible();
-  const set = async (label: string, value: string) => {
+  const set = async (panel: import("@playwright/test").Locator, label: string, value: string) => {
     const slider = panel.getByLabel(label);
     await slider.fill(value);
     await slider.dispatchEvent("pointerup");
   };
+  // The sun, in the map style's Light part: by the compass, along its real path (east to west)
+  const light = page.getByTestId("look-part-light");
+  await light.getByRole("button", { name: /Light and shadow/ }).click();
   let before = await painting.getAttribute("href");
-  await set("Sun from the", "90");
-  await expect.poll(async () => (await course(page)).style.sunAngle).toBe(90);
-  await expect(panel).toContainText("right");
+  await set(light, "Sun from the", "90");
+  await expect.poll(async () => (await course(page)).style.sunFrom).toBe(270);
+  await expect(light).toContainText("west");
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
   before = await painting.getAttribute("href");
-  await set("Shadows", "1");
+  await set(light, "Shadows", "1");
   await expect.poll(async () => (await course(page)).style.shadows).toBe(1);
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
+  // Golden hour and night repaint it too
+  for (const mode of ["Golden hour", "Night"]) {
+    before = await painting.getAttribute("href");
+    await light.getByRole("radio", { name: mode }).click();
+    await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
+  }
+  await light.getByRole("button", { name: "Back to the style's own" }).click();
+  await expect.poll(async () => { const s = (await course(page)).style; return [s.sunFrom, s.shadows, s.lightMode]; }).toEqual([undefined, undefined, undefined]);
+  // Fine tuning: the picture's brightness, and its Reset
+  const panel = page.getByTestId("light-shadow");
   before = await painting.getAttribute("href");
-  await set("Brightness", "0.3");
+  await set(panel, "Brightness", "0.3");
   await expect.poll(async () => (await course(page)).style.light).toBe(0.3);
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
   await panel.getByRole("button", { name: "Reset" }).click();
-  await expect.poll(async () => { const s = (await course(page)).style; return [s.sunAngle, s.shadows, s.light]; }).toEqual([315, 0.65, 0]);
+  await expect.poll(async () => (await course(page)).style.light).toBe(0);
 });
 
 test("picking a basket mark changes the map's baskets", async ({ page }) => {

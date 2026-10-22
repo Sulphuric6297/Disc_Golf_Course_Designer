@@ -12,6 +12,7 @@ import { changeDoc, useCourse, useEditor } from "../state/course";
 import { AREA_KINDS } from "../constants";
 import { RESTRICTED } from "../lib/symbols";
 import { StylePicker } from "./LandscapePicker";
+import { MapLookPanel } from "./MapLookPanel";
 import { useEffect, useRef, useState } from "react";
 import type { MapStyle, PaperSize, SignSettings } from "../types";
 import { Button, ColorInput, Field, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
@@ -51,10 +52,7 @@ export const signed = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.
 /** Where the light comes from, how long and dark the shadows are, and the picture's tone. */
 function LightAndShadow({ s }: { s: MapStyle }) {
   return (
-    <Section title="Light and shadow" testid="light-shadow" right={<button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ sunAngle: 315, sunHeight: 38, shadows: 0.65, light: 0, contrast: 0, colorStrength: 1, paint: 0.8 })}><RotateCcw size={12} /> Reset</button>}>
-      <StyleSlider k="sunAngle" value={s.sunAngle ?? 315} label="Sun from the" min={0} max={359} step={5} format={x => FROM[Math.round(x / 45) % 8]} />
-      <StyleSlider k="sunHeight" value={s.sunHeight ?? 38} label="Sun height" min={12} max={80} step={2} format={x => `${Math.round(x)}° · ${x < 25 ? "long shadows" : x < 50 ? "afternoon" : "midday"}`} />
-      <StyleSlider k="shadows" value={s.shadows ?? 0.65} label="Shadows" min={0} max={1} step={0.05} format={x => `${Math.round(x * 100)}%`} />
+    <Section title="Fine tuning" testid="light-shadow" right={<button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ light: 0, contrast: 0, colorStrength: 1, paint: 0.8, reliefScale: 1 })}><RotateCcw size={12} /> Reset</button>}>
       <StyleSlider k="light" value={s.light ?? 0} label="Brightness" min={-0.3} max={0.3} step={0.02} format={signed} />
       <StyleSlider k="contrast" value={s.contrast ?? 0} label="Contrast" min={-0.3} max={0.4} step={0.02} format={signed} />
       <StyleSlider k="colorStrength" value={s.colorStrength ?? 1} label="Color strength" min={0.3} max={1.4} step={0.05} format={x => `${Math.round(x * 100)}%`} />
@@ -144,16 +142,16 @@ export function DesignPanel() {
   return (
     <>
       <PageElementPanel />
-      <Section title="Style" testid="themes">
+      <Section title="Map style" testid="map-style">
+        <MapLookPanel />
+      </Section>
+      <Section title="Landscape" testid="themes">
         <StylePicker />
         <div className="mt-3" data-testid="forest-options">
           <Field label="Where to paint the woods">
             <Segmented label="Woods" value={s.forest} onChange={v => setStyle({ forest: v })} options={[{ value: "photo", label: "From the photo" }, { value: "everywhere", label: "Everywhere" }, { value: "woods", label: "Drawn only" }]} />
           </Field>
           <TreeCover value={s.treeCover ?? 1} />
-          <Field label="Treetops" hint="Classic, as painted park maps have them, or natural: the 3D trees as seen from above.">
-            <Segmented label="Treetops" value={s.treeLook ?? "classic"} onChange={v => setStyle({ treeLook: v === "classic" ? undefined : v })} options={[{ value: "classic", label: "Classic" }, { value: "natural", label: "Natural" }]} />
-          </Field>
         </div>
       </Section>
       <PageSection />

@@ -3,6 +3,7 @@
 // tees, baskets, mandos, drop zones, distances), labels, and the frame (title, legend, hole table,
 // north arrow, scale bar). The same renderer draws a single hole for tee signs, turned so the tee
 // is at the bottom.
+import { latitudeOf, sunFromOf } from "./mapLook";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
 import { activeLayout, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, obSides, sharedWalks, teeAim, walkRoutes } from "./course";
@@ -355,7 +356,8 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   // Built things: bridges over the creeks, boardwalks, stairs, walls, buildings, shelters and decks
   const structures = items.filter(i => i.type === "structure") as StructureItem[];
   if (structures.length) {
-    const az = ((s.sunAngle ?? 315) * Math.PI) / 180;
+    // (where the sun really shines from, by the compass; turned with the map below)
+    const az = (sunFromOf(s, latitudeOf(doc.site)) * Math.PI) / 180;
     const draw: StructureDraw = {
       u: px(1), ft: 1, sun: rotatePoint({ x: Math.sin(az), y: -Math.cos(az) }, view.rotation), sunHeight: s.sunHeight ?? 38,
       // (The Forest painting casts their shadows itself)
@@ -748,7 +750,7 @@ if (typeof window !== "undefined") (window as any).__dgPainting = paintingNow;
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
   const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
-  const look = [s.forest, s.treeCover, s.treeLook, s.landscape, s.contours, s.trees, s.fairway, s.rough, s.tallGrass, s.water, s.path, s.nextTee, s.walkWidth, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale];
+  const look = [s.forest, s.treeCover, s.treeLook, s.landscape, s.contours, s.trees, s.fairway, s.rough, s.tallGrass, s.water, s.path, s.nextTee, s.walkWidth, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale, s.mapLook, s.lookParts, s.lightMode, s.goldenSun, s.sunFrom, s.pathOrder, doc.site.location, doc.site.bounds];
   const key = JSON.stringify([paintLimit, printDensity, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), paintedFrom(doc), doc.canvas, doc.id]);
   // (A live preview may show a picture made for print; a print never uses a live one, which is a
   // blob only this page can read)

@@ -467,6 +467,14 @@ export interface MapStyle {
   forest: "everywhere" | "photo" | "woods";
   /** Forest style: how thick the woods are, from a few scattered clumps (0.1) to solid canopy (1). */
   treeCover: number;
+  /** The painted map's look (lib/mapLook): its style (unset: classic), and any part of it changed
+   * on its own; the light: golden hour, midday or night (unset: the style's), the golden sun's
+   * strength (0..1), and where the sun shines from by the compass (unset: the afternoon's). */
+  mapLook?: import("./lib/mapLook").LookTheme;
+  lookParts?: { [K in import("./lib/mapLook").LookPart]?: Partial<import("./lib/mapLook").LookParts[K]> };
+  lightMode?: import("./lib/mapLook").LightMode;
+  goldenSun?: number;
+  sunFrom?: number;
   /** How paths and roads stack where they cross, bottom first (unset: dirt, gravel and wood
    * chips, paved walkways, roads and parking): on the painted map and in 3D. */
   pathOrder?: PathTier[];

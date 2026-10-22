@@ -13,6 +13,8 @@ import type { HoleStats } from "./holeStats";
 import { landscapeOf, tallGrassOf } from "./landscapes";
 import { reliefExaggeration } from "./relief";
 import { isLineKind, offsetPolygon, roofOf, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
+import { latitudeOf, lookParts, paintLight, sunFromOf } from "./mapLook";
+import { STYLE_GREENS, drawBoulders, drawMist, drawShadows, drawTrees, gradeLight, type PaintTree } from "./paintTrees";
 
 /** Where the photo shows trees, on a grid over the site (1 = canopy). */
 export type CanopyGrid = { cols: number; rows: number; ftPerCell: number; data: Uint8Array };
@@ -656,7 +658,12 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // Natural treetops (as the 3D trees look from above): a broadleaf's crown is leaf clusters at
   // the ends of its limbs, the middle highest and gaps between them where the floor shows; a
   // pine is tiers of boughs, each a star a little smaller and higher than the one below it
-  const natural = s.treeLook === "natural";
+  const look = lookParts(s), pl = paintLight(s);
+  // (the newer looks: trees drawn as shapes after the ground, not stamped into the height field)
+  const vector = look.trees.style !== "classic" && !opts.under;
+  const vstyle = look.trees.style as Exclude<typeof look.trees.style, "classic">;
+  const vtrees: PaintTree[] = [];
+  const natural = !vector && s.treeLook === "natural" && !s.mapLook;
   const leafy = (cx: number, cy: number, R: number, top: number, t: number, clusters = 0) => {
     const tr = seeded(Math.round(cx * 7.3 + cy * 13.1) ^ 0x2c1b3c6d);
     const n = clusters || 5 + Math.round(tr() * 3 + Math.min(4, R / crownR));
@@ -694,6 +701,19 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     }
   };
   const rnd = seeded(idSeed(doc.seed ?? doc.id ?? doc.name) ^ 0x5bd1e995);
+  const vGreens: RGB[] = (() => {
+    if (!vector) return [];
+    const mixes = landscapeOf(s).mix ?? [];
+    if (mixes.length) return mixes.map(c => hexRgb(c));
+    const [h0, s0, l0] = rgbToHsl(hexRgb("#354a2c")), [h1, s1, l1] = rgbToHsl(hexRgb(s.trees));
+    return STYLE_GREENS[vstyle].map(c => { const [h, sl, l] = rgbToHsl(hexRgb(c)); return hslToRgb(h + (h1 - h0), Math.max(0, Math.min(1, sl * (s1 / Math.max(0.05, s0)))), Math.max(0.05, Math.min(0.9, l * (l1 / Math.max(0.05, l0))))); });
+  })();
+  /** A tree's color: one of the style's greens, as varied as the style says. */
+  const treeColor = (u: number): RGB => {
+    const a = vGreens[0], b = vGreens[Math.floor(u * vGreens.length) % vGreens.length], v = look.trees.variety;
+    const k2 = 0.92 + ((u * 7.31) % 1) * 0.16 * (0.4 + v);
+    return [(a[0] + (b[0] - a[0]) * v) * k2, (a[1] + (b[1] - a[1]) * v) * k2, (a[2] + (b[2] - a[2]) * v) * k2];
+  };
   // Stratified at random (no grid shows): one or two treetops in each small square, all sizes.
   // Sparse woods keep fewer, in clumps, and the trees stand bigger on their own.
   // (natural: trees at about their real size and spacing, as the 3D woods stand, about 15 ft
@@ -701,13 +721,17 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // of pines. Their shadows as long as the classic treetops' are: a map, not a photo at sunset)
   const realStep = 15 * k, realR = (f: number) => Math.max(crownR * 0.9, (7 + f * 8) * k);
   const realTop = (r: number) => crownR * (1.9 + rnd() * 0.9) + r * 0.35;
-  const stepPx = natural ? Math.max(crownR * 1.15, realStep) : crownR * 1.15;
+  // (the newer looks: each style's spacing and crown sizes, in feet, never smaller than reads)
+  const VSPACE = { summer: 15, drybrush: 10.5, golden: 13, highland: 12 } as const, VSIZE = { summer: [9, 15], drybrush: [7, 12], golden: [7.5, 13], highland: [7, 13] } as const;
+  const vStep = vector ? Math.max(crownR * 1.05, (VSPACE[vstyle] / Math.sqrt(Math.max(0.3, look.trees.density))) * k) : 0;
+  const vR = (u: number) => Math.max(crownR * 0.75, (VSIZE[vstyle][0] + u * (VSIZE[vstyle][1] - VSIZE[vstyle][0])) * look.trees.size * k);
+  const stepPx = vector ? vStep : natural ? Math.max(crownR * 1.15, realStep) : crownR * 1.15;
   const pineShare = natural ? landscapeOf(s).conifers : pines;
   const grow = 1 + (1 - cover) * 0.7;
   for (let gy = -stepPx; gy < H + stepPx && !opts.under; gy += stepPx) {
     yield 0.15 + 0.35 * ((gy + stepPx) / (H + 2 * stepPx));
     for (let gx = -stepPx; gx < W + stepPx; gx += stepPx) {
-      const n = natural ? 1 : rnd() < 0.5 ? 2 : 1;
+      const n = natural || vector ? 1 : rnd() < 0.5 ? 2 : 1;
       for (let j = 0; j < n; j++) {
         const x = gx + rnd() * stepPx, y = gy + rnd() * stepPx;
         const mx = Math.min(mw - 1, Math.max(0, Math.floor(x / cell))), my = Math.min(mh - 1, Math.max(0, Math.floor(y / cell)));
@@ -718,6 +742,14 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         }
         const u = rnd();
         const t = 1 + Math.floor(rnd() * 6);
+        if (vector) {
+          let r = vR(u) * grow;
+          // (a crown that would reach over a fairway, path or water nearby: smaller, so the clearing stays clear)
+          const clearAt = (dx: number, dy: number) => { const cx = Math.min(mw - 1, Math.max(0, Math.floor((x + dx) / cell))), cy = Math.min(mh - 1, Math.max(0, Math.floor((y + dy) / cell))); return a[(cy * mw + cx) * 4 + 1] > 90; };
+          for (let tries = 0; tries < 2; tries++) { const q = r * 0.75; if (clearAt(q, 0) || clearAt(-q, 0) || clearAt(0, q) || clearAt(0, -q)) r *= 0.72; else break; }
+          vtrees.push({ x, y, r, h: r * (1.6 + rnd() * 0.8), pine: rnd() < Math.max(look.trees.pines, pines * 0.5), col: treeColor(rnd()), seed: rnd() });
+          continue;
+        }
         if (natural) {
           const r = realR(u) * grow;
           if (rnd() < pineShare) whorls(x, y, r * 0.62, realTop(r) * 1.15, t);
@@ -739,6 +771,11 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     if (sp.x < -r || sp.y < -r || sp.x > W + r || sp.y > H + r) continue;
     const top = Math.max(r * 1.2, (t.height ?? t.radius * 2.6) * k);
     const tone = 1 + (idSeed(t.id) % 6);
+    if (vector) {
+      const tr = seeded(idSeed(t.id));
+      vtrees.push({ x: sp.x, y: sp.y, r: t.treeType === "bush" ? r * 0.9 : r, h: t.treeType === "bush" ? r * 1.1 : top, pine: t.treeType === "conifer", col: treeColor(tr()), seed: tr() });
+      continue;
+    }
     if (t.treeType === "conifer") (natural ? whorls : pine)(sp.x, sp.y, r, top, tone);
     else if (t.treeType === "bush") natural ? leafy(sp.x, sp.y, r, Math.min(top, r * 1.1), tone, 4) : stamp(sp.x, sp.y, r, Math.min(top, r * 1.1), tone);
     else if (natural) leafy(sp.x, sp.y, r, top, tone);
@@ -749,7 +786,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   yield;
   // ---------------------------------------------------------------- light
   // The sun comes from `sunAngle` (degrees clockwise from the top of the page) at `sunHeight`
-  const az = ((s.sunAngle ?? 315) * Math.PI) / 180, el = (Math.max(10, Math.min(85, s.sunHeight ?? 38)) * Math.PI) / 180;
+  // (where it shines from by the compass, turned with the map on the page; as high as the light says)
+  const az = ((sunFromOf(s, latitudeOf(doc.site)) - (view.rotation || 0)) * Math.PI) / 180, el = (Math.max(10, Math.min(85, pl.height)) * Math.PI) / 180;
   const sunX = Math.sin(az), sunY = -Math.cos(az), rise = Math.tan(el);
   const L = { x: sunX * Math.cos(el), y: sunY * Math.cos(el), z: Math.sin(el) };
   const shadowK = Math.max(0, Math.min(1, s.shadows ?? 0.65));
@@ -944,6 +982,35 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     cb += (tb0 - cb) * alpha;
   };
   const light = s.light ?? 0, contrast = s.contrast ?? 0, sat = s.colorStrength ?? 1;
+  // The grass's own looks (Painted: the tone bands above): each from the course's grass color,
+  // lighter and sunnier, its patterns in feet so they stay put however the map is framed
+  const grassBase = rgbToHsl(hexRgb(s.rough));
+  const gshift = (dl: number, dh: number, ds: number): RGB => hslToRgb(grassBase[0] + dh, Math.max(0, Math.min(1, grassBase[1] + ds)), Math.max(0.04, Math.min(0.92, grassBase[2] + dl)));
+  const G = {
+    meadow: [gshift(0.13, -6, 0.06), gshift(0.29, -14, 0.08), gshift(0.03, 0, 0.02)],
+    field: [gshift(0.06, -22, 0.02), gshift(0.2, -34, 0.08), gshift(0.0, -12, 0.02)],
+    mown: [gshift(0.08, -2, 0.04), gshift(0.14, -6, 0.06), gshift(0.02, 0, 0)]
+  };
+  const blend = (p: RGB, q: RGB, t: number): RGB => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
+  const grassColor = (style: string, X: number, Y: number, tex: number, mott: number, grain: number): RGB => {
+    if (style === "meadow") {
+      const pp = fbm(X * 0.006, Y * 0.006), q = fbm(X * 0.03 + 4, Y * 0.03);
+      const c0 = blend(blend(G.meadow[0], G.meadow[1], smooth(0.35, 0.75, pp)), G.meadow[2], smooth(0.55, 0.85, q) * 0.5 * tex);
+      const kk = 0.94 + 0.08 * noise(X * 0.8, Y * 0.8) * tex + (grain - 0.5) * 0.04 * tex;
+      return [c0[0] * kk, c0[1] * kk, c0[2] * kk];
+    }
+    if (style === "field") {
+      const st = fbm(X * 0.004 + Y * 0.002, Y * 0.03 - X * 0.012), pp = fbm(X * 0.008, Y * 0.008);
+      const c0 = blend(blend(G.field[0], G.field[1], smooth(0.3, 0.8, pp * 0.6 + st * 0.4 * tex)), G.field[2], (1 - mott) * 0.15);
+      const kk = 0.92 + 0.12 * noise(X * 0.8, Y * 0.8) * tex;
+      return [c0[0] * kk, c0[1] * kk, c0[2] * kk];
+    }
+    // mown: stripes as a mower leaves them, blended over a pixel
+    const band = Math.max(-1, Math.min(1, Math.sin((X * 0.6 + Y * 0.8) / 18) * (18 * k / 1.2)));
+    const c0 = blend(G.mown[0], G.mown[1], fbm(X * 0.01, Y * 0.01));
+    const kk = 1.005 + 0.055 * band * tex + (grain - 0.5) * 0.03;
+    return [c0[0] * kk, c0[1] * kk, c0[2] * kk];
+  };
   yield;
   // (a mask's channel k where the pixel is, from its four nearest cells)
   let q00 = 0, q10 = 0, q01 = 0, q11 = 0, w00 = 1, w10 = 0, w01 = 0, w11 = 0;
@@ -1000,8 +1067,19 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         const lit = (1 - shadowK * 0.75 * (1 - sun)) * (1 - 0.62 * shadowK * ao) * rf;
         const mott = at(mottle, x, y);
         const grain = GRAIN[tr | (x & 511)];
-        tone(lawn, (0.5 + mott * 0.5 + grain * 0.18) * lit);
-        cr = tr0; cg = tg0; cb = tb0;
+        if (look.grass.style === "painted") {
+          // (brighter than the tones go: the whole lawn lighter, as Parkland's sunny grass)
+          tone(lawn, (0.5 + mott * 0.5 + grain * 0.18) * Math.min(1, look.grass.bright) * lit);
+          const lift = Math.max(1, look.grass.bright);
+          cr = tr0 * lift; cg = tg0 * lift; cb = tb0 * lift;
+        }
+        else {
+          // (the plan position, in feet, for the grass's own patterns)
+          const sxp = (x - W / 2) / k, syp = (y - H / 2) / k, X = view.cx + sxp * cos + syp * sin, Y = view.cy - sxp * sin + syp * cos;
+          const g0 = grassColor(look.grass.style, X, Y, look.grass.texture, mott, grain);
+          const kk = look.grass.bright * lit;
+          cr = g0[0] * kk; cg = g0[1] * kk; cb = g0[2] * kk;
+        }
         // The floor under the trees, well inside the woods (fading out toward their edges)
         const deep = smooth(0.55, 0.95, S(inWoods, 0) / 255);
         if (deep > 0) {
@@ -1020,7 +1098,19 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         // Fairways: light down the middle, darker toward the trees, soft ragged edges
         if (f > 0.05) {
           const mid = smooth(0.05, 0.9, S(middle, 2) / 255);
-          lay(fair, (0.44 + 0.62 * mid + at(fairMottle, x, y) * 0.3 + grain * 0.08) * lit, smooth(0.42, 0.52, f + rag * 0.35));
+          const fv = (0.44 + 0.62 * mid + at(fairMottle, x, y) * 0.3 + grain * 0.08) * look.fairway.bright * lit;
+          const fa = smooth(0.42, 0.52, f + rag * 0.35);
+          if (look.fairway.style === "stripes") {
+            // mown stripes: bands across the plan, about 26 ft, blended over a pixel
+            const sxp = (x - W / 2) / k, syp = (y - H / 2) / k, X = view.cx + sxp * cos + syp * sin, Y = view.cy - sxp * sin + syp * cos;
+            const band = Math.max(-1, Math.min(1, Math.sin(((X + Y) * 0.7071 * Math.PI) / 26) * (26 / (Math.PI * 1.2 / k))));
+            lay(fair, fv * (1.02 + 0.06 * band), fa);
+          } else if (look.fairway.style === "sunlit") {
+            lay(fair, fv * 1.04, fa);
+            // (warm sun down the middle)
+            const sm2 = fa * mid * 0.45;
+            cr += (236 - cr) * sm2; cg += (228 - cg) * sm2; cb += (150 - cb) * sm2;
+          } else lay(fair, fv, fa);
         }
         const sa = S(c, 1) / 255;
         if (sa > 0.3) lay(sandPal, (0.6 + grain * 0.3) * lit, smooth(0.45, 0.55, sa));
@@ -1028,6 +1118,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         // under paved walkways, walkways under roads and parking)
         for (let li = 0; li < order.length; li++) {
           const layer = order[li];
+          if (look.paths.style === "trail" && (layer === 0 || layer === 1)) continue;
           if (layer === 3) {
             // Roads and parking: soft gray, darker at the edges, a little gravel
             if (r > 0.2) lay(road, (0.35 + 0.45 * smooth(0.45, 0.9, r) + grain * 0.25 + mott * 0.1) * lit, smooth(0.38, 0.5, r + rag * 0.04));
@@ -1053,8 +1144,13 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
           } else {
             // Paved walkways: pale concrete, a little darker at the edges, a faint fine grit
             const wk = S(ee, 0) / 255;
+            if (look.paths.style === "clean" && wk > 0.2) { const rim = smooth(0.25, 0.42, wk) * (1 - smooth(0.5, 0.66, wk)); cr *= 1 - 0.3 * rim; cg *= 1 - 0.3 * rim; cb *= 1 - 0.3 * rim; }
             if (wk > 0.2) lay(walkPal, (0.42 + 0.4 * smooth(0.45, 0.9, wk) + (GRIT[tr | (x & 511)] - 0.5) * 0.12 + mott * 0.08) * (0.55 + 0.45 * lit), smooth(0.4, 0.52, wk));
           }
+        }
+        if (look.paths.style === "clean") {
+          const pv = Math.max(S(b, 0), S(dd, 0), S(dd, 1)) / 255;
+          if (pv > 0.2) { const rim = smooth(0.3, 0.45, pv) * (1 - smooth(0.52, 0.66, pv)); cr *= 1 - 0.32 * rim; cg *= 1 - 0.32 * rim; cb *= 1 - 0.32 * rim; }
         }
         const bd = S(c, 0) / 255;
         if (bd > 0.25) lay(roof, (0.25 + 0.6 * smooth(0.5, 0.8, bd)) * (0.6 + 0.4 * lit), smooth(0.42, 0.52, bd));
@@ -1076,7 +1172,18 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
             }
             const sun = sunAt(x, y);
             if (sun > 0.9 && d > 6 * pt && GRIT[tr | (x & 511)] > 0.93 && GRIT[((y >> 1) & 511) << 9 | ((x * 3) & 511)] > 0.6) pond += 0.3;
-            lay(water, (creek + (pond - creek) * open) * (0.55 + 0.45 * lit), smooth(0.4, 0.46, w));
+            let wv = (creek + (pond - creek) * open) * (0.55 + 0.45 * lit);
+            if (look.water.style === "glinting") wv *= 0.78;
+            lay(water, wv, smooth(0.4, 0.46, w));
+            if (look.water.style === "painterly") {
+              // (foam streaks along the current, on the creeks; a pale rim at the shore)
+              const foam = smooth(0.62, 0.7, fbm(x / pt * 0.12 + 40, y / pt * 0.5)) * (1 - open) * 0.38 + (1 - smooth(0.3 * pt, 1.4 * pt, d)) * 0.18;
+              const fa2 = foam * smooth(0.4, 0.46, w);
+              cr += (240 - cr) * fa2; cg += (250 - cg) * fa2; cb += (250 - cb) * fa2;
+            } else if (look.water.style === "glinting") {
+              const gl = smooth(0.82, 0.9, noise(x / pt * 0.9 + 3, y / pt * 2.2)) * smooth(0.5, 0.6, fbm(x / pt * 0.05, y / pt * 0.05)) * sunAt(x, y) * 0.75 * smooth(0.4, 0.46, w);
+              cr += (255 - cr) * gl; cg += (231 - cg) * gl; cb += (168 - cb) * gl;
+            }
           }
         }
         // Illuminated contours on the open ground (never across the treetops or water): light
@@ -1136,6 +1243,48 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const solid = (i: number) => height[i] > 0 || built[i] > 0;
   smoothEdges(o, W, H, i => !solid(i) || !solid(i + 1) || !solid(i - 1) || !solid(i + W) || !solid(i - W));
   ctx.putImageData(img, 0, 0);
+  yield;
+  const lxy = Math.hypot(sunX, sunY) || 1, Lx = sunX / lxy, Ly = sunY / lxy;
+  if (vector) {
+    const strength = 0.6 + shadowK * 0.8;
+    if (vstyle === "highland") {
+      // granite boulders at the woods' edge and out in the open
+      const br = seeded(idSeed(doc.id ?? "b") ^ 77), spots: { x: number; y: number; r: number }[] = [];
+      // (a few, in small groups, along the woods' edge where the ground opens)
+      const want = Math.min(90, Math.round((W * H) / (170 * k) ** 2));
+      for (let i = 0; i < want * 30 && spots.length < want; i++) {
+        const x = br() * W, y = br() * H, mx = Math.min(mw - 1, x >> 1), my2 = Math.min(mh - 1, y >> 1), mm = (my2 * mw + mx) * 4;
+        if (wooded[my2 * mw + mx] || a[mm + 1] > 30 || b[mm] > 30 || b[mm + 1] > 30 || near[mm] < 70 || near[mm] > 200) continue;
+        const n = 1 + Math.floor(br() * 3);
+        for (let j = 0; j < n; j++) spots.push({ x: x + (br() - 0.5) * 9 * k, y: y + (br() - 0.5) * 9 * k, r: Math.max(2, (2.5 + br() * 3.5) * k * (j ? 0.6 : 1)) });
+      }
+      drawBoulders(ctx, spots, Lx, Ly, pl, strength);
+    }
+    drawShadows(ctx, vtrees, Lx, Ly, pl, strength, vstyle === "drybrush" ? 1 : vstyle === "highland" ? 0.3 : 0.6);
+    yield 0.92;
+    drawTrees(ctx, vtrees, vstyle, Lx, Ly, pl);
+  }
+  if (pl.mist) {
+    const mr = seeded(31), spots: { x: number; y: number; r: number }[] = [];
+    // (only over open ground well away from the woods, never on the hole's own fairway)
+    for (let i = 0; i < 200 && spots.length < 10; i++) {
+      const x = mr() * W, y = mr() * H, mm = (Math.min(mh - 1, y >> 1) * mw + Math.min(mw - 1, x >> 1)) * 4;
+      if (inWoods[mm] > 40 || a[mm] > 40 || near[mm] > 90) continue;
+      spots.push({ x, y, r: (50 + mr() * 70) * k });
+    }
+    drawMist(ctx, spots);
+  }
+  gradeLight(ctx, W, H, Lx, Ly, pl);
+  if (look.paths.style === "trail") {
+    // dirt and gravel paths as dashed trail lines (walkways and roads stay painted)
+    ctx.save();
+    ctx.strokeStyle = pl.mode === "night" ? "rgba(220,228,255,.85)" : "rgba(255,255,255,.9)";
+    ctx.lineWidth = Math.max(1.2, 1.1 * pt); ctx.lineCap = "round"; ctx.setLineDash([4 * pt, 3.2 * pt]);
+    const trail = (pts: P[]) => { if (pts.length < 2) return; ctx.beginPath(); pts.forEach((q, i) => { const sp = toScreen(q); if (i) ctx.lineTo(sp.x, sp.y); else ctx.moveTo(sp.x, sp.y); }); ctx.stroke(); };
+    for (const l of doc.items.filter(i => i.type === "line" && (i.kind === "path" || i.kind === "walk")) as LineItem[]) if (l.surface !== "paved" && l.surface !== "grass") trail(paintedLine(l, view.scale).points);
+    if (s.nextTee) for (const { from, to } of autoWalks(doc.items, stats, doc.holes)) if (dist(from, to) >= 40) trail([from, to]);
+    ctx.restore();
+  }
   // Where it painted woods, for 3D trees standing on the painting (an unturned view only)
   if (!view.rotation) woodedGrids.set(canvas, { cols: mw, rows: mh, data: wooded, x0: view.cx - W / 2 / k, y0: view.cy - H / 2 / k, ftPerCell: cell / k, cover });
   return canvas;

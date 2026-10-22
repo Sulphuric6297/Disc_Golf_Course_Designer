@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { Layers, X } from "lucide-react";
 import { FOCUS, POPOVER } from "./ui";
 import { useCourse, useEditor } from "../state/course";
-import { FROM, StyleSlider, setStyle, signed } from "./DesignPanel";
+import { StyleSlider, setStyle, signed } from "./DesignPanel";
 import { Segmented, Toggle } from "./ui";
 import { LandscapePicker } from "./LandscapePicker";
+import { SunFromSlider } from "./MapLookPanel";
 import { BAND_COLORS, BASKET_BAND } from "../three/courseModels";
 import { RotateCcw } from "lucide-react";
 
@@ -50,13 +51,13 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-semibold text-zinc-100">Layers</div>
         <div className="flex items-center gap-2">
-          <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ sunAngle: 315, sunHeight: 38, shadows: 0.65, light: 0 })}>
+          <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ sunFrom: undefined, sunHeight: 38, shadows: 0.65, light: 0 })}>
             <RotateCcw size={12} /> Reset
           </button>
           <button className={`text-zinc-400 hover:text-zinc-50 ${big ? "w-9 h-9 -m-2 flex items-center justify-center" : ""}`} title="Close" aria-label="Close" onClick={onClose}><X size={15} /></button>
         </div>
       </div>
-      <StyleSlider live k="sunAngle" value={s.sunAngle ?? 315} label="Sun from the" min={0} max={359} step={5} format={x => FROM[Math.round(x / 45) % 8]} />
+      <SunFromSlider live s={s} />
       <StyleSlider live k="sunHeight" value={s.sunHeight ?? 38} label="Sun height" min={12} max={80} step={2} format={x => `${Math.round(x)}° · ${x < 25 ? "evening" : x < 50 ? "afternoon" : "midday"}`} />
       <StyleSlider live k="shadows" value={s.shadows ?? 0.65} label="Shadows" min={0} max={1} step={0.05} format={x => `${Math.round(x * 100)}%`} />
       <StyleSlider live k="light" value={s.light ?? 0} label="Brightness" min={-0.3} max={0.3} step={0.02} format={signed} />
