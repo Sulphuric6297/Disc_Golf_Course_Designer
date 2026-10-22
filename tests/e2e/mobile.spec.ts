@@ -242,8 +242,8 @@ test.describe("phone", () => {
   });
 
   test("the app never scrolls as a whole when something low in the sheet is brought into view", async ({ page }) => {
+    // (on the Design step, its sheet peeking)
     await oneHole(page);
-    await nav(page).getByRole("button", { name: /Design/ }).tap();
     await settle(page);
     expect(await detent(page)).toBe("peek");
     const before = (await page.getByTestId("plan").boundingBox())!;

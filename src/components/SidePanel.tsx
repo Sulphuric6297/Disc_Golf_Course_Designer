@@ -206,8 +206,9 @@ function LayoutEditor({ open, setOpen }: { open: boolean; setOpen: (f: (o: boole
   );
 }
 
-/** The holes: the new hole tool, the layouts, each hole to pick, the course's totals (the phone's sheet). */
-export function HolesStep() {
+/** The holes: the new hole tool, the layouts, each hole to pick, the course's totals (the phone's
+ * sheet). `course`: only what is the whole course's (the holes column has the rest). */
+export function HolesStep({ course = false }: { course?: boolean }) {
   const doc = useCourse(s => s.doc);
   // (in a draft on a HyzerLab server: the holes it changes)
   const changed = useMemo(() => (SERVER ? draftHoles(doc) : new Set<string>()), [doc]);
@@ -222,12 +223,14 @@ export function HolesStep() {
   const oneLayout = doc.layouts.length < 2 && !layoutsOpen;
   return (
     <>
-      <Section>
-        <ToolCard icon={<Route size={18} />} title="New hole (H)" active={ed.tool === "add-hole"} onClick={() => ed.set({ tool: "add-hole" })} testid="new-hole" />
-      </Section>
+      {!course && (
+        <Section>
+          <ToolCard icon={<Route size={18} />} title="New hole (H)" active={ed.tool === "add-hole"} onClick={() => ed.set({ tool: "add-hole" })} testid="new-hole" />
+        </Section>
+      )}
       {!oneLayout && <LayoutEditor open={layoutsOpen} setOpen={setLayoutsOpen} />}
-      <Section title={`${played} hole${played === 1 ? "" : "s"}`} testid="hole-list" right={oneLayout ? <button className="text-xs text-orange-300 hover:text-orange-200 touch:py-2" onClick={() => setLayoutsOpen(true)}>Edit layouts</button> : undefined}>
-        {doc.holes.length === 0 ? (
+      <Section title={`${played} hole${played === 1 ? "" : "s"}`} testid={course ? "course-holes" : "hole-list"} right={oneLayout ? <button className="text-xs text-orange-300 hover:text-orange-200 touch:py-2" onClick={() => setLayoutsOpen(true)}>Edit layouts</button> : undefined}>
+        {course ? null : doc.holes.length === 0 ? (
           <p className="text-xs text-zinc-400">No holes yet.</p>
         ) : (
           <ol className="space-y-0.5">
@@ -258,7 +261,7 @@ export function HolesStep() {
           </ol>
         )}
         {totals.complete > 0 && (
-          <div className="mt-3"><Facts testid="course-totals" items={[["Par", totals.par], ["Length", fmtDist(totals.length, u)], ["Walking", fmtDist(totals.walk, u)]]} /></div>
+          <div className={course ? "" : "mt-3"}><Facts testid="course-totals" items={[["Par", totals.par], ["Length", fmtDist(totals.length, u)], ["Walking", fmtDist(totals.walk, u)]]} /></div>
         )}
         {doc.holes.length > 1 && (
           <div className="mt-3" data-testid="auto-walks">
@@ -464,7 +467,7 @@ export function HolesColumn() {
         </button>
         {more && (
           <div className="glass-solid absolute left-0 bottom-full mb-2 w-[320px] rounded-[20px] max-h-[70vh] overflow-y-auto" data-testid="course-more">
-            <HolesStep />
+            <HolesStep course />
           </div>
         )}
       </div>
