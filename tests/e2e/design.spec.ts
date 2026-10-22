@@ -23,15 +23,15 @@ test("the Design step shows the printed map; its styles are the painted map in e
   await expect(pageSvg).toContainText("DISC GOLF COURSE");
   await expect(pageSvg).toContainText(/PAR 6 \| 700'/);
   await expect(pageSvg.locator("image").first()).toBeVisible();
-  // One style, the painted Forest map: the styles are its landscapes (colors and woods)
-  await expect(page.getByTestId("styles").getByRole("radio")).toHaveCount(6);
+  // The painted Forest map; the trees' part open, its leaf colors as pictures (autumn: several colors)
+  await expect(page.getByTestId("colors-trees").getByRole("radio")).toHaveCount(4);
   await expect(page.getByTestId("theme-illustrated")).toHaveCount(0);
-  await page.getByTestId("style-autumn").click();
-  await expect.poll(async () => (await course(page)).style.landscape).toBe("autumn");
+  await page.getByTestId("colors-trees-autumn").click();
+  await expect.poll(async () => (await course(page)).style.trees).toBe("#7a4b26");
   const autumn = await course(page);
   expect(autumn.style.theme).toBe("forest");
-  expect(autumn.style.trees).toBe("#7a4b26");
-  await expect(page.getByTestId("style-autumn")).toHaveAttribute("aria-checked", "true");
+  expect(autumn.style.treeMix?.length).toBeGreaterThan(2);
+  await expect(page.getByTestId("colors-trees-autumn")).toHaveAttribute("aria-checked", "true");
   // Title and toggles go straight onto the map
   await page.getByLabel("Map title").fill("Ridge Run");
   await expect(pageSvg).toContainText("Ridge Run");
@@ -181,9 +181,9 @@ test("picking a basket mark changes the map's baskets", async ({ page }) => {
   await page.getByTestId("basket-mark-number").click();
   await expect.poll(async () => (await course(page)).style.basketMark).toBe("number");
   await expect(pageSvg.locator('[data-mark="number"]')).toContainText("1");
-  // Another style keeps the mark chosen
-  await page.getByTestId("style-pines").click();
-  await expect.poll(async () => (await course(page)).style.landscape).toBe("pines");
+  // Another color keeps the mark chosen
+  await page.getByTestId("colors-trees-deep").click();
+  await expect.poll(async () => (await course(page)).style.trees).toBe("#2a3d2e");
   expect((await course(page)).style.basketMark).toBe("number");
 });
 
@@ -662,7 +662,8 @@ test("tall grass is painted its own way: lighter, straw-colored tufts, not the g
   }, url);
   // (about a quarter of the page here; a few percent without it)
   expect(await straw((await painting.getAttribute("href"))!)).toBeGreaterThan(0.1);
-  // Its own color, to set
+  // Its own color, to set (in the grass's part)
+  await page.getByTestId("look-part-grass").getByRole("button", { name: /Grass/ }).first().click();
   await expect(page.getByLabel("Tall grass")).toBeVisible();
 });
 

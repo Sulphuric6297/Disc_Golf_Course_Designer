@@ -1,8 +1,7 @@
 // The Design step's controls: how the printed map looks (its style, colors, title block, what shows).
 import { ArrowRight, RotateCcw } from "lucide-react";
 import { ApplyToHoles } from "./ApplyToHoles";
-import { BASKET_MARKS, PAPER, THEME_COLORS, basketMark, bestRotation } from "../lib/mapSvg";
-import { landscapeOf, tallGrassOf } from "../lib/landscapes";
+import { BASKET_MARKS, PAPER, basketMark, bestRotation } from "../lib/mapSvg";
 import { autoWalks } from "../lib/course";
 import { courseStats } from "../lib/holeStats";
 import { editWalks } from "../state/actions";
@@ -174,7 +173,11 @@ export function DesignPanel() {
             </button>
           ))}
         </div>
-        <div className="mt-2"><ColorInput label="Basket color" value={s.basket} onChange={v => setStyle({ basket: v }, false)} onDone={done} /></div>
+        <div className="mt-2 grid grid-cols-2 gap-x-2">
+          <ColorInput label="Basket color" value={s.basket} onChange={v => setStyle({ basket: v }, false)} onDone={done} />
+          <ColorInput label="OB" value={s.ob} onChange={v => setStyle({ ob: v }, false)} onDone={done} />
+          <ColorInput label="Hazard" value={s.hazard} onChange={v => setStyle({ hazard: v }, false)} onDone={done} />
+        </div>
         <div className="mt-3 text-xs text-zinc-400">Marking colors</div>
         <div className="mt-1 grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Marking colors">
           {([
@@ -248,19 +251,6 @@ export function DesignPanel() {
         <Toggle label="Putting circle (10 m)" checked={s.circle} onChange={v => setStyle({ circle: v })} />
         <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />
         <Toggle label="Hill shading" checked={s.hillshade} onChange={v => setStyle({ hillshade: v })} />
-      </Section>
-      <Section title="Colors" right={<button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ ...THEME_COLORS.forest, ...landscapeOf(s).colors, tallGrass: undefined })}><RotateCcw size={12} /> Style colors</button>}>
-        <div className="grid grid-cols-2 gap-x-3">
-          <ColorInput label="Fairway" value={s.fairway} onChange={v => setStyle({ fairway: v }, false)} onDone={done} />
-          <ColorInput label="Grass" value={s.rough} onChange={v => setStyle({ rough: v }, false)} onDone={done} />
-          <ColorInput label="Tall grass" value={tallGrassOf(s)} onChange={v => setStyle({ tallGrass: v }, false)} onDone={done} />
-          <ColorInput label="Trees" value={s.trees} onChange={v => setStyle({ trees: v }, false)} onDone={done} />
-          <ColorInput label="Water" value={s.water} onChange={v => setStyle({ water: v }, false)} onDone={done} />
-          <ColorInput label="Paths" value={s.path} onChange={v => setStyle({ path: v }, false)} onDone={done} />
-          <ColorInput label="OB" value={s.ob} onChange={v => setStyle({ ob: v }, false)} onDone={done} />
-          <ColorInput label="Hazard" value={s.hazard} onChange={v => setStyle({ hazard: v }, false)} onDone={done} />
-          <ColorInput label="Baskets" value={s.basket} onChange={v => setStyle({ basket: v }, false)} onDone={done} />
-        </div>
       </Section>
       <div className="px-4 py-3">
         <Button full onClick={() => useEditor.getState().set({ step: "export" })} testid="next-step">Next: Export <ArrowRight size={15} /></Button>

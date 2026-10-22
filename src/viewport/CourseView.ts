@@ -20,7 +20,7 @@ import { FAIRWAY_STATIONS, sharedWalks, teeLines, walkRoutes, autoWalks, areaCur
 import { boundsOf, dist, distanceToPath, inBounds, nearestAlong, offsetPath, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath, subPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
-import { landscapeOf } from "../lib/landscapes";
+import { conifersOf, treeMixOf } from "../lib/landscapes";
 import { fmtArea, fmtDist, fmtElev } from "../lib/units";
 import { BASKET_BAND, createAmenity, createBasket, createDropZone, createMando, createTeePad, fitTeePad } from "../three/courseModels";
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
@@ -1905,7 +1905,7 @@ export class CourseView {
       case "basket": return JSON.stringify([doc.course.style.basketBand ?? BASKET_BAND, this.num(item.holeId)]);
       case "mando": return item.side;
       case "dropzone": return "dz";
-      case "tree": return getTreeSignature(item as TreeItem) + item.id + (this.doc ? `|${this.doc.course.style.trees}|${this.doc.course.style.landscape ?? ""}` : "");
+      case "tree": return getTreeSignature(item as TreeItem) + item.id + (this.doc ? `|${this.doc.course.style.trees}|${this.doc.course.style.landscape ?? ""}|${this.doc.course.style.treeMix?.join() ?? ""}` : "");
       case "amenity": return item.kind;
       default: return "";
     }
@@ -1918,7 +1918,7 @@ export class CourseView {
       case "basket": return createBasket(doc.course.style.basketBand ?? BASKET_BAND, this.num(item.holeId));
       case "mando": return createMando(item.side);
       case "dropzone": return createDropZone();
-      case "tree": { const st = doc.course.style; return create3dTree(item, { color: st.trees, mix: landscapeOf(st).mix ?? [] }); }
+      case "tree": { const st = doc.course.style; return create3dTree(item, { color: st.trees, mix: treeMixOf(st) }); }
       case "amenity": return createAmenity(item.kind);
       default: return null;
     }
@@ -2177,8 +2177,8 @@ export class CourseView {
         return { stand, cut, kept: clearing ? stand.filter(k => keptSet.has(k) && forPlay.test({ x: lidar.trees[k][0], y: lidar.trees[k][1] }, lidar.trees[k][3] * 0.3)) : [] };
       });
       this.lidarState = state;
-      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, state.cut, hv, st.trees, st.landscape]), () => {
-        const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, landscapeOf(st).mix);
+      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, state.cut, hv, st.trees, st.landscape, st.treeMix, st.conifers]), () => {
+        const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, treeMixOf(st));
         this.shadowsDirty = true;
         return woods;
       }, this.itemsGroup, true);
@@ -2247,10 +2247,9 @@ export class CourseView {
       // between the measured ones as thickly as it asks; none when it says so)
       if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn")) {
         const here = clearings.near(boundsOf(a.points));
-        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key, cutKey, a.pines, a.bushes, a.density, a.heights]), () => {
-          const land = landscapeOf(st);
+        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, cutKey, a.pines, a.bushes, a.density, a.heights]), () => {
           this.plantings++;
-          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, (p, r) => here.test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.2, a.density ?? 1)), { pines: a.pines, bushes: a.bushes, heights: a.heights });
+          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), (p, r) => here.test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.2, a.density ?? 1)), { pines: a.pines, bushes: a.bushes, heights: a.heights });
           woods.traverse(o => { o.userData.itemId = a.id; });
           this.shadowsDirty = true;
           return woods;
@@ -2265,12 +2264,11 @@ export class CourseView {
         const edge = Math.min(1, Math.max(0, a.brushEdge ?? 0.6));
         // (`over`: the sections drawn after this one, which have their say where they overlap it)
         const plant = (key: string, outline: P[], level: "light" | "medium" | "heavy", kind: BrushKind, outside: boolean, over: P[][] = []) =>
-          put(key, JSON.stringify([outline, level, kind, hv, st.trees, st.landscape, here.key, cutKey, outside ? sections.map(b => b.points) : over, edge, a.points]), () => {
-            const land = landscapeOf(st);
+          put(key, JSON.stringify([outline, level, kind, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, cutKey, outside ? sections.map(b => b.points) : over, edge, a.points]), () => {
             this.plantings++;
             // (the wood's own level stays out of its sections; a section keeps to the wood)
             const keepOut = (p: P, r: number) => here.test(p, r) || cutAt(p) || (outside ? inSection(p) : !pointInPolygon(p, a.points) || over.some(o => pointInPolygon(p, o)));
-            const brush = createUnderbrush(outline, (x, y) => this.h(x, y), st.trees, land.mix ?? [], keepOut, level, edge, a.points, kind);
+            const brush = createUnderbrush(outline, (x, y) => this.h(x, y), st.trees, treeMixOf(st), keepOut, level, edge, a.points, kind);
             brush.traverse(o => { o.userData.itemId = a.id; });
             this.shadowsDirty = true;
             return brush;
@@ -2286,13 +2284,12 @@ export class CourseView {
         a.patches.forEach((patch, i) => {
           const here = clearings.near(boundsOf(patch.points));
           const fill = Math.min(1, Math.max(0.1, patch.fill));
-          put(`woods:${a.id}:patch:${i}`, JSON.stringify([patch.points, fill, hv, st.trees, st.landscape, here.key, this.lidarKey, cutKey, a.pines, a.bushes, a.heights]), () => {
-            const land = landscapeOf(st);
+          put(`woods:${a.id}:patch:${i}`, JSON.stringify([patch.points, fill, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, this.lidarKey, cutKey, a.pines, a.bushes, a.heights]), () => {
             this.plantings++;
             const box = boundsOf(patch.points);
             const near = standing.map(k => trees[k]).filter(t => t && t[0] >= box.minX - 40 && t[0] <= box.maxX + 40 && t[1] >= box.minY - 40 && t[1] <= box.maxY + 40);
             const keepOut = (p: P, reach: number) => here.test(p, reach) || cutAt(p) || near.some(t => Math.hypot(t[0] - p.x, t[1] - p.y) < t[3] * 0.8 + 4);
-            const woods = createWoods(patch.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, keepOut, 22 / Math.sqrt(fill), { pines: a.pines, bushes: a.bushes, heights: a.heights });
+            const woods = createWoods(patch.points, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), keepOut, 22 / Math.sqrt(fill), { pines: a.pines, bushes: a.bushes, heights: a.heights });
             woods.traverse(o => { o.userData.itemId = a.id; });
             this.shadowsDirty = true;
             return woods;
@@ -2316,14 +2313,13 @@ export class CourseView {
     // The painted map's own woods: trees standing on it
     const pw = painted && !measured ? this.paintedWoods : null;
     if (pw) {
-      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, clearings.key, cutKey]), () => {
-        const land = landscapeOf(st);
+      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, st.treeMix, st.conifers, clearings.key, cutKey]), () => {
         const inside = (p: P) => {
           const c = Math.floor((p.x - pw.x0) / pw.ftPerCell), r = Math.floor((p.y - pw.y0) / pw.ftPerCell);
           return c >= 0 && r >= 0 && c < pw.cols && r < pw.rows && pw.data[r * pw.cols + c] === 1;
         };
         // (as thick as the painting's tree cover)
-        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, (p, r) => clearings.test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.15, pw.cover)));
+        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), (p, r) => clearings.test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.15, pw.cover)));
         this.shadowsDirty = true;
         return woods;
       }, this.itemsGroup, true);
@@ -2368,7 +2364,8 @@ export class CourseView {
             l.kind === "stream" ? waterMaterial(c, ...this.waterShore(l.points)) : new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 1, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
           );
           // (walks to the next hole over every other path)
-          ribbon.renderOrder = l.kind === "stream" ? 2 : tierOrder(tierOf(l.kind, l.surface));
+          // (a walk to the next hole over the paths of its own kind it crosses)
+          ribbon.renderOrder = l.kind === "stream" ? 2 : tierOrder(tierOf(l.kind, l.surface)) + (l.kind === "walk" ? 0.07 : 0);
           ribbon.receiveShadow = true;
           g.add(ribbon);
         } else {
@@ -2433,8 +2430,8 @@ export class CourseView {
               drapedRibbon([from, to], wide, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.17),
               new THREE.MeshLambertMaterial({ color: surface && surface !== "dirt" ? PATH_SURFACES[surface].color : st.path, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
             );
-            // (walks to the next hole over every other path)
-            mesh.renderOrder = tierOrder(tierOf("walk", surface));
+            // (walks to the next hole over the paths of their own kind they cross, under the kinds above)
+            mesh.renderOrder = tierOrder(tierOf("walk", surface)) + 0.07;
             g.add(mesh);
           }
           if (!clean) g.add(this.fatLine(this.drapeLine([from, to], LIFT + 0.15), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 6 }));

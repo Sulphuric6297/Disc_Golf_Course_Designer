@@ -10,7 +10,7 @@ import { canopyMask } from "./geo/detect";
 import { boundsOf, corridor, dist, pathLength, pointInPolygon, smoothPath } from "./geom";
 import { autoWalks, drawnAreas, fairwayShiftAt, fairwayWidthAt, linePath, teeLines, widthAlong, widthFactors, widthVaries } from "./course";
 import type { HoleStats } from "./holeStats";
-import { landscapeOf, tallGrassOf } from "./landscapes";
+import { conifersOf, paintedPinesOf, tallGrassOf, treeMixOf } from "./landscapes";
 import { reliefExaggeration } from "./relief";
 import { isLineKind, offsetPolygon, roofOf, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
 import { latitudeOf, lookParts, paintLight, sunFromOf } from "./mapLook";
@@ -620,7 +620,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const cover = Math.max(0.1, Math.min(1, s.treeCover ?? 1));
   // Pines among the trees where the landscape is mostly pines (a few pines in broadleaf woods
   // don't show from above, as on painted maps)
-  const pines = Math.max(0, (landscapeOf(s).conifers - 0.3) / 0.7);
+  const pines = Math.max(0, (conifersOf(s) - 0.3) / 0.7);
   const height = new Float32Array(W * H);
   const kind = new Uint8Array(W * H);
   /** A treetop: a lumpy dome, `top` high at the middle; the taller one wins where they overlap. */
@@ -720,7 +720,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const rnd = seeded(idSeed(doc.seed ?? doc.id ?? doc.name) ^ 0x5bd1e995);
   const vGreens: RGB[] = (() => {
     if (!vector) return [];
-    const mixes = landscapeOf(s).mix ?? [];
+    const mixes = treeMixOf(s);
     if (mixes.length) return mixes.map(c => hexRgb(c));
     const [h0, s0, l0] = rgbToHsl(hexRgb("#354a2c")), [h1, s1, l1] = rgbToHsl(hexRgb(s.trees));
     return STYLE_GREENS[vstyle].map(c => { const [h, sl, l] = rgbToHsl(hexRgb(c)); return hslToRgb(h + (h1 - h0), Math.max(0, Math.min(1, sl * (s1 / Math.max(0.05, s0)))), Math.max(0.05, Math.min(0.9, l * (l1 / Math.max(0.05, l0))))); });
@@ -743,7 +743,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const vStep = vector ? Math.max(crownR * 1.05, (VSPACE[vstyle] / Math.sqrt(Math.max(0.3, look.trees.density))) * k) : 0;
   const vR = (u: number) => Math.max(crownR * 0.75, (VSIZE[vstyle][0] + u * (VSIZE[vstyle][1] - VSIZE[vstyle][0])) * look.trees.size * k);
   const stepPx = vector ? vStep : natural ? Math.max(crownR * 1.15, realStep) : crownR * 1.15;
-  const pineShare = natural ? landscapeOf(s).conifers : pines;
+  const pineShare = natural ? conifersOf(s) : pines;
+  const vPines = paintedPinesOf(s, look.trees.pines);
   const grow = 1 + (1 - cover) * 0.7;
   for (let gy = -stepPx; gy < H + stepPx && !opts.under; gy += stepPx) {
     yield 0.15 + 0.35 * ((gy + stepPx) / (H + 2 * stepPx));
@@ -764,7 +765,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
           // (a crown that would reach over a fairway, path or water nearby: smaller, so the clearing stays clear)
           const clearAt = (dx: number, dy: number) => { const cx = Math.min(mw - 1, Math.max(0, Math.floor((x + dx) / cell))), cy = Math.min(mh - 1, Math.max(0, Math.floor((y + dy) / cell))); return a[(cy * mw + cx) * 4 + 1] > 90; };
           for (let tries = 0; tries < 2; tries++) { const q = r * 0.75; if (clearAt(q, 0) || clearAt(-q, 0) || clearAt(0, q) || clearAt(0, -q)) r *= 0.72; else break; }
-          vtrees.push({ x, y, r, h: r * (1.6 + rnd() * 0.8), pine: rnd() < Math.max(look.trees.pines, pines * 0.9), col: treeColor(rnd()), seed: rnd() });
+          vtrees.push({ x, y, r, h: r * (1.6 + rnd() * 0.8), pine: rnd() < vPines, col: treeColor(rnd()), seed: rnd() });
           continue;
         }
         if (natural) {
@@ -944,7 +945,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const woodsFactors = [0.54, 0.69, 0.86, 1.02, 1.2, 1.46, 1.86, 2.4];
   const woods = palette(s.trees, woodsFactors, 6, 0.82);
   // Treetops in several colors where the landscape has them (autumn), one color per tree
-  const mixPals = (landscapeOf(s).mix ?? []).map(c => palette(c, woodsFactors, 6, 0.9));
+  const mixPals = treeMixOf(s).map(c => palette(c, woodsFactors, 6, 0.9));
   const fair = palette(s.fairway, [0.56, 0.7, 0.84, 1, 1.14, 1.28], 4);
   const lawn = palette(s.rough, [0.6, 0.76, 0.9, 1.04, 1.18], 3);
   // Tall grass: lighter and straw yellow

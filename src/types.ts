@@ -484,6 +484,12 @@ export interface MapStyle {
   /** What the land is like (lib/landscapes): its natural colors in 3D, and on the painted map
    * when picked. Unset: a wooded park. */
   landscape?: "woods" | "park" | "pines" | "dry" | "autumn" | "desert";
+  /** The woods' leaf colors tree by tree (autumn's reds and golds; empty: one color), on the map
+   * and in 3D. Unset: the landscape's. */
+  treeMix?: string[];
+  /** Share of the woods' trees that are pines (0..1), on the map and in 3D. Unset: the landscape's
+   * (and on the painted styles, the style's own). */
+  conifers?: number;
   /** Light on the painted map: where the sun comes from (degrees clockwise from the top of the
    * page) and how high it is (degrees; low sun, long shadows). */
   sunAngle: number;

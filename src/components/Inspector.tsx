@@ -10,7 +10,7 @@ import { STRUCTURE_INK } from "../lib/symbols";
 import { courseStats, holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
 import { fairwayTrees } from "../lib/lidar";
-import { landscapeOf } from "../lib/landscapes";
+import { conifersOf } from "../lib/landscapes";
 import { addHoleOb, deleteSelection, duplicateSelection, editWalks, markObBeyond, select, setTeeLevel, shareBasket } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
 import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface, BrushKind } from "../types";
@@ -18,7 +18,7 @@ import { ElevationProfile } from "./ElevationProfile";
 import { TreeSettings } from "./TreeSettings";
 import { HoleFlight } from "./FlyoverSettings";
 import { HoleSteps } from "./HoleSteps";
-import { getView } from "./MapViewport";
+import { getView } from "../state/view";
 import { Button, ColorInput, Field, NumberInput, Section, Segmented, Slider, Facts, TextInput, Toggle } from "./ui";
 
 const shapeText = { straight: "Straight", left: "Turns left", right: "Turns right", "s-curve": "S-curve" };
@@ -328,7 +328,6 @@ function WoodsBrush({ item }: { item: AreaItem }) {
 function WoodsMix({ item }: { item: AreaItem }) {
   const style = useCourse(s => s.doc.style);
   const u = useCourse(s => s.doc.units);
-  const land = landscapeOf(style);
   const set = (patch: Partial<AreaItem>, history = false) => updateItem(item.id, patch as Partial<CourseItem>, history);
   const done = () => useCourse.getState().commit();
   const [lo, hi] = item.heights ?? [38, 72];
@@ -336,7 +335,7 @@ function WoodsMix({ item }: { item: AreaItem }) {
   return (
     <div className="mb-3" data-testid="woods-mix">
       <div className="text-xs text-zinc-400 mb-1">The trees it grows</div>
-      <Slider label="Pines" min={0} max={100} step={5} value={Math.round((item.pines ?? land.conifers) * 100)} onChange={v => set({ pines: v / 100 })} onDone={done} format={v => `${v}%`} />
+      <Slider label="Pines" min={0} max={100} step={5} value={Math.round((item.pines ?? conifersOf(style)) * 100)} onChange={v => set({ pines: v / 100 })} onDone={done} format={v => `${v}%`} />
       <Slider label="Bushes" min={0} max={80} step={5} value={Math.round((item.bushes ?? 0) * 100)} onChange={v => set({ bushes: v ? v / 100 : undefined })} onDone={done} format={v => (v ? `${v}%` : "None")} />
       <Slider label="Density" min={20} max={250} step={10} value={Math.round((item.density ?? 1) * 100)} onChange={v => set({ density: v / 100 })} onDone={done} format={v => (v === 100 ? "Usual" : v < 100 ? `Sparser (${v}%)` : `Denser (${v}%)`)} />
       <Slider label="Shortest trees" min={8} max={100} value={Math.round(lo)} onChange={v => set({ heights: [Math.min(v, hi - 2), hi] })} onDone={done} format={v => fmtDist(v, u)} />

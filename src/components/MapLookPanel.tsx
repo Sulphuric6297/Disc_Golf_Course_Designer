@@ -1,16 +1,15 @@
 // The Design step's map style: pick one of the styles, then change any part of the map on its own
-// (the landscape it shows, its trees, grass, fairways, paths and roads, water and light). A part
-// changed shows a dot, and the style card says "Mixed"; each part goes back to its style's own in
-// one click. (The landscape is the course's, not the style's: kept when the style changes.)
+// (its trees, grass, fairways, paths and roads, water and light), each choice shown as a picture.
+// A part changed shows a dot, and the style card says "Mixed"; each part goes back to its style's
+// own in one click. Each part's colors are the course's own: kept when the style changes.
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight, RotateCcw } from "lucide-react";
-import { LANDSCAPES, type LandscapeId } from "../lib/landscapes";
+import { COLOR_PICKS, conifersOf, paintedPinesOf, tallGrassOf, treeMixOf } from "../lib/landscapes";
 import { LIGHT_MODES, LOOK_THEMES, PART_CHOICES, compassName, latitudeOf, lightOf, lookParts, partChanged, sunArc, sunFromOf, themeOf, type LookPart, type LookParts } from "../lib/mapLook";
 import { useCourse } from "../state/course";
 import type { MapStyle, PathTier } from "../types";
 import { setStyle, WoodsOptions } from "./DesignPanel";
-import { StylePicker } from "./LandscapePicker";
-import { Segmented, Slider } from "./ui";
+import { ColorInput, Slider } from "./ui";
 
 /** A slider that changes the map when let go (painting takes a moment). */
 function LookSlider({ value, label, min, max, step, format, onDone }: { value: number; label: string; min: number; max: number; step: number; format: (v: number) => string; onDone: (v: number) => void }) {
@@ -68,27 +67,68 @@ function PathOrder({ s }: { s: MapStyle }) {
   );
 }
 
-type Part = LookPart | "light" | "landscape";
-const PART_LABEL: Record<Part, string> = { landscape: "Landscape", trees: "Trees", grass: "Grass", fairway: "Fairways", paths: "Paths and roads", water: "Water", light: "Light and shadow" };
+type Part = LookPart | "light";
+const PART_LABEL: Record<Part, string> = { trees: "Trees", grass: "Grass", fairway: "Fairways", paths: "Paths and roads", water: "Water", light: "Light and shadow" };
+/** Each part's color on the map (its field in the style), and its own color's label. */
+const COLOR_FIELD = { trees: "trees", grass: "rough", fairway: "fairway", paths: "path", water: "water" } as const;
+const COLOR_LABEL: Record<LookPart, string> = { trees: "Trees", grass: "Grass", fairway: "Fairway", paths: "Paths", water: "Water" };
+const commit = () => useCourse.getState().commit();
+
+type Thumb = { id: string; label: string; img: string; on: boolean; pick: () => void };
+/** Choices as pictures (each a small painting of the map with it), two to a row. */
+function Thumbs({ label, items, testid }: { label: string; items: Thumb[]; testid?: string }) {
+  return (
+    <div className="grid grid-cols-2 gap-1.5 mb-2" role="radiogroup" aria-label={label} data-testid={testid}>
+      {items.map(c => (
+        <button key={c.id} role="radio" aria-checked={c.on} onClick={c.pick} data-testid={testid && `${testid}-${c.id}`}
+          className={`text-left rounded-lg overflow-hidden bg-zinc-800 ring-1 transition ${c.on ? "ring-2 ring-orange-400" : "ring-white/10 hover:ring-white/30"}`}>
+          <img src={c.img} alt="" loading="lazy" className="block w-full aspect-[3/2] object-cover" draggable={false} />
+          <span className="block px-2 py-1 text-[11px] font-semibold text-zinc-100 leading-tight">{c.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** A part's colors: a few to pick (as pictures), or its own. */
+function PartColors({ p, s }: { p: LookPart; s: MapStyle }) {
+  const field = COLOR_FIELD[p], value = s[field], base = import.meta.env.BASE_URL;
+  const mix = treeMixOf(s).join();
+  const picks = COLOR_PICKS[p] as { id: string; label: string; color: string; mix?: string[] }[];
+  return (
+    <>
+      <div className="text-xs text-zinc-400 mt-1 mb-1">{p === "trees" ? "Leaf colors" : "Colors"}</div>
+      <Thumbs label={`${PART_LABEL[p]} colors`} testid={`colors-${p}`} items={picks.map(c => ({
+        id: c.id, label: c.label, img: `${base}parts/${p}-color-${c.id}.jpg`,
+        on: c.color.toLowerCase() === value.toLowerCase() && (p !== "trees" || (c.mix ?? []).join() === mix),
+        pick: () => setStyle({ [field]: c.color, ...(p === "trees" ? { treeMix: c.mix ?? [] } : {}) })
+      }))} />
+      <ColorInput label={COLOR_LABEL[p]} value={value} onChange={v => setStyle({ [field]: v, ...(p === "trees" ? { treeMix: [] } : {}) }, false)} onDone={commit} />
+      {p === "grass" && <ColorInput label="Tall grass" value={tallGrassOf(s)} onChange={v => setStyle({ tallGrass: v }, false)} onDone={commit} />}
+    </>
+  );
+}
 
 export function MapLookPanel() {
   const s = useCourse(c => c.doc.style);
-  // (the landscape open to start with: the first thing to pick)
-  const [open, setOpen] = useState<Part | null>("landscape");
+  // (the trees open to start with: the part most changed)
+  const [open, setOpen] = useState<Part | null>("trees");
   const theme = themeOf(s), parts = lookParts(s), lt = lightOf(s);
-  const mixed = (Object.keys(PART_LABEL) as Part[]).some(p => p !== "landscape" && (p === "light" ? !!s.lightMode || s.goldenSun !== undefined : partChanged(s, p)));
+  const mixed = (Object.keys(PART_LABEL) as Part[]).some(p => (p === "light" ? !!s.lightMode || s.goldenSun !== undefined : partChanged(s, p)));
   /** One part's setting changed (kept apart from its style's own). */
   const setPart = <K extends LookPart>(part: K, patch: Partial<LookParts[K]>) => setStyle({ lookParts: { ...s.lookParts, [part]: { ...s.lookParts?.[part], ...patch } } });
-  const resetPart = (part: LookPart | "light") => {
+  const resetPart = (part: Part) => {
     if (part === "light") { setStyle({ lightMode: undefined, goldenSun: undefined, sunFrom: undefined, sunHeight: undefined, shadows: undefined }); return; }
     const own = { ...s.lookParts };
     delete own[part];
     setStyle({ lookParts: Object.keys(own).length ? own : undefined, ...(part === "paths" ? { pathOrder: undefined } : {}) });
   };
   const pickTheme = (id: string) => setStyle({ mapLook: id === "classic" ? undefined : (id as MapStyle["mapLook"]), lookParts: undefined, lightMode: undefined, goldenSun: undefined });
-  const current = (p: Part) => (p === "landscape" ? LANDSCAPES[(s.landscape ?? "woods") as LandscapeId]?.label ?? "" : p === "light" ? LIGHT_MODES.find(m => m.id === lt.mode)!.label : (PART_CHOICES[p] as { id: string; label: string }[]).find(c => c.id === parts[p].style)?.label ?? "");
-  const changed = (p: Part) => (p === "landscape" ? false : p === "light" ? !!s.lightMode || s.goldenSun !== undefined || s.sunFrom !== undefined : partChanged(s, p) || (p === "paths" && !!s.pathOrder));
+  const current = (p: Part) => (p === "light" ? LIGHT_MODES.find(m => m.id === lt.mode)!.label : (PART_CHOICES[p] as { id: string; label: string }[]).find(c => c.id === parts[p].style)?.label ?? "");
+  const changed = (p: Part) => (p === "light" ? !!s.lightMode || s.goldenSun !== undefined || s.sunFrom !== undefined : partChanged(s, p) || (p === "paths" && !!s.pathOrder));
   const base = import.meta.env.BASE_URL;
+  const painted = parts.trees.style !== "classic";
+  const pinesNow = painted ? paintedPinesOf(s, parts.trees.pines) : conifersOf(s);
 
   return (
     <div data-testid="map-look">
@@ -118,21 +158,15 @@ export function MapLookPanel() {
             <button className="w-full flex items-center gap-2 px-2.5 py-2 text-left" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : p)}>
               <span className="text-sm font-semibold text-zinc-100 flex-1">{PART_LABEL[p]}</span>
               {changed(p) && <span className="w-1.5 h-1.5 rounded-full bg-orange-400" aria-label="Changed" />}
+              {p !== "light" && <span className="w-3 h-3 rounded ring-1 ring-white/20" style={{ background: s[COLOR_FIELD[p]] }} />}
               <span className="text-xs text-zinc-400">{current(p)}</span>
               <ChevronRight size={14} className={`text-zinc-500 transition-transform ${isOpen ? "rotate-90" : ""}`} />
             </button>
             {isOpen && (
               <div className="px-2.5 pb-3">
-                {p === "landscape" ? (
+                {p === "light" ? (
                   <>
-                    <StylePicker />
-                    <WoodsOptions s={s} />
-                    <div className="text-[11px] text-zinc-500 mt-2">Also the 3D view's grass and trees.</div>
-                  </>
-                ) : p === "light" ? (
-                  <>
-                    <Segmented label="Light" value={lt.mode} onChange={v => setStyle({ lightMode: v })} options={LIGHT_MODES.map(m => ({ value: m.id, label: m.label }))} />
-                    <div className="h-2" />
+                    <Thumbs label="Light" items={LIGHT_MODES.map(m => ({ id: m.id, label: m.label, img: `${base}parts/light-${m.id}.jpg`, on: lt.mode === m.id, pick: () => setStyle({ lightMode: m.id }) }))} />
                     {lt.mode === "golden" && <LookSlider value={lt.sun} label="Golden sun" min={0} max={1} step={0.05} format={x => (x < 0.05 ? "The style's daylight" : pct(x))} onDone={v => setStyle({ goldenSun: v, lightMode: "golden" })} />}
                     <SunFromSlider s={s} />
                     {lt.mode === "midday" && <LookSlider value={s.sunHeight ?? 38} label="Sun height" min={12} max={80} step={2} format={x => `${Math.round(x)}° · ${x < 25 ? "long shadows" : x < 50 ? "afternoon" : "midday"}`} onDone={v => setStyle({ sunHeight: v })} />}
@@ -140,21 +174,19 @@ export function MapLookPanel() {
                   </>
                 ) : (
                   <>
-                    <div className="flex flex-wrap gap-1.5 mb-2" role="radiogroup" aria-label={PART_LABEL[p]}>
-                      {(PART_CHOICES[p] as { id: string; label: string }[]).map(c => {
-                        const on = parts[p].style === c.id;
-                        return (
-                          <button key={c.id} role="radio" aria-checked={on} onClick={() => setPart(p, { style: c.id } as never)}
-                            className={`px-2.5 py-1.5 rounded-md text-xs font-semibold ${on ? "bg-orange-500/20 text-orange-100 ring-1 ring-orange-400" : "bg-zinc-900/60 text-zinc-300 hover:bg-zinc-700"}`}>{c.label}</button>
-                        );
-                      })}
-                    </div>
-                    {p === "trees" && parts.trees.style !== "classic" && (
+                    <Thumbs label={PART_LABEL[p]} items={(PART_CHOICES[p] as { id: string; label: string }[]).map(c => ({ id: c.id, label: c.label, img: `${base}parts/${p}-${c.id}.jpg`, on: parts[p].style === c.id, pick: () => setPart(p, { style: c.id } as never) }))} />
+                    <PartColors p={p} s={s} />
+                    {p === "trees" && (
                       <>
-                        <LookSlider value={parts.trees.density} label="Density" min={0.4} max={1.6} step={0.05} format={pct} onDone={v => setPart("trees", { density: v })} />
-                        <LookSlider value={parts.trees.size} label="Size" min={0.6} max={1.5} step={0.05} format={pct} onDone={v => setPart("trees", { size: v })} />
-                        <LookSlider value={parts.trees.variety} label="Color variety" min={0} max={1} step={0.05} format={pct} onDone={v => setPart("trees", { variety: v })} />
-                        <LookSlider value={parts.trees.pines} label="Pines" min={0} max={0.9} step={0.05} format={pct} onDone={v => setPart("trees", { pines: v })} />
+                        <LookSlider value={pinesNow} label="Pines" min={0} max={0.9} step={0.05} format={pct} onDone={v => setStyle({ conifers: v })} />
+                        <WoodsOptions s={s} />
+                        {painted && (
+                          <>
+                            <LookSlider value={parts.trees.density} label="Density" min={0.4} max={1.6} step={0.05} format={pct} onDone={v => setPart("trees", { density: v })} />
+                            <LookSlider value={parts.trees.size} label="Size" min={0.6} max={1.5} step={0.05} format={pct} onDone={v => setPart("trees", { size: v })} />
+                            <LookSlider value={parts.trees.variety} label="Color variety" min={0} max={1} step={0.05} format={pct} onDone={v => setPart("trees", { variety: v })} />
+                          </>
+                        )}
                       </>
                     )}
                     {p === "grass" && (
@@ -167,7 +199,7 @@ export function MapLookPanel() {
                     {p === "paths" && <PathOrder s={s} />}
                   </>
                 )}
-                {p !== "landscape" && changed(p) && <button className="mt-2 text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => resetPart(p)}><RotateCcw size={12} /> Back to the style's own</button>}
+                {changed(p) && <button className="mt-2 text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => resetPart(p)}><RotateCcw size={12} /> Back to the style's own</button>}
               </div>
             )}
           </div>

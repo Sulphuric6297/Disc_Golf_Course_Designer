@@ -77,6 +77,27 @@ export const LANDSCAPE_ORDER: LandscapeId[] = ["woods", "park", "pines", "dry", 
 /** The course's landscape (older courses: the wooded park). */
 export const landscapeOf = (s: Pick<MapStyle, "landscape">): Landscape => LANDSCAPES[(s.landscape as LandscapeId) ?? "woods"] ?? LANDSCAPES.woods;
 
+/** The woods' leaf colors tree by tree: as picked, or the landscape's (none: one color). */
+export const treeMixOf = (s: Pick<MapStyle, "landscape" | "treeMix">): string[] => s.treeMix ?? landscapeOf(s).mix ?? [];
+/** Share of the woods' trees that are pines: as picked, or the landscape's. */
+export const conifersOf = (s: Pick<MapStyle, "landscape" | "conifers">) => s.conifers ?? landscapeOf(s).conifers;
+/** Share of a painted style's trees that are pines: as picked, or the style's own (`own`), more
+ * where the landscape is mostly pines. */
+export const paintedPinesOf = (s: Pick<MapStyle, "landscape" | "conifers">, own: number) => s.conifers ?? Math.max(own, Math.max(0, (landscapeOf(s).conifers - 0.3) / 0.7) * 0.9);
+
+/** Colors to pick for each part of the map (Design > Parts of the map), each with its picture
+ * (public/parts/<part>-color-<id>.jpg). The trees' autumn: leaves in several colors. */
+export const COLOR_PICKS = {
+  trees: [
+    { id: "summer", label: "Summer", color: "#354a2c" }, { id: "deep", label: "Deep green", color: "#2a3d2e" },
+    { id: "autumn", label: "Autumn", color: "#7a4b26", mix: LANDSCAPES.autumn.mix }, { id: "late", label: "Late summer", color: "#47532f" }
+  ],
+  grass: [{ id: "green", label: "Green", color: "#4d6a3c" }, { id: "lush", label: "Lush", color: "#668845" }, { id: "dry", label: "Dry", color: "#a39561" }, { id: "sand", label: "Sand", color: "#b9a682" }],
+  fairway: [{ id: "mown", label: "Mown", color: "#6f9255" }, { id: "bright", label: "Bright", color: "#7a9d58" }, { id: "dry", label: "Dry", color: "#8f9a5a" }, { id: "pale", label: "Pale", color: "#a9a374" }],
+  paths: [{ id: "earth", label: "Earth", color: "#6e5b38" }, { id: "light", label: "Light dirt", color: "#8a7552" }, { id: "stony", label: "Stony", color: "#7a6a52" }, { id: "sandy", label: "Sandy", color: "#b08a5a" }],
+  water: [{ id: "deep", label: "Deep", color: "#23677f" }, { id: "blue", label: "Blue", color: "#2a6f86" }, { id: "dark", label: "Dark", color: "#215d78" }, { id: "teal", label: "Teal", color: "#3a7f8a" }]
+} satisfies Record<string, { id: string; label: string; color: string; mix?: string[] }[]>;
+
 /** The color of tall grass on the map: as set, or the grass's own, lighter and straw yellow. */
 export const tallGrassOf = (s: Pick<MapStyle, "rough" | "tallGrass">) => {
   if (s.tallGrass) return s.tallGrass;
