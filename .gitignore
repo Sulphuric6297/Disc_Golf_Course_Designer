@@ -12,3 +12,4 @@ zz-*
 
 # Helper agents' working copies (Claude Code worktrees): local only
 /.claude/worktrees/
+dist-server

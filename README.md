@@ -79,6 +79,12 @@ npm run check      # typecheck, build and the full test suite
 npm run look       # screenshots of the main screens into look/
 ```
 
+## Your own server (in progress)
+
+HyzerLab can also run on your own server, for a group that works on courses together. It is
+invite-only: you're the admin, and you invite everyone else with a link. Two-factor sign-in is
+required for everyone. The server is in `server/`; a ready-to-run container is coming.
+
 ## Hosting on GitHub Pages
 
 `.github/workflows/deploy.yml` runs the tests once per push, split four ways to run at

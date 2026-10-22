@@ -29,6 +29,7 @@ import { TOOLS, toolHint, toolOptions } from "../Toolbar";
 import { ExportProgressPill } from "../ExportProgress";
 import { ActionSheet, type SheetAction } from "./ActionSheet";
 import { BottomSheet, type Detent } from "./BottomSheet";
+import { accountActions } from "../../auth/AccountMenu";
 
 export type MenuInfo = { clientX: number; clientY: number; itemId: string | null; ground: P | null };
 
@@ -362,7 +363,8 @@ function AppMenu({ onClose, onHelp, onOpenFile }: { onClose: () => void; onHelp:
     { label: "New course", icon: <FilePlus size={19} />, run: () => void newCourse() },
     { label: "Open a course file…", icon: <FolderOpen size={19} />, run: onOpenFile },
     { label: "Save as a file", icon: <Save size={19} />, run: () => saveCourseFile() },
-    { label: "Help and gestures", icon: <HelpCircle size={19} />, run: onHelp, testid: "menu-help" }
+    { label: "Help and gestures", icon: <HelpCircle size={19} />, run: onHelp, testid: "menu-help" },
+    ...accountActions()
   ];
   return (
     <>

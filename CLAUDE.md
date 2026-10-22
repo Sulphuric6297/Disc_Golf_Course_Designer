@@ -1,6 +1,12 @@
 # HyzerLab: working rules
 
-A static React + Vite + TypeScript app, hosted on GitHub Pages. No API keys and no backend.
+A React + Vite + TypeScript app in two builds from one codebase:
+
+- **The demo** (the default build), a static site on GitHub Pages: no accounts, no server and no
+  API keys; courses are kept in the browser.
+- **For a HyzerLab server** (`VITE_SERVER=1`): the same app behind sign-in, served by the
+  self-hosted server in `server/` (accounts, invites, 2FA; courses on the server come next).
+
 It is built on the map engine of the Security Camera Planner: the same site import (satellite
 photo, elevation, trees), terrain, and one map view that is 2D looking straight down and 3D when
 tilted.
@@ -22,6 +28,28 @@ design tools and the PDGA guidance the app follows.
   - any `zz-*` file.
 
   It cannot recognise an address or a town, so read your diff and commit message for those yourself.
+
+## The server (`server/`)
+
+- Node + TypeScript: Fastify, Postgres through `postgres` with plain SQL migrations
+  (`server/migrations/`, applied in order at start), `@node-rs/argon2` for passwords, `zod` for
+  input. 2FA codes (TOTP), tokens and encryption at rest are in `server/src/crypto.ts`, on
+  `node:crypto` alone.
+- Invite-only: the first account (the admin) needs the setup code the server prints at its first
+  start; everyone after comes in by an invite link the admin makes. 2FA is required before
+  anything else. No email is needed or kept.
+- Security rules to keep: sessions are random tokens in HttpOnly, SameSite=Strict cookies with
+  only their SHA-256 in the database; every request that changes something needs the
+  `x-hyzerlab: 1` header and an allowed origin; sign-in routes are rate limited; failed
+  passwords rest an account; every account change goes in `audit_log`; 2FA secrets are encrypted
+  with `APP_SECRET`. Check permissions in the server, never only in the app.
+- The app's side is `src/auth/` (the sign-in screens, the account menu and dialogs). The demo
+  build never shows any of it: `SERVER` (`src/auth/api.ts`) is false there.
+- Settings come from the environment (`server/src/config.ts`). Real values, the domain and the
+  server's address never go in the repository.
+- Develop: `docker compose -f server/compose.dev.yml up -d` (Postgres on 127.0.0.1), then
+  `cd server && npm ci && npm run dev` with a `server/.env` (git-ignored), and
+  `VITE_SERVER=1 npm run dev` for the app (it proxies `/api` to the server).
 
 ## How to work
 
@@ -57,6 +85,11 @@ design tools and the PDGA guidance the app follows.
 - Playwright is pinned to the version whose Chromium is installed in Claude Code cloud
   sessions (1.56.1). First-time setup is `npm ci`. On any other machine, also run
   `npx playwright install chromium`.
+
+Server: `cd server && npm test` (needs the dev database; it empties `hyzerlab_test`), and
+signing in through the app: `npx playwright test -c playwright.server.config.ts` (empties
+`hyzerlab_e2e`). CI runs both (`.github/workflows/server.yml`) when the server or `src/auth/`
+changes.
 
 | Spec | Area |
 | --- | --- |

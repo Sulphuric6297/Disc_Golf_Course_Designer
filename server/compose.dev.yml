@@ -1,0 +1,17 @@
+# The database for development and the server's tests, reachable from this machine only:
+#   docker compose -f server/compose.dev.yml up -d
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hyzerlab
+      POSTGRES_PASSWORD: hyzerlab
+      POSTGRES_DB: hyzerlab
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - dev-db:/var/lib/postgresql/data
+      - ./dev-db-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+volumes:
+  dev-db:
