@@ -27,7 +27,7 @@ export const archiveCurrent = async () => {
 const renamed = (doc: CourseDoc): CourseDoc => ({ ...doc, seed: doc.seed ?? doc.id, id: generateId() });
 
 export const show = (doc: CourseDoc) => {
-  useEditor.getState().set({ selectedId: null, activeHoleId: null, tool: "select", teeView: null, flyover: false, step: doc.holes.length ? "holes" : "site" });
+  useEditor.getState().set({ selectedId: null, activeHoleId: null, tool: "select", teeView: null, flyover: false, step: doc.holes.length ? "design" : "site" });
   useCourse.getState().load(doc);
 };
 

@@ -18,13 +18,17 @@ type Preview = "map" | "sign" | "page" | "scorecard";
 
 /** `compact`: a phone's layout (two rows of controls, the page fitted edge to edge, pinch to zoom);
  * `topInset` keeps the controls clear of a top bar over it. */
-export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boolean; topInset?: number }) {
+/** The page being designed (`preview`: shown only, as Export shows what goes out). */
+export function MapDesigner({ compact = false, topInset = 0, preview: only = false }: { compact?: boolean; topInset?: number; preview?: boolean }) {
   const live = useCourse(s => s.doc);
   const doc = useDeferredValue(live);
   const relief0 = useRelief(doc);
   const canopy = useCanopy(doc);
   const relief = useMemo(() => ({ ...relief0, canopy }), [relief0, canopy]);
-  const [preview, setPreview] = useState<Preview>("map");
+  // (the Map step's tab: General shows the course map)
+  const tabId = useEditor(e => e.designTab);
+  const preview: Preview = tabId === "general" ? "map" : tabId;
+  const setPreview = (id: Preview | "general") => useEditor.getState().set({ designTab: id });
   const hole = useEditor(e => e.designHole);
   const setHole = (id: string) => useEditor.getState().set({ designHole: id });
   const [signSize, setSignSize] = useState<SignSize>("18x12");
@@ -176,7 +180,7 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
   // while dragged, then kept as shares of the page.
   const designSel = useEditor(e => e.designSel);
   const setEd = useEditor(e => e.set);
-  const editing = preview === "map";
+  const editing = preview === "map" && !only;
   const svgHost = useRef<HTMLDivElement>(null);
   type Box = { x: number; y: number; w: number; h: number };
   const [selBox, setSelBox] = useState<Box | null>(null);
@@ -315,8 +319,8 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
     </div>
   );
   // (on a phone each tab as wide as its label, "Map" for the course map: all four across the screen)
-  const tab = (id: Preview, label: string, short = label) => (
-    <button key={id} role="tab" aria-selected={preview === id} onClick={() => { setPreview(id); setZoom(null); }} className={`${compact ? "flex-auto min-w-0 h-10 px-2 rounded-full text-[13px] whitespace-nowrap" : "px-3.5 py-1.5 rounded-full text-sm"} font-semibold ${preview === id ? "bg-zinc-100 text-zinc-900" : "text-zinc-300 hover:bg-white/[0.09]"}`}>
+  const tab = (id: Preview | "general", label: string, short = label) => (
+    <button key={id} role="tab" aria-selected={(only && tabId === "general" ? "map" : tabId) === id} onClick={() => { setPreview(id); setZoom(null); }} className={`${compact ? "flex-auto min-w-0 h-10 px-2 rounded-full text-[13px] whitespace-nowrap" : "px-3.5 py-1.5 rounded-full text-sm"} font-semibold ${(only && tabId === "general" ? "map" : tabId) === id ? "bg-white/[0.2] text-zinc-50" : "text-zinc-300 hover:bg-white/[0.09]"}`}>
       {compact ? short : label}
     </button>
   );
@@ -324,7 +328,7 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
     <div className="absolute inset-0 z-20 bg-zinc-950 flex flex-col isolate overflow-hidden" style={compact ? { paddingTop: topInset } : undefined} data-testid="map-designer">
       <Woods inset />
       <div className={compact ? "flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2 py-2" : "flex items-center gap-2 px-3 py-2.5"}>
-        <div role="tablist" className={compact ? "w-full flex gap-1" : "flex gap-1"}>{[tab("map", "Course map", "Map"), tab("sign", "Tee sign"), tab("page", "Hole page"), tab("scorecard", "Scorecard")]}</div>
+        <div role="tablist" className={compact ? "w-full flex gap-1" : "flex gap-1"}>{[...(only ? [] : [tab("general", "General")]), tab("map", "Course map", "Map"), tab("sign", "Tee sign"), tab("page", "Hole page"), tab("scorecard", "Scorecard")]}</div>
         {(preview === "sign" || preview === "page") && doc.holes.length > 0 && (
           <select aria-label={preview === "sign" ? "Hole for the tee sign" : "Hole for the hole page"} className={`bg-white/[0.08] rounded-full px-3 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={holeId ?? ""} onChange={e => setHole(e.target.value)}>
             {doc.holes.map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}</option>)}

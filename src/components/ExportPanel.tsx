@@ -1,7 +1,8 @@
 // The Export step: printable maps, tee signs, scorecards and hole sheets, hole-by-hole pages and
 // GPS files, flyover videos, GPS and data files, and the parts list.
 import { useState, type ReactNode } from "react";
-import { Box, Clapperboard, FileDown, FileJson, Image as ImageIcon, Map as MapIcon } from "lucide-react";
+import { Box, ChevronRight, Clapperboard, FileDown, FileJson, Image as ImageIcon, Link2, Map as MapIcon, Users } from "lucide-react";
+import { SERVER, useAuth } from "../auth/api";
 import JSZip from "jszip";
 import { PAPER, paintedForPrint, renderPoster } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
@@ -198,6 +199,20 @@ export function ExportPanel() {
   return (
     <>
       <ExportBanner />
+      {SERVER && (
+        <Section title="Share" testid="export-share">
+          <div className="rounded-[16px] bg-white/[0.06] overflow-hidden">
+            {([["public", <Link2 key="l" size={16} />, "Public link", "A page anyone with the link can see"], ["people", <Users key="u" size={16} />, "People", "Who can see and edit the course"]] as const).map(([t, icon, label, sub], i) => (
+              <button key={t} data-testid={`export-share-${t}`} onClick={() => useAuth.getState().share(t)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left ${i ? "border-t border-white/[0.07]" : ""}`}>
+                <span className="w-7 h-7 rounded-[8px] bg-white/[0.1] flex items-center justify-center text-zinc-200">{icon}</span>
+                <span className="flex-1 min-w-0"><span className="block text-[13.5px] text-zinc-100">{label}</span><span className="block text-[11.5px] text-zinc-400">{sub}</span></span>
+                <ChevronRight size={15} className="text-zinc-500" />
+              </button>
+            ))}
+          </div>
+        </Section>
+      )}
       <Section title="Print">
         <Row icon={<MapIcon size={15} className="text-orange-300" />} title="Course map" pick={
           <select aria-label="Map paper" className={`${selectCls} w-full`} value={doc.style.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>

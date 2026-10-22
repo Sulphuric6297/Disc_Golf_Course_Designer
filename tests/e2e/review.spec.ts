@@ -6,7 +6,7 @@ test("checks: one ignored is out of the list and the count, kept with the course
   await addHole(page, { x: 300, y: 500 }, { x: 700, y: 500 });
   await addHole(page, { x: 700, y: 540 }, { x: 300, y: 540 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "4 Review" }).click();
+  await page.getByRole("button", { name: "2 Design" }).click();
   const list = page.getByTestId("issues");
   const row = list.getByTestId("issue-row").filter({ hasText: "apart" });
   await expect(row).toHaveCount(1);

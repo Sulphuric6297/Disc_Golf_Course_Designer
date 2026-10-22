@@ -4,8 +4,8 @@ import { createEmptyCourse } from "../../src/lib/course";
 test("loads with the welcome card and the six steps", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Design your disc golf course" })).toBeVisible();
   const steps = page.locator('nav[aria-label="Steps"] button');
-  await expect(steps).toHaveText([/Site/, /Holes/, /Features/, /Review/, /Design/, /Export/]);
-  for (const name of ["2 Holes", "3 Features", "4 Review", "5 Design", "6 Export", "1 Site"]) {
+  await expect(steps).toHaveText([/Site/, /Design/, /Map/, /Export/]);
+  for (const name of ["2 Design", "3 Map", "4 Export", "1 Site"]) {
     await page.getByRole("button", { name }).click();
     await expect.poll(async () => (await editorState(page)).step).toBe(name.split(" ")[1].toLowerCase());
   }
@@ -14,7 +14,7 @@ test("loads with the welcome card and the six steps", async ({ page }) => {
 test("start on open ground goes to the Hole tool", async ({ page }) => {
   await page.getByTestId("welcome-blank").click();
   const s = await editorState(page);
-  expect(s.step).toBe("holes");
+  expect(s.step).toBe("design");
   expect(s.tool).toBe("add-hole");
   await expect(page.getByTestId("tool-hint")).toContainText("Click where the tee goes");
 });
@@ -142,16 +142,16 @@ test("Go to (Ctrl+K or /): a hole by its number, a step, a named thing; Esc clos
   await expect.poll(async () => (await editorState(page)).selectedId).toBe(b.id);
   // The header's button, a step by name (arrows to pick)
   await page.getByTestId("goto-button").click();
-  await page.keyboard.type("desi");
+  await page.keyboard.type("map");
   await page.keyboard.press("Enter");
-  await expect.poll(async () => (await editorState(page)).step).toBe("design");
+  await expect.poll(async () => (await editorState(page)).step).toBe("map");
   // "/", a name: back on the map with it selected
   await page.keyboard.press("/");
   await page.keyboard.type("mill");
   await page.keyboard.press("Enter");
   const pond = (await course(page)).items.find((i: any) => i.label === "Mill Pond");
   await expect.poll(async () => (await editorState(page)).selectedId).toBe(pond.id);
-  expect((await editorState(page)).step).not.toBe("design");
+  expect((await editorState(page)).step).not.toBe("map");
   // Esc closes without going anywhere
   await page.keyboard.press("Control+k");
   await page.keyboard.type("1");

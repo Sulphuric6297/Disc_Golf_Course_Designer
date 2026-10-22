@@ -1,19 +1,18 @@
 // The side panel follows the steps: what to do now, and the lists for it. The map stays the one
 // canvas; the steps never lock anything.
 import { useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, CircleDot, ClipboardCheck, Download, Eye, EyeOff, Info, MapPinned, Palette, Pentagon, Plus, Route, Signpost, Spline, Trash2, TreeDeciduous, type LucideIcon } from "lucide-react";
-import { AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
+import { AlertTriangle, ArrowRight, Info, X, ClipboardCheck, Download, Eye, EyeOff, MapPinned, Palette, Plus, Route, Trash2, type LucideIcon } from "lucide-react";
+import { TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
 import { activeLayout, holeTees } from "../lib/course";
 import { courseIssues, courseStats, courseTotals, levelsOnCourse, openIssues, playsOf, swapped, type SafetyIssue } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { select, uncutTrees } from "../state/actions";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
-import type { AreaKind, Layout, LineKind, PinPosition, StructureKind, TeeLevel, ToolMode } from "../types";
+import type { Layout, PinPosition, TeeLevel } from "../types";
 import { refreshOsm } from "../state/osm";
 import { measureLidar } from "../state/lidar";
 import { saplings, yearsSince } from "../lib/lidar";
 import { getView } from "../state/view";
-import { structureIcon } from "./Toolbar";
 import { Button, Facts, Field, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
 import { DesignPanel } from "./DesignPanel";
 import { ExportPanel } from "./ExportPanel";
@@ -24,15 +23,13 @@ import { NearbyCourses, NearbySafety } from "../auth/Nearby";
 
 export const STEPS: { id: Step; label: string; title: string }[] = [
   { id: "site", label: "Site", title: "Your site" },
-  { id: "holes", label: "Holes", title: "Holes" },
-  { id: "features", label: "Features", title: "OB, mandos and more" },
-  { id: "review", label: "Review", title: "Review" },
-  { id: "design", label: "Design", title: "Map design" },
+  { id: "design", label: "Design", title: "Design" },
+  { id: "map", label: "Map", title: "Map" },
   { id: "export", label: "Export", title: "Export" }
 ];
 
 /** The steps' icons (the phone's step bar and rail). */
-export const STEP_ICONS: Record<Step, LucideIcon> = { site: MapPinned, holes: Route, features: Signpost, review: ClipboardCheck, design: Palette, export: Download };
+export const STEP_ICONS: Record<Step, LucideIcon> = { site: MapPinned, design: Route, map: Palette, export: Download };
 
 /** Mouse words for a touch screen: tap instead of click, hold instead of right-click, no key letters. */
 export const touchWords = (text: string) =>
@@ -64,6 +61,34 @@ const ToolCard = ({ icon, title, onClick, active, testid }: { icon: ReactNode; t
     </button>
   );
 };
+
+/** What was brought in by itself (from the photo, from OpenStreetMap), to take out at once. */
+function BroughtIn() {
+  const doc = useCourse(s => s.doc);
+  const photoTrees = doc.items.filter(i => i.type === "tree" && i.importSource === "photo").length;
+  const photoAreas = doc.items.filter(i => i.type === "area" && i.importSource === "photo").length;
+  const osm = doc.items.filter(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm").length;
+  return (
+    <>
+      {(photoTrees > 0 || photoAreas > 0 || osm > 0) && (
+        <Section title="Brought in automatically">
+          {(photoTrees > 0 || photoAreas > 0) && (
+            <div className="flex items-center justify-between text-xs text-zinc-300 mb-1.5" data-testid="photo-found">
+              {[photoAreas ? `${photoAreas} area${photoAreas > 1 ? "s" : ""}` : "", photoTrees ? `${photoTrees} trees` : ""].filter(Boolean).join(" and ")} from the photo
+              <Button small tone="danger" onClick={() => changeDoc(d => ({ items: d.items.filter(i => !((i.type === "tree" || i.type === "area") && i.importSource === "photo")) }))}>Remove all</Button>
+            </div>
+          )}
+          {osm > 0 && (
+            <div className="flex items-center justify-between text-xs text-zinc-300">
+              {osm} shapes from OpenStreetMap
+              <Button small tone="danger" onClick={() => changeDoc(d => ({ items: d.items.filter(i => !((i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm")) }))}>Remove all</Button>
+            </div>
+          )}
+        </Section>
+      )}
+    </>
+  );
+}
 
 function SiteStep({ onFindSite }: { onFindSite: () => void }) {
   const doc = useCourse(s => s.doc);
@@ -147,6 +172,7 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
         <Toggle label="Hill shading" checked={ed.shading} onChange={v => ed.set({ shading: v })} />
         <Toggle label="Ground texture up close" checked={ed.groundDetail} onChange={v => ed.set({ groundDetail: v })} />
       </Section>
+      <BroughtIn />
       {SERVER && <NearbyCourses />}
       <NextButton step="site" />
     </>
@@ -183,7 +209,8 @@ function LayoutEditor({ open, setOpen }: { open: boolean; setOpen: (f: (o: boole
   );
 }
 
-function HolesStep() {
+/** The holes: the new hole tool, the layouts, each hole to pick, the course's totals (the phone's sheet). */
+export function HolesStep() {
   const doc = useCourse(s => s.doc);
   // (in a draft on a HyzerLab server: the holes it changes)
   const changed = useMemo(() => (SERVER ? draftHoles(doc) : new Set<string>()), [doc]);
@@ -242,89 +269,6 @@ function HolesStep() {
           </div>
         )}
       </Section>
-      <NextButton step="holes" />
-    </>
-  );
-}
-
-function FeaturesStep() {
-  const doc = useCourse(s => s.doc);
-  const ed = useEditor();
-  const area = (kind: AreaKind) => (
-    <ToolCard key={kind} icon={<Pentagon size={17} style={{ color: AREA_KINDS[kind].color }} />} title={AREA_KINDS[kind].label} active={ed.tool === "draw-area" && ed.areaKind === kind} onClick={() => ed.set({ tool: "draw-area", areaKind: kind })} testid={`feature-area-${kind}`} />
-  );
-  const line = (kind: LineKind) => (
-    <ToolCard key={kind} icon={<Spline size={17} style={{ color: LINE_KINDS[kind].color }} />} title={LINE_KINDS[kind].label} active={ed.tool === "draw-line" && ed.lineKind === kind} onClick={() => ed.set({ tool: "draw-line", lineKind: kind })} testid={`feature-line-${kind}`} />
-  );
-  const built = (kind: StructureKind) => (
-    <ToolCard key={kind} icon={<span className="inline-block" dangerouslySetInnerHTML={{ __html: structureIcon(kind, 18, `card-${kind}`) }} />} title={STRUCTURE_KINDS[kind].label} active={ed.tool === "draw-structure" && ed.structureKind === kind} onClick={() => ed.set({ tool: "draw-structure", structureKind: kind, drawShape: STRUCTURE_KINDS[kind].shape === "outline" ? "box" : "points" })} testid={`feature-structure-${kind}`} />
-  );
-  const tool = (mode: ToolMode, icon: ReactNode, title: string) => (
-    <ToolCard key={mode} icon={icon} title={title} active={ed.tool === mode} onClick={() => ed.set({ tool: mode })} testid={`feature-${mode}`} />
-  );
-  const photoTrees = doc.items.filter(i => i.type === "tree" && i.importSource === "photo").length;
-  const photoAreas = doc.items.filter(i => i.type === "area" && i.importSource === "photo").length;
-  const osm = doc.items.filter(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm").length;
-  return (
-    <>
-      <Section title="Rules of play">
-        <div className="space-y-1.5">
-          {area("ob")}
-          {line("ob")}
-          {area("hazard")}
-          {tool("add-mando", <Signpost size={17} className="text-orange-400" />, "Mando (M)")}
-          {tool("add-dropzone", <CircleDot size={17} className="text-orange-400" />, "Drop zone (Z)")}
-        </div>
-      </Section>
-      <Section title="The land">
-        <div className="space-y-1.5">
-          {area("water")}
-          {line("stream")}
-          {area("woods")}
-          {tool("add-tree", <TreeDeciduous size={17} className="text-green-400" />, "Trees (R)")}
-          {area("fairway")}
-          {area("nogo")}
-          {area("casual")}
-        </div>
-      </Section>
-      <Section title="Getting around">
-        <div className="space-y-1.5">
-          {line("path")}
-          {line("walk")}
-          {line("road")}
-          {line("fence")}
-          {area("parking")}
-          {tool("add-amenity", <Info size={17} className="text-sky-400" />, "Benches, signs, parking… (A)")}
-        </div>
-      </Section>
-      <Section title="Buildings and bridges (S)" testid="feature-structures">
-        <div className="space-y-1.5">
-          {built("bridge")}
-          {built("boardwalk")}
-          {built("stairs")}
-          {built("wall")}
-          {built("building")}
-          {built("shelter")}
-          {built("deck")}
-        </div>
-      </Section>
-      {(photoTrees > 0 || photoAreas > 0 || osm > 0) && (
-        <Section title="Brought in automatically">
-          {(photoTrees > 0 || photoAreas > 0) && (
-            <div className="flex items-center justify-between text-xs text-zinc-300 mb-1.5" data-testid="photo-found">
-              {[photoAreas ? `${photoAreas} area${photoAreas > 1 ? "s" : ""}` : "", photoTrees ? `${photoTrees} trees` : ""].filter(Boolean).join(" and ")} from the photo
-              <Button small tone="danger" onClick={() => changeDoc(d => ({ items: d.items.filter(i => !((i.type === "tree" || i.type === "area") && i.importSource === "photo")) }))}>Remove all</Button>
-            </div>
-          )}
-          {osm > 0 && (
-            <div className="flex items-center justify-between text-xs text-zinc-300">
-              {osm} shapes from OpenStreetMap
-              <Button small tone="danger" onClick={() => changeDoc(d => ({ items: d.items.filter(i => !((i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm")) }))}>Remove all</Button>
-            </div>
-          )}
-        </Section>
-      )}
-      <NextButton step="features" />
     </>
   );
 }
@@ -333,7 +277,8 @@ const IssueIcon = ({ level }: { level: SafetyIssue["level"] }) => (
   level === "info" ? <Info size={14} className="text-sky-400 shrink-0 mt-0.5" /> : <AlertTriangle size={14} className={`${level === "danger" ? "text-red-400" : "text-amber-400"} shrink-0 mt-0.5`} />
 );
 
-function ReviewStep() {
+/** The course checked: its numbers, the problems found (each shown on the map too), the holes. */
+export function ReviewStep() {
   const doc = useCourse(s => s.doc);
   const stats = courseStats(doc);
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
@@ -425,23 +370,101 @@ function ReviewStep() {
         </table>
       </Section>
       {SERVER && <NearbySafety />}
-      <NextButton step="review" />
     </>
   );
 }
 
-/** The step's own content (lists, settings and tools), under its heading. */
+/** The step's own content (lists, settings and tools), under its heading. (Design on a big
+ * screen has none: the map is the step, see HolesColumn and Problems.) */
 export function StepContent({ onFindSite }: { onFindSite: () => void }) {
   const step = useEditor(e => e.step);
   return (
     <>
       {step === "site" && <SiteStep onFindSite={onFindSite} />}
-      {step === "holes" && <HolesStep />}
-      {step === "features" && <FeaturesStep />}
-      {step === "review" && <ReviewStep />}
-      {step === "design" && <DesignPanel />}
+      {step === "design" && <HolesStep />}
+      {step === "design" && <Section title="Checks" testid="checks-link"><ProblemsCount full /></Section>}
+      {step === "map" && <DesignPanel />}
       {step === "export" && <ExportPanel />}
     </>
+  );
+}
+
+/** The problems found on the course, as a count to open them by (green when there are none). */
+export function ProblemsCount({ full }: { full?: boolean }) {
+  const doc = useCourse(s => s.doc);
+  const open = useEditor(e => e.problemsOpen);
+  const n = useMemo(() => openIssues(doc, courseIssues(doc)).open.length, [doc]);
+  return (
+    <button
+      data-testid="problems-button"
+      aria-expanded={open}
+      onClick={() => useEditor.getState().set({ problemsOpen: !open })}
+      className={`${full ? "w-full justify-center" : ""} inline-flex items-center gap-2 h-9 px-3 rounded-full text-[12.5px] font-semibold ${n ? "bg-red-500/[0.18] text-red-200 ring-1 ring-red-400/40" : "bg-emerald-500/[0.14] text-emerald-200"}`}
+    >
+      {n ? <span className="w-[18px] h-[18px] rounded-full bg-red-400 text-red-950 text-[11px] font-bold leading-[18px] text-center">{n}</span> : <ClipboardCheck size={15} />}
+      {n ? `Problem${n === 1 ? "" : "s"}` : "No problems"}
+    </button>
+  );
+}
+
+/** The checks, opened from the problems count: a glass panel over the map's right side. */
+export function ProblemsPanel() {
+  const open = useEditor(e => e.problemsOpen);
+  if (!open) return null;
+  return (
+    <div className="glass-solid absolute right-3 top-3 bottom-3 z-30 w-[340px] max-w-[calc(100%-24px)] rounded-[24px] overflow-y-auto" role="dialog" aria-label="Checks" data-testid="problems-panel">
+      <div className="flex items-center justify-between px-4 pt-3.5">
+        <h2 className="text-[17px] font-bold text-zinc-50">Checks</h2>
+        <button className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-50" aria-label="Close checks" onClick={() => useEditor.getState().set({ problemsOpen: false })}><X size={16} /></button>
+      </div>
+      <ReviewStep />
+    </div>
+  );
+}
+
+/** The holes, floating down the map's left side (Design): each to fly to and pick, a new one, the
+ * course's totals and layouts behind a button. */
+export function HolesColumn() {
+  const doc = useCourse(s => s.doc);
+  const ed = useEditor();
+  const stats = courseStats(doc);
+  const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
+  const [more, setMore] = useState(false);
+  const u = doc.units;
+  return (
+    <div className="absolute left-3 top-3 bottom-3 z-20 flex flex-col gap-2 pointer-events-none" data-testid="holes-column">
+      <div className="glass pointer-events-auto rounded-[22px] p-1.5 flex flex-col gap-0.5 max-h-full min-h-0 w-[172px]" data-testid="hole-list">
+        <div className="overflow-y-auto min-h-0 flex flex-col gap-0.5">
+          {stats.map(s => {
+            const hole = doc.holes.find(h => h.id === s.holeId)!;
+            const sel = ed.selectedId === s.holeId || ed.activeHoleId === s.holeId;
+            return (
+              <button key={s.holeId} data-testid="hole-row" title={hole.name || `Hole ${s.label}`}
+                onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
+                className={`flex items-center gap-2 rounded-[14px] pl-1 pr-2 py-1 text-left ${sel ? "bg-white/[0.16] text-zinc-50" : "text-zinc-300"}`}>
+                <span className="min-w-[24px] h-6 px-1 rounded-full flex items-center justify-center text-[11.5px] font-bold shrink-0" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink }} data-testid="hole-badge">{s.label}</span>
+                <span className="text-[12.5px] tabular-nums truncate">{s.complete ? `${fmtDist(s.length, u)} · P${s.par}` : "unfinished"}</span>
+              </button>
+            );
+          })}
+        </div>
+        <button data-testid="new-hole" onClick={() => ed.set({ tool: "add-hole" })} className={`flex items-center gap-2 rounded-[14px] pl-1 pr-2 py-1 text-[12.5px] font-semibold ${ed.tool === "add-hole" ? "bg-orange-500 text-zinc-950" : "text-orange-300"}`}>
+          <span className={`w-6 h-6 rounded-full flex items-center justify-center ${ed.tool === "add-hole" ? "bg-zinc-950/20" : "bg-orange-500 text-zinc-950"}`}><Plus size={14} /></span>New hole
+        </button>
+      </div>
+      <div className="glass pointer-events-auto rounded-[18px] mt-auto relative">
+        <button className="w-full flex gap-3 items-end px-3.5 py-2 text-left" onClick={() => setMore(m => !m)} aria-expanded={more} data-testid="course-totals-button">
+          {[[totals.complete, "holes"], [totals.par, "par"], [fmtDist(totals.length, u), "total"]].map(([v, k]) => (
+            <span key={k as string}><span className="block text-[15px] font-bold text-zinc-50 leading-tight tabular-nums">{v}</span><span className="text-[11px] text-zinc-400">{k}</span></span>
+          ))}
+        </button>
+        {more && (
+          <div className="glass-solid absolute left-0 bottom-full mb-2 w-[320px] rounded-[20px] max-h-[70vh] overflow-y-auto" data-testid="course-more">
+            <HolesStep />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

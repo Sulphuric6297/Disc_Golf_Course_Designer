@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 /** The focus ring (keyboard only). */
 export const FOCUS = "focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
 /** A floating surface: a menu, a popover, a card over the map. */
-export const POPOVER = "glass backdrop-blur-xl rounded-2xl shadow-xl shadow-black/40 ring-1 ring-white/10";
+export const POPOVER = "glass-solid rounded-2xl shadow-xl shadow-black/40 ring-1 ring-white/10";
 /** A row in a menu. */
 export const MENU_ROW = `w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-200 hover:bg-white/[0.07] rounded-lg text-left disabled:opacity-40 ${FOCUS}`;
 /** A quiet heading inside a menu or a list. */

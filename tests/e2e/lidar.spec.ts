@@ -132,7 +132,7 @@ test("trees measured from the air on import: cut down on a fairway, a stump to b
   // Flyovers keep clear of the trees standing: one measured tree's crown, as tall as it is
   const crown = await page.evaluate(p => (window as any).__dgView.canopyAt(p, 4), here);
   expect(crown.top - (await page.evaluate(p => (window as any).__dgView.h(p.x, p.y), here))).toBeGreaterThan(55);
-  expect((await editorState(page)).step).toBe("holes");
+  expect((await editorState(page)).step).toBe("design");
 });
 
 test("an existing course measured from the air from the Site step (Undo takes it back)", async ({ page }) => {

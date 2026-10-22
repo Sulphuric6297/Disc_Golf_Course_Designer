@@ -179,7 +179,7 @@ export function PreviewBar() {
   // (in a draft that the course moved on from: bring its changes in)
   if (!preview && behind && draft) {
     return (
-      <div className={`fixed left-1/2 -translate-x-1/2 top-[68px] z-30 ${beside} max-w-[calc(100vw-24px)] glass border border-sky-700/60 rounded-xl shadow-2xl px-3 py-2 flex flex-wrap items-center gap-2`} role="region" aria-label="Course changed" data-testid="behind-bar">
+      <div className={`fixed left-1/2 -translate-x-1/2 top-[68px] z-30 ${beside} max-w-[calc(100vw-24px)] glass-solid border border-sky-700/60 rounded-xl shadow-2xl px-3 py-2 flex flex-wrap items-center gap-2`} role="region" aria-label="Course changed" data-testid="behind-bar">
         <span className="text-sm text-zinc-100 mr-2">The course changed since your draft started</span>
         <button className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold bg-sky-600 hover:bg-sky-500 text-white" onClick={() => open("update")} data-testid="update-draft">Update draft</button>
       </div>
@@ -189,7 +189,7 @@ export function PreviewBar() {
   const go = (fn: () => Promise<void>) => async () => { setBusy(true); try { await fn(); } finally { setBusy(false); } };
   const btn = "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold disabled:opacity-50";
   return (
-    <div className={`fixed left-1/2 -translate-x-1/2 top-[68px] z-30 ${beside} max-w-[calc(100vw-24px)] glass rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 px-3 py-2 flex flex-wrap items-center gap-2`} role="region" aria-label="Looking back" data-testid="preview-bar">
+    <div className={`fixed left-1/2 -translate-x-1/2 top-[68px] z-30 ${beside} max-w-[calc(100vw-24px)] glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 px-3 py-2 flex flex-wrap items-center gap-2`} role="region" aria-label="Looking back" data-testid="preview-bar">
       <History size={16} className="text-sky-300 shrink-0" />
       <span className="text-sm text-zinc-100 mr-2 min-w-0 truncate">{preview.label}</span>
       {preview.kind === "version" && (role === "owner" || !approval) && (

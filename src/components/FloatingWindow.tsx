@@ -145,7 +145,7 @@ export function FloatingWindow({ title, storageKey, width, onWidth, minWidth = 2
       ref={ref}
       role="dialog"
       aria-label={label}
-      className={`absolute z-40 glass backdrop-blur-xl rounded-xl shadow-2xl overflow-hidden border border-white/10 ring-1 ring-black/50 ${dragging ? "" : "transition-[left,top] duration-150"} ${className}`}
+      className={`absolute z-40 glass-solid rounded-xl shadow-2xl overflow-hidden border border-white/10 ring-1 ring-black/50 ${dragging ? "" : "transition-[left,top] duration-150"} ${className}`}
       style={{ width, left: pos?.x ?? 0, top: pos?.y ?? 0, visibility: pos ? "visible" : "hidden" }}
     >
       <div

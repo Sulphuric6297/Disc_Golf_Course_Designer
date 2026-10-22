@@ -2,8 +2,9 @@
 // as a file, the courses opened before), the steps in the middle, and on the right the search,
 // then the course's state and the account (on a server) or the demo note. 2D/3D and the
 // light live with the map's own controls.
+import { ProblemsCount } from "./SidePanel";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, FilePlus, FolderOpen, HelpCircle, Save, Search, Trash2, MapPin, Route, Trees, ClipboardCheck, Palette, Download } from "lucide-react";
+import { ChevronDown, FilePlus, FolderOpen, HelpCircle, Save, Search, Trash2, MapPin, Route, Palette, Download } from "lucide-react";
 import { STEPS } from "./SidePanel";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { deleteRecent, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../state/files";
@@ -23,7 +24,7 @@ const Logo = ({ size = 26 }: { size?: number }) => (
 /** The icon buttons along the bar. */
 export const BAR_BUTTON = `p-2 rounded-full text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.08] ${FOCUS}`;
 /** Each step's mark on the steps bar. */
-const STEP_ICONS = { site: MapPin, holes: Route, features: Trees, review: ClipboardCheck, design: Palette, export: Download } as const;
+const STEP_ICONS = { site: MapPin, design: Route, map: Palette, export: Download } as const;
 
 export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => void }) {
   const name = useCourse(s => s.doc.name);
@@ -106,6 +107,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
       </nav>}
 
       <div className="flex items-center gap-1">
+        {ed.step === "design" && !readOnly && <ProblemsCount />}
         <button onClick={onGoTo} className={BAR_BUTTON} aria-label="Go to" title="Go to (Ctrl+K)" data-testid="goto-button"><Search size={18} /></button>
         {SERVER ? <AccountMenu onHelp={onHelp} /> : (
           <>

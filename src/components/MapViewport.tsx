@@ -87,7 +87,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const terrain = useMemo(() => terrainStats(doc.terrainHeights), [doc.terrainHeights]);
   const contours = useMemo(() => (ed.contours ? contoursOf(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height) : { segments: [], interval: 1 }), [ed.contours, doc.terrainHeights, doc.gridSize, doc.canvas]);
   const shadeUrl = useMemo(() => (ed.shading && terrain.relief > 1 && (doc.style.reliefScale ?? 1) > 0 ? hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, undefined, doc.style.reliefScale ?? 1).toDataURL() : null), [ed.shading, terrain.relief, doc.terrainHeights, doc.gridSize, doc.canvas, doc.style.reliefScale]);
-  const issues = useMemo(() => (ed.step === "review" ? openIssues(doc, courseIssues(doc)).open : null), [ed.step, doc]);
+  const issues = useMemo(() => (ed.step === "design" ? openIssues(doc, courseIssues(doc)).open : null), [ed.step, doc]);
   // From a tee and in flyovers: the ground in the Design look (the painted map), not the photo
   const paintedOn = !!ed.teeView && ed.flyLook === "painted" && !!doc.holes.length;
   // (painted ahead while the course rests with a hole picked, so a flyover has less to wait for;
@@ -95,7 +95,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const [restingDoc, setRestingDoc] = useState(doc);
   useEffect(() => { const t = window.setTimeout(() => setRestingDoc(doc), 1500); return () => window.clearTimeout(t); }, [doc]);
   const warmHole = ed.selectedId && doc.holes.some(h => h.id === ed.selectedId) ? ed.selectedId : ed.activeHoleId;
-  const warm = !ed.teeView && ed.flyLook === "painted" && restingDoc === doc && doc.holes.length > 0 && ed.step !== "design";
+  const warm = !ed.teeView && ed.flyLook === "painted" && restingDoc === doc && doc.holes.length > 0 && ed.step !== "map";
   const [painted, paintedFresh] = usePaintedGround(paintedOn || warm);
   useEffect(() => {
     if (!warm || !warmHole || !painted) return;
@@ -155,7 +155,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { if (ed.tool !== "draw-area" && ed.patchFor) useEditor.getState().set({ patchFor: null }); }, [ed.tool, ed.patchFor]);
   useEffect(() => { view?.setGrass(ed.grass, ed.wind); }, [view, ed.grass, ed.wind]);
   // Covered by the Design step's page: the map view rests
-  useEffect(() => { view?.setPaused(ed.step === "design" && !ed.teeView); }, [view, ed.step, ed.teeView]);
+  useEffect(() => { view?.setPaused(ed.step === "map" && !ed.teeView); }, [view, ed.step, ed.teeView]);
   useEffect(() => {
     if (!view) return;
     if (ed.flyover && ed.teeView) view.flyover(ed.teeView, () => useEditor.getState().set({ flyover: false }));
@@ -169,8 +169,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const pad = "pointer-events-auto glass backdrop-blur rounded-lg shadow-lg shadow-black/30 ring-1 ring-white/10";
 
   // (on a computer, clear of the Selection panel at the top right: 150 to 450 px from the edge)
-  const obBar = ed.obPick && !ed.teeView && <ObPickBar view={view} cut={ed.pickCut} top={compact ? controlsTop + 8 : 12} right={!compact && ed.selectedId && ed.step !== "design" ? 462 : 8} />;
-  const plotBar = ed.plotLine && !ed.teeView && <PlotBar view={view} holeNumber={doc.holes.findIndex(h => h.id === ed.plotLine) + 1} top={compact ? controlsTop + 8 : 12} right={!compact && ed.selectedId && ed.step !== "design" ? 462 : 8} />;
+  const obBar = ed.obPick && !ed.teeView && <ObPickBar view={view} cut={ed.pickCut} top={compact ? controlsTop + 8 : 12} right={!compact && ed.selectedId && ed.step !== "map" ? 462 : 8} />;
+  const plotBar = ed.plotLine && !ed.teeView && <PlotBar view={view} holeNumber={doc.holes.findIndex(h => h.id === ed.plotLine) + 1} top={compact ? controlsTop + 8 : 12} right={!compact && ed.selectedId && ed.step !== "map" ? 462 : 8} />;
   if (compact) {
     return (
       <div className="absolute inset-0">
@@ -252,7 +252,7 @@ function ObPickBar({ view, cut, top, right }: { view: CourseView | null; cut: bo
   const b = "px-3 h-9 touch:h-11 rounded-lg text-sm font-semibold";
   return (
     <div className="absolute left-2 z-20 flex justify-center pointer-events-none" style={{ top, right }}>
-    <div className="pointer-events-auto flex items-center gap-2 glass rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 px-3 py-2 max-w-full" data-testid="ob-pick-bar">
+    <div className="pointer-events-auto flex items-center gap-2 glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 px-3 py-2 max-w-full" data-testid="ob-pick-bar">
       <span className="text-sm text-zinc-100 font-semibold whitespace-nowrap">{cut ? "Remove a stretch" : "OB stretch"}</span>
       <span className="text-xs text-zinc-300 hidden sm:inline">Click where it starts, then where it ends</span>
       <button className={`${b} text-zinc-300 hover:bg-white/[0.09]`} onClick={() => view?.cancelDrawing()} data-testid="ob-pick-cancel">Cancel</button>
@@ -265,7 +265,7 @@ function PlotBar({ view, holeNumber, top, right }: { view: CourseView | null; ho
   const b = "px-3 h-9 touch:h-11 rounded-lg text-sm font-semibold";
   return (
     <div className="absolute left-2 z-20 flex justify-center pointer-events-none" style={{ top, right }}>
-    <div className="pointer-events-auto flex items-center gap-2 glass rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 px-3 py-2 max-w-full" data-testid="plot-bar">
+    <div className="pointer-events-auto flex items-center gap-2 glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 px-3 py-2 max-w-full" data-testid="plot-bar">
       <span className="text-sm text-zinc-100 font-semibold whitespace-nowrap">Hole {holeNumber}</span>
       <span className="text-xs text-zinc-300 hidden sm:inline">Click along the line to the basket, or drag it</span>
       <button className={`${b} text-zinc-200 hover:bg-white/[0.09]`} onClick={() => view?.undoPoint()} data-testid="plot-undo">Undo point</button>
@@ -280,7 +280,7 @@ function TouchControls({ view, info, scale, units, phone, top, room, threeD }: {
   const set = useEditor(e => e.set);
   const mode = useEditor(e => e.view);
   const boxing = useEditor(e => e.dragSelect);
-  const editing = useEditor(e => e.step !== "design");
+  const editing = useEditor(e => e.step !== "map");
   const b = "w-11 h-11 flex items-center justify-center text-zinc-100 active:bg-white/[0.13] focus:outline-none focus-visible:bg-white/[0.13]";
   const group = "pointer-events-auto flex flex-col glass rounded-2xl border border-white/10 shadow-[0_6px_20px_rgba(0,0,0,0.35)] overflow-hidden divide-y divide-white/5";
   // On a phone the compass only once the map is turned (as in map apps), and only what fits above

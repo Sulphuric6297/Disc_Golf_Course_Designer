@@ -18,7 +18,7 @@ type Entry = { key: string; text: string; find: string; sub?: string; icon: Reac
 /** The map shows on every step but Design: going to something on it leaves the Design page. */
 const toMap = () => {
   const ed = useEditor.getState();
-  if (ed.step === "design" || ed.teeView) ed.set({ step: "holes", teeView: null, flyover: false });
+  if (ed.step === "map" || ed.teeView) ed.set({ step: "design", teeView: null, flyover: false });
 };
 
 /** What a named thing on the map is called, and what kind it is. */
@@ -82,7 +82,7 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => v
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center pt-[12vh] bg-black/50" onMouseDown={e => e.target === e.currentTarget && onClose()} data-testid="goto">
-      <div className="w-[520px] max-w-[calc(100%-24px)] glass rounded-2xl shadow-2xl ring-1 ring-white/10 overflow-hidden" role="dialog" aria-label="Go to">
+      <div className="w-[520px] max-w-[calc(100%-24px)] glass-solid rounded-2xl shadow-2xl ring-1 ring-white/10 overflow-hidden" role="dialog" aria-label="Go to">
         <div className="flex items-center gap-2 px-3 shadow-[0_1px_0_0_rgba(255,255,255,0.06)]">
           <Search size={16} className="text-zinc-500 shrink-0" />
           <input

@@ -43,7 +43,7 @@ export function NoticeBell() {
         {list.unread > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-orange-500 text-zinc-950 text-[11px] font-bold flex items-center justify-center" data-testid="notice-count">{list.unread}</span>}
       </button>
       {menu && (
-        <div className="absolute right-0 top-full mt-1 w-80 max-h-[70vh] overflow-y-auto glass rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 py-1 z-50" role="menu" data-testid="notices">
+        <div className="absolute right-0 top-full mt-1 w-80 max-h-[70vh] overflow-y-auto glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 py-1 z-50" role="menu" data-testid="notices">
           <div className="flex items-center px-3 py-1.5">
             <span className="text-[12px] font-bold uppercase tracking-wider text-zinc-500 flex-1">Notices</span>
             {list.unread > 0 && <button className="text-xs text-orange-300" onClick={() => void api("POST", "notifications/read", {}).then(refresh)}>Mark all read</button>}

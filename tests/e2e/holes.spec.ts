@@ -224,7 +224,7 @@ test("the walk to the next tee becomes a line to reshape, in place of the automa
   await drag(page, await handleCenter(page, "corner", 1), await screenOf(page, 640, 560));
   await expect.poll(async () => (await course(page)).items.find((i: any) => i.kind === "walk").points[1].y).toBeLessThan(600);
   // Nothing automatic left to edit in the Design step either
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await expect(page.getByTestId("edit-walks")).toHaveCount(0);
   await page.keyboard.press("Control+z");
   await page.keyboard.press("Control+z");
@@ -522,11 +522,11 @@ test("walks leaving a basket that two holes share say which hole each goes to, o
   await expect(tags.filter({ hasText: "→ 2" })).toHaveCount(1);
   await expect(tags.filter({ hasText: "→ 3" })).toHaveCount(1);
   // On the printed map too (each one movable like the other labels)
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await expect(page.getByTestId("design-page").locator('[data-label^="walk:"]')).toHaveCount(2, { timeout: 60_000 });
   await expect(page.getByTestId("design-page")).toContainText("→ 3");
   // Hole 2 taken out: one walk from that basket, no tag
-  await page.getByRole("button", { name: "2 Holes" }).click();
+  await page.getByRole("button", { name: "2 Design" }).click();
   await page.evaluate(() => { const w = window as any; w.__dgActions.select(w.__dgCourse().holes[1].id); });
   await page.keyboard.press("Delete");
   await expect.poll(async () => (await course(page)).holes.length).toBe(2);

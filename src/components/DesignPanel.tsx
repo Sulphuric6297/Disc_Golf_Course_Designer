@@ -164,15 +164,33 @@ export function DesignPanel() {
   const s = doc.style;
   // Color pickers change the map live while dragging; the change is one undo step when it ends
   const done = () => useCourse.getState().commit();
+  // (the tab above the page: what's shared by every download, or one of them alone)
+  const tab = useEditor(e => e.designTab);
+  const toGeneral = (
+    <Section>
+      <button className="w-full flex items-center justify-between rounded-[14px] bg-white/[0.06] px-3 py-2.5 text-sm text-zinc-100" onClick={() => useEditor.getState().set({ designTab: "general" })} data-testid="to-general">
+        Logo, colors and lettering <ArrowRight size={15} className="text-zinc-400" />
+      </button>
+    </Section>
+  );
   return (
     <>
-      <PageElementPanel />
-      <Section title="Map style" testid="map-style">
-        <MapLookPanel />
+      {tab === "general" && (
+        <>
+      <Section title="Logo, colors and lettering" testid="card-style" right={s.card ? <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ card: undefined })}><RotateCcw size={12} /> Reset</button> : undefined}>
+        <div className="grid grid-cols-2 gap-x-3">
+          {([["header", "Header"], ["accent", "Header lettering"], ["paper", "Paper"], ["ink", "Text"]] as const).map(([key, label]) => (
+            <ColorInput key={key} label={label} value={s.card?.[key] ?? CARD_DEFAULTS[key]} onChange={v => setStyle({ card: { ...s.card, [key]: v } }, false)} onDone={done} />
+          ))}
+        </div>
+        <Field label="Course logo">
+          <LogoPicker logo={s.logo} />
+        </Field>
+        <Field label="Headings">
+          <Segmented label="Card font" value={s.card?.font ?? CARD_DEFAULTS.font} onChange={v => setStyle({ card: { ...s.card, font: v } })} options={[{ value: "Oswald", label: <span style={{ fontFamily: "Oswald" }}>Oswald</span> }, { value: "Bitter", label: <span style={{ fontFamily: "Bitter" }}>Bitter</span> }, { value: "Inter", label: <span style={{ fontFamily: "Inter" }}>Inter</span> }, { value: "Script", label: <span style={{ fontFamily: "Kaushan Script" }}>Script</span> }]} />
+        </Field>
       </Section>
-      <PageSection />
-      <LightAndShadow s={s} />
-      <Section title="Symbols">
+      <Section title="Markings" testid="markings">
         <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="Basket marks">
           {BASKET_MARKS.map(m => (
             <button
@@ -215,6 +233,28 @@ export function DesignPanel() {
           ))}
         </div>
       </Section>
+        </>
+      )}
+      {tab === "map" && (
+        <>
+          <PageElementPanel />
+          <Section title="Map style" testid="map-style">
+            <MapLookPanel />
+          </Section>
+      <Section title="On the map">
+        <Toggle label="Throw lines" checked={s.throwLines} onChange={v => setStyle({ throwLines: v })} />
+        <Toggle label="Distances on the lines" checked={s.distances} onChange={v => setStyle({ distances: v })} />
+        <Toggle label="Walks to the next hole (automatic)" checked={s.nextTee} onChange={v => setStyle({ nextTee: v })} />
+        {s.nextTee && (
+          <>
+            <Slider label="Walk width" min={1} max={20} step={0.5} value={s.walkWidth ?? 6} onChange={v => setAllWalks(v, false)} onDone={done} format={v => fmtDist(v, doc.units)} />
+            {autoWalks(doc.items, courseStats(doc), doc.holes).length > 0 && <div className="-mt-1 mb-1"><Button small onClick={() => editWalks(null)} testid="edit-walks">Edit the walks</Button></div>}
+          </>
+        )}
+        <Toggle label="Putting circle (10 m)" checked={s.circle} onChange={v => setStyle({ circle: v })} />
+        <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />
+        <Toggle label="Hill shading" checked={s.hillshade} onChange={v => setStyle({ hillshade: v })} />
+      </Section>
       <Section title="Title block">
         <Field label="Title"><TextInput label="Map title" value={s.title} placeholder={doc.name} onChange={v => setStyle({ title: v })} /></Field>
         <Field label="Subtitle"><TextInput label="Map subtitle" value={s.subtitle} placeholder={doc.site.location?.label ?? "Location, designer, year"} onChange={v => setStyle({ subtitle: v })} /></Field>
@@ -224,20 +264,6 @@ export function DesignPanel() {
         </Field>
         <Slider label="Label size" min={0.7} max={1.6} step={0.05} value={s.labelScale} onChange={v => setStyle({ labelScale: v })} format={v => `${Math.round(v * 100)}%`} />
       </Section>
-      <Section title="Signs and cards" testid="card-style" right={s.card ? <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ card: undefined })}><RotateCcw size={12} /> Reset</button> : undefined}>
-        <div className="grid grid-cols-2 gap-x-3">
-          {([["header", "Header"], ["accent", "Header lettering"], ["paper", "Paper"], ["ink", "Text"]] as const).map(([key, label]) => (
-            <ColorInput key={key} label={label} value={s.card?.[key] ?? CARD_DEFAULTS[key]} onChange={v => setStyle({ card: { ...s.card, [key]: v } }, false)} onDone={done} />
-          ))}
-        </div>
-        <Field label="Course logo">
-          <LogoPicker logo={s.logo} />
-        </Field>
-        <Field label="Headings">
-          <Segmented label="Card font" value={s.card?.font ?? CARD_DEFAULTS.font} onChange={v => setStyle({ card: { ...s.card, font: v } })} options={[{ value: "Oswald", label: <span style={{ fontFamily: "Oswald" }}>Oswald</span> }, { value: "Bitter", label: <span style={{ fontFamily: "Bitter" }}>Bitter</span> }, { value: "Inter", label: <span style={{ fontFamily: "Inter" }}>Inter</span> }, { value: "Script", label: <span style={{ fontFamily: "Kaushan Script" }}>Script</span> }]} />
-        </Field>
-      </Section>
-      <TeeSignSettings />
       <Section title="Paper">
         <Field label="Size">
           <select aria-label="Paper size" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={s.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
@@ -253,20 +279,17 @@ export function DesignPanel() {
           </div>
         </div>
       </Section>
-      <Section title="On the map">
-        <Toggle label="Throw lines" checked={s.throwLines} onChange={v => setStyle({ throwLines: v })} />
-        <Toggle label="Distances on the lines" checked={s.distances} onChange={v => setStyle({ distances: v })} />
-        <Toggle label="Walks to the next hole (automatic)" checked={s.nextTee} onChange={v => setStyle({ nextTee: v })} />
-        {s.nextTee && (
-          <>
-            <Slider label="Walk width" min={1} max={20} step={0.5} value={s.walkWidth ?? 6} onChange={v => setAllWalks(v, false)} onDone={done} format={v => fmtDist(v, doc.units)} />
-            {autoWalks(doc.items, courseStats(doc), doc.holes).length > 0 && <div className="-mt-1 mb-1"><Button small onClick={() => editWalks(null)} testid="edit-walks">Edit the walks</Button></div>}
-          </>
-        )}
-        <Toggle label="Putting circle (10 m)" checked={s.circle} onChange={v => setStyle({ circle: v })} />
-        <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />
-        <Toggle label="Hill shading" checked={s.hillshade} onChange={v => setStyle({ hillshade: v })} />
-      </Section>
+          <PageSection />
+          <LightAndShadow s={s} />
+        </>
+      )}
+      {tab === "sign" && (
+        <>
+          <TeeSignSettings />
+          {toGeneral}
+        </>
+      )}
+      {(tab === "page" || tab === "scorecard") && toGeneral}
       <div className="px-4 py-3">
         <Button full onClick={() => useEditor.getState().set({ step: "export" })} testid="next-step">Next: Export <ArrowRight size={15} /></Button>
       </div>

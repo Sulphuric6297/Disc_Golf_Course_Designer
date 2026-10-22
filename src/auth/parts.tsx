@@ -109,7 +109,7 @@ export function Dialog({ title, onClose, children, wide, testid, side }: { title
       <>
         {/* (a phone: the sheet's backdrop; a computer: none, the map stays live) */}
         <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={onClose} />
-        <div ref={box} className="fixed z-50 bottom-0 inset-x-0 md:inset-x-auto md:right-0 md:top-12 md:bottom-0 md:w-[400px] glass shadow-2xl ring-1 ring-white/10 rounded-t-[22px] md:rounded-none max-h-[92dvh] md:max-h-none overflow-y-auto p-5 pb-[max(20px,env(safe-area-inset-bottom))]" role="dialog" aria-label={title} data-testid={testid}>
+        <div ref={box} className="fixed z-50 bottom-0 inset-x-0 md:inset-x-auto md:right-0 md:top-12 md:bottom-0 md:w-[400px] glass-solid shadow-2xl ring-1 ring-white/10 rounded-t-[22px] md:rounded-none max-h-[92dvh] md:max-h-none overflow-y-auto p-5 pb-[max(20px,env(safe-area-inset-bottom))]" role="dialog" aria-label={title} data-testid={testid}>
           <div className="flex items-center mb-4">
             <h2 className="font-semibold text-zinc-50 text-base flex-1">{title}</h2>
             <button aria-label="Close" className="text-zinc-400 hover:text-white touch:w-11 touch:h-11 touch:-m-2.5 touch:flex touch:items-center touch:justify-center" onClick={onClose}><X size={18} /></button>

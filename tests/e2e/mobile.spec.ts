@@ -101,7 +101,7 @@ test.describe("phone", () => {
     await expect(page.getByRole("toolbar", { name: "Tools" })).toHaveCount(0);
     // (A course with a hole: an empty one shows the welcome card on the Site step instead)
     await oneHole(page);
-    const titles: Record<string, string> = { Site: "Your site", Holes: "Holes", Features: "OB, mandos and more", Review: "Review", Design: "Map design", Export: "Export" };
+    const titles: Record<string, string> = { Site: "Your site", Design: "Design", Map: "Map", Export: "Export" };
     for (const [label, title] of Object.entries(titles)) {
       await nav(page).getByRole("button", { name: new RegExp(label) }).tap();
       await expect.poll(async () => (await editorState(page)).step).toBe(label.toLowerCase());
@@ -134,7 +134,7 @@ test.describe("phone", () => {
     expect(go.y + go.height).toBeGreaterThan(vh * 0.85);
     await page.getByTestId("import-site").tap();
     await expect.poll(async () => (await course(page)).background, { timeout: 60_000 }).not.toBeNull();
-    await expect.poll(async () => (await editorState(page)).step).toBe("holes");
+    await expect.poll(async () => (await editorState(page)).step).toBe("design");
     await expect(page.getByTestId("tool-hint")).toContainText("Tap where the tee goes");
   });
 
@@ -489,7 +489,7 @@ test.describe("tablet on its side", () => {
   test("a tablet on its side keeps the desktop layout; the top bar and tools fit on screen", async ({ page }) => {
     await oneHole(page);
     await expect(page.getByTestId("side-panel")).toBeVisible();
-    await expect(page.getByRole("button", { name: "2 Holes" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "2 Design" })).toBeVisible();
     await expect(page.getByTestId("bottom-nav")).toHaveCount(0);
     const vw = page.viewportSize()!.width;
     const tools = (await page.getByRole("toolbar", { name: "Tools" }).boundingBox())!;

@@ -113,7 +113,9 @@ export const setHoleNumber = (holeId: string, n: number, also: number[] = []) =>
 
 // --- Editor state (not saved with the course) ---
 
-export type Step = "site" | "holes" | "features" | "review" | "design" | "export";
+/** The steps: the site, the course drawn on it (holes, features and their checks), the map's look
+ * (and the signs and cards), and what goes out (downloads, the public link). */
+export type Step = "site" | "design" | "map" | "export";
 
 type EditorStore = {
   step: Step;
@@ -139,6 +141,10 @@ type EditorStore = {
   designSel: string | null;
   /** The hole whose tee sign or hole page the Design step shows. */
   designHole: string | null;
+  /** The checks (problems on the course) open over the map. */
+  problemsOpen: boolean;
+  /** The Map step's tab: what's shared by every download, or one of them (its page shown). */
+  designTab: "general" | "map" | "sign" | "page" | "scorecard";
   /** The hole being worked on (its parts get handles; new tees, baskets and mandos join it). */
   activeHoleId: string | null;
   view: "2d" | "3d";
@@ -202,6 +208,8 @@ export const useEditor = create<EditorStore>()(set => ({
   patchBrush: false,
   designSel: null,
   designHole: null,
+  problemsOpen: false,
+  designTab: "map",
   activeHoleId: null,
   view: "2d",
   teeLevel: "blue",

@@ -369,7 +369,7 @@ test("the map view rests while the Design step's page covers it, and draws the c
   await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
   await page.keyboard.press("Escape");
   const info = () => page.evaluate(() => (window as any).__dgView.drawInfo() as { paused: boolean; frames: number });
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await expect.poll(async () => (await info()).paused).toBe(true);
   const before = (await info()).frames;
   // Changes to the course while it rests: nothing drawn
@@ -380,7 +380,7 @@ test("the map view rests while the Design step's page covers it, and draws the c
   await page.waitForTimeout(500);
   expect((await info()).frames).toBe(before);
   // Back on the map: drawing again
-  await page.getByRole("button", { name: "2 Holes" }).click();
+  await page.getByRole("button", { name: "2 Design" }).click();
   await expect.poll(async () => (await info()).paused).toBe(false);
   await expect.poll(async () => (await info()).frames).toBeGreaterThan(before);
 });

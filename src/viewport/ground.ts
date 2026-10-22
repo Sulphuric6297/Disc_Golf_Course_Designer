@@ -402,7 +402,8 @@ export class Ground {
         const [r, g, b] = elevationColor(t);
         c.setRGB((r / 255) * 0.85, (g / 255) * 0.85, (b / 255) * 0.85, THREE.SRGBColorSpace);
       } else {
-        c.copy(flat).offsetHSL(0, 0, (t - 0.5) * 0.12);
+        // (by a share, not a step: low ground a little darker, never black)
+        c.copy(flat).multiplyScalar(1 + (t - 0.5) * 0.35);
       }
       attr.setXYZ(i, c.r, c.g, c.b);
     }

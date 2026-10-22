@@ -62,7 +62,7 @@ const keepPut = (e: UIEvent<HTMLElement>) => {
 };
 
 /** How tall the sheet is when a step opens (the map first where the step is about the map). */
-const STEP_DETENT: Record<Step, Detent> = { site: "half", holes: "peek", features: "peek", review: "half", design: "peek", export: "half" };
+const STEP_DETENT: Record<Step, Detent> = { site: "half", design: "peek", map: "peek", export: "half" };
 
 const Logo = ({ size = 30 }: { size?: number }) => (
   // (the badge: a fairway through the woods at sunrise)
@@ -168,9 +168,8 @@ function StepHeader({ onFindSite }: { onFindSite: () => void }) {
   const chip = (text: string) => <span className="shrink-0 text-[13px] font-semibold text-zinc-200 bg-white/[0.07] rounded-full px-3 py-1.5 tabular-nums">{text}</span>;
   const right =
     step === "site" ? (!site.bounds ? <button className="shrink-0 h-10 px-4 rounded-full bg-orange-500 text-zinc-950 text-[14px] font-bold active:bg-orange-600" onClick={onFindSite}>Find your park</button> : site.bounds ? chip(`${((canvas.width * canvas.height) / 43560).toFixed(1)} acres`) : null)
-    : step === "holes" || step === "features" ? (sum.holes ? chip(`${sum.holes} hole${sum.holes === 1 ? "" : "s"} · Par ${sum.par}`) : null)
-    : step === "review" ? chip(sum.issues ? `${sum.issues} check${sum.issues === 1 ? "" : "s"}` : "No problems")
-    : step === "design" ? chip(look)
+    : step === "design" ? (sum.holes ? chip(`${sum.holes} hole${sum.holes === 1 ? "" : "s"} · Par ${sum.par}`) : null)
+    : step === "map" ? chip(look)
     : null;
   return (
     <div className="touch-none flex items-center gap-3 px-4 pb-3" data-testid="sheet-header">
@@ -440,7 +439,7 @@ function usePanel({ onFindSite, onMore }: { onFindSite: () => void; onMore: () =
   const tool = useEditor(e => e.tool);
   const selectedId = useEditor(e => e.selectedId);
   const meta = STEPS.find(s => s.id === step)!;
-  const tools = step === "holes" || step === "features" || mode === "tool";
+  const tools = step === "design" || mode === "tool";
   const header = (
     <>
       {tools && <ToolStrip />}
@@ -538,7 +537,7 @@ function PhoneShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: Shel
   const toggle = useCallback(() => setDetent(d => (d === "peek" ? "half" : "peek")), []);
   const onStep = (s: Step) => goStep(s, setDetent, toggle);
   const top = 72; // below the top bar
-  const design = ed.step === "design" && !ed.teeView;
+  const design = (ed.step === "map" || ed.step === "export") && !ed.teeView;
   // (Room for the map's buttons: between the top bar and the sheet, less the drawing buttons;
   // none under the welcome card or the Design preview)
   const controlsRoom = welcome || design ? 0 : mainH - sheetH - top - 12 - (ed.drawPoints > 0 ? 64 : 0);
@@ -550,7 +549,7 @@ function PhoneShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: Shel
         <MapViewport onContextMenu={onContextMenu} compact="phone" controlsTop={top} controlsRoom={immersive ? 0 : controlsRoom} />
         {design && (
           <div className="absolute inset-x-0 top-0 z-20" style={{ bottom: sheetH }}>
-            <MapDesigner compact topInset={top} />
+            <MapDesigner compact topInset={top} preview={ed.step === "export"} />
           </div>
         )}
         {!immersive && <PhoneTopBar onMenu={openApp} />}
@@ -590,7 +589,7 @@ function RailShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: Shell
     setOpen(true);
     goStep(s, () => {}, () => setOpen(o => !o));
   };
-  const design = ed.step === "design" && !ed.teeView;
+  const design = (ed.step === "map" || ed.step === "export") && !ed.teeView;
   return (
     <div className="dg-compact fixed inset-0 flex bg-zinc-950 text-zinc-100 overflow-hidden isolate" data-layout="rail" onScroll={keepPut}>
       <Woods />
@@ -603,7 +602,7 @@ function RailShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: Shell
       )}
       <main className="relative flex-1 min-w-0">
         <MapViewport onContextMenu={onContextMenu} compact="rail" controlsTop={8} controlsRoom={immersive || design ? 0 : 999} />
-        {design && <div className="absolute inset-0 z-20"><MapDesigner compact topInset={0} /></div>}
+        {design && <div className="absolute inset-0 z-20"><MapDesigner compact topInset={0} preview={ed.step === "export"} /></div>}
         {!immersive && <DrawBar bottom={12} />}
         {ed.teeView && <TeeViewHud compact />}
         <ExportProgressPill />

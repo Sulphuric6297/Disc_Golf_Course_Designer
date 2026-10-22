@@ -16,7 +16,7 @@ test("the Design step shows the printed map; its styles are the painted map in e
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await addHole(page, { x: 700, y: 650 }, { x: 700, y: 300 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const pageSvg = page.getByTestId("design-page");
   await expect(pageSvg.locator("svg")).toBeVisible();
   // Forest is the default: the title over the map, the layout's par and length on a chip
@@ -54,7 +54,7 @@ test("turning the map to fill the page", async ({ page }) => {
   await addHole(page, { x: 550, y: 600 }, { x: 850, y: 350 });
   await addHole(page, { x: 900, y: 300 }, { x: 1200, y: 100 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await page.getByTestId("best-rotation").click();
   await expect.poll(async () => Math.abs((await course(page)).style.rotation)).toBeGreaterThan(20);
   await page.getByRole("button", { name: "North up" }).click();
@@ -66,7 +66,7 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   // How light the painted land is (dark canopy against lighter grass)
@@ -125,7 +125,7 @@ test("light and shadow: the sun, shadows and brightness repaint the Forest map, 
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
@@ -169,7 +169,7 @@ test("picking a basket mark changes the map's baskets", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const pageSvg = page.getByTestId("design-page");
   await expect(page.getByTestId("basket-mark-basket")).toHaveAttribute("aria-checked", "true");
   await expect(pageSvg.locator('[data-mark="basket"]')).toHaveCount(1);
@@ -537,7 +537,7 @@ test("choosing PDGA marking colors in the Design step", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await expect(page.getByTestId("markings-map")).toHaveAttribute("aria-checked", "true");
   await page.getByTestId("markings-pdga").click();
   await expect.poll(async () => (await course(page)).style.markings).toBe("pdga");
@@ -577,7 +577,7 @@ test("elevation on the Forest map: hills shade the painting, contour lines are p
   await importSite(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
   await painted(page);
@@ -619,7 +619,7 @@ test("painted water: a pond is lighter at its rim and in the shallows, deep and 
     (window as any).__dgEditor().set({ areaKind: "water" });
     (window as any).__dgActions.addDrawn("area", pts);
   });
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
@@ -663,7 +663,7 @@ test("tall grass is painted its own way: lighter, straw-colored tufts, not the g
     (window as any).__dgEditor().set({ areaKind: "rough" });
     (window as any).__dgActions.addDrawn("area", [{ x: 150, y: 700 }, { x: 500, y: 700 }, { x: 500, y: 860 }, { x: 150, y: 860 }]);
   });
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
@@ -713,7 +713,7 @@ test.describe("on a phone", () => {
     await blankCourse(page);
     await page.evaluate(() => {
       (window as any).__dgActions.addHole({ x: 300, y: 700 }, { x: 650, y: 700 }, "blue");
-      (window as any).__dgEditor().set({ step: "design", tool: "select" });
+      (window as any).__dgEditor().set({ step: "map", tool: "select" });
     });
     const painting = page.getByTestId("design-page").locator("image").first();
     await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/, { timeout: 30_000 });
@@ -729,7 +729,7 @@ test("the page never freezes while the map paints: it paints between frames, the
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await addHole(page, { x: 700, y: 650 }, { x: 900, y: 350 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/, { timeout: 60_000 });
   const before = await painting.getAttribute("href");
@@ -764,14 +764,14 @@ test("no explainers: the steps' panels and the printed pages say what things are
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
   const explainers = [/Make the course map beautiful/, /Click a tee spot, then a basket spot/, /A layout plays each hole/, /Quick OB/, /Draw around it/, /Anyone with the link/, /budgets usually run/, /The same sun lights/, /Short on fairways/, /stay clear\. Lone trees/, /Made with/, /PDGA par guidelines/, /Play safe/];
-  for (const step of ["1 Site", "2 Holes", "3 Features", "4 Review", "5 Design", "6 Export"]) {
+  for (const step of ["1 Site", "2 Design", "2 Design", "2 Design", "3 Map", "4 Export"]) {
     await page.getByRole("button", { name: step }).click();
     const text = (await page.getByTestId("side-panel").textContent()) ?? "";
     for (const e of explainers) expect(text, `${step}: ${e}`).not.toMatch(e);
   }
   // The printed pages: the course map, a tee sign, the scorecard
   for (const tab of ["Course map", "Tee sign", "Scorecard"]) {
-    await page.getByRole("button", { name: "5 Design" }).click();
+    await page.getByRole("button", { name: "3 Map" }).click();
     await page.getByRole("tab", { name: tab }).click();
     const text = (await page.getByTestId("design-page").textContent()) ?? "";
     for (const e of explainers) expect(text, `${tab}: ${e}`).not.toMatch(e);
@@ -800,7 +800,7 @@ test("trees placed on a fairway are painted where and as they were placed, and t
   await blankCourse(page);
   await addHole(page, { x: 300, y: 500 }, { x: 700, y: 500 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
@@ -848,7 +848,7 @@ test("the course map's page edited like Canva: pick, drag, size, style, hide; te
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
   await page.getByTestId("hole-row").click();
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const svg = page.getByTestId("design-page");
   const style = async () => (await course(page)).style;
   // (Delete on the page with nothing picked never deletes the hole picked on the map)
@@ -932,7 +932,7 @@ test("the map stays put on the Design page; its labels are dragged, hidden and p
   await blankCourse(page);
   const hole = await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const style = async () => (await course(page)).style;
   // (the map isn't one of the things to pick)
   await expect(page.getByTestId("page-element").filter({ hasText: /^Map$/ })).toHaveCount(0);
@@ -964,7 +964,7 @@ test("the Design page zooms with the wheel and pans with a press and drag", asyn
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const zoom = async () => parseInt((await page.getByTestId("design-zoom").textContent()) ?? "0");
   await expect.poll(zoom).toBeGreaterThan(0);
   const z0 = await zoom();
@@ -990,7 +990,7 @@ test("zoomed in on the Design page, every edge of the page can be reached: the f
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await expect.poll(async () => parseInt((await page.getByTestId("design-zoom").textContent()) ?? "0")).toBeGreaterThan(0);
   for (let i = 0; i < 6; i++) await page.getByTestId("map-designer").getByRole("button", { name: "Zoom in", exact: true }).click();
   const scroller = page.getByTestId("design-scroll");
@@ -1046,7 +1046,7 @@ test("while the Design preview paints, a bar shows how far along it is, gone whe
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const bar = page.getByTestId("paint-progress");
   await expect(bar).toBeVisible({ timeout: 20_000 });
   await expect(bar).toContainText("Painting the map");
@@ -1060,7 +1060,7 @@ test("tee sign settings: one hole's own given to the holes picked (Apply to hole
   await addHole(page, { x: 300, y: 500 }, { x: 700, y: 500 });
   await addHole(page, { x: 300, y: 700 }, { x: 700, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const panel = page.getByTestId("sign-settings");
   await panel.getByRole("radio", { name: /^Hole \d/ }).click();
   await panel.getByRole("radio", { name: "Hidden" }).click();

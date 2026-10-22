@@ -181,7 +181,7 @@ test("shapes by dragging: a rectangle and a circle", async ({ page }) => {
 test("a building as a rectangle by two clicks (Rectangle comes first for buildings), and a circle the same way", async ({ page }) => {
   await blankCourse(page);
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "3 Features" }).click();
+  await page.getByRole("button", { name: "2 Design" }).click();
   await page.getByTestId("feature-structure-building").click();
   await expect(page.getByTestId("draw-shape-box")).toHaveAttribute("aria-checked", "true");
   // One corner, then the opposite one (it once only ever added corner points)

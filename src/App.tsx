@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MapPinned, Route, X } from "lucide-react";
 import { Header } from "./components/Header";
 import { ViewerPanel } from "./auth/ViewerPanel";
-import { SidePanel } from "./components/SidePanel";
+import { HolesColumn, ProblemsPanel, SidePanel } from "./components/SidePanel";
 import { MapViewport } from "./components/MapViewport";
 import { getView } from "./state/view";
 import { Toolbar, TOOLS } from "./components/Toolbar";
@@ -92,7 +92,7 @@ const GESTURES: [string, string][] = [
 ];
 
 /** A dialog's box: a sheet up from the bottom on a phone, a centered box from a tablet up. */
-const SHEET = "glass shadow-2xl ring-1 ring-white/10 w-full rounded-t-[22px] md:rounded-2xl max-h-[92dvh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] md:pb-5 animate-[dgrise_220ms_cubic-bezier(0.2,0.9,0.3,1)] md:animate-none";
+const SHEET = "glass-solid shadow-2xl ring-1 ring-white/10 w-full rounded-t-[22px] md:rounded-2xl max-h-[92dvh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] md:pb-5 animate-[dgrise_220ms_cubic-bezier(0.2,0.9,0.3,1)] md:animate-none";
 const CLOSE = "text-zinc-400 hover:text-zinc-50 touch:w-11 touch:h-11 touch:-m-2.5 touch:flex touch:items-center touch:justify-center";
 
 function HelpDialog({ onClose }: { onClose: () => void }) {
@@ -165,7 +165,7 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
   const group = useEditor.getState().group;
   const inGroup = !!item && group.includes(item.id);
   return (
-    <div className="fixed z-50 w-52 glass rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 py-1" style={{ left: x, top: y }} role="menu" onPointerDown={e => e.stopPropagation()}>
+    <div className="fixed z-50 w-52 glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 py-1" style={{ left: x, top: y }} role="menu" onPointerDown={e => e.stopPropagation()}>
       {holeId && holeStats(doc, doc.holes.find(h => h.id === holeId)!).complete && (
         <>
           <button className={row} role="menuitem" onClick={run(() => useEditor.getState().set({ teeView: holeId, flyover: false }))}>View from the tee</button>
@@ -246,7 +246,7 @@ export default function App() {
       lidar: site.lidar
     }));
     setFindSite(false);
-    useEditor.getState().set({ step: "holes", tool: getDoc().holes.length ? "select" : "add-hole" });
+    useEditor.getState().set({ step: "design", tool: getDoc().holes.length ? "select" : "add-hole" });
     setTimeout(() => getView()?.fitSite(), 50);
     const outside = carried.outside ? ` ${carried.outside} ${carried.outside === 1 ? "thing you drew is" : "things you drew are"} now past the site's edges.` : "";
     toast(`Site brought in. ${site.notes.join(" ")}${outside}`, "success", false, { label: "View in 3D", run: () => useEditor.getState().set({ view: "3d" }) }, 12000);
@@ -270,11 +270,11 @@ export default function App() {
       if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); setGoTo(g => !g); return; }
       if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) useCourse.getState().redo(); else useCourse.getState().undo(); return; }
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); useCourse.getState().redo(); return; }
-      if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (s.step !== "design") duplicateSelection(); return; }
-      if (mod && e.key.toLowerCase() === "c" && !s.teeView && s.step !== "design") { if (copySelection()) e.preventDefault(); return; }
-      if (mod && e.key.toLowerCase() === "x" && !s.teeView && s.step !== "design") { e.preventDefault(); cutSelection(); return; }
-      if (mod && e.key.toLowerCase() === "v" && !s.teeView && s.step !== "design") { e.preventDefault(); s.set({ tool: "select" }); pasteClipboard(); return; }
-      if (mod && e.key.toLowerCase() === "a" && !s.teeView && s.step !== "design") { e.preventDefault(); s.set({ tool: "select" }); selectAll(); return; }
+      if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (s.step !== "map") duplicateSelection(); return; }
+      if (mod && e.key.toLowerCase() === "c" && !s.teeView && s.step !== "map") { if (copySelection()) e.preventDefault(); return; }
+      if (mod && e.key.toLowerCase() === "x" && !s.teeView && s.step !== "map") { e.preventDefault(); cutSelection(); return; }
+      if (mod && e.key.toLowerCase() === "v" && !s.teeView && s.step !== "map") { e.preventDefault(); s.set({ tool: "select" }); pasteClipboard(); return; }
+      if (mod && e.key.toLowerCase() === "a" && !s.teeView && s.step !== "map") { e.preventDefault(); s.set({ tool: "select" }); selectAll(); return; }
       if (mod) return;
       // (AltGr types characters: only the [ and ] it types go on to the shortcuts)
       if (((e.ctrlKey && e.altKey) || e.getModifierState?.("AltGraph")) && e.key !== "[" && e.key !== "]") return;
@@ -304,7 +304,7 @@ export default function App() {
         return;
       }
       // (on the Design page, these keys are the page's: the map's selection isn't seen there)
-      if (s.step === "design" && (e.key === "Backspace" || e.key === "Delete" || e.key.startsWith("Arrow"))) return;
+      if (s.step === "map" && (e.key === "Backspace" || e.key === "Delete" || e.key.startsWith("Arrow"))) return;
       if (e.key === "Backspace" || e.key === "Delete") {
         if (e.key === "Backspace" && view?.undoPoint()) { e.preventDefault(); return; }
         if (s.selectedId || s.group.length) { e.preventDefault(); deleteSelection(); }
@@ -318,7 +318,7 @@ export default function App() {
       }
       if (e.key === "?") { setHelp(h => !h); return; }
       if (e.key === "/") { e.preventDefault(); setGoTo(true); return; }
-      if ((e.key === "[" || e.key === "]") && s.step !== "design") { stepHole(e.key === "[" ? -1 : 1); return; }
+      if ((e.key === "[" || e.key === "]") && s.step !== "map") { stepHole(e.key === "[" ? -1 : 1); return; }
       if (e.key === "2") { s.set({ view: "2d" }); return; }
       if (e.key === "3") { s.set({ view: "3d" }); return; }
       if (e.key === "0") { view?.fitCourse(); return; }
@@ -340,12 +340,12 @@ export default function App() {
   const showWelcome = ready && empty && ed.step === "site";
   const onContextMenu = (i: { clientX: number; clientY: number; itemId: string | null; ground: P | null; under?: string | null }) => setMenu(i);
   const welcome = (
-    <div className="pointer-events-auto glass backdrop-blur rounded-2xl shadow-2xl ring-1 ring-white/10 p-6 w-[440px] max-w-full text-center" data-testid="welcome">
+    <div className="pointer-events-auto glass-solid rounded-2xl shadow-2xl ring-1 ring-white/10 p-6 w-[440px] max-w-full text-center" data-testid="welcome">
       <div className="w-12 h-12 rounded-xl bg-orange-500/15 text-orange-400 flex items-center justify-center mx-auto mb-3"><Route size={24} /></div>
       <h2 className="text-xl font-bold text-zinc-50">Design your disc golf course</h2>
       <div className="mt-4 flex flex-col gap-2">
         <Button tone="primary" full onClick={() => setFindSite(true)} testid="welcome-find"><MapPinned size={16} /> Find your park</Button>
-        <Button full onClick={() => useEditor.getState().set({ step: "holes", tool: "add-hole" })} testid="welcome-blank">Start on open ground</Button>
+        <Button full onClick={() => useEditor.getState().set({ step: "design", tool: "add-hole" })} testid="welcome-blank">Start on open ground</Button>
       </div>
     </div>
   );
@@ -380,12 +380,14 @@ export default function App() {
       <Woods />
       <Header onHelp={() => setHelp(true)} onGoTo={() => setGoTo(true)} />
       <div className="flex-1 flex min-h-0 gap-2.5 p-2.5 relative">
-        {readOnly ? <ViewerPanel /> : <SidePanel onFindSite={() => setFindSite(true)} />}
+        {readOnly ? <ViewerPanel /> : ed.step !== "design" && <SidePanel onFindSite={() => setFindSite(true)} />}
         <main className="flex-1 relative min-w-0 rounded-[20px] overflow-hidden ring-1 ring-white/10">
           <MapViewport onContextMenu={onContextMenu} />
-          {ed.step === "design" && !ed.teeView && <MapDesigner />}
-          {ed.step !== "design" && !readOnly && <Toolbar />}
-          {ed.step !== "design" && !readOnly && <Inspector />}
+          {(ed.step === "map" || ed.step === "export") && !ed.teeView && <MapDesigner preview={ed.step === "export"} />}
+          {ed.step === "design" && !readOnly && !ed.teeView && <HolesColumn />}
+          {ed.step === "design" && !readOnly && <ProblemsPanel />}
+          {ed.step === "design" || ed.step === "site" ? !readOnly && <Toolbar /> : null}
+          {ed.step === "design" || ed.step === "site" ? !readOnly && <Inspector /> : null}
           {ed.teeView && <TeeViewHud />}
           <ExportProgressPill />
           <Toasts />

@@ -42,7 +42,7 @@ export function ActionSheet({ title, subtitle, actions, onClose, children, testi
         className="w-full max-w-md mx-2 mb-[max(8px,env(safe-area-inset-bottom))] animate-[dgrise_220ms_cubic-bezier(0.2,0.9,0.3,1)]"
         onClick={e => e.stopPropagation()}
       >
-        <div className="glass border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div className="glass-solid border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
           <div className="px-4 pt-3.5 pb-2.5 text-center border-b border-white/5">
             <div className="text-[15px] font-bold text-zinc-50">{title}</div>
             {subtitle && <div className="text-[13px] text-zinc-400 mt-0.5">{subtitle}</div>}
@@ -66,7 +66,7 @@ export function ActionSheet({ title, subtitle, actions, onClose, children, testi
             ))}
           </div>
         </div>
-        <button className="mt-2 w-full min-h-[52px] rounded-2xl glass border border-white/10 text-[16px] font-semibold text-orange-300 active:bg-white/[0.09] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 shadow-2xl" onClick={e => !fresh(e) && onClose()} data-testid="action-sheet-cancel">
+        <button className="mt-2 w-full min-h-[52px] rounded-2xl glass-solid border border-white/10 text-[16px] font-semibold text-orange-300 active:bg-white/[0.09] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 shadow-2xl" onClick={e => !fresh(e) && onClose()} data-testid="action-sheet-cancel">
           Cancel
         </button>
       </div>

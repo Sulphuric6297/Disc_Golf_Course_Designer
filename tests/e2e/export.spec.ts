@@ -28,7 +28,7 @@ async function setup(page: Page) {
     a.addDrawn("area", [{ x: 100, y: 100 }, { x: 200, y: 100 }, { x: 200, y: 200 }]);
     (window as any).__dgEditor().set({ tool: "select" });
   });
-  await page.getByRole("button", { name: "6 Export" }).click();
+  await page.getByRole("button", { name: "4 Export" }).click();
   return { W, H };
 }
 

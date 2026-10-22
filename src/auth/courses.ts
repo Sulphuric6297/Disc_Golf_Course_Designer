@@ -179,7 +179,7 @@ export const startServerAutosave = () => {
   // only the views the viewer may see
   const keepSelect = useEditor.subscribe(e => {
     if (!useCourse.getState().readOnly) return;
-    if (e.tool !== "select" || e.step !== "holes") e.set({ tool: "select", step: "holes" });
+    if (e.tool !== "select" || e.step !== "design") e.set({ tool: "select", step: "design" });
     const may = (k: keyof Perms) => state().role !== "viewer" || ((state().perms ?? {})[k] ?? k !== "downloads");
     if (e.view === "3d" && !may("view3d")) e.set({ view: "2d" });
     else if (e.view === "2d" && !may("map") && may("view3d")) e.set({ view: "3d" });

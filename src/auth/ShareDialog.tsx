@@ -20,7 +20,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
   const [newRole, setNewRole] = useState<Role>("editor");
   const [error, setError] = useState("");
   const [seeing, setSeeing] = useState<string | null>(null);
-  const [tab, setTab] = useState<"people" | "public">("people");
+  const [tab, setTab] = useState<"people" | "public">(() => useAuth.getState().shareTab);
   const owner = role === "owner";
 
   const refresh = async () => { if (id) setMembers(await api<Member[]>("GET", `courses/${id}/members`)); };

@@ -318,7 +318,7 @@ test("flyover on-screen switches: off for all holes, back on for one; no disc fl
   const h2 = await addHole(page, { x: 300, y: 700 }, { x: 800, y: 700 });
   await page.keyboard.press("Escape");
   // All holes: the Export step's Camera settings
-  await page.getByRole("button", { name: "6 Export" }).click();
+  await page.getByRole("button", { name: "4 Export" }).click();
   await page.getByTestId("video-camera").locator("summary").click();
   const sw = (name: string) => page.getByTestId("video-camera").getByRole("checkbox", { name, exact: true });
   for (const name of ["Hole title", "Hole badge", "Distance to the pin", "Course name", "Line of play", "Putting circle", "OB", "Other holes", "Walks"]) await expect(sw(name)).toBeChecked();
@@ -331,7 +331,7 @@ test("flyover on-screen switches: off for all holes, back on for one; no disc fl
   await expect.poll(async () => (await course(page)).flyover?.otherHoles).toBeUndefined();
   await sw("Other holes").uncheck();
   // Hole 1's own: the distance back on for it
-  await page.getByRole("button", { name: "2 Holes" }).click();
+  await page.getByRole("button", { name: "2 Design" }).click();
   await page.getByTestId("hole-row").first().click();
   await expect(page.getByTestId("hole-flight").getByTestId("flyover-show")).toBeVisible();
   const own = (name: string) => page.getByTestId("hole-flight").getByRole("checkbox", { name, exact: true });

@@ -181,9 +181,7 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
 /** The tools a step is about; the rest wait under More (and come forward while in use). */
 const STEP_TOOLS: Record<string, ToolMode[]> = {
   site: ["select", "draw-area", "draw-line", "add-tree", "measure"],
-  holes: ["select", "add-hole", "add-tee", "add-basket", "measure"],
-  features: ["select", "add-mando", "add-dropzone", "draw-area", "draw-line", "draw-structure"],
-  review: ["select", "measure"],
+  design: ["select", "add-hole", "add-tee", "add-basket", "add-mando", "draw-area", "draw-line", "draw-structure", "add-tree", "measure"],
   export: ["select"]
 };
 
@@ -210,7 +208,7 @@ export function Toolbar() {
   const set = ed.set;
   const options = toolOptions(ed);
   const hint = toolHint(ed, touch);
-  const main = STEP_TOOLS[ed.step] ?? STEP_TOOLS.features;
+  const main = STEP_TOOLS[ed.step] ?? STEP_TOOLS.design;
   const shown = TOOLS.filter(t => main.includes(t.mode) || t.mode === ed.tool);
   const rest = TOOLS.filter(t => !shown.includes(t));
   const tool = (t: (typeof TOOLS)[number], inMenu = false) => (
@@ -245,7 +243,7 @@ export function Toolbar() {
           <div className="relative shrink-0" ref={moreRef}>
             <button className={`${BAR_BTN} ${more ? "bg-white/[0.07] text-zinc-50" : "text-zinc-300 hover:bg-white/[0.09] hover:text-zinc-50"}`} title="More tools" aria-label="More tools" aria-haspopup="menu" aria-expanded={more} onClick={() => setMore(m => !m)} data-testid="more-tools"><Ellipsis size={18} /></button>
             {more && (
-              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-56 glass rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 p-1 flex flex-col" role="menu" data-testid="more-tools-menu">
+              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-56 glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 p-1 flex flex-col" role="menu" data-testid="more-tools-menu">
                 {rest.map(t => tool(t, true))}
               </div>
             )}

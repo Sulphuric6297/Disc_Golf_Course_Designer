@@ -156,7 +156,7 @@ function Composer({ at }: { at: { x: number; y: number } }) {
     } finally { setBusy(false); }
   };
   return (
-    <div className="fixed z-30 w-72 glass rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 p-3" style={{ left: Math.min(at.x + 12, window.innerWidth - 300), top: Math.max(70, at.y - 40) }} data-testid="comment-composer"
+    <div className="fixed z-30 w-72 glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 p-3" style={{ left: Math.min(at.x + 12, window.innerWidth - 300), top: Math.max(70, at.y - 40) }} data-testid="comment-composer"
       onKeyDown={e => { if (e.key === "Escape") useComments.setState({ draftAt: null }); }}>
       <textarea ref={ref} className={`${inputCls} min-h-[72px]`} placeholder="Comment (@name to tell someone)" value={text} onChange={e => setText(e.target.value)} aria-label="Comment"
         onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void post(); }} />
@@ -180,7 +180,7 @@ export function CommentsPanel() {
   const shown = useMemo(() => threads.filter(t => showResolved || !t.resolvedAt), [threads, showResolved]);
   if (!panel) return null;
   return (
-    <aside className="fixed right-0 top-14 bottom-0 z-30 w-[360px] max-w-full glass border-l border-white/[0.08] shadow-2xl flex flex-col" aria-label="Comments" data-testid="comments-panel">
+    <aside className="fixed right-0 top-14 bottom-0 z-30 w-[360px] max-w-full glass-solid border-l border-white/[0.08] shadow-2xl flex flex-col" aria-label="Comments" data-testid="comments-panel">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.08]">
         <h2 className="font-bold text-zinc-50 flex-1">Comments <span className="text-zinc-500 font-normal">{open.length}</span></h2>
         <label className="flex items-center gap-1.5 text-xs text-zinc-400"><input type="checkbox" checked={showResolved} onChange={e => useComments.setState({ showResolved: e.target.checked })} /> Resolved</label>

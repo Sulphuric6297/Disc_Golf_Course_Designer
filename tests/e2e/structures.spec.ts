@@ -67,7 +67,7 @@ const MATERIALS: Record<StructureKind, string[]> = {
 
 test("a boardwalk, stairs and a wall drawn from the Features list, click by click", async ({ page }) => {
   await blankCourse(page);
-  await page.getByRole("button", { name: "3 Features" }).click();
+  await page.getByRole("button", { name: "2 Design" }).click();
   await expect(page.getByTestId("feature-structures")).toBeVisible();
   let x = 250;
   for (const kind of ["boardwalk", "stairs", "wall"] as const) {
@@ -88,7 +88,7 @@ test("a boardwalk, stairs and a wall drawn from the Features list, click by clic
 
 test("a building, a shelter and a deck dragged out as rectangles; kind and roof in the inspector", async ({ page }) => {
   await blankCourse(page);
-  await page.getByRole("button", { name: "3 Features" }).click();
+  await page.getByRole("button", { name: "2 Design" }).click();
   let x = 250;
   for (const kind of ["building", "shelter", "deck"] as const) {
     await page.getByTestId(`feature-structure-${kind}`).click();
@@ -145,7 +145,7 @@ test("reshaping a building with its corner and mid handles, moving it, deleting 
 test("buildings like the Security Camera Planner's: looks, roofs, colors, turning, height; a shelter as a gazebo", async ({ page }) => {
   await blankCourse(page);
   await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 300, minY: 300, maxX: 700, maxY: 600 }, { animate: false }));
-  await page.getByRole("button", { name: "3 Features" }).click();
+  await page.getByRole("button", { name: "2 Design" }).click();
   await page.getByTestId("feature-structure-building").click();
   await clickPlan(page, 400, 400);
   await clickPlan(page, 480, 450);
