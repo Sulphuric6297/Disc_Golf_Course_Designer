@@ -5,7 +5,7 @@ import { STEPS } from "./SidePanel";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { deleteRecent, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../state/files";
 import type { PlanMeta } from "../lib/storage";
-import { AccountMenu } from "../auth/AccountMenu";
+import { AccountMenu, goHome } from "../auth/AccountMenu";
 import { SERVER } from "../auth/api";
 
 const Logo = () => (
@@ -38,7 +38,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
   const item = "w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 text-left";
   return (
     <header className="h-14 shrink-0 bg-zinc-950 border-b border-zinc-800 flex items-center gap-3 px-3 z-30">
-      <Logo />
+      {SERVER ? <button className="shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400" aria-label="Courses" title="Courses" onClick={goHome} data-testid="logo-home"><Logo /></button> : <Logo />}
       <div className="flex items-center gap-1 min-w-0">
         {readOnly ? <span className="text-zinc-50 font-bold text-[15px] px-1.5 py-1 max-w-[230px] truncate" data-testid="course-title">{name}</span> : <input
           aria-label="Course name"
@@ -74,7 +74,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
         <input ref={fileRef} type="file" accept=".json,.dgcourse.json,application/json" className="hidden" aria-label="Open course file" onChange={e => { const f = e.target.files?.[0]; if (f) void openCourseFile(f); e.target.value = ""; }} />
       </div>
 
-      {readOnly ? <div className="flex-1" /> : <nav aria-label="Steps" className="flex-1 flex justify-center">
+      {readOnly ? <div className="flex-1" /> : <nav aria-label="Steps" className="flex-1 min-w-0 flex justify-center overflow-hidden">
         <ol className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl p-1 gap-0.5">
           {STEPS.map((s, i) => (
             <li key={s.id}>

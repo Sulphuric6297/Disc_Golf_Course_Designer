@@ -11,7 +11,7 @@ import { courseStats, courseTotals, playsOf } from "../lib/holeStats";
 import { canopyFor } from "../lib/forest";
 import { paintedForPrint, renderPoster } from "../lib/mapSvg";
 import { canvasBlob, svgToCanvas } from "../lib/raster";
-import { describeChanges, holesChanged, keepTheirs, mergeCourse, type Merged } from "../lib/merge";
+import { changesBetween, describeChanges, holesChanged, keepTheirs, mergeCourse, type Merged } from "../lib/merge";
 import { reliefOf } from "../components/useRelief";
 import { safeDoc } from "../lib/safeDoc";
 import type { PlanMeta } from "../lib/storage";
@@ -298,6 +298,14 @@ export async function prepareMerge() {
   await saveNow();
   return mergeWith(id, getDoc(), base.doc);
 }
+
+/** How many things the draft changes (holes, features, and settings). */
+export const draftChangeCount = () => {
+  if (!base) return 0;
+  const c = changesBetween(base.doc as never, usable(getDoc()) as never);
+  const n = (x: { added: number; removed: number; changed: number }) => x.added + x.removed + x.changed;
+  return n(c.holes) + n(c.items) + c.other.length;
+};
 
 /** What the draft changes ("Holes: 1 added"): the version's name when none is given. */
 export const draftChanges = () => (base ? describeChanges(base.doc, usable(getDoc())) : "");
