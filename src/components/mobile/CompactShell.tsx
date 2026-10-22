@@ -30,6 +30,8 @@ import { ExportProgressPill } from "../ExportProgress";
 import { ActionSheet, type SheetAction } from "./ActionSheet";
 import { BottomSheet, type Detent } from "./BottomSheet";
 import { accountActions } from "../../auth/AccountMenu";
+import { ViewerPanelBody } from "../../auth/ViewerPanel";
+import { SERVER } from "../../auth/api";
 
 export type MenuInfo = { clientX: number; clientY: number; itemId: string | null; ground: P | null };
 
@@ -183,7 +185,12 @@ function StepHeader({ onFindSite }: { onFindSite: () => void }) {
 
 // ---------------------------------------------------------------------------------- tools
 
+// (view only: no tools to change the course with)
 function ToolStrip() {
+  return useCourse(s => s.readOnly) ? null : <Tools />;
+}
+
+function Tools() {
   const tool = useEditor(e => e.tool);
   const set = useEditor(e => e.set);
   const canUndo = useCourse(s => s.past.length > 0);
@@ -371,7 +378,7 @@ function AppMenu({ onClose, onHelp, onOpenFile }: { onClose: () => void; onHelp:
       <ActionSheet title={name} subtitle="HyzerLab" actions={actions} onClose={onClose} testid="app-menu">
         {recent.length > 0 && (
           <div className="border-b border-white/5">
-            <div className="px-4 pt-2.5 pb-1 text-[12px] uppercase tracking-wider font-bold text-zinc-500">Recent courses</div>
+            <div className="px-4 pt-2.5 pb-1 text-[12px] uppercase tracking-wider font-bold text-zinc-500">{SERVER ? "Courses" : "Recent courses"}</div>
             <div className="flex gap-2 overflow-x-auto dg-noscrollbar px-4 pb-3 touch-pan-x">
               {recent.map(r => (
                 <div key={r.id} className="shrink-0 flex items-center bg-zinc-800 rounded-xl" data-testid="recent-course">
@@ -426,6 +433,7 @@ function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
 
 /** The panel's header and content, for the bottom sheet and the side panel. */
 function usePanel({ onFindSite, onMore }: { onFindSite: () => void; onMore: () => void }) {
+  const readOnly = useCourse(s => s.readOnly);
   const mode = useMode();
   const step = useEditor(e => e.step);
   const tool = useEditor(e => e.tool);
@@ -454,6 +462,8 @@ function usePanel({ onFindSite, onMore }: { onFindSite: () => void; onMore: () =
     : mode === "tool" ? `${TOOL_TITLES[tool] ?? tool}: ${toolHint(useEditor.getState(), true) ?? ""}`
     : `Step ${STEPS.findIndex(s => s.id === step) + 1}: ${meta.title}`;
   const announce = <div aria-live="polite" className="sr-only" data-testid="announce">{said}</div>;
+  // (view only: the course and its holes, nothing to change)
+  if (readOnly) return { mode, header: null, body: <ViewerPanelBody />, announce, key: "viewer" };
   return { mode, header, body, announce, key: mode === "selection" ? `sel:${selectedId}` : `step:${step}:${mode === "tool" ? tool : ""}` };
 }
 
@@ -481,6 +491,7 @@ function useMenus(onHelp: () => void) {
 
 function PhoneShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: ShellProps) {
   const ed = useEditor();
+  const readOnly = useCourse(s => s.readOnly);
   const [detent, setDetent] = useState<Detent>(() => STEP_DETENT[useEditor.getState().step]);
   const [restH, setRestH] = useState(180);
   const [mainH, setMainH] = useState(700);
@@ -553,7 +564,7 @@ function PhoneShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: Shel
           </BottomSheet>
         )}
       </main>
-      {!immersive && <BottomNav onStep={onStep} />}
+      {!immersive && !readOnly && <BottomNav onStep={onStep} />}
       {panel.announce}
       {menus}
     </div>

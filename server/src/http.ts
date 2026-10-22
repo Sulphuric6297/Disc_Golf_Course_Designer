@@ -5,7 +5,8 @@ import type { Sql } from "./db.js";
 import type { Auth, Stage } from "./sessions.js";
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  /** `extra`: more for the app alongside the message (such as the version saved meanwhile). */
+  constructor(public status: number, message: string, public extra: Record<string, unknown> = {}) { super(message); }
 }
 
 export function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {

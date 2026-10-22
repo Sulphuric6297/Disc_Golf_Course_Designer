@@ -1,5 +1,8 @@
-// Keeping courses: the autosave, the library of earlier courses, and course files.
+// Keeping courses: the autosave, the library of earlier courses, and course files. On a
+// HyzerLab server (SERVER) the courses are kept there instead (src/auth/courses.ts).
 import { generateId } from "../constants";
+import { SERVER } from "../auth/api";
+import { listServerCourses, newServerCourse, openServerCourse, removeServerCourse, restoreServer, startServerAutosave, startUnsaved } from "../auth/courses";
 import { createEmptyCourse, normalizeCourse } from "../lib/course";
 import { AUTOSAVE_KEY, idbGet, idbSet, listPlans, loadPlan, removePlan, storePlan, type PlanMeta } from "../lib/storage";
 import type { CourseDoc } from "../types";
@@ -22,12 +25,13 @@ export const archiveCurrent = async () => {
 /** The course under a new id, looking the same. */
 const renamed = (doc: CourseDoc): CourseDoc => ({ ...doc, seed: doc.seed ?? doc.id, id: generateId() });
 
-const show = (doc: CourseDoc) => {
+export const show = (doc: CourseDoc) => {
   useEditor.getState().set({ selectedId: null, activeHoleId: null, tool: "select", teeView: null, flyover: false, step: doc.holes.length ? "holes" : "site" });
   useCourse.getState().load(doc);
 };
 
 export const newCourse = async () => {
+  if (SERVER) return newServerCourse();
   const before = getDoc();
   const meta = await archiveCurrent();
   show(createEmptyCourse());
@@ -40,6 +44,7 @@ export const newCourse = async () => {
 };
 
 export const openRecent = async (id: string) => {
+  if (SERVER) { await openServerCourse(id); return; }
   const data = await loadPlan(id);
   if (!data) {
     toast("That course couldn't be found.", "error");
@@ -51,8 +56,9 @@ export const openRecent = async (id: string) => {
   show(normalizeCourse({ ...data, id }));
 };
 
-export const recentCourses = () => listPlans();
+export const recentCourses = (): Promise<PlanMeta[]> => (SERVER ? listServerCourses() : listPlans());
 export const deleteRecent = async (id: string) => {
+  if (SERVER) return removeServerCourse(id);
   const data = await loadPlan(id);
   const list = await listPlans();
   const meta = list.find(p => p.id === id);
@@ -85,8 +91,11 @@ export const openCourseFile = async (file: File) => {
   try {
     const raw = JSON.parse(await file.text());
     if (!raw || !Array.isArray(raw.holes)) throw new Error("not a course");
-    await archiveCurrent();
-    show(renamed(normalizeCourse(raw)));
+    if (SERVER) await startUnsaved(renamed(normalizeCourse(raw)));
+    else {
+      await archiveCurrent();
+      show(renamed(normalizeCourse(raw)));
+    }
     toast(`Opened "${raw.name ?? file.name}".`, "success");
   } catch {
     toast("That file isn't a course file (.dgcourse.json).", "error");
@@ -97,7 +106,7 @@ export const openCourseFile = async (file: File) => {
 
 let saveTimer = 0;
 export const startAutosave = () =>
-  useCourse.subscribe((state, prev) => {
+  SERVER ? startServerAutosave() : useCourse.subscribe((state, prev) => {
     if (state.doc === prev.doc) return;
     window.clearTimeout(saveTimer);
     saveTimer = window.setTimeout(() => {
@@ -107,6 +116,7 @@ export const startAutosave = () =>
   });
 
 export const restoreAutosave = async () => {
+  if (SERVER) return restoreServer();
   try {
     const data = await idbGet(AUTOSAVE_KEY);
     if (data && Array.isArray(data.holes)) {

@@ -39,7 +39,7 @@ export function PeopleDialog({ onClose }: { onClose: () => void }) {
       {tab === "people" ? (
         <div className="-mx-4">
           <Section title="Invite someone">
-            <Form submit="Create invite link" testid="new-invite" onSubmit={async () => {
+            <Form compact submit="Create invite link" testid="new-invite" onSubmit={async () => {
               const r = await api<{ token: string }>("POST", "admin/invites", { note, isAdmin: asAdmin });
               setLink({ url: linkFor("invite", r.token), label: "Invite link (works once, for 48 hours)" });
               setNote("");

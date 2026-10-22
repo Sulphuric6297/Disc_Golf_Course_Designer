@@ -5,7 +5,7 @@ A React + Vite + TypeScript app in two builds from one codebase:
 - **The demo** (the default build), a static site on GitHub Pages: no accounts, no server and no
   API keys; courses are kept in the browser.
 - **For a HyzerLab server** (`VITE_SERVER=1`): the same app behind sign-in, served by the
-  self-hosted server in `server/` (accounts, invites, 2FA; courses on the server come next).
+  self-hosted server in `server/` (accounts, invites, 2FA, courses kept on the server and shared with roles).
 
 It is built on the map engine of the Security Camera Planner: the same site import (satellite
 photo, elevation, trees), terrain, and one map view that is 2D looking straight down and 3D when
@@ -43,7 +43,16 @@ design tools and the PDGA guidance the app follows.
   `x-hyzerlab: 1` header and an allowed origin; sign-in routes are rate limited; failed
   passwords rest an account; every account change goes in `audit_log`; 2FA secrets are encrypted
   with `APP_SECRET`. Check permissions in the server, never only in the app.
-- The app's side is `src/auth/` (the sign-in screens, the account menu and dialogs). The demo
+- Courses on the server: `courses` (the document as JSON, without its aerial photo, which is in
+  `course_backgrounds`), and `course_members` with a role each: owner (shares, deletes), editor
+  (changes), viewer (looks). Someone else's course answers 404. Each save names the version it
+  was made from; an older one is refused (409, saying who saved). A course needs an owner; a
+  removed person's courses that only they owned pass to the admin removing them.
+- A course from the server is cleaned by `src/lib/safeDoc.ts` before it's shown (pictures must be
+  image data URLs; only free text may hold < > " or `): parts of the map are built as markup
+  from the course's values. Keep it in step when a new kind of text or picture field is added.
+- The app's side is `src/auth/` (the sign-in screens, the account menu and dialogs, saving to the
+  server in `courses.ts`; `src/state/files.ts` hands over to it when `SERVER`). The demo
   build never shows any of it: `SERVER` (`src/auth/api.ts`) is false there.
 - Settings come from the environment (`server/src/config.ts`). Real values, the domain and the
   server's address never go in the repository.

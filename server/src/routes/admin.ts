@@ -96,7 +96,17 @@ export async function adminRoutes(app: FastifyInstance, { sql }: Ctx) {
   app.delete<Id>("/api/admin/users/:id", async req => {
     const { id } = parse(uuid, req.params);
     const u = await other(req, id);
-    await sql`delete from users where id = ${id}`;
+    const a = needAdmin(req);
+    await sql.begin(async tx => {
+      // (courses only they owned: the admin removing them owns them now)
+      await tx`
+        insert into course_members (course_id, user_id, role)
+        select m.course_id, ${a.user.id}, 'owner' from course_members m
+        where m.user_id = ${id} and m.role = 'owner'
+          and not exists (select 1 from course_members o where o.course_id = m.course_id and o.role = 'owner' and o.user_id <> ${id})
+        on conflict (course_id, user_id) do update set role = 'owner'`;
+      await tx`delete from users where id = ${id}`;
+    });
     await audit(sql, req, "user.removed", { username: u.username });
     return { ok: true };
   });

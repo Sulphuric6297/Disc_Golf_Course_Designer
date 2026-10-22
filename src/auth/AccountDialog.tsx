@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Section } from "../components/ui";
 import { api, useAuth } from "./api";
 import { BackupCodes, Dialog, Form, Input, when } from "./parts";
+import { saveNow } from "./courses";
 
 interface SessionRow { id: string; current: boolean; createdAt: string; lastSeenAt: string; ip: string | null; userAgent: string | null }
 
@@ -15,7 +16,7 @@ const device = (ua: string | null) => {
 };
 
 export function AccountDialog({ onClose }: { onClose: () => void }) {
-  const { session, load, signOut } = useAuth();
+  const { session, load } = useAuth();
   const user = session!.user!;
   const [name, setName] = useState(user.displayName);
   const [list, setList] = useState<{ sessions: SessionRow[]; backupCodesLeft: number } | null>(null);
@@ -31,14 +32,14 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
     <Dialog title="Account" onClose={onClose} testid="account-dialog">
       <div className="-mx-4">
         <Section title="Name">
-          <Form submit="Save" onSubmit={async () => { await api("POST", "me", { displayName: name }); await load(); }}>
+          <Form compact submit="Save" onSubmit={async () => { await api("POST", "me", { displayName: name }); await load(); }}>
             <Input label={`Shown to others · signed in as ${user.username}`} value={name} onChange={setName} auto="name" />
           </Form>
         </Section>
 
         <Section title="Password">
           {pwDone ? <p className="text-sm text-emerald-300">Password changed. Signed out everywhere else.</p> : (
-            <Form submit="Change password" testid="change-password" onSubmit={async () => {
+            <Form compact submit="Change password" testid="change-password" onSubmit={async () => {
               if (pw.next !== pw.again) throw new Error("The new passwords don't match");
               await api("POST", "me/password", { current: pw.current, next: pw.next, code: pw.code });
               setPwDone(true);
@@ -54,7 +55,7 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
 
         <Section title="Backup codes">
           {codes ? <BackupCodes codes={codes} /> : (
-            <Form submit="New backup codes" onSubmit={async () => { setCodes((await api<{ backupCodes: string[] }>("POST", "me/backup-codes", { code: codesCode })).backupCodes); void refresh(); }}>
+            <Form compact submit="New backup codes" onSubmit={async () => { setCodes((await api<{ backupCodes: string[] }>("POST", "me/backup-codes", { code: codesCode })).backupCodes); void refresh(); }}>
               <p className="text-sm text-zinc-300">{list ? `${list.backupCodesLeft} left` : "…"}</p>
               <Input label="Code from your app" value={codesCode} onChange={setCodesCode} auto="one-time-code" mono />
             </Form>
@@ -73,7 +74,7 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
               </li>
             ))}
           </ul>
-          <button className="mt-4 text-sm text-red-300 hover:text-red-200" onClick={() => void signOut()} data-testid="sign-out">Sign out</button>
+          <button className="mt-4 text-sm text-red-300 hover:text-red-200" onClick={() => void saveNow().then(() => useAuth.getState().signOut())} data-testid="sign-out">Sign out</button>
         </Section>
       </div>
     </Dialog>

@@ -442,6 +442,14 @@ export class CourseView {
     this.invalidate();
   }
 
+  /** View only (a course shared to look at): no handles on the selection. */
+  private readOnly = false;
+  setReadOnly(on: boolean) {
+    if (on === this.readOnly) return;
+    this.readOnly = on;
+    this.syncHandles();
+  }
+
   setSelection(id: string | null) {
     if (id === this.selectedId) return;
     this.selectedId = id;
@@ -2543,15 +2551,15 @@ export class CourseView {
   private syncHandles() {
     const doc = this.doc;
     if (!doc) return;
-    const editing = this.tool.mode === "select";
+    const editing = this.tool.mode === "select" && !this.readOnly;
     const sel = editing ? this.item(this.selectedId) : null;
     const holeId = editing ? (this.hole(this.selectedId)?.id ?? doc.activeHoleId) : null;
     const hole = this.hole(holeId);
     const drawing = this.drawn() ? this.drawPts.length : -1;
     const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" || sel.type === "line" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
     const obKey = `${sel?.type === "line" ? `${sel.ob}:${sel.obStretches?.length ?? 0}` : ""}|${this.obPick ? `${this.obPick.id}:${this.obPick.from}:${this.obPick.cut}` : ""}`;
-    if (key + obKey === this.handleKey) return;
-    this.handleKey = key + obKey;
+    if (`${this.readOnly}${key}${obKey}` === this.handleKey) return;
+    this.handleKey = `${this.readOnly}${key}${obKey}`;
     this.handles.forEach(h => h.el.remove());
     this.handles = [];
     const add = (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts: { index?: number; title?: string; data?: Record<string, string>; visible?: () => boolean } = {}) => {

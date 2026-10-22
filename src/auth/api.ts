@@ -8,7 +8,7 @@ export class ApiFail extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-export async function api<T = unknown>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<T> {
+export async function api<T = unknown>(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`./api/${path}`, {
     method,
     credentials: "same-origin",
@@ -24,21 +24,31 @@ export type Stage = "mfa" | "mfa-setup" | "full";
 export interface User { id: string; username: string; displayName: string; isAdmin: boolean; totpEnabled: boolean }
 export interface Session { needsSetup: boolean; stage: Stage | null; user: User | null }
 
-type Dialog = null | "account" | "people";
+type Dialog = null | "account" | "people" | "share";
 
 export const useAuth = create<{
   session: Session | null;
   dialog: Dialog;
+  /** The course list (the first page once signed in), over the app. */
+  home: boolean;
+  showHome: (on: boolean) => void;
+  /** Goes up when the course list should be read again (a course's picture just changed). */
+  listVersion: number;
+  bump: () => void;
   load: () => Promise<void>;
   signOut: () => Promise<void>;
   open: (d: Dialog) => void;
 }>((set, get) => ({
   session: null,
   dialog: null,
+  home: true,
+  showHome: home => set({ home, dialog: null }),
+  listVersion: 0,
+  bump: () => set({ listVersion: get().listVersion + 1 }),
   load: async () => set({ session: await api<Session>("GET", "session") }),
   signOut: async () => {
     await api("POST", "logout").catch(() => {});
-    set({ dialog: null });
+    set({ dialog: null, home: true });
     await get().load();
   },
   open: dialog => set({ dialog })
