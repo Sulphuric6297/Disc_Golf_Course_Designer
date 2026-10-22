@@ -97,6 +97,8 @@ const STYLE = `
 .dg-issue{pointer-events:auto;cursor:help;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:900 12px/1 Inter,system-ui,sans-serif;color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.55)}
 .dg-measure{pointer-events:none;padding:1px 6px;border-radius:6px;background:#facc15;color:#1c1917;font:700 11px Inter,system-ui,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .dg-measure.total{background:#1c1917;color:#facc15}
+.dg-mpt{pointer-events:none;width:12px;height:12px;border-radius:50%;background:#facc15;border:2.5px solid #1c1917;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.dg-mpt.live{background:#fff;opacity:.85}
 .dg-h{position:absolute;left:0;top:0;pointer-events:auto;will-change:translate;box-sizing:border-box;touch-action:none}
 .dg-h[data-handle=corner],.dg-h[data-handle=dogleg]{width:14px;height:14px;border-radius:50%;background:#fff;border:2.5px solid #0891b2;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=dogleg]{border-color:#f59e0b}
@@ -2192,7 +2194,8 @@ export class CourseView {
         const g = new THREE.Group();
         const fill = photo ? meta.fill : Math.min(0.9, meta.fill + 0.35);
         const rule = a.kind === "ob" || a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo";
-        if (painted && a.kind !== "water") {
+        // (on the painted ground, or looked at only: no translucent fills, only the rules' edges)
+        if ((painted || clean) && a.kind !== "water") {
           if (rule) g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, 3, { order: 4, dashed: a.kind === "ob" ? undefined : 6 }));
           if (a.ob === true && a.kind !== "ob") g.add(this.fatLine(this.drapeLine(a.points, LIFT + 0.05, true), color("ob")!, 3, { order: 5 }));
           return g;
@@ -2425,16 +2428,17 @@ export class CourseView {
         put(`walk:${a.holeId}`, JSON.stringify([from, to, hv, wide, surface, painted, st.path, clean]), () => {
           const g = new THREE.Group();
           if (dist(from, to) < 10) return g;
-          if (wide && !painted) {
+          // (a path on the ground, as wide as walks are set, in its surface's color; on the painted
+          // ground the painting has it)
+          if (!painted) {
             const mesh = new THREE.Mesh(
-              drapedRibbon([from, to], wide, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.17),
+              drapedRibbon([from, to], wide ?? 6, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.17),
               new THREE.MeshLambertMaterial({ color: surface && surface !== "dirt" ? PATH_SURFACES[surface].color : st.path, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
             );
             // (walks to the next hole over the paths of their own kind they cross, under the kinds above)
             mesh.renderOrder = tierOrder(tierOf("walk", surface)) + 0.07;
             g.add(mesh);
           }
-          if (!clean) g.add(this.fatLine(this.drapeLine([from, to], LIFT + 0.15), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 6 }));
           return g;
         });
       }
@@ -3625,7 +3629,7 @@ export class CourseView {
       el.style.translate = `${Math.round(s.x - el.offsetWidth / 2)}px ${Math.round(s.y - el.offsetHeight / 2 + dy)}px`;
     };
     this.layoutOverlays();
-    for (const m of this.measureLabels) place(m.el, m.at, -12);
+    for (const m of this.measureLabels) place(m.el, m.at, m.el.classList.contains("dg-mpt") ? 0 : -14);
     if (this.draftLabel && this.draftAt) place(this.draftLabel, this.draftAt, -22);
     for (const h of this.handles) {
       let w: THREE.Vector3 | null = null;
@@ -4738,8 +4742,21 @@ export class CourseView {
     const pts = [...this.measurePts];
     if (this.measureCursor && pts.length === 1) pts.push(this.measureCursor);
     const units = this.doc?.course.units ?? "ft";
+    // A dot at each point (the pointer's end fainter)
+    pts.forEach((v, i) => {
+      const el = document.createElement("div");
+      el.className = `dg-mpt${i >= this.measurePts.length ? " live" : ""}`;
+      el.setAttribute("data-testid", "measure-point");
+      this.labelsLayer.appendChild(el);
+      this.measureLabels.push({ el, at: v.clone() });
+    });
     if (pts.length >= 2) {
-      this.measureLine = this.fatLine(this.drapeLine(pts.map(v => ({ x: v.x, y: v.z })), LIFT + 0.3), "#facc15", 3, { depthTest: false, order: 30 });
+      // (a thin line on a dark casing: it reads over grass, photo and woods alike)
+      const line = this.drapeLine(pts.map(v => ({ x: v.x, y: v.z })), LIFT + 0.3);
+      const g = new THREE.Group();
+      g.add(this.fatLine(line, "#1c1917", 4.5, { depthTest: false, order: 29, opacity: 0.55 }));
+      g.add(this.fatLine(line, "#facc15", 2, { depthTest: false, order: 30 }));
+      this.measureLine = g;
       this.fx.add(this.measureLine);
       let total = 0;
       for (let i = 1; i < pts.length; i++) {
@@ -4825,7 +4842,9 @@ export class CourseView {
       const g = this.groundAt(p.x, p.y);
       this.cb.onHover(g ? { x: g.x, y: g.z } : null);
       if (this.tool.mode === "measure") {
-        if (this.measurePts.length === 1 && g) {
+        // (only over the site: a tilted view's horizon would stretch the line across the screen)
+        const w = this.doc.course.canvas;
+        if (this.measurePts.length === 1 && g && g.x >= 0 && g.z >= 0 && g.x <= w.width && g.z <= w.height) {
           this.measureCursor = g;
           this.drawMeasure();
         }

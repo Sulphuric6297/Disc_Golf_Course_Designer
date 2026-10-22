@@ -84,12 +84,19 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   }, []);
 
   const stats = courseStats(doc);
+  // Looked at only (shared, the public page): the course as its owner set it for viewers (the
+  // painted ground, no contours, by default), not the editor's own display
+  const viewOnly = useCourse(s => s.readOnly);
+  const pv = doc.style.publicView ?? {};
+  const show = viewOnly
+    ? { photo: pv.ground === "photo", contours: !!pv.contours, shading: pv.shading ?? true, painted: pv.ground !== "photo" }
+    : { photo: ed.photo, contours: ed.contours, shading: ed.shading, painted: false };
   const terrain = useMemo(() => terrainStats(doc.terrainHeights), [doc.terrainHeights]);
-  const contours = useMemo(() => (ed.contours ? contoursOf(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height) : { segments: [], interval: 1 }), [ed.contours, doc.terrainHeights, doc.gridSize, doc.canvas]);
-  const shadeUrl = useMemo(() => (ed.shading && terrain.relief > 1 && (doc.style.reliefScale ?? 1) > 0 ? hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, undefined, doc.style.reliefScale ?? 1).toDataURL() : null), [ed.shading, terrain.relief, doc.terrainHeights, doc.gridSize, doc.canvas, doc.style.reliefScale]);
+  const contours = useMemo(() => (show.contours ? contoursOf(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height) : { segments: [], interval: 1 }), [show.contours, doc.terrainHeights, doc.gridSize, doc.canvas]);
+  const shadeUrl = useMemo(() => (show.shading && !show.painted && terrain.relief > 1 && (doc.style.reliefScale ?? 1) > 0 ? hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, undefined, doc.style.reliefScale ?? 1).toDataURL() : null), [show.shading, show.painted, terrain.relief, doc.terrainHeights, doc.gridSize, doc.canvas, doc.style.reliefScale]);
   const issues = useMemo(() => (ed.step === "design" ? openIssues(doc, courseIssues(doc)).open : null), [ed.step, doc]);
   // From a tee and in flyovers: the ground in the Design look (the painted map), not the photo
-  const paintedOn = !!ed.teeView && ed.flyLook === "painted" && !!doc.holes.length;
+  const paintedOn = ((!!ed.teeView && ed.flyLook === "painted") || show.painted) && !!doc.holes.length;
   // (painted ahead while the course rests with a hole picked, so a flyover has less to wait for;
   // not while it's being changed: that would paint it over and over)
   const [restingDoc, setRestingDoc] = useState(doc);
@@ -122,14 +129,14 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     heights: doc.terrainHeights,
     terrain,
     // (no photo while the painted map is on its way)
-    background: { url: doc.background, rect: { x: 0, y: 0, width: doc.canvas.width, height: doc.canvas.height }, opacity: ed.photo && !paintedOn ? 1 : 0 },
+    background: { url: doc.background, rect: { x: 0, y: 0, width: doc.canvas.width, height: doc.canvas.height }, opacity: show.photo && !paintedOn ? 1 : 0 },
     overlay: shadeUrl ? "shaded" : contours.segments.length ? "contours" : "off",
     contours,
     shadeUrl,
     groundDetail: ed.groundDetail,
     groundPaint: doc.groundPaint,
     groundColor: natural.colors.rough
-  }), [doc, stats, ed.activeHoleId, issues, terrain, ed.photo, shadeUrl, contours, ed.groundDetail, natural, naturalStyle, paintedOn]);
+  }), [doc, stats, ed.activeHoleId, issues, terrain, show.photo, shadeUrl, contours, ed.groundDetail, natural, naturalStyle, paintedOn]);
 
   useEffect(() => { view?.setDoc(viewDoc); }, [view, viewDoc]);
   useEffect(() => { void view?.setPaintedGround(paintedOn ? painted : null); }, [view, paintedOn, painted]);
@@ -141,8 +148,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   // view or flyover opens)
   useEffect(() => { if (paintedOn && ed.teeView) void paintedDetail(doc, ed.teeView, view?.detailPx() ?? 3072); }, [view, paintedOn, ed.teeView, doc]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
-  const readOnly = useCourse(s => s.readOnly);
-  useEffect(() => { view?.setReadOnly(readOnly); }, [view, readOnly]);
+  useEffect(() => { view?.setReadOnly(viewOnly); }, [view, viewOnly]);
   useEffect(() => { view?.setShowStumps(ed.stumps); }, [view, ed.stumps]);
   useEffect(() => { view?.setGroup(ed.group); }, [view, ed.group]);
   useEffect(() => { view?.setPlotLine(ed.plotLine); }, [view, ed.plotLine]);

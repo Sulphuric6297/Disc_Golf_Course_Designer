@@ -24,7 +24,7 @@ import { reliefOf } from "./useRelief";
 import { canopyFor } from "../lib/forest";
 import { setStyle } from "./DesignPanel";
 import { ExportBanner, ProgressBar } from "./ExportProgress";
-import { Button, Field, Section, Segmented } from "./ui";
+import { Button, Field, Section, Segmented, Toggle } from "./ui";
 
 const svgBlob = (svg: string) => new Blob([svg], { type: "image/svg+xml" });
 const two = (i: number) => String(i).padStart(2, "0");
@@ -51,6 +51,22 @@ const videoSeconds = (d: CourseDoc, ids: string[]) =>
     return t + flightClock(flight, !keyed).play + VIDEO_HOLD.intro + VIDEO_HOLD.outro;
   }, 0);
 const minSec = (s: number) => (s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s)} s`);
+
+/** How the course looks to those who only view it (shared, the public page): its own ground and
+ * lines, apart from the editor's display. */
+function PublicViewSettings() {
+  const pv = useCourse(s => s.doc.style.publicView) ?? {};
+  const set = (p: Partial<NonNullable<CourseDoc["style"]["publicView"]>>) => setStyle({ publicView: { ...pv, ...p } });
+  return (
+    <Section title="How viewers see it" testid="public-view">
+      <Field label="Ground">
+        <Segmented label="Viewers' ground" value={pv.ground ?? "painted"} onChange={v => set({ ground: v })} options={[{ value: "painted", label: "Painted map" }, { value: "photo", label: "Satellite photo" }]} />
+      </Field>
+      <Toggle label="Contour lines" checked={!!pv.contours} onChange={v => set({ contours: v })} />
+      {pv.ground === "photo" && <Toggle label="Hill shading" checked={pv.shading ?? true} onChange={v => set({ shading: v })} />}
+    </Section>
+  );
+}
 
 export function ExportPanel() {
   const doc = useCourse(s => s.doc);
@@ -213,6 +229,7 @@ export function ExportPanel() {
           </div>
         </Section>
       )}
+      {SERVER && <PublicViewSettings />}
       <Section title="Print">
         <Row icon={<MapIcon size={15} className="text-orange-300" />} title="Course map" pick={
           <select aria-label="Map paper" className={`${selectCls} w-full`} value={doc.style.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>

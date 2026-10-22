@@ -486,6 +486,9 @@ export interface MapStyle {
   /** How paths and roads stack where they cross, bottom first (unset: dirt, gravel and wood
    * chips, paved walkways, roads and parking): on the painted map and in 3D. */
   pathOrder?: PathTier[];
+  /** How the course looks to those who only view it (shared, the public page), apart from the
+   * editor's own display: the ground painted (unset) or the photo, contour lines, hill shading. */
+  publicView?: { ground?: "painted" | "photo"; contours?: boolean; shading?: boolean };
   /** Forest style: the treetops as painted maps have them (unset), or natural ones, as the 3D
    * trees are seen from above: leaf clusters with gaps between, pines in tiers of boughs. */
   treeLook?: "classic" | "natural";
