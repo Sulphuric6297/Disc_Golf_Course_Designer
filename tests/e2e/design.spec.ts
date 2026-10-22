@@ -243,6 +243,19 @@ plain("tee signs: wide and tall layouts, notes, next hole", () => {
   plainExpect(wide.svg).toContain("HOLE 2 OF 2");
   plainExpect(wide.svg).not.toContain("COURSE MAP<");
   plainExpect(wide.svg).toContain("ELEVATION CHANGE FROM TEE");
+  // The spot under the notes: the green up close, the hole's numbers, or nothing
+  doc.style.sign = { spot: "green" };
+  const green = renderTeeSign(doc, doc.holes[1].id, "18x12", { contours: null, hillshade: null })!;
+  plainExpect(green.svg).toContain('data-part="green"');
+  plainExpect(green.svg).not.toContain('data-part="course-map"');
+  doc.style.sign = { spot: "stats" };
+  const stats = renderTeeSign(doc, doc.holes[1].id, "18x12", { contours: null, hillshade: null })!;
+  plainExpect(stats.svg).toContain('data-part="hole-stats"');
+  plainExpect(stats.svg).toContain("TO THE NEXT TEE");
+  doc.style.sign = { show: { courseMap: false } };
+  const none = renderTeeSign(doc, doc.holes[1].id, "18x12", { contours: null, hillshade: null })!;
+  plainExpect(none.svg).not.toContain('data-part="course-map"');
+  doc.style.sign = undefined;
   const first = renderTeeSign(doc, doc.holes[0].id, "12x18", { contours: null, hillshade: null })!;
   plainExpect(first.height).toBe(18 * 72);
   plainExpect(first.svg).toContain("HOLE 2 ·");
@@ -1037,7 +1050,7 @@ test("tee sign settings: one hole's own given to the holes picked (Apply to hole
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "5 Design" }).click();
   const panel = page.getByTestId("sign-settings");
-  await panel.getByRole("radio", { name: /^Hole / }).click();
+  await panel.getByRole("radio", { name: /^Hole \d/ }).click();
   await panel.getByRole("radio", { name: "Hidden" }).click();
   const signs = async () => (await course(page)).holes.map((h: any) => h.sign?.others);
   await expect.poll(signs).toContain("hidden");

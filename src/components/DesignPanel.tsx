@@ -5,7 +5,7 @@ import { BASKET_MARKS, PAPER, basketMark, bestRotation } from "../lib/mapSvg";
 import { autoWalks } from "../lib/course";
 import { courseStats } from "../lib/holeStats";
 import { editWalks } from "../state/actions";
-import { CARD_DEFAULTS, SIGN_PARTS, signOf } from "../lib/teeSign";
+import { CARD_DEFAULTS, SIGN_PARTS, SIGN_SPOTS, signOf } from "../lib/teeSign";
 import { holeLabel } from "../lib/course";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { AREA_KINDS } from "../constants";
@@ -135,8 +135,11 @@ function TeeSignSettings() {
       </Field>
       {eff.others === "faded" && <Slider label="How faded" min={0.05} max={0.9} step={0.05} value={eff.fade} onChange={v => patch({ fade: v }, false)} onDone={() => useCourse.getState().commit()} format={v => `${Math.round(v * 100)}%`} />}
       <div className="grid grid-cols-2 gap-x-3" data-testid="sign-parts">
-        {SIGN_PARTS.map(p => <Toggle key={p.id} label={p.label} checked={eff.show(p.id)} onChange={v => patch({ show: { ...own.show, [p.id]: v } })} />)}
+        {SIGN_PARTS.filter(p => p.id !== "courseMap").map(p => <Toggle key={p.id} label={p.label} checked={eff.show(p.id)} onChange={v => patch({ show: { ...own.show, [p.id]: v } })} />)}
       </div>
+      <Field label="Under the notes (wide signs)">
+        <Segmented label="What goes under the notes" value={eff.spot} onChange={v => patch({ spot: v, show: { ...own.show, courseMap: undefined } })} options={SIGN_SPOTS.map(o => ({ value: o.id, label: o.label }))} />
+      </Field>
       <div className="mt-2">
         <ApplyToHoles fromId={forHole ? hole!.id : undefined} apply={applyTo} testid="sign-apply" />
       </div>

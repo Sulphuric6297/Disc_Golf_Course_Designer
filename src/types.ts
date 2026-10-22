@@ -345,7 +345,12 @@ export interface SignSettings {
   fade?: number;
   /** Parts shown or left out (unset: as by default). */
   show?: Partial<Record<SignPart, boolean>>;
+  /** What fills a wide sign's spot under the notes (unset: the course map). */
+  spot?: SignSpot;
 }
+/** A wide sign's spot under the notes: the course in miniature, the green up close, the hole's
+ * numbers, or nothing. */
+export type SignSpot = "courseMap" | "green" | "stats" | "none";
 
 /** What is on the course map's page besides the map, each one moved, sized, colored or hidden by
  * hand in the Design step ("map" is the map itself: moved and zoomed on the page). */
