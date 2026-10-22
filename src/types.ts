@@ -347,7 +347,10 @@ export interface SignSettings {
   show?: Partial<Record<SignPart, boolean>>;
   /** What fills a wide sign's spot under the notes (unset: the course map). */
   spot?: SignSpot;
+  /** How the signs look, for the whole course (unset: the first look; lib/signLooks). */
+  look?: SignLook;
 }
+export type SignLook = "classic" | "trailhead";
 /** A wide sign's spot under the notes: the course in miniature, the green up close, the hole's
  * numbers, or nothing. */
 export type SignSpot = "courseMap" | "green" | "stats" | "none";

@@ -255,6 +255,18 @@ plain("tee signs: wide and tall layouts, notes, next hole", () => {
   doc.style.sign = { show: { courseMap: false } };
   const none = renderTeeSign(doc, doc.holes[1].id, "18x12", { contours: null, hillshade: null })!;
   plainExpect(none.svg).not.toContain('data-part="course-map"');
+  // Trailhead: the number on its tab, each tee's length on a chip; wide, the spot beside the climb
+  doc.style.sign = { look: "trailhead", spot: "green" };
+  const trail = renderTeeSign(doc, doc.holes[1].id, "18x12", { contours: null, hillshade: null })!;
+  plainExpect(trail.width).toBe(18 * 72);
+  plainExpect(trail.svg).toContain('data-part="tee-chip"');
+  plainExpect(trail.svg).toContain('data-part="spot-green"');
+  plainExpect(trail.svg).toContain("HOLE 2 OF 2");
+  const trailTall = renderTeeSign(doc, doc.holes[1].id, "12x18", { contours: null, hillshade: null })!;
+  plainExpect(trailTall.svg).toContain('data-part="hole-map"');
+  plainExpect(trailTall.svg).not.toContain('data-part="spot-green"');
+  // (the hole sheets keep their own page)
+  plainExpect(renderTeeSign(doc, doc.holes[1].id, "letter", { contours: null, hillshade: null })!.svg).not.toContain('data-part="tee-chip"');
   doc.style.sign = undefined;
   const first = renderTeeSign(doc, doc.holes[0].id, "12x18", { contours: null, hillshade: null })!;
   plainExpect(first.height).toBe(18 * 72);

@@ -2,10 +2,11 @@
 // the hole drawn with the tee at the bottom, its elevation profile, the hole's rules, and an arrow
 // to the next tee.
 import { CIRCLE_ONE_FT, FT_PER_M, TEE_LEVELS } from "../constants";
-import type { AreaItem, BasketItem, CourseDoc, CourseItem, LineItem, P, SignPart, SignSpot } from "../types";
+import type { AreaItem, BasketItem, CourseDoc, CourseItem, LineItem, P, SignLook, SignPart, SignSpot } from "../types";
+import { renderTrailhead } from "./signLooks";
 import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, obFor, obPieces, throwLine } from "./course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, rotatePoint, smoothPath } from "./geom";
-import { holeStats, playedHoles } from "./holeStats";
+import { holeStats, playedHoles, type HoleStats } from "./holeStats";
 import { markingsInView, northArrow, palette, renderMapLayers, scaleBar, titleStack, wrapSvg, type MapView } from "./mapSvg";
 import type { CanopyGrid } from "./forest";
 import type { Contours } from "./relief";
@@ -21,7 +22,7 @@ export const SIGN_SIZES: Record<SignSize, { label: string; w: number; h: number 
   a4: { label: "Hole sheet (A4)", w: 8.27, h: 11.69 }
 };
 
-const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+export const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const n = (v: number) => (Math.round(v * 100) / 100).toString();
 const font = (f: string) => (f === "Oswald" ? "Oswald, 'Arial Narrow', Arial, sans-serif" : f === "Bitter" ? "Bitter, Georgia, serif" : "Inter, Arial, sans-serif");
 
@@ -96,6 +97,9 @@ const SIGN_SHOW: Record<SignPart, boolean> = {
   north: true, scale: true, throwLine: true, circle: true, distances: false, holeOf: true, designer: true, legend: true
 };
 
+/** How tee signs can look (each with its picture: public/signs/<id>.jpg). */
+export const SIGN_LOOKS: { id: SignLook; label: string }[] = [{ id: "classic", label: "Classic" }, { id: "trailhead", label: "Trailhead" }];
+
 /** What a wide sign's spot under the notes can hold. */
 export const SIGN_SPOTS: { id: SignSpot; label: string }[] = [
   { id: "courseMap", label: "Course map" }, { id: "green", label: "The green" }, { id: "stats", label: "Hole stats" }, { id: "none", label: "Nothing" }
@@ -119,13 +123,14 @@ export const signOf = (doc: Pick<CourseDoc, "style" | "holes">, holeId: string) 
     fade: h.fade ?? g.fade ?? 0.3,
     show: (p: SignPart) => h.show?.[p] ?? g.show?.[p] ?? SIGN_SHOW[p],
     // (a course map left out before there was a choice: nothing there)
-    spot: (h.spot ?? g.spot ?? ((h.show?.courseMap ?? g.show?.courseMap) === false ? "none" : "courseMap")) as SignSpot
+    spot: (h.spot ?? g.spot ?? ((h.show?.courseMap ?? g.show?.courseMap) === false ? "none" : "courseMap")) as SignSpot,
+    look: (g.look ?? "classic") as SignLook
   };
 };
 
 /** The course as a sign's map draws it: with only this hole when the others are left out (their
  * fairways, tees, baskets, mandos and drop zones gone; a basket it shares stays, as its own). */
-const signMapDoc = (doc: CourseDoc, holeId: string): CourseDoc => {
+export const signMapDoc = (doc: CourseDoc, holeId: string): CourseDoc => {
   const sign = signOf(doc, holeId);
   const style = { ...doc.style, throwLines: sign.show("throwLine"), circle: sign.show("circle"), distances: sign.show("distances") };
   if (sign.others !== "hidden") return { ...doc, style };
@@ -143,6 +148,8 @@ const signMapDoc = (doc: CourseDoc, holeId: string): CourseDoc => {
 export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: SignArt) => {
   const hole = doc.holes.find(h => h.id === holeId);
   if (!hole) return null;
+  // (the hole sheets keep their own page)
+  if (signOf(doc, holeId).look === "trailhead" && size !== "letter" && size !== "a4") return renderTrailhead(doc, holeId, size, opts);
   if (SIGN_SIZES[size].w > SIGN_SIZES[size].h) return renderWideSign(doc, holeId, size, opts);
   const layout = activeLayout(doc);
   const stats = doc.holes.map(h => holeStats(doc, h, layout));
@@ -353,7 +360,7 @@ export const renderScorecard = (doc: CourseDoc, players = 5) => {
 };
 
 /** Wraps text into lines of at most `max` characters. */
-const wrap = (text: string, max: number) => {
+export const wrap = (text: string, max: number) => {
   const out: string[] = [];
   let cur = "";
   for (const w of text.split(/\s+/).filter(Boolean)) {
@@ -386,6 +393,69 @@ export const holeMap = (doc: CourseDoc, holeId: string, box: { w: number; h: num
   const mapStats = md.holes.length === doc.holes.length ? stats : md.holes.map(h => holeStats(md, h, activeLayout(doc)));
   const map = renderMapLayers(md, view, { stats: mapStats, contours: opts.contours, hillshade: opts.hillshade, focusHole: holeId, fade: sign ? (sign.others === "shown" ? 1 : sign.fade) : undefined, textScale: ts, fontFamily: doc.style.font, canopy: opts.canopy }, uid);
   return { ...map, rotation, scale, st, stats, view };
+};
+
+/** The course in miniature, in the map's colors, in a box: this hole picked out, "you are here" at
+ * its tee (`done`: the holes drawn whole). */
+export const miniCourseMap = (doc: CourseDoc, holeId: string, st: HoleStats, done: HoleStats[], box: { x: number; y: number; w: number; h: number }, card: ReturnType<typeof cardStyle>, lvl: { color: string }, u: number) => {
+  const sty = doc.style;
+  const out: string[] = [];
+  const all = done.flatMap(x => x.line);
+  const b0 = boundsOf(all);
+  const pad = 80;
+  const b = { minX: b0.minX - pad, minY: b0.minY - pad, maxX: b0.maxX + pad, maxY: b0.maxY + pad };
+  const k = Math.min(box.w / (b.maxX - b.minX), box.h / (b.maxY - b.minY));
+  const ox = box.x + box.w / 2 - ((b.minX + b.maxX) / 2) * k, oy = box.y + box.h / 2 - ((b.minY + b.maxY) / 2) * k;
+  const P2 = (q: P) => `${n(ox + q.x * k)} ${n(oy + q.y * k)}`;
+  const poly = (pts: P[]) => `M${pts.map(P2).join("L")}Z`;
+  const pth = (pts: P[]) => `M${pts.map(P2).join("L")}`;
+  const mw = (b.maxX - b.minX) * k, mh = (b.maxY - b.minY) * k;
+  const mbox = { x: box.x + (box.w - mw) / 2, y: box.y + (box.h - mh) / 2, w: mw, h: mh };
+  const clip = `mini${holeId.slice(-4)}`;
+  const woodsEverywhere = (sty.forest ?? "everywhere") === "everywhere";
+  const mini: string[] = [`<clipPath id="${clip}"><rect x="${n(mbox.x)}" y="${n(mbox.y)}" width="${n(mbox.w)}" height="${n(mbox.h)}" rx="${n(10 * u)}"/></clipPath>`];
+  mini.push(`<rect x="${n(mbox.x)}" y="${n(mbox.y)}" width="${n(mbox.w)}" height="${n(mbox.h)}" fill="${woodsEverywhere ? sty.trees : sty.rough}"/>`);
+  for (const a of doc.items) {
+    if (a.type === "area" && (a.kind === "woods" && !woodsEverywhere)) mini.push(`<path d="${poly(a.points)}" fill="${sty.trees}"/>`);
+    if (a.type === "area" && (a.kind === "fairway" || a.kind === "nogo" || a.kind === "parking") && woodsEverywhere) mini.push(`<path d="${poly(a.points)}" fill="${sty.rough}"/>`);
+  }
+  for (const x of done) {
+    const h = doc.holes.find(q => q.id === x.holeId);
+    if (h?.fairway) mini.push(`<path d="${poly(fairwayOutline(h, smoothPath(x.line, 6), 0, 6))}" fill="${sty.fairway}"/>`);
+  }
+  for (const a of doc.items) {
+    if (a.type === "area" && a.kind === "water") mini.push(`<path d="${poly(a.points)}" fill="${sty.water}"/>`);
+    if (a.type === "line" && a.kind === "stream") mini.push(`<path d="${pth(a.points)}" fill="none" stroke="${sty.water}" stroke-width="${n(2 * u)}" stroke-linecap="round"/>`);
+    if (a.type === "line" && (a.kind === "path" || a.kind === "walk")) mini.push(`<path d="${pth(a.points)}" fill="none" stroke="${sty.path}" stroke-width="${n(1.4 * u)}" stroke-linecap="round"/>`);
+  }
+  for (const x of done) {
+    const me = x.holeId === holeId;
+    mini.push(`<path d="${pth(smoothPath(x.line, 6))}" fill="none" stroke="${me ? lvl.color : "#ffffff"}" stroke-opacity="${me ? 1 : 0.75}" stroke-width="${n((me ? 3.4 : 1.4) * u)}" stroke-linecap="round"/>`);
+  }
+  for (const x of done) {
+    const t = x.line[0], me = x.holeId === holeId;
+    if (!me) mini.push(`<circle cx="${n(ox + t.x * k)}" cy="${n(oy + t.y * k)}" r="${n(6.5 * u)}" fill="${card.header}" stroke="#ffffff" stroke-width="${n(0.8 * u)}"/><text x="${n(ox + t.x * k)}" y="${n(oy + t.y * k)}" text-anchor="middle" dominant-baseline="central" font-family="${card.head}" font-weight="700" font-size="${n(7 * u)}" fill="#ffffff">${x.number}</text>`);
+  }
+  out.push(`<g data-part="course-map"><g clip-path="url(#${clip})">${mini.join("")}</g><rect x="${n(mbox.x)}" y="${n(mbox.y)}" width="${n(mbox.w)}" height="${n(mbox.h)}" rx="${n(10 * u)}" fill="none" stroke="${card.ink}" stroke-opacity="0.35" stroke-width="${n(1.2 * u)}"/>`);
+  // You are here
+  const here = st.line[0];
+  const hx = ox + here.x * k, hy = oy + here.y * k;
+  out.push(`<path d="M${n(hx)} ${n(hy)}c${n(-9 * u)} ${n(-12 * u)} ${n(-9 * u)} ${n(-24 * u)} 0 ${n(-24 * u)}s${n(9 * u)} ${n(12 * u)} 0 ${n(24 * u)}z" fill="#dc2626" stroke="#ffffff" stroke-width="${n(1.4 * u)}"/><text x="${n(hx)}" y="${n(hy - 15 * u)}" text-anchor="middle" dominant-baseline="central" font-family="${card.head}" font-weight="700" font-size="${n(8.5 * u)}" fill="#ffffff">${st.label}</text>`);
+  const tagX = Math.max(mbox.x + 40 * u, Math.min(mbox.x + mbox.w - 40 * u, hx));
+  out.push(`<rect x="${n(tagX - 38 * u)}" y="${n(Math.min(hy + 6 * u, mbox.y + mbox.h - 18 * u))}" width="${n(76 * u)}" height="${n(14 * u)}" rx="${n(7 * u)}" fill="#dc2626"/><text x="${n(tagX)}" y="${n(Math.min(hy + 6 * u, mbox.y + mbox.h - 18 * u) + 7 * u)}" text-anchor="middle" dominant-baseline="central" font-family="${card.body}" font-weight="800" font-size="${n(6.5 * u)}" letter-spacing="${n(1 * u)}" fill="#ffffff">YOU ARE HERE</text></g>`);
+  return out.join("");
+};
+
+/** The green up close: the painted ground round the basket, turned as the hole's map is. */
+export const greenView = (doc: CourseDoc, holeId: string, map: ReturnType<typeof holeMap>, box: { x: number; y: number; w: number; h: number }, opts: SignArt, u: number, sign: ReturnType<typeof signOf>, edge = cardStyle(doc).ink) => {
+  const st = map.st, sty = doc.style;
+  const end = st.line[st.line.length - 1];
+  const view: MapView = { cx: end.x, cy: end.y, rotation: map.rotation, scale: Math.min(box.w, box.h) / 110, width: box.w, height: box.h };
+  const md = signMapDoc(doc, holeId);
+  const mstats = md.holes.length === doc.holes.length ? map.stats : md.holes.map(h => holeStats(md, h, activeLayout(doc)));
+  const g = renderMapLayers(md, view, { stats: mstats, contours: opts.contours, hillshade: opts.hillshade, focusHole: holeId, fade: sign.others === "shown" ? 1 : sign.fade, textScale: 1.3 * u, fontFamily: sty.font, canopy: opts.canopy }, `gr${holeId.slice(-4)}`);
+  const clip = `green${holeId.slice(-4)}`;
+  return `<g data-part="green"><clipPath id="${clip}"><rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.w)}" height="${n(box.h)}" rx="${n(10 * u)}"/></clipPath><g clip-path="url(#${clip})"><g transform="translate(${n(box.x)} ${n(box.y)})">${g.svg}</g></g><rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.w)}" height="${n(box.h)}" rx="${n(10 * u)}" fill="none" stroke="${edge}" stroke-opacity="0.35" stroke-width="${n(1.2 * u)}"/></g>`;
 };
 
 /**
@@ -499,62 +569,12 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
   const done = map.stats.filter(x => x.complete);
   const bottom = H - 44 * u;
   if (sign.spot === "courseMap" && done.length > 1 && bottom - y > 90 * u) {
-    const all = done.flatMap(x => x.line);
-    const b0 = boundsOf(all);
-    const pad = 80;
-    const b = { minX: b0.minX - pad, minY: b0.minY - pad, maxX: b0.maxX + pad, maxY: b0.maxY + pad };
-    const box = { x: mx, y, w: cw, h: bottom - y };
-    const k = Math.min(box.w / (b.maxX - b.minX), box.h / (b.maxY - b.minY));
-    const ox = box.x + box.w / 2 - ((b.minX + b.maxX) / 2) * k, oy = box.y + box.h / 2 - ((b.minY + b.maxY) / 2) * k;
-    const P2 = (q: P) => `${n(ox + q.x * k)} ${n(oy + q.y * k)}`;
-    const poly = (pts: P[]) => `M${pts.map(P2).join("L")}Z`;
-    const pth = (pts: P[]) => `M${pts.map(P2).join("L")}`;
-    const mw = (b.maxX - b.minX) * k, mh = (b.maxY - b.minY) * k;
-    const mbox = { x: box.x + (box.w - mw) / 2, y: box.y + (box.h - mh) / 2, w: mw, h: mh };
-    const clip = `mini${holeId.slice(-4)}`;
-    const woodsEverywhere = (sty.forest ?? "everywhere") === "everywhere";
-    const mini: string[] = [`<clipPath id="${clip}"><rect x="${n(mbox.x)}" y="${n(mbox.y)}" width="${n(mbox.w)}" height="${n(mbox.h)}" rx="${n(10 * u)}"/></clipPath>`];
-    mini.push(`<rect x="${n(mbox.x)}" y="${n(mbox.y)}" width="${n(mbox.w)}" height="${n(mbox.h)}" fill="${woodsEverywhere ? sty.trees : sty.rough}"/>`);
-    for (const a of doc.items) {
-      if (a.type === "area" && (a.kind === "woods" && !woodsEverywhere)) mini.push(`<path d="${poly(a.points)}" fill="${sty.trees}"/>`);
-      if (a.type === "area" && (a.kind === "fairway" || a.kind === "nogo" || a.kind === "parking") && woodsEverywhere) mini.push(`<path d="${poly(a.points)}" fill="${sty.rough}"/>`);
-    }
-    for (const x of done) {
-      const h = doc.holes.find(q => q.id === x.holeId);
-      if (h?.fairway) mini.push(`<path d="${poly(fairwayOutline(h, smoothPath(x.line, 6), 0, 6))}" fill="${sty.fairway}"/>`);
-    }
-    for (const a of doc.items) {
-      if (a.type === "area" && a.kind === "water") mini.push(`<path d="${poly(a.points)}" fill="${sty.water}"/>`);
-      if (a.type === "line" && a.kind === "stream") mini.push(`<path d="${pth(a.points)}" fill="none" stroke="${sty.water}" stroke-width="${n(2 * u)}" stroke-linecap="round"/>`);
-      if (a.type === "line" && (a.kind === "path" || a.kind === "walk")) mini.push(`<path d="${pth(a.points)}" fill="none" stroke="${sty.path}" stroke-width="${n(1.4 * u)}" stroke-linecap="round"/>`);
-    }
-    for (const x of done) {
-      const me = x.holeId === holeId;
-      mini.push(`<path d="${pth(smoothPath(x.line, 6))}" fill="none" stroke="${me ? lvl.color : "#ffffff"}" stroke-opacity="${me ? 1 : 0.75}" stroke-width="${n((me ? 3.4 : 1.4) * u)}" stroke-linecap="round"/>`);
-    }
-    for (const x of done) {
-      const t = x.line[0], me = x.holeId === holeId;
-      if (!me) mini.push(`<circle cx="${n(ox + t.x * k)}" cy="${n(oy + t.y * k)}" r="${n(6.5 * u)}" fill="${card.header}" stroke="#ffffff" stroke-width="${n(0.8 * u)}"/><text x="${n(ox + t.x * k)}" y="${n(oy + t.y * k)}" text-anchor="middle" dominant-baseline="central" font-family="${card.head}" font-weight="700" font-size="${n(7 * u)}" fill="#ffffff">${x.number}</text>`);
-    }
-    parts.push(`<g data-part="course-map"><g clip-path="url(#${clip})">${mini.join("")}</g><rect x="${n(mbox.x)}" y="${n(mbox.y)}" width="${n(mbox.w)}" height="${n(mbox.h)}" rx="${n(10 * u)}" fill="none" stroke="${card.ink}" stroke-opacity="0.35" stroke-width="${n(1.2 * u)}"/>`);
-    // You are here
-    const here = st.line[0];
-    const hx = ox + here.x * k, hy = oy + here.y * k;
-    parts.push(`<path d="M${n(hx)} ${n(hy)}c${n(-9 * u)} ${n(-12 * u)} ${n(-9 * u)} ${n(-24 * u)} 0 ${n(-24 * u)}s${n(9 * u)} ${n(12 * u)} 0 ${n(24 * u)}z" fill="#dc2626" stroke="#ffffff" stroke-width="${n(1.4 * u)}"/><text x="${n(hx)}" y="${n(hy - 15 * u)}" text-anchor="middle" dominant-baseline="central" font-family="${card.head}" font-weight="700" font-size="${n(8.5 * u)}" fill="#ffffff">${st.label}</text>`);
-    const tagX = Math.max(mbox.x + 40 * u, Math.min(mbox.x + mbox.w - 40 * u, hx));
-    parts.push(`<rect x="${n(tagX - 38 * u)}" y="${n(Math.min(hy + 6 * u, mbox.y + mbox.h - 18 * u))}" width="${n(76 * u)}" height="${n(14 * u)}" rx="${n(7 * u)}" fill="#dc2626"/><text x="${n(tagX)}" y="${n(Math.min(hy + 6 * u, mbox.y + mbox.h - 18 * u) + 7 * u)}" text-anchor="middle" dominant-baseline="central" font-family="${card.body}" font-weight="800" font-size="${n(6.5 * u)}" letter-spacing="${n(1 * u)}" fill="#ffffff">YOU ARE HERE</text></g>`);
+    parts.push(miniCourseMap(doc, holeId, st, done, { x: mx, y, w: cw, h: bottom - y }, card, lvl, u));
   }
   // Or the green up close: the painted ground round the basket, turned as the hole's map is
   if (sign.spot === "green" && st.complete && bottom - y > 90 * u) {
     label("THE GREEN", y);
-    const box = { x: mx, y: y + 10 * u, w: cw, h: bottom - y - 10 * u };
-    const end = st.line[st.line.length - 1];
-    const view: MapView = { cx: end.x, cy: end.y, rotation: map.rotation, scale: Math.min(box.w, box.h) / 110, width: box.w, height: box.h };
-    const md = signMapDoc(doc, holeId);
-    const mstats = md.holes.length === doc.holes.length ? map.stats : md.holes.map(h => holeStats(md, h, activeLayout(doc)));
-    const g = renderMapLayers(md, view, { stats: mstats, contours: opts.contours, hillshade: opts.hillshade, focusHole: holeId, fade: sign.others === "shown" ? 1 : sign.fade, textScale: 1.3 * u, fontFamily: sty.font, canopy: opts.canopy }, `gr${holeId.slice(-4)}`);
-    const clip = `green${holeId.slice(-4)}`;
-    parts.push(`<g data-part="green"><clipPath id="${clip}"><rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.w)}" height="${n(box.h)}" rx="${n(10 * u)}"/></clipPath><g clip-path="url(#${clip})"><g transform="translate(${n(box.x)} ${n(box.y)})">${g.svg}</g></g><rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.w)}" height="${n(box.h)}" rx="${n(10 * u)}" fill="none" stroke="${card.ink}" stroke-opacity="0.35" stroke-width="${n(1.2 * u)}"/></g>`);
+    parts.push(greenView(doc, holeId, map, { x: mx, y: y + 10 * u, w: cw, h: bottom - y - 10 * u }, opts, u, sign));
   }
   // Or the hole's numbers, each on a tile
   if (sign.spot === "stats" && st.complete && bottom - y > 70 * u) {

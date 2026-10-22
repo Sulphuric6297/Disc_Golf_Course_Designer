@@ -5,7 +5,7 @@ import { BASKET_MARKS, PAPER, basketMark, bestRotation } from "../lib/mapSvg";
 import { autoWalks } from "../lib/course";
 import { courseStats } from "../lib/holeStats";
 import { editWalks } from "../state/actions";
-import { CARD_DEFAULTS, SIGN_PARTS, SIGN_SPOTS, signOf } from "../lib/teeSign";
+import { CARD_DEFAULTS, SIGN_LOOKS, SIGN_PARTS, SIGN_SPOTS, signOf } from "../lib/teeSign";
 import { holeLabel } from "../lib/course";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { AREA_KINDS } from "../constants";
@@ -125,6 +125,18 @@ function TeeSignSettings() {
   if (!doc.holes.length) return null;
   return (
     <Section title="Tee signs" testid="sign-settings" right={reset}>
+      <div className="grid grid-cols-2 gap-2 mb-3" role="radiogroup" aria-label="Tee sign look" data-testid="sign-looks">
+        {SIGN_LOOKS.map(l => {
+          const on = (doc.style.sign?.look ?? "classic") === l.id;
+          return (
+            <button key={l.id} role="radio" aria-checked={on} data-testid={`sign-look-${l.id}`} onClick={() => setStyle({ sign: { ...doc.style.sign, look: l.id === "classic" ? undefined : l.id } })}
+              className={`text-left rounded-lg overflow-hidden bg-zinc-800 ring-1 transition ${on ? "ring-2 ring-orange-400" : "ring-white/10 hover:ring-white/30"}`}>
+              <img src={`${import.meta.env.BASE_URL}signs/${l.id}.jpg`} alt="" loading="lazy" className="block w-full aspect-[2/3] object-cover object-top" draggable={false} />
+              <span className="block px-2 py-1 text-xs font-semibold text-zinc-100">{l.label}</span>
+            </button>
+          );
+        })}
+      </div>
       {hole && (
         <div className="mb-2.5">
           <Segmented label="Tee sign settings for" value={scope} onChange={setScope} options={[{ value: "all", label: "All holes" }, { value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }]} />
