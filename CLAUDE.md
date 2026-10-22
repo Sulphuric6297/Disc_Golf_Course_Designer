@@ -40,7 +40,9 @@ design tools and the PDGA guidance the app follows.
 
 ## Testing
 
-- Every change is tested in full once, by CI on its pull request (`npm run check`).
+- Every change is tested in full once, by CI on each push (a pull request shows that run): the typecheck, and the
+  end-to-end suite split four ways (`--shard`). A change to only Markdown or `docs/` skips it.
+  Don't also run the full suite yourself.
 - While working: run `npm run typecheck`, `npm run build`, and the spec files for the areas you
   changed (`npx playwright test tests/e2e/<area>.spec.ts`).
 - Every bug fix adds a test that fails without the fix. Every new feature adds a test.

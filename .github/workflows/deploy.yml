@@ -1,17 +1,52 @@
 name: Test and deploy
 
+# Tests run once per push. A pull request shows its branch's push run, so a pull request
+# from this repository doesn't test again (only one from a fork does). Changes to only text
+# files (Markdown, docs/) or only the server (server/, tested by its own workflow) skip these.
 on:
   push:
     branches-ignore:
       - gh-pages
+    paths-ignore: ['**.md', 'docs/**', 'server/**']
   pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'server/**']
 
 permissions:
   contents: write
 
+# A newer push to the same branch cancels its older run (never on main, which deploys)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
-  test:
+  typecheck:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  e2e:
+    # The end-to-end suite split four ways, run at the same time
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,14 +63,17 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: Typecheck, build and run the full end-to-end suite
-        run: npm run check
+      - name: Build
+        run: npm run build
+
+      - name: End-to-end tests (part ${{ matrix.shard }} of 4)
+        run: npx playwright test --shard=${{ matrix.shard }}/4
 
       - name: Upload test report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-results
+          name: playwright-results-${{ matrix.shard }}
           path: |
             test-results/
             playwright-report/
@@ -44,7 +82,7 @@ jobs:
   deploy:
     # Only deploys from main, and only when every test passed. In the repository's
     # Settings → Pages, set the source to "Deploy from a branch", branch gh-pages.
-    needs: test
+    needs: [typecheck, e2e]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:

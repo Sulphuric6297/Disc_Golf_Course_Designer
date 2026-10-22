@@ -81,7 +81,8 @@ npm run look       # screenshots of the main screens into look/
 
 ## Hosting on GitHub Pages
 
-`.github/workflows/deploy.yml` runs the tests on every push. On `main`, once they pass, it
+`.github/workflows/deploy.yml` runs the tests once per push, split four ways to run at
+the same time (changes to only Markdown or `docs/` skip them). On `main`, once they pass, it
 publishes the built site to the `gh-pages` branch.
 
 To turn it on, go to the repository's **Settings → Pages**. Set **Source** to *Deploy from a
