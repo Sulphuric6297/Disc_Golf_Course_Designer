@@ -18,7 +18,6 @@ const FLY_SHOW: [FlyShow, string][] = [
   ["badge", "Hole badge"],
   ["pinDistance", "Distance to the pin"],
   ["courseName", "Course name"],
-  ["discFlight", "Disc flight"],
   ["playLine", "Line of play"],
   ["circle", "Putting circle"],
   ["ob", "OB"],
@@ -47,15 +46,9 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { ho
       : changeDoc(d => ({ flyover: { ...d.flyover, ...patch } }), false);
   const done = () => useCourse.getState().commit();
   const ft = (v: number) => fmtDist(v, u);
-  // A switch: one undo step. The disc's flight for all holes is the yellow lines everywhere too
-  // (the map's, the tee view's); for one hole, on brings the lines back
+  // A switch: one undo step
   const showPart = (k: FlyShow, v: boolean) =>
-    changeDoc(d => {
-      const lines = k !== "discFlight" ? d.style : !forHole ? { ...d.style, discFlight: v ? undefined : false } : v ? { ...d.style, discFlight: undefined } : d.style;
-      return forHole
-        ? { style: lines, holes: d.holes.map(h => (h.id === hole!.id ? { ...h, flyover: { ...h.flyover, [k]: v } } : h)) }
-        : { style: lines, flyover: { ...d.flyover, [k]: v } };
-    });
+    changeDoc(d => (forHole ? { holes: d.holes.map(h => (h.id === hole!.id ? { ...h, flyover: { ...h.flyover, [k]: v } } : h)) } : { flyover: { ...d.flyover, [k]: v } }));
   return (
     <div data-testid="flyover-settings">
       {ground && (
@@ -81,7 +74,7 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { ho
       <div className="text-xs text-zinc-300 mt-2.5 mb-0.5">On screen</div>
       <div className="grid grid-cols-2 gap-x-2 mb-2" data-testid="flyover-show">
         {FLY_SHOW.map(([k, label]) => (
-          <Toggle key={k} label={label} checked={f[k] && (k !== "discFlight" || doc.style.discFlight !== false)} onChange={v => showPart(k, v)} />
+          <Toggle key={k} label={label} checked={f[k]} onChange={v => showPart(k, v)} />
         ))}
       </div>
       {/* (from a hole: its settings to the holes picked; for all holes: the picked holes follow them) */}

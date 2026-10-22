@@ -1,6 +1,7 @@
 // The panel for what is selected: a hole (par, fairway, notes, numbers, profile) or one item.
+import { BRUSH_SECTION } from "../lib/view";
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X } from "lucide-react";
+import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X, Plus } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
 import { areaPath, autoWalks, byNumber, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, obPicked, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
@@ -12,7 +13,7 @@ import { fairwayTrees } from "../lib/lidar";
 import { landscapeOf } from "../lib/landscapes";
 import { addHoleOb, deleteSelection, duplicateSelection, editWalks, markObBeyond, select, setTeeLevel, shareBasket } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface } from "../types";
+import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface, BrushKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { TreeSettings } from "./TreeSettings";
 import { HoleFlight } from "./FlyoverSettings";
@@ -270,29 +271,48 @@ const holeChip = (on: boolean) => `px-2 py-1 touch:py-2 rounded-md text-xs font-
 const BRUSH_LEVELS = [{ value: "none", label: "None" }, { value: "light", label: "Light" }, { value: "medium", label: "Medium" }, { value: "heavy", label: "Heavy" }] as const;
 type BrushLevel = (typeof BRUSH_LEVELS)[number]["value"];
 
-/** A wood's underbrush: its own level, and sections drawn inside it with levels of their own. */
+const BRUSH_KINDS: { value: BrushKind; label: string }[] = [{ value: "mixed", label: "A mix" }, { value: "thicket", label: "Thicket" }, { value: "briars", label: "Briars & thorns" }, { value: "weeds", label: "Weeds" }];
+const kindSelect = "bg-zinc-800 rounded-lg px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80";
+
+/** A wood's underbrush: its own level and kind, and sections drawn inside it with their own. */
 function WoodsBrush({ item }: { item: AreaItem }) {
   const drawing = useEditor(e => e.patchFor === item.id && e.patchBrush);
   const sections = item.brush ?? [];
-  const setSections = (next: { points: P[]; level: BrushLevel }[]) => updateItem(item.id, { brush: next.length ? next : undefined } as Partial<CourseItem>);
+  const setSections = (next: { points: P[]; level: BrushLevel; kind?: BrushKind }[]) => updateItem(item.id, { brush: next.length ? next : undefined } as Partial<CourseItem>);
   const draw = () => useEditor.getState().set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", patchFor: item.id, patchBrush: true });
+  const kind = item.brushKind ?? "mixed";
   return (
     <div className="mb-3" data-testid="woods-brush">
-      <Field label={sections.length ? "Underbrush (the rest of the wood)" : "Underbrush"} hint="Bushes and young trees beneath the trees, kept off fairways and paths.">
+      <Field label={sections.length ? "Underbrush (the rest of the wood)" : "Underbrush"} hint="Bushes, thickets, briars and weeds beneath the trees, kept off fairways and paths.">
         <Segmented label="Underbrush" value={item.underbrush ?? "none"} onChange={v => updateItem(item.id, { underbrush: v === "none" ? undefined : v } as Partial<CourseItem>)} options={[...BRUSH_LEVELS]} />
       </Field>
+      {(item.underbrush || sections.length > 0) && (
+        <label className="flex items-center gap-2 mb-3 text-xs text-zinc-400">
+          <span className="w-16 shrink-0">What grows</span>
+          <select aria-label="What the underbrush is" data-testid="brush-kind" className={`${kindSelect} flex-1 min-w-0`} value={kind} onChange={e => updateItem(item.id, { brushKind: e.target.value === "mixed" ? undefined : e.target.value } as Partial<CourseItem>)}>
+            {BRUSH_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
+          </select>
+        </label>
+      )}
+      {sections.length > 0 && <div className="text-[11px] text-zinc-500 mb-1.5"><span className="inline-block w-3 border-t-2 border-dashed align-middle mr-1.5" style={{ borderColor: BRUSH_SECTION }} />Sections, outlined on the map: each its own underbrush (where they overlap, the later one's).</div>}
       {sections.map((b, k) => (
-        <div key={k} className="flex items-center gap-2 mb-1.5" data-testid="brush-section">
-          <span className="text-xs text-zinc-300 w-16 shrink-0">Section {k + 1}</span>
-          <div className="flex-1 min-w-0">
-            <Segmented label={`Section ${k + 1} underbrush`} value={b.level} onChange={v => setSections(sections.map((q, m) => (m === k ? { ...q, level: v } : q)))} options={[...BRUSH_LEVELS]} />
+        <div key={k} className="rounded-lg bg-zinc-800/50 p-2 mb-1.5" data-testid="brush-section">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-semibold text-zinc-300">Section {k + 1}</span>
+            <button className="p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-zinc-800" aria-label={`Remove section ${k + 1}`} title="Remove" onClick={() => setSections(sections.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
           </div>
-          <button className="p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-zinc-800" aria-label={`Remove section ${k + 1}`} title="Remove" onClick={() => setSections(sections.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
+          <Segmented label={`Section ${k + 1} underbrush`} value={b.level} onChange={v => setSections(sections.map((q, m) => (m === k ? { ...q, level: v } : q)))} options={[...BRUSH_LEVELS]} />
+          {b.level !== "none" && (
+            <select aria-label={`Section ${k + 1}: what grows`} className={`${kindSelect} w-full mt-1.5`} value={b.kind ?? ""} onChange={e => setSections(sections.map((q, m) => (m === k ? { ...q, kind: (e.target.value || undefined) as BrushKind | undefined } : q)))}>
+              <option value="">As the rest ({BRUSH_KINDS.find(x => x.value === kind)!.label.toLowerCase()})</option>
+              {BRUSH_KINDS.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}
+            </select>
+          )}
         </div>
       ))}
       {drawing
-        ? <div className="text-xs text-orange-300">Draw the section over the wood with the mouse held down; let go to finish (Esc cancels).</div>
-        : <Button small onClick={draw} testid="brush-draw-section">Underbrush in part of it…</Button>}
+        ? <div className="text-xs text-orange-300">Draw around the part of the wood with the mouse held down (a finger on a phone); let go to finish. Esc cancels.</div>
+        : <Button small onClick={draw} testid="brush-draw-section" title="Draw around part of this wood to give it its own underbrush"><Plus size={13} /> Draw a section with its own underbrush</Button>}
       {(item.underbrush || sections.some(b => b.level !== "none")) && (
         <div className="mt-2">
           <Slider label="Thicker at the edges" min={0} max={100} step={5} value={Math.round((item.brushEdge ?? 0.6) * 100)}

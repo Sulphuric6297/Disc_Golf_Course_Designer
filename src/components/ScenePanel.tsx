@@ -74,7 +74,6 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
         ]}
       />
       <Toggle label="Grass sways in the wind" checked={wind} onChange={v => set({ wind: v })} />
-      <Toggle label="Disc flight lines" checked={s.discFlight !== false} onChange={v => setStyle({ discFlight: v ? undefined : false })} />
     </div>
   );
 }

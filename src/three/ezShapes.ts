@@ -22,9 +22,120 @@ export const ezLoaded = () => Tree !== null;
 const PRESETS: Record<TreeShape, string[]> = {
   broadleaf: ["Oak Medium", "Ash Medium", "Oak Large", "Ash Large", "Oak Small", "Ash Small"],
   conifer: ["Pine Medium", "Pine Large", "Pine Small", "Pine Large"],
-  bush: ["Bush 1", "Bush 3", "Bush 1", "Bush 3"]
+  // (the first six: bushes; then the underbrush's own: briars, weeds, thicket shrubs, two each)
+  bush: ["Bush 1", "Bush 3", "Bush 1", "Bush 3", "Bush 2", "Bush 2", "Briars", "Briars", "Weeds", "Ferns", "Thicket", "Thicket"]
 };
-export const EZ_VARIANTS: Record<TreeShape, number> = { broadleaf: 6, conifer: 4, bush: 4 };
+/** How many variants a kind picks from when nothing says which (bushes: not the underbrush's own). */
+export const EZ_VARIANTS: Record<TreeShape, number> = { broadleaf: 6, conifer: 4, bush: 6 };
+/** The underbrush's own bush variants: briars, weeds and thicket shrubs. */
+export const BRUSH_VARIANTS = { briars: [6, 7], weeds: [8, 9], thicket: [10, 11] } as const;
+
+type Options = {
+  branch: Record<"angle" | "children" | "gnarliness" | "length" | "radius" | "sections" | "segments" | "start" | "taper" | "twist", Record<number, number>> & { levels: number; force: { direction: { x: number; y: number; z: number }; strength: number } };
+  bark: { type: string; tint: number; textureScale: { x: number; y: number } };
+  leaves: { type: string; count: number; size: number; sizeVariance: number; angle: number; start: number; billboard: string };
+};
+/** Growths of our own, each from one of ez-tree's bushes reshaped. */
+/** A growth of our own: the ez-tree bush it starts from, how it's reshaped, and (for the light
+ * ones) how its leaves thin with distance: one in how many kept, how much bigger, middle to farthest. */
+type Custom = { base: string; shape: (o: Options) => void; thin?: [number, number][] };
+const CUSTOM: Record<string, Custom> = {
+  // Briars: blackberry, greenbrier, multiflora rose. A mound of long, thin canes from the ground,
+  // arching up and out and back down, twiggy side shoots all along, small dark leaves; reddish canes
+  Briars: {
+    base: "Bush 2",
+    shape: o => {
+      const b = o.branch;
+      b.levels = 2;
+      Object.assign(b.length, { 0: 0.1, 1: 26, 2: 5 });
+      Object.assign(b.radius, { 0: 0.4, 1: 0.75, 2: 0.6 });
+      Object.assign(b.children, { 0: 24, 1: 10 });
+      Object.assign(b.angle, { 1: 42, 2: 55 });
+      Object.assign(b.start, { 1: 0, 2: 0.15 });
+      Object.assign(b.sections, { 0: 2, 1: 8, 2: 3 });
+      Object.assign(b.segments, { 0: 3, 1: 3, 2: 3 });
+      Object.assign(b.gnarliness, { 0: 0, 1: 0.1, 2: 0.4 });
+      Object.assign(b.taper, { 1: 0.85, 2: 0.7 });
+      Object.assign(b.twist, { 0: 0.4, 1: 0.03, 2: 0 });
+      b.force.strength = -0.055;
+      o.bark.type = "willow";
+      o.bark.tint = 0x9a6458;
+      o.bark.textureScale = { x: 0.5, y: 4 };
+      Object.assign(o.leaves, { type: "oak", count: 5, size: 2.6, sizeVariance: 0.5, angle: 40, start: 0.3, billboard: "double" });
+    },
+    thin: [[2, 1.4], [3, 1.7], [7, 2.6]]
+  },
+  // Weeds: goldenrod, ironweed, pokeweed, broomsedge. A clump of thin stalks standing up, leaves
+  // up their length; tan-green stems
+  Weeds: {
+    base: "Bush 2",
+    shape: o => {
+      const b = o.branch;
+      b.levels = 1;
+      Object.assign(b.length, { 0: 0.1, 1: 20 });
+      Object.assign(b.radius, { 0: 0.35, 1: 0.32 });
+      Object.assign(b.children, { 0: 32 });
+      Object.assign(b.angle, { 1: 16 });
+      Object.assign(b.start, { 1: 0 });
+      Object.assign(b.sections, { 0: 2, 1: 6 });
+      Object.assign(b.segments, { 0: 3, 1: 3 });
+      Object.assign(b.gnarliness, { 0: 0, 1: 0.06 });
+      Object.assign(b.taper, { 1: 0.9 });
+      Object.assign(b.twist, { 0: 0.5, 1: 0 });
+      b.force.strength = 0.006;
+      o.bark.type = "birch";
+      o.bark.tint = 0xa8ad7a;
+      o.bark.textureScale = { x: 0.3, y: 3 };
+      Object.assign(o.leaves, { type: "ash", count: 7, size: 2.1, sizeVariance: 0.6, angle: 55, start: 0.3, billboard: "double" });
+    },
+    thin: [[1, 1], [2, 1.3], [3, 1.6]]
+  },
+  // Ferns: bracken and Christmas fern in the shade, a clump of fronds (ez-tree's needle sprays)
+  Ferns: {
+    base: "Bush 2",
+    shape: o => {
+      const b = o.branch;
+      b.levels = 1;
+      Object.assign(b.length, { 0: 0.1, 1: 18 });
+      Object.assign(b.radius, { 0: 0.3, 1: 0.18 });
+      Object.assign(b.children, { 0: 40 });
+      Object.assign(b.angle, { 1: 24 });
+      Object.assign(b.start, { 1: 0 });
+      Object.assign(b.sections, { 0: 2, 1: 5 });
+      Object.assign(b.segments, { 0: 3, 1: 3 });
+      Object.assign(b.gnarliness, { 0: 0, 1: 0.1 });
+      Object.assign(b.taper, { 1: 0.9 });
+      Object.assign(b.twist, { 0: 0.5, 1: 0 });
+      b.force.strength = -0.004;
+      o.bark.type = "birch";
+      o.bark.tint = 0xb3a77a;
+      o.bark.textureScale = { x: 0.3, y: 3 };
+      Object.assign(o.leaves, { type: "pine", count: 5, size: 2.5, sizeVariance: 0.5, angle: 20, start: 0.1, billboard: "double" });
+    },
+    thin: [[1, 1], [2, 1.25], [3, 1.45]]
+  },
+  // Thicket shrubs: mountain laurel, rhododendron, privet. Big, many-stemmed, leafy to the ground
+  // and packed tight
+  Thicket: {
+    base: "Bush 1",
+    shape: o => {
+      const b = o.branch;
+      Object.assign(b.children, { 0: 13, 1: 4, 2: 3 });
+      Object.assign(b.angle, { 1: 34 });
+      Object.assign(b.start, { 1: 0.2, 2: 0.2 });
+      Object.assign(b.gnarliness, { 1: 0.16, 2: 0.12 });
+      o.leaves.type = "oak";
+      o.leaves.count = 14;
+      o.leaves.size *= 1.05;
+    }
+  }
+};
+/** Loads a preset (ez-tree's, or one of ours) into a tree's options. */
+const loadInto = (t: EzTree, preset: string) => {
+  const own = CUSTOM[preset];
+  t.loadPreset(own ? own.base : preset);
+  if (own) own.shape(t.options as unknown as Options);
+};
 
 /** The species a tree can be, by kind (ez-tree's preset families). */
 export const SPECIES: Record<TreeShape, { id: string; label: string; presets: [string, string, string] }[]> = {
@@ -36,7 +147,10 @@ export const SPECIES: Record<TreeShape, { id: string; label: string; presets: [s
   bush: [
     { id: "round", label: "Round", presets: ["Bush 1", "Bush 1", "Bush 1"] },
     { id: "dense", label: "Dense", presets: ["Bush 3", "Bush 3", "Bush 3"] },
-    { id: "airy", label: "Airy", presets: ["Bush 2", "Bush 2", "Bush 2"] }
+    { id: "airy", label: "Airy", presets: ["Bush 2", "Bush 2", "Bush 2"] },
+    { id: "briars", label: "Briars", presets: ["Briars", "Briars", "Briars"] },
+    { id: "weeds", label: "Weeds", presets: ["Weeds", "Weeds", "Ferns"] },
+    { id: "thicket", label: "Thicket", presets: ["Thicket", "Thicket", "Thicket"] }
   ]
 };
 /** A species' preset for a tree of this height (a young tree, a grown one, an old one). */
@@ -71,19 +185,19 @@ const keyOf = (s: TreeSpec) => JSON.stringify([s.preset, s.seed, s.crownBase ?? 
 export const presetDefaults = (preset: string) => {
   if (!Tree) return { crownBase: 0.3, limbs: 6 };
   const t = new Tree();
-  t.loadPreset(preset);
+  loadInto(t, preset);
   return { crownBase: t.options.branch.start[1] as number, limbs: t.options.branch.children[0] as number };
 };
 
 const mats = new Map<string, THREE.Material>();
 /** One material per bark and leaf texture, shared; instancing-friendly (each tree's tint comes in
  * as its instance color, so it multiplies the photographed leaves gently). */
-const materialFor = (kind: "bark" | "leaves", from: THREE.MeshPhongMaterial, key: string) => {
+const materialFor = (kind: "bark" | "leaves", from: THREE.MeshPhongMaterial, key: string, tint?: number) => {
   let m = mats.get(`${kind}|${key}`);
   if (m) return m;
   m = kind === "leaves"
     ? new THREE.MeshPhongMaterial({ name: `ez-leaves-${key}`, map: from.map, side: THREE.DoubleSide, alphaTest: from.alphaTest || 0.5, dithering: true, shininess: 4 })
-    : new THREE.MeshPhongMaterial({ name: `ez-bark-${key}`, map: from.map, normalMap: from.normalMap, aoMap: from.aoMap, shininess: 2 });
+    : new THREE.MeshPhongMaterial({ name: `ez-bark-${key}`, map: from.map, normalMap: from.normalMap, aoMap: from.aoMap, shininess: 2, color: tint ?? 0xffffff });
   if (kind === "leaves") (m as THREE.MeshPhongMaterial).alphaToCoverage = true;
   m.userData.shared = true;
   mats.set(`${kind}|${key}`, m);
@@ -93,7 +207,7 @@ const materialFor = (kind: "bark" | "leaves", from: THREE.MeshPhongMaterial, key
 /** Grows the tree, noting which bark indices belong to which branch level (for the lighter versions). */
 const grow = (spec: TreeSpec) => {
   const t = new Tree!();
-  t.loadPreset(spec.preset);
+  loadInto(t, spec.preset);
   const o = t.options;
   o.seed = spec.seed;
   // (aspen leaves are autumn-yellow: the green landscapes take ash leaves on those bushes)
@@ -162,15 +276,21 @@ export const ezTree = (shape: TreeShape, spec: TreeSpec, detail: Detail): TreePr
   if (!g) {
     const { t, levels } = grow(spec);
     const bark0 = t.branchesMesh.geometry as THREE.BufferGeometry, leaves0 = t.leavesMesh.geometry as THREE.BufferGeometry;
-    const barkMat = materialFor("bark", t.branchesMesh.material as THREE.MeshPhongMaterial, t.options.bark.type);
+    // (bark keeps ez-tree's own colors on our growths only: its presets' tints are near white)
+    const ownBark = CUSTOM[spec.preset] ? t.options.bark.tint : undefined;
+    const barkMat = materialFor("bark", t.branchesMesh.material as THREE.MeshPhongMaterial, `${t.options.bark.type}${ownBark ?? ""}`, ownBark);
     const leafMat = materialFor("leaves", t.leavesMesh.material as THREE.MeshPhongMaterial, t.options.leaves.type);
     const box = new THREE.Box3().setFromObject(t);
     const h = Math.max(0.01, box.max.y - box.min.y), w = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
     const bush = shape === "bush", pine = shape === "conifer";
+    const thin = CUSTOM[spec.preset]?.thin;
     const versions: [Detail, THREE.BufferGeometry, THREE.BufferGeometry][] = [
       ["near", bark0, leaves0],
-      ["mid", barkUpTo(bark0, levels, 1), thinLeaves(leaves0, bush ? 4 : 6, bush ? 1.9 : 2.3)],
-      ["far", barkUpTo(bark0, levels, pine ? 0 : 1), thinLeaves(leaves0, bush ? 12 : 26, bush ? 3.2 : 4.6)]
+      ["mid", barkUpTo(bark0, levels, 1), thinLeaves(leaves0, ...(thin?.[0] ?? (bush ? [4, 1.9] : [6, 2.3])))],
+      ["far", barkUpTo(bark0, levels, pine ? 0 : 1), thinLeaves(leaves0, ...(thin?.[1] ?? (bush ? [12, 3.2] : [26, 4.6])))],
+      // (underbrush past arm's reach: the main stems and a few big leaf clusters; our own thin
+      // growths, their leaves alone)
+      ["brush", barkUpTo(bark0, levels, bush && !thin ? 1 : 0), thinLeaves(leaves0, ...(thin?.[2] ?? (bush ? [30, 5] : [40, 5.6])))]
     ];
     g = {} as Grown;
     for (const [d, bark, leaves] of versions) {

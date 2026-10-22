@@ -6,6 +6,7 @@
 // It can also look from a tee down its hole, and fly over a hole.
 //
 // Plan (x, y) is world (x, z) with Y up; plan units are feet.
+import { BRUSH_SECTION, TREE_PATCH } from "../lib/view";
 import * as THREE from "three";
 import CameraControls from "camera-controls";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
@@ -36,7 +37,7 @@ import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createStructure } from "../three/structures";
 import { isLineKind, orientedBox, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
-import type { AmenityItem, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem } from "../types";
+import type { AmenityItem, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
 import type { FlightFrames, FlyoverVideo, FrameInfo, RecordOptions } from "./flyoverVideo";
@@ -175,7 +176,6 @@ export class CourseView {
   private shapesGroup = new THREE.Group();
   /** Other courses on the same ground: their holes, drawn faintly over this one's map. */
   private nearbyGroup = new THREE.Group();
-  private arcsGroup = new THREE.Group();
   private fx = new THREE.Group();
   private labelsLayer: HTMLDivElement;
   private handlesLayer: HTMLDivElement;
@@ -398,7 +398,7 @@ export class CourseView {
     c.addEventListener("rest", () => { this.posePinned = false; });
 
     this.ground = new Ground(this.renderer, () => this.invalidate(true));
-    this.scene.add(this.ground.group, this.shapesGroup, this.arcsGroup, this.itemsGroup, this.nearbyGroup, this.fx, this.skyBox, this.grass.group);
+    this.scene.add(this.ground.group, this.shapesGroup, this.itemsGroup, this.nearbyGroup, this.fx, this.skyBox, this.grass.group);
     {
       const gl = this.renderer.getContext();
       const info = gl.getExtension("WEBGL_debug_renderer_info");
@@ -1019,7 +1019,6 @@ export class CourseView {
     this.updateForests(cam.position);
     waterUniforms.uTime.value = this.clock.elapsedTime;
     waterUniforms.uWind.value = this.wind ? 1 : 0.25;
-    this.arcsGroup.visible = true;
     this.fx.visible = false;
     const hidden = this.fly ? this.hideForFlight() : [];
     this.ground.detailActive(true);
@@ -1065,8 +1064,7 @@ export class CourseView {
       // (whose it is: the flown hole's, or another's)
       const own = (holes: (string | undefined)[]) => holes.includes(holeId);
       let show = true;
-      if (kind === "arc") show = f.discFlight && (id === holeId || f.otherHoles);
-      else if (kind === "throw") show = f.playLine && (!!it && it.type === "tee" && (own([it.holeId]) || f.otherHoles));
+      if (kind === "throw") show = f.playLine && (!!it && it.type === "tee" && (own([it.holeId]) || f.otherHoles));
       else if (kind === "circle") show = f.circle && (!!it && it.type === "basket" && (own(basketHoles(it)) || f.otherHoles));
       else if (kind === "walk") show = f.walks;
       else if ((kind === "line" || kind === "area") && it && (it.type === "line" || it.type === "area")) {
@@ -1496,7 +1494,6 @@ export class CourseView {
     }
     this.camera.updateMatrixWorld();
     const tilted = this.controls.polarAngle > TILT_TOP;
-    this.arcsGroup.visible = tilted;
     this.ground.detailActive(dist < 250);
     // Tilted, the course is a place: sky, haze, land to the horizon and grass up close
     this.lastSky = false;
@@ -2217,19 +2214,21 @@ export class CourseView {
         const sections = (a.brush ?? []).filter(b => b.points.length >= 3);
         const inSection = (p: P) => sections.some(b => pointInPolygon(p, b.points));
         const edge = Math.min(1, Math.max(0, a.brushEdge ?? 0.6));
-        const plant = (key: string, outline: P[], level: "light" | "medium" | "heavy", outside: boolean) =>
-          put(key, JSON.stringify([outline, level, hv, st.trees, st.landscape, here.key, cutKey, outside ? sections.map(b => b.points) : 0, edge, a.points]), () => {
+        // (`over`: the sections drawn after this one, which have their say where they overlap it)
+        const plant = (key: string, outline: P[], level: "light" | "medium" | "heavy", kind: BrushKind, outside: boolean, over: P[][] = []) =>
+          put(key, JSON.stringify([outline, level, kind, hv, st.trees, st.landscape, here.key, cutKey, outside ? sections.map(b => b.points) : over, edge, a.points]), () => {
             const land = landscapeOf(st);
             this.plantings++;
             // (the wood's own level stays out of its sections; a section keeps to the wood)
-            const keepOut = (p: P, r: number) => here.test(p, r) || cutAt(p) || (outside ? inSection(p) : !pointInPolygon(p, a.points));
-            const brush = createUnderbrush(outline, (x, y) => this.h(x, y), st.trees, land.mix ?? [], keepOut, level, edge, a.points);
+            const keepOut = (p: P, r: number) => here.test(p, r) || cutAt(p) || (outside ? inSection(p) : !pointInPolygon(p, a.points) || over.some(o => pointInPolygon(p, o)));
+            const brush = createUnderbrush(outline, (x, y) => this.h(x, y), st.trees, land.mix ?? [], keepOut, level, edge, a.points, kind);
             brush.traverse(o => { o.userData.itemId = a.id; });
             this.shadowsDirty = true;
             return brush;
           }, this.itemsGroup, true);
-        if (a.underbrush) plant(`woods:${a.id}:under`, a.points, a.underbrush, true);
-        sections.forEach((b, i) => { if (b.level !== "none") plant(`woods:${a.id}:under:${i}`, b.points, b.level, false); });
+        const kind = a.brushKind ?? "mixed";
+        if (a.underbrush) plant(`woods:${a.id}:under`, a.points, a.underbrush, kind, true);
+        sections.forEach((b, i) => { if (b.level !== "none") plant(`woods:${a.id}:under:${i}`, b.points, b.level, b.kind ?? kind, false, sections.slice(i + 1).map(s => s.points)); });
       }
       // Custom: the measured trees stand as usual, and each patch drawn inside is filled in with
       // drawn trees as thickly as it says, never under a measured crown; outlined while picked
@@ -2359,25 +2358,6 @@ export class CourseView {
           g.add(this.fatLine(this.drapeLine(line, LIFT + 0.1), sel ? SELECT : main ? "#ffffff" : TEE_LEVELS[tee.level].color, sel ? 3.5 : main ? 2.5 : 1.5, { dashed: main ? undefined : 7, opacity: main ? 0.95 : 0.75, order: 6 }));
           return g;
         });
-        if (main && line.length >= 2) {
-          put(`arc:${hole.id}`, JSON.stringify([line, hv, st.discFlight !== false]), () => {
-            if (st.discFlight === false) return new THREE.Group();
-            // The disc's flight: up from the tee and down to the basket, about 15% of the length high at most
-            const len = pathLength(line);
-            const pts: THREE.Vector3[] = [];
-            const n = 48;
-            for (let i = 0; i <= n; i++) {
-              const t = i / n;
-              const p = pointAlong(line, t * len).point;
-              const peak = Math.min(60, len * 0.12);
-              const lift = 5 + Math.sin(Math.PI * Math.pow(t, 0.8)) * peak - t * 2.5;
-              pts.push(new THREE.Vector3(p.x, this.h(p.x, p.y) + lift, p.y));
-            }
-            const g = new THREE.Group();
-            g.add(this.fatLine(pts, "#fde68a", 2, { opacity: 0.85, dashed: 4, order: 7 }));
-            return g;
-          }, this.arcsGroup);
-        }
       }
       for (const b of holeBaskets(course, hole.id)) {
         put(`circle:${b.id}`, JSON.stringify([b.x, b.y, hv, st.circle]), () => {
@@ -2523,7 +2503,14 @@ export class CourseView {
       });
       const rings = w ? [[...edge(w), ...edge(-w).reverse()]] : [pts];
       for (const r of rings) g.add(this.fatLine(this.drapeLine(r, LIFT + 0.3, true), color, 3, { opacity, order: 9, depthTest: false }));
-    } else if (item.type === "area") g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2, true), color, 3.5, { opacity, order: 9 }));
+    } else if (item.type === "area") {
+      g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2, true), color, 3.5, { opacity, order: 9 }));
+      // (a wood's underbrush sections and tree patches, while it's the one picked)
+      if (id === this.selectedId && item.kind === "woods") {
+        for (const b of item.brush ?? []) if (b.points.length >= 3) g.add(this.fatLine(this.drapeLine(b.points, LIFT + 0.25, true), BRUSH_SECTION, 3, { opacity, order: 9, dashed: 6, depthTest: false }));
+        for (const p of item.patches ?? []) if (p.points.length >= 3) g.add(this.fatLine(this.drapeLine(p.points, LIFT + 0.25, true), TREE_PATCH, 3, { opacity, order: 9, dashed: 6, depthTest: false }));
+      }
+    }
     else if (item.type === "line") g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2), color, 5, { opacity: opacity * 0.6, order: 9 }));
     else {
       const r = item.type === "tree" ? item.radius * (item.width ?? 1) * 1.05 : item.type === "tee" ? item.padLength * 0.62 : item.type === "basket" ? 3 : 3.5;
@@ -4260,9 +4247,32 @@ export class CourseView {
         this.marquee = null;
         const r = { l: Math.min(x0, x1), r: Math.max(x0, x1), t: Math.min(y0, y1), b: Math.max(y0, y1) };
         if (r.r - r.l < 3 && r.b - r.t < 3) return;
-        this.cb.onBoxSelect(this.itemsIn(r), add);
+        this.cb.onBoxSelect(this.itemsIn(r), add, this.treesIn(r));
       }
     };
+  }
+
+  /** The measured trees and the saplings grown since the survey standing inside a rectangle on
+   * the screen (their trunks), each with its look: to be made the course's own and picked. */
+  private treesIn(r: { l: number; r: number; t: number; b: number }) {
+    const lidar = this.doc?.course.lidar, ls = this.lidarState;
+    const out: { tree: NonNullable<ReturnType<CourseView["treeAt"]>>; look: ReturnType<CourseView["lookOf"]> }[] = [];
+    if (!lidar || !ls) return out;
+    const inside = (x: number, y: number) => {
+      const s = this.project(new THREE.Vector3(x, this.h(x, y), y));
+      return !!s && s.x >= r.l && s.x <= r.r && s.y >= r.t && s.y <= r.b;
+    };
+    for (const g of this.itemsGroup.children) {
+      if (!g.userData.measured) continue;
+      const spots = g.userData.spots as TreeSpot[], indexOf = g.userData.indexes as number[] | undefined;
+      spots.forEach((s, i) => {
+        if (!inside(s.x, s.y)) return;
+        const k = indexOf?.[i] ?? -1;
+        const look = { variant: s.variant, rotation: Math.round((-s.turn / DEG) * 10) / 10, leaf: `#${s.tint.getHexString()}` };
+        out.push({ tree: k >= 0 && k < lidar.trees.length ? { kind: "measured", k } : { kind: "spot", x: s.x, y: s.y, height: s.height, width: s.width, conifer: s.shape === "conifer" }, look });
+      });
+    }
+    return out;
   }
 
   /** The things inside a rectangle on the screen (container pixels). */

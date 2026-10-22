@@ -69,7 +69,8 @@ export type ViewCallbacks = {
    * own and picked, looking as it did. */
   onAdoptTree: (tree: { kind: "measured"; k: number } | { kind: "spot"; x: number; y: number; height: number; width: number; conifer: boolean }, look: { variant: number; rotation: number; leaf: string } | null) => void;
   /** What a drag box took in; `add`: with what was picked already. */
-  onBoxSelect: (ids: string[], add: boolean) => void;
+  /** `trees`: the trees inside that aren't items yet (measured ones, saplings), with their looks. */
+  onBoxSelect: (ids: string[], add: boolean, trees?: { tree: { kind: "measured"; k: number } | { kind: "spot"; x: number; y: number; height: number; width: number; conifer: boolean }; look: { variant: number; rotation: number; leaf: string } | null }[]) => void;
   /** Live: the things picked together moved by (dx, dy) from where they were in `base`. */
   onMoveGroup: (base: CourseDoc, ids: string[], dx: number, dy: number) => void;
   /** A click with a placing tool (tee, basket, mando, drop zone, tree, amenity, label). */

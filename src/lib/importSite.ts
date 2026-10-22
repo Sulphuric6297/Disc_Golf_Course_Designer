@@ -4,7 +4,7 @@
 import { clamp } from "../constants";
 import type { AreaItem, CourseDoc, CourseItem, Hole, LineItem, P, SiteInfo, TreeItem } from "../types";
 import { FEET_PER_METER, getGeoBounds, type GeoBounds, type SiteSelection } from "./geo/core";
-import { canopyMask, detectTrees, waterRegions, woodsRegions } from "./geo/detect";
+import { canopyMask, detectTrees, treeStands, waterRegions, woodsRegions } from "./geo/detect";
 import { fetchBestElevationGrid } from "./geo/elevation";
 import { fetchLidar } from "./geo/lidarFetch";
 import { groundOnGrid } from "./lidar";
@@ -281,11 +281,21 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   // What OpenStreetMap maps already (its woods and water) needn't come again from the photo
   const mappedAs = (kind: string) => mapped.filter((m): m is AreaItem => m.type === "area" && m.kind === kind);
   const inside = (p: P, kind: string) => mappedAs(kind).some(a => pointInPolygon(p, a.points));
-  // (with the trees measured from the air, none guessed from the photo)
-  const woods = lidar ? [] : found.woods.filter(a => !inside(centroid(a.points), "woods"));
+  // With trees measured from the air, none guessed from the photo: the woods are their stands,
+  // trees close together in one, each stand its own woods (OpenStreetMap's woods, drawn by hand
+  // and often over a whole hillside, give way to them)
+  let woods: AreaItem[];
+  if (lidar?.trees.length) {
+    const { w: gw, h: gh, cell, stands } = treeStands(lidar.trees.map(t => ({ x: t[0], y: t[1], r: t[3] })), width, height);
+    woods = stands.map(s => ({ ...createArea("woods", outlineToPlan(s.outline, gw, gh, gw * cell, gh * cell, 5)), importSource: "lidar" as const }) as AreaItem).filter(a => a.points.length >= 3);
+    if (woods.length) {
+      mapped = mapped.filter(m => !(m.type === "area" && m.kind === "woods"));
+      notes.push(`The measured trees in ${woods.length} ${woods.length === 1 ? "stand" : "stands"} of woods.`);
+    }
+  } else woods = found.woods.filter(a => !inside(centroid(a.points), "woods"));
   const water = found.water.filter(a => !inside(centroid(a.points), "water"));
   const trees = lidar ? [] : found.trees.filter(t => !inside(t, "woods") && !inside(t, "water"));
-  const counted = [[woods.length, "wooded area", "wooded areas"], [trees.length, "tree", "trees"], [water.length, "water area", "water areas"]] as const;
+  const counted = [[lidar?.trees.length ? 0 : woods.length, "wooded area", "wooded areas"], [trees.length, "tree", "trees"], [water.length, "water area", "water areas"]] as const;
   const said = counted.filter(([n]) => n > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
   if (said.length) notes.push(`On the photo: ${said.join(", ")}.`);
   mapped = [...mapped, ...woods, ...water];

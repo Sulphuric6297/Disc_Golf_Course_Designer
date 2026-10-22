@@ -55,7 +55,7 @@ const idOf = (o: Record<string, number>) => {
 /** What the painting depends on (not flyover settings, names, the logo and such). */
 const paintKey = (doc: CourseDoc) =>
   JSON.stringify([
-    { ...doc.style, logo: undefined, card: undefined, sign: undefined, discFlight: undefined, legendAt: undefined, page: undefined, texts: undefined, images: undefined, title: undefined, subtitle: undefined, footer: undefined },
+    { ...doc.style, logo: undefined, card: undefined, sign: undefined, legendAt: undefined, page: undefined, texts: undefined, images: undefined, title: undefined, subtitle: undefined, footer: undefined },
     idOf(doc.terrainHeights),
     doc.background?.length ?? 0,
     doc.canvas,

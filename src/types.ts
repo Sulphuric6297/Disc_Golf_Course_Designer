@@ -105,6 +105,9 @@ export interface LabelItem extends BaseItem {
 
 /** Areas drawn on the map. OB and hazards are what play cares about; the rest make the map read. */
 export type AreaKind = "ob" | "hazard" | "casual" | "water" | "fairway" | "green" | "woods" | "rough" | "nogo" | "parking" | "building" | "sand";
+/** What a wood's underbrush is: a mix, or mostly thicket shrubs, briars and thorns, or weeds. */
+export type BrushKind = "mixed" | "thicket" | "briars" | "weeds";
+
 export interface AreaItem extends BaseItem {
   /** Straight between its corners (unset: a smooth curve through them, but parking and buildings). */
   straight?: boolean;
@@ -135,14 +138,16 @@ export interface AreaItem extends BaseItem {
   heights?: [number, number];
   /** Underbrush beneath its trees: bushes and young trees, light to heavy (unset: none). */
   underbrush?: "light" | "medium" | "heavy";
-  /** Sections of the wood with underbrush of their own (none, or light to heavy): the wood's own
-   * setting covers the rest. */
-  brush?: { points: P[]; level: "none" | "light" | "medium" | "heavy" }[];
+  /** What the underbrush is: a mix (unset), thicket shrubs, briars and thorns, or weeds. */
+  brushKind?: BrushKind;
+  /** Sections of the wood with underbrush of their own (none, or light to heavy, and its own
+   * kind, unset: the wood's): the wood's own setting covers the rest. */
+  brush?: { points: P[]; level: "none" | "light" | "medium" | "heavy"; kind?: BrushKind }[];
   /** How much thicker underbrush grows along the wood's edge, where light gets in, than deep
    * inside: 0 even everywhere, 1 almost none deep inside (unset: 0.6). */
   brushEdge?: number;
   /** Brought in from OpenStreetMap, or found on the satellite photo (replaced on re-import). */
-  importSource?: "osm" | "photo";
+  importSource?: "osm" | "photo" | "lidar";
 }
 
 /** Lines drawn on the map: OB lines (the line itself is OB), paths, roads, fences, streams. */
@@ -300,7 +305,6 @@ export interface FlyoverSettings {
   badge: boolean;
   pinDistance: boolean;
   courseName: boolean;
-  discFlight: boolean;
   playLine: boolean;
   circle: boolean;
   ob: boolean;
@@ -309,7 +313,7 @@ export interface FlyoverSettings {
 }
 
 /** What a flyover can show or hide. */
-export type FlyShow = "title" | "badge" | "pinDistance" | "courseName" | "discFlight" | "playLine" | "circle" | "ob" | "otherHoles" | "walks";
+export type FlyShow = "title" | "badge" | "pinDistance" | "courseName" | "playLine" | "circle" | "ob" | "otherHoles" | "walks";
 
 /** A layout picks which tee and pin each hole uses (e.g. "Blue", long tees to B pins). */
 export interface Layout {
@@ -448,9 +452,6 @@ export interface MapStyle {
   nextTee: boolean;
   /** Putting circle (10 m) around each basket. */
   circle: boolean;
-  /** The disc's flight over each hole in 3D (the yellow arcs) anywhere: the map, the tee view and
-   * flyovers (unset: shown). */
-  discFlight?: boolean;
   legend: boolean;
   holeTable: boolean;
   north: boolean;

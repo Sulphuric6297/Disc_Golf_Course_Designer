@@ -8,17 +8,22 @@ import { LANDSCAPES, type LandscapeId } from "../lib/landscapes";
 import { CANDIDATES } from "./treeCandidates";
 import { ezReady } from "../three/ezShapes";
 
-type Kind = { id: TreeShape; label: string; heights: [number, number]; widthOfHeight: [number, number] };
+type Kind = { id: TreeShape; label: string; heights: [number, number]; widthOfHeight: [number, number]; pick?: number[] };
 const KINDS: Kind[] = [
   { id: "broadleaf", label: "Leafy", heights: [32, 62], widthOfHeight: [0.55, 0.85] },
   { id: "conifer", label: "Pine", heights: [36, 72], widthOfHeight: [0.32, 0.45] },
-  { id: "bush", label: "Bush", heights: [3.5, 8], widthOfHeight: [1.1, 1.6] }
+  { id: "bush", label: "Bush", heights: [3.5, 8], widthOfHeight: [1.1, 1.6] },
+  // (the underbrush's own: briars, weeds, a thicket shrub, briars again)
+  { id: "bush", label: "Brush", heights: [3, 6], widthOfHeight: [1.2, 1.8], pick: [6, 8, 10, 9] }
 ];
 /** A column: a way of making a tree of a kind (today's, or a candidate). */
 export type Maker = (kind: TreeShape, variant: number, height: number, width: number, tint: THREE.Color, seed: number) => THREE.Object3D;
 const COLUMNS: { name: string; make: Maker }[] = [
   { name: "Before", make: (kind, variant, height, width, tint) => treeMeshes(kind, variant % 2, height, width, tint, "near", true) },
   { name: "Now (ez-tree)", make: (kind, variant, height, width, tint) => treeMeshes(kind, variant, height, width, tint) },
+  { name: "Middle", make: (kind, variant, height, width, tint) => treeMeshes(kind, variant, height, width, tint, "mid") },
+  { name: "Far", make: (kind, variant, height, width, tint) => treeMeshes(kind, variant, height, width, tint, "far") },
+  { name: "Farthest", make: (kind, variant, height, width, tint) => treeMeshes(kind, variant, height, width, tint, "brush") },
   ...CANDIDATES
 ];
 const PER = 4;
@@ -74,13 +79,13 @@ const tag = (text: string, at: THREE.Vector3, col = false) => {
 const trees = new THREE.Group();
 scene.add(trees);
 let landscape: LandscapeId = "woods";
-let shown: TreeShape | "all" = "all";
+let shown: string = "all";
 const COL_GAP = 70, TREE_GAP = 62, ROW_GAP = 150, BUSH_GAP = 18;
 const build = () => {
   trees.clear();
   tags.forEach(t => t.el.remove()); tags.length = 0;
   const land = LANDSCAPES[landscape];
-  const kinds = KINDS.filter(k => shown === "all" || k.id === shown);
+  const kinds = KINDS.filter(k => shown === "all" || k.label === shown);
   const colW = (k: Kind) => (k.id === "bush" ? BUSH_GAP : TREE_GAP) * PER;
   const width = COLUMNS.length * TREE_GAP * PER + (COLUMNS.length - 1) * COL_GAP;
   kinds.forEach((kind, row) => {
@@ -96,7 +101,7 @@ const build = () => {
         const mix = land.mix?.length && kind.id !== "conifer" ? land.mix[Math.floor(rnd() * land.mix.length)] : land.colors.trees;
         const tint = foliageTint(mix, rnd);
         if (kind.id === "conifer") tint.offsetHSL(0.03, -0.06, -0.08);
-        const t = col.make(kind.id, i, h, w, tint, 7 + i * 31 + row * 977);
+        const t = col.make(kind.id, kind.pick?.[i] ?? i, h, w, tint, 7 + i * 31 + row * 977);
         t.position.set(x0 + (i + 0.5) * (kind.id === "bush" ? BUSH_GAP : TREE_GAP), 0, z + (rnd() - 0.5) * 10);
         // (a tree that shows a setting turns its lean toward the camera's side, and says which)
         t.rotation.y = t.userData.label ? -Math.PI / 2 : rnd() * Math.PI * 2;
@@ -154,7 +159,7 @@ const buttons = (host: string, items: [string, () => void, boolean][]) => {
 };
 let cam = "Tilted";
 const refreshBar = () => {
-  buttons("kinds", [["All", () => { shown = "all"; build(); }, shown === "all"], ...KINDS.map(k => [k.label, () => { shown = k.id; build(); }, shown === k.id] as [string, () => void, boolean])]);
+  buttons("kinds", [["All", () => { shown = "all"; build(); }, shown === "all"], ...KINDS.map(k => [k.label, () => { shown = k.label; build(); }, shown === k.label] as [string, () => void, boolean])]);
   buttons("cams", Object.keys(CAMS).map(k => [k, () => { cam = k; CAMS[k](); }, cam === k] as [string, () => void, boolean]));
   buttons("seasons", (["woods", "park", "pines", "autumn", "dry"] as LandscapeId[]).map(id => [LANDSCAPES[id].label ?? id, () => { landscape = id; build(); }, landscape === id] as [string, () => void, boolean]));
   buttons("light", [["Our light", () => setLight(false), !demoLight], ["Demo light", () => setLight(true), demoLight]]);
@@ -189,10 +194,10 @@ tick();
 // (for screenshots: a camera by name)
 (window as unknown as { labCamera: (name: string) => void }).labCamera = (name: string) => { cam = name; CAMS[name]?.(); refreshBar(); };
 // (and to look at any column: its index, from where)
-(window as unknown as { labLook: (col: number, dist?: number, h?: number) => void }).labLook = (col, dist = 150, h = 24) => {
+(window as unknown as { labLook: (col: number, dist?: number, h?: number, dx?: number) => void }).labLook = (col, dist = 150, h = 24, dx = 0) => {
   const w = COLUMNS.length * TREE_GAP * PER + (COLUMNS.length - 1) * COL_GAP;
-  const x = -w / 2 + col * (TREE_GAP * PER + COL_GAP) + (TREE_GAP * PER) / 2;
-  const kinds = KINDS.filter(k => shown === "all" || k.id === shown);
+  const x = -w / 2 + col * (TREE_GAP * PER + COL_GAP) + (TREE_GAP * PER) / 2 + dx;
+  const kinds = KINDS.filter(k => shown === "all" || k.label === shown);
   const z = kinds.length === 1 ? 0 : -ROW_GAP;
   camera.position.set(x, h, z + dist); controls.target.set(x, Math.max(4, h * 0.9), z);
 };

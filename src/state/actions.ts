@@ -52,10 +52,28 @@ export const pickGroup = (ids: string[]) => {
   useEditor.getState().set({ group: live, selectedId: null });
 };
 
-/** What a drag box took in, alone or (Shift) with what was picked already. */
-export const boxSelect = (ids: string[], add: boolean) => {
+/** Most trees a drag box makes the course's own at once. */
+const BOX_TREES = 400;
+
+/** What a drag box took in, alone or (Shift) with what was picked already; the measured trees
+ * and saplings inside too, made the course's own in one undo step (and given back, as a click's
+ * are, if the pick is let go without a change). */
+export const boxSelect = (ids: string[], add: boolean, trees: { tree: AnyTree; look: TreeLook }[] = []) => {
   const ed = editor();
-  pickGroup([...(add ? (ed.group.length ? ed.group : partsOf(ed.selectedId)) : []), ...ids]);
+  if (lookedAt) letGoUntouched();
+  if (lookedAtGroup) letGroupGoUntouched();
+  const before = [...(add ? (ed.group.length ? ed.group : partsOf(ed.selectedId)) : []), ...ids];
+  let made: string[] = [];
+  if (trees.length) {
+    if (trees.length > BOX_TREES) toast(`${trees.length.toLocaleString()} trees in the box: the first ${BOX_TREES} are picked. Draw a smaller box for the rest.`, "info");
+    made = adoptTrees(trees.slice(0, BOX_TREES));
+  }
+  pickGroup([...before, ...made]);
+  if (!made.length) return;
+  // (one tree alone ends up simply picked: given back as a click's is)
+  const now = editor(), doc = useCourse.getState().doc;
+  if (now.group.length) lookedAtGroup = { ids: made, doc };
+  else if (now.selectedId && made.includes(now.selectedId)) lookedAt = { id: now.selectedId, doc };
 };
 
 /** Everything on the course that isn't locked (Ctrl+A). */
@@ -542,6 +560,46 @@ export const addPatch = (areaId: string, points: P[]) => {
 };
 
 type TreeLook = { variant: number; rotation: number; leaf: string } | null;
+
+/** Trees made the course's own at once (see adoptTree), one undo step: their new ids. */
+const adoptTrees = (list: { tree: AnyTree; look: TreeLook }[]) => {
+  const doc = getDoc();
+  const removed = new Set(doc.lidar?.removed ?? []), cut: P[] = [];
+  const items: TreeItem[] = [];
+  for (const { tree, look } of list) {
+    let made: TreeItem;
+    if (tree.kind === "measured") {
+      const t = doc.lidar?.trees[tree.k];
+      if (!doc.lidar || !t || removed.has(tree.k)) continue;
+      const [x, y, h, r, conifer] = grownTree(t, doc.lidar.growYears ?? 0);
+      made = createTree({ x, y }, { height: Math.round(h), radius: Math.round(r), treeType: conifer ? "conifer" : "deciduous" });
+      removed.add(tree.k);
+    } else {
+      made = createTree({ x: tree.x, y: tree.y }, { height: Math.round(tree.height), radius: Math.round(tree.width / 2), treeType: tree.conifer ? "conifer" : "deciduous" });
+      cut.push({ x: tree.x, y: tree.y });
+    }
+    items.push(look ? { ...made, variant: look.variant, rotation: look.rotation, leaf: look.leaf } : made);
+  }
+  if (!items.length) return [];
+  const taken = new Set(list.flatMap(({ tree }) => (tree.kind === "measured" ? [tree.k] : [])));
+  changeDoc(d => ({
+    ...(d.lidar ? { lidar: { ...d.lidar, removed: [...removed].sort((a, b) => a - b), kept: (d.lidar.kept ?? []).filter(i => !taken.has(i)) } } : {}),
+    ...(cut.length ? { cutTrees: [...(d.cutTrees ?? []), ...cut] } : {}),
+    items: [...d.items, ...items]
+  }));
+  return items.map(i => i.id);
+};
+
+// Trees a drag box made the course's own: let go without a change, that's undone
+let lookedAtGroup: { ids: string[]; doc: CourseDoc } | null = null;
+const letGroupGoUntouched = () => {
+  const l = lookedAtGroup;
+  lookedAtGroup = null;
+  if (l && useCourse.getState().doc === l.doc) useCourse.getState().undo();
+};
+if (typeof window !== "undefined") {
+  useEditor.subscribe(s => { if (lookedAtGroup && !lookedAtGroup.ids.every(id => s.group.includes(id))) letGroupGoUntouched(); });
+}
 type AnyTree = { kind: "measured"; k: number } | { kind: "spot"; x: number; y: number; height: number; width: number; conifer: boolean };
 
 // A tree made the course's own by a click only (to look at it, or change it): when it's let go

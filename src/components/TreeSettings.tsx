@@ -38,7 +38,11 @@ export function TreeSettings({ item, set }: { item: TreeItem; set: (patch: Parti
         <div className="flex items-end gap-2 mb-3">
           <div className="flex-1 min-w-0">
             <Field label="Species">
-              <Segmented label="Species" value={species} onChange={v => set({ species: v, leaf: undefined })} options={SPECIES[shape].map(s => ({ value: s.id, label: s.label }))} />
+              {SPECIES[shape].length > 3
+                ? <select aria-label="Species" data-testid="tree-species" className="w-full bg-zinc-800 rounded-lg px-2.5 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80" value={species} onChange={e => set({ species: e.target.value, leaf: undefined })}>
+                    {SPECIES[shape].map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                  </select>
+                : <Segmented label="Species" value={species} onChange={v => set({ species: v, leaf: undefined })} options={SPECIES[shape].map(s => ({ value: s.id, label: s.label }))} />}
             </Field>
           </div>
           <div className="mb-3">

@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { EZ_VARIANTS, ezLoaded, ezProto, ezTint, ezTree, type TreeSpec } from "./ezShapes";
 
 export type TreeShape = "broadleaf" | "conifer" | "bush";
-export type Detail = "near" | "mid" | "far";
+export type Detail = "near" | "mid" | "far" | "brush";
 
 /** Shapes made of each kind (trees pick one by their id, so each keeps its own). */
 export const VARIANTS: Record<TreeShape, number> = EZ_VARIANTS;
@@ -451,7 +451,7 @@ export const treeProto = (shape: TreeShape, variant: number, detail: Detail, cla
   let p = protos.get(key);
   if (!p) {
     // (the classic shapes have two levels: their far one serves the middle distance too)
-    const d = classic && detail === "mid" ? "far" : detail;
+    const d = classic && (detail === "mid" || detail === "brush") ? "far" : detail;
     // (without ez-tree, outside a browser, the hand-built shapes stand in)
     const old = classic || !ezLoaded();
     p = old ? (shape === "conifer" ? conifer(variant % CLASSIC_VARIANTS.conifer, d as "near" | "far") : broadleaf(variant % CLASSIC_VARIANTS[shape], d as "near" | "far", shape === "bush")) : ezProto(shape, variant, detail);
@@ -532,8 +532,9 @@ export class Forest {
   private version = -1;
   private matrices: THREE.Matrix4[][] = [];
 
-  /** `maxFt`: not drawn past this far from the eye (underbrush). */
-  constructor(spots: TreeSpot[], private maxFt = Infinity) {
+  /** `maxFt`: not drawn past this far from the eye; `ladder`: its versions close, middle and far
+   * off, and where the first gives way (underbrush: lighter ones, the middle only close by). */
+  constructor(spots: TreeSpot[], private maxFt = Infinity, private ladder: { levels: [Detail, Detail, Detail]; nearFt?: number; midFt?: number } = { levels: ["near", "mid", "far"] }) {
     this.group.name = "forest";
     const byShape = new Map<string, TreeSpot[]>();
     for (const s of spots) {
@@ -544,7 +545,8 @@ export class Forest {
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3();
     for (const [key, list] of byShape) {
       const [shape, variant] = key.split("|");
-      const near = treeProto(shape as TreeShape, +variant, "near"), mid = treeProto(shape as TreeShape, +variant, "mid"), far = treeProto(shape as TreeShape, +variant, "far");
+      const [l0, l1, l2] = this.ladder.levels;
+      const near = treeProto(shape as TreeShape, +variant, l0), mid = treeProto(shape as TreeShape, +variant, l1), far = treeProto(shape as TreeShape, +variant, l2);
       const make = (proto: TreeProto) => {
         const leafMat = proto.leafMat ?? leafMaterial(proto.needles);
         return [new THREE.InstancedMesh(proto.bark, proto.barkMat ?? barkMaterial(), list.length), new THREE.InstancedMesh(proto.leaves, leafMat, list.length)];
@@ -583,7 +585,8 @@ export class Forest {
     if (this.last.distanceToSquared(eye) < 30 * 30 && Number.isFinite(this.last.x) && this.version === forestDetail.version) return;
     this.version = forestDetail.version;
     this.last.copy(eye);
-    const r2 = forestDetail.nearFt * forestDetail.nearFt, m2 = midOf(forestDetail.nearFt) ** 2;
+    const nearFt = this.ladder.nearFt ?? forestDetail.nearFt, midFt = this.ladder.midFt ?? midOf(forestDetail.nearFt);
+    const r2 = nearFt * nearFt, m2 = midFt * midFt;
     this.sets.forEach((set, si) => {
       const n = [0, 0, 0];
       const levels = [set.near, set.mid, set.far];

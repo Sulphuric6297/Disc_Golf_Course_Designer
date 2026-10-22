@@ -6,6 +6,8 @@ import { createEmptyCourse, newHole } from "../../src/lib/course";
 import { getGeoBounds } from "../../src/lib/geo/core";
 import { emptyPoints, grownTree, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesOver, depthFor, type LazReader } from "../../src/lib/lidar";
 import type { LidarTree } from "../../src/types";
+import { treeStands } from "../../src/lib/geo/detect";
+import { pointInPolygon } from "../../src/lib/geom";
 
 const FT = 3.28084;
 // The made-up survey's trees (tests/fixtures/lidar/make.py): meters east and north of the site's
@@ -238,4 +240,50 @@ test("any tree the app planted in a wood acts like a tree placed by hand: picked
   await page.getByRole("slider", { name: "Height" }).fill("60");
   await page.keyboard.press("Escape");
   await expect.poll(async () => (await trees()).map((t: any) => t.height)).toEqual([60]);
+});
+
+plain("the trees measured from the air in stands: crowns close together are one woods, a clearing between splits them, a tree alone stands on its own (pure logic)", async () => {
+  // Two stands of 3 by 3 trees, 18 ft apart in each, 200 ft between the stands; one tree alone
+  const stand = (x0: number, y0: number) => Array.from({ length: 9 }, (_, k) => ({ x: x0 + (k % 3) * 18, y: y0 + Math.floor(k / 3) * 18, r: 10 }));
+  const a = stand(100, 100), b = stand(360, 120), lone = { x: 600, y: 500, r: 10 };
+  const { cell, stands } = treeStands([...a, ...b, lone], 800, 700);
+  plainExpect(stands).toHaveLength(2);
+  const outlines = stands.map(s => s.outline.map(p => ({ x: p.x * cell, y: p.y * cell })));
+  const inStand = (t: { x: number; y: number }) => outlines.findIndex(o => pointInPolygon(t, o));
+  const ia = inStand(a[4]), ib = inStand(b[4]);
+  plainExpect(ia).toBeGreaterThanOrEqual(0);
+  plainExpect(ib).toBeGreaterThanOrEqual(0);
+  plainExpect(ia).not.toBe(ib);
+  for (const t of a) plainExpect(inStand(t)).toBe(ia);
+  for (const t of b) plainExpect(inStand(t)).toBe(ib);
+  plainExpect(inStand(lone)).toBe(-1);
+  plainExpect(stands.map(s => s.trees).sort()).toEqual([9, 9]);
+});
+
+test("a drag box takes in the measured trees inside it: each made the course's own and picked together; let go untouched, they're as they were", async ({ page }) => {
+  test.setTimeout(180_000);
+  await withLidar(page);
+  await importSite(page);
+  const doc = await course(page);
+  const W2 = doc.canvas.width, H2 = doc.canvas.height;
+  const at = (e: number, n: number) => ({ x: W2 / 2 + e * FT, y: H2 / 2 - n * FT });
+  const trees = async () => (await course(page)).items.filter((i: any) => i.type === "tree");
+  await page.keyboard.press("Escape");
+  // The row of five, in a Shift+drag box
+  const from = await screenOf(page, at(-75, -25).x, at(-75, -25).y), to = await screenOf(page, at(35, -55).x, at(35, -55).y);
+  await page.keyboard.down("Shift");
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  await expect.poll(async () => (await trees()).length).toBe(5);
+  const picked = ((await editorState(page)).group as string[]).slice().sort();
+  plainExpect(picked).toEqual((await trees()).map((t: any) => t.id).sort());
+  plainExpect((await course(page)).lidar.removed).toHaveLength(5);
+  await expect(page.getByTestId("inspector-title")).toHaveText("5 selected");
+  // Let go without a change: the measured trees again, no items
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await trees()).length).toBe(0);
+  plainExpect((await course(page)).lidar.removed).toBeUndefined();
 });
