@@ -435,6 +435,8 @@ export interface MapStyle {
   path: string;
   trees: string;
   basket: string;
+  /** The baskets' band in 3D (unset: yellow, as most are). */
+  basketBand?: string;
   /** How baskets are drawn on printed maps and tee signs. */
   basketMark: BasketMark;
   /** Colors for regulated areas: the common map habit (red OB, purple out of play) or the PDGA

@@ -2,7 +2,7 @@ import { test, expect, addHole, blankCourse, course, importSite, screenOf } from
 import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
 import * as THREE from "three";
 import { create3dTree } from "../../src/three/trees";
-import { BASKET_NEAR, createBasket } from "../../src/three/courseModels";
+import { BASKET_LINKS, BASKET_NEAR, createBasket } from "../../src/three/courseModels";
 
 const grassSetting = (page: import("@playwright/test").Page) => page.evaluate(() => (window as any).__dgEditor().grass);
 
@@ -62,7 +62,7 @@ test("3D grass: blades near the ground when tilted, none from straight above; th
   await expect.poll(() => grassSetting(page)).toBe(2);
   await page.keyboard.press("3");
   await page.getByTestId("scene-button").click();
-  await page.getByTestId("scene-panel").getByRole("radio", { name: "Low" }).click();
+  await page.getByTestId("scene-panel").getByRole("radio", { name: "Low", exact: true }).click();
   await expect.poll(() => grassSetting(page)).toBe(1);
   // Down low over the fairway: blades
   const look = (eye: number[], at: number[]) => page.evaluate(([e, a]) => {
@@ -77,7 +77,7 @@ test("3D grass: blades near the ground when tilted, none from straight above; th
   await expect.poll(async () => (await scene(page)).grass.quality).toBe(0);
   expect((await scene(page)).grass.visible).toBe(false);
   // Looking straight down: none (they couldn't be seen)
-  await page.getByTestId("scene-panel").getByRole("radio", { name: "Low" }).click();
+  await page.getByTestId("scene-panel").getByRole("radio", { name: "Low", exact: true }).click();
   await expect.poll(async () => (await scene(page)).grass.visible).toBe(true);
   await look([560, 200, 700], [560, 0, 700.01]);
   await expect.poll(async () => (await scene(page)).grass.visible).toBe(false);
@@ -407,35 +407,38 @@ test("in 3D a basket close enough to see is drawn at its real size, not as a bad
   await expect(badge).toBeVisible();
 });
 
-plain("a basket in 3D is built like a real one: its band on top, chains hanging from under it to a collar over a wire tray, at real size (pure logic)", () => {
-  const lod = createBasket("#e11d48").children[0] as THREE.LOD;
-  const [near, far] = lod.levels;
+plain("a basket in 3D is built like a real one, at a championship basket's size: its band on top, chains of links hanging from under it to a collar over a wire tray (pure logic)", () => {
+  const lod = createBasket("#e11d48", "7").children[0] as THREE.LOD;
+  const [near, mid, far] = lod.levels;
   const part = (level: { object: THREE.Object3D }, name: string) => {
     const mesh = level.object.getObjectByName(name) as THREE.Mesh;
     mesh.geometry.computeBoundingBox();
     return { box: mesh.geometry.boundingBox!, mesh };
   };
-  // About 4.6 ft to the top of its band, which is about 2 ft across and painted the band color
+  // About 4.7 ft (143 cm) to the top of its cap; the band about 1.9 ft (57 cm) across, painted the band color
   const all = new THREE.Box3().setFromObject(near.object);
-  plainExpect(all.max.y).toBeGreaterThan(4.5);
+  plainExpect(all.max.y).toBeGreaterThan(4.55);
   plainExpect(all.max.y).toBeLessThan(4.8);
   const band = part(near, "band");
-  plainExpect(band.box.max.y).toBeCloseTo(4.6, 1);
-  plainExpect(band.box.max.x - band.box.min.x).toBeGreaterThan(2);
+  plainExpect(band.box.max.y).toBeCloseTo(4.62, 1);
+  plainExpect(band.box.max.x - band.box.min.x).toBeCloseTo(1.88, 1);
   plainExpect((band.mesh.material as THREE.MeshStandardMaterial).color.getHexString()).toBe("e11d48");
-  // The chains: solid links of chain (not lines), from under the band down to a collar just over the tray
+  // The chains: links (many small rings, not lines), from under the band down to a collar just over the tray
   const chains = part(near, "chains");
-  plainExpect(chains.mesh.isMesh).toBe(true);
-  plainExpect(chains.box.max.y).toBeCloseTo(4.3, 1);
+  plainExpect(chains.mesh.geometry.getAttribute("position").count).toBeGreaterThan(20000);
+  plainExpect(chains.box.max.y).toBeGreaterThan(4.35);
+  plainExpect(chains.box.max.y).toBeLessThan(4.62);
   plainExpect(chains.box.min.y).toBeGreaterThan(2.7);
   plainExpect(chains.box.min.y).toBeLessThan(3);
-  // The tray: its rim about 2.6 ft up and 2.2 ft across, its bottom about 1.85 ft up
+  // The tray: its rim about 2.66 ft (81 cm) up and 2.2 ft (67 cm) across, its wire bottom about 1.88 ft up
   const wires = part(near, "wires");
   plainExpect(wires.box.max.x - wires.box.min.x).toBeGreaterThan(2.2);
   plainExpect(wires.box.max.x - wires.box.min.x).toBeLessThan(2.4);
-  plainExpect(part(near, "tray-bottom").box.max.y).toBeCloseTo(1.87, 1);
-  // Farther off, a lighter one (no thin wires to glitter)
-  plainExpect(lod.levels[1].distance).toBe(BASKET_NEAR);
+  plainExpect(wires.box.min.y).toBeCloseTo(1.86, 1);
+  // Farther off, lighter ones: smooth strands, then a see-through cone and no thin wires to glitter
+  plainExpect(mid.distance).toBe(BASKET_LINKS);
+  plainExpect(part(mid, "chains").mesh.geometry.getAttribute("position").count).toBeLessThan(chains.mesh.geometry.getAttribute("position").count / 4);
+  plainExpect(far.distance).toBe(BASKET_NEAR);
   plainExpect(far.object.getObjectByName("wires")).toBeUndefined();
 });
 

@@ -22,7 +22,7 @@ import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
 import { landscapeOf } from "../lib/landscapes";
 import { fmtArea, fmtDist, fmtElev } from "../lib/units";
-import { createAmenity, createBasket, createDropZone, createMando, createTeePad, fitTeePad } from "../three/courseModels";
+import { BASKET_BAND, createAmenity, createBasket, createDropZone, createMando, createTeePad, fitTeePad } from "../three/courseModels";
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
@@ -1865,7 +1865,7 @@ export class CourseView {
     const doc = this.doc!;
     switch (item.type) {
       case "tee": return JSON.stringify([item.level, item.padLength, item.padWidth, item.surface, this.num(item.holeId)]);
-      case "basket": return doc.course.style.basket;
+      case "basket": return JSON.stringify([doc.course.style.basketBand ?? BASKET_BAND, this.num(item.holeId)]);
       case "mando": return item.side;
       case "dropzone": return "dz";
       case "tree": return getTreeSignature(item as TreeItem) + item.id + (this.doc ? `|${this.doc.course.style.trees}|${this.doc.course.style.landscape ?? ""}` : "");
@@ -1878,7 +1878,7 @@ export class CourseView {
     const doc = this.doc!;
     switch (item.type) {
       case "tee": return createTeePad(item, this.num(item.holeId));
-      case "basket": return createBasket(doc.course.style.basket);
+      case "basket": return createBasket(doc.course.style.basketBand ?? BASKET_BAND, this.num(item.holeId));
       case "mando": return createMando(item.side);
       case "dropzone": return createDropZone();
       case "tree": { const st = doc.course.style; return create3dTree(item, { color: st.trees, mix: landscapeOf(st).mix ?? [] }); }
@@ -4837,7 +4837,7 @@ export class CourseView {
         disposeObjectDeep(this.ghost);
       }
       this.ghostKey = kind;
-      const obj = kind === "basket" ? createBasket(this.doc.course.style.basket)
+      const obj = kind === "basket" ? createBasket(this.doc.course.style.basketBand ?? BASKET_BAND)
         : kind === "mando" ? createMando("right")
         : kind === "dropzone" ? createDropZone()
         : kind === "amenity" ? createAmenity("bench")

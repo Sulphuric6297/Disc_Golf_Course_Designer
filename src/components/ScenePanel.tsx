@@ -7,6 +7,7 @@ import { useCourse, useEditor } from "../state/course";
 import { FROM, StyleSlider, setStyle, signed } from "./DesignPanel";
 import { Segmented, Toggle } from "./ui";
 import { LandscapePicker } from "./LandscapePicker";
+import { BAND_COLORS, BASKET_BAND } from "../three/courseModels";
 import { RotateCcw } from "lucide-react";
 
 export function SceneButton({ className = "", big = false }: { className?: string; big?: boolean }) {
@@ -74,6 +75,17 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
         ]}
       />
       <Toggle label="Grass sways in the wind" checked={wind} onChange={v => set({ wind: v })} />
+      <div className="h-2" />
+      <div className="text-xs text-zinc-400 mb-1">Basket band</div>
+      <div className="flex gap-1.5" role="radiogroup" aria-label="Basket band" data-testid="basket-band">
+        {BAND_COLORS.map(([c, name]) => {
+          const on = (s.basketBand ?? BASKET_BAND) === c;
+          return (
+            <button key={c} role="radio" aria-checked={on} aria-label={name} title={name} onClick={() => setStyle({ basketBand: c === BASKET_BAND ? undefined : c })}
+              className={`w-7 h-7 rounded-full ${FOCUS} ${on ? "ring-2 ring-white ring-offset-2 ring-offset-zinc-900" : "ring-1 ring-white/15 hover:ring-white/40"}`} style={{ background: c }} />
+          );
+        })}
+      </div>
     </div>
   );
 }
