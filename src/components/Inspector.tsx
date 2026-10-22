@@ -1,4 +1,5 @@
 // The panel for what is selected: a hole (par, fairway, notes, numbers, profile) or one item.
+import { PlaceByGps } from "./PlaceByGps";
 import { BRUSH_SECTION } from "../lib/view";
 import { useEffect, useMemo, useState } from "react";
 import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X, Plus } from "lucide-react";
@@ -733,6 +734,7 @@ export function InspectorBody() {
   return (
     <>
       {hole ? <HoleInspector hole={hole} /> : item ? <ItemInspector item={item} /> : group.length ? <GroupInspector items={group} /> : null}
+      {item && "x" in item && "y" in item && item.type !== "area" && item.type !== "line" && item.type !== "structure" && <PlaceByGps item={item as never} />}
       {hole && <div className="px-4 pb-3"><Button small full onClick={() => getView()?.fitHole(hole.id)}>Zoom to this hole</Button></div>}
     </>
   );

@@ -634,3 +634,13 @@ test("a creek wider in one stretch: drag the square on its bank; the Width slide
   await expect.poll(async () => (await creek()).widths).toBeUndefined();
   await expect(page.getByTestId("line-widths")).toHaveCount(0);
 });
+
+plain("on the course: the phone's readings averaged, the weak ones left out (pure logic)", async () => {
+  const { averageFixes } = await import("../../src/components/PlaceByGps");
+  const a = averageFixes([{ lat: 35, lon: -83, acc: 4 }, { lat: 35.00002, lon: -83, acc: 4 }, { lat: 35.01, lon: -83.01, acc: 60 }])!;
+  // (the 60 m reading dropped; the two good ones meet halfway)
+  plainExpect(a.n).toBe(2);
+  plainExpect(Math.abs(a.lat - 35.00001)).toBeLessThan(1e-7);
+  plainExpect(a.acc).toBeLessThan(4);
+  plainExpect(averageFixes([])).toBeNull();
+});
