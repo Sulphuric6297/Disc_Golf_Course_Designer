@@ -1,4 +1,4 @@
-# Disc Golf Course Designer: working rules
+# HyzerLab: working rules
 
 A static React + Vite + TypeScript app, hosted on GitHub Pages. No API keys and no backend.
 It is built on the map engine of the Security Camera Planner: the same site import (satellite

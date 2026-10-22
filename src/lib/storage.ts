@@ -7,6 +7,7 @@ export const AUTOSAVE_KEY = "current-course";
 let connection: Promise<IDBDatabase> | null = null;
 export const openAutosaveDb = () =>
   (connection ??= new Promise<IDBDatabase>((resolve, reject) => {
+    // The app's earlier name, kept: renaming the database would leave saved courses behind
     const req = indexedDB.open("disc-golf-course-designer", 1);
     req.onupgradeneeded = () => req.result.createObjectStore("kv");
     req.onsuccess = () => {

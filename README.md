@@ -1,4 +1,4 @@
-# Disc Golf Course Designer
+# HyzerLab
 
 Design a disc golf course on your park's real satellite photo and elevation, see it in 3D and
 from every tee, then print beautiful course maps, tee signs and scorecards, and export GPS files. It runs entirely in the browser: a static site with no accounts, no server

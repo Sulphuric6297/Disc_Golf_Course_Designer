@@ -366,7 +366,7 @@ function AppMenu({ onClose, onHelp, onOpenFile }: { onClose: () => void; onHelp:
   ];
   return (
     <>
-      <ActionSheet title={name} subtitle="Disc Golf Course Designer" actions={actions} onClose={onClose} testid="app-menu">
+      <ActionSheet title={name} subtitle="HyzerLab" actions={actions} onClose={onClose} testid="app-menu">
         {recent.length > 0 && (
           <div className="border-b border-white/5">
             <div className="px-4 pt-2.5 pb-1 text-[12px] uppercase tracking-wider font-bold text-zinc-500">Recent courses</div>
@@ -405,7 +405,7 @@ function ViewToggle({ vertical = false }: { vertical?: boolean }) {
 function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
   const name = useCourse(s => s.doc.name);
   const sum = useSummary();
-  const sub = sum.complete ? `${sum.complete} hole${sum.complete === 1 ? "" : "s"} · Par ${sum.par} · ${fmtDist(sum.length, sum.units)}` : "Disc Golf Course Designer";
+  const sub = sum.complete ? `${sum.complete} hole${sum.complete === 1 ? "" : "s"} · Par ${sum.par} · ${fmtDist(sum.length, sum.units)}` : "HyzerLab";
   return (
     <div className="absolute left-0 right-0 top-0 z-30 px-2 pt-[max(8px,env(safe-area-inset-top))] pointer-events-none" data-testid="top-bar">
       <div className="pointer-events-auto flex items-center gap-1 h-[56px] pl-1 pr-1 rounded-2xl bg-zinc-900/90 border border-white/10 shadow-[0_8px_30px_rgba(0,0,0,0.35)]">
