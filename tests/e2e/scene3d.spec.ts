@@ -1,4 +1,4 @@
-import { test, expect, addHole, blankCourse, course, importSite } from "./fixtures";
+import { test, expect, addHole, blankCourse, course, importSite, screenOf } from "./fixtures";
 import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
 import * as THREE from "three";
 import { create3dTree } from "../../src/three/trees";
@@ -301,6 +301,39 @@ test("3D woods leave the fairways, ponds, tees and baskets clear (as the painted
   await page.keyboard.press("Delete");
   await expect.poll(async () => (await course(page)).holes.length, { timeout: 30_000 }).toBe(0);
   await expect.poll(() => near(475, 500, 30), { timeout: 40_000 }).toBeGreaterThan(0);
+});
+
+test("3D woods planted again only once a drag ends, and only the woods near what moved", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 500 }, { x: 650, y: 500 });
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => {
+    const a = (window as any).__dgActions, s = (window as any).__dgEditor();
+    s.set({ areaKind: "woods" });
+    // (one round the hole, one far from it)
+    a.addDrawn("area", [{ x: 150, y: 250 }, { x: 900, y: 250 }, { x: 900, y: 800 }, { x: 150, y: 800 }]);
+    a.addDrawn("area", [{ x: 1300, y: 250 }, { x: 1700, y: 250 }, { x: 1700, y: 600 }, { x: 1300, y: 600 }]);
+    s.set({ tool: "select" });
+    (window as any).__dgActions.select((window as any).__dgCourse().holes[0].id);
+  });
+  const info = () => page.evaluate(() => (window as any).__dgView.forestInfo());
+  await expect.poll(async () => (await info()).trees, { timeout: 40_000 }).toBeGreaterThan(300);
+  test.setTimeout(240_000);
+  const before = (await info()).plantings;
+  // Dragging the basket: the woods stay as they are (the 3D view rests meanwhile: drawn in
+  // software, its woods would hold up each move)
+  const b = await screenOf(page, 650, 500);
+  await page.evaluate(() => (window as any).__dgView.setPaused(true));
+  await page.mouse.move(b.x, b.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 3; i++) await page.mouse.move(b.x + i * 12, b.y + i * 6);
+  expect((await info()).plantings).toBe(before);
+  // Let go: the woods round the hole planted again, the far ones not
+  await page.mouse.up();
+  await expect.poll(async () => (await info()).plantings, { timeout: 20_000 }).toBe(before + 1);
+  const basket = (await course(page)).items.find((i: any) => i.type === "basket");
+  expect(basket.x).toBeGreaterThan(660);
+  expect(await page.evaluate(([x, y]) => (window as any).__dgView.treesNear(x, y, 8), [basket.x, basket.y])).toBe(0);
 });
 
 test("3D water: a pond on sloping ground lies level but never under the ground, and reflects (water material)", async ({ page }) => {
