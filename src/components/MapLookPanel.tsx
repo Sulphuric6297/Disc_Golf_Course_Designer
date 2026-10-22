@@ -8,7 +8,7 @@ import { COLOR_PICKS, conifersOf, paintedPinesOf, tallGrassOf, treeMixOf } from 
 import { LIGHT_MODES, LOOK_THEMES, PART_CHOICES, compassName, latitudeOf, lightOf, lookParts, partChanged, sunArc, sunFromOf, themeOf, type LookPart, type LookParts } from "../lib/mapLook";
 import { useCourse } from "../state/course";
 import type { MapStyle, PathTier } from "../types";
-import { setStyle, WoodsOptions } from "./DesignPanel";
+import { FineTuning, setStyle, WoodsOptions } from "./DesignPanel";
 import { ColorInput, Slider } from "./ui";
 
 /** A slider that changes the map when let go (painting takes a moment). */
@@ -172,6 +172,7 @@ export function MapLookPanel() {
                     <SunFromSlider s={s} />
                     {lt.mode === "midday" && <LookSlider value={s.sunHeight ?? 38} label="Sun height" min={12} max={80} step={2} format={x => `${Math.round(x)}° · ${x < 25 ? "long shadows" : x < 50 ? "afternoon" : "midday"}`} onDone={v => setStyle({ sunHeight: v })} />}
                     <LookSlider value={s.shadows ?? 0.65} label="Shadows" min={0} max={1} step={0.05} format={pct} onDone={v => setStyle({ shadows: v })} />
+                    <div className="-mx-4"><FineTuning s={s} /></div>
                   </>
                 ) : (
                   <>

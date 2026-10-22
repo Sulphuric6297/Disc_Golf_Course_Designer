@@ -1000,7 +1000,23 @@ export const bestRotation = (doc: CourseDoc) => {
  * full-bleed picture with the title laid over the emptiest corner; the others put the title on
  * top and the legend and hole table at the side (or below, on a tall page).
  */
+/** The course map's page, in its frame (see MapStyle.frame): the same on every side. */
 export const renderPoster = (doc: CourseDoc, opts: PosterOptions) => {
+  const out = posterPage(doc, opts);
+  const f = doc.style.frame;
+  if (!f) return out;
+  const { width: W, height: H } = out;
+  const t = Math.min(W, H) / 612; // 1 on a letter page's short side
+  const pal = palette(doc.style), ink = doc.style.card?.ink ?? "#1d2a1b", paper = doc.style.card?.paper ?? "#f4efe0";
+  const band = f === "mat" ? 14 * t : f === "band" ? 18 * t : 0;
+  const ring = (inset: number, w: number, c: string, o = 1) => `<rect x="${n(inset + w / 2)}" y="${n(inset + w / 2)}" width="${n(W - 2 * inset - w)}" height="${n(H - 2 * inset - w)}" fill="none" stroke="${c}" stroke-opacity="${o}" stroke-width="${n(w)}"/>`;
+  const art = f === "line" ? ring(10 * t, 1.2 * t, pal.ink ?? ink, 0.8) + ring(14 * t, 0.6 * t, pal.ink ?? ink, 0.5)
+    : f === "mat" ? ring(0, band, paper) + ring(band, 0.8 * t, ink, 0.45)
+    : ring(0, band, doc.style.card?.header ?? "#13311d") + ring(band, 1 * t, paper, 0.7);
+  return { ...out, svg: out.svg.replace(/<\/svg>\s*$/, `<g data-part="frame" pointer-events="none">${art}</g></svg>`) };
+};
+
+const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
   const s = doc.style;
   const pal = palette(s);
   const layout = activeLayout(doc);

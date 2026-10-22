@@ -33,6 +33,7 @@ test("the Design step shows the printed map; its styles are the painted map in e
   expect(autumn.style.treeMix?.length).toBeGreaterThan(2);
   await expect(page.getByTestId("colors-trees-autumn")).toHaveAttribute("aria-checked", "true");
   // Title and toggles go straight onto the map
+  await page.getByTestId("fold-title").locator("summary").click();
   await page.getByLabel("Map title").fill("Ridge Run");
   await expect(pageSvg).toContainText("Ridge Run");
   await page.getByRole("button", { name: "Show Legend" }).click();
@@ -226,6 +227,15 @@ plain("course map page: title, layout chips, holes and credits", () => {
   plainExpect(f.svg).toContain(">Hollow<");
   plainExpect(f.svg).toContain("MAIN LAYOUT");
   plainExpect(f.svg).toContain("GOLD LAYOUT");
+});
+
+plain("the course map's frame: even on all four sides, or none", () => {
+  const doc = sample();
+  plainExpect(renderPoster(doc, { contours: null, hillshade: null } as never).svg).not.toContain('data-part="frame"');
+  for (const frame of ["mat", "line", "band"] as const) {
+    doc.style.frame = frame;
+    plainExpect(renderPoster(doc, { contours: null, hillshade: null } as never).svg).toContain('data-part="frame"');
+  }
 });
 
 plain("tee signs: wide and tall layouts, notes, next hole", () => {

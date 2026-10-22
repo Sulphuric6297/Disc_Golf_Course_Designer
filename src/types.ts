@@ -350,7 +350,7 @@ export interface SignSettings {
   /** How the signs look, for the whole course (unset: the first look; lib/signLooks). */
   look?: SignLook;
 }
-export type SignLook = "classic" | "trailhead";
+export type SignLook = "classic" | "trailhead" | "fieldguide" | "openview";
 /** A wide sign's spot under the notes: the course in miniature, the green up close, the hole's
  * numbers, or nothing. */
 export type SignSpot = "courseMap" | "green" | "stats" | "none";
@@ -489,6 +489,8 @@ export interface MapStyle {
   /** How the course looks to those who only view it (shared, the public page), apart from the
    * editor's own display: the ground painted (unset) or the photo, contour lines, hill shading. */
   publicView?: { ground?: "painted" | "photo"; contours?: boolean; shading?: boolean };
+  /** The course map's frame, even on all four sides (unset: none, the map to the paper's edge). */
+  frame?: "mat" | "line" | "band";
   /** Forest style: the treetops as painted maps have them (unset), or natural ones, as the 3D
    * trees are seen from above: leaf clusters with gaps between, pines in tiers of boughs. */
   treeLook?: "classic" | "natural";

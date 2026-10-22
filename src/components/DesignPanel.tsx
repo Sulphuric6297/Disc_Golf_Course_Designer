@@ -59,10 +59,10 @@ export function WoodsOptions({ s }: { s: MapStyle }) {
 export const FROM = ["top", "top right", "right", "bottom right", "bottom", "bottom left", "left", "top left"];
 export const signed = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.round(Math.abs(x) * 100)}%`;
 
-/** Where the light comes from, how long and dark the shadows are, and the picture's tone. */
-function LightAndShadow({ s }: { s: MapStyle }) {
+/** The picture's tone: brightness, contrast, color, how painted, the hills (in the Light part). */
+export function FineTuning({ s }: { s: MapStyle }) {
   return (
-    <Section title="Fine tuning" testid="light-shadow" right={<button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ light: 0, contrast: 0, colorStrength: 1, paint: 0.8, reliefScale: 1 })}><RotateCcw size={12} /> Reset</button>}>
+    <Section title="Tone" testid="light-shadow" right={<button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ light: 0, contrast: 0, colorStrength: 1, paint: 0.8, reliefScale: 1 })}><RotateCcw size={12} /> Reset</button>}>
       <StyleSlider k="light" value={s.light ?? 0} label="Brightness" min={-0.3} max={0.3} step={0.02} format={signed} />
       <StyleSlider k="contrast" value={s.contrast ?? 0} label="Contrast" min={-0.3} max={0.4} step={0.02} format={signed} />
       <StyleSlider k="colorStrength" value={s.colorStrength ?? 1} label="Color strength" min={0.3} max={1.4} step={0.05} format={x => `${Math.round(x * 100)}%`} />
@@ -255,7 +255,9 @@ export function DesignPanel() {
         <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />
         <Toggle label="Hill shading" checked={s.hillshade} onChange={v => setStyle({ hillshade: v })} />
       </Section>
-      <Section title="Title block">
+      <details className="mx-4 my-2 rounded-[16px] bg-white/[0.06] group" data-testid="fold-title">
+        <summary className="cursor-pointer list-none flex items-center justify-between px-3 py-2.5 text-[13.5px] font-medium text-zinc-100">Title block <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
+        <div className="px-3 pb-3">
         <Field label="Title"><TextInput label="Map title" value={s.title} placeholder={doc.name} onChange={v => setStyle({ title: v })} /></Field>
         <Field label="Subtitle"><TextInput label="Map subtitle" value={s.subtitle} placeholder={doc.site.location?.label ?? "Location, designer, year"} onChange={v => setStyle({ subtitle: v })} /></Field>
         <Field label="Footer note"><TextInput label="Footer note" value={s.footer} placeholder="e.g. Please carry out what you carry in" onChange={v => setStyle({ footer: v })} /></Field>
@@ -263,8 +265,14 @@ export function DesignPanel() {
           <Segmented label="Font" value={s.font} onChange={v => setStyle({ font: v })} options={[{ value: "Script", label: <span style={{ fontFamily: "Kaushan Script" }}>Script</span> }, { value: "Oswald", label: <span style={{ fontFamily: "Oswald" }}>Oswald</span> }, { value: "Inter", label: <span style={{ fontFamily: "Inter" }}>Inter</span> }, { value: "Bitter", label: <span style={{ fontFamily: "Bitter" }}>Bitter</span> }]} />
         </Field>
         <Slider label="Label size" min={0.7} max={1.6} step={0.05} value={s.labelScale} onChange={v => setStyle({ labelScale: v })} format={v => `${Math.round(v * 100)}%`} />
-      </Section>
-      <Section title="Paper">
+        </div>
+      </details>
+      <details className="mx-4 my-2 rounded-[16px] bg-white/[0.06] group" data-testid="fold-paper">
+        <summary className="cursor-pointer list-none flex items-center justify-between px-3 py-2.5 text-[13.5px] font-medium text-zinc-100">Paper <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
+        <div className="px-3 pb-3">
+        <Field label="Frame">
+          <Segmented label="Frame" value={s.frame ?? "none"} onChange={v => setStyle({ frame: v === "none" ? undefined : v })} options={[{ value: "none", label: "None" }, { value: "mat", label: "Mat" }, { value: "line", label: "Fine line" }, { value: "band", label: "Band" }]} />
+        </Field>
         <Field label="Size">
           <select aria-label="Paper size" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={s.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
             {(Object.keys(PAPER) as PaperSize[]).map(p => <option key={p} value={p}>{PAPER[p].label}</option>)}
@@ -278,9 +286,9 @@ export function DesignPanel() {
             {s.rotation !== 0 && <Button small onClick={() => setStyle({ rotation: 0 })}>North up</Button>}
           </div>
         </div>
-      </Section>
+        </div>
+      </details>
           <PageSection />
-          <LightAndShadow s={s} />
         </>
       )}
       {tab === "sign" && (

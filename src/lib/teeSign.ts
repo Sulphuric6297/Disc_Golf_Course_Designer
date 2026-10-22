@@ -3,7 +3,7 @@
 // to the next tee.
 import { CIRCLE_ONE_FT, FT_PER_M, TEE_LEVELS } from "../constants";
 import type { AreaItem, BasketItem, CourseDoc, CourseItem, LineItem, P, SignLook, SignPart, SignSpot } from "../types";
-import { renderTrailhead } from "./signLooks";
+import { renderFieldGuide, renderOpenView, renderTrailhead } from "./signLooks";
 import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, obFor, obPieces, throwLine } from "./course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, rotatePoint, smoothPath } from "./geom";
 import { holeStats, playedHoles, type HoleStats } from "./holeStats";
@@ -98,7 +98,7 @@ const SIGN_SHOW: Record<SignPart, boolean> = {
 };
 
 /** How tee signs can look (each with its picture: public/signs/<id>.jpg). */
-export const SIGN_LOOKS: { id: SignLook; label: string }[] = [{ id: "classic", label: "Classic" }, { id: "trailhead", label: "Trailhead" }];
+export const SIGN_LOOKS: { id: SignLook; label: string }[] = [{ id: "classic", label: "Classic" }, { id: "trailhead", label: "Trailhead" }, { id: "fieldguide", label: "Field guide" }, { id: "openview", label: "Open view" }];
 
 /** What a wide sign's spot under the notes can hold. */
 export const SIGN_SPOTS: { id: SignSpot; label: string }[] = [
@@ -149,7 +149,12 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   const hole = doc.holes.find(h => h.id === holeId);
   if (!hole) return null;
   // (the hole sheets keep their own page)
-  if (signOf(doc, holeId).look === "trailhead" && size !== "letter" && size !== "a4") return renderTrailhead(doc, holeId, size, opts);
+  const look = signOf(doc, holeId).look;
+  if (size !== "letter" && size !== "a4") {
+    if (look === "trailhead") return renderTrailhead(doc, holeId, size, opts);
+    if (look === "fieldguide") return renderFieldGuide(doc, holeId, size, opts);
+    if (look === "openview") return renderOpenView(doc, holeId, size, opts);
+  }
   if (SIGN_SIZES[size].w > SIGN_SIZES[size].h) return renderWideSign(doc, holeId, size, opts);
   const layout = activeLayout(doc);
   const stats = doc.holes.map(h => holeStats(doc, h, layout));

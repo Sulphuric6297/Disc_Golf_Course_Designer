@@ -45,6 +45,8 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
   const wind = useEditor(e => e.wind);
   const stumps = useEditor(e => e.stumps);
   const measured = useCourse(c => !!c.doc.lidar?.trees.length && !c.readOnly);
+  const editing = useCourse(c => !c.readOnly);
+  const ed = useEditor();
   const set = useEditor(e => e.set);
   return (
     <div className={`absolute ${big ? "right-[52px] top-0 max-h-[min(70vh,calc(100dvh-140px))] overflow-y-auto dg-scroll" : "right-0 top-10"} w-72 ${POPOVER} p-3 z-30 text-left`} data-testid="scene-panel">
@@ -57,6 +59,15 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
           <button className={`text-zinc-400 hover:text-zinc-50 ${big ? "w-9 h-9 -m-2 flex items-center justify-center" : ""}`} title="Close" aria-label="Close" onClick={onClose}><X size={15} /></button>
         </div>
       </div>
+      {/* (the map as you work on it: the viewers' own look is set in Export > Share) */}
+      {editing && (
+        <div className="mb-2" data-testid="map-display">
+          <Toggle label="Satellite photo" checked={ed.photo} onChange={v => set({ photo: v })} />
+          <Toggle label="Contour lines" checked={ed.contours} onChange={v => set({ contours: v })} />
+          <Toggle label="Hill shading" checked={ed.shading} onChange={v => set({ shading: v })} />
+          <Toggle label="Ground texture up close" checked={ed.groundDetail} onChange={v => set({ groundDetail: v })} />
+        </div>
+      )}
       <SunFromSlider live s={s} />
       <StyleSlider live k="sunHeight" value={s.sunHeight ?? 38} label="Sun height" min={12} max={80} step={2} format={x => `${Math.round(x)}° · ${x < 25 ? "evening" : x < 50 ? "afternoon" : "midday"}`} />
       <StyleSlider live k="shadows" value={s.shadows ?? 0.65} label="Shadows" min={0} max={1} step={0.05} format={x => `${Math.round(x * 100)}%`} />

@@ -117,7 +117,8 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
             <Button small onClick={onFindSite}>Resize or re-import the site</Button>
             <Button small onClick={() => void refreshOsm()} testid="refresh-osm">Update paths, roads and water</Button>
           </div>
-          <div className="mt-3 pt-2 border-t border-white/10" data-testid="lidar-info">
+          <div className={`mt-3 ${doc.lidar ? "pt-2 border-t border-white/10" : "rounded-[16px] bg-orange-500/[0.12] ring-1 ring-orange-400/30 p-3"}`} data-testid="lidar-info">
+            {!doc.lidar && <div className="text-[13.5px] font-semibold text-orange-100 mb-0.5">Real trees and ground</div>}
             <div className="text-xs text-zinc-400 mb-1.5">{doc.lidar ? `${doc.lidar.trees.length.toLocaleString()} trees measured from the air · ${doc.lidar.source}` : "Trees and ground from LiDAR"}</div>
             <div className="flex flex-wrap gap-1.5">
               {ed.lidarBusy !== null
@@ -126,7 +127,8 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
               {doc.lidar && ed.lidarBusy === null && <Button small tone="danger" onClick={() => changeDoc(() => ({ lidar: undefined }))} testid="remove-lidar">Remove the trees</Button>}
             </div>
             {doc.lidar && doc.lidar.trees.length > 0 && (
-              <div className="mt-2" data-testid="lidar-min">
+              <details className="mt-2 group" data-testid="lidar-settings"><summary className="cursor-pointer list-none text-[12.5px] font-semibold text-zinc-200 flex items-center justify-between py-1">Tree settings <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
+              <div className="mt-1" data-testid="lidar-min">
                 <Slider label="Smallest tree kept" min={0} max={60} step={1} value={doc.lidar.minHeight ?? 0}
                   format={v => (v ? `${fmtElev(v, doc.units).replace(/^[+−-]/, "")} and up` : "All")}
                   onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, minHeight: v || undefined } } : {}), false)} onDone={() => useCourse.getState().commit()} />
@@ -155,6 +157,7 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
                 </div>
 
               </div>
+              </details>
             )}
           </div>
         </Section>
@@ -165,12 +168,6 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
         <Field label="Distances in">
           <Segmented label="Units" value={doc.units} onChange={v => set({ units: v })} options={[{ value: "ft", label: "Feet" }, { value: "m", label: "Meters" }]} />
         </Field>
-      </Section>
-      <Section title="Map display">
-        <Toggle label="Satellite photo" checked={ed.photo} onChange={v => ed.set({ photo: v })} />
-        <Toggle label="Contour lines" checked={ed.contours} onChange={v => ed.set({ contours: v })} />
-        <Toggle label="Hill shading" checked={ed.shading} onChange={v => ed.set({ shading: v })} />
-        <Toggle label="Ground texture up close" checked={ed.groundDetail} onChange={v => ed.set({ groundDetail: v })} />
       </Section>
       <BroughtIn />
       {SERVER && <NearbyCourses />}
