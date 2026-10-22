@@ -198,7 +198,32 @@ const materialFor = (kind: "bark" | "leaves", from: THREE.MeshPhongMaterial, key
   m = kind === "leaves"
     ? new THREE.MeshPhongMaterial({ name: `ez-leaves-${key}`, map: from.map, side: THREE.DoubleSide, alphaTest: from.alphaTest || 0.5, dithering: true, shininess: 4 })
     : new THREE.MeshPhongMaterial({ name: `ez-bark-${key}`, map: from.map, normalMap: from.normalMap, aoMap: from.aoMap, shininess: 2, color: tint ?? 0xffffff });
-  if (kind === "leaves") (m as THREE.MeshPhongMaterial).alphaToCoverage = true;
+  if (kind === "leaves") {
+    (m as THREE.MeshPhongMaterial).alphaToCoverage = true;
+    // Leaves of a warm color (autumn's reds, oranges and golds; a dry landscape's browns): the
+    // photo is of green leaves, which no tint turns orange, so they take the photo's light and
+    // shade in that color instead; green ones keep the photo as it is, gently tinted
+    m.onBeforeCompile = shader => {
+      shader.fragmentShader = shader.fragmentShader.replace("#include <color_fragment>", /* glsl */ `
+        vec3 leafTint = diffuse;
+        #if defined( USE_COLOR ) || defined( USE_COLOR_ALPHA )
+          leafTint *= vColor.rgb;
+        #endif
+        // (by the tint's hue: green keeps the photo, warm takes the color whole, olive between: dusty)
+        float ltMax = max( leafTint.r, max( leafTint.g, leafTint.b ) ), ltD = ltMax - min( leafTint.r, min( leafTint.g, leafTint.b ) );
+        float ltHue = 0.3;
+        if ( ltD > 1e-4 ) {
+          if ( ltMax == leafTint.r ) ltHue = mod( ( leafTint.g - leafTint.b ) / ltD, 6.0 ) / 6.0;
+          else if ( ltMax == leafTint.g ) ltHue = ( ( leafTint.b - leafTint.r ) / ltD + 2.0 ) / 6.0;
+          else ltHue = ( ( leafTint.r - leafTint.g ) / ltD + 4.0 ) / 6.0;
+        }
+        float greenish = ltD / max( ltMax, 1e-4 ) < 0.03 ? 1.0 : smoothstep( 0.19, 0.28, ltHue ) * ( 1.0 - smoothstep( 0.6, 0.7, ltHue ) );
+        vec3 leafPhoto = diffuseColor.rgb / max( diffuse, vec3( 1e-3 ) );
+        float leafLum = dot( leafPhoto, vec3( 0.299, 0.587, 0.114 ) );
+        diffuseColor.rgb = mix( leafLum * 3.0 * leafTint, leafPhoto * leafTint, greenish );`);
+    };
+    m.customProgramCacheKey = () => "ez-leaves";
+  }
   m.userData.shared = true;
   mats.set(`${kind}|${key}`, m);
   return m;
@@ -318,10 +343,16 @@ export const ezProto = (shape: TreeShape, variant: number, detail: Detail): Tree
   return ezTree(shape, spec, detail);
 };
 
-/** A tree's tint, made gentle for photographed leaves: toward the landscape's color, never dark. */
+/** A tree's tint, made gentle for photographed leaves: toward the landscape's color, never dark.
+ * A warm color (not green: autumn's, a dry landscape's browns) stays rich, as the leaves take it
+ * whole (see the leaf material). */
 export const ezTint = (tint: THREE.Color) => {
   const hsl = { h: 0, s: 0, l: 0 };
   tint.getHSL(hsl);
+  // (reds lean a little toward orange, as fall leaves do: crimson reads as paint)
+  if (hsl.s > 0.2 && (hsl.h < 0.16 || hsl.h > 0.9)) return new THREE.Color().setHSL(hsl.h > 0.9 ? 0.02 : Math.max(0.025, hsl.h + 0.01), Math.min(0.78, hsl.s * 1.1), Math.min(0.6, Math.max(0.45, hsl.l * 1.7)));
+  // (olive, a dry landscape's: a little richer, so its leaves go dusty)
+  if (hsl.h < 0.25) return new THREE.Color().setHSL(Math.max(0.15, hsl.h - 0.02), Math.min(0.4, hsl.s * 1.15), 0.4);
   const c = new THREE.Color().setHSL(hsl.h, Math.min(0.55, hsl.s * 0.8), 0.72);
   return new THREE.Color(1, 1, 1).lerp(c, 0.45);
 };
