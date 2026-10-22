@@ -74,6 +74,12 @@ function Card({ c, onOpen, onRemove }: { c: ServerPlan; onOpen: () => void; onRe
             <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${r.cls}`}><r.icon size={11} />{r.label}</span>
           </div>
           <p className="text-sm text-zinc-400 mt-0.5">{facts}</p>
+          {(c.hasDraft || c.toReview > 0) && (
+            <div className="flex gap-1.5 mt-2">
+              {c.hasDraft && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-orange-500/15 text-orange-200" data-testid="has-draft">Your draft</span>}
+              {c.toReview > 0 && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/20 text-amber-200" data-testid="to-review">{c.toReview} to review</span>}
+            </div>
+          )}
           <p className="text-[12px] text-zinc-500 mt-2 flex flex-wrap items-center gap-x-1.5">
             {c.role !== "owner" && c.owner && <span>{c.owner}'s ·</span>}
             {c.members > 1 && <span className="inline-flex items-center gap-0.5" title={`${c.members} people have it`}><Users size={11} />{c.members} ·</span>}

@@ -128,7 +128,8 @@ test("the admin, an invite, signing in again with a backup code", async ({ page,
   await other.close();
 });
 
-test("courses: a home page, shared as viewer (look only, or copy) then editor, a save over a newer one asked about", async ({ browser }) => {
+test("courses: a home page; shared as viewer (look only, or copy), then editor (a draft, published and merged); history; the owner's OK", async ({ browser }) => {
+  test.setTimeout(240_000);
   const admin = await as(browser, "admin");
   await admin.getByTestId("new-course").click();
   await expect(admin.getByTestId("home")).toHaveCount(0);
@@ -192,29 +193,82 @@ test("courses: a home page, shared as viewer (look only, or copy) then editor, a
   await pat.getByTestId("courses-button").click();
   await expect(pat.getByTestId("my-courses").getByTestId("course-card")).toContainText("2 holes");
 
-  // Now an editor of the original: Pat's changes save
+  // Now an editor of the original: Pat's changes go in a draft of Pat's own
   await admin.getByTestId("share-button").click();
   await admin.getByLabel("Role for pat").selectOption("editor");
   await admin.keyboard.press("Escape");
   await sharedCard.click();
-  await expect(pat.getByTestId("save-status")).toHaveText("Saved");
+  await expect.poll(async () => (await course(pat)).name).not.toMatch(/\(copy\)$/);
+  await expect(pat.getByTestId("publish-button")).toHaveCount(0);
   await site(pat);
   await addHole(pat, { x: 100, y: 500 }, { x: 650, y: 500 });
-  await expect(pat.getByTestId("save-status")).toHaveText("Saved");
+  await expect(pat.getByTestId("save-status")).toHaveText("Draft saved");
+  // The owner doesn't see it, and keeps changing the course meanwhile
   await admin.reload();
   await admin.getByTestId("my-courses").getByTestId("course-card").click();
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(2);
+  await expect(admin.getByTestId("save-status")).toHaveText("Saved");
+  await expect.poll(async () => (await course(admin)).holes.length).toBe(1);
   await site(admin);
-
-  // Both change it: the later save, from the older version, is stopped
   await addHole(admin, { x: 100, y: 800 }, { x: 650, y: 800 });
   await expect(admin.getByTestId("save-status")).toHaveText("Saved");
+  // Pat's draft is kept across a reload, and published: both new holes are in the course
+  await pat.reload();
+  await pat.getByTestId("shared-courses").getByTestId("course-card").click();
+  await expect.poll(async () => (await course(pat)).holes.length).toBe(2);
+  await pat.getByTestId("publish-button").click();
+  await expect(pat.getByTestId("draft-changes")).toHaveText("Holes: 1 added");
+  await pat.getByTestId("publish-form").getByLabel(/What changed/).fill("a long hole by the creek");
+  await pat.getByTestId("publish-form").getByRole("button", { name: "Publish" }).click();
+  await expect(pat.getByTestId("publish-button")).toHaveCount(0);
+  await expect.poll(async () => (await course(pat)).holes.length).toBe(3);
+  await admin.reload();
+  await admin.getByTestId("my-courses").getByTestId("course-card").click();
+  await expect.poll(async () => (await course(admin)).holes.length).toBe(3);
+
+  // The history: Pat's publish, with its note; an earlier version looked at, and restored
+  await admin.getByTestId("history-button").click();
+  const versions = admin.getByTestId("versions").locator("li");
+  await expect(versions.first()).toContainText("Published by Pat");
+  await expect(versions.first()).toContainText("a long hole by the creek");
+  await versions.filter({ hasText: "Created" }).getByRole("button", { name: "Look" }).click();
+  await expect(admin.getByTestId("preview-bar")).toBeVisible();
+  await expect.poll(async () => (await course(admin)).holes.length).toBe(1);
+  await expect(admin.getByTestId("viewer-panel")).toBeVisible();
+  await admin.getByTestId("preview-back").click();
+  await expect.poll(async () => (await course(admin)).holes.length).toBe(3);
+  await expect(admin.getByTestId("preview-bar")).toHaveCount(0);
+
+  // The owner's OK, turned on: Pat sends, the owner accepts
+  await admin.getByTestId("share-button").click();
+  await admin.getByTestId("approval-toggle").check();
+  await admin.keyboard.press("Escape");
+  await pat.reload();
+  await pat.getByTestId("shared-courses").getByTestId("course-card").click();
+  await expect.poll(async () => (await course(pat)).holes.length).toBe(3);
   await site(pat);
   await addHole(pat, { x: 900, y: 200 }, { x: 900, y: 700 });
-  await expect(pat.getByTestId("save-conflict")).toBeVisible();
-  await pat.getByTestId("save-conflict").click();
-  await expect(pat.getByText(/^Admin saved this course since you opened it/)).toBeVisible();
-  await pat.getByRole("button", { name: "Open theirs" }).click();
-  await expect(pat.getByTestId("save-status")).toHaveText("Saved");
+  await expect(pat.getByTestId("save-status")).toHaveText("Draft saved");
+  await pat.getByTestId("publish-button").click();
+  await pat.getByTestId("publish-form").getByRole("button", { name: "Send to the owner" }).click();
+  await expect(pat.getByTestId("publish-button")).toHaveCount(0);
   await expect.poll(async () => (await course(pat)).holes.length).toBe(3);
+  await admin.reload();
+  await expect(admin.getByTestId("my-courses").getByTestId("to-review")).toHaveText("1 to review");
+  await admin.getByTestId("my-courses").getByTestId("course-card").click();
+  await admin.getByTestId("review-button").click();
+  await admin.getByTestId("submissions").getByRole("button", { name: "Look" }).click();
+  await expect.poll(async () => (await course(admin)).holes.length).toBe(4);
+  await admin.getByTestId("preview-bar").getByRole("button", { name: "Accept" }).click();
+  await expect(admin.getByTestId("preview-bar")).toHaveCount(0);
+  await expect.poll(async () => (await course(admin)).holes.length).toBe(4);
+  await expect(admin.getByTestId("review-button")).toHaveCount(0);
+
+  // Restored: back to before Pat's holes; the history keeps everything
+  await admin.getByTestId("history-button").click();
+  admin.once("dialog", d => void d.accept());
+  await versions.filter({ hasText: "Created" }).getByRole("button", { name: "Restore" }).click();
+  await expect.poll(async () => (await course(admin)).holes.length).toBe(1);
+  await admin.getByTestId("history-button").click();
+  await expect(versions.first()).toContainText("Restored");
+  await expect(versions.filter({ hasText: "OK'd by Admin" })).toHaveCount(1);
 });

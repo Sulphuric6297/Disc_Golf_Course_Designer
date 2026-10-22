@@ -7,6 +7,8 @@ import { AccountDialog } from "./AccountDialog";
 import { PeopleDialog } from "./PeopleDialog";
 import { ShareDialog } from "./ShareDialog";
 import { Home } from "./Home";
+import { HistoryDialog, PreviewBar, PublishDialog, ReviewDialog } from "./ChangesDialogs";
+import { draftBase } from "./courses";
 
 const samePassword = (a: string, b: string) => { if (a !== b) throw new Error("The passwords don't match"); };
 
@@ -53,6 +55,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
         {dialog === "account" && <AccountDialog onClose={() => open(null)} />}
         {dialog === "people" && session.user.isAdmin && <PeopleDialog onClose={() => open(null)} />}
         {dialog === "share" && <ShareDialog onClose={() => open(null)} />}
+        {dialog === "publish" && <PublishDialog base={draftBase()} onClose={() => open(null)} />}
+        {dialog === "history" && <HistoryDialog onClose={() => open(null)} />}
+        {dialog === "review" && <ReviewDialog onClose={() => open(null)} />}
+        {!home && <PreviewBar />}
       </>
     );
   }

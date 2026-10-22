@@ -5,21 +5,24 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Ctx } from "../app.js";
 import { ApiError, audit, need, parse } from "../http.js";
+import { snapshot } from "../history.js";
 
 export type Role = "owner" | "editor" | "viewer";
+/** How often the owner's own changes go in the history, at most. */
+const AUTOSAVE_EVERY = 10 * 60_000;
 const RANK: Record<Role, number> = { viewer: 1, editor: 2, owner: 3 };
 
 /** A course document: what the server needs of it; the rest is kept as sent. */
-const courseDoc = z.looseObject({
+export const courseDoc = z.looseObject({
   name: z.string().max(200),
   holes: z.array(z.unknown()).max(500),
   items: z.array(z.unknown()).max(50_000)
 });
 // (the aerial photo: an image as a data URL, nothing else)
-const IMAGE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/;
-const BIG = { bodyLimit: 64 << 20 };
+export const IMAGE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/;
+export const BIG = { bodyLimit: 64 << 20 };
 /** The course list's summary of a course (from the app): small, numbers and short text only. */
-const summary = z.object({
+export const summary = z.object({
   par: z.number().int().min(0).max(10_000),
   length: z.number().min(0).max(10_000_000),
   units: z.enum(["ft", "m"]),
@@ -27,20 +30,22 @@ const summary = z.object({
   lines: z.array(z.array(z.tuple([z.number(), z.number()])).max(64)).max(200)
 }).optional();
 
-type Id = { Params: { id: string } };
-const ids = z.object({ id: z.uuid("Not found") });
+export type Id = { Params: { id: string } };
+export const ids = z.object({ id: z.uuid("Not found") });
+
+/** Your role on the course, at least `min`: else not found (or not allowed, for a member). */
+export const roleOn = (sql: Ctx["sql"]) => async (req: FastifyRequest, courseId: string, min: Role) => {
+  const a = need(req);
+  const [m] = await sql`select role from course_members where course_id = ${courseId} and user_id = ${a.user.id}`;
+  if (!m) throw new ApiError(404, "Not found");
+  if (RANK[m.role as Role] < RANK[min]) throw new ApiError(403, min === "owner" ? "Only an owner can do that" : "View only");
+  return { a, role: m.role as Role };
+};
+// (what's stored: the document without its photo, which is kept apart)
+export const stored = (doc: z.infer<typeof courseDoc>) => ({ ...doc, background: null });
 
 export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
-  /** Your role on the course, at least `min`: else not found (or not allowed, for a member). */
-  const role = async (req: FastifyRequest, courseId: string, min: Role) => {
-    const a = need(req);
-    const [m] = await sql`select role from course_members where course_id = ${courseId} and user_id = ${a.user.id}`;
-    if (!m) throw new ApiError(404, "Not found");
-    if (RANK[m.role as Role] < RANK[min]) throw new ApiError(403, min === "owner" ? "Only an owner can do that" : "View only");
-    return { a, role: m.role as Role };
-  };
-  // (what's stored: the document without its photo, which is kept apart)
-  const stored = (doc: z.infer<typeof courseDoc>) => ({ ...doc, background: null });
+  const role = roleOn(sql);
 
   app.get("/api/courses", async req => {
     const a = need(req);
@@ -49,12 +54,15 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
         (select o.display_name from course_members om join users o on o.id = om.user_id
           where om.course_id = c.id and om.role = 'owner' order by om.added_at limit 1) as owner,
         (select count(*)::int from course_members x where x.course_id = c.id) as members,
-        (select t.updated_at from course_thumbnails t where t.course_id = c.id) as thumb_at
+        (select t.updated_at from course_thumbnails t where t.course_id = c.id) as thumb_at,
+        exists (select 1 from course_drafts d where d.course_id = c.id and d.user_id = ${a.user.id}) as has_draft,
+        case when m.role = 'owner' then (select count(*)::int from course_submissions s where s.course_id = c.id and s.status = 'pending') else 0 end as to_review
       from course_members m join courses c on c.id = m.course_id left join users u on u.id = c.updated_by
       where m.user_id = ${a.user.id} order by c.updated_at desc`;
     return rows.map(r => ({
       id: r.id, name: r.name, holes: r.holes, version: r.version, updatedAt: r.updated_at, role: r.role, updatedBy: r.updated_by,
-      owner: r.owner, members: r.members, summary: r.summary, thumbAt: r.thumb_at ? r.thumb_at.getTime() : null
+      owner: r.owner, members: r.members, summary: r.summary, thumbAt: r.thumb_at ? r.thumb_at.getTime() : null,
+      hasDraft: r.has_draft, toReview: r.to_review
     }));
   });
 
@@ -66,6 +74,7 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
         insert into courses (name, holes, doc, summary, created_by, updated_by)
         values (${doc.name}, ${doc.holes.length}, ${tx.json(stored(doc) as never)}, ${tx.json((sum ?? {}) as never)}, ${a.user.id}, ${a.user.id}) returning id, version`;
       await tx`insert into course_members (course_id, user_id, role) values (${c.id}, ${a.user.id}, 'owner')`;
+      await snapshot(tx, c.id, "created", "", a.user.id);
       return c;
     });
     await audit(sql, req, "course.created", { course: course.id, name: doc.name });
@@ -76,16 +85,17 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
     const { id } = parse(ids, req.params);
     const { role: r } = await role(req, id, "viewer");
     const [c] = await sql`
-      select c.doc, c.version,
+      select c.doc, c.version, c.approval,
         exists (select 1 from course_backgrounds b where b.course_id = c.id) as has_background,
         exists (select 1 from course_thumbnails t where t.course_id = c.id) as has_thumbnail
       from courses c where c.id = ${id}`;
-    return { id, version: c.version, role: r, doc: c.doc, hasBackground: c.has_background, hasThumbnail: c.has_thumbnail };
+    return { id, version: c.version, role: r, approval: c.approval, doc: c.doc, hasBackground: c.has_background, hasThumbnail: c.has_thumbnail };
   });
 
+  // The owner's own changes, as they go (editors change a draft, and publish it)
   app.put<Id>("/api/courses/:id", BIG, async req => {
     const { id } = parse(ids, req.params);
-    const { a } = await role(req, id, "editor");
+    const { a } = await role(req, id, "owner");
     const b = parse(z.object({ doc: courseDoc, version: z.number().int(), summary }), req.body);
     const [done] = await sql`
       update courses set doc = ${sql.json(stored(b.doc) as never)}, summary = ${sql.json((b.summary ?? {}) as never)}, name = ${b.doc.name}, holes = ${b.doc.holes.length},
@@ -95,6 +105,9 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
       const [c] = await sql`select c.version, u.display_name from courses c left join users u on u.id = c.updated_by where c.id = ${id}`;
       throw new ApiError(409, `${c.display_name ?? "Someone"} saved this course since you opened it`, { version: c.version });
     }
+    // (kept in the history every ten minutes or so, and when someone else's change came between)
+    const [last] = await sql`select created_at, by_user from course_versions where course_id = ${id} order by id desc limit 1`;
+    if (!last || last.by_user !== a.user.id || Date.now() - last.created_at.getTime() > AUTOSAVE_EVERY) await snapshot(sql, id, "autosave", "", a.user.id);
     return { version: done.version };
   });
 
@@ -103,6 +116,15 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
     await role(req, id, "owner");
     const [c] = await sql`delete from courses where id = ${id} returning name`;
     await audit(sql, req, "course.deleted", { course: id, name: c.name });
+    return { ok: true };
+  });
+
+  app.post<Id>("/api/courses/:id/settings", async req => {
+    const { id } = parse(ids, req.params);
+    await role(req, id, "owner");
+    const b = parse(z.object({ approval: z.boolean() }), req.body);
+    await sql`update courses set approval = ${b.approval} where id = ${id}`;
+    await audit(sql, req, "course.settings", { course: id, approval: b.approval });
     return { ok: true };
   });
 
@@ -116,7 +138,7 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
 
   app.put<Id>("/api/courses/:id/background", BIG, async req => {
     const { id } = parse(ids, req.params);
-    await role(req, id, "editor");
+    await role(req, id, "owner");
     const { data } = parse(z.object({ data: z.string().max(60 << 20).regex(IMAGE, "Not an image").nullable() }), req.body);
     if (data === null) await sql`delete from course_backgrounds where course_id = ${id}`;
     else await sql`insert into course_backgrounds (course_id, data) values (${id}, ${data}) on conflict (course_id) do update set data = excluded.data, updated_at = now()`;
