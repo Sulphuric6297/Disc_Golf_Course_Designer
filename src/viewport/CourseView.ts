@@ -25,7 +25,7 @@ import { createAmenity, createBasket, createDropZone, createMando, createTeePad,
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
-import { createMeasuredWoods, createWoods, createWoodsWhere } from "../three/woods";
+import { createMeasuredWoods, createUnderbrush, createWoods, createWoodsWhere } from "../three/woods";
 import { standingTrees, grownTree, grownTrees } from "../lib/lidar";
 import type { WoodedGrid } from "../lib/forest";
 import { autoFlight, flightClock, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy, type Crown } from "../lib/flight";
@@ -2201,14 +2201,35 @@ export class CourseView {
       // between the measured ones as thickly as it asks; none when it says so)
       if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn")) {
         const here = clearings.near(boundsOf(a.points));
-        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key, cutKey]), () => {
+        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key, cutKey, a.pines, a.bushes, a.density, a.heights]), () => {
           const land = landscapeOf(st);
           this.plantings++;
-          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, (p, r) => here.test(p, r) || cutAt(p));
+          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, (p, r) => here.test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.2, a.density ?? 1)), { pines: a.pines, bushes: a.bushes, heights: a.heights });
           woods.traverse(o => { o.userData.itemId = a.id; });
           this.shadowsDirty = true;
           return woods;
         }, this.itemsGroup, true);
+      }
+      // Underbrush beneath a wood (measured or drawn): its own bushes and young trees, kept off
+      // the fairways, paths and water, and off the spots cut by hand
+      if (a.kind === "woods" && a.trees !== "none" && (a.underbrush || a.brush?.some(b => b.level !== "none"))) {
+        const here = clearings.near(boundsOf(a.points));
+        const sections = (a.brush ?? []).filter(b => b.points.length >= 3);
+        const inSection = (p: P) => sections.some(b => pointInPolygon(p, b.points));
+        const edge = Math.min(1, Math.max(0, a.brushEdge ?? 0.6));
+        const plant = (key: string, outline: P[], level: "light" | "medium" | "heavy", outside: boolean) =>
+          put(key, JSON.stringify([outline, level, hv, st.trees, st.landscape, here.key, cutKey, outside ? sections.map(b => b.points) : 0, edge, a.points]), () => {
+            const land = landscapeOf(st);
+            this.plantings++;
+            // (the wood's own level stays out of its sections; a section keeps to the wood)
+            const keepOut = (p: P, r: number) => here.test(p, r) || cutAt(p) || (outside ? inSection(p) : !pointInPolygon(p, a.points));
+            const brush = createUnderbrush(outline, (x, y) => this.h(x, y), st.trees, land.mix ?? [], keepOut, level, edge, a.points);
+            brush.traverse(o => { o.userData.itemId = a.id; });
+            this.shadowsDirty = true;
+            return brush;
+          }, this.itemsGroup, true);
+        if (a.underbrush) plant(`woods:${a.id}:under`, a.points, a.underbrush, true);
+        sections.forEach((b, i) => { if (b.level !== "none") plant(`woods:${a.id}:under:${i}`, b.points, b.level, false); });
       }
       // Custom: the measured trees stand as usual, and each patch drawn inside is filled in with
       // drawn trees as thickly as it says, never under a measured crown; outlined while picked
@@ -2217,13 +2238,13 @@ export class CourseView {
         a.patches.forEach((patch, i) => {
           const here = clearings.near(boundsOf(patch.points));
           const fill = Math.min(1, Math.max(0.1, patch.fill));
-          put(`woods:${a.id}:patch:${i}`, JSON.stringify([patch.points, fill, hv, st.trees, st.landscape, here.key, this.lidarKey, cutKey]), () => {
+          put(`woods:${a.id}:patch:${i}`, JSON.stringify([patch.points, fill, hv, st.trees, st.landscape, here.key, this.lidarKey, cutKey, a.pines, a.bushes, a.heights]), () => {
             const land = landscapeOf(st);
             this.plantings++;
             const box = boundsOf(patch.points);
             const near = standing.map(k => trees[k]).filter(t => t && t[0] >= box.minX - 40 && t[0] <= box.maxX + 40 && t[1] >= box.minY - 40 && t[1] <= box.maxY + 40);
             const keepOut = (p: P, reach: number) => here.test(p, reach) || cutAt(p) || near.some(t => Math.hypot(t[0] - p.x, t[1] - p.y) < t[3] * 0.8 + 4);
-            const woods = createWoods(patch.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, keepOut, 22 / Math.sqrt(fill));
+            const woods = createWoods(patch.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, keepOut, 22 / Math.sqrt(fill), { pines: a.pines, bushes: a.bushes, heights: a.heights });
             woods.traverse(o => { o.userData.itemId = a.id; });
             this.shadowsDirty = true;
             return woods;

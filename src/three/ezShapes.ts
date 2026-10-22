@@ -6,8 +6,17 @@
 // versions: the full tree close by; the same branches without the small twigs and one leaf in
 // six, bigger, in the middle distance; trunk, main limbs and a few big leaf clusters far off.
 import * as THREE from "three";
-import { Tree } from "@dgreenheck/ez-tree";
+import type { Tree as EzTree } from "@dgreenheck/ez-tree";
 import type { Detail, TreeProto, TreeShape } from "./treeKit";
+
+// ez-tree, loaded in the browser before the app starts (it loads its textures as soon as it is
+// imported: tests outside a browser, and anything else without a page, never load it)
+let Tree: (new () => EzTree) | null = null;
+export const ezReady: Promise<void> = typeof document === "undefined"
+  ? Promise.resolve()
+  : import("@dgreenheck/ez-tree").then(m => { Tree = m.Tree as unknown as new () => EzTree; });
+/** Whether ez-tree is there to grow trees (else the hand-built shapes stand in). */
+export const ezLoaded = () => Tree !== null;
 
 /** ez-tree's presets behind each kind's variants (a variant picks one, and its seed). */
 const PRESETS: Record<TreeShape, string[]> = {
@@ -60,6 +69,7 @@ const keyOf = (s: TreeSpec) => JSON.stringify([s.preset, s.seed, s.crownBase ?? 
 
 /** The preset's own values of the settings (what the sliders start at). */
 export const presetDefaults = (preset: string) => {
+  if (!Tree) return { crownBase: 0.3, limbs: 6 };
   const t = new Tree();
   t.loadPreset(preset);
   return { crownBase: t.options.branch.start[1] as number, limbs: t.options.branch.children[0] as number };
@@ -82,7 +92,7 @@ const materialFor = (kind: "bark" | "leaves", from: THREE.MeshPhongMaterial, key
 
 /** Grows the tree, noting which bark indices belong to which branch level (for the lighter versions). */
 const grow = (spec: TreeSpec) => {
-  const t = new Tree();
+  const t = new Tree!();
   t.loadPreset(spec.preset);
   const o = t.options;
   o.seed = spec.seed;

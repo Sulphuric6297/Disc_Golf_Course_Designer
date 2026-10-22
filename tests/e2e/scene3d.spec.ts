@@ -443,7 +443,10 @@ plain("a placed pine is darker and bluer than a broadleaf tree of the same color
   const leaves = (treeType: string) => {
     const g = create3dTree({ id: "t1", type: "tree", x: 0, y: 0, radius: 10, height: 40, color: "#4f8a3c", treeType } as any);
     const hsl = { h: 0, s: 0, l: 0 };
-    (g.children[1] as any).material.color.getHSL(hsl);
+    // (its leaves: the two-sided material, in its nearest version)
+    let leaf: any = null;
+    g.traverse((o: any) => { if (!leaf && o.isMesh && o.material?.side === 2) leaf = o; });
+    leaf.material.color.getHSL(hsl);
     return hsl;
   };
   const pine = leaves("conifer"), broad = leaves("deciduous");

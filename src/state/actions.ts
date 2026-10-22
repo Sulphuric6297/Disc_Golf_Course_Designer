@@ -527,6 +527,14 @@ export const cutStretch = (id: string, a: number, b: number) => {
 
 /** An outline drawn as a patch of a woods area (trees: custom): drawn trees fill it in, as
  * thickly as the wood's last patch (half, for the first). One undo step; the wood stays selected. */
+/** An outline drawn as a section of underbrush in a wood (its own level; the last one's, or
+ * heavy for the first). One undo step; the wood stays selected. */
+export const addBrushSection = (areaId: string, points: P[]) => {
+  if (!getDoc().items.some(i => i.id === areaId && i.type === "area")) { toast("That wood is gone: draw the section again on another.", "info"); return; }
+  changeDoc(d => ({ items: d.items.map(i => (i.id === areaId && i.type === "area" ? { ...i, brush: [...(i.brush ?? []), { points, level: i.brush?.[i.brush.length - 1]?.level ?? "heavy" }] } : i)) }));
+  select(areaId);
+};
+
 export const addPatch = (areaId: string, points: P[]) => {
   if (!getDoc().items.some(i => i.id === areaId && i.type === "area")) { toast("That wood is gone: draw the patch again on another.", "info"); return; }
   changeDoc(d => ({ items: d.items.map(i => (i.id === areaId && i.type === "area" ? { ...i, trees: "custom" as const, patches: [...(i.patches ?? []), { points, fill: i.patches?.[i.patches.length - 1]?.fill ?? 0.5 }] } : i)) }));

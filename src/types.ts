@@ -127,6 +127,20 @@ export interface AreaItem extends BaseItem {
   /** Custom: patches drawn inside the wood where drawn trees fill in between the measured ones,
    * each as thickly as its `fill` says (0.1 to 1). */
   patches?: { points: P[]; fill: number }[];
+  /** Woods filled by the app: its mix (shares of pines and of bushes; the rest leafy), how thick
+   * (1 = usual), and its trees' heights (ft). Unset: the landscape's. */
+  pines?: number;
+  bushes?: number;
+  density?: number;
+  heights?: [number, number];
+  /** Underbrush beneath its trees: bushes and young trees, light to heavy (unset: none). */
+  underbrush?: "light" | "medium" | "heavy";
+  /** Sections of the wood with underbrush of their own (none, or light to heavy): the wood's own
+   * setting covers the rest. */
+  brush?: { points: P[]; level: "none" | "light" | "medium" | "heavy" }[];
+  /** How much thicker underbrush grows along the wood's edge, where light gets in, than deep
+   * inside: 0 even everywhere, 1 almost none deep inside (unset: 0.6). */
+  brushEdge?: number;
   /** Brought in from OpenStreetMap, or found on the satellite photo (replaced on re-import). */
   importSource?: "osm" | "photo";
 }

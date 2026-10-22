@@ -28,8 +28,13 @@ const startFrom = () => {
 let importing = false;
 
 export function SiteImportDialog({ onClose, onImported }: { onClose: () => void; onImported: (site: ImportedSite, opts: { trees: boolean; osm: boolean }) => void }) {
+  // (open again each time it mounts: React mounts it twice in development, and a flag only ever
+  // set to closed left every import there unapplied, stuck short of the end)
   const open = useRef(true);
-  useEffect(() => () => { open.current = false; }, []);
+  useEffect(() => {
+    open.current = true;
+    return () => { open.current = false; };
+  }, []);
   const [start] = useState(startFrom);
   const [query, setQuery] = useState(start.label);
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);

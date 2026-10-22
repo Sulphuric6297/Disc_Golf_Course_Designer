@@ -5,7 +5,7 @@
 // underneath). A few shapes of each kind are made once, at unit height, and shared by every tree:
 // woods draw them instanced, a close version near the camera and a lighter one farther away.
 import * as THREE from "three";
-import { EZ_VARIANTS, ezProto, ezTint, ezTree, type TreeSpec } from "./ezShapes";
+import { EZ_VARIANTS, ezLoaded, ezProto, ezTint, ezTree, type TreeSpec } from "./ezShapes";
 
 export type TreeShape = "broadleaf" | "conifer" | "bush";
 export type Detail = "near" | "mid" | "far";
@@ -452,7 +452,9 @@ export const treeProto = (shape: TreeShape, variant: number, detail: Detail, cla
   if (!p) {
     // (the classic shapes have two levels: their far one serves the middle distance too)
     const d = classic && detail === "mid" ? "far" : detail;
-    p = classic ? (shape === "conifer" ? conifer(variant, d as "near" | "far") : broadleaf(variant, d as "near" | "far", shape === "bush")) : ezProto(shape, variant, detail);
+    // (without ez-tree, outside a browser, the hand-built shapes stand in)
+    const old = classic || !ezLoaded();
+    p = old ? (shape === "conifer" ? conifer(variant % CLASSIC_VARIANTS.conifer, d as "near" | "far") : broadleaf(variant % CLASSIC_VARIANTS[shape], d as "near" | "far", shape === "bush")) : ezProto(shape, variant, detail);
     protos.set(key, p);
   }
   return p;
@@ -478,7 +480,7 @@ const woodsSpread = (asked: number) => Math.min(1.5, Math.max(0.72, asked));
 
 /** One tree as meshes (shared shape and materials): `height` ft tall, `width` ft across the crown. */
 export const treeMeshes = (shape: TreeShape, variant: number, height: number, width: number, tint: THREE.Color, detail: Detail = "near", classic = false, spec?: TreeSpec) => {
-  const proto = spec && !classic ? ezTree(shape, spec, detail) : treeProto(shape, variant, detail, classic);
+  const proto = spec && !classic && ezLoaded() ? ezTree(shape, spec, detail) : treeProto(shape, variant, detail, classic);
   const group = new THREE.Group();
   const sx = treeSpread(width / height / naturalOf(shape, proto));
   const leafMat = (proto.leafMat ?? leafMaterial(proto.needles)) as THREE.MeshStandardMaterial;
@@ -530,7 +532,8 @@ export class Forest {
   private version = -1;
   private matrices: THREE.Matrix4[][] = [];
 
-  constructor(spots: TreeSpot[]) {
+  /** `maxFt`: not drawn past this far from the eye (underbrush). */
+  constructor(spots: TreeSpot[], private maxFt = Infinity) {
     this.group.name = "forest";
     const byShape = new Map<string, TreeSpot[]>();
     for (const s of spots) {
@@ -587,6 +590,7 @@ export class Forest {
       set.spots.forEach((s, i) => {
         const dx = s.x - eye.x, dz = s.y - eye.z, dy = s.ground + s.height * 0.5 - eye.y;
         const d2 = dx * dx + dz * dz + dy * dy;
+        if (d2 > this.maxFt * this.maxFt) return;
         const l = d2 < r2 ? 0 : d2 < m2 ? 1 : 2;
         const mat = this.matrices[si][i];
         levels[l][0].setMatrixAt(n[l], mat);

@@ -6,6 +6,7 @@ import { treeMeshes, type TreeShape } from "../three/treeKit";
 import { foliageTint } from "../three/trees";
 import { LANDSCAPES, type LandscapeId } from "../lib/landscapes";
 import { CANDIDATES } from "./treeCandidates";
+import { ezReady } from "../three/ezShapes";
 
 type Kind = { id: TreeShape; label: string; heights: [number, number]; widthOfHeight: [number, number] };
 const KINDS: Kind[] = [
@@ -168,6 +169,7 @@ const resize = () => {
 window.addEventListener("resize", resize);
 resize();
 placeSun();
+await ezReady;
 build();
 CAMS[cam]();
 refreshBar();

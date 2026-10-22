@@ -2,21 +2,33 @@
 // so thousands stay quick: mostly broadleaf canopy trees with some conifers, a few smaller trees
 // beneath them, each its own height, crown, lean and shade of green.
 import type { LidarTree, P } from "../types";
-import { pointInPolygon } from "../lib/geom";
+import { nearestOnSegment, pointInPolygon } from "../lib/geom";
 import { Forest, VARIANTS, type TreeSpot } from "./treeKit";
 import { foliageTint } from "./trees";
 
 const MAX_TREES = 6000;
 
+/** How a wood fills itself (unset: the landscape's mix, usual heights). */
+export type WoodsFill = { pines?: number; bushes?: number; heights?: [number, number] };
+
+/** A number in [0, 1) of a spot and a salt: the same every time (the woods' own draws are left as
+ * they were, so a wood's mix or heights changed never moves its other trees). */
+const spotDraw = (p: P, salt: number) => {
+  let n = Math.imul(Math.round(p.x * 10) ^ 0x5bd1e995, 0x2c1b3c6d) ^ Math.imul(Math.round(p.y * 10) + salt * 7919, 0x297a2d39);
+  n = Math.imul(n ^ (n >>> 15), 0x85ebca6b);
+  n = Math.imul(n ^ (n >>> 13), 0xc2b2ae35);
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+};
+
 /** Trees about every `spacing` feet inside the outline, standing on the ground. */
-export const createWoods = (outline: P[], groundAt: (x: number, y: number) => number, color: string, conifers = 0.22, mix: string[] = [], keepOut: (p: P, reach: number) => boolean = () => false, spacing = 22) => {
+export const createWoods = (outline: P[], groundAt: (x: number, y: number) => number, color: string, conifers = 0.22, mix: string[] = [], keepOut: (p: P, reach: number) => boolean = () => false, spacing = 22, fill: WoodsFill = {}) => {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of outline) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
-  return createWoodsWhere(outline.length >= 3 ? { minX, minY, maxX, maxY } : null, p => pointInPolygon(p, outline), groundAt, color, conifers, mix, keepOut, spacing);
+  return createWoodsWhere(outline.length >= 3 ? { minX, minY, maxX, maxY } : null, p => pointInPolygon(p, outline), groundAt, color, fill.pines ?? conifers, mix, keepOut, spacing, fill);
 };
 
 /** Trees about every `spacing` feet wherever `inside` says, within the bounds, standing on the ground. */
-export const createWoodsWhere = (bounds: { minX: number; minY: number; maxX: number; maxY: number } | null, inside: (p: P) => boolean, groundAt: (x: number, y: number) => number, color: string, conifers = 0.22, mix: string[] = [], keepOut: (p: P, reach: number) => boolean = () => false, spacing = 22) => {
+export const createWoodsWhere = (bounds: { minX: number; minY: number; maxX: number; maxY: number } | null, inside: (p: P) => boolean, groundAt: (x: number, y: number) => number, color: string, conifers = 0.22, mix: string[] = [], keepOut: (p: P, reach: number) => boolean = () => false, spacing = 22, fill: WoodsFill = {}) => {
   const spots: TreeSpot[] = [];
   if (bounds) {
     const { minX, minY, maxX, maxY } = bounds;
@@ -29,11 +41,16 @@ export const createWoodsWhere = (bounds: { minX: number; minY: number; maxX: num
         const p = { x: x + (rnd() - 0.5) * step * 0.7, y: y + (rnd() - 0.5) * step * 0.7 };
         if (!inside(p)) continue;
         const u = rnd();
-        const shape = u < conifers ? "conifer" : "broadleaf";
+        // (a bush, for its share of the spots: a draw of its own)
+        const bush = (fill.bushes ?? 0) > 0 && spotDraw(p, 1) < (fill.bushes ?? 0);
+        const shape = bush ? "bush" : u < conifers ? "conifer" : "broadleaf";
         // Now and then a smaller tree under the big ones
         const small = rnd() < 0.18;
-        const height = small ? 16 + rnd() * 12 : shape === "conifer" ? 45 + rnd() * 35 : 38 + rnd() * 34;
-        const width = (shape === "conifer" ? height * 0.42 : Math.max(step * 1.25, height * 0.62)) * (0.8 + rnd() * 0.4) * (small ? 0.7 : 1);
+        let height = small ? 16 + rnd() * 12 : shape === "conifer" ? 45 + rnd() * 35 : 38 + rnd() * 34;
+        // (heights asked for: the same spread of sizes within them; a bush its own few feet)
+        if (fill.heights && !bush) { const [lo, hi] = fill.heights, t = Math.min(1, Math.max(0, (height - 16) / 64)); height = lo + (hi - lo) * t; }
+        if (bush) height = 3 + spotDraw(p, 2) * 6;
+        const width = bush ? height * (1.2 + spotDraw(p, 3) * 0.6) : (shape === "conifer" ? height * 0.42 : Math.max(step * 1.25, height * 0.62)) * (0.8 + rnd() * 0.4) * (small ? 0.7 : 1);
         const tree: TreeSpot = {
           ...p,
           ground: 0,
@@ -87,5 +104,63 @@ export const createMeasuredWoods = (trees: { tree: LidarTree; index: number }[],
   forest.group.userData.spots = spots;
   forest.group.userData.measured = true;
   forest.group.userData.indexes = trees.map(t => t.index);
+  return forest.group;
+};
+
+/** How far apart the underbrush grows, ft (light, medium, heavy). */
+const BRUSH_SPACING = { light: 24, medium: 15, heavy: 9.5 } as const;
+/** Underbrush is drawn this close to the eye only (ft): beyond, the trees hide it anyway. */
+export const BRUSH_REACH = 360;
+
+/** Underbrush in a wood: round, dense and airy bushes of a few feet, and now and then a young
+ * tree, about every `spacing` feet (closer the heavier), kept off what `keepOut` says. */
+/** How far a point is from an outline's edge, inside or out. */
+const edgeDistance = (p: P, poly: P[]) => {
+  let best = Infinity;
+  for (let i = 0; i < poly.length; i++) best = Math.min(best, nearestOnSegment(p, poly[i], poly[(i + 1) % poly.length]).distance);
+  return best;
+};
+
+/** How deep into a wood the light reaches for underbrush, ft (past it, the edge's extra fades out). */
+const EDGE_DEPTH = 45;
+
+export const createUnderbrush = (outline: P[], groundAt: (x: number, y: number) => number, color: string, mix: string[], keepOut: (p: P, reach: number) => boolean, level: keyof typeof BRUSH_SPACING, edge = 0.6, wood: P[] = outline) => {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of outline) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+  const spots: TreeSpot[] = [];
+  const step = Math.max(BRUSH_SPACING[level], Math.sqrt(((maxX - minX) * (maxY - minY)) / MAX_TREES));
+  if (outline.length >= 3) {
+    for (let y = minY; y <= maxY; y += step * 0.87) {
+      for (let x = minX + ((Math.round((y - minY) / step) % 2) * step) / 2; x <= maxX; x += step) {
+        const p = { x: x + (spotDraw({ x, y }, 11) - 0.5) * step * 0.9, y: y + (spotDraw({ x, y }, 12) - 0.5) * step * 0.9 };
+        if (!pointInPolygon(p, outline)) continue;
+        // (thickest along the wood's edge, where the light gets in; thinner deep inside)
+        if (edge > 0 && spotDraw(p, 24) > 1 - edge * (1 - Math.exp(-edgeDistance(p, wood) / EDGE_DEPTH))) continue;
+        const young = spotDraw(p, 13) < 0.14;
+        const height = young ? 7 + spotDraw(p, 14) * 9 : 2 + spotDraw(p, 15) * 4.5;
+        const width = young ? height * (0.45 + spotDraw(p, 16) * 0.2) : height * (1.1 + spotDraw(p, 17) * 0.8);
+        if (keepOut(p, width * 0.4)) continue;
+        const shape = young ? "broadleaf" : "bush";
+        const r = () => spotDraw(p, 18 + spots.length % 7);
+        spots.push({
+          ...p,
+          ground: groundAt(p.x, p.y),
+          height,
+          width,
+          shape,
+          // (young trees: the small oaks and ashes; bushes: any of theirs)
+          variant: young ? 4 + Math.floor(spotDraw(p, 19) * 2) : Math.floor(spotDraw(p, 20) * VARIANTS.bush),
+          tint: foliageTint(mix.length ? mix[Math.floor(spotDraw(p, 21) * mix.length)] : color, r),
+          turn: spotDraw(p, 22) * Math.PI * 2,
+          lean: (spotDraw(p, 23) - 0.5) * 0.08
+        });
+      }
+    }
+  }
+  const forest = new Forest(spots, BRUSH_REACH);
+  forest.group.name = "woods";
+  forest.group.userData.forest = forest;
+  forest.group.userData.spots = spots;
+  forest.group.userData.underbrush = true;
   return forest.group;
 };

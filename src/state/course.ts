@@ -133,6 +133,8 @@ type EditorStore = {
   lidarBusy: number | null;
   /** Drawing a patch of drawn trees inside this woods area (its id). */
   patchFor: string | null;
+  /** Drawing a section of underbrush (not of trees) for `patchFor`. */
+  patchBrush: boolean;
   /** What is picked on the Design page's course map: "title", "legend"... or "text:ID", "image:ID". */
   designSel: string | null;
   /** The hole whose tee sign or hole page the Design step shows. */
@@ -195,6 +197,7 @@ export const useEditor = create<EditorStore>()(set => ({
   pickCut: false,
   lidarBusy: null,
   patchFor: null,
+  patchBrush: false,
   designSel: null,
   designHole: null,
   activeHoleId: null,
