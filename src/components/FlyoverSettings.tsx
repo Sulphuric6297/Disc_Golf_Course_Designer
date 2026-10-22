@@ -8,7 +8,7 @@ import { holeLabel } from "../lib/course";
 import { fmtDist } from "../lib/units";
 import { changeDoc, updateHole, useCourse, useEditor } from "../state/course";
 import type { FlyKey, FlyoverSettings, FlyShow, Hole } from "../types";
-import { getView } from "./MapViewport";
+import { getView } from "../state/view";
 import { ApplyToHoles } from "./ApplyToHoles";
 import { Button, NumberInput, Segmented, Slider, Toggle } from "./ui";
 

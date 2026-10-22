@@ -18,7 +18,7 @@ import { download, fileName, saveCourseFile } from "../state/files";
 import { runExport, useExportJob, type JobControl } from "../state/exportJob";
 import { recordVideo, useVideoSettings } from "../state/video";
 import type { CourseDoc, CourseRules, PaperSize } from "../types";
-import { getView } from "./MapViewport";
+import { getView } from "../state/view";
 import { reliefOf } from "./useRelief";
 import { canopyFor } from "../lib/forest";
 import { setStyle } from "./DesignPanel";

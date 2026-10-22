@@ -10,7 +10,7 @@ import { safeDoc } from "../lib/safeDoc";
 import { withGround, type GroundShare } from "../lib/sharedGround";
 import { getDoc } from "../state/course";
 import { toast } from "../state/toast";
-import { getView } from "../components/MapViewport";
+import { getView } from "../state/view";
 import { inputCls, Section } from "../components/ui";
 import { useCourse } from "../state/course";
 import type { CourseDoc, P } from "../types";

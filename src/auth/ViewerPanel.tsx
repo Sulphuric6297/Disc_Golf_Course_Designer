@@ -8,7 +8,7 @@ import { courseStats, courseTotals } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
 import { select } from "../state/actions";
 import { useCourse, useEditor } from "../state/course";
-import { getView } from "../components/MapViewport";
+import { getView } from "../state/view";
 import { Section, Facts } from "../components/ui";
 import { copyCourse, holesOf } from "./courses";
 import { useAllowed } from "./perms";

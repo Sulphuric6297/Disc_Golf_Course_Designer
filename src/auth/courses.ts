@@ -8,11 +8,7 @@ import { create } from "zustand";
 import { generateId } from "../constants";
 import { createEmptyCourse, normalizeCourse } from "../lib/course";
 import { courseStats, courseTotals, playsOf } from "../lib/holeStats";
-import { canopyFor } from "../lib/forest";
-import { paintedForPrint, renderPoster } from "../lib/mapSvg";
-import { canvasBlob, svgToCanvas } from "../lib/raster";
 import { changesBetween, describeChanges, holesChanged, keepCourseHoles, keepTheirs, mergeCourse, type Merged } from "../lib/merge";
-import { reliefOf } from "../components/useRelief";
 import { safeDoc } from "../lib/safeDoc";
 import type { PlanMeta } from "../lib/storage";
 import { getDoc, useCourse, useEditor } from "../state/course";
@@ -142,6 +138,8 @@ async function makeThumbnail(doc = getDoc()) {
   thumbFor = doc;
   thumbAt = Date.now();
   try {
+    // (the painter loaded only when a picture is made: the course list doesn't wait for it)
+    const [{ canopyFor }, { paintedForPrint, renderPoster }, { canvasBlob, svgToCanvas }, { reliefOf }] = await Promise.all([import("../lib/forest"), import("../lib/mapSvg"), import("../lib/raster"), import("../components/useRelief")]);
     const art = { ...reliefOf(doc), canopy: await canopyFor(doc) };
     const p = await paintedForPrint(page => (72 * THUMB_PX) / page.width, () => renderPoster(doc, art));
     const canvas = await svgToCanvas(p.svg, p.width, p.height, (72 * THUMB_PX) / p.width);

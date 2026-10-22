@@ -1,13 +1,12 @@
 // In front of the app on a HyzerLab server: first-run setup, invite and reset links, signing in,
 // and 2FA (set up, or a code) before anything else. Signed in, the app and the account dialogs.
-import { useEffect, useState, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 import { api, useAuth } from "./api";
 import { BackupCodes, CopyButton, Form, Input, Screen } from "./parts";
 import { AccountDialog } from "./AccountDialog";
 import { PeopleDialog } from "./PeopleDialog";
-import { ShareDialog } from "./ShareDialog";
 import { Home } from "./Home";
-import { getView } from "../components/MapViewport";
+import { getView, onLiveView } from "../state/view";
 import { HistoryDialog, PreviewBar, PublishDialog, ReviewDialog, UpdateDialog } from "./ChangesDialogs";
 import { CommentLayer, CommentsPanel, loadComments, useCommentKeys, useComments } from "./Comments";
 import { useServerCourse } from "./courses";
@@ -22,6 +21,9 @@ const linkToken = () => {
 };
 const clearLink = () => history.replaceState(null, "", location.pathname + location.search);
 
+// (loaded when opened: publishing a site brings the map painter with it)
+const ShareDialog = lazy(() => import("./ShareDialog").then(m => ({ default: m.ShareDialog })));
+
 export function AuthGate({ children }: { children: ReactNode }) {
   const { session, load, dialog, open, home } = useAuth();
   const [token, setToken] = useState(linkToken);
@@ -31,6 +33,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => { load().catch(() => setFailed(true)); }, [load]);
   // (the map behind the course list rests: it would draw for nothing)
   useEffect(() => { getView()?.setPaused(home); }, [home]);
+  // (the map loads after the course list shows: it starts resting if the list is up)
+  useEffect(() => onLiveView(v => v?.setPaused(useAuth.getState().home)), []);
   const after = () => load();
 
   if (failed) return <Screen title="Can't reach the server"><button className="text-sm text-orange-300" onClick={() => location.reload()}>Try again</button></Screen>;
@@ -59,7 +63,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         {home && <Home />}
         {dialog === "account" && <AccountDialog onClose={() => open(null)} />}
         {dialog === "people" && session.user.isAdmin && <PeopleDialog onClose={() => open(null)} />}
-        {dialog === "share" && <ShareDialog onClose={() => open(null)} />}
+        {dialog === "share" && <Suspense fallback={null}><ShareDialog onClose={() => open(null)} /></Suspense>}
         {dialog === "publish" && <PublishDialog onClose={() => open(null)} />}
         {dialog === "update" && <UpdateDialog onClose={() => open(null)} />}
         {dialog === "history" && <HistoryDialog onClose={() => open(null)} />}

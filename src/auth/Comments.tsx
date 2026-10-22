@@ -6,7 +6,7 @@ import { create } from "zustand";
 import { Check, MessageCircle, MessageSquarePlus, RotateCcw, Trash2, X } from "lucide-react";
 import { holeLabel } from "../lib/course";
 import { getDoc, useCourse } from "../state/course";
-import { getView } from "../components/MapViewport";
+import { getView } from "../state/view";
 import { inputCls } from "../components/ui";
 import type { CourseDoc, P } from "../types";
 import { api, useAuth } from "./api";

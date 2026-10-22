@@ -12,7 +12,7 @@ import type { AreaKind, Layout, LineKind, PinPosition, StructureKind, TeeLevel, 
 import { refreshOsm } from "../state/osm";
 import { measureLidar } from "../state/lidar";
 import { saplings, yearsSince } from "../lib/lidar";
-import { getView } from "./MapViewport";
+import { getView } from "../state/view";
 import { structureIcon } from "./Toolbar";
 import { Button, Facts, Field, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
 import { DesignPanel } from "./DesignPanel";

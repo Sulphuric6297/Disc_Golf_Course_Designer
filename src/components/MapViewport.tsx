@@ -18,10 +18,8 @@ import type { P } from "../types";
 import { SceneButton } from "./ScenePanel";
 import { landscapeOf } from "../lib/landscapes";
 import { paintedDetail, usePaintedGround } from "../state/paintedGround";
+import { getView, setLiveView } from "../state/view";
 
-let current: CourseView | null = null;
-/** The live map view (for buttons elsewhere: fit, tee view, snapshots). */
-export const getView = () => current;
 
 type MenuInfo = { clientX: number; clientY: number; itemId: string | null; ground: P | null };
 
@@ -74,14 +72,14 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       onLidar: patch => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, ...patch } } : {})),
       onFlyWait: waiting => useEditor.getState().set({ flyLoading: waiting })
     });
-    current = v;
+    setLiveView(v);
     (window as any).__dgView = v;
     setView(v);
     const off = v.onView(setInfo);
     return () => {
       off();
       v.dispose();
-      if (current === v) current = null;
+      if (getView() === v) setLiveView(null);
     };
   }, []);
 

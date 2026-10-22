@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { holeLabel } from "../lib/course";
 import { select } from "../state/actions";
 import { getDoc, useCourse, useEditor } from "../state/course";
-import { getView } from "./MapViewport";
+import { getView } from "../state/view";
 
 /** The hole `delta` places on from the one being worked on (round the end of the list). */
 export const neighbourHole = (holeId: string | null, delta: number) => {

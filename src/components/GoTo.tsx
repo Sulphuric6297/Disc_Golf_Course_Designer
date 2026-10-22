@@ -7,7 +7,7 @@ import { courseStats } from "../lib/holeStats";
 import { fmtDist } from "../lib/units";
 import { select } from "../state/actions";
 import { useCourse, useEditor } from "../state/course";
-import { getView } from "./MapViewport";
+import { getView } from "../state/view";
 import { STEPS } from "./SidePanel";
 import { TOOLS } from "./Toolbar";
 import type { CourseItem } from "../types";
