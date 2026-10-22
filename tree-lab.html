@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HyzerLab · Tree lab</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0b0d10; color: #e4e4e7; font: 14px/1.4 Inter, system-ui, sans-serif; overflow: hidden; }
+      #view { position: fixed; inset: 0; }
+      #bar { position: fixed; left: 12px; top: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; pointer-events: none; }
+      #bar > * { pointer-events: auto; }
+      .group { display: flex; gap: 2px; background: rgba(24,24,27,.9); border-radius: 10px; padding: 3px; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+      button { background: transparent; color: #d4d4d8; border: 0; border-radius: 7px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+      button:hover { background: #27272a; color: #fafafa; }
+      button[aria-pressed="true"] { background: #f4f4f5; color: #18181b; font-weight: 600; }
+      #title { background: rgba(24,24,27,.9); border-radius: 10px; padding: 7px 12px; font-weight: 600; }
+      #labels { position: fixed; inset: 0; pointer-events: none; }
+      .label { position: absolute; transform: translate(-50%, -100%); white-space: nowrap; font-size: 12px; font-weight: 600; color: #fafafa; background: rgba(9,9,11,.72); padding: 3px 8px; border-radius: 6px; }
+      .label.col { font-size: 13px; background: rgba(249,115,22,.92); color: #18181b; }
+      #hint { position: fixed; left: 12px; bottom: 12px; font-size: 12px; color: #a1a1aa; background: rgba(24,24,27,.85); padding: 6px 10px; border-radius: 8px; }
+    </style>
+  </head>
+  <body>
+    <div id="view"></div>
+    <div id="labels"></div>
+    <div id="bar">
+      <span id="title">Tree lab</span>
+      <div class="group" id="kinds"></div>
+      <div class="group" id="cams"></div>
+      <div class="group" id="seasons"></div>
+      <div class="group" id="light"></div>
+      <div class="group" id="extras"></div>
+    </div>
+    <div id="hint">Drag to turn · scroll to zoom · right-drag to move</div>
+    <script type="module" src="/src/lab/treeLab.ts"></script>
+  </body>
+</html>

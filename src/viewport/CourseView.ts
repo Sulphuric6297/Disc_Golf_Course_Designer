@@ -46,8 +46,11 @@ CameraControls.install({ THREE });
 const { ACTION } = CameraControls;
 
 const DEG = Math.PI / 180;
-const SUN_INTENSITY = 2.4;
-const HEMI_INTENSITY = 0.9;
+// The light of ez-tree's demo (photographed leaves and bark read true under it): a strong sun, a
+// soft even sky, and Neutral tone mapping at twice the exposure
+const SUN_INTENSITY = 5;
+const HEMI_INTENSITY = 0.5;
+const EXPOSURE = 2;
 const CLICK_PX = 4;
 /** A finger moves a little in a tap (more than a mouse in a click). */
 const TOUCH_SLOP = 10;
@@ -297,8 +300,8 @@ export class CourseView {
     this.maxRatio = Math.min(window.devicePixelRatio || 1, this.mobile ? 1.5 : 2);
     this.renderer.setPixelRatio(this.maxRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
+    this.renderer.toneMappingExposure = EXPOSURE;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
@@ -1730,7 +1733,7 @@ export class CourseView {
     const shadows = clamp(doc.sun?.shadows ?? 0.65, 0, 1);
     this.sun.intensity = SUN_INTENSITY * strength;
     this.hemi.intensity = HEMI_INTENSITY * (0.45 + 0.55 * Math.min(1, strength * 1.2)) * (1.55 - 0.85 * shadows);
-    this.renderer.toneMappingExposure = 1.05 * Math.pow(2, (doc.sun?.light ?? 0) * 1.6);
+    this.renderer.toneMappingExposure = EXPOSURE * Math.pow(2, (doc.sun?.light ?? 0) * 1.6);
     // The sky's sun, and its haze: blue-grey at midday, warmer when the sun is low
     {
       const sm = this.skyBox.material as THREE.ShaderMaterial;

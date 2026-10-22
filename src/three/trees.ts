@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { clamp } from "../constants";
 import type { TreeItem } from "../types";
-import { treeMeshes, variantOf, type TreeShape } from "./treeKit";
+import { treeMeshes, variantOf, type TreeShape, forestDetail, midOf } from "./treeKit";
 
 export const getTreeSignature = (item: TreeItem) =>
   `${item.radius}|${item.height ?? 30}|${item.width ?? 1}|${item.treeType ?? 'deciduous'}|${item.color}|${item.variant ?? ""}|${item.leaf ?? ""}`;
@@ -45,7 +45,14 @@ export const create3dTree = (item: TreeItem, look?: TreeLook): THREE.Group => {
       tint = foliageTint(leaf, next);
       if (shape === "conifer") tint.offsetHSL(0.03, -0.06, -0.08);
     }
-    group = treeMeshes(shape, item.variant ?? variantOf(item.id, shape), height, item.radius * 2 * widthMultiplier, tint);
+    // (close, middle and far versions, as the woods have, by distance from the camera)
+    const variant = item.variant ?? variantOf(item.id, shape), w = item.radius * 2 * widthMultiplier;
+    const lod = new THREE.LOD();
+    lod.addLevel(treeMeshes(shape, variant, height, w, tint, "near"), 0);
+    lod.addLevel(treeMeshes(shape, variant, height, w, tint, "mid"), forestDetail.nearFt);
+    lod.addLevel(treeMeshes(shape, variant, height, w, tint, "far"), midOf(forestDetail.nearFt));
+    group = new THREE.Group();
+    group.add(lod);
   } else {
     group = new THREE.Group();
     const base = foliageTint(look?.color ?? item.color, next);
