@@ -68,10 +68,10 @@ const MATERIALS: Record<StructureKind, string[]> = {
 test("a boardwalk, stairs and a wall drawn from the Features list, click by click", async ({ page }) => {
   await blankCourse(page);
   await page.getByRole("button", { name: "2 Design" }).click();
-  await expect(page.getByTestId("feature-structures")).toBeVisible();
   let x = 250;
   for (const kind of ["boardwalk", "stairs", "wall"] as const) {
-    await page.getByTestId(`feature-structure-${kind}`).click();
+    await page.keyboard.press("s");
+    await page.getByTestId(`structure-kind-${kind}`).click();
     await expect.poll(async () => (await editorState(page)).tool).toBe("draw-structure");
     await clickPlan(page, x, 400);
     await clickPlan(page, x + 40, 470, { double: true });
@@ -91,7 +91,8 @@ test("a building, a shelter and a deck dragged out as rectangles; kind and roof 
   await page.getByRole("button", { name: "2 Design" }).click();
   let x = 250;
   for (const kind of ["building", "shelter", "deck"] as const) {
-    await page.getByTestId(`feature-structure-${kind}`).click();
+    await page.keyboard.press("s");
+    await page.getByTestId(`structure-kind-${kind}`).click();
     await page.getByTestId("draw-shape-box").click();
     await drag(page, await screenOf(page, x, 400), await screenOf(page, x + 60, 440), 3);
     await expect.poll(async () => (await structures(page)).map((s: any) => s.kind)).toContain(kind);
@@ -146,7 +147,8 @@ test("buildings like the Security Camera Planner's: looks, roofs, colors, turnin
   await blankCourse(page);
   await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 300, minY: 300, maxX: 700, maxY: 600 }, { animate: false }));
   await page.getByRole("button", { name: "2 Design" }).click();
-  await page.getByTestId("feature-structure-building").click();
+  await page.keyboard.press("s");
+  await page.getByTestId("structure-kind-building").click();
   await clickPlan(page, 400, 400);
   await clickPlan(page, 480, 450);
   await expect.poll(async () => (await structures(page)).length).toBe(1);

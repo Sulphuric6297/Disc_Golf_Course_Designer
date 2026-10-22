@@ -400,7 +400,7 @@ export class CourseView {
     c.polarRotateSpeed = 0.7;
     c.dollyToCursor = true;
     c.addEventListener("controlend", () => this.snapNorth());
-    c.addEventListener("controlstart", () => { this.posePinned = false; });
+    c.addEventListener("controlstart", () => { this.posePinned = false; this.autoFit = null; });
     c.addEventListener("rest", () => { this.posePinned = false; });
 
     this.ground = new Ground(this.renderer, () => this.invalidate(true));
@@ -618,6 +618,29 @@ export class CourseView {
   /** Fit plan bounds in view, keeping the current rotation and tilt. */
   /** Pixels on the right covered by a panel: fitting keeps things clear of them. */
   rightInset = 0;
+  /** Pixels on the left covered by a panel (the holes column). */
+  leftInset = 0;
+  /** The fit the map was last put at, until it is moved by hand. */
+  private autoFit: (() => void) | null = null;
+  /** A panel over the map's left side shown or gone: the map slides over by half of it, so what
+   * was in the middle stays in the middle of what can be seen. */
+  setLeftInset(px: number) {
+    const delta = px - this.leftInset;
+    this.leftInset = px;
+    if (!delta || !this.fitted || this.size.height < 2) return;
+    // (still as fitted, untouched: fitted again, around the panel)
+    if (this.autoFit) return this.autoFit();
+    const worldPerPx = (2 * this.controls.distance * Math.tan((this.camera.fov * DEG) / 2)) / this.size.height;
+    const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+    right.y = 0;
+    if (right.lengthSq() < 1e-6) return;
+    right.normalize().multiplyScalar(-(delta / 2) * worldPerPx);
+    const t = this.controls.getTarget(new THREE.Vector3(), true).add(right);
+    void this.controls.moveTo(t.x, t.y, t.z, false);
+    this.controls.update(0);
+    this.camera.updateMatrixWorld();
+    this.invalidate();
+  }
   /** Pixels at the bottom and top covered by panels (a phone's bottom sheet; its top bar). */
   bottomInset = 0;
   topInset = 0;
@@ -638,26 +661,29 @@ export class CourseView {
   fitBounds(b: { minX: number; minY: number; maxX: number; maxY: number }, opts: { minSpan?: number; margin?: number; animate?: boolean } = {}) {
     const doc = this.doc;
     if (!doc) return;
+    this.autoFit = null;
     const margin = opts.margin ?? 1.2;
     const minSpan = opts.minSpan ?? 0;
     const w = Math.max(b.maxX - b.minX, minSpan, 1) * margin;
     const d = Math.max(b.maxY - b.minY, minSpan * 0.6, 1) * margin;
     const inset = clamp(this.rightInset, 0, this.size.width * 0.5);
+    const leftIn = clamp(this.leftInset, 0, this.size.width * 0.3);
     const covered = clamp(this.bottomInset, 0, this.size.height * 0.6) + clamp(this.topInset, 0, this.size.height * 0.3);
     const H = Math.max(1, this.size.height);
-    const aspect = (this.size.width - inset) / H;
+    const aspect = Math.max(1, this.size.width - inset - leftIn) / H;
     const t = Math.tan((this.camera.fov * DEG) / 2);
     const dist = clamp(Math.max(d / (2 * t), w / (2 * t * aspect)) * (H / Math.max(1, H - covered)), this.controls.minDistance, this.controls.maxDistance);
     let cx = (b.minX + b.maxX) / 2;
     let cy = (b.minY + b.maxY) / 2;
     const worldPerPx = (2 * dist * t) / H;
-    if (inset > 0) {
-      // Look a little right of the middle, so the middle lands in the visible part
+    if (inset !== leftIn) {
+      // Look a little off the middle, so the middle lands in the visible part
       const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
       right.y = 0;
       if (right.lengthSq() > 1e-6) right.normalize();
-      cx += right.x * (inset / 2) * worldPerPx;
-      cy += right.z * (inset / 2) * worldPerPx;
+      const off = (inset - leftIn) / 2;
+      cx += right.x * off * worldPerPx;
+      cy += right.z * off * worldPerPx;
     }
     // (And between the top and bottom panels)
     const shift = this.insetShift(dist);
@@ -678,6 +704,7 @@ export class CourseView {
     const doc = this.doc;
     if (!doc) return;
     this.fitBounds({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, { margin: 1, animate });
+    this.autoFit = () => this.fitSite(false);
   }
 
   /** Fit the holes (or the whole site when there are none). */
@@ -687,6 +714,7 @@ export class CourseView {
     const pts = doc.course.items.filter(i => i.type === "tee" || i.type === "basket") as P[];
     if (pts.length < 2) return this.fitSite(animate);
     this.fitBounds(boundsOf(pts), { margin: 1.25, minSpan: 300, animate });
+    this.autoFit = () => this.fitCourse(false);
   }
 
   /** Fit one hole (tee to basket, with its fairway). */
@@ -706,10 +734,10 @@ export class CourseView {
     if (!b) return;
     const box = this.screenBox(id);
     const m = 24;
-    const visibleW = this.size.width - rightInset;
+    const left = this.leftInset, visibleW = this.size.width - rightInset;
     const top = this.topInset, visibleH = this.size.height - this.bottomInset;
-    if (box && box.x >= m && box.y >= top + m && box.x + box.width <= visibleW - m && box.y + box.height <= visibleH - m) return;
-    if (box && (box.width > visibleW - 2 * m || box.height > visibleH - top - 2 * m)) {
+    if (box && box.x >= left + m && box.y >= top + m && box.x + box.width <= visibleW - m && box.y + box.height <= visibleH - m) return;
+    if (box && (box.width > visibleW - left - 2 * m || box.height > visibleH - top - 2 * m)) {
       this.fitBounds(b, { margin: 1.3 });
       return;
     }

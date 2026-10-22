@@ -57,7 +57,7 @@ test("bringing in a site: photo, elevation, trees, and OpenStreetMap paths and w
   // Straight on to laying out holes
   await expect(page.getByTestId("tool-hint")).toContainText("Click where the tee goes");
   // Listed with what came in by itself, to take out at once
-  await page.getByRole("button", { name: /^3\s*Features$/ }).click();
+  await page.getByRole("button", { name: /^1\s*Site$/ }).click();
   await expect(page.getByTestId("photo-found")).toContainText(/^1 area and \d+ trees? from the photo/);
 });
 
@@ -69,9 +69,9 @@ test("a hole up the hill: elevation change and par on the real terrain", async (
   const top = { x: mid.x + 120 * 3.28084, y: mid.y - 120 * 3.28084 };
   await addHole(page, { x: top.x - 300, y: top.y + 150 }, top);
   const row = page.getByTestId("hole-row");
-  await expect(row).toContainText(/\+\d+(\.\d)? ft/);
   await page.keyboard.press("Escape");
   await row.click();
+  await expect(page.getByTestId("hole-stats")).toContainText(/\+\d+(\.\d)? ft/);
   await expect(page.getByTestId("hole-stats")).toContainText(/uphill/i);
   await expect(page.getByTestId("elevation-profile")).toBeVisible();
   // (its heights with their unit: bare four-figure heights read as years)

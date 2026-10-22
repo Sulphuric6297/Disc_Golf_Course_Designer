@@ -56,6 +56,7 @@ test("turning the map to fill the page", async ({ page }) => {
   await addHole(page, { x: 900, y: 300 }, { x: 1200, y: 100 });
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "3 Map" }).click();
+  await page.getByTestId("fold-paper").locator("summary").click();
   await page.getByTestId("best-rotation").click();
   await expect.poll(async () => Math.abs((await course(page)).style.rotation)).toBeGreaterThan(20);
   await page.getByRole("button", { name: "North up" }).click();
@@ -609,6 +610,8 @@ test("elevation on the Forest map: hills shade the painting, contour lines are p
   await page.getByLabel("Contour lines").uncheck();
   await expect.poll(async () => painting.getAttribute("href")).toBe(shaded);
   // Hills: the relief fine-tuned, from flat (the same as no hill shading) to stronger
+  // (in the Light part's Tone)
+  await page.getByTestId("look-part-light").getByRole("button").first().click();
   const hills = page.getByLabel("Hills");
   await hills.fill("0");
   await hills.dispatchEvent("pointerup");
@@ -778,9 +781,10 @@ test("no explainers: the steps' panels and the printed pages say what things are
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
   const explainers = [/Make the course map beautiful/, /Click a tee spot, then a basket spot/, /A layout plays each hole/, /Quick OB/, /Draw around it/, /Anyone with the link/, /budgets usually run/, /The same sun lights/, /Short on fairways/, /stay clear\. Lone trees/, /Made with/, /PDGA par guidelines/, /Play safe/];
-  for (const step of ["1 Site", "2 Design", "2 Design", "2 Design", "3 Map", "4 Export"]) {
+  for (const step of ["1 Site", "2 Design", "3 Map", "4 Export"]) {
     await page.getByRole("button", { name: step }).click();
-    const text = (await page.getByTestId("side-panel").textContent()) ?? "";
+    // (Design has no side panel: the holes down the map's side)
+    const text = (await page.getByTestId(step === "2 Design" ? "holes-column" : "side-panel").textContent()) ?? "";
     for (const e of explainers) expect(text, `${step}: ${e}`).not.toMatch(e);
   }
   // The printed pages: the course map, a tee sign, the scorecard
@@ -1075,6 +1079,7 @@ test("tee sign settings: one hole's own given to the holes picked (Apply to hole
   await addHole(page, { x: 300, y: 700 }, { x: 700, y: 700 });
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "3 Map" }).click();
+  await page.getByRole("tab", { name: "Tee sign" }).click();
   const panel = page.getByTestId("sign-settings");
   await panel.getByRole("radio", { name: /^Hole \d/ }).click();
   await panel.getByRole("radio", { name: "Hidden" }).click();

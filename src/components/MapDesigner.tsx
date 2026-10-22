@@ -318,7 +318,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       <button className={zb} aria-label="Fit the page" onClick={() => setZoom(null)}><Scan size={compact ? 19 : 16} /></button>
     </div>
   );
-  // (on a phone each tab as wide as its label, "Map" for the course map: all four across the screen)
+  // (on a phone each tab as wide as its label, short ones: all five across the screen)
   const tab = (id: Preview | "general", label: string, short = label) => (
     <button key={id} role="tab" aria-selected={(only && tabId === "general" ? "map" : tabId) === id} onClick={() => { setPreview(id); setZoom(null); }} className={`${compact ? "flex-auto min-w-0 h-10 px-2 rounded-full text-[13px] whitespace-nowrap" : "px-3.5 py-1.5 rounded-full text-sm"} font-semibold ${(only && tabId === "general" ? "map" : tabId) === id ? "bg-white/[0.2] text-zinc-50" : "text-zinc-300 hover:bg-white/[0.09]"}`}>
       {compact ? short : label}
@@ -328,7 +328,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     <div className="absolute inset-0 z-20 bg-zinc-950 flex flex-col isolate overflow-hidden" style={compact ? { paddingTop: topInset } : undefined} data-testid="map-designer">
       <Woods inset />
       <div className={compact ? "flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2 py-2" : "flex items-center gap-2 px-3 py-2.5"}>
-        <div role="tablist" className={compact ? "w-full flex gap-1" : "flex gap-1"}>{[...(only ? [] : [tab("general", "General")]), tab("map", "Course map", "Map"), tab("sign", "Tee sign"), tab("page", "Hole page"), tab("scorecard", "Scorecard")]}</div>
+        <div role="tablist" className={compact ? "w-full flex gap-1" : "flex gap-1"}>{[...(only ? [] : [tab("general", "General")]), tab("map", "Course map", "Map"), tab("sign", "Tee sign", "Sign"), tab("page", "Hole page", "Page"), tab("scorecard", "Scorecard", "Card")]}</div>
         {(preview === "sign" || preview === "page") && doc.holes.length > 0 && (
           <select aria-label={preview === "sign" ? "Hole for the tee sign" : "Hole for the hole page"} className={`bg-white/[0.08] rounded-full px-3 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={holeId ?? ""} onChange={e => setHole(e.target.value)}>
             {doc.holes.map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}</option>)}

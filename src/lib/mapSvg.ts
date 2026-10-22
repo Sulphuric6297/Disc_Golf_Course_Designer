@@ -706,13 +706,16 @@ export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), dr
  * size, all at once.
  */
 export const withLivePaint = <T>(px: number, draw: () => T): T => {
-  const was = [paintLimit, paintLive] as const;
+  // (a print painting meanwhile, between frames, isn't this preview's: its size and its list)
+  const was = [paintLimit, paintLive, printDensity, printJobs] as const;
   paintLimit = px;
   paintLive = true;
+  printDensity = null;
+  printJobs = null;
   try {
     return draw();
   } finally {
-    [paintLimit, paintLive] = was;
+    [paintLimit, paintLive, printDensity, printJobs] = was;
   }
 };
 

@@ -1,6 +1,6 @@
 // The side panel follows the steps: what to do now, and the lists for it. The map stays the one
 // canvas; the steps never lock anything.
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowRight, Info, X, ClipboardCheck, Download, Eye, EyeOff, MapPinned, Palette, Plus, Route, Trash2, type LucideIcon } from "lucide-react";
 import { TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
 import { activeLayout, holeTees } from "../lib/course";
@@ -428,6 +428,13 @@ export function HolesColumn() {
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
   const [more, setMore] = useState(false);
   const u = doc.units;
+  // (Fitting the map keeps clear of the column: its width and margins)
+  useEffect(() => {
+    let raf = 0;
+    const set = () => { const v = getView(); if (v) v.setLeftInset(196); else raf = requestAnimationFrame(set); };
+    set();
+    return () => { cancelAnimationFrame(raf); getView()?.setLeftInset(0); };
+  }, []);
   return (
     <div className="absolute left-3 top-3 bottom-3 z-20 flex flex-col gap-2 pointer-events-none" data-testid="holes-column">
       <div className="glass pointer-events-auto rounded-[22px] p-1.5 flex flex-col gap-0.5 max-h-full min-h-0 w-[172px]" data-testid="hole-list">

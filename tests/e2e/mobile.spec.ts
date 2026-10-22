@@ -79,7 +79,7 @@ test.describe("phone", () => {
     await expect(page.getByTestId("compass")).toBeVisible();
     await above();
     // (with the panel lower, more of them)
-    await nav(page).getByRole("button", { name: /Holes/ }).tap();
+    await nav(page).getByRole("button", { name: /Design/ }).tap();
     await above();
   });
 
@@ -109,12 +109,12 @@ test.describe("phone", () => {
       await expect(nav(page).getByRole("button", { name: new RegExp(label) })).toHaveAttribute("aria-current", "step");
     }
     // Tapping the step that is open shows more of its panel, and tapping again less
-    await nav(page).getByRole("button", { name: /Holes/ }).tap();
+    await nav(page).getByRole("button", { name: /Design/ }).tap();
     await settle(page);
     expect(await detent(page)).toBe("peek");
-    await nav(page).getByRole("button", { name: /Holes/ }).tap();
+    await nav(page).getByRole("button", { name: /Design/ }).tap();
     await expect.poll(() => detent(page)).toBe("half");
-    await nav(page).getByRole("button", { name: /Holes/ }).tap();
+    await nav(page).getByRole("button", { name: /Design/ }).tap();
     await expect.poll(() => detent(page)).toBe("peek");
   });
 
@@ -217,7 +217,7 @@ test.describe("phone", () => {
 
   test("an area drawn with taps: Undo takes a point back, Done finishes it", async ({ page }) => {
     await oneHole(page);
-    await nav(page).getByRole("button", { name: /Features/ }).tap();
+    await nav(page).getByRole("button", { name: /Design/ }).tap();
     await page.locator('[data-tool="draw-area"]').tap();
     await page.getByTestId("area-kind-ob").tap();
     await expect(page.getByTestId("tool-hint")).toContainText("Tap the corners, then Done");
@@ -243,7 +243,7 @@ test.describe("phone", () => {
 
   test("the app never scrolls as a whole when something low in the sheet is brought into view", async ({ page }) => {
     await oneHole(page);
-    await nav(page).getByRole("button", { name: /Features/ }).tap();
+    await nav(page).getByRole("button", { name: /Design/ }).tap();
     await settle(page);
     expect(await detent(page)).toBe("peek");
     const before = (await page.getByTestId("plan").boundingBox())!;
@@ -280,7 +280,7 @@ test.describe("phone", () => {
     await expect.poll(async () => (await course(page)).holes[0].par).toBe(4);
     await page.getByTestId("selection-back").tap();
     await expect.poll(async () => (await editorState(page)).selectedId).toBeNull();
-    await expect(page.getByTestId("sheet-title")).toHaveText("Holes");
+    await expect(page.getByTestId("sheet-title")).toHaveText("Design");
   });
 
   test("holding a finger on a tee opens its menu (the right-click); Delete there, and Undo", async ({ page }) => {
@@ -359,15 +359,15 @@ test.describe("phone", () => {
     await expect.poll(scale).toBeLessThan(now * 0.85);
   });
 
-  test("the Design preview fits the phone's width (its four tabs too, whole); pinch and the buttons zoom it", async ({ page }) => {
+  test("the Map step's preview fits the phone's width (its five tabs too, whole); pinch and the buttons zoom it", async ({ page }) => {
     await oneHole(page);
-    await nav(page).getByRole("button", { name: /Design/ }).tap();
+    await nav(page).getByRole("button", { name: /Map/ }).tap();
     const pageBox = async () => (await page.getByTestId("design-page").boundingBox())!;
     await expect(page.getByTestId("design-page")).toBeVisible();
     const vw = page.viewportSize()!.width;
     const tabs = page.getByRole("tablist").first().getByRole("tab");
-    await expect(tabs).toHaveCount(4);
-    for (let i = 0; i < 4; i++) {
+    await expect(tabs).toHaveCount(5);
+    for (let i = 0; i < 5; i++) {
       const t = (await tabs.nth(i).boundingBox())!;
       expect(t.x).toBeGreaterThanOrEqual(0);
       expect(t.x + t.width).toBeLessThanOrEqual(vw);
@@ -387,9 +387,9 @@ test.describe("phone", () => {
     await expect.poll(zoom).toBeGreaterThan(fit);
   });
 
-  test("a pinch on the Design preview while the map paints still ends (the painting goes in once the fingers lift)", async ({ page }) => {
+  test("a pinch on the Map step's preview while the map paints still ends (the painting goes in once the fingers lift)", async ({ page }) => {
     await oneHole(page);
-    await nav(page).getByRole("button", { name: /Design/ }).tap();
+    await nav(page).getByRole("button", { name: /Map/ }).tap();
     await expect(page.getByTestId("design-page")).toBeVisible();
     const painting = () => page.evaluate(() => (window as any).__dgPainting());
     const zoom = async () => parseInt((await page.getByTestId("design-zoom").textContent()) ?? "0", 10);
@@ -448,15 +448,15 @@ test.describe("phone on its side", () => {
     await expect(page.getByTestId("bottom-nav")).toHaveCount(0);
     const side = page.getByTestId("side-sheet");
     await expect(side).toBeVisible();
-    await nav(page).getByRole("button", { name: /Review/ }).tap();
-    await expect(side.getByTestId("sheet-title")).toHaveText("Review");
+    await nav(page).getByRole("button", { name: /Export/ }).tap();
+    await expect(side.getByTestId("sheet-title")).toHaveText("Export");
     const mapW = async () => (await page.getByTestId("plan").boundingBox())!.width;
     const w = await mapW();
     await page.getByTestId("panel-toggle").tap();
     await expect(side).toHaveCount(0);
     await expect.poll(mapW).toBeGreaterThan(w + 200);
     // A step brings the panel back
-    await nav(page).getByRole("button", { name: /Holes/ }).tap();
+    await nav(page).getByRole("button", { name: /Design/ }).tap();
     await expect(side).toBeVisible();
     // (the map back at its width before the hole is tapped where it shows)
     await expect.poll(mapW).toBeLessThan(w + 2);
@@ -488,7 +488,7 @@ test.describe("tablet on its side", () => {
 
   test("a tablet on its side keeps the desktop layout; the top bar and tools fit on screen", async ({ page }) => {
     await oneHole(page);
-    await expect(page.getByTestId("side-panel")).toBeVisible();
+    await expect(page.getByTestId("holes-column")).toBeVisible();
     await expect(page.getByRole("button", { name: "2 Design" })).toBeVisible();
     await expect(page.getByTestId("bottom-nav")).toHaveCount(0);
     const vw = page.viewportSize()!.width;
@@ -509,11 +509,14 @@ test("desktop at 1600 × 1000 keeps its layout: top bar steps, side panel, tool 
   await oneHole(page);
   const header = (await page.locator("header").boundingBox())!;
   expect(header.height).toBe(50);
+  // (the Site step's panel; Design has the holes down the map's side instead)
+  await page.getByRole("button", { name: "1 Site" }).click();
   const side = (await page.getByTestId("side-panel").boundingBox())!;
   expect(side.width).toBe(340);
   // (the bar and the panel float, 10 px from the edges and from each other)
   expect(side.y).toBe(70);
-  await expect(page.getByRole("button", { name: "1 Site" })).toBeVisible();
+  await page.getByRole("button", { name: "2 Design" }).click();
+  await expect(page.getByTestId("holes-column")).toBeVisible();
   await expect(page.getByRole("toolbar", { name: "Tools" })).toBeVisible();
   // (no prompt over the map with Select; a tool's own prompt when one is picked)
   await expect(page.getByTestId("tool-hint")).toHaveCount(0);

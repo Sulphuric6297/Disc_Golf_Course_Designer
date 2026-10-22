@@ -182,7 +182,8 @@ test("a building as a rectangle by two clicks (Rectangle comes first for buildin
   await blankCourse(page);
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "2 Design" }).click();
-  await page.getByTestId("feature-structure-building").click();
+  await page.keyboard.press("s");
+  await page.getByTestId("structure-kind-building").click();
   await expect(page.getByTestId("draw-shape-box")).toHaveAttribute("aria-checked", "true");
   // One corner, then the opposite one (it once only ever added corner points)
   await clickPlan(page, 300, 300);

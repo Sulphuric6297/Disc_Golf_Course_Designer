@@ -34,7 +34,7 @@ test("long holes get par 4 and 5 by the PDGA's effective length", async ({ page 
   const rows = page.getByTestId("hole-row");
   await expect(rows.nth(0)).toContainText("P4");
   await expect(rows.nth(1)).toContainText("P5");
-  await expect(page.getByTestId("course-totals")).toContainText("9");
+  await expect(page.getByTestId("course-totals-button")).toContainText(/9\s*par/);
 });
 
 test("bending the throw line: pull the middle dot to add a dogleg, double-click to remove it", async ({ page }) => {
@@ -145,6 +145,8 @@ test("another tee and pin for a hole, and layouts pick between them", async ({ p
   // (one layout: no switcher above the holes)
   await expect(page.getByRole("radiogroup", { name: "Active layout" })).toHaveCount(0);
   // A red layout to pin B
+  // (the course's totals open its layouts)
+  await page.getByTestId("course-totals-button").click();
   await page.getByRole("button", { name: "Edit layouts" }).click();
   await page.getByRole("button", { name: "Add a layout" }).click();
   const editor = page.getByTestId("layout-editor");
@@ -376,7 +378,7 @@ test("a hole with two numbers (1/2): shown as both, counted twice; a new hole do
   await expect(page.getByTestId("inspector-title")).toHaveText("Hole 1/2");
   await expect(page.getByTestId("hole-row").first()).toContainText("1/2");
   // Counted twice, as on the scorecard; its badge holds both numbers
-  await expect(page.getByTestId("hole-list")).toContainText("2 holes");
+  await expect(page.getByTestId("course-totals-button")).toContainText(/2\s*holes/);
   expect(await page.getByTestId("hole-badge").first().evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 100, minY: 100, maxX: 1000, maxY: 900 }, { animate: false }));
   const b = await addHole(page, { x: 600, y: 600 }, { x: 900, y: 600 });
@@ -426,6 +428,7 @@ test("automatic walks to the next hole turned off and on from the Holes step", a
   await page.keyboard.press("Escape");
   const walk = () => page.evaluate(id => !!(window as any).__dgView.scene.getObjectByName(`walk:${id}`), a.id);
   await expect.poll(walk).toBe(true);
+  await page.getByTestId("course-totals-button").click();
   const toggle = page.getByTestId("auto-walks").getByText("Walks to the next hole (automatic)");
   await toggle.click();
   await expect.poll(async () => (await course(page)).style.nextTee).toBe(false);
