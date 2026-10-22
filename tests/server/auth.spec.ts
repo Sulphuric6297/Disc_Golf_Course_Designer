@@ -202,7 +202,7 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await expect(pat.getByTestId("publish-button")).toHaveCount(0);
   await site(pat);
   await addHole(pat, { x: 100, y: 500 }, { x: 650, y: 500 });
-  await expect(pat.getByTestId("save-status")).toHaveText("Draft saved");
+  await expect(pat.getByTestId("save-status")).toHaveText(/^Draft saved/);
   // The owner doesn't see it, and keeps changing the course meanwhile
   await admin.reload();
   await admin.getByTestId("my-courses").getByTestId("course-card").click();
@@ -217,7 +217,7 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await expect.poll(async () => (await course(pat)).holes.length).toBe(2);
   await pat.getByTestId("publish-button").click();
   await expect(pat.getByTestId("draft-changes")).toHaveText("Holes: 1 added");
-  await pat.getByTestId("publish-form").getByLabel(/What changed/).fill("a long hole by the creek");
+  await pat.getByTestId("publish-form").getByLabel(/^Name/).fill("a long hole by the creek");
   await pat.getByTestId("publish-form").getByRole("button", { name: "Publish" }).click();
   await expect(pat.getByTestId("publish-button")).toHaveCount(0);
   await expect.poll(async () => (await course(pat)).holes.length).toBe(3);
@@ -247,7 +247,7 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await expect.poll(async () => (await course(pat)).holes.length).toBe(3);
   await site(pat);
   await addHole(pat, { x: 900, y: 200 }, { x: 900, y: 700 });
-  await expect(pat.getByTestId("save-status")).toHaveText("Draft saved");
+  await expect(pat.getByTestId("save-status")).toHaveText(/^Draft saved/);
   await pat.getByTestId("publish-button").click();
   await pat.getByTestId("publish-form").getByRole("button", { name: "Send to the owner" }).click();
   await expect(pat.getByTestId("publish-button")).toHaveCount(0);
@@ -271,4 +271,70 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await admin.getByTestId("history-button").click();
   await expect(versions.first()).toContainText("Restored");
   await expect(versions.filter({ hasText: "OK'd by Admin" })).toHaveCount(1);
+});
+
+test("owners: a draft too, published to the official layout; a draft behind the course updated, picking per part", async ({ browser }) => {
+  test.setTimeout(240_000);
+  const admin = await as(browser, "admin");
+  await admin.getByTestId("my-courses").getByTestId("course-card").click();
+  await expect(admin.getByTestId("edit-mode")).toHaveText("Official layout");
+  // (the editors' drafts publish straight away again)
+  await admin.getByTestId("share-button").click();
+  await admin.getByTestId("approval-toggle").uncheck();
+  await admin.keyboard.press("Escape");
+  const holes0 = (await course(admin)).holes.length;
+
+  // The owner works in a draft: the official layout stays as it is meanwhile
+  await admin.getByTestId("edit-mode").click();
+  await admin.getByTestId("mode-draft").click();
+  await expect(admin.getByTestId("edit-mode")).toHaveText("Draft (no changes)");
+  await site(admin);
+  await addHole(admin, { x: 900, y: 300 }, { x: 900, y: 800 });
+  await expect(admin.getByTestId("save-status")).toHaveText("Draft saved · Holes: 1 added");
+  await expect(admin.getByTestId("draft-dot")).toHaveCount(1);
+  await admin.getByRole("textbox", { name: "Course name" }).first().fill("Admin's name");
+  await admin.keyboard.press("Tab");
+  await expect(admin.getByTestId("save-status")).toContainText("Course settings changed");
+
+  // Meanwhile Pat publishes a draft that renames the course too
+  const pat = await as(browser, "pat");
+  await pat.getByTestId("shared-courses").getByTestId("course-card").click();
+  await expect.poll(async () => (await course(pat)).holes.length).toBe(holes0);
+  await pat.getByRole("textbox", { name: "Course name" }).first().fill("Pat's name");
+  await pat.keyboard.press("Tab");
+  await expect(pat.getByTestId("save-status")).toContainText("Draft saved");
+  await pat.getByTestId("publish-button").click();
+  await pat.getByTestId("publish-form").getByRole("button", { name: "Publish" }).click();
+  await expect(pat.getByTestId("publish-button")).toHaveCount(0);
+
+  // The owner's draft is behind: updated, keeping the course's name (Pat's)
+  await admin.reload();
+  await admin.getByTestId("my-courses").getByTestId("course-card").click();
+  await expect(admin.getByTestId("behind-bar")).toBeVisible();
+  await admin.getByTestId("update-draft").click();
+  await expect(admin.getByTestId("clash")).toHaveCount(1);
+  await expect(admin.getByTestId("clash")).toContainText("The course's name");
+  await admin.getByTestId("clash").getByRole("combobox").selectOption("theirs");
+  await admin.getByTestId("update-form").getByRole("button", { name: "Update draft" }).click();
+  await expect(admin.getByTestId("behind-bar")).toHaveCount(0);
+  await expect.poll(async () => (await course(admin)).name).toBe("Pat's name");
+  await expect.poll(async () => (await course(admin)).holes.length).toBe(holes0 + 1);
+
+  // Published to the official layout, named from what changed
+  await admin.getByTestId("publish-button").click();
+  await expect(admin.getByTestId("draft-changes")).toHaveText("Holes: 1 added");
+  await expect(admin.getByTestId("clashes")).toHaveCount(0);
+  await admin.getByTestId("publish-form").getByRole("button", { name: "Publish" }).click();
+  await expect(admin.getByTestId("edit-mode")).toHaveText("Draft (no changes)");
+  await admin.getByTestId("history-button").click();
+  const top = admin.getByTestId("versions").locator("li").first();
+  await expect(top).toContainText("Published by Admin");
+  await expect(top).toContainText("Holes: 1 added");
+  await admin.keyboard.press("Escape");
+
+  // Back to publishing as it goes
+  await admin.getByTestId("edit-mode").click();
+  await admin.getByTestId("mode-live").click();
+  await expect(admin.getByTestId("edit-mode")).toHaveText("Official layout");
+  await expect.poll(async () => (await course(admin)).holes.length).toBe(holes0 + 1);
 });

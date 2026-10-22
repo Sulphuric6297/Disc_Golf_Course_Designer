@@ -2,41 +2,74 @@
 // looking at an earlier version or a sent draft.
 import { useEffect, useState } from "react";
 import { ArrowLeft, Check, History, RotateCcw, X } from "lucide-react";
-import { changesBetween } from "../lib/merge";
-import { getDoc } from "../state/course";
 import { useAuth } from "./api";
 import {
-  acceptSubmission, declineSubmission, discardDraft, endPreview, listSubmissions, listVersions, previewSubmission, previewVersion, publishDraft,
-  restoreVersion, useServerCourse, type SubmissionRow, type VersionRow
+  acceptSubmission, declineSubmission, discardDraft, draftChanges, endPreview, listSubmissions, listVersions, prepareMerge, previewSubmission, previewVersion,
+  publishDraft, restoreVersion, updateDraft, useServerCourse, type Merge, type SubmissionRow, type VersionRow
 } from "./courses";
 import { Dialog, Form, when } from "./parts";
 import { inputCls } from "../components/ui";
 
 
-/** "2 holes added, 1 changed · 3 features changed" */
-export function changeText(before: object, after: object) {
-  const c = changesBetween(before as never, after as never);
-  const part = (x: { added: number; removed: number; changed: number }, what: string) => {
-    const bits = [x.added && `${x.added} added`, x.changed && `${x.changed} changed`, x.removed && `${x.removed} removed`].filter(Boolean);
-    return bits.length ? `${what}: ${bits.join(", ")}` : "";
-  };
-  return [part(c.holes, "Holes"), part(c.items, "Features"), c.other.length ? "Course settings changed" : ""].filter(Boolean).join(" · ") || "No changes";
+/** The parts both your draft and the course changed: keep yours (the default) or the course's. */
+function Clashes({ m, picked, setPicked }: { m: Merge; picked: Set<number>; setPicked: (s: Set<number>) => void }) {
+  if (!m.clashes.length) return null;
+  const pick = (i: number, theirs: boolean) => { const n = new Set(picked); if (theirs) n.add(i); else n.delete(i); setPicked(n); };
+  return (
+    <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3" data-testid="clashes">
+      <p className="text-sm text-amber-100 mb-2">Changed in the course too since your draft started:</p>
+      <ul className="space-y-1.5">
+        {m.clashes.map((c, i) => (
+          <li key={`${c.list}:${c.id}`} className="flex items-center gap-2 text-sm" data-testid="clash">
+            <span className="flex-1 min-w-0 truncate text-zinc-100">{c.label}{c.mine === undefined ? " (you removed it)" : c.theirs === undefined ? " (removed in the course)" : ""}</span>
+            <select className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-100" value={picked.has(i) ? "theirs" : "mine"} onChange={e => pick(i, e.target.value === "theirs")} aria-label={`Keep for ${c.label}`}>
+              <option value="mine">Keep mine</option>
+              <option value="theirs">Keep the course's</option>
+            </select>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
-export function PublishDialog({ onClose, base }: { onClose: () => void; base: object | null }) {
-  const approval = useServerCourse(s => s.approval);
+export function PublishDialog({ onClose }: { onClose: () => void }) {
+  const { approval, role } = useServerCourse();
+  const sending = approval && role !== "owner";
   const [note, setNote] = useState("");
-  const summary = base ? changeText(base, getDoc()) : "";
+  const [m, setM] = useState<Merge | null>(null);
+  const [picked, setPicked] = useState(new Set<number>());
+  useEffect(() => { if (!sending) void prepareMerge().then(setM); }, [sending]);
+  const summary = draftChanges();
   return (
-    <Dialog title={approval ? "Send your changes" : "Publish your changes"} onClose={onClose} testid="publish-dialog">
+    <Dialog title={sending ? "Send your changes" : "Publish your changes"} onClose={onClose} testid="publish-dialog">
       <p className="text-sm text-zinc-300 mb-3" data-testid="draft-changes">{summary}</p>
-      <Form compact submit={approval ? "Send to the owner" : "Publish"} testid="publish-form" onSubmit={async () => { await publishDraft(note); onClose(); }}>
+      {m && <Clashes m={m} picked={picked} setPicked={setPicked} />}
+      <Form compact submit={sending ? "Send to the owner" : "Publish"} testid="publish-form" onSubmit={async () => { await publishDraft(note, m, picked); onClose(); }}>
         <label className="block">
-          <span className="block text-xs font-medium text-zinc-300 mb-1">What changed (optional)</span>
-          <textarea className={`${inputCls} min-h-[64px]`} value={note} maxLength={500} onChange={e => setNote(e.target.value)} />
+          <span className="block text-xs font-medium text-zinc-300 mb-1">Name (optional)</span>
+          <input className={inputCls} value={note} maxLength={200} placeholder={summary} onChange={e => setNote(e.target.value)} />
         </label>
       </Form>
       <button className="mt-4 text-xs text-red-300 hover:text-red-200" onClick={() => { if (confirm("Throw away your draft?")) void discardDraft().then(onClose); }} data-testid="discard-draft">Discard draft</button>
+    </Dialog>
+  );
+}
+
+/** The course's changes since your draft started, brought into the draft. */
+export function UpdateDialog({ onClose }: { onClose: () => void }) {
+  const [m, setM] = useState<Merge | null>(null);
+  const [picked, setPicked] = useState(new Set<number>());
+  useEffect(() => { void prepareMerge().then(setM); }, []);
+  return (
+    <Dialog title="Update your draft" onClose={onClose} testid="update-dialog">
+      <p className="text-sm text-zinc-300 mb-3">The course changed since your draft started. Its changes go into your draft.</p>
+      {m ? (
+        <>
+          <Clashes m={m} picked={picked} setPicked={setPicked} />
+          <Form compact submit="Update draft" testid="update-form" onSubmit={async () => { await updateDraft(m, picked); onClose(); }}>{null}</Form>
+        </>
+      ) : <div className="h-10" aria-busy="true" />}
     </Dialog>
   );
 }
@@ -114,9 +147,19 @@ export function ReviewDialog({ onClose }: { onClose: () => void }) {
 
 /** Over the map while looking at an earlier version or a sent draft. */
 export function PreviewBar() {
-  const { preview, role, approval } = useServerCourse();
+  const { preview, role, approval, behind, draft } = useServerCourse();
   const me = useAuth(s => s.session?.user?.id);
+  const open = useAuth(s => s.open);
   const [busy, setBusy] = useState(false);
+  // (in a draft that the course moved on from: bring its changes in)
+  if (!preview && behind && draft) {
+    return (
+      <div className="fixed left-1/2 -translate-x-1/2 top-[68px] z-30 max-w-[calc(100vw-24px)] bg-zinc-900/95 border border-sky-700/60 rounded-xl shadow-2xl px-3 py-2 flex flex-wrap items-center gap-2" role="region" aria-label="Course changed" data-testid="behind-bar">
+        <span className="text-sm text-zinc-100 mr-2">The course changed since your draft started</span>
+        <button className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold bg-sky-600 hover:bg-sky-500 text-white" onClick={() => open("update")} data-testid="update-draft">Update draft</button>
+      </div>
+    );
+  }
   if (!preview) return null;
   const go = (fn: () => Promise<void>) => async () => { setBusy(true); try { await fn(); } finally { setBusy(false); } };
   const btn = "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold disabled:opacity-50";

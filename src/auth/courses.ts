@@ -1,7 +1,8 @@
-// Courses kept on the HyzerLab server. Owners' changes save straight into the course (one made
-// over a newer save is stopped and asked about); editors' changes save into a draft of their own,
-// which Publish merges into the course (or, when the owner asks for it, sends for the owner's
-// OK). Earlier versions and sent drafts can be looked at (view only) before restoring or
+// Courses kept on the HyzerLab server. Changes save into a draft of your own, which Publish
+// merges into the course (editors: or sends for the owner's OK, when the owner asks for it);
+// owners can instead "Publish as I go", saving straight into the course (one made over a newer
+// save is stopped and asked about). When both a draft and the course changed the same part, you
+// pick which to keep. Earlier versions and sent drafts can be looked at (view only) before restoring or
 // accepting them. The File menu and the home page list the courses shared with you.
 import { create } from "zustand";
 import { generateId } from "../constants";
@@ -10,7 +11,7 @@ import { courseStats, courseTotals, playsOf } from "../lib/holeStats";
 import { canopyFor } from "../lib/forest";
 import { paintedForPrint, renderPoster } from "../lib/mapSvg";
 import { canvasBlob, svgToCanvas } from "../lib/raster";
-import { mergeCourse } from "../lib/merge";
+import { describeChanges, holesChanged, keepTheirs, mergeCourse, type Merged } from "../lib/merge";
 import { reliefOf } from "../components/useRelief";
 import { safeDoc } from "../lib/safeDoc";
 import type { PlanMeta } from "../lib/storage";
@@ -46,14 +47,19 @@ export type Preview = { kind: "version"; id: number; label: string } | { kind: "
 
 export const useServerCourse = create<{
   id: string | null; version: number; role: Role | null; status: Status; conflict: string;
-  /** Editors work in a draft; it exists once they've changed something. */
+  /** Working in a draft (editors always; owners unless publishing as they go); it exists once
+   * something was changed. */
   draft: boolean;
+  /** An owner saving straight into the course ("Publish as I go"). */
+  live: boolean;
+  /** The course moved on since the draft started (Update draft brings its changes in). */
+  behind: boolean;
   /** The owner's switch: editors' drafts wait for the owner's OK. */
   approval: boolean;
   preview: Preview | null;
   /** Drafts waiting for the owner's OK (for the owner). */
   pending: number;
-}>(() => ({ id: null, version: 0, role: null, status: "saved", conflict: "", draft: false, approval: false, preview: null, pending: 0 }));
+}>(() => ({ id: null, version: 0, role: null, status: "saved", conflict: "", draft: false, live: true, behind: false, approval: false, preview: null, pending: 0 }));
 const state = () => useServerCourse.getState();
 const set = (s: Partial<ReturnType<typeof state>>) => useServerCourse.setState(s);
 
@@ -72,7 +78,7 @@ const remember = (id: string | null) => { try { if (id) localStorage.setItem(las
 
 const editing = () => state().role === "owner" || state().role === "editor";
 const canSave = () => editing() && state().status !== "conflict" && !state().preview;
-const inDraft = () => state().role === "editor";
+export const inDraft = () => state().role === "editor" || (state().role === "owner" && !state().live);
 const noPhoto = (doc: CourseDoc) => ({ ...doc, background: null });
 /** A document from the server in the app's own form (filled in, cleaned): what it's compared in. */
 const usable = (doc: CourseDoc) => normalizeCourse(safeDoc({ ...doc, background: null }));
@@ -91,8 +97,8 @@ async function save() {
       sentBackground = null;
       remember(r.id);
     } else if (inDraft()) {
-      await api("PUT", `courses/${id}/draft`, { doc: noPhoto(doc), summary, base: state().draft ? undefined : { doc: noPhoto(base!.doc), version: base!.version } });
-      set({ draft: true });
+      const r = await api<{ version: number }>("PUT", `courses/${id}/draft`, { doc: noPhoto(doc), summary, base: state().draft ? undefined : { doc: noPhoto(base!.doc), version: base!.version } });
+      set({ draft: true, behind: r.version > base!.version });
     } else {
       const r = await api<{ version: number }>("PUT", `courses/${id}`, { doc: noPhoto(doc), version: state().version, summary });
       set({ version: r.version });
@@ -167,7 +173,7 @@ export const startServerAutosave = () => {
   return () => { stopSaving(); keepSelect(); };
 };
 
-type CourseRead = { id: string; version: number; role: Role; approval: boolean; doc: CourseDoc; hasBackground: boolean; hasThumbnail: boolean };
+type CourseRead = { id: string; version: number; role: Role; approval: boolean; live: boolean; doc: CourseDoc; hasBackground: boolean; hasThumbnail: boolean };
 const readCourse = (id: string) => api<CourseRead>("GET", `courses/${id}`);
 const readPhoto = async (id: string, has: boolean) => (has ? (await api<{ data: string | null }>("GET", `courses/${id}/background`)).data : null);
 
@@ -188,7 +194,7 @@ export async function openServerCourse(id: string, quiet = false) {
     const photo = await readPhoto(id, c.hasBackground);
     let doc = c.doc, shown = photo, draft = false;
     base = null;
-    if (c.role === "editor") {
+    if (c.role === "editor" || (c.role === "owner" && !c.live)) {
       const { draft: d } = await api<{ draft: { doc: CourseDoc; baseDoc: CourseDoc; baseVersion: number; hasPhoto: boolean } | null }>("GET", `courses/${id}/draft`);
       if (d) {
         doc = d.doc;
@@ -197,7 +203,7 @@ export async function openServerCourse(id: string, quiet = false) {
         if (d.hasPhoto) shown = (await api<{ data: string | null }>("GET", `courses/${id}/draft/photo`)).data;
       } else base = { doc: usable(c.doc), version: c.version, photo };
     }
-    set({ id, version: c.version, role: c.role, approval: c.approval, status: "saved", conflict: "", draft, preview: null, pending: 0 });
+    set({ id, version: c.version, role: c.role, approval: c.approval, live: c.live, behind: !!base && c.version > base.version, status: "saved", conflict: "", draft, preview: null, pending: 0 });
     thumbFor = null;
     thumbAt = 0;
     sentBackground = shown;
@@ -218,7 +224,7 @@ const reopen = () => { const id = state().id; return id ? openServerCourse(id) :
 /** A course not on the server yet: saved there (yours) once something is on it. */
 export async function startUnsaved(doc: CourseDoc) {
   if (state().id) await saveNow();
-  set({ id: null, version: 0, role: "owner", status: "saved", conflict: "", draft: false, approval: false, preview: null, pending: 0 });
+  set({ id: null, version: 0, role: "owner", status: "saved", conflict: "", draft: false, live: true, behind: false, approval: false, preview: null, pending: 0 });
   sentBackground = null;
   base = null;
   opened = null;
@@ -277,25 +283,37 @@ export async function keepMine() {
 
 // --- Publishing a draft
 
-/** What the draft started from (for what it changes), or none. */
-export const draftBase = () => base?.doc ?? null;
 
-/** The draft merged with the course as it is now (the parts both changed: the draft's). */
-const merged = async (id: string, draft: CourseDoc, from: CourseDoc) => {
+/** A draft merged with the course as it is now, and the version merged with. */
+export type Merge = Merged & { version: number };
+const mergeWith = async (id: string, draft: CourseDoc, from: CourseDoc): Promise<Merge> => {
   const c = await readCourse(id);
-  const m = mergeCourse(usable(from) as never, usable(c.doc) as never, usable(draft) as never);
-  return { ...m, version: c.version };
+  return { ...mergeCourse(usable(from) as never, usable(c.doc) as never, usable(draft) as never), version: c.version };
 };
 
-const said = (clashes: string[]) => (clashes.length ? ` Yours replaced changes made meanwhile to ${clashes.slice(0, 3).join(", ")}${clashes.length > 3 ? "…" : ""}.` : "");
+/** The draft merged with the course as it is now: what Publish would put in (its clashes to pick). */
+export async function prepareMerge() {
+  const id = state().id;
+  if (!id || !base) return null;
+  await saveNow();
+  return mergeWith(id, getDoc(), base.doc);
+}
 
-/** Publishes the draft (or, when the owner wants to OK it, sends it). */
-export async function publishDraft(note: string) {
+/** What the draft changes ("Holes: 1 added"): the version's name when none is given. */
+export const draftChanges = () => (base ? describeChanges(base.doc, usable(getDoc())) : "");
+
+/** The holes the draft changes (for the dots in the hole list), or none. */
+export const draftHoles = (doc: CourseDoc) => (base && inDraft() ? holesChanged(base.doc as never, doc as never) : new Set<string>());
+
+/** Publishes the draft as merged (the clashes picked keep the course's); the owner's OK first,
+ * for an editor when the owner wants it. */
+export async function publishDraft(note: string, m: Merge | null, picked = new Set<number>()) {
   const id = state().id;
   if (!id || !base) return;
   await saveNow();
-  if (state().approval) {
-    await api("POST", `courses/${id}/submissions`, { note });
+  const name = note.trim() || draftChanges();
+  if (state().approval && state().role !== "owner") {
+    await api("POST", `courses/${id}/submissions`, { note: name });
     await reopen();
     toast("Sent to the owner.", "success");
     return;
@@ -303,19 +321,48 @@ export async function publishDraft(note: string) {
   const draft = getDoc();
   // (a new photo in the draft goes with it)
   const photo = draft.background !== base.photo ? draft.background : undefined;
+  let merge = m ?? (await mergeWith(id, draft, base.doc));
   for (let tries = 0; ; tries++) {
-    const m = await merged(id, draft, base.doc);
+    const doc = keepTheirs(merge, picked);
     try {
-      await api("POST", `courses/${id}/publish`, { doc: m.doc, version: m.version, summary: summaryOf(m.doc), photo, note });
+      await api("POST", `courses/${id}/publish`, { doc, version: merge.version, summary: summaryOf(doc), photo, note: name });
       await reopen();
-      void makeThumbnail(normalizeCourse({ ...m.doc, background: photo === undefined ? base?.photo ?? null : photo }));
-      toast(`Published.${said(m.clashes)}`, "success");
+      void makeThumbnail(normalizeCourse({ ...doc, background: photo === undefined ? base?.photo ?? null : photo }));
+      toast("Published.", "success");
       return;
     } catch (e) {
-      // (the course changed while merging: once more)
+      // (the course changed again meanwhile: merged once more, the same picks where they still apply)
       if (!(e instanceof ApiFail && e.status === 409) || tries >= 2) throw e;
+      const again = await mergeWith(id, draft, base.doc);
+      picked = new Set([...picked].map(i => merge.clashes[i]).map(c => again.clashes.findIndex(x => x.list === c.list && x.id === c.id)).filter(i => i >= 0));
+      merge = again;
     }
   }
+}
+
+/** Brings the course's changes since the draft started into the draft (the clashes picked keep
+ * the course's); the draft then starts from the course as it is now. */
+export async function updateDraft(m: Merge, picked = new Set<number>()) {
+  const id = state().id;
+  if (!id || !base) return;
+  const c = await readCourse(id);
+  const doc = normalizeCourse(safeDoc({ ...keepTheirs(m, picked), background: getDoc().background }));
+  base = { doc: usable(c.doc), version: c.version, photo: await readPhoto(id, c.hasBackground) };
+  await api("PUT", `courses/${id}/draft`, { doc: noPhoto(doc), summary: summaryOf(doc), base: { doc: noPhoto(base.doc), version: base.version } });
+  set({ draft: true, behind: false, version: c.version });
+  opened = doc;
+  useCourse.setState({ readOnly: false });
+  show(doc);
+  toast("Your draft has the course's latest changes.", "success");
+}
+
+/** An owner: straight into the course as they go, or in a draft. */
+export async function setLive(on: boolean) {
+  const id = state().id;
+  if (!id) { set({ live: on }); return; }
+  await saveNow();
+  await api("POST", `courses/${id}/live`, { live: on });
+  await reopen();
 }
 
 /** Drops the draft: the course as it is now again. */
@@ -368,14 +415,14 @@ export async function acceptSubmission(sid: string) {
   if (!id) return;
   const s = await api<{ doc: CourseDoc; baseDoc: CourseDoc; photo: string | null; note: string }>("GET", `courses/${id}/submissions/${sid}`);
   for (let tries = 0; ; tries++) {
-    const m = await merged(id, s.doc, s.baseDoc);
+    const m = await mergeWith(id, s.doc, s.baseDoc);
     try {
       await api("POST", `courses/${id}/submissions/${sid}/accept`, { doc: m.doc, version: m.version, summary: summaryOf(m.doc), photo: s.photo ?? undefined, note: s.note });
       set({ preview: null });
       await reopen();
       thumbFor = null;
       void makeThumbnail();
-      toast(`Accepted.${said(m.clashes)}`, "success");
+      toast(m.clashes.length ? `Accepted. Theirs replaced changes made meanwhile to ${m.clashes.slice(0, 3).map(c => c.label).join(", ")}${m.clashes.length > 3 ? "…" : ""}.` : "Accepted.", "success");
       return;
     } catch (e) {
       if (!(e instanceof ApiFail && e.status === 409) || tries >= 2) throw e;

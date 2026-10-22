@@ -73,7 +73,8 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
       const [c] = await tx`
         insert into courses (name, holes, doc, summary, created_by, updated_by)
         values (${doc.name}, ${doc.holes.length}, ${tx.json(stored(doc) as never)}, ${tx.json((sum ?? {}) as never)}, ${a.user.id}, ${a.user.id}) returning id, version`;
-      await tx`insert into course_members (course_id, user_id, role) values (${c.id}, ${a.user.id}, 'owner')`;
+      // (a new course: its maker edits it straight away, publishing as they go)
+      await tx`insert into course_members (course_id, user_id, role, live) values (${c.id}, ${a.user.id}, 'owner', true)`;
       await snapshot(tx, c.id, "created", "", a.user.id);
       return c;
     });
@@ -83,13 +84,14 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
 
   app.get<Id>("/api/courses/:id", async req => {
     const { id } = parse(ids, req.params);
-    const { role: r } = await role(req, id, "viewer");
+    const { a, role: r } = await role(req, id, "viewer");
+    const [m] = await sql`select live from course_members where course_id = ${id} and user_id = ${a.user.id}`;
     const [c] = await sql`
       select c.doc, c.version, c.approval,
         exists (select 1 from course_backgrounds b where b.course_id = c.id) as has_background,
         exists (select 1 from course_thumbnails t where t.course_id = c.id) as has_thumbnail
       from courses c where c.id = ${id}`;
-    return { id, version: c.version, role: r, approval: c.approval, doc: c.doc, hasBackground: c.has_background, hasThumbnail: c.has_thumbnail };
+    return { id, version: c.version, role: r, approval: c.approval, live: r === "owner" && m.live, doc: c.doc, hasBackground: c.has_background, hasThumbnail: c.has_thumbnail };
   });
 
   // The owner's own changes, as they go (editors change a draft, and publish it)
@@ -116,6 +118,19 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
     await role(req, id, "owner");
     const [c] = await sql`delete from courses where id = ${id} returning name`;
     await audit(sql, req, "course.deleted", { course: id, name: c.name });
+    return { ok: true };
+  });
+
+  // How you edit it: straight into the course ("Publish as I go", owners), or in a draft
+  app.post<Id>("/api/courses/:id/live", async req => {
+    const { id } = parse(ids, req.params);
+    const { a } = await role(req, id, "owner");
+    const b = parse(z.object({ live: z.boolean() }), req.body);
+    if (b.live) {
+      const [d] = await sql`select 1 from course_drafts where course_id = ${id} and user_id = ${a.user.id}`;
+      if (d) throw new ApiError(409, "Publish or discard your draft first");
+    }
+    await sql`update course_members set live = ${b.live} where course_id = ${id} and user_id = ${a.user.id}`;
     return { ok: true };
   });
 
