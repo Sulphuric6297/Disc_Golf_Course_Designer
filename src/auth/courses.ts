@@ -49,6 +49,8 @@ export const useServerCourse = create<{
   draft: boolean;
   /** An owner saving straight into the course ("Publish as I go"). */
   live: boolean;
+  /** When the draft was last saved by hand (Save draft). */
+  savedAt?: number;
   /** The course moved on since the draft started (Update draft brings its changes in). */
   behind: boolean;
   /** The owner's switch: editors' drafts wait for the owner's OK. */
@@ -158,6 +160,15 @@ const thumbnailSoon = () => {
   const idle = (window as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => void }).requestIdleCallback;
   (idle ? (f: () => void) => idle(f, { timeout: 10_000 }) : (f: () => void) => setTimeout(f, 3000))(() => void thumbnailNow());
 };
+
+/** Your draft saved by hand, named: saved now, then kept in the history to come back to. */
+export async function saveDraftAs(note: string) {
+  const id = state().id;
+  if (!id || !inDraft()) return;
+  await saveNow();
+  await api("POST", `courses/${id}/draft/save`, { note: note.trim() });
+  set({ savedAt: Date.now() });
+}
 
 /** Saves now (waiting for one already going). */
 export async function saveNow() {

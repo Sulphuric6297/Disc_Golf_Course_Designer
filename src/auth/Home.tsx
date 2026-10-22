@@ -109,6 +109,8 @@ export function Home() {
   const listVersion = useAuth(s => s.listVersion);
   const refresh = () => listServerCourses().then(setList, () => setList([]));
   useEffect(() => { void refresh(); }, [listVersion]);
+  // (drawn: the editor may load behind the list now; a frame later, so the cards paint first)
+  useEffect(() => { if (list) requestAnimationFrame(() => setTimeout(() => useAuth.setState({ listShown: true }), 0)); }, [list]);
 
   const [park, setPark] = useState("");
   const parks = useMemo(() => [...new Set((list ?? []).map(c => c.park).filter(Boolean))].sort(), [list]);

@@ -40,6 +40,8 @@ export const useAuth = create<{
   open: (d: Dialog) => void;
   /** The share dialog's tab to open on (people, or the public link). */
   shareTab: "people" | "public";
+  /** The course list has been drawn (the editor may load behind it now). */
+  listShown: boolean;
   share: (tab: "people" | "public") => void;
 }>((set, get) => ({
   session: null,
@@ -56,6 +58,7 @@ export const useAuth = create<{
   },
   open: dialog => set({ dialog, shareTab: "people" }),
   shareTab: "people",
+  listShown: false,
   share: shareTab => set({ dialog: "share", shareTab })
 }));
 

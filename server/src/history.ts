@@ -37,6 +37,14 @@ export async function keepCurrent(tx: Tx, courseId: string) {
   if (!v || v.version !== c.version) await snapshot(tx, courseId, "autosave", "", c.updated_by);
 }
 
+/** Someone's draft saved by hand, named (theirs alone to see, kept like the others). */
+export async function saveDraft(tx: Tx, courseId: string, userId: string, note: string) {
+  const [d] = await tx`select doc, base_version, summary from course_drafts where course_id = ${courseId} and user_id = ${userId}`;
+  if (!d) return false;
+  await tx`insert into course_versions (course_id, version, doc, summary, kind, note, by_user) values (${courseId}, ${d.base_version}, ${tx.json(d.doc)}, ${tx.json(d.summary)}, 'draft', ${note}, ${userId})`;
+  return true;
+}
+
 /** The main version as it is now, into the history. */
 export async function snapshot(tx: Tx, courseId: string, kind: "created" | "autosave" | "publish" | "restore", note: string, by: string | null, approvedBy: string | null = null) {
   const [c] = await tx`select version, doc, summary from courses where id = ${courseId}`;

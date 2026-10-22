@@ -3,12 +3,12 @@
 // how you edit, review and history; then comments, share, notices and your account. The same
 // choices for the phone's app menu.
 import { useEffect, useRef, useState } from "react";
-import { HelpCircle, History, Inbox, LayoutGrid, LogOut, MessageCircle, Send, Share2, Trash2, UserRound, Users } from "lucide-react";
+import { HelpCircle, History, Inbox, Save, LayoutGrid, LogOut, MessageCircle, Send, Share2, Trash2, UserRound, Users } from "lucide-react";
 import { FOCUS, MENU_ROW, MenuRow, POPOVER } from "../components/ui";
 import { NoticeBell } from "./Notices";
 import { useComments } from "./Comments";
 import { SERVER, useAuth } from "./api";
-import { discardDraft, draftChangeCount, draftChanges, inDraft, keepMine, reloadTheirs, saveNow, setLive, thumbnailNow, useServerCourse } from "./courses";
+import { discardDraft, draftChangeCount, draftChanges, inDraft, keepMine, reloadTheirs, saveDraftAs, saveNow, setLive, thumbnailNow, useServerCourse } from "./courses";
 import { useCourse } from "../state/course";
 import { useAllowed } from "./perms";
 
@@ -92,6 +92,12 @@ export function CourseChip() {
           {drafting && (
             <>
               <div className="px-3 py-1.5 text-[12px] text-zinc-400">{draft ? draftChanges() : "No changes in your draft yet"}</div>
+              {draft && (
+                <form className="flex items-center gap-1.5 px-3 py-1.5" data-testid="save-draft" onSubmit={e => { e.preventDefault(); const f = e.currentTarget; const name = (f.elements.namedItem("name") as HTMLInputElement).value; void choose(() => saveDraftAs(name)); }}>
+                  <input name="name" aria-label="Name for this save" placeholder="Name this save (optional)" className="flex-1 min-w-0 bg-white/[0.07] rounded-full px-3 py-1.5 text-[13px] text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-400/80" />
+                  <button type="submit" className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[12.5px] font-semibold bg-white/[0.12] text-zinc-50"><Save size={13} /> Save draft</button>
+                </form>
+              )}
               {n > 0 && <Row icon={<Send size={15} />} onClick={() => { m.setOpen(false); open("publish"); }}>{sends ? "Send to the owner…" : "Publish…"}</Row>}
               {draft && <Row icon={<Trash2 size={15} />} danger testid="discard-draft" onClick={() => { if (confirm("Throw away your draft? The course stays as it is.")) void choose(discardDraft); }}>Discard draft</Row>}
               <div className="border-t border-white/[0.08] my-1" />

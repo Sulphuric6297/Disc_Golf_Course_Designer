@@ -10,7 +10,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Ctx } from "../app.js";
 import { ApiError, audit, parse } from "../http.js";
-import { draftCheckpoint, keepCurrent, snapshot } from "../history.js";
+import { draftCheckpoint, keepCurrent, saveDraft, snapshot } from "../history.js";
 import { BIG, IMAGE, courseDoc, ids, roleOn, stored, summary, type Id } from "./courses.js";
 
 /** A photo sent with a change: a new one, none (null), or the course's own (left out). */
@@ -103,6 +103,15 @@ export async function versionRoutes(app: FastifyInstance, { sql }: Ctx) {
     await sql`delete from course_drafts where course_id = ${id} and user_id = ${a.user.id}`;
     await audit(sql, req, "course.published", { course: id, version, note: b.note });
     return { version };
+  });
+
+  // Your draft saved by hand, with a name, to come back to from the history
+  app.post<Id>("/api/courses/:id/draft/save", async req => {
+    const { id } = parse(ids, req.params);
+    const { a } = await role(req, id, "editor");
+    const b = parse(z.object({ note }), req.body);
+    if (!(await saveDraft(sql, id, a.user.id, b.note || "Saved draft"))) throw new ApiError(409, "No draft to save");
+    return { ok: true };
   });
 
   // --- Sent for the owner's OK

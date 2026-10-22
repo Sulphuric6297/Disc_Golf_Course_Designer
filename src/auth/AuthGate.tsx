@@ -36,6 +36,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // (the map loads after the course list shows: it starts resting if the list is up)
   useEffect(() => onLiveView(v => v?.setPaused(useAuth.getState().home)), []);
   const after = () => load();
+  // (the editor, a few MB, loads once the course list is up: the list never waits on it)
+  const listShown = useAuth(s => s.listShown);
+  const [warm, setWarm] = useState(!home);
+  useEffect(() => {
+    if (warm) return;
+    if (!home || listShown) { setWarm(true); return; }
+    // (a list that's slow to come: the editor after a few seconds anyway)
+    const id = window.setTimeout(() => setWarm(true), 4000);
+    return () => window.clearTimeout(id);
+  }, [home, warm, listShown]);
 
   if (failed) return <Screen title="Can't reach the server"><button className="text-sm text-orange-300" onClick={() => location.reload()}>Try again</button></Screen>;
   if (!session) return <div className="min-h-[100dvh] bg-zinc-950" aria-busy="true" />;
@@ -59,7 +69,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (session.stage === "full" && session.user) {
     return (
       <>
-        {children}
+        {warm && children}
         {home && <Home />}
         {dialog === "account" && <AccountDialog onClose={() => open(null)} />}
         {dialog === "people" && session.user.isAdmin && <PeopleDialog onClose={() => open(null)} />}

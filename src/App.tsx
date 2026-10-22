@@ -1,5 +1,6 @@
 // The app: header with the steps, the step panel, the map (2D and 3D in one view), the tools, the
 // inspector for the selection, and the dialogs.
+import { inDraft, saveDraftAs, saveNow } from "./auth/courses";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MapPinned, Route, X } from "lucide-react";
 import { Header } from "./components/Header";
@@ -270,6 +271,8 @@ export default function App() {
       if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); setGoTo(g => !g); return; }
       if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) useCourse.getState().redo(); else useCourse.getState().undo(); return; }
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); useCourse.getState().redo(); return; }
+      // (Ctrl+S: your draft saved now, into the history; out of a draft, saved now)
+      if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); void (inDraft() ? saveDraftAs("") : saveNow()); return; }
       if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (s.step !== "map") duplicateSelection(); return; }
       if (mod && e.key.toLowerCase() === "c" && !s.teeView && s.step !== "map") { if (copySelection()) e.preventDefault(); return; }
       if (mod && e.key.toLowerCase() === "x" && !s.teeView && s.step !== "map") { e.preventDefault(); cutSelection(); return; }
