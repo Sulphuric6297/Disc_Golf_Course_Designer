@@ -2,19 +2,68 @@
 // ashes, pines and bushes from its presets, each seed its own tree, made once at unit height and
 // shared (woods draw them instanced). Its photographed bark and leaves, lit like its demo.
 //
-// A far version keeps the very same branches: the small twigs go and the leaves thin out, each
-// one left bigger, so a tree far off has the same outline at a fraction of the cost.
+// A tree is grown once for what it is (its preset, seed and own settings) and gives three
+// versions: the full tree close by; the same branches without the small twigs and one leaf in
+// six, bigger, in the middle distance; trunk, main limbs and a few big leaf clusters far off.
 import * as THREE from "three";
 import { Tree } from "@dgreenheck/ez-tree";
 import type { Detail, TreeProto, TreeShape } from "./treeKit";
 
-/** ez-tree's presets behind each kind's variants (the variant picks one, and its seed). */
+/** ez-tree's presets behind each kind's variants (a variant picks one, and its seed). */
 const PRESETS: Record<TreeShape, string[]> = {
   broadleaf: ["Oak Medium", "Ash Medium", "Oak Large", "Ash Large", "Oak Small", "Ash Small"],
   conifer: ["Pine Medium", "Pine Large", "Pine Small", "Pine Large"],
   bush: ["Bush 1", "Bush 3", "Bush 1", "Bush 3"]
 };
 export const EZ_VARIANTS: Record<TreeShape, number> = { broadleaf: 6, conifer: 4, bush: 4 };
+
+/** The species a tree can be, by kind (ez-tree's preset families). */
+export const SPECIES: Record<TreeShape, { id: string; label: string; presets: [string, string, string] }[]> = {
+  broadleaf: [
+    { id: "oak", label: "Oak", presets: ["Oak Small", "Oak Medium", "Oak Large"] },
+    { id: "ash", label: "Ash", presets: ["Ash Small", "Ash Medium", "Ash Large"] }
+  ],
+  conifer: [{ id: "pine", label: "Pine", presets: ["Pine Small", "Pine Medium", "Pine Large"] }],
+  bush: [
+    { id: "round", label: "Round", presets: ["Bush 1", "Bush 1", "Bush 1"] },
+    { id: "dense", label: "Dense", presets: ["Bush 3", "Bush 3", "Bush 3"] },
+    { id: "airy", label: "Airy", presets: ["Bush 2", "Bush 2", "Bush 2"] }
+  ]
+};
+/** A species' preset for a tree of this height (a young tree, a grown one, an old one). */
+export const presetFor = (shape: TreeShape, species: string, height: number) => {
+  const sp = SPECIES[shape].find(s => s.id === species) ?? SPECIES[shape][0];
+  return sp.presets[shape === "bush" ? 0 : height < 30 ? 0 : height < 58 ? 1 : 2];
+};
+export const speciesOfPreset = (shape: TreeShape, preset: string) => (SPECIES[shape].find(s => s.presets.includes(preset)) ?? SPECIES[shape][0]).id;
+
+/** What a tree is grown from: its preset and seed, and its own settings (unset: the preset's). */
+export type TreeSpec = {
+  preset: string;
+  seed: number;
+  /** Where the branches start, as a share of the trunk (ez-tree's branch.start[1]). */
+  crownBase?: number;
+  /** Main limbs off the trunk (a pine: its branches up the trunk). */
+  limbs?: number;
+  /** Trunk thickness, 1 = the preset's. */
+  trunk?: number;
+  /** Leaves, 1 = the preset's. */
+  fullness?: number;
+};
+
+/** A pool variant's spec (what an untouched tree of the woods or the survey is). */
+export const specOf = (shape: TreeShape, variant: number): TreeSpec => {
+  const list = PRESETS[shape];
+  return { preset: list[variant % list.length], seed: 1000 + variant * 7919 };
+};
+const keyOf = (s: TreeSpec) => JSON.stringify([s.preset, s.seed, s.crownBase ?? null, s.limbs ?? null, s.trunk ?? null, s.fullness ?? null]);
+
+/** The preset's own values of the settings (what the sliders start at). */
+export const presetDefaults = (preset: string) => {
+  const t = new Tree();
+  t.loadPreset(preset);
+  return { crownBase: t.options.branch.start[1] as number, limbs: t.options.branch.children[0] as number };
+};
 
 const mats = new Map<string, THREE.Material>();
 /** One material per bark and leaf texture, shared; instancing-friendly (each tree's tint comes in
@@ -31,13 +80,21 @@ const materialFor = (kind: "bark" | "leaves", from: THREE.MeshPhongMaterial, key
   return m;
 };
 
-/** Grows the tree, noting which bark indices belong to which branch level (for the far version). */
-const grow = (preset: string, seed: number) => {
+/** Grows the tree, noting which bark indices belong to which branch level (for the lighter versions). */
+const grow = (spec: TreeSpec) => {
   const t = new Tree();
-  t.loadPreset(preset);
-  t.options.seed = seed;
+  t.loadPreset(spec.preset);
+  const o = t.options;
+  o.seed = spec.seed;
   // (aspen leaves are autumn-yellow: the green landscapes take ash leaves on those bushes)
-  if (t.options.leaves.type === "aspen") t.options.leaves.type = "ash";
+  if (o.leaves.type === "aspen") o.leaves.type = "ash";
+  if (spec.crownBase !== undefined) o.branch.start[1] = Math.min(0.95, Math.max(0, spec.crownBase));
+  if (spec.limbs !== undefined) o.branch.children[0] = Math.max(1, Math.round(spec.limbs));
+  if (spec.trunk !== undefined) o.branch.radius[0] *= Math.max(0.3, spec.trunk);
+  if (spec.fullness !== undefined) {
+    o.leaves.count = Math.max(1, Math.round(o.leaves.count * spec.fullness));
+    o.leaves.size *= 0.85 + 0.15 * Math.min(1.6, spec.fullness);
+  }
   const levels: { level: number; from: number; to: number }[] = [];
   const self = t as unknown as { generateBranch: (b: { level: number }) => void; branches: { indices: number[] } };
   const orig = self.generateBranch.bind(t);
@@ -85,33 +142,50 @@ const barkUpTo = (g: THREE.BufferGeometry, levels: { level: number; from: number
   return out;
 };
 
-/** A shape: grown at its preset's size, then set at height 1 standing on the origin. */
+type Grown = Record<Detail, TreeProto>;
+const grown = new Map<string, Grown>();
+
+/** A tree's three versions, at height 1 standing on the origin (grown once per spec). */
+export const ezTree = (shape: TreeShape, spec: TreeSpec, detail: Detail): TreeProto => {
+  const key = keyOf(spec);
+  let g = grown.get(key);
+  if (!g) {
+    const { t, levels } = grow(spec);
+    const bark0 = t.branchesMesh.geometry as THREE.BufferGeometry, leaves0 = t.leavesMesh.geometry as THREE.BufferGeometry;
+    const barkMat = materialFor("bark", t.branchesMesh.material as THREE.MeshPhongMaterial, t.options.bark.type);
+    const leafMat = materialFor("leaves", t.leavesMesh.material as THREE.MeshPhongMaterial, t.options.leaves.type);
+    const box = new THREE.Box3().setFromObject(t);
+    const h = Math.max(0.01, box.max.y - box.min.y), w = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+    const bush = shape === "bush", pine = shape === "conifer";
+    const versions: [Detail, THREE.BufferGeometry, THREE.BufferGeometry][] = [
+      ["near", bark0, leaves0],
+      ["mid", barkUpTo(bark0, levels, 1), thinLeaves(leaves0, bush ? 4 : 6, bush ? 1.9 : 2.3)],
+      ["far", barkUpTo(bark0, levels, pine ? 0 : 1), thinLeaves(leaves0, bush ? 12 : 26, bush ? 3.2 : 4.6)]
+    ];
+    g = {} as Grown;
+    for (const [d, bark, leaves] of versions) {
+      for (const geo of [bark, leaves]) {
+        geo.translate(0, -box.min.y, 0);
+        geo.scale(1 / h, 1 / h, 1 / h);
+        geo.computeBoundingSphere();
+        geo.computeBoundingBox();
+        geo.userData.shared = true;
+      }
+      g[d] = { bark, leaves, needles: pine, barkMat, leafMat, natural: w / h };
+    }
+    grown.set(key, g);
+    // (a tree's own shapes, set by hand, don't pile up: the oldest of those go)
+    if (grown.size > 400) for (const k of grown.keys()) { if (grown.size <= 360) break; if (!POOL.has(k)) grown.delete(k); }
+  }
+  return g[detail];
+};
+const POOL = new Set<string>();
+
+/** A pool variant's shape (what an untouched tree of the woods or the survey is). */
 export const ezProto = (shape: TreeShape, variant: number, detail: Detail): TreeProto => {
-  const list = PRESETS[shape];
-  const preset = list[variant % list.length];
-  const { t, levels } = grow(preset, 1000 + variant * 7919);
-  let bark = t.branchesMesh.geometry as THREE.BufferGeometry, leaves = t.leavesMesh.geometry as THREE.BufferGeometry;
-  const barkMat = materialFor("bark", t.branchesMesh.material as THREE.MeshPhongMaterial, t.options.bark.type);
-  const leafMat = materialFor("leaves", t.leavesMesh.material as THREE.MeshPhongMaterial, t.options.leaves.type);
-  // The middle distance: the small twigs gone, one leaf in six left, bigger. Far: trunk and main
-  // limbs, and a few big leaf clusters where the leaves were (the outline is what shows)
-  if (detail === "mid") {
-    bark = barkUpTo(bark, levels, shape === "conifer" ? 1 : 1);
-    leaves = thinLeaves(leaves, shape === "bush" ? 4 : 6, shape === "bush" ? 1.9 : 2.3);
-  } else if (detail === "far") {
-    bark = barkUpTo(bark, levels, shape === "conifer" ? 0 : 1);
-    leaves = thinLeaves(leaves, shape === "bush" ? 12 : 26, shape === "bush" ? 3.2 : 4.6);
-  }
-  const box = new THREE.Box3().setFromObject(t);
-  const h = Math.max(0.01, box.max.y - box.min.y), w = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
-  for (const g of [bark, leaves]) {
-    g.translate(0, -box.min.y, 0);
-    g.scale(1 / h, 1 / h, 1 / h);
-    g.computeBoundingSphere();
-    g.computeBoundingBox();
-    g.userData.shared = true;
-  }
-  return { bark, leaves, needles: shape === "conifer", barkMat, leafMat, natural: w / h };
+  const spec = specOf(shape, variant);
+  POOL.add(keyOf(spec));
+  return ezTree(shape, spec, detail);
 };
 
 /** A tree's tint, made gentle for photographed leaves: toward the landscape's color, never dark. */

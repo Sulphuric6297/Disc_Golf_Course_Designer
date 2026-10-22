@@ -11,8 +11,9 @@ import { fmtDist, fmtElev } from "../lib/units";
 import { fairwayTrees } from "../lib/lidar";
 import { addHoleOb, deleteSelection, duplicateSelection, editWalks, markObBeyond, select, setTeeLevel, shareBasket } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface, TreeKind } from "../types";
+import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
+import { TreeSettings } from "./TreeSettings";
 import { HoleFlight } from "./FlyoverSettings";
 import { HoleSteps } from "./HoleSteps";
 import { getView } from "./MapViewport";
@@ -547,16 +548,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
       break;
     }
     case "tree":
-      body = (
-        <>
-          <Field label="Kind">
-            <Segmented label="Tree kind" value={item.treeType ?? "deciduous"} onChange={v => set({ treeType: v as TreeKind })} options={[{ value: "deciduous", label: "Leafy" }, { value: "conifer", label: "Pine" }, { value: "palm", label: "Palm" }, { value: "bush", label: "Bush" }]} />
-          </Field>
-          <Slider label="Crown radius" min={2} max={40} value={Math.round(item.radius)} onChange={v => set({ radius: v })} format={v => fmtDist(v, u)} />
-          {/* (taller or shorter keeps its shape: the crown grows or shrinks with it) */}
-          <Slider label="Height" min={3} max={110} value={Math.round(item.height ?? item.radius * 2.6)} onChange={v => { const h0 = item.height ?? item.radius * 2.6; set({ height: v, radius: Math.max(2, Math.min(40, Math.round(item.radius * (v / h0) * 10) / 10)) }); }} format={v => fmtDist(v, u)} />
-        </>
-      );
+      body = <TreeSettings item={item} set={(patch, history = true) => set(patch as Record<string, unknown>, history)} />;
       break;
     case "amenity":
       body = (

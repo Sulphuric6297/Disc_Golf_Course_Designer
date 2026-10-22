@@ -5,7 +5,7 @@
 // underneath). A few shapes of each kind are made once, at unit height, and shared by every tree:
 // woods draw them instanced, a close version near the camera and a lighter one farther away.
 import * as THREE from "three";
-import { EZ_VARIANTS, ezProto, ezTint } from "./ezShapes";
+import { EZ_VARIANTS, ezProto, ezTint, ezTree, type TreeSpec } from "./ezShapes";
 
 export type TreeShape = "broadleaf" | "conifer" | "bush";
 export type Detail = "near" | "mid" | "far";
@@ -477,8 +477,8 @@ export const treeSpread = (asked: number) => Math.min(50, Math.max(0.02, asked))
 const woodsSpread = (asked: number) => Math.min(1.5, Math.max(0.72, asked));
 
 /** One tree as meshes (shared shape and materials): `height` ft tall, `width` ft across the crown. */
-export const treeMeshes = (shape: TreeShape, variant: number, height: number, width: number, tint: THREE.Color, detail: Detail = "near", classic = false) => {
-  const proto = treeProto(shape, variant, detail, classic);
+export const treeMeshes = (shape: TreeShape, variant: number, height: number, width: number, tint: THREE.Color, detail: Detail = "near", classic = false, spec?: TreeSpec) => {
+  const proto = spec && !classic ? ezTree(shape, spec, detail) : treeProto(shape, variant, detail, classic);
   const group = new THREE.Group();
   const sx = treeSpread(width / height / naturalOf(shape, proto));
   const leafMat = (proto.leafMat ?? leafMaterial(proto.needles)) as THREE.MeshStandardMaterial;

@@ -71,6 +71,20 @@ export interface TreeItem extends BaseItem {
    * from a wood or the survey keeps the look it had there. */
   variant?: number;
   leaf?: string;
+  /** Its species within the kind (an oak or an ash, a round or an airy bush…) and its seed: a new
+   * seed grows a different tree of the same species. */
+  species?: string;
+  seed?: number;
+  /** Where its branches start, a share of the trunk (unset: the species' own). */
+  crownBase?: number;
+  /** Lean from upright, degrees, toward `leanDir` (degrees clockwise from north). */
+  lean?: number;
+  leanDir?: number;
+  /** Main limbs off the trunk (a pine: its branches up the trunk). */
+  limbs?: number;
+  /** Trunk thickness and leaves, 1 = the species' own. */
+  trunk?: number;
+  fullness?: number;
   /** Found on the imported aerial photo (replaced on re-import). */
   importSource?: "photo";
 }

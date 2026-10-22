@@ -2,12 +2,24 @@
 // leaf-spray cards), and palms (a ringed trunk and drooping fronds). (From the Security Camera
 // Planner.)
 import * as THREE from "three";
+import { presetFor, specOf, speciesOfPreset, type TreeSpec } from "./ezShapes";
 import { clamp } from "../constants";
 import type { TreeItem } from "../types";
 import { treeMeshes, variantOf, type TreeShape, forestDetail, midOf } from "./treeKit";
 
 export const getTreeSignature = (item: TreeItem) =>
-  `${item.radius}|${item.height ?? 30}|${item.width ?? 1}|${item.treeType ?? 'deciduous'}|${item.color}|${item.variant ?? ""}|${item.leaf ?? ""}`;
+  `${item.radius}|${item.height ?? 30}|${item.width ?? 1}|${item.treeType ?? 'deciduous'}|${item.color}|${item.variant ?? ""}|${item.leaf ?? ""}|` +
+  JSON.stringify([item.species, item.seed, item.crownBase, item.lean, item.leanDir, item.limbs, item.trunk, item.fullness, item.rotation]);
+
+/** What a tree item is grown from: its pool shape when untouched, else its own spec. */
+export const itemSpec = (item: TreeItem, shape: TreeShape, variant: number, height: number): TreeSpec | undefined => {
+  const own = item.species !== undefined || item.seed !== undefined || item.crownBase !== undefined || item.limbs !== undefined || item.trunk !== undefined || item.fullness !== undefined;
+  if (!own) return undefined;
+  const pool = specOf(shape, variant);
+  // (its own preset until a species is picked: a setting changed doesn't grow it anew)
+  const preset = item.species !== undefined && item.species !== speciesOfPreset(shape, pool.preset) ? presetFor(shape, item.species, height) : pool.preset;
+  return { preset, seed: item.seed ?? pool.seed, crownBase: item.crownBase, limbs: item.limbs, trunk: item.trunk, fullness: item.fullness };
+};
 
 /** Leaf color for a tree from its (map) color: lifted to a real crown's lightness, varied a little. */
 export const foliageTint = (color: string, rand: () => number) => {
@@ -47,12 +59,21 @@ export const create3dTree = (item: TreeItem, look?: TreeLook): THREE.Group => {
     }
     // (close, middle and far versions, as the woods have, by distance from the camera)
     const variant = item.variant ?? variantOf(item.id, shape), w = item.radius * 2 * widthMultiplier;
+    const spec = itemSpec(item, shape, variant, height);
     const lod = new THREE.LOD();
-    lod.addLevel(treeMeshes(shape, variant, height, w, tint, "near"), 0);
-    lod.addLevel(treeMeshes(shape, variant, height, w, tint, "mid"), forestDetail.nearFt);
-    lod.addLevel(treeMeshes(shape, variant, height, w, tint, "far"), midOf(forestDetail.nearFt));
+    lod.addLevel(treeMeshes(shape, variant, height, w, tint, "near", false, spec), 0);
+    lod.addLevel(treeMeshes(shape, variant, height, w, tint, "mid", false, spec), forestDetail.nearFt);
+    lod.addLevel(treeMeshes(shape, variant, height, w, tint, "far", false, spec), midOf(forestDetail.nearFt));
+    // Its lean: tilted over about its foot (the map's north is -z; the turn is undone so the lean
+    // keeps its compass direction whichever way the tree is turned)
+    const tilt = new THREE.Group();
+    if (item.lean) {
+      const dir = ((item.leanDir ?? 0) + (item.rotation ?? 0)) * (Math.PI / 180);
+      tilt.rotation.set(-Math.cos(dir) * item.lean * (Math.PI / 180), 0, -Math.sin(dir) * item.lean * (Math.PI / 180), "XZY");
+    }
+    tilt.add(lod);
     group = new THREE.Group();
-    group.add(lod);
+    group.add(tilt);
   } else {
     group = new THREE.Group();
     const base = foliageTint(look?.color ?? item.color, next);
