@@ -3,12 +3,12 @@
 // (mix and match). Pure: the painter (lib/forest) draws what this resolves, the Design step shows it.
 import type { MapStyle } from "../types";
 
-export type LookTheme = "classic" | "parkland" | "hollow" | "golden" | "highland";
-export type TreeStyle = "classic" | "summer" | "drybrush" | "golden" | "highland";
-export type GrassStyle = "painted" | "meadow" | "field" | "mown";
-export type FairwayStyle = "soft" | "stripes" | "sunlit";
+export type LookTheme = "classic" | "brushwood" | "hollow" | "golden" | "storybook" | "gouache";
+export type TreeStyle = "classic" | "cluster" | "drybrush" | "golden" | "cloud" | "gouache";
+export type GrassStyle = "painted" | "meadow" | "field" | "storybook" | "mown";
+export type FairwayStyle = "soft" | "stripes" | "sunlit" | "outlined";
 export type PathStyle = "painted" | "clean" | "trail";
-export type WaterStyle = "deep" | "painterly" | "glinting";
+export type WaterStyle = "deep" | "painterly" | "glinting" | "flat";
 export type LightMode = "golden" | "midday" | "night";
 
 export type LookParts = {
@@ -28,8 +28,8 @@ export const LOOK_THEMES: ThemeDef[] = [
     light: "midday", sun: 0.8
   },
   {
-    id: "parkland", label: "Parkland", hint: "A clear summer morning: big rounded crowns, fresh greens, cool teal shade.",
-    parts: { trees: { style: "summer", density: 1, size: 1.1, variety: 0.55, pines: 0.12 }, grass: { style: "painted", bright: 1.3, texture: 1 }, fairway: { style: "soft", bright: 1.08 }, paths: { style: "painted" }, water: { style: "deep" } },
+    id: "brushwood", label: "Brushwood", hint: "Painted clusters of dry-brushed leaves with a lighter broken rim, a bright meadow, a painterly creek.",
+    parts: { trees: { style: "cluster", density: 1, size: 1.05, variety: 0.7, pines: 0.15 }, grass: { style: "meadow", bright: 1.02, texture: 1 }, fairway: { style: "soft", bright: 1.04 }, paths: { style: "painted" }, water: { style: "painterly" } },
     light: "midday", sun: 0.8
   },
   {
@@ -43,19 +43,24 @@ export const LOOK_THEMES: ThemeDef[] = [
     light: "golden", sun: 1
   },
   {
-    id: "highland", label: "Highland", hint: "Mountain pines in tiers, granite boulders, a mown fairway, crisp cool light.",
-    parts: { trees: { style: "highland", density: 1, size: 1.05, variety: 0.5, pines: 0.75 }, grass: { style: "mown", bright: 1, texture: 0.8 }, fairway: { style: "stripes", bright: 1 }, paths: { style: "clean" }, water: { style: "deep" } },
+    id: "storybook", label: "Storybook", hint: "Scalloped cloud crowns with bright highlights, flat bright grass, an outlined striped fairway, trail lines.",
+    parts: { trees: { style: "cloud", density: 0.95, size: 1, variety: 0.8, pines: 0.12 }, grass: { style: "storybook", bright: 1.02, texture: 0.8 }, fairway: { style: "outlined", bright: 1 }, paths: { style: "trail" }, water: { style: "flat" } },
+    light: "midday", sun: 0.8
+  },
+  {
+    id: "gouache", label: "Gouache", hint: "Flat painted layers, dark to light with soft edges, cut-out grass tones, a sunlit fairway. Calm and graphic.",
+    parts: { trees: { style: "gouache", density: 1, size: 1.05, variety: 0.6, pines: 0.2 }, grass: { style: "painted", bright: 1.12, texture: 1 }, fairway: { style: "sunlit", bright: 1.02 }, paths: { style: "clean" }, water: { style: "deep" } },
     light: "midday", sun: 0.8
   }
 ];
 
 /** The choices for each part, labelled (a part takes any style's look). */
 export const PART_CHOICES: { [K in LookPart]: { id: LookParts[K]["style"]; label: string }[] } = {
-  trees: [{ id: "classic", label: "Classic" }, { id: "summer", label: "Summer" }, { id: "drybrush", label: "Deep woods" }, { id: "golden", label: "Golden" }, { id: "highland", label: "Mountain pines" }],
-  grass: [{ id: "painted", label: "Painted" }, { id: "meadow", label: "Meadow" }, { id: "field", label: "Golden field" }, { id: "mown", label: "Mown" }],
-  fairway: [{ id: "soft", label: "Soft" }, { id: "stripes", label: "Mown stripes" }, { id: "sunlit", label: "Sunlit" }],
+  trees: [{ id: "classic", label: "Classic" }, { id: "cluster", label: "Painted cluster" }, { id: "drybrush", label: "Deep woods" }, { id: "golden", label: "Golden" }, { id: "cloud", label: "Cloud" }, { id: "gouache", label: "Gouache" }],
+  grass: [{ id: "painted", label: "Painted" }, { id: "meadow", label: "Meadow" }, { id: "field", label: "Golden field" }, { id: "storybook", label: "Storybook" }, { id: "mown", label: "Mown" }],
+  fairway: [{ id: "soft", label: "Soft" }, { id: "stripes", label: "Mown stripes" }, { id: "sunlit", label: "Sunlit" }, { id: "outlined", label: "Outlined" }],
   paths: [{ id: "painted", label: "Painted" }, { id: "clean", label: "Clean" }, { id: "trail", label: "Trail line" }],
-  water: [{ id: "deep", label: "Deep" }, { id: "painterly", label: "Painterly" }, { id: "glinting", label: "Glinting" }]
+  water: [{ id: "deep", label: "Deep" }, { id: "painterly", label: "Painterly" }, { id: "glinting", label: "Glinting" }, { id: "flat", label: "Flat" }]
 };
 export const LIGHT_MODES: { id: LightMode; label: string }[] = [{ id: "golden", label: "Golden hour" }, { id: "midday", label: "Midday" }, { id: "night", label: "Night" }];
 
@@ -88,10 +93,11 @@ export const lightOf = (s: Pick<MapStyle, "mapLook" | "lightMode" | "goldenSun">
 export type Daylight = { len: number; warm: number; cool: number; grade: [number[], number[]] | null; mist?: boolean };
 const DAY: Record<TreeStyle, Daylight> = {
   classic: { len: 1, warm: 0, cool: 0, grade: null },
-  summer: { len: 1.05, warm: 0.25, cool: 0.38, grade: [[255, 250, 215, 0.6], [30, 100, 120, 0.34]] },
+  cluster: { len: 1.15, warm: 0.3, cool: 0.35, grade: [[250, 240, 190, 0.5], [20, 60, 50, 0.35]] },
+  cloud: { len: 0.75, warm: 0.2, cool: 0.25, grade: [[255, 250, 220, 0.4], [40, 80, 120, 0.2]] },
+  gouache: { len: 1.05, warm: 0.25, cool: 0.3, grade: [[250, 236, 200, 0.45], [50, 70, 90, 0.25]] },
   drybrush: { len: 1.15, warm: 0.3, cool: 0.45, grade: [[240, 232, 160, 0.5], [8, 36, 30, 0.5]], mist: true },
-  golden: { len: 1, warm: 0.35, cool: 0.18, grade: [[255, 225, 160, 0.5], [60, 80, 130, 0.22]] },
-  highland: { len: 1.2, warm: 0.15, cool: 0.5, grade: [[235, 245, 255, 0.55], [30, 55, 120, 0.42]] }
+  golden: { len: 1, warm: 0.35, cool: 0.18, grade: [[255, 225, 160, 0.5], [60, 80, 130, 0.22]] }
 };
 const GOLDEN: Daylight = { len: 1.7, warm: 1, cool: 0.35, grade: [[255, 196, 100, 0.7], [60, 80, 130, 0.28]] };
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;

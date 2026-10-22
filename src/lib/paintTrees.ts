@@ -20,10 +20,11 @@ type Ctx = CanvasRenderingContext2D;
 /** Each style's trees' greens, for a woods color of the default landscape (the course's own trees'
  * color moves them all by as much). */
 export const STYLE_GREENS: Record<Exclude<TreeStyle, "classic">, string[]> = {
-  summer: ["#4f8a3c", "#5f9842", "#447e3a", "#6aa04a", "#3f7640", "#78a84a"],
+  cluster: ["#3d6b2c", "#4a7a31", "#33602e", "#567f36", "#2f5a2a", "#44713a"],
   drybrush: ["#2e5524", "#3a6428", "#47702c", "#264b2c", "#507834", "#33592d"],
   golden: ["#3a5a26", "#4b6a2a", "#2e4f2a", "#5a6f2c"],
-  highland: ["#3a6440", "#456f46", "#33593c", "#527a4a", "#3d6845"]
+  cloud: ["#3f8a3a", "#4f9a3e", "#358040", "#62a03f", "#4a8f3c"],
+  gouache: ["#3d6b2c", "#4a7a31", "#33602e", "#567f36", "#2f5a2a"]
 };
 
 const circle = (g: Ctx, x: number, y: number, r: number, fill: string | CanvasGradient) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fillStyle = fill; g.fill(); };
@@ -69,23 +70,91 @@ const goldenCrown = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => numb
   }
   for (let i = 0; i < 12; i++) { const a = Math.atan2(Ly, Lx) + (R() - 0.5) * 2.2, d = r * (0.25 + R() * 0.6); circle(g, t.x + Math.cos(a) * d, t.y + Math.sin(a) * d, r * (0.06 + R() * 0.1), css(mix(mul(c, 1.7), [255, 210, 120], 0.55 * Math.max(0.4, warm)))); }
 };
-/** Summer: one big rounded crown, a few broad lobes, lit as one mass: fresh pale top on the sun's
- * side, cool teal underneath; a few leaf glints. */
-const summerCrown = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => number) => {
-  const r = t.r, c = t.col, lobes: [number, number, number][] = [];
-  for (let i = 0; i < 7; i++) { const a = (i / 7) * 6.283 + R() * 0.6, d = r * (0.5 + R() * 0.12); lobes.push([Math.cos(a) * d, Math.sin(a) * d, r * (0.42 + R() * 0.1)]); }
-  const gr = g.createRadialGradient(t.x + Lx * r * 0.45, t.y + Ly * r * 0.45, r * 0.05, t.x - Lx * r * 0.1, t.y - Ly * r * 0.1, r * 1.15);
-  gr.addColorStop(0, css(mix(mul(c, 1.55), [240, 250, 205], 0.35))); gr.addColorStop(0.45, css(mul(c, 1.05)));
-  gr.addColorStop(0.8, css(mix(mul(c, 0.62), [20, 70, 80], 0.25))); gr.addColorStop(1, css(mix(mul(c, 0.45), [15, 50, 65], 0.4)));
+/** A wobbly round outline (a painted crown's edge). */
+const blobPath = (g: Ctx, x: number, y: number, r: number, R: () => number, wob = 0.22, n = 28) => {
   g.beginPath();
-  for (const [bx, by, br] of lobes) { g.moveTo(t.x + bx + br, t.y + by); g.arc(t.x + bx, t.y + by, br, 0, 6.2832); }
-  g.moveTo(t.x + r * 0.62, t.y); g.arc(t.x, t.y, r * 0.62, 0, 6.2832);
-  g.fillStyle = gr; g.fill();
-  for (const [bx, by, br] of lobes) {
-    const s = g.createRadialGradient(t.x + bx + Lx * br * 0.4, t.y + by + Ly * br * 0.4, br * 0.4, t.x + bx, t.y + by, br);
-    s.addColorStop(0, "rgba(0,0,0,0)"); s.addColorStop(1, "rgba(10,40,45,.28)"); circle(g, t.x + bx, t.y + by, br, s);
+  const ph = R() * 6.28;
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * 6.283, rr = r * (1 + wob * (Math.sin(a * 3 + ph) * 0.5 + Math.sin(a * 5 + ph * 1.7) * 0.3 + (R() - 0.5) * 0.4));
+    const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
+    if (i) g.lineTo(px, py); else g.moveTo(px, py);
   }
-  for (let i = 0; i < 5; i++) { const a = Math.atan2(Ly, Lx) + (R() - 0.5) * 1.6, d = r * (0.3 + R() * 0.45); circle(g, t.x + Math.cos(a) * d, t.y + Math.sin(a) * d, r * (0.05 + R() * 0.06), css(mix(mul(c, 1.7), [245, 255, 215], 0.5))); }
+  g.closePath();
+};
+/** Painted cluster (Brushwood): a few soft clumps, dry-brushed, a lighter broken rim on the sun side. */
+const clusterCrown = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => number) => {
+  const r = t.r, c = t.col, n = 3 + Math.floor(R() * 3), clumps: [number, number, number][] = [];
+  for (let i = 0; i < n; i++) { const a = R() * 6.28, d = r * (0.18 + R() * 0.32); clumps.push([t.x + Math.cos(a) * d, t.y + Math.sin(a) * d, r * (0.5 + R() * 0.2)]); }
+  for (const [x, y, cr] of clumps) { blobPath(g, x, y, cr * 1.02, R, 0.18); g.fillStyle = css(mix(mul(c, 0.5), [14, 34, 30], 0.3)); g.fill(); }
+  for (const [x, y, cr] of clumps) {
+    const gr = g.createRadialGradient(x + Lx * cr * 0.45, y + Ly * cr * 0.45, cr * 0.05, x, y, cr);
+    gr.addColorStop(0, css(mix(mul(c, 1.35), [205, 220, 140], 0.25))); gr.addColorStop(0.6, css(c)); gr.addColorStop(1, css(mul(c, 0.55), 0));
+    blobPath(g, x, y, cr * 0.92, R, 0.15); g.fillStyle = gr; g.fill();
+  }
+  // dry brush: short strokes in each clump, lit on the sun side
+  g.lineCap = "round";
+  const strokes = r < 10 ? 12 : 26, len = r * 0.2;
+  for (const [x, y, cr] of clumps) for (let i = 0; i < strokes; i++) {
+    const a = R() * 6.28, d = Math.sqrt(R()) * cr * 0.85, px = x + Math.cos(a) * d, py = y + Math.sin(a) * d, lit = clamp(0.5 + (Math.cos(a) * Lx + Math.sin(a) * Ly) * (d / cr) * 0.8);
+    g.strokeStyle = css(lit > 0.55 ? mix(mul(c, 1.5), [215, 230, 150], 0.3) : mul(c, 0.7), 0.55); g.lineWidth = r * (0.06 + R() * 0.08);
+    g.beginPath(); g.moveTo(px, py); g.lineTo(px + Math.cos(a + 1.7) * len, py + Math.sin(a + 1.7) * len); g.stroke();
+  }
+};
+/** Cloud (Storybook): a scalloped crown, a thin dark rim, a bright highlight cluster toward the sun. */
+const cloudCrown = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => number) => {
+  const r = t.r, c = t.col, lobes: [number, number, number][] = [], n = 8 + Math.floor(R() * 3);
+  for (let i = 0; i < n; i++) { const a = (i / n) * 6.283 + R() * 0.3; lobes.push([t.x + Math.cos(a) * r * 0.62, t.y + Math.sin(a) * r * 0.62, r * (0.38 + R() * 0.08)]); }
+  lobes.push([t.x, t.y, r * 0.66]);
+  const path = (k: number, dx = 0, dy = 0) => { g.beginPath(); for (const [x, y, lr] of lobes) { g.moveTo(x + dx + lr * k, y + dy); g.arc(x + dx, y + dy, lr * k, 0, 6.283); } };
+  path(1.06); g.fillStyle = css(mix(mul(c, 0.38), [12, 30, 26], 0.4)); g.fill();
+  path(1); g.fillStyle = css(mul(c, 0.82)); g.fill();
+  path(0.78, Lx * r * 0.12, Ly * r * 0.12); g.fillStyle = css(c); g.fill();
+  for (let i = 0; i < 7; i++) { const a = Math.atan2(Ly, Lx) + (R() - 0.5) * 1.6, d = r * (0.25 + R() * 0.35); circle(g, t.x + Math.cos(a) * d, t.y + Math.sin(a) * d, r * (0.16 + R() * 0.1), css(mix(mul(c, 1.35), [200, 228, 110], 0.4))); }
+  for (let i = 0; i < 4; i++) { const a = Math.atan2(Ly, Lx) + (R() - 0.5) * 1.2, d = r * (0.3 + R() * 0.25); circle(g, t.x + Math.cos(a) * d, t.y + Math.sin(a) * d, r * (0.07 + R() * 0.05), "rgba(232,245,170,.9)"); }
+  g.strokeStyle = css(mul(c, 0.5), 0.8); g.lineWidth = Math.max(0.6, r * 0.06);
+  for (let i = 0; i < 4; i++) { const a = Math.atan2(-Ly, -Lx) + (R() - 0.5) * 1.4, d = r * (0.25 + R() * 0.3), x = t.x + Math.cos(a) * d, y = t.y + Math.sin(a) * d; g.beginPath(); g.arc(x, y, r * 0.18, a - 1.2, a + 1.2); g.stroke(); }
+};
+/** Gouache: three flat painted layers, dark to light, each offset toward the sun, soft edged. */
+const gouacheCrown = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => number) => {
+  const r = t.r, c = t.col;
+  // (the soft edge: a dark halo just round the bottom layer)
+  const halo = g.createRadialGradient(t.x, t.y, r * 0.85, t.x, t.y, r * 1.18);
+  halo.addColorStop(0, css([10, 30, 20], 0.5)); halo.addColorStop(1, css([10, 30, 20], 0));
+  circle(g, t.x, t.y, r * 1.18, halo);
+  blobPath(g, t.x, t.y, r, R, 0.2); g.fillStyle = css(mix(mul(c, 0.5), [16, 40, 40], 0.3)); g.fill();
+  blobPath(g, t.x + Lx * r * 0.14, t.y + Ly * r * 0.14, r * 0.74, R, 0.24); g.fillStyle = css(mul(c, 0.95)); g.fill();
+  blobPath(g, t.x + Lx * r * 0.3, t.y + Ly * r * 0.3, r * 0.42, R, 0.3); g.fillStyle = css(mix(mul(c, 1.35), [215, 230, 150], 0.25)); g.fill();
+  for (let i = 0; i < 6; i++) { const a = R() * 6.28, d = R() * r * 0.8; circle(g, t.x + Math.cos(a) * d, t.y + Math.sin(a) * d, r * (0.05 + R() * 0.05), css(mul(c, R() > 0.5 ? 1.5 : 0.6), 0.7)); }
+};
+/** Feathered pine (Brushwood, Gouache): rings of soft curved boughs, light tips on the sun side. */
+const featherPine = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => number) => {
+  const r = t.r, c = mix(t.col, [40, 75, 70], 0.35);
+  circle(g, t.x, t.y, r * 0.8, css(mix(mul(c, 0.4), [10, 26, 30], 0.3)));
+  for (let ring = 0; ring < 3; ring++) {
+    const rr = r * (1 - ring * 0.27), n = 14 - ring * 3;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * 6.283 + ring * 0.4 + R() * 0.2, lit = clamp(Math.cos(a) * Lx + Math.sin(a) * Ly, -1, 1);
+      const tipx = t.x + Math.cos(a) * rr, tipy = t.y + Math.sin(a) * rr, bx = t.x + Math.cos(a) * rr * 0.25, by = t.y + Math.sin(a) * rr * 0.25, w = rr * 0.22, nx = -Math.sin(a) * w, ny = Math.cos(a) * w;
+      const gr = g.createLinearGradient(bx, by, tipx, tipy);
+      gr.addColorStop(0, css(mul(c, 0.55 + ring * 0.1))); gr.addColorStop(1, css(mix(mul(c, 0.9 + 0.5 * Math.max(0, lit) + ring * 0.1), [205, 225, 170], Math.max(0, lit) * 0.2)));
+      g.beginPath(); g.moveTo(bx, by); g.quadraticCurveTo((bx + tipx) / 2 + nx, (by + tipy) / 2 + ny, tipx, tipy); g.quadraticCurveTo((bx + tipx) / 2 - nx * 0.4, (by + tipy) / 2 - ny * 0.4, bx, by); g.fillStyle = gr; g.fill();
+    }
+  }
+  circle(g, t.x, t.y, r * 0.1, css(mul(c, 0.45)));
+};
+/** Rosette pine (Storybook): rounded scalloped tiers, lit from the sun's side. */
+const rosettePine = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => number) => {
+  const r = t.r, c = mix(t.col, [40, 90, 70], 0.3);
+  for (let k = 0; k < 3; k++) {
+    const rr = r * (1 - k * 0.3), n = 9 - k * 2, ph = R() * 6.28;
+    const gr = g.createRadialGradient(t.x + Lx * rr * 0.45, t.y + Ly * rr * 0.45, 0, t.x, t.y, rr);
+    gr.addColorStop(0, css(mix(mul(c, 1.25 + k * 0.15), [200, 225, 170], 0.15))); gr.addColorStop(0.7, css(mul(c, 0.85 + k * 0.1))); gr.addColorStop(1, css(mul(c, 0.5)));
+    g.beginPath();
+    for (let i = 0; i < n; i++) { const a = (i / n) * 6.283 + ph; g.moveTo(t.x + Math.cos(a) * rr * 0.72 + rr * 0.33, t.y + Math.sin(a) * rr * 0.72); g.arc(t.x + Math.cos(a) * rr * 0.72, t.y + Math.sin(a) * rr * 0.72, rr * 0.33, 0, 6.283); }
+    g.moveTo(t.x + rr * 0.72, t.y); g.arc(t.x, t.y, rr * 0.72, 0, 6.283);
+    g.fillStyle = gr; g.fill();
+    if (k < 2) { g.strokeStyle = css(mul(c, 0.45), 0.5); g.lineWidth = Math.max(0.6, r * 0.05); g.beginPath(); g.arc(t.x, t.y, rr * 0.7, 0, 6.283); g.stroke(); }
+  }
 };
 /** Deep woods: a dark mass, its edge ragged, then many leaf dabs over it, darkest in the shade,
  * bright yellow-green where the sun catches the edge. */
@@ -106,8 +175,8 @@ const dryBrushCrown = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => nu
     g.beginPath(); g.ellipse(t.x + x, t.y + y, rad, rad * 0.75, rot, 0, 6.2832); g.fillStyle = css(col); g.fill();
   }
 };
-/** A pine: tiers of star-shaped boughs, each spike split down its middle, the sun's half bright,
- * the far half deep; Mountain pines with four tiers and a cool white edge on the lit spikes. */
+/** A pine (Golden, Deep woods): tiers of star-shaped boughs, each spike split down its middle, the
+ * sun's half bright, the far half deep. */
 const pine = (g: Ctx, t: PaintTree, Lx: number, Ly: number, mountain: boolean, warm: number) => {
   const c = mix(t.col, mountain ? [45, 80, 62] : [40, 75, 70], mountain ? 0.2 : 0.4), n = mountain ? 10 : 9, tiers = mountain ? 4 : 3;
   for (let k = 0; k < tiers; k++) {
@@ -132,25 +201,19 @@ export const drawTrees = (g: Ctx, trees: PaintTree[], style: Exclude<TreeStyle, 
   const sorted = [...trees].sort((p, q) => p.h - q.h);
   for (const t of sorted) {
     const R = seeded(Math.floor(t.seed * 1e6) + 1);
-    if (t.pine) { if (t.r < 3) circle(g, t.x, t.y, t.r, css(mul(t.col, 0.8))); else pine(g, t, Lx, Ly, style === "highland", lt.warm); continue; }
+    if (t.pine) {
+      if (t.r < 3) circle(g, t.x, t.y, t.r, css(mul(t.col, 0.8)));
+      else if (style === "cluster" || style === "gouache") featherPine(g, t, Lx, Ly, R);
+      else if (style === "cloud") rosettePine(g, t, Lx, Ly, R);
+      else pine(g, t, Lx, Ly, false, lt.warm);
+      continue;
+    }
     if (t.r < 4) { tinyCrown(g, t, Lx, Ly, style === "golden" ? [255, 205, 110] : [230, 240, 180]); continue; }
-    if (style === "summer" || style === "highland") summerCrown(g, t, Lx, Ly, R);
+    if (style === "cluster") clusterCrown(g, t, Lx, Ly, R);
+    else if (style === "cloud") cloudCrown(g, t, Lx, Ly, R);
+    else if (style === "gouache") gouacheCrown(g, t, Lx, Ly, R);
     else if (style === "drybrush") dryBrushCrown(g, t, Lx, Ly, R);
     else goldenCrown(g, t, Lx, Ly, R, lt.warm);
-  }
-};
-
-/** Granite boulders, lit on top, their own little shadows (Mountain pines). */
-export const drawBoulders = (g: Ctx, spots: { x: number; y: number; r: number }[], Lx: number, Ly: number, lt: Light, strength: number) => {
-  const R = seeded(77);
-  for (const b of spots) {
-    const sx = b.x - Lx * b.r * lt.len, sy = b.y - Ly * b.r * lt.len;
-    const sh = g.createRadialGradient(sx, sy, 0, sx, sy, b.r * 1.3);
-    sh.addColorStop(0, css([26, 34, 48], 0.5 * strength)); sh.addColorStop(1, css([26, 34, 48], 0));
-    circle(g, sx, sy, b.r * 1.3, sh);
-    const gr = g.createRadialGradient(b.x + Lx * b.r * 0.4, b.y + Ly * b.r * 0.4, b.r * 0.1, b.x, b.y, b.r);
-    gr.addColorStop(0, "#eceee8"); gr.addColorStop(0.55, "#a9ada8"); gr.addColorStop(1, "#666c6e");
-    g.beginPath(); g.ellipse(b.x, b.y, b.r, b.r * 0.82, R() * 3, 0, 6.2832); g.fillStyle = gr; g.fill();
   }
 };
 

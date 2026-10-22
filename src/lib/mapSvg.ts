@@ -747,6 +747,8 @@ export const onPaintProgress = (fn: (fraction: number | null) => void) => {
 const tellProgress = () => progressListeners.forEach(fn => fn(livePaint ? liveProgress : null));
 if (typeof window !== "undefined") (window as any).__dgPainting = paintingNow;
 
+/** The quick drafts shown while the sharp pictures paint (freed when no longer shown). */
+const draftUrls: string[] = [];
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
   const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
@@ -764,7 +766,9 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
     return { url: hit, view };
   }
   // (a print: its resolution, up to about 32 million pixels)
-  const density = printDensity !== null ? Math.min(printDensity, Math.sqrt(32e6 / Math.max(1, view.width * view.height))) : Math.min(3, Math.max(paintLimit < 2400 ? 1 : 1.5, paintLimit / Math.max(view.width, view.height)));
+  // (live: about as many pixels as the screen shows, `paintLimit` along the long side; a big poster
+  // isn't painted at print size while it's being designed)
+  const density = printDensity !== null ? Math.min(printDensity, Math.sqrt(32e6 / Math.max(1, view.width * view.height))) : Math.min(3, Math.max(0.3, paintLimit / Math.max(view.width, view.height)));
   const opts = { mode: s.forest ?? "everywhere", canopy, style: s, density } as const;
   // A photo-like picture: JPEG keeps it a tenth the size of a PNG
   const keep = (canvas: HTMLCanvasElement) => {
@@ -799,13 +803,30 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
     livePaint = job;
     liveProgress = 0;
     queueMicrotask(tellProgress);
-    void forestCanvasAsync(doc, view, layers.stats, opts, job.stop.signal, f => {
-      if (livePaint !== job) return;
-      liveProgress = f;
-      tellProgress();
-    })
+    // First a quick draft (a fifth of the pixels: shown in a moment), then the sharp picture
+    const toBlob = (canvas: HTMLCanvasElement) => new Promise<Blob>((res, rej) => canvas.toBlob(b => (b ? res(b) : rej(new Error("no picture"))), "image/jpeg", 0.9));
+    const draftDensity = density * 0.32;
+    const draft = draftDensity * Math.max(view.width, view.height) >= 500
+      ? forestCanvasAsync(doc, view, layers.stats, { ...opts, density: draftDensity }, job.stop.signal, f => { if (livePaint === job) { liveProgress = f * 0.3; tellProgress(); } })
+        .then(toBlob)
+        .then(blob => {
+          if (livePaint !== job) return;
+          const url = URL.createObjectURL(blob);
+          draftUrls.push(url);
+          while (draftUrls.length > 3) URL.revokeObjectURL(draftUrls.shift()!);
+          lastForView.set(viewKey, url);
+          lastLive = { url, view, doc: doc.id ?? "", limit: paintLimit };
+          paintedListeners.forEach(fn => fn());
+        })
+      : Promise.resolve();
+    void draft
+      .then(() => forestCanvasAsync(doc, view, layers.stats, opts, job.stop.signal, f => {
+        if (livePaint !== job) return;
+        liveProgress = 0.3 + f * 0.7;
+        tellProgress();
+      }))
       // (encoded off the page's thread, unlike toDataURL)
-      .then(canvas => new Promise<Blob>((res, rej) => canvas.toBlob(b => (b ? res(b) : rej(new Error("no picture"))), "image/jpeg", 0.9)))
+      .then(toBlob)
       .then(blob => {
         const url = URL.createObjectURL(blob);
         liveCache.set(key, url);

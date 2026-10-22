@@ -101,7 +101,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const [painted, paintedFresh] = usePaintedGround(paintedOn || warm);
   useEffect(() => {
     if (!warm || !warmHole || !painted) return;
-    const id = window.setTimeout(() => void paintedDetail(doc, warmHole, view?.detailPx() ?? 3072), 50);
+    // (only once the hole has stayed picked a few seconds: clicking through holes paints nothing)
+    const id = window.setTimeout(() => void paintedDetail(doc, warmHole, view?.detailPx() ?? 3072), 4000);
     return () => window.clearTimeout(id);
   }, [warm, warmHole, painted, doc]);
 

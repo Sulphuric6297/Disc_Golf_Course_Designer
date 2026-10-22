@@ -8,6 +8,9 @@ import { BASKET_MARKS, basketMark, bestRotation, renderPoster } from "../../src/
 import { renderScorecard, renderTeeSign } from "../../src/lib/teeSign";
 import { tallGrassOf } from "../../src/lib/landscapes";
 
+/** The map's painting finished (a quick draft shows first, then the sharp picture). */
+const painted = (page: import("@playwright/test").Page) => expect.poll(() => page.evaluate(() => !(window as any).__dgPainting()), { timeout: 90_000 }).toBe(true);
+
 test("the Design step shows the printed map; its styles are the painted map in each landscape", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
@@ -59,6 +62,7 @@ test("turning the map to fill the page", async ({ page }) => {
 });
 
 test("tree cover: sparse woods leave grass between the trees", async ({ page }) => {
+  test.setTimeout(300_000);
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
@@ -67,6 +71,7 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
   const painting = page.getByTestId("design-page").locator("image").first();
   // How light the painted land is (dark canopy against lighter grass)
   const lightness = async () => {
+    await painted(page);
     const href = await painting.getAttribute("href");
     return page.evaluate(async (url: string) => {
       const img = new Image();
@@ -84,6 +89,7 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
     }, href!);
   };
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
+  await painted(page);
   const dense = await lightness();
   // (the share of the land lighter than all but a quarter of the thick woods)
   const light = dense[Math.floor(dense.length * 0.75)];
@@ -96,6 +102,7 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
   await expect.poll(async () => (await course(page)).style.treeCover).toBe(0.2);
   await expect(page.getByTestId("forest-options")).toContainText("Sparse");
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
+  await painted(page);
   // Grass between the trees: far more of the land is lighter
   expect(share(await lightness())).toBeGreaterThan(share(dense) + 0.2);
   // One undo step brings the thick woods back
@@ -103,7 +110,7 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
   await expect.poll(async () => (await course(page)).style.treeCover).toBe(1);
   // Each map style repaints it; Classic again is as it was
   const styles = page.getByTestId("map-styles");
-  for (const [name, id] of [["Parkland", "parkland"], ["Hollow", "hollow"], ["Golden hour", "golden"], ["Highland", "highland"]]) {
+  for (const [name, id] of [["Brushwood", "brushwood"], ["Hollow", "hollow"], ["Golden hour", "golden"], ["Storybook", "storybook"], ["Gouache", "gouache"]]) {
     const before = await painting.getAttribute("href");
     await styles.getByRole("radio", { name }).click();
     await expect.poll(async () => (await course(page)).style.mapLook).toBe(id);
@@ -122,6 +129,7 @@ test("light and shadow: the sun, shadows and brightness repaint the Forest map, 
   await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
+  await painted(page);
   const set = async (panel: import("@playwright/test").Locator, label: string, value: string) => {
     const slider = panel.getByLabel(label);
     await slider.fill(value);
@@ -547,6 +555,7 @@ test("elevation on the Forest map: hills shade the painting, contour lines are p
   await page.getByRole("button", { name: "5 Design" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
+  await painted(page);
   const shaded = await painting.getAttribute("href");
   // Hill shading off: a different picture (the hill's light and shade gone)
   await page.getByLabel("Hill shading").uncheck();
@@ -589,6 +598,7 @@ test("painted water: a pond is lighter at its rim and in the shallows, deep and 
   await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
+  await painted(page);
   await page.waitForTimeout(1500);
   // Along the row through the pond's middle (its widest): the water's edge against its middle
   const profile = await page.evaluate(async (url: string) => {
@@ -632,6 +642,7 @@ test("tall grass is painted its own way: lighter, straw-colored tufts, not the g
   await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
+  await painted(page);
   await page.waitForTimeout(1500);
   // Straw-green pixels (red near green, both well over blue): the tall grass; the grass and the
   // fairway are much greener
@@ -767,6 +778,7 @@ test("trees placed on a fairway are painted where and as they were placed, and t
   await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
+  await painted(page);
   // The share of the land in canopy shade (much darker than the grass)
   const dark = async () => {
     const href = await painting.getAttribute("href");
