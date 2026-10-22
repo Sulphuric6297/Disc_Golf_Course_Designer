@@ -51,7 +51,7 @@ function HoleNumberInput({ holeId, value }: { holeId: string; value: string }) {
         aria-label="Hole number"
         data-testid="hole-number"
         inputMode="numeric"
-        className="w-16 touch:w-20 h-8 touch:h-11 rounded-lg bg-zinc-800 border border-zinc-700 text-center text-sm touch:text-base font-bold text-zinc-50 focus:outline-none focus:ring-2 focus:ring-sky-400/80"
+        className="w-16 touch:w-20 h-8 touch:h-11 rounded-lg bg-white/[0.07] border border-white/[0.12] text-center text-sm touch:text-base font-bold text-zinc-50 focus:outline-none focus:ring-2 focus:ring-sky-400/80"
         value={text}
         onChange={e => setText(e.target.value.replace(/[^0-9/, &]/g, "").slice(0, 16))}
         onFocus={e => e.target.select()}
@@ -216,7 +216,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
       <Section title="Tees and pins">
         {doc.holes.length > 1 && (
           <Field label="Basket">
-            <select aria-label="Basket" data-testid="share-basket" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
+            <select aria-label="Basket" data-testid="share-basket" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
               <option value="">Its own</option>
               {doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => b.holeId === h.id)).map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}'s</option>)}
             </select>
@@ -225,7 +225,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
         <ul className="space-y-1">
           {tees.map(t => (
             <li key={t.id}>
-              <button className="w-full flex items-center gap-2 text-left text-xs text-zinc-200 hover:bg-zinc-800 rounded px-1.5 py-1" onClick={() => select(t.id)}>
+              <button className="w-full flex items-center gap-2 text-left text-xs text-zinc-200 hover:bg-white/[0.09] rounded px-1.5 py-1" onClick={() => select(t.id)}>
                 <span className="w-3 h-3 rounded-sm border border-black/40" style={{ background: TEE_LEVELS[t.level].color }} />
                 {TEE_LEVELS[t.level].label} tee
                 <span className="ml-auto text-zinc-400">{fmtDist(holeStats(doc, hole, { id: "x", name: "", tee: t.level, pin: "A" }).length, u)}</span>
@@ -234,7 +234,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
           ))}
           {baskets.map(b => (
             <li key={b.id}>
-              <button className="w-full flex items-center gap-2 text-left text-xs text-zinc-200 hover:bg-zinc-800 rounded px-1.5 py-1" onClick={() => select(b.id)}>
+              <button className="w-full flex items-center gap-2 text-left text-xs text-zinc-200 hover:bg-white/[0.09] rounded px-1.5 py-1" onClick={() => select(b.id)}>
                 <span className="w-3 h-3 rounded-full border-2" style={{ borderColor: doc.style.basket }} />
                 Pin {b.position}
               </button>
@@ -255,7 +255,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
 function SurfacePick({ value, onChange }: { value?: PathSurface; onChange: (v: PathSurface | undefined) => void }) {
   return (
     <Field label="Surface">
-      <select aria-label="Surface" data-testid="path-surface" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={value ?? "dirt"} onChange={e => onChange(e.target.value === "dirt" ? undefined : (e.target.value as PathSurface))}>
+      <select aria-label="Surface" data-testid="path-surface" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={value ?? "dirt"} onChange={e => onChange(e.target.value === "dirt" ? undefined : (e.target.value as PathSurface))}>
         {(Object.keys(PATH_SURFACES) as PathSurface[]).map(k => <option key={k} value={k}>{PATH_SURFACES[k].label}</option>)}
       </select>
     </Field>
@@ -263,7 +263,7 @@ function SurfacePick({ value, onChange }: { value?: PathSurface; onChange: (v: P
 }
 
 /** A hole's chip in a pick of holes. */
-const holeChip = (on: boolean) => `px-2 py-1 touch:py-2 rounded-md text-xs font-semibold border ${on ? "bg-orange-500/20 border-orange-400 text-orange-100" : "border-zinc-700 text-zinc-300 hover:border-zinc-500"}`;
+const holeChip = (on: boolean) => `px-2 py-1 touch:py-2 rounded-md text-xs font-semibold border ${on ? "bg-orange-500/20 border-orange-400 text-orange-100" : "border-white/[0.12] text-zinc-300 hover:border-zinc-500"}`;
 
 /** Whether water, a creek, a road, a fence or a path is out of bounds (and shown so on the map);
  * a line OB beyond it too, and along all of it or stretches of it. */
@@ -272,7 +272,7 @@ const BRUSH_LEVELS = [{ value: "none", label: "None" }, { value: "light", label:
 type BrushLevel = (typeof BRUSH_LEVELS)[number]["value"];
 
 const BRUSH_KINDS: { value: BrushKind; label: string }[] = [{ value: "mixed", label: "A mix" }, { value: "thicket", label: "Thicket" }, { value: "briars", label: "Briars & thorns" }, { value: "weeds", label: "Weeds" }];
-const kindSelect = "bg-zinc-800 rounded-lg px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80";
+const kindSelect = "bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80";
 
 /** A wood's underbrush: its own level and kind, and sections drawn inside it with their own. */
 function WoodsBrush({ item }: { item: AreaItem }) {
@@ -296,10 +296,10 @@ function WoodsBrush({ item }: { item: AreaItem }) {
       )}
       {sections.length > 0 && <div className="text-[11px] text-zinc-500 mb-1.5"><span className="inline-block w-3 border-t-2 border-dashed align-middle mr-1.5" style={{ borderColor: BRUSH_SECTION }} />Sections, outlined on the map: each its own underbrush (where they overlap, the later one's).</div>}
       {sections.map((b, k) => (
-        <div key={k} className="rounded-lg bg-zinc-800/50 p-2 mb-1.5" data-testid="brush-section">
+        <div key={k} className="rounded-lg bg-white/[0.07] p-2 mb-1.5" data-testid="brush-section">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs font-semibold text-zinc-300">Section {k + 1}</span>
-            <button className="p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-zinc-800" aria-label={`Remove section ${k + 1}`} title="Remove" onClick={() => setSections(sections.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
+            <button className="p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-white/[0.09]" aria-label={`Remove section ${k + 1}`} title="Remove" onClick={() => setSections(sections.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
           </div>
           <Segmented label={`Section ${k + 1} underbrush`} value={b.level} onChange={v => setSections(sections.map((q, m) => (m === k ? { ...q, level: v } : q)))} options={[...BRUSH_LEVELS]} />
           {b.level !== "none" && (
@@ -371,7 +371,7 @@ function WoodsTrees({ item }: { item: AreaItem }) {
               <input type="range" aria-label={`Patch ${k + 1} density`} min={0.1} max={1} step={0.1} value={p.fill} className="flex-1 accent-orange-500"
                 onChange={e => setPatches(patches.map((q, m) => (m === k ? { ...q, fill: parseFloat(e.target.value) } : q)), false)} onPointerUp={() => useCourse.getState().commit()} onKeyUp={() => useCourse.getState().commit()} />
               <span className="text-xs text-zinc-400 tabular-nums w-9 text-right">{Math.round(p.fill * 100)}%</span>
-              <button className="p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-zinc-800" aria-label={`Remove patch ${k + 1}`} title="Remove" onClick={() => setPatches(patches.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
+              <button className="p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-white/[0.09]" aria-label={`Remove patch ${k + 1}`} title="Remove" onClick={() => setPatches(patches.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
             </div>
           ))}
           {!patches.length && <div className="text-[11px] text-zinc-500 mb-1">No patches yet.</div>}
@@ -415,7 +415,7 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
             {line.obStretches?.length ? line.obStretches.map(([a, b], k) => (
               <div key={k} className="flex items-center gap-2 text-sm text-zinc-200" data-testid="ob-stretch">
                 <span className="flex-1 tabular-nums">{fmtDist(Math.min(a, b) * len, units, false)} to {fmtDist(Math.max(a, b) * len, units)}</span>
-                <button className="p-1 rounded hover:bg-zinc-800 text-zinc-400" aria-label={`Remove stretch ${k + 1}`} onClick={() => {
+                <button className="p-1 rounded hover:bg-white/[0.09] text-zinc-400" aria-label={`Remove stretch ${k + 1}`} onClick={() => {
                   const rest = line.obStretches!.filter((_, j) => j !== k);
                   updateItem(item.id, (rest.length ? { obStretches: rest } : { obStretches: undefined, ob: undefined }) as Partial<CourseItem>);
                 }}><X size={14} /></button>
@@ -447,7 +447,7 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
 function TurnShape({ item }: { item: AreaItem | LineItem | StructureItem }) {
   if (item.locked || item.points.length < 2) return null;
   const turn = (deg: number) => updateItem(item.id, turnShape(item.points, item, (deg * Math.PI) / 180) as Partial<CourseItem>);
-  const b = "flex-1 h-8 touch:h-11 rounded-lg border border-zinc-700 hover:border-zinc-500 text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1";
+  const b = "flex-1 h-8 touch:h-11 rounded-lg border border-white/[0.12] hover:border-zinc-500 text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1";
   return (
     <Field label="Turn">
       <div className="flex gap-1.5" data-testid="turn-shape">
@@ -481,7 +481,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
     </Field>
   ) : (
     <Field label="Belongs to">
-      <select aria-label="Belongs to hole" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={("holeId" in item && item.holeId) || ""} onChange={e => set({ holeId: e.target.value || undefined })}>
+      <select aria-label="Belongs to hole" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={("holeId" in item && item.holeId) || ""} onChange={e => set({ holeId: e.target.value || undefined })}>
         {holeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </Field>
@@ -499,7 +499,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
             <Field label="Pad length"><NumberInput label="Pad length" value={item.padLength} min={4} max={30} step={0.5} unit="ft" onChange={v => set({ padLength: v })} /></Field>
           </div>
           <Field label="Surface">
-            <select aria-label="Tee surface" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.surface} onChange={e => set({ surface: e.target.value as TeeSurface })}>
+            <select aria-label="Tee surface" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.surface} onChange={e => set({ surface: e.target.value as TeeSurface })}>
               {(Object.keys(TEE_SURFACES) as TeeSurface[]).map(k => <option key={k} value={k}>{TEE_SURFACES[k].label}</option>)}
             </select>
           </Field>
@@ -536,7 +536,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
       body = (
         <>
           <Field label="Kind">
-            <select aria-label="Area kind" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as AreaKind })}>
+            <select aria-label="Area kind" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as AreaKind })}>
               {(Object.keys(AREA_KINDS) as AreaKind[]).map(k => <option key={k} value={k}>{AREA_KINDS[k].label}</option>)}
             </select>
           </Field>
@@ -555,7 +555,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
       body = (
         <>
           <Field label="Kind">
-            <select aria-label="Line kind" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as LineKind })}>
+            <select aria-label="Line kind" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as LineKind })}>
               {(Object.keys(LINE_KINDS) as LineKind[]).map(k => <option key={k} value={k}>{LINE_KINDS[k].label}</option>)}
             </select>
           </Field>
@@ -585,7 +585,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
       body = (
         <>
           <Field label="Kind">
-            <select aria-label="Structure kind" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as StructureKind })}>
+            <select aria-label="Structure kind" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as StructureKind })}>
               {kinds.map(k => <option key={k} value={k}>{STRUCTURE_KINDS[k].label}</option>)}
             </select>
           </Field>
@@ -597,7 +597,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
                 {BUILDING_LOOKS.map(l => {
                   const on = structureRoof(item) === l.roof && item.wallColor === l.wallColor && item.roofColor === l.roofColor;
                   return (
-                    <button key={l.id} role="radio" aria-checked={on} data-testid={`building-look-${l.id}`} onClick={() => set({ roof: l.roof as RoofKind, wallColor: l.wallColor, roofColor: l.roofColor })} className={`rounded-md border px-1.5 py-1 flex items-center gap-1.5 text-[11px] font-semibold ${on ? "border-orange-500 bg-orange-500/10 text-zinc-100" : "border-zinc-700 text-zinc-300 hover:border-zinc-500"}`}>
+                    <button key={l.id} role="radio" aria-checked={on} data-testid={`building-look-${l.id}`} onClick={() => set({ roof: l.roof as RoofKind, wallColor: l.wallColor, roofColor: l.roofColor })} className={`rounded-md border px-1.5 py-1 flex items-center gap-1.5 text-[11px] font-semibold ${on ? "border-orange-500 bg-orange-500/10 text-zinc-100" : "border-white/[0.12] text-zinc-300 hover:border-zinc-500"}`}>
                       <span className="w-3 h-3 rounded-sm" style={{ background: `linear-gradient(135deg, ${l.roofColor} 50%, ${l.wallColor} 50%)` }} />
                       {l.label}
                     </button>
@@ -637,7 +637,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
       body = (
         <>
           <Field label="Kind">
-            <select aria-label="Amenity kind" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as AmenityKind })}>
+            <select aria-label="Amenity kind" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as AmenityKind })}>
               {(Object.keys(AMENITY_KINDS) as AmenityKind[]).map(k => <option key={k} value={k}>{AMENITY_KINDS[k].label}</option>)}
             </select>
           </Field>
@@ -721,7 +721,7 @@ function GroupInspector({ items }: { items: CourseItem[] }) {
     <Section>
       <div className="text-sm font-bold text-zinc-50 mb-2" data-testid="inspector-title">{items.length} selected</div>
       <div className="flex flex-wrap gap-1.5" data-testid="group-kinds">
-        {parts.map(p => <span key={p} className="px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 text-xs text-zinc-200">{p}</span>)}
+        {parts.map(p => <span key={p} className="px-2 py-0.5 rounded-full bg-white/[0.07] border border-white/[0.12] text-xs text-zinc-200">{p}</span>)}
       </div>
     </Section>
   );
@@ -750,7 +750,7 @@ export function InspectorActions({ big = false, close = true }: { big?: boolean;
       changeDoc(d => ({ items: d.items.map(i => (ids.has(i.id) ? { ...i, locked: !locked } : i)) }));
     }
   };
-  const base = big ? "w-11 h-11 flex items-center justify-center rounded-xl text-zinc-300 hover:bg-zinc-800" : "p-1.5 rounded text-zinc-400 hover:bg-zinc-800";
+  const base = big ? "w-11 h-11 flex items-center justify-center rounded-xl text-zinc-300 hover:bg-white/[0.09]" : "p-1.5 rounded text-zinc-400 hover:bg-white/[0.09]";
   const b = `${base} hover:text-zinc-50`;
   const sz = big ? 19 : 15;
   return (
@@ -771,7 +771,7 @@ export function Inspector() {
   }, [open]);
   if (!open) return null;
   return (
-    <aside className="absolute top-3 right-[150px] w-[300px] max-h-[calc(100%-120px)] overflow-y-auto bg-zinc-900/95 backdrop-blur rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 z-20" data-testid="inspector" aria-label="Selection">
+    <aside className="absolute top-3 right-[150px] w-[300px] max-h-[calc(100%-120px)] overflow-y-auto glass backdrop-blur rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 z-20" data-testid="inspector" aria-label="Selection">
       <div className="flex items-center gap-0.5 px-2 pt-2">
         {hole && <HoleSteps holeId={hole.id} />}
         <div className="flex-1" />

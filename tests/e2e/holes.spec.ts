@@ -203,7 +203,8 @@ test("dragging a tee moves it and the hole's length follows", async ({ page }) =
   const to = await screenOf(page, 300, 700);
   await drag(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, to);
   await expect.poll(async () => Math.round((await course(page)).items.find((i: any) => i.type === "tee").x / 10)).toBe(30);
-  await expect(page.getByTestId("hole-row")).toContainText("500 ft");
+  // (to the foot, as near as a pixel of the map lands)
+  await expect(page.getByTestId("hole-row")).toContainText(/(499|500|501) ft/);
 });
 
 test("the walk to the next tee becomes a line to reshape, in place of the automatic one; Undo brings that back", async ({ page }) => {

@@ -82,7 +82,7 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => v
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center pt-[12vh] bg-black/50" onMouseDown={e => e.target === e.currentTarget && onClose()} data-testid="goto">
-      <div className="w-[520px] max-w-[calc(100%-24px)] bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-white/10 overflow-hidden" role="dialog" aria-label="Go to">
+      <div className="w-[520px] max-w-[calc(100%-24px)] glass rounded-2xl shadow-2xl ring-1 ring-white/10 overflow-hidden" role="dialog" aria-label="Go to">
         <div className="flex items-center gap-2 px-3 shadow-[0_1px_0_0_rgba(255,255,255,0.06)]">
           <Search size={16} className="text-zinc-500 shrink-0" />
           <input
@@ -99,7 +99,7 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => v
             aria-label="Go to"
             className="flex-1 bg-transparent py-3 text-[15px] text-zinc-100 placeholder:text-zinc-500 focus:outline-none touch:text-base"
           />
-          <kbd className="text-[10px] text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5 touch:hidden">Esc</kbd>
+          <kbd className="text-[10px] text-zinc-500 border border-white/[0.12] rounded px-1.5 py-0.5 touch:hidden">Esc</kbd>
         </div>
         <ul ref={list} className="max-h-[50vh] overflow-y-auto py-1" role="listbox" aria-label="Results">
           {shown.length === 0 && <li className="px-4 py-3 text-sm text-zinc-500">Nothing found</li>}

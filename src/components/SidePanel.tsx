@@ -56,7 +56,7 @@ const NextButton = ({ step }: { step: Step }) => {
 const ToolCard = ({ icon, title, onClick, active, testid }: { icon: ReactNode; title: string; onClick: () => void; active?: boolean; testid?: string }) => {
   const touch = useTouch();
   return (
-    <button onClick={onClick} data-testid={testid} className={`w-full text-left flex gap-3 items-center rounded-lg px-3 py-2 touch:py-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${active ? "bg-orange-500/10 ring-1 ring-orange-500/40" : "bg-zinc-800/60 hover:bg-zinc-800"}`}>
+    <button onClick={onClick} data-testid={testid} className={`w-full text-left flex gap-3 items-center rounded-lg px-3 py-2 touch:py-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${active ? "bg-orange-500/10 ring-1 ring-orange-500/40" : "bg-white/[0.07] hover:bg-white/[0.09]"}`}>
       <span className={active ? "text-orange-300" : "text-zinc-400"}>{icon}</span>
       <span>
         <span className="block text-sm font-semibold text-zinc-100">{touch ? touchWords(title) : title}</span>
@@ -162,7 +162,7 @@ function LayoutEditor({ open, setOpen }: { open: boolean; setOpen: (f: (o: boole
       {open && (
         <div className="mt-2 space-y-2" data-testid="layout-editor">
           {doc.layouts.map(l => (
-            <div key={l.id} className="bg-zinc-800/60 rounded-lg p-2 space-y-1.5">
+            <div key={l.id} className="bg-white/[0.07] rounded-lg p-2 space-y-1.5">
               <div className="flex gap-1.5">
                 <TextInput label="Layout name" value={l.name} onChange={v => setLayouts(doc.layouts.map(x => (x.id === l.id ? { ...x, name: v } : x)))} />
                 {doc.layouts.length > 1 && <button aria-label="Remove layout" className="text-zinc-400 hover:text-red-400 px-1" onClick={() => changeDoc(d => ({ layouts: d.layouts.filter(x => x.id !== l.id), activeLayout: d.activeLayout === l.id ? d.layouts.find(x => x.id !== l.id)!.id : d.activeLayout }))}><Trash2 size={14} /></button>}
@@ -216,7 +216,7 @@ function HolesStep() {
                   <button
                     data-testid="hole-row"
                     onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
-                    className={`w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${sel ? "bg-orange-500/15 ring-1 ring-orange-400/60" : "hover:bg-zinc-800"}`}
+                    className={`w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${sel ? "bg-orange-500/15 ring-1 ring-orange-400/60" : "hover:bg-white/[0.09]"}`}
                   >
                     <span className="min-w-[1.5rem] h-6 px-1 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 whitespace-nowrap" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink, fontFamily: "Oswald, Inter" }} data-testid="hole-badge">{s.label}</span>
                     <span className="flex-1 min-w-0">
@@ -364,7 +364,7 @@ function ReviewStep() {
             {issues.map(issue => (
               <li key={issue.id} className="flex items-start gap-1 group">
                 <button
-                  className="flex-1 min-w-0 flex gap-2 items-start text-left text-xs text-zinc-200 hover:bg-zinc-800 rounded px-1.5 py-1"
+                  className="flex-1 min-w-0 flex gap-2 items-start text-left text-xs text-zinc-200 hover:bg-white/[0.09] rounded px-1.5 py-1"
                   data-testid="issue-row"
                   onClick={() => {
                     if (issue.holes[0]) select(issue.holes[0]);
@@ -374,7 +374,7 @@ function ReviewStep() {
                   <IssueIcon level={issue.level} />
                   {issue.text}
                 </button>
-                <button className="shrink-0 p-1 touch:p-2.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800" title="Ignore" aria-label="Ignore" data-testid="issue-ignore" onClick={() => ignore(issue.id, true)}>
+                <button className="shrink-0 p-1 touch:p-2.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.09]" title="Ignore" aria-label="Ignore" data-testid="issue-ignore" onClick={() => ignore(issue.id, true)}>
                   <EyeOff size={13} />
                 </button>
               </li>
@@ -391,7 +391,7 @@ function ReviewStep() {
                 {ignored.map(issue => (
                   <li key={issue.id} className="flex items-start gap-1 text-xs text-zinc-500" data-testid="ignored-row">
                     <span className="flex-1 min-w-0 flex gap-2 items-start px-1.5 py-1"><IssueIcon level={issue.level} />{issue.text}</span>
-                    <button className="shrink-0 p-1 touch:p-2.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800" title="Check again" aria-label="Check again" onClick={() => ignore(issue.id, false)}>
+                    <button className="shrink-0 p-1 touch:p-2.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.09]" title="Check again" aria-label="Check again" onClick={() => ignore(issue.id, false)}>
                       <Eye size={13} />
                     </button>
                   </li>
@@ -400,7 +400,7 @@ function ReviewStep() {
             )}
           </div>
         )}
-        <div className="mt-3 border-t border-zinc-800 pt-2">
+        <div className="mt-3 border-t border-white/[0.08] pt-2">
           <Field label="Safe distance between holes">
             <Segmented label="Safe distance" value={doc.rules.safetyGapFt ?? 0} onChange={v => set({ safetyGapFt: v || undefined })} options={[{ value: 0, label: "Auto" }, { value: 50, label: "50 ft" }, { value: 75, label: "75 ft" }, { value: 100, label: "100 ft" }, { value: 150, label: "150 ft" }]} />
           </Field>
@@ -413,7 +413,7 @@ function ReviewStep() {
           </thead>
           <tbody>
             {stats.map(s => (
-              <tr key={s.holeId} className="hover:bg-zinc-800 cursor-pointer" onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}>
+              <tr key={s.holeId} className="hover:bg-white/[0.09] cursor-pointer" onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}>
                 <td className="py-0.5">{s.label}</td>
                 <td className="text-right">{s.par}</td>
                 <td className="text-right">{s.complete ? fmtDist(s.length, u, false) : "–"}</td>
@@ -450,10 +450,10 @@ export function SidePanel({ onFindSite }: { onFindSite: () => void }) {
   const i = STEPS.findIndex(s => s.id === step);
   const meta = STEPS[i];
   return (
-    <aside className="w-[340px] shrink-0 bg-zinc-900 overflow-y-auto" aria-label="Step panel" data-testid="side-panel">
+    <aside className="glass w-[340px] shrink-0 rounded-[24px] overflow-y-auto" aria-label="Step panel" data-testid="side-panel">
       <div className="px-4 pt-4 pb-1">
-        <div className="text-[11px] text-zinc-500">Step {i + 1} of {STEPS.length}</div>
-        <h2 className="text-base font-semibold text-zinc-50">{meta.title}</h2>
+        <div className="text-[11.5px] font-semibold text-orange-300">Step {i + 1} of {STEPS.length}</div>
+        <h2 className="text-[22px] leading-tight font-bold tracking-[-0.02em] text-zinc-50">{meta.title}</h2>
       </div>
       <StepContent onFindSite={onFindSite} />
     </aside>

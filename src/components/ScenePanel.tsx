@@ -25,7 +25,7 @@ export function SceneButton({ className = "", big = false }: { className?: strin
   return (
     <div className={`relative pointer-events-auto ${className}`} ref={ref}>
       <button
-        className={`bg-zinc-900/90 backdrop-blur ${big ? "rounded-2xl w-11 h-11" : "rounded-lg w-8 h-8"} flex items-center justify-center shadow-lg shadow-black/30 ring-1 transition-colors ${FOCUS} ${open ? "ring-sky-400 text-zinc-50" : "ring-white/10 text-zinc-300 hover:text-zinc-50"}`}
+        className={`glass backdrop-blur ${big ? "rounded-2xl w-11 h-11" : "rounded-lg w-8 h-8"} flex items-center justify-center shadow-lg shadow-black/30 ring-1 transition-colors ${FOCUS} ${open ? "ring-sky-400 text-zinc-50" : "ring-white/10 text-zinc-300 hover:text-zinc-50"}`}
         title="Layers: light, landscape, grass"
         aria-label="Layers"
         aria-expanded={open}

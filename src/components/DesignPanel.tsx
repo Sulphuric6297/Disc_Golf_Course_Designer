@@ -130,7 +130,7 @@ function TeeSignSettings() {
           const on = (doc.style.sign?.look ?? "classic") === l.id;
           return (
             <button key={l.id} role="radio" aria-checked={on} data-testid={`sign-look-${l.id}`} onClick={() => setStyle({ sign: { ...doc.style.sign, look: l.id === "classic" ? undefined : l.id } })}
-              className={`text-left rounded-lg overflow-hidden bg-zinc-800 ring-1 transition ${on ? "ring-2 ring-orange-400" : "ring-white/10 hover:ring-white/30"}`}>
+              className={`text-left rounded-lg overflow-hidden bg-white/[0.07] ring-1 transition ${on ? "ring-2 ring-orange-400" : "ring-white/10 hover:ring-white/30"}`}>
               <img src={`${import.meta.env.BASE_URL}signs/${l.id}.jpg`} alt="" loading="lazy" className="block w-full aspect-[2/3] object-cover object-top" draggable={false} />
               <span className="block px-2 py-1 text-xs font-semibold text-zinc-100">{l.label}</span>
             </button>
@@ -181,7 +181,7 @@ export function DesignPanel() {
               aria-checked={s.basketMark === m.value}
               data-testid={`basket-mark-${m.value}`}
               onClick={() => setStyle({ basketMark: m.value })}
-              className={`rounded-lg border p-1 flex flex-col items-center gap-1 transition-colors ${s.basketMark === m.value ? "border-orange-500 bg-orange-500/10" : "border-zinc-700 hover:border-zinc-500"}`}
+              className={`rounded-lg border p-1 flex flex-col items-center gap-1 transition-colors ${s.basketMark === m.value ? "border-orange-500 bg-orange-500/10" : "border-white/[0.12] hover:border-zinc-500"}`}
             >
               <svg viewBox="0 0 40 40" className="w-10 h-10 rounded" style={{ background: s.fairway }} dangerouslySetInnerHTML={{ __html: basketMark(m.value, { x: 20, y: m.value === "flag" ? 30 : 20 }, 2, s.basket, "7") }} />
               <span className="text-[10px] font-semibold text-zinc-300">{m.label}</span>
@@ -205,7 +205,7 @@ export function DesignPanel() {
               aria-checked={(s.markings ?? "map") === m.value}
               data-testid={`markings-${m.value}`}
               onClick={() => setStyle({ markings: m.value })}
-              className={`rounded-lg border px-2 py-1.5 flex items-center gap-2 text-xs font-semibold text-zinc-200 transition-colors ${(s.markings ?? "map") === m.value ? "border-orange-500 bg-orange-500/10" : "border-zinc-700 hover:border-zinc-500"}`}
+              className={`rounded-lg border px-2 py-1.5 flex items-center gap-2 text-xs font-semibold text-zinc-200 transition-colors ${(s.markings ?? "map") === m.value ? "border-orange-500 bg-orange-500/10" : "border-white/[0.12] hover:border-zinc-500"}`}
             >
               <span className="flex gap-0.5">
                 {[m.ob, s.hazard, AREA_KINDS.casual.color, m.nogo].map((c, i) => <span key={i} className="w-2.5 h-4 rounded-sm border border-zinc-900" style={{ background: c }} />)}
@@ -240,7 +240,7 @@ export function DesignPanel() {
       <TeeSignSettings />
       <Section title="Paper">
         <Field label="Size">
-          <select aria-label="Paper size" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={s.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
+          <select aria-label="Paper size" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={s.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
             {(Object.keys(PAPER) as PaperSize[]).map(p => <option key={p} value={p}>{PAPER[p].label}</option>)}
           </select>
         </Field>

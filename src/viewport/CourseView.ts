@@ -328,16 +328,16 @@ export class CourseView {
     container.appendChild(this.labelsLayer);
     container.appendChild(this.handlesLayer);
 
-    // A dusky backdrop behind the site when tilted, in the app's dark palette
+    // A dusky backdrop behind the site, the deep green of the woods (the app's palette)
     {
       const c = document.createElement("canvas");
       c.width = 2;
       c.height = 256;
       const g = c.getContext("2d")!;
       const grad = g.createLinearGradient(0, 0, 0, 256);
-      grad.addColorStop(0, "#101418");
-      grad.addColorStop(0.6, "#1d252b");
-      grad.addColorStop(1, "#2c3a36");
+      grad.addColorStop(0, "#0e1810");
+      grad.addColorStop(0.6, "#16261a");
+      grad.addColorStop(1, "#203524");
       g.fillStyle = grad;
       g.fillRect(0, 0, 2, 256);
       this.sky = new THREE.CanvasTexture(c);

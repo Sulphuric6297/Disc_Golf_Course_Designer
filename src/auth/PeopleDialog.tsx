@@ -49,7 +49,7 @@ export function PeopleDialog({ onClose }: { onClose: () => void }) {
               <label className="flex items-center gap-2 text-sm text-zinc-200"><input type="checkbox" checked={asAdmin} onChange={e => setAsAdmin(e.target.checked)} /> Admin</label>
             </Form>
             {link && (
-              <div className="mt-3 bg-zinc-950 border border-zinc-800 rounded-lg p-3" data-testid="new-link">
+              <div className="mt-3 bg-zinc-950 border border-white/[0.08] rounded-lg p-3" data-testid="new-link">
                 <div className="text-[12px] text-zinc-400 mb-1">{link.label}</div>
                 <div className="flex items-center gap-2"><code className="flex-1 min-w-0 truncate text-xs text-zinc-100">{link.url}</code><CopyButton text={link.url} /></div>
               </div>
@@ -70,7 +70,7 @@ export function PeopleDialog({ onClose }: { onClose: () => void }) {
           )}
 
           <Section title={`People (${people.length})`}>
-            <ul className="divide-y divide-zinc-800" data-testid="people">
+            <ul className="divide-y divide-white/[0.08]" data-testid="people">
               {people.map(p => (
                 <li key={p.id} className="py-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                   <div className="flex-1 min-w-[180px]">
@@ -93,7 +93,7 @@ export function PeopleDialog({ onClose }: { onClose: () => void }) {
           </Section>
         </div>
       ) : (
-        <ul className="text-sm divide-y divide-zinc-800" data-testid="activity">
+        <ul className="text-sm divide-y divide-white/[0.08]" data-testid="activity">
           {log.map(e => (
             <li key={e.id} className="py-1.5 flex gap-3">
               <span className="text-zinc-500 text-[12px] w-40 shrink-0">{when(e.at)}</span>

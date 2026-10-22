@@ -1,5 +1,6 @@
 // The Design step's preview: the printed course map (or a tee sign, a hole page, or the
 // scorecard) exactly as it will print, updating as the style changes.
+import { Woods } from "./Woods";
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EyeOff, Minus, Plus, Scan, Trash2 } from "lucide-react";
 import { onPaintProgress, onPainted, renderPoster, withLivePaint } from "../lib/mapSvg";
@@ -304,7 +305,7 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
   kRef.current = k;
   const html = page.svg.replace(/^<svg([^>]*?) width="[^"]*" height="[^"]*"/, `<svg$1 width="${page.width * k}" height="${page.height * k}"`);
   htmlRef.current = html;
-  const zb = compact ? "w-10 h-10 flex items-center justify-center rounded-xl active:bg-zinc-700 hover:bg-zinc-800" : "p-1.5 rounded hover:bg-zinc-800";
+  const zb = compact ? "w-10 h-10 flex items-center justify-center rounded-full active:bg-white/[0.14] hover:bg-white/[0.08]" : "p-1.5 rounded-full hover:bg-white/[0.08]";
   const zoomGroup = (
     <div className="ml-auto flex items-center gap-1 text-zinc-300">
       <button className={zb} aria-label="Zoom out" onClick={() => setZoom(Math.max(0.1, k / 1.25))}><Minus size={compact ? 19 : 16} /></button>
@@ -315,34 +316,35 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
   );
   // (on a phone each tab as wide as its label, "Map" for the course map: all four across the screen)
   const tab = (id: Preview, label: string, short = label) => (
-    <button key={id} role="tab" aria-selected={preview === id} onClick={() => { setPreview(id); setZoom(null); }} className={`${compact ? "flex-auto min-w-0 h-10 px-2 rounded-xl text-[13px] whitespace-nowrap" : "px-3 py-1.5 rounded-lg text-sm"} font-semibold ${preview === id ? "bg-zinc-100 text-zinc-900" : "text-zinc-300 hover:bg-zinc-800"}`}>
+    <button key={id} role="tab" aria-selected={preview === id} onClick={() => { setPreview(id); setZoom(null); }} className={`${compact ? "flex-auto min-w-0 h-10 px-2 rounded-full text-[13px] whitespace-nowrap" : "px-3.5 py-1.5 rounded-full text-sm"} font-semibold ${preview === id ? "bg-zinc-100 text-zinc-900" : "text-zinc-300 hover:bg-white/[0.09]"}`}>
       {compact ? short : label}
     </button>
   );
   return (
-    <div className={`absolute inset-0 z-20 ${compact ? "bg-zinc-900" : "bg-zinc-800"} flex flex-col`} style={compact ? { paddingTop: topInset } : undefined} data-testid="map-designer">
-      <div className={compact ? "flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2 py-2 bg-zinc-900 border-b border-zinc-800" : "flex items-center gap-2 px-3 py-2 bg-zinc-900 border-b border-zinc-800"}>
+    <div className="absolute inset-0 z-20 bg-zinc-950 flex flex-col isolate overflow-hidden" style={compact ? { paddingTop: topInset } : undefined} data-testid="map-designer">
+      <Woods inset />
+      <div className={compact ? "flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2 py-2" : "flex items-center gap-2 px-3 py-2.5"}>
         <div role="tablist" className={compact ? "w-full flex gap-1" : "flex gap-1"}>{[tab("map", "Course map", "Map"), tab("sign", "Tee sign"), tab("page", "Hole page"), tab("scorecard", "Scorecard")]}</div>
         {(preview === "sign" || preview === "page") && doc.holes.length > 0 && (
-          <select aria-label={preview === "sign" ? "Hole for the tee sign" : "Hole for the hole page"} className={`bg-zinc-800 rounded-lg px-2 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={holeId ?? ""} onChange={e => setHole(e.target.value)}>
+          <select aria-label={preview === "sign" ? "Hole for the tee sign" : "Hole for the hole page"} className={`bg-white/[0.08] rounded-full px-3 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={holeId ?? ""} onChange={e => setHole(e.target.value)}>
             {doc.holes.map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}</option>)}
           </select>
         )}
         {preview === "sign" && (
-          <select aria-label="Tee sign size" className={`bg-zinc-800 rounded-lg px-2 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={signSize} onChange={e => { setSignSize(e.target.value as SignSize); setZoom(null); }}>
+          <select aria-label="Tee sign size" className={`bg-white/[0.08] rounded-full px-3 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={signSize} onChange={e => { setSignSize(e.target.value as SignSize); setZoom(null); }}>
             {(Object.keys(SIGN_SIZES) as SignSize[]).map(k => <option key={k} value={k}>{SIGN_SIZES[k].label}</option>)}
           </select>
         )}
         {preview === "page" && (
-          <select aria-label="Hole page size" className={`bg-zinc-800 rounded-lg px-2 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={pageSize} onChange={e => { setPageSize(e.target.value as HolePageSize); setZoom(null); }}>
+          <select aria-label="Hole page size" className={`bg-white/[0.08] rounded-full px-3 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={pageSize} onChange={e => { setPageSize(e.target.value as HolePageSize); setZoom(null); }}>
             {(Object.keys(HOLE_PAGES) as HolePageSize[]).map(k => <option key={k} value={k}>{HOLE_PAGES[k].label}</option>)}
           </select>
         )}
         {!compact && zoomGroup}
       </div>
       {/* (A phone: the zoom buttons float over the page, in the thumb's reach) */}
-      {compact && <div className="absolute right-2 bottom-2 z-10 rounded-2xl bg-zinc-900/95 border border-white/10 shadow-lg p-0.5">{zoomGroup}</div>}
-      <div ref={box} className={`flex-1 overflow-auto ${compact ? "bg-zinc-800 dg-scroll" : ""} cursor-grab`} data-testid="design-scroll" onPointerDown={onBoxDown} onPointerMove={onBoxMove} onPointerUp={onBoxUp} onPointerCancel={onBoxUp}>
+      {compact && <div className="glass absolute right-2 bottom-2 z-10 rounded-[22px] p-0.5">{zoomGroup}</div>}
+      <div ref={box} className={`flex-1 overflow-auto ${compact ? "dg-scroll" : ""} cursor-grab`} data-testid="design-scroll" onPointerDown={onBoxDown} onPointerMove={onBoxMove} onPointerUp={onBoxUp} onPointerCancel={onBoxUp}>
         {/* (as wide as the page when zoomed in past the window, so all of it scrolls into view) */}
         <div className={`w-max min-w-full min-h-full flex items-center justify-center ${compact ? "p-2.5" : "p-6"}`}>
           <div
@@ -368,9 +370,9 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
                   const [cx, cy] = c.split(",").map(Number);
                   return <div key={c} data-corner={c} data-testid="page-corner" className="absolute w-3 h-3 touch:w-6 touch:h-6 bg-white border-2 border-orange-500 rounded-sm pointer-events-auto" style={{ left: `calc(${cx * 100}% - ${compact ? 12 : 6}px)`, top: `calc(${cy * 100}% - ${compact ? 12 : 6}px)`, cursor: cx === cy ? "nwse-resize" : "nesw-resize", touchAction: "none" }} />;
                 })}
-                <div data-page-bar className="absolute left-0 flex items-center gap-1 pointer-events-auto bg-zinc-900/95 border border-white/10 rounded-lg px-1.5 py-1 shadow-lg whitespace-nowrap" style={{ top: selBox.y * k > 40 ? -36 : undefined, bottom: selBox.y * k > 40 ? undefined : -36 }}>
+                <div data-page-bar className="glass absolute left-0 flex items-center gap-1 pointer-events-auto rounded-full px-1.5 py-1 whitespace-nowrap" style={{ top: selBox.y * k > 40 ? -36 : undefined, bottom: selBox.y * k > 40 ? undefined : -36 }}>
                   <span className="text-[11px] font-semibold text-zinc-200 px-1 max-w-[140px] truncate">{elementLabel(doc, designSel)}</span>
-                  {(() => { const gone = designSel.startsWith("text:") || designSel.startsWith("image:"); return <button className="p-1 rounded hover:bg-zinc-700 text-zinc-300" aria-label={gone ? "Delete it" : "Hide it"} title={gone ? "Delete" : "Hide"} onClick={removeDesignSel}>{gone ? <Trash2 size={13} /> : <EyeOff size={13} />}</button>; })()}
+                  {(() => { const gone = designSel.startsWith("text:") || designSel.startsWith("image:"); return <button className="p-1 rounded hover:bg-white/[0.13] text-zinc-300" aria-label={gone ? "Delete it" : "Hide it"} title={gone ? "Delete" : "Hide"} onClick={removeDesignSel}>{gone ? <Trash2 size={13} /> : <EyeOff size={13} />}</button>; })()}
                 </div>
               </div>
             )}
@@ -378,13 +380,13 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
         </div>
       </div>
       {painting !== null && (
-        <div className={`absolute left-1/2 -translate-x-1/2 ${compact ? "" : "top-14"} z-10 pointer-events-none flex items-center gap-2.5 rounded-full bg-zinc-900/90 border border-white/10 shadow-lg px-3.5 py-1.5`} style={compact ? { top: topInset + 104 } : undefined} role="progressbar" aria-label="Painting the map" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(painting * 100)} data-testid="paint-progress">
+        <div className={`absolute left-1/2 -translate-x-1/2 ${compact ? "" : "top-14"} z-10 pointer-events-none flex items-center gap-2.5 rounded-full glass shadow-lg px-3.5 py-1.5`} style={compact ? { top: topInset + 104 } : undefined} role="progressbar" aria-label="Painting the map" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(painting * 100)} data-testid="paint-progress">
           <span className="text-xs font-semibold text-zinc-200 whitespace-nowrap">Painting the map</span>
-          <span className="w-32 h-1.5 rounded-full bg-zinc-700 overflow-hidden"><span className="block h-full bg-orange-500 transition-[width] duration-200" style={{ width: `${Math.max(3, Math.round(painting * 100))}%` }} /></span>
+          <span className="w-32 h-1.5 rounded-full bg-white/[0.14] overflow-hidden"><span className="block h-full bg-orange-500 transition-[width] duration-200" style={{ width: `${Math.max(3, Math.round(painting * 100))}%` }} /></span>
           <span className="text-xs tabular-nums text-zinc-300 w-8 text-right">{Math.round(painting * 100)}%</span>
         </div>
       )}
-      {doc.holes.length === 0 && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="bg-zinc-900/90 rounded-xl px-4 py-3 text-sm text-zinc-200">No holes yet.</div></div>}
+      {doc.holes.length === 0 && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="glass rounded-[18px] px-4 py-3 text-sm text-zinc-200">No holes yet.</div></div>}
     </div>
   );
 }

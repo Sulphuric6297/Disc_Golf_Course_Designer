@@ -389,7 +389,10 @@ export class Ground {
     }
     // The theme's ground color, a little lighter up high and darker down low so slopes read
     // (or the elevation colors, when the elevation overlay is on)
-    const flat = new THREE.Color(doc.groundColor);
+    // (darker than set, as much as the scene's light brightens it, and never yellower than a grass
+    // green: the plan's ground a woodsy green, not a washed-out yellow)
+    const hsl = new THREE.Color(doc.groundColor).getHSL({ h: 0, s: 0, l: 0 });
+    const flat = new THREE.Color().setHSL(Math.max(hsl.h, 0.28), hsl.s * 0.85, hsl.l * 0.8).multiplyScalar(0.45);
     const c = new THREE.Color();
     const { min, relief } = doc.terrain;
     const tint = false;

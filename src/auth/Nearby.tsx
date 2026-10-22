@@ -161,7 +161,7 @@ export function NearbyCourses() {
             ))}
           </ul>
           {sharing ? (
-            <div className="mt-3 rounded-lg border border-zinc-700 p-3 space-y-2" data-testid="share-ground">
+            <div className="mt-3 rounded-lg border border-white/[0.12] p-3 space-y-2" data-testid="share-ground">
               <p className="text-sm text-zinc-200">This course's ground into:</p>
               {list.filter(n => n.role !== "viewer").map(n => (
                 <label key={n.id} className="flex items-center gap-2 text-sm text-zinc-200">
@@ -172,7 +172,7 @@ export function NearbyCourses() {
               <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={withPlanted} onChange={e => setWithPlanted(e.target.checked)} data-testid="share-planted" /> And the trees planted by hand</label>
               <p className="text-[11px] text-zinc-500">Their holes, OB and everything drawn stay as they are. A tree cut down on one course stays on the others.</p>
               <div className="flex gap-2 justify-end">
-                <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded-lg" onClick={() => setSharing(null)}>Cancel</button>
+                <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/[0.09] rounded-lg" onClick={() => setSharing(null)}>Cancel</button>
                 <button className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" disabled={busy || !sharing.size}
                   onClick={() => { setBusy(true); void shareGround([...sharing], { trees: withTrees, planted: withPlanted }).finally(() => { setBusy(false); setSharing(null); }); }} data-testid="share-ground-go">{busy ? "Copying…" : "Copy the ground"}</button>
               </div>

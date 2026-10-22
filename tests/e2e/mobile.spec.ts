@@ -508,10 +508,11 @@ test.describe("tablet on its side", () => {
 test("desktop at 1600 × 1000 keeps its layout: top bar steps, side panel, tool bar, no phone parts", async ({ page }) => {
   await oneHole(page);
   const header = (await page.locator("header").boundingBox())!;
-  expect(header.height).toBe(48);
+  expect(header.height).toBe(50);
   const side = (await page.getByTestId("side-panel").boundingBox())!;
   expect(side.width).toBe(340);
-  expect(side.y).toBe(48);
+  // (the bar and the panel float, 10 px from the edges and from each other)
+  expect(side.y).toBe(70);
   await expect(page.getByRole("button", { name: "1 Site" })).toBeVisible();
   await expect(page.getByRole("toolbar", { name: "Tools" })).toBeVisible();
   // (no prompt over the map with Select; a tool's own prompt when one is picked)
@@ -524,5 +525,5 @@ test("desktop at 1600 × 1000 keeps its layout: top bar steps, side panel, tool 
   await page.getByTestId("hole-row").click();
   const insp = (await page.getByTestId("inspector").boundingBox())!;
   expect(insp.width).toBe(300);
-  expect(Math.round(insp.x + insp.width)).toBe(1600 - 150);
+  expect(Math.round(insp.x + insp.width)).toBe(1600 - 10 - 150);
 });

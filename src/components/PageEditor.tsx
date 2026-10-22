@@ -244,7 +244,7 @@ export function PageElementPanel() {
     const t = e.text;
     return (
       <Section title={`Text: ${title}`} testid="page-selected" right={close}>
-        <textarea ref={textArea} aria-label="Text on the page" data-testid="page-text" className="w-full bg-zinc-800 rounded-lg px-2.5 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80 min-h-[64px]" value={t.text} onChange={ev => patchText(t.id, { text: ev.target.value }, false)} onBlur={done} />
+        <textarea ref={textArea} aria-label="Text on the page" data-testid="page-text" className="w-full bg-white/[0.07] rounded-lg px-2.5 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80 min-h-[64px]" value={t.text} onChange={ev => patchText(t.id, { text: ev.target.value }, false)} onBlur={done} />
         <Field label="Font"><Segmented label="Text font" value={t.font ?? s.font} onChange={v => patchText(t.id, { font: v })} options={FONTS.map(f => ({ ...f }))} /></Field>
         <LiveSlider label="Size" value={t.size} min={4} max={200} step={1} format={v => `${Math.round(v)} pt`} onDone={v => patchText(t.id, { size: v })} />
         <div className="grid grid-cols-2 gap-x-3">
@@ -347,7 +347,7 @@ export function PageSection() {
         {rows.map(r => {
           const shown = isShown(doc, r);
           return (
-            <li key={r} className={`flex items-center gap-1 rounded-lg ${sel === r ? "bg-orange-500/15 ring-1 ring-orange-400/60" : "hover:bg-zinc-800"}`}>
+            <li key={r} className={`flex items-center gap-1 rounded-lg ${sel === r ? "bg-orange-500/15 ring-1 ring-orange-400/60" : "hover:bg-white/[0.09]"}`}>
               <button className="flex-1 min-w-0 text-left text-sm px-2 py-1.5 touch:py-2.5 truncate text-zinc-100 flex items-center gap-1.5" data-testid="page-element" onClick={() => set({ designSel: r })}>
                 {r.startsWith("text:") ? <Type size={13} className="text-zinc-400 shrink-0" /> : r.startsWith("image:") ? <ImagePlus size={13} className="text-zinc-400 shrink-0" /> : null}
                 <span className={`truncate ${shown ? "" : "text-zinc-500"}`}>{elementLabel(doc, r)}</span>

@@ -88,7 +88,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
     return (
       <>
         {children}
-        {!teeView && <button className="fixed z-50 left-1/2 -translate-x-1/2 top-[76px] md:translate-x-0 md:left-auto md:top-2 md:right-2 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 md:py-1.5 text-sm font-semibold bg-zinc-900/95 border border-zinc-700 text-zinc-100 shadow-lg" onClick={() => setExplore(false)} data-testid="leave-3d"><X size={14} /> Course page</button>}
+        {!teeView && <button className="fixed z-50 left-1/2 -translate-x-1/2 top-[76px] md:translate-x-0 md:left-auto md:top-2 md:right-2 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 md:py-1.5 text-sm font-semibold glass border border-white/[0.12] text-zinc-100 shadow-lg" onClick={() => setExplore(false)} data-testid="leave-3d"><X size={14} /> Course page</button>}
       </>
     );
   }
@@ -98,7 +98,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
       <Plain>
         <form className="space-y-3" onSubmit={e => { e.preventDefault(); void load(password); }}>
           <div className="flex items-center gap-2 text-zinc-200"><Lock size={16} /> This course page has a password.</div>
-          <input type="password" className="w-full bg-zinc-800 rounded-lg px-3 py-2 text-zinc-100" value={password} onChange={e => setPassword(e.target.value)} aria-label="Password" autoFocus />
+          <input type="password" className="w-full bg-white/[0.07] rounded-lg px-3 py-2 text-zinc-100" value={password} onChange={e => setPassword(e.target.value)} aria-label="Password" autoFocus />
           {tried && <p role="alert" className="text-sm text-red-300">{tried}</p>}
           <button className="w-full rounded-lg px-3 py-2 font-semibold bg-orange-500 text-zinc-950">Open</button>
         </form>
@@ -130,7 +130,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
       </header>
       {map && (
         <div className="max-w-5xl mx-auto px-4">
-          <button className="block w-full rounded-2xl overflow-hidden border border-zinc-800 hover:border-zinc-600" onClick={() => setBig(map)} aria-label="The course map, bigger">
+          <button className="block w-full rounded-2xl overflow-hidden border border-white/[0.08] hover:border-zinc-600" onClick={() => setBig(map)} aria-label="The course map, bigger">
             <img src={map} alt={`Map of ${site.info.name}`} className="w-full h-auto" />
           </button>
         </div>
@@ -140,7 +140,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
         {t && site.shown.stats && (
           <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-6" data-testid="public-totals">
             {[["Holes", String(t.holes)], ["Par", String(t.par)], ["Length", fmtDist(t.length, u)], ["Climb", fmtElev(t.climb, u)]].map(([k, v]) => (
-              <div key={k} className="bg-zinc-900 border border-zinc-800 rounded-xl p-3"><dt className="text-[11px] uppercase tracking-wider text-zinc-500 font-bold">{k}</dt><dd className="text-2xl font-bold">{v}</dd></div>
+              <div key={k} className="glass border border-white/[0.08] rounded-xl p-3"><dt className="text-[11px] uppercase tracking-wider text-zinc-500 font-bold">{k}</dt><dd className="text-2xl font-bold">{v}</dd></div>
             ))}
           </dl>
         )}
@@ -152,17 +152,17 @@ export function PublicSite({ children }: { children: ReactNode }) {
             </button>
           )}
           {site.files.filter(f => /\.(gpx|kml)$/.test(f)).map(f => (
-            <button key={f} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-semibold bg-zinc-800 hover:bg-zinc-700 border border-zinc-700" onClick={() => void download(f)}><Download size={15} /> {f.endsWith("gpx") ? "GPS file (GPX)" : "Google Earth (KML)"}</button>
+            <button key={f} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-semibold bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.12]" onClick={() => void download(f)}><Download size={15} /> {f.endsWith("gpx") ? "GPS file (GPX)" : "Google Earth (KML)"}</button>
           ))}
         </div>
 
         {site.shown.stats && site.info.holes.length > 0 && (
           <section className="my-8">
             <h2 className="text-[12px] font-bold uppercase tracking-wider text-zinc-400 mb-3">Holes</h2>
-            <ul className="rounded-xl border border-zinc-800 divide-y divide-zinc-800 overflow-hidden" data-testid="public-holes">
+            <ul className="rounded-xl border border-white/[0.08] divide-y divide-white/[0.08] overflow-hidden" data-testid="public-holes">
               {site.info.holes.map(h => (
                 <li key={h.label} data-testid="public-hole">
-                  <button className="w-full flex items-center gap-3 px-3 py-3 text-left hover:bg-zinc-900" onClick={() => setOpenHole(openHole === h.label ? null : h.label)} aria-expanded={openHole === h.label}>
+                  <button className="w-full flex items-center gap-3 px-3 py-3 text-left hover:bg-white/[0.06]" onClick={() => setOpenHole(openHole === h.label ? null : h.label)} aria-expanded={openHole === h.label}>
                     <span className="w-8 h-8 rounded-full bg-sky-600 text-white font-bold flex items-center justify-center shrink-0">{h.label}</span>
                     <span className="flex-1 min-w-0">
                       <span className="block font-semibold truncate">{h.name || `Hole ${h.label}`}</span>
@@ -174,7 +174,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
                   {openHole === h.label && (
                     <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-3 pb-3" data-testid="hole-facts">
                       {holeFacts(h, u).map(([k, v]) => (
-                        <div key={k} className="bg-zinc-900 rounded-lg p-2"><dt className="text-[11px] uppercase tracking-wider text-zinc-500 font-bold">{k}</dt><dd className="font-semibold">{v}</dd></div>
+                        <div key={k} className="glass rounded-lg p-2"><dt className="text-[11px] uppercase tracking-wider text-zinc-500 font-bold">{k}</dt><dd className="font-semibold">{v}</dd></div>
                       ))}
                     </dl>
                   )}
@@ -189,7 +189,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
             <h2 className="text-[12px] font-bold uppercase tracking-wider text-zinc-400 mb-3">Tee signs</h2>
             <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3" data-testid="public-signs">
               {signs.map(n => (
-                <li key={n}><button className="block w-full rounded-xl overflow-hidden border border-zinc-800 hover:border-zinc-600" onClick={() => setBig(files[n])}><img src={files[n]} alt={`Tee sign, hole ${n.slice(5).split(".")[0]}`} className="w-full" loading="lazy" /></button></li>
+                <li key={n}><button className="block w-full rounded-xl overflow-hidden border border-white/[0.08] hover:border-zinc-600" onClick={() => setBig(files[n])}><img src={files[n]} alt={`Tee sign, hole ${n.slice(5).split(".")[0]}`} className="w-full" loading="lazy" /></button></li>
               ))}
             </ul>
           </section>
@@ -198,7 +198,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
         {card && (
           <section className="my-8">
             <h2 className="text-[12px] font-bold uppercase tracking-wider text-zinc-400 mb-3">Scorecard</h2>
-            <button className="block w-full rounded-xl overflow-hidden border border-zinc-800" onClick={() => setBig(card)}><img src={card} alt="Scorecard" className="w-full bg-white" /></button>
+            <button className="block w-full rounded-xl overflow-hidden border border-white/[0.08]" onClick={() => setBig(card)}><img src={card} alt="Scorecard" className="w-full bg-white" /></button>
           </section>
         )}
 
@@ -212,7 +212,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
 
 const Plain = ({ children }: { children: ReactNode }) => (
   <div className="min-h-[100dvh] bg-zinc-950 flex items-center justify-center p-4">
-    <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+    <div className="w-full max-w-sm glass border border-white/[0.08] rounded-2xl p-6">
       <div className="flex items-center gap-2 mb-4"><Logo size={28} /><span className="font-bold text-zinc-50">HyzerLab</span></div>
       {children}
     </div>
@@ -270,7 +270,7 @@ function Zoomable({ src, onClose }: { src: string; onClose: () => void }) {
         setTimeout(() => { if (lastTap.current === now && v.k === 1) onClose(); }, 320);
       }}>
       <img src={src} alt="" draggable={false} className="absolute inset-0 m-auto max-w-full max-h-full object-contain will-change-transform" style={{ transform: `translate(${v.x}px, ${v.y}px) scale(${v.k})`, transformOrigin: "center" }} />
-      <button className="absolute top-3 right-3 rounded-full w-10 h-10 bg-zinc-900/90 border border-zinc-700 text-zinc-100 flex items-center justify-center" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()} onClick={onClose} aria-label="Close"><X size={18} /></button>
+      <button className="absolute top-3 right-3 rounded-full w-10 h-10 glass border border-white/[0.12] text-zinc-100 flex items-center justify-center" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()} onClick={onClose} aria-label="Close"><X size={18} /></button>
     </div>
   );
 }

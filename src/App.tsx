@@ -28,6 +28,7 @@ import { grownTree } from "./lib/lidar";
 import { isImported, reframeDesign, type ImportedSite } from "./lib/importSite";
 import { holeLabel } from "./lib/course";
 import { geoRefOf } from "./lib/geoRef";
+import { Woods } from "./components/Woods";
 import type { CourseItem, P } from "./types";
 
 function Toasts({ bottom }: { bottom?: number }) {
@@ -37,7 +38,7 @@ function Toasts({ bottom }: { bottom?: number }) {
   return (
     <div className="absolute bottom-[120px] left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-40 pointer-events-none w-max max-w-[calc(100%-16px)]" style={bottom !== undefined ? { bottom } : undefined}>
       {toasts.map(t => (
-        <div key={t.id} role="status" className={`pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-2.5 touch:py-3 shadow-2xl text-sm max-w-[560px] border ${t.tone === "error" ? "bg-red-950 border-red-800 text-red-100" : t.tone === "success" ? "bg-emerald-950 border-emerald-800 text-emerald-50" : "bg-zinc-900 border-zinc-700 text-zinc-100"}`}>
+        <div key={t.id} role="status" className={`pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-2.5 touch:py-3 shadow-2xl text-sm max-w-[560px] border ${t.tone === "error" ? "bg-red-950 border-red-800 text-red-100" : t.tone === "success" ? "bg-emerald-950 border-emerald-800 text-emerald-50" : "glass border-white/[0.12] text-zinc-100"}`}>
           <span className={bottom !== undefined ? "text-[13px] leading-snug line-clamp-3" : undefined}>{t.text}</span>
           {t.undo && <button className="font-bold text-orange-300 hover:text-orange-200 touch:min-h-[40px]" onClick={() => { undo(); dismiss(t.id); }}>Undo</button>}
           {t.action && <button className="font-bold text-orange-300 hover:text-orange-200 whitespace-nowrap touch:min-h-[40px]" onClick={() => { t.action!.run(); dismiss(t.id); }}>{t.action.label}</button>}
@@ -91,7 +92,7 @@ const GESTURES: [string, string][] = [
 ];
 
 /** A dialog's box: a sheet up from the bottom on a phone, a centered box from a tablet up. */
-const SHEET = "bg-zinc-900 shadow-2xl ring-1 ring-white/10 w-full rounded-t-[22px] md:rounded-2xl max-h-[92dvh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] md:pb-5 animate-[dgrise_220ms_cubic-bezier(0.2,0.9,0.3,1)] md:animate-none";
+const SHEET = "glass shadow-2xl ring-1 ring-white/10 w-full rounded-t-[22px] md:rounded-2xl max-h-[92dvh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] md:pb-5 animate-[dgrise_220ms_cubic-bezier(0.2,0.9,0.3,1)] md:animate-none";
 const CLOSE = "text-zinc-400 hover:text-zinc-50 touch:w-11 touch:h-11 touch:-m-2.5 touch:flex touch:items-center touch:justify-center";
 
 function HelpDialog({ onClose }: { onClose: () => void }) {
@@ -123,7 +124,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
           {SHORTCUTS.map(([k, v]) => (
             <div key={k} className="contents">
-              <dt><kbd className="px-1.5 py-0.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-zinc-200 font-mono">{k}</kbd></dt>
+              <dt><kbd className="px-1.5 py-0.5 bg-white/[0.07] border border-white/[0.12] rounded text-xs text-zinc-200 font-mono">{k}</kbd></dt>
               <dd className="text-zinc-300">{v}</dd>
             </div>
           ))}
@@ -157,14 +158,14 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
   const underHole = info.under ? doc.holes.find(h => h.id === info.under) : undefined;
   if (!hole && !item && !tree && !(canPaste() && info.ground)) return null;
   const x = Math.min(info.clientX, window.innerWidth - 220), y = Math.min(info.clientY, window.innerHeight - 200);
-  const row = "w-full text-left px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800";
+  const row = "w-full text-left px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/[0.09]";
   const run = (fn: () => void) => () => { fn(); onClose(); };
   const holeId = hole?.id ?? (item && "holeId" in item ? item.holeId : undefined);
   // (on one of the things picked together: for all of them)
   const group = useEditor.getState().group;
   const inGroup = !!item && group.includes(item.id);
   return (
-    <div className="fixed z-50 w-52 bg-zinc-900 rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 py-1" style={{ left: x, top: y }} role="menu" onPointerDown={e => e.stopPropagation()}>
+    <div className="fixed z-50 w-52 glass rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 py-1" style={{ left: x, top: y }} role="menu" onPointerDown={e => e.stopPropagation()}>
       {holeId && holeStats(doc, doc.holes.find(h => h.id === holeId)!).complete && (
         <>
           <button className={row} role="menuitem" onClick={run(() => useEditor.getState().set({ teeView: holeId, flyover: false }))}>View from the tee</button>
@@ -185,15 +186,15 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
         const label = t.kind === "measured" ? (() => { const g = doc.lidar?.trees[t.k]; const h = g ? grownTree(g, doc.lidar?.growYears ?? 0)[2] : 0; return `Measured tree · ${Math.round(h)} ft`; })()
           : `${t.height < 25 ? "Sapling" : "Planted tree"} · ${Math.round(t.height)} ft`;
         return (
-          <div key={n} className={n ? "border-t border-zinc-800 mt-1 pt-1" : ""} data-testid="tree-menu-tree">
+          <div key={n} className={n ? "border-t border-white/[0.08] mt-1 pt-1" : ""} data-testid="tree-menu-tree">
             <div className="px-3 pt-1 pb-0.5 text-[11px] text-zinc-500">{n === 0 && trees.length > 1 ? `${label} · in front` : label}</div>
             <button className={row} role="menuitem" onClick={run(() => { const look = getView()?.lookOf(t) ?? null; if (t.kind === "measured") adoptLidarTree(t.k, look); else adoptTreeAt(t, look); })} data-testid="tree-adopt">Edit this tree (height, place…)</button>
             <button className={row} role="menuitem" onClick={run(() => (t.kind === "measured" ? getView()?.toggleLidarTree(t.k) : cutTreeAt(t)))} data-testid="tree-cut">Cut down this tree</button>
           </div>
         );
       })}
-      {tree && under && <button className={`${row} border-t border-zinc-800`} role="menuitem" onClick={run(() => select(under.id))} data-testid="tree-select-under">Select the {under.type === "area" ? (under.kind === "woods" ? "woods" : "area") : under.type === "line" ? "line" : "structure"}</button>}
-      {tree && underHole && <button className={`${row} border-t border-zinc-800`} role="menuitem" onClick={run(() => select(underHole.id))} data-testid="tree-select-under">Select hole {holeLabel(doc, underHole.id)}</button>}
+      {tree && under && <button className={`${row} border-t border-white/[0.08]`} role="menuitem" onClick={run(() => select(under.id))} data-testid="tree-select-under">Select the {under.type === "area" ? (under.kind === "woods" ? "woods" : "area") : under.type === "line" ? "line" : "structure"}</button>}
+      {tree && underHole && <button className={`${row} border-t border-white/[0.08]`} role="menuitem" onClick={run(() => select(underHole.id))} data-testid="tree-select-under">Select hole {holeLabel(doc, underHole.id)}</button>}
       {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); copySelection(); })}>{inGroup ? `Copy ${group.length}` : "Copy"}</button>}
       {canPaste() && info.ground && <button className={row} role="menuitem" onClick={run(() => pasteClipboard(info.ground))}>Paste here</button>}
       {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); duplicateSelection(); })}>{inGroup ? `Duplicate ${group.length}` : "Duplicate"}</button>}
@@ -339,7 +340,7 @@ export default function App() {
   const showWelcome = ready && empty && ed.step === "site";
   const onContextMenu = (i: { clientX: number; clientY: number; itemId: string | null; ground: P | null; under?: string | null }) => setMenu(i);
   const welcome = (
-    <div className="pointer-events-auto bg-zinc-900/95 backdrop-blur rounded-2xl shadow-2xl ring-1 ring-white/10 p-6 w-[440px] max-w-full text-center" data-testid="welcome">
+    <div className="pointer-events-auto glass backdrop-blur rounded-2xl shadow-2xl ring-1 ring-white/10 p-6 w-[440px] max-w-full text-center" data-testid="welcome">
       <div className="w-12 h-12 rounded-xl bg-orange-500/15 text-orange-400 flex items-center justify-center mx-auto mb-3"><Route size={24} /></div>
       <h2 className="text-xl font-bold text-zinc-50">Design your disc golf course</h2>
       <div className="mt-4 flex flex-col gap-2">
@@ -375,11 +376,12 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
+    <div className="h-screen w-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden relative isolate">
+      <Woods />
       <Header onHelp={() => setHelp(true)} onGoTo={() => setGoTo(true)} />
-      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex min-h-0 gap-2.5 p-2.5 relative">
         {readOnly ? <ViewerPanel /> : <SidePanel onFindSite={() => setFindSite(true)} />}
-        <main className="flex-1 relative min-w-0">
+        <main className="flex-1 relative min-w-0 rounded-[20px] overflow-hidden ring-1 ring-white/10">
           <MapViewport onContextMenu={onContextMenu} />
           {ed.step === "design" && !ed.teeView && <MapDesigner />}
           {ed.step !== "design" && !readOnly && <Toolbar />}

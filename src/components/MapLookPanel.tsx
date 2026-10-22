@@ -57,7 +57,7 @@ function PathOrder({ s }: { s: MapStyle }) {
     <div className="mt-2" data-testid="path-order">
       <div className="text-xs text-zinc-400 mb-1">Where they cross, on top first</div>
       {top.map((t, i) => (
-        <div key={t} className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-zinc-900/60 mb-1">
+        <div key={t} className="flex items-center gap-2 px-2 py-1.5 rounded-md glass mb-1">
           <span className="text-xs text-zinc-200 flex-1">{TIER_LABEL[t]}</span>
           <button className="p-1 rounded text-zinc-400 hover:text-zinc-100 disabled:opacity-30" disabled={i === 0} aria-label={`Move ${TIER_LABEL[t]} up`} onClick={() => move(t, -1)}><ArrowUp size={13} /></button>
           <button className="p-1 rounded text-zinc-400 hover:text-zinc-100 disabled:opacity-30" disabled={i === top.length - 1} aria-label={`Move ${TIER_LABEL[t]} down`} onClick={() => move(t, 1)}><ArrowDown size={13} /></button>
@@ -78,12 +78,11 @@ type Thumb = { id: string; label: string; img: string; on: boolean; pick: () => 
 /** Choices as pictures (each a small painting of the map with it), two to a row. */
 function Thumbs({ label, items, testid }: { label: string; items: Thumb[]; testid?: string }) {
   return (
-    <div className="grid grid-cols-2 gap-1.5 mb-2" role="radiogroup" aria-label={label} data-testid={testid}>
+    <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 mb-2.5" role="radiogroup" aria-label={label} data-testid={testid}>
       {items.map(c => (
-        <button key={c.id} role="radio" aria-checked={c.on} onClick={c.pick} data-testid={testid && `${testid}-${c.id}`}
-          className={`text-left rounded-lg overflow-hidden bg-zinc-800 ring-1 transition ${c.on ? "ring-2 ring-orange-400" : "ring-white/10 hover:ring-white/30"}`}>
-          <img src={c.img} alt="" loading="lazy" className="block w-full aspect-[3/2] object-cover" draggable={false} />
-          <span className="block px-2 py-1 text-[11px] font-semibold text-zinc-100 leading-tight">{c.label}</span>
+        <button key={c.id} role="radio" aria-checked={c.on} onClick={c.pick} data-testid={testid && `${testid}-${c.id}`} className="group text-center rounded-[12px]">
+          <img src={c.img} alt="" loading="lazy" className={`block w-full aspect-[3/2] object-cover rounded-[12px] transition ${c.on ? "ring-[2.5px] ring-orange-400" : "ring-1 ring-white/15 group-hover:ring-white/35"}`} draggable={false} />
+          <span className={`block px-1 pt-1 text-[11px] leading-tight ${c.on ? "text-zinc-50 font-semibold" : "text-zinc-400"}`}>{c.label}</span>
         </button>
       ))}
     </div>
@@ -132,15 +131,14 @@ export function MapLookPanel() {
 
   return (
     <div data-testid="map-look">
-      <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Map style" data-testid="map-styles">
+      <div className="grid grid-cols-2 gap-x-2.5 gap-y-3" role="radiogroup" aria-label="Map style" data-testid="map-styles">
         {LOOK_THEMES.map(t => {
           const on = theme.id === t.id;
           return (
-            <button key={t.id} role="radio" aria-checked={on} onClick={() => pickTheme(t.id)} title={t.hint} data-testid={`map-style-${t.id}`}
-              className={`relative text-left rounded-xl overflow-hidden bg-zinc-800 ring-1 transition ${on ? "ring-2 ring-orange-400" : "ring-white/10 hover:ring-white/30"}`}>
-              <img src={`${base}looks/${t.id}.jpg`} alt="" className="block w-full aspect-[3/2] object-cover" draggable={false} />
-              <span className="block px-2 py-1.5 text-xs font-semibold text-zinc-100">{t.label}</span>
-              {on && mixed && <span className="absolute top-1.5 right-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-black/60 text-orange-200">Mixed</span>}
+            <button key={t.id} role="radio" aria-checked={on} onClick={() => pickTheme(t.id)} title={t.hint} data-testid={`map-style-${t.id}`} className="group relative text-center rounded-[14px]">
+              <img src={`${base}looks/${t.id}.jpg`} alt="" className={`block w-full aspect-[3/2] object-cover rounded-[14px] transition ${on ? "ring-[2.5px] ring-orange-400" : "ring-1 ring-white/15 group-hover:ring-white/35"}`} draggable={false} />
+              <span className={`block pt-1.5 text-xs ${on ? "text-zinc-50 font-semibold" : "text-zinc-400"}`}>{t.label}</span>
+              {on && mixed && <span className="absolute top-1.5 right-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-black/55 backdrop-blur text-orange-200">Mixed</span>}
             </button>
           );
         })}
@@ -148,22 +146,25 @@ export function MapLookPanel() {
       <div className="text-[11px] text-zinc-500 mt-1.5 mb-3">{theme.hint}</div>
 
       <div className="flex items-center justify-between mb-1.5">
-        <div className="text-xs font-semibold text-zinc-400">Parts of the map</div>
+        <div className="text-[12px] font-semibold text-zinc-400 px-1">Parts of the map</div>
         {mixed && <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => pickTheme(theme.id)}><RotateCcw size={12} /> Reset all</button>}
       </div>
+      <div className="rounded-[16px] bg-white/[0.06] overflow-hidden">
       {(Object.keys(PART_LABEL) as Part[]).map(p => {
         const isOpen = open === p;
+        const pic = p === "light" ? `${base}parts/light-${lt.mode}.jpg` : `${base}parts/${p}-${parts[p].style}.jpg`;
         return (
-          <div key={p} className="rounded-lg bg-zinc-800/70 mb-1.5" data-testid={`look-part-${p}`}>
-            <button className="w-full flex items-center gap-2 px-2.5 py-2 text-left" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : p)}>
-              <span className="text-sm font-semibold text-zinc-100 flex-1">{PART_LABEL[p]}</span>
+          <div key={p} className="relative before:absolute before:left-[52px] before:right-0 before:top-0 before:h-px before:bg-white/[0.07] first:before:hidden" data-testid={`look-part-${p}`}>
+            <button className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-white/[0.04]" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : p)}>
+              <img src={pic} alt="" className="w-7 h-7 rounded-[8px] object-cover ring-1 ring-white/10" draggable={false} />
+              <span className="text-[13.5px] font-medium text-zinc-100 flex-1">{PART_LABEL[p]}</span>
               {changed(p) && <span className="w-1.5 h-1.5 rounded-full bg-orange-400" aria-label="Changed" />}
-              {p !== "light" && <span className="w-3 h-3 rounded ring-1 ring-white/20" style={{ background: s[COLOR_FIELD[p]] }} />}
-              <span className="text-xs text-zinc-400">{current(p)}</span>
-              <ChevronRight size={14} className={`text-zinc-500 transition-transform ${isOpen ? "rotate-90" : ""}`} />
+              {p !== "light" && <span className="w-3 h-3 rounded-[4px] ring-1 ring-white/20" style={{ background: s[COLOR_FIELD[p]] }} />}
+              <span className="text-[12.5px] text-zinc-400">{current(p)}</span>
+              <ChevronRight size={15} className={`text-zinc-500 transition-transform ${isOpen ? "rotate-90" : ""}`} />
             </button>
             {isOpen && (
-              <div className="px-2.5 pb-3">
+              <div className="px-3 pb-3.5 pt-0.5">
                 {p === "light" ? (
                   <>
                     <Thumbs label="Light" items={LIGHT_MODES.map(m => ({ id: m.id, label: m.label, img: `${base}parts/light-${m.id}.jpg`, on: lt.mode === m.id, pick: () => setStyle({ lightMode: m.id }) }))} />
@@ -205,6 +206,7 @@ export function MapLookPanel() {
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

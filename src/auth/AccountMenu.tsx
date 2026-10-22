@@ -35,7 +35,7 @@ function useMenu() {
 
 const ROW = MENU_ROW, Row = MenuRow;
 /** The icon buttons along the bar (comments, share, notices). */
-const BAR = `relative p-2 rounded-lg text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 ${FOCUS}`;
+const BAR = `relative p-2 rounded-lg text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.09] ${FOCUS}`;
 
 /** The open course: how it's being changed, and what can be done about it. */
 export function CourseChip() {
@@ -55,7 +55,7 @@ export function CourseChip() {
             <p className="text-zinc-200 mb-2">{conflict}.</p>
             <div className="flex gap-2">
               <button className="flex-1 rounded-lg px-2 py-1.5 bg-orange-500 hover:bg-orange-400 text-zinc-950 font-semibold" onClick={() => { m.setOpen(false); void reloadTheirs(); }}>Open theirs</button>
-              <button className="flex-1 rounded-lg px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700" onClick={() => { m.setOpen(false); void keepMine(); }}>Save mine</button>
+              <button className="flex-1 rounded-lg px-2 py-1.5 bg-white/[0.07] hover:bg-white/[0.13] text-zinc-100 border border-white/[0.12]" onClick={() => { m.setOpen(false); void keepMine(); }}>Save mine</button>
             </div>
           </div>
         )}
@@ -94,7 +94,7 @@ export function CourseChip() {
               <div className="px-3 py-1.5 text-[12px] text-zinc-400">{draft ? draftChanges() : "No changes in your draft yet"}</div>
               {n > 0 && <Row icon={<Send size={15} />} onClick={() => { m.setOpen(false); open("publish"); }}>{sends ? "Send to the owner…" : "Publish…"}</Row>}
               {draft && <Row icon={<Trash2 size={15} />} danger testid="discard-draft" onClick={() => { if (confirm("Throw away your draft? The course stays as it is.")) void choose(discardDraft); }}>Discard draft</Row>}
-              <div className="border-t border-zinc-800 my-1" />
+              <div className="border-t border-white/[0.08] my-1" />
             </>
           )}
           {role === "owner" && (
@@ -110,7 +110,7 @@ export function CourseChip() {
               <button className={`${ROW} ${drafting ? "text-orange-200" : ""}`} role="menuitemradio" aria-checked={drafting} data-testid="mode-draft" onClick={() => void choose(() => setLive(false))}>
                 <span><span className="block">Work in a draft</span><span className="block text-[12px] text-zinc-500">Publish when it's ready</span></span>
               </button>
-              <div className="border-t border-zinc-800 my-1" />
+              <div className="border-t border-white/[0.08] my-1" />
               {pending > 0 && <Row icon={<Inbox size={15} />} testid="review-button" onClick={() => { m.setOpen(false); open("review"); }}>{pending} to review</Row>}
             </>
           )}
@@ -154,7 +154,7 @@ export function AccountMenu({ home = false, onHelp }: { home?: boolean; onHelp?:
       )}
       <NoticeBell />
       <div className="relative" ref={m.ref}>
-        <button className={`ml-1 w-8 h-8 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-[11px] font-bold flex items-center justify-center ${FOCUS} ${m.open ? "ring-2 ring-sky-400" : ""}`} aria-label="Account" title={user.displayName} aria-haspopup="menu" aria-expanded={m.open} onClick={() => m.setOpen(o => !o)} data-testid="account-menu">
+        <button className={`ml-1 w-8 h-8 rounded-full bg-white/[0.07] hover:bg-white/[0.13] text-zinc-100 text-[11px] font-bold flex items-center justify-center ${FOCUS} ${m.open ? "ring-2 ring-sky-400" : ""}`} aria-label="Account" title={user.displayName} aria-haspopup="menu" aria-expanded={m.open} onClick={() => m.setOpen(o => !o)} data-testid="account-menu">
           {initials(user.displayName)}
         </button>
         {m.open && (
@@ -164,7 +164,7 @@ export function AccountMenu({ home = false, onHelp }: { home?: boolean; onHelp?:
             <Row icon={<UserRound size={15} />} onClick={() => { m.setOpen(false); open("account"); }}>Account</Row>
             {user.isAdmin && <Row icon={<Users size={15} />} onClick={() => { m.setOpen(false); open("people"); }}>People</Row>}
             {onHelp && <Row icon={<HelpCircle size={15} />} onClick={() => { m.setOpen(false); onHelp(); }}>Shortcuts and help</Row>}
-            <div className="border-t border-zinc-800 my-1" />
+            <div className="border-t border-white/[0.08] my-1" />
             <Row icon={<LogOut size={15} />} onClick={() => { m.setOpen(false); void signOut(); }}>Sign out</Row>
           </div>
         )}

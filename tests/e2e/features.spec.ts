@@ -94,7 +94,9 @@ test("a mando placed on a hole faces down it, passed on the line's side; its sid
   const rot = await handleCenter(page, "rotate");
   await drag(page, rot, await screenOf(page, 480, 400));
   mando = (await course(page)).items.find((i: any) => i.type === "mando");
-  expect(Math.abs(mando.rotation)).toBeLessThan(10);
+  // (turned to about straight up: 359° is as near as 1°)
+  const turn = ((mando.rotation % 360) + 360) % 360;
+  expect(Math.min(turn, 360 - turn)).toBeLessThan(10);
   await page.keyboard.press("z");
   await clickPlan(page, 470, 380);
   const dz = (await course(page)).items.find((i: any) => i.type === "dropzone");

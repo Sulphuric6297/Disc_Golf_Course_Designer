@@ -82,7 +82,7 @@ const Chip = ({ active, onClick, children, color, testid }: { active: boolean; o
   <button
     onClick={onClick}
     data-testid={testid}
-    className={`flex items-center gap-1.5 px-2.5 py-1 touch:py-2 touch:px-3 touch:text-[13px] shrink-0 whitespace-nowrap rounded-full text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${active ? "bg-zinc-100 text-zinc-900" : "bg-zinc-900/90 text-zinc-300 ring-1 ring-white/10 hover:bg-zinc-800"}`}
+    className={`flex items-center gap-1.5 px-2.5 py-1 touch:py-2 touch:px-3 touch:text-[13px] shrink-0 whitespace-nowrap rounded-full text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${active ? "bg-zinc-100 text-zinc-900" : "glass text-zinc-300 ring-1 ring-white/10 hover:bg-white/[0.09]"}`}
   >
     {color && <span className="w-2.5 h-2.5 rounded-full border border-black/30" style={{ background: color }} />}
     {children}
@@ -96,12 +96,12 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
   const set = ed.set;
   // How to draw: point by point, or drag a rectangle, a circle or a freehand shape
   const shapes = (list: DrawShape[]) => (
-    <div key="shapes" className="flex shrink-0 gap-0.5 bg-zinc-900/95 ring-1 ring-white/10 rounded-full p-0.5 mr-1" role="radiogroup" aria-label="How to draw">
+    <div key="shapes" className="flex shrink-0 gap-0.5 glass ring-1 ring-white/10 rounded-full p-0.5 mr-1" role="radiogroup" aria-label="How to draw">
       {list.map(sh => {
         // (Lines can't be rectangles or circles: those draw freehand)
         const on = ed.drawShape === sh || (sh === "freehand" && !list.includes(ed.drawShape));
         return (
-          <button key={sh} role="radio" aria-checked={on} data-testid={`draw-shape-${sh}`} title={SHAPES[sh].title} onClick={() => set({ drawShape: sh })} className={`flex items-center gap-1 px-2 py-0.5 touch:py-1.5 touch:px-2.5 touch:text-[13px] whitespace-nowrap rounded-full text-xs font-semibold ${on ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-zinc-800"}`}>
+          <button key={sh} role="radio" aria-checked={on} data-testid={`draw-shape-${sh}`} title={SHAPES[sh].title} onClick={() => set({ drawShape: sh })} className={`flex items-center gap-1 px-2 py-0.5 touch:py-1.5 touch:px-2.5 touch:text-[13px] whitespace-nowrap rounded-full text-xs font-semibold ${on ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09]"}`}>
             {SHAPES[sh].icon}{SHAPES[sh].label}
           </button>
         );
@@ -112,9 +112,9 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
       case "select":
         // What a drag on the map does: move the map, or draw a box to select things
         return [
-          <div key="drag" className="flex shrink-0 gap-0.5 bg-zinc-900/95 ring-1 ring-white/10 rounded-full p-0.5" role="radiogroup" aria-label="Drag on the map">
+          <div key="drag" className="flex shrink-0 gap-0.5 glass ring-1 ring-white/10 rounded-full p-0.5" role="radiogroup" aria-label="Drag on the map">
             {([[false, "Move the map", <Hand key="i" size={13} />, "drag-pan"], [true, "Select", <BoxSelect key="i" size={13} />, "drag-select"]] as const).map(([on, label, icon, id]) => (
-              <button key={id} role="radio" aria-checked={ed.dragSelect === on} data-testid={id} title={on ? "Drag a box around things to select them (Shift+drag)" : "Drag to move the map"} onClick={() => set({ dragSelect: on })} className={`flex items-center gap-1 px-2 py-0.5 touch:py-1.5 touch:px-2.5 touch:text-[13px] whitespace-nowrap rounded-full text-xs font-semibold ${ed.dragSelect === on ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-zinc-800"}`}>
+              <button key={id} role="radio" aria-checked={ed.dragSelect === on} data-testid={id} title={on ? "Drag a box around things to select them (Shift+drag)" : "Drag to move the map"} onClick={() => set({ dragSelect: on })} className={`flex items-center gap-1 px-2 py-0.5 touch:py-1.5 touch:px-2.5 touch:text-[13px] whitespace-nowrap rounded-full text-xs font-semibold ${ed.dragSelect === on ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09]"}`}>
                 {icon}{label}
               </button>
             ))}
@@ -222,8 +222,8 @@ export function Toolbar() {
       data-tool={t.mode}
       onClick={() => { set({ tool: t.mode }); setMore(false); }}
       className={inMenu
-        ? `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${ed.tool === t.mode ? "bg-orange-500 text-zinc-950" : "text-zinc-200 hover:bg-zinc-800"}`
-        : `${BAR_BTN} ${ed.tool === t.mode ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50"}`}
+        ? `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${ed.tool === t.mode ? "bg-orange-500 text-zinc-950" : "text-zinc-200 hover:bg-white/[0.09]"}`
+        : `${BAR_BTN} ${ed.tool === t.mode ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09] hover:text-zinc-50"}`}
     >
       {t.icon}
       {inMenu ? <span className="flex-1">{t.short}</span> : null}
@@ -233,27 +233,27 @@ export function Toolbar() {
   return (
     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-20 max-w-[calc(100%-24px)]">
       {options && <div className="flex flex-wrap justify-center gap-1.5 max-w-[760px]" data-testid="tool-options">{options}</div>}
-      {hint && <div className="text-xs text-zinc-100 bg-zinc-900/85 backdrop-blur rounded-lg px-3 py-1.5 ring-1 ring-white/10 text-center" data-testid="tool-hint">{hint}</div>}
-      <div className="flex items-center gap-0.5 max-w-full bg-zinc-900/95 backdrop-blur rounded-2xl px-1.5 py-1.5 shadow-xl shadow-black/40 ring-1 ring-white/10" role="toolbar" aria-label="Tools">
+      {hint && <div className="text-xs text-zinc-100 glass backdrop-blur rounded-lg px-3 py-1.5 ring-1 ring-white/10 text-center" data-testid="tool-hint">{hint}</div>}
+      <div className="flex items-center gap-0.5 max-w-full glass backdrop-blur rounded-2xl px-1.5 py-1.5 shadow-xl shadow-black/40 ring-1 ring-white/10" role="toolbar" aria-label="Tools">
         {shown.map((t, i) => (
           <div key={t.mode} className="flex items-center shrink-0">
-            {i > 0 && shown[i - 1].group !== t.group && <div className="w-px h-5 bg-zinc-700/80 mx-1" />}
+            {i > 0 && shown[i - 1].group !== t.group && <div className="w-px h-5 bg-white/[0.12] mx-1" />}
             {tool(t)}
           </div>
         ))}
         {rest.length > 0 && (
           <div className="relative shrink-0" ref={moreRef}>
-            <button className={`${BAR_BTN} ${more ? "bg-zinc-800 text-zinc-50" : "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50"}`} title="More tools" aria-label="More tools" aria-haspopup="menu" aria-expanded={more} onClick={() => setMore(m => !m)} data-testid="more-tools"><Ellipsis size={18} /></button>
+            <button className={`${BAR_BTN} ${more ? "bg-white/[0.07] text-zinc-50" : "text-zinc-300 hover:bg-white/[0.09] hover:text-zinc-50"}`} title="More tools" aria-label="More tools" aria-haspopup="menu" aria-expanded={more} onClick={() => setMore(m => !m)} data-testid="more-tools"><Ellipsis size={18} /></button>
             {more && (
-              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-56 bg-zinc-900 rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 p-1 flex flex-col" role="menu" data-testid="more-tools-menu">
+              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-56 glass rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 p-1 flex flex-col" role="menu" data-testid="more-tools-menu">
                 {rest.map(t => tool(t, true))}
               </div>
             )}
           </div>
         )}
-        <div className="w-px h-5 bg-zinc-700/80 mx-1 shrink-0" />
-        <button title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!canUndo} onClick={undo} className={`${BAR_BTN} shrink-0 text-zinc-300 hover:bg-zinc-800 disabled:opacity-30`}><Undo2 size={18} /></button>
-        <button title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled={!canRedo} onClick={redo} className={`${BAR_BTN} shrink-0 text-zinc-300 hover:bg-zinc-800 disabled:opacity-30`}><Redo2 size={18} /></button>
+        <div className="w-px h-5 bg-white/[0.12] mx-1 shrink-0" />
+        <button title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!canUndo} onClick={undo} className={`${BAR_BTN} shrink-0 text-zinc-300 hover:bg-white/[0.09] disabled:opacity-30`}><Undo2 size={18} /></button>
+        <button title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled={!canRedo} onClick={redo} className={`${BAR_BTN} shrink-0 text-zinc-300 hover:bg-white/[0.09] disabled:opacity-30`}><Redo2 size={18} /></button>
       </div>
     </div>
   );

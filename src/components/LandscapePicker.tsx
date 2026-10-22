@@ -22,7 +22,7 @@ export function LandscapePicker() {
             aria-checked={current === id}
             data-testid={`landscape-${id}`}
             onClick={() => pick(id)}
-            className={`rounded-lg border p-1 flex flex-col items-center gap-1 transition-colors ${current === id ? "border-orange-500 bg-orange-500/10" : "border-zinc-700 hover:border-zinc-500"}`}
+            className={`rounded-lg border p-1 flex flex-col items-center gap-1 transition-colors ${current === id ? "border-orange-500 bg-orange-500/10" : "border-white/[0.12] hover:border-zinc-500"}`}
           >
             <span className="w-full h-7 rounded relative overflow-hidden" style={{ background: l.colors.rough }}>
               <span className="absolute left-1 right-3 top-2.5 h-2 rounded-full" style={{ background: l.colors.fairway }} />

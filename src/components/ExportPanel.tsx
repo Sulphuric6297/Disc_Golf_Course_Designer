@@ -27,7 +27,7 @@ import { Button, Field, Section, Segmented } from "./ui";
 
 const svgBlob = (svg: string) => new Blob([svg], { type: "image/svg+xml" });
 const two = (i: number) => String(i).padStart(2, "0");
-const selectCls = "bg-zinc-800 rounded-lg px-2 py-1 text-xs";
+const selectCls = "bg-white/[0.07] rounded-lg px-2 py-1 text-xs";
 
 /** Contours, hill shading and (Forest style) the photo's canopy, for drawing a page. */
 const art = async (d: CourseDoc) => ({ ...reliefOf(d), canopy: await canopyFor(d) });
@@ -310,7 +310,7 @@ export function ExportPanel() {
                     <td className="text-right font-semibold text-zinc-100">${l.total.toLocaleString()}</td>
                   </tr>
                 ))}
-                <tr className="border-t border-zinc-700"><td className="pt-1 font-bold text-zinc-100" colSpan={3}>Estimate</td><td className="text-right pt-1 font-bold text-zinc-50" data-testid="parts-total">${parts.total.toLocaleString()}</td></tr>
+                <tr className="border-t border-white/[0.12]"><td className="pt-1 font-bold text-zinc-100" colSpan={3}>Estimate</td><td className="text-right pt-1 font-bold text-zinc-50" data-testid="parts-total">${parts.total.toLocaleString()}</td></tr>
               </tbody>
             </table>
             <p className="text-[11px] text-zinc-500 mt-1">Concrete for the pads: {parts.concreteYd3.toFixed(1)} cu yd</p>
@@ -319,7 +319,7 @@ export function ExportPanel() {
               <div className="grid grid-cols-2 gap-2 mt-2">
                 {(Object.keys(doc.rules.prices) as (keyof CourseRules["prices"])[]).map(k => (
                   <Field key={k} label={k === "teePad" ? "Tee pad" : k[0].toUpperCase() + k.slice(1)}>
-                    <input aria-label={`Price ${k}`} type="number" className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs" value={doc.rules.prices[k]} onChange={e => setPrice(k, Math.max(0, parseFloat(e.target.value) || 0))} />
+                    <input aria-label={`Price ${k}`} type="number" className="w-full bg-white/[0.07] border border-white/[0.12] rounded px-2 py-1 text-xs" value={doc.rules.prices[k]} onChange={e => setPrice(k, Math.max(0, parseFloat(e.target.value) || 0))} />
                   </Field>
                 ))}
               </div>

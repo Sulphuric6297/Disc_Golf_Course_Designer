@@ -121,7 +121,7 @@ export function HoleFlight({ hole }: { hole: Hole }) {
               <NumberInput label={`Keyframe ${i + 1} height`} value={Math.round(k.alt)} min={2} max={1000} onChange={v => edit(i, { alt: v })} />
               <NumberInput label={`Keyframe ${i + 1} field of view`} value={k.fov ?? f.fov} min={15} max={110} onChange={v => edit(i, { fov: v })} />
               {i === 0 ? <span className="text-xs text-zinc-500 text-center">0</span> : <NumberInput label={`Keyframe ${i + 1} seconds`} value={k.secs ?? NaN} min={0.5} max={60} step={0.5} onChange={v => edit(i, { secs: v })} />}
-              <button className="p-1 rounded text-zinc-400 hover:text-red-400 hover:bg-zinc-800 disabled:opacity-30" aria-label={`Remove keyframe ${i + 1}`} disabled={keys.length <= 2} onClick={() => setKeys(keys.filter((_, j) => j !== i))}><Trash2 size={14} /></button>
+              <button className="p-1 rounded text-zinc-400 hover:text-red-400 hover:bg-white/[0.09] disabled:opacity-30" aria-label={`Remove keyframe ${i + 1}`} disabled={keys.length <= 2} onClick={() => setKeys(keys.filter((_, j) => j !== i))}><Trash2 size={14} /></button>
             </div>
           ))}
           <div className="flex gap-1.5 pt-1">

@@ -51,7 +51,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
                   <span className="sr-only">Username</span>
                   <input className={inputCls} list="share-people" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} autoCapitalize="none" spellCheck={false} aria-label="Username" />
                 </label>
-                <select className="shrink-0 w-28 bg-zinc-800 rounded-lg px-2 py-1.5 text-sm touch:py-2.5 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80" value={newRole} onChange={e => setNewRole(e.target.value as Role)} aria-label="Role">
+                <select className="shrink-0 w-28 bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm touch:py-2.5 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80" value={newRole} onChange={e => setNewRole(e.target.value as Role)} aria-label="Role">
                   {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
               </div>
@@ -79,14 +79,14 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
               </div>
             );
           })()}
-          <ul className="divide-y divide-zinc-800" data-testid="members">
+          <ul className="divide-y divide-white/[0.08]" data-testid="members">
             {members.map(m => (
               <li key={m.userId} className="py-2 flex items-center gap-2 text-sm">
                 <div className="flex-1 min-w-0">
                   <span className="text-zinc-100">{m.displayName}</span> <span className="text-zinc-500">{m.username}{m.userId === me.id ? " · you" : ""}</span>
                 </div>
                 {owner ? (
-                  <select className="bg-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100" value={m.role} aria-label={`Role for ${m.username}`}
+                  <select className="bg-white/[0.07] rounded-lg px-2 py-1 text-xs text-zinc-100" value={m.role} aria-label={`Role for ${m.username}`}
                     onChange={e => void change(() => api("POST", `courses/${id}/members`, { username: m.username, role: e.target.value }))}>
                     {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
@@ -170,7 +170,7 @@ function PublicSection({ id }: { id: string }) {
       <Section title="Public links" testid="public-links">
         <ul className="space-y-2">
           {links.map(l => (
-            <li key={l.id} className={`rounded-lg bg-zinc-800/50 p-2.5 text-sm ${l.revoked ? "opacity-60" : ""}`} data-testid="link">
+            <li key={l.id} className={`rounded-lg bg-white/[0.07] p-2.5 text-sm ${l.revoked ? "opacity-60" : ""}`} data-testid="link">
               <div className="flex items-center gap-2">
                 <span className="flex-1 min-w-0 truncate text-zinc-100 font-medium">{l.label || "Public link"}{l.revoked ? " · off" : ""}{l.hasPassword ? " · password" : ""}{l.expiresAt ? ` · until ${new Date(l.expiresAt).toLocaleDateString()}` : ""}</span>
                 {!l.revoked && <CopyButton text={linkUrl(l)} label="Copy link" />}
@@ -187,7 +187,7 @@ function PublicSection({ id }: { id: string }) {
           ))}
         </ul>
         {editing ? (
-          <div className="mt-3 rounded-lg bg-zinc-800/50 p-3 space-y-2" data-testid="link-form">
+          <div className="mt-3 rounded-lg bg-white/[0.07] p-3 space-y-2" data-testid="link-form">
             <input className={inputCls} placeholder="Label (where it's shared)" value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} aria-label="Label" />
             <label className="block">
               <span className="flex items-center gap-2"><span className="text-xs text-zinc-400 shrink-0">{location.host}/</span>
@@ -200,7 +200,7 @@ function PublicSection({ id }: { id: string }) {
               <input className={`${inputCls} w-40`} type="date" value={form.expires} onChange={e => setForm({ ...form, expires: e.target.value })} aria-label="Works until" />
             </div>
             <div className="flex gap-2 justify-end">
-              <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded-lg" onClick={() => setEditing(null)}>Cancel</button>
+              <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/[0.09] rounded-lg" onClick={() => setEditing(null)}>Cancel</button>
               <button className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" disabled={!!busy} onClick={() => void save()} data-testid="save-link">{busy ? busy + "…" : editing === "new" ? "Make link" : "Save"}</button>
             </div>
           </div>
