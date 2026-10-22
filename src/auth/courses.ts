@@ -11,7 +11,7 @@ import { courseStats, courseTotals, playsOf } from "../lib/holeStats";
 import { canopyFor } from "../lib/forest";
 import { paintedForPrint, renderPoster } from "../lib/mapSvg";
 import { canvasBlob, svgToCanvas } from "../lib/raster";
-import { changesBetween, describeChanges, holesChanged, keepTheirs, mergeCourse, type Merged } from "../lib/merge";
+import { changesBetween, describeChanges, holesChanged, keepCourseHoles, keepTheirs, mergeCourse, type Merged } from "../lib/merge";
 import { reliefOf } from "../components/useRelief";
 import { safeDoc } from "../lib/safeDoc";
 import type { PlanMeta } from "../lib/storage";
@@ -83,8 +83,14 @@ const editing = () => state().role === "owner" || state().role === "editor";
 const canSave = () => editing() && state().status !== "conflict" && !state().preview;
 export const inDraft = () => state().role === "editor" || (state().role === "owner" && !state().live);
 const noPhoto = (doc: CourseDoc) => ({ ...doc, background: null });
-/** A document from the server in the app's own form (filled in, cleaned): what it's compared in. */
-const usable = (doc: CourseDoc) => normalizeCourse(safeDoc({ ...doc, background: null }));
+/** A document from the server in the app's own form (filled in, cleaned): what it's compared in
+ * (made once for each document). */
+const usableOf = new WeakMap<CourseDoc, CourseDoc>();
+const usable = (doc: CourseDoc) => {
+  let u = usableOf.get(doc);
+  if (!u) usableOf.set(doc, (u = normalizeCourse(safeDoc({ ...doc, background: null }))));
+  return u;
+};
 
 async function save() {
   const doc = getDoc();
@@ -309,16 +315,22 @@ export async function prepareMerge() {
   return mergeWith(id, getDoc(), base.doc);
 }
 
-/** How many things the draft changes (holes, features, and settings). */
-export const draftChangeCount = () => {
-  if (!base) return 0;
-  const c = changesBetween(base.doc as never, usable(getDoc()) as never);
-  const n = (x: { added: number; removed: number; changed: number }) => x.added + x.removed + x.changed;
-  return n(c.holes) + n(c.items) + c.other.length;
+// (what the draft changes, worked out once for each change: the top bar asks often)
+let changesFor: { doc: CourseDoc; base: CourseDoc; count: number; text: string } | null = null;
+const changes = () => {
+  const doc = getDoc();
+  if (!base) return { count: 0, text: "" };
+  if (changesFor?.doc !== doc || changesFor.base !== base.doc) {
+    const c = changesBetween(base.doc as never, doc as never);
+    const n = (x: { added: number; removed: number; changed: number }) => x.added + x.removed + x.changed;
+    changesFor = { doc, base: base.doc, count: n(c.holes) + n(c.items) + c.other.length, text: describeChanges(base.doc, doc) };
+  }
+  return changesFor;
 };
-
+/** How many things the draft changes (holes, features, and settings). */
+export const draftChangeCount = () => changes().count;
 /** What the draft changes ("Holes: 1 added"): the version's name when none is given. */
-export const draftChanges = () => (base ? describeChanges(base.doc, usable(getDoc())) : "");
+export const draftChanges = () => changes().text;
 
 /** The holes the draft changes (for the dots in the hole list), or none. */
 export const draftHoles = (doc: CourseDoc) => (base && inDraft() ? holesChanged(base.doc as never, doc as never) : new Set<string>());
@@ -394,7 +406,13 @@ export async function discardDraft() {
 
 // --- Looking back: earlier versions, drafts sent for the owner's OK
 
-export interface VersionRow { id: number; version: number; kind: "created" | "autosave" | "publish" | "restore"; note: string; at: string; by: string | null; approvedBy: string | null }
+export interface VersionRow { id: number; version: number; kind: "created" | "autosave" | "publish" | "restore" | "draft"; note: string; at: string; by: string | null; approvedBy: string | null }
+
+/** What changed between an earlier version and the course as it is now (or your draft). */
+export async function compareWithNow(vid: number) {
+  const r = await api<{ doc: CourseDoc }>("GET", `courses/${state().id}/versions/${vid}`);
+  return describeChanges(usable(r.doc), usable(getDoc()));
+}
 export interface SubmissionRow { id: string; note: string; createdAt: string; by: string | null; byId: string | null }
 
 export const listVersions = () => api<VersionRow[]>("GET", `courses/${state().id}/versions`);
@@ -406,6 +424,18 @@ export async function previewVersion(v: VersionRow, label: string) {
   const r = await api<{ doc: CourseDoc; photo: string | null }>("GET", `courses/${state().id}/versions/${v.id}`);
   set({ preview: { kind: "version", id: v.id, label } });
   display(r.doc, r.photo, true);
+}
+
+/** An earlier version (or a checkpoint of your draft) into your draft, to publish. */
+export async function versionToDraft(vid: number) {
+  const id = state().id;
+  if (!id) return;
+  await saveNow();
+  await api("POST", `courses/${id}/versions/${vid}/to-draft`);
+  // (an owner publishing as they go: into a draft now)
+  if (state().role === "owner" && state().live) await api("POST", `courses/${id}/live`, { live: false });
+  await reopen();
+  toast("It's in your draft now: Publish puts it in the course.", "success");
 }
 
 export async function restoreVersion(vid: number) {
@@ -428,14 +458,23 @@ export async function previewSubmission(s: SubmissionRow, label: string) {
   display(r.doc, r.photo ?? (await readPhoto(state().id!, c.hasBackground)), true);
 }
 
-export async function acceptSubmission(sid: string) {
+/** The holes a sent draft changes, with their names (for leaving some out when accepting). */
+export async function submissionHoles(sid: string) {
+  const s = await api<{ doc: CourseDoc; baseDoc: CourseDoc }>("GET", `courses/${state().id}/submissions/${sid}`);
+  const doc = usable(s.doc);
+  return [...holesChanged(usable(s.baseDoc) as never, doc as never)].map(h => ({ id: h, label: doc.holes.find(x => x.id === h)?.name || `Hole ${doc.holes.findIndex(x => x.id === h) + 1}` }));
+}
+
+export async function acceptSubmission(sid: string, leaveOut = new Set<string>()) {
   const id = state().id;
   if (!id) return;
   const s = await api<{ doc: CourseDoc; baseDoc: CourseDoc; photo: string | null; note: string }>("GET", `courses/${id}/submissions/${sid}`);
   for (let tries = 0; ; tries++) {
     const m = await mergeWith(id, s.doc, s.baseDoc);
+    // (holes left out: as they are in the course)
+    const doc = keepCourseHoles(m.doc, usable((await readCourse(id)).doc), leaveOut);
     try {
-      await api("POST", `courses/${id}/submissions/${sid}/accept`, { doc: m.doc, version: m.version, summary: summaryOf(m.doc), photo: s.photo ?? undefined, note: s.note });
+      await api("POST", `courses/${id}/submissions/${sid}/accept`, { doc, version: m.version, summary: summaryOf(doc), photo: s.photo ?? undefined, note: s.note });
       set({ preview: null });
       await reopen();
       thumbFor = null;
@@ -449,8 +488,8 @@ export async function acceptSubmission(sid: string) {
 }
 
 /** The owner declines a sent draft; whoever sent it takes it back. */
-export async function declineSubmission(sid: string) {
-  await api("POST", `courses/${state().id}/submissions/${sid}/decline`);
+export async function declineSubmission(sid: string, note = "") {
+  await api("POST", `courses/${state().id}/submissions/${sid}/decline`, { note });
   set({ preview: null });
   await reopen();
 }

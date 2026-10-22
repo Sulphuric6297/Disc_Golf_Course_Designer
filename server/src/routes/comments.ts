@@ -122,7 +122,7 @@ export async function commentRoutes(app: FastifyInstance, { sql }: Ctx) {
   app.get("/api/notifications", async req => {
     const a = need(req);
     const rows = await sql`
-      select n.id, n.kind, n.created_at, n.read_at, n.course_id, n.comment_id, c.name as course, b.display_name as by, cm.body,
+      select n.id, n.kind, n.created_at, n.read_at, n.course_id, n.comment_id, c.name as course, b.display_name as by, coalesce(cm.body, nullif(n.text, '')) as body,
         coalesce(cm.parent_id, cm.id) as thread_id
       from notifications n
       left join courses c on c.id = n.course_id left join users b on b.id = n.by_id left join course_comments cm on cm.id = n.comment_id
