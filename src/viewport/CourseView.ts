@@ -271,6 +271,7 @@ export class CourseView {
   private grassBuilt = 0;
   private grassTimer = 0;
   private lastSky = false;
+  private readonly haze = new THREE.FogExp2(0xffffff, 0);
   private grassTerrainRef: unknown = null;
   private grassPhoto: unknown = null;
   private grassSetting: GrassQuality | "auto" = "auto";
@@ -402,6 +403,13 @@ export class CourseView {
 
     this.ground = new Ground(this.renderer, () => this.invalidate(true));
     this.scene.add(this.ground.group, this.shapesGroup, this.itemsGroup, this.nearbyGroup, this.fx, this.skyBox, this.grass.group, this.tufts.group);
+    // (the scene and the items' group never move. A frame works out again only the woods' matrices
+    // (their trees near the camera change); each item's are set as it's placed)
+    this.scene.matrixAutoUpdate = false;
+    this.itemsGroup.matrixAutoUpdate = false;
+    this.itemsGroup.updateMatrixWorld = force => {
+      for (const c of this.itemsGroup.children) if (!c.userData.placed || force) c.updateMatrixWorld(force);
+    };
     {
       const gl = this.renderer.getContext();
       const info = gl.getExtension("WEBGL_debug_renderer_info");
@@ -1581,8 +1589,11 @@ export class CourseView {
     // Thin haze over the site, thick toward the horizon: distance reads as distance
     // (thinner in a video: it reaches farther)
     const thin = this.videoDetail ? 0.5 : 1;
-    this.scene.fog = new THREE.FogExp2(haze.getHex(THREE.LinearSRGBColorSpace), (eyeLevel ? 0.8 / (span * 2.4) : 0.7 / (span * 3.2)) * thin);
-    (this.scene.fog as THREE.FogExp2).color.copy(haze);
+    // (one haze, its density and color set each picture: a new one would have every material
+    // worked out again, each frame)
+    this.haze.density = (eyeLevel ? 0.8 / (span * 2.4) : 0.7 / (span * 3.2)) * thin;
+    this.haze.color.copy(haze);
+    this.scene.fog = this.haze;
     this.scene.background = haze;
     return () => {
       this.scene.fog = prevFog;
@@ -1961,6 +1972,10 @@ export class CourseView {
         this.shadowsDirty = true;
       }
       this.place(entry.obj, item);
+      // (an item stays where it's placed: its matrices worked out here, not again every frame for
+      // the thousands of parts the trees, tees and baskets are made of)
+      entry.obj.userData.placed = true;
+      entry.obj.updateMatrixWorld(true);
     }
     for (const [id, entry] of this.objects) {
       if (seen.has(id)) continue;

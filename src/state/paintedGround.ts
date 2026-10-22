@@ -52,8 +52,15 @@ const idOf = (o: Record<string, number>) => {
   }
   return id;
 };
-/** What the painting depends on (not flyover settings, names, the logo and such). */
-const paintKey = (doc: CourseDoc) =>
+/** What the painting depends on (not flyover settings, names, the logo and such). Worked out once
+ * per version of the course: every item goes into it, and the map view asks on each render. */
+const keys = new WeakMap<CourseDoc, string>();
+const paintKey = (doc: CourseDoc) => {
+  let key = keys.get(doc);
+  if (key === undefined) keys.set(doc, (key = keyOf(doc)));
+  return key;
+};
+const keyOf = (doc: CourseDoc) =>
   JSON.stringify([
     { ...doc.style, logo: undefined, card: undefined, sign: undefined, legendAt: undefined, page: undefined, texts: undefined, images: undefined, title: undefined, subtitle: undefined, footer: undefined },
     idOf(doc.terrainHeights),
