@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import { inputCls, Section } from "../components/ui";
 import { api, useAuth } from "./api";
 import { setApproval, useServerCourse, type Role } from "./courses";
-import { Dialog, Form } from "./parts";
+import { CopyButton, Dialog, Form, when } from "./parts";
+import { LINK_DEFAULT, LINK_PARTS, PART_LABELS, PARTS, VIEWER_DEFAULT, type Part, type Perms } from "./perms";
+import { publishSite } from "./site";
 
-interface Member { userId: string; username: string; displayName: string; role: Role }
+interface Member { userId: string; username: string; displayName: string; role: Role; perms: Perms | null }
 const ROLES: { value: Role; label: string }[] = [{ value: "viewer", label: "Viewer" }, { value: "editor", label: "Editor" }, { value: "owner", label: "Owner" }];
 
 export function ShareDialog({ onClose }: { onClose: () => void }) {
@@ -17,6 +19,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
   const [username, setUsername] = useState("");
   const [newRole, setNewRole] = useState<Role>("editor");
   const [error, setError] = useState("");
+  const [seeing, setSeeing] = useState<string | null>(null);
   const owner = role === "owner";
 
   const refresh = async () => { if (id) setMembers(await api<Member[]>("GET", `courses/${id}/members`)); };
@@ -63,6 +66,17 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
           </Section>
         )}
         <Section title="Has it">
+          {seeing && (() => {
+            const m = members.find(x => x.userId === seeing);
+            if (!m) return null;
+            const p = { ...VIEWER_DEFAULT, ...(m.perms ?? {}) };
+            return (
+              <div className="mb-3 rounded-lg border border-sky-700/50 bg-sky-950/30 p-3" data-testid="viewer-perms">
+                <div className="text-[12px] text-sky-200 mb-2">What {m.displayName} sees</div>
+                <Ticks parts={PARTS} value={p} onChange={next => void change(() => api("POST", `courses/${id}/members`, { username: m.username, role: m.role, perms: next }))} />
+              </div>
+            );
+          })()}
           <ul className="divide-y divide-zinc-800" data-testid="members">
             {members.map(m => (
               <li key={m.userId} className="py-2 flex items-center gap-2 text-sm">
@@ -75,6 +89,9 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
                     {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
                 ) : <span className="text-xs text-zinc-400">{ROLES.find(r => r.value === m.role)!.label}</span>}
+                {owner && m.role === "viewer" && (
+                  <button className="text-xs text-sky-300 hover:text-sky-200" onClick={() => setSeeing(seeing === m.userId ? null : m.userId)} data-testid={`sees-${m.username}`}>What they see</button>
+                )}
                 {(owner || m.userId === me.id) && (
                   <button className="text-xs text-red-300 hover:text-red-200" onClick={() => void change(() => api("DELETE", `courses/${id}/members/${m.userId}`))}>
                     {m.userId === me.id ? "Leave" : "Remove"}
@@ -85,7 +102,106 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
           </ul>
           {error && <p role="alert" className="mt-2 text-sm text-red-300">{error}</p>}
         </Section>
+        {owner && <PublicSection id={id} />}
       </div>
     </Dialog>
+  );
+}
+
+/** Ticks for the parts that can be shown. */
+function Ticks({ parts, value, onChange }: { parts: readonly Part[]; value: Perms; onChange: (p: Perms) => void }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1">
+      {parts.map(k => (
+        <label key={k} className="flex items-center gap-2 text-sm text-zinc-200">
+          <input type="checkbox" checked={!!value[k]} onChange={e => onChange({ ...value, [k]: e.target.checked })} data-testid={`part-${k}`} /> {PART_LABELS[k]}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+interface Link { id: string; token: string; label: string; perms: Perms; hasPassword: boolean; expiresAt: string | null; createdAt: string; revoked: boolean }
+const linkUrl = (token: string) => `${location.origin}${location.pathname}#site=${token}`;
+const partsOf = (p: Perms) => LINK_PARTS.filter(k => p[k]).map(k => PART_LABELS[k].replace(/ \(.*\)$/, "")).join(", ") || "Nothing";
+
+/** Public links (each with what it shows, a password, an end), and the public site they show. */
+function PublicSection({ id }: { id: string }) {
+  const [links, setLinks] = useState<Link[]>([]);
+  const [site, setSite] = useState<{ version: number; publishedAt: string } | null>(null);
+  const [editing, setEditing] = useState<string | "new" | null>(null);
+  const [form, setForm] = useState<{ label: string; perms: Perms; password: string; expires: string }>({ label: "", perms: LINK_DEFAULT, password: "", expires: "" });
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const version = useServerCourse(s => s.version);
+  const refresh = async () => {
+    setLinks(await api<Link[]>("GET", `courses/${id}/links`));
+    setSite((await api<{ site: { version: number; publishedAt: string } | null }>("GET", `courses/${id}/site`)).site);
+  };
+  useEffect(() => { void refresh(); }, [id]);
+  const act = async (fn: () => Promise<unknown>) => {
+    setError("");
+    try { await fn(); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : "Something went wrong"); }
+  };
+  const update = () => act(async () => { await publishSite(id, setBusy); setBusy(""); });
+  const save = () => act(async () => {
+    const body = { label: form.label, perms: form.perms, password: form.password || (editing === "new" ? null : undefined), expiresAt: form.expires ? new Date(form.expires).toISOString() : null };
+    if (editing === "new") await api("POST", `courses/${id}/links`, body);
+    else await api("PATCH", `courses/${id}/links/${editing}`, body);
+    setEditing(null);
+    // (the site has what the links show: published again, so a new part is there)
+    await publishSite(id, setBusy);
+    setBusy("");
+  });
+  return (
+    <>
+      <Section title="Public site" testid="public-site-settings">
+        <div className="flex items-center gap-3 text-sm">
+          <span className="flex-1 text-zinc-300" data-testid="site-state">
+            {site ? <>Shows version {site.version} · {when(site.publishedAt)}{site.version < version ? <span className="text-amber-300"> · the course changed since</span> : null}</> : "Not published yet"}
+          </span>
+          <button className="rounded-lg px-3 py-1.5 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white disabled:opacity-50" disabled={!!busy} onClick={() => void update()} data-testid="update-site">
+            {busy ? busy + "…" : site ? "Update site" : "Publish site"}
+          </button>
+        </div>
+      </Section>
+      <Section title="Public links" testid="public-links">
+        <ul className="space-y-2">
+          {links.map(l => (
+            <li key={l.id} className={`rounded-lg border border-zinc-800 p-2.5 text-sm ${l.revoked ? "opacity-60" : ""}`} data-testid="link">
+              <div className="flex items-center gap-2">
+                <span className="flex-1 min-w-0 truncate text-zinc-100 font-medium">{l.label || "Public link"}{l.revoked ? " · off" : ""}{l.hasPassword ? " · password" : ""}{l.expiresAt ? ` · until ${new Date(l.expiresAt).toLocaleDateString()}` : ""}</span>
+                {!l.revoked && <CopyButton text={linkUrl(l.token)} label="Copy link" />}
+              </div>
+              <div className="text-[12px] text-zinc-500 mt-1">{partsOf(l.perms)}</div>
+              <div className="flex gap-3 mt-1.5 text-xs">
+                <button className="text-zinc-300 hover:text-white" onClick={() => { setEditing(l.id); setForm({ label: l.label, perms: l.perms, password: "", expires: l.expiresAt ? l.expiresAt.slice(0, 10) : "" }); }}>Change</button>
+                <button className="text-zinc-300 hover:text-white" onClick={() => void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { revoked: !l.revoked }))}>{l.revoked ? "Turn on" : "Turn off"}</button>
+                <button className="text-zinc-300 hover:text-white" onClick={() => { if (confirm("Give it a new address? The old one stops working.")) void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { newToken: true })); }}>New address</button>
+                {l.hasPassword && <button className="text-zinc-300 hover:text-white" onClick={() => void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { password: null }))}>No password</button>}
+                <button className="text-red-300 hover:text-red-200" onClick={() => { if (confirm("Delete this link?")) void act(() => api("DELETE", `courses/${id}/links/${l.id}`)); }}>Delete</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+        {editing ? (
+          <div className="mt-3 rounded-lg border border-zinc-700 p-3 space-y-2" data-testid="link-form">
+            <input className={inputCls} placeholder="Label (where it's shared)" value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} aria-label="Label" />
+            <Ticks parts={LINK_PARTS} value={form.perms} onChange={perms => setForm({ ...form, perms })} />
+            <div className="flex gap-2">
+              <input className={inputCls} type="password" placeholder={editing === "new" ? "Password (optional)" : "New password (optional)"} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} aria-label="Password" />
+              <input className={`${inputCls} w-40`} type="date" value={form.expires} onChange={e => setForm({ ...form, expires: e.target.value })} aria-label="Works until" />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded-lg" onClick={() => setEditing(null)}>Cancel</button>
+              <button className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-white disabled:opacity-50" disabled={!!busy} onClick={() => void save()} data-testid="save-link">{busy ? busy + "…" : editing === "new" ? "Make link" : "Save"}</button>
+            </div>
+          </div>
+        ) : (
+          <button className="mt-3 text-sm text-orange-300 hover:text-orange-200" onClick={() => { setEditing("new"); setForm({ label: "", perms: LINK_DEFAULT, password: "", expires: "" }); }} data-testid="new-link">+ New public link</button>
+        )}
+        {error && <p role="alert" className="mt-2 text-sm text-red-300">{error}</p>}
+      </Section>
+    </>
   );
 }

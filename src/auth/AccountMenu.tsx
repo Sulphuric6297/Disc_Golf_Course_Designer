@@ -9,6 +9,7 @@ import { useComments } from "./Comments";
 import { SERVER, useAuth } from "./api";
 import { discardDraft, draftChangeCount, draftChanges, inDraft, keepMine, reloadTheirs, saveNow, setLive, thumbnailNow, useServerCourse } from "./courses";
 import { useCourse } from "../state/course";
+import { useAllowed } from "./perms";
 
 const signOut = async () => { await saveNow(); await useAuth.getState().signOut(); };
 export const goHome = () => { useAuth.getState().showHome(true); void saveNow().then(thumbnailNow).then(() => useAuth.getState().bump()); };
@@ -138,12 +139,13 @@ export function AccountMenu({ home = false }: { home?: boolean }) {
   // (the course list covers the app: only its own menu then)
   const covered = useAuth(s => s.home) && !home;
   const m = useMenu();
+  const mayComment = useAllowed("comments");
   if (!SERVER || !user || covered) return null;
   const course = !home && !preview && !!courseId;
   return (
     <>
       {!home && <CourseChip />}
-      {course && <CommentsButton />}
+      {course && mayComment && <CommentsButton />}
       {course && role === "owner" && (
         <button className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800" aria-label="Share" title="Share" onClick={() => open("share")} data-testid="share-button"><Share2 size={18} /></button>
       )}

@@ -11,6 +11,8 @@ import { useCourse, useEditor } from "../state/course";
 import { getView } from "../components/MapViewport";
 import { Section, Stat } from "../components/ui";
 import { copyCourse, holesOf } from "./courses";
+import { useAllowed } from "./perms";
+import { Downloads } from "./Downloads";
 
 export function ViewerPanelBody() {
   const doc = useCourse(s => s.doc);
@@ -19,6 +21,7 @@ export function ViewerPanelBody() {
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
   const u = doc.units;
   const picked = stats.find(s => s.holeId === ed.selectedId || s.holeId === ed.activeHoleId) ?? null;
+  const mayCopy = useAllowed("copy"), mayStats = useAllowed("stats");
   const hole = picked ? doc.holes.find(h => h.id === picked.holeId) : null;
   return (
     <div data-testid="viewer-panel">
@@ -26,11 +29,13 @@ export function ViewerPanelBody() {
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-900/60 text-sky-200 text-[11px] font-semibold mb-2"><Eye size={12} /> View only</span>
         <h2 className="text-lg font-bold text-zinc-50 leading-tight">{doc.name || "Untitled course"}</h2>
         {doc.designer && <p className="text-sm text-zinc-400">{doc.designer}</p>}
-        <button className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 touch:py-2.5 text-sm font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700" onClick={() => void copyCourse()} data-testid="copy-course">
-          <Copy size={14} /> Make a copy
-        </button>
+        {mayCopy && (
+          <button className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 touch:py-2.5 text-sm font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700" onClick={() => void copyCourse()} data-testid="copy-course">
+            <Copy size={14} /> Make a copy
+          </button>
+        )}
       </div>
-      {totals.complete > 0 && (
+      {mayStats && totals.complete > 0 && (
         <Section>
           <div className="grid grid-cols-3 gap-1.5" data-testid="course-totals">
             <Stat label="Holes" value={holesOf(doc)} />
@@ -39,7 +44,7 @@ export function ViewerPanelBody() {
           </div>
         </Section>
       )}
-      {picked && hole && (
+      {mayStats && picked && hole && (
         <Section title={hole.name || `Hole ${picked.label}`} testid="viewer-hole">
           <div className="grid grid-cols-3 gap-1.5">
             <Stat label="Par" value={picked.par} />
@@ -49,6 +54,7 @@ export function ViewerPanelBody() {
           {picked.complete && picked.playsLike !== picked.length && <p className="text-xs text-zinc-400 mt-2">Plays like {fmtDist(picked.playsLike, u)}</p>}
         </Section>
       )}
+      <Downloads />
       <Section title={`${stats.length} hole${stats.length === 1 ? "" : "s"}`} testid="hole-list">
         {stats.length === 0 ? <p className="text-xs text-zinc-400">No holes yet.</p> : (
           <ol className="space-y-0.5">
@@ -63,9 +69,9 @@ export function ViewerPanelBody() {
                     <span className="min-w-[1.5rem] h-6 px-1 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink }}>{s.label}</span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm text-zinc-100 truncate">{h.name || `Hole ${s.label}`}</span>
-                      <span className="block text-[11px] text-zinc-400">{s.complete ? <>{fmtDist(s.length, u)} · {fmtElev(s.elevationChange, u)}{tees.length > 1 ? ` · ${tees.length} tees` : ""}</> : "unfinished"}</span>
+                      {mayStats && <span className="block text-[11px] text-zinc-400">{s.complete ? <>{fmtDist(s.length, u)} · {fmtElev(s.elevationChange, u)}{tees.length > 1 ? ` · ${tees.length} tees` : ""}</> : "unfinished"}</span>}
                     </span>
-                    <span className="text-sm font-bold text-zinc-200 tabular-nums">P{s.par}</span>
+                    {mayStats && <span className="text-sm font-bold text-zinc-200 tabular-nums">P{s.par}</span>}
                   </button>
                 </li>
               );

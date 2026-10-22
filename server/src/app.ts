@@ -15,6 +15,7 @@ import { meRoutes } from "./routes/me.js";
 import { courseRoutes } from "./routes/courses.js";
 import { versionRoutes } from "./routes/versions.js";
 import { commentRoutes } from "./routes/comments.js";
+import { publicRoutes } from "./routes/public.js";
 
 declare module "fastify" {
   interface FastifyRequest { auth: Auth | null }
@@ -96,6 +97,7 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
   await app.register(async a => courseRoutes(a, ctx));
   await app.register(async a => versionRoutes(a, ctx));
   await app.register(async a => commentRoutes(a, ctx));
+  await app.register(async a => publicRoutes(a, ctx));
   app.get("/api/health", async () => ({ ok: true }));
   app.all("/api/*", async () => { throw new ApiError(404, "Not found"); });
 

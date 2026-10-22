@@ -63,7 +63,7 @@ export class Client {
       if (!c.value || (c.expires && c.expires.getTime() < Date.now())) this.cookies.delete(c.name);
       else this.cookies.set(c.name, c.value);
     }
-    return { status: res.statusCode, body: res.body ? res.json() : null };
+    return { status: res.statusCode, body: res.body ? (String(res.headers["content-type"] ?? "").includes("json") ? res.json() : res.body) : null };
   }
   get = (url: string) => this.req("GET", url);
   post = (url: string, body: unknown = {}) => this.req("POST", url, body);
