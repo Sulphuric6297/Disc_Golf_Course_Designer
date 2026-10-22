@@ -1,7 +1,7 @@
 // Who has the open course, and (for its owners) sharing it: viewers look, editors change, owners
 // also share and delete.
 import { useEffect, useState } from "react";
-import { inputCls, Section } from "../components/ui";
+import { inputCls, Section, Tabs } from "../components/ui";
 import { api, useAuth } from "./api";
 import { setApproval, useServerCourse, type Role } from "./courses";
 import { CopyButton, Dialog, Form, when } from "./parts";
@@ -20,6 +20,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
   const [newRole, setNewRole] = useState<Role>("editor");
   const [error, setError] = useState("");
   const [seeing, setSeeing] = useState<string | null>(null);
+  const [tab, setTab] = useState<"people" | "public">("people");
   const owner = role === "owner";
 
   const refresh = async () => { if (id) setMembers(await api<Member[]>("GET", `courses/${id}/members`)); };
@@ -36,8 +37,9 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
   const others = people.filter(p => !members.some(m => m.username === p.username));
   return (
     <Dialog title="Share" onClose={onClose} testid="share-dialog">
+      {owner && <div className="-mt-2 mb-2"><Tabs label="Share" value={tab} onChange={setTab} tabs={[{ value: "people", label: "People", testid: "share-tab-people" }, { value: "public", label: "Public link and site", testid: "share-tab-public" }]} /></div>}
       <div className="-mx-4">
-        {owner && (
+        {tab === "people" && owner && (
           <Section title="Add someone">
             <Form compact submit="Share" testid="share-add" onSubmit={async () => {
               await api("POST", `courses/${id}/members`, { username, role: newRole });
@@ -57,7 +59,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
             </Form>
           </Section>
         )}
-        {owner && (
+        {tab === "people" && owner && (
           <Section title="Editors' changes">
             <label className="flex items-center gap-2 text-sm text-zinc-200">
               <input type="checkbox" checked={approval} onChange={e => void change(() => setApproval(e.target.checked))} data-testid="approval-toggle" />
@@ -65,13 +67,13 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
             </label>
           </Section>
         )}
-        <Section title="Has it">
+        {tab === "people" && <Section title="Has it">
           {seeing && (() => {
             const m = members.find(x => x.userId === seeing);
             if (!m) return null;
             const p = { ...VIEWER_DEFAULT, ...(m.perms ?? {}) };
             return (
-              <div className="mb-3 rounded-lg border border-sky-700/50 bg-sky-950/30 p-3" data-testid="viewer-perms">
+              <div className="mb-3 rounded-lg bg-sky-950/40 p-3" data-testid="viewer-perms">
                 <div className="text-[12px] text-sky-200 mb-2">What {m.displayName} sees</div>
                 <Ticks parts={PARTS} value={p} onChange={next => void change(() => api("POST", `courses/${id}/members`, { username: m.username, role: m.role, perms: next }))} />
               </div>
@@ -101,8 +103,8 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
             ))}
           </ul>
           {error && <p role="alert" className="mt-2 text-sm text-red-300">{error}</p>}
-        </Section>
-        {owner && <PublicSection id={id} />}
+        </Section>}
+        {tab === "public" && owner && <PublicSection id={id} />}
       </div>
     </Dialog>
   );
@@ -168,7 +170,7 @@ function PublicSection({ id }: { id: string }) {
       <Section title="Public links" testid="public-links">
         <ul className="space-y-2">
           {links.map(l => (
-            <li key={l.id} className={`rounded-lg border border-zinc-800 p-2.5 text-sm ${l.revoked ? "opacity-60" : ""}`} data-testid="link">
+            <li key={l.id} className={`rounded-lg bg-zinc-800/50 p-2.5 text-sm ${l.revoked ? "opacity-60" : ""}`} data-testid="link">
               <div className="flex items-center gap-2">
                 <span className="flex-1 min-w-0 truncate text-zinc-100 font-medium">{l.label || "Public link"}{l.revoked ? " · off" : ""}{l.hasPassword ? " · password" : ""}{l.expiresAt ? ` · until ${new Date(l.expiresAt).toLocaleDateString()}` : ""}</span>
                 {!l.revoked && <CopyButton text={linkUrl(l)} label="Copy link" />}
@@ -185,7 +187,7 @@ function PublicSection({ id }: { id: string }) {
           ))}
         </ul>
         {editing ? (
-          <div className="mt-3 rounded-lg border border-zinc-700 p-3 space-y-2" data-testid="link-form">
+          <div className="mt-3 rounded-lg bg-zinc-800/50 p-3 space-y-2" data-testid="link-form">
             <input className={inputCls} placeholder="Label (where it's shared)" value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} aria-label="Label" />
             <label className="block">
               <span className="flex items-center gap-2"><span className="text-xs text-zinc-400 shrink-0">{location.host}/</span>

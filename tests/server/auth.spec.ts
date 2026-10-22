@@ -406,6 +406,7 @@ test("a public link: the site with what it allows (pictures, numbers), 3D when a
   const admin = await as(browser, "admin");
   await admin.getByTestId("my-courses").getByTestId("course-card").click();
   await admin.getByTestId("share-button").click();
+  await admin.getByTestId("share-tab-public").click();
   await admin.getByTestId("new-link").click();
   await admin.getByTestId("link-form").getByLabel("Label").fill("Club website");
   await admin.getByTestId("save-link").click();
@@ -428,7 +429,7 @@ test("a public link: the site with what it allows (pictures, numbers), 3D when a
   await expect(page.getByTestId("public-site")).toBeVisible();
   await expect(page.getByTestId("public-totals")).toBeVisible();
   const holes = (await course(admin)).holes.length;
-  await expect(page.getByTestId("public-holes").locator("tbody tr")).toHaveCount(holes);
+  await expect(page.getByTestId("public-holes").locator(":scope > li")).toHaveCount(holes);
   await expect(page.getByTestId("public-signs").locator("img")).toHaveCount(holes);
   await expect(page.getByRole("img", { name: /^Map of/ })).toBeVisible();
   await expect(page.getByTestId("explore")).toHaveCount(0);

@@ -174,3 +174,17 @@ export const Facts = ({ items, testid }: { items: [label: string, value: ReactNo
     ))}
   </dl>
 );
+
+/** Tabs over a panel's parts: one row of quiet labels, the open one lit and underlined. */
+export function Tabs<T extends string>({ value, tabs, onChange, label }: { value: T; tabs: { value: T; label: ReactNode; testid?: string }[]; onChange: (v: T) => void; label: string }) {
+  return (
+    <div className="flex gap-1 shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.08)]" role="tablist" aria-label={label}>
+      {tabs.map(t => (
+        <button key={t.value} role="tab" aria-selected={value === t.value} onClick={() => onChange(t.value)} data-testid={t.testid}
+          className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors ${FOCUS} rounded-t-md ${value === t.value ? "border-orange-500 text-zinc-50 font-semibold" : "border-transparent text-zinc-400 hover:text-zinc-100"}`}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
