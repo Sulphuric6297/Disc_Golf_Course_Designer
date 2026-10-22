@@ -102,8 +102,13 @@ export interface AreaItem extends BaseItem {
   /** Out of bounds: water is unless set false; true also draws the red OB edge on the map. */
   ob?: boolean;
   /** Woods: which trees stand in it in 3D: those measured from the air (the default, when the
-   * course has them), the app's own drawn trees, or none (measured ones inside cut down). */
-  trees?: "measured" | "drawn" | "none";
+   * course has them), custom (the measured ones, plus `patches` of drawn trees filling in where
+   * the survey saw none or they've grown since), drawn trees only, or none (measured ones inside
+   * cut down). */
+  trees?: "measured" | "custom" | "drawn" | "none";
+  /** Custom: patches drawn inside the wood where drawn trees fill in between the measured ones,
+   * each as thickly as its `fill` says (0.1 to 1). */
+  patches?: { points: P[]; fill: number }[];
   /** Brought in from OpenStreetMap, or found on the satellite photo (replaced on re-import). */
   importSource?: "osm" | "photo";
 }
@@ -484,7 +489,11 @@ export interface CourseDoc {
   /** The site's trees measured from the air (LiDAR): those on fairways, tees and baskets' circles
    * are cut down unless `kept` (by index); `removed` ones taken out wherever they stand. */
   /** `growYears`: the measured trees grown that many years (the survey is older than today). */
-  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number };
+  /** `clearFairways: false`: the measured trees stay where the holes play (cut by hand only). */
+  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number; clearFairways?: false };
+  /** Where trees were cut down by hand that have no list of their own: saplings grown since the
+   * survey and the trees the app plants in woods and patches. None stands within 4 ft of one. */
+  cutTrees?: P[];
   terrainHeights: Record<string, number>;
   /** Painted ground (lib/groundPaint): a material per painted square foot, keyed "i,j". */
   groundPaint: Record<string, number>;

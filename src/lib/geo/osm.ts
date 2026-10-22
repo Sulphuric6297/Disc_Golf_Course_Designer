@@ -134,41 +134,35 @@ export const overpassQuery = (bounds: GeoBounds) => {
  */
 export const fetchOsmFeatures = async (bounds: GeoBounds, timeoutMs = OVERPASS_TIMEOUT_MS, onServer?: (index: number) => void): Promise<OsmFeature[]> => {
   const query = overpassQuery(bounds);
-  let lastError: unknown = null;
-  // Each server once; those that turned it down straight away (busy: 502, 503, 504, 429) once
-  // more after a short pause
-  const quick: number[] = [];
-  const order = [...OVERPASS_ENDPOINTS.keys()];
-  for (let round = 0; round < 2; round++) {
-    if (round === 1) {
-      if (!quick.length) break;
-      await new Promise(r => setTimeout(r, 2000));
-    }
-    for (const index of round === 0 ? order : quick.splice(0)) {
-    const endpoint = OVERPASS_ENDPOINTS[index];
-    const t0 = Date.now();
-    onServer?.(index);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // All the servers at once: the first good answer wins and the others are dropped (one at a
+  // time, a busy main server made imports wait a minute or more, or fail)
+  const stops = OVERPASS_ENDPOINTS.map(() => new AbortController());
+  onServer?.(0);
+  const one = async (index: number) => {
+    const timer = setTimeout(() => stops[index].abort(), timeoutMs);
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetch(OVERPASS_ENDPOINTS[index], {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: `data=${encodeURIComponent(query)}`,
-        signal: controller.signal
+        signal: stops[index].signal
       });
       if (!res.ok) throw new Error(`Overpass ${res.status}`);
       const json = await res.json();
-      // (A server out of time or memory still answers 200, with what it had and a remark)
       if (typeof json.remark === "string" && /runtime error|timed out|out of memory/i.test(json.remark)) throw new Error(json.remark);
       return osmFeaturesFrom(json);
-    } catch (err) {
-      lastError = err;
-      if (round === 0 && Date.now() - t0 < 8000) quick.push(index);
     } finally {
       clearTimeout(timer);
     }
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error("OpenStreetMap lookup failed.");
+  };
+  return new Promise<OsmFeature[]>((resolve, reject) => {
+    let left = OVERPASS_ENDPOINTS.length, firstError: unknown = null;
+    OVERPASS_ENDPOINTS.forEach((_, i) => {
+      one(i).then(out => { stops.forEach(s => s.abort()); resolve(out); }, err => {
+        firstError ??= err;
+        if (--left === 0) reject(firstError instanceof Error ? firstError : new Error("OpenStreetMap lookup failed."));
+      });
+    });
+  });
 };
+

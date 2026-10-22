@@ -72,7 +72,7 @@ test("a hole up the hill: elevation change and par on the real terrain", async (
   await expect(row).toContainText(/\+\d+(\.\d)? ft/);
   await page.keyboard.press("Escape");
   await row.click();
-  await expect(page.getByTestId("hole-stats")).toContainText("uphill");
+  await expect(page.getByTestId("hole-stats")).toContainText(/uphill/i);
   await expect(page.getByTestId("elevation-profile")).toBeVisible();
   // (its heights with their unit: bare four-figure heights read as years)
   await expect(page.getByTestId("elevation-profile").locator("text").first()).toHaveText(/^-?[\d,]+ ft$/);

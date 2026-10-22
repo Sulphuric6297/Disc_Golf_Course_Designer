@@ -381,7 +381,7 @@ export class CourseView {
     c.mouseButtons.right = ACTION.ROTATE;
     c.mouseButtons.wheel = ACTION.NONE;
     c.touches.one = ACTION.TOUCH_TRUCK;
-    c.touches.two = ACTION.TOUCH_DOLLY_ROTATE;
+    c.touches.two = ACTION.NONE; // (two fingers are handled here: see twoFingers)
     c.touches.three = ACTION.TOUCH_TRUCK;
     c.minPolarAngle = 0;
     c.maxPolarAngle = MAX_TILT;
@@ -809,12 +809,19 @@ export class CourseView {
    * picture, the flight (the title fading), a moment at the basket. */
   flyover(holeId: string, done?: () => void) {
     const path = this.flightPath(holeId);
-    if (!path || !this.doc) return;
+    if (!path || !this.doc) {
+      this.fly = null;
+      this.flyWait = null;
+      this.cb.onFlyWait(null);
+      done?.();
+      return;
+    }
     this.setTeeView(holeId);
     if (!this.fly) this.povFov = this.povCam.fov;
     this.fly = { ...path, t: -VIDEO_HOLD.intro, done, title: holeTitle(this.doc.course, holeId) };
     const wait: { since: number; loaded: boolean; frames: number } = { since: performance.now(), loaded: false, frames: 0 };
     this.flyWait = wait;
+    this.cb.onFlyWait("map");
     void (async () => {
       const left = () => performance.now() - wait.since < FLY_WAIT_MS;
       const pause = () => new Promise(r => setTimeout(r, 100));
@@ -822,7 +829,9 @@ export class CourseView {
       // still on their way: the photo, the trees' leaves)
       await new Promise(r => setTimeout(r, 150));
       while (this.paintedPending && left()) await pause();
+      if (this.flyWait === wait) this.cb.onFlyWait("detail");
       await this.detailReady;
+      if (this.flyWait === wait) this.cb.onFlyWait("textures");
       while (texturesLoading() && left()) await pause();
       wait.loaded = true;
     })();
@@ -1183,7 +1192,7 @@ export class CourseView {
     void this.updateDetail();
   }
   /** The longest side of the sharp painting (what the graphics card takes, at most 4096). */
-  private detailPx() {
+  detailPx() {
     return Math.min(4096, this.renderer.capabilities.maxTextureSize, COARSE ? 2048 : 3072);
   }
   private detailAsk = 0;
@@ -1305,7 +1314,11 @@ export class CourseView {
       // must not skip the flight
       const w = this.flyWait;
       if (w && (w.loaded ? ++w.frames < 4 : true) && performance.now() - w.since < FLY_WAIT_MS) { /* waiting */ }
-      else { this.flyWait = null; this.fly.t += Math.min(dt, 0.25); }
+      else {
+        if (w) this.cb.onFlyWait(null);
+        this.flyWait = null;
+        this.fly.t += Math.min(dt, 0.25);
+      }
       this.dirty = true;
       // (a moment at the basket before it ends, as in a recording)
       if (this.fly.t >= this.fly.play + (this.fly.title ? VIDEO_HOLD.outro : 0)) {
@@ -2087,20 +2100,32 @@ export class CourseView {
     // Trees measured from the air: cut down where the course clears the ground for play, unless
     // kept (in place of the woods' made-up trees)
     // (grown to today, as many years as the course asks)
-    const lidar = course.lidar?.trees.length ? { ...course.lidar, trees: grownTrees(course.lidar) } : null;
+    // Where trees were cut down by hand (saplings, planted ones): nothing grows or is planted there
+    const cut = course.cutTrees ?? [];
+    const cutAt = (p: P) => cut.some(c => Math.hypot(c.x - p.x, c.y - p.y) < 4);
+    const cutKey = cut.length ? JSON.stringify(cut) : "";
+    const measuredCount = course.lidar?.trees.length ?? 0;
+    // (the same list while the measured trees, the growth and the cut spots are the same: the
+    // forest is only rebuilt when one of them changes, not on every change to the course)
+    const grownList = course.lidar?.trees.length
+      ? this.keep("lidar:list", course.lidar.trees, JSON.stringify([course.lidar.growYears ?? 0, cutKey]), () => grownTrees(course.lidar!).filter((t, k) => k < measuredCount || !cutAt({ x: t[0], y: t[1] })))
+      : null;
+    const lidar = grownList ? { ...course.lidar!, trees: grownList } : null;
     const measured = !!lidar;
     this.lidarState = null;
     if (lidar) {
       const forPlay = clearingsFor(true);
       const nowhere = nowhereFor();
-      this.clearedAt = (p, reach) => forPlay.test(p, reach) || nowhere.test(p);
-      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.minHeight ?? 0, lidar.growYears ?? 0, forPlay.key, nowhere.key]);
+      const cleared = forPlay.test;
+      const clearing = lidar.clearFairways !== false;
+      this.clearedAt = (p, reach) => (clearing && cleared(p, reach)) || nowhere.test(p);
+      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.minHeight ?? 0, lidar.growYears ?? 0, lidar.clearFairways !== false, forPlay.key, nowhere.key, cutKey]);
       if (this.dragging && this.lidarKey && fresh !== this.lidarKey) this.afterDrag = true;
       else this.lidarKey = fresh;
       const state = this.keep("lidar", lidar.trees, this.lidarKey, () => {
-        const { stand, cut } = standingTrees(lidar, forPlay.test, nowhere.test);
+        const { stand, cut } = standingTrees(lidar, cleared, nowhere.test);
         const keptSet = new Set(lidar.kept ?? []);
-        return { stand, cut, kept: stand.filter(k => keptSet.has(k) && forPlay.test({ x: lidar.trees[k][0], y: lidar.trees[k][1] }, lidar.trees[k][3] * 0.3)) };
+        return { stand, cut, kept: clearing ? stand.filter(k => keptSet.has(k) && forPlay.test({ x: lidar.trees[k][0], y: lidar.trees[k][1] }, lidar.trees[k][3] * 0.3)) : [] };
       });
       this.lidarState = state;
       put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, state.cut, hv, st.trees, st.landscape]), () => {
@@ -2169,17 +2194,39 @@ export class CourseView {
         return g;
       });
       // Woods: trees standing in it (shadows and all)
-      // (its own drawn trees: without measured ones, or when it asks for them; none when it says so)
+      // (its own drawn trees: without measured ones, or when it asks for them, or filling in
+      // between the measured ones as thickly as it asks; none when it says so)
       if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn")) {
         const here = clearings.near(boundsOf(a.points));
-        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key]), () => {
+        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key, cutKey]), () => {
           const land = landscapeOf(st);
           this.plantings++;
-          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, here.test);
+          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, (p, r) => here.test(p, r) || cutAt(p));
           woods.traverse(o => { o.userData.itemId = a.id; });
           this.shadowsDirty = true;
           return woods;
         }, this.itemsGroup, true);
+      }
+      // Custom: the measured trees stand as usual, and each patch drawn inside is filled in with
+      // drawn trees as thickly as it says, never under a measured crown; outlined while picked
+      if (a.kind === "woods" && a.trees === "custom" && measured && a.patches?.length) {
+        const standing = this.lidarState?.stand ?? [], trees = lidar?.trees ?? [];
+        a.patches.forEach((patch, i) => {
+          const here = clearings.near(boundsOf(patch.points));
+          const fill = Math.min(1, Math.max(0.1, patch.fill));
+          put(`woods:${a.id}:patch:${i}`, JSON.stringify([patch.points, fill, hv, st.trees, st.landscape, here.key, this.lidarKey, cutKey]), () => {
+            const land = landscapeOf(st);
+            this.plantings++;
+            const box = boundsOf(patch.points);
+            const near = standing.map(k => trees[k]).filter(t => t && t[0] >= box.minX - 40 && t[0] <= box.maxX + 40 && t[1] >= box.minY - 40 && t[1] <= box.maxY + 40);
+            const keepOut = (p: P, reach: number) => here.test(p, reach) || cutAt(p) || near.some(t => Math.hypot(t[0] - p.x, t[1] - p.y) < t[3] * 0.8 + 4);
+            const woods = createWoods(patch.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, keepOut, 22 / Math.sqrt(fill));
+            woods.traverse(o => { o.userData.itemId = a.id; });
+            this.shadowsDirty = true;
+            return woods;
+          }, this.itemsGroup, true);
+          if (a.id === this.selectedId) put(`woods:${a.id}:patchline:${i}`, JSON.stringify([patch.points, hv]), () => this.fatLine(this.drapeLine(patch.points, LIFT + 0.05, true), "#86efac", 1.5, { order: 5, dashed: 5 }));
+        });
       }
     });
     // A hand-made flyover of the selected hole: its path over the ground, and where each keyframe looks
@@ -2197,14 +2244,14 @@ export class CourseView {
     // The painted map's own woods: trees standing on it
     const pw = painted && !measured ? this.paintedWoods : null;
     if (pw) {
-      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, clearings.key]), () => {
+      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, clearings.key, cutKey]), () => {
         const land = landscapeOf(st);
         const inside = (p: P) => {
           const c = Math.floor((p.x - pw.x0) / pw.ftPerCell), r = Math.floor((p.y - pw.y0) / pw.ftPerCell);
           return c >= 0 && r >= 0 && c < pw.cols && r < pw.rows && pw.data[r * pw.cols + c] === 1;
         };
         // (as thick as the painting's tree cover)
-        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, clearings.test, 22 / Math.sqrt(Math.max(0.15, pw.cover)));
+        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, (p, r) => clearings.test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.15, pw.cover)));
         this.shadowsDirty = true;
         return woods;
       }, this.itemsGroup, true);
@@ -2687,6 +2734,25 @@ export class CourseView {
   }
 
   /** The measured tree standing at a spot (its trunk within reach), if any. */
+  /** Any tree standing at a spot that isn't an item of its own: a measured one (its index), or a
+   * sapling or planted tree (where it stands and its size). */
+  treeAt(p: P): { kind: "measured"; k: number } | { kind: "spot"; x: number; y: number; height: number; width: number; conifer: boolean } | null {
+    const k = this.lidarTreeAt(p);
+    if (k !== null) return { kind: "measured", k };
+    let best: TreeSpot | null = null, bestD = Infinity;
+    const look = (g: THREE.Object3D) => {
+      const spots = g.userData.spots as TreeSpot[] | undefined;
+      if (!spots) return;
+      for (const s of spots) {
+        const d = Math.hypot(s.x - p.x, s.y - p.y);
+        if (d < Math.max(4, s.width * 0.3) && d < bestD) { best = s; bestD = d; }
+      }
+    };
+    this.itemsGroup.children.forEach(look);
+    const b = best as TreeSpot | null;
+    return b ? { kind: "spot", x: b.x, y: b.y, height: b.height, width: b.width, conifer: b.shape === "conifer" } : null;
+  }
+
   lidarTreeAt(p: P): number | null {
     const lidar = this.doc?.course.lidar, ls = this.lidarState;
     if (!lidar || !ls) return null;
@@ -3529,8 +3595,10 @@ export class CourseView {
     const began = performance.now();
     let drag: Drag | null = null;
     let moved = false;
+    let lastEv: PointerEvent = e;
     const move = (ev: PointerEvent) => {
       if (ev.pointerId !== id) return;
+      lastEv = ev;
       if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) > slop) {
         moved = true;
         drag = h.drag?.(e) ?? null;
@@ -3562,7 +3630,11 @@ export class CourseView {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
-    this.endDragListeners = cleanup;
+    // (ended from outside, by a second finger say: a drag under way is ended, so its change lands)
+    this.endDragListeners = () => {
+      cleanup();
+      if (drag) { drag.end(lastEv); this.setDragging(false); drag = null; }
+    };
   }
 
   private setDragging(on: boolean) {
@@ -3631,8 +3703,56 @@ export class CourseView {
   /** Whether the last press was a finger (taps get a bigger reach for picking things). */
   private fingers = false;
 
+  /** Where each finger is now (screen px). */
+  private fingerAt = new Map<number, { x: number; y: number }>();
+  /** Two fingers on the map, as on Google Earth: a pinch zooms around the point between them, a
+   * twist turns the map around it (it stays under the fingers), a slide up or down tilts. */
+  private pinch: { d: number; a: number; cy: number } | null = null;
+  private readonly twoFingers = (e: PointerEvent) => {
+    const f = this.fingerAt.get(e.pointerId);
+    if (!f) return;
+    f.x = e.clientX; f.y = e.clientY;
+    if (this.touchIds.size !== 2 || !this.pinch) return;
+    const [p, q] = [...this.touchIds].map(id => this.fingerAt.get(id)!);
+    if (!p || !q) return;
+    const d = Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a = Math.atan2(q.y - p.y, q.x - p.x), cx = (p.x + q.x) / 2, cy = (p.y + q.y) / 2;
+    const was = this.pinch;
+    this.pinch = { d, a, cy };
+    // (the map turns with the fingers and stays under them: around the ground between them)
+    let da = a - was.a;
+    if (da > Math.PI) da -= 2 * Math.PI; else if (da < -Math.PI) da += 2 * Math.PI;
+    if (Math.abs(da) > 1e-4) {
+      const under = this.groundAt(cx, cy);
+      if (under) {
+        // (camera and target turned together about the vertical through that ground point)
+        const pos = this.controls.getPosition(new THREE.Vector3(), true), tgt = this.controls.getTarget(new THREE.Vector3(), true);
+        const up = new THREE.Vector3(0, 1, 0);
+        const np = pos.sub(under).applyAxisAngle(up, da).add(under), nt = tgt.sub(under).applyAxisAngle(up, da).add(under);
+        void this.controls.setLookAt(np.x, np.y, np.z, nt.x, nt.y, nt.z, false);
+      } else void this.controls.rotate(da, 0, false);
+    }
+    if (Math.abs(was.cy - cy) > 0.5) void this.controls.rotate(0, (was.cy - cy) * (MAX_TILT / Math.max(300, this.size.height * 0.6)), false);
+    if (Math.abs(d / was.d - 1) > 1e-3) this.zoomAt(cx, cy, was.d / d, false);
+    this.invalidate();
+  };
+  private startPinch() {
+    const [p, q] = [...this.touchIds].map(id => this.fingerAt.get(id)!);
+    if (!p || !q) return;
+    this.pinch = { d: Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a: Math.atan2(q.y - p.y, q.x - p.x), cy: (p.y + q.y) / 2 };
+  }
+  private endPinch() {
+    if (this.touchIds.size === 0) window.removeEventListener("pointermove", this.twoFingers);
+    if (!this.pinch) return;
+    this.pinch = null;
+    this.snapNorth();
+  }
+
   private touchUp(e: PointerEvent) {
+    this.fingerAt.delete(e.pointerId);
     if (this.touchIds.delete(e.pointerId) && this.touchIds.size >= 1) this.pinchAt = performance.now();
+    if (this.touchIds.size < 2) this.endPinch();
+    else if (this.touchIds.size === 2 && !this.pinch) this.startPinch();
+    if (this.touchIds.size === 0) window.removeEventListener("pointermove", this.twoFingers);
     const lp = this.longPress;
     if (lp?.id !== e.pointerId) return;
     // (Held long enough, even if a busy page ran the timer late: still the long-press)
@@ -3662,7 +3782,7 @@ export class CourseView {
   /** A finger on a handle: it moves once the finger does (a handle's hit area is big for a finger,
    * so a tap on a hole's line often lands on one); a tap selects what the handle belongs to. */
   private fingerOnHandle(e: PointerEvent, h: Handle) {
-    const x0 = e.clientX, y0 = e.clientY, id = e.pointerId;
+    const x0 = e.clientX, y0 = e.clientY, id = e.pointerId, began = performance.now();
     let drag: Drag | null = null, moved = false;
     const move = (ev: PointerEvent) => {
       if (ev.pointerId !== id) return;
@@ -3679,10 +3799,11 @@ export class CourseView {
     const up = (ev: PointerEvent) => {
       if (ev.pointerId !== id) return;
       cleanup();
+      const pinched = this.touchIds.size > 0 || this.pinchAt >= began - 50 || performance.now() - this.pinchAt < 350;
       if (drag) {
         drag.end(ev);
         this.setDragging(false);
-      } else if (!moved && ev.type === "pointerup") {
+      } else if (!moved && !pinched && ev.type === "pointerup") {
         const owner = this.selectedId ?? this.doc?.activeHoleId ?? null;
         if (owner && owner !== this.selectedId) this.cb.onSelect(owner);
       }
@@ -3692,10 +3813,14 @@ export class CourseView {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
+      this.endDragListeners = null;
     };
+    // (a second finger ends this: see secondFinger)
+    this.endDragListeners?.();
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
+    this.endDragListeners = cleanup;
   }
 
   /** Holding a finger still on an item opens its menu, like a right-click. */
@@ -3713,7 +3838,8 @@ export class CourseView {
       this.cancelLongPress();
       const domItem = (target.closest?.("[data-item-id]") as HTMLElement | null)?.dataset.itemId ?? null;
       const itemId = domItem ?? this.pick(x, y);
-      if (!itemId) return;
+      const ground = this.groundAt(x, y);
+      if (!itemId && !(ground && this.treeAt({ x: ground.x, y: ground.z }))) return;
       // The press is now the menu's: no tap, no drag, and the map stops following the finger
       this.endDragListeners?.();
       this.setDragging(false);
@@ -3733,9 +3859,13 @@ export class CourseView {
     this.fingers = e.pointerType === "touch";
     if (this.fingers) {
       this.touchIds.add(e.pointerId);
+      this.fingerAt.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.touchIds.size === 1) window.addEventListener("pointermove", this.twoFingers);
       if (this.touchIds.size > 1) {
         this.pinchAt = performance.now();
         this.secondFinger();
+        if (this.touchIds.size === 2) this.startPinch();
+        else this.endPinch();
         return;
       }
       // (Not on a handle that moves something: holding one still before dragging it slowly is no
@@ -3764,9 +3894,10 @@ export class CourseView {
       window.addEventListener("pointerup", up, true);
       return;
     }
-    // A stump: the tree back (or a kept tree's ring: cut down after all)
+    // A stump: the tree back (or a kept tree's ring: cut down after all). Not while an area or
+    // line is being drawn: a loop round the stumps starts on one as often as not
     const stumpEl = target.closest?.("[data-stump]") as HTMLElement | null;
-    if (stumpEl && e.button === 0) {
+    if (stumpEl && e.button === 0 && !this.drawn(this.tool)) {
       e.stopPropagation();
       e.preventDefault();
       this.gesture(e, { click: () => this.toggleLidarTree(Number(stumpEl.dataset.stump)) });
@@ -3774,14 +3905,23 @@ export class CourseView {
     }
     const handleEl = target.closest?.("[data-handle]") as HTMLElement | null;
     if (handleEl && e.button === 0) {
-      e.stopPropagation();
-      e.preventDefault();
       const h = this.handles.find(x => x.el === handleEl);
       if (!h) return;
       if (e.pointerType === "touch" && h.kind !== "draw") {
+        // (the handles of the hole in hand while it isn't picked: a tap picks it, a drag moves
+        // the map, not the hole; nothing moves by accident while panning or pinching)
+        const owner = this.selectedId ?? this.doc?.activeHoleId ?? null;
+        if (owner !== this.selectedId) {
+          this.gesture(e, { click: () => { if (owner) this.cb.onSelect(owner); } });
+          return;
+        }
+        e.stopPropagation();
+        e.preventDefault();
         this.fingerOnHandle(e, h);
         return;
       }
+      e.stopPropagation();
+      e.preventDefault();
       const drag = h.start(e);
       if (!drag) { this.invalidate(); return; }
       const id = e.pointerId;
@@ -3939,7 +4079,15 @@ export class CourseView {
         return;
       }
       stop();
-      this.gesture(e, { click: () => this.cb.onSelect(null), drag: panOrNothing });
+      this.gesture(e, {
+        click: ev => {
+          const g = this.groundAt(ev.clientX, ev.clientY);
+          const tree = g && ev.pointerType !== "touch" ? this.treeAt({ x: g.x, y: g.z }) : null;
+          if (tree) this.cb.onContextMenu({ clientX: ev.clientX, clientY: ev.clientY, itemId: null, ground: { x: g!.x, y: g!.z } });
+          else this.cb.onSelect(null);
+        },
+        drag: panOrNothing
+      });
       return;
     }
     if (add) {
@@ -3964,7 +4112,8 @@ export class CourseView {
     }
     // Holes, areas and lines move only once selected (dragging across the map still pans, or
     // draws a box); a hole itself never moves (move its tee or basket); a locked item never moves
-    const big = !item || item.type === "area" || item.type === "line" || item.type === "structure";
+    // With a finger, everything moves only once picked: a drag across a thing pans the map
+    const big = !item || item.type === "area" || item.type === "line" || item.type === "structure" || touch;
     if ((big && hit !== this.selectedId) || !item || item.locked) {
       if (boxing) e.stopPropagation();
       else stop();
@@ -4465,7 +4614,7 @@ export class CourseView {
   }
 
   /** Zoom keeping the ground point under the cursor fixed. */
-  private zoomAt(clientX: number, clientY: number, factor: number) {
+  private zoomAt(clientX: number, clientY: number, factor: number, smooth = true) {
     const pos = this.controls.getPosition(new THREE.Vector3(), true);
     const target = this.controls.getTarget(new THREE.Vector3(), true);
     const d = pos.distanceTo(target);
@@ -4474,7 +4623,7 @@ export class CourseView {
     const p = this.groundAt(clientX, clientY) ?? target.clone();
     const np = p.clone().add(pos.sub(p).multiplyScalar(f));
     const nt = p.clone().add(target.sub(p).multiplyScalar(f));
-    void this.controls.setLookAt(np.x, np.y, np.z, nt.x, nt.y, nt.z, true);
+    void this.controls.setLookAt(np.x, np.y, np.z, nt.x, nt.y, nt.z, smooth);
     this.controls.normalizeRotations();
     this.invalidate();
   }

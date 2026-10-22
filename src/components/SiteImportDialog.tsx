@@ -164,7 +164,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
             <Search size={17} className="absolute left-3 top-3.5 text-zinc-500" />
             <input
               aria-label="Search address"
-              className="w-full h-12 bg-zinc-800 border border-zinc-700 rounded-xl pl-9 pr-2 text-base focus:outline-none focus:border-orange-400"
+              className="w-full h-12 bg-zinc-800 border border-zinc-700 rounded-xl pl-9 pr-2 text-base focus:outline-none focus:ring-2 focus:ring-sky-400/80"
               placeholder="Park name, address or lat, lon"
               enterKeyHint="search"
               value={query}
@@ -172,7 +172,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
               onKeyDown={e => { if (e.key === "Enter") void go(); }}
             />
             {suggestions.length > 0 && (
-              <div className="absolute z-10 left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden">
+              <div className="absolute z-10 left-0 right-0 mt-1 bg-zinc-800 rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 overflow-hidden">
                 {suggestions.map((s, i) => (
                   <button key={i} className="block w-full text-left px-3.5 py-3 border-t border-zinc-700/60 first:border-t-0 active:bg-zinc-700" onClick={() => void go(s)}>
                     <div className="text-[15px] text-zinc-100">{s.text}</div>
@@ -201,7 +201,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
             <div className="pb-2">{options}</div>
           </details>
           {statusEl}
-          <button className="h-12 rounded-xl bg-orange-500 text-white text-[16px] font-bold disabled:opacity-40 active:bg-orange-600" onClick={() => void run()} disabled={!selection || tooBig || status.state === "loading"} data-testid="import-site">Bring in this site</button>
+          <button className="h-12 rounded-xl bg-orange-500 text-zinc-950 text-[16px] font-bold disabled:opacity-40 active:bg-orange-600" onClick={() => void run()} disabled={!selection || tooBig || status.state === "loading"} data-testid="import-site">Bring in this site</button>
         </div>
       </div>
     );
@@ -224,14 +224,14 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
               <Search size={15} className="absolute left-2.5 top-2.5 text-zinc-500" />
               <input
                 aria-label="Search address"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg pl-8 pr-2 py-2 text-sm focus:outline-none focus:border-orange-400"
+                className="w-full bg-zinc-800 rounded-lg pl-8 pr-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400/80"
                 placeholder="Park name, address or lat, lon"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") void go(); }}
               />
               {suggestions.length > 0 && (
-                <div className="absolute z-10 left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl overflow-hidden">
+                <div className="absolute z-10 left-0 right-0 mt-1 bg-zinc-800 rounded-lg shadow-xl overflow-hidden">
                   {suggestions.map((s, i) => (
                     <button key={i} className="block w-full text-left px-3 py-2 text-sm hover:bg-zinc-700" onClick={() => void go(s)}>
                       <div className="text-zinc-100">{s.text}</div>

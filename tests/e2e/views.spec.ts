@@ -65,7 +65,8 @@ test("flyover runs from the tee to the basket and stops", async ({ page }) => {
   await page.getByTestId("hole-row").click();
   await page.getByTestId("flyover").click();
   await expect(page.getByTestId("hud-flyover")).toHaveText(/Flying/);
-  await expect.poll(() => page.evaluate(() => (window as any).__dgView.flyProgress()), { timeout: 5000 }).toBeGreaterThan(0.05);
+  // (it waits for everything to be drawn first, up to 15 s, then holds its title a moment)
+  await expect.poll(() => page.evaluate(() => (window as any).__dgView.flyProgress()), { timeout: 30_000 }).toBeGreaterThan(0.05);
   // It lands by itself (a short hole flies for 6 seconds and slows to a stop; a slow frame
   // doesn't skip it, so drawn in software here it takes longer)
   await expect(page.getByTestId("hud-flyover")).toHaveText(/Fly over/, { timeout: 90_000 });

@@ -324,17 +324,17 @@ export function MapDesigner({ compact = false, topInset = 0 }: { compact?: boole
       <div className={compact ? "flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2 py-2 bg-zinc-900 border-b border-zinc-800" : "flex items-center gap-2 px-3 py-2 bg-zinc-900 border-b border-zinc-800"}>
         <div role="tablist" className={compact ? "w-full flex gap-1" : "flex gap-1"}>{[tab("map", "Course map", "Map"), tab("sign", "Tee sign"), tab("page", "Hole page"), tab("scorecard", "Scorecard")]}</div>
         {(preview === "sign" || preview === "page") && doc.holes.length > 0 && (
-          <select aria-label={preview === "sign" ? "Hole for the tee sign" : "Hole for the hole page"} className={`bg-zinc-800 border border-zinc-700 rounded-lg px-2 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={holeId ?? ""} onChange={e => setHole(e.target.value)}>
+          <select aria-label={preview === "sign" ? "Hole for the tee sign" : "Hole for the hole page"} className={`bg-zinc-800 rounded-lg px-2 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={holeId ?? ""} onChange={e => setHole(e.target.value)}>
             {doc.holes.map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}</option>)}
           </select>
         )}
         {preview === "sign" && (
-          <select aria-label="Tee sign size" className={`bg-zinc-800 border border-zinc-700 rounded-lg px-2 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={signSize} onChange={e => { setSignSize(e.target.value as SignSize); setZoom(null); }}>
+          <select aria-label="Tee sign size" className={`bg-zinc-800 rounded-lg px-2 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={signSize} onChange={e => { setSignSize(e.target.value as SignSize); setZoom(null); }}>
             {(Object.keys(SIGN_SIZES) as SignSize[]).map(k => <option key={k} value={k}>{SIGN_SIZES[k].label}</option>)}
           </select>
         )}
         {preview === "page" && (
-          <select aria-label="Hole page size" className={`bg-zinc-800 border border-zinc-700 rounded-lg px-2 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={pageSize} onChange={e => { setPageSize(e.target.value as HolePageSize); setZoom(null); }}>
+          <select aria-label="Hole page size" className={`bg-zinc-800 rounded-lg px-2 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={pageSize} onChange={e => { setPageSize(e.target.value as HolePageSize); setZoom(null); }}>
             {(Object.keys(HOLE_PAGES) as HolePageSize[]).map(k => <option key={k} value={k}>{HOLE_PAGES[k].label}</option>)}
           </select>
         )}

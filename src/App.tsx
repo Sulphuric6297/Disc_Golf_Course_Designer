@@ -18,7 +18,7 @@ import { Button } from "./components/ui";
 import { useLayout, useTouch } from "./components/useLayout";
 import { CompactShell, ItemMenu } from "./components/mobile/CompactShell";
 import { useCourse, useEditor, getDoc, changeDoc, updateItem } from "./state/course";
-import { canPaste, copySelection, cutSelection, deleteSelection, duplicateSelection, markObBeyond, nudgeSelection, pasteClipboard, select, selectAll } from "./state/actions";
+import { adoptLidarTree, adoptTreeAt, canPaste, copySelection, cutTreeAt, cutSelection, deleteSelection, duplicateSelection, markObBeyond, nudgeSelection, pasteClipboard, select, selectAll } from "./state/actions";
 import { osmFailedToast } from "./state/osm";
 import { restoreAutosave, startAutosave } from "./state/files";
 import { toast, useToasts } from "./state/toast";
@@ -38,7 +38,7 @@ function Toasts({ bottom }: { bottom?: number }) {
           <span className={bottom !== undefined ? "text-[13px] leading-snug line-clamp-3" : undefined}>{t.text}</span>
           {t.undo && <button className="font-bold text-orange-300 hover:text-orange-200 touch:min-h-[40px]" onClick={() => { undo(); dismiss(t.id); }}>Undo</button>}
           {t.action && <button className="font-bold text-orange-300 hover:text-orange-200 whitespace-nowrap touch:min-h-[40px]" onClick={() => { t.action!.run(); dismiss(t.id); }}>{t.action.label}</button>}
-          <button aria-label="Dismiss" className="text-zinc-400 hover:text-white touch:w-9 touch:h-9 touch:-mr-2 touch:flex touch:items-center touch:justify-center shrink-0" onClick={() => dismiss(t.id)}><X size={14} /></button>
+          <button aria-label="Dismiss" className="text-zinc-400 hover:text-zinc-50 touch:w-9 touch:h-9 touch:-mr-2 touch:flex touch:items-center touch:justify-center shrink-0" onClick={() => dismiss(t.id)}><X size={14} /></button>
         </div>
       ))}
     </div>
@@ -88,8 +88,8 @@ const GESTURES: [string, string][] = [
 ];
 
 /** A dialog's box: a sheet up from the bottom on a phone, a centered box from a tablet up. */
-const SHEET = "bg-zinc-900 border border-zinc-700 shadow-2xl w-full rounded-t-[22px] md:rounded-2xl max-h-[92dvh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] md:pb-5 animate-[dgrise_220ms_cubic-bezier(0.2,0.9,0.3,1)] md:animate-none";
-const CLOSE = "text-zinc-400 hover:text-white touch:w-11 touch:h-11 touch:-m-2.5 touch:flex touch:items-center touch:justify-center";
+const SHEET = "bg-zinc-900 shadow-2xl ring-1 ring-white/10 w-full rounded-t-[22px] md:rounded-2xl max-h-[92dvh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] md:pb-5 animate-[dgrise_220ms_cubic-bezier(0.2,0.9,0.3,1)] md:animate-none";
+const CLOSE = "text-zinc-400 hover:text-zinc-50 touch:w-11 touch:h-11 touch:-m-2.5 touch:flex touch:items-center touch:justify-center";
 
 function HelpDialog({ onClose }: { onClose: () => void }) {
   const touch = useTouch();
@@ -146,8 +146,9 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
     return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc); };
   }, [onClose]);
   // (a tree measured from the air standing there)
-  const measuredTree = info.ground ? getView()?.lidarTreeAt(info.ground) ?? null : null;
-  if (!hole && !item && measuredTree === null && !(canPaste() && info.ground)) return null;
+  const tree = info.ground ? getView()?.treeAt(info.ground) ?? null : null;
+  const measuredTree = tree?.kind === "measured" ? tree.k : null;
+  if (!hole && !item && !tree && !(canPaste() && info.ground)) return null;
   const x = Math.min(info.clientX, window.innerWidth - 220), y = Math.min(info.clientY, window.innerHeight - 200);
   const row = "w-full text-left px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800";
   const run = (fn: () => void) => () => { fn(); onClose(); };
@@ -156,7 +157,7 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
   const group = useEditor.getState().group;
   const inGroup = !!item && group.includes(item.id);
   return (
-    <div className="fixed z-50 w-52 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-1" style={{ left: x, top: y }} role="menu" onPointerDown={e => e.stopPropagation()}>
+    <div className="fixed z-50 w-52 bg-zinc-900 rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 py-1" style={{ left: x, top: y }} role="menu" onPointerDown={e => e.stopPropagation()}>
       {holeId && holeStats(doc, doc.holes.find(h => h.id === holeId)!).complete && (
         <>
           <button className={row} role="menuitem" onClick={run(() => useEditor.getState().set({ teeView: holeId, flyover: false }))}>View from the tee</button>
@@ -173,7 +174,20 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
         </>
       )}
       {item?.type === "line" && !item.locked && info.ground && <button className={row} role="menuitem" onClick={run(() => { getView()?.startObPick(item.id, info.ground!, true); useEditor.getState().set({ obPick: item.id, pickCut: true, tool: "select" }); })}>Remove a stretch from here</button>}
-      {measuredTree !== null && <button className={row} role="menuitem" onClick={run(() => getView()?.toggleLidarTree(measuredTree))}>Cut down this tree</button>}
+      {measuredTree !== null && (
+        <>
+          <div className="px-3 pt-1 pb-0.5 text-[11px] text-zinc-500">Measured tree</div>
+          <button className={row} role="menuitem" onClick={run(() => adoptLidarTree(measuredTree))} data-testid="tree-adopt">Edit this tree (height, place…)</button>
+          <button className={row} role="menuitem" onClick={run(() => getView()?.toggleLidarTree(measuredTree))}>Cut down this tree</button>
+        </>
+      )}
+      {tree?.kind === "spot" && (
+        <>
+          <div className="px-3 pt-1 pb-0.5 text-[11px] text-zinc-500">{tree.height < 25 ? "Sapling" : "Planted tree"} · {Math.round(tree.height)} ft</div>
+          <button className={row} role="menuitem" onClick={run(() => adoptTreeAt(tree))} data-testid="tree-adopt">Edit this tree (height, place…)</button>
+          <button className={row} role="menuitem" onClick={run(() => cutTreeAt(tree))} data-testid="tree-cut">Cut down this tree</button>
+        </>
+      )}
       {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); copySelection(); })}>{inGroup ? `Copy ${group.length}` : "Copy"}</button>}
       {canPaste() && info.ground && <button className={row} role="menuitem" onClick={run(() => pasteClipboard(info.ground))}>Paste here</button>}
       {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); duplicateSelection(); })}>{inGroup ? `Duplicate ${group.length}` : "Duplicate"}</button>}
@@ -319,7 +333,7 @@ export default function App() {
   const showWelcome = ready && empty && ed.step === "site";
   const onContextMenu = (i: { clientX: number; clientY: number; itemId: string | null; ground: P | null }) => setMenu(i);
   const welcome = (
-    <div className="pointer-events-auto bg-zinc-900/95 backdrop-blur border border-zinc-700 rounded-2xl shadow-2xl p-6 w-[440px] max-w-full text-center" data-testid="welcome">
+    <div className="pointer-events-auto bg-zinc-900/95 backdrop-blur rounded-2xl shadow-2xl ring-1 ring-white/10 p-6 w-[440px] max-w-full text-center" data-testid="welcome">
       <div className="w-12 h-12 rounded-xl bg-orange-500/15 text-orange-400 flex items-center justify-center mx-auto mb-3"><Route size={24} /></div>
       <h2 className="text-xl font-bold text-zinc-50">Design your disc golf course</h2>
       <div className="mt-4 flex flex-col gap-2">
@@ -349,6 +363,7 @@ export default function App() {
         />
         {dialogs}
         {menu?.itemId && <ItemMenu itemId={menu.itemId} onClose={() => setMenu(null)} />}
+        {menu && !menu.itemId && menu.ground && <ContextMenu info={menu} onClose={() => setMenu(null)} />}
       </>
     );
   }

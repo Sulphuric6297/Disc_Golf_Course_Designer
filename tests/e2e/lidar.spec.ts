@@ -56,6 +56,8 @@ plain("trees on a fairway are cut down unless kept; taken out anywhere; a hole's
   plainExpect(standingTrees(doc.lidar, cleared)).toEqual({ stand: [3], cut: [0, 1, 2] });
   doc.lidar = { ...doc.lidar, kept: [1], removed: [3] };
   plainExpect(standingTrees(doc.lidar, cleared)).toEqual({ stand: [1], cut: [0, 2, 3] });
+  // (fairways left alone: only what was taken out by hand is down)
+  plainExpect(standingTrees({ ...doc.lidar, clearFairways: false }, cleared)).toEqual({ stand: [0, 1, 2], cut: [3] });
   const hole = newHole({ fairwayWidth: 30 });
   plainExpect(fairwayTrees(doc, hole, [{ x: 50, y: 300 }, { x: 350, y: 300 }])).toEqual({ cut: [0, 2], kept: [1] });
 });

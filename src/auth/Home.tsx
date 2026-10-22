@@ -65,8 +65,8 @@ function Card({ c, onOpen, onRemove }: { c: ServerPlan; onOpen: () => void; onRe
   const s = c.summary;
   const facts = [`${c.holes} hole${c.holes === 1 ? "" : "s"}`, s.par ? `Par ${s.par}` : null, s.length && s.units ? fmtDist(s.length, s.units) : null].filter(Boolean).join(" · ");
   return (
-    <li className="group relative bg-zinc-900 border border-zinc-800 hover:border-zinc-600 rounded-2xl overflow-hidden transition-colors" data-testid="course-card">
-      <button className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-2xl" onClick={onOpen}>
+    <li className="group relative bg-zinc-900 hover:bg-zinc-800/80 rounded-2xl overflow-hidden transition-colors ring-1 ring-white/5 hover:ring-white/10" data-testid="course-card">
+      <button className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 rounded-2xl" onClick={onOpen}>
         <Picture c={c} />
         <div className="p-3.5">
           <div className="flex items-start gap-2">
@@ -123,7 +123,7 @@ export function Home() {
 
   return (
     <div className="fixed inset-0 z-40 bg-zinc-950 overflow-y-auto" data-testid="home">
-      <header className="sticky top-0 z-10 bg-zinc-950/95 border-b border-zinc-800">
+      <header className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur shadow-[0_1px_0_0_rgba(255,255,255,0.06)]">
         <div className="max-w-6xl mx-auto h-14 px-4 flex items-center gap-3">
           <Logo size={30} />
           <span className="font-bold text-zinc-50 text-[17px] hidden sm:inline">HyzerLab</span>
@@ -145,9 +145,9 @@ export function Home() {
           </div>
           <label className="relative sm:w-64">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-            <input className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-9 pr-3 py-2 text-sm touch:text-base text-zinc-100 focus:outline-none focus:border-orange-400" placeholder="Search" value={q} onChange={e => setQ(e.target.value)} aria-label="Search courses" />
+            <input className="w-full bg-zinc-900 rounded-lg pl-9 pr-3 py-2 text-sm touch:text-base text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-400/80" placeholder="Search" value={q} onChange={e => setQ(e.target.value)} aria-label="Search courses" />
           </label>
-          <button className="inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 touch:py-3 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white shadow" onClick={() => void fresh()} data-testid="new-course">
+          <button className="inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 touch:py-3 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950 shadow" onClick={() => void fresh()} data-testid="new-course">
             <Plus size={16} /> New course
           </button>
         </div>
@@ -155,25 +155,25 @@ export function Home() {
         {parks.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-5" role="group" aria-label="Parks" data-testid="park-chips">
             {["", ...parks].map(p => (
-              <button key={p || "all"} className={`px-3 py-1 rounded-full text-sm border ${park === p ? "bg-orange-500 border-orange-500 text-white" : "border-zinc-700 text-zinc-300 hover:bg-zinc-800"}`} onClick={() => setPark(p)}>{p || "All parks"}</button>
+              <button key={p || "all"} className={`px-3 py-1 rounded-full text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${park === p ? "bg-zinc-100 text-zinc-900 font-semibold" : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"}`} onClick={() => setPark(p)}>{p || "All parks"}</button>
             ))}
           </div>
         )}
         {list === null ? <div className="h-40" aria-busy="true" /> : list.length === 0 ? (
-          <div className="text-center py-20 border border-dashed border-zinc-800 rounded-2xl">
+          <div className="text-center py-20 bg-zinc-900/60 rounded-2xl">
             <Logo size={48} />
             <h2 className="text-lg font-semibold text-zinc-100 mt-4">No courses yet</h2>
             <p className="text-sm text-zinc-400 mt-1">Start one, or ask someone to share theirs.</p>
-            <button className="mt-5 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white" onClick={() => void fresh()}><Plus size={16} /> New course</button>
+            <button className="mt-5 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950" onClick={() => void fresh()}><Plus size={16} /> New course</button>
           </div>
         ) : (
           <>
             <section className="mb-10" data-testid="my-courses">
-              <h2 className="text-[12px] font-bold uppercase tracking-wider text-zinc-400 mb-3">Your courses <span className="text-zinc-600">{mine.length}</span></h2>
+              <h2 className="text-sm font-semibold text-zinc-300 mb-3">Your courses <span className="text-zinc-500 font-normal">{mine.length}</span></h2>
               {mine.length ? grid(mine) : <p className="text-sm text-zinc-500">None{q ? " match" : " yet"}.</p>}
             </section>
             <section data-testid="shared-courses">
-              <h2 className="text-[12px] font-bold uppercase tracking-wider text-zinc-400 mb-3">Shared with you <span className="text-zinc-600">{shared.length}</span></h2>
+              <h2 className="text-sm font-semibold text-zinc-300 mb-3">Shared with you <span className="text-zinc-500 font-normal">{shared.length}</span></h2>
               {shared.length ? grid(shared) : <p className="text-sm text-zinc-500">{q ? "None match." : "Courses others share with you show up here."}</p>}
             </section>
           </>

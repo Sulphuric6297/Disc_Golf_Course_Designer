@@ -236,7 +236,7 @@ export function BottomSheet({ detent, onDetent, header, children, peekExtra = 0,
       <div ref={head} className="shrink-0 select-none" onPointerDown={onHeadDown}>
         <button
           type="button"
-          className="w-full flex justify-center pt-2 pb-1.5 touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-t-[22px]"
+          className="w-full flex justify-center pt-2 pb-1.5 touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 rounded-t-[22px]"
           aria-label={`Panel: ${NAMES[detent]}. Show it ${NAMES[next]}`}
           aria-expanded={detent !== "peek"}
           data-testid="sheet-handle"

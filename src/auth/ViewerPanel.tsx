@@ -9,7 +9,7 @@ import { fmtDist, fmtElev } from "../lib/units";
 import { select } from "../state/actions";
 import { useCourse, useEditor } from "../state/course";
 import { getView } from "../components/MapViewport";
-import { Section, Stat } from "../components/ui";
+import { Section, Facts } from "../components/ui";
 import { copyCourse, holesOf } from "./courses";
 import { useAllowed } from "./perms";
 import { Downloads } from "./Downloads";
@@ -38,18 +38,14 @@ export function ViewerPanelBody() {
       </div>
       {mayStats && totals.complete > 0 && (
         <Section>
-          <div className="grid grid-cols-3 gap-1.5" data-testid="course-totals">
-            <Stat label="Holes" value={holesOf(doc)} />
-            <Stat label="Par" value={totals.par} />
-            <Stat label="Length" value={fmtDist(totals.length, u)} />
-          </div>
+          <Facts testid="course-totals" items={[["Holes", holesOf(doc)], ["Par", totals.par], ["Length", fmtDist(totals.length, u)]]} />
         </Section>
       )}
       {picked && hole && picked.complete && (may3d || mayFly) && (
         <Section testid="viewer-views">
           <div className="flex flex-wrap gap-2">
             {may3d && <button className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 touch:py-2.5 text-sm font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700" onClick={() => useEditor.getState().set({ teeView: picked.holeId, flyover: false })} data-testid="viewer-tee">From the tee</button>}
-            {mayFly && <button className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 touch:py-2.5 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white" onClick={() => useEditor.getState().set({ view: "3d", teeView: picked.holeId, flyover: true })} data-testid="viewer-fly">▶ Fly over</button>}
+            {mayFly && <button className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 touch:py-2.5 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950" onClick={() => useEditor.getState().set({ view: "3d", teeView: picked.holeId, flyover: true })} data-testid="viewer-fly">▶ Fly over</button>}
           </div>
         </Section>
       )}

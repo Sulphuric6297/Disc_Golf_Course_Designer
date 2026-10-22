@@ -139,7 +139,7 @@ export function FloatingWindow({ title, storageKey, width, onWidth, minWidth = 2
     window.addEventListener("pointerup", up);
   };
 
-  const iconBtn = "p-1 text-slate-400 hover:text-white hover:bg-white/10 rounded transition-colors";
+  const iconBtn = "p-1 text-slate-400 hover:text-zinc-50 hover:bg-white/10 rounded transition-colors";
   return (
     <div
       ref={ref}

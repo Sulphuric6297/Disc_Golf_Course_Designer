@@ -120,3 +120,15 @@ test("one ground for the park: the trees planted by hand come across; one cut do
   const aCut = { ...from, items: from.items.filter((i: any) => i.id !== "t2") };
   expect(withGround(cut, aCut, { trees: false, planted: true }).items.map((i: any) => i.id)).toEqual(["t2"]);
 });
+
+test("one ground for the park: the taking course keeps its own measured trees where the other doesn't reach (pure logic)", async () => {
+  const { withGround } = await import("../../src/lib/sharedGround");
+  const site = (west: number) => ({ location: null, bounds: { north: 40, south: 39.99, west, east: west + 0.01 }, baseElevationFt: 100 });
+  const from = { name: "A", holes: [], items: [], canvas: { width: 100, height: 100 }, gridSize: 50, site: site(-89), terrainHeights: {}, lidar: { source: "s", trees: [[25, 25, 40, 10, 0]] } } as any;
+  // (B's site starts halfway across A's: its tree at x=90 is past A's edge, its tree at x=10 is on A)
+  const to = { name: "B", holes: [], items: [], canvas: { width: 100, height: 100 }, gridSize: 50, site: site(-88.995), terrainHeights: {}, lidar: { source: "old", trees: [[90, 50, 30, 8, 0], [10, 50, 30, 8, 1]], removed: [0] } } as any;
+  const out = withGround(to, from, true);
+  expect(out.lidar.trees).toContainEqual([90, 50, 30, 8, 0]);
+  expect(out.lidar.trees.some((t: number[]) => t[0] === 10 && t[4] === 1)).toBe(false);
+  expect(out.lidar.removed).toEqual([out.lidar.trees.findIndex((t: number[]) => t[0] === 90)]);
+});

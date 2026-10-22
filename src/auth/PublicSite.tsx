@@ -98,9 +98,9 @@ export function PublicSite({ children }: { children: ReactNode }) {
       <Plain>
         <form className="space-y-3" onSubmit={e => { e.preventDefault(); void load(password); }}>
           <div className="flex items-center gap-2 text-zinc-200"><Lock size={16} /> This course page has a password.</div>
-          <input type="password" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-100" value={password} onChange={e => setPassword(e.target.value)} aria-label="Password" autoFocus />
+          <input type="password" className="w-full bg-zinc-800 rounded-lg px-3 py-2 text-zinc-100" value={password} onChange={e => setPassword(e.target.value)} aria-label="Password" autoFocus />
           {tried && <p role="alert" className="text-sm text-red-300">{tried}</p>}
-          <button className="w-full rounded-lg px-3 py-2 font-semibold bg-orange-500 text-white">Open</button>
+          <button className="w-full rounded-lg px-3 py-2 font-semibold bg-orange-500 text-zinc-950">Open</button>
         </form>
       </Plain>
     );
@@ -147,7 +147,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
 
         <div className="flex flex-wrap gap-2 my-6">
           {site.hasCourse && (
-            <button className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-semibold bg-orange-500 hover:bg-orange-400 text-white" onClick={() => void open3d()} data-testid="explore">
+            <button className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950" onClick={() => void open3d()} data-testid="explore">
               {site.shown.view3d ? <Mountain size={16} /> : <MapIcon size={16} />} {site.shown.view3d ? "Explore in 3D" : "Explore the map"}
             </button>
           )}
@@ -168,7 +168,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
                       <span className="block font-semibold truncate">{h.name || `Hole ${h.label}`}</span>
                       <span className="block text-sm text-zinc-400">Par {h.par} · {fmtDist(h.length, u)} · {fmtElev(h.elevation, u)}</span>
                     </span>
-                    {flies && h.id && <span role="button" tabIndex={0} className="shrink-0 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white" onClick={e => { e.stopPropagation(); void open3d(h.id); }} onKeyDown={e => { if (e.key === "Enter") { e.stopPropagation(); void open3d(h.id); } }} data-testid="fly-hole">▶ Fly</span>}
+                    {flies && h.id && <span role="button" tabIndex={0} className="shrink-0 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950" onClick={e => { e.stopPropagation(); void open3d(h.id); }} onKeyDown={e => { if (e.key === "Enter") { e.stopPropagation(); void open3d(h.id); } }} data-testid="fly-hole">▶ Fly</span>}
                     <span className={`text-zinc-500 transition-transform ${openHole === h.label ? "rotate-90" : ""}`}>›</span>
                   </button>
                   {openHole === h.label && (

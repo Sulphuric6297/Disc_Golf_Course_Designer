@@ -32,7 +32,7 @@ export function ApplyToHoles({ fromId, apply, testid }: { fromId?: string; apply
                   key={h.id}
                   aria-pressed={on}
                   aria-label={`Hole ${holeLabel(doc, h.id)}`}
-                  className={`rounded-md py-1 touch:py-2.5 text-xs font-semibold border ${on ? "bg-orange-500 border-orange-400 text-white" : "bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700"}`}
+                  className={`rounded-md py-1 touch:py-2.5 text-xs font-semibold border ${on ? "bg-orange-500 border-orange-400 text-zinc-950" : "bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700"}`}
                   onClick={() => setPicked(p => (on ? p.filter(x => x !== h.id) : [...p, h.id]))}
                 >
                   {holeLabel(doc, h.id)}

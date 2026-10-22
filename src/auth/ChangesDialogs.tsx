@@ -22,7 +22,7 @@ function Clashes({ m, picked, setPicked }: { m: Merge; picked: Set<number>; setP
         {m.clashes.map((c, i) => (
           <li key={`${c.list}:${c.id}`} className="flex items-center gap-2 text-sm" data-testid="clash">
             <span className="flex-1 min-w-0 truncate text-zinc-100">{c.label}{c.mine === undefined ? " (you removed it)" : c.theirs === undefined ? " (removed in the course)" : ""}</span>
-            <select className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-100" value={picked.has(i) ? "theirs" : "mine"} onChange={e => pick(i, e.target.value === "theirs")} aria-label={`Keep for ${c.label}`}>
+            <select className="bg-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100" value={picked.has(i) ? "theirs" : "mine"} onChange={e => pick(i, e.target.value === "theirs")} aria-label={`Keep for ${c.label}`}>
               <option value="mine">Keep mine</option>
               <option value="theirs">Keep the course's</option>
             </select>
@@ -86,7 +86,7 @@ export function HistoryDialog({ onClose }: { onClose: () => void }) {
   const canRestore = role === "owner" || !approval;
   const label = (v: VersionRow) => `Version ${v.version} · ${KIND[v.kind]}${v.by ? ` by ${v.by}` : ""} · ${when(v.at)}`;
   return (
-    <Dialog title="History" onClose={onClose} testid="history-dialog">
+    <Dialog title="History" onClose={onClose} testid="history-dialog" side>
       <label className="flex items-center gap-2 text-xs text-zinc-400 mb-2"><input type="checkbox" checked={named} onChange={e => setNamed(e.target.checked)} /> Published only</label>
       {rows === null ? <div className="h-24" aria-busy="true" /> : (
         <ol className="divide-y divide-zinc-800 -mx-1" data-testid="versions">
@@ -104,9 +104,9 @@ export function HistoryDialog({ onClose }: { onClose: () => void }) {
               </div>
               {(v.version !== version || v.kind === "draft") && (
                 <div className="flex flex-wrap justify-end gap-x-3 gap-y-1 text-xs shrink-0 pt-0.5 max-w-[45%]">
-                  <button className="text-zinc-300 hover:text-white" onClick={() => { onClose(); void previewVersion(v, label(v)); }}>Look</button>
-                  <button className="text-zinc-300 hover:text-white" onClick={() => void compareWithNow(v.id).then(t => setCompared(c => ({ ...c, [v.id]: t })))} data-testid="compare">Compare</button>
-                  {(inDraft() || role === "owner") && <button className="text-zinc-300 hover:text-white" onClick={() => { onClose(); void versionToDraft(v.id); }} data-testid="to-draft">Into my draft</button>}
+                  <button className="text-zinc-300 hover:text-zinc-50" onClick={() => void previewVersion(v, label(v))} data-testid="look">Look</button>
+                  <button className="text-zinc-300 hover:text-zinc-50" onClick={() => void compareWithNow(v.id).then(t => setCompared(c => ({ ...c, [v.id]: t })))} data-testid="compare">Compare</button>
+                  {(inDraft() || role === "owner") && <button className="text-zinc-300 hover:text-zinc-50" onClick={() => { onClose(); void versionToDraft(v.id); }} data-testid="to-draft">Into my draft</button>}
                   {canRestore && v.kind !== "draft" && <button className="text-orange-300 hover:text-orange-200" onClick={() => { if (confirm(`Restore version ${v.version}? The course as it is now stays in the history${useServerCourse.getState().draft ? ", and your draft is discarded" : ""}.`)) { onClose(); void restoreVersion(v.id); } }}>Restore</button>}
                 </div>
               )}
@@ -141,7 +141,7 @@ export function ReviewDialog({ onClose }: { onClose: () => void }) {
                 <div className="text-[12px] text-zinc-500">{when(s.createdAt)}</div>
               </div>
               <div className="flex gap-3 text-xs shrink-0 pt-0.5">
-                <button className="text-zinc-300 hover:text-white" onClick={() => { onClose(); void previewSubmission(s, `${s.by ?? "Someone"}'s changes${s.note ? `: ${s.note}` : ""}`); }}>Look</button>
+                <button className="text-zinc-300 hover:text-zinc-50" onClick={() => { onClose(); void previewSubmission(s, `${s.by ?? "Someone"}'s changes${s.note ? `: ${s.note}` : ""}`); }}>Look</button>
                 <button className="text-emerald-300 hover:text-emerald-200" onClick={() => void submissionHoles(s.id).then(h => { setPicking({ sid: s.id, holes: h }); setLeaveOut(new Set()); })} data-testid="accept-some">Accept…</button>
                 <button className="text-red-300 hover:text-red-200" onClick={() => { const note = prompt("Ask for changes (optional note):", ""); if (note !== null) void act(() => declineSubmission(s.id, note)); }} data-testid="ask-changes">Ask for changes</button>
               </div>
@@ -172,12 +172,14 @@ export function ReviewDialog({ onClose }: { onClose: () => void }) {
 export function PreviewBar() {
   const { preview, role, approval, behind, draft } = useServerCourse();
   const me = useAuth(s => s.session?.user?.id);
+  // (beside the History panel when it's open, not under it)
+  const beside = useAuth(s => s.dialog) === "history" ? "md:left-[calc(50%-200px)]" : "";
   const open = useAuth(s => s.open);
   const [busy, setBusy] = useState(false);
   // (in a draft that the course moved on from: bring its changes in)
   if (!preview && behind && draft) {
     return (
-      <div className="fixed left-1/2 -translate-x-1/2 top-[68px] z-30 max-w-[calc(100vw-24px)] bg-zinc-900/95 border border-sky-700/60 rounded-xl shadow-2xl px-3 py-2 flex flex-wrap items-center gap-2" role="region" aria-label="Course changed" data-testid="behind-bar">
+      <div className={`fixed left-1/2 -translate-x-1/2 top-[68px] z-30 ${beside} max-w-[calc(100vw-24px)] bg-zinc-900/95 border border-sky-700/60 rounded-xl shadow-2xl px-3 py-2 flex flex-wrap items-center gap-2`} role="region" aria-label="Course changed" data-testid="behind-bar">
         <span className="text-sm text-zinc-100 mr-2">The course changed since your draft started</span>
         <button className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold bg-sky-600 hover:bg-sky-500 text-white" onClick={() => open("update")} data-testid="update-draft">Update draft</button>
       </div>
@@ -187,11 +189,11 @@ export function PreviewBar() {
   const go = (fn: () => Promise<void>) => async () => { setBusy(true); try { await fn(); } finally { setBusy(false); } };
   const btn = "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold disabled:opacity-50";
   return (
-    <div className="fixed left-1/2 -translate-x-1/2 top-[68px] z-30 max-w-[calc(100vw-24px)] bg-zinc-900/95 border border-zinc-700 rounded-xl shadow-2xl px-3 py-2 flex flex-wrap items-center gap-2" role="region" aria-label="Looking back" data-testid="preview-bar">
+    <div className={`fixed left-1/2 -translate-x-1/2 top-[68px] z-30 ${beside} max-w-[calc(100vw-24px)] bg-zinc-900/95 rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 px-3 py-2 flex flex-wrap items-center gap-2`} role="region" aria-label="Looking back" data-testid="preview-bar">
       <History size={16} className="text-sky-300 shrink-0" />
       <span className="text-sm text-zinc-100 mr-2 min-w-0 truncate">{preview.label}</span>
       {preview.kind === "version" && (role === "owner" || !approval) && (
-        <button disabled={busy} className={`${btn} bg-orange-500 hover:bg-orange-400 text-white`} onClick={go(() => restoreVersion(preview.id))}><RotateCcw size={14} /> Restore</button>
+        <button disabled={busy} className={`${btn} bg-orange-500 hover:bg-orange-400 text-zinc-950`} onClick={go(() => restoreVersion(preview.id))}><RotateCcw size={14} /> Restore</button>
       )}
       {preview.kind === "submission" && role === "owner" && (
         <>

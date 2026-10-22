@@ -2,14 +2,18 @@
 // the open course (Live, Draft · changes, View only, Not saved) whose menu holds Publish, Discard,
 // how you edit, review and history; then comments, share, notices and your account. The same
 // choices for the phone's app menu.
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { History, Inbox, LayoutGrid, LogOut, MessageCircle, Send, Share2, Trash2, UserRound, Users } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { HelpCircle, History, Inbox, LayoutGrid, LogOut, MessageCircle, Send, Share2, Trash2, UserRound, Users } from "lucide-react";
+import { FOCUS, MENU_ROW, MenuRow, POPOVER } from "../components/ui";
 import { NoticeBell } from "./Notices";
 import { useComments } from "./Comments";
 import { SERVER, useAuth } from "./api";
 import { discardDraft, draftChangeCount, draftChanges, inDraft, keepMine, reloadTheirs, saveNow, setLive, thumbnailNow, useServerCourse } from "./courses";
 import { useCourse } from "../state/course";
 import { useAllowed } from "./perms";
+
+/** Up to two letters for the avatar. */
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join("") || "?";
 
 const signOut = async () => { await saveNow(); await useAuth.getState().signOut(); };
 export const goHome = () => { useAuth.getState().showHome(true); void saveNow().then(thumbnailNow).then(() => useAuth.getState().bump()); };
@@ -29,10 +33,9 @@ function useMenu() {
   return { open, setOpen, ref };
 }
 
-const ROW = "w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 text-left disabled:opacity-40";
-const Row = ({ icon, children, onClick, testid, danger }: { icon?: ReactNode; children: ReactNode; onClick: () => void; testid?: string; danger?: boolean }) => (
-  <button className={`${ROW} ${danger ? "text-red-300" : ""}`} role="menuitem" onClick={onClick} data-testid={testid}>{icon}{children}</button>
-);
+const ROW = MENU_ROW, Row = MenuRow;
+/** The icon buttons along the bar (comments, share, notices). */
+const BAR = `relative p-2 rounded-lg text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 ${FOCUS}`;
 
 /** The open course: how it's being changed, and what can be done about it. */
 export function CourseChip() {
@@ -42,16 +45,16 @@ export function CourseChip() {
   const m = useMenu();
   const [error, setError] = useState("");
   if (preview || !role) return null;
-  if (role === "viewer") return <span className="px-2.5 py-1 rounded-full bg-sky-900/60 text-sky-200 text-[12px] font-semibold" data-testid="view-only">View only</span>;
+  if (role === "viewer") return <span className="px-2.5 py-1 rounded-full bg-sky-500/10 text-sky-200 text-[12px] font-semibold" data-testid="view-only">View only</span>;
   if (status === "conflict") {
     return (
       <div className="relative" ref={m.ref}>
         <button className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-200 text-[12px] font-semibold" onClick={() => m.setOpen(o => !o)} data-testid="save-conflict">Not saved</button>
         {m.open && (
-          <div className="absolute right-0 top-full mt-1 w-64 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-3 z-50 text-sm" role="dialog" aria-label="Not saved">
+          <div className={`absolute right-0 top-full mt-1 w-64 ${POPOVER} p-3 z-50 text-sm`} role="dialog" aria-label="Not saved">
             <p className="text-zinc-200 mb-2">{conflict}.</p>
             <div className="flex gap-2">
-              <button className="flex-1 rounded-lg px-2 py-1.5 bg-orange-500 hover:bg-orange-400 text-white font-semibold" onClick={() => { m.setOpen(false); void reloadTheirs(); }}>Open theirs</button>
+              <button className="flex-1 rounded-lg px-2 py-1.5 bg-orange-500 hover:bg-orange-400 text-zinc-950 font-semibold" onClick={() => { m.setOpen(false); void reloadTheirs(); }}>Open theirs</button>
               <button className="flex-1 rounded-lg px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700" onClick={() => { m.setOpen(false); void keepMine(); }}>Save mine</button>
             </div>
           </div>
@@ -72,7 +75,7 @@ export function CourseChip() {
     <div className="relative flex items-center gap-1.5" ref={m.ref}>
       {status === "error" && <span className="text-[12px] text-red-300">Can't save</span>}
       <button
-        className={`inline-flex items-center gap-1.5 pl-2.5 pr-2 py-1 rounded-full text-[12px] font-semibold border ${drafting ? "bg-orange-500/15 text-orange-200 border-orange-500/30" : "bg-emerald-500/10 text-emerald-200 border-emerald-500/25"}`}
+        className={`inline-flex items-center gap-1.5 pl-2.5 pr-2 py-1 rounded-full text-[12px] font-semibold ${FOCUS} ${drafting ? "bg-orange-500/15 text-orange-200" : "bg-emerald-500/10 text-emerald-200"}`}
         onClick={() => m.setOpen(o => !o)} aria-haspopup="menu" aria-expanded={m.open} data-testid="course-chip"
         title={drafting ? draftChanges() : "Changes go straight into the official layout"}>
         <span className={`w-1.5 h-1.5 rounded-full ${busy ? "bg-zinc-400 animate-pulse" : drafting ? "bg-orange-400" : "bg-emerald-400"}`} data-testid="save-status" data-state={busy ? "saving" : "saved"} />
@@ -80,12 +83,12 @@ export function CourseChip() {
         {role === "owner" && pending > 0 && <span className="ml-0.5 px-1.5 rounded-full bg-amber-500 text-zinc-950 text-[10px]" data-testid="review-count">{pending}</span>}
       </button>
       {drafting && n > 0 && (
-        <button className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[13px] font-semibold bg-orange-500 hover:bg-orange-400 text-white" onClick={() => open("publish")} data-testid="publish-button">
+        <button className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[13px] font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950" onClick={() => open("publish")} data-testid="publish-button">
           <Send size={13} /> {sends ? "Send" : "Publish"}
         </button>
       )}
       {m.open && (
-        <div className="absolute right-0 top-full mt-1 w-72 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-1 z-50" role="menu" data-testid="course-menu">
+        <div className={`absolute right-0 top-full mt-1 w-72 ${POPOVER} py-1 z-50`} role="menu" data-testid="course-menu">
           {drafting && (
             <>
               <div className="px-3 py-1.5 text-[12px] text-zinc-400">{draft ? draftChanges() : "No changes in your draft yet"}</div>
@@ -124,7 +127,7 @@ function CommentsButton() {
   const { threads, panel } = useComments();
   const open = threads.filter(t => !t.resolvedAt).length;
   return (
-    <button className={`relative p-2 rounded-lg hover:bg-zinc-800 ${panel ? "text-orange-300" : "text-zinc-400 hover:text-white"}`} aria-label={`Comments (${open})`} title="Comments" onClick={() => useComments.setState({ panel: !panel })} data-testid="comments-button">
+    <button className={`${BAR} ${panel ? "text-orange-300" : ""}`} aria-label={`Comments (${open})`} title="Comments" onClick={() => useComments.setState({ panel: !panel })} data-testid="comments-button">
       <MessageCircle size={18} />
       {open > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-sky-500 text-white text-[10px] font-bold flex items-center justify-center">{open}</span>}
     </button>
@@ -132,7 +135,7 @@ function CommentsButton() {
 }
 
 /** `home`: on the course list (no open course's chip, comments or Share). */
-export function AccountMenu({ home = false }: { home?: boolean }) {
+export function AccountMenu({ home = false, onHelp }: { home?: boolean; onHelp?: () => void }) {
   const user = useAuth(s => s.session?.user);
   const open = useAuth(s => s.open);
   const { role, preview, id: courseId } = useServerCourse();
@@ -147,19 +150,20 @@ export function AccountMenu({ home = false }: { home?: boolean }) {
       {!home && <CourseChip />}
       {course && mayComment && <CommentsButton />}
       {course && role === "owner" && (
-        <button className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800" aria-label="Share" title="Share" onClick={() => open("share")} data-testid="share-button"><Share2 size={18} /></button>
+        <button className={BAR} aria-label="Share" title="Share" onClick={() => open("share")} data-testid="share-button"><Share2 size={18} /></button>
       )}
       <NoticeBell />
       <div className="relative" ref={m.ref}>
-        <button className="flex items-center gap-1.5 p-2 rounded-lg text-zinc-300 hover:text-white hover:bg-zinc-800 text-sm" aria-label="Account" aria-haspopup="menu" aria-expanded={m.open} onClick={() => m.setOpen(o => !o)} data-testid="account-menu">
-          <UserRound size={18} /><span className="hidden 2xl:inline max-w-[120px] truncate">{user.displayName}</span>
+        <button className={`ml-1 w-8 h-8 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-[11px] font-bold flex items-center justify-center ${FOCUS} ${m.open ? "ring-2 ring-sky-400" : ""}`} aria-label="Account" title={user.displayName} aria-haspopup="menu" aria-expanded={m.open} onClick={() => m.setOpen(o => !o)} data-testid="account-menu">
+          {initials(user.displayName)}
         </button>
         {m.open && (
-          <div className="absolute right-0 top-full mt-1 w-56 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-1 z-50" role="menu">
-            <div className="px-3 py-1.5 text-[12px] text-zinc-500 truncate">{user.displayName} · {user.username}</div>
+          <div className={`absolute right-0 top-full mt-1 w-56 ${POPOVER} py-1 z-50`} role="menu">
+            <div className="px-3 py-2"><div className="text-sm font-semibold text-zinc-100 truncate">{user.displayName}</div><div className="text-[12px] text-zinc-500 truncate">{user.username}</div></div>
             {!home && <Row icon={<LayoutGrid size={15} />} testid="courses-button" onClick={() => { m.setOpen(false); goHome(); }}>Courses</Row>}
             <Row icon={<UserRound size={15} />} onClick={() => { m.setOpen(false); open("account"); }}>Account</Row>
             {user.isAdmin && <Row icon={<Users size={15} />} onClick={() => { m.setOpen(false); open("people"); }}>People</Row>}
+            {onHelp && <Row icon={<HelpCircle size={15} />} onClick={() => { m.setOpen(false); onHelp(); }}>Shortcuts and help</Row>}
             <div className="border-t border-zinc-800 my-1" />
             <Row icon={<LogOut size={15} />} onClick={() => { m.setOpen(false); void signOut(); }}>Sign out</Row>
           </div>

@@ -1,4 +1,5 @@
 // What the tools and menus do to the course.
+import { grownTree } from "../lib/lidar";
 import { CIRCLE_ONE_FT, PIN_POSITIONS, TEE_ORDER, generateId } from "../constants";
 import {
   createAmenity, createArea, createBasket, createDropZone, createLabel, createLine, createMando, createStructure, createTee, createTree,
@@ -523,3 +524,42 @@ export const cutStretch = (id: string, a: number, b: number) => {
   changeDoc(d => ({ items: d.items.flatMap(i => (i.id === id ? parts : [i])) }));
   select(parts[0]?.id ?? null);
 };
+
+/** An outline drawn as a patch of a woods area (trees: custom): drawn trees fill it in, as
+ * thickly as the wood's last patch (half, for the first). One undo step; the wood stays selected. */
+export const addPatch = (areaId: string, points: P[]) => {
+  if (!getDoc().items.some(i => i.id === areaId && i.type === "area")) { toast("That wood is gone: draw the patch again on another.", "info"); return; }
+  changeDoc(d => ({ items: d.items.map(i => (i.id === areaId && i.type === "area" ? { ...i, trees: "custom" as const, patches: [...(i.patches ?? []), { points, fill: i.patches?.[i.patches.length - 1]?.fill ?? 0.5 }] } : i)) }));
+  select(areaId);
+};
+
+/** A measured tree made the course's own: a tree item where it stands, as tall and wide as it was
+ * measured (grown as the course asks), to drag and set like any other; the measured one is cut
+ * down under it. One undo step; the new tree is picked. */
+export const adoptLidarTree = (k: number) => {
+  const doc = getDoc();
+  const t = doc.lidar?.trees[k];
+  if (!doc.lidar || !t) return;
+  const [x, y, h, r, conifer] = grownTree(t, doc.lidar.growYears ?? 0);
+  const tree = createTree({ x, y }, { height: Math.round(h), radius: Math.round(r), treeType: conifer ? "conifer" : "deciduous" });
+  const removed = [...new Set([...(doc.lidar.removed ?? []), k])].sort((a, b) => a - b);
+  changeDoc(d => ({ items: [...d.items, tree], lidar: d.lidar ? { ...d.lidar, removed, kept: (d.lidar.kept ?? []).filter(i => i !== k) } : d.lidar }));
+  select(tree.id);
+};
+
+/** A sapling or planted tree cut down by hand: nothing stands there from now on. One undo step. */
+export const cutTreeAt = (p: P) => {
+  changeDoc(d => ({ cutTrees: [...(d.cutTrees ?? []), { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 }] }));
+  toast("Tree cut down.", "success", true);
+};
+
+/** A sapling or planted tree made the course's own: a tree item where it stood, its size, to drag
+ * and set like any other; the spot is cut under it. One undo step; the new tree is picked. */
+export const adoptTreeAt = (spot: { x: number; y: number; height: number; width: number; conifer: boolean }) => {
+  const tree = createTree({ x: spot.x, y: spot.y }, { height: Math.round(spot.height), radius: Math.round(spot.width / 2), treeType: spot.conifer ? "conifer" : "deciduous" });
+  changeDoc(d => ({ items: [...d.items, tree], cutTrees: [...(d.cutTrees ?? []), { x: spot.x, y: spot.y }] }));
+  select(tree.id);
+};
+
+/** The trees cut down by hand (saplings, planted ones) all back. */
+export const uncutTrees = () => changeDoc(() => ({ cutTrees: undefined }));

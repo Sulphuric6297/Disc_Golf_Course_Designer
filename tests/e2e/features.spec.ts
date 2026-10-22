@@ -63,11 +63,11 @@ test("lines: an OB line and a walking path with its width", async ({ page }) => 
   await expect.poll(async () => (await course(page)).items[0].width).toBe(12);
   await page.keyboard.press("l");
   await page.getByTestId("line-kind-ob").click();
-  await clickPlan(page, 1500, 100);
+  // (below the map's controls at the top right)
+  await clickPlan(page, 1500, 600);
   await clickPlan(page, 1500, 1000);
   await page.keyboard.press("Enter");
-  const lines = (await course(page)).items.filter((i: any) => i.type === "line");
-  expect(lines.map((l: any) => l.kind).sort()).toEqual(["ob", "path"]);
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "line").map((l: any) => l.kind).sort()).toEqual(["ob", "path"]);
 });
 
 test("a mando placed on a hole faces down it, passed on the line's side; its side can be switched; a drop zone joins the hole", async ({ page }) => {

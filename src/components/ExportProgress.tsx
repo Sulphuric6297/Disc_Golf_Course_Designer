@@ -41,7 +41,7 @@ export function ExportProgressPill({ top }: { top?: number }) {
         <span className="flex-1 min-w-0 truncate font-semibold">{job.label}</span>
         {job.progress !== null && <span className="tabular-nums text-zinc-300">{Math.round(job.progress * 100)}%</span>}
         {job.cancel && (
-          <button className="ml-1 p-0.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-800" aria-label="Cancel the export" title="Cancel" onClick={job.cancel} data-testid="export-progress-cancel">
+          <button className="ml-1 p-0.5 rounded text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800" aria-label="Cancel the export" title="Cancel" onClick={job.cancel} data-testid="export-progress-cancel">
             <X size={14} />
           </button>
         )}

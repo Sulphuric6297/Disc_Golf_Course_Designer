@@ -312,6 +312,8 @@ export const surveyYear = (name: string) => Math.max(0, ...(name.match(/(19|20)\
  * `cleared` says) are cut down unless kept; any taken out are gone. */
 export const standingTrees = (lidar: NonNullable<CourseDoc["lidar"]>, cleared: (p: P, reach: number) => boolean, nowhere: (p: P) => boolean = () => false) => {
   const kept = new Set(lidar.kept ?? []), removed = new Set(lidar.removed ?? []);
+  // (a course can keep its measured trees on the fairways and cut by hand only)
+  if (lidar.clearFairways === false) cleared = () => false;
   const stand: number[] = [], cut: number[] = [];
   lidar.trees.forEach((t, k) => {
     const p = { x: t[0], y: t[1] };
@@ -330,7 +332,7 @@ export const standingTrees = (lidar: NonNullable<CourseDoc["lidar"]>, cleared: (
 export const fairwayTrees = (doc: Pick<CourseDoc, "lidar">, hole: Hole, line: P[]) => {
   const out = { cut: [] as number[], kept: [] as number[] };
   const lidar = doc.lidar;
-  if (!lidar?.trees.length || line.length < 2) return out;
+  if (!lidar?.trees.length || line.length < 2 || lidar.clearFairways === false) return out;
   const poly = fairwayOutline(hole, smoothPath(line, 8), hole.fairway ? 0 : -hole.fairwayWidth * 0.4, 6);
   const box = boundsOf(poly), kept = new Set(lidar.kept ?? []);
   lidar.trees.forEach(([x, y, , r], k) => {

@@ -131,8 +131,8 @@ type EditorStore = {
   pickCut: boolean;
   /** How far measuring the trees and ground from the air has got (0..1; null: not measuring). */
   lidarBusy: number | null;
-  /** Drawing an area to cut the measured trees in, or bring them back ("keep"). */
-  lidarLasso: "cut" | "keep" | null;
+  /** Drawing a patch of drawn trees inside this woods area (its id). */
+  patchFor: string | null;
   /** What is picked on the Design page's course map: "title", "legend"... or "text:ID", "image:ID". */
   designSel: string | null;
   /** The hole whose tee sign or hole page the Design step shows. */
@@ -156,6 +156,8 @@ type EditorStore = {
   /** Looking from a tee down its hole (the hole's id), or flying over it. */
   teeView: string | null;
   flyover: boolean;
+  /** A flyover still waiting for its pictures (the loading screen shows): what it waits on. */
+  flyLoading: "map" | "detail" | "textures" | null;
   /** Points placed so far while drawing (for the hint). */
   drawPoints: number;
   /** Map display: the satellite photo, contour lines, hill shading, ground texture up close. */
@@ -192,7 +194,7 @@ export const useEditor = create<EditorStore>()(set => ({
   obPick: null,
   pickCut: false,
   lidarBusy: null,
-  lidarLasso: null,
+  patchFor: null,
   designSel: null,
   designHole: null,
   activeHoleId: null,
@@ -208,6 +210,7 @@ export const useEditor = create<EditorStore>()(set => ({
   treeKind: "deciduous",
   teeView: null,
   flyover: false,
+  flyLoading: null,
   drawPoints: 0,
   photo: true,
   contours: true,

@@ -156,13 +156,13 @@ function Composer({ at }: { at: { x: number; y: number } }) {
     } finally { setBusy(false); }
   };
   return (
-    <div className="fixed z-30 w-72 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-3" style={{ left: Math.min(at.x + 12, window.innerWidth - 300), top: Math.max(70, at.y - 40) }} data-testid="comment-composer"
+    <div className="fixed z-30 w-72 bg-zinc-900 rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 p-3" style={{ left: Math.min(at.x + 12, window.innerWidth - 300), top: Math.max(70, at.y - 40) }} data-testid="comment-composer"
       onKeyDown={e => { if (e.key === "Escape") useComments.setState({ draftAt: null }); }}>
       <textarea ref={ref} className={`${inputCls} min-h-[72px]`} placeholder="Comment (@name to tell someone)" value={text} onChange={e => setText(e.target.value)} aria-label="Comment"
         onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void post(); }} />
       <div className="flex justify-end gap-2 mt-2">
         <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded-lg" onClick={() => useComments.setState({ draftAt: null })}>Cancel</button>
-        <button disabled={busy || !text.trim()} className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-white disabled:opacity-50" onClick={() => void post()}>Post</button>
+        <button disabled={busy || !text.trim()} className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" onClick={() => void post()}>Post</button>
       </div>
     </div>
   );
@@ -184,9 +184,9 @@ export function CommentsPanel() {
       <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800">
         <h2 className="font-bold text-zinc-50 flex-1">Comments <span className="text-zinc-500 font-normal">{open.length}</span></h2>
         <label className="flex items-center gap-1.5 text-xs text-zinc-400"><input type="checkbox" checked={showResolved} onChange={e => useComments.setState({ showResolved: e.target.checked })} /> Resolved</label>
-        <button aria-label="Close" className="text-zinc-400 hover:text-white" onClick={() => useComments.setState({ panel: false })}><X size={18} /></button>
+        <button aria-label="Close" className="text-zinc-400 hover:text-zinc-50" onClick={() => useComments.setState({ panel: false })}><X size={18} /></button>
       </div>
-      <button className="mx-4 mt-3 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white" onClick={() => useComments.setState({ placing: true, draftAt: null })} data-testid="add-comment">
+      <button className="mx-4 mt-3 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950" onClick={() => useComments.setState({ placing: true, draftAt: null })} data-testid="add-comment">
         <MessageSquarePlus size={15} /> Add a comment
       </button>
       <ol className="flex-1 overflow-y-auto p-3 space-y-2" data-testid="threads">
@@ -241,10 +241,10 @@ function ThreadView({ t, n, doc, me, owner, members }: { t: Thread; n: number; d
           onKeyDown={e => { if (e.key === "Enter" && reply.trim()) { const b = reply; setReply(""); void act(() => api("POST", base(), { body: b, parentId: t.id })); } }} />
       </div>
       <div className="flex items-center gap-3 mt-2 text-xs">
-        <button className="inline-flex items-center gap-1 text-zinc-300 hover:text-white" onClick={() => void act(() => api("PATCH", `${base()}/${t.id}`, { resolved: !t.resolvedAt }))} data-testid="resolve">
+        <button className="inline-flex items-center gap-1 text-zinc-300 hover:text-zinc-50" onClick={() => void act(() => api("PATCH", `${base()}/${t.id}`, { resolved: !t.resolvedAt }))} data-testid="resolve">
           {t.resolvedAt ? <><RotateCcw size={12} /> Re-open</> : <><Check size={12} /> Resolve</>}
         </button>
-        <select className="bg-zinc-800 border border-zinc-700 rounded-lg px-1.5 py-0.5 text-xs text-zinc-200 max-w-[150px]" value={t.assigneeId ?? ""} aria-label="Assigned to"
+        <select className="bg-zinc-800 rounded-lg px-1.5 py-0.5 text-xs text-zinc-200 max-w-[150px]" value={t.assigneeId ?? ""} aria-label="Assigned to"
           onChange={e => void act(() => api("PATCH", `${base()}/${t.id}`, { assigneeId: e.target.value || null }))}>
           <option value="">Not assigned</option>
           {members.map(m => <option key={m.userId} value={m.userId}>{m.displayName}</option>)}

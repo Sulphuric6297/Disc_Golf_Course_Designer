@@ -6,6 +6,32 @@ import { canopyFor, detailArea, forestCanvasAsync, paintedFrom, woodedOf, type W
 import { courseStats, holeStats } from "../lib/holeStats";
 import type { CourseDoc } from "../types";
 import { useCourse } from "./course";
+import { idbDelete, idbGet, idbSet } from "../lib/storage";
+
+// Paintings kept on this device, by what they depend on: the next session skips the painting
+// (the slowest part of a flyover's wait). A short list; the oldest go.
+const KEPT_KEY = "paint:index", KEEP = 16;
+const hashOf = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+const savedPaint = async <T,>(key: string): Promise<T | null> => { try { return ((await idbGet(key)) as T | undefined) ?? null; } catch { return null; } };
+const savePaint = async (key: string, value: unknown) => {
+  try {
+    await idbSet(key, value);
+    const index = ((await idbGet(KEPT_KEY)) as string[] | undefined ?? []).filter(k => k !== key);
+    index.push(key);
+    while (index.length > KEEP) await idbDelete(index.shift()!);
+    await idbSet(KEPT_KEY, index);
+  } catch { /* no room, or no store: painted again next time */ }
+};
+const toBlob = (canvas: HTMLCanvasElement, type: string, quality?: number) => new Promise<Blob | null>(res => canvas.toBlob(res, type, quality));
+/** A kept picture back on a canvas (what the view draws from). */
+const canvasOf = async (blob: Blob) => {
+  const bmp = await createImageBitmap(blob);
+  const canvas = document.createElement("canvas");
+  canvas.width = bmp.width; canvas.height = bmp.height;
+  canvas.getContext("2d")!.drawImage(bmp, 0, 0);
+  bmp.close();
+  return canvas;
+};
 
 /** The painting's longest side, pixels (about a foot per pixel on a usual site, like the photo). */
 const MAX_PX = 2048;
@@ -13,11 +39,18 @@ const MAX_PX = 2048;
 /** The painting (a picture's URL) and where it shows woods. */
 export type PaintedGround = { url: string; wooded: WoodedGrid | null };
 
-const ids = new WeakMap<object, number>();
-let nextId = 1;
-const idOf = (o: object) => {
-  if (!ids.has(o)) ids.set(o, nextId++);
-  return ids.get(o)!;
+// (the terrain by what's in it, not which object it is: a painting kept on disk is found again
+// in the next session)
+const terrainIds = new WeakMap<object, string>();
+const idOf = (o: Record<string, number>) => {
+  let id = terrainIds.get(o);
+  if (!id) {
+    let h = 2166136261, n = 0;
+    for (const k in o) { const v = o[k]; h ^= (v * 100) | 0; h = Math.imul(h, 16777619); n++; }
+    id = `${n}:${(h >>> 0).toString(36)}`;
+    terrainIds.set(o, id);
+  }
+  return id;
 };
 /** What the painting depends on (not flyover settings, names, the logo and such). */
 const paintKey = (doc: CourseDoc) =>
@@ -48,9 +81,18 @@ export const paintedGround = (doc: CourseDoc): Promise<PaintedGround | null> => 
   const k = Math.min(4, MAX_PX / Math.max(width, height, 1));
   const view = { cx: width / 2, cy: height / 2, rotation: 0, scale: k, width: width * k, height: height * k };
   const work = (async () => {
-    const canopy = doc.style.forest === "photo" ? await canopyFor(doc) : null;
-    const canvas = await forestCanvasAsync(doc, view, courseStats(doc), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1, under: true }, job.stop.signal);
-    const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, "image/jpeg", 0.9));
+    const diskKey = `paint:map:${hashOf(key)}`;
+    const saved = await savedPaint<{ blob: Blob; wooded: WoodedGrid | null }>(diskKey);
+    let blob: Blob | null, wooded: WoodedGrid | null;
+    if (saved) ({ blob, wooded } = saved);
+    else {
+      if (job.stop.signal.aborted) throw new Error("stopped");
+      const canopy = doc.style.forest === "photo" ? await canopyFor(doc) : null;
+      const canvas = await forestCanvasAsync(doc, view, courseStats(doc), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1, under: true }, job.stop.signal);
+      blob = await toBlob(canvas, "image/jpeg", 0.9);
+      wooded = woodedOf(canvas);
+      if (blob) void savePaint(diskKey, { blob, wooded });
+    }
     if (!blob) return null;
     const url = URL.createObjectURL(blob);
     kept.push({ key, url });
@@ -59,7 +101,7 @@ export const paintedGround = (doc: CourseDoc): Promise<PaintedGround | null> => 
       made.delete(old.key);
       URL.revokeObjectURL(old.url);
     }
-    return { url, wooded: woodedOf(canvas) };
+    return { url, wooded };
   })().catch((err: unknown) => {
     // (stopped for a newer one: nothing to say; a failure is said)
     if (!job.stop.signal.aborted) console.error("The ground couldn't be painted:", err);
@@ -101,6 +143,10 @@ export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Pro
   detailUnder = job;
   const view = { cx: rect.x + rect.width / 2, cy: rect.y + rect.height / 2, rotation: 0, scale: k, width: rect.width * k, height: rect.height * k };
   const work = (async () => {
+    const diskKey = `paint:detail:${hashOf(key)}`;
+    const saved = await savedPaint<{ blob: Blob }>(diskKey);
+    if (saved) return { canvas: await canvasOf(saved.blob), rect };
+    if (job.stop.signal.aborted) throw new Error("stopped");
     const canopy = doc.style.forest === "photo" ? await canopyFor(doc) : null;
     const canvas = await forestCanvasAsync(doc, view, courseStats(doc), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1, under: true }, job.stop.signal);
     // Its edges fade into the painting of the whole site (none where it meets the site's edge)
@@ -120,6 +166,8 @@ export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Pro
     if (rect.y > 0) band(0, 0, W, f, 0, 0, 0, f);
     if (rect.y + rect.height < height) band(0, H - f, W, f, 0, H, 0, H - f);
     c.globalCompositeOperation = "source-over";
+    // (kept with its see-through edges: WebP where the browser writes it, else PNG)
+    void toBlob(canvas, "image/webp", 0.9).then(b => { if (b) void savePaint(diskKey, { blob: b }); });
     return { canvas, rect };
   })().catch((err: unknown) => {
     if (!job.stop.signal.aborted) console.error("The hole's ground couldn't be painted:", err);
@@ -134,16 +182,19 @@ export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Pro
   return work;
 };
 
-/** The painted ground for the course as it is, while `active` (null until it is painted). */
-export const usePaintedGround = (active: boolean) => {
+/** The painted ground for the course as it is, while `active` (null until it is painted), and
+ * whether it is of the course as it is now (the last painting stands in while the newest
+ * version paints: a flyover waits for the new one). */
+export const usePaintedGround = (active: boolean): [PaintedGround | null, boolean] => {
   const doc = useCourse(s => s.doc);
-  const [got, setGot] = useState<PaintedGround | null>(null);
+  const [got, setGot] = useState<{ key: string; p: PaintedGround } | null>(null);
   useEffect(() => {
     if (!active) return;
     let live = true;
-    void paintedGround(doc).then(p => { if (live && p) setGot(p); });
+    const key = paintKey(doc);
+    void paintedGround(doc).then(p => { if (live && p) setGot({ key, p }); });
     return () => { live = false; };
   }, [active, doc]);
-  // (the last painting stands in while the course's newest version paints)
-  return active ? got : null;
+  const fresh = !!got && got.key === paintKey(doc);
+  return [active ? got?.p ?? null : null, fresh];
 };

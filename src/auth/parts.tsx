@@ -27,7 +27,7 @@ export function Form({ onSubmit, submit, children, testid, compact }: { onSubmit
     <form onSubmit={go} className="space-y-3" data-testid={testid} noValidate>
       {children}
       {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
-      <button type="submit" disabled={busy} className={`inline-flex items-center justify-center rounded-lg font-semibold text-sm text-white disabled:opacity-50 ${compact ? "px-3 py-1.5 touch:py-2.5 bg-zinc-700 hover:bg-orange-500" : "w-full px-3 py-2 touch:py-3 bg-orange-500 hover:bg-orange-400 shadow"}`}>
+      <button type="submit" disabled={busy} className={`inline-flex items-center justify-center rounded-lg font-semibold text-sm text-zinc-950 disabled:opacity-50 ${compact ? "px-3 py-1.5 touch:py-2.5 bg-zinc-700 hover:bg-orange-500" : "w-full px-3 py-2 touch:py-3 bg-orange-500 hover:bg-orange-400 shadow"}`}>
         {submit}
       </button>
     </form>
@@ -90,7 +90,9 @@ export function BackupCodes({ codes }: { codes: string[] }) {
 }
 
 /** A dialog over the app: Esc, the close button or a click outside closes it. */
-export function Dialog({ title, onClose, children, wide, testid }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean; testid?: string }) {
+/** `side`: on a computer a panel down the right (the course stays in view and can be used);
+ * on a phone the usual sheet. */
+export function Dialog({ title, onClose, children, wide, testid, side }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean; testid?: string; side?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
@@ -101,12 +103,27 @@ export function Dialog({ title, onClose, children, wide, testid }: { title: stri
     window.addEventListener("keydown", esc, true);
     return () => { window.removeEventListener("keydown", esc, true); before?.focus?.({ preventScroll: true }); };
   }, []);
+  if (side) {
+    return (
+      <>
+        {/* (a phone: the sheet's backdrop; a computer: none, the map stays live) */}
+        <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={onClose} />
+        <div ref={box} className="fixed z-50 bottom-0 inset-x-0 md:inset-x-auto md:right-0 md:top-12 md:bottom-0 md:w-[400px] bg-zinc-900 shadow-2xl ring-1 ring-white/10 rounded-t-[22px] md:rounded-none max-h-[92dvh] md:max-h-none overflow-y-auto p-5 pb-[max(20px,env(safe-area-inset-bottom))]" role="dialog" aria-label={title} data-testid={testid}>
+          <div className="flex items-center mb-4">
+            <h2 className="font-semibold text-zinc-50 text-base flex-1">{title}</h2>
+            <button aria-label="Close" className="text-zinc-400 hover:text-white touch:w-11 touch:h-11 touch:-m-2.5 touch:flex touch:items-center touch:justify-center" onClick={onClose}><X size={18} /></button>
+          </div>
+          {children}
+        </div>
+      </>
+    );
+  }
   return (
     <div ref={box} className="fixed inset-0 z-50 bg-black/60 flex items-end md:items-center justify-center p-0 md:p-4" role="dialog" aria-modal="true" aria-label={title} onClick={onClose} data-testid={testid}>
-      <div className={`bg-zinc-900 border border-zinc-700 shadow-2xl w-full rounded-t-[22px] md:rounded-2xl max-h-[92dvh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] md:pb-5 p-5 ${wide ? "md:max-w-3xl" : "md:max-w-lg"}`} onClick={e => e.stopPropagation()}>
+      <div className={`bg-zinc-900 shadow-2xl ring-1 ring-white/10 w-full rounded-t-[22px] md:rounded-2xl max-h-[92dvh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] md:pb-5 p-5 ${wide ? "md:max-w-3xl" : "md:max-w-lg"}`} onClick={e => e.stopPropagation()}>
         <div className="flex items-center mb-4">
-          <h2 className="font-bold text-zinc-50 text-lg flex-1">{title}</h2>
-          <button aria-label="Close" className="text-zinc-400 hover:text-white touch:w-11 touch:h-11 touch:-m-2.5 touch:flex touch:items-center touch:justify-center" onClick={onClose}><X size={18} /></button>
+          <h2 className="font-semibold text-zinc-50 text-base flex-1">{title}</h2>
+          <button aria-label="Close" className="text-zinc-400 hover:text-zinc-50 touch:w-11 touch:h-11 touch:-m-2.5 touch:flex touch:items-center touch:justify-center" onClick={onClose}><X size={18} /></button>
         </div>
         {children}
       </div>

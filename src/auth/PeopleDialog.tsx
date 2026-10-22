@@ -81,9 +81,9 @@ export function PeopleDialog({ onClose }: { onClose: () => void }) {
                   </div>
                   {p.id !== me.id && (
                     <div className="flex gap-3 text-xs">
-                      <button className="text-zinc-300 hover:text-white" onClick={() => void act(() => api("POST", `admin/users/${p.id}`, { isAdmin: !p.isAdmin }))}>{p.isAdmin ? "Remove admin" : "Make admin"}</button>
-                      <button className="text-zinc-300 hover:text-white" onClick={() => void act(() => api("POST", `admin/users/${p.id}`, { disabled: !p.disabled }))}>{p.disabled ? "Enable" : "Disable"}</button>
-                      <button className="text-zinc-300 hover:text-white" onClick={() => void reset(p)}>Reset</button>
+                      <button className="text-zinc-300 hover:text-zinc-50" onClick={() => void act(() => api("POST", `admin/users/${p.id}`, { isAdmin: !p.isAdmin }))}>{p.isAdmin ? "Remove admin" : "Make admin"}</button>
+                      <button className="text-zinc-300 hover:text-zinc-50" onClick={() => void act(() => api("POST", `admin/users/${p.id}`, { disabled: !p.disabled }))}>{p.disabled ? "Enable" : "Disable"}</button>
+                      <button className="text-zinc-300 hover:text-zinc-50" onClick={() => void reset(p)}>Reset</button>
                       <button className="text-red-300 hover:text-red-200" onClick={() => { if (confirm(`Remove ${p.username}'s account?`)) void act(() => api("DELETE", `admin/users/${p.id}`)); }}>Remove</button>
                     </div>
                   )}
