@@ -10,6 +10,7 @@ import { Home } from "./Home";
 import { HistoryDialog, PreviewBar, PublishDialog, ReviewDialog, UpdateDialog } from "./ChangesDialogs";
 import { CommentLayer, CommentsPanel, loadComments, useCommentKeys, useComments } from "./Comments";
 import { useServerCourse } from "./courses";
+import { NearbyLayer } from "./Nearby";
 
 const samePassword = (a: string, b: string) => { if (a !== b) throw new Error("The passwords don't match"); };
 
@@ -62,6 +63,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         {dialog === "review" && <ReviewDialog onClose={() => open(null)} />}
         {!home && <PreviewBar />}
         {!home && <CourseComments />}
+        {!home && <NearbyLayer />}
       </>
     );
   }

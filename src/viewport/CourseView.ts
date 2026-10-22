@@ -162,6 +162,8 @@ export class CourseView {
   private ground: Ground;
   private itemsGroup = new THREE.Group();
   private shapesGroup = new THREE.Group();
+  /** Other courses on the same ground: their holes, drawn faintly over this one's map. */
+  private nearbyGroup = new THREE.Group();
   private arcsGroup = new THREE.Group();
   private fx = new THREE.Group();
   private labelsLayer: HTMLDivElement;
@@ -381,7 +383,7 @@ export class CourseView {
     c.addEventListener("rest", () => { this.posePinned = false; });
 
     this.ground = new Ground(this.renderer, () => this.invalidate(true));
-    this.scene.add(this.ground.group, this.shapesGroup, this.arcsGroup, this.itemsGroup, this.fx, this.skyBox, this.grass.group);
+    this.scene.add(this.ground.group, this.shapesGroup, this.arcsGroup, this.itemsGroup, this.nearbyGroup, this.fx, this.skyBox, this.grass.group);
     {
       const gl = this.renderer.getContext();
       const info = gl.getExtension("WEBGL_debug_renderer_info");
@@ -444,6 +446,26 @@ export class CourseView {
     this.group = ids;
     this.syncSelection();
     this.syncOverlays();
+    this.invalidate();
+  }
+
+  /** Other courses on the same ground: each one's holes (tee to basket, in this course's plan
+   * coordinates) in its color. */
+  setNearby(courses: { color: string; lines: P[][] }[]) {
+    for (const o of [...this.nearbyGroup.children]) { this.nearbyGroup.remove(o); disposeObjectDeep(o); }
+    for (const c of courses) {
+      for (const l of c.lines) {
+        if (l.length < 2) continue;
+        this.nearbyGroup.add(this.fatLine(this.drapeLine(l, LIFT + 0.3), c.color, 3, { dashed: 10, opacity: 0.9, order: 6 }));
+        for (const [p, r] of [[l[0], 5], [l[l.length - 1], 4]] as const) {
+          const dot = new THREE.Mesh(new THREE.CircleGeometry(r, 18), new THREE.MeshBasicMaterial({ color: c.color, transparent: true, opacity: 0.95, depthTest: false }));
+          dot.rotation.x = -Math.PI / 2;
+          dot.position.set(p.x, this.h(p.x, p.y) + LIFT + 0.4, p.y);
+          dot.renderOrder = 7;
+          this.nearbyGroup.add(dot);
+        }
+      }
+    }
     this.invalidate();
   }
 

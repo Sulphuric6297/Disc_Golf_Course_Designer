@@ -162,6 +162,24 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
     return { ok: true };
   });
 
+  // Other courses on the same ground (a park with several courses): those you're on whose site
+  // overlaps this one's, with their holes' lines to draw on this one's map
+  app.get<Id>("/api/courses/:id/nearby", async req => {
+    const { id } = parse(ids, req.params);
+    const { a } = await role(req, id, "viewer");
+    type B = { north: number; south: number; west: number; east: number };
+    const [me] = await sql`select doc->'site'->'bounds' as b from courses where id = ${id}`;
+    const mine = me?.b as B | null;
+    if (!mine) return [];
+    const rows = await sql`
+      select c.id, c.name, c.summary, c.doc->'site'->'bounds' as b, m.role
+      from course_members m join courses c on c.id = m.course_id where m.user_id = ${a.user.id} and c.id <> ${id}`;
+    const meets = (x: B) => x.west < mine.east && x.east > mine.west && x.south < mine.north && x.north > mine.south;
+    return rows.filter(r => r.b && meets(r.b as B) && r.summary?.lines?.length).map(r => ({
+      id: r.id, name: r.name, role: r.role, bounds: r.b, canvas: r.summary.canvas, lines: r.summary.lines
+    }));
+  });
+
   // --- The list's picture of the course (its printed map, small)
   app.get<Id>("/api/courses/:id/thumbnail", async (req, reply) => {
     const { id } = parse(ids, req.params);
