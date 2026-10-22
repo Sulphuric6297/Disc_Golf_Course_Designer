@@ -38,7 +38,7 @@ import { Tufts } from "../three/tufts";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createStructure } from "../three/structures";
 import { isLineKind, orientedBox, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
-import type { AmenityItem, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind } from "../types";
+import type { AmenityItem, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
 import type { FlightFrames, FlyoverVideo, FrameInfo, RecordOptions } from "./flyoverVideo";
@@ -2012,6 +2012,11 @@ export class CourseView {
     // A map only looked at (shared to view, the public page): what stands there, rendered, and
     // the rules (OB, hazards, mandos); not the editor's outlines and dashes
     const clean = this.readOnly;
+    // Paths and roads stack where they cross as the style says (bottom first): each tier drawn
+    // after the ones under it
+    const tiers: PathTier[] = st.pathOrder?.length === 4 ? st.pathOrder : ["dirt", "gravel", "walkway", "road"];
+    const tierOf = (kind: string, surface?: string): PathTier => (kind === "road" ? "road" : surface === "paved" ? "walkway" : surface === "gravel" || surface === "woodchips" ? "gravel" : "dirt");
+    const tierOrder = (t: PathTier) => 2.05 + tiers.indexOf(t) * 0.15;
 
     // Fairways (under everything else): one from each tee of a hole, and where fairways meet (a
     // hole's tees, holes sharing a basket) they make one: drawn once where they overlap, their
@@ -2213,7 +2218,7 @@ export class CourseView {
           drapedPolygon(a.points, (x, y) => this.h(x, y), doc.gridSize, floor ? 0.08 : 0.15 + order * 0.01),
           new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: floor ? Math.min(fill, 0.45) : fill, depthWrite: false, polygonOffset: true, polygonOffsetFactor: floor ? -1 : -4, polygonOffsetUnits: floor ? -2 : -8 })
         );
-        mesh.renderOrder = floor ? 0.5 : 2 + order * 0.001;
+        mesh.renderOrder = floor ? 0.5 : a.kind === "parking" ? tierOrder("road") : 2 + order * 0.001;
         mesh.receiveShadow = true;
         g.add(mesh);
         const w = a.kind === "ob" || a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo" ? 3 : 1.5;
@@ -2321,7 +2326,7 @@ export class CourseView {
         const piece = subPath(this.shapeOf(l).pts, a, b);
         return { a, b, piece, sides: l.obBeyond ? obSides(piece, doc.stats.filter(st => st.complete && obFor(course, l, st.holeId)).map(st => st.line), 300, !obPicked(course, l).length) : null };
       }).filter(o => o.piece.length >= 2) : [];
-      put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, l.widths, hv, c, l.ob, l.kind === "stream" ? this.waterShore(l.points) : 0, obParts.map(o => [o.a, o.b, o.sides])]), () => {
+      put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, l.widths, hv, c, l.ob, l.kind === "stream" ? this.waterShore(l.points) : 0, obParts.map(o => [o.a, o.b, o.sides]), st.pathOrder]), () => {
         const g = new THREE.Group();
         const pts = this.shapeOf(l).pts;
         // (wider or narrower along the way: a creek that opens out)
@@ -2345,10 +2350,10 @@ export class CourseView {
         if (width > 0 && l.points.length >= 2) {
           const ribbon = new THREE.Mesh(
             drapedRibbon(pts, along, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.18),
-            l.kind === "stream" ? waterMaterial(c, ...this.waterShore(l.points)) : new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
+            l.kind === "stream" ? waterMaterial(c, ...this.waterShore(l.points)) : new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 1, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
           );
           // (walks to the next hole over every other path)
-          ribbon.renderOrder = l.kind === "walk" ? 2.6 : 2;
+          ribbon.renderOrder = l.kind === "stream" ? 2 : tierOrder(tierOf(l.kind, l.surface));
           ribbon.receiveShadow = true;
           g.add(ribbon);
         } else {
@@ -2414,7 +2419,7 @@ export class CourseView {
               new THREE.MeshLambertMaterial({ color: surface && surface !== "dirt" ? PATH_SURFACES[surface].color : st.path, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
             );
             // (walks to the next hole over every other path)
-            mesh.renderOrder = 2.6;
+            mesh.renderOrder = tierOrder(tierOf("walk", surface));
             g.add(mesh);
           }
           if (!clean) g.add(this.fatLine(this.drapeLine([from, to], LIFT + 0.15), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 6 }));

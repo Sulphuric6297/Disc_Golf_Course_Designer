@@ -433,7 +433,7 @@ export const layoutTee = (holeId: string) => {
 export const withCentroid = <T extends { points: P[] }>(item: T): T & P => ({ ...item, ...centroid(item.points) });
 
 // For the automated tests and screenshots: build a course quickly without clicking every spot.
-if (typeof window !== "undefined") (window as any).__dgActions = { addHole, addDrawn, placeAt, select, pickGroup };
+if (typeof window !== "undefined") (window as any).__dgActions = { addHole, addDrawn, placeAt, select, pickGroup, updateItem };
 
 /**
  * An OB line for a hole, ready to fine-tune with its handles: along the left or right of the

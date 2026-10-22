@@ -307,7 +307,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     g.lineJoin = "round";
     return { c, g };
   };
-  const A = mask(), B = mask(), C = mask(), D = mask();
+  const A = mask(), B = mask(), C = mask(), D = mask(), E = mask();
   type Ch = { g: CanvasRenderingContext2D; color: string };
   const ch = (m: { g: CanvasRenderingContext2D }, i: 0 | 1 | 2, v = 255): Ch => ({ g: m.g, color: `rgb(${i === 0 ? v : 0},${i === 1 ? v : 0},${i === 2 ? v : 0})` });
   const FAIR = ch(A, 0), CLEAR = ch(A, 1), WATER = ch(A, 2);
@@ -315,8 +315,10 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const BUILDING = ch(C, 0), SAND = ch(C, 1), MIDDLE = ch(C, 2);
   //   D: gravel, wood chips, tall grass
   const GRAVEL = ch(D, 0), CHIPS = ch(D, 1), TALL = ch(D, 2);
+  //   E: paved walkways (sidewalks, paved paths and walks: under the roads, over gravel and dirt)
+  const WALKWAY = ch(E, 0);
   /** Where a path or walk of this surface is painted (grass: as mown as a fairway; paved: as a road). */
-  const surfaceCh = (surface: PathSurface | undefined) => (surface === "gravel" ? GRAVEL : surface === "woodchips" ? CHIPS : surface === "grass" ? FAIR : surface === "paved" ? ROAD : DIRT);
+  const surfaceCh = (surface: PathSurface | undefined) => (surface === "gravel" ? GRAVEL : surface === "woodchips" ? CHIPS : surface === "grass" ? FAIR : surface === "paved" ? WALKWAY : DIRT);
   const poly = (c: Ch, pts: P[]) => {
     if (pts.length < 3) return;
     c.g.fillStyle = c.color;
@@ -436,14 +438,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   yield;
   // Walks to the next hole, over every other path (what other paths and roads painted under them
   // taken out first): drawn ones, then dirt trails from each basket to the next tee
-  const walkLine = (c: Ch, pts: P[], width: number) => {
-    for (const m of [B, D]) {
-      m.g.globalCompositeOperation = "multiply";
-      line({ g: m.g, color: "rgb(0,0,255)" }, pts, width);
-      m.g.globalCompositeOperation = "lighter";
-    }
-    line(c, pts, width);
-  };
+  // (their surface stacks with the rest: see the paths' order)
+  const walkLine = (c: Ch, pts: P[], width: number) => line(c, pts, width);
   for (const l of doc.items.filter(i => i.type === "line" && i.kind === "walk") as LineItem[]) {
     const { points: pts, width: lw } = paintedLine(l, view.scale);
     walkLine(surfaceCh(l.surface), pts, lw);
@@ -480,6 +476,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const c = read(C.c, 1 * (pt / cell));
   yield;
   const dd = read(D.c, 0.9 * (pt / cell));
+  const ee = read(E.c, 0.8 * (pt / cell));
   yield;
   const wet = read(A.c, 0.6 * (pt / cell));
   yield;
@@ -830,6 +827,13 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     if ((y & 15) === 0) yield 0.5 + 0.15 * (y / H);
   }
   yield;
+  // (read smoothly between the samples taken every other pixel)
+  const hh = (H >> 1) + 1;
+  const sunAt = (x: number, y: number) => {
+    const fx = Math.min(hw - 1.001, x * 0.5), fy = Math.min(hh - 1.001, y * 0.5), x0 = fx | 0, y0 = fy | 0, u = fx - x0, v = fy - y0, i = y0 * hw + x0;
+    const top = groundSun[i] * (1 - u) + groundSun[i + 1] * u, bot = (groundSun[i + hw] ?? groundSun[i]) * (1 - u) + (groundSun[i + hw + 1] ?? groundSun[i + 1]) * u;
+    return top * (1 - v) + bot * v;
+  };
   // The ground darkens near the woods, all round (the light under the trees' edges)
   const near = (() => {
     const cov = document.createElement("canvas");
@@ -897,8 +901,13 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // Worn dirt: an olive tan, lighter than the shade around it (it reads as open ground)
   const dirtPal = palette(s.path, [0.86, 1.03, 1.19, 1.35, 1.54], -8, 0.85);
   const road = palette("#969a9d", [0.66, 0.8, 0.92, 1.02, 1.1], 0);
+  // (concrete: lighter and warmer than the asphalt roads, so a walkway reads apart from a road)
+  const walkPal = palette("#dcdad4", [0.8, 0.9, 0.97, 1.02, 1.06], 0, 0.6);
+  const TIERS = ["dirt", "gravel", "walkway", "road"] as const;
+  const order = (s.pathOrder?.length === 4 ? s.pathOrder : TIERS).map(t => TIERS.indexOf(t));
   const sandPal = palette("#b3a275", [0.78, 0.9, 1, 1.1], 0);
-  const gravelPal = palette(PATH_SURFACES.gravel.color, [0.8, 0.9, 1, 1.1], 0);
+  // (gravel: a warm stone, speckled light and dark: never the smooth pale of concrete)
+  const gravelPal = palette("#b3a891", [0.66, 0.82, 0.96, 1.1, 1.22], 0, 1.1);
   const chipsPal = palette(PATH_SURFACES.woodchips.color, [0.72, 0.86, 1, 1.16], 0);
   const roof = palette("#77716a", [0.6, 0.8, 1, 1.18], 0);
   const n6 = (pal: RGB[]) => pal.length;
@@ -936,13 +945,21 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   };
   const light = s.light ?? 0, contrast = s.contrast ?? 0, sat = s.colorStrength ?? 1;
   yield;
+  // (a mask's channel k where the pixel is, from its four nearest cells)
+  let q00 = 0, q10 = 0, q01 = 0, q11 = 0, w00 = 1, w10 = 0, w01 = 0, w11 = 0;
+  const S = (arr: ArrayLike<number>, k: number) => arr[q00 + k] * w00 + arr[q10 + k] * w10 + arr[q01 + k] * w01 + arr[q11 + k] * w11;
   for (let y = 0; y < H; y++) {
     if ((y & 7) === 0) yield 0.7 + 0.3 * (y / H);
     const my = Math.min(mh - 1, y >> 1) * mw;
+    // (the masks read smoothly between their cells: edges blend over a pixel, never in steps)
+    const fy = Math.max(0, Math.min(mh - 1.001, (y + 0.5) / cell - 0.5)), y0 = fy | 0, wy = fy - y0;
     const tr = (y & 511) << 9, tu = ((y - 1) & 511) << 9, td = ((y + 1) & 511) << 9;
     for (let x = 0, i = y * W; x < W; x++, i++) {
       const o4 = i * 4;
-      const m = my + Math.min(mw - 1, x >> 1), m4 = m * 4;
+      const m = my + Math.min(mw - 1, x >> 1);
+      const fx = Math.max(0, Math.min(mw - 1.001, (x + 0.5) / cell - 0.5)), x0 = fx | 0, wx = fx - x0;
+      q00 = (y0 * mw + x0) * 4; q10 = q00 + 4; q01 = q00 + mw * 4; q11 = q01 + 4;
+      w00 = (1 - wx) * (1 - wy); w10 = wx * (1 - wy); w01 = (1 - wx) * wy; w11 = wx * wy;
       const rf = relief && s.hillshade ? relief.shade(x, y) : 1;
       const h = height[i];
       if (h > 0) {
@@ -977,8 +994,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         cr = tr0; cg = tg0; cb = tb0;
       } else {
         // The ground: grass, or the dark floor under the trees, then what is drawn on it
-        const sun = groundSun[(y >> 1) * hw + (x >> 1)];
-        const ao = near[m4] / 255;
+        const sun = sunAt(x, y);
+        const ao = S(near, 0) / 255;
         // (the grass darkens in a band along the trees, as on painted maps)
         const lit = (1 - shadowK * 0.75 * (1 - sun)) * (1 - 0.62 * shadowK * ao) * rf;
         const mott = at(mottle, x, y);
@@ -986,52 +1003,65 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         tone(lawn, (0.5 + mott * 0.5 + grain * 0.18) * lit);
         cr = tr0; cg = tg0; cb = tb0;
         // The floor under the trees, well inside the woods (fading out toward their edges)
-        const deep = smooth(0.55, 0.95, inWoods[m4] / 255);
+        const deep = smooth(0.55, 0.95, S(inWoods, 0) / 255);
         if (deep > 0) {
           if (thick > 0.5 && !opts.under) lay(floorPal, (0.5 + mott * 0.4 + grain * 0.2) * (0.35 + 0.65 * lit), deep);
           else lay(lawn, (0.45 + mott * 0.4 + grain * 0.2) * lit * 0.8, deep);
         }
         // Tall grass: in tufts, its blades streaked up and down, a soft ragged edge
-        const tg = dd[m4 + 2] / 255;
+        const tg = S(dd, 2) / 255;
         if (tg > 0.1) {
           const tuft = noise(x / pt * 0.9 + 30, y / pt * 0.3) - 0.5;
           const edge = (fbm(x / pt * 0.3 + 160, y / pt * 0.3) - 0.5) * 0.14;
           lay(tallPal, (0.5 + tuft * 0.55 + (GRIT[tr | (x & 511)] - 0.5) * 0.3 + mott * 0.2) * lit, smooth(0.42, 0.55, tg + edge));
         }
-        const f = a[m4] / 255, r = b[m4 + 1] / 255;
+        const f = S(a, 0) / 255, r = S(b, 1) / 255;
         const rag = f > 0.05 || r > 0.2 ? fbm(x / pt * 0.16 + 50, y / pt * 0.16) - 0.5 : 0;
         // Fairways: light down the middle, darker toward the trees, soft ragged edges
         if (f > 0.05) {
-          const mid = smooth(0.05, 0.9, middle[m4 + 2] / 255);
+          const mid = smooth(0.05, 0.9, S(middle, 2) / 255);
           lay(fair, (0.44 + 0.62 * mid + at(fairMottle, x, y) * 0.3 + grain * 0.08) * lit, smooth(0.42, 0.52, f + rag * 0.35));
         }
-        const sa = c[m4 + 1] / 255;
+        const sa = S(c, 1) / 255;
         if (sa > 0.3) lay(sandPal, (0.6 + grain * 0.3) * lit, smooth(0.45, 0.55, sa));
-        // Roads and parking: soft gray, darker at the edges, a little gravel
-        if (r > 0.2) lay(road, (0.35 + 0.45 * smooth(0.45, 0.9, r) + grain * 0.25 + mott * 0.1) * lit, smooth(0.38, 0.5, r + rag * 0.04));
-        // Dirt: fuzzy edged, speckled with lighter and darker grit
-        const d = b[m4] / 255;
-        if (d > 0.1) {
-          const da = smooth(0.45, 0.55, d + (fbm(x / pt * 0.35 + 80, y / pt * 0.35) - 0.5) * 0.12);
-          if (da > 0) {
-            const grit = GRIT[tr | (x & 511)];
-            lay(dirtPal, (0.52 + (grit - 0.5) * 0.7 + mott * 0.3) * (0.45 + 0.55 * lit), da);
+        // Paths and roads, stacked in the order the style sets (unset: dirt under gravel, gravel
+        // under paved walkways, walkways under roads and parking)
+        for (let li = 0; li < order.length; li++) {
+          const layer = order[li];
+          if (layer === 3) {
+            // Roads and parking: soft gray, darker at the edges, a little gravel
+            if (r > 0.2) lay(road, (0.35 + 0.45 * smooth(0.45, 0.9, r) + grain * 0.25 + mott * 0.1) * lit, smooth(0.38, 0.5, r + rag * 0.04));
+          } else if (layer === 0) {
+            // Dirt: fuzzy edged, speckled with lighter and darker grit
+            const d = S(b, 0) / 255;
+            if (d > 0.1) {
+              const da = smooth(0.45, 0.55, d + (fbm(x / pt * 0.35 + 80, y / pt * 0.35) - 0.5) * 0.12);
+              if (da > 0) {
+                const grit = GRIT[tr | (x & 511)];
+                lay(dirtPal, (0.52 + (grit - 0.5) * 0.7 + mott * 0.3) * (0.45 + 0.55 * lit), da);
+              }
+            }
+          } else if (layer === 1) {
+            // Gravel and wood chips: speckled, fuzzy edged like the dirt
+            const gv = S(dd, 0) / 255, ch2 = S(dd, 1) / 255;
+            if (gv > 0.1 || ch2 > 0.1) {
+              const edge = (fbm(x / pt * 0.35 + 120, y / pt * 0.35) - 0.5) * 0.12;
+              const grit = GRIT[tr | (x & 511)];
+              if (gv > 0.1) lay(gravelPal, (0.55 + (grit - 0.5) * 0.8 + mott * 0.2) * (0.5 + 0.5 * lit), smooth(0.45, 0.55, gv + edge));
+              if (ch2 > 0.1) lay(chipsPal, (0.5 + (grit - 0.5) * 0.9 + mott * 0.25) * (0.45 + 0.55 * lit), smooth(0.45, 0.55, ch2 + edge));
+            }
+          } else {
+            // Paved walkways: pale concrete, a little darker at the edges, a faint fine grit
+            const wk = S(ee, 0) / 255;
+            if (wk > 0.2) lay(walkPal, (0.42 + 0.4 * smooth(0.45, 0.9, wk) + (GRIT[tr | (x & 511)] - 0.5) * 0.12 + mott * 0.08) * (0.55 + 0.45 * lit), smooth(0.4, 0.52, wk));
           }
         }
-        // Gravel and wood chips: speckled, fuzzy edged like the dirt
-        const gv = dd[m4] / 255, ch2 = dd[m4 + 1] / 255;
-        if (gv > 0.1 || ch2 > 0.1) {
-          const edge = (fbm(x / pt * 0.35 + 120, y / pt * 0.35) - 0.5) * 0.12;
-          const grit = GRIT[tr | (x & 511)];
-          if (gv > 0.1) lay(gravelPal, (0.55 + (grit - 0.5) * 0.8 + mott * 0.2) * (0.5 + 0.5 * lit), smooth(0.45, 0.55, gv + edge));
-          if (ch2 > 0.1) lay(chipsPal, (0.5 + (grit - 0.5) * 0.9 + mott * 0.25) * (0.45 + 0.55 * lit), smooth(0.45, 0.55, ch2 + edge));
-        }
-        const bd = c[m4] / 255;
+        const bd = S(c, 0) / 255;
         if (bd > 0.25) lay(roof, (0.25 + 0.6 * smooth(0.5, 0.8, bd)) * (0.6 + 0.4 * lit), smooth(0.42, 0.52, bd));
         // Water. Ponds: lighter in the shallows, deepening toward the middle, a bright rim just
         // inside the shore and a few faint lines following it out (as cartographers draw water),
         // and now and then a glint of sun. Creeks: dark at the banks, light down the middle.
-        const w0 = wet[m4 + 2] / 255;
+        const w0 = S(wet, 2) / 255;
         if (w0 > 0.25) {
           const w = w0 + (fbm(x / pt * 0.25 + 120, y / pt * 0.25) - 0.5) * 0.1;
           if (w > 0.36) {
@@ -1044,7 +1074,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
               const at = (2.2 + k * k * 1.6) * pt;
               pond += (0.11 / k) * (1 - smooth(0.2 * pt, 0.75 * pt, Math.abs(d - at))) * (1 - 0.4 * smooth(0, 30 * pt, d));
             }
-            const sun = groundSun[(y >> 1) * hw + (x >> 1)];
+            const sun = sunAt(x, y);
             if (sun > 0.9 && d > 6 * pt && GRIT[tr | (x & 511)] > 0.93 && GRIT[((y >> 1) & 511) << 9 | ((x * 3) & 511)] > 0.6) pond += 0.3;
             lay(water, (creek + (pond - creek) * open) * (0.55 + 0.45 * lit), smooth(0.4, 0.46, w));
           }
@@ -1100,11 +1130,59 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       o[o4 + 3] = 255;
     }
   }
+  yield;
+  // (the open ground everywhere: its tone bands' steps; treetops and roofs only at their outline,
+  // so the leaf grain stays crisp)
+  const solid = (i: number) => height[i] > 0 || built[i] > 0;
+  smoothEdges(o, W, H, i => !solid(i) || !solid(i + 1) || !solid(i - 1) || !solid(i + W) || !solid(i - W));
   ctx.putImageData(img, 0, 0);
   // Where it painted woods, for 3D trees standing on the painting (an unturned view only)
   if (!view.rotation) woodedGrids.set(canvas, { cols: mw, rows: mh, data: wooded, x0: view.cx - W / 2 / k, y0: view.cy - H / 2 / k, ftPerCell: cell / k, cover });
   return canvas;
 }
+
+/**
+ * Anti-aliasing, FXAA's way (T. Lottes): every step between tones or at an outline blends over
+ * about a pixel. Only where `eligible` says, and only where the contrast is a real edge's, so
+ * fine textures stay crisp.
+ */
+export const smoothEdges = (o: Uint8ClampedArray, W: number, H: number, eligible: (i: number) => boolean) => {
+  const src = new Uint8ClampedArray(o);
+  const luma = (i: number) => src[i * 4] * 0.299 + src[i * 4 + 1] * 0.587 + src[i * 4 + 2] * 0.114;
+  // (a bilinear read of the source, as r, g, b)
+  const out = [0, 0, 0];
+  const read = (x: number, y: number, k: number, acc: number[]) => {
+    x = Math.max(0, Math.min(W - 1.001, x)); y = Math.max(0, Math.min(H - 1.001, y));
+    const x0 = x | 0, y0 = y | 0, fx = x - x0, fy = y - y0, i = (y0 * W + x0) * 4;
+    for (let c = 0; c < 3; c++) {
+      const top = src[i + c] * (1 - fx) + src[i + 4 + c] * fx, bot = src[i + W * 4 + c] * (1 - fx) + src[i + W * 4 + 4 + c] * fx;
+      acc[c] += (top * (1 - fy) + bot * fy) * k;
+    }
+  };
+  const A = [0, 0, 0], B = [0, 0, 0];
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1, i = y * W + 1; x < W - 1; x++, i++) {
+      if (!eligible(i)) continue;
+      const lM = luma(i), lNW = luma(i - W - 1), lNE = luma(i - W + 1), lSW = luma(i + W - 1), lSE = luma(i + W + 1);
+      const lMin = Math.min(lM, lNW, lNE, lSW, lSE), lMax = Math.max(lM, lNW, lNE, lSW, lSE);
+      if (lMax - lMin < Math.max(8, lMax * 0.1)) continue;
+      let dx = -(lNW + lNE - (lSW + lSE)), dy = lNW + lSW - (lNE + lSE);
+      const reduce = Math.max((lNW + lNE + lSW + lSE) * 0.25 * (1 / 8), 1 / 128);
+      const rcp = 1 / (Math.min(Math.abs(dx), Math.abs(dy)) + reduce);
+      dx = Math.max(-8, Math.min(8, dx * rcp)); dy = Math.max(-8, Math.min(8, dy * rcp));
+      A[0] = A[1] = A[2] = 0; B[0] = B[1] = B[2] = 0;
+      read(x + dx * (1 / 3 - 0.5), y + dy * (1 / 3 - 0.5), 0.5, A);
+      read(x + dx * (2 / 3 - 0.5), y + dy * (2 / 3 - 0.5), 0.5, A);
+      read(x - dx * 0.5, y - dy * 0.5, 0.25, B);
+      read(x + dx * 0.5, y + dy * 0.5, 0.25, B);
+      for (let c = 0; c < 3; c++) B[c] += A[c] * 0.5;
+      const lB = B[0] * 0.299 + B[1] * 0.587 + B[2] * 0.114;
+      const pick = lB < lMin || lB > lMax ? A : B;
+      out[0] = pick[0]; out[1] = pick[1]; out[2] = pick[2];
+      o[i * 4] = out[0]; o[i * 4 + 1] = out[1]; o[i * 4 + 2] = out[2];
+    }
+  }
+};
 
 /** Where a painting shows woods, cell by cell (1: woods it painted itself; 2: drawn woods), and how thick. */
 export type WoodedGrid = { cols: number; rows: number; data: Uint8Array; x0: number; y0: number; ftPerCell: number; cover: number };

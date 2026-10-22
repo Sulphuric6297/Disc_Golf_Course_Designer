@@ -151,6 +151,8 @@ export interface AreaItem extends BaseItem {
 }
 
 /** Lines drawn on the map: OB lines (the line itself is OB), paths, roads, fences, streams. */
+/** The tiers paths and roads stack in where they cross. */
+export type PathTier = "dirt" | "gravel" | "walkway" | "road";
 export type LineKind = "ob" | "path" | "road" | "fence" | "stream" | "walk";
 /** What a path or a walk between holes is made of. */
 export type PathSurface = "dirt" | "gravel" | "woodchips" | "grass" | "paved";
@@ -465,6 +467,9 @@ export interface MapStyle {
   forest: "everywhere" | "photo" | "woods";
   /** Forest style: how thick the woods are, from a few scattered clumps (0.1) to solid canopy (1). */
   treeCover: number;
+  /** How paths and roads stack where they cross, bottom first (unset: dirt, gravel and wood
+   * chips, paved walkways, roads and parking): on the painted map and in 3D. */
+  pathOrder?: PathTier[];
   /** Forest style: the treetops as painted maps have them (unset), or natural ones, as the 3D
    * trees are seen from above: leaf clusters with gaps between, pines in tiers of boughs. */
   treeLook?: "classic" | "natural";

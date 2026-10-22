@@ -66,10 +66,10 @@ export const AREA_KINDS: Record<AreaKind, { label: string; color: string; fill: 
 /** What paths and walks can be made of (dirt takes the map's path color). */
 export const PATH_SURFACES: Record<PathSurface, { label: string; color: string }> = {
   dirt: { label: "Dirt", color: "#b08a5a" },
-  gravel: { label: "Gravel", color: "#bdb6a6" },
+  gravel: { label: "Gravel", color: "#a39a86" },
   woodchips: { label: "Wood chips", color: "#7a5236" },
   grass: { label: "Mown grass", color: "#9cc46a" },
-  paved: { label: "Paved", color: "#a3a6a8" }
+  paved: { label: "Paved", color: "#cfccc4" }
 };
 
 export const LINE_KINDS: Record<LineKind, { label: string; color: string; width: number; help: string }> = {
