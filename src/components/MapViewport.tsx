@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BoxSelect, Compass, Maximize2, Minus, Plus, RotateCcw, RotateCw } from "lucide-react";
 import { CourseView } from "../viewport/CourseView";
 import type { ViewDoc, ViewInfo } from "../viewport/types";
+import { lassoTrees } from "../state/lidar";
 import { changeDoc, useCourse, useEditor, updateItem, updateHole, useCourse as courseStore } from "../state/course";
 import { addDrawn, addHole, boxSelect, cutStretch, moveGroup, placeAt, select } from "../state/actions";
 import { courseIssues, courseStats, openIssues } from "../lib/holeStats";
@@ -46,8 +47,11 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       onPlace: (mode, p) => placeAt(mode, p),
       onHole: (tee, basket) => addHole(tee, basket),
       onDrawn: (kind, pts, opts) => {
-        addDrawn(kind, pts, opts);
-        useEditor.getState().set({ tool: "select" });
+        // (drawn to cut measured trees in, or bring them back: no area made)
+        const lasso = useEditor.getState().lidarLasso;
+        if (lasso && kind === "area") lassoTrees(pts, lasso);
+        else addDrawn(kind, pts, opts);
+        useEditor.getState().set({ tool: "select", lidarLasso: null });
       },
       onChange: (id, patch) => {
         const next = { ...patch } as Record<string, unknown>;
@@ -114,6 +118,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
 
   useEffect(() => { view?.setDoc(viewDoc); }, [view, viewDoc]);
   useEffect(() => { void view?.setPaintedGround(paintedOn ? painted : null); }, [view, paintedOn, painted]);
+  // (a flyover waits for the painting it will fly over)
+  useEffect(() => { view?.setPaintedPending(paintedOn && !painted); }, [view, paintedOn, painted]);
   // (and a sharper painting round the hole looked at, flown over or filmed)
   useEffect(() => { view?.setDetailPainter((holeId, maxPx) => paintedDetail(doc, holeId, maxPx)); }, [view, doc]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);

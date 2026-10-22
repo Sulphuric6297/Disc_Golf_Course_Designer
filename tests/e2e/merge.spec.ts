@@ -71,3 +71,52 @@ test("a version's name from what changed; the holes a draft changes (a moved bas
   expect([...holesChanged(before, after)].sort()).toEqual(["b", "c"]);
   expect(describeChanges(before, before)).toBe("No changes");
 });
+
+test("one ground for the park: a course takes another's ground where they overlap, its own elsewhere; its holes as they are (pure logic)", async () => {
+  const { withGround } = await import("../../src/lib/sharedGround");
+  const site = (west: number) => ({ location: null, bounds: { north: 40, south: 39.99, west, east: west + 0.01 }, baseElevationFt: 100 });
+  const from = { name: "A", holes: [], items: [], canvas: { width: 100, height: 100 }, gridSize: 50, site: site(-89), terrainHeights: { "0,0": 7, "50,0": 7, "100,0": 7, "0,50": 7, "50,50": 7, "100,50": 7, "0,100": 7, "50,100": 7, "100,100": 7 }, lidar: { source: "USGS 2017", trees: [[25, 25, 40, 10, 0]] } } as any;
+  // (B's site starts halfway across A's)
+  const to = { name: "B", holes: [{ id: "h" }], items: [{ id: "x" }], canvas: { width: 100, height: 100 }, gridSize: 50, site: { ...site(-88.995), baseElevationFt: 98 }, terrainHeights: { "0,0": 1, "100,0": 1 } } as any;
+  const out = withGround(to, from, true);
+  expect(out.terrainHeights["0,0"]).toBe(9);
+  expect(out.terrainHeights["100,0"]).toBe(1);
+  expect(out.holes).toEqual(to.holes);
+  expect(out.items).toEqual(to.items);
+  expect(out.lidar.trees).toEqual([]);
+  const back = withGround(from, to, true);
+  // (none measured there: this one keeps its own)
+  expect(back.lidar).toEqual(from.lidar);
+});
+
+test("one ground for the park: each course's own tree decisions stay its own (pure logic)", async () => {
+  const { withGround } = await import("../../src/lib/sharedGround");
+  const site = { location: null, bounds: { north: 40, south: 39.99, west: -89, east: -88.99 }, baseElevationFt: 100 };
+  const base = { holes: [], items: [], canvas: { width: 100, height: 100 }, gridSize: 50, site, terrainHeights: {} };
+  // A cut tree 0 down and kept tree 1 (on its fairway); B, framed the same, cut tree 1 down and kept tree 2
+  const from = { ...base, name: "A", lidar: { source: "USGS 2017", trees: [[10, 10, 40, 10, 0], [20, 20, 50, 12, 0], [30, 30, 60, 14, 1]], removed: [0], kept: [1] } } as any;
+  const to = { ...base, name: "B", lidar: { source: "old", trees: [[20.4, 19.8, 45, 11, 0], [30, 30, 55, 13, 1], [90, 90, 20, 5, 0]], removed: [0], kept: [1] } } as any;
+  const out = withGround(to, from, true);
+  expect(out.lidar.trees).toHaveLength(3);
+  expect(out.lidar.removed).toEqual([1]);
+  expect(out.lidar.kept).toEqual([2]);
+  expect(out.lidar.removed).not.toContain(0);
+});
+
+test("one ground for the park: the trees planted by hand come across; one cut down on a course stays cut there (pure logic)", async () => {
+  const { withGround } = await import("../../src/lib/sharedGround");
+  const site = { location: null, bounds: { north: 40, south: 39.99, west: -89, east: -88.99 }, baseElevationFt: 100 };
+  const tree = (id: string, x: number) => ({ id, type: "tree", x, y: 50, rotation: 0, radius: 12, color: "#1a5" });
+  const from = { name: "A", holes: [], items: [tree("t1", 10), tree("t2", 20), { id: "ob", type: "area", kind: "ob", x: 0, y: 0, rotation: 0, points: [] }], canvas: { width: 100, height: 100 }, gridSize: 50, site, terrainHeights: {} } as any;
+  const to = { name: "B", holes: [], items: [], canvas: { width: 100, height: 100 }, gridSize: 50, site, terrainHeights: {} } as any;
+  const once = withGround(to, from, { trees: false, planted: true });
+  expect(once.items.map((i: any) => i.id)).toEqual(["t1", "t2"]);
+  expect(once.site.sharedTrees).toEqual(["t1", "t2"]);
+  // B cuts t1 down (it's on B's fairway); A shares the ground again: t1 stays cut on B, t2 stands
+  const cut = { ...once, items: once.items.filter((i: any) => i.id !== "t1") };
+  const again = withGround(cut, from, { trees: false, planted: true });
+  expect(again.items.map((i: any) => i.id)).toEqual(["t2"]);
+  // A cuts t2 down: B keeps its own
+  const aCut = { ...from, items: from.items.filter((i: any) => i.id !== "t2") };
+  expect(withGround(cut, aCut, { trees: false, planted: true }).items.map((i: any) => i.id)).toEqual(["t2"]);
+});

@@ -4,11 +4,10 @@ import { LANDSCAPES, LANDSCAPE_ORDER, type LandscapeId } from "../lib/landscapes
 import { useCourse } from "../state/course";
 import { setStyle } from "./DesignPanel";
 
-/** Picking a landscape: the painted map takes its colors and woods, the 3D view its grass and trees. */
-const pickLandscape = (id: LandscapeId) => {
-  const l = LANDSCAPES[id];
-  setStyle({ theme: "forest", landscape: id, ...l.colors, treeCover: l.treeCover });
-};
+/** Picking a landscape: its colors (the painted map's, the 3D view's grass and trees). A look:
+ * never how many trees there are, never the layout. The Design step's also paints the map in it. */
+const pickLandscape = (id: LandscapeId) => setStyle({ theme: "forest", landscape: id, ...LANDSCAPES[id].colors });
+const pickColors = (id: LandscapeId) => setStyle({ landscape: id, ...LANDSCAPES[id].colors });
 
 /** The Design step's styles: one painted map, in each landscape's colors and woods. */
 export function StylePicker() {
@@ -50,7 +49,7 @@ export function StylePicker() {
 export function LandscapePicker() {
   const s = useCourse(c => c.doc.style);
   const current = (s.landscape ?? "woods") as LandscapeId;
-  const pick = pickLandscape;
+  const pick = pickColors;
   return (
     <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Landscape" data-testid="landscapes">
       {LANDSCAPE_ORDER.map(id => {

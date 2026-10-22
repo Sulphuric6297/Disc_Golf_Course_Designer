@@ -85,7 +85,7 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
     const e = err as { statusCode?: number; code?: string };
     if (e.statusCode === 413) return reply.status(413).send({ error: "Too big to save" });
     if (e.statusCode === 429) return reply.status(429).send({ error: "Too many tries. Wait a minute" });
-    if (e.code === "23505") return reply.status(409).send({ error: "That's taken" });
+    if (e.code === "23505") return reply.status(409).send({ error: "That name is taken" });
     if (e.statusCode && e.statusCode < 500) return reply.status(e.statusCode).send({ error: "Invalid request" });
     req.log.error(err);
     return reply.status(500).send({ error: "Something went wrong" });
@@ -102,6 +102,12 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
   app.all("/api/*", async () => { throw new ApiError(404, "Not found"); });
 
   if (cfg.staticDir) {
+    // A public link's own address (…/springfield-park, or its random one): the app's page
+    app.setNotFoundHandler((req, reply) => {
+      const path = req.url.split("?")[0];
+      if (req.method === "GET" && /^\/([a-z0-9][a-z0-9-]{2,39}|[A-Za-z0-9_-]{40,})\/?$/.test(path)) return reply.type("text/html").sendFile("index.html");
+      return reply.status(404).send({ error: "Not found" });
+    });
     await app.register(fastifyStatic, {
       root: cfg.staticDir,
       // (hashed file names never change: cache them; the page itself is always asked for again)

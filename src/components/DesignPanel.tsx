@@ -19,20 +19,26 @@ import { PageElementPanel, PageSection } from "./PageEditor";
 import { setAllWalks } from "./Inspector";
 import { fmtDist } from "../lib/units";
 
-export const setStyle = (patch: Partial<MapStyle>, history = true) => changeDoc(d => ({ style: { ...d.style, ...patch } }), history);
+export const setStyle = (patch: Partial<MapStyle>, history = true) => {
+  // View only: the look changes on this screen (sun, landscape…), never saved
+  if (useCourse.getState().readOnly) { useCourse.setState(s => ({ doc: { ...s.doc, style: { ...s.doc.style, ...patch } } })); return; }
+  changeDoc(d => ({ style: { ...d.style, ...patch } }), history);
+};
 
 /** How thick the painted woods are. The map repaints when the slider is let go (painting takes a moment). */
 /** A slider for a style setting that repaints the map: it changes the map when let go. */
-export function StyleSlider<K extends keyof MapStyle>({ k, value, label, min, max, step, format }: { k: K; value: number; label: string; min: number; max: number; step: number; format: (v: number) => string }) {
+/** `live`: the change shows while dragging (the 3D view's light: quick), one undo step at the end. */
+export function StyleSlider<K extends keyof MapStyle>({ k, value, label, min, max, step, format, live }: { k: K; value: number; label: string; min: number; max: number; step: number; format: (v: number) => string; live?: boolean }) {
   const [v, setV] = useState(value);
   // Only a slider that was moved commits (a key let go on it, like Ctrl+Z's, must not)
   const moved = useRef(false);
-  useEffect(() => setV(value), [value]);
+  useEffect(() => { setV(value); }, [value]);
   const done = () => {
-    if (moved.current && v !== value) setStyle({ [k]: v } as Partial<MapStyle>);
+    if (live) { if (moved.current) useCourse.getState().commit(); }
+    else if (moved.current && v !== value) setStyle({ [k]: v } as Partial<MapStyle>);
     moved.current = false;
   };
-  return <Slider label={label} min={min} max={max} step={step} value={v} onChange={x => { moved.current = true; setV(x); }} onDone={done} format={format} />;
+  return <Slider label={label} min={min} max={max} step={step} value={v} onChange={x => { moved.current = true; setV(x); if (live) setStyle({ [k]: x } as Partial<MapStyle>, false); }} onDone={done} format={format} />;
 }
 
 const TreeCover = ({ value }: { value: number }) => (

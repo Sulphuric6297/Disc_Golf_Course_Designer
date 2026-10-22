@@ -201,7 +201,7 @@ const FONTS = [
 function LiveSlider({ value, label, min, max, step, format, onDone }: { value: number; label: string; min: number; max: number; step: number; format: (v: number) => string; onDone: (v: number) => void }) {
   const [v, setV] = useState(value);
   const moved = useRef(false);
-  useEffect(() => setV(value), [value]);
+  useEffect(() => { setV(value); }, [value]);
   return <Slider label={label} min={min} max={max} step={step} value={v} format={format} onChange={x => { moved.current = true; setV(x); }} onDone={() => { if (moved.current && v !== value) onDone(v); moved.current = false; }} />;
 }
 

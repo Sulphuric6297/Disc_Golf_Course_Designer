@@ -101,6 +101,9 @@ export interface AreaItem extends BaseItem {
   label?: string;
   /** Out of bounds: water is unless set false; true also draws the red OB edge on the map. */
   ob?: boolean;
+  /** Woods: which trees stand in it in 3D: those measured from the air (the default, when the
+   * course has them), the app's own drawn trees, or none (measured ones inside cut down). */
+  trees?: "measured" | "drawn" | "none";
   /** Brought in from OpenStreetMap, or found on the satellite photo (replaced on re-import). */
   importSource?: "osm" | "photo";
 }
@@ -456,6 +459,9 @@ export interface SiteInfo {
   baseElevationFt: number;
   imagerySource?: string;
   elevationSource?: string;
+  /** Trees planted by hand that came from another course sharing this ground (by id). One of
+   * them no longer among the items was cut down here: sharing the ground again leaves it out. */
+  sharedTrees?: string[];
 }
 
 /** A tree measured from the air: where it stands (plan ft), how tall and how far its crown
@@ -477,7 +483,8 @@ export interface CourseDoc {
   gridSize: number;
   /** The site's trees measured from the air (LiDAR): those on fairways, tees and baskets' circles
    * are cut down unless `kept` (by index); `removed` ones taken out wherever they stand. */
-  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[] };
+  /** `growYears`: the measured trees grown that many years (the survey is older than today). */
+  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number };
   terrainHeights: Record<string, number>;
   /** Painted ground (lib/groundPaint): a material per painted square foot, keyed "i,j". */
   groundPaint: Record<string, number>;

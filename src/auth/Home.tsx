@@ -73,7 +73,7 @@ function Card({ c, onOpen, onRemove }: { c: ServerPlan; onOpen: () => void; onRe
             <h3 className="flex-1 min-w-0 font-semibold text-zinc-50 truncate">{c.name || "Untitled course"}</h3>
             <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${r.cls}`}><r.icon size={11} />{r.label}</span>
           </div>
-          <p className="text-sm text-zinc-400 mt-0.5">{facts}</p>
+          <p className="text-sm text-zinc-400 mt-0.5">{facts}{c.park ? <span className="text-zinc-500"> · {c.park}</span> : null}</p>
           {(c.hasDraft || c.toReview > 0) && (
             <div className="flex gap-1.5 mt-2">
               {c.hasDraft && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-orange-500/15 text-orange-200" data-testid="has-draft">Your draft</span>}
@@ -107,7 +107,9 @@ export function Home() {
   const refresh = () => listServerCourses().then(setList, () => setList([]));
   useEffect(() => { void refresh(); }, [listVersion]);
 
-  const shown = useMemo(() => (list ?? []).filter(c => !q.trim() || `${c.name} ${c.owner ?? ""}`.toLowerCase().includes(q.trim().toLowerCase())), [list, q]);
+  const [park, setPark] = useState("");
+  const parks = useMemo(() => [...new Set((list ?? []).map(c => c.park).filter(Boolean))].sort(), [list]);
+  const shown = useMemo(() => (list ?? []).filter(c => (!park || c.park === park) && (!q.trim() || `${c.name} ${c.owner ?? ""} ${c.park}`.toLowerCase().includes(q.trim().toLowerCase()))), [list, q, park]);
   const mine = shown.filter(c => c.role === "owner");
   const shared = shown.filter(c => c.role !== "owner");
   const open = async (id: string) => { if (await openServerCourse(id)) showHome(false); };
@@ -150,6 +152,13 @@ export function Home() {
           </button>
         </div>
 
+        {parks.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-5" role="group" aria-label="Parks" data-testid="park-chips">
+            {["", ...parks].map(p => (
+              <button key={p || "all"} className={`px-3 py-1 rounded-full text-sm border ${park === p ? "bg-orange-500 border-orange-500 text-white" : "border-zinc-700 text-zinc-300 hover:bg-zinc-800"}`} onClick={() => setPark(p)}>{p || "All parks"}</button>
+            ))}
+          </div>
+        )}
         {list === null ? <div className="h-40" aria-busy="true" /> : list.length === 0 ? (
           <div className="text-center py-20 border border-dashed border-zinc-800 rounded-2xl">
             <Logo size={48} />

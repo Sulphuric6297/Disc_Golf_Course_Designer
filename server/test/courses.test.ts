@@ -296,3 +296,20 @@ test("other courses on the same ground: those you're on whose site overlaps, wit
     assert.deepEqual(near[0].lines, sum.lines);
   } finally { await w.close(); }
 });
+
+test("a park: courses in it show each other, wherever their sites are framed", async () => {
+  const w = await world();
+  try {
+    const { c: admin } = await adminSignedIn(w);
+    const site = (west: number) => ({ location: null, bounds: { north: 40, south: 39.99, west, east: west + 0.01 }, baseElevationFt: 0 });
+    const sum = { par: 3, length: 300, units: "ft", canvas: { width: 1000, height: 1000 }, lines: [[[10, 10], [300, 10]]] };
+    const a = (await admin.post("/api/courses", { doc: { ...doc("Red course"), site: site(-89) }, summary: sum })).body.id;
+    const b = (await admin.post("/api/courses", { doc: { ...doc("Blue course"), site: site(-88.9) }, summary: sum })).body.id;
+    assert.equal((await admin.get(`/api/courses/${a}/nearby`)).body.length, 0);
+    await admin.post(`/api/courses/${a}/park`, { park: "Springfield Park" });
+    await admin.post(`/api/courses/${b}/park`, { park: "springfield park" });
+    const near = (await admin.get(`/api/courses/${a}/nearby`)).body;
+    assert.deepEqual(near.map((n: { name: string; samePark: boolean }) => [n.name, n.samePark]), [["Blue course", true]]);
+    assert.equal((await admin.get("/api/courses")).body.find((c: { id: string }) => c.id === a).park, "Springfield Park");
+  } finally { await w.close(); }
+});

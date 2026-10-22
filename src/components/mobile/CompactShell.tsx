@@ -29,7 +29,7 @@ import { TOOLS, toolHint, toolOptions } from "../Toolbar";
 import { ExportProgressPill } from "../ExportProgress";
 import { ActionSheet, type SheetAction } from "./ActionSheet";
 import { BottomSheet, type Detent } from "./BottomSheet";
-import { accountActions } from "../../auth/AccountMenu";
+import { accountActions, CourseChip } from "../../auth/AccountMenu";
 import { ViewerPanelBody } from "../../auth/ViewerPanel";
 import { SERVER } from "../../auth/api";
 
@@ -423,6 +423,7 @@ function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
           <div className="text-[15px] font-bold text-zinc-50 truncate leading-tight" data-testid="course-name">{name}</div>
           <div className="text-[12px] text-zinc-400 truncate tabular-nums">{sub}</div>
         </div>
+        {SERVER && <CourseChip />}
         <ViewToggle />
       </div>
     </div>
@@ -519,7 +520,8 @@ function PhoneShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: Shel
     prevMode.current = panel.mode;
   }, [panel.mode]);
   useLayoutEffect(() => {
-    if (ed.selectedId) setDetent(d => (d === "full" ? "half" : d));
+    // (view only: its numbers come up)
+    if (ed.selectedId) setDetent(d => (d === "full" ? "half" : readOnly && d === "peek" ? "half" : d));
   }, [ed.selectedId]);
 
   // Fitting holes and items keeps them clear of the sheet (set before the fit that follows a

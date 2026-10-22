@@ -26,7 +26,7 @@ import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
 import { createMeasuredWoods, createWoods, createWoodsWhere } from "../three/woods";
-import { standingTrees } from "../lib/lidar";
+import { standingTrees, grownTrees } from "../lib/lidar";
 import type { WoodedGrid } from "../lib/forest";
 import { autoFlight, flightClock, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy, type Crown } from "../lib/flight";
 import { VIDEO_HOLD, titleStrength } from "../lib/video";
@@ -152,6 +152,14 @@ const idOfGrid = (g: object) => {
   return gridIds.get(g)!;
 };
 
+/** The longest a flyover waits for the course to load before it flies anyway. */
+const FLY_WAIT_MS = 15_000;
+// Whether three.js's loaders still have textures on their way
+let loadingTextures = 0;
+THREE.DefaultLoadingManager.onStart = () => { loadingTextures++; };
+THREE.DefaultLoadingManager.onLoad = () => { loadingTextures = 0; };
+const texturesLoading = () => loadingTextures > 0;
+
 export class CourseView {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -222,6 +230,10 @@ export class CourseView {
   private povHole: string | null = null;
   private povLook = { yaw: 0, pitch: 0 };
   /** A flight under way: `dur` s of path, played over `play` s (`at`: path time at a moment; see flightClock). */
+  /** A flyover holds its first picture until the hole's detail and textures are in and a few
+   * frames are drawn (so it looks right from the start), ten seconds at most. */
+  private flyWait: { since: number; loaded: boolean; frames: number } | null = null;
+  private detailReady: Promise<unknown> = Promise.resolve();
   private fly: { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; t: number; dur: number; play: number; at: (t: number) => number; done?: () => void; title?: HoleTitle } | null = null;
   /** A hole whose line is being plotted by hand, and its turns so far (from the tee). */
   private plotHole: string | null = null;
@@ -453,7 +465,23 @@ export class CourseView {
    * coordinates) in its color. */
   setNearby(courses: { color: string; lines: P[][] }[]) {
     for (const o of [...this.nearbyGroup.children]) { this.nearbyGroup.remove(o); disposeObjectDeep(o); }
+    // (a hole's number, beside its tee, in the course's color)
+    const number = (n: number, color: string, p: P) => {
+      const cv = document.createElement("canvas");
+      cv.width = cv.height = 64;
+      const g = cv.getContext("2d")!;
+      g.fillStyle = color;
+      g.beginPath(); g.arc(32, 32, 30, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#111"; g.font = "bold 34px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText(String(n), 32, 34);
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false, transparent: true }));
+      s.scale.set(16, 16, 1);
+      s.position.set(p.x, this.h(p.x, p.y) + 10, p.y);
+      s.renderOrder = 8;
+      return s;
+    };
     for (const c of courses) {
+      c.lines.forEach((l, i) => { if (l.length >= 2) this.nearbyGroup.add(number(i + 1, c.color, l[0])); });
       for (const l of c.lines) {
         if (l.length < 2) continue;
         this.nearbyGroup.add(this.fatLine(this.drapeLine(l, LIFT + 0.3), c.color, 3, { dashed: 10, opacity: 0.9, order: 6 }));
@@ -765,7 +793,7 @@ export class CourseView {
     if (holeId === this.povHole) return;
     this.povHole = holeId;
     this.povLook = { yaw: 0, pitch: 0 };
-    void this.updateDetail();
+    this.detailReady = this.updateDetail().catch(() => {});
     this.controls.enabled = !holeId;
     this.labelsLayer.style.display = holeId ? "none" : "";
     this.handlesLayer.style.display = holeId ? "none" : "";
@@ -785,6 +813,19 @@ export class CourseView {
     this.setTeeView(holeId);
     if (!this.fly) this.povFov = this.povCam.fov;
     this.fly = { ...path, t: -VIDEO_HOLD.intro, done, title: holeTitle(this.doc.course, holeId) };
+    const wait: { since: number; loaded: boolean; frames: number } = { since: performance.now(), loaded: false, frames: 0 };
+    this.flyWait = wait;
+    void (async () => {
+      const left = () => performance.now() - wait.since < FLY_WAIT_MS;
+      const pause = () => new Promise(r => setTimeout(r, 100));
+      // (the painted ground still being painted, then its sharp close-up, then any textures
+      // still on their way: the photo, the trees' leaves)
+      await new Promise(r => setTimeout(r, 150));
+      while (this.paintedPending && left()) await pause();
+      await this.detailReady;
+      while (texturesLoading() && left()) await pause();
+      wait.loaded = true;
+    })();
     this.invalidate();
   }
 
@@ -1120,8 +1161,14 @@ export class CourseView {
    * woods (null: the photo). */
   setPaintedGround(look: PaintedLook | null) {
     this.paintedScreen = look;
-    return this.applyPainted();
+    const done = this.applyPainted();
+    this.detailReady = done.catch(() => {});
+    return done;
   }
+
+  /** A painted ground on its way (the tee view's Design look being painted): a flyover waits. */
+  private paintedPending = false;
+  setPaintedPending(on: boolean) { this.paintedPending = on; }
 
   private paintedScreen: PaintedLook | null = null;
   /** While recording: the ground the video shows (undefined: as on screen). */
@@ -1162,7 +1209,7 @@ export class CourseView {
     await this.ground.setPainted(look?.url ?? null);
     if (this.disposed) return;
     if (!look) this.ground.setPaintedDetail(null);
-    else void this.updateDetail();
+    else await this.updateDetail();
     const woods = this.ground.paintedTexture ? look?.wooded ?? null : null;
     if (woods !== this.paintedWoods || this.shapesPainted !== !!this.ground.paintedTexture) {
       this.paintedWoods = woods;
@@ -1253,9 +1300,12 @@ export class CourseView {
     const dt = this.clock.getDelta();
     if (this.controls.update(dt)) this.dirty = true;
     if (this.fly) {
-      // At most a quarter second per frame: a slow first frame (or a tab coming back from the
-      // background) must not skip the flight
-      this.fly.t += Math.min(dt, 0.25);
+      // Held on its first picture until everything's in (a few frames drawn after), then at most
+      // a quarter second per frame: a slow first frame (or a tab coming back from the background)
+      // must not skip the flight
+      const w = this.flyWait;
+      if (w && (w.loaded ? ++w.frames < 4 : true) && performance.now() - w.since < FLY_WAIT_MS) { /* waiting */ }
+      else { this.flyWait = null; this.fly.t += Math.min(dt, 0.25); }
       this.dirty = true;
       // (a moment at the basket before it ends, as in a recording)
       if (this.fly.t >= this.fly.play + (this.fly.title ? VIDEO_HOLD.outro : 0)) {
@@ -2015,7 +2065,8 @@ export class CourseView {
     const nowhereFor = () => {
       const polys: P[][] = [], lines: { pts: P[]; half: number }[] = [];
       for (const it of course.items) {
-        if (it.type === "area" && ["water", "parking", "building"].includes(it.kind)) polys.push(this.shapeOf(it).pts);
+        // (and woods given drawn trees or none: no measured ones there)
+        if (it.type === "area" && (["water", "parking", "building"].includes(it.kind) || (it.kind === "woods" && (it.trees === "drawn" || it.trees === "none")))) polys.push(this.shapeOf(it).pts);
         else if (it.type === "line" && ["road", "path", "walk", "stream"].includes(it.kind)) lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 });
         else if (it.type === "structure") lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 2 });
       }
@@ -2035,14 +2086,15 @@ export class CourseView {
     };
     // Trees measured from the air: cut down where the course clears the ground for play, unless
     // kept (in place of the woods' made-up trees)
-    const lidar = course.lidar?.trees.length ? course.lidar : null;
+    // (grown to today, as many years as the course asks)
+    const lidar = course.lidar?.trees.length ? { ...course.lidar, trees: grownTrees(course.lidar) } : null;
     const measured = !!lidar;
     this.lidarState = null;
     if (lidar) {
       const forPlay = clearingsFor(true);
       const nowhere = nowhereFor();
       this.clearedAt = (p, reach) => forPlay.test(p, reach) || nowhere.test(p);
-      const fresh = JSON.stringify([lidar.kept, lidar.removed, forPlay.key, nowhere.key]);
+      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.minHeight ?? 0, lidar.growYears ?? 0, forPlay.key, nowhere.key]);
       if (this.dragging && this.lidarKey && fresh !== this.lidarKey) this.afterDrag = true;
       else this.lidarKey = fresh;
       const state = this.keep("lidar", lidar.trees, this.lidarKey, () => {
@@ -2051,7 +2103,7 @@ export class CourseView {
         return { stand, cut, kept: stand.filter(k => keptSet.has(k) && forPlay.test({ x: lidar.trees[k][0], y: lidar.trees[k][1] }, lidar.trees[k][3] * 0.3)) };
       });
       this.lidarState = state;
-      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), state.cut, hv, st.trees, st.landscape]), () => {
+      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, state.cut, hv, st.trees, st.landscape]), () => {
         const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, landscapeOf(st).mix);
         this.shadowsDirty = true;
         return woods;
@@ -2117,7 +2169,8 @@ export class CourseView {
         return g;
       });
       // Woods: trees standing in it (shadows and all)
-      if (a.kind === "woods" && !measured) {
+      // (its own drawn trees: without measured ones, or when it asks for them; none when it says so)
+      if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn")) {
         const here = clearings.near(boundsOf(a.points));
         put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key]), () => {
           const land = landscapeOf(st);
@@ -2586,7 +2639,10 @@ export class CourseView {
     const lidar = course.lidar, ls = this.lidarState;
     if (lidar && ls) {
       const mark = (k: number, kept: boolean) => {
-        const [x, y] = lidar.trees[k];
+        // (a sapling grown since the survey isn't in the list: no stump for it)
+        const t = lidar.trees[k];
+        if (!t) return;
+        const [x, y] = t;
         put(`stump:${k}`, String(kept), 4, () => {
           const el = document.createElement("div");
           el.className = kept ? "dg-stump kept" : "dg-stump";
@@ -2636,7 +2692,9 @@ export class CourseView {
     if (!lidar || !ls) return null;
     let best: number | null = null, bestD = Infinity;
     for (const k of ls.stand) {
-      const [x, y, , r] = lidar.trees[k], d = Math.hypot(x - p.x, y - p.y);
+      const t = lidar.trees[k];
+      if (!t) continue; // (a sapling since the survey: not one to cut by hand)
+      const [x, y, , r] = t, d = Math.hypot(x - p.x, y - p.y);
       if (d < Math.max(4, r * 0.6) && d < bestD) { best = k; bestD = d; }
     }
     return best;
@@ -3459,6 +3517,8 @@ export class CourseView {
   // ------------------------------------------------------------------ pointer input
 
   private endDragListeners: (() => void) | null = null;
+  /** When two fingers were last on the map (a pinch): a tap then is no tap. */
+  private pinchAt = 0;
 
   /** Press that becomes a click (no movement) or a drag. */
   private gesture(e: PointerEvent, h: { click?: (ev: PointerEvent) => void; drag?: (start: PointerEvent) => Drag | null }) {
@@ -3466,6 +3526,7 @@ export class CourseView {
     const sy = e.clientY;
     const id = e.pointerId;
     const slop = e.pointerType === "touch" ? TOUCH_SLOP : CLICK_PX;
+    const began = performance.now();
     let drag: Drag | null = null;
     let moved = false;
     const move = (ev: PointerEvent) => {
@@ -3483,10 +3544,12 @@ export class CourseView {
     const up = (ev: PointerEvent) => {
       if (ev.pointerId !== id) return;
       cleanup();
+      // (a finger that was part of a pinch, or lifted just after one, taps nothing)
+      const pinched = ev.pointerType === "touch" && (this.touchIds.size > 0 || this.pinchAt >= began - 50 || performance.now() - this.pinchAt < 350);
       if (drag) {
         drag.end(ev);
         this.setDragging(false);
-      } else if (!moved) h.click?.(ev);
+      } else if (!moved && !pinched) h.click?.(ev);
       this.invalidate();
     };
     const cleanup = () => {
@@ -3569,7 +3632,7 @@ export class CourseView {
   private fingers = false;
 
   private touchUp(e: PointerEvent) {
-    this.touchIds.delete(e.pointerId);
+    if (this.touchIds.delete(e.pointerId) && this.touchIds.size >= 1) this.pinchAt = performance.now();
     const lp = this.longPress;
     if (lp?.id !== e.pointerId) return;
     // (Held long enough, even if a busy page ran the timer late: still the long-press)
@@ -3671,6 +3734,7 @@ export class CourseView {
     if (this.fingers) {
       this.touchIds.add(e.pointerId);
       if (this.touchIds.size > 1) {
+        this.pinchAt = performance.now();
         this.secondFinger();
         return;
       }

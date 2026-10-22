@@ -121,8 +121,8 @@ function Ticks({ parts, value, onChange }: { parts: readonly Part[]; value: Perm
   );
 }
 
-interface Link { id: string; token: string; label: string; perms: Perms; hasPassword: boolean; expiresAt: string | null; createdAt: string; revoked: boolean }
-const linkUrl = (token: string) => `${location.origin}${location.pathname}#site=${token}`;
+interface Link { id: string; token: string; slug: string | null; label: string; perms: Perms; hasPassword: boolean; expiresAt: string | null; createdAt: string; revoked: boolean }
+const linkUrl = (l: { token: string; slug?: string | null }) => `${location.origin}/${l.slug || l.token}`;
 const partsOf = (p: Perms) => LINK_PARTS.filter(k => p[k]).map(k => PART_LABELS[k].replace(/ \(.*\)$/, "")).join(", ") || "Nothing";
 
 /** Public links (each with what it shows, a password, an end), and the public site they show. */
@@ -130,7 +130,7 @@ function PublicSection({ id }: { id: string }) {
   const [links, setLinks] = useState<Link[]>([]);
   const [site, setSite] = useState<{ version: number; publishedAt: string } | null>(null);
   const [editing, setEditing] = useState<string | "new" | null>(null);
-  const [form, setForm] = useState<{ label: string; perms: Perms; password: string; expires: string }>({ label: "", perms: LINK_DEFAULT, password: "", expires: "" });
+  const [form, setForm] = useState<{ label: string; slug: string; perms: Perms; password: string; expires: string }>({ label: "", slug: "", perms: LINK_DEFAULT, password: "", expires: "" });
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const version = useServerCourse(s => s.version);
@@ -145,7 +145,7 @@ function PublicSection({ id }: { id: string }) {
   };
   const update = () => act(async () => { await publishSite(id, setBusy); setBusy(""); });
   const save = () => act(async () => {
-    const body = { label: form.label, perms: form.perms, password: form.password || (editing === "new" ? null : undefined), expiresAt: form.expires ? new Date(form.expires).toISOString() : null };
+    const body = { label: form.label, slug: form.slug.trim() || null, perms: form.perms, password: form.password || (editing === "new" ? null : undefined), expiresAt: form.expires ? new Date(form.expires).toISOString() : null };
     if (editing === "new") await api("POST", `courses/${id}/links`, body);
     else await api("PATCH", `courses/${id}/links/${editing}`, body);
     setEditing(null);
@@ -171,11 +171,11 @@ function PublicSection({ id }: { id: string }) {
             <li key={l.id} className={`rounded-lg border border-zinc-800 p-2.5 text-sm ${l.revoked ? "opacity-60" : ""}`} data-testid="link">
               <div className="flex items-center gap-2">
                 <span className="flex-1 min-w-0 truncate text-zinc-100 font-medium">{l.label || "Public link"}{l.revoked ? " · off" : ""}{l.hasPassword ? " · password" : ""}{l.expiresAt ? ` · until ${new Date(l.expiresAt).toLocaleDateString()}` : ""}</span>
-                {!l.revoked && <CopyButton text={linkUrl(l.token)} label="Copy link" />}
+                {!l.revoked && <CopyButton text={linkUrl(l)} label="Copy link" />}
               </div>
-              <div className="text-[12px] text-zinc-500 mt-1">{partsOf(l.perms)}</div>
+              <div className="text-[12px] text-zinc-500 mt-1">{l.slug ? <span className="text-zinc-300">/{l.slug} · </span> : null}{partsOf(l.perms)}</div>
               <div className="flex gap-3 mt-1.5 text-xs">
-                <button className="text-zinc-300 hover:text-white" onClick={() => { setEditing(l.id); setForm({ label: l.label, perms: l.perms, password: "", expires: l.expiresAt ? l.expiresAt.slice(0, 10) : "" }); }}>Change</button>
+                <button className="text-zinc-300 hover:text-white" onClick={() => { setEditing(l.id); setForm({ label: l.label, slug: l.slug ?? "", perms: l.perms, password: "", expires: l.expiresAt ? l.expiresAt.slice(0, 10) : "" }); }}>Change</button>
                 <button className="text-zinc-300 hover:text-white" onClick={() => void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { revoked: !l.revoked }))}>{l.revoked ? "Turn on" : "Turn off"}</button>
                 <button className="text-zinc-300 hover:text-white" onClick={() => { if (confirm("Give it a new address? The old one stops working.")) void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { newToken: true })); }}>New address</button>
                 {l.hasPassword && <button className="text-zinc-300 hover:text-white" onClick={() => void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { password: null }))}>No password</button>}
@@ -187,6 +187,11 @@ function PublicSection({ id }: { id: string }) {
         {editing ? (
           <div className="mt-3 rounded-lg border border-zinc-700 p-3 space-y-2" data-testid="link-form">
             <input className={inputCls} placeholder="Label (where it's shared)" value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} aria-label="Label" />
+            <label className="block">
+              <span className="flex items-center gap-2"><span className="text-xs text-zinc-400 shrink-0">{location.host}/</span>
+                <input className={inputCls} placeholder="Its own name (optional), e.g. springfield-park" value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })} aria-label="Link name" data-testid="link-slug" /></span>
+              {form.slug && <span className="block text-[11px] text-zinc-500 mt-1">Easy to guess: add a password if only some should see it.</span>}
+            </label>
             <Ticks parts={LINK_PARTS} value={form.perms} onChange={perms => setForm({ ...form, perms })} />
             <div className="flex gap-2">
               <input className={inputCls} type="password" placeholder={editing === "new" ? "Password (optional)" : "New password (optional)"} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} aria-label="Password" />
@@ -198,7 +203,7 @@ function PublicSection({ id }: { id: string }) {
             </div>
           </div>
         ) : (
-          <button className="mt-3 text-sm text-orange-300 hover:text-orange-200" onClick={() => { setEditing("new"); setForm({ label: "", perms: LINK_DEFAULT, password: "", expires: "" }); }} data-testid="new-link">+ New public link</button>
+          <button className="mt-3 text-sm text-orange-300 hover:text-orange-200" onClick={() => { setEditing("new"); setForm({ label: "", slug: "", perms: LINK_DEFAULT, password: "", expires: "" }); }} data-testid="new-link">+ New public link</button>
         )}
         {error && <p role="alert" className="mt-2 text-sm text-red-300">{error}</p>}
       </Section>

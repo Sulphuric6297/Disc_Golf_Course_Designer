@@ -80,3 +80,21 @@ test("a viewer's permissions: kept per person, sent with the course", async () =
     assert.equal((await admin.get(url)).body.perms, null);
   } finally { await w.close(); }
 });
+
+test("a link's own name: opens it like its address; unique; cleared", async () => {
+  const w = await world();
+  try {
+    const { c: admin } = await adminSignedIn(w);
+    const { body: made } = await admin.post("/api/courses", { doc: doc() });
+    const url = `/api/courses/${made.id}`;
+    await admin.post(`${url}/site`, { parts: { printedMap: true }, info: { name: "Springfield Park", holes: [] }, doc: null, files: [] });
+    const { body: l } = await admin.post(`${url}/links`, { slug: "Springfield-Park", perms: { printedMap: true } });
+    const anon = new Client(w.app);
+    assert.equal((await anon.req("GET", "/api/public/springfield-park", undefined, {})).body.info.name, "Springfield Park");
+    assert.equal((await admin.post(`${url}/links`, { slug: "springfield-park", perms: {} })).status, 409);
+    assert.equal((await admin.post(`${url}/links`, { slug: "no", perms: {} })).status, 400);
+    await admin.req("PATCH", `${url}/links/${l.id}`, { slug: null });
+    assert.equal((await anon.req("GET", "/api/public/springfield-park", undefined, {})).status, 404);
+    assert.equal((await anon.req("GET", `/api/public/${l.token}`, undefined, {})).status, 200);
+  } finally { await w.close(); }
+});

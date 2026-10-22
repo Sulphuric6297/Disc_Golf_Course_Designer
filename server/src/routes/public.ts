@@ -34,12 +34,15 @@ export async function publicRoutes(app: FastifyInstance, { sql }: Ctx) {
   app.get<Id>("/api/courses/:id/links", async req => {
     const { id } = parse(ids, req.params);
     await role(req, id, "owner");
-    const rows = await sql`select id, token, label, perms, password_hash is not null as has_password, expires_at, created_at, revoked_at from course_links where course_id = ${id} order by created_at desc`;
-    return rows.map(l => ({ id: l.id, token: l.token, label: l.label, perms: l.perms, hasPassword: l.has_password, expiresAt: l.expires_at, createdAt: l.created_at, revoked: !!l.revoked_at }));
+    const rows = await sql`select id, token, slug, label, perms, password_hash is not null as has_password, expires_at, created_at, revoked_at from course_links where course_id = ${id} order by created_at desc`;
+    return rows.map(l => ({ id: l.id, token: l.token, slug: l.slug, label: l.label, perms: l.perms, hasPassword: l.has_password, expiresAt: l.expires_at, createdAt: l.created_at, revoked: !!l.revoked_at }));
   });
 
+  // (a link's own name: lowercase letters, digits and dashes)
+  const slug = z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]{2,39}$/, "Name: 3 to 40 letters, digits or dashes").nullable().optional();
   const linkBody = z.object({
     label: z.string().trim().max(100).default(""),
+    slug,
     perms,
     password: z.string().min(4, "Password: at least 4 characters").max(200).nullable().optional(),
     expiresAt: z.coerce.date().nullable().optional()
@@ -51,8 +54,8 @@ export async function publicRoutes(app: FastifyInstance, { sql }: Ctx) {
     const b = parse(linkBody, req.body);
     const token = newToken();
     const [l] = await sql`
-      insert into course_links (course_id, token_hash, token, label, perms, password_hash, expires_at, created_by)
-      values (${id}, ${sha256(token)}, ${token}, ${b.label}, ${sql.json(b.perms as never)}, ${b.password ? await hash(b.password) : null}, ${b.expiresAt ?? null}, ${a.user.id}) returning id`;
+      insert into course_links (course_id, token_hash, token, slug, label, perms, password_hash, expires_at, created_by)
+      values (${id}, ${sha256(token)}, ${token}, ${b.slug || null}, ${b.label}, ${sql.json(b.perms as never)}, ${b.password ? await hash(b.password) : null}, ${b.expiresAt ?? null}, ${a.user.id}) returning id`;
     await audit(sql, req, "link.created", { course: id, link: l.id });
     return { id: l.id, token };
   });
@@ -64,6 +67,7 @@ export async function publicRoutes(app: FastifyInstance, { sql }: Ctx) {
     const [l] = await sql`select id from course_links where id = ${lid} and course_id = ${id}`;
     if (!l) throw new ApiError(404, "Not found");
     if (b.label !== undefined) await sql`update course_links set label = ${b.label} where id = ${lid}`;
+    if (b.slug !== undefined) await sql`update course_links set slug = ${b.slug || null} where id = ${lid}`;
     if (b.perms) await sql`update course_links set perms = ${sql.json(b.perms as never)} where id = ${lid}`;
     if (b.password !== undefined) await sql`update course_links set password_hash = ${b.password ? await hash(b.password) : null} where id = ${lid}`;
     if (b.expiresAt !== undefined) await sql`update course_links set expires_at = ${b.expiresAt} where id = ${lid}`;
@@ -132,7 +136,7 @@ export async function publicRoutes(app: FastifyInstance, { sql }: Ctx) {
     const [l] = await sql`
       select l.id, l.course_id, l.perms, l.password_hash, s.parts, s.info, s.version, s.published_at, s.doc is not null as has_doc
       from course_links l join course_sites s on s.course_id = l.course_id
-      where l.token_hash = ${sha256(token)} and l.revoked_at is null and (l.expires_at is null or l.expires_at > now())`;
+      where (l.token_hash = ${sha256(token)} or l.slug = ${token.toLowerCase()}) and l.revoked_at is null and (l.expires_at is null or l.expires_at > now())`;
     if (!l) throw new ApiError(404, "This link doesn't work (any more)");
     if (l.password_hash) {
       const given = String(req.headers["x-link-password"] ?? "");

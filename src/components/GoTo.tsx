@@ -35,7 +35,7 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => v
   const [at, setAt] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
-  useEffect(() => input.current?.focus(), []);
+  useEffect(() => { input.current?.focus(); }, []);
 
   const all = useMemo<Entry[]>(() => {
     const out: Entry[] = [];
@@ -71,8 +71,8 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => v
       .slice(0, 40);
   }, [all, q]);
 
-  useEffect(() => setAt(0), [q]);
-  useEffect(() => list.current?.querySelector(`[data-at="${at}"]`)?.scrollIntoView({ block: "nearest" }), [at]);
+  useEffect(() => { setAt(0); }, [q]);
+  useEffect(() => { list.current?.querySelector(`[data-at="${at}"]`)?.scrollIntoView({ block: "nearest" }); }, [at]);
 
   const run = (e: Entry | undefined) => {
     if (!e) return;

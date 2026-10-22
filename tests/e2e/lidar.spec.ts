@@ -4,7 +4,7 @@ import { createLazPerf } from "laz-perf";
 import { test, expect, addHole, importSite, course, editorState, screenOf, withLidar, SITE } from "./fixtures";
 import { createEmptyCourse, newHole } from "../../src/lib/course";
 import { getGeoBounds } from "../../src/lib/geo/core";
-import { emptyPoints, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesOver, depthFor, type LazReader } from "../../src/lib/lidar";
+import { emptyPoints, grownTree, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesOver, depthFor, type LazReader } from "../../src/lib/lidar";
 import type { LidarTree } from "../../src/types";
 
 const FT = 3.28084;
@@ -147,4 +147,37 @@ plain("measured trees never stand where no tree does (in water, on a road): cut,
   const { stand, cut } = standingTrees(lidar, () => false, inRiverOrRoad);
   plainExpect(stand).toEqual([0, 2]);
   plainExpect(cut).toEqual([1]);
+});
+
+plain("measured trees smaller than the course keeps are cut, unless kept by hand (pure logic)", () => {
+  const lidar = { source: "test", trees: [[10, 10, 12, 6, 0], [100, 100, 40, 12, 0], [200, 200, 8, 4, 0]] as LidarTree[], kept: [2], minHeight: 15 };
+  const { stand, cut } = standingTrees(lidar, () => false);
+  plainExpect(stand).toEqual([1, 2]);
+  plainExpect(cut).toEqual([0]);
+});
+
+plain("measured trees grown since the survey: small ones the most, tall ones hardly, crowns with them (pure logic)", () => {
+  const small = grownTree([0, 0, 10, 4, 0], 9), mid = grownTree([0, 0, 50, 15, 0], 9), tall = grownTree([0, 0, 95, 25, 0], 9);
+  plainExpect(small[2] - 10).toBeGreaterThan(mid[2] - 50);
+  plainExpect(mid[2] - 50).toBeGreaterThan(tall[2] - 95);
+  plainExpect(small[2]).toBeGreaterThan(25);
+  plainExpect(tall[2]).toBeLessThan(100);
+  plainExpect(mid[3]).toBeGreaterThan(15);
+  plainExpect(grownTree([0, 0, 40, 12, 1], 0)).toEqual([0, 0, 40, 12, 1]);
+});
+
+plain("saplings since the survey: none at once, more with the years, near the measured trees, fast and narrow (pure logic)", () => {
+  const woods: [number, number, number, number, 0 | 1][] = Array.from({ length: 200 }, (_, k) => [(k % 20) * 30, Math.floor(k / 20) * 30, 50, 15, 0]);
+  plainExpect(saplings(woods, 0)).toEqual([]);
+  const ten = saplings(woods, 10), twenty = saplings(woods, 20);
+  plainExpect(ten.length).toBeGreaterThan(10);
+  plainExpect(twenty.length).toBeGreaterThan(ten.length);
+  for (const s of ten) {
+    plainExpect(s[2]).toBeGreaterThanOrEqual(6);
+    plainExpect(s[2]).toBeLessThan(40);
+    plainExpect(s[3] / s[2]).toBeLessThan(15 / 50);
+    const near = woods.some(t => Math.hypot(t[0] - s[0], t[1] - s[1]) <= 15 * 2.4);
+    plainExpect(near).toBe(true);
+  }
+  plainExpect(saplings(woods, 10)).toEqual(ten);
 });

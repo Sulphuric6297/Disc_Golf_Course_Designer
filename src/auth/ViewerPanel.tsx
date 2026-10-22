@@ -13,6 +13,7 @@ import { Section, Stat } from "../components/ui";
 import { copyCourse, holesOf } from "./courses";
 import { useAllowed } from "./perms";
 import { Downloads } from "./Downloads";
+import { holeFacts } from "./holeFacts";
 
 export function ViewerPanelBody() {
   const doc = useCourse(s => s.doc);
@@ -21,7 +22,7 @@ export function ViewerPanelBody() {
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
   const u = doc.units;
   const picked = stats.find(s => s.holeId === ed.selectedId || s.holeId === ed.activeHoleId) ?? null;
-  const mayCopy = useAllowed("copy"), mayStats = useAllowed("stats");
+  const mayCopy = useAllowed("copy"), mayStats = useAllowed("stats"), may3d = useAllowed("view3d"), mayFly = useAllowed("flyovers");
   const hole = picked ? doc.holes.find(h => h.id === picked.holeId) : null;
   return (
     <div data-testid="viewer-panel">
@@ -44,14 +45,23 @@ export function ViewerPanelBody() {
           </div>
         </Section>
       )}
+      {picked && hole && picked.complete && (may3d || mayFly) && (
+        <Section testid="viewer-views">
+          <div className="flex flex-wrap gap-2">
+            {may3d && <button className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 touch:py-2.5 text-sm font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700" onClick={() => useEditor.getState().set({ teeView: picked.holeId, flyover: false })} data-testid="viewer-tee">From the tee</button>}
+            {mayFly && <button className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 touch:py-2.5 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white" onClick={() => useEditor.getState().set({ view: "3d", teeView: picked.holeId, flyover: true })} data-testid="viewer-fly">▶ Fly over</button>}
+          </div>
+        </Section>
+      )}
       {mayStats && picked && hole && (
         <Section title={hole.name || `Hole ${picked.label}`} testid="viewer-hole">
-          <div className="grid grid-cols-3 gap-1.5">
-            <Stat label="Par" value={picked.par} />
-            <Stat label="Length" value={picked.complete ? fmtDist(picked.length, u) : "—"} />
-            <Stat label="Elevation" value={picked.complete ? fmtElev(picked.elevationChange, u) : "—"} />
-          </div>
-          {picked.complete && picked.playsLike !== picked.length && <p className="text-xs text-zinc-400 mt-2">Plays like {fmtDist(picked.playsLike, u)}</p>}
+          {picked.complete ? (
+            <dl className="grid grid-cols-2 gap-1.5">
+              {holeFacts({ ...picked, elevation: picked.elevationChange }, u).map(([k, v]) => (
+                <div key={k} className="bg-zinc-800/60 rounded-lg px-2 py-1.5"><dt className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">{k}</dt><dd className="text-sm font-semibold text-zinc-100">{v}</dd></div>
+              ))}
+            </dl>
+          ) : <p className="text-xs text-zinc-400">Unfinished</p>}
         </Section>
       )}
       <Downloads />

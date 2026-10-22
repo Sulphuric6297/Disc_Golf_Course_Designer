@@ -52,7 +52,7 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
   app.get("/api/courses", async req => {
     const a = need(req);
     const rows = await sql`
-      select c.id, c.name, c.holes, c.version, c.updated_at, c.summary, m.role, u.display_name as updated_by,
+      select c.id, c.name, c.park, c.holes, c.version, c.updated_at, c.summary, m.role, u.display_name as updated_by,
         (select o.display_name from course_members om join users o on o.id = om.user_id
           where om.course_id = c.id and om.role = 'owner' order by om.added_at limit 1) as owner,
         (select count(*)::int from course_members x where x.course_id = c.id) as members,
@@ -62,7 +62,7 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
       from course_members m join courses c on c.id = m.course_id left join users u on u.id = c.updated_by
       where m.user_id = ${a.user.id} order by c.updated_at desc`;
     return rows.map(r => ({
-      id: r.id, name: r.name, holes: r.holes, version: r.version, updatedAt: r.updated_at, role: r.role, updatedBy: r.updated_by,
+      id: r.id, name: r.name, park: r.park, holes: r.holes, version: r.version, updatedAt: r.updated_at, role: r.role, updatedBy: r.updated_by,
       owner: r.owner, members: r.members, summary: r.summary, thumbAt: r.thumb_at ? r.thumb_at.getTime() : null,
       hasDraft: r.has_draft, toReview: r.to_review
     }));
@@ -89,11 +89,11 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
     const { a, role: r } = await role(req, id, "viewer");
     const [m] = await sql`select live, perms from course_members where course_id = ${id} and user_id = ${a.user.id}`;
     const [c] = await sql`
-      select c.doc, c.version, c.approval,
+      select c.doc, c.version, c.approval, c.park,
         exists (select 1 from course_backgrounds b where b.course_id = c.id) as has_background,
         exists (select 1 from course_thumbnails t where t.course_id = c.id) as has_thumbnail
       from courses c where c.id = ${id}`;
-    return { id, version: c.version, role: r, approval: c.approval, live: r === "owner" && m.live, perms: r === "viewer" ? m.perms : null, doc: c.doc, hasBackground: c.has_background, hasThumbnail: c.has_thumbnail };
+    return { id, version: c.version, role: r, approval: c.approval, live: r === "owner" && m.live, park: c.park, perms: r === "viewer" ? m.perms : null, doc: c.doc, hasBackground: c.has_background, hasThumbnail: c.has_thumbnail };
   });
 
   // The owner's own changes, as they go (editors change a draft, and publish it)
@@ -136,6 +136,14 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
     return { ok: true };
   });
 
+  app.post<Id>("/api/courses/:id/park", async req => {
+    const { id } = parse(ids, req.params);
+    await role(req, id, "owner");
+    const b = parse(z.object({ park: z.string().trim().max(100) }), req.body);
+    await sql`update courses set park = ${b.park} where id = ${id}`;
+    return { ok: true };
+  });
+
   app.post<Id>("/api/courses/:id/settings", async req => {
     const { id } = parse(ids, req.params);
     await role(req, id, "owner");
@@ -168,15 +176,17 @@ export async function courseRoutes(app: FastifyInstance, { sql }: Ctx) {
     const { id } = parse(ids, req.params);
     const { a } = await role(req, id, "viewer");
     type B = { north: number; south: number; west: number; east: number };
-    const [me] = await sql`select doc->'site'->'bounds' as b from courses where id = ${id}`;
+    const [me] = await sql`select doc->'site'->'bounds' as b, park from courses where id = ${id}`;
     const mine = me?.b as B | null;
     if (!mine) return [];
     const rows = await sql`
-      select c.id, c.name, c.summary, c.doc->'site'->'bounds' as b, m.role
+      select c.id, c.name, c.park, c.summary, c.doc->'site'->'bounds' as b, m.role
       from course_members m join courses c on c.id = m.course_id where m.user_id = ${a.user.id} and c.id <> ${id}`;
     const meets = (x: B) => x.west < mine.east && x.east > mine.west && x.south < mine.north && x.north > mine.south;
-    return rows.filter(r => r.b && meets(r.b as B) && r.summary?.lines?.length).map(r => ({
-      id: r.id, name: r.name, role: r.role, bounds: r.b, canvas: r.summary.canvas, lines: r.summary.lines
+    // (in the same park, or on the same ground)
+    const samePark = (p: string) => !!me.park && p.toLowerCase() === String(me.park).toLowerCase();
+    return rows.filter(r => r.b && (samePark(r.park) || meets(r.b as B)) && r.summary?.lines?.length).map(r => ({
+      id: r.id, name: r.name, park: r.park, samePark: samePark(r.park), role: r.role, bounds: r.b, canvas: r.summary.canvas, lines: r.summary.lines
     }));
   });
 
