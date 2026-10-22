@@ -34,6 +34,7 @@ import { VIDEO_HOLD, titleStrength } from "../lib/video";
 import { drawOverlay, holeTitle, overlayShow, type HoleTitle } from "./flyTitle";
 import { forestDetail, type Forest, type TreeSpot } from "../three/treeKit";
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
+import { Tufts } from "../three/tufts";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createStructure } from "../three/structures";
 import { isLineKind, orientedBox, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
@@ -261,6 +262,8 @@ export class CourseView {
   private skyBox: Sky;
   /** Grass blades near the camera, in 3D (see three/grass). */
   readonly grass = new Grass();
+  /** Tufts of grass and wildflowers (ez-tree's demo's) among the blades. */
+  readonly tufts = new Tufts(this.grass);
   private grassInputs: unknown[] = [];
   /** The sky as an environment for water to reflect (made again when the sun moves). */
   private skyEnv: THREE.WebGLRenderTarget | null = null;
@@ -398,7 +401,7 @@ export class CourseView {
     c.addEventListener("rest", () => { this.posePinned = false; });
 
     this.ground = new Ground(this.renderer, () => this.invalidate(true));
-    this.scene.add(this.ground.group, this.shapesGroup, this.itemsGroup, this.nearbyGroup, this.fx, this.skyBox, this.grass.group);
+    this.scene.add(this.ground.group, this.shapesGroup, this.itemsGroup, this.nearbyGroup, this.fx, this.skyBox, this.grass.group, this.tufts.group);
     {
       const gl = this.renderer.getContext();
       const info = gl.getExtension("WEBGL_debug_renderer_info");
@@ -774,6 +777,7 @@ export class CourseView {
     cancelAnimationFrame(this.raf);
     clearTimeout(this.grassTimer);
     this.grass.dispose();
+    this.tufts.dispose();
     this.skyEnv?.dispose();
     this.ro.disconnect();
     this.disposers.forEach(d => d());
@@ -1575,8 +1579,10 @@ export class CourseView {
     const doc = this.doc;
     const q = this.grassQuality();
     this.grass.setQuality(on && doc ? q : 0);
+    this.tufts.setQuality(on && doc ? q : 0);
     if (!doc || !on || !q) {
       this.grass.group.visible = false;
+      this.tufts.group.visible = false;
       return;
     }
     // What grows where: painted again when the course changed (at most a few times a second
@@ -1605,7 +1611,9 @@ export class CourseView {
     }
     const p = cam.position;
     const t = this.clock.elapsedTime;
-    this.grass.update(p, this.h(clamp(p.x, 0, doc.canvas.width), clamp(p.z, 0, doc.canvas.height)), t, this.wind && this.povHole ? 0.14 : 0.05);
+    const wind = this.wind && this.povHole ? 0.14 : 0.05;
+    this.grass.update(p, this.h(clamp(p.x, 0, doc.canvas.width), clamp(p.z, 0, doc.canvas.height)), t, wind);
+    this.tufts.update(p, t, wind, this.grass.group.visible);
   }
 
   /** What a stretch of water mirrors on its banks: woods close by (high and dark) or open grass. */
