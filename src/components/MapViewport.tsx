@@ -223,7 +223,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
             </div>
           )}
           {hover && (
-            <div className="absolute left-3 bottom-3 text-[11px] text-zinc-200 glass rounded-md px-2 py-1 pointer-events-none" data-testid="hover-readout">
+            <div className={`absolute ${ed.step === "design" && !ed.teeView ? "left-[208px]" : "left-3"} bottom-3 text-[11px] text-zinc-200 glass rounded-md px-2 py-1 pointer-events-none`} data-testid="hover-readout">
               {doc.site.bounds ? `Elevation ${Math.round(doc.units === "m" ? elevation! / 3.28084 : elevation!)} ${doc.units}` : `Ground ${fmtElev(elevation!, doc.units)}`}
             </div>
           )}
