@@ -31,6 +31,8 @@ import { TOOLS, toolHint, toolOptions } from "../Toolbar";
 import { ExportProgressPill } from "../ExportProgress";
 import { ActionSheet, type SheetAction } from "./ActionSheet";
 import { BottomSheet, type Detent } from "./BottomSheet";
+import { HereButton } from "../MyLocation";
+import { useGps } from "../../state/gps";
 import { accountActions, CourseChip } from "../../auth/AccountMenu";
 import { ViewerPanelBody } from "../../auth/ViewerPanel";
 import { SERVER } from "../../auth/api";
@@ -262,6 +264,7 @@ function DrawBar({ bottom }: { bottom: number }) {
   const n = useEditor(e => e.drawPoints);
   const structureKind = useEditor(e => e.structureKind);
   const teeView = useEditor(e => e.teeView);
+  const gpsOn = useGps(g => g.mode !== "off");
   if (teeView) return null;
   const kind = tool === "draw-area" ? "area" : tool === "draw-line" ? "line" : tool === "draw-structure" ? (STRUCTURE_KINDS[structureKind].shape === "outline" ? "area" : "line") : null;
   const pill = "absolute left-1/2 -translate-x-1/2 z-30 w-max max-w-[calc(100%-16px)] flex items-center gap-1 p-1.5 rounded-full glass border border-white/10 shadow-2xl transition-[bottom] duration-300";
@@ -279,11 +282,23 @@ function DrawBar({ bottom }: { bottom: number }) {
       </div>
     );
   }
+  // (where you stand, once you've shown it on the map: a button beside the words)
+  const here = `${btn} bg-sky-500/90 text-white active:bg-sky-600 disabled:opacity-90`;
   if (tool === "add-hole" && n === 1) {
     return (
       <div className={pill} style={{ bottom }} role="toolbar" aria-label="New hole" data-testid="draw-bar">
-        <span className="pl-3 pr-1 text-[15px] text-zinc-100 font-semibold">Now tap the basket spot</span>
+        <span className="pl-3 pr-1 text-[15px] text-zinc-100 font-semibold">{gpsOn ? "Basket spot" : "Now tap the basket spot"}</span>
+        <HereButton what="basket" className={here} />
         <button className={`${btn} text-zinc-200 active:bg-white/[0.13]`} onClick={() => getView()?.cancelDrawing()} data-testid="draw-cancel"><X size={18} /> Cancel</button>
+      </div>
+    );
+  }
+  if (gpsOn && (tool === "add-hole" || tool === "add-tee" || tool === "add-basket")) {
+    const what = tool === "add-basket" ? "pin" : "tee";
+    return (
+      <div className={pill} style={{ bottom }} role="toolbar" aria-label="Where you stand" data-testid="here-bar">
+        <span className="pl-3 pr-1 text-[15px] text-zinc-100 font-semibold">Tap the map, or</span>
+        <HereButton what={what} className={here} />
       </div>
     );
   }

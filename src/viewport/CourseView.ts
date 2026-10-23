@@ -42,7 +42,7 @@ import type { AmenityItem, AreaItem, BasketItem, CourseItem, FlyKey, Hole, Label
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
 import type { FlightFrames, FlyoverVideo, FrameInfo, RecordOptions } from "./flyoverVideo";
-import type { P, ViewCallbacks, ViewDoc, ViewInfo, ViewTool } from "./types";
+import type { LocationMark, P, ViewCallbacks, ViewDoc, ViewInfo, ViewTool } from "./types";
 
 CameraControls.install({ THREE });
 const { ACTION } = CameraControls;
@@ -99,6 +99,13 @@ const STYLE = `
 .dg-issue{pointer-events:auto;cursor:help;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:900 12px/1 Inter,system-ui,sans-serif;color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.55)}
 .dg-measure{pointer-events:none;padding:1px 6px;border-radius:6px;background:#facc15;color:#1c1917;font:700 11px Inter,system-ui,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .dg-measure.total{background:#1c1917;color:#facc15}
+.dg-me{pointer-events:none;width:20px;height:20px;border-radius:50%;background:#0a84ff;border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.55);position:absolute}
+.dg-me::after{content:"";position:absolute;inset:-9px;border-radius:50%;background:rgba(10,132,255,.35);animation:dgme 2s ease-out infinite;z-index:-1}
+.dg-me.dim{background:#8e8e93}.dg-me.dim::after{display:none}
+.dg-me i{position:absolute;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;background:conic-gradient(from -28deg,rgba(10,132,255,.55),rgba(10,132,255,0) 56deg,rgba(10,132,255,0) 304deg,rgba(10,132,255,.55));-webkit-mask:radial-gradient(circle,#000 30%,transparent 72%);mask:radial-gradient(circle,#000 30%,transparent 72%);z-index:-2}
+.dg-me.dim i{display:none}
+@keyframes dgme{0%{transform:scale(.6);opacity:1}100%{transform:scale(1.6);opacity:0}}
+.dg-me-tag{pointer-events:none;padding:3px 8px;border-radius:999px;background:rgba(15,23,20,.82);color:#f8fafc;font:700 11.5px Inter,system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.45);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 .dg-measure.live{background:rgba(28,25,23,.72);color:#fde68a;box-shadow:none}
 .dg-mpt{pointer-events:none;width:12px;height:12px;border-radius:50%;background:#facc15;border:2.5px solid #1c1917;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .dg-mpt.live{background:#fff;opacity:.85}
@@ -403,7 +410,7 @@ export class CourseView {
     c.polarRotateSpeed = 0.7;
     c.dollyToCursor = true;
     c.addEventListener("controlend", () => this.snapNorth());
-    c.addEventListener("controlstart", () => { this.posePinned = false; this.autoFit = null; });
+    c.addEventListener("controlstart", () => { this.posePinned = false; this.autoFit = null; this.onUserMove?.(); });
     c.addEventListener("rest", () => { this.posePinned = false; });
 
     this.ground = new Ground(this.renderer, () => this.invalidate(true));
@@ -3678,6 +3685,7 @@ export class CourseView {
     };
     this.layoutOverlays();
     for (const m of this.measureLabels) place(m.el, m.at, m.el.classList.contains("dg-mpt") ? 0 : -14);
+    this.placeMe(place);
     if (this.draftLabel && this.draftAt) place(this.draftLabel, this.draftAt, -22);
     for (const h of this.handles) {
       let w: THREE.Vector3 | null = null;
@@ -4754,6 +4762,109 @@ export class CourseView {
     }
     const delta = (line ? e.deltaY * 33 : e.deltaY) * (e.ctrlKey ? 0.01 : 0.002);
     this.zoomAt(e.clientX, e.clientY, Math.exp(delta));
+  }
+
+  // ------------------------------------------------------------------ you, on the map (GPS)
+
+  /** Called when someone moves the map by hand (the map stops following you). */
+  onUserMove: (() => void) | null = null;
+  private me: { mark: LocationMark; dot: HTMLDivElement; cone: HTMLElement; tag: HTMLDivElement; at: THREE.Vector3; ring: THREE.Object3D | null } | null = null;
+
+  /** You on the map (null: not shown); `follow`: the map keeps you in the middle of what's visible. */
+  setLocation(mark: LocationMark | null, follow = false) {
+    if (!mark) {
+      if (this.me) {
+        this.me.dot.remove();
+        this.me.tag.remove();
+        if (this.me.ring) { this.fx.remove(this.me.ring); disposeObjectDeep(this.me.ring); }
+        this.me = null;
+        this.invalidate();
+      }
+      return;
+    }
+    if (!this.me) {
+      const dot = document.createElement("div");
+      dot.className = "dg-ov dg-me";
+      dot.setAttribute("data-testid", "my-location");
+      const cone = document.createElement("i");
+      dot.appendChild(cone);
+      const tag = document.createElement("div");
+      tag.className = "dg-ov dg-me-tag";
+      tag.setAttribute("data-testid", "my-location-tag");
+      this.labelsLayer.append(dot, tag);
+      this.me = { mark, dot, cone, tag, at: new THREE.Vector3(), ring: null };
+    }
+    const me = this.me;
+    const was = me.mark;
+    me.mark = mark;
+    me.at.set(mark.at.x, this.h(mark.at.x, mark.at.y) + 1, mark.at.y);
+    me.dot.classList.toggle("dim", mark.dim);
+    me.tag.textContent = mark.tag;
+    me.tag.style.visibility = mark.tag ? "" : "hidden";
+    // The circle of how sure it is, and the dashed line on to the basket
+    const moved = !me.ring || was.acc !== mark.acc || was.at.x !== mark.at.x || was.at.y !== mark.at.y || was.to?.x !== mark.to?.x || was.to?.y !== mark.to?.y || was.dim !== mark.dim;
+    if (moved) {
+      if (me.ring) { this.fx.remove(me.ring); disposeObjectDeep(me.ring); }
+      const g = new THREE.Group();
+      const r = Math.max(4, mark.acc);
+      const ring: P[] = [];
+      for (let i = 0; i < 72; i++) ring.push({ x: mark.at.x + Math.cos((i / 72) * Math.PI * 2) * r, y: mark.at.y + Math.sin((i / 72) * Math.PI * 2) * r });
+      const color = mark.dim ? "#8e8e93" : "#0a84ff";
+      const disc = new THREE.Mesh(drapedPolygon(ring, (x, y) => this.h(x, y), this.doc?.gridSize ?? 20, 0.4), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.16, depthWrite: false, depthTest: false }));
+      disc.renderOrder = 27;
+      g.add(disc);
+      g.add(this.fatLine(this.drapeLine(ring, 0.5, true), color, 1.5, { opacity: 0.55, depthTest: false, order: 28 }));
+      if (mark.to) g.add(this.fatLine(this.drapeLine([mark.at, mark.to], LIFT + 0.35), "#ffffff", 2, { dashed: 6, opacity: 0.85, depthTest: false, order: 28 }));
+      me.ring = g;
+      this.fx.add(g);
+    }
+    if (follow) {
+      const shift = this.insetShift(this.controls.distance);
+      const cx = mark.at.x + shift.x, cy = mark.at.y + shift.y;
+      void this.controls.moveTo(cx, this.h(cx, cy), cy, true);
+    }
+    this.invalidate();
+  }
+
+  /** A spot for the tool in hand, as if tapped there (where you stand, from the GPS): a new hole's
+   * tee and then its basket, another tee or pin. False: not taken (the basket right by the tee). */
+  toolPoint(p: P) {
+    const mode = this.tool.mode;
+    if (mode === "add-hole") {
+      if (!this.holeStart) {
+        this.holeStart = p;
+        this.cursor = p;
+        this.drawDraft();
+        this.cb.onDrawProgress(1);
+        return true;
+      }
+      if (dist(this.holeStart, p) <= 10) return false;
+      const start = this.holeStart;
+      this.holeStart = null;
+      this.clearDraft();
+      this.cb.onDrawProgress(0);
+      this.cb.onHole(start, p);
+      return true;
+    }
+    if (mode === "add-tee" || mode === "add-basket") { this.cb.onPlace(mode, p); return true; }
+    return false;
+  }
+
+  /** Puts the dot (and its cone, turned the way you face on the screen) where you are. */
+  private placeMe(place: (el: HTMLElement, world: THREE.Vector3 | null, dy?: number) => void) {
+    const me = this.me;
+    if (!me) return;
+    place(me.dot, me.at);
+    place(me.tag, me.at, 26);
+    const f = me.mark.facing;
+    if (f === null) { me.cone.style.display = "none"; return; }
+    // (the way you face, as the screen shows it: north is -y on the plan, east +x)
+    const a = this.project(me.at);
+    const ahead = new THREE.Vector3(me.mark.at.x + Math.sin(f * DEG) * 30, me.at.y, me.mark.at.y - Math.cos(f * DEG) * 30);
+    const b = this.project(ahead);
+    if (!a || !b) { me.cone.style.display = "none"; return; }
+    me.cone.style.display = "";
+    me.cone.style.transform = `rotate(${Math.atan2(b.x - a.x, -(b.y - a.y))}rad)`;
   }
 
   private measurePts: THREE.Vector3[] = [];

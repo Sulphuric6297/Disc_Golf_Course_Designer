@@ -17,6 +17,8 @@ import { centroid } from "../lib/geom";
 import { fmtElev } from "../lib/units";
 import type { P } from "../types";
 import { SceneButton } from "./ScenePanel";
+import { LocateButton, useMyLocation } from "./MyLocation";
+import { canShowLocation } from "../state/gps";
 import { landscapeOf } from "../lib/landscapes";
 import { paintedDetail, usePaintedGround } from "../state/paintedGround";
 import { getView, setLiveView } from "../state/view";
@@ -150,6 +152,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   // view or flyover opens)
   useEffect(() => { if (paintedOn && ed.teeView) void paintedDetail(doc, ed.teeView, view?.detailPx() ?? 3072); }, [view, paintedOn, ed.teeView, doc]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
+  useMyLocation(view, stats);
   // (new tees in the color of the layout worked on, whatever changed it: a pick, undo, another course)
   const layoutTee = activeLayout(doc)?.tee;
   useEffect(() => { if (layoutTee) useEditor.getState().set({ teeLevel: layoutTee }); }, [layoutTee]);
@@ -211,6 +214,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
                 <button className={btn} title="Zoom in (+)" onClick={() => view?.zoomBy(1.4)}><Plus size={16} /></button>
                 <button className={btn} title="Zoom out (−)" onClick={() => view?.zoomBy(1 / 1.4)}><Minus size={16} /></button>
                 <button className={btn} title="Show the whole course (0)" onClick={() => view?.fitCourse()}><Maximize2 size={15} /></button>
+                <LocateButton className={btn} size={15} />
               </div>
               <div className="flex flex-col gap-2 items-end">
                 <div className={`${pad} flex flex-col overflow-hidden`}>
@@ -304,6 +308,8 @@ function TouchControls({ view, info, scale, units, phone, top, room, threeD }: {
     used += h;
     return true;
   };
+  // (where you are first: it's what you look for on the course)
+  const locate = canShowLocation() && fits(52);
   const fit = fits(52);
   const box = editing && fits(52);
   const turn = fits(96);
@@ -334,6 +340,7 @@ function TouchControls({ view, info, scale, units, phone, top, room, threeD }: {
               <button className={b} aria-label="Zoom in" onClick={() => view?.zoomBy(1.4)}><Plus size={20} /></button>
               <button className={b} aria-label="Zoom out" onClick={() => view?.zoomBy(1 / 1.4)}><Minus size={20} /></button>
             </div>
+            {locate && <div className={group}><LocateButton className={b} size={20} /></div>}
             {box && (
               <button className={`${group} ${b} ${boxing ? "!bg-orange-500 !text-zinc-950" : ""}`} aria-label="Select with a box" title="Select with a box" aria-pressed={boxing} onClick={() => set({ dragSelect: !boxing, tool: "select" })} data-testid="touch-drag-select">
                 <BoxSelect size={19} />

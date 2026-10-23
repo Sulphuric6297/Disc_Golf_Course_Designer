@@ -62,6 +62,10 @@ export type ViewInfo = {
   height: number;
 };
 
+/** You, on the map (the phone's GPS): where, how sure (ft), which way you face (degrees from
+ * north), greyed when old or weak; `tag`: words under the dot; `to`: a dashed line to there. */
+export type LocationMark = { at: P; acc: number; facing: number | null; dim: boolean; tag: string; to: P | null };
+
 export type ViewCallbacks = {
   /** A thing picked (or nothing); `add`: Shift+click, into or out of the things picked together. */
   onSelect: (id: string | null, add?: boolean) => void;
