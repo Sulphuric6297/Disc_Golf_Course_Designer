@@ -272,8 +272,8 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "lines", section: "design", title: "Lines: paths, roads, streams, OB lines, walks",
-    body: "The Line tool (L) draws a line by clicks (double-click or Enter to finish) or freehand. Its kind is what it is: an OB line, a walking path, a next-tee route, a road, a fence or a stream.\n\nPaths and next-tee routes have a surface (dirt, gravel, wood chips, mown grass or paved). A stream can be wider in places by dragging its handles. Remove a stretch cuts a piece out of a line. Nothing draws the walk between holes for you, so draw a path or a next-tee route where players should go. Checks tells you where one's missing.\n\nNo tree stands on a road, path, walk or stream, so drawing one over trees takes those trees out, in the same Undo step.",
-    words: "line path road stream creek walk walking path next-tee route surface fence remove a stretch",
+    body: "The Line tool (L) draws a line by clicks (double-click or Enter to finish) or freehand. Its kind is what it is: an OB line, a walking path, a next-tee route, a road, a fence or a stream.\n\nPaths and next-tee routes have a surface (dirt, gravel, wood chips, mown grass or paved). A stream can be wider in places by dragging its handles. Remove a stretch cuts a piece out of a line. Nothing draws the walk between holes for you, so draw a path or a next-tee route where players should go. Checks tells you where one's missing.\n\nNo tree stands on a road, path, walk or stream, so drawing one over trees takes those trees out, in the same Undo step.\n\nA fence stands up in 3D along its line, so you see it from the tee. Pick what it is in its panel (posts and rails, boards, or chain link you can see through) and how tall it is. On the 2D map it stays a line.",
+    words: "line path road stream creek walk walking path next-tee route surface fence remove a stretch fence chain link boards rails height 3d",
     path: "Design › Line (L)"
   },
   {

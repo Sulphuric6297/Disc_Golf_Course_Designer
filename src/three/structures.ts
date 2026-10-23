@@ -4,7 +4,7 @@
 // stone, cedar shingles, a metal roof, siding, concrete, glass) and their textures are made once
 // and shared; texture coordinates are in feet, so every texture is at its real size.
 import * as THREE from "three";
-import type { P, StructureItem } from "../types";
+import type { FenceStyle, P, StructureItem } from "../types";
 import { pointInPolygon } from "../lib/geom";
 import {
   boardwalkDeck, bridgeDeck, isLineKind, offsetPolygon, orientedBox, roofBreaks, roofOf, samplePath, stairSteps,
@@ -697,4 +697,76 @@ export const createStructure = (st: StructureItem, groundAt: Ground) => {
     group.add(mesh);
   }
   return group;
+};
+
+/**
+ * A fence along a drawn line, standing on the ground: wooden posts every 8 ft with a top and a
+ * middle rail; solid boards with a cap; or chain link (see-through mesh) on metal posts with a top
+ * rail. Its meshes cast and catch shadows.
+ */
+export const createFence = (points: P[], groundAt: Ground, height = 4, style: FenceStyle = "rail") => {
+  const group = new THREE.Group();
+  group.name = "fence";
+  const samples = samplePath(points, 2);
+  if (samples.length < 2) return group;
+  const H = Math.max(1.5, Math.min(16, height));
+  const ground = samples.map(p => groundAt(p.x, p.y));
+  const parts: Parts = {};
+  const wood = (parts.timber ??= new Mesher());
+  // (a post every 8 ft or so, one at each end, square to the line)
+  const total = samples[samples.length - 1].s, count = Math.max(1, Math.round(total / 8));
+  let j = 0;
+  for (let k = 0; k <= count; k++) {
+    const at = (total * k) / count;
+    while (j < samples.length - 2 && samples[j + 1].s < at) j++;
+    const a = samples[j], b = samples[j + 1], t = Math.max(0, Math.min(1, (at - a.s) / Math.max(1e-6, b.s - a.s)));
+    const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, gy = groundAt(p.x, p.y);
+    if (style === "chain") post((parts.metal ??= new Mesher()), p, gy - 0.6, gy + H + 0.1, 0.18, a.angle);
+    else post(wood, p, gy - 0.8, gy + H + (style === "boards" ? 0.15 : 0.2), style === "boards" ? 0.4 : 0.36, a.angle);
+  }
+  if (style === "rail") {
+    sweep(wood, samples, ground.map(y => y + H - 0.45), ground.map(y => y + H - 0.12), 0, 0.09);
+    sweep(wood, samples, ground.map(y => y + H * 0.45), ground.map(y => y + H * 0.45 + 0.33), 0, 0.09);
+  } else if (style === "boards") {
+    sweep(wood, samples, ground.map(y => y + 0.15), ground.map(y => y + H), 0, 0.06);
+    sweep(wood, samples, ground.map(y => y + H), ground.map(y => y + H + 0.18), 0, 0.12);
+  } else {
+    sweep((parts.metal ??= new Mesher()), samples, ground.map(y => y + H - 0.12), ground.map(y => y + H + 0.02), 0, 0.07);
+  }
+  for (const [key, m] of Object.entries(parts) as [MatKey, Mesher][]) {
+    if (m.empty) continue;
+    const mesh = new THREE.Mesh(m.geometry(), style === "chain" && key === "metal" ? chainPost() : material(key));
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  // Chain link: a grey see-through sheet between the posts
+  if (style === "chain") {
+    const mesh = new Mesher();
+    sweep(mesh, samples, ground.map(y => y + 0.1), ground.map(y => y + H - 0.1), 0, 0.01, false, false);
+    const sheet = new THREE.Mesh(mesh.geometry(), chainLink());
+    sheet.castShadow = true;
+    group.add(sheet);
+  }
+  return group;
+};
+let chainMat: THREE.Material | null = null, chainPostMat: THREE.Material | null = null;
+/** Galvanized posts and rails. */
+const chainPost = () => (chainPostMat ??= Object.assign(new THREE.MeshStandardMaterial({ color: "#9aa3a6", roughness: 0.45, metalness: 0.55 }), { userData: { shared: true } }));
+/** Chain link: a diamond mesh you see through. */
+const chainLink = () => {
+  if (chainMat) return chainMat;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d")!;
+  g.strokeStyle = "rgba(200,206,208,0.95)";
+  g.lineWidth = 3;
+  g.beginPath(); g.moveTo(0, 32); g.lineTo(32, 0); g.lineTo(64, 32); g.lineTo(32, 64); g.closePath(); g.stroke();
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 2);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  chainMat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.25, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.4 });
+  chainMat.userData.shared = true;
+  return chainMat;
 };

@@ -37,7 +37,7 @@ import { forestDetail, type Forest, type TreeSpot } from "../three/treeKit";
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { Tufts } from "../three/tufts";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
-import { createStructure } from "../three/structures";
+import { createFence, createStructure } from "../three/structures";
 import { isLineKind, orientedBox, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
 import type { AmenityItem, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier } from "../types";
 import { Ground } from "./ground";
@@ -2422,7 +2422,7 @@ export class CourseView {
         const piece = subPath(this.shapeOf(l).pts, a, b);
         return { a, b, piece, sides: l.obBeyond ? beyondSides(l, piece, doc.stats.filter(st => st.complete && obFor(course, l, st.holeId)).map(st => st.line), !obPicked(course, l).length) : null };
       }).filter(o => o.piece.length >= 2) : [];
-      put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, l.widths, hv, c, l.ob, l.obToward, l.kind === "stream" ? this.waterShore(l.points) : 0, obParts.map(o => [o.a, o.b, o.sides]), st.pathOrder]), () => {
+      put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, l.widths, hv, c, l.ob, l.obToward, l.kind === "stream" ? this.waterShore(l.points) : 0, obParts.map(o => [o.a, o.b, o.sides]), st.pathOrder, l.fenceStyle, l.fenceHeight]), () => {
         const g = new THREE.Group();
         const pts = this.shapeOf(l).pts;
         // (wider or narrower along the way: a creek that opens out)
@@ -2456,6 +2456,8 @@ export class CourseView {
         } else {
           g.add(this.fatLine(this.drapeLine(pts, l.kind === "walk" ? LIFT + 0.15 : LIFT), c, l.kind === "ob" ? 3.5 : 2.5, { order: l.kind === "walk" ? 6 : 5, dashed: l.kind === "walk" ? 5 : l.kind === "fence" ? 2 : undefined }));
         }
+        // (a fence stands up along its line: posts and rails, boards, or chain link)
+        if (l.kind === "fence") { const fence = createFence(pts, (x, y) => this.h(x, y), l.fenceHeight ?? 4, l.fenceStyle ?? "rail"); this.shadowsDirty = true; g.add(fence); }
         // (a walk with a width: its dashes along the middle too)
         if (l.kind === "walk" && width > 0) g.add(this.fatLine(this.drapeLine(pts, LIFT + 0.15), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 6 }));
         return g;

@@ -157,6 +157,8 @@ export interface AreaItem extends BaseItem {
 /** The tiers paths and roads stack in where they cross. */
 export type PathTier = "dirt" | "gravel" | "walkway" | "road";
 export type LineKind = "ob" | "path" | "road" | "fence" | "stream" | "walk";
+/** A fence in 3D: wooden posts with two rails, solid boards, or chain link on metal posts. */
+export type FenceStyle = "rail" | "boards" | "chain";
 /** What a path or a walk between holes is made of. */
 export type PathSurface = "dirt" | "gravel" | "woodchips" | "grass" | "paved";
 export interface LineItem extends BaseItem {
@@ -174,6 +176,9 @@ export interface LineItem extends BaseItem {
   surface?: PathSurface;
   /** Straight between its points (paths, walks, streams and roads curve through them unless set). */
   straight?: boolean;
+  /** A fence: how it's built in 3D (unset: posts and rails), and how tall, ft (unset: 4). */
+  fenceStyle?: FenceStyle;
+  fenceHeight?: number;
   holeId?: string;
   label?: string;
   /** Out of bounds: a stream is unless set false; a road, fence or path is when true (and then

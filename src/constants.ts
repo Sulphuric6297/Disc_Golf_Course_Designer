@@ -77,7 +77,7 @@ export const LINE_KINDS: Record<LineKind, { label: string; color: string; width:
   path: { label: "Walking path", color: "#c8a06a", width: 5, help: "A trail between holes." },
   walk: { label: "Next-tee route", color: "#ffffff", width: 0, help: "How to walk to the next tee." },
   road: { label: "Road", color: "#6b7280", width: 22, help: "A road or drive." },
-  fence: { label: "Fence", color: "#78716c", width: 0, help: "A fence or wall." },
+  fence: { label: "Fence", color: "#78716c", width: 0, help: "A fence: posts and rails, boards or chain link, standing up in 3D." },
   stream: { label: "Stream", color: "#2b8fd6", width: 6, help: "A creek or ditch." }
 };
 

@@ -603,6 +603,14 @@ function ItemInspector({ item }: { item: CourseItem }) {
             </div>
           )}
           {(item.kind === "path" || item.kind === "walk") && <SurfacePick value={item.surface} onChange={v => set({ surface: v })} />}
+          {item.kind === "fence" && (
+            <>
+              <Field label="Fence">
+                <Segmented label="What the fence is" value={item.fenceStyle ?? "rail"} onChange={v => set({ fenceStyle: v === "rail" ? undefined : v })} options={[{ value: "rail", label: "Posts and rails" }, { value: "boards", label: "Boards" }, { value: "chain", label: "Chain link" }]} />
+              </Field>
+              <Slider label="Height" min={2} max={12} step={0.5} value={item.fenceHeight ?? 4} onChange={v => set({ fenceHeight: v })} format={v => fmtDist(v, u)} />
+            </>
+          )}
           <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />
           <Field label="Name on the map (optional)"><TextInput label="Line name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
           {item.kind !== "ob" && item.kind !== "walk" && <ObChoice item={item} />}
