@@ -95,7 +95,8 @@ const GROUND_BRUSHES = [
   { value: "raise", label: "Raise", title: "Builds the ground up under the brush" },
   { value: "lower", label: "Lower", title: "Digs the ground down under the brush" },
   { value: "flatten", label: "Flatten", title: "Levels the ground to the height where the stroke starts (a tee pad, a green)" },
-  { value: "smooth", label: "Smooth", title: "Evens out bumps and steps, keeping the overall slope" }
+  { value: "smooth", label: "Smooth", title: "Evens out bumps and steps, keeping the overall slope" },
+  { value: "restore", label: "Restore", title: "Puts the ground back to its height as measured, wherever you've changed it" }
 ] as const;
 const SHAPE_HINTS: Record<DrawShape, string> = {
   points: "",

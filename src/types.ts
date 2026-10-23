@@ -574,6 +574,9 @@ export interface CourseDoc {
    * survey and the trees the app plants in woods and patches. None stands within 4 ft of one. */
   cutTrees?: P[];
   terrainHeights: Record<string, number>;
+  /** The heights as measured, for the grid points the Ground tool has changed (so its Restore
+   * brush can put them back). Bringing the site's ground in again clears it. */
+  terrainOriginal?: Record<string, number>;
   /** Painted ground (lib/groundPaint): a material per painted square foot, keyed "i,j". */
   groundPaint: Record<string, number>;
   /** The aerial photo covering the plan (a data URL), or none. */

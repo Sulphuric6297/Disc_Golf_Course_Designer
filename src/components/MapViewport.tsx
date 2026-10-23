@@ -64,8 +64,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       },
       onHoleChange: (id, patch) => updateHole(id, patch, false),
       onCommit: () => courseStore.getState().commit(),
-      onTerrain: (heights, done) => {
-        changeDoc(() => ({ terrainHeights: heights }), false);
+      onTerrain: (heights, done, original) => {
+        changeDoc(() => ({ terrainHeights: heights, terrainOriginal: original && Object.keys(original).length ? original : undefined }), false);
         if (done) courseStore.getState().commit();
       },
       onHover: setHover,

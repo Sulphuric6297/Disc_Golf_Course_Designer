@@ -1,11 +1,11 @@
-// Painting with a brush: the ground raised, lowered, flattened or smoothed under it (soft at its
+// Painting with a brush: the ground raised, lowered, flattened, smoothed or put back under it (soft at its
 // edge, so what's painted blends into the ground round it), and a painted stroke turned into an
 // area's outline (a few corners, drawn as a smooth curve).
 import type { P } from "../types";
 import { traceOutline } from "./geo/detect";
 import { simplify } from "./geom";
 
-export type GroundBrush = "raise" | "lower" | "flatten" | "smooth";
+export type GroundBrush = "raise" | "lower" | "flatten" | "smooth" | "restore";
 
 /** How much a brush does at a distance from its middle: all of it there, none at its edge, easing
  * out in between (a cosine), so a stroke leaves no step at its edge. */
@@ -15,9 +15,11 @@ export const falloff = (d: number, r: number) => (d >= r ? 0 : 0.5 * (1 + Math.c
  * One dab of the ground brush at `at` (plan ft), on heights kept at grid points ("x,y" keys, ft
  * above the site's lowest point), changed in place. `strength`: ft a dab raises or lowers the
  * middle (flatten and smooth: how far toward the level, 0 to 1). `level`: the height flatten
- * levels to. Grid points outside the site are left alone.
+ * levels to. Grid points outside the site are left alone. `original`: the heights as measured,
+ * for the points changed so far; each point keeps the height it had before its first change, and
+ * restore moves it back toward that (a point back where it was drops out).
  */
-export const dab = (heights: Record<string, number>, grid: number, width: number, height: number, at: P, radius: number, brush: GroundBrush, strength: number, level = 0) => {
+export const dab = (heights: Record<string, number>, grid: number, width: number, height: number, at: P, radius: number, brush: GroundBrush, strength: number, level = 0, original?: Record<string, number>) => {
   const g = grid || 20;
   const i0 = Math.max(0, Math.floor((at.x - radius) / g)), i1 = Math.min(Math.floor(width / g), Math.ceil((at.x + radius) / g));
   const j0 = Math.max(0, Math.floor((at.y - radius) / g)), j1 = Math.min(Math.floor(height / g), Math.ceil((at.y + radius) / g));
@@ -35,11 +37,17 @@ export const dab = (heights: Record<string, number>, grid: number, width: number
     if (brush === "raise") next = h + strength * w;
     else if (brush === "lower") next = h - strength * w;
     else if (brush === "flatten") next = h + (level - h) * Math.min(1, strength * w);
-    else {
+    else if (brush === "restore") {
+      const was0 = original?.[k];
+      if (was0 === undefined) continue;
+      next = h + (was0 - h) * Math.min(1, strength * w * 1.5);
+      if (Math.abs(next - was0) < 0.02) { heights[k] = was0; delete original![k]; continue; }
+    } else {
       let sum = 0, n = 0;
       for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { sum += was(i + a, j + b); n++; }
       next = h + (sum / n - h) * Math.min(1, strength * w);
     }
+    if (original && !(k in original)) original[k] = h;
     heights[k] = Math.round(next * 100) / 100;
   }
 };

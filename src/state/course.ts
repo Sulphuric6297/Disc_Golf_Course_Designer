@@ -140,7 +140,7 @@ type EditorStore = {
   /** The brush (the ground tool and painting areas): radius (ft), strength (1 to 10), and what it does to the ground. */
   brushSize: number;
   brushStrength: number;
-  groundBrush: "raise" | "lower" | "flatten" | "smooth";
+  groundBrush: "raise" | "lower" | "flatten" | "smooth" | "restore";
   /** Drawing a section of underbrush (not of trees) for `patchFor`. */
   patchBrush: boolean;
   /** What is picked on the Design page's course map: "title", "legend"... or "text:ID", "image:ID". */

@@ -4686,19 +4686,20 @@ export class CourseView {
     if (!g0) return null;
     const b = this.tool.brush ?? { size: 25, strength: 5, ground: "raise" as const };
     const heights: Record<string, number> = { ...doc.heights };
+    const original: Record<string, number> = { ...(doc.course.terrainOriginal ?? {}) };
     const W = doc.course.canvas.width, H = doc.course.canvas.height;
     // (raise and lower: a quarter foot a dab at strength 1; flatten and smooth: how far a dab goes)
     const amount = b.ground === "raise" || b.ground === "lower" ? b.strength * 0.12 : Math.min(1, b.strength * 0.05);
     const level = heightAt(doc.heights, doc.gridSize, g0.x, g0.z);
     let last: P = { x: g0.x, y: g0.z }, frame = 0;
-    const put = (p: P) => dab(heights, doc.gridSize, W, H, p, b.size, b.ground, amount, level);
+    const put = (p: P) => dab(heights, doc.gridSize, W, H, p, b.size, b.ground, amount, level, original);
     // (while painting, only the ground itself reshapes, once a frame at most: the trees, lines,
     // contours and the painted map follow once, when the stroke ends)
     const show = () => {
       if (frame) return;
       frame = requestAnimationFrame(() => { frame = 0; this.ground.previewHeights(heights); this.invalidate(); });
     };
-    const send = (done: boolean) => { if (done) this.cb.onTerrain?.({ ...heights }, true); else show(); };
+    const send = (done: boolean) => { if (done) this.cb.onTerrain?.({ ...heights }, true, { ...original }); else show(); };
     put(last);
     show();
     this.setDragging(true);

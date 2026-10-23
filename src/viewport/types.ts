@@ -50,7 +50,7 @@ export type ViewTool = {
   /** Select: a drag on the map draws a box to pick things with (instead of moving the map). */
   dragSelect?: boolean;
   /** The brush (the ground tool, and painting areas): its radius (ft), how strong, what it does to the ground. */
-  brush?: { size: number; strength: number; ground: "raise" | "lower" | "flatten" | "smooth" };
+  brush?: { size: number; strength: number; ground: "raise" | "lower" | "flatten" | "smooth" | "restore" };
 };
 
 export type ViewInfo = {
@@ -70,7 +70,7 @@ export type LocationMark = { at: P; acc: number; facing: number | null; dim: boo
 
 export type ViewCallbacks = {
   /** The ground painted with the ground tool: all its heights (live while painting; `done` once let go). */
-  onTerrain?: (heights: Record<string, number>, done: boolean) => void;
+  onTerrain?: (heights: Record<string, number>, done: boolean, original?: Record<string, number>) => void;
   /** A thing picked (or nothing); `add`: Shift+click, into or out of the things picked together. */
   onSelect: (id: string | null, add?: boolean) => void;
   /** A tree that isn't an item (measured, a sapling, planted in a wood) clicked: made the course's

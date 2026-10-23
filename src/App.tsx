@@ -190,6 +190,7 @@ export default function App() {
       canvas: site.canvas,
       gridSize: site.gridSize,
       terrainHeights: site.terrainHeights,
+      terrainOriginal: undefined,
       background: site.background,
       site: site.site,
       groundPaint: {},
