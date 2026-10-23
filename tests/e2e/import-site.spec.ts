@@ -1,5 +1,5 @@
 import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
-import { test, expect, addHole, course, geoAt, importSite, STAND } from "./fixtures";
+import { test, expect, addHole, course, editorState, geoAt, importSite, STAND } from "./fixtures";
 import { osmFeaturesFrom, overpassQuery } from "../../src/lib/geo/osm";
 import { clipPathToRect, clipPolygonToRect, pointInPolygon as inPoly, polygonArea as polyArea } from "../../src/lib/geom";
 import { boxFill, traceOutline, waterRegions, woodsRegions, type Canopy } from "../../src/lib/geo/detect";
@@ -54,8 +54,9 @@ test("bringing in a site: photo, elevation, trees, and OpenStreetMap paths and w
   expect(doc.items.filter((i: any) => i.type === "area" && i.kind === "water")).toHaveLength(1);
   expect(summary).toMatch(/On the photo: 1 wooded area, \d+ trees?\./);
   expect(doc.name).toBe("Springfield Park Disc Golf Course");
-  // Straight on to laying out holes
-  await expect(page.getByTestId("tool-hint")).toContainText("Click where the tee goes");
+  // On the Design step with the pointer: a look around first, not a hole at the first click
+  await expect.poll(async () => (await editorState(page)).tool).toBe("select");
+  await expect(page.getByTestId("tool-hint")).toHaveCount(0);
   // Listed with what came in by itself, to take out at once
   await page.getByRole("button", { name: /^1\s*Site$/ }).click();
   await expect(page.getByTestId("photo-found")).toContainText(/^1 area and \d+ trees? from the photo/);

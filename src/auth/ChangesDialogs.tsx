@@ -8,7 +8,7 @@ import {
   publishDraft, restoreVersion, submissionHoles, updateDraft, useServerCourse, versionToDraft, type Merge, type SubmissionRow, type VersionRow
 } from "./courses";
 import { Dialog, Form, when } from "./parts";
-import { inputCls } from "../components/ui";
+import { Loading, inputCls } from "../components/ui";
 
 
 /** The parts both your draft and the course changed: keep yours (the default) or the course's. */
@@ -69,7 +69,7 @@ export function UpdateDialog({ onClose }: { onClose: () => void }) {
           <Clashes m={m} picked={picked} setPicked={setPicked} />
           <Form compact submit="Update draft" testid="update-form" onSubmit={async () => { await updateDraft(m, picked); onClose(); }}>{null}</Form>
         </>
-      ) : <div className="h-10" aria-busy="true" />}
+      ) : <Loading label="Loading…" className="h-10" />}
     </Dialog>
   );
 }
@@ -88,7 +88,7 @@ export function HistoryDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="History" onClose={onClose} testid="history-dialog" side>
       <label className="flex items-center gap-2 text-xs text-zinc-400 mb-2"><input type="checkbox" checked={named} onChange={e => setNamed(e.target.checked)} /> Published only</label>
-      {rows === null ? <div className="h-24" aria-busy="true" /> : (
+      {rows === null ? <Loading label="Loading…" className="h-24" /> : (
         <ol className="divide-y divide-white/[0.08] -mx-1" data-testid="versions">
           {shown.map(v => (
             <li key={v.id} className="py-2 px-1 flex items-start gap-3 text-sm">
@@ -131,7 +131,7 @@ export function ReviewDialog({ onClose }: { onClose: () => void }) {
   };
   return (
     <Dialog title="Sent for your OK" onClose={onClose} testid="review-dialog">
-      {rows === null ? <div className="h-24" aria-busy="true" /> : rows.length === 0 ? <p className="text-sm text-zinc-400">Nothing waiting.</p> : (
+      {rows === null ? <Loading label="Loading…" className="h-24" /> : rows.length === 0 ? <p className="text-sm text-zinc-400">Nothing waiting.</p> : (
         <ul className="divide-y divide-white/[0.08]" data-testid="submissions">
           {rows.map(s => (
             <li key={s.id} className="py-2 flex items-start gap-3 text-sm">

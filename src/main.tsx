@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { SERVER } from "./auth/api";
 import { AuthGate } from "./auth/AuthGate";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { installTooltips } from "./components/tooltips";
+import { LoadingScreen } from "./components/ui";
 import { PublicSite, SITE_TOKEN } from "./auth/PublicSite";
 import "./index.css";
 
@@ -11,10 +13,13 @@ import "./index.css";
 // the first frame.
 const App = lazy(() => Promise.all([import("./App"), import("./three/ezShapes").then(m => m.ezReady.catch(() => {}))]).then(([m]) => m));
 
+installTooltips();
+
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element not found");
 
-const app = <Suspense fallback={null}><App /></Suspense>;
+// (the editor's code still coming: said so, not a blank page)
+const app = <Suspense fallback={<LoadingScreen label="Opening HyzerLab…" />}><App /></Suspense>;
 createRoot(rootElement).render(
   <React.StrictMode>
     <ErrorBoundary>

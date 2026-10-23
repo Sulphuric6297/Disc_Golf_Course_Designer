@@ -9,7 +9,7 @@ import { LIGHT_MODES, LOOK_THEMES, PART_CHOICES, compassName, latitudeOf, lightO
 import { useCourse } from "../state/course";
 import type { MapStyle, PathTier } from "../types";
 import { FineTuning, setStyle, WoodsOptions } from "./DesignPanel";
-import { ColorInput, Slider } from "./ui";
+import { ColorInput, Slider, useKeepInPlace } from "./ui";
 
 /** A slider that changes the map when let go (painting takes a moment). */
 function LookSlider({ value, label, min, max, step, format, onDone }: { value: number; label: string; min: number; max: number; step: number; format: (v: number) => string; onDone: (v: number) => void }) {
@@ -112,6 +112,8 @@ export function MapLookPanel() {
   const s = useCourse(c => c.doc.style);
   // (the trees open to start with: the part most changed)
   const [open, setOpen] = useState<Part | null>("trees");
+  // (the part opened stays under the pointer while the one open before closes above it)
+  const keep = useKeepInPlace();
   const theme = themeOf(s), parts = lookParts(s), lt = lightOf(s);
   const mixed = (Object.keys(PART_LABEL) as Part[]).some(p => (p === "light" ? !!s.lightMode || s.goldenSun !== undefined : partChanged(s, p)));
   /** One part's setting changed (kept apart from its style's own). */
@@ -155,7 +157,7 @@ export function MapLookPanel() {
         const pic = p === "light" ? `${base}parts/light-${lt.mode}.jpg` : `${base}parts/${p}-${parts[p].style}.jpg`;
         return (
           <div key={p} className="relative before:absolute before:left-[52px] before:right-0 before:top-0 before:h-px before:bg-white/[0.07] first:before:hidden" data-testid={`look-part-${p}`}>
-            <button className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-white/[0.04]" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : p)}>
+            <button className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-white/[0.04]" aria-expanded={isOpen} onClick={e => { keep(e.currentTarget); setOpen(isOpen ? null : p); }}>
               <img src={pic} alt="" className="w-7 h-7 rounded-[8px] object-cover ring-1 ring-white/10" draggable={false} />
               <span className="text-[13.5px] font-medium text-zinc-100 flex-1">{PART_LABEL[p]}</span>
               {changed(p) && <span className="w-1.5 h-1.5 rounded-full bg-orange-400" aria-label="Changed" />}

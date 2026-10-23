@@ -246,7 +246,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
                 </div>
               )}
             </div>
-            <Button onClick={() => void go()} disabled={!query.trim() || status.state === "searching"}>Search</Button>
+            <Button onClick={() => go()} disabled={!query.trim() || status.state === "searching"}>Search</Button>
             <div className="flex gap-2">
               <Button small onClick={() => setDrawing(true)}>Draw the area</Button>
               <Button small onClick={() => setSelectView(v => v + 1)}>Use this view</Button>

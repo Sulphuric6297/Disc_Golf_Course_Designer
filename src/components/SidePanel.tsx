@@ -115,7 +115,7 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <Button small onClick={onFindSite}>Resize or re-import the site</Button>
-            <Button small onClick={() => void refreshOsm()} testid="refresh-osm">Update paths, roads and water</Button>
+            <Button small onClick={() => refreshOsm()} testid="refresh-osm">Update paths, roads and water</Button>
           </div>
           <div className={`mt-3 ${doc.lidar ? "pt-2 border-t border-white/10" : "rounded-[16px] bg-orange-500/[0.12] ring-1 ring-orange-400/30 p-3"}`} data-testid="lidar-info">
             {!doc.lidar && <div className="text-[13.5px] font-semibold text-orange-100 mb-0.5">Real trees and ground</div>}

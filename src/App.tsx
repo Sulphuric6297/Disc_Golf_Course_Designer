@@ -247,7 +247,7 @@ export default function App() {
       lidar: site.lidar
     }));
     setFindSite(false);
-    useEditor.getState().set({ step: "design", tool: getDoc().holes.length ? "select" : "add-hole" });
+    useEditor.getState().set({ step: "design", tool: "select" });
     setTimeout(() => getView()?.fitSite(), 50);
     const outside = carried.outside ? ` ${carried.outside} ${carried.outside === 1 ? "thing you drew is" : "things you drew are"} now past the site's edges.` : "";
     toast(`Site brought in. ${site.notes.join(" ")}${outside}`, "success", false, { label: "View in 3D", run: () => useEditor.getState().set({ view: "3d" }) }, 12000);

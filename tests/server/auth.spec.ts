@@ -442,7 +442,10 @@ test("a public link: the site with what it allows (pictures, numbers), 3D when a
   await expect(admin.getByTestId("update-site")).toHaveText(/Update site/, { timeout: 120_000 });
   await page.reload();
   await page.getByTestId("explore").click();
+  // (said at once that it's opening, and the wait gone once the course is drawn)
+  await expect(page.getByTestId("opening-course")).toBeVisible();
   await expect(page.getByTestId("viewer-panel")).toBeVisible();
+  await expect(page.getByTestId("opening-course")).toHaveCount(0, { timeout: 30_000 });
   await expect(page.getByTestId("file-menu")).toHaveCount(0);
   await expect(page.getByTestId("copy-course")).toHaveCount(0);
   await expect.poll(async () => (await course(page)).holes.length).toBe(holes);

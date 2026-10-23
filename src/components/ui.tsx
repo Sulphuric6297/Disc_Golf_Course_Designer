@@ -2,7 +2,34 @@
 // (zinc-950 behind, zinc-900 panels, zinc-800 controls) told apart by spacing rather than lines,
 // text-sm with zinc-400 for the quieter words, one orange button per view (dark words on it),
 // and a sky-blue ring where the keyboard focus is.
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Loader2 } from "lucide-react";
+
+/** The nearest box that scrolls (or the page). */
+const scrollerOf = (el: HTMLElement | null): HTMLElement | null => {
+  for (let p = el?.parentElement; p; p = p.parentElement) {
+    const o = getComputedStyle(p).overflowY;
+    if ((o === "auto" || o === "scroll") && p.scrollHeight > p.clientHeight) return p;
+  }
+  return document.scrollingElement as HTMLElement | null;
+};
+/**
+ * Keeps a clicked row where it was when what's around it opens or closes (one part of a list
+ * opened, another closing above it): `keep(row)` before the change, and after it the list scrolls
+ * by however far the row moved, so it stays under the pointer.
+ */
+export function useKeepInPlace() {
+  const pending = useRef<{ el: HTMLElement; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const p = pending.current;
+    if (!p) return;
+    pending.current = null;
+    const moved = p.el.getBoundingClientRect().top - p.top;
+    const box = scrollerOf(p.el);
+    if (box && Math.abs(moved) > 0.5) box.scrollTop += moved;
+  });
+  return (el: HTMLElement | null) => { if (el) pending.current = { el, top: el.getBoundingClientRect().top }; };
+}
 
 /** The focus ring (keyboard only). */
 export const FOCUS = "focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
@@ -127,7 +154,32 @@ export const Toggle = ({ checked, onChange, label, hint }: { checked: boolean; o
   </label>
 );
 
-export const Button = ({ children, onClick, tone = "default", disabled, title, testid, full, small }: { children: ReactNode; onClick: () => void; tone?: "default" | "primary" | "danger" | "ghost"; disabled?: boolean; title?: string; testid?: string; full?: boolean; small?: boolean }) => {
+/** Something on its way: a spinner and what it is, shown only once the wait is long enough to
+ * notice (a quick load never flashes it). */
+export const Loading = ({ label, className = "" }: { label: string; className?: string }) => (
+  <div className={`flex items-center justify-center gap-2 text-sm text-zinc-300 animate-[dgfade_0.25s_ease_0.25s_both] ${className}`} role="status" aria-live="polite" aria-busy="true" data-testid="loading">
+    <Loader2 size={16} className="animate-spin text-orange-300 shrink-0" />
+    <span>{label}</span>
+  </div>
+);
+/** A whole screen waiting (the app opening, a course page). */
+export const LoadingScreen = ({ label }: { label: string }) => (
+  <div className="min-h-[100dvh] bg-zinc-950 flex items-center justify-center"><Loading label={label} /></div>
+);
+
+/** A button. One that starts something taking a while (its onClick returns a promise) shows a
+ * spinner and takes no second click until it's done. */
+export const Button = ({ children, onClick, tone = "default", disabled, title, testid, full, small }: { children: ReactNode; onClick: () => unknown; tone?: "default" | "primary" | "danger" | "ghost"; disabled?: boolean; title?: string; testid?: string; full?: boolean; small?: boolean }) => {
+  const [busy, setBusy] = useState(false);
+  const live = useRef(true);
+  useEffect(() => () => { live.current = false; }, []);
+  const click = () => {
+    const r = onClick();
+    if (r && typeof (r as Promise<unknown>).finally === "function") {
+      setBusy(true);
+      void (r as Promise<unknown>).catch(() => {}).finally(() => { if (live.current) setBusy(false); });
+    }
+  };
   const tones = {
     default: "bg-white/[0.09] hover:bg-white/[0.14] text-zinc-100",
     primary: "bg-orange-500 hover:bg-orange-400 text-zinc-950",
@@ -136,12 +188,14 @@ export const Button = ({ children, onClick, tone = "default", disabled, title, t
   };
   return (
     <button
-      onClick={onClick}
-      disabled={disabled}
+      onClick={click}
+      disabled={disabled || busy}
+      aria-busy={busy || undefined}
       title={title}
       data-testid={testid}
       className={`${full ? "w-full" : ""} inline-flex items-center justify-center gap-1.5 rounded-full font-semibold transition-colors disabled:opacity-40 disabled:pointer-events-none ${FOCUS} ${small ? "px-2.5 py-1 text-xs touch:py-2.5 touch:text-[13px]" : "px-3 py-2 text-sm touch:py-3"} ${tones[tone]}`}
     >
+      {busy && <Loader2 size={small ? 12 : 14} className="animate-spin shrink-0" />}
       {children}
     </button>
   );

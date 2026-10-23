@@ -2,12 +2,14 @@
 // owner published and the link allows: the course map, its numbers and holes, tee signs, the
 // scorecard, downloads, and the course to look round in 3D when allowed.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Download, Lock, Map as MapIcon, Mountain, X } from "lucide-react";
+import { Download, Loader2, Lock, Map as MapIcon, Mountain, X } from "lucide-react";
+import { Loading, LoadingScreen } from "../components/ui";
 import { normalizeCourse } from "../lib/course";
 import { safeDoc } from "../lib/safeDoc";
 import { fmtDist, fmtElev } from "../lib/units";
 import { useCourse, useEditor } from "../state/course";
 import { show } from "../state/files";
+import { getView, onLiveView } from "../state/view";
 import type { CourseDoc, Units } from "../types";
 import { Logo } from "./parts";
 import { holeFacts, type HoleNumbers } from "./holeFacts";
@@ -24,6 +26,14 @@ interface Site {
   files: string[];
 }
 
+/** The pictures shown on the page, each in one format (the lighter one when there are two). */
+const pictures = (files: string[]) => {
+  const pics = files.filter(n => /\.(webp|png|jpeg)$/.test(n) && !n.startsWith("photo."));
+  return pics.filter(n => !(n.endsWith(".png") && pics.includes(n.replace(/\.png$/, ".webp"))));
+};
+/** The course page's own parts first: the map, then the signs and the card. */
+const byNeed = (n: string) => (n.startsWith("map.") ? 0 : n.startsWith("sign-") ? 1 : 2);
+
 const get = async (path: string, password: string) => {
   const res = await fetch(`./api/public/${SITE_TOKEN}${path}`, { headers: password ? { "x-link-password": password } : {} });
   return res;
@@ -37,6 +47,10 @@ export function PublicSite({ children }: { children: ReactNode }) {
   const [tried, setTried] = useState("");
   const [files, setFiles] = useState<Record<string, string>>({});
   const [explore, setExplore] = useState(false);
+  // (the course on its way to the 3D view or the map, and once there, until it's drawn)
+  const [opening, setOpening] = useState<"3d" | "map" | null>(null);
+  const [openError, setOpenError] = useState("");
+  const [drawn, setDrawn] = useState(false);
   const [big, setBig] = useState<string | null>(null);
   const [openHole, setOpenHole] = useState<string | null>(null);
   // (from a tee or in a flyover the view's own bar has Map: the way back waits)
@@ -49,21 +63,37 @@ export function PublicSite({ children }: { children: ReactNode }) {
     if (!res.ok) { setError(data.error ?? "This link doesn't work"); return; }
     setNeedsPassword(false);
     setSite(data);
-    // (pictures through the link: the password goes with each)
-    const out: Record<string, string> = {};
-    for (const name of data.files as string[]) {
-      if (!/\.(webp|png|jpeg)$/.test(name) || name.startsWith("photo.")) continue;
+    // Pictures through the link (the password goes with each), each shown as it comes: the map
+    // first, then the rest a few at a time
+    const one = async (name: string) => {
       const f = await get(`/files/${name}`, pw);
-      if (f.ok) out[name] = URL.createObjectURL(await f.blob());
-    }
-    setFiles(out);
+      if (f.ok) { const url = URL.createObjectURL(await f.blob()); setFiles(o => ({ ...o, [name]: url })); }
+    };
+    const queue = pictures(data.files as string[]).sort((a, b) => byNeed(a) - byNeed(b));
+    await Promise.all(queue.filter(n => byNeed(n) === 0).map(one));
+    const rest = queue.filter(n => byNeed(n) > 0);
+    await Promise.all(Array.from({ length: 4 }, async () => { for (let n = rest.shift(); n; n = rest.shift()) await one(n); }));
+    // (the 3D view's code fetched meanwhile, ready for Explore)
+    if (data.hasCourse) setTimeout(() => { void import("../App").catch(() => {}); void import("../three/ezShapes").catch(() => {}); }, 1500);
   };
   useEffect(() => { void load(""); }, []);
 
   /** The course to look round (and a hole's flyover, when one is asked for). */
   const open3d = async (flyHole?: string) => {
+    if (opening) return;
+    setOpenError("");
+    setOpening(site!.shown.view3d || flyHole ? "3d" : "map");
+    setDrawn(false);
+    try {
+      await openCourse(flyHole);
+    } catch {
+      setOpenError("The course couldn't be opened. Check the connection and try again.");
+      setOpening(null);
+    }
+  };
+  const openCourse = async (flyHole?: string) => {
     const res = await get("/course", password);
-    if (!res.ok) return;
+    if (!res.ok) throw new Error("no course");
     const { doc } = await res.json() as { doc: CourseDoc };
     let background: string | null = null;
     const photo = site!.files.find(f => f.startsWith("photo."));
@@ -84,10 +114,23 @@ export function PublicSite({ children }: { children: ReactNode }) {
     if (flyHole && d.holes.some(h => h.id === flyHole)) setTimeout(() => useEditor.getState().set({ view: "3d", teeView: flyHole, flyover: true }), 400);
   };
 
+  // Opened: the view up and its first frames drawn before the wait goes
+  useEffect(() => {
+    if (!explore) return;
+    let raf = 0;
+    const up = (v: unknown) => { if (v) raf = requestAnimationFrame(() => { raf = requestAnimationFrame(() => setDrawn(true)); }); };
+    // (already up when the editor's code was loaded before: a second visit)
+    const stop = onLiveView(up);
+    up(getView());
+    return () => { stop(); cancelAnimationFrame(raf); };
+  }, [explore]);
+  useEffect(() => { if (drawn) setOpening(null); }, [drawn]);
+
   if (explore) {
     return (
       <>
         {children}
+        {!drawn && <Opening what={opening ?? "3d"} />}
         {!teeView && <button className="fixed z-50 left-1/2 -translate-x-1/2 top-[76px] md:translate-x-0 md:left-auto md:top-2 md:right-2 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 md:py-1.5 text-sm font-semibold glass border border-white/[0.12] text-zinc-100 shadow-lg" onClick={() => setExplore(false)} data-testid="leave-3d"><X size={14} /> Course page</button>}
       </>
     );
@@ -105,15 +148,18 @@ export function PublicSite({ children }: { children: ReactNode }) {
       </Plain>
     );
   }
-  if (!site) return <div className="min-h-[100dvh] bg-zinc-950" aria-busy="true" />;
+  if (!site) return <LoadingScreen label="Loading the course…" />;
 
   const u = site.info.units ?? "ft";
   // (each hole's flyover, when the link shows flyovers and the course)
   const flies = site.hasCourse && !!site.shown.flyovers;
   const t = site.info.totals;
-  const signs = Object.keys(files).filter(n => n.startsWith("sign-")).sort((a, b) => parseInt(a.slice(5)) - parseInt(b.slice(5)));
-  const map = files["map.webp"] ?? files["map.png"];
-  const card = files["scorecard.webp"] ?? files["scorecard.png"];
+  const shownPics = pictures(site.files);
+  const signs = shownPics.filter(n => n.startsWith("sign-")).sort((a, b) => parseInt(a.slice(5)) - parseInt(b.slice(5)));
+  const mapName = shownPics.find(n => n.startsWith("map."));
+  const map = mapName ? files[mapName] : undefined;
+  const cardName = shownPics.find(n => n.startsWith("scorecard."));
+  const card = cardName ? files[cardName] : undefined;
   const download = async (name: string) => {
     const f = await get(`/files/${name}`, password);
     if (!f.ok) return;
@@ -128,11 +174,17 @@ export function PublicSite({ children }: { children: ReactNode }) {
         <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight">{site.info.name}</h1>
         {site.info.designer && <p className="text-zinc-300 mt-1">{site.info.designer}</p>}
       </header>
-      {map && (
+      {mapName && (
         <div className="max-w-5xl mx-auto px-4">
-          <button className="block w-full rounded-2xl overflow-hidden border border-white/[0.08] hover:border-zinc-600" onClick={() => setBig(map)} aria-label="The course map, bigger">
-            <img src={map} alt={`Map of ${site.info.name}`} className="w-full h-auto" />
-          </button>
+          {map ? (
+            <button className="block w-full rounded-2xl overflow-hidden border border-white/[0.08] hover:border-zinc-600 animate-[dgfade_0.3s_ease_both]" onClick={() => setBig(map)} aria-label="The course map, bigger">
+              <img src={map} alt={`Map of ${site.info.name}`} className="w-full h-auto" />
+            </button>
+          ) : (
+            <div className="w-full aspect-[17/11] rounded-2xl glass border border-white/[0.08] flex items-center justify-center" data-testid="map-loading">
+              <Loading label="Loading the course map…" />
+            </div>
+          )}
         </div>
       )}
 
@@ -147,14 +199,15 @@ export function PublicSite({ children }: { children: ReactNode }) {
 
         <div className="flex flex-wrap gap-2 my-6">
           {site.hasCourse && (
-            <button className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950" onClick={() => void open3d()} data-testid="explore">
-              {site.shown.view3d ? <Mountain size={16} /> : <MapIcon size={16} />} {site.shown.view3d ? "Explore in 3D" : "Explore the map"}
+            <button className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-80" onClick={() => void open3d()} disabled={!!opening} aria-busy={!!opening || undefined} data-testid="explore">
+              {opening ? <Loader2 size={16} className="animate-spin" /> : site.shown.view3d ? <Mountain size={16} /> : <MapIcon size={16} />} {opening ? "Opening…" : site.shown.view3d ? "Explore in 3D" : "Explore the map"}
             </button>
           )}
           {site.files.filter(f => /\.(gpx|kml)$/.test(f)).map(f => (
             <button key={f} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-semibold bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.12]" onClick={() => void download(f)}><Download size={15} /> {f.endsWith("gpx") ? "GPS file (GPX)" : "Google Earth (KML)"}</button>
           ))}
         </div>
+        {openError && <p role="alert" className="-mt-3 mb-6 text-sm text-red-300">{openError}</p>}
 
         {site.shown.stats && site.info.holes.length > 0 && (
           <section className="my-8">
@@ -189,16 +242,20 @@ export function PublicSite({ children }: { children: ReactNode }) {
             <h2 className="text-[12px] font-bold uppercase tracking-wider text-zinc-400 mb-3">Tee signs</h2>
             <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3" data-testid="public-signs">
               {signs.map(n => (
-                <li key={n}><button className="block w-full rounded-xl overflow-hidden border border-white/[0.08] hover:border-zinc-600" onClick={() => setBig(files[n])}><img src={files[n]} alt={`Tee sign, hole ${n.slice(5).split(".")[0]}`} className="w-full" loading="lazy" /></button></li>
+                <li key={n}>{files[n]
+                  ? <button className="block w-full rounded-xl overflow-hidden border border-white/[0.08] hover:border-zinc-600 animate-[dgfade_0.3s_ease_both]" onClick={() => setBig(files[n])}><img src={files[n]} alt={`Tee sign, hole ${n.slice(5).split(".")[0]}`} className="w-full" loading="lazy" /></button>
+                  : <div className="w-full aspect-[2/3] rounded-xl glass border border-white/[0.08] animate-pulse" role="img" aria-label={`Tee sign, hole ${n.slice(5).split(".")[0]}, loading`} />}</li>
               ))}
             </ul>
           </section>
         )}
 
-        {card && (
+        {cardName && (
           <section className="my-8">
             <h2 className="text-[12px] font-bold uppercase tracking-wider text-zinc-400 mb-3">Scorecard</h2>
-            <button className="block w-full rounded-xl overflow-hidden border border-white/[0.08]" onClick={() => setBig(card)}><img src={card} alt="Scorecard" className="w-full bg-white" /></button>
+            {card
+              ? <button className="block w-full rounded-xl overflow-hidden border border-white/[0.08] animate-[dgfade_0.3s_ease_both]" onClick={() => setBig(card)}><img src={card} alt="Scorecard" className="w-full bg-white" /></button>
+              : <div className="w-full aspect-[11/5] rounded-xl glass border border-white/[0.08] animate-pulse" role="img" aria-label="Scorecard, loading" />}
           </section>
         )}
 
@@ -206,9 +263,17 @@ export function PublicSite({ children }: { children: ReactNode }) {
       </main>
 
       {big && <Zoomable src={big} onClose={() => setBig(null)} />}
+      {opening && <Opening what={opening} />}
     </div>
   );
 }
+
+/** The course on its way to the 3D view or the map: from the click until it's drawn. */
+const Opening = ({ what }: { what: "3d" | "map" }) => (
+  <div className="fixed inset-0 z-[60] bg-zinc-950/90 backdrop-blur-sm flex items-center justify-center animate-[dgfade_0.2s_ease_both]" data-testid="opening-course">
+    <Loading label={what === "map" ? "Opening the map…" : "Opening the course in 3D…"} />
+  </div>
+);
 
 const Plain = ({ children }: { children: ReactNode }) => (
   <div className="min-h-[100dvh] bg-zinc-950 flex items-center justify-center p-4">

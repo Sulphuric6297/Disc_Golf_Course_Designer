@@ -1,7 +1,7 @@
 // The first page after signing in: your courses and the ones shared with you, each with a small
 // map of its holes, to open with one click; a new course; search.
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Eye, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
+import { ArrowLeft, Eye, Loader2, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
 import { fmtDist } from "../lib/units";
 import { useCourse } from "../state/course";
 import { useAuth } from "./api";
@@ -9,6 +9,7 @@ import { listServerCourses, newServerCourse, openServerCourse, removeServerCours
 import { AccountMenu } from "./AccountMenu";
 import { Logo } from "./parts";
 import { Woods } from "../components/Woods";
+import { Loading } from "../components/ui";
 
 const ago = (t: number) => {
   const s = Math.max(0, (Date.now() - t) / 1000);
@@ -63,14 +64,20 @@ const Picture = ({ c }: { c: ServerPlan }) =>
 
 /** A course: its map, its name and numbers on a strip of glass over the map's foot (`big`: the
  * newest of the list, two columns wide). */
-function Card({ c, onOpen, onRemove, big }: { c: ServerPlan; onOpen: () => void; onRemove: () => void; big?: boolean }) {
+function Card({ c, onOpen, onRemove, big, opening }: { c: ServerPlan; onOpen: () => void; onRemove: () => void; big?: boolean; opening?: boolean }) {
   const r = ROLE[c.role];
   const s = c.summary;
   const facts = [`${c.holes} hole${c.holes === 1 ? "" : "s"}`, s.par ? `Par ${s.par}` : null, s.length && s.units ? fmtDist(s.length, s.units) : null].filter(Boolean).join(" · ");
   return (
     <li className={`group relative rounded-[22px] overflow-hidden ring-1 ring-white/10 hover:ring-white/25 shadow-[0_12px_30px_rgba(0,0,0,0.35)] transition ${big ? "sm:col-span-2" : ""}`} data-testid="course-card">
-      <button className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 rounded-[22px]" onClick={onOpen}>
+      <button className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 rounded-[22px]" onClick={onOpen} aria-busy={opening || undefined}>
         <div className="transition-transform duration-500 group-hover:scale-[1.02]"><Picture c={c} /></div>
+        {/* (opening: said on the card at once, while the course comes) */}
+        {opening && (
+          <div className="absolute inset-0 bg-black/40 flex items-start justify-center pt-[18%] animate-[dgfade_0.15s_ease_both]" data-testid="card-opening">
+            <span className="glass rounded-full px-3.5 py-1.5 text-sm font-semibold text-zinc-50 inline-flex items-center gap-2"><Loader2 size={15} className="animate-spin text-orange-300" /> Opening…</span>
+          </div>
+        )}
         <div className="glass absolute left-2.5 right-2.5 bottom-2.5 rounded-[16px] px-3.5 py-2.5">
           <div className="flex items-start gap-2">
             <h3 className={`flex-1 min-w-0 font-semibold text-zinc-50 truncate ${big ? "text-lg" : ""}`}>{c.name || "Untitled course"}</h3>
@@ -117,12 +124,22 @@ export function Home() {
   const shown = useMemo(() => (list ?? []).filter(c => (!park || c.park === park) && (!q.trim() || `${c.name} ${c.owner ?? ""} ${c.park}`.toLowerCase().includes(q.trim().toLowerCase()))), [list, q, park]);
   const mine = shown.filter(c => c.role === "owner");
   const shared = shown.filter(c => c.role !== "owner");
-  const open = async (id: string) => { if (await openServerCourse(id)) showHome(false); };
-  const fresh = async () => { await newServerCourse(); showHome(false); };
+  // (the course being opened, or a new one being made: one at a time, shown while it comes)
+  const [opening, setOpening] = useState<string | null>(null);
+  const open = async (id: string) => {
+    if (opening) return;
+    setOpening(id);
+    try { if (await openServerCourse(id)) showHome(false); } finally { setOpening(null); }
+  };
+  const fresh = async () => {
+    if (opening) return;
+    setOpening("new");
+    try { await newServerCourse(); showHome(false); } finally { setOpening(null); }
+  };
 
   const grid = (cs: ServerPlan[]) => (
     <ul className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {cs.map((c, i) => <Card key={c.id} c={c} big={i === 0 && cs.length > 2} onOpen={() => void open(c.id)} onRemove={() => void removeServerCourse(c.id).then(refresh)} />)}
+      {cs.map((c, i) => <Card key={c.id} c={c} big={i === 0 && cs.length > 2} opening={opening === c.id} onOpen={() => void open(c.id)} onRemove={() => void removeServerCourse(c.id).then(refresh)} />)}
     </ul>
   );
 
@@ -154,8 +171,8 @@ export function Home() {
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
             <input className="glass w-full rounded-full pl-9 pr-3 py-2 text-sm touch:text-base text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-400/80" placeholder="Search" value={q} onChange={e => setQ(e.target.value)} aria-label="Search courses" />
           </label>
-          <button className="inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 touch:py-3 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950 shadow" onClick={() => void fresh()} data-testid="new-course">
-            <Plus size={16} /> New course
+          <button className="inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 touch:py-3 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950 shadow" onClick={() => void fresh()} disabled={!!opening} aria-busy={opening === "new" || undefined} data-testid="new-course">
+            {opening === "new" ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} New course
           </button>
         </div>
 
@@ -166,7 +183,7 @@ export function Home() {
             ))}
           </div>
         )}
-        {list === null ? <div className="h-40" aria-busy="true" /> : list.length === 0 ? (
+        {list === null ? <Loading label="Loading your courses…" className="h-40" /> : list.length === 0 ? (
           <div className="glass text-center py-20 rounded-[24px]">
             <Logo size={48} />
             <h2 className="text-lg font-semibold text-zinc-100 mt-4">No courses yet</h2>
