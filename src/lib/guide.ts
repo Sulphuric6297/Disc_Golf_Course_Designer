@@ -302,11 +302,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "my-location", section: "design", title: "Where you are (your location)",
-    body: "The locate button by the zoom buttons shows you on the map as a blue dot, kept up to date as you walk. The pale circle round it is how sure the phone is; the little fan shows the way you're facing. Under the dot: how far it is to the basket of the hole picked (or the one you're nearest), with a dashed line to it.
-
-The map follows you while the button is filled in (and keeps the screen awake). Move the map yourself and it stops following; tap the button to follow again, and tap it once more to stop showing where you are. A grey dot means the readings are old or weak.
-
-For the best accuracy: stand in the open, away from buildings and thick trees, and give it a few seconds; phones are usually good to within 10 to 15 feet, less under heavy cover. The site must be brought in (placed on the earth), on a secure (https) page.",
+    body: "The locate button by the zoom buttons shows you on the map as a blue dot, kept up to date as you walk. The pale circle round it is how sure the phone is; the little fan shows the way you're facing. Under the dot: how far it is to the basket of the hole picked (or the one you're nearest), with a dashed line to it.\n\nThe map follows you while the button is filled in (and keeps the screen awake). Move the map yourself and it stops following; tap the button to follow again, and tap it once more to stop showing where you are. A grey dot means the readings are old or weak.\n\nFor the best accuracy: stand in the open, away from buildings and thick trees, and give it a few seconds; phones are usually good to within 10 to 15 feet, less under heavy cover. The site must be brought in (placed on the earth), on a secure (https) page.",
     words: "gps location blue dot live follow me where am i track accuracy compass heading distance to basket udisc",
     path: "The map › locate button",
     where: { step: "design", find: "locate-me" }
