@@ -438,7 +438,7 @@ test("a hole's own flight through keyframes: shown on the map, dragged, set, add
   await page.getByTestId("hud-close").click();
   // By itself again
   await page.getByTestId("hole-row").first().click();
-  await page.getByTestId("hole-flight").getByRole("radio", { name: "By itself" }).click();
+  await page.getByTestId("hole-flight").getByRole("radio", { name: "Automatic" }).click();
   await expect.poll(async () => (await course(page)).holes[0].flyKeys).toBeUndefined();
   await expect(page.locator('[data-handle="flykey"]')).toHaveCount(0);
 });

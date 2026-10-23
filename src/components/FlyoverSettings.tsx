@@ -104,7 +104,7 @@ export function HoleFlight({ hole }: { hole: Hole }) {
   };
   return (
     <div data-testid="hole-flight">
-      <Segmented label="Flyover" value={keys ? "keys" : "auto"} onChange={v => (v === "keys" ? byHand() : setKeys(undefined))} options={[{ value: "auto", label: "By itself" }, { value: "keys", label: "Keyframes" }]} />
+      <Segmented label="Flyover" value={keys ? "keys" : "auto"} onChange={v => (v === "keys" ? byHand() : setKeys(undefined))} options={[{ value: "auto", label: "Automatic" }, { value: "keys", label: "Keyframes" }]} />
       <div className="mt-2.5"><FlyoverSettingsPanel holeId={hole.id} keys={!!keys} ground={false} /></div>
       {keys && (
         <div className="mt-2 space-y-1.5" data-testid="fly-keys">
