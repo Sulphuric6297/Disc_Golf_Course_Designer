@@ -55,7 +55,8 @@ body {
   left: 0;
   top: 0;
   z-index: 1000;
-  max-width: 260px;
+  max-width: min(260px, calc(100vw - 8px));
+  overflow-wrap: anywhere;
   padding: 5px 10px;
   border-radius: 10px;
   background: rgba(24, 32, 24, 0.96);

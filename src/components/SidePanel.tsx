@@ -508,7 +508,7 @@ export function HolesColumn() {
     if (v && v.leftInset) v.leftInset = slim ? PANEL_INSET : 196;
   }, [slim]);
   return (
-    <div className="absolute left-3 top-3 bottom-3 z-20 flex flex-col gap-2 pointer-events-none" data-testid="holes-column">
+    <div className={`absolute left-3 top-3 bottom-3 ${more ? "z-30" : "z-20"} flex flex-col gap-2 pointer-events-none`} data-testid="holes-column">
       <div className={`glass pointer-events-auto rounded-[22px] p-1.5 flex flex-col gap-0.5 max-h-full min-h-0 ${slim ? "w-[52px]" : "w-[172px]"}`} data-testid="hole-list">
         {doc.layouts.length > 1 && !slim && <div className="pb-1 mb-0.5 border-b border-white/10"><LayoutPicker compact /></div>}
         <div className="overflow-y-auto min-h-0 flex flex-col gap-0.5">
@@ -541,9 +541,9 @@ export function HolesColumn() {
           <span className={`w-6 h-6 rounded-full flex items-center justify-center ${ed.tool === "add-hole" ? "bg-zinc-950/20" : "bg-orange-500 text-zinc-950"}`}><Plus size={14} /></span>{!slim && "New hole"}
         </button>
       </div>
-      <div className={`glass pointer-events-auto rounded-[18px] mt-auto relative ${slim ? "hidden" : ""}`} ref={moreRef}>
-        <button className="w-full flex gap-3 items-end px-3.5 py-2 text-left" onClick={() => setMore(m => !m)} aria-expanded={more} data-testid="course-totals-button">
-          {[[totals.complete, "holes"], [totals.par, "par"], [fmtDist(totals.length, u), "total"]].map(([v, k]) => (
+      <div className="glass pointer-events-auto rounded-[18px] mt-auto relative" ref={moreRef}>
+        <button className={`w-full flex gap-3 items-end py-2 text-left ${slim ? "justify-center px-1" : "px-3.5"}`} onClick={() => setMore(m => !m)} aria-expanded={more} title={slim ? `${totals.complete} holes · par ${totals.par} · ${fmtDist(totals.length, u)}` : undefined} data-testid="course-totals-button">
+          {(slim ? [[totals.par, "par"]] : [[totals.complete, "holes"], [totals.par, "par"], [fmtDist(totals.length, u), "total"]]).map(([v, k]) => (
             <span key={k as string}><span className="block text-[15px] font-bold text-zinc-50 leading-tight tabular-nums">{v}</span><span className="text-[11px] text-zinc-400">{k}</span></span>
           ))}
         </button>

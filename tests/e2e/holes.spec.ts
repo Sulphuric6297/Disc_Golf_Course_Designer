@@ -506,3 +506,21 @@ test("a tee or basket picked opens its hole's panel, with it opened up under Tee
   await expect(insp.getByTestId("hole-part-settings")).toHaveCount(0);
   expect((await editorState(page)).selectedId).toBe(hole.id);
 });
+
+test("a tip on a button at a panel's edge stays inside the panel (and the window)", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 400, y: 600 }, { x: 800, y: 600 });
+  await page.keyboard.press("Escape");
+  await page.getByTestId("hole-row").first().click();
+  const insp = page.getByTestId("inspector");
+  // (the close button, in the panel's top right corner)
+  await insp.getByRole("button", { name: "Close" }).hover();
+  const tip = page.getByTestId("tooltip");
+  await expect(tip).toHaveClass(/show/);
+  await page.waitForTimeout(200);
+  const t = (await tip.boundingBox())!, p = (await insp.boundingBox())!;
+  expect(t.x).toBeGreaterThanOrEqual(p.x);
+  expect(t.x + t.width).toBeLessThanOrEqual(p.x + p.width + 0.5);
+  expect(t.y).toBeGreaterThanOrEqual(p.y);
+  expect(t.y + t.height).toBeLessThanOrEqual(p.y + p.height + 0.5);
+});

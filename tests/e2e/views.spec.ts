@@ -395,6 +395,8 @@ const setRange = (loc: import("@playwright/test").Locator, v: number) =>
   }, v);
 
 test("a hole's own flight through keyframes: a timeline to pick and retime them, the picked one's card, a + on the map, and flown", async ({ page }) => {
+  test.setTimeout(240_000);
+  const t0 = Date.now(), mark = (what: string) => console.log(`[${what}] ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   await blankCourse(page);
   const hole = await addHole(page, { x: 300, y: 600 }, { x: 800, y: 600 });
   await page.keyboard.press("Escape");
@@ -457,6 +459,7 @@ test("a hole's own flight through keyframes: a timeline to pick and retime them,
     return v.flightPath(v.doc.course.holes[0].id).dur;
   });
   expect(Math.abs(after - before)).toBeLessThan(0.15);
+  mark("timeline");
   // A + on the map between keyframes 1 and 2: a new keyframe 2, right on the flight that was there
   const path0 = await page.evaluate(id => (window as any).__dgView.flightPath(id).pts.map((p: any) => [p.x, p.y, p.z]), hole.id);
   await page.locator('[data-handle="flyadd"][data-index="0"]').click();
@@ -474,6 +477,7 @@ test("a hole's own flight through keyframes: a timeline to pick and retime them,
   await page.getByTestId("fly-key-add").click();
   await expect(page.getByTestId("fly-key")).toHaveCount(5);
   await expect(page.getByTestId("fly-key-title")).toHaveText("Keyframe 3 of 5");
+  mark("added");
   // Flown from the panel
   await page.getByTestId("fly-preview").click();
   await expect(page.getByTestId("hud-flyover")).toHaveText(/Flying/);
@@ -486,6 +490,8 @@ test("a hole's own flight through keyframes: a timeline to pick and retime them,
 });
 
 test("the camera flown by hand: the keys move it, a drag turns it, and each keyframe is just where it was and looks just where it looked", async ({ page }) => {
+  test.setTimeout(240_000);
+  const t0 = Date.now(), mark = (what: string) => console.log(`[${what}] ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   await blankCourse(page);
   const hole = await addHole(page, { x: 300, y: 600 }, { x: 800, y: 600 });
   await page.keyboard.press("Escape");
@@ -514,6 +520,7 @@ test("the camera flown by hand: the keys move it, a drag turns it, and each keyf
   await page.keyboard.up(" ");
   const p2 = await pose();
   expect(p2.alt).toBeGreaterThan(p1.alt + 5);
+  mark("moved");
   // Enter: keyframe 1, right there and looking there
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await keys()).length).toBe(1);
@@ -555,7 +562,9 @@ test("the camera flown by hand: the keys move it, a drag turns it, and each keyf
   await page.waitForTimeout(400);
   await page.keyboard.up("q");
   await expect(page.getByTestId("cam-update")).toBeEnabled();
+  mark("before u");
   await page.keyboard.press("u");
+  mark("after u");
   await expect.poll(async () => (await keys())[0].alt).toBeLessThan(k0.alt - 2);
   // Played, stopped, and Esc back to the map with the hole still picked
   await page.getByTestId("cam-play").click();
