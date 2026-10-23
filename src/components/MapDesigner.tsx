@@ -287,6 +287,9 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     return best;
   };
 
+  // (a finger off the piece lets go of it only when it lifts without moving: the first of two
+  // fingers pinching a small piece often lands just beside it)
+  const tapOut = useRef<{ pid: number; x: number; y: number } | null>(null);
   const onPageDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!editing || !page || e.button !== 0 || typing) return;
     // (a field in the panel lets go, so keys like Delete go to what's picked on the page)
@@ -295,6 +298,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     const corner = (e.target as HTMLElement).closest?.("[data-corner]") as HTMLElement | null;
     if ((e.target as HTMLElement).closest?.("[data-page-bar]")) return;
     const id = corner ? designSel : pieceAt(e.target);
+    if (!id && e.pointerType === "touch" && designSel) { tapOut.current = { pid: e.pointerId, x: e.clientX, y: e.clientY }; return; }
     if (!id) { setEd({ designSel: null }); return; }
     const el = elOf(id);
     if (!el) return;
@@ -351,6 +355,11 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     }
   };
   const onPageUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const out = tapOut.current;
+    if (out && out.pid === e.pointerId) {
+      tapOut.current = null;
+      if (Math.hypot(e.clientX - out.x, e.clientY - out.y) < 10) setEd({ designSel: null });
+    }
     const d = drag.current;
     if (!d || d.pid !== e.pointerId) return;
     drag.current = null;
@@ -417,6 +426,10 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       const near = 50 / k;
       if (mx < b.x - near || mx > b.x + b.w + near || my < b.y - near || my > b.y + b.h + near) return;
       ev.stopImmediatePropagation();
+      // (not a tap off it, and not a drag by the first finger)
+      tapOut.current = null;
+      const dr = drag.current;
+      if (dr) { dr.el.setAttribute("transform", dr.orig); drag.current = null; setGuides({ x: [], y: [] }); }
       pinch = { id, g, orig: g.getAttribute("transform") ?? "", d: Math.max(1, spread(ev.touches)), box: b, mid: { x: b.x + b.w / 2, y: b.y + b.h / 2 }, f: 1 };
     };
     const onMove = (ev: TouchEvent) => {
@@ -575,7 +588,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
               <div className="absolute pointer-events-none" data-testid="page-selection" style={{ left: selBox.x * k, top: selBox.y * k, width: selBox.w * k, height: selBox.h * k, outline: "2px solid #f97316", outlineOffset: 2 }}>
                 {!designSel.startsWith("label:") && !typing && ["0,0", "1,0", "0,1", "1,1"].map(c => {
                   const [cx, cy] = c.split(",").map(Number);
-                  return <div key={c} data-corner={c} data-testid="page-corner" className="absolute w-3 h-3 touch:w-6 touch:h-6 bg-white border-2 border-orange-500 rounded-full pointer-events-auto" style={{ left: `calc(${cx * 100}% - ${compact ? 12 : 6}px)`, top: `calc(${cy * 100}% - ${compact ? 12 : 6}px)`, cursor: cx === cy ? "nwse-resize" : "nesw-resize", touchAction: "none" }} />;
+                  return <div key={c} data-corner={c} data-testid="page-corner" className="absolute w-3 h-3 touch:w-[18px] touch:h-[18px] bg-white border-2 border-orange-500 rounded-full pointer-events-auto" style={{ left: `calc(${cx * 100}% - ${compact ? 9 : 6}px)`, top: `calc(${cy * 100}% - ${compact ? 9 : 6}px)`, cursor: cx === cy ? "nwse-resize" : "nesw-resize", touchAction: "none" }} />;
                 })}
               </div>
             )}
