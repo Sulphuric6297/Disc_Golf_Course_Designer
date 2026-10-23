@@ -2,6 +2,7 @@
 // the wanted resolution, and a PDF is written with one full-page JPEG per page (no library needed).
 
 import { fontCssUrl, fontsInSvg } from "./fontLoad";
+import { fitSvgString } from "./fitText";
 
 const FONT_CSS_URL = "https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Oswald:wght@500;700&family=Bitter:wght@700&family=Kaushan+Script&display=swap";
 
@@ -40,6 +41,8 @@ export const embeddedFonts = (more: string[] = []) => {
 
 /** An SVG document (with its viewBox in points) drawn at `dpi` into a canvas. */
 export const svgToCanvas = async (svg: string, widthPt: number, heightPt: number, dpi = 150) => {
+  // (lettering kept inside its panels, measured in the fonts it prints in)
+  svg = await fitSvgString(svg);
   const css = await embeddedFonts(fontsInSvg(svg));
   const withFonts = css ? svg.replace(/(<svg[^>]*>)/, `$1<style>${css}</style>`) : svg;
   const w = Math.round((widthPt / 72) * dpi), h = Math.round((heightPt / 72) * dpi);

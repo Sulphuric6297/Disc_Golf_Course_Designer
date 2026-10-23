@@ -11,8 +11,9 @@ import { MapLookPanel } from "./MapLookPanel";
 import { useEffect, useRef, useState } from "react";
 import type { MapStyle, PaperSize, ReliefLook, SignSettings } from "../types";
 import { Button, ColorInput, Field, Section, Segmented, Slider, Toggle } from "./ui";
-import { PageElementPanel, PageSection } from "./PageEditor";
-import { AddPieces, HolePageSettings, SignLayers, SignPieceSettings, Sponsors } from "./SignEditor";
+import { HolePageLook, PrintPanel, ScorecardSettings } from "./PrintPanel";
+import { FontPicker } from "./FontPicker";
+import { fontsIn } from "../lib/fontLoad";
 
 export const setStyle = (patch: Partial<MapStyle>, history = true) => {
   // View only: the look changes on this screen (sun, landscape…), never saved
@@ -115,7 +116,6 @@ function TeeSignSettings() {
   const holeId = [designHole, active].find(id => id && doc.holes.some(h => h.id === id)) ?? doc.holes[0]?.id ?? null;
   const hole = doc.holes.find(h => h.id === holeId);
   const scope = useEditor(e => e.signScope);
-  const setScope = (v: "all" | "hole") => useEditor.getState().set({ signScope: v });
   const forHole = scope === "hole" && !!hole;
   // (what shows: a hole's own over the course's, or the course's alone)
   const eff = forHole ? signOf(doc, hole!.id) : signOf({ style: doc.style, holes: [] }, "");
@@ -130,23 +130,20 @@ function TeeSignSettings() {
   if (!doc.holes.length) return null;
   return (
     <Section title="Tee signs" testid="sign-settings" right={reset} help="tee-signs">
-      <div className="grid grid-cols-2 gap-2 mb-3" role="radiogroup" aria-label="Tee sign look" data-testid="sign-looks">
+      <div className="text-[12px] text-zinc-400 mb-1.5 px-0.5">Start from</div>
+      <div className="grid grid-cols-4 gap-1.5 mb-3" role="radiogroup" aria-label="Tee sign look" data-testid="sign-looks">
         {SIGN_LOOKS.map(l => {
           const on = (doc.style.sign?.look ?? "classic") === l.id;
           return (
             <button key={l.id} role="radio" aria-checked={on} data-testid={`sign-look-${l.id}`} onClick={() => setStyle({ sign: { ...doc.style.sign, look: l.id === "classic" ? undefined : l.id, layout: undefined } })}
               className={`text-left rounded-lg overflow-hidden bg-white/[0.07] ring-1 transition ${on ? "ring-2 ring-orange-400" : "ring-white/10 hover:ring-white/30"}`}>
               <img src={`${import.meta.env.BASE_URL}signs/${l.id}.jpg`} alt="" loading="lazy" className="block w-full aspect-[2/3] object-cover object-top" draggable={false} />
-              <span className="block px-2 py-1 text-xs font-semibold text-zinc-100">{l.label}</span>
+              <span className="block px-1 py-1 text-[10.5px] leading-tight font-semibold text-zinc-100 text-center">{l.label}</span>
             </button>
           );
         })}
       </div>
-      {hole && (
-        <div className="mb-2.5">
-          <Segmented label="Tee sign settings for" value={scope} onChange={setScope} options={[{ value: "all", label: "All holes" }, { value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }]} />
-        </div>
-      )}
+      {forHole && <p className="text-[11.5px] text-orange-200/90 mb-2 px-0.5">Changing hole {holeLabel(doc, hole!.id)}'s sign only (the switch over the page).</p>}
       <Field label="Other holes">
         <Segmented label="Other holes on the sign" value={eff.others} onChange={v => patch({ others: v })} options={[{ value: "faded", label: "Faded" }, { value: "hidden", label: "Hidden" }, { value: "shown", label: "Shown" }]} />
       </Field>
@@ -154,11 +151,6 @@ function TeeSignSettings() {
       <div className="grid grid-cols-2 gap-x-3" data-testid="sign-parts">
         {SIGN_PARTS.filter(p => ["throwLine", "circle", "distances"].includes(p.id)).map(p => <Toggle key={p.id} label={p.label} checked={eff.show(p.id)} onChange={v => patch({ show: { ...own.show, [p.id]: v } })} />)}
       </div>
-      <div className="mt-3"><AddPieces /></div>
-      <div className="text-[12px] font-semibold text-zinc-400 mb-1.5 px-1">Layers</div>
-      <SignLayers />
-      <SignPieceSettings />
-      <Sponsors />
       <Field label="Under the notes">
         <Segmented label="What goes under the notes" value={eff.spot} onChange={v => patch({ spot: v, show: { ...own.show, courseMap: undefined } })} options={SIGN_SPOTS.map(o => ({ value: o.id, label: o.label }))} />
       </Field>
@@ -196,8 +188,8 @@ export function DesignPanel() {
         <Field label="Course logo">
           <LogoPicker logo={s.logo} />
         </Field>
-        <Field label="Headings">
-          <Segmented label="Card font" value={s.card?.font ?? CARD_DEFAULTS.font} onChange={v => setStyle({ card: { ...s.card, font: v } })} options={[{ value: "Oswald", label: <span style={{ fontFamily: "Oswald" }}>Oswald</span> }, { value: "Bitter", label: <span style={{ fontFamily: "Bitter" }}>Bitter</span> }, { value: "Inter", label: <span style={{ fontFamily: "Inter" }}>Inter</span> }, { value: "Script", label: <span style={{ fontFamily: "Kaushan Script" }}>Script</span> }]} />
+        <Field label="Headings (tee signs, hole pages, scorecard)">
+          <FontPicker label="Headings font" value={s.card?.font ?? CARD_DEFAULTS.font} onPick={f => setStyle({ card: { ...s.card, font: f ?? CARD_DEFAULTS.font } })} used={fontsIn(doc)} testid="card-font" />
         </Field>
       </Section>
       <Section title="Marks and colors" testid="markings">
@@ -246,8 +238,7 @@ export function DesignPanel() {
         </>
       )}
       {tab === "map" && (
-        <>
-          <PageElementPanel />
+        <PrintPanel t="map">
           <Section title="Map style" testid="map-style" help="map-style">
             <MapLookPanel />
           </Section>
@@ -260,8 +251,8 @@ export function DesignPanel() {
       <details className="mx-4 my-2 rounded-[16px] bg-white/[0.06] group" data-testid="fold-title">
         <summary className="cursor-pointer list-none flex items-center justify-between px-3 py-2.5 text-[13.5px] font-medium text-zinc-100">Lettering <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
         <div className="px-3 pb-3">
-        <Field label="Font">
-          <Segmented label="Font" value={s.font} onChange={v => setStyle({ font: v })} options={[{ value: "Script", label: <span style={{ fontFamily: "Kaushan Script" }}>Script</span> }, { value: "Oswald", label: <span style={{ fontFamily: "Oswald" }}>Oswald</span> }, { value: "Inter", label: <span style={{ fontFamily: "Inter" }}>Inter</span> }, { value: "Bitter", label: <span style={{ fontFamily: "Bitter" }}>Bitter</span> }]} />
+        <Field label="Font (the title and the map's labels)">
+          <FontPicker label="Map font" value={s.font} onPick={f => setStyle({ font: f ?? "Script" })} used={fontsIn(doc)} testid="map-font" />
         </Field>
         <Slider label="Label size" min={0.7} max={1.6} step={0.05} value={s.labelScale} onChange={v => setStyle({ labelScale: v })} format={v => `${Math.round(v * 100)}%`} />
         </div>
@@ -287,17 +278,11 @@ export function DesignPanel() {
         </div>
         </div>
       </details>
-          <PageSection />
-        </>
+        </PrintPanel>
       )}
-      {tab === "sign" && (
-        <>
-          <TeeSignSettings />
-          {toGeneral}
-        </>
-      )}
-      {tab === "page" && <HolePageSettings />}
-      {(tab === "page" || tab === "scorecard") && toGeneral}
+      {tab === "sign" && <PrintPanel t="sign" top={<TeeSignSettings />}>{toGeneral}</PrintPanel>}
+      {tab === "page" && <PrintPanel t="page" top={<HolePageLook />}>{toGeneral}</PrintPanel>}
+      {tab === "scorecard" && <PrintPanel t="card" top={<ScorecardSettings />}>{toGeneral}</PrintPanel>}
       <div className="px-4 py-3">
         <Button full onClick={() => useEditor.getState().set({ step: "export" })} testid="next-step">Next: Export <ArrowRight size={15} /></Button>
       </div>

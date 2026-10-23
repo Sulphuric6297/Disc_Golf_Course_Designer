@@ -566,6 +566,10 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
     if (holePicked) setDetent("peek");
     else if (ed.selectedId) setDetent(d => (d === "full" ? "half" : readOnly && d === "peek" ? "half" : d));
   }, [ed.selectedId]);
+  // (a piece picked on a printout's page: the sheet down, the page and its toolbar free above it)
+  useLayoutEffect(() => {
+    if (ed.designSel && (ed.step === "map" || ed.step === "export")) setDetent("peek");
+  }, [ed.designSel]);
   // (and the hole brought into the map above the sheet once the sheet has its height)
   useEffect(() => {
     if (!holePicked || !ed.selectedId) return;

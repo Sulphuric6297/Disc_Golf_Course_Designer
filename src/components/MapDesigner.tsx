@@ -1,17 +1,20 @@
-// The Design step's preview: the printed course map (or a tee sign, a hole page, or the
-// scorecard) exactly as it will print, updating as the style changes.
+// The Design step's page: the printed course map (or a tee sign, a hole page, or the scorecard)
+// exactly as it will print, updating as the style changes, and laid out by hand right on it.
 import { Woods } from "./Woods";
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { EyeOff, Minus, Plus, Scan, Trash2 } from "lucide-react";
+import { Minus, Plus, Scan } from "lucide-react";
 import { onPaintProgress, onPainted, renderPoster, withLivePaint } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
 import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { holeLabel } from "../lib/course";
 import { useCanopy, useRelief } from "./useRelief";
-import { duplicateDesignSel, elementLabel, moveDesignEl, moveLabel, removeDesignSel, sizeDesignEl } from "./PageEditor";
-import { hideSignSel, movePiece, pieceLabel, sizePiece } from "./SignEditor";
+import { moveLabel } from "./PageEditor";
+import { duplicatePicked, movePicked, patchPicked, pickedOf, removePicked, sizePicked, type TargetKey } from "./printouts";
+import { PieceToolbar } from "./PieceToolbar";
 import { fontsIn, loadFont } from "../lib/fontLoad";
+import { fitTexts } from "../lib/fitText";
+import { pieceFont } from "../lib/pieces";
 
 /** A phone or small tablet (touch first, small screen). */
 const PHONE = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches && typeof screen !== "undefined" && Math.min(screen.width, screen.height) < 900;
@@ -182,19 +185,24 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     return renderPoster(doc, relief);
   }), [doc, relief, preview, holeId, signSize, pageSize, painted]);
 
-  // Everything on the course map's page picked, moved and sized like in Canva: a click picks
-  // (the map itself on a second press, so it isn't moved by mistake; a finger picks first, then
-  // drags), a drag moves, the corner squares size; one undo step each. Shown moving on the page
-  // while dragged, then kept as shares of the page.
+  // Everything on the page picked, moved and sized like in Canva, the same on the course map, a tee
+  // sign, a hole page and the scorecard: a click picks (and the toolbar over it holds its
+  // settings), a drag moves it (snapping to the page's edges and middle and to the other pieces,
+  // pink guides showing where; Alt drags freely), the corner squares size it, a double-click on
+  // text types on the page. A finger taps to pick, then drags, and pinches the picked piece to
+  // size it. One undo step each.
   const designSel = useEditor(e => e.designSel);
   const setEd = useEditor(e => e.set);
-  // (a tee sign's pieces the same way: each piece of it, the hole's picture too)
-  const signEdit = (preview === "sign" || preview === "page") && !only;
-  const editing = (preview === "map" || signEdit) && !only;
+  const scope = useEditor(e => e.signScope);
+  const t: TargetKey = preview === "map" ? "map" : preview === "sign" ? "sign" : preview === "page" ? "page" : "card";
+  const editing = !only;
   const svgHost = useRef<HTMLDivElement>(null);
   type Box = { x: number; y: number; w: number; h: number };
   const [selBox, setSelBox] = useState<Box | null>(null);
-  const drag = useRef<{ mode: "move" | "size"; id: string; el: SVGGElement; orig: string; cx: number; cy: number; pid: number; k: number; W: number; H: number; box: Box; anchor: { x: number; y: number }; corner: { x: number; y: number }; f: number; dx: number; dy: number } | null>(null);
+  const [hover, setHover] = useState<{ id: string; box: Box } | null>(null);
+  const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
+  const [typing, setTyping] = useState<{ id: string; text: string; box: Box } | null>(null);
+  const drag = useRef<{ mode: "move" | "size"; id: string; el: SVGGElement; orig: string; cx: number; cy: number; pid: number; k: number; W: number; H: number; box: Box; anchor: { x: number; y: number }; corner: { x: number; y: number }; f: number; dx: number; dy: number; lines: { x: number[]; y: number[] } } | null>(null);
   const elOf = (id: string) =>
     svgHost.current?.querySelector(id.startsWith("label:") ? `[data-label="${CSS.escape(id.slice(6))}"]` : `[data-el="${CSS.escape(id)}"]`) as SVGGElement | null;
   const boxOf = (el: Element): Box => {
@@ -203,10 +211,12 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       const [x, y, w, h] = box.split(" ").map(Number);
       return { x, y, w, h };
     }
-    // (a label on the map: where it is drawn)
+    // (as drawn, moved and sized as it is)
     const r = el.getBoundingClientRect(), host = svgHost.current!.getBoundingClientRect(), k = kRef.current;
     return { x: (r.left - host.left) / k, y: (r.top - host.top) / k, w: r.width / k, h: r.height / k };
   };
+  /** The page's size as the pieces are placed on it (the scorecard: one card of the two). */
+  const dims = () => ({ W: page?.width ?? 1, H: (page?.height ?? 1) / (t === "card" ? 2 : 1) });
   /** A move on the page as feet on the ground (the map's own scale and turn). */
   const groundShift = (dx: number, dy: number) => {
     const m = svgHost.current?.querySelector("[data-el=map]");
@@ -214,20 +224,31 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     const c = Math.cos(-rot), sn = Math.sin(-rot);
     return { x: (dx * c + dy * sn) / k, y: (-dx * sn + dy * c) / k };
   };
+  // (what can be picked: the course map's map itself can't, so a drag on it pans)
+  const pickable = (id: string | null) => !!id && !(t === "map" && id === "map");
   useLayoutEffect(() => {
     const el = editing && designSel ? elOf(designSel) : null;
     setSelBox(el ? boxOf(el) : null);
-  }, [page, designSel, editing]);
-  // (leaving the course map, or the Design step, lets go of what was picked)
+  }, [page, designSel, editing, held]);
+  // (leaving the Design step, or another printout, lets go of what was picked)
   useEffect(() => { if (!editing) setEd({ designSel: null }); }, [editing, setEd]);
-  useEffect(() => { setEd({ designSel: null }); }, [preview, setEd]);
-  // A sign's pieces are picked anywhere in their outline, not only on their ink: each gets an
-  // unseen box the size of what it draws
+  useEffect(() => { setEd({ designSel: null }); setHover(null); setTyping(null); }, [preview, setEd]);
+  useEffect(() => () => setEd({ designSel: null }), [setEd]);
+  // Each piece is picked anywhere in its outline, not only on its ink (an unseen box the size of
+  // what it draws), and lettering is kept inside its panels in the fonts it's set in
+  const [fontsIn2, setFontsIn2] = useState(0);
+  useEffect(() => {
+    const on = () => setFontsIn2(v => v + 1);
+    document.fonts?.addEventListener?.("loadingdone", on);
+    return () => document.fonts?.removeEventListener?.("loadingdone", on);
+  }, []);
   useLayoutEffect(() => {
     const host = svgHost.current;
-    if (!signEdit || !host) return;
+    if (!host) return;
+    fitTexts(host);
+    if (!editing) return;
     for (const g of Array.from(host.querySelectorAll<SVGGElement>("[data-el]"))) {
-      if (g.querySelector(":scope > rect[data-hit]")) continue;
+      if (g.hasAttribute("data-box") || g.querySelector(":scope > rect[data-hit]")) continue;
       const b = g.getBBox();
       const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
       r.setAttribute("data-hit", "1");
@@ -235,20 +256,46 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       r.setAttribute("fill", "none"); r.setAttribute("pointer-events", "all");
       g.insertBefore(r, g.firstChild);
     }
-  });
-  useEffect(() => () => setEd({ designSel: null }), [setEd]);
+  }, [page, held, fontsIn2, editing]);
+
+  /** What's under the pointer: a piece (or a label on the course map). */
+  const pieceAt = (target: EventTarget | null) => {
+    const tag = t === "map" ? (target as Element).closest?.("[data-label]") : null;
+    if (tag) return `label:${tag.getAttribute("data-label")}`;
+    const hit = (target as Element).closest?.("[data-el]");
+    const id = hit?.getAttribute("data-el") ?? null;
+    return pickable(id) ? id : null;
+  };
+  /** Where things line up: the page's edges and middle, and every other piece's. */
+  const linesFor = (id: string) => {
+    const W = page!.width, H = page!.height, xs = [0, W / 2, W], ys = [0, H / 2, H];
+    if (t === "card") ys.push(H / 4, (H * 3) / 4);
+    for (const g of Array.from(svgHost.current?.querySelectorAll("[data-el]") ?? [])) {
+      const gid = g.getAttribute("data-el");
+      if (!gid || gid === id || (t === "map" && gid === "map")) continue;
+      const b = boxOf(g);
+      if (b.w > W * 0.95 && b.h > H * 0.95) continue;
+      xs.push(b.x, b.x + b.w / 2, b.x + b.w);
+      ys.push(b.y, b.y + b.h / 2, b.y + b.h);
+    }
+    return { x: xs, y: ys };
+  };
+  /** The nearest line to any of `edges` within reach: the shift onto it, and the line. */
+  const snap = (edges: number[], lines: number[], reach: number) => {
+    let best: { d: number; at: number } | null = null;
+    for (const e of edges) for (const l of lines) { const d = l - e; if (Math.abs(d) <= reach && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, at: l }; }
+    return best;
+  };
+
   const onPageDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!editing || !page || e.button !== 0) return;
+    if (!editing || !page || e.button !== 0 || typing) return;
     // (a field in the panel lets go, so keys like Delete go to what's picked on the page)
     const active = document.activeElement as HTMLElement | null;
     if (active?.matches?.("input,textarea,select")) active.blur();
     const corner = (e.target as HTMLElement).closest?.("[data-corner]") as HTMLElement | null;
     if ((e.target as HTMLElement).closest?.("[data-page-bar]")) return;
-    // (a label on the map, else what's on the page; the map itself stays where it is)
-    const tag = signEdit ? null : (e.target as Element).closest?.("[data-label]") as SVGGElement | null;
-    const hit = (e.target as Element).closest?.("[data-el]") as SVGGElement | null;
-    const id = corner ? designSel : tag ? `label:${tag.getAttribute("data-label")}` : hit?.getAttribute("data-el") ?? null;
-    if (!id || (id === "map" && !signEdit)) { setEd({ designSel: null }); return; }
+    const id = corner ? designSel : pieceAt(e.target);
+    if (!id) { setEd({ designSel: null }); return; }
     const el = elOf(id);
     if (!el) return;
     const fresh = id !== designSel;
@@ -259,16 +306,37 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     e.currentTarget.setPointerCapture(e.pointerId);
     const b = boxOf(el);
     const [sx, sy] = (corner?.dataset.corner ?? "1,1").split(",").map(Number);
+    const { W, H } = dims();
     drag.current = {
-      mode: corner ? "size" : "move", id, el, orig: el.getAttribute("transform") ?? "", cx: e.clientX, cy: e.clientY, pid: e.pointerId, k: kRef.current, W: page.width, H: page.height, box: b,
-      corner: { x: b.x + sx * b.w, y: b.y + sy * b.h }, anchor: { x: b.x + (1 - sx) * b.w, y: b.y + (1 - sy) * b.h }, f: 1, dx: 0, dy: 0
+      mode: corner ? "size" : "move", id, el, orig: el.getAttribute("transform") ?? "", cx: e.clientX, cy: e.clientY, pid: e.pointerId, k: kRef.current, W, H, box: b,
+      corner: { x: b.x + sx * b.w, y: b.y + sy * b.h }, anchor: { x: b.x + (1 - sx) * b.w, y: b.y + (1 - sy) * b.h }, f: 1, dx: 0, dy: 0,
+      lines: corner ? { x: [], y: [] } : linesFor(id)
     };
+    setHover(null);
   };
   const onPageMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = drag.current;
-    if (!d || d.pid !== e.pointerId) return;
-    const dx = (e.clientX - d.cx) / d.k, dy = (e.clientY - d.cy) / d.k;
+    if (!d) {
+      // (the piece under the pointer, outlined: what a click picks)
+      if (e.pointerType !== "mouse" || !editing || typing) return;
+      const id = pieceAt(e.target);
+      if (!id || id === designSel) { if (hover) setHover(null); return; }
+      if (hover?.id !== id) { const el = elOf(id); if (el) setHover({ id, box: boxOf(el) }); }
+      return;
+    }
+    if (d.pid !== e.pointerId) return;
+    let dx = (e.clientX - d.cx) / d.k, dy = (e.clientY - d.cy) / d.k;
     if (d.mode === "move") {
+      // (snapped onto the nearest line within a few pixels, shown pink)
+      const reach = 6 / d.k, gx: number[] = [], gy: number[] = [];
+      if (!e.altKey && !d.id.startsWith("label:")) {
+        const b = d.box;
+        const sxp = snap([b.x + dx, b.x + dx + b.w / 2, b.x + dx + b.w], d.lines.x, reach);
+        const syp = snap([b.y + dy, b.y + dy + b.h / 2, b.y + dy + b.h], d.lines.y, reach);
+        if (sxp) { dx += sxp.d; gx.push(sxp.at); }
+        if (syp) { dy += syp.d; gy.push(syp.at); }
+      }
+      setGuides({ x: gx, y: gy });
       d.dx = dx;
       d.dy = dy;
       d.el.setAttribute("transform", `translate(${dx} ${dy}) ${d.orig}`);
@@ -286,42 +354,121 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     const d = drag.current;
     if (!d || d.pid !== e.pointerId) return;
     drag.current = null;
+    setGuides({ x: [], y: [] });
     if (Math.abs(e.clientX - d.cx) + Math.abs(e.clientY - d.cy) < 3) {
       d.el.setAttribute("transform", d.orig);
       setSelBox(d.box);
       return;
     }
-    if (signEdit) {
-      if (d.mode === "move") movePiece(d.id, d.dx / d.W, d.dy / d.H);
-      else sizePiece(d.id, d.f, d.anchor, d.W, d.H);
-    } else if (d.mode === "move" && d.id.startsWith("label:")) {
+    if (d.mode === "move" && d.id.startsWith("label:")) {
       const g = groundShift(d.dx, d.dy);
       moveLabel(d.id.slice(6), g.x, g.y);
-    } else if (d.mode === "move") moveDesignEl(d.id, { x: d.box.x / d.W, y: d.box.y / d.H }, d.dx / d.W, d.dy / d.H);
-    else sizeDesignEl(d.id, d.f, { x: (d.anchor.x + (d.box.x - d.anchor.x) * d.f) / d.W, y: (d.anchor.y + (d.box.y - d.anchor.y) * d.f) / d.H });
+    } else if (d.mode === "move") movePicked(t, d.id, d.dx, d.dy, d.box, d.W, d.H);
+    else sizePicked(t, d.id, d.f, d.anchor, d.box, d.W, d.H);
   };
-  // Keys for what's picked: Delete hides it (text and pictures go), arrows nudge it (Shift: more),
-  // Ctrl+D copies text or a picture, Esc lets go. Before the course map's own keys hear them.
+  /** Double-click on text: type on the page. */
+  const onPageDouble = (e: React.MouseEvent) => {
+    if (!editing) return;
+    const id = pieceAt(e.target);
+    if (id && pickedOf(doc, t, id)?.has.text) startTyping(id);
+  };
+  const startTyping = (id: string) => {
+    const el = elOf(id), p = pickedOf(live, t, id);
+    if (!el || !p) return;
+    setEd({ designSel: id });
+    setTyping({ id, text: p.text ?? "", box: boxOf(el) });
+  };
+  const doneTyping = (keep: boolean) => {
+    if (typing && keep) patchPicked(t, typing.id, { text: typing.text });
+    setTyping(null);
+  };
+  /** The toolbar's − and +: bigger or smaller about its top-left corner. */
+  const grow = (f: number) => {
+    const el = designSel ? elOf(designSel) : null;
+    if (!el || !designSel) return;
+    const b = boxOf(el), { W, H } = dims();
+    sizePicked(t, designSel, f, { x: b.x, y: b.y }, b, W, H);
+  };
+  /** A font shown on the picked piece while it's pointed at in the list (not kept). */
+  const previewFont = (f: string | null) => {
+    const el = designSel ? elOf(designSel) : null;
+    if (!el) return;
+    for (const x of Array.from(el.querySelectorAll<SVGElement>("text, tspan"))) {
+      if (f) x.style.setProperty("font-family", pieceFont(f), "important");
+      else x.style.removeProperty("font-family");
+    }
+    if (svgHost.current) fitTexts(svgHost.current);
+  };
+  // A pinch on the picked piece (a phone) sizes it; anywhere else it zooms the page
+  const pieceRef = useRef({ designSel, t, page });
+  pieceRef.current = { designSel, t, page };
   useEffect(() => {
-    if (!editing || !designSel) return;
+    const el = box.current;
+    if (!el || !compact) return;
+    let pinch: { id: string; g: SVGGElement; orig: string; d: number; box: Box; mid: { x: number; y: number }; f: number } | null = null;
+    const spread = (tl: TouchList) => Math.hypot(tl[0].clientX - tl[1].clientX, tl[0].clientY - tl[1].clientY);
+    const onStart = (ev: TouchEvent) => {
+      const { designSel: id } = pieceRef.current;
+      if (ev.touches.length !== 2 || !id || id.startsWith("label:")) return;
+      const g = elOf(id), host = svgHost.current;
+      if (!g || !host) return;
+      const b = boxOf(g), hr = host.getBoundingClientRect(), k = kRef.current;
+      const mx = ((ev.touches[0].clientX + ev.touches[1].clientX) / 2 - hr.left) / k, my = ((ev.touches[0].clientY + ev.touches[1].clientY) / 2 - hr.top) / k;
+      const near = 50 / k;
+      if (mx < b.x - near || mx > b.x + b.w + near || my < b.y - near || my > b.y + b.h + near) return;
+      ev.stopImmediatePropagation();
+      pinch = { id, g, orig: g.getAttribute("transform") ?? "", d: Math.max(1, spread(ev.touches)), box: b, mid: { x: b.x + b.w / 2, y: b.y + b.h / 2 }, f: 1 };
+    };
+    const onMove = (ev: TouchEvent) => {
+      if (!pinch || ev.touches.length !== 2) return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      const f = Math.max(0.2, Math.min(6, spread(ev.touches) / pinch.d)), A = pinch.mid;
+      pinch.f = f;
+      pinch.g.setAttribute("transform", `translate(${A.x} ${A.y}) scale(${f}) translate(${-A.x} ${-A.y}) ${pinch.orig}`);
+      setSelBox({ x: A.x + (pinch.box.x - A.x) * f, y: A.y + (pinch.box.y - A.y) * f, w: pinch.box.w * f, h: pinch.box.h * f });
+    };
+    const onEnd = (ev: TouchEvent) => {
+      if (!pinch || ev.touches.length >= 2) return;
+      ev.stopImmediatePropagation();
+      const p = pinch, { t: tk, page: pg } = pieceRef.current;
+      pinch = null;
+      if (Math.abs(p.f - 1) > 0.02 && pg) sizePicked(tk, p.id, p.f, p.mid, p.box, pg.width, pg.height / (tk === "card" ? 2 : 1));
+      else p.g.setAttribute("transform", p.orig);
+    };
+    // (heard before the page's own pinch to zoom)
+    el.addEventListener("touchstart", onStart, { capture: true, passive: true });
+    el.addEventListener("touchmove", onMove, { capture: true, passive: false });
+    el.addEventListener("touchend", onEnd, { capture: true });
+    el.addEventListener("touchcancel", onEnd, { capture: true });
+    return () => {
+      el.removeEventListener("touchstart", onStart, { capture: true });
+      el.removeEventListener("touchmove", onMove, { capture: true });
+      el.removeEventListener("touchend", onEnd, { capture: true });
+      el.removeEventListener("touchcancel", onEnd, { capture: true });
+    };
+  }, [compact]);
+  // Keys for what's picked: Delete hides it (or takes away what was added), arrows nudge it
+  // (Shift: more), Ctrl+D copies what was added, Enter types into text, Esc lets go. Before the
+  // map's own keys hear them.
+  useEffect(() => {
+    if (!editing || !designSel || typing) return;
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement;
-      if (t.closest?.("input,textarea,select,[contenteditable=true]")) return;
+      const tg = e.target as HTMLElement;
+      if (tg.closest?.("input,textarea,select,[contenteditable=true],[role=dialog]")) return;
       const mod = e.ctrlKey || e.metaKey;
       let used = true;
       if (e.key === "Escape") setEd({ designSel: null });
-      else if (!mod && (e.key === "Delete" || e.key === "Backspace")) (signEdit ? hideSignSel : removeDesignSel)();
-      else if (mod && e.key.toLowerCase() === "d" && !signEdit) duplicateDesignSel();
+      else if (!mod && (e.key === "Delete" || e.key === "Backspace")) removePicked(t, designSel);
+      else if (mod && e.key.toLowerCase() === "d") duplicatePicked(t, designSel);
+      else if (!mod && e.key === "Enter" && pickedOf(live, t, designSel)?.has.text) startTyping(designSel);
       else if (!mod && e.key.startsWith("Arrow") && page) {
         const el = elOf(designSel);
         if (!el) return;
-        const b = boxOf(el), step = e.shiftKey ? 10 : 1;
+        const b = boxOf(el), step = e.shiftKey ? 10 : 1, { W, H } = dims();
         const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0, dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
-        if (signEdit) movePiece(designSel, dx / page.width, dy / page.height);
-        else if (designSel.startsWith("label:")) {
-          const g = groundShift(dx, dy);
-          moveLabel(designSel.slice(6), g.x, g.y);
-        } else moveDesignEl(designSel, { x: b.x / page.width, y: b.y / page.height }, dx / page.width, dy / page.height);
+        if (designSel.startsWith("label:")) { const g = groundShift(dx, dy); moveLabel(designSel.slice(6), g.x, g.y); }
+        else movePicked(t, designSel, dx, dy, b, W, H);
       } else used = false;
       if (used) {
         e.preventDefault();
@@ -330,11 +477,11 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [editing, signEdit, designSel, page, setEd]);
+  }, [editing, designSel, page, setEd, t, typing, live]);
 
   if (!page) return null;
   const margin = compact ? 20 : 48;
-  const fit = Math.min((size.w - margin) / page.width, (size.h - margin) / page.height);
+  const fit = Math.min((size.w - margin) / page.width, (size.h - margin - (compact && designSel ? 64 : 0)) / page.height);
   const k = zoom ?? fit;
   kRef.current = k;
   const html = page.svg.replace(/^<svg([^>]*?) width="[^"]*" height="[^"]*"/, `<svg$1 width="${page.width * k}" height="${page.height * k}"`);
@@ -354,33 +501,52 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       {compact ? short : label}
     </button>
   );
+  const sel = (select: string) => `bg-white/[0.08] rounded-full px-3 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"} ${select}`;
+  const perHole = editing && (preview === "sign" || preview === "page") && !!holeId;
+  // (the toolbar over the piece, under it when there's no room above; docked at the bottom on a phone)
+  const barTop = selBox ? (selBox.y * k > 56 ? selBox.y * k - 50 : (selBox.y + selBox.h) * k + 14) : 0;
+  const barLeft = selBox ? Math.max(0, Math.min(selBox.x * k, page.width * k - 420)) : 0;
+  const toolbar = editing && designSel && selBox && !typing ? (
+    <PieceToolbar t={t} id={designSel} onGrow={grow} onPreviewFont={previewFont} onEditText={() => startTyping(designSel)} onDone={() => setEd({ designSel: null })} docked={compact} />
+  ) : null;
   return (
     <div className="absolute inset-0 z-20 bg-zinc-950 flex flex-col isolate overflow-hidden" style={compact ? { paddingTop: topInset } : undefined} data-testid="map-designer">
       <Woods inset />
-      <div className={compact ? "flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2 py-2" : "flex items-center gap-2 px-3 py-2.5"}>
+      <div className={compact ? "flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2 py-2" : "flex items-center gap-2 px-3 py-2.5 flex-wrap"}>
         <div role="tablist" className={compact ? "w-full flex gap-1" : "flex gap-1"}>{[...(only ? [] : [tab("general", "General")]), tab("map", "Course map", "Map"), tab("sign", "Tee sign", "Sign"), tab("page", "Hole page", "Page"), tab("scorecard", "Scorecard", "Card")]}</div>
         {(preview === "sign" || preview === "page") && doc.holes.length > 0 && (
-          <select aria-label={preview === "sign" ? "Hole for the tee sign" : "Hole for the hole page"} className={`bg-white/[0.08] rounded-full px-3 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={holeId ?? ""} onChange={e => setHole(e.target.value)}>
+          <select aria-label={preview === "sign" ? "Hole for the tee sign" : "Hole for the hole page"} className={sel("")} value={holeId ?? ""} onChange={e => setHole(e.target.value)}>
             {doc.holes.map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}</option>)}
           </select>
         )}
         {preview === "sign" && (
-          <select aria-label="Tee sign size" className={`bg-white/[0.08] rounded-full px-3 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={signSize} onChange={e => { setSignSize(e.target.value as SignSize); setZoom(null); }}>
+          <select aria-label="Tee sign size" className={sel("")} value={signSize} onChange={e => { setSignSize(e.target.value as SignSize); setZoom(null); }}>
             {(Object.keys(SIGN_SIZES) as SignSize[]).map(k => <option key={k} value={k}>{SIGN_SIZES[k].label}</option>)}
           </select>
         )}
         {preview === "page" && (
-          <select aria-label="Hole page size" className={`bg-white/[0.08] rounded-full px-3 ${compact ? "h-10 text-base min-w-0" : "py-1 text-sm"}`} value={pageSize} onChange={e => { setPageSize(e.target.value as HolePageSize); setZoom(null); }}>
+          <select aria-label="Hole page size" className={sel("")} value={pageSize} onChange={e => { setPageSize(e.target.value as HolePageSize); setZoom(null); }}>
             {(Object.keys(HOLE_PAGES) as HolePageSize[]).map(k => <option key={k} value={k}>{HOLE_PAGES[k].label}</option>)}
           </select>
         )}
+        {perHole && (
+          <div className="flex items-center gap-0.5 rounded-full bg-white/[0.08] p-0.5" role="radiogroup" aria-label="Changes go to" data-testid="change-scope">
+            {(["all", "hole"] as const).map(v => (
+              <button key={v} role="radio" aria-checked={scope === v} onClick={() => setEd({ signScope: v })} className={`px-2.5 ${compact ? "h-9 text-[12.5px]" : "py-1 text-xs"} rounded-full font-semibold whitespace-nowrap ${scope === v ? "bg-orange-400 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09]"}`}>
+                {v === "all" ? "Every hole" : `Hole ${holeLabel(doc, holeId!)} only`}
+              </button>
+            ))}
+          </div>
+        )}
         {!compact && zoomGroup}
       </div>
-      {/* (A phone: the zoom buttons float over the page, in the thumb's reach) */}
-      {compact && <div className="glass absolute right-2 bottom-2 z-10 rounded-[22px] p-0.5">{zoomGroup}</div>}
+      {/* (A phone: the zoom buttons float over the page, in the thumb's reach; the picked piece's
+          toolbar takes their place along the bottom) */}
+      {compact && !designSel && <div className="glass absolute right-2 bottom-2 z-10 rounded-[22px] p-0.5">{zoomGroup}</div>}
+      {compact && toolbar && <div className="absolute inset-x-2 bottom-2 z-30 flex justify-center">{toolbar}</div>}
       <div ref={box} className={`flex-1 overflow-auto ${compact ? "dg-scroll" : ""} cursor-grab`} data-testid="design-scroll" onPointerDown={onBoxDown} onPointerMove={onBoxMove} onPointerUp={onBoxUp} onPointerCancel={onBoxUp}>
         {/* (as wide as the page when zoomed in past the window, so all of it scrolls into view) */}
-        <div className={`w-max min-w-full min-h-full flex items-center justify-center ${compact ? "p-2.5" : "p-6"}`}>
+        <div className={`w-max min-w-full min-h-full flex items-center justify-center ${compact ? "p-2.5" : "p-6"}`} style={compact && designSel ? { paddingBottom: 72 } : undefined}>
           <div
             ref={pageEl}
             className="relative shrink-0"
@@ -388,27 +554,45 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
             onPointerMove={onPageMove}
             onPointerUp={onPageUp}
             onPointerCancel={onPageUp}
+            onPointerLeave={() => setHover(null)}
+            onDoubleClick={onPageDouble}
             style={{ width: page.width * k, height: page.height * k, ...(pinchScale ? { transform: `scale(${pinchScale.s})`, transformOrigin: `${pinchScale.ox}px ${pinchScale.oy}px` } : {}) }}
           >
             <div
               ref={svgHost}
               data-testid="design-page"
-              className={`shadow-2xl bg-white ${signEdit ? "[&_[data-el]]:cursor-pointer" : editing ? "[&_[data-el]:not([data-el=map])]:cursor-pointer" : ""}`}
+              className={`shadow-2xl bg-white ${editing ? (t === "map" ? "[&_[data-el]:not([data-el=map])]:cursor-pointer" : "[&_[data-el]]:cursor-pointer") : ""}`}
               style={{ width: page.width * k, height: page.height * k }}
               dangerouslySetInnerHTML={{ __html: held ?? html }}
             />
             {editing && <style>{`[data-testid=design-page] [data-label]{cursor:move}${designSel ? `[data-testid=design-page] ${designSel.startsWith("label:") ? `[data-label="${designSel.slice(6).replace(/"/g, "")}"]` : `[data-el="${designSel.replace(/"/g, "")}"]`}{cursor:move;touch-action:none}` : ""}`}</style>}
+            {editing && hover && hover.id !== designSel && (
+              <div className="absolute pointer-events-none rounded-[2px]" data-testid="page-hover" style={{ left: hover.box.x * k - 2, top: hover.box.y * k - 2, width: hover.box.w * k + 4, height: hover.box.h * k + 4, outline: "1.5px solid rgba(56,189,248,.9)" }} />
+            )}
+            {guides.x.map(x => <div key={`gx${x}`} className="absolute top-0 bottom-0 w-px pointer-events-none bg-pink-500" style={{ left: x * k }} data-testid="snap-guide" />)}
+            {guides.y.map(y => <div key={`gy${y}`} className="absolute left-0 right-0 h-px pointer-events-none bg-pink-500" style={{ top: y * k }} data-testid="snap-guide" />)}
             {editing && designSel && selBox && (
               <div className="absolute pointer-events-none" data-testid="page-selection" style={{ left: selBox.x * k, top: selBox.y * k, width: selBox.w * k, height: selBox.h * k, outline: "2px solid #f97316", outlineOffset: 2 }}>
-                {!designSel.startsWith("label:") && ["0,0", "1,0", "0,1", "1,1"].map(c => {
+                {!designSel.startsWith("label:") && !typing && ["0,0", "1,0", "0,1", "1,1"].map(c => {
                   const [cx, cy] = c.split(",").map(Number);
-                  return <div key={c} data-corner={c} data-testid="page-corner" className="absolute w-3 h-3 touch:w-6 touch:h-6 bg-white border-2 border-orange-500 rounded-sm pointer-events-auto" style={{ left: `calc(${cx * 100}% - ${compact ? 12 : 6}px)`, top: `calc(${cy * 100}% - ${compact ? 12 : 6}px)`, cursor: cx === cy ? "nwse-resize" : "nesw-resize", touchAction: "none" }} />;
+                  return <div key={c} data-corner={c} data-testid="page-corner" className="absolute w-3 h-3 touch:w-6 touch:h-6 bg-white border-2 border-orange-500 rounded-full pointer-events-auto" style={{ left: `calc(${cx * 100}% - ${compact ? 12 : 6}px)`, top: `calc(${cy * 100}% - ${compact ? 12 : 6}px)`, cursor: cx === cy ? "nwse-resize" : "nesw-resize", touchAction: "none" }} />;
                 })}
-                <div data-page-bar className="glass absolute left-0 flex items-center gap-1 pointer-events-auto rounded-full px-1.5 py-1 whitespace-nowrap" style={{ top: selBox.y * k > 40 ? -36 : undefined, bottom: selBox.y * k > 40 ? undefined : -36 }}>
-                  <span className="text-[11px] font-semibold text-zinc-200 px-1 max-w-[140px] truncate">{signEdit ? pieceLabel(designSel) : elementLabel(doc, designSel)}</span>
-                  {(() => { const gone = !signEdit && (designSel.startsWith("text:") || designSel.startsWith("image:")); return <button className="p-1 rounded hover:bg-white/[0.13] text-zinc-300" aria-label={gone ? "Delete it" : "Hide it"} title={gone ? "Delete" : "Hide"} onClick={signEdit ? hideSignSel : removeDesignSel}>{gone ? <Trash2 size={13} /> : <EyeOff size={13} />}</button>; })()}
-                </div>
               </div>
+            )}
+            {!compact && toolbar && <div className="absolute z-30" style={{ left: barLeft, top: barTop }}>{toolbar}</div>}
+            {typing && (
+              <textarea
+                autoFocus
+                aria-label="The words"
+                data-testid="page-typing"
+                className="absolute z-40 rounded-[8px] bg-zinc-950/90 text-zinc-50 ring-2 ring-orange-400 px-2 py-1.5 text-[15px] leading-snug resize-none focus:outline-none"
+                style={{ left: typing.box.x * k - 4, top: typing.box.y * k - 4, width: Math.max(220, typing.box.w * k + 8), height: Math.max(64, typing.box.h * k + 8) }}
+                value={typing.text}
+                onChange={e => setTyping({ ...typing, text: e.target.value })}
+                onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); doneTyping(false); } else if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doneTyping(true); } }}
+                onBlur={() => doneTyping(true)}
+                onPointerDown={e => e.stopPropagation()}
+              />
             )}
           </div>
         </div>

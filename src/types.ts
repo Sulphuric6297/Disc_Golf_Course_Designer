@@ -366,7 +366,13 @@ export interface PiecePlace {
  * as shares of the page (top-left corner, width); on every hole, or the holes listed. */
 export interface PrintExtra {
   id: string;
-  kind: "text" | "image" | "sponsors" | "qr";
+  kind: "text" | "image" | "sponsors" | "sponsor" | "qr";
+  /** The sponsor a "sponsor" piece shows (only on that sponsor's holes). */
+  sponsorId?: string;
+  /** How solid a picture is (0..1). */
+  opacity?: number;
+  /** Left off the page for now (Layers' eye brings it back). */
+  hidden?: boolean;
   x: number;
   y: number;
   w: number;
@@ -452,7 +458,8 @@ export interface PageText {
   /** Letter size, points (on the page as printed). */
   size: number;
   color: string;
-  font?: MapStyle["font"];
+  /** The course's lettering, or any Google font by name. */
+  font?: string;
   bold?: boolean;
   italic?: boolean;
   align?: "start" | "middle" | "end";
@@ -538,7 +545,8 @@ export interface MapStyle {
   north: boolean;
   scale: boolean;
   /** Lettering: "Script" sets the title in a brush script (the rest in Oswald). */
-  font: "Inter" | "Oswald" | "Bitter" | "Script";
+  /** The course's lettering: the app's own (Script, Oswald, Inter, Bitter) or any Google font. */
+  font: string;
   /** Forest style: where to paint woods (everywhere off the fairways, where the photo shows trees,
    * or only drawn woods and single trees). */
   forest: "everywhere" | "photo" | "woods";
@@ -562,8 +570,12 @@ export interface MapStyle {
   signSize?: "18x12" | "12x18" | "18x24" | "letter" | "a4";
   holePageSize?: "letter" | "a4" | "card" | "square";
   holePage?: HolePageSettings;
-  /** The course's hole sponsors (shown by a Sponsors piece on tee signs and hole pages). */
+  /** The course's hole sponsors (each placed on tee signs, hole pages, the scorecard or the map). */
   sponsors?: Sponsor[];
+  /** The scorecard's pieces placed by hand, and what's added to it. */
+  scorecard?: { layout?: Record<string, PiecePlace>; extras?: PrintExtra[]; players?: number };
+  /** Pictures, QR codes and sponsors added to the course map (its text has its own list). */
+  mapExtras?: PrintExtra[];
   /** The course map's frame, even on all four sides (unset: none, the map to the paper's edge). */
   frame?: "mat" | "line" | "band";
   /** Forest style: the treetops as painted maps have them (unset), or natural ones, as the 3D

@@ -3,6 +3,9 @@
 // tees, baskets, mandos, drop zones, distances), labels, and the frame (title, legend, hole table,
 // north arrow, scale bar). The same renderer draws a single hole for tee signs, turned so the tee
 // is at the bottom.
+import { extrasSvg } from "./pieces";
+import { fitAttr } from "./fitText";
+import { SCRIPT_FONTS } from "./fontKinds";
 import { latitudeOf, sunFromOf } from "./mapLook";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
@@ -137,9 +140,13 @@ export type MapLayers = {
   labelAt?: MapStyle["labelAt"];
 };
 
-export const fontStack = (f: string) => (f === "Oswald" || f === "Script" ? "Oswald, 'Arial Narrow', Arial, sans-serif" : f === "Bitter" ? "Bitter, Georgia, serif" : "Inter, Arial, sans-serif");
-/** The title's lettering (the brush script for "Script"). */
-export const titleStack = (f: string) => (f === "Script" ? "'Kaushan Script', 'Brush Script MT', cursive" : fontStack(f));
+const OWN_FONTS = new Set(["", "Oswald", "Inter", "Bitter", "Script"]);
+/** A font for labels: the app's own, or a Google font by name (a script's labels in Oswald). */
+export const fontStack = (f: string) => (f === "Oswald" || f === "Script" || SCRIPT_FONTS.has(f) ? "Oswald, 'Arial Narrow', Arial, sans-serif" : f === "Bitter" ? "Bitter, Georgia, serif" : OWN_FONTS.has(f) ? "Inter, Arial, sans-serif" : `'${f.replace(/'/g, "")}', Inter, Arial, sans-serif`);
+/** A font for titles: a script stays a script. */
+export const titleStack = (f: string) => (f === "Script" ? "'Kaushan Script', 'Brush Script MT', cursive" : SCRIPT_FONTS.has(f) ? `'${f.replace(/'/g, "")}', 'Kaushan Script', cursive` : fontStack(f));
+/** A script keeps its own capitals (a title in all capitals reads badly in one). */
+export const keepsCase = (f: string) => f === "Script" || SCRIPT_FONTS.has(f);
 
 export { BASKET_MARKS, basketMark };
 
@@ -1089,10 +1096,10 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
       if (the) name = name.replace(/^the\s+/i, "");
       const course = /\s+disc\s+golf(\s+course)?$/i.test(name);
       if (course) name = name.replace(/\s+disc\s+golf(\s+course)?$/i, "");
-      const big = Math.min(54 * ts, ((W * 0.4) / Math.max(4, name.length)) * (s.font === "Script" ? 2.1 : 1.9));
-      let tw = name.length * big * (s.font === "Script" ? 0.48 : 0.6);
+      const big = Math.min(54 * ts, ((W * 0.4) / Math.max(4, name.length)) * (keepsCase(s.font) ? 2.1 : 1.9));
+      let tw = name.length * big * (keepsCase(s.font) ? 0.48 : 0.6);
       if (the) { out.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="${font}" font-weight="700" font-style="italic" font-size="${n(13 * ts)}" fill="${ink}" ${shadow}>THE</text>`); ty += 10 * ts; }
-      out.push(`<text x="${n(tx)}" y="${n(ty + big * 0.95)}" text-anchor="${anchor}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(big)}" fill="${ink}" ${shadow}>${esc(s.font === "Script" ? name : name.toUpperCase())}</text>`);
+      out.push(`<text${fitAttr(W * 0.42)} x="${n(tx)}" y="${n(ty + big * 0.95)}" text-anchor="${anchor}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(big)}" fill="${ink}" ${shadow}>${esc(keepsCase(s.font) ? name : name.toUpperCase())}</text>`);
       ty += big * 1.15;
       const golf = course || !/golf/i.test(title) ? "DISC GOLF COURSE" : "";
       out.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="${n(12 * ts)}" letter-spacing="${n(3.2 * ts)}" fill="${ink}" ${shadow}>${golf}</text>`);
@@ -1113,10 +1120,10 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
       chips.forEach((c, i) => {
         const x0 = left ? tx + i * (cw + 8 * ts) : tx - (chips.length - i) * (cw + 8 * ts) + 8 * ts;
         const col = TEE_LEVELS[c.l.tee].color;
-        out.push(`<text x="${n(x0)}" y="${n(ty + 8 * ts)}" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(7 * ts)}" fill="${col}" ${shadow}>${esc(`${c.l.name} layout`.toUpperCase())}</text>`);
+        out.push(`<text${fitAttr(50 * ts)} x="${n(x0)}" y="${n(ty + 8 * ts)}" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(7 * ts)}" fill="${col}" ${shadow}>${esc(`${c.l.name} layout`.toUpperCase())}</text>`);
         out.push(`<rect x="${n(x0 + 52 * ts)}" y="${n(ty + 5.5 * ts)}" width="${n(cw - 52 * ts)}" height="${n(1.4 * ts)}" fill="${col}"/>`);
         out.push(`<rect x="${n(x0)}" y="${n(ty + 12 * ts)}" width="${n(cw)}" height="${n(chH)}" fill="#0b0f0a" fill-opacity="0.88"/>`);
-        out.push(`<text x="${n(x0 + cw / 2)}" y="${n(ty + 12 * ts + chH / 2)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(11 * ts)}" fill="${col === "#f8fafc" ? "#ffffff" : col}">PAR ${c.par} <tspan fill="#ffffff" fill-opacity="0.6">|</tspan> ${esc(fmtDist(c.len, doc.units, false))}${doc.units === "ft" ? "'" : " m"}</text>`);
+        out.push(`<text${fitAttr(cw - 8 * ts)} x="${n(x0 + cw / 2)}" y="${n(ty + 12 * ts + chH / 2)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(11 * ts)}" fill="${col === "#f8fafc" ? "#ffffff" : col}">PAR ${c.par} <tspan fill="#ffffff" fill-opacity="0.6">|</tspan> ${esc(fmtDist(c.len, doc.units, false))}${doc.units === "ft" ? "'" : " m"}</text>`);
       });
       if (chips.length) { tw = Math.max(tw, chips.length * (cw + 8 * ts)); ty += 12 * ts + chH; }
       const box = { x: left ? tx : tx - tw, y: ty0, w: tw, h: ty - ty0 + 4 * ts };
@@ -1195,9 +1202,11 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
       const ax = t.align === "middle" ? X + tw / 2 : t.align === "end" ? X + tw : X;
       const pad = t.size * 0.4;
       const bgRect = t.bg && (t.bgOpacity ?? 1) > 0 ? `<rect x="${n(X - pad)}" y="${n(Y - pad)}" width="${n(tw + pad * 2)}" height="${n(th + pad * 2)}" rx="${n(pad)}" fill="${t.bg}" fill-opacity="${n(t.bgOpacity ?? 1)}"/>` : "";
-      const body = lines.map((l, i) => `<text x="${n(ax)}" y="${n(Y + t.size * (0.95 + i * 1.25))}" text-anchor="${t.align ?? "start"}" font-family="${titleStack(t.font ?? s.font)}" font-weight="${t.bold ? 700 : 400}"${t.italic ? ` font-style="italic"` : ""} font-size="${n(t.size)}" fill="${t.color}">${esc(l)}</text>`).join("");
+      const body = lines.map((l, i) => `<text x="${n(ax)}" y="${n(Y + t.size * (0.95 + i * 1.25))}" text-anchor="${t.align ?? "start"}" font-family="${titleStack(t.font || s.font)}" font-weight="${t.bold ? 700 : 400}"${t.italic ? ` font-style="italic"` : ""} font-size="${n(t.size)}" fill="${t.color}">${esc(l)}</text>`).join("");
       parts.push(`<g data-el="text:${t.id}" data-box="${n(X)} ${n(Y)} ${n(tw)} ${n(th)}"><rect x="${n(X)}" y="${n(Y)}" width="${n(tw)}" height="${n(th)}" fill="none" pointer-events="all"/>${bgRect}${body}</g>`);
     }
+    // Pictures, QR codes and sponsors added to the map (the course's own name filled in)
+    parts.push(extrasSvg(s.mapExtras, s.sponsors, "", { hole: "", par: "", length: "", course: title, name: "" }, W, H, s.font, (id, c) => `<g data-el="${id}">${c}</g>`));
     return { svg: wrapSvg(W, H, parts.join(""), opts.dpi), width: W, height: H, page };
   }
 
@@ -1209,7 +1218,7 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
   const scale = Math.min(map.w / bw, map.h / bh);
   const view: MapView = { cx: center.x, cy: center.y, rotation, scale, width: map.w, height: map.h };
   const { svg } = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy }, "pm");
-  if (title) parts.push(`<text x="${n(m)}" y="${n(m + 30 * ts)}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(30 * ts)}" fill="${pal.ink}" letter-spacing="${n(s.font === "Script" ? 0 : 0.5 * ts)}">${esc(s.font === "Script" ? title : title.toUpperCase())}</text>`);
+  if (title) parts.push(`<text x="${n(m)}" y="${n(m + 30 * ts)}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(30 * ts)}" fill="${pal.ink}" letter-spacing="${n(keepsCase(s.font) ? 0 : 0.5 * ts)}">${esc(keepsCase(s.font) ? title : title.toUpperCase())}</text>`);
   const info = `${totals.complete} HOLES · PAR ${totals.par} · ${fmtDist(totals.length, doc.units).toUpperCase()}${layout && doc.layouts.length > 1 ? ` · ${layout.name.toUpperCase()} LAYOUT` : ""}`;
   parts.push(`<text x="${n(W - m)}" y="${n(m + 28 * ts)}" text-anchor="end" font-family="${font}" font-weight="600" font-size="${n(13 * ts)}" fill="${pal.inkSoft}">${esc(info)}</text>`);
   if (sub) parts.push(`<text x="${n(m)}" y="${n(m + 46 * ts)}" font-family="Inter, Arial, sans-serif" font-size="${n(9.5 * ts)}" fill="${pal.inkSoft}">${esc(sub)}</text>`);
@@ -1302,18 +1311,18 @@ const holeTable = (doc: CourseDoc, stats: HoleStats[], x: number, y: number, w: 
         const half = c.head.length * f * 0.3;
         const mid = c.x0 + c.cw / 2;
         rows.push(`<circle cx="${n(mid - half - f * 0.7)}" cy="${n(y - f * 0.35)}" r="${n(f * 0.38)}" fill="${c.dot}" stroke="#333" stroke-width="0.5"/><text x="${n(mid + f * 0.3)}" y="${n(y)}" text-anchor="middle" font-family="${font}" font-weight="700" font-size="${n(f * 1.05)}" fill="${pal.panelInk}">${esc(c.head)}</text>`);
-      } else rows.push(`<text x="${n(cellX(c))}" y="${n(y)}" text-anchor="${c.left ? "start" : "middle"}" font-family="${font}" font-weight="700" font-size="${n(f * 1.15)}" fill="${pal.panelInk}">${c.head}</text>`);
+      } else rows.push(`<text${fitAttr(c.cw)} x="${n(cellX(c))}" y="${n(y)}" text-anchor="${c.left ? "start" : "middle"}" font-family="${font}" font-weight="700" font-size="${n(f * 1.15)}" fill="${pal.panelInk}">${c.head}</text>`);
     });
     stats.forEach((st, r) => {
       const yy = y + (r + 1) * rowH + 4 * ts;
       if (r % 2 === 0) rows.push(`<rect x="${n(x - 4 * ts)}" y="${n(yy - rowH * 0.72)}" width="${n(w + 8 * ts)}" height="${n(rowH)}" fill="${pal.panelInk}" fill-opacity="0.05"/>`);
       rows.push(`<text x="${n(x + 6 * ts)}" y="${n(yy)}" text-anchor="middle" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">${st.label}</text>`);
-      placedCols.forEach(c => rows.push(`<text x="${n(cellX(c))}" y="${n(yy)}" text-anchor="${c.left ? "start" : "middle"}" font-family="Inter, Arial, sans-serif" font-size="${n(f)}" fill="${pal.panelInk}">${esc(clip(c.cell(r), c))}</text>`));
+      placedCols.forEach(c => rows.push(`<text${fitAttr(c.cw)} x="${n(cellX(c))}" y="${n(yy)}" text-anchor="${c.left ? "start" : "middle"}" font-family="Inter, Arial, sans-serif" font-size="${n(f)}" fill="${pal.panelInk}">${esc(clip(c.cell(r), c))}</text>`));
     });
     const yy = y + (stats.length + 1) * rowH + 8 * ts;
     rows.push(`<line x1="${n(x - 4 * ts)}" x2="${n(x + w + 4 * ts)}" y1="${n(yy - rowH * 0.8)}" y2="${n(yy - rowH * 0.8)}" stroke="${pal.panelInk}" stroke-opacity="0.4"/>`);
     rows.push(`<text x="${n(x)}" y="${n(yy)}" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">TOTAL</text>`);
-    placedCols.forEach(c => { if (c.total) rows.push(`<text x="${n(cellX(c))}" y="${n(yy)}" text-anchor="${c.left ? "start" : "middle"}" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">${c.total}</text>`); });
+    placedCols.forEach(c => { if (c.total) rows.push(`<text${fitAttr(c.cw)} x="${n(cellX(c))}" y="${n(yy)}" text-anchor="${c.left ? "start" : "middle"}" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">${c.total}</text>`); });
     return { svg: rows.join(""), bottom: yy + 4 * ts };
   }
   // Horizontal: holes across, rows for par and each layout (two blocks of up to 9 or 12 holes)

@@ -31,6 +31,10 @@ export const fontsIn = (doc: CourseDoc) => {
   const out = new Set<string>();
   const fromLayout = (l?: Record<string, PiecePlace>) => Object.values(l ?? {}).forEach(p => p.font && out.add(p.font));
   const fromExtras = (xs?: PrintExtra[]) => (xs ?? []).forEach(x => x.font && out.add(x.font));
+  for (const f of [doc.style.font, doc.style.card?.font, ...(doc.style.texts ?? []).map(t => t.font)]) if (f) out.add(f);
+  fromExtras(doc.style.mapExtras);
+  fromExtras(doc.style.scorecard?.extras);
+  fromLayout(doc.style.scorecard?.layout);
   fromLayout(doc.style.sign?.layout);
   fromLayout(doc.style.holePage?.layout);
   fromExtras(doc.style.sign?.extras);
