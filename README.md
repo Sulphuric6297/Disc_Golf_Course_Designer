@@ -57,7 +57,7 @@ If you want accounts, sharing, drafts and history, comments on the map and a pub
 - A computer that stays on. A Linux box, a VM or a cheap VPS all work.
 - Docker with Docker Compose.
 - A web address (a domain or subdomain) and a way to put HTTPS in front of the app, like Cloudflare Tunnel, Caddy or nginx. HTTPS isn't optional here, because the sign-in cookies won't work without it.
-- An authenticator app on your phone. Everyone signs in with two-factor.
+- An authenticator app on your phone, if you want two-factor sign-in. It's optional: each person can turn it on in their account, and an admin can require it for anyone.
 
 **Setting it up**
 
@@ -81,7 +81,7 @@ If you want accounts, sharing, drafts and history, comments on the map and a pub
    ```
    docker compose logs app
    ```
-7. Open your address, enter the setup code, and make the first account. That one is the admin. Set up two-factor sign-in when it asks.
+7. Open your address, enter the setup code, and make the first account. That one is the admin. I'd turn on two-factor sign-in for it from **Account** right away.
 8. Invite everyone else from inside the app. There's no public sign-up, so nobody gets in without an invite link from the admin.
 
 **Backups and updates**
