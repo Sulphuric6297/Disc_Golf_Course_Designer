@@ -202,8 +202,9 @@ function LayoutGaps({ compact = false }: { compact?: boolean }) {
   );
 }
 
-/** The layouts to pick from (the one worked on: its tees and pins stand out on the map). */
-export function LayoutPicker({ compact = false }: { compact?: boolean }) {
+/** The layouts to pick from (the one worked on: its tees and pins stand out on the map); `slim`:
+ * just each one's tee color, its name in the tip. */
+export function LayoutPicker({ compact = false, slim = false }: { compact?: boolean; slim?: boolean }) {
   const doc = useCourse(s => s.doc);
   if (doc.layouts.length < 2) return null;
   return (
@@ -213,15 +214,15 @@ export function LayoutPicker({ compact = false }: { compact?: boolean }) {
         const on = l.id === doc.activeLayout;
         return (
           <button key={l.id} role="radio" aria-checked={on} onClick={() => pickLayout(l.id)}
-            title={`${l.name}: ${TEE_LEVELS[l.tee].label.toLowerCase()} tees to pin ${l.pin}`}
-            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold min-w-0 touch:py-2 ${on ? "bg-white/[0.18] text-zinc-50 ring-1 ring-white/25" : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.07]"}`}>
+            title={`${l.name}: ${TEE_LEVELS[l.tee].label.toLowerCase()} tees to pin ${l.pin}`} aria-label={slim ? l.name : undefined}
+            className={`flex items-center gap-1.5 rounded-full py-1 text-[12px] font-semibold min-w-0 touch:py-2 ${slim ? "w-full justify-center px-1" : "px-2.5"} ${on ? "bg-white/[0.18] text-zinc-50 ring-1 ring-white/25" : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.07]"}`}>
             <span className="w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-black/40" style={{ background: TEE_LEVELS[l.tee].color }} />
-            <span className="truncate">{l.name}</span>
+            {!slim && <span className="truncate">{l.name}</span>}
           </button>
         );
       })}
     </div>
-    <LayoutGaps compact={compact} />
+    {!slim && <LayoutGaps compact={compact} />}
     </>
   );
 }
@@ -510,7 +511,7 @@ export function HolesColumn() {
   return (
     <div className={`absolute left-3 top-3 bottom-3 ${more ? "z-30" : "z-20"} flex flex-col gap-2 pointer-events-none`} data-testid="holes-column">
       <div className={`glass pointer-events-auto rounded-[22px] p-1.5 flex flex-col gap-0.5 max-h-full min-h-0 ${slim ? "w-[52px]" : "w-[172px]"}`} data-testid="hole-list">
-        {doc.layouts.length > 1 && !slim && <div className="pb-1 mb-0.5 border-b border-white/10"><LayoutPicker compact /></div>}
+        {doc.layouts.length > 1 && <div className="pb-1 mb-0.5 border-b border-white/10"><LayoutPicker compact slim={slim} /></div>}
         <div className="overflow-y-auto min-h-0 flex flex-col gap-0.5">
           {stats.map(s => {
             const hole = doc.holes.find(h => h.id === s.holeId)!;

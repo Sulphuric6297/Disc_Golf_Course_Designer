@@ -145,6 +145,9 @@ function HoleInspector({ hole, part }: { hole: Hole; part?: CourseItem }) {
   const baskets = holeBaskets(doc, hole.id);
   // The hole whose basket this one plays to, when it shares one
   const sharing = baskets.find(b => b.holeId !== hole.id)?.holeId ?? null;
+  // (open already when it does share one)
+  const [shareOpen, setShareOpen] = useState(!!sharing);
+  useEffect(() => { if (sharing) setShareOpen(true); }, [sharing]);
   const set = (patch: Partial<Hole>) => updateHole(hole.id, patch);
   return (
     <>
@@ -214,7 +217,7 @@ function HoleInspector({ hole, part }: { hole: Hole; part?: CourseItem }) {
           </button>
         </div>
         {doc.holes.length > 1 && (
-          <details className="mt-2" open={!!sharing || undefined}><summary className="cursor-pointer text-[11.5px] text-zinc-400 hover:text-zinc-200">Play to another hole's basket instead</summary>
+          <details className="mt-2" open={shareOpen} onToggle={e => setShareOpen((e.target as HTMLDetailsElement).open)}><summary className="cursor-pointer text-[11.5px] text-zinc-400 hover:text-zinc-200">Play to another hole's basket instead</summary>
             <select aria-label="Basket" data-testid="share-basket" className="mt-1.5 w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
               <option value="">Its own basket</option>
               {doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => b.holeId === h.id)).map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}'s basket</option>)}

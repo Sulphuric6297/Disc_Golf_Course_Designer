@@ -263,6 +263,8 @@ export class CourseView {
   private freeWas = 62;
   /** The selected hole's picked keyframe (its handle stands out). */
   private flyKeyOn: number | null = null;
+  /** The keyframe camera last taken hold of, and when (twice quickly looks through it). */
+  private keyTap: { i: number; t: number } | null = null;
   /** A flight under way: `dur` s of path, played over `play` s (`at`: path time at a moment; see flightClock). */
   /** A flyover holds its first picture until the hole's detail and textures are in and a few
    * frames are drawn (so it looks right from the start), ten seconds at most. */
@@ -3346,12 +3348,23 @@ export class CourseView {
           end: () => this.cb.onCommit()
         };
       };
-      // (taking hold of any of a keyframe's handles picks it)
-      const picked = (i: number, d: Drag | null) => { this.cb.onFlyKey?.(i); return d; };
+      // (taking hold of any of a keyframe's handles picks it; a camera taken hold of twice quickly,
+      // a double-click or double-tap, is looked through)
+      const picked = (i: number, d: Drag | null, cam = false) => {
+        const now = performance.now(), last = this.keyTap;
+        this.keyTap = cam ? { i, t: now } : null;
+        if (cam && last && last.i === i && now - last.t < 400) {
+          this.keyTap = null;
+          this.cb.onFlyCam?.(i);
+          return null;
+        }
+        this.cb.onFlyKey?.(i);
+        return d;
+      };
       keys.forEach((_, i) => {
         add("flylook", () => { const k = hole()?.flyKeys?.[i]; return k ? at({ x: k.lookX, y: k.lookY }) : null; }, () => picked(i, dragKey(i, true)), { index: i, title: `Where keyframe ${i + 1} looks: drag` });
         add("flyfoot", () => { const k = hole()?.flyKeys?.[i]; return k ? at(k) : null; }, () => picked(i, dragKey(i, false)), { index: i, title: `Keyframe ${i + 1} over the ground: drag to move it`, visible: tilted });
-        add("flykey", () => { const k = hole()?.flyKeys?.[i]; return k ? (tilted() ? new THREE.Vector3(k.x, this.h(k.x, k.y) + k.alt, k.y) : at(k)) : null; }, () => picked(i, tilted() ? dragHeight(i) : dragKey(i, false)), { index: i, title: `Keyframe ${i + 1}: in 3D drag up or down for its height; from above, drag to move it. Double-click to look through it`, data: { n: String(i + 1) } });
+        add("flykey", () => { const k = hole()?.flyKeys?.[i]; return k ? (tilted() ? new THREE.Vector3(k.x, this.h(k.x, k.y) + k.alt, k.y) : at(k)) : null; }, () => picked(i, tilted() ? dragHeight(i) : dragKey(i, false), true), { index: i, title: `Keyframe ${i + 1}: in 3D drag up or down for its height; from above, drag to move it. Double-click to look through it`, data: { n: String(i + 1) } });
       });
       // A + halfway (in time) between each two: a click adds a keyframe there, right where the
       // flight already goes
@@ -5460,9 +5473,6 @@ export class CourseView {
 
   private onDoubleClick(e: MouseEvent) {
     if (this.povHole) return;
-    // (a keyframe's camera: looked through)
-    const fk = (e.target as HTMLElement).closest?.("[data-handle=flykey]") as HTMLElement | null;
-    if (fk?.dataset.index) { this.cb.onFlyCam?.(Number(fk.dataset.index)); return; }
     if (this.drawn()) {
       // The double-click's two clicks each added a point: drop the repeat, then finish
       if (this.drawPts.length >= 2 && dist(this.drawPts[this.drawPts.length - 1], this.drawPts[this.drawPts.length - 2]) < 3) this.drawPts.pop();
