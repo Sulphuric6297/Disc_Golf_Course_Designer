@@ -223,18 +223,18 @@ export function ExportPanel() {
       )}
       <Section title="Print" help="print">
         <Row icon={<MapIcon size={15} className="text-orange-300" />} title="Course map" pick={
-          <select aria-label="Map paper" className={`${selectCls} w-full`} value={doc.style.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
+          <><span className="block text-[11px] text-zinc-500 mb-0.5">Paper size</span><select aria-label="Map paper" className={`${selectCls} w-full`} value={doc.style.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
             {(Object.keys(PAPER) as PaperSize[]).map(p => <option key={p} value={p}>{PAPER[p].label}</option>)}
-          </select>
+          </select></>
         }>
           <Button small onClick={mapPdf} disabled={busy} testid="export-map-pdf"><FileDown size={13} /> PDF</Button>
           <Button small onClick={mapPng} disabled={busy} testid="export-map-png"><ImageIcon size={13} /> PNG</Button>
           <Button small onClick={mapSvg} disabled={busy} testid="export-map-svg">SVG</Button>
         </Row>
-        <Row icon={<FileDown size={15} className="text-orange-300" />} title="Tee signs and hole sheets" pick={
-          <select aria-label="Tee sign size" className={`${selectCls} w-full`} value={signSize} onChange={e => setSignSize(e.target.value as SignSize)}>
+        <Row icon={<FileDown size={15} className="text-orange-300" />} title="Tee signs" pick={
+          <><span className="block text-[11px] text-zinc-500 mb-0.5">Sign size</span><select aria-label="Tee sign size" className={`${selectCls} w-full`} value={signSize} onChange={e => setSignSize(e.target.value as SignSize)}>
             {(Object.keys(SIGN_SIZES) as SignSize[]).map(p => <option key={p} value={p}>{SIGN_SIZES[p].label}</option>)}
-          </select>
+          </select></>
         }>
           <Button small onClick={signsPdf} disabled={busy || nothing} testid="export-signs-pdf"><FileDown size={13} /> PDF</Button>
           <Button small onClick={signsZip} disabled={busy || nothing} testid="export-signs-zip"><ImageIcon size={13} /> Pictures (ZIP)</Button>
@@ -249,10 +249,12 @@ export function ExportPanel() {
       </Section>
       <Section title="Hole by hole" testid="hole-exports">
         <div className="flex flex-col gap-1.5 mb-1.5">
+          <span className="block text-[11px] text-zinc-500 -mb-1">Which holes</span>
           <select aria-label="Hole to export" data-testid="hole-pick" className={`${selectCls} w-full`} value={pageHole ? pageHole.id : "all"} onChange={e => setPagePick(e.target.value)} disabled={nothing}>
             <option value="all">All holes{complete.length ? ` (${complete.length})` : ""}</option>
             {complete.map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}{h.name ? ` · ${h.name}` : ""}</option>)}
           </select>
+          <span className="block text-[11px] text-zinc-500 -mb-1">Page</span>
           <select aria-label="Hole page size" data-testid="hole-page-size" className={`${selectCls} w-full`} value={pageSize} onChange={e => setPageSize(e.target.value as HolePageSize)}>
             {(Object.keys(HOLE_PAGES) as HolePageSize[]).map(k => <option key={k} value={k}>{HOLE_PAGES[k].label}</option>)}
           </select>

@@ -76,7 +76,7 @@ const SHAPES: Record<DrawShape, { label: string; title: string; icon: ReactNode 
 const BrushSliders = ({ ed, strength = true }: { ed: Editor; strength?: boolean }) => {
   const units = useCourse(s => s.doc.units);
   return (
-    <div key="brush" className="flex shrink-0 items-center gap-3 glass ring-1 ring-white/10 rounded-full px-3 py-1 touch:py-1.5" data-testid="brush-sliders">
+    <div key="brush" className="flex shrink-0 touch:flex-1 items-center gap-3 glass ring-1 ring-white/10 rounded-full px-3 py-1 touch:py-1.5 touch:justify-between" data-testid="brush-sliders">
       <label className="flex items-center gap-1.5 text-xs touch:text-[13px] text-zinc-300 whitespace-nowrap">Brush
         <input type="range" aria-label="Brush size" min={4} max={150} step={1} value={ed.brushSize} onChange={e => ed.set({ brushSize: Number(e.target.value) })} className="slider w-20 touch:w-24" style={{ ["--fill" as string]: `${((ed.brushSize - 4) / 146) * 100}%` }} />
         <span className="tabular-nums w-12">{fmtDist(ed.brushSize * 2, units)}</span>

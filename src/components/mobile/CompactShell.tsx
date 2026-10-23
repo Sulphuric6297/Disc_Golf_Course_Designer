@@ -256,7 +256,9 @@ function ToolHeader() {
         </div>
         <button className={iconBtn} aria-label="Back to Select" title="Back to Select" onClick={() => { stopDrawing(); ed.set({ tool: "select" }); }} data-testid="tool-close"><X size={20} /></button>
       </div>
-      {options && <div className="mt-2.5 px-4 flex gap-1.5 overflow-x-auto dg-noscrollbar dg-fade-r touch-pan-x" data-testid="tool-options">{options}<span className="shrink-0 w-4" aria-hidden /></div>}
+      {options && <div className="mt-2.5 px-4 flex gap-1.5 overflow-x-auto dg-noscrollbar dg-fade-r touch-pan-x" data-testid="tool-options">{options.filter(o => (o as { key?: string } | null)?.key !== "brush")}<span className="shrink-0 w-4" aria-hidden /></div>}
+      {/* (the brush's size and strength on a row of their own: there's no room beside the rest) */}
+      {options?.some(o => (o as { key?: string } | null)?.key === "brush") && <div className="mt-2 px-4 flex">{options.find(o => (o as { key?: string } | null)?.key === "brush")}</div>}
     </div>
   );
 }

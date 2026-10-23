@@ -5,7 +5,7 @@
 // settings are further up the sheet, as before.
 import { useRef, useState, type ReactNode } from "react";
 import { Navigation, Plus } from "lucide-react";
-import { LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER } from "../../constants";
+import { AREA_KINDS, LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER } from "../../constants";
 import { holeBaskets, holeTees, teeAim } from "../../lib/course";
 import { holeStats } from "../../lib/holeStats";
 import { fmtDist } from "../../lib/units";
@@ -13,7 +13,7 @@ import { addHoleOb, select, setTeeLevel, startAnotherPin, startAnotherTee, start
 import { updateHole, updateItem, useCourse } from "../../state/course";
 import { canShowLocation, spotHere, useGps } from "../../state/gps";
 import { toast } from "../../state/toast";
-import type { BasketItem, CourseItem, Hole, MandoItem, StructureItem, TeeItem, TreeItem, TreeKind } from "../../types";
+import type { AreaItem, AreaKind, BasketItem, CourseItem, Hole, LineItem, LineKind, MandoItem, StructureItem, TeeItem, TreeItem, TreeKind } from "../../types";
 import { Segmented } from "../ui";
 
 type Chip = "par" | "fairway" | "tees" | "pins" | "ob" | "foliage";
@@ -168,9 +168,25 @@ export function ItemStrip({ item }: { item: CourseItem }) {
     const r = Math.round((item as { rotation?: number }).rotation ?? 0);
     chips.push({ id: "turn", label: <>Turn <span className="opacity-60">{deg(r)}</span></>, control: <Dial label="Turn" value={r} min={-720} max={720} step={1} format={v => `Turned ${deg(v)}`} onChange={v => live({ rotation: v })} onDone={done} /> });
     if (item.type === "mando") chips.push({ id: "side", label: <>Pass <span className="opacity-60">{(item as MandoItem).side}</span></>, control: <Segmented label="Mando side" value={(item as MandoItem).side} onChange={v => set({ side: v })} options={[{ value: "left", label: "Pass on the left" }, { value: "right", label: "Pass on the right" }]} /> });
-  } else if (item.type === "line" && LINE_KINDS[item.kind].width > 0) {
-    const w = item.width ?? LINE_KINDS[item.kind].width;
-    chips.push({ id: "width", label: <>Width <span className="opacity-60">{fmtDist(w, u)}</span></>, control: <Dial label="Width" value={w} min={1} max={60} step={0.5} format={v => `${fmtDist(v, u)} wide`} onChange={v => live({ width: v })} onDone={done} /> });
+  } else if (item.type === "area" || item.type === "line") {
+    // A shape: what kind, its OB, and a woods' trees and underbrush (tap a corner to delete it)
+    const kinds = item.type === "area" ? (Object.keys(AREA_KINDS) as AreaKind[]).map(k => [k, AREA_KINDS[k].label.replace(/ \(.*\)/, ""), AREA_KINDS[k].color]) : (Object.keys(LINE_KINDS) as LineKind[]).map(k => [k, LINE_KINDS[k].label, LINE_KINDS[k].color]);
+    const kindLabel = item.type === "area" ? AREA_KINDS[item.kind].label.replace(/ \(.*\)/, "") : LINE_KINDS[item.kind].label;
+    chips.push({ id: "kind", label: <>{kindLabel}</>, control: (
+      <div className="flex gap-1.5 overflow-x-auto touch-pan-x dg-scroll -mx-1 px-1">
+        {kinds.map(([k, label, color]) => <button key={k} className={`${small} ${item.kind === k ? "!bg-zinc-100 !text-zinc-900" : ""}`} onClick={() => set({ kind: k })}><span className="w-2.5 h-2.5 rounded-full ring-1 ring-black/40" style={{ background: color }} />{label}</button>)}
+      </div>
+    ) });
+    if (item.type === "line" && LINE_KINDS[item.kind].width > 0) {
+      const w = item.width ?? LINE_KINDS[item.kind].width;
+      chips.push({ id: "width", label: <>Width <span className="opacity-60">{fmtDist(w, u)}</span></>, control: <Dial label="Width" value={w} min={1} max={60} step={0.5} format={v => `${fmtDist(v, u)} wide`} onChange={v => live({ width: v })} onDone={done} /> });
+    }
+    const a = item as AreaItem | LineItem;
+    if (a.kind !== "ob" && a.kind !== "walk") chips.push({ id: "ob", label: <>OB <span className="opacity-60">{a.ob === true ? "red edge" : "no"}</span></>, control: <Segmented label="Out of bounds" value={a.ob === true ? "edge" : "no"} onChange={v => set(v === "edge" ? { ob: true } : { ob: undefined, obStretches: undefined, obBeyond: undefined })} options={[{ value: "no", label: "Not OB" }, { value: "edge", label: "OB, red edge" }]} /> });
+    if (item.type === "area" && item.kind === "woods") {
+      if (doc.lidar?.trees.length) chips.push({ id: "trees", label: <>Trees</>, control: <Segmented label="Trees in these woods" value={item.trees ?? "measured"} onChange={v => set({ trees: v === "measured" ? undefined : v })} options={[{ value: "measured", label: "Real" }, { value: "custom", label: "Real + fill" }, { value: "drawn", label: "App's" }, { value: "none", label: "None" }]} /> });
+      chips.push({ id: "brush", label: <>Underbrush <span className="opacity-60">{item.underbrush ?? "none"}</span></>, control: <Segmented label="Underbrush" value={item.underbrush ?? "none"} onChange={v => set({ underbrush: v === "none" ? undefined : v })} options={[{ value: "none", label: "None" }, { value: "light", label: "Light" }, { value: "medium", label: "Medium" }, { value: "heavy", label: "Heavy" }]} /> });
+    }
   } else if (item.type === "structure") {
     const s = item as StructureItem;
     const h = s.height ?? STRUCTURE_KINDS[s.kind].height;

@@ -99,6 +99,8 @@ const STYLE = `
 .dg-area{pointer-events:none;font:700 11px Inter,system-ui,sans-serif;color:#fff;text-shadow:0 0 3px #000,0 0 2px #000;opacity:.9}
 .dg-issue{pointer-events:auto;cursor:help;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:900 12px/1 Inter,system-ui,sans-serif;color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.55)}
 .dg-measure{pointer-events:none;padding:1px 6px;border-radius:6px;background:#facc15;color:#1c1917;font:700 11px Inter,system-ui,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.dg-ptmenu{position:absolute;z-index:40;transform:translate(-50%,-100%);padding:9px 14px;border-radius:999px;background:#fafaf9;color:#b91c1c;font:700 14px/1 Inter,system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.45);white-space:nowrap;border:0;pointer-events:auto}
+.dg-ptmenu:disabled{color:#71717a}
 .dg-measure.total{background:#1c1917;color:#facc15}
 .dg-me{pointer-events:none;width:20px;height:20px;border-radius:50%;background:#0a84ff;border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.55);position:absolute}
 .dg-me::after{content:"";position:absolute;inset:-9px;border-radius:50%;background:rgba(10,132,255,.35);animation:dgme 2s ease-out infinite;z-index:-1}
@@ -4069,6 +4071,37 @@ export class CourseView {
 
   /** A finger on a handle: it moves once the finger does (a handle's hit area is big for a finger,
    * so a tap on a hole's line often lands on one); a tap selects what the handle belongs to. */
+  /** A small Delete point button by a corner tapped with a finger (an area keeps 3, a line 2). */
+  private pointMenu(h: Handle, id: string, index: number) {
+    document.querySelectorAll(".dg-ptmenu").forEach(n => n.remove());
+    const it = this.item(id) as AreaItem | LineItem | StructureItem | null;
+    if (!it || !("points" in it) || it.locked) return;
+    const min = it.type === "line" || (it.type === "structure" && STRUCTURE_KINDS[it.kind].shape !== "outline") ? 2 : 3;
+    const btn = document.createElement("button");
+    btn.className = "dg-ptmenu";
+    btn.setAttribute("data-testid", "delete-point");
+    const can = it.points.length > min;
+    btn.textContent = can ? "Delete point" : `Needs at least ${min} points`;
+    btn.disabled = !can;
+    const r = h.el.getBoundingClientRect(), box = this.container.getBoundingClientRect();
+    btn.style.left = `${r.left + r.width / 2 - box.left}px`;
+    btn.style.top = `${r.top - box.top - 10}px`;
+    const gone = () => { btn.remove(); window.removeEventListener("pointerdown", away, true); };
+    const away = (ev: PointerEvent) => { if (ev.target !== btn) gone(); };
+    btn.addEventListener("click", ev => {
+      ev.stopPropagation();
+      const cur = this.item(id) as AreaItem | LineItem | StructureItem | null;
+      if (cur && "points" in cur && cur.points.length > min) {
+        this.cb.onChange(id, { points: cur.points.filter((_, k) => k !== index), ...(cur.type === "line" ? { widths: widthsWithout(cur, index) } : {}) });
+        this.cb.onCommit();
+      }
+      gone();
+    });
+    this.container.appendChild(btn);
+    window.setTimeout(() => window.addEventListener("pointerdown", away, true), 0);
+    window.setTimeout(gone, 6000);
+  }
+
   private fingerOnHandle(e: PointerEvent, h: Handle) {
     const x0 = e.clientX, y0 = e.clientY, id = e.pointerId, began = performance.now();
     let drag: Drag | null = null, moved = false;
@@ -4094,6 +4127,8 @@ export class CourseView {
       } else if (!moved && !pinched && ev.type === "pointerup") {
         const owner = this.selectedId ?? this.doc?.activeHoleId ?? null;
         if (owner && owner !== this.selectedId) this.cb.onSelect(owner);
+        // (a corner of the thing picked, tapped: a Delete point button by it, as a finger can't double-tap it reliably)
+        else if (h.kind === "corner" && h.index !== undefined && this.selectedId) this.pointMenu(h, this.selectedId, h.index);
       }
       this.invalidate();
     };
