@@ -11,6 +11,7 @@ import { holeLabel } from "../lib/course";
 import { useCanopy, useRelief } from "./useRelief";
 import { duplicateDesignSel, elementLabel, moveDesignEl, moveLabel, removeDesignSel, sizeDesignEl } from "./PageEditor";
 import { hideSignSel, movePiece, pieceLabel, sizePiece } from "./SignEditor";
+import { fontsIn, loadFont } from "../lib/fontLoad";
 
 /** A phone or small tablet (touch first, small screen). */
 const PHONE = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches && typeof screen !== "undefined" && Math.min(screen.width, screen.height) < 900;
@@ -26,6 +27,9 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const relief0 = useRelief(doc);
   const canopy = useCanopy(doc);
   const relief = useMemo(() => ({ ...relief0, canopy }), [relief0, canopy]);
+  // (the Google fonts the signs and pages use, put into the page so the preview shows them)
+  const fonts = fontsIn(doc).join("|");
+  useEffect(() => { for (const f of fonts.split("|")) if (f) loadFont(f); }, [fonts]);
   // (the Map step's tab: General shows the course map)
   const tabId = useEditor(e => e.designTab);
   const preview: Preview = tabId === "general" ? "map" : tabId;

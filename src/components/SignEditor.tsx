@@ -6,6 +6,8 @@ import { useRef } from "react";
 import { Eye, EyeOff, ImagePlus, Plus, QrCode, RotateCcw, Star, Trash2, Type } from "lucide-react";
 import { generateId } from "../constants";
 import { pictureFrom } from "./PageEditor";
+import { FontPicker } from "./FontPicker";
+import { fontsIn } from "../lib/fontLoad";
 import { signOf } from "../lib/teeSign";
 import { HOLE_PAGE_LOOKS, holePageOf } from "../lib/holePage";
 import { holeLabel } from "../lib/course";
@@ -156,13 +158,6 @@ export const hideSignSel = () => {
   set({ designSel: null });
 };
 
-const FONTS: { id: string; label: string }[] = [
-  { id: "", label: "The course's lettering" },
-  { id: "Oswald", label: "Oswald" },
-  { id: "Inter", label: "Inter" },
-  { id: "Bitter", label: "Bitter" },
-  { id: "Script", label: "Kaushan Script" }
-];
 
 /** Layers: every piece of the sign, shown or hidden, to pick or bring back. */
 export function SignLayers() {
@@ -206,9 +201,7 @@ export function SignPieceSettings() {
       </div>
       <Slider label="Size" min={0.3} max={3} step={0.05} value={p.scale ?? 1} onChange={v => setPlace(sel, { scale: v }, false)} onDone={commit} format={v => `${Math.round(v * 100)}%`} />
       <Field label="Font">
-        <select aria-label="Font" className="w-full bg-white/[0.08] rounded-[10px] px-2.5 py-1.5 text-sm text-zinc-100" value={p.font ?? ""} onChange={e => setPlace(sel, { font: e.target.value || undefined })}>
-          {FONTS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-        </select>
+        <FontPicker value={p.font} onChange={f => setPlace(sel, { font: f })} used={fontsIn(doc)} />
       </Field>
       <ColorInput label="Lettering color" value={p.color ?? "#ffffff"} onChange={v => setPlace(sel, { color: v }, false)} onDone={commit} />
       <ColorInput label="Panel color" value={p.fill ?? "#1b4332"} onChange={v => setPlace(sel, { fill: v }, false)} onDone={commit} />
@@ -276,7 +269,6 @@ function HolePicker({ holes, onChange }: { holes?: string[]; onChange: (v: strin
   );
 }
 
-const FONT_PICKS = [{ id: "", label: "The course's lettering" }, { id: "Oswald", label: "Oswald" }, { id: "Inter", label: "Inter" }, { id: "Bitter", label: "Bitter" }, { id: "Script", label: "Kaushan Script" }];
 
 /** An added piece's settings: its words (or picture, or link), size, font, color, holes. */
 function ExtraSettings({ id }: { id: string }) {
@@ -315,9 +307,7 @@ function ExtraSettings({ id }: { id: string }) {
         <>
           <Slider label="Letter size" min={6} max={240} step={1} value={e.size ?? 24} onChange={v => patch({ size: v }, false)} onDone={commit} format={v => `${Math.round(v)} pt`} />
           <Field label="Font">
-            <select aria-label="Font" className="w-full bg-white/[0.08] rounded-[10px] px-2.5 py-1.5 text-sm text-zinc-100" value={e.font ?? ""} onChange={ev => patch({ font: ev.target.value || undefined })}>
-              {FONT_PICKS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-            </select>
+            <FontPicker value={e.font} onChange={f => patch({ font: f })} used={fontsIn(doc)} />
           </Field>
           <ColorInput label="Color" value={e.color ?? "#111111"} onChange={v => patch({ color: v }, false)} onDone={commit} />
           {e.kind === "text" && <Toggle label="Bold" checked={!!e.bold} onChange={v => patch({ bold: v })} />}

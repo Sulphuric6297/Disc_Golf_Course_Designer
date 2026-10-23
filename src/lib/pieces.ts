@@ -8,8 +8,10 @@ import { titleStack } from "./mapSvg";
 
 const n = (v: number) => (Math.round(v * 100) / 100).toString();
 
-/** The fonts a piece can be set in (the course's lettering by default). */
-export const pieceFont = (f: string) => titleStack(f);
+/** The fonts a piece can be set in: the app's own (the course's lettering by default), or any
+ * Google font by its family name. */
+const OWN = new Set(["", "Oswald", "Inter", "Bitter", "Script"]);
+export const pieceFont = (f: string) => (OWN.has(f) ? titleStack(f) : `'${f.replace(/'/g, "")}', Inter, Arial, sans-serif`);
 
 /**
  * Pieces for one page: `wrap` puts a piece's drawing in its own group (moved, sized, restyled as
