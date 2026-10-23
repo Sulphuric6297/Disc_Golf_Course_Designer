@@ -389,7 +389,7 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
   const wet = item.kind === "water" || item.kind === "stream";
   const line = item.type === "line" ? item : null;
   const value = item.ob === true ? (line?.obBeyond ? "beyond" : "edge") : item.ob === false || !wet ? "no" : "yes";
-  const options = [{ value: "no", label: "Not OB" }, ...(wet ? [{ value: "yes", label: "OB" }] : []), { value: "edge", label: "OB, red edge" }, ...(line ? [{ value: "beyond", label: "OB and beyond" }] : [])];
+  const options = [{ value: "no", label: "Not OB" }, ...(wet ? [{ value: "yes", label: "OB (no line)" }] : []), { value: "edge", label: "OB, red edge" }, ...(line ? [{ value: "beyond", label: "OB and beyond" }] : [])];
   const pick = (v: string) => {
     if (line && v === "beyond") return markObBeyond(item.id);
     updateItem(item.id, {

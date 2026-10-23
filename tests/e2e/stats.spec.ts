@@ -344,7 +344,7 @@ test.describe("safety and design checks", () => {
     const doc = make([[{ x: 100, y: 300 }, { x: 500, y: 300 }], [{ x: 800, y: 600 }, { x: 1100, y: 600 }], [{ x: 1150, y: 650 }, { x: 1400, y: 650 }]]);
     const noPath = (d: CourseDoc) => safetyIssues(d).filter(i => i.id.startsWith("no-path:")).map(i => i.text);
     // (hole 2's basket and hole 3's tee 71 ft apart: no path needed)
-    expect(noPath(doc)).toEqual(["No path from Hole 1's basket to Hole 2's tee. Draw one with the Line tool so players can find the next hole."]);
+    expect(noPath(doc)).toEqual(["No path from Hole 1's basket to Hole 2's tee. Draw a Walking path or a Next-tee route with the Line tool so players can find the next hole."]);
     // Two paths that meet: from near the basket, then on to near the tee
     doc.items.push(createLine("path", [{ x: 520, y: 320 }, { x: 650, y: 450 }]), createLine("walk", [{ x: 660, y: 455 }, { x: 790, y: 590 }]));
     expect(noPath(doc)).toEqual([]);
