@@ -408,10 +408,12 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
     if (line && v === "beyond") return markObBeyond(item.id);
     updateItem(item.id, {
       ob: v === "edge" ? true : v === "no" ? (wet ? false : undefined) : undefined,
-      ...(line ? { obBeyond: undefined, ...(v === "edge" ? {} : { obStretches: undefined, obHoles: undefined }) } : {})
+      ...(line ? { obBeyond: undefined, ...(v === "edge" ? {} : { obStretches: undefined, obHoles: undefined }) } : v === "edge" ? {} : { obStretches: undefined })
     } as Partial<CourseItem>);
   };
-  const len = line ? pathLength(linePath(line)) : 0;
+  // (a line along its length, an area round its edge)
+  const len = line ? pathLength(linePath(line)) : item.type === "area" ? pathLength(areaRing(item)) : 0;
+  const stretches = item.obStretches;
   const markStretch = () => useEditor.getState().set({ obPick: item.id, pickCut: false, tool: "select" });
   // The holes it is OB for (none picked: all of them)
   const picked = line ? obPicked(doc, line) : [];
@@ -421,21 +423,21 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
       <Field label="Out of bounds">
         <Segmented label="Out of bounds" value={value} onChange={pick} options={options} />
       </Field>
-      {line && item.ob === true && (
-        <Field label="OB along">
+      {item.ob === true && (
+        <Field label={line ? "OB along" : "OB along its edge"}>
           <div className="flex flex-col gap-1.5" data-testid="ob-stretches">
-            {line.obStretches?.length ? line.obStretches.map(([a, b], k) => (
+            {stretches?.length ? stretches.map(([a, b], k) => (
               <div key={k} className="flex items-center gap-2 text-sm text-zinc-200" data-testid="ob-stretch">
                 <span className="flex-1 tabular-nums">{fmtDist(Math.min(a, b) * len, units, false)} to {fmtDist(Math.max(a, b) * len, units)}</span>
                 <button className="p-1 rounded hover:bg-white/[0.09] text-zinc-400" aria-label={`Remove stretch ${k + 1}`} onClick={() => {
-                  const rest = line.obStretches!.filter((_, j) => j !== k);
+                  const rest = stretches.filter((_, j) => j !== k);
                   updateItem(item.id, (rest.length ? { obStretches: rest } : { obStretches: undefined, ob: undefined }) as Partial<CourseItem>);
                 }}><X size={14} /></button>
               </div>
-            )) : <span className="text-sm text-zinc-200">All of it</span>}
+            )) : <span className="text-sm text-zinc-200">{line ? "All of it" : "All the way round"}</span>}
             <div className="flex gap-1.5">
-              <Button small onClick={markStretch} testid="ob-mark-stretch">{line.obStretches?.length ? "Add a stretch" : "Only a stretch"}</Button>
-              {!!line.obStretches?.length && <Button small onClick={() => updateItem(item.id, { obStretches: undefined } as Partial<CourseItem>)} testid="ob-all">All of it</Button>}
+              <Button small onClick={markStretch} testid="ob-mark-stretch">{stretches?.length ? "Add a stretch" : "Only a stretch"}</Button>
+              {!!stretches?.length && <Button small onClick={() => updateItem(item.id, { obStretches: undefined } as Partial<CourseItem>)} testid="ob-all">{line ? "All of it" : "All the way round"}</Button>}
             </div>
           </div>
         </Field>
@@ -558,7 +560,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
             </select>
           </Field>
           <Field label="Name on the map (optional)"><TextInput label="Area name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
-          {item.kind === "water" && <ObChoice item={item} />}
+          {item.kind !== "ob" && <ObChoice item={item} />}
           {item.kind === "woods" && <WoodsTrees item={item} />}
           {item.kind === "woods" && <WoodsBrush item={item} />}
           {(item.kind === "ob" || item.kind === "hazard") && holePicker}

@@ -32,6 +32,7 @@ import { ExportProgressPill } from "../ExportProgress";
 import { ActionSheet, type SheetAction } from "./ActionSheet";
 import { BottomSheet, type Detent } from "./BottomSheet";
 import { HereButton } from "../MyLocation";
+import { HoleStrip } from "./HoleStrip";
 import { useGps } from "../../state/gps";
 import { accountActions, CourseChip } from "../../auth/AccountMenu";
 import { ViewerPanelBody } from "../../auth/ViewerPanel";
@@ -458,11 +459,15 @@ function usePanel({ onFindSite, onMore }: { onFindSite: () => void; onMore: () =
   const tool = useEditor(e => e.tool);
   const selectedId = useEditor(e => e.selectedId);
   const meta = STEPS.find(s => s.id === step)!;
-  const tools = step === "design" || mode === "tool";
+  // (a hole picked: its strip of settings in the tools' place, the hole kept in view above it)
+  const { hole: pickedHole } = useSelection();
+  const strip = mode === "selection" && !!pickedHole && !readOnly;
+  const tools = (step === "design" || mode === "tool") && !strip;
   const header = (
     <>
       {tools && <ToolStrip />}
       {mode === "tool" ? <ToolHeader /> : mode === "selection" ? <SelectionHeader onMore={onMore} /> : <StepHeader onFindSite={onFindSite} />}
+      {strip && <HoleStrip hole={pickedHole} />}
     </>
   );
   const body = mode === "selection" ? (
@@ -537,10 +542,19 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
     if (panel.mode === "tool" && prevMode.current !== "tool") setDetent("peek");
     prevMode.current = panel.mode;
   }, [panel.mode]);
+  const holePicked = !readOnly && !!ed.selectedId && getDoc().holes.some(h => h.id === ed.selectedId);
   useLayoutEffect(() => {
-    // (view only: its numbers come up)
-    if (ed.selectedId) setDetent(d => (d === "full" ? "half" : readOnly && d === "peek" ? "half" : d));
+    // (a hole: down to its strip, the map free above it; view only: its numbers come up)
+    if (holePicked) setDetent("peek");
+    else if (ed.selectedId) setDetent(d => (d === "full" ? "half" : readOnly && d === "peek" ? "half" : d));
   }, [ed.selectedId]);
+  // (and the hole brought into the map above the sheet once the sheet has its height)
+  useEffect(() => {
+    if (!holePicked || !ed.selectedId) return;
+    const id = ed.selectedId;
+    const t = window.setTimeout(() => getView()?.reveal(id), 320);
+    return () => window.clearTimeout(t);
+  }, [ed.selectedId, holePicked, sheetH]);
 
   // Fitting holes and items keeps them clear of the sheet (set before the fit that follows a
   // pick from the list)

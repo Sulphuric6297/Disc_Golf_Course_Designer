@@ -40,6 +40,46 @@ async function oneHole(page: Page) {
 test.describe("phone", () => {
   test.use(device("iPhone 13"));
 
+  test("a hole picked: the strip under the map, its dial widening the fairway live (one undo step); holding open ground offers a tee, a bend, a new hole", async ({ page }) => {
+    await oneHole(page);
+    const hole = (await course(page)).holes[0];
+    await page.evaluate(id => (window as any).__dgActions.select(id), hole.id);
+    await expect(page.getByTestId("hole-strip")).toBeVisible();
+    await settle(page);
+    expect(await detent(page)).toBe("peek");
+    // (the tools make way for it)
+    await expect(page.getByTestId("tool-strip")).toHaveCount(0);
+    // The hole in the map above the sheet
+    const sheetTop = (await sheet(page).boundingBox())!.y;
+    const mid = await screenOf(page, 450, 500);
+    expect(mid.y).toBeLessThan(sheetTop);
+    // Fairway: the dial dragged left widens it as it goes, one undo step in all
+    await page.getByTestId("strip-fairway").tap();
+    const dial = page.getByTestId("dial");
+    const w0 = (await course(page)).holes[0].fairwayWidth;
+    const past0 = await page.evaluate(() => (window as any).__dgHistory().past);
+    const b = (await dial.boundingBox())!;
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2 - 90, b.y + b.height / 2, { steps: 6 });
+    await expect.poll(async () => (await course(page)).holes[0].fairwayWidth).toBe(w0 + 10);
+    await page.mouse.up();
+    expect(await page.evaluate(() => (window as any).__dgHistory().past)).toBe(past0 + 1);
+    // Par: the choices in its place
+    await page.getByTestId("strip-par").tap();
+    await page.getByTestId("hole-strip").getByRole("radio", { name: "4" }).tap();
+    await expect.poll(async () => (await course(page)).holes[0].par).toBe(4);
+    // Holding open ground beside the hole: a tee there, a bend
+    const g = await screenOf(page, 450, 560);
+    await longPress(page, g);
+    await expect(page.getByTestId("map-menu-here")).toBeVisible();
+    await page.getByRole("menuitem", { name: "Bend the hole here" }).tap();
+    await expect.poll(async () => (await course(page)).holes[0].doglegs.length).toBe(1);
+    await longPress(page, await screenOf(page, 300, 560));
+    await page.getByRole("menuitem", { name: "Add a tee here" }).tap();
+    await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "tee").length).toBe(2);
+  });
+
   test("where you are: the blue dot follows you, and a new hole's tee and basket go where you stand", async ({ page, context }) => {
     await openGround(page);
     // (the site placed on the earth; the phone's GPS at plan spots)

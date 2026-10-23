@@ -165,6 +165,15 @@ body {
 :where(input, select, textarea):focus-visible {
   outline: none;
 }
+/* A dropdown's list: the see-through field colour would leave it white, its words pale on it */
+select option,
+select optgroup {
+  background-color: #1d2621;
+  color: #f4f4f5;
+}
+select option:disabled {
+  color: #71717a;
+}
 
 /* Site picker: selected area size label */
 .leaflet-tooltip.site-picker-tooltip {

@@ -201,7 +201,7 @@ export const linePath = (l: Pick<LineItem, "kind" | "straight" | "points">, perS
 
 /** Where along a line it is out of bounds, as fractions of it as drawn (in order): its stretches,
  * or all of it. */
-export const obRanges = (l: Pick<LineItem, "obStretches">): [number, number][] =>
+export const obRanges = (l: { obStretches?: [number, number][] }): [number, number][] =>
   l.obStretches?.length ? l.obStretches.map(([a, b]): [number, number] => [Math.max(0, Math.min(a, b)), Math.min(1, Math.max(a, b))]).sort((x, y) => x[0] - y[0]) : [[0, 1]];
 /** Stretches put in order, overlapping ones joined and any next to nothing left out. */
 export const mergeStretches = (list: [number, number][]): [number, number][] => {
@@ -248,6 +248,26 @@ export const withoutStretch = (l: LineItem, a: number, b: number, newId = genera
     };
   };
   return [piece(0, from, l.id), piece(to, 1, newId())].filter((x): x is LineItem => !!x);
+};
+/** Whether a path comes back to where it starts (an area's edge, a line drawn round in a ring). */
+export const isRing = (pts: P[]) => pts.length > 3 && dist(pts[0], pts[pts.length - 1]) < 3;
+/**
+ * A stretch round a ring from `from` to `to` (fractions round it), the way it was gone round:
+ * `dir` 1 forward (as drawn), -1 back; 0: the shorter way. Crossing where the ring starts, it is
+ * two stretches.
+ */
+export const ringStretch = (from: number, to: number, dir: number): [number, number][] => {
+  let d = dir;
+  if (!d) { const fwd = (((to - from) % 1) + 1) % 1; d = fwd <= 0.5 ? 1 : -1; }
+  const [a, b] = d > 0 ? [from, to] : [to, from];
+  return a <= b ? [[a, b]] : [[a, 1], [0, b]];
+};
+/** An area's edge as drawn, closed (back to where it starts): what its OB stretches run round. */
+export const areaRing = (a: Pick<AreaItem, "kind" | "straight" | "points">) => { const p = areaPath(a); return p.length ? [...p, p[0]] : p; };
+/** An area's red OB edge as drawn: all the way round, or each of its stretches. */
+export const areaObEdges = (a: Pick<AreaItem, "kind" | "straight" | "points" | "obStretches">): P[][] => {
+  const ring = areaRing(a);
+  return obRanges(a).map(([x, y]) => subPath(ring, x, y)).filter(p => p.length >= 2 && pathLength(p) > 0.5);
 };
 /** A line's out-of-bounds pieces as drawn: all of it, or each of its stretches. */
 export const obPieces = (l: Pick<LineItem, "kind" | "straight" | "points" | "obStretches">): P[][] => {

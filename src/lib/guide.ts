@@ -552,7 +552,12 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "gestures", section: "phone", title: "Touch gestures",
-    body: "One finger pans (or drags a picked thing), pinch zooms, two fingers up or down tilt into 3D, two fingers sideways turn the map. Tap picks; hold opens a thing's menu.",
-    words: "gestures pinch tap hold tilt turn swipe"
+    body: "One finger pans (or drags a picked thing), pinch zooms, two fingers up or down tilt into 3D, two fingers sideways turn the map. Tap picks; hold on a thing opens its menu. Hold on open ground for what can start there: a tee or pin for the hole you're on, a turn in its line, a new hole, or measuring from that spot.",
+    words: "gestures pinch tap hold long press tilt turn swipe menu here"
+  },
+  {
+    id: "hole-strip", section: "phone", title: "Changing a hole on a phone",
+    body: "Tap a hole and the panel drops to a short strip, with the hole kept in view above it. Along the strip: Par, Fairway, Tees, Pins, OB and Foliage, each with what it's set to. Tap one to change it just below: drag the dial sideways for the fairway's width (the map follows as you go), or tap a choice. Everything else about the hole is further up: drag the panel up. The arrows by the hole's name go to the next and previous holes.",
+    words: "phone hole strip dial fairway width par tees pins ob foliage edit mobile"
   }
 ];

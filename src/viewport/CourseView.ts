@@ -16,7 +16,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, fairwayOutline, mergeStretches, obFor, obPicked, obRanges, obSides, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { FAIRWAY_STATIONS, areaObEdges, areaRing, isRing, ringStretch, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, fairwayOutline, mergeStretches, obFor, obPicked, obRanges, obSides, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, dist, distanceToPath, inBounds, nearestAlong, offsetPath, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath, subPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
@@ -255,6 +255,10 @@ export class CourseView {
   private plotHole: string | null = null;
   /** Marking a stretch of OB along a line: the line, and where along it the stretch starts (0..1). */
   private obPick: { id: string; from: number | null; cut: boolean } | null = null;
+  /** While marking a stretch round a ring: how far round the pointer has gone from its start (and
+   * where it was last), which way the stretch goes; and the stretch shown so far. */
+  private obTravel = { sum: 0, last: 0 };
+  private obPreview: THREE.Object3D | null = null;
   /** The trees measured from the air that are cut down (cleared for play, or taken out), and those
    * kept standing where they would be (by index). */
   private lidarState: { stand: number[]; cut: number[]; kept: number[] } | null = null;
@@ -2134,7 +2138,11 @@ export class CourseView {
         else if (it.type === "line" && !play && it.kind !== "ob" && it.kind !== "fence") lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 + 3 });
         else if (it.type === "tee") discs.push({ p: it, r: Math.max(12, it.padLength) });
         else if (it.type === "basket") discs.push({ p: it, r: CIRCLE_ONE_FT * 0.6 });
-        else if (it.type === "structure" && !play) lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 6 });
+        else if (it.type === "structure" && !play) {
+          // (a building, shelter or deck: none inside it, nor right against its walls)
+          if (STRUCTURE_KINDS[it.kind].shape === "outline") { polys.push(it.points); lines.push({ pts: [...it.points, it.points[0]], half: 4 }); }
+          else lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 6 });
+        }
       }
       type Box = { minX: number; minY: number; maxX: number; maxY: number };
       const shapes = polys.filter(pp => pp.length >= 3).map(pts => ({ pts, closed: [...pts, pts[0]], box: boundsOf(pts) }));
@@ -2178,7 +2186,11 @@ export class CourseView {
         // (and woods given drawn trees or none: no measured ones there)
         if (it.type === "area" && (["water", "parking", "building"].includes(it.kind) || (it.kind === "woods" && (it.trees === "drawn" || it.trees === "none")))) polys.push(this.shapeOf(it).pts);
         else if (it.type === "line" && ["road", "path", "walk", "stream"].includes(it.kind)) lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 });
-        else if (it.type === "structure") lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 2 });
+        else if (it.type === "structure") {
+          // (a building's outline: none inside it, nor with its trunk against the walls)
+          if (STRUCTURE_KINDS[it.kind].shape === "outline") { polys.push(it.points); lines.push({ pts: [...it.points, it.points[0]], half: 3 }); }
+          else lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 2 });
+        }
       }
       const shapes = polys.filter(pp => pp.length >= 3).map(pts => ({ pts, box: boundsOf(pts) }));
       const paths = lines.filter(l => l.pts.length > 1).map(l => ({ ...l, box: boundsOf(l.pts) }));
@@ -2231,19 +2243,22 @@ export class CourseView {
         return woods;
       }, this.itemsGroup, true);
     }
-    // Areas: fill plus outline
+    // Areas: fill plus outline (and a red OB edge, all round or along its stretches)
+    const obEdge = (a: AreaItem, g: THREE.Group) => {
+      for (const piece of areaObEdges({ ...a, straight: true })) g.add(this.fatLine(this.drapeLine(piece, LIFT + 0.05), color("ob")!, 3, { order: 5 }));
+    };
     const areas = (course.items.filter(i => i.type === "area") as AreaItem[]).map(a => ({ ...a, points: this.shapeOf(a).pts })).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
     areas.forEach((a, order) => {
       const meta = AREA_KINDS[a.kind];
       const c = color(a.kind) ?? meta.color;
-      put(`area:${a.id}`, JSON.stringify([a.points, a.kind, hv, c, photo, order, a.ob, a.kind === "water" ? this.waterShore(a.points) : 0, painted, clean]), () => {
+      put(`area:${a.id}`, JSON.stringify([a.points, a.kind, hv, c, photo, order, a.ob, a.obStretches, a.kind === "water" ? this.waterShore(a.points) : 0, painted, clean]), () => {
         const g = new THREE.Group();
         const fill = photo ? meta.fill : Math.min(0.9, meta.fill + 0.35);
         const rule = a.kind === "ob" || a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo";
         // (on the painted ground, or looked at only: no translucent fills, only the rules' edges)
         if ((painted || clean) && a.kind !== "water") {
           if (rule) g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, 3, { order: 4, dashed: a.kind === "ob" ? undefined : 6 }));
-          if (a.ob === true && a.kind !== "ob") g.add(this.fatLine(this.drapeLine(a.points, LIFT + 0.05, true), color("ob")!, 3, { order: 5 }));
+          if (a.ob === true && a.kind !== "ob") obEdge(a, g);
           return g;
         }
         if (a.kind === "water") {
@@ -2273,7 +2288,7 @@ export class CourseView {
           pond.renderOrder = 2;
           pond.receiveShadow = true;
           g.add(pond);
-          if (a.ob === true) g.add(this.fatLine(this.drapeLine(a.points, LIFT + 0.05, true), color("ob")!, 3, { order: 5 }));
+          if (a.ob === true) obEdge(a, g);
           return g;
         }
         // (A woods' floor goes under the fairways and paths through it, and under its ponds)
@@ -2288,7 +2303,7 @@ export class CourseView {
         const w = a.kind === "ob" || a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo" ? 3 : 1.5;
         if (w === 3 || !clean) g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, w, { order: 4, dashed: a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo" ? 6 : undefined }));
         // Marked OB (water, say): its red OB edge
-        if (a.ob === true && a.kind !== "ob") g.add(this.fatLine(this.drapeLine(a.points, LIFT + 0.05, true), color("ob")!, 3, { order: 5 }));
+        if (a.ob === true && a.kind !== "ob") obEdge(a, g);
         return g;
       });
       // Woods: trees standing in it (shadows and all)
@@ -2969,7 +2984,7 @@ export class CourseView {
     const hole = this.hole(holeId);
     const drawing = this.drawn() ? this.drawPts.length : -1;
     const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" || sel.type === "line" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
-    const obKey = `${sel?.type === "line" ? `${sel.ob}:${sel.obStretches?.length ?? 0}` : ""}|${this.obPick ? `${this.obPick.id}:${this.obPick.from}:${this.obPick.cut}` : ""}`;
+    const obKey = `${sel?.type === "line" || sel?.type === "area" ? `${sel.ob}:${sel.obStretches?.length ?? 0}` : ""}|${this.obPick ? `${this.obPick.id}:${this.obPick.from}:${this.obPick.cut}` : ""}`;
     if (`${this.readOnly}${key}${obKey}` === this.handleKey) return;
     this.handleKey = `${this.readOnly}${key}${obKey}`;
     this.handles.forEach(h => h.el.remove());
@@ -2986,10 +3001,10 @@ export class CourseView {
       this.handles.push({ el, kind, index: opts.index, world, start, visible: opts.visible });
     };
     // Marking a stretch of OB: where it starts, once clicked
-    const pick = this.obPick, picked = pick && pick.from !== null ? (this.item(pick.id) as LineItem | null) : null;
-    if (pick && picked?.type === "line") {
+    const pick = this.obPick, picked = pick && pick.from !== null ? (this.item(pick.id) as LineItem | AreaItem | null) : null;
+    if (pick && (picked?.type === "line" || picked?.type === "area")) {
       add("obmark", () => {
-        const pts = this.shapeOf(picked).pts, p = pointAlong(pts, (pick.from ?? 0) * pathLength(pts)).point;
+        const pts = this.obPath(picked), p = pointAlong(pts, (pick.from ?? 0) * pathLength(pts)).point;
         return new THREE.Vector3(p.x, this.h(p.x, p.y) + 0.3, p.y);
       }, () => null);
     }
@@ -3016,7 +3031,7 @@ export class CourseView {
       this.turnHandle(sel.id, add);
     }
     if (sel.type === "line" && sel.kind === "stream") this.lineWidthHandles(sel.id, add);
-    if (sel.type === "line" && sel.ob === true && sel.obStretches?.length && !sel.locked) this.obStretchHandles(sel.id, add);
+    if ((sel.type === "line" || sel.type === "area") && sel.ob === true && sel.obStretches?.length && !sel.locked) this.obStretchHandles(sel.id, add);
     if (sel.type === "structure" && !isLineKind(sel.kind)) this.outlineHandles(sel.id, add);
     else if (sel.type === "tree") {
       const id = sel.id;
@@ -3441,11 +3456,11 @@ export class CourseView {
   /** The ends of a line's OB stretches: each dragged along the line (a stretch dragged to nothing
    * goes). */
   private obStretchHandles(id: string, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
-    const it = () => this.item(id) as LineItem | null;
+    const it = () => this.item(id) as LineItem | AreaItem | null;
     const first = it();
     if (!first?.obStretches) return;
-    const at = (l: LineItem, t: number) => {
-      const pts = this.shapeOf(l).pts;
+    const at = (l: LineItem | AreaItem, t: number) => {
+      const pts = this.obPath(l);
       return pointAlong(pts, t * pathLength(pts)).point;
     };
     first.obStretches.forEach((_, k) => {
@@ -3462,7 +3477,7 @@ export class CourseView {
             move: ev => {
               const l = it(), g = this.groundAt(ev.clientX, ev.clientY);
               if (!l?.obStretches?.[k] || !g) return;
-              const t = nearestAlong(this.shapeOf(l).pts, { x: g.x, y: g.z }).t;
+              const t = nearestAlong(this.obPath(l), { x: g.x, y: g.z }).t;
               this.cb.onChange(id, { obStretches: l.obStretches.map((st, j) => (j === k ? (end ? [st[0], t] : [t, st[1]]) : st)) });
             },
             end: () => {
@@ -3492,9 +3507,10 @@ export class CourseView {
   /** Mark a stretch of OB along a line starting at a spot on it (from its right-click menu): then
    * a click where it ends. */
   startObPick(id: string, from: P, cut = false) {
-    const l = this.item(id) as LineItem | null;
-    if (l?.type !== "line") return;
-    this.obPick = { id, from: nearestAlong(this.shapeOf(l).pts, from).t, cut };
+    const l = this.item(id) as LineItem | AreaItem | null;
+    if (l?.type !== "line" && l?.type !== "area") return;
+    this.obPick = { id, from: nearestAlong(this.obPath(l), from).t, cut: cut && l.type === "line" };
+    this.obTravel = { sum: 0, last: this.obPick.from ?? 0 };
     this.syncHandles();
     this.updateCursor();
     this.invalidate();
@@ -3502,32 +3518,64 @@ export class CourseView {
 
   /** A click while marking a stretch of OB: on the line, its start, then its end (then done). */
   private obPickClick(p: P) {
-    const pick = this.obPick, l = pick ? (this.item(pick.id) as LineItem | null) : null;
-    if (!pick || l?.type !== "line") return this.endObPick();
-    const pts = this.shapeOf(l).pts, near = nearestAlong(pts, p);
-    // (near the line: within its width, a few steps, or a few pixels of it)
-    const reach = Math.max((l.width ?? LINE_KINDS[l.kind].width) / 2 + 12, 20 * this.upp(new THREE.Vector3(p.x, this.h(p.x, p.y), p.y)));
+    const pick = this.obPick, l = pick ? (this.item(pick.id) as LineItem | AreaItem | null) : null;
+    if (!pick || (l?.type !== "line" && l?.type !== "area")) return this.endObPick();
+    const pts = this.obPath(l), near = nearestAlong(pts, p);
+    // (near the line or the edge: within its width, a few steps, or a few pixels of it)
+    const reach = Math.max((l.type === "line" ? (l.width ?? LINE_KINDS[l.kind].width) / 2 : 0) + 12, 20 * this.upp(new THREE.Vector3(p.x, this.h(p.x, p.y), p.y)));
     if (near.distance > reach) return;
     if (pick.from === null) {
       this.obPick = { ...pick, from: near.t };
+      this.obTravel = { sum: 0, last: near.t };
       this.syncHandles();
       this.invalidate();
       return;
     }
     if (Math.abs(near.t - pick.from) * pathLength(pts) < 2) return;
-    if (pick.cut) {
+    // Round a ring: the way the pointer went round from the start (a finger: the shorter way)
+    const ring = isRing(pts);
+    const added: [number, number][] = ring ? ringStretch(pick.from, near.t, Math.abs(this.obTravel.sum) > 0.01 ? Math.sign(this.obTravel.sum) : 0) : [[pick.from, near.t]];
+    if (pick.cut && l.type === "line") {
       this.endObPick();
       this.cb.onCutLine(l.id, pick.from, near.t);
       return;
     }
     // (only along its stretches from now: marked OB all along, it was OB everywhere)
     const had = l.ob === true ? l.obStretches ?? [] : [];
-    this.cb.onChange(l.id, { ob: true, obStretches: mergeStretches([...had, [pick.from, near.t]]) });
+    this.cb.onChange(l.id, { ob: true, obStretches: mergeStretches([...had, ...added]) });
     this.cb.onCommit();
     this.endObPick();
   }
 
+  /** What OB stretches run along: a line as drawn, or an area's edge all the way round. */
+  private obPath(i: LineItem | AreaItem) {
+    return i.type === "line" ? this.shapeOf(i).pts : areaRing({ ...i, straight: true, points: this.shapeOf(i).pts });
+  }
+
+  /** The stretch so far while marking one round a ring (from its start to the pointer, the way it went). */
+  private obPickHover(p: P) {
+    const pick = this.obPick, l = pick ? (this.item(pick.id) as LineItem | AreaItem | null) : null;
+    if (this.obPreview) { this.fx.remove(this.obPreview); disposeObjectDeep(this.obPreview); this.obPreview = null; }
+    if (!pick || pick.from === null || (l?.type !== "line" && l?.type !== "area")) return;
+    const pts = this.obPath(l);
+    const t = nearestAlong(pts, p).t;
+    let d = t - this.obTravel.last;
+    const ring = isRing(pts);
+    if (ring) d = ((d + 1.5) % 1) - 0.5;
+    this.obTravel = { sum: this.obTravel.sum + d, last: t };
+    const parts = ring ? ringStretch(pick.from, t, Math.abs(this.obTravel.sum) > 0.01 ? Math.sign(this.obTravel.sum) : 0) : [[Math.min(pick.from, t), Math.max(pick.from, t)] as [number, number]];
+    const g = new THREE.Group();
+    for (const [a, b] of parts) {
+      const piece = subPath(pts, a, b);
+      if (piece.length >= 2) g.add(this.fatLine(this.drapeLine(piece, LIFT + 0.4), pick.cut ? "#f8fafc" : "#ef4444", 4, { dashed: 6, depthTest: false, order: 29, opacity: 0.9 }));
+    }
+    this.obPreview = g;
+    this.fx.add(g);
+    this.invalidate();
+  }
+
   private endObPick() {
+    if (this.obPreview) { this.fx.remove(this.obPreview); disposeObjectDeep(this.obPreview); this.obPreview = null; }
     if (!this.obPick) return;
     this.obPick = null;
     this.syncHandles();
@@ -4850,6 +4898,13 @@ export class CourseView {
     return false;
   }
 
+  /** The measure tool started at a spot (from the map's menu): the next tap measures from there. */
+  measureFrom(p: P) {
+    this.measurePts = [new THREE.Vector3(p.x, this.h(p.x, p.y), p.y)];
+    this.measureCursor = null;
+    this.drawMeasure();
+  }
+
   /** Puts the dot (and its cone, turned the way you face on the screen) where you are. */
   private placeMe(place: (el: HTMLElement, world: THREE.Vector3 | null, dy?: number) => void) {
     const me = this.me;
@@ -5025,6 +5080,7 @@ export class CourseView {
       if (!p || !this.doc) return;
       const g = this.groundAt(p.x, p.y);
       this.cb.onHover(g ? { x: g.x, y: g.z } : null);
+      if (this.obPick && g) { this.obPickHover({ x: g.x, y: g.z }); return; }
       if (this.tool.mode === "measure") {
         // (only over the site: a tilted view's horizon would stretch the line across the screen)
         const w = this.doc.course.canvas;

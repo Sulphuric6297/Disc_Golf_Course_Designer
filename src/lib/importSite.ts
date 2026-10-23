@@ -14,6 +14,7 @@ import { fetchTileFeatures } from "./geo/vectorTiles";
 import { createArea, createLine, createStructure, createTree } from "./course";
 import { centroid, clipPathToRect, clipPolygonToRect, pointInPolygon, polygonArea, simplify } from "./geom";
 import { reframe, toPlanXY, type GeoRef } from "./geoRef";
+import { treeFree } from "./treeFree";
 
 export type ImportedSite = {
   canvas: { width: number; height: number };
@@ -297,7 +298,9 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   } else woods = found.woods.filter(a => !inside(centroid(a.points), "woods"));
   const water = found.water.filter(a => !inside(centroid(a.points), "water"));
   const measuredNear = (t: P) => (lidar?.trees ?? []).some(m => Math.hypot(m[0] - t.x, m[1] - t.y) < 15);
-  const trees = lidar && !thinSurvey ? [] : found.trees.filter(t => !inside(t, "woods") && !inside(t, "water") && !measuredNear(t));
+  // (and never on a road, a building, parking or in water, as OpenStreetMap or the photo has them)
+  const nowhere = treeFree([...mapped, ...found.water]);
+  const trees = lidar && !thinSurvey ? [] : found.trees.filter(t => !inside(t, "woods") && !inside(t, "water") && !measuredNear(t) && !nowhere(t));
   // Woods the survey saw few trees in (missed, or grown since): drawn trees fill in between the
   // measured ones, all through it (the "Filled in" choice, set as if by hand)
   if (lidar) {

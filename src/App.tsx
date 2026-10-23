@@ -22,7 +22,7 @@ import { Button, HELP_EVENT } from "./components/ui";
 import { useLayout, useTouch } from "./components/useLayout";
 import { CompactShell, ItemMenu } from "./components/mobile/CompactShell";
 import { useCourse, useEditor, getDoc, changeDoc, updateItem } from "./state/course";
-import { adoptLidarTree, adoptTreeAt, canPaste, copySelection, cutTreeAt, cutSelection, deleteSelection, duplicateSelection, markObBeyond, nudgeSelection, pasteClipboard, select, selectAll } from "./state/actions";
+import { adoptLidarTree, adoptTreeAt, bendHoleAt, placeAt, canPaste, copySelection, cutTreeAt, cutSelection, deleteSelection, duplicateSelection, markObBeyond, nudgeSelection, pasteClipboard, select, selectAll } from "./state/actions";
 import { osmFailedToast } from "./state/osm";
 import { restoreAutosave, startAutosave } from "./state/files";
 import { toast, useToasts } from "./state/toast";
@@ -71,30 +71,49 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
   const tree = trees[0] ?? null;
   const under = info.under ? doc.items.find(i => i.id === info.under) : undefined;
   const underHole = info.under ? doc.holes.find(h => h.id === info.under) : undefined;
-  if (!hole && !item && !tree && !(canPaste() && info.ground)) return null;
-  const x = Math.min(info.clientX, window.innerWidth - 220), y = Math.min(info.clientY, window.innerHeight - 200);
-  const row = "w-full text-left px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/[0.09]";
+  // On open ground: what can start there (a tee or pin for the hole being worked on, a turn in
+  // its line, a new hole, measuring), as a long press on a phone's map offers
+  const ed = useEditor.getState();
+  const working = !hole && !item && info.ground && !useCourse.getState().readOnly ? doc.holes.find(h => h.id === (ed.activeHoleId ?? ed.selectedId)) : undefined;
+  const here = !hole && !item && !!info.ground && !useCourse.getState().readOnly && ed.step === "design";
+  if (!hole && !item && !tree && !here && !(canPaste() && info.ground)) return null;
+  const x = Math.min(info.clientX, window.innerWidth - 236), y = Math.min(info.clientY, window.innerHeight - (here ? 300 : 200));
+  const row = "w-full text-left px-3 py-1.5 touch:py-3 touch:text-[15px] text-sm text-zinc-200 hover:bg-white/[0.09]";
+  const toolThen = (tool: "add-hole" | "measure", then: (p: P) => void) => () => {
+    useEditor.getState().set({ tool });
+    const p = info.ground!;
+    requestAnimationFrame(() => requestAnimationFrame(() => then(p)));
+    onClose();
+  };
   const run = (fn: () => void) => () => { fn(); onClose(); };
   const holeId = hole?.id ?? (item && "holeId" in item ? item.holeId : undefined);
   // (on one of the things picked together: for all of them)
   const group = useEditor.getState().group;
   const inGroup = !!item && group.includes(item.id);
   return (
-    <div className="fixed z-50 w-52 glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 py-1" style={{ left: x, top: y }} role="menu" onPointerDown={e => e.stopPropagation()}>
+    <div className="fixed z-50 w-52 touch:w-56 glass-solid rounded-xl touch:rounded-2xl shadow-xl shadow-black/40 ring-1 ring-white/10 py-1" style={{ left: x, top: y }} role="menu" onPointerDown={e => e.stopPropagation()} data-testid="map-menu">
+      {here && (
+        <div className={trees.length || canPaste() ? "border-b border-white/[0.08] mb-1 pb-1" : ""} data-testid="map-menu-here">
+          {working && <div className="px-3 pt-1 pb-0.5 text-[11px] text-zinc-500">Hole {holeLabel(doc, working.id)}</div>}
+          {working && <button className={row} role="menuitem" onClick={run(() => placeAt("add-tee", info.ground!))}>Add a tee here</button>}
+          {working && <button className={row} role="menuitem" onClick={run(() => placeAt("add-basket", info.ground!))}>Add a pin here</button>}
+          {working && holeStats(doc, working).complete && <button className={row} role="menuitem" onClick={run(() => bendHoleAt(working.id, info.ground!))}>Bend the hole here</button>}
+          <button className={row} role="menuitem" onClick={toolThen("add-hole", p => getView()?.toolPoint(p))}>New hole, tee here</button>
+          <button className={row} role="menuitem" onClick={toolThen("measure", p => getView()?.measureFrom(p))}>Measure from here</button>
+        </div>
+      )}
       {holeId && holeStats(doc, doc.holes.find(h => h.id === holeId)!).complete && (
         <>
           <button className={row} role="menuitem" onClick={run(() => useEditor.getState().set({ teeView: holeId, flyover: false }))}>View from the tee</button>
           <button className={row} role="menuitem" onClick={run(() => useEditor.getState().set({ teeView: holeId, flyover: true }))}>Fly over the hole</button>
         </>
       )}
-      {item && (item.type === "area" && item.kind === "water" || item.type === "line" && item.kind !== "ob" && item.kind !== "walk") && (
+      {item && (item.type === "area" && item.kind !== "ob" || item.type === "line" && item.kind !== "ob" && item.kind !== "walk") && (
         <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, (item.ob === true ? { ob: undefined, obBeyond: undefined, obHoles: undefined, obStretches: undefined } : { ob: true }) as Partial<CourseItem>))}>{item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)"}</button>
       )}
-      {item?.type === "line" && item.kind !== "ob" && item.kind !== "walk" && (
-        <>
-          {!(item.ob === true && item.obBeyond) && <button className={row} role="menuitem" onClick={run(() => markObBeyond(item.id))}>Mark as OB and beyond</button>}
-          {info.ground && <button className={row} role="menuitem" onClick={run(() => { getView()?.startObPick(item.id, info.ground!); useEditor.getState().set({ obPick: item.id, pickCut: false, tool: "select" }); })}>OB stretch from here</button>}
-        </>
+      {item?.type === "line" && item.kind !== "ob" && item.kind !== "walk" && !(item.ob === true && item.obBeyond) && <button className={row} role="menuitem" onClick={run(() => markObBeyond(item.id))}>Mark as OB and beyond</button>}
+      {item && (item.type === "line" && item.kind !== "ob" && item.kind !== "walk" || item.type === "area" && item.kind !== "ob") && info.ground && (
+        <button className={row} role="menuitem" onClick={run(() => { getView()?.startObPick(item.id, info.ground!); useEditor.getState().set({ obPick: item.id, pickCut: false, tool: "select" }); })}>{item.type === "area" ? "OB along the edge from here" : "OB stretch from here"}</button>
       )}
       {item?.type === "line" && !item.locked && info.ground && <button className={row} role="menuitem" onClick={run(() => { getView()?.startObPick(item.id, info.ground!, true); useEditor.getState().set({ obPick: item.id, pickCut: true, tool: "select" }); })}>Remove a stretch from here</button>}
       {trees.map((t, n) => {

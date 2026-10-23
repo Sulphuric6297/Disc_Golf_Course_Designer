@@ -6,7 +6,7 @@
 import { latitudeOf, sunFromOf } from "./mapLook";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
-import { activeLayout, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, obSides, sharedWalks, teeAim, walkRoutes } from "./course";
+import { activeLayout, areaObEdges, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, obSides, sharedWalks, teeAim, walkRoutes } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
 import { courseTotals, holeStats, isOb, playsOf, type HoleStats } from "./holeStats";
 import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, type CanopyGrid } from "./forest";
@@ -415,7 +415,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       });
     };
     const edge = (d: string, o: number) => out.push(`<path d="${d}" fill="none" stroke="${obCase}" stroke-opacity="0.9" stroke-width="${n(px(3.6))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/><path d="${d}" fill="none" stroke="${obCol}" stroke-width="${n(px(1.9))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/>`);
-    for (const a of areas) if (a.ob === true && a.kind !== "ob" && a.points.length >= 3) edge(pathD(a.points, true), dim(a.holeId, a.alsoHoles));
+    for (const a of areas) if (a.ob === true && a.kind !== "ob" && a.points.length >= 3) for (const piece of areaObEdges({ ...a, straight: true })) edge(pathD(piece), dim(a.holeId, a.alsoHoles));
     // (short ticks from an edge into the out-of-bounds side: a road and beyond)
     const ticks = (line: P[], side: number, o: number) => {
       const len = pathLength(line), step = px(9), out1: string[] = [];

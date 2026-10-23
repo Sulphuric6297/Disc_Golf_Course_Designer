@@ -10,6 +10,7 @@ import { courseStats, holeStats } from "../lib/holeStats";
 import type { BasketItem, CourseDoc, CourseItem, Hole, P, TeeLevel, ToolMode, TreeItem } from "../types";
 import { changeDoc, editor, getDoc, removeHole, removeItems, updateItem, useEditor, useCourse } from "./course";
 import { toast } from "./toast";
+import { keepsTreesOut, treeFree } from "../lib/treeFree";
 
 /** Selects an item or a hole; selecting a hole's part makes that hole the one being worked on. */
 export const select = (id: string | null, add = false) => {
@@ -200,8 +201,11 @@ export const addDrawn = (kind: "area" | "line" | "structure", points: P[], opts:
   const ed = editor();
   const made = kind === "area" ? createArea(ed.areaKind, points) : kind === "structure" ? createStructure(ed.structureKind, points) : createLine(ed.lineKind, points);
   const item = opts.straight && made.type !== "structure" ? { ...made, straight: true } : made;
-  changeDoc(d => ({ items: [...d.items, item] }));
+  // (a building, road, parking or water drawn over trees: those standing in it go, the same step)
+  const under = keepsTreesOut(item) ? new Set(getDoc().items.filter(i => i.type === "tree" && !i.locked && treeFree([item])(i)).map(i => i.id)) : new Set<string>();
+  changeDoc(d => ({ items: [...d.items.filter(i => !under.has(i.id)), item] }));
   select(item.id);
+  if (under.size) toast(`Took out ${under.size} tree${under.size === 1 ? "" : "s"} standing in it.`, "info", true);
 };
 
 export const deleteSelection = () => {
@@ -420,6 +424,23 @@ export const setTeeLevel = (teeId: string, level: TeeLevel) => {
   if (!tee || tee.type !== "tee") return;
   const other = holeTees(doc, tee.holeId).find(t => t.level === level && t.id !== teeId);
   changeDoc(d => ({ items: d.items.map(i => (i.id === teeId ? { ...i, level } as CourseItem : other && i.id === other.id ? { ...i, level: tee.level } as CourseItem : i)) }));
+};
+
+/** A turn put in a hole's line at a spot (between the turns either side of where it's nearest). */
+export const bendHoleAt = (holeId: string, p: P) => {
+  const doc = getDoc();
+  const hole = doc.holes.find(h => h.id === holeId);
+  if (!hole) return;
+  const s = holeStats(doc, hole);
+  if (!s.complete || s.line.length < 2) return;
+  let at = 0, best = Infinity;
+  for (let i = 1; i < s.line.length; i++) {
+    const d = nearestOnSegment(p, s.line[i - 1], s.line[i]).distance;
+    if (d < best) { best = d; at = i - 1; }
+  }
+  const doglegs = [...hole.doglegs];
+  doglegs.splice(at, 0, { x: p.x, y: p.y });
+  changeDoc(d => ({ holes: d.holes.map(h => (h.id === holeId ? { ...h, doglegs } : h)) }));
 };
 
 /** The layout worked on: its tees and pins to the fore, new tees in its color. */

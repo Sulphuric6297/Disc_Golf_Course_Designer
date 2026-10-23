@@ -122,6 +122,9 @@ export interface AreaItem extends BaseItem {
   label?: string;
   /** Out of bounds: water is unless set false; true also draws the red OB edge on the map. */
   ob?: boolean;
+  /** The stretches of its edge that are OB, each from-to as fractions round it from its first
+   * point (unset: all the way round). */
+  obStretches?: [number, number][];
   /** Woods: which trees stand in it in 3D: those measured from the air (the default, when the
    * course has them), custom (the measured ones, plus `patches` of drawn trees filling in where
    * the survey saw none or they've grown since), drawn trees only, or none (measured ones inside
