@@ -20,7 +20,7 @@ import { TreeSettings } from "./TreeSettings";
 import { HoleFlight } from "./FlyoverSettings";
 import { HoleSteps } from "./HoleSteps";
 import { getView } from "../state/view";
-import { Button, ChoiceList, ColorInput, Field, HelpLink, NumberInput, Section, Segmented, Slider, Facts, TextInput, Toggle } from "./ui";
+import { Button, ChoiceList, ColorInput, Field, NumberInput, Section, Segmented, Slider, Facts, TextInput, Toggle } from "./ui";
 
 const shapeText = { straight: "Straight", left: "Turns left", right: "Turns right", "s-curve": "S-curve" };
 /** A small size to the half foot (or tenth of a meter): "2.5 ft". */
