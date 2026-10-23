@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { Box, ChevronRight, Clapperboard, FileDown, FileJson, Image as ImageIcon, Link2, Map as MapIcon, Users } from "lucide-react";
 import { SERVER, useAuth } from "../auth/api";
+import { useServerCourse } from "../auth/courses";
 import JSZip from "jszip";
 import { PAPER, paintedForPrint, renderPoster } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
@@ -196,13 +197,18 @@ export function ExportPanel() {
   );
   const nothing = !complete.length;
   const recording = job?.kind === "video" ? job : null;
+  // (only the owner makes public links: others share with people)
+  const owner = useServerCourse(s => s.role) === "owner";
+  const shares = ([["public", <Link2 key="l" size={16} />, "Public link", "A page anyone with the link can see"], ["people", <Users key="u" size={16} />, "People", "Who can see and edit the course"]] as const).filter(([t]) => owner || t === "people");
   return (
     <>
       <ExportBanner />
+      {/* (why most of the buttons below are off) */}
+      {nothing && <p className="mx-4 mb-2 rounded-[14px] bg-white/[0.06] px-3 py-2 text-[12.5px] text-zinc-300" data-testid="export-needs-hole">Signs, pages, the scorecard and videos need at least one hole with a tee and a basket.</p>}
       {SERVER && (
         <Section title="Share" testid="export-share">
           <div className="rounded-[16px] bg-white/[0.06] overflow-hidden">
-            {([["public", <Link2 key="l" size={16} />, "Public link", "A page anyone with the link can see"], ["people", <Users key="u" size={16} />, "People", "Who can see and edit the course"]] as const).map(([t, icon, label, sub], i) => (
+            {shares.map(([t, icon, label, sub], i) => (
               <button key={t} data-testid={`export-share-${t}`} onClick={() => useAuth.getState().share(t)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 text-left ${i ? "border-t border-white/[0.07]" : ""}`}>
                 <span className="w-7 h-7 rounded-[8px] bg-white/[0.1] flex items-center justify-center text-zinc-200">{icon}</span>
@@ -299,6 +305,7 @@ export function ExportPanel() {
         )}
       </Section>
       <Section title="GPS and data">
+        {!geo && <p className="text-[12px] text-zinc-400 mb-2">GPS files need the course's real place: bring in the site on the Site step.</p>}
         <Row icon={<FileJson size={15} className="text-sky-300" />} title="GPS files">
           <Button small onClick={text(() => toKML(getDoc()), ".kml", "application/vnd.google-earth.kml+xml")} disabled={busy || !geo} testid="export-kml">KML</Button>
           <Button small onClick={text(() => toGeoJSON(getDoc()), ".geojson", "application/geo+json")} disabled={busy || !geo} testid="export-geojson">GeoJSON</Button>

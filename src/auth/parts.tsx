@@ -58,13 +58,29 @@ export const Screen = ({ title, children }: { title: string; children: ReactNode
   </div>
 );
 
+/** Copies text: the clipboard, or where that isn't allowed (a plain-http address) the old way. */
+const copyText = async (text: string) => {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* the old way below */ }
+  const box = document.createElement("textarea");
+  box.value = text;
+  box.style.cssText = "position:fixed;opacity:0;left:0;top:0";
+  document.body.appendChild(box);
+  box.select();
+  const ok = document.execCommand("copy");
+  box.remove();
+  return ok;
+};
+
 export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState<"" | "yes" | "no">("");
   return (
-    <button type="button" className="inline-flex items-center gap-1.5 rounded-lg font-semibold px-2.5 py-1 text-xs touch:py-2.5 bg-white/[0.07] hover:bg-white/[0.13] text-zinc-100 border border-white/[0.12]"
-      onClick={() => { void navigator.clipboard?.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1500); }); }}>
-      {done ? <Check size={13} /> : <Copy size={13} />} {done ? "Copied" : label}
-    </button>
+    <span className="inline-flex flex-col items-end">
+      <button type="button" className="inline-flex items-center gap-1.5 rounded-lg font-semibold px-2.5 py-1 text-xs touch:py-2.5 bg-white/[0.07] hover:bg-white/[0.13] text-zinc-100 border border-white/[0.12]"
+        onClick={() => { void copyText(text).then(ok => { setDone(ok ? "yes" : "no"); setTimeout(() => setDone(""), ok ? 1500 : 6000); }); }}>
+        {done === "yes" ? <Check size={13} /> : <Copy size={13} />} {done === "yes" ? "Copied" : label}
+      </button>
+      {done === "no" && <span role="alert" className="mt-1 text-[11px] text-red-300 select-all break-all max-w-[260px]">Couldn't copy. Select it: {text}</span>}
+    </span>
   );
 }
 

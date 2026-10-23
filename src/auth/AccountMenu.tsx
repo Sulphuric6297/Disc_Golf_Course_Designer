@@ -73,7 +73,7 @@ export function CourseChip() {
   const label = !drafting ? "Live" : n ? `Draft · ${n} change${n === 1 ? "" : "s"}` : "Draft";
   return (
     <div className="relative flex items-center gap-1.5" ref={m.ref}>
-      {status === "error" && <span className="text-[12px] text-red-300">Can't save</span>}
+      {status === "error" && <button className="text-[12px] text-red-300 hover:text-red-200 underline underline-offset-2" onClick={() => void saveNow()} title="The last changes aren't on the server yet" data-testid="save-retry">Not saved · try again</button>}
       <button
         className={`inline-flex items-center gap-1.5 pl-2.5 pr-2 py-1 rounded-full text-[12px] font-semibold ${FOCUS} ${drafting ? "bg-orange-500/15 text-orange-200" : "bg-emerald-500/10 text-emerald-200"}`}
         onClick={() => m.setOpen(o => !o)} aria-haspopup="menu" aria-expanded={m.open} data-testid="course-chip"

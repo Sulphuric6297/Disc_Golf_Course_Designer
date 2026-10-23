@@ -7,6 +7,7 @@ import { Check, MessageCircle, MessageSquarePlus, RotateCcw, Trash2, X } from "l
 import { holeLabel } from "../lib/course";
 import { getDoc, useCourse } from "../state/course";
 import { getView } from "../state/view";
+import { toast } from "../state/toast";
 import { inputCls } from "../components/ui";
 import type { CourseDoc, P } from "../types";
 import { api, useAuth } from "./api";
@@ -40,7 +41,12 @@ export async function loadComments() {
   const threads = await api<Thread[]>("GET", `courses/${id}/comments`);
   if (useServerCourse.getState().id === id) useComments.setState({ courseId: id, threads });
 }
-const act = async (fn: () => Promise<unknown>) => { await fn(); await loadComments(); };
+/** A change to the comments, then the list again; a failure said (true when it went through). */
+const act = async (fn: () => Promise<unknown>) => {
+  try { await fn(); } catch (e) { toast(`That didn't go through: ${e instanceof Error ? e.message : "try again"}.`, "error"); return false; }
+  await loadComments().catch(() => {});
+  return true;
+};
 
 export const openComments = (threadId?: string) => {
   useComments.setState({ panel: true, selected: threadId ?? cs().selected });
@@ -152,7 +158,9 @@ function Composer({ at }: { at: { x: number; y: number } }) {
     try {
       const r = await api<{ id: string }>("POST", base(), { body: text, anchor: { x: d.p.x, y: d.p.y, on: d.on }, inDraft: inDraft() && useServerCourse.getState().draft });
       useComments.setState({ draftAt: null, selected: r.id, panel: true });
-      await loadComments();
+      await loadComments().catch(() => {});
+    } catch (e) {
+      toast(`The comment wasn't posted: ${e instanceof Error ? e.message : "try again"}.`, "error");
     } finally { setBusy(false); }
   };
   return (
@@ -238,7 +246,7 @@ function ThreadView({ t, n, doc, me, owner, members }: { t: Thread; n: number; d
       {t.replies.map(r => <div key={r.id}>{one(r, false)}</div>)}
       <div className="mt-2 flex items-center gap-2">
         <input className={`${inputCls} flex-1`} placeholder="Reply" value={reply} onChange={e => setReply(e.target.value)} aria-label="Reply"
-          onKeyDown={e => { if (e.key === "Enter" && reply.trim()) { const b = reply; setReply(""); void act(() => api("POST", base(), { body: b, parentId: t.id })); } }} />
+          onKeyDown={e => { if (e.key === "Enter" && reply.trim()) { const b = reply; setReply(""); void act(() => api("POST", base(), { body: b, parentId: t.id })).then(ok => { if (!ok) setReply(b); }); } }} />
       </div>
       <div className="flex items-center gap-3 mt-2 text-xs">
         <button className="inline-flex items-center gap-1 text-zinc-300 hover:text-zinc-50" onClick={() => void act(() => api("PATCH", `${base()}/${t.id}`, { resolved: !t.resolvedAt }))} data-testid="resolve">

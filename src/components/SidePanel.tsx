@@ -1,6 +1,6 @@
 // The side panel follows the steps: what to do now, and the lists for it. The map stays the one
 // canvas; the steps never lock anything.
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowRight, Info, X, ClipboardCheck, Download, Eye, EyeOff, MapPinned, Palette, Plus, Route, Trash2, type LucideIcon } from "lucide-react";
 import { TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
 import { activeLayout, holeTees } from "../lib/course";
@@ -430,6 +430,16 @@ export function HolesColumn() {
   const stats = courseStats(doc);
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
   const [more, setMore] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  // (the course popover closes with Esc or a click elsewhere, like the other menus)
+  useEffect(() => {
+    if (!more) return;
+    const down = (e: PointerEvent) => { if (!moreRef.current?.contains(e.target as Node)) setMore(false); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setMore(false); } };
+    window.addEventListener("pointerdown", down, true);
+    window.addEventListener("keydown", key, true);
+    return () => { window.removeEventListener("pointerdown", down, true); window.removeEventListener("keydown", key, true); };
+  }, [more]);
   const u = doc.units;
   // (Fitting the map keeps clear of the column: its width and margins)
   useEffect(() => {
@@ -459,7 +469,7 @@ export function HolesColumn() {
           <span className={`w-6 h-6 rounded-full flex items-center justify-center ${ed.tool === "add-hole" ? "bg-zinc-950/20" : "bg-orange-500 text-zinc-950"}`}><Plus size={14} /></span>New hole
         </button>
       </div>
-      <div className="glass pointer-events-auto rounded-[18px] mt-auto relative">
+      <div className="glass pointer-events-auto rounded-[18px] mt-auto relative" ref={moreRef}>
         <button className="w-full flex gap-3 items-end px-3.5 py-2 text-left" onClick={() => setMore(m => !m)} aria-expanded={more} data-testid="course-totals-button">
           {[[totals.complete, "holes"], [totals.par, "par"], [fmtDist(totals.length, u), "total"]].map(([v, k]) => (
             <span key={k as string}><span className="block text-[15px] font-bold text-zinc-50 leading-tight tabular-nums">{v}</span><span className="text-[11px] text-zinc-400">{k}</span></span>

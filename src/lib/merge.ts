@@ -118,14 +118,14 @@ export function changesBetween(before: Doc, after: Doc) {
   return { holes: count("holes"), items: count("items"), other };
 }
 
-/** "Holes: 1 added, 2 changed · Features: 3 changed" (a version's name, when none is given) */
+/** "Holes: 1 added, 2 changed · On the map: 3 changed" (a version's name, when none is given) */
 export function describeChanges(before: object, after: object) {
   const c = changesBetween(before as Doc, after as Doc);
   const part = (x: { added: number; removed: number; changed: number }, what: string) => {
     const bits = [x.added && `${x.added} added`, x.changed && `${x.changed} changed`, x.removed && `${x.removed} removed`].filter(Boolean);
     return bits.length ? `${what}: ${bits.join(", ")}` : "";
   };
-  return [part(c.holes, "Holes"), part(c.items, "Features"), c.other.length ? "Course settings changed" : ""].filter(Boolean).join(" · ") || "No changes";
+  return [part(c.holes, "Holes"), part(c.items, "On the map"), c.other.length ? "Course settings changed" : ""].filter(Boolean).join(" · ") || "No changes";
 }
 
 /** The merged course with the course's version kept for the holes picked (their tees and baskets

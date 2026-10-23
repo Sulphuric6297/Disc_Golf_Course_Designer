@@ -2,7 +2,8 @@
 // owner published and the link allows: the course map, its numbers and holes, tee signs, the
 // scorecard, downloads, and the course to look round in 3D when allowed.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Download, Loader2, Lock, Map as MapIcon, Mountain, X } from "lucide-react";
+import { create } from "zustand";
+import { ChevronLeft, Download, Loader2, Lock, Map as MapIcon, Mountain, X } from "lucide-react";
 import { Loading, LoadingScreen } from "../components/ui";
 import { normalizeCourse } from "../lib/course";
 import { safeDoc } from "../lib/safeDoc";
@@ -17,6 +18,20 @@ import { useServerCourse } from "./courses";
 
 // (a link's random address or the name its owner gave it: …/springfield-park, or …#site=…)
 export const SITE_TOKEN = /^\/([a-z0-9][a-z0-9-]{2,39}|[A-Za-z0-9_-]{40,})\/?$/.exec(location.pathname)?.[1] ?? /^#site=([A-Za-z0-9_-]{3,})$/.exec(location.hash)?.[1] ?? null;
+
+/** Back from the 3D view or the map to the course page (set while they're open). */
+const usePublicBack = create<{ back: (() => void) | null }>(() => ({ back: null }));
+
+/** The way back to the course page, at the left of the view's top bar like a back button. */
+export function CoursePageButton() {
+  const back = usePublicBack(s => s.back);
+  if (!back) return null;
+  return (
+    <button className="shrink-0 inline-flex items-center gap-0.5 h-[34px] pl-1.5 pr-3 rounded-full bg-white/[0.1] hover:bg-white/[0.16] text-sm font-semibold text-zinc-50" onClick={back} data-testid="leave-3d">
+      <ChevronLeft size={18} /> Course page
+    </button>
+  );
+}
 
 interface Site {
   info: { name: string; designer?: string; units?: Units; totals?: { holes: number; par: number; length: number; climb: number }; holes: (HoleNumbers & { id?: string; label: string; name: string })[] };
@@ -51,10 +66,10 @@ export function PublicSite({ children }: { children: ReactNode }) {
   const [opening, setOpening] = useState<"3d" | "map" | null>(null);
   const [openError, setOpenError] = useState("");
   const [drawn, setDrawn] = useState(false);
+  // (a file on its way down)
+  const [fetching, setFetching] = useState("");
   const [big, setBig] = useState<string | null>(null);
   const [openHole, setOpenHole] = useState<string | null>(null);
-  // (from a tee or in a flyover the view's own bar has Map: the way back waits)
-  const teeView = useEditor(e => e.teeView);
 
   const load = async (pw: string) => {
     const res = await get("", pw);
@@ -76,7 +91,13 @@ export function PublicSite({ children }: { children: ReactNode }) {
     // (the 3D view's code fetched meanwhile, ready for Explore)
     if (data.hasCourse) setTimeout(() => { void import("../App").catch(() => {}); void import("../three/ezShapes").catch(() => {}); }, 1500);
   };
-  useEffect(() => { void load(""); }, []);
+  // (the page couldn't be had: said so, not left loading)
+  const [checking, setChecking] = useState(false);
+  const tryLoad = async (pw: string) => {
+    setChecking(true);
+    try { await load(pw); } catch { setError("This course page couldn't be loaded. Check the connection and reload"); } finally { setChecking(false); }
+  };
+  useEffect(() => { void tryLoad(""); }, []);
 
   /** The course to look round (and a hole's flyover, when one is asked for). */
   const open3d = async (flyHole?: string) => {
@@ -125,13 +146,16 @@ export function PublicSite({ children }: { children: ReactNode }) {
     return () => { stop(); cancelAnimationFrame(raf); };
   }, [explore]);
   useEffect(() => { if (drawn) setOpening(null); }, [drawn]);
+  useEffect(() => {
+    usePublicBack.setState({ back: explore ? () => setExplore(false) : null });
+    return () => usePublicBack.setState({ back: null });
+  }, [explore]);
 
   if (explore) {
     return (
       <>
         {children}
         {!drawn && <Opening what={opening ?? "3d"} />}
-        {!teeView && <button className="fixed z-50 left-1/2 -translate-x-1/2 top-[76px] md:translate-x-0 md:left-auto md:top-2 md:right-2 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 md:py-1.5 text-sm font-semibold glass border border-white/[0.12] text-zinc-100 shadow-lg" onClick={() => setExplore(false)} data-testid="leave-3d"><X size={14} /> Course page</button>}
       </>
     );
   }
@@ -139,11 +163,11 @@ export function PublicSite({ children }: { children: ReactNode }) {
   if (needsPassword) {
     return (
       <Plain>
-        <form className="space-y-3" onSubmit={e => { e.preventDefault(); void load(password); }}>
+        <form className="space-y-3" onSubmit={e => { e.preventDefault(); if (!checking) void tryLoad(password); }}>
           <div className="flex items-center gap-2 text-zinc-200"><Lock size={16} /> This course page has a password.</div>
           <input type="password" className="w-full bg-white/[0.07] rounded-lg px-3 py-2 text-zinc-100" value={password} onChange={e => setPassword(e.target.value)} aria-label="Password" autoFocus />
           {tried && <p role="alert" className="text-sm text-red-300">{tried}</p>}
-          <button className="w-full rounded-lg px-3 py-2 font-semibold bg-orange-500 text-zinc-950">Open</button>
+          <button className="w-full rounded-lg px-3 py-2 font-semibold bg-orange-500 text-zinc-950 inline-flex items-center justify-center gap-2 disabled:opacity-80" disabled={checking}>{checking && <Loader2 size={15} className="animate-spin" />}{checking ? "Opening…" : "Open"}</button>
         </form>
       </Plain>
     );
@@ -161,8 +185,9 @@ export function PublicSite({ children }: { children: ReactNode }) {
   const cardName = shownPics.find(n => n.startsWith("scorecard."));
   const card = cardName ? files[cardName] : undefined;
   const download = async (name: string) => {
-    const f = await get(`/files/${name}`, password);
-    if (!f.ok) return;
+    setFetching(name);
+    const f = await get(`/files/${name}`, password).catch(() => null).finally(() => setFetching(""));
+    if (!f?.ok) { setOpenError("That file couldn't be downloaded. Try again."); return; }
     const a = document.createElement("a");
     a.href = URL.createObjectURL(await f.blob());
     a.download = `${(site.info.name || "course").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.${name.split(".").pop()}`;
@@ -204,7 +229,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
             </button>
           )}
           {site.files.filter(f => /\.(gpx|kml)$/.test(f)).map(f => (
-            <button key={f} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-semibold bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.12]" onClick={() => void download(f)}><Download size={15} /> {f.endsWith("gpx") ? "GPS file (GPX)" : "Google Earth (KML)"}</button>
+            <button key={f} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-semibold bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.12] disabled:opacity-70" disabled={fetching === f} onClick={() => void download(f)}>{fetching === f ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} {f.endsWith("gpx") ? "GPS file (GPX)" : "Google Earth (KML)"}</button>
           ))}
         </div>
         {openError && <p role="alert" className="-mt-3 mb-6 text-sm text-red-300">{openError}</p>}

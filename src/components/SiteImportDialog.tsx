@@ -58,6 +58,8 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   }, [status.state]);
   const layout = useLayout();
   const timer = useRef(0);
+  /** This dialog's own import under way (a second click starts nothing). */
+  const running = useRef(false);
   /** The place just picked (its name in the search box asks for no more suggestions). */
   const picked = useRef(start.label);
 
@@ -89,13 +91,28 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     }
   };
 
+  // Closed (X or Esc): asked first while a site is coming in, as what came so far is left out
+  const close = () => {
+    if (status.state === "loading" && !confirm("Stop bringing in this site? Nothing of it is kept.")) return;
+    onClose();
+  };
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); close(); } };
+    // (before the editor's own Esc, which would let go of what's picked behind the dialog)
+    window.addEventListener("keydown", k, true);
+    return () => window.removeEventListener("keydown", k, true);
+  });
+
   const dims = selection ? selectionFromBounds(selection, label) : null;
   const tooBig = !!dims && (dims.widthFt > SITE_MAX_WIDTH_FT || dims.heightFt > SITE_MAX_WIDTH_FT);
 
   const run = async () => {
     // One import at a time (a second click, before the button shows it is busy, starts nothing)
-    if (!selection || tooBig || importing) return;
+    if (!selection || tooBig || running.current) return;
+    // (one closed while it was coming in is still finishing)
+    if (importing) { setStatus({ state: "error", text: "The site from before is still coming in. Try again in a moment." }); return; }
     importing = true;
+    running.current = true;
     setStarted(Date.now());
     setStatus({ state: "loading", text: "Starting…" });
     try {
@@ -107,6 +124,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
       setStatus({ state: "error", text: err instanceof Error ? err.message : "Couldn't bring in the site." });
     } finally {
       importing = false;
+      running.current = false;
     }
   };
 
@@ -158,7 +176,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     return (
       <div className="dg-compact fixed inset-0 z-50 bg-zinc-950 flex flex-col" role="dialog" aria-modal="true" aria-label="Find your course site">
         <div className="flex items-center gap-1 pl-1 pr-3 pt-[max(6px,env(safe-area-inset-top))] pb-1">
-          <button className="w-11 h-11 flex items-center justify-center rounded-xl text-zinc-300 active:bg-white/[0.09]" onClick={onClose} aria-label="Close"><X size={22} /></button>
+          <button className="w-11 h-11 flex items-center justify-center rounded-xl text-zinc-300 active:bg-white/[0.09]" onClick={close} aria-label="Close"><X size={22} /></button>
           <div className="flex-1 min-w-0">
             <div className="font-bold text-zinc-50 text-[17px] leading-tight">Find your course site</div>
             <div className="text-[13px] text-zinc-400 truncate">Search, then frame the area the holes will use</div>
@@ -221,7 +239,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
             <div className="font-bold text-zinc-50">Find your course site</div>
             <div className="text-xs text-zinc-400">Search for the park, then frame the area the holes will use (drag the corners; Shift+drag draws a new one).</div>
           </div>
-          <button className="p-1.5 rounded hover:bg-white/[0.09] text-zinc-400" onClick={onClose} aria-label="Close"><X size={18} /></button>
+          <button className="p-1.5 rounded hover:bg-white/[0.09] text-zinc-400" onClick={close} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="flex-1 flex min-h-0">
           <div className="w-[320px] border-r border-white/[0.08] p-4 flex flex-col gap-3 overflow-y-auto">

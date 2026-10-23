@@ -179,6 +179,12 @@ export async function saveNow() {
   if (again) { again = false; await saveNow(); }
 }
 
+// (the tab closed or reloaded after a save failed: the browser asks first, the changes not on
+// the server; a save only waiting its moment goes on its own)
+if (typeof window !== "undefined") window.addEventListener("beforeunload", e => {
+  if (state().status === "error") { e.preventDefault(); e.returnValue = ""; }
+});
+
 export const startServerAutosave = () => {
   const stopSaving = useCourse.subscribe((s, prev) => {
     if (s.doc === prev.doc || s.doc === opened || !canSave()) return;
@@ -282,9 +288,9 @@ export const listServerCourses = async (): Promise<ServerPlan[]> =>
   (await api<(Omit<ServerPlan, "updatedAt"> & { updatedAt: string })[]>("GET", "courses")).map(c => ({ ...c, updatedAt: new Date(c.updatedAt).getTime() }));
 
 /** Deletes a course you own; takes one shared with you off your list. */
-export async function removeServerCourse(id: string) {
-  const list = await listServerCourses();
-  const c = list.find(x => x.id === id);
+export async function removeServerCourse(id: string, known?: ServerPlan) {
+  // (the list's own entry when there is one: asked at once, not after fetching the list again)
+  const c = known ?? (await listServerCourses()).find(x => x.id === id);
   if (!c) return;
   const owner = c.role === "owner";
   if (!confirm(owner ? `Delete "${c.name}" for everyone?` : `Take "${c.name}" off your list?`)) return;

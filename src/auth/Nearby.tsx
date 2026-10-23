@@ -123,12 +123,13 @@ export function NearbyCourses() {
   const [withTrees, setWithTrees] = useState(true);
   const [withPlanted, setWithPlanted] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [opening, setOpening] = useState("");
   const [value, setValue] = useState(park);
   useEffect(() => { setValue(park); }, [park]);
   useEffect(() => { if (role === "owner") void api<{ park: string }[]>("GET", "courses").then(l => setParks([...new Set(l.map(c => c.park).filter(Boolean))]), () => {}); }, [role]);
   const savePark = async () => {
     if (!id || value.trim() === park) return;
-    await api("POST", `courses/${id}/park`, { park: value.trim() });
+    try { await api("POST", `courses/${id}/park`, { park: value.trim() }); } catch (e) { toast(`The park wasn't saved: ${e instanceof Error ? e.message : "try again"}.`, "error"); return; }
     useServerCourse.setState({ park: value.trim() });
     void load(id);
   };
@@ -156,7 +157,7 @@ export function NearbyCourses() {
                   <span className="block text-[11px] text-zinc-500">{n.samePark ? "Same park" : "On the same ground"}</span>
                   {concerns[i]?.length > 0 && <span className="block text-[11px] text-amber-300" data-testid="nearby-cross">{concerns[i].length} close call{concerns[i].length === 1 ? "" : "s"} with its holes</span>}
                 </span>
-                <button className="text-xs text-orange-300 hover:text-orange-200" onClick={() => void openServerCourse(n.id)}>Open</button>
+                <button className="text-xs text-orange-300 hover:text-orange-200 disabled:opacity-50" disabled={opening === n.id} onClick={() => { setOpening(n.id); void openServerCourse(n.id).finally(() => setOpening("")); }}>{opening === n.id ? "Opening…" : "Open"}</button>
               </li>
             ))}
           </ul>
@@ -174,7 +175,7 @@ export function NearbyCourses() {
               <div className="flex gap-2 justify-end">
                 <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/[0.09] rounded-lg" onClick={() => setSharing(null)}>Cancel</button>
                 <button className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" disabled={busy || !sharing.size}
-                  onClick={() => { setBusy(true); void shareGround([...sharing], { trees: withTrees, planted: withPlanted }).finally(() => { setBusy(false); setSharing(null); }); }} data-testid="share-ground-go">{busy ? "Copying…" : "Copy the ground"}</button>
+                  onClick={() => { setBusy(true); void shareGround([...sharing], { trees: withTrees, planted: withPlanted }).then(() => setSharing(null), e => toast(`The ground wasn't copied to every course: ${e instanceof Error ? e.message : "try again"}.`, "error")).finally(() => setBusy(false)); }} data-testid="share-ground-go">{busy ? "Copying…" : "Copy the ground"}</button>
               </div>
             </div>
           ) : list.some(n => n.role !== "viewer") && (

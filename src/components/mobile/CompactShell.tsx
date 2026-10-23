@@ -34,6 +34,7 @@ import { BottomSheet, type Detent } from "./BottomSheet";
 import { accountActions, CourseChip } from "../../auth/AccountMenu";
 import { ViewerPanelBody } from "../../auth/ViewerPanel";
 import { SERVER } from "../../auth/api";
+import { CoursePageButton, SITE_TOKEN } from "../../auth/PublicSite";
 
 export type MenuInfo = { clientX: number; clientY: number; itemId: string | null; ground: P | null; under?: string | null };
 
@@ -417,7 +418,7 @@ function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
   return (
     <div className="absolute left-0 right-0 top-0 z-30 px-2 pt-[max(8px,env(safe-area-inset-top))] pointer-events-none" data-testid="top-bar">
       <div className="glass pointer-events-auto flex items-center gap-1 h-[56px] pl-1 pr-1 rounded-[22px]">
-        <button className={iconBtn} aria-label="Menu: files, help" onClick={onMenu} data-testid="app-menu-button"><Logo /></button>
+        {SITE_TOKEN ? <CoursePageButton /> : <button className={iconBtn} aria-label="Menu: files, help" onClick={onMenu} data-testid="app-menu-button"><Logo /></button>}
         <div className="flex-1 min-w-0 pl-0.5">
           <div className="text-[15px] font-bold text-zinc-50 truncate leading-tight" data-testid="course-name">{name}</div>
           <div className="text-[12px] text-zinc-400 truncate tabular-nums">{sub}</div>

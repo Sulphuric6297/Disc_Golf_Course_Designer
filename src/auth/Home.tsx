@@ -109,12 +109,16 @@ export function Home() {
   const user = useAuth(s => s.session!.user!);
   const showHome = useAuth(s => s.showHome);
   const [list, setList] = useState<ServerPlan[] | null>(null);
+  // (the list couldn't be had: said so, not shown as no courses)
+  const [failed, setFailed] = useState(false);
+  // (a removal that didn't go through: the editor's notices are behind this page)
+  const [notice, setNotice] = useState("");
   const [q, setQ] = useState("");
   const openId = useServerCourse(s => s.id);
   const openName = useCourse(s => s.doc.name);
 
   const listVersion = useAuth(s => s.listVersion);
-  const refresh = () => listServerCourses().then(setList, () => setList([]));
+  const refresh = () => listServerCourses().then(l => { setFailed(false); setList(l); }, () => { setFailed(true); setList(o => o ?? []); });
   useEffect(() => { void refresh(); }, [listVersion]);
   // (drawn: the editor may load behind the list now; a frame later, so the cards paint first)
   useEffect(() => { if (list) requestAnimationFrame(() => setTimeout(() => useAuth.setState({ listShown: true }), 0)); }, [list]);
@@ -139,7 +143,7 @@ export function Home() {
 
   const grid = (cs: ServerPlan[]) => (
     <ul className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {cs.map((c, i) => <Card key={c.id} c={c} big={i === 0 && cs.length > 2} opening={opening === c.id} onOpen={() => void open(c.id)} onRemove={() => void removeServerCourse(c.id).then(refresh)} />)}
+      {cs.map((c, i) => <Card key={c.id} c={c} big={i === 0 && cs.length > 2} opening={opening === c.id} onOpen={() => void open(c.id)} onRemove={() => { setNotice(""); void removeServerCourse(c.id, c).then(refresh, e => setNotice(`Couldn't remove "${c.name}": ${e instanceof Error ? e.message : "try again"}.`)); }} />)}
     </ul>
   );
 
@@ -183,7 +187,14 @@ export function Home() {
             ))}
           </div>
         )}
-        {list === null ? <Loading label="Loading your courses…" className="h-40" /> : list.length === 0 ? (
+        {notice && <p className="glass rounded-[18px] px-4 py-3 mb-4 text-sm text-red-200" role="alert">{notice}</p>}
+        {failed && (
+          <div className="glass rounded-[18px] px-4 py-3 mb-4 flex items-center gap-3 text-sm text-zinc-200" role="alert" data-testid="list-failed">
+            <span className="flex-1">Couldn't load your courses. Check the connection.</span>
+            <button className="px-3 py-1.5 rounded-full bg-white/[0.1] hover:bg-white/[0.16] font-semibold" onClick={() => void refresh()}>Try again</button>
+          </div>
+        )}
+        {list === null ? <Loading label="Loading your courses…" className="h-40" /> : list.length === 0 && failed ? null : list.length === 0 ? (
           <div className="glass text-center py-20 rounded-[24px]">
             <Logo size={48} />
             <h2 className="text-lg font-semibold text-zinc-100 mt-4">No courses yet</h2>

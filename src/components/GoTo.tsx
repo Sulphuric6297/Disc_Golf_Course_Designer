@@ -15,10 +15,11 @@ import type { CourseItem } from "../types";
 /** `find`: what typing matches (its name, not its figures); `nums`: a hole's numbers, first when typed. */
 type Entry = { key: string; text: string; find: string; sub?: string; icon: ReactNode; run: () => void; nums?: string[] };
 
-/** The map shows on every step but Design: going to something on it leaves the Design page. */
+/** Going to something on the map: the Design step, where the map is to work on (the Map and
+ * Export steps show the printed page over it). */
 const toMap = () => {
   const ed = useEditor.getState();
-  if (ed.step === "map" || ed.teeView) ed.set({ step: "design", teeView: null, flyover: false });
+  if (ed.step === "map" || ed.step === "export" || ed.teeView) ed.set({ step: "design", teeView: null, flyover: false });
 };
 
 /** What a named thing on the map is called, and what kind it is. */
