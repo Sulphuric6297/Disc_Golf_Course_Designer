@@ -8,7 +8,7 @@ import { COLOR_PICKS, conifersOf, paintedPinesOf, tallGrassOf, treeMixOf } from 
 import { LIGHT_MODES, LOOK_THEMES, PART_CHOICES, compassName, latitudeOf, lightOf, lookParts, partChanged, sunArc, sunFromOf, themeOf, type LookPart, type LookParts } from "../lib/mapLook";
 import { useCourse } from "../state/course";
 import type { MapStyle, PathTier } from "../types";
-import { FineTuning, setStyle, WoodsOptions } from "./DesignPanel";
+import { ELEVATION_LOOKS, FineTuning, setStyle, WoodsOptions } from "./DesignPanel";
 import { ColorInput, Slider, useKeepInPlace } from "./ui";
 import { SHOW_EVENT } from "./showSetting";
 
@@ -68,8 +68,8 @@ function PathOrder({ s }: { s: MapStyle }) {
   );
 }
 
-type Part = LookPart | "light";
-const PART_LABEL: Record<Part, string> = { trees: "Trees", grass: "Grass", fairway: "Fairways", paths: "Paths and roads", water: "Water", light: "Light and shadow" };
+type Part = LookPart | "light" | "elevation";
+const PART_LABEL: Record<Part, string> = { trees: "Trees", grass: "Grass", fairway: "Fairways", paths: "Paths and roads", water: "Water", light: "Light and shadow", elevation: "Elevation" };
 /** Each part's color on the map (its field in the style), and its own color's label. */
 const COLOR_FIELD = { trees: "trees", grass: "rough", fairway: "fairway", paths: "path", water: "water" } as const;
 const COLOR_LABEL: Record<LookPart, string> = { trees: "Trees", grass: "Grass", fairway: "Fairway", paths: "Paths", water: "Water" };
@@ -126,18 +126,21 @@ export function MapLookPanel() {
   // (the part opened stays under the pointer while the one open before closes above it)
   const keep = useKeepInPlace();
   const theme = themeOf(s), parts = lookParts(s), lt = lightOf(s);
-  const mixed = (Object.keys(PART_LABEL) as Part[]).some(p => (p === "light" ? !!s.lightMode || s.goldenSun !== undefined : partChanged(s, p)));
+  const mixed = (Object.keys(PART_LABEL) as Part[]).some(p => (p === "elevation" ? false : p === "light" ? !!s.lightMode || s.goldenSun !== undefined : partChanged(s, p)));
+  // (how the ground's shape is drawn: Shaded unless picked)
+  const relief = !s.hillshade ? "off" : s.reliefLook ?? "shaded";
   /** One part's setting changed (kept apart from its style's own). */
   const setPart = <K extends LookPart>(part: K, patch: Partial<LookParts[K]>) => setStyle({ lookParts: { ...s.lookParts, [part]: { ...s.lookParts?.[part], ...patch } } });
   const resetPart = (part: Part) => {
     if (part === "light") { setStyle({ lightMode: undefined, goldenSun: undefined, sunFrom: undefined, sunHeight: undefined, shadows: undefined }); return; }
+    if (part === "elevation") { setStyle({ hillshade: true, reliefLook: undefined, reliefScale: undefined }); return; }
     const own = { ...s.lookParts };
     delete own[part];
     setStyle({ lookParts: Object.keys(own).length ? own : undefined, ...(part === "paths" ? { pathOrder: undefined } : {}) });
   };
   const pickTheme = (id: string) => setStyle({ mapLook: id === "classic" ? undefined : (id as MapStyle["mapLook"]), lookParts: undefined, lightMode: undefined, goldenSun: undefined });
-  const current = (p: Part) => (p === "light" ? LIGHT_MODES.find(m => m.id === lt.mode)!.label : (PART_CHOICES[p] as { id: string; label: string }[]).find(c => c.id === parts[p].style)?.label ?? "");
-  const changed = (p: Part) => (p === "light" ? !!s.lightMode || s.goldenSun !== undefined || s.sunFrom !== undefined : partChanged(s, p) || (p === "paths" && !!s.pathOrder));
+  const current = (p: Part) => (p === "elevation" ? ELEVATION_LOOKS.find(l => l.id === relief)!.label : p === "light" ? LIGHT_MODES.find(m => m.id === lt.mode)!.label : (PART_CHOICES[p] as { id: string; label: string }[]).find(c => c.id === parts[p].style)?.label ?? "");
+  const changed = (p: Part) => (p === "elevation" ? relief !== "shaded" || (s.reliefScale ?? 1) !== 1 : p === "light" ? !!s.lightMode || s.goldenSun !== undefined || s.sunFrom !== undefined : partChanged(s, p) || (p === "paths" && !!s.pathOrder));
   const base = import.meta.env.BASE_URL;
   const painted = parts.trees.style !== "classic";
   const pinesNow = painted ? paintedPinesOf(s, parts.trees.pines) : conifersOf(s);
@@ -165,20 +168,26 @@ export function MapLookPanel() {
       <div className="rounded-[16px] bg-white/[0.06] overflow-hidden">
       {(Object.keys(PART_LABEL) as Part[]).map(p => {
         const isOpen = open === p;
-        const pic = p === "light" ? `${base}parts/light-${lt.mode}.jpg` : `${base}parts/${p}-${parts[p].style}.jpg`;
+        const pic = p === "elevation" ? `${base}relief/${relief}.jpg` : p === "light" ? `${base}parts/light-${lt.mode}.jpg` : `${base}parts/${p}-${parts[p].style}.jpg`;
         return (
           <div key={p} className="relative before:absolute before:left-[52px] before:right-0 before:top-0 before:h-px before:bg-white/[0.07] first:before:hidden" data-testid={`look-part-${p}`}>
             <button className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-white/[0.04]" aria-expanded={isOpen} onClick={e => { keep(e.currentTarget); setOpen(isOpen ? null : p); }}>
               <img src={pic} alt="" className="w-7 h-7 rounded-[8px] object-cover ring-1 ring-white/10" draggable={false} />
               <span className="text-[13.5px] font-medium text-zinc-100 flex-1">{PART_LABEL[p]}</span>
               {changed(p) && <span className="w-1.5 h-1.5 rounded-full bg-orange-400" aria-label="Changed" />}
-              {p !== "light" && <span className="w-3 h-3 rounded-[4px] ring-1 ring-white/20" style={{ background: s[COLOR_FIELD[p]] }} />}
+              {p !== "light" && p !== "elevation" && <span className="w-3 h-3 rounded-[4px] ring-1 ring-white/20" style={{ background: s[COLOR_FIELD[p]] }} />}
               <span className="text-[12.5px] text-zinc-400">{current(p)}</span>
               <ChevronRight size={15} className={`text-zinc-500 transition-transform ${isOpen ? "rotate-90" : ""}`} />
             </button>
             {isOpen && (
               <div className="px-3 pb-3.5 pt-0.5">
-                {p === "light" ? (
+                {p === "elevation" ? (
+                  <div>
+                    <Thumbs label="Elevation" testid="elevation" items={ELEVATION_LOOKS.map(l => ({ id: l.id, label: l.label, img: `${base}relief/${l.id}.jpg`, on: relief === l.id, pick: () => setStyle(l.id === "off" ? { hillshade: false } : { hillshade: true, reliefLook: l.id === "shaded" ? undefined : l.id }) }))} />
+                    <div className="text-[11px] text-zinc-500 -mt-1 mb-2">{ELEVATION_LOOKS.find(l => l.id === relief)!.hint}</div>
+                    {relief !== "off" && <LookSlider value={s.reliefScale ?? 1} label="Hills" min={0} max={3} step={0.05} format={x => (x === 0 ? "Flat" : `${x.toFixed(2).replace(/0$/, "")}×`)} onDone={v => setStyle({ reliefScale: v })} />}
+                  </div>
+                ) : p === "light" ? (
                   <>
                     <Thumbs label="Light" items={LIGHT_MODES.map(m => ({ id: m.id, label: m.label, img: `${base}parts/light-${m.id}.jpg`, on: lt.mode === m.id, pick: () => setStyle({ lightMode: m.id }) }))} />
                     {lt.mode === "golden" && <LookSlider value={lt.sun} label="Golden sun" min={0} max={1} step={0.05} format={x => (x < 0.05 ? "The style's daylight" : pct(x))} onDone={v => setStyle({ goldenSun: v, lightMode: "golden" })} />}

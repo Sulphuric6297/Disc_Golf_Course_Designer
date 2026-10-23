@@ -9,7 +9,7 @@ export interface Where {
   step?: Step;
   tab?: "general" | "map" | "sign" | "page" | "scorecard";
   /** A part of the map style to open (Map step, Course map tab). */
-  look?: "trees" | "grass" | "fairway" | "paths" | "water" | "light";
+  look?: "trees" | "grass" | "fairway" | "paths" | "water" | "light" | "elevation";
   /** A panel or popover to open first. */
   open?: "view" | "course" | "problems" | "share-public" | "share-people";
   /** A thing to pick first (its panel holds the setting). */
@@ -427,17 +427,17 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "light", section: "map", title: "Light and shadow",
-    body: "Golden hour, midday or night, where the sun sits (along its real path for your site), how high it gets, and the shadows. The 3D view uses the same light.\n\nTone fine-tunes the picture: brightness, contrast, color strength, how painted it looks, and how much the hills stand out.",
+    body: "Golden hour, midday or night, where the sun sits (along its real path for your site), how high it gets, and the shadows. The 3D view uses the same light.\n\nTone fine-tunes the picture: brightness, contrast, color strength and how painted it looks. How much the hills stand out is under Elevation.",
     words: "light shadow sun golden hour midday night brightness contrast hills relief tone",
     path: "Map › Course map › Map style › Light and shadow",
     where: { step: "map", tab: "map", look: "light", find: "look-part-light" }
   },
   {
     id: "elevation", section: "map", title: "Elevation on the map",
-    body: "Elevation, under Map style, picks how the painted map shows the ground's shape. The map style stays the same; only the hills and drops are drawn differently.\n\nShaded is soft light and shadow, with bare rock on cliffs. Cliff edges inks the top edge of every drop and puts the wall below it in shadow, so canyons and ledges stand out. Sketched draws short strokes down the steep slopes, like an old survey map. Contours draws lines at round heights and writes the heights on them, so you can read how high anything is. Terraces cuts the land into stepped layers, each a bit lighter than the one below. Off draws no elevation at all.\n\nEvery look uses the same sun as the rest of the map, and higher ground throws its shadow across what's below it. Hills under Light and shadow makes any of them stronger or softer.",
+    body: "Elevation, in the parts of the map under Map style, picks how the painted map shows the ground's shape. The map style stays the same; only the hills and drops are drawn differently.\n\nShaded is soft light and shadow, with bare rock on cliffs. Cliff edges inks the top edge of every drop and puts the wall below it in shadow, so canyons and ledges stand out. Sketched draws short strokes down the steep slopes, like an old survey map. Contours draws lines at round heights and writes the heights on them, so you can read how high anything is. Terraces cuts the land into stepped layers, each a bit lighter than the one below. Off draws no elevation at all.\n\nEvery look uses the same sun as the rest of the map, and higher ground throws its shadow across what's below it. Its Hills slider makes any of them stronger or softer.",
     words: "elevation hills hill shading relief canyon cliff cliffs edges sketched hachures contours heights terraces layers steps shading off flat topography slope",
-    path: "Map › Course map › Elevation",
-    where: { step: "map", tab: "map", find: "elevation" }
+    path: "Map › Course map › Map style › Elevation",
+    where: { step: "map", tab: "map", look: "elevation", find: "look-part-elevation" }
   },
   {
     id: "drawn-on-map", section: "map", title: "Drawn on the map",

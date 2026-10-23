@@ -599,6 +599,8 @@ test("elevation on the Forest map: hills shade the painting, each Elevation look
   await painted(page);
   const shaded = await painting.getAttribute("href");
   // Elevation off: a different picture (the hill's light and shade gone); each other look its own
+  // (in the map's parts, under Light and shadow)
+  await page.getByTestId("look-part-elevation").getByRole("button").first().click();
   await page.getByTestId("elevation-off").click();
   await expect.poll(async () => (await course(page)).style.hillshade).toBe(false);
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(shaded);
@@ -622,8 +624,7 @@ test("elevation on the Forest map: hills shade the painting, each Elevation look
   await page.getByLabel("Contour lines").uncheck();
   await expect.poll(async () => painting.getAttribute("href")).toBe(shaded);
   // Hills: the relief fine-tuned, from flat (the same as no hill shading) to stronger
-  // (in the Light part's Tone)
-  await page.getByTestId("look-part-light").getByRole("button").first().click();
+  // (in the Elevation part, still open)
   const hills = page.getByLabel("Hills");
   await hills.fill("0");
   await hills.dispatchEvent("pointerup");
