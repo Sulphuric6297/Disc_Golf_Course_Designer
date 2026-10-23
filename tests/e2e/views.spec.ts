@@ -324,7 +324,7 @@ test("flyover on-screen switches: off for all holes, back on for one; no disc fl
   await page.evaluate(() => (window as any).__dgView.setPaused(true));
   await page.getByTestId("flyover-settings").getByRole("radio", { name: "All holes" }).click();
   const sw = (name: string) => page.getByTestId("flyover-settings").getByRole("checkbox", { name, exact: true });
-  for (const name of ["Hole title", "Hole badge", "Distance to the pin", "Course name", "Line of play", "Putting circle", "OB", "Other holes", "Walks"]) await expect(sw(name)).toBeChecked();
+  for (const name of ["Hole title", "Hole badge", "Distance to the pin", "Course name", "Line of play", "Putting circle", "OB", "Other holes", "Paths to the next tee"]) await expect(sw(name)).toBeChecked();
   await sw("Distance to the pin").uncheck();
   await expect(sw("Disc flight")).toHaveCount(0);
   await sw("Other holes").uncheck();
