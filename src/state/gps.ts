@@ -57,7 +57,7 @@ export const spotHere = (sure = 16, ms = 8000) =>
       const { fix, mode } = useGps.getState();
       if (mode === "off") return done(null);
       // (a reading since the wait began, sure enough; the first ones are often the least sure)
-      const fresh = fix && fix.time >= t0 ? fix : null;
+      const fresh = fix && fix.time >= t0 - 3000 ? fix : null;
       if (fresh && fresh.acc <= sure && Date.now() - t0 > 1500) return done(fresh);
       if (Date.now() - t0 > ms) done(fresh && fresh.raw <= WEAK_FT ? fresh : null);
     };
@@ -81,6 +81,8 @@ export const smooth = (prev: typeof filter, z: P, acc: number, t: number) => {
   const v = prev.v + dt * WALK_FT_S * WALK_FT_S;
   // (much less sure than the estimate already is, soon after it: left out)
   if (acc > 3 * Math.sqrt(v) && acc > WEAK_FT && dt < 10) return { ...prev, v, t };
+  // (a sure reading far from the estimate: you've moved more than a walker would; start from it)
+  if (acc <= WEAK_FT && Math.hypot(z.x - prev.x, z.y - prev.y) > 3 * Math.sqrt(v + r)) return { x: z.x, y: z.y, v: r, t };
   const k = v / (v + r);
   return { x: prev.x + k * (z.x - prev.x), y: prev.y + k * (z.y - prev.y), v: (1 - k) * v, t };
 };

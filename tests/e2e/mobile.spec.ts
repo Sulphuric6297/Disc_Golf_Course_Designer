@@ -40,6 +40,43 @@ async function oneHole(page: Page) {
 test.describe("phone", () => {
   test.use(device("iPhone 13"));
 
+  test("where you are: the blue dot follows you, and a new hole's tee and basket go where you stand", async ({ page, context }) => {
+    await openGround(page);
+    // (the site placed on the earth; the phone's GPS at plan spots)
+    const bounds = { north: 40, south: 39.99, west: -90, east: -89.99 };
+    await page.evaluate(b => (window as any).__dgActions.site({ bounds: b }), bounds);
+    const { width, height } = (await course(page)).canvas;
+    const geo = (x: number, y: number) => ({ latitude: bounds.north - (y / height) * (bounds.north - bounds.south), longitude: bounds.west + (x / width) * (bounds.east - bounds.west), accuracy: 2 });
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation(geo(300, 500));
+    await page.getByTestId("locate-me").tap();
+    await expect(page.getByTestId("my-location")).toBeVisible();
+    // (followed: the dot in the map's middle, about)
+    const box = (await page.getByTestId("my-location").boundingBox())!;
+    const vp = page.viewportSize()!;
+    expect(Math.abs(box.x + box.width / 2 - vp.width / 2)).toBeLessThan(vp.width * 0.25);
+    // The Hole tool offers your spot; the tee there, then walk to the basket
+    await expect(page.getByTestId("here-bar")).toContainText("Tee here");
+    await page.getByTestId("here-button").tap();
+    await expect.poll(async () => (await editorState(page)).drawPoints).toBe(1);
+    await context.setGeolocation(geo(600, 500));
+    await expect(page.getByTestId("draw-bar")).toContainText("Basket here");
+    await page.waitForTimeout(600);
+    await page.getByTestId("here-button").tap();
+    await expect.poll(async () => (await course(page)).holes.length).toBe(1);
+    const d = await course(page);
+    const tee = d.items.find((i: any) => i.type === "tee"), basket = d.items.find((i: any) => i.type === "basket");
+    expect(Math.hypot(tee.x - 300, tee.y - 500)).toBeLessThan(6);
+    expect(Math.hypot(basket.x - 600, basket.y - 500)).toBeLessThan(6);
+    // How far to the basket, under the dot
+    await expect(page.getByTestId("my-location-tag")).toContainText("to the basket");
+    // Off again: no dot, no offer
+    await page.evaluate(() => (window as any).__dgEditor().set({ tool: "add-hole" }));
+    await page.getByTestId("locate-me").tap();
+    await expect(page.getByTestId("my-location")).toHaveCount(0);
+    await expect(page.getByTestId("here-bar")).toHaveCount(0);
+  });
+
   test("a course file opens from the menu (which closes while the file is picked)", async ({ page }) => {
     await openGround(page);
     const doc = createEmptyCourse();

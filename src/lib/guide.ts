@@ -301,6 +301,23 @@ export const TOPICS: Topic[] = [
     where: { step: "design", pick: "tee", find: "inspector" }
   },
   {
+    id: "my-location", section: "design", title: "Where you are (your location)",
+    body: "The locate button by the zoom buttons shows you on the map as a blue dot, kept up to date as you walk. The pale circle round it is how sure the phone is; the little fan shows the way you're facing. Under the dot: how far it is to the basket of the hole picked (or the one you're nearest), with a dashed line to it.
+
+The map follows you while the button is filled in (and keeps the screen awake). Move the map yourself and it stops following; tap the button to follow again, and tap it once more to stop showing where you are. A grey dot means the readings are old or weak.
+
+For the best accuracy: stand in the open, away from buildings and thick trees, and give it a few seconds; phones are usually good to within 10 to 15 feet, less under heavy cover. The site must be brought in (placed on the earth), on a secure (https) page.",
+    words: "gps location blue dot live follow me where am i track accuracy compass heading distance to basket udisc",
+    path: "The map › locate button",
+    where: { step: "design", find: "locate-me" }
+  },
+  {
+    id: "tee-here", section: "phone", title: "Tee and basket where you stand",
+    body: "Walking the course to lay out holes: show where you are (the locate button), pick New hole, and the bar at the bottom offers Tee here. Stand on the tee spot and tap it (hold still a moment while it gets a sure spot), walk to the basket spot and tap Basket here. Another tee and Another pin work the same way. Tapping the map still works too.",
+    words: "gps walk lay out stake new hole tee here basket here standing location phone",
+    path: "Design › New hole › Tee here"
+  },
+  {
     id: "gps", section: "design", title: "Put it where you're standing (GPS)",
     body: "On the course with a phone: pick a tee, basket or anything else, and Put it where I'm standing. The phone listens for about ten seconds, keeps its best readings and shows how close it is; Move it here puts it there.",
     words: "gps location phone standing on site stake out",
