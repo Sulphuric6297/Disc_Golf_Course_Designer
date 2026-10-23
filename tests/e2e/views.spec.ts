@@ -270,7 +270,7 @@ test("flyover settings: height, speed and field of view change the flight, one u
   const slider = (name: string) => page.getByTestId("flyover-settings").getByRole("slider", { name });
   // (for all holes; then this hole's own)
   await page.getByTestId("flyover-settings").getByRole("radio", { name: "All holes" }).click();
-  await slider("Height").focus();
+  await slider("Camera height").focus();
   await page.keyboard.press("End");
   await expect.poll(async () => (await course(page)).flyover?.height).toBe(250);
   await slider("Speed").focus();
@@ -299,7 +299,7 @@ test("flyover settings: height, speed and field of view change the flight, one u
   // (the 3D view rests while the settings change: drawn in software, its frames hold up the page)
   await page.evaluate(() => (window as any).__dgView.setPaused(true));
   await page.getByTestId("flyover-settings").getByRole("radio", { name: /^Hole 1/ }).click();
-  await slider("Height").focus();
+  await slider("Camera height").focus();
   await page.keyboard.press("Home");
   await expect.poll(async () => (await course(page)).holes[0].flyover?.height, { timeout: 30_000 }).toBe(10);
   expect((await course(page)).flyover?.height).toBe(250);

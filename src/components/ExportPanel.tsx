@@ -221,7 +221,7 @@ export function ExportPanel() {
           </div>
         </Section>
       )}
-      <Section title="Print">
+      <Section title="Print" help="print">
         <Row icon={<MapIcon size={15} className="text-orange-300" />} title="Course map" pick={
           <select aria-label="Map paper" className={`${selectCls} w-full`} value={doc.style.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
             {(Object.keys(PAPER) as PaperSize[]).map(p => <option key={p} value={p}>{PAPER[p].label}</option>)}
@@ -269,7 +269,7 @@ export function ExportPanel() {
           )}
         </div>
       </Section>
-      <Section title="Flyover video" testid="video-export">
+      <Section title="Flyover video" testid="video-export" help="video">
         <Field label="Holes">
           <select aria-label="Holes to fly over" data-testid="video-holes" className={`${selectCls} w-full`} value={videoHoles.length === 1 && videoPick !== "all" ? videoPick : "all"} onChange={e => setVideoPick(e.target.value)} disabled={nothing}>
             <option value="all">The whole course, in order{complete.length ? ` (${complete.length} holes)` : ""}</option>
@@ -304,7 +304,7 @@ export function ExportPanel() {
           </>
         )}
       </Section>
-      <Section title="GPS and data">
+      <Section title="GPS and data" help="gps-files">
         {!geo && <p className="text-[12px] text-zinc-400 mb-2">GPS files need the course's real place: bring in the site on the Site step.</p>}
         <Row icon={<FileJson size={15} className="text-sky-300" />} title="GPS files">
           <Button small onClick={text(() => toKML(getDoc()), ".kml", "application/vnd.google-earth.kml+xml")} disabled={busy || !geo} testid="export-kml">KML</Button>

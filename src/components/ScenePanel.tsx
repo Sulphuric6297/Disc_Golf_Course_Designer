@@ -98,7 +98,7 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
         ]}
       />
       <Toggle label="Grass sways in the wind" checked={wind} onChange={v => set({ wind: v })} />
-      {measured && <Toggle label="Stumps of cut-down trees" hint="Everywhere close by, to bring trees back (always on the hole picked)." checked={stumps} onChange={v => set({ stumps: v })} />}
+      {measured && <Toggle label="Stumps where trees were cut" hint="Shows a stump wherever a tree was cut down, so you can click it to bring the tree back. The hole you pick always shows its stumps." checked={stumps} onChange={v => set({ stumps: v })} />}
       {/* The course's own look (everyone sees it, on the printed map too) */}
       {editing && (
         <div className="mt-3 pt-3 border-t border-white/[0.07]" data-testid="course-look">

@@ -255,8 +255,8 @@ test("making the site bigger keeps the design on the same ground", async ({ page
   await page.mouse.down();
   await page.mouse.move(nw.x - 90, nw.y - 60, { steps: 10 });
   await page.mouse.up();
-  await page.getByText("Trees found on the photo").click();
-  await page.getByText("Paths, water, roads and parking").click();
+  await page.getByText("Trees spotted on the satellite photo").click();
+  await page.getByText("Paths, roads, water and buildings").click();
   await page.getByTestId("import-site").click();
   await expect.poll(async () => (await course(page)).canvas.width, { timeout: 90_000 }).toBeGreaterThan(W + 100);
   expect((await course(page)).canvas.height).toBeGreaterThan(H + 50);

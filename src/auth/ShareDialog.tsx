@@ -176,7 +176,7 @@ function PublicSection({ id }: { id: string }) {
   });
   return (
     <>
-      <Section title="Public site" testid="public-site-settings">
+      <Section title="Public site" testid="public-site-settings" help="public-site">
         <div className="flex items-center gap-3 text-sm">
           <span className="flex-1 text-zinc-300" data-testid="site-state">
             {site ? <>Shows version {site.version} · {when(site.publishedAt)}{site.version < version ? <span className="text-amber-300"> · the course changed since</span> : null}</> : "Not published yet"}
@@ -187,7 +187,7 @@ function PublicSection({ id }: { id: string }) {
         </div>
         <div className="mt-3"><ViewerLook /></div>
       </Section>
-      <Section title="Public links" testid="public-links">
+      <Section title="Public links" testid="public-links" help="public-links">
         <ul className="space-y-2">
           {links.map(l => (
             <li key={l.id} className={`rounded-lg bg-white/[0.07] p-2.5 text-sm ${l.revoked ? "opacity-60" : ""}`} data-testid="link">

@@ -284,8 +284,8 @@ export async function importSite(page: Page, opts: { trees?: boolean; osm?: bool
   await page.getByLabel("Search address").fill("Springfield Park");
   await page.getByRole("button", { name: /Springfield Park/ }).first().click();
   await expect(page.getByTestId("site-size")).toBeVisible();
-  if (opts.trees === false) await page.getByText("Trees found on the photo").click();
-  if (opts.osm === false) await page.getByText("Paths, water, roads and parking").click();
+  if (opts.trees === false) await page.getByText("Trees spotted on the satellite photo").click();
+  if (opts.osm === false) await page.getByText("Paths, roads, water and buildings").click();
   // The summary is a toast that goes after 12 seconds: note it the moment it shows (a busy test
   // machine can take longer than that between two polls)
   await page.evaluate(() => {

@@ -166,11 +166,11 @@ test("search finds any setting and takes you to it, lit up; the help guide's Sho
   await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
   await addHole(page, { x: 600, y: 600 }, { x: 900, y: 600 });
   await page.keyboard.press("Escape");
-  // A setting by a few of its words: the course's walks, opened and pointed at
+  // A setting by a few of its words: the course's layouts, opened and pointed at
   await page.keyboard.press("Control+k");
   await expect(page.getByRole("textbox", { name: "Go to" })).toBeFocused();
-  await page.keyboard.type("walk width");
-  await expect(page.getByTestId("goto-option").first()).toContainText("Walks to the next hole");
+  await page.keyboard.type("edit layouts");
+  await expect(page.getByTestId("goto-option").first()).toContainText("Layouts");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("course-more")).toBeVisible();
   await expect(page.locator(".dg-found")).toHaveCount(1);

@@ -27,7 +27,7 @@ export const defaultStyle = (): MapStyle => ({
   hillshade: true,
   throwLines: false,
   distances: false,
-  nextTee: true,
+  nextTee: false,
   circle: false,
   legend: false,
   holeTable: false,
@@ -97,7 +97,7 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
     site: { ...base.site, ...(raw.site ?? {}) },
     canvas: raw.canvas && raw.canvas.width > 0 && raw.canvas.height > 0 ? raw.canvas : base.canvas,
     // (Courses saved before there was a choice of basket marks keep the mark their style had)
-    style: forestStyle({ ...base.style, ...(raw.style && !raw.style.basketMark ? { basketMark: raw.style.theme === "forest" || !raw.style.theme ? "basket" : "target" } : {}), ...(raw.style ?? {}) }),
+    style: forestStyle({ ...base.style, ...(raw.style && !raw.style.basketMark ? { basketMark: raw.style.theme === "forest" || !raw.style.theme ? "basket" : "target" } : {}), ...(raw.style ?? {}), nextTee: false }),
     rules: { ...base.rules, ...(raw.rules ?? {}), prices: { ...base.rules.prices, ...(raw.rules?.prices ?? {}) } },
     holes: (raw.holes ?? []).map(h => {
       const stations = Array.isArray(h.fairwayStations) && h.fairwayStations.length > 0 && h.fairwayStations.every((v, i, a) => Number.isFinite(v) && v > 0 && v < 1 && (i === 0 || v > a[i - 1])) ? h.fairwayStations : undefined;

@@ -1,7 +1,7 @@
 // Numbers for each hole and the whole course: length, elevation change, how long it plays, par,
 // shape, what is in the way, and safety checks between holes.
-import { CIRCLE_ONE_FT, CLEAR_IN_FRONT_FT, MIN_PAD, TEE_LEVELS, TEE_ORDER } from "../constants";
-import type { AreaItem, CourseDoc, Hole, Layout, LineItem, P, TeeItem, TeeLevel, TreeItem } from "../types";
+import { CIRCLE_ONE_FT, CLEAR_IN_FRONT_FT, MIN_PAD, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER } from "../constants";
+import type { AreaItem, CourseDoc, Hole, Layout, LineItem, P, StructureItem, TeeItem, TeeLevel, TreeItem } from "../types";
 import { activeLayout, areaPath, basketFor, belongsTo, fairwayOutline, holeLabel, holeNumber, holeTees, linePath, obFor, obPieces, teeAim, teeFor, throwLine } from "./course";
 import { boundsGap, boundsOf, densify, dist, distanceToPath, lengthInside, pathLength, pathTouchesPolygon, pointBoundsGap, segmentsIntersect, smoothPath, turnAngles } from "./geom";
 import { heightAt, profileAlong } from "./terrainGrid";
@@ -297,6 +297,27 @@ export const courseIssues = (doc: CourseDoc) => {
   return out;
 };
 
+/** Holes this close (basket to the next tee, ft) need no path: the next tee is in sight. */
+const NO_PATH_NEEDED_FT = 120;
+/** How near a path has to come to a basket or tee to reach it, and two paths to meet (ft). */
+const PATH_REACH_FT = 60, PATH_MEET_FT = 20;
+/** What players can walk along: paths, walks and roads, and bridges and boardwalks. */
+const walkwaysOf = (doc: CourseDoc): P[][] => [
+  ...(doc.items.filter(i => i.type === "line" && ["path", "walk", "road"].includes((i as LineItem).kind)) as LineItem[]).map(l => linePath(l)),
+  ...(doc.items.filter(i => i.type === "structure" && STRUCTURE_KINDS[i.kind].shape !== "outline") as StructureItem[]).map(s => s.points)
+].filter(p => p.length >= 2);
+/** Whether paths that meet one another lead from one spot to another. */
+const connected = (ways: P[][], from: P, to: P) => {
+  const start = ways.map((w, k) => (distanceToPath(from, w) <= PATH_REACH_FT ? k : -1)).filter(k => k >= 0);
+  const seen = new Set(start), todo = [...start];
+  while (todo.length) {
+    const k = todo.pop()!;
+    if (distanceToPath(to, ways[k]) <= PATH_REACH_FT) return true;
+    for (let j = 0; j < ways.length; j++) if (!seen.has(j) && pathPathDistance(ways[k], ways[j]).d <= PATH_MEET_FT) { seen.add(j); todo.push(j); }
+  }
+  return false;
+};
+
 export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(h => holeStats(doc, h))): SafetyIssue[] => {
   const issues: SafetyIssue[] = [];
   const fixed = doc.rules?.safetyGapFt;
@@ -362,12 +383,15 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
     const outside = la.find(p => p.x < 0 || p.y < 0 || p.x > doc.canvas.width || p.y > doc.canvas.height);
     if (outside) issues.push({ id: `off-site:${a.holeId}`, level: "info", text: `${n(a)} runs off the edge of the site.`, holes: [a.holeId], at: outside });
   }
-  // Walks between holes
+  // Walks between holes: a long one, and one with no path to follow
+  const walkways = walkwaysOf(doc);
   for (let i = 0; i + 1 < stats.length; i++) {
     const a = stats[i], b = stats[i + 1];
     if (!a.complete || !b.complete) continue;
-    const d = dist(a.line[a.line.length - 1], b.line[0]);
-    if (d > 400) issues.push({ id: `long-walk:${a.holeId}:${b.holeId}`, level: "info", text: `Long walk from ${n(a)}'s basket to ${n(b)}'s tee: ${Math.round(d)} ft.`, holes: [a.holeId, b.holeId], at: b.line[0] });
+    const from = a.line[a.line.length - 1], to = b.line[0];
+    const d = dist(from, to);
+    if (d > 400) issues.push({ id: `long-walk:${a.holeId}:${b.holeId}`, level: "info", text: `Long walk from ${n(a)}'s basket to ${n(b)}'s tee: ${Math.round(d)} ft.`, holes: [a.holeId, b.holeId], at: to });
+    if (d > NO_PATH_NEEDED_FT && !connected(walkways, from, to)) issues.push({ id: `no-path:${a.holeId}:${b.holeId}`, level: "info", text: `No path from ${n(a)}'s basket to ${n(b)}'s tee. Draw one with the Line tool so players can find the next hole.`, holes: [a.holeId, b.holeId], at: to });
   }
   // Holes not finished
   stats.filter(s => !s.complete).forEach(s => issues.push({ id: `unfinished:${s.holeId}`, level: "info", text: `Hole ${s.label} needs ${s.teeId ? "a basket" : "a tee"}.`, holes: [s.holeId], at: s.line[0] ?? { x: 0, y: 0 } }));

@@ -137,9 +137,9 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   const options = (
     <>
       <Toggle label="Satellite photo" checked={imagery === "satellite"} onChange={v => setImagery(v ? "satellite" : "streets")} hint={imagery === "satellite" ? "Esri World Imagery" : "OpenStreetMap"} />
-      <Toggle label="Trees and ground from LiDAR" checked={lidar} onChange={setLidar} hint="USGS" />
-      <Toggle label="Trees found on the photo" checked={trees && imagery === "satellite"} onChange={setTrees} />
-      <Toggle label="Paths, water, roads and parking" checked={osm} onChange={setOsm} />
+      <Toggle label="Real trees and ground (aerial survey)" checked={lidar} onChange={setLidar} hint="USGS LiDAR, in the US where it's been flown" />
+      <Toggle label="Trees spotted on the satellite photo" checked={trees && imagery === "satellite"} onChange={setTrees} hint="Used where there's no aerial survey" />
+      <Toggle label="Paths, roads, water and buildings" checked={osm} onChange={setOsm} hint="OpenStreetMap" />
     </>
   );
   const secs = status.state === "loading" && started ? Math.floor((Date.now() - started) / 1000) : 0;

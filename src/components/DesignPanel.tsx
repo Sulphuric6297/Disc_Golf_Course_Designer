@@ -122,7 +122,7 @@ function TeeSignSettings() {
   const size = doc.style.signSize ?? "18x12";
   const tallClassic = size === "letter" || size === "a4" || ((doc.style.sign?.look ?? "classic") === "classic" && size !== "18x12");
   return (
-    <Section title="Tee signs" testid="sign-settings" right={reset}>
+    <Section title="Tee signs" testid="sign-settings" right={reset} help="tee-signs">
       <div className="grid grid-cols-2 gap-2 mb-3" role="radiogroup" aria-label="Tee sign look" data-testid="sign-looks">
         {SIGN_LOOKS.map(l => {
           const on = (doc.style.sign?.look ?? "classic") === l.id;
@@ -236,10 +236,10 @@ export function DesignPanel() {
       {tab === "map" && (
         <>
           <PageElementPanel />
-          <Section title="Map style" testid="map-style">
+          <Section title="Map style" testid="map-style" help="map-style">
             <MapLookPanel />
           </Section>
-      <Section title="Drawn on the map">
+      <Section title="Drawn on the map" help="drawn-on-map">
         <Toggle label="Throw lines" checked={s.throwLines} onChange={v => setStyle({ throwLines: v })} />
         <Toggle label="Distances on the lines" checked={s.distances} onChange={v => setStyle({ distances: v })} />
         <Toggle label="Putting circle (10 m)" checked={s.circle} onChange={v => setStyle({ circle: v })} />

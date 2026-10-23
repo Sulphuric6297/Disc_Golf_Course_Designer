@@ -4,7 +4,7 @@ import { BRUSH_SECTION } from "../lib/view";
 import { useEffect, useMemo, useState } from "react";
 import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X, Plus } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
-import { areaPath, areaRing, autoWalks, byNumber, obFor, obSides, sideCompass, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, obPicked, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
+import { areaPath, areaRing, byNumber, obFor, obSides, sideCompass, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, obPicked, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
@@ -12,7 +12,7 @@ import { courseStats, holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
 import { fairwayTrees } from "../lib/lidar";
 import { conifersOf } from "../lib/landscapes";
-import { addHoleOb, deleteSelection, duplicateSelection, editWalks, markObBeyond, select, setTeeLevel, shareBasket } from "../state/actions";
+import { addHoleOb, deleteSelection, duplicateSelection, markObBeyond, select, setTeeLevel, shareBasket } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
 import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface, BrushKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
@@ -20,7 +20,7 @@ import { TreeSettings } from "./TreeSettings";
 import { HoleFlight } from "./FlyoverSettings";
 import { HoleSteps } from "./HoleSteps";
 import { getView } from "../state/view";
-import { Button, ColorInput, Field, NumberInput, Section, Segmented, Slider, Facts, TextInput, Toggle } from "./ui";
+import { Button, ChoiceList, ColorInput, Field, HelpLink, NumberInput, Section, Segmented, Slider, Facts, TextInput, Toggle } from "./ui";
 
 const shapeText = { straight: "Straight", left: "Turns left", right: "Turns right", "s-curve": "S-curve" };
 /** A small size to the half foot (or tenth of a meter): "2.5 ft". */
@@ -101,9 +101,6 @@ function HoleInspector({ hole }: { hole: Hole }) {
   const doc = useCourse(s => s.doc);
   const s = useMemo(() => holeStats(doc, hole), [doc, hole]);
   const label = holeLabel(doc, hole.id);
-  // The walk on to the next tee, while it is the automatic one
-  const walkNext = useMemo(() => (doc.style.nextTee ? autoWalks(doc.items, courseStats(doc), doc.holes).find(w => w.a.holeId === hole.id) ?? null : null), [doc, hole.id]);
-  const nextNo = walkNext ? holeLabel(doc, walkNext.b.holeId) : "";
   const u = doc.units;
   const tees = holeTees(doc, hole.id);
   const baskets = holeBaskets(doc, hole.id);
@@ -150,7 +147,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
           </div>
         </Section>
       )}
-      <Section title="Par and play">
+      <Section title="Par and play" help="par">
         <Field label="Par">
           <Segmented
             label="Par"
@@ -188,22 +185,6 @@ function HoleInspector({ hole }: { hole: Hole }) {
           </div>
         )}
       </Section>
-      {walkNext && (
-        <Section title={`Walk to hole ${nextNo}`} testid="hole-walk">
-          <Slider label="Width" min={1} max={20} step={0.5} value={hole.walkWidth ?? doc.style.walkWidth ?? 6} onChange={v => set({ walkWidth: v })} format={v => fmtDist(v, u)} />
-          <SurfacePick value={hole.walkSurface} onChange={v => set({ walkSurface: v })} />
-          <div className="flex flex-wrap gap-1.5">
-            <Button small onClick={() => editWalks(hole.id)} testid="edit-walk">Edit the walk to hole {nextNo}</Button>
-            {hole.walkOut && <Button small onClick={() => set({ walkOut: undefined })} testid="walk-out-reset">Start off the green again</Button>}
-            <Button small tone="danger" onClick={() => set({ walkOff: true })} testid="walk-remove"><Trash2 size={13} /> Remove this walk</Button>
-          </div>
-        </Section>
-      )}
-      {hole.walkOff && doc.style.nextTee && (
-        <Section title="Walk to the next hole" testid="hole-walk-off">
-          <Button small onClick={() => set({ walkOff: undefined })} testid="walk-restore">Add the walk back</Button>
-        </Section>
-      )}
       {s.complete && (
         <Section title="In play">
           <ul className="text-xs text-zinc-300 space-y-1" data-testid="hole-in-play">
@@ -213,7 +194,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
           </ul>
         </Section>
       )}
-      <Section title="Tees and pins">
+      <Section title="Tees and pins" help="tees-pins">
         {doc.holes.length > 1 && (
           <Field label="Basket">
             <select aria-label="Basket" data-testid="share-basket" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
@@ -255,7 +236,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
         </ul>
       </Section>
       {s.complete && (
-        <Section title="Flyover">
+        <Section title="Flyover" help="flyover">
           <HoleFlight hole={hole} />
         </Section>
       )}
@@ -295,7 +276,7 @@ function WoodsBrush({ item }: { item: AreaItem }) {
   const kind = item.brushKind ?? "mixed";
   return (
     <div className="mb-3" data-testid="woods-brush">
-      <Field label={sections.length ? "Underbrush (the rest of the wood)" : "Underbrush"} hint="Bushes, thickets, briars and weeds beneath the trees, kept off fairways and paths.">
+      <Field label={sections.length ? "Underbrush (the rest of the wood)" : "Underbrush"} help="woods" hint="Bushes, thickets, briars and weeds under the trees. It stays off fairways and paths.">
         <Segmented label="Underbrush" value={item.underbrush ?? "none"} onChange={v => updateItem(item.id, { underbrush: v === "none" ? undefined : v } as Partial<CourseItem>)} options={[...BRUSH_LEVELS]} />
       </Field>
       {(item.underbrush || sections.length > 0) && (
@@ -370,9 +351,14 @@ function WoodsTrees({ item }: { item: AreaItem }) {
   const draw = () => useEditor.getState().set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", patchFor: item.id });
   return (
     <>
-      <Field label="Trees" hint={mode === "custom" ? "The measured trees, and generated ones filling the patches you draw." : mode === "none" ? "No trees in here." : mode === "drawn" ? "Generated trees only, not the measured ones." : "The measured trees, cleared where the holes play."}>
-        <Segmented label="Trees" value={mode} onChange={v => updateItem(item.id, { trees: v === "measured" ? undefined : v } as Partial<CourseItem>)}
-          options={[{ value: "measured", label: "Measured" }, { value: "custom", label: "Filled in" }, { value: "drawn", label: "Generated" }, { value: "none", label: "None" }]} />
+      <Field label="Trees in these woods" help="woods">
+        <ChoiceList label="Trees in these woods" testid="woods-trees" value={mode} onChange={v => updateItem(item.id, { trees: v === "measured" ? undefined : v } as Partial<CourseItem>)}
+          options={[
+            { value: "measured", label: "Real trees", hint: "The trees the aerial survey (LiDAR) found here, at their real size and spot. Trees in a fairway are cut down." },
+            { value: "custom", label: "Real trees plus fill-in", hint: "The real trees, plus trees the app plants in patches you draw. Use it where the survey missed trees or new ones have grown." },
+            { value: "drawn", label: "Planted by the app", hint: "Ignores the survey here. The app plants its own trees, using the mix below." },
+            { value: "none", label: "No trees", hint: "Clears every tree in these woods, even ones the survey found." }
+          ]} />
       </Field>
       {(mode === "drawn" || mode === "custom") && <WoodsMix item={item} />}
       {mode === "custom" && (
@@ -420,7 +406,7 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
   const setObHoles = (ids: string[]) => updateItem(item.id, { obHoles: ids.length ? ids : undefined } as Partial<CourseItem>);
   return (
     <>
-      <Field label="Out of bounds">
+      <Field label="Out of bounds" help="ob">
         <Segmented label="Out of bounds" value={value} onChange={pick} options={options} />
       </Field>
       {line?.obBeyond && item.ob === true && (() => {

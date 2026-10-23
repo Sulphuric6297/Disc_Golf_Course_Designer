@@ -137,7 +137,7 @@ test("trees measured from the air on import: cut down on a fairway, a stump to b
   await page.evaluate(([x, y]) => { const v = (window as any).__dgView; v.controls.moveTo(x, v.h(x, y), y, false); v.controls.dollyTo(120, false); v.invalidate(); }, [here.x, here.y]);
   await expect(page.locator(`[data-stump="${lone}"]`)).toBeHidden();
   await page.getByTestId("scene-button").click();
-  await page.getByTestId("scene-panel").getByRole("checkbox", { name: "Stumps of cut-down trees" }).check();
+  await page.getByTestId("scene-panel").getByRole("checkbox", { name: "Stumps where trees were cut" }).check();
   await page.getByTestId("scene-button").click();
   await page.locator(`[data-stump="${lone}"]`).click();
   await expect.poll(async () => (await course(page)).lidar.removed).toBeUndefined();

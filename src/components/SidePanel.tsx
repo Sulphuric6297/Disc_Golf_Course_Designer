@@ -3,12 +3,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowRight, Info, X, ClipboardCheck, Download, Eye, EyeOff, MapPinned, Palette, Plus, Route, Trash2, type LucideIcon } from "lucide-react";
 import { TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
-import { activeLayout, autoWalks, holeTees } from "../lib/course";
+import { activeLayout, holeTees } from "../lib/course";
 import { courseIssues, courseStats, courseTotals, levelsOnCourse, openIssues, playsOf, swapped, type SafetyIssue } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
-import { editWalks, pickLayout, select, uncutTrees } from "../state/actions";
+import { pickLayout, select, uncutTrees } from "../state/actions";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
-import { setAllWalks } from "./Inspector";
 import { SHOW_EVENT } from "./showSetting";
 import type { Layout, PinPosition, TeeLevel } from "../types";
 import { refreshOsm } from "../state/osm";
@@ -73,7 +72,7 @@ function BroughtIn() {
   return (
     <>
       {(photoTrees > 0 || photoAreas > 0 || osm > 0) && (
-        <Section title="Brought in automatically">
+        <Section title="Brought in automatically" help="brought-in">
           {(photoTrees > 0 || photoAreas > 0) && (
             <div className="flex items-center justify-between text-xs text-zinc-300 mb-1.5" data-testid="photo-found">
               {[photoAreas ? `${photoAreas} area${photoAreas > 1 ? "s" : ""}` : "", photoTrees ? `${photoTrees} trees` : ""].filter(Boolean).join(" and ")} from the photo
@@ -120,8 +119,8 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
             <Button small onClick={() => refreshOsm()} testid="refresh-osm">Update paths, roads and water</Button>
           </div>
           <div className={`mt-3 ${doc.lidar ? "pt-2 border-t border-white/10" : "rounded-[16px] bg-orange-500/[0.12] ring-1 ring-orange-400/30 p-3"}`} data-testid="lidar-info">
-            {!doc.lidar && <div className="text-[13.5px] font-semibold text-orange-100 mb-0.5">Real trees and ground</div>}
-            <div className="text-xs text-zinc-400 mb-1.5">{doc.lidar ? `${doc.lidar.trees.length.toLocaleString()} trees measured from the air · ${doc.lidar.source}` : "Trees and ground from LiDAR"}</div>
+            {!doc.lidar && <div className="text-[13.5px] font-semibold text-orange-100 mb-0.5 flex items-center gap-1.5">Real trees and ground <HelpLink topic="lidar" label="Real trees and ground" /></div>}
+            <div className="text-xs text-zinc-400 mb-1.5 flex items-center gap-1.5">{doc.lidar ? <>{`${doc.lidar.trees.length.toLocaleString()} trees measured from the air · ${doc.lidar.source}`} <HelpLink topic="lidar" label="Measured trees" /></> : "Each tree's real spot and height, and the bare ground, from an aerial survey (LiDAR) where one has been flown."}</div>
             <div className="flex flex-wrap gap-1.5">
               {ed.lidarBusy !== null
                 ? <span className="text-xs text-zinc-300" data-testid="lidar-busy">Measuring… {Math.round(ed.lidarBusy * 100)}%</span>
@@ -129,14 +128,14 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
               {doc.lidar && ed.lidarBusy === null && <Button small tone="danger" onClick={() => changeDoc(() => ({ lidar: undefined }))} testid="remove-lidar">Remove the measured trees</Button>}
             </div>
             {doc.lidar && doc.lidar.trees.length > 0 && (
-              <details className="mt-2 group" data-testid="lidar-settings"><summary className="cursor-pointer list-none text-[12.5px] font-semibold text-zinc-200 flex items-center justify-between py-1">Measured trees <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
+              <details className="mt-2 group" data-testid="lidar-settings"><summary className="cursor-pointer list-none text-[12.5px] font-semibold text-zinc-200 flex items-center justify-between py-1">Measured tree settings <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
               <div className="mt-1" data-testid="lidar-min">
-                <Slider label="Smallest tree kept" min={0} max={60} step={1} value={doc.lidar.minHeight ?? 0}
+                <Slider label="Leave out trees shorter than" min={0} max={60} step={1} value={doc.lidar.minHeight ?? 0}
                   format={v => (v ? `${fmtElev(v, doc.units).replace(/^[+−-]/, "")} and up` : "All")}
                   onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, minHeight: v || undefined } } : {}), false)} onDone={() => useCourse.getState().commit()} />
                 <div className="text-[11px] text-zinc-500">{(() => { const m = doc.lidar.minHeight ?? 0; const n = m ? doc.lidar.trees.filter(t => t[2] >= m).length : doc.lidar.trees.length; return `${n.toLocaleString()} of ${doc.lidar.trees.length.toLocaleString()} kept`; })()}</div>
                 <div className="mt-2" data-testid="lidar-grow">
-                  <Slider label="Grown since the survey" min={0} max={25} step={1} value={doc.lidar.growYears ?? 0}
+                  <Slider label="Growth since the survey" min={0} max={25} step={1} value={doc.lidar.growYears ?? 0}
                     format={v => (v ? `${v} year${v === 1 ? "" : "s"} · ${saplings(doc.lidar!.trees, v).length.toLocaleString()} new` : "As measured")}
                     onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, growYears: v || undefined } } : {}), false)} onDone={() => useCourse.getState().commit()} />
                   {yearsSince(doc.lidar.source) > 0 && (doc.lidar.growYears ?? 0) !== yearsSince(doc.lidar.source) && (
@@ -154,7 +153,7 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
                   ) : null;
                 })()}
                 <div className="mt-2" data-testid="lidar-clear">
-                  <Toggle label="Cut trees off the fairways" hint="Off: the measured trees stand where the holes play, cut by hand only" checked={doc.lidar.clearFairways !== false}
+                  <Toggle label="Clear trees from the fairways" hint="Turn it off to keep the real trees where the holes play and cut them by hand instead." checked={doc.lidar.clearFairways !== false}
                     onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, clearFairways: v ? undefined : false } } : {}))} />
                 </div>
 
@@ -203,7 +202,7 @@ function LayoutEditor({ open, setOpen, picker = true }: { open: boolean; setOpen
   const doc = useCourse(s => s.doc);
   const setLayouts = (layouts: Layout[]) => changeDoc(() => ({ layouts }));
   return (
-    <Section title={<span className="flex items-center gap-1.5">Layouts <HelpLink topic="layouts" label="Layouts" /></span>} right={<button className="text-xs text-orange-300 hover:text-orange-200" onClick={() => setOpen(o => !o)}>{open ? "Done" : "Edit layouts"}</button>}>
+    <Section title="Layouts" help="layouts" right={<button className="text-xs text-orange-300 hover:text-orange-200" onClick={() => setOpen(o => !o)}>{open ? "Done" : "Edit layouts"}</button>}>
       {picker && <LayoutPicker />}
       {open && (
         <div className="mt-2 space-y-2" data-testid="layout-editor">
@@ -287,17 +286,6 @@ export function HolesStep({ course = false }: { course?: boolean }) {
         {totals.complete > 0 && (
           <div className={course ? "" : "mt-3"}><Facts testid="course-totals" items={[["Par", totals.par], ["Length", fmtDist(totals.length, u)], ["Walking", fmtDist(totals.walk, u)]]} /></div>
         )}
-        {doc.holes.length > 1 && (
-          <div className="mt-3" data-testid="auto-walks">
-            <Toggle label="Walks to the next hole (automatic)" checked={doc.style.nextTee} onChange={v => changeDoc(d => ({ style: { ...d.style, nextTee: v } }))} />
-            {doc.style.nextTee && (
-              <>
-                <Slider label="Walk width" min={1} max={20} step={0.5} value={doc.style.walkWidth ?? 6} onChange={v => setAllWalks(v, false)} onDone={() => useCourse.getState().commit()} format={v => fmtDist(v, u)} />
-                {autoWalks(doc.items, stats, doc.holes).length > 0 && <Button small onClick={() => editWalks(null)} testid="edit-walks">Edit the walks</Button>}
-              </>
-            )}
-          </div>
-        )}
       </Section>
     </>
   );
@@ -331,7 +319,7 @@ export function ReviewStep() {
         <p className="text-xs text-zinc-500 mt-1">{totals.complete ? `Average hole ${fmtDist(totals.length / totals.complete, u)} · ` : ""}Par mix {Object.entries(totals.parCounts).map(([p, n]) => `${n}×${p}`).join(" ") || "–"}</p>
         {levels.length > 0 && <p className="text-[11px] text-zinc-500 mt-2">Tee colors on the course: {levels.map(l => TEE_LEVELS[l].label).join(", ")}.</p>}
       </Section>
-      <Section title={`Checks (${issues.length})`} testid="issues">
+      <Section title={`Checks (${issues.length})`} testid="issues" help="checks">
         {issues.length === 0 ? (
           <p className="text-xs text-emerald-300">No problems found.</p>
         ) : (
