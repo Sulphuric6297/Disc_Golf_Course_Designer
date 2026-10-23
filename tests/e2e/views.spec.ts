@@ -555,16 +555,22 @@ plain("the flight round the trees standing there: at its height through woods, a
   plainExpect(Math.abs(behind.cam[0].z - 10)).toBeLessThan(0.3);
 });
 
-plain("a flight through keyframes keeps their height over the ground between them, and clear of the trees (pure logic)", () => {
+plain("a flight through keyframes goes exactly where they say, never into the ground, and never around trees by itself (pure logic)", () => {
   const bumpy = (x: number) => 100 + 8 * Math.sin(x / 20);
   const keys = [{ x: 0, y: 0, alt: 10, lookX: 100, lookY: 0 }, { x: 200, y: 0, alt: 10, lookX: 300, lookY: 0 }, { x: 400, y: 0, alt: 10, lookX: 500, lookY: 0 }];
   const f = keyFlight(keys, FLYOVER_DEFAULTS, x => bumpy(x))!;
-  for (const c of f.cam) plainExpect(Math.abs(c.z - bumpy(c.x) - 10)).toBeLessThan(2);
-  // A wall of low trees between two keyframes: over it
+  // (at each keyframe: its spot, as high over the ground as it says)
+  for (const k of keys) {
+    const c = f.cam.reduce((a, q) => (Math.hypot(q.x - k.x, q.y - k.y) < Math.hypot(a.x - k.x, a.y - k.y) ? q : a));
+    plainExpect(Math.abs(c.x - k.x)).toBeLessThan(1.5);
+    plainExpect(Math.abs(c.z - bumpy(k.x) - k.alt)).toBeLessThan(0.6);
+  }
+  // (between them, never under the ground)
+  for (const c of f.cam) plainExpect(c.z).toBeGreaterThanOrEqual(bumpy(c.x) + 4 - 1e-6);
+  // A wall of trees between two keyframes: the same flight (what's set is what flies)
   const wall = (p: { x: number; y: number }, reach: number) => (Math.abs(p.x - 300) < reach + 8 ? { base: 103, top: 140, trunks: [] } : null);
   const g = keyFlight(keys, FLYOVER_DEFAULTS, x => bumpy(x), wall)!;
-  const at300 = g.cam.reduce((a, c) => (Math.abs(c.x - 300) < Math.abs(a.x - 300) ? c : a));
-  plainExpect(at300.z).toBeGreaterThanOrEqual(148 - 1e-6);
+  plainExpect(g.cam).toEqual(f.cam);
 });
 
 plain("a flight never jolts: round the trees by itself, and through keyframes at their own speeds (pure logic)", () => {

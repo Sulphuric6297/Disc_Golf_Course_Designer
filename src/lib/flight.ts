@@ -445,20 +445,20 @@ export const keyFlight = (keys: FlyKey[], set: FlyoverSettings, ground: (x: numb
   const dur = at[at.length - 1];
   const n = Math.max(60, Math.ceil(dur * RATE));
   const camAt = timed(keys.map(k => ({ x: k.x, y: k.y })), at), lookAt = timed(keys.map(k => ({ x: k.lookX, y: k.lookY })), at);
-  // (the camera's height over the ground: between two keyframes it keeps to the ground's rise and
-  // fall, as high over it as they are, and clear of the trees on the way)
-  const altAt = monotone(at, keys.map(k => k.alt)), fovAt = monotone(at, keys.map(k => k.fov ?? set.fov));
+  // (the camera goes exactly where each keyframe puts it, as high as it says, and between two it
+  // goes smoothly from one height to the next, like a drone between waypoints: never lifted or
+  // turned aside by what it thinks is in the way, so what's set is what flies. Only the ground
+  // itself keeps it up: a rise between two keyframes, it stays a few feet over)
+  const zAt = monotone(at, keys.map(k => ground(k.x, k.y) + k.alt)), fovAt = monotone(at, keys.map(k => k.fov ?? set.fov));
   const lookZ = monotone(at, keys.map(k => ground(k.lookX, k.lookY) + 3));
-  const way: P[] = [], alts: number[] = [], look: Air[] = [], fov: number[] = [];
+  const cam: Air[] = [], look: Air[] = [], fov: number[] = [];
   for (let j = 0; j <= n; j++) {
-    const t = (j / n) * dur;
-    way.push(camAt(t));
-    alts.push(altAt(t));
+    const t = (j / n) * dur, p = camAt(t);
+    cam.push({ ...p, z: Math.max(zAt(t), ground(p.x, p.y) + 4) });
     look.push({ ...lookAt(t), z: lookZ(t) });
     fov.push(fovAt(t));
   }
-  const flown = flyAlong(way, alts, n / dur, ground, obstacles);
-  return finish(flown.way.map((w, j) => ({ x: w.x, y: w.y, z: flown.z[j] })), look, fov, dur, n / dur);
+  return finish(cam, look, fov, dur, n / dur);
 };
 
 /** Keyframes to start from: the flight it flies by itself, at a few moments (to change by hand),
