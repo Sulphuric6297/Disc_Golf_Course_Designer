@@ -332,7 +332,7 @@ export interface Layout {
 }
 
 /** How a new area or line is drawn: point by point, a dragged rectangle or circle, or freehand. */
-export type DrawShape = "points" | "box" | "circle" | "freehand";
+export type DrawShape = "points" | "box" | "circle" | "freehand" | "paint";
 
 export type MapTheme = "forest" | "illustrated" | "satellite" | "topo" | "minimal" | "night";
 
@@ -615,4 +615,5 @@ export type ToolMode =
   | "draw-area"
   | "draw-line"
   | "draw-structure"
+  | "sculpt"
   | "measure";

@@ -57,7 +57,7 @@ type ShellProps = {
 
 const TOOL_TITLES: Record<string, string> = {
   "add-hole": "New hole", "add-tee": "Another tee", "add-basket": "Another pin", "add-mando": "Mando", "add-dropzone": "Drop zone",
-  "draw-area": "Draw an area", "draw-line": "Draw a line", "draw-structure": "Build", "add-tree": "Trees", "add-amenity": "Amenities",
+  "draw-area": "Draw an area", "draw-line": "Draw a line", sculpt: "Shape the ground", "draw-structure": "Build", "add-tree": "Trees", "add-amenity": "Amenities",
   "add-label": "Text label", measure: "Measure"
 };
 

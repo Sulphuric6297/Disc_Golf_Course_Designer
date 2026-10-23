@@ -245,9 +245,16 @@ export const TOPICS: Topic[] = [
     path: "Design › tool bar"
   },
   {
+    id: "ground", section: "design", title: "Shaping the ground",
+    body: "The Ground tool (G) lets you paint the terrain yourself, for the things the elevation data doesn't have: a mound you're building, a tee pad you're leveling, a hole that's been moved. Pick what the brush does, then drag it over the map.\n\nRaise builds the ground up and Lower digs it down. Flatten levels everything you paint to the height where the stroke started, which is handy for tee pads and greens. Smooth evens out bumps and steps but keeps the overall slope. Holding the brush still keeps it working. The brush is soft at its edge, so what you paint blends into the ground around it instead of leaving a step.\n\nBrush sets how wide it is, and Strength how much each pass does. Each stroke is one Undo. The 3D view, the contour lines and the printed map all follow the new ground. Keep in mind it changes the ground the course is drawn on, not the real survey, so bringing the site in again replaces it.",
+    words: "terrain ground elevation sculpt raise lower flatten smooth hill mound berm dig level paint brush topography",
+    path: "Design › Ground (G)",
+    where: { step: "design", find: "ground-raise" }
+  },
+  {
     id: "areas", section: "design", title: "Areas: OB, hazards, water, woods, rough",
-    body: "The Area tool (O) draws a shape. Click its corners and finish with a double-click or Enter, or pick Rectangle, Circle or Freehand above the tools. Pick its kind (OB, hazard, water, woods, tall grass, parking and so on) before you draw, or change it after in its panel.\n\nThe panel also has its name on the map and a Curved switch. Water, parking lots and buildings never have trees in them, so drawing one over trees takes those trees out. That's part of the same change, so one Undo brings them back.",
-    words: "area draw polygon rectangle circle freehand water woods hazard parking building",
+    body: "The Area tool (O) draws a shape. Click its corners and finish with a double-click or Enter, or pick Rectangle, Circle, Freehand or Paint above the tools. Paint works like a real brush: drag it over the map and let go, and the shape comes out with a smooth edge. Set the brush size next to it. Pick its kind (OB, hazard, water, woods, tall grass, parking and so on) before you draw, or change it after in its panel.\n\nThe panel also has its name on the map and a Curved switch. Water, parking lots and buildings never have trees in them, so drawing one over trees takes those trees out. That's part of the same change, so one Undo brings them back.",
+    words: "area draw polygon rectangle circle freehand paint brush water woods grass rough hazard parking building",
     path: "Design › Area (O)"
   },
   {

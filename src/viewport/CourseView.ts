@@ -24,6 +24,7 @@ import { conifersOf, treeMixOf } from "../lib/landscapes";
 import { fmtArea, fmtDist, fmtElev } from "../lib/units";
 import { BASKET_BAND, createAmenity, createBasket, createDropZone, createMando, createTeePad, fitTeePad } from "../three/courseModels";
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
+import { dab, strokeOutline } from "../lib/brush";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
 import { createMeasuredWoods, createUnderbrush, createWoods, createWoodsWhere } from "../three/woods";
@@ -4301,6 +4302,12 @@ export class CourseView {
       });
       return;
     }
+    if (tool.mode === "sculpt") {
+      // The ground tool: a drag paints, a tap is one dab (two fingers still move the map)
+      e.stopPropagation();
+      this.gesture(e, { drag: s => this.sculptDrag(s), click: groundClick(p => { const d = this.sculptDrag(e, p); d?.end(e); }) });
+      return;
+    }
     if (this.drawn(tool)) {
       // A rectangle, circle or freehand shape is dragged out (clicking still adds points); with a
       // finger too, so the map stays put (two fingers still move it)
@@ -4311,6 +4318,12 @@ export class CourseView {
       this.gesture(e, {
         drag: shaped ? s => this.shapeDrag(s, shape) : panOrNothing,
         click: groundClick(p0 => {
+          // (painting: a tap paints a round spot)
+          if (shape === "paint") {
+            const out = strokeOutline([p0], this.tool.brush?.size ?? 20);
+            if (out) { this.drawPts = out; if (!this.finishDrawing()) this.cancelDrawing(); }
+            return;
+          }
           // A rectangle or a circle by clicks: one corner (or the middle), then the other corner
           // (or the edge); dragging one out works too
           if (shape === "box" || shape === "circle") {
@@ -4550,7 +4563,7 @@ export class CourseView {
   }
 
   /** Drags out a new area or line: a rectangle (square to the screen), a circle from its middle, or freehand. */
-  private shapeDrag(start: PointerEvent, shape: "box" | "circle" | "freehand"): { move: (ev: PointerEvent) => void; end: (ev: PointerEvent) => void } | null {
+  private shapeDrag(start: PointerEvent, shape: "box" | "circle" | "freehand" | "paint"): { move: (ev: PointerEvent) => void; end: (ev: PointerEvent) => void } | null {
     const g0 = this.groundAt(start.clientX, start.clientY);
     if (!g0) return null;
     const a = { x: g0.x, y: g0.z };
@@ -4566,6 +4579,13 @@ export class CourseView {
         const pts = this.shapePoints(shape, { x: start.clientX, y: start.clientY }, { x: ev.clientX, y: ev.clientY });
         if (!pts) return;
         this.drawPts = pts;
+      } else if (shape === "paint") {
+        // (painted: the brush's track, its outline shown as it goes)
+        const b = ground(ev.clientX, ev.clientY);
+        const r = this.tool.brush?.size ?? 20;
+        if (b && dist(free[free.length - 1], b) >= Math.max(step, r / 5)) free.push(b);
+        this.drawPts = strokeOutline(free, r) ?? [];
+        this.showBrush(b, r);
       } else {
         const b = ground(ev.clientX, ev.clientY);
         if (b && dist(free[free.length - 1], b) >= step) free.push(b);
@@ -4585,6 +4605,66 @@ export class CourseView {
         this.shaping = false;
         if (shape === "freehand") this.drawPts = simplify(this.drawPts, step * 0.5);
         if (!this.finishDrawing()) this.cancelDrawing();
+      }
+    };
+  }
+
+  // ------------------------------------------------------------------ the brush (ground, painting)
+
+  private brushRing: THREE.Object3D | null = null;
+  /** The brush's circle on the ground under the pointer (null: hidden). */
+  private showBrush(at: P | null, r: number) {
+    if (this.brushRing) { this.fx.remove(this.brushRing); disposeObjectDeep(this.brushRing); this.brushRing = null; }
+    if (at) {
+      const ring: P[] = [];
+      for (let i = 0; i <= 48; i++) ring.push({ x: at.x + Math.cos((i / 48) * Math.PI * 2) * r, y: at.y + Math.sin((i / 48) * Math.PI * 2) * r });
+      const g = new THREE.Group();
+      g.add(this.fatLine(this.drapeLine(ring, LIFT + 0.4), "#1c1917", 4, { depthTest: false, order: 29, opacity: 0.45 }));
+      g.add(this.fatLine(this.drapeLine(ring, LIFT + 0.4), "#fafaf9", 2, { depthTest: false, order: 30, opacity: 0.95 }));
+      this.brushRing = g;
+      this.fx.add(g);
+    }
+    this.invalidate();
+  }
+
+  /** The ground tool's stroke: dabs along the drag and, held still, again and again where it is;
+   * the ground sent on live (a few times a second) and once more when let go, as one undo step. */
+  private sculptDrag(start: PointerEvent, at0?: P): { move: (ev: PointerEvent) => void; end: (ev: PointerEvent) => void } | null {
+    const doc = this.doc;
+    if (!doc || this.readOnly) return null;
+    const g0 = at0 ? { x: at0.x, z: at0.y } : this.groundAt(start.clientX, start.clientY);
+    if (!g0) return null;
+    const b = this.tool.brush ?? { size: 25, strength: 5, ground: "raise" as const };
+    const heights: Record<string, number> = { ...doc.heights };
+    const W = doc.course.canvas.width, H = doc.course.canvas.height;
+    // (raise and lower: a quarter foot a dab at strength 1; flatten and smooth: how far a dab goes)
+    const amount = b.ground === "raise" || b.ground === "lower" ? b.strength * 0.12 : Math.min(1, b.strength * 0.05);
+    const level = heightAt(doc.heights, doc.gridSize, g0.x, g0.z);
+    let last: P = { x: g0.x, y: g0.z }, sent = 0;
+    const put = (p: P) => dab(heights, doc.gridSize, W, H, p, b.size, b.ground, amount, level);
+    const send = (done: boolean) => {
+      sent = performance.now();
+      this.cb.onTerrain?.({ ...heights }, done);
+    };
+    put(last);
+    this.setDragging(true);
+    // (held still: it keeps working where the brush is)
+    const hold = window.setInterval(() => { put(last); if (performance.now() - sent > 140) send(false); }, 90);
+    return {
+      move: ev => {
+        const g = this.groundAt(ev.clientX, ev.clientY);
+        if (!g) return;
+        const p = { x: g.x, y: g.z };
+        const d = dist(last, p), step = Math.max(1, b.size / 4);
+        for (let k = 1; k <= Math.floor(d / step); k++) put({ x: last.x + ((p.x - last.x) * k * step) / d, y: last.y + ((p.y - last.y) * k * step) / d });
+        if (d >= step) last = p;
+        this.showBrush(p, b.size);
+        if (performance.now() - sent > 140) send(false);
+      },
+      end: () => {
+        window.clearInterval(hold);
+        this.setDragging(false);
+        send(true);
       }
     };
   }
@@ -5126,6 +5206,10 @@ export class CourseView {
       const g = this.groundAt(p.x, p.y);
       this.cb.onHover(g ? { x: g.x, y: g.z } : null);
       if (this.obPick && g) { this.obPickHover({ x: g.x, y: g.z }); return; }
+      // (the brush's circle where it would paint)
+      const painting = this.tool.mode === "sculpt" || (this.tool.mode === "draw-area" && this.tool.shape === "paint");
+      if (painting) this.showBrush(g ? { x: g.x, y: g.z } : null, this.tool.brush?.size ?? 20);
+      else if (this.brushRing) this.showBrush(null, 0);
       if (this.tool.mode === "measure") {
         // (only over the site: a tilted view's horizon would stretch the line across the screen)
         const w = this.doc.course.canvas;

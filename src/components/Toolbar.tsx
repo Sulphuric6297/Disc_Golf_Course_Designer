@@ -1,12 +1,13 @@
 // The tools along the bottom of the map, with the active tool's options and a hint above them.
 import { holeLabel } from "../lib/course";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Armchair, BoxSelect, Circle, CircleDot, Ellipsis, Hand, House, MousePointer2, PenLine, Pentagon, RectangleHorizontal, Redo2, Route, Ruler, Signpost, Spline, Square, Target, TreeDeciduous, Type, Undo2 } from "lucide-react";
+import { Armchair, BoxSelect, Brush, Mountain, Circle, CircleDot, Ellipsis, Hand, House, MousePointer2, PenLine, Pentagon, RectangleHorizontal, Redo2, Route, Ruler, Signpost, Spline, Square, Target, TreeDeciduous, Type, Undo2 } from "lucide-react";
 import { amenitySymbol, structureLegend, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import { getDoc, useCourse, useEditor } from "../state/course";
 import type { AmenityKind, AreaKind, DrawShape, LineKind, StructureKind, ToolMode, TreeKind } from "../types";
 import { useTouch } from "./useLayout";
+import { fmtDist } from "../lib/units";
 
 /** A built thing's map symbol, small (for the tool's chips and the Features list). */
 export const structureIcon = (kind: StructureKind, size: number, id: string) =>
@@ -25,6 +26,7 @@ export const TOOLS: { mode: ToolMode; key: string; label: string; short: string;
   { mode: "add-tree", key: "R", label: "Tree", short: "Tree", icon: <TreeDeciduous size={18} />, group: 3 },
   { mode: "add-amenity", key: "A", label: "Amenities: bench, trash can, sign, parking…", short: "Amenities", icon: <Armchair size={18} />, group: 3 },
   { mode: "add-label", key: "K", label: "Text label", short: "Label", icon: <Type size={18} />, group: 3 },
+  { mode: "sculpt", key: "G", label: "Shape the ground: paint to raise, lower, flatten or smooth it", short: "Ground", icon: <Mountain size={18} />, group: 4 },
   { mode: "measure", key: "D", label: "Measure distance and elevation", short: "Measure", icon: <Ruler size={18} />, group: 4 }
 ];
 
@@ -40,7 +42,8 @@ const HINTS: Partial<Record<ToolMode, string>> = {
   "add-tree": "Click to plant trees",
   "add-amenity": "Click to place it",
   "add-label": "Click to place a label, then type its text in the panel",
-  measure: "Click a start point, then click anywhere to measure from it · Shift+click adds a turn · Esc to finish"
+  measure: "Click a start point, then click anywhere to measure from it · Shift+click adds a turn · Esc to finish",
+  sculpt: "Drag over the ground to paint it · hold still to keep going · right-drag moves the map · Ctrl+Z undoes a stroke"
 };
 
 /** The same, for a touch screen (no keys, no right button, no double-click). */
@@ -57,26 +60,56 @@ const TOUCH_HINTS: Partial<Record<ToolMode, string>> = {
   "add-tree": "Tap to plant trees",
   "add-amenity": "Tap to place it",
   "add-label": "Tap to place a label, then type its text",
-  measure: "Tap a start point, then tap anywhere to measure from it"
+  measure: "Tap a start point, then tap anywhere to measure from it",
+  sculpt: "Paint the ground with one finger · two fingers move the map"
 };
 
 const SHAPES: Record<DrawShape, { label: string; title: string; icon: ReactNode }> = {
   points: { label: "Points", title: "Click each corner or bend", icon: <Spline size={13} /> },
   box: { label: "Rectangle", title: "Drag a rectangle", icon: <Square size={13} /> },
   circle: { label: "Circle", title: "Drag from the middle out", icon: <Circle size={13} /> },
-  freehand: { label: "Freehand", title: "Drag to draw", icon: <PenLine size={13} /> }
+  freehand: { label: "Freehand", title: "Drag to draw", icon: <PenLine size={13} /> },
+  paint: { label: "Paint", title: "Paint it on with a brush (its edge comes out smooth)", icon: <Brush size={13} /> }
 };
+
+/** The brush's size and strength, small, beside the tool's other choices. */
+const BrushSliders = ({ ed, strength = true }: { ed: Editor; strength?: boolean }) => {
+  const units = useCourse(s => s.doc.units);
+  return (
+    <div key="brush" className="flex shrink-0 items-center gap-3 glass ring-1 ring-white/10 rounded-full px-3 py-1 touch:py-1.5" data-testid="brush-sliders">
+      <label className="flex items-center gap-1.5 text-xs touch:text-[13px] text-zinc-300 whitespace-nowrap">Brush
+        <input type="range" aria-label="Brush size" min={4} max={150} step={1} value={ed.brushSize} onChange={e => ed.set({ brushSize: Number(e.target.value) })} className="slider w-20 touch:w-24" style={{ ["--fill" as string]: `${((ed.brushSize - 4) / 146) * 100}%` }} />
+        <span className="tabular-nums w-12">{fmtDist(ed.brushSize * 2, units)}</span>
+      </label>
+      {strength && (
+        <label className="flex items-center gap-1.5 text-xs touch:text-[13px] text-zinc-300 whitespace-nowrap">Strength
+          <input type="range" aria-label="Brush strength" min={1} max={10} step={1} value={ed.brushStrength} onChange={e => ed.set({ brushStrength: Number(e.target.value) })} className="slider w-16 touch:w-20" style={{ ["--fill" as string]: `${((ed.brushStrength - 1) / 9) * 100}%` }} />
+          <span className="tabular-nums w-4">{ed.brushStrength}</span>
+        </label>
+      )}
+    </div>
+  );
+};
+
+const GROUND_BRUSHES = [
+  { value: "raise", label: "Raise", title: "Builds the ground up under the brush" },
+  { value: "lower", label: "Lower", title: "Digs the ground down under the brush" },
+  { value: "flatten", label: "Flatten", title: "Levels the ground to the height where the stroke starts (a tee pad, a green)" },
+  { value: "smooth", label: "Smooth", title: "Evens out bumps and steps, keeping the overall slope" }
+] as const;
 const SHAPE_HINTS: Record<DrawShape, string> = {
   points: "",
   box: "Click one corner, then the opposite corner (or drag) · Esc cancels",
   circle: "Click the middle, then the edge (or drag) · Esc cancels",
-  freehand: "Drag to draw; let go to finish · Esc cancels"
+  freehand: "Drag to draw; let go to finish · Esc cancels",
+  paint: "Paint the area on with the brush; let go to finish · a click paints a round spot"
 };
 const TOUCH_SHAPE_HINTS: Record<DrawShape, string> = {
   points: "",
   box: "Tap one corner, then the opposite corner",
   circle: "Tap the middle, then the edge",
-  freehand: "Draw with one finger; lift it to finish"
+  freehand: "Draw with one finger; lift it to finish",
+  paint: "Paint the area on with one finger; lift it to finish"
 };
 
 const Chip = ({ active, onClick, children, color, testid }: { active: boolean; onClick: () => void; children: ReactNode; color?: string; testid?: string }) => (
@@ -125,8 +158,17 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
       case "add-hole":
       case "add-tee":
         return TEE_ORDER.map(l => <Chip key={l} active={ed.teeLevel === l} color={TEE_LEVELS[l].color} onClick={() => set({ teeLevel: l })} testid={`tee-level-${l}`}>{TEE_LEVELS[l].label}</Chip>);
+      case "sculpt":
+        return [
+          <div key="ground" className="flex shrink-0 gap-0.5 glass ring-1 ring-white/10 rounded-full p-0.5 mr-1" role="radiogroup" aria-label="What the brush does">
+            {GROUND_BRUSHES.map(g => (
+              <button key={g.value} role="radio" aria-checked={ed.groundBrush === g.value} title={g.title} data-testid={`ground-${g.value}`} onClick={() => set({ groundBrush: g.value })} className={`px-2.5 py-0.5 touch:py-1.5 touch:px-3 touch:text-[13px] whitespace-nowrap rounded-full text-xs font-semibold ${ed.groundBrush === g.value ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09]"}`}>{g.label}</button>
+            ))}
+          </div>,
+          <BrushSliders key="brush" ed={ed} />
+        ];
       case "draw-area":
-        return [shapes(["points", "box", "circle", "freehand"]), ...(Object.keys(AREA_KINDS) as AreaKind[]).map(k => <Chip key={k} active={ed.areaKind === k} color={AREA_KINDS[k].color} onClick={() => set({ areaKind: k })} testid={`area-kind-${k}`}>{AREA_KINDS[k].label.replace(/ \(.*\)/, "")}</Chip>)];
+        return [shapes(["points", "box", "circle", "freehand", "paint"]), ...(ed.drawShape === "paint" ? [<BrushSliders key="brush" ed={ed} strength={false} />] : []), ...(Object.keys(AREA_KINDS) as AreaKind[]).map(k => <Chip key={k} active={ed.areaKind === k} color={AREA_KINDS[k].color} onClick={() => set({ areaKind: k })} testid={`area-kind-${k}`}>{AREA_KINDS[k].label.replace(/ \(.*\)/, "")}</Chip>)];
       case "draw-line":
         return [shapes(["points", "freehand"]), ...(Object.keys(LINE_KINDS) as LineKind[]).map(k => <Chip key={k} active={ed.lineKind === k} color={LINE_KINDS[k].color} onClick={() => set({ lineKind: k })} testid={`line-kind-${k}`}>{LINE_KINDS[k].label}</Chip>)];
       case "draw-structure":
@@ -196,8 +238,8 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
 
 /** The tools a step is about; the rest wait under More (and come forward while in use). */
 const STEP_TOOLS: Record<string, ToolMode[]> = {
-  site: ["select", "draw-area", "draw-line", "add-tree", "measure"],
-  design: ["select", "add-hole", "add-tee", "add-basket", "add-mando", "draw-area", "draw-line", "draw-structure", "add-tree", "measure"],
+  site: ["select", "draw-area", "draw-line", "add-tree", "sculpt", "measure"],
+  design: ["select", "add-hole", "add-tee", "add-basket", "add-mando", "draw-area", "draw-line", "draw-structure", "add-tree", "sculpt", "measure"],
   export: ["select"]
 };
 

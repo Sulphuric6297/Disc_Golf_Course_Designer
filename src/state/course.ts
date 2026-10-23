@@ -137,6 +137,10 @@ type EditorStore = {
   patchFor: string | null;
   /** The Tee tool placing a new hole's tee that plays to this basket (one already there). */
   holeToBasket: string | null;
+  /** The brush (the ground tool and painting areas): radius (ft), strength (1 to 10), and what it does to the ground. */
+  brushSize: number;
+  brushStrength: number;
+  groundBrush: "raise" | "lower" | "flatten" | "smooth";
   /** Drawing a section of underbrush (not of trees) for `patchFor`. */
   patchBrush: boolean;
   /** What is picked on the Design page's course map: "title", "legend"... or "text:ID", "image:ID". */
@@ -207,6 +211,9 @@ export const useEditor = create<EditorStore>()(set => ({
   lidarBusy: null,
   patchFor: null,
   holeToBasket: null,
+  brushSize: 25,
+  brushStrength: 5,
+  groundBrush: "raise",
   patchBrush: false,
   designSel: null,
   designHole: null,
