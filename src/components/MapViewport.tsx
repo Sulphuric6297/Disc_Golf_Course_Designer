@@ -179,8 +179,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => {
     if (!view) return;
     if (ed.flyover && ed.teeView) view.flyover(ed.teeView, () => useEditor.getState().set({ flyover: false }));
-    else { view.setTeeView(ed.teeView); useEditor.getState().set({ flyLoading: null }); }
-  }, [view, ed.teeView, ed.flyover]);
+    else { view.setTeeView(ed.teeView, ed.teeViewTee ?? null); useEditor.getState().set({ flyLoading: null, ...(ed.teeView ? {} : { teeViewTee: null }) }); }
+  }, [view, ed.teeView, ed.teeViewTee, ed.flyover]);
 
   const scale = info ? niceScaleBar(info.pxPerUnit, 110) : null;
   const elevation = hover ? heightAt(doc.terrainHeights, doc.gridSize, hover.x, hover.y) + doc.site.baseElevationFt : null;

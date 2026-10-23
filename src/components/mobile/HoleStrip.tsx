@@ -10,7 +10,7 @@ import { holeBaskets, holeTees, teeAim } from "../../lib/course";
 import { holeStats } from "../../lib/holeStats";
 import { fmtDist } from "../../lib/units";
 import { addHoleOb, select, setTeeLevel, startAnotherPin, startAnotherTee, startHoleToBasket } from "../../state/actions";
-import { updateHole, updateItem, useCourse } from "../../state/course";
+import { updateHole, updateItem, useCourse, useEditor } from "../../state/course";
 import { canShowLocation, spotHere, useGps } from "../../state/gps";
 import { toast } from "../../state/toast";
 import type { AreaItem, AreaKind, BasketItem, CourseItem, Hole, LineItem, LineKind, MandoItem, StructureItem, TeeItem, TreeItem, TreeKind } from "../../types";
@@ -149,6 +149,7 @@ export function ItemStrip({ item }: { item: CourseItem }) {
     const t = item as TeeItem;
     const aim = Math.round(teeAim(doc, t));
     chips.push(
+      { id: "view", label: <>View from it</>, control: <button className={`${small} w-full justify-center`} onClick={() => useEditor.getState().set({ teeView: t.holeId, teeViewTee: t.id, flyover: false })} data-testid="strip-tee-view">Stand on this tee and look down the hole</button> },
       { id: "color", label: <>Color <span className="inline-block w-2.5 h-2.5 rounded-full align-middle ring-1 ring-black/40 ml-0.5" style={{ background: TEE_LEVELS[t.level].color }} /></>, control: (
         <div className="flex gap-1.5 overflow-x-auto touch-pan-x dg-scroll -mx-1 px-1">
           {TEE_ORDER.map(l => <button key={l} className={`${small} ${t.level === l ? "!bg-zinc-100 !text-zinc-900" : ""}`} onClick={() => setTeeLevel(t.id, l)}><span className="w-2.5 h-2.5 rounded-full ring-1 ring-black/40" style={{ background: TEE_LEVELS[l].color }} />{TEE_LEVELS[l].label}</button>)}

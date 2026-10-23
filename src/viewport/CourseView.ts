@@ -247,6 +247,8 @@ export class CourseView {
   // Tee view and flyover
   private povCam = new THREE.PerspectiveCamera(62, 16 / 9, 0.3, 30000);
   private povHole: string | null = null;
+  /** The tee the tee view stands on, when it isn't the layout's. */
+  private povTee: string | null = null;
   private povLook = { yaw: 0, pitch: 0 };
   /** A flight under way: `dur` s of path, played over `play` s (`at`: path time at a moment; see flightClock). */
   /** A flyover holds its first picture until the hole's detail and textures are in and a few
@@ -867,10 +869,15 @@ export class CourseView {
 
   // ------------------------------------------------------------------ tee view and flyover
 
-  /** Look from a hole's tee down the hole (null: back to the map). */
-  setTeeView(holeId: string | null) {
+  /** Look from a hole's tee down the hole (null: back to the map); `teeId`: from that tee of it
+   * (another skill level's), not the one the layout plays. */
+  setTeeView(holeId: string | null, teeId: string | null = null) {
     this.fly = null;
-    if (holeId === this.povHole) return;
+    const tee = teeId && holeId ? this.doc?.course.items.find(i => i.id === teeId && i.type === "tee" && i.holeId === holeId) : null;
+    const nextTee = tee ? tee.id : null;
+    if (holeId === this.povHole && nextTee === this.povTee) return;
+    this.povTee = nextTee;
+    if (holeId === this.povHole) { this.povLook = { yaw: 0, pitch: 0 }; this.invalidate(); return; }
     this.povHole = holeId;
     this.povLook = { yaw: 0, pitch: 0 };
     this.detailReady = this.updateDetail().catch(() => {});
@@ -1051,7 +1058,8 @@ export class CourseView {
     if (!doc || !this.povHole) return null;
     const s = doc.stats.find(x => x.holeId === this.povHole);
     if (!s || s.line.length < 2) return null;
-    const tee = s.line[0];
+    const own = this.povTee ? doc.course.items.find(i => i.id === this.povTee) : null;
+    const tee = own ? { x: own.x, y: own.y } : s.line[0];
     const next = s.line[1];
     const eye = new THREE.Vector3(tee.x, this.h(tee.x, tee.y) + EYE_HEIGHT_FT + 0.35, tee.y);
     const base = Math.atan2(next.y - tee.y, next.x - tee.x) + this.povLook.yaw;

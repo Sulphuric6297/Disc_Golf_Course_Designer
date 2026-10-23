@@ -524,6 +524,9 @@ function ItemInspector({ item }: { item: CourseItem }) {
     case "tee":
       body = (
         <>
+          {holeStats(doc, doc.holes.find(h => h.id === item.holeId) ?? doc.holes[0]).complete && doc.holes.some(h => h.id === item.holeId) && (
+            <div className="mb-3"><Button small onClick={() => useEditor.getState().set({ teeView: item.holeId, teeViewTee: item.id, flyover: false })} testid="tee-view-this"><Eye size={14} /> View from this tee</Button></div>
+          )}
           <Field label="Tee color (skill level)">
             <Segmented label="Tee color" value={item.level} onChange={v => setTeeLevel(item.id, v)} options={TEE_ORDER.map(l => ({ value: l, label: TEE_LEVELS[l].label, title: `${TEE_LEVELS[l].skill} (${TEE_LEVELS[l].rating})` }))} />
           </Field>

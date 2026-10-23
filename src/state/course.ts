@@ -168,6 +168,8 @@ type EditorStore = {
   treeKind: TreeKind;
   /** Looking from a tee down its hole (the hole's id), or flying over it. */
   teeView: string | null;
+  /** The tee the tee view stands on (another skill level's), unset: the layout's. */
+  teeViewTee?: string | null;
   flyover: boolean;
   /** A flyover still waiting for its pictures (the loading screen shows): what it waits on. */
   flyLoading: "map" | "detail" | "textures" | null;
