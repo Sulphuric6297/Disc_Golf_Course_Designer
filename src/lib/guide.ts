@@ -357,7 +357,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "tee-view", section: "view", title: "View from the tee",
-    body: "You can also stand on one particular tee: pick the tee (a red one, say) and use View from this tee in its panel. Pick a hole and click View from tee (or press Enter). You're standing on the tee looking down the hole, with its par and length. It's a good way to check whether a line is actually throwable.\n\nThe arrow keys (or Previous and Next) go to the other holes, and Back or Esc takes you back to the map.",
+    body: "You can also stand on one particular tee: pick the tee (a red one, say) and use View from this tee in its panel. Pick a hole and click View from tee (or press Enter). You're standing on the tee looking down the hole, with its par and length. It's a good way to check whether a line is actually throwable.\n\nThe arrow keys (or Previous and Next) go to the other holes, and Back or Esc takes you back to the map. So does going to another step, like Map or Export.",
     words: "tee view first person look from tee",
     path: "Design › a hole › View from tee",
     where: { step: "design", pick: "hole", find: "tee-view" }

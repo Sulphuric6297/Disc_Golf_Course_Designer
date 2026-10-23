@@ -171,6 +171,12 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { view?.setPose(ed.view === "2d" ? "top" : "tilt"); }, [view, ed.view]);
   // (a patch is drawn with the Area tool; leaving the tool drops the patch)
   useEffect(() => { if (ed.tool !== "draw-area" && ed.patchFor) useEditor.getState().set({ patchFor: null }); }, [ed.tool, ed.patchFor]);
+  // (going to another step, Map say, leaves the tee view and any flyover: they're the map's)
+  const stepWas = useRef(ed.step);
+  useEffect(() => {
+    if (stepWas.current !== ed.step && useEditor.getState().teeView) useEditor.getState().set({ teeView: null, flyover: false });
+    stepWas.current = ed.step;
+  }, [ed.step]);
   // (and leaving the Tee tool drops a new hole on its way to a basket)
   useEffect(() => { if (ed.tool !== "add-tee" && ed.holeToBasket) useEditor.getState().set({ holeToBasket: null }); }, [ed.tool, ed.holeToBasket]);
   useEffect(() => { view?.setGrass(ed.grass, ed.wind); }, [view, ed.grass, ed.wind]);
