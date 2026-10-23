@@ -10,6 +10,7 @@ import { useCourse } from "../state/course";
 import type { MapStyle, PathTier } from "../types";
 import { FineTuning, setStyle, WoodsOptions } from "./DesignPanel";
 import { ColorInput, Slider, useKeepInPlace } from "./ui";
+import { SHOW_EVENT } from "./showSetting";
 
 /** A slider that changes the map when let go (painting takes a moment). */
 function LookSlider({ value, label, min, max, step, format, onDone }: { value: number; label: string; min: number; max: number; step: number; format: (v: number) => string; onDone: (v: number) => void }) {
@@ -116,6 +117,12 @@ export function MapLookPanel() {
   const s = useCourse(c => c.doc.style);
   // (the trees open to start with: the part most changed)
   const [open, setOpen] = useState<Part | null>(() => { const w = wanted; wanted = null; return w ?? "trees"; });
+  // (asked for by search or the 3D view's light link while it's up)
+  useEffect(() => {
+    const on = (e: Event) => { const d = String((e as CustomEvent).detail); if (d.startsWith("look:")) { wanted = null; setOpen(d.slice(5) as Part); } };
+    window.addEventListener(SHOW_EVENT, on);
+    return () => window.removeEventListener(SHOW_EVENT, on);
+  }, []);
   // (the part opened stays under the pointer while the one open before closes above it)
   const keep = useKeepInPlace();
   const theme = themeOf(s), parts = lookParts(s), lt = lightOf(s);

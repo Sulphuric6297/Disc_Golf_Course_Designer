@@ -2,7 +2,8 @@
 // inspector for the selection, and the dialogs.
 import { inDraft, saveDraftAs, saveNow, useServerCourse } from "./auth/courses";
 import { SERVER } from "./auth/api";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { HelpGuide } from "./components/help/HelpGuide";
+import { useEffect, useMemo, useState } from "react";
 import { MapPinned, Route, X } from "lucide-react";
 import { Header } from "./components/Header";
 import { ViewerPanel } from "./auth/ViewerPanel";
@@ -51,94 +52,6 @@ function Toasts({ bottom }: { bottom?: number }) {
   );
 }
 
-/** A dialog takes the focus when it opens and gives it back when it closes; Esc closes it. */
-function useModal(onClose: () => void) {
-  const box = useRef<HTMLDivElement>(null);
-  const close = useRef(onClose);
-  close.current = onClose;
-  useEffect(() => {
-    const before = document.activeElement as HTMLElement | null;
-    box.current?.querySelector<HTMLElement>("button, input")?.focus({ preventScroll: true });
-    const esc = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      close.current();
-    };
-    window.addEventListener("keydown", esc, true);
-    return () => {
-      window.removeEventListener("keydown", esc, true);
-      before?.focus?.({ preventScroll: true });
-    };
-  }, []);
-  return box;
-}
-
-const SHORTCUTS: [string, string][] = [
-  ["V", "Select and move"], ["H", "New hole (tee, then basket)"], ["T / B", "Another tee / pin for the hole"], ["M / Z", "Mando / drop zone"],
-  ["O / L", "Draw an area / a line"], ["S", "Build: bridge, boardwalk, stairs, wall, building, shelter, deck"], ["R / A / K", "Tree / bench, sign… / label"], ["D", "Measure"],
-  ["Enter", "Finish drawing · view from the selected hole's tee"], ["Esc", "Cancel · back to Select · close"], ["Backspace", "Remove the last point drawn"],
-  ["Shift+drag", "Select with a box"], ["Shift+click", "Add to the selection, or take out"], ["Ctrl+A", "Select everything"],
-  ["Del", "Delete the selection"], ["Ctrl+D", "Duplicate"], ["Ctrl+C / X / V", "Copy / cut / paste (where the pointer is)"], ["Arrows", "Nudge 1 ft (Shift: 10 ft) · other holes in the tee view"],
-  ["Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"], ["2 / 3", "Top-down / 3D"], ["0 / F", "Whole course / zoom to selection"], ["[ / ]", "Previous / next hole"], ["Ctrl+K or /", "Go to a hole, step, tool or name"], ["Q / E / N", "Turn left / right / north up"], ["+ / −", "Zoom"]
-];
-
-const GESTURES: [string, string][] = [
-  ["One finger", "Pan the map; drag a selected thing or its handles to move or reshape it"],
-  ["Pinch", "Zoom in and out (or the + and − buttons)"],
-  ["Two fingers up or down", "Tilt into 3D and back"],
-  ["Two fingers sideways", "Turn the map (or the turn buttons; the compass puts north up)"],
-  ["Tap", "Select a hole or a thing; with a tool, place it"],
-  ["Hold", "A thing's menu: view from the tee, mark OB, duplicate, lock, delete"],
-  ["Select, above the tools", "Drag a box around several things; tap one to add it or take it out"],
-  ["Drag the panel", "Up for more, down for more map; tap its handle to step through"]
-];
-
-/** A dialog's box: a sheet up from the bottom on a phone, a centered box from a tablet up. */
-const SHEET = "glass-solid shadow-2xl ring-1 ring-white/10 w-full rounded-t-[22px] md:rounded-2xl max-h-[92dvh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] md:pb-5 animate-[dgrise_220ms_cubic-bezier(0.2,0.9,0.3,1)] md:animate-none";
-const CLOSE = "text-zinc-400 hover:text-zinc-50 touch:w-11 touch:h-11 touch:-m-2.5 touch:flex touch:items-center touch:justify-center";
-
-function HelpDialog({ onClose }: { onClose: () => void }) {
-  const touch = useTouch();
-  const box = useModal(onClose);
-  return (
-    <div ref={box} className="fixed inset-0 z-50 bg-black/60 flex items-end md:items-center justify-center p-0 md:p-4" role="dialog" aria-modal="true" aria-label="Shortcuts and help" onClick={onClose}>
-      <div className={`${SHEET} h-[92dvh] md:h-auto md:max-w-2xl p-5 md:max-h-[90vh]`} onClick={e => e.stopPropagation()}>
-        {touch && (
-          <>
-            <div className="flex items-center mb-3">
-              <h2 className="font-bold text-zinc-50 text-lg flex-1">Touch gestures</h2>
-              <button aria-label="Close" className={CLOSE} onClick={onClose}><X size={18} /></button>
-            </div>
-            <dl className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-x-4 text-[15px] mb-5" data-testid="gestures">
-              {GESTURES.map(([k, v]) => (
-                <div key={k} className="contents">
-                  <dt className="font-semibold text-zinc-100 mt-2.5 sm:mt-2">{k}</dt>
-                  <dd className="text-zinc-300 sm:mt-2">{v}</dd>
-                </div>
-              ))}
-            </dl>
-          </>
-        )}
-        <div className="flex items-center mb-3">
-          <h2 className="font-bold text-zinc-50 text-lg flex-1">Keyboard shortcuts</h2>
-          {!touch && <button aria-label="Close" className={CLOSE} onClick={onClose}><X size={18} /></button>}
-        </div>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-          {SHORTCUTS.map(([k, v]) => (
-            <div key={k} className="contents">
-              <dt><kbd className="px-1.5 py-0.5 bg-white/[0.07] border border-white/[0.12] rounded text-xs text-zinc-200 font-mono">{k}</kbd></dt>
-              <dd className="text-zinc-300">{v}</dd>
-            </div>
-          ))}
-        </dl>
-        <h3 className="font-bold text-zinc-100 mt-5 mb-1">Map navigation</h3>
-        <p className="text-sm text-zinc-400">Drag to pan, scroll or pinch to zoom at the cursor, right-drag (or Ctrl+drag) to turn and tilt, Shift+drag to select, double-click to zoom in.</p>
-        <h3 className="font-bold text-zinc-100 mt-4 mb-1">Credits</h3>
-        <p className="text-xs text-zinc-500">Imagery © Esri, Maxar, Earthstar Geographics. Map data © OpenStreetMap contributors (and OpenFreeMap, OpenMapTiles). Elevation: USGS 3DEP and AWS Terrain Tiles (Mapzen).</p>
-      </div>
-    </div>
-  );
-}
 
 function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: number; itemId: string | null; ground: P | null; under?: string | null }; onClose: () => void }) {
   const doc = getDoc();
@@ -224,7 +137,9 @@ export default function App() {
   const layout = useLayout();
   const doc = useCourse(s => s.doc);
   const [findSite, setFindSite] = useState(false);
-  const [help, setHelp] = useState(false);
+  // (the help guide, open at a topic when one is asked for)
+  const [help, setHelp] = useState<false | { topic?: string }>(false);
+  const touchUi = useTouch();
   const [goTo, setGoTo] = useState(false);
   const [menu, setMenu] = useState<{ clientX: number; clientY: number; itemId: string | null; ground: P | null; under?: string | null } | null>(null);
   const [ready, setReady] = useState(false);
@@ -331,7 +246,7 @@ export default function App() {
         nudgeSelection(e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0, e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0);
         return;
       }
-      if (e.key === "?") { setHelp(h => !h); return; }
+      if (e.key === "?") { setHelp(h => (h ? false : {})); return; }
       if (e.key === "/") { e.preventDefault(); setGoTo(true); return; }
       if ((e.key === "[" || e.key === "]") && s.step !== "map") { stepHole(e.key === "[" ? -1 : 1); return; }
       if (e.key === "2") { s.set({ view: "2d" }); return; }
@@ -367,8 +282,8 @@ export default function App() {
   const dialogs = (
     <>
       {findSite && <SiteImportDialog onClose={() => setFindSite(false)} onImported={onImported} />}
-      {help && <HelpDialog onClose={() => setHelp(false)} />}
-      {goTo && <GoTo onClose={() => setGoTo(false)} onHelp={() => setHelp(true)} />}
+      {help && <HelpGuide onClose={() => setHelp(false)} topic={help.topic} touch={touchUi} />}
+      {goTo && <GoTo onClose={() => setGoTo(false)} onHelp={topic => setHelp({ topic })} />}
     </>
   );
 
@@ -378,7 +293,8 @@ export default function App() {
         <CompactShell
           layout={layout}
           onFindSite={() => setFindSite(true)}
-          onHelp={() => setHelp(true)}
+          onHelp={() => setHelp({})}
+          onGoTo={() => setGoTo(true)}
           onContextMenu={onContextMenu}
           welcome={showWelcome ? welcome : null}
           toasts={bottom => <Toasts bottom={bottom} />}
@@ -393,7 +309,7 @@ export default function App() {
   return (
     <div className="h-screen w-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden relative isolate">
       <Woods />
-      <Header onHelp={() => setHelp(true)} onGoTo={() => setGoTo(true)} />
+      <Header onHelp={() => setHelp({})} onGoTo={() => setGoTo(true)} />
       <div className="flex-1 flex min-h-0 gap-2.5 p-2.5 relative">
         {readOnly ? <ViewerPanel /> : ed.step !== "design" && <SidePanel onFindSite={() => setFindSite(true)} />}
         <main className="flex-1 relative min-w-0 rounded-[20px] overflow-hidden ring-1 ring-white/10">

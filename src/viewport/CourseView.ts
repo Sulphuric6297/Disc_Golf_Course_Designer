@@ -4707,7 +4707,7 @@ export class CourseView {
     this.fx.add(g);
     if (!this.draftLabel) {
       this.draftLabel = document.createElement("div");
-      this.draftLabel.className = "dg-measure total";
+      this.draftLabel.className = "dg-ov dg-measure total";
       this.draftLabel.setAttribute("data-testid", "draft-label");
       this.draftLabel.style.position = "absolute";
       this.labelsLayer.appendChild(this.draftLabel);
@@ -4775,7 +4775,7 @@ export class CourseView {
     // A dot at each point (the pointer's end fainter)
     pts.forEach((v, i) => {
       const el = document.createElement("div");
-      el.className = `dg-mpt${i >= this.measurePts.length ? " live" : ""}`;
+      el.className = `dg-ov dg-mpt${i >= this.measurePts.length ? " live" : ""}`;
       el.setAttribute("data-testid", "measure-point");
       this.labelsLayer.appendChild(el);
       this.measureLabels.push({ el, at: v.clone() });
@@ -4794,7 +4794,7 @@ export class CourseView {
         total += d;
         const dh = pts[i].y - pts[i - 1].y;
         const el = document.createElement("div");
-        el.className = "dg-measure";
+        el.className = "dg-ov dg-measure";
         el.setAttribute("data-testid", "measure-label");
         el.textContent = `${fmtDist(d, units)}${Math.abs(dh) >= 1 ? ` · ${fmtElev(dh, units)}` : ""}`;
         this.labelsLayer.appendChild(el);
@@ -4802,7 +4802,7 @@ export class CourseView {
       }
       if (pts.length > 2) {
         const el = document.createElement("div");
-        el.className = "dg-measure total";
+        el.className = "dg-ov dg-measure total";
         el.textContent = `Total ${fmtDist(total, units)}`;
         this.labelsLayer.appendChild(el);
         this.measureLabels.push({ el, at: pts[pts.length - 1].clone() });

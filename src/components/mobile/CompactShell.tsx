@@ -9,7 +9,7 @@
 // a thing opens its menu (the right-click).
 import { Woods } from "../Woods";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
-import { Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Trash2, Undo2, Unlock, X } from "lucide-react";
+import { Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Search, Trash2, Undo2, Unlock, X } from "lucide-react";
 import { STRUCTURE_KINDS } from "../../constants";
 import { holeLabel, holeNumber } from "../../lib/course";
 import { courseIssues, courseStats, courseTotals, holeStats, openIssues, playsOf } from "../../lib/holeStats";
@@ -42,6 +42,8 @@ type ShellProps = {
   layout: "phone" | "rail";
   onFindSite: () => void;
   onHelp: () => void;
+  /** Search: holes, tools, settings and help. */
+  onGoTo: () => void;
   onContextMenu: (info: MenuInfo) => void;
   /** The welcome card for an empty course, when it shows. */
   welcome: ReactNode;
@@ -362,15 +364,16 @@ export function ItemMenu({ itemId, onClose }: { itemId: string; onClose: () => v
 
 // ---------------------------------------------------------------------------------- app menu
 
-function AppMenu({ onClose, onHelp, onOpenFile }: { onClose: () => void; onHelp: () => void; onOpenFile: () => void }) {
+function AppMenu({ onClose, onHelp, onGoTo, onOpenFile }: { onClose: () => void; onHelp: () => void; onGoTo: () => void; onOpenFile: () => void }) {
   const [recent, setRecent] = useState<PlanMeta[]>([]);
   const name = useCourse(s => s.doc.name);
   useEffect(() => { void recentCourses().then(setRecent); }, []);
   const actions: SheetAction[] = [
+    { label: "Search settings and help", icon: <Search size={19} />, run: onGoTo, testid: "menu-search" },
     { label: "New course", icon: <FilePlus size={19} />, run: () => void newCourse() },
     { label: "Open a course file…", icon: <FolderOpen size={19} />, run: onOpenFile },
     { label: "Save as a file", icon: <Save size={19} />, run: () => saveCourseFile() },
-    { label: "Help and gestures", icon: <HelpCircle size={19} />, run: onHelp, testid: "menu-help" },
+    { label: "Help guide", icon: <HelpCircle size={19} />, run: onHelp, testid: "menu-help" },
     ...accountActions()
   ];
   return (
@@ -474,7 +477,7 @@ export function CompactShell(props: ShellProps) {
   return props.layout === "phone" ? <PhoneShell {...props} /> : <RailShell {...props} />;
 }
 
-function useMenus(onHelp: () => void) {
+function useMenus(onHelp: () => void, onGoTo: () => void) {
   const [appMenu, setAppMenu] = useState(false);
   const [more, setMore] = useState(false);
   const selectedId = useEditor(e => e.selectedId);
@@ -483,21 +486,21 @@ function useMenus(onHelp: () => void) {
   const menus = (
     <>
       <input ref={file} type="file" className="hidden" aria-label="Open course file" onChange={e => { const f = e.target.files?.[0]; if (f) void openCourseFile(f); e.target.value = ""; }} />
-      {appMenu && <AppMenu onClose={() => setAppMenu(false)} onHelp={onHelp} onOpenFile={() => file.current?.click()} />}
+      {appMenu && <AppMenu onClose={() => setAppMenu(false)} onHelp={onHelp} onGoTo={onGoTo} onOpenFile={() => file.current?.click()} />}
       {more && selectedId && <ItemMenu itemId={selectedId} onClose={() => setMore(false)} />}
     </>
   );
   return { menus, openApp: () => setAppMenu(true), openMore: () => setMore(true) };
 }
 
-function PhoneShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: ShellProps) {
+function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts }: ShellProps) {
   const ed = useEditor();
   const readOnly = useCourse(s => s.readOnly);
   const [detent, setDetent] = useState<Detent>(() => STEP_DETENT[useEditor.getState().step]);
   const [restH, setRestH] = useState(180);
   const [mainH, setMainH] = useState(700);
   const main = useRef<HTMLDivElement>(null);
-  const { menus, openApp, openMore } = useMenus(onHelp);
+  const { menus, openApp, openMore } = useMenus(onHelp, onGoTo);
   const panel = usePanel({ onFindSite, onMore: openMore });
   const immersive = !!ed.teeView;
   // (No sheet under the welcome card: it is the first step's panel, with the same two choices)
@@ -574,10 +577,10 @@ function PhoneShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: Shel
   );
 }
 
-function RailShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: ShellProps) {
+function RailShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts }: ShellProps) {
   const ed = useEditor();
   const [open, setOpen] = useState(true);
-  const { menus, openApp, openMore } = useMenus(onHelp);
+  const { menus, openApp, openMore } = useMenus(onHelp, onGoTo);
   const panel = usePanel({ onFindSite, onMore: openMore });
   const immersive = !!ed.teeView;
   const body = useRef<HTMLDivElement>(null);

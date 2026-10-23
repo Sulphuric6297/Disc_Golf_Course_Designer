@@ -112,7 +112,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
         <button onClick={onGoTo} className={BAR_BUTTON} aria-label="Go to" title="Go to (Ctrl+K)" data-testid="goto-button"><Search size={18} /></button>
         {SERVER ? <AccountMenu onHelp={onHelp} /> : (
           <>
-            <button onClick={onHelp} className={BAR_BUTTON} aria-label="Keyboard shortcuts and help" title="Shortcuts and help (?)"><HelpCircle size={18} /></button>
+            <button onClick={onHelp} className={BAR_BUTTON} aria-label="Help guide" title="Help guide (?)"><HelpCircle size={18} /></button>
             <DemoNote />
           </>
         )}

@@ -9,6 +9,7 @@ import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { editWalks, select, uncutTrees } from "../state/actions";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
 import { setAllWalks } from "./Inspector";
+import { SHOW_EVENT } from "./showSetting";
 import type { Layout, PinPosition, TeeLevel } from "../types";
 import { refreshOsm } from "../state/osm";
 import { measureLidar } from "../state/lidar";
@@ -438,6 +439,12 @@ export function HolesColumn() {
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
   const [more, setMore] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
+  // (opened by search: a course setting asked for)
+  useEffect(() => {
+    const on = (e: Event) => { if ((e as CustomEvent).detail === "course") setMore(true); };
+    window.addEventListener(SHOW_EVENT, on);
+    return () => window.removeEventListener(SHOW_EVENT, on);
+  }, []);
   // (the course popover closes with Esc or a click elsewhere, like the other menus)
   useEffect(() => {
     if (!more) return;

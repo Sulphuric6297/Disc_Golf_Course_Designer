@@ -8,12 +8,19 @@ import { setStyle } from "./DesignPanel";
 import { Segmented, Toggle } from "./ui";
 import { LandscapePicker } from "./LandscapePicker";
 import { openLookPart } from "./MapLookPanel";
+import { SHOW_EVENT } from "./showSetting";
 import { LIGHT_MODES, compassName, latitudeOf, lightOf, sunFromOf } from "../lib/mapLook";
 import { BAND_COLORS, BASKET_BAND } from "../three/courseModels";
 
 export function SceneButton({ className = "", big = false }: { className?: string; big?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // (opened by search: a setting in it asked for)
+  useEffect(() => {
+    const on = (e: Event) => { if ((e as CustomEvent).detail === "view") setOpen(true); };
+    window.addEventListener(SHOW_EVENT, on);
+    return () => window.removeEventListener(SHOW_EVENT, on);
+  }, []);
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
@@ -49,11 +56,20 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
   const lat = latitudeOf(useCourse(c => c.doc.site));
   const ed = useEditor();
   const set = useEditor(e => e.set);
+  // (as tall as the room below it on screen, scrolling inside: never cut off at the bottom)
+  const box = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState<number | null>(null);
+  useEffect(() => {
+    const fit = () => { const r = box.current?.getBoundingClientRect(); if (r) setRoom(Math.max(180, window.innerHeight - r.top - 16)); };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
   // (from a tee or in a flyover, the ground there: painted or the photo)
   const fromTee = !!ed.teeView;
   const lt = lightOf(s);
   return (
-    <div className={`absolute ${big ? "right-[52px] top-0 max-h-[min(70vh,calc(100dvh-140px))] overflow-y-auto dg-scroll" : "right-0 top-10"} w-72 ${POPOVER} p-3 z-30 text-left`} data-testid="scene-panel">
+    <div ref={box} className={`absolute ${big ? "right-[52px] top-0" : "right-0 top-10"} overflow-y-auto dg-scroll overscroll-contain w-72 ${POPOVER} p-3 z-30 text-left`} style={room ? { maxHeight: room } : undefined} data-testid="scene-panel">
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-semibold text-zinc-100">View</div>
         <button className={`text-zinc-400 hover:text-zinc-50 ${big ? "w-9 h-9 -m-2 flex items-center justify-center" : ""}`} title="Close" aria-label="Close" onClick={onClose}><X size={15} /></button>

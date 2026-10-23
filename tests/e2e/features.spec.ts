@@ -142,6 +142,15 @@ test("measuring: distance and elevation change", async ({ page }) => {
   await clickPlan(page, 200, 200);
   await clickPlan(page, 500, 600);
   await expect(page.getByTestId("measure-label")).toHaveText("500 ft");
+  // A small tag halfway along the line, its dots at the ends (once a bar right across the map)
+  const tag = (await page.getByTestId("measure-label").boundingBox())!;
+  expect(tag.width).toBeLessThan(120);
+  const mid = await screenOf(page, 350, 400);
+  expect(Math.hypot(tag.x + tag.width / 2 - mid.x, tag.y + tag.height / 2 - mid.y)).toBeLessThan(40);
+  const dot = (await page.getByTestId("measure-point").first().boundingBox())!;
+  const a = await screenOf(page, 200, 200);
+  expect(dot.width).toBeLessThan(20);
+  expect(Math.hypot(dot.x + dot.width / 2 - a.x, dot.y + dot.height / 2 - a.y)).toBeLessThan(8);
 });
 
 test("shapes by dragging: a rectangle and a circle", async ({ page }) => {

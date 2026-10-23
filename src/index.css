@@ -39,6 +39,16 @@ body {
   backdrop-filter: blur(24px) saturate(160%);
   box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 14px 34px rgba(0, 0, 0, 0.45);
 }
+/* A setting found by search: lit up for a moment (components/showSetting) */
+.dg-found {
+  border-radius: 12px;
+  animation: dg-found 2.2s ease-out;
+}
+@keyframes dg-found {
+  0%, 30% { box-shadow: 0 0 0 3px rgba(162, 207, 106, 0.95), 0 0 24px rgba(162, 207, 106, 0.45); background-color: rgba(162, 207, 106, 0.12); }
+  100% { box-shadow: 0 0 0 3px rgba(162, 207, 106, 0), 0 0 24px rgba(162, 207, 106, 0); background-color: transparent; }
+}
+
 /* What a button is, when the mouse rests on it (components/tooltips) */
 .dg-tip {
   position: fixed;

@@ -113,8 +113,8 @@ test("tool shortcuts pick tools; Esc goes back to Select; ? shows the shortcuts"
   await page.keyboard.press("Escape");
   await expect.poll(async () => (await editorState(page)).tool).toBe("select");
   await page.keyboard.press("?");
-  await expect(page.getByRole("dialog", { name: "Shortcuts and help" })).toBeVisible();
-  await expect(page.getByRole("dialog", { name: "Shortcuts and help" })).toContainText("Undo");
+  await expect(page.getByRole("dialog", { name: "Help guide" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Help guide" })).toContainText("Undo");
 });
 
 test("Go to (Ctrl+K or /): a hole by its number, a step, a named thing; Esc closes", async ({ page }) => {
@@ -159,4 +159,37 @@ test("Go to (Ctrl+K or /): a hole by its number, a step, a named thing; Esc clos
   await expect(page.getByTestId("goto")).toHaveCount(0);
   expect((await editorState(page)).selectedId).toBe(pond.id);
   expect(a.id).toBeTruthy();
+});
+
+test("search finds any setting and takes you to it, lit up; the help guide's Show me does the same", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
+  await addHole(page, { x: 600, y: 600 }, { x: 900, y: 600 });
+  await page.keyboard.press("Escape");
+  // A setting by a few of its words: the course's walks, opened and pointed at
+  await page.keyboard.press("Control+k");
+  await page.keyboard.type("walk width");
+  await expect(page.getByTestId("goto-option").first()).toContainText("Walks to the next hole");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("course-more")).toBeVisible();
+  await expect(page.locator(".dg-found")).toHaveCount(1);
+  // One on another step: the Map step's tee sign tab
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Control+k");
+  await page.keyboard.type("tee sign look");
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => { const e = await editorState(page); return [e.step, e.designTab]; }).toEqual(["map", "sign"]);
+  await expect(page.getByTestId("sign-settings")).toBeVisible();
+  // The help guide: chapters, a search of its own, and Show me
+  await page.keyboard.press("?");
+  const guide = page.getByRole("dialog", { name: "Help guide" });
+  await expect(guide).toContainText("The four steps");
+  await guide.getByTestId("help-chapters").getByRole("button", { name: "Map: the printed course map, signs and cards" }).click();
+  await expect(guide).toContainText("Paper and turning the map");
+  await guide.getByTestId("help-search").fill("paper size");
+  const card = guide.getByTestId("help-topic").filter({ hasText: "Paper and turning the map" });
+  await card.getByTestId("help-show-me").click();
+  await expect(guide).toHaveCount(0);
+  await expect.poll(async () => (await editorState(page)).designTab).toBe("map");
+  await expect(page.getByTestId("fold-paper")).toHaveAttribute("open", "");
 });

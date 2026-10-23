@@ -1,6 +1,10 @@
-// "Go to" (Ctrl+K): a hole, a step, a tool or a named thing on the map, found by typing.
+// Search (Ctrl+K): a hole, a step, a tool, a named thing on the map, or any setting or feature in
+// the guide, found by typing; picked, it takes you there (a setting: opened and pointed at).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Hash, MapPin, Search, Wrench, Zap } from "lucide-react";
+import { BookOpen, Hash, MapPin, Search, SlidersHorizontal, Wrench, Zap } from "lucide-react";
+import { SECTIONS, TOPICS } from "../lib/guide";
+import { SERVER } from "../auth/api";
+import { showSetting } from "./showSetting";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS } from "../constants";
 import { holeLabel } from "../lib/course";
 import { courseStats } from "../lib/holeStats";
@@ -12,8 +16,9 @@ import { STEPS } from "./SidePanel";
 import { TOOLS } from "./Toolbar";
 import type { CourseItem } from "../types";
 
-/** `find`: what typing matches (its name, not its figures); `nums`: a hole's numbers, first when typed. */
-type Entry = { key: string; text: string; find: string; sub?: string; icon: ReactNode; run: () => void; nums?: string[] };
+/** `find`: what typing matches (its name, not its figures); `nums`: a hole's numbers, first when
+ * typed; `rank`: ties go to holes and steps first, then tools, then settings. */
+type Entry = { key: string; text: string; find: string; sub?: string; icon: ReactNode; run: () => void; nums?: string[]; rank?: number };
 
 /** Going to something on the map: the Design step, where the map is to work on (the Map and
  * Export steps show the printed page over it). */
@@ -30,7 +35,7 @@ const named = (i: CourseItem): { name: string; kind: string } | null => {
   return { name: i.label, kind };
 };
 
-export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => void }) {
+export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: (topic?: string) => void }) {
   const doc = useCourse(s => s.doc);
   const [q, setQ] = useState("");
   const [at, setAt] = useState(0);
@@ -57,8 +62,18 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => v
     }
     out.push(
       { key: "act:fit", text: "Whole course", find: "whole course fit", sub: "0", icon: <Zap size={15} />, run: () => { toMap(); requestAnimationFrame(() => getView()?.fitCourse()); } },
-      { key: "act:help", text: "Keyboard shortcuts", find: "keyboard shortcuts help", sub: "?", icon: <Zap size={15} />, run: onHelp }
+      { key: "act:help", text: "Help guide", find: "help guide manual how to keyboard shortcuts", sub: "?", icon: <BookOpen size={15} />, run: () => onHelp() }
     );
+    // Every setting and feature (from the guide): there and pointed at, or its page in the guide
+    const section = (id: string) => SECTIONS.find(s => s.id === id)?.title ?? "";
+    for (const t of TOPICS) {
+      if (t.server !== undefined && t.server !== SERVER) continue;
+      out.push({
+        key: `set:${t.id}`, text: t.title, find: `${t.title} ${t.words ?? ""} ${t.path ?? ""}`, sub: t.path ?? section(t.section),
+        icon: t.where ? <SlidersHorizontal size={15} /> : <BookOpen size={15} />, rank: -1,
+        run: () => { if (t.where) void showSetting(t.where); else onHelp(t.id); }
+      });
+    }
     return out;
   }, [doc, onHelp]);
 
@@ -66,9 +81,15 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => v
     const t = q.trim().toLowerCase();
     if (!t) return all.filter(e => e.key.startsWith("hole:") || e.key.startsWith("step:"));
     const rank = (e: Entry) => +!!e.nums?.includes(t);
+    // (every word typed somewhere in it: "sign size", "walk width")
+    const words = t.split(/\s+/).filter(Boolean);
+    const has = (e: Entry) => { const f = `${e.text} ${e.find}`.toLowerCase(); return words.every(w => f.includes(w)); };
+    const exact = (e: Entry) => +(e.text.toLowerCase() === t);
+    const starts = (e: Entry) => +e.text.toLowerCase().startsWith(t);
+    const inTitle = (e: Entry) => +words.every(w => e.text.toLowerCase().includes(w));
     return all
-      .filter(e => rank(e) || e.find.toLowerCase().includes(t))
-      .sort((a, b) => rank(b) - rank(a) || +b.text.toLowerCase().startsWith(t) - +a.text.toLowerCase().startsWith(t))
+      .filter(e => rank(e) || has(e))
+      .sort((a, b) => rank(b) - rank(a) || exact(b) - exact(a) || starts(b) - starts(a) || inTitle(b) - inTitle(a) || (b.rank ?? 0) - (a.rank ?? 0))
       .slice(0, 40);
   }, [all, q]);
 
@@ -96,7 +117,7 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => v
               else if (e.key === "ArrowUp") { e.preventDefault(); setAt(a => Math.max(0, a - 1)); }
               else if (e.key === "Enter") { e.preventDefault(); run(shown[at]); }
             }}
-            placeholder="Hole, step, tool or name"
+            placeholder="Search holes, tools, settings and help"
             aria-label="Go to"
             className="flex-1 bg-transparent py-3 text-[15px] text-zinc-100 placeholder:text-zinc-500 focus:outline-none touch:text-base"
           />
