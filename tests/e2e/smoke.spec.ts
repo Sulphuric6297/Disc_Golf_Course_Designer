@@ -168,7 +168,7 @@ test("search finds any setting and takes you to it, lit up; the help guide's Sho
   await page.keyboard.press("Escape");
   // A setting by a few of its words: the course's walks, opened and pointed at
   await page.keyboard.press("Control+k");
-  await expect(page.getByLabel("Go to")).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "Go to" })).toBeFocused();
   await page.keyboard.type("walk width");
   await expect(page.getByTestId("goto-option").first()).toContainText("Walks to the next hole");
   await page.keyboard.press("Enter");
@@ -178,7 +178,7 @@ test("search finds any setting and takes you to it, lit up; the help guide's Sho
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("course-more")).toHaveCount(0);
   await page.keyboard.press("Control+k");
-  await expect(page.getByLabel("Go to")).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "Go to" })).toBeFocused();
   await page.keyboard.type("tee sign look");
   await expect(page.getByTestId("goto-option").first()).toContainText("Tee signs");
   await page.keyboard.press("Enter");
