@@ -239,6 +239,8 @@ export interface Hole {
   flyover?: Partial<FlyoverSettings>;
   /** This hole's own tee sign settings (over the course's). */
   sign?: SignSettings;
+  /** This hole's own hole page pieces (over the course's). */
+  page?: { layout?: Record<string, PiecePlace> };
   /** Shown name, e.g. "The Gauntlet" (optional). */
   name?: string;
   /** Par set by hand; unset: worked out from the hole's length, elevation and shape. */
@@ -358,6 +360,12 @@ export interface PiecePlace {
   font?: string;
   color?: string;
   fill?: string;
+}
+/** How hole pages look, and their pieces placed by hand (the course's; a hole's own over it). */
+export interface HolePageSettings {
+  /** The usual page, or the hole's picture across the whole page with its number (unset: usual). */
+  look?: "standard" | "justhole";
+  layout?: Record<string, PiecePlace>;
 }
 export interface SignSettings {
   /** The other holes on a sign's map: faded (unset), left out, or as clear as its own. */
@@ -517,6 +525,7 @@ export interface MapStyle {
   /** The tee signs' and hole pages' size: the one designed (Map) and printed (Export). */
   signSize?: "18x12" | "12x18" | "18x24" | "letter" | "a4";
   holePageSize?: "letter" | "a4" | "card" | "square";
+  holePage?: HolePageSettings;
   /** The course map's frame, even on all four sides (unset: none, the map to the paper's edge). */
   frame?: "mat" | "line" | "band";
   /** Forest style: the treetops as painted maps have them (unset), or natural ones, as the 3D

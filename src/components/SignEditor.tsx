@@ -1,13 +1,18 @@
-// Tee signs laid out by hand, like Canva: every piece of a sign (the hole's picture, its number,
-// par, lengths, notes...) picked on the page or in Layers, dragged, sized from its corners,
-// recolored, set in another font or hidden. For every hole at once, or for one hole on its own
-// (the Tee signs panel's "All holes / Hole N"); one undo step each.
+// Tee signs and hole pages laid out by hand, like Canva: every piece of a page (the hole's picture,
+// its number, par, lengths, notes...) picked on the page or in Layers, dragged, sized from its
+// corners, recolored, set in another font or hidden. For every hole at once, or for one hole on
+// its own ("All holes / Hole N"); one undo step each.
 import { Eye, EyeOff, RotateCcw } from "lucide-react";
 import { signOf } from "../lib/teeSign";
+import { HOLE_PAGE_LOOKS, holePageOf } from "../lib/holePage";
+import { holeLabel } from "../lib/course";
 import { sizedPlace } from "../lib/pieces";
 import { changeDoc, getDoc, useCourse, useEditor } from "../state/course";
 import type { CourseDoc, PiecePlace, SignPart } from "../types";
-import { ColorInput, Field, Slider } from "./ui";
+import { ColorInput, Field, Section, Segmented, Slider } from "./ui";
+
+/** Which printout the Design step is laying out: the tee sign or the hole page. */
+const target = (): "sign" | "page" => (useEditor.getState().designTab === "page" ? "page" : "sign");
 
 /** Every piece a sign can have, by name (in the order Layers lists them). */
 export const SIGN_PIECES: { id: string; label: string; part?: SignPart }[] = [
@@ -17,8 +22,11 @@ export const SIGN_PIECES: { id: string; label: string; part?: SignPart }[] = [
   { id: "rule", label: "Line under the name" },
   { id: "number", label: "Hole number", part: "number" },
   { id: "numberTag", label: "Hole number tag", part: "number" },
+  { id: "holeTitle", label: "Hole title" },
   { id: "par", label: "Par", part: "par" },
+  { id: "length", label: "Length" },
   { id: "holeName", label: "Hole name" },
+  { id: "facts", label: "Elevation and plays like" },
   { id: "lengths", label: "Lengths (each tee)", part: "lengths" },
   { id: "elevation", label: "Elevation", part: "elevation" },
   { id: "elevationStrip", label: "Elevation strip", part: "elevation" },
@@ -29,6 +37,7 @@ export const SIGN_PIECES: { id: string; label: string; part?: SignPart }[] = [
   { id: "scale", label: "Scale bar", part: "scale" },
   { id: "nextTee", label: "Way to the next tee", part: "nextTee" },
   { id: "footRule", label: "Line over the notes" },
+  { id: "footer", label: "Footer panel" },
   { id: "legend", label: "Legend", part: "legend" },
   { id: "holeOf", label: "Hole N of M", part: "holeOf" },
   { id: "designer", label: "Designer", part: "designer" }
@@ -42,9 +51,11 @@ const LOOK_PIECES: Record<string, string[]> = {
   "classic-tall": ["band", "number", "courseName", "par", "holeName", "lengths", "map", "north", "scale", "nextTee", "elevation", "notes", "legend", "holeOf"],
   trailhead: ["map", "north", "scale", "nextTee", "number", "courseName", "lengths", "spot", "elevation", "notes", "holeOf", "designer"],
   fieldguide: ["courseName", "rule", "numberTag", "number", "par", "map", "north", "scale", "lengths", "spot", "elevation", "footRule", "notes", "nextTee"],
-  openview: ["map", "courseName", "north", "card", "number", "par", "holeName", "lengths", "nextTee"]
+  openview: ["map", "courseName", "north", "card", "number", "par", "holeName", "lengths", "nextTee"],
+  page: ["map", "band", "number", "courseName", "holeTitle", "holeName", "par", "length", "lengths", "facts", "north", "scale", "nextTee", "footer", "elevation", "notes", "legend", "holeOf"]
 };
 export const piecesFor = (doc: CourseDoc) => {
+  if (target() === "page") return LOOK_PIECES.page.map(id => byId.get(id)!).filter(Boolean);
   const look = doc.style.sign?.look ?? "classic", size = doc.style.signSize ?? "18x12";
   const key = look !== "classic" && size !== "letter" && size !== "a4" ? look : size === "18x12" ? "classic-wide" : "classic-tall";
   const ids = new Set(LOOK_PIECES[key] ?? LOOK_PIECES["classic-wide"]);
@@ -58,10 +69,11 @@ const signHole = (doc: CourseDoc) => {
 };
 const forHole = () => useEditor.getState().signScope === "hole";
 
-/** A piece's place on the shown hole's sign. */
+/** A piece's place on the shown hole's sign or page. */
 export const placeNow = (doc: CourseDoc, id: string) => {
-  const h = signHole(doc);
-  return h ? signOf(doc, h).place(id) : doc.style.sign?.layout?.[id];
+  const h = signHole(doc), page = target() === "page";
+  if (!h) return (page ? doc.style.holePage : doc.style.sign)?.layout?.[id];
+  return page ? holePageOf(doc, h).place(id) : signOf(doc, h).place(id);
 };
 
 /** A piece's place changed (null: back to where its look puts it), for every hole or the shown one. */
@@ -73,7 +85,10 @@ export const setPlace = (id: string, patch: Partial<PiecePlace> | null, history 
     else all[id] = Object.fromEntries(Object.entries({ ...now, ...patch }).filter(([, v]) => v !== undefined)) as PiecePlace;
     return Object.keys(all).length ? all : undefined;
   };
-  if (forHole() && h) {
+  if (target() === "page") {
+    if (forHole() && h) changeDoc(d => ({ holes: d.holes.map(x => (x.id === h ? { ...x, page: { ...x.page, layout: clean(x.page?.layout, holePageOf(d, h).place(id)) } } : x)) }), history);
+    else changeDoc(d => ({ style: { ...d.style, holePage: { ...d.style.holePage, layout: clean(d.style.holePage?.layout, d.style.holePage?.layout?.[id]) } } }), history);
+  } else if (forHole() && h) {
     changeDoc(d => ({ holes: d.holes.map(x => (x.id === h ? { ...x, sign: { ...x.sign, layout: clean(x.sign?.layout, signOf(d, h).place(id)) } } : x)) }), history);
   } else {
     changeDoc(d => ({ style: { ...d.style, sign: { ...d.style.sign, layout: clean(d.style.sign?.layout, d.style.sign?.layout?.[id]) } } }), history);
@@ -91,11 +106,13 @@ export const sizePiece = (id: string, f: number, a: { x: number; y: number }, W:
 
 /** Whether a piece shows (a part of the sign through its switch, the rest through its place). */
 export const pieceShown = (doc: CourseDoc, id: string) => {
-  const h = signHole(doc), part = byId.get(id)?.part;
+  const h = signHole(doc), part = target() === "sign" ? byId.get(id)?.part : undefined;
   if (part && h && !signOf(doc, h).show(part)) return false;
   return !placeNow(doc, id)?.hidden;
 };
 export const setPieceShown = (id: string, v: boolean) => {
+  // (a hole page's pieces through their place alone: just the hole leaves most out to start with)
+  if (target() === "page") return setPlace(id, { hidden: !v });
   const part = byId.get(id)?.part, doc = getDoc(), h = signHole(doc);
   if (part && (!v || (h && !signOf(doc, h).show(part)))) {
     if (forHole() && h) changeDoc(d => ({ holes: d.holes.map(x => (x.id === h ? { ...x, sign: { ...x.sign, show: { ...x.sign?.show, [part]: v } } } : x)) }));
@@ -131,7 +148,8 @@ export function SignLayers() {
   return (
     <div className="rounded-[14px] bg-white/[0.05] py-1" role="list" aria-label="Layers" data-testid="sign-layers">
       {list.map(p => {
-        const on = pieceShown(doc, p.id), picked = sel === p.id, moved = !!placeNow(doc, p.id);
+        const pl = placeNow(doc, p.id), on = pieceShown(doc, p.id), picked = sel === p.id;
+        const moved = !!pl && Object.entries(pl).some(([k, v]) => k !== "hidden" && v !== undefined);
         return (
           <div key={p.id} role="listitem" className={`flex items-center gap-1 px-1.5 ${picked ? "bg-orange-400/15" : ""}`}>
             <button className={`flex-1 text-left px-1.5 py-1.5 text-[13px] ${on ? "text-zinc-100" : "text-zinc-500"} ${picked ? "font-semibold" : ""}`} onClick={() => set({ designSel: picked ? null : p.id })} data-testid={`layer-${p.id}`}>
@@ -170,5 +188,25 @@ export function SignPieceSettings() {
       <ColorInput label="Panel color" value={p.fill ?? "#1b4332"} onChange={v => setPlace(sel, { fill: v }, false)} onDone={commit} />
       {(p.color || p.fill) && <button className="text-xs text-zinc-400 hover:text-zinc-200" onClick={() => setPlace(sel, { color: undefined, fill: undefined })}>Its look's own colors</button>}
     </div>
+  );
+}
+
+/** The Hole page tab's panel: its look, all holes or one, Layers and the picked piece. */
+export function HolePageSettings() {
+  const doc = useCourse(s => s.doc);
+  const scope = useEditor(e => e.signScope);
+  const h = signHole(doc);
+  if (!doc.holes.length) return null;
+  const look = doc.style.holePage?.look ?? "standard";
+  return (
+    <Section title="Hole pages" testid="page-settings" help="hole-pages">
+      <Field label="Start from">
+        <Segmented label="Hole page look" value={look} onChange={v => changeDoc(d => ({ style: { ...d.style, holePage: { look: v === "standard" ? undefined : v } } }))} options={HOLE_PAGE_LOOKS.map(l => ({ value: l.id, label: l.label }))} />
+      </Field>
+      {h && <div className="mb-2.5"><Segmented label="Hole page changes for" value={scope} onChange={v => useEditor.getState().set({ signScope: v })} options={[{ value: "all", label: "All holes" }, { value: "hole", label: `Hole ${holeLabel(doc, h)}` }]} /></div>}
+      <div className="text-[12px] font-semibold text-zinc-400 mt-1 mb-1.5 px-1">Layers</div>
+      <SignLayers />
+      <SignPieceSettings />
+    </Section>
   );
 }

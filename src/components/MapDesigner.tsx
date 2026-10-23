@@ -185,8 +185,8 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const designSel = useEditor(e => e.designSel);
   const setEd = useEditor(e => e.set);
   // (a tee sign's pieces the same way: each piece of it, the hole's picture too)
-  const signEdit = preview === "sign" && !only;
-  const editing = (preview === "map" || preview === "sign") && !only;
+  const signEdit = (preview === "sign" || preview === "page") && !only;
+  const editing = (preview === "map" || signEdit) && !only;
   const svgHost = useRef<HTMLDivElement>(null);
   type Box = { x: number; y: number; w: number; h: number };
   const [selBox, setSelBox] = useState<Box | null>(null);

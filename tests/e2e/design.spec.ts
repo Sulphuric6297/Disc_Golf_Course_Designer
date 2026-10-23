@@ -6,6 +6,7 @@ import { contoursOf, reliefExaggeration } from "../../src/lib/relief";
 import { dist, distanceToPath } from "../../src/lib/geom";
 import { BASKET_MARKS, basketMark, bestRotation, renderPoster } from "../../src/lib/mapSvg";
 import { renderScorecard, renderTeeSign } from "../../src/lib/teeSign";
+import { renderHolePage } from "../../src/lib/holePage";
 import { tallGrassOf } from "../../src/lib/landscapes";
 
 /** The map's painting finished (a quick draft shows first, then the sharp picture). */
@@ -1043,6 +1044,25 @@ test("zoomed in on the Design page, every edge of the page can be reached: the f
   const end = await edges("end");
   expect(end.sheet.x + end.sheet.width).toBeLessThanOrEqual(end.area.right + 0.5);
   expect(end.sheet.y + end.sheet.height).toBeLessThanOrEqual(end.area.bottom + 0.5);
+});
+
+plain("hole pages: pieces placed by hand, and Just the hole (its picture across the page, its number, the rest a click away)", () => {
+  const doc = sample();
+  const [h1] = doc.holes;
+  const art = { contours: null, hillshade: null };
+  const page = () => renderHolePage(doc, h1.id, "letter", art)!.svg;
+  plainExpect(page()).toContain('<g data-el="par">');
+  doc.style.holePage = { layout: { par: { dx: 0.1, dy: 0, scale: 1 } } };
+  plainExpect(page()).toContain('<g data-el="par" transform="translate(61.2 0) scale(1)">');
+  doc.style.holePage = { look: "justhole" };
+  const just = page();
+  plainExpect(just).toContain('<g data-el="map">');
+  plainExpect(just).toContain('<g data-el="number">');
+  plainExpect(just).not.toContain(">PAR ");
+  plainExpect(just).not.toContain("HOLE NOTES");
+  // The par brought back
+  doc.style.holePage = { look: "justhole", layout: { par: { hidden: false } } };
+  plainExpect(page()).toContain(">PAR ");
 });
 
 plain("tee sign pieces: moved, sized, restyled or hidden, for every hole or one hole's own, on every look", () => {

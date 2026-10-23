@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import type { MapStyle, PaperSize, ReliefLook, SignSettings } from "../types";
 import { Button, ColorInput, Field, Section, Segmented, Slider, Toggle } from "./ui";
 import { PageElementPanel, PageSection } from "./PageEditor";
-import { SignLayers, SignPieceSettings } from "./SignEditor";
+import { HolePageSettings, SignLayers, SignPieceSettings } from "./SignEditor";
 
 export const setStyle = (patch: Partial<MapStyle>, history = true) => {
   // View only: the look changes on this screen (sun, landscape…), never saved
@@ -294,6 +294,7 @@ export function DesignPanel() {
           {toGeneral}
         </>
       )}
+      {tab === "page" && <HolePageSettings />}
       {(tab === "page" || tab === "scorecard") && toGeneral}
       <div className="px-4 py-3">
         <Button full onClick={() => useEditor.getState().set({ step: "export" })} testid="next-step">Next: Export <ArrowRight size={15} /></Button>
