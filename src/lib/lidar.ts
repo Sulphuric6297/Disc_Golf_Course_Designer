@@ -333,7 +333,9 @@ export const grownTrees = (lidar: NonNullable<CourseDoc["lidar"]>) => {
 /** Years since a survey (by the year in its name), or 0. */
 export const yearsSince = (name: string) => { const y = surveyYear(name); return y ? Math.max(0, new Date().getFullYear() - y) : 0; };
 
-export const surveyYear = (name: string) => Math.max(0, ...(name.match(/(19|20)\d\d/g) ?? []).map(Number));
+/** A survey's year from its name: "…_2019", or USGS's newer work codes ("KY_Western_1_A22": 2022). */
+export const surveyYear = (name: string) =>
+  Math.max(0, ...(name.match(/(19|20)\d\d/g) ?? []).map(Number), ...[...name.matchAll(/(?:^|_)[A-Z](\d\d)(?=_|$)/g)].map(m => 2000 + Number(m[1])));
 
 /** Which measured trees stand: those on a fairway, a tee or a basket's circle (as
  * `cleared` says) are cut down unless kept; any taken out are gone. */

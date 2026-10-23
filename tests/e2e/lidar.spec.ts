@@ -48,6 +48,11 @@ plain("trees and ground from a LiDAR tile: each tree where it stands, as tall an
   plainExpect(tiles).toEqual([{ key: "0-0-0-0", points: 10 }, { key: "1-0-0-0", points: 7 }]);
   plainExpect(asked).toEqual(["0-0-0-0", "1-0-0-0"]);
   plainExpect(surveyYear("USGS_LPC_IL_WestCentral_2017_LAS_2019")).toBe(2019);
+  // (USGS's newer names carry a work code: A22 is 2022; none at all is the oldest)
+  plainExpect(surveyYear("KY_Western_1_A22")).toBe(2022);
+  plainExpect(surveyYear("CA_CaliforniaGaps_3_B23")).toBe(2023);
+  plainExpect(surveyYear("KY_FullState")).toBe(0);
+  plainExpect(surveyYear("CA_FEMA_Z4_B1_2018")).toBe(2018);
 });
 
 plain("trees on a fairway are cut down unless kept; taken out anywhere; a hole's fairway trees counted (pure logic)", () => {

@@ -25,8 +25,8 @@ const lazReader = () =>
     return (await createLazPerf({ locateFile: () => wasm.default })) as unknown as LazReader;
   })());
 
-/** The survey to read over a site: the newest that has points all over it (null: none here). */
-const pickSurvey = async (ref: GeoRef, box: Box) => {
+/** The surveys to read over a site, newest first, each with points all over it. */
+async function* surveysOver(ref: GeoRef, box: Box) {
   const index = (await getJson(new URL("lidar-index.json", document.baseURI).href)) as { base: string; surveys: [string, number, number, number, number][] };
   const over = index.surveys.filter(([, w, s, e, n]) => w <= ref.west && e >= ref.east && s <= ref.south && n >= ref.north).sort((a, b) => surveyYear(b[0]) - surveyYear(a[0]));
   const area = (box[2] - box[0]) * (box[3] - box[1]);
@@ -37,19 +37,29 @@ const pickSurvey = async (ref: GeoRef, box: Box) => {
       if (ept.dataType !== "laszip" || (ept.srs?.horizontal && ept.srs.horizontal !== "3857")) continue;
       const tiles = await tilesOver(ept, box, depthFor(ept), key => getJson(`${base}/ept-hierarchy/${key}.json`));
       // (points all over it, the tiles reaching past it: a survey that only grazes it has few)
-      if (tiles.reduce((t, x) => t + x.points, 0) >= area * 0.2) return { name, base, tiles };
+      if (tiles.reduce((t, x) => t + x.points, 0) >= area * 0.2) yield { name, base, tiles };
     } catch (err) {
       console.warn("LiDAR survey unreadable", name, err);
     }
   }
-  return null;
-};
+}
 
 /** The site's trees and ground from the air, or null where no survey covers it. */
 export const fetchLidar = async (ref: GeoRef, onProgress: (fraction: number) => void): Promise<LidarSite | null> => {
   const box = siteBox(ref);
-  const survey = await pickSurvey(ref, box);
-  if (!survey) return null;
+  // The newest survey; one that sees hardly a tree (an old, thin one, or bare of leaves) makes way
+  // for the next if that sees more
+  const few = Math.max(40, (ref.width * ref.height) / 40_000);
+  let best: LidarSite | null = null, tried = 0;
+  for await (const survey of surveysOver(ref, box)) {
+    const got = await readSurvey(survey, ref, box, onProgress).catch(err => { console.warn("LiDAR survey unreadable", survey.name, err); return null; });
+    if (got && (!best || got.trees.length > best.trees.length)) best = got;
+    if ((best && best.trees.length >= few) || ++tried >= 2) break;
+  }
+  return best;
+};
+
+const readSurvey = async (survey: { name: string; base: string; tiles: { key: string; points: number }[] }, ref: GeoRef, box: Box, onProgress: (fraction: number) => void): Promise<LidarSite> => {
   const lp = await lazReader();
   const pts = emptyPoints();
   const total = survey.tiles.reduce((t, x) => t + x.points, 0);

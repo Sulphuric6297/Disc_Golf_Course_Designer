@@ -285,7 +285,9 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   // trees close together in one, each stand its own woods (OpenStreetMap's woods, drawn by hand
   // and often over a whole hillside, give way to them)
   let woods: AreaItem[];
-  if (lidar?.trees.length) {
+  // (a survey that saw hardly a tree, old and thin or bare of leaves: the photo's woods still count)
+  const thinSurvey = !!lidar && lidar.trees.length < Math.max(40, (width * height) / 40_000);
+  if (lidar?.trees.length && !thinSurvey) {
     const { w: gw, h: gh, cell, stands } = treeStands(lidar.trees.map(t => ({ x: t[0], y: t[1], r: t[3] })), width, height);
     woods = stands.map(s => ({ ...createArea("woods", outlineToPlan(s.outline, gw, gh, gw * cell, gh * cell, 5)), importSource: "lidar" as const }) as AreaItem).filter(a => a.points.length >= 3);
     if (woods.length) {
@@ -294,8 +296,21 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     }
   } else woods = found.woods.filter(a => !inside(centroid(a.points), "woods"));
   const water = found.water.filter(a => !inside(centroid(a.points), "water"));
-  const trees = lidar ? [] : found.trees.filter(t => !inside(t, "woods") && !inside(t, "water"));
-  const counted = [[lidar?.trees.length ? 0 : woods.length, "wooded area", "wooded areas"], [trees.length, "tree", "trees"], [water.length, "water area", "water areas"]] as const;
+  const measuredNear = (t: P) => (lidar?.trees ?? []).some(m => Math.hypot(m[0] - t.x, m[1] - t.y) < 15);
+  const trees = lidar && !thinSurvey ? [] : found.trees.filter(t => !inside(t, "woods") && !inside(t, "water") && !measuredNear(t));
+  // Woods the survey saw few trees in (missed, or grown since): drawn trees fill in between the
+  // measured ones, all through it (the "Filled in" choice, set as if by hand)
+  if (lidar) {
+    const fillThin = (a: AreaItem): AreaItem => {
+      if (a.kind !== "woods" || a.trees) return a;
+      const area = Math.abs(polygonArea(a.points));
+      const n = lidar.trees.filter(t => pointInPolygon({ x: t[0], y: t[1] }, a.points)).length;
+      return area > 2000 && n < area / 3000 ? { ...a, trees: "custom", patches: [{ points: a.points.map(p => ({ ...p })), fill: 0.6 }] } : a;
+    };
+    mapped = mapped.map(m => (m.type === "area" ? fillThin(m) : m));
+    woods = woods.map(fillThin);
+  }
+  const counted = [[lidar?.trees.length && !thinSurvey ? 0 : woods.length, "wooded area", "wooded areas"], [trees.length, "tree", "trees"], [water.length, "water area", "water areas"]] as const;
   const said = counted.filter(([n]) => n > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
   if (said.length) notes.push(`On the photo: ${said.join(", ")}.`);
   mapped = [...mapped, ...woods, ...water];
