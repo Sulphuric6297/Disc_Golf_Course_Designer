@@ -9,7 +9,7 @@ import { AREA_KINDS } from "../constants";
 import { RESTRICTED } from "../lib/symbols";
 import { MapLookPanel } from "./MapLookPanel";
 import { useEffect, useRef, useState } from "react";
-import type { MapStyle, PaperSize, SignSettings } from "../types";
+import type { MapStyle, PaperSize, ReliefLook, SignSettings } from "../types";
 import { Button, ColorInput, Field, Section, Segmented, Slider, Toggle } from "./ui";
 import { PageElementPanel, PageSection } from "./PageEditor";
 
@@ -33,6 +33,39 @@ export function StyleSlider<K extends keyof MapStyle>({ k, value, label, min, ma
     moved.current = false;
   };
   return <Slider label={label} min={min} max={max} step={step} value={v} onChange={x => { moved.current = true; setV(x); if (live) setStyle({ [k]: x } as Partial<MapStyle>, false); }} onDone={done} format={format} />;
+}
+
+/** Ways to draw elevation on the painted map, each with a picture of a canyon drawn that way. */
+const ELEVATION_LOOKS: { id: ReliefLook | "off"; label: string; hint: string }[] = [
+  { id: "shaded", label: "Shaded", hint: "Soft light and shadow, with bare rock on cliffs. Easy on the eye." },
+  { id: "cliffs", label: "Cliff edges", hint: "Every drop's top edge inked, with the walls below it in shadow. Canyons and ledges stand out." },
+  { id: "sketched", label: "Sketched", hint: "Hand-drawn strokes down the steep slopes, like an old survey map." },
+  { id: "contours", label: "Contours", hint: "Lines at round heights with the heights written on them, so you can read how high anything is." },
+  { id: "terraces", label: "Terraces", hint: "The land in stepped layers, each one a bit lighter than the one below." },
+  { id: "off", label: "Off", hint: "No elevation drawn. The ground looks flat." }
+];
+
+function ElevationPicker() {
+  const s = useCourse(c => c.doc.style);
+  const now = !s.hillshade ? "off" : s.reliefLook ?? "shaded";
+  const base = import.meta.env.BASE_URL;
+  const pick = (id: ReliefLook | "off") => setStyle(id === "off" ? { hillshade: false } : { hillshade: true, reliefLook: id === "shaded" ? undefined : id });
+  return (
+    <div data-testid="elevation">
+      <div className="grid grid-cols-3 gap-x-2 gap-y-2.5" role="radiogroup" aria-label="Elevation">
+        {ELEVATION_LOOKS.map(l => {
+          const on = now === l.id;
+          return (
+            <button key={l.id} role="radio" aria-checked={on} onClick={() => pick(l.id)} title={l.hint} data-testid={`elevation-${l.id}`} className="group text-center rounded-[12px]">
+              <img src={`${base}relief/${l.id}.jpg`} alt="" className={`block w-full aspect-[3/2] object-cover rounded-[12px] transition ${on ? "ring-[2.5px] ring-orange-400" : "ring-1 ring-white/15 group-hover:ring-white/35"}`} draggable={false} />
+              <span className={`block pt-1 text-[11.5px] leading-tight ${on ? "text-zinc-50 font-semibold" : "text-zinc-400"}`}>{l.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="text-[11px] text-zinc-500 mt-1.5">{ELEVATION_LOOKS.find(l => l.id === now)!.hint}</div>
+    </div>
+  );
 }
 
 const TreeCover = ({ value }: { value: number }) => (
@@ -239,12 +272,14 @@ export function DesignPanel() {
           <Section title="Map style" testid="map-style" help="map-style">
             <MapLookPanel />
           </Section>
+          <Section title="Elevation" help="elevation">
+            <ElevationPicker />
+          </Section>
       <Section title="Drawn on the map" help="drawn-on-map">
         <Toggle label="Throw lines" checked={s.throwLines} onChange={v => setStyle({ throwLines: v })} />
         <Toggle label="Distances on the lines" checked={s.distances} onChange={v => setStyle({ distances: v })} />
         <Toggle label="Putting circle (10 m)" checked={s.circle} onChange={v => setStyle({ circle: v })} />
-        <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />
-        <Toggle label="Hill shading" checked={s.hillshade} onChange={v => setStyle({ hillshade: v })} />
+        {!(s.hillshade && s.reliefLook === "contours") && <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />}
       </Section>
       <details className="mx-4 my-2 rounded-[16px] bg-white/[0.06] group" data-testid="fold-title">
         <summary className="cursor-pointer list-none flex items-center justify-between px-3 py-2.5 text-[13.5px] font-medium text-zinc-100">Lettering <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>

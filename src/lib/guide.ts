@@ -433,9 +433,16 @@ export const TOPICS: Topic[] = [
     where: { step: "map", tab: "map", look: "light", find: "look-part-light" }
   },
   {
+    id: "elevation", section: "map", title: "Elevation on the map",
+    body: "Elevation, under Map style, picks how the painted map shows the ground's shape. The map style stays the same; only the hills and drops are drawn differently.\n\nShaded is soft light and shadow, with bare rock on cliffs. Cliff edges inks the top edge of every drop and puts the wall below it in shadow, so canyons and ledges stand out. Sketched draws short strokes down the steep slopes, like an old survey map. Contours draws lines at round heights and writes the heights on them, so you can read how high anything is. Terraces cuts the land into stepped layers, each a bit lighter than the one below. Off draws no elevation at all.\n\nEvery look uses the same sun as the rest of the map, and higher ground throws its shadow across what's below it. Hills under Light and shadow makes any of them stronger or softer.",
+    words: "elevation hills hill shading relief canyon cliff cliffs edges sketched hachures contours heights terraces layers steps shading off flat topography slope",
+    path: "Map › Course map › Elevation",
+    where: { step: "map", tab: "map", find: "elevation" }
+  },
+  {
     id: "drawn-on-map", section: "map", title: "Drawn on the map",
-    body: "Extra lines on the printed map: throw lines, the distances on them, the putting circle, contour lines and hill shading. These only change the printed map, not the map you work on.\n\nHill shading is what makes the ground's shape show. Slopes facing away from the sun are darker, high ground throws its shadow across what's below it, and the bottom of a canyon or hollow is a little darker since it sees less sky. Cliffs and steep banks show as bare rock in layers. Hills under Light and shadow makes all of it stronger or softer.",
-    words: "throw lines distances putting circle contour lines hill shading canyon cliff rock steep elevation shadow valley",
+    body: "Extra lines on the printed map: throw lines, the distances on them, the putting circle, and contour lines. These only change the printed map, not the map you work on. How the hills themselves are drawn is under Elevation.",
+    words: "throw lines distances putting circle contour lines",
     path: "Map › Course map › Drawn on the map",
     where: { step: "map", tab: "map", find: "map-style", text: "Drawn on the map" }
   },

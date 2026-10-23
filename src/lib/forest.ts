@@ -5,7 +5,8 @@
 // mown grass. It is one picture for the whole map, laid into the SVG under the symbols (built
 // things are drawn there too; the painting clears the trees from them and casts their shadows).
 import { CIRCLE_ONE_FT, LINE_KINDS, PATH_SURFACES } from "../constants";
-import type { AreaItem, CourseDoc, LineItem, MapStyle, P, PathSurface, StructureItem, TreeItem } from "../types";
+import type { AreaItem, CourseDoc, LineItem, MapStyle, P, PathSurface, ReliefLook, StructureItem, TreeItem } from "../types";
+import { toUnits } from "./units";
 import { canopyMask } from "./geo/detect";
 import { boundsOf, corridor, dist, pathLength, pointInPolygon, smoothPath } from "./geom";
 import { autoWalks, drawnAreas, fairwayShiftAt, fairwayWidthAt, linePath, teeLines, widthAlong, widthFactors, widthVaries } from "./course";
@@ -937,6 +938,15 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const lxyL = Math.hypot(L.x, L.y) || 1;
   // Bare rock, a warm gray-tan
   const rockColor = [186, 172, 152];
+  // How elevation is drawn (hill shading on): the contours' and terraces' steps in round numbers
+  // of the course's own units, counted from sea level so their heights read as real ones
+  const reliefLook: ReliefLook | "off" = relief && s.hillshade ? s.reliefLook ?? "shaded" : "off";
+  const perFt = toUnits(1, doc.units), seaFt = doc.site.baseElevationFt ?? 0;
+  const tidyStep = (raw: number) => { for (const iv of [1, 2, 5, 10, 20, 25, 30, 40, 50, 100, 200, 250, 500]) if (iv >= raw) return iv; return 1000; };
+  const lineIv = reliefLook === "contours" ? tidyStep(((relief!.hi - relief!.lo) * perFt) / 30) / perFt : 0;
+  const stepIv = reliefLook === "terraces" ? tidyStep(((relief!.hi - relief!.lo) * perFt) / 12) / perFt : 0;
+  const inked = reliefLook === "cliffs" || reliefLook === "sketched" || reliefLook === "terraces";
+  const sketch = reliefLook === "sketched" ? hachures(relief!, W, H, pt) : null;
 
   yield;
   // ---------------------------------------------------------------- paint
@@ -1078,8 +1088,13 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       const fx = Math.max(0, Math.min(mw - 1.001, (x + 0.5) / cell - 0.5)), x0 = fx | 0, wx = fx - x0;
       q00 = (y0 * mw + x0) * 4; q10 = q00 + 4; q01 = q00 + mw * 4; q11 = q01 + 4;
       w00 = (1 - wx) * (1 - wy); w10 = wx * (1 - wy); w01 = (1 - wx) * wy; w11 = wx * wy;
-      const rh = relief ? relief.at(x, y, contourIv > 0) : null;
-      const rf = rh && s.hillshade ? rh.shade : 1;
+      const rh = relief ? relief.at(x, y, contourIv > 0 || lineIv > 0, inked) : null;
+      let rf = rh && s.hillshade ? rh.shade : 1;
+      // (terraces: each shelf flat and lit alike, a little lighter the higher it is, under the
+      // shadow of higher ground; the inked looks: the light a little softer, the lines carry it)
+      if (stepIv) rf = (0.8 + 0.34 * ((Math.floor((seaFt + rh!.elev) / stepIv) * stepIv - seaFt - relief!.lo) / (relief!.hi - relief!.lo))) * rh!.amb;
+      else if (reliefLook === "contours") rf = 1 + (rf - 1) * 0.7;
+      else if (reliefLook === "sketched") rf = 1 + (rf - 1) * 0.85;
       const h = height[i];
       if (h > 0) {
         // Treetops: the slope of the leafy surface (neighbours outside the crowns count as level)
@@ -1134,13 +1149,20 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         }
         // Cliffs and steep banks: bare rock in ledges across the slope (the layers of a canyon
         // wall), broken up at its edge, lit like the ground round it
-        if (rh && s.hillshade && rh.rock > 0.02) {
+        if (rh && reliefLook === "shaded" && rh.rock > 0.02) {
           const ledge = rh.elev / 11 + (fbm(x / pt * 0.03 + 70, y / pt * 0.03) - 0.5) * 2.2 + (noise(x / pt * 0.4, y / pt * 0.4) - 0.5) * 0.25;
           const fr = ledge - Math.floor(ledge);
           const band = 0.88 + 0.18 * smooth(0.1, 0.5, fr) - 0.16 * smooth(0.86, 1, fr);
           const rv = (0.78 + (grain - 0.5) * 0.3 + mott * 0.16) * band * lit;
           const ra = smooth(0.15, 0.75, rh.rock + (fbm(x / pt * 0.12 + 90, y / pt * 0.12) - 0.5) * 0.6);
           cr += (rockColor[0] * rv - cr) * ra; cg += (rockColor[1] * rv - cg) * ra; cb += (rockColor[2] * rv - cb) * ra;
+        }
+        // Cliff edges: the walls darker than the ground above and below, worn into ledges
+        if (rh && (reliefLook === "cliffs" || reliefLook === "sketched") && rh.wall > 0.02) {
+          const ledge = rh.elev / 12 + (fbm(x / pt * 0.03 + 70, y / pt * 0.03) - 0.5) * 2.2;
+          const fr = ledge - Math.floor(ledge);
+          const wk = reliefLook === "cliffs" ? 1 - rh.wall * (0.26 + 0.16 * smooth(0.86, 1, fr) - 0.06 * smooth(0.1, 0.5, fr)) : 1 - rh.wall * 0.08;
+          cr *= wk; cg *= wk; cb *= wk;
         }
         // The floor under the trees, well inside the woods (fading out toward their edges)
         const deep = smooth(0.55, 0.95, S(inWoods, 0) / 255);
@@ -1284,6 +1306,66 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
             }
           }
         }
+        if (rh && w0 <= 0.3 && reliefLook !== "off" && reliefLook !== "shaded") {
+          // The rim of every drop, inked, with a pale lip of light just above it (only where the
+          // ground bulges: the foot of a wall gets none)
+          if (reliefLook === "cliffs" || reliefLook === "sketched") {
+            const gw2 = Math.hypot(rh.wgx, rh.wgy);
+            if (gw2 > 1e-4 && rh.cv > 0) {
+              const dpx = (rh.wall - 0.5) / gw2;
+              const conv = smooth(0, 0.15, rh.cv);
+              const lip = dpx < 0 ? (1 - smooth(1.2 * pt, 6 * pt, -dpx)) * smooth(0.7 * pt, 1.5 * pt, -dpx) * conv * 0.42 : 0;
+              if (lip > 0) { cr += (255 - cr) * lip; cg += (242 - cg) * lip; cb += (200 - cb) * lip; }
+              const ln = (1 - smooth(0.7 * pt, 1.5 * pt, Math.abs(dpx))) * conv * 0.88;
+              if (ln > 0) { cr += (48 - cr) * ln; cg += (34 - cg) * ln; cb += (22 - cb) * ln; }
+            }
+          }
+          // Sketched: the strokes down the slopes
+          if (sketch) {
+            const sa = sketch[i] / 255 * 0.9;
+            if (sa > 0) { cr += (52 - cr) * sa; cg += (40 - cg) * sa; cb += (26 - cb) * sa; }
+          }
+          // Contours: a lit line every so often (every fifth bolder), at round heights
+          if (lineIv) {
+            const gX = rh.sx, gY = rh.sy, g = Math.hypot(gX, gY);
+            if (g > 1e-5) {
+              const kk = (seaFt + rh.elev) / lineIv, near = Math.round(kk);
+              const dpx = (Math.abs(kk - near) * lineIv) / g;
+              const index = near % 5 === 0;
+              const half = (index ? 0.75 : 0.42) * pt;
+              if (dpx < half + 0.8) {
+                const a = (1 - smooth(half - 0.4, half + 0.8, dpx)) * (index ? 1 : 0.8);
+                const face = (-gX * L.x - gY * L.y) / (g * lxyL);
+                if (face > 0.15) {
+                  const m = a * (0.18 + 0.5 * face);
+                  cr += (252 - cr) * m; cg += (248 - cg) * m; cb += (226 - cb) * m;
+                } else {
+                  const m = a * (0.3 + 0.45 * Math.max(0, -face));
+                  cr += (30 - cr) * m; cg += (32 - cg) * m; cb += (22 - cb) * m;
+                }
+              }
+            }
+          }
+          // Terraces: at each step a fine dark line, a pale lip on top, and a soft shadow thrown
+          // down onto the shelf below (longer where the step faces away from the sun)
+          if (stepIv) {
+            const gX = rh.sx, gY = rh.sy, g = Math.hypot(gX, gY);
+            if (g > 1e-5) {
+              const t = (seaFt + rh.elev) / stepIv, n0 = Math.round(t);
+              const dpx = ((t - n0) * stepIv) / g;
+              const face = (-gX * L.x - gY * L.y) / (g * lxyL);
+              if (dpx < 0) {
+                const sh = (1 - smooth(0, (4 + 9 * Math.max(0, -face)) * pt, -dpx)) * 0.38;
+                cr *= 1 - sh; cg *= 1 - sh; cb *= 1 - sh * 0.85;
+              } else {
+                const lip = (1 - smooth(0.8 * pt, 3 * pt, dpx)) * smooth(0.3 * pt, 0.8 * pt, dpx) * (0.26 + 0.26 * Math.max(0, face));
+                cr += (255 - cr) * lip; cg += (246 - cg) * lip; cb += (214 - cb) * lip;
+              }
+              const ln = (1 - smooth(0.4 * pt, 1.0 * pt, Math.abs(dpx))) * 0.48;
+              cr += (40 - cr) * ln; cg += (34 - cg) * ln; cb += (24 - cb) * ln;
+            }
+          }
+        }
       }
       // Relief in color, as on Swiss maps: slopes facing the sun a little warmer, slopes facing
       // away a little cooler, high ground a touch lighter than low (half as much on treetops)
@@ -1291,7 +1373,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       // much as half in shadow, the slope toward it warmed; treetops get a little less, so the
       // woods stay woods)
       if (relief && s.hillshade) {
-        const tt = (rf - 1) * (h > 0 ? 0.7 : 1);
+        const tt = (rf - 1) * (h > 0 ? 0.7 : 1) * (stepIv ? 0.5 : 1);
         if (tt > 0) {
           const k = Math.min(0.45, tt * 1.3);
           cr += (255 - cr) * k * 0.42; cg += (244 - cg) * k * 0.36; cb += (206 - cb) * k * 0.16;
@@ -1351,10 +1433,75 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     if (s.nextTee) for (const { from, to } of autoWalks(doc.items, stats, doc.holes)) if (dist(from, to) >= 40) trail([from, to]);
     ctx.restore();
   }
+  if (lineIv) contourLabels(ctx, relief!, W, H, pt, lineIv, seaFt, doc.units, height, s.labelScale ?? 1);
   // Where it painted woods, for 3D trees standing on the painting (an unturned view only)
   if (!view.rotation) woodedGrids.set(canvas, { cols: mw, rows: mh, data: wooded, x0: view.cx - W / 2 / k, y0: view.cy - H / 2 / k, ftPerCell: cell / k, cover });
   return canvas;
 }
+
+type Relief = NonNullable<ReturnType<typeof reliefGrid>>;
+
+/** Sketched elevation: short strokes straight down every steep slope, as old survey maps draw
+ * them (heavier on the shaded side), as how much ink each pixel takes (0 to 255). */
+const hachures = (relief: Relief, W: number, H: number, pt: number) => {
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d")!;
+  g.strokeStyle = "#000"; g.lineCap = "round";
+  const rnd = seeded(77), sp = 5 * pt;
+  for (let y = 0; y < H; y += sp) for (let x = 0; x < W; x += sp) {
+    const jx = x + (rnd() - 0.5) * sp * 0.7, jy = y + (rnd() - 0.5) * sp * 0.7;
+    const t = relief.at(jx, jy, true, true);
+    const keepIt = rnd() < smooth(0.45, 1, t.rise) * 0.95;
+    if (t.rise < 0.45 || !keepIt) continue;
+    const gl = Math.hypot(t.sx, t.sy) || 1, ux = -t.sx / gl, uy = -t.sy / gl;
+    const dark = Math.max(0, Math.min(1, (1 - t.shade) / 0.5));
+    const len = (4 + 8 * smooth(0.45, 1.3, t.rise)) * pt;
+    g.globalAlpha = 0.55 + 0.4 * dark;
+    g.lineWidth = (0.55 + 0.8 * dark) * pt;
+    g.beginPath(); g.moveTo(jx, jy); g.lineTo(jx + ux * len, jy + uy * len); g.stroke();
+  }
+  const px = g.getImageData(0, 0, W, H).data, a = new Uint8Array(W * H);
+  for (let i = 0; i < a.length; i++) a[i] = px[i * 4 + 3];
+  c.width = c.height = 1;
+  return a;
+};
+
+/** Contours: the bolder lines' heights, written along them (their tops uphill, never upside
+ * down), a few to each line, on open ground. */
+const contourLabels = (ctx: CanvasRenderingContext2D, relief: Relief, W: number, H: number, pt: number, iv: number, seaFt: number, units: CourseDoc["units"], trees: Float32Array, scale: number) => {
+  const major = iv * 5, size = 7.5 * pt * scale, sp = 6 * pt, gap = 170 * pt;
+  const placed: { x: number; y: number }[] = [];
+  const perLevel = new Map<number, number>();
+  ctx.save();
+  ctx.font = `600 ${size}px Inter, Arial, sans-serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  const rnd = seeded(91);
+  for (let y = size * 2; y < H - size * 2; y += sp) for (let x = size * 3; x < W - size * 3; x += sp) {
+    const t = relief.at(x + (rnd() - 0.5) * sp, y + (rnd() - 0.5) * sp, true, true);
+    if (t.rise < 0.06 || t.rise > 0.9) continue;
+    const abs = seaFt + t.elev, n0 = Math.round(abs / major), off = abs - n0 * major;
+    const g2 = t.sx * t.sx + t.sy * t.sy;
+    // (onto the line: a step against the slope)
+    const lx = x - (off * t.sx) / g2, ly = y - (off * t.sy) / g2;
+    if (Math.abs(off) / Math.sqrt(g2) > sp || lx < size * 3 || ly < size * 2 || lx > W - size * 3 || ly > H - size * 2) continue;
+    if (trees[(ly | 0) * W + (lx | 0)] > 0 || (perLevel.get(n0) ?? 0) >= 4) continue;
+    if (placed.some(p => (p.x - lx) ** 2 + (p.y - ly) ** 2 < gap * gap)) continue;
+    placed.push({ x: lx, y: ly });
+    perLevel.set(n0, (perLevel.get(n0) ?? 0) + 1);
+    const gl = Math.sqrt(g2);
+    let ang = Math.atan2(t.sx / gl, -t.sy / gl);
+    if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
+    const label = Math.round(toUnits(n0 * major, units)).toLocaleString();
+    ctx.save();
+    ctx.translate(lx, ly); ctx.rotate(ang);
+    ctx.lineWidth = 3 * pt; ctx.strokeStyle = "rgba(240,234,210,.92)"; ctx.strokeText(label, 0, 0);
+    ctx.fillStyle = "#2a2a1e"; ctx.fillText(label, 0, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+};
 
 /**
  * Anti-aliasing, FXAA's way (T. Lottes): every step between tones or at an outline blends over
@@ -1521,7 +1668,7 @@ export const contourInterval = (range: number) => {
  * hollow: the floor and the foot of the walls darker, so depth reads without the sun), and how
  * steep it is (cliffs and steep banks drawn as bare rock). Plan direction `dir` points at the sun.
  */
-const terrainLights = new WeakMap<object, { key: string; v: { cols: number; rows: number; grid: number; cast: Float32Array; sky: Float32Array; rock: Float32Array } }>();
+const terrainLights = new WeakMap<object, { key: string; v: { cols: number; rows: number; grid: number; cast: Float32Array; sky: Float32Array; rock: Float32Array; wall: Float32Array; cv: Float32Array } }>();
 const terrainLight = (doc: CourseDoc, dir: P, tanEl: number, hills: number) => {
   const key = `${dir.x.toFixed(3)},${dir.y.toFixed(3)},${tanEl.toFixed(3)},${hills}`;
   const hit = terrainLights.get(doc.terrainHeights);
@@ -1537,6 +1684,9 @@ const terrainLight = (doc: CourseDoc, dir: P, tanEl: number, hills: number) => {
   let top = -Infinity;
   for (let k = 0; k < tg.data.length; k++) top = Math.max(top, tg.data[k] * hills);
   const cast = new Float32Array(cols * rows), sky = new Float32Array(cols * rows), rock = new Float32Array(cols * rows);
+  // (and for the inked looks: walls, steep enough to draw as a drop; and whether the ground
+  // here bulges (a rim, a ridge) or dips (the foot of a wall, a gully) against the ring round it)
+  const wall = new Float32Array(cols * rows), cv = new Float32Array(cols * rows);
   const elA = Math.atan(tanEl), soft = (2.5 * Math.PI) / 180;
   const far = Math.min(2000, Math.max(tg.cols, tg.rows) * tg.grid);
   const skyR = 400, dirs = Array.from({ length: 8 }, (_, k) => ({ x: Math.cos((k * Math.PI) / 4), y: Math.sin((k * Math.PI) / 4) }));
@@ -1558,8 +1708,12 @@ const terrainLight = (doc: CourseDoc, dir: P, tanEl: number, hills: number) => {
     sky[j] = 1 - seen / dirs.length;
     const gx = (z(x + G, y) - z(x - G, y)) / (2 * G), gy = (z(x, y + G) - z(x, y - G)) / (2 * G);
     rock[j] = smooth(0.62, 1.05, Math.hypot(gx, gy));
+    wall[j] = smooth(0.45, 0.8, Math.hypot(gx, gy));
+    let ring = 0;
+    for (const u of dirs) ring += z(x + u.x * 3 * G, y + u.y * 3 * G);
+    cv[j] = Math.max(-1, Math.min(1, ((h0 - ring / dirs.length) / (3 * G)) * 3));
   }
-  const v = { cols, rows, grid: G, cast, sky, rock };
+  const v = { cols, rows, grid: G, cast, sky, rock, wall, cv };
   terrainLights.set(doc.terrainHeights, { key, v });
   return v;
 };
@@ -1578,6 +1732,7 @@ const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (
   const gw = Math.ceil(W / step) + 2, gh = Math.ceil(H / step) + 2;
   const elev = new Float32Array(gw * gh), sx = new Float32Array(gw * gh), sy = new Float32Array(gw * gh), shade = new Float32Array(gw * gh);
   const castS = new Float32Array(gw * gh), skyS = new Float32Array(gw * gh), rockS = new Float32Array(gw * gh);
+  const ambS = new Float32Array(gw * gh), wallS = new Float32Array(gw * gh), cvS = new Float32Array(gw * gh), wgx = new Float32Array(gw * gh), wgy = new Float32Array(gw * gh);
   const e = Math.max(2, doc.gridSize / 2);
   // Beyond the measured ground the edge heights carry on (no cliff at the site's edge)
   const at = (p: P) => {
@@ -1623,6 +1778,12 @@ const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (
   for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
     const p = toPlan(gx * step, gy * step), j = gy * gw + gx;
     castS[j] = fromTl(tl.cast, p); skyS[j] = fromTl(tl.sky, p); rockS[j] = fromTl(tl.rock, p);
+    wallS[j] = fromTl(tl.wall, p); cvS[j] = fromTl(tl.cv, p);
+  }
+  // (how fast the walls start, per screen pixel: to draw their rim a set width)
+  for (let gy = 1; gy < gh - 1; gy++) for (let gx = 1; gx < gw - 1; gx++) {
+    const j = gy * gw + gx;
+    wgx[j] = (wallS[j + 1] - wallS[j - 1]) / (2 * step); wgy[j] = (wallS[j + gw] - wallS[j - gw]) / (2 * step);
   }
   // Steep enough to read: the steeper slopes shown at about 20 degrees, whatever the course (and
   // as much more or less as the Hills setting asks)
@@ -1643,6 +1804,7 @@ const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (
     // rolling park sees nearly all its sky and stays as bright as it was)
     const open = 1 - Math.min(0.4, Math.max(0, 0.9 - skyS[j]) * 1.6);
     shade[j] = Math.max(0.3, lit * inShadow * open);
+    ambS[j] = inShadow * open;
   }
   let k00 = 0, k10 = 0, k01 = 0, k11 = 0;
   const cell = (x: number, y: number) => {
@@ -1652,13 +1814,17 @@ const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (
     return j;
   };
   const look = (f: Float32Array, j: number) => f[j] * k00 + f[j + 1] * k10 + f[j + gw] * k01 + f[j + gw + 1] * k11;
-  const here = { shade: 1, elev: 0, sx: 0, sy: 0, rock: 0 };
+  const here = { shade: 1, elev: 0, sx: 0, sy: 0, rock: 0, amb: 1, wall: 0, wgx: 0, wgy: 0, cv: 0, rise: 0 };
   return {
     /** Everything at a pixel at once (one lookup of its cell): light, height, slope (per pixel). */
-    at: (x: number, y: number, withSlope: boolean) => {
+    at: (x: number, y: number, withSlope: boolean, inked = false) => {
       const j = cell(x, y);
       here.shade = look(shade, j); here.elev = look(elev, j); here.rock = look(rockS, j);
-      if (withSlope) { here.sx = look(sx, j) * ftPerPx; here.sy = look(sy, j) * ftPerPx; }
+      if (withSlope || inked) { here.sx = look(sx, j) * ftPerPx; here.sy = look(sy, j) * ftPerPx; }
+      if (inked) {
+        here.amb = look(ambS, j); here.wall = look(wallS, j); here.wgx = look(wgx, j); here.wgy = look(wgy, j); here.cv = look(cvS, j);
+        here.rise = Math.hypot(here.sx, here.sy) / ftPerPx;
+      }
       return here;
     },
     lo,

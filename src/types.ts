@@ -334,6 +334,9 @@ export interface Layout {
 /** How a new area or line is drawn: point by point, a dragged rectangle or circle, or freehand. */
 export type DrawShape = "points" | "box" | "circle" | "freehand" | "paint";
 
+/** Ways to draw elevation: soft light and shadow; inked rims over darker walls; hand-drawn strokes
+ * down the slopes; lit contour lines with their heights; the land in stepped layers. */
+export type ReliefLook = "shaded" | "cliffs" | "sketched" | "contours" | "terraces";
 export type MapTheme = "forest" | "illustrated" | "satellite" | "topo" | "minimal" | "night";
 
 /** A basket's mark on the printed map: side view, side view in a round badge, a pin flag, target
@@ -422,6 +425,8 @@ export interface MapStyle {
   images?: PageImage[];
   /** Hills: how strongly the ground's relief shows on the map, times the automatic (0: flat). */
   reliefScale?: number;
+  /** How the painted map draws the ground's shape when hill shading is on (unset: shaded). */
+  reliefLook?: ReliefLook;
   /** Where the legend (and hole table) panel sits on the course map: its top-left corner as a
    * share of the page's width and height (unset: a free corner). */
   legendAt?: { x: number; y: number };

@@ -588,7 +588,7 @@ plain("elevation on the map: relief exaggerated to suit the course, tidy contour
   plainExpect(renderPoster(doc, { contours, hillshade: null }).svg).toMatch(/>3\d\d<\/text>/);
 });
 
-test("elevation on the Forest map: hills shade the painting, contour lines are painted in on request, Hills fine-tunes the relief", async ({ page }) => {
+test("elevation on the Forest map: hills shade the painting, each Elevation look paints its own, contour lines are painted in on request, Hills fine-tunes the relief", async ({ page }) => {
   test.setTimeout(150_000);
   await importSite(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
@@ -598,10 +598,21 @@ test("elevation on the Forest map: hills shade the painting, contour lines are p
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
   await painted(page);
   const shaded = await painting.getAttribute("href");
-  // Hill shading off: a different picture (the hill's light and shade gone)
-  await page.getByLabel("Hill shading").uncheck();
+  // Elevation off: a different picture (the hill's light and shade gone); each other look its own
+  await page.getByTestId("elevation-off").click();
+  await expect.poll(async () => (await course(page)).style.hillshade).toBe(false);
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(shaded);
-  await page.getByLabel("Hill shading").check();
+  const seen = new Set([shaded]);
+  for (const look of ["cliffs", "sketched", "contours", "terraces"]) {
+    await page.getByTestId(`elevation-${look}`).click();
+    await expect.poll(async () => (await course(page)).style.reliefLook).toBe(look);
+    await painted(page);
+    const href = await painting.getAttribute("href");
+    expect(seen.has(href)).toBe(false);
+    seen.add(href);
+  }
+  await page.getByTestId("elevation-shaded").click();
+  await expect.poll(async () => (await course(page)).style.reliefLook).toBeUndefined();
   await expect.poll(async () => painting.getAttribute("href")).toBe(shaded);
   // Contour lines: painted into the land, not drawn over it
   await page.getByLabel("Contour lines").check();
