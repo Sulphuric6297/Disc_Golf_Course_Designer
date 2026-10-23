@@ -516,11 +516,12 @@ export function HolesColumn() {
             const hole = doc.holes.find(h => h.id === s.holeId)!;
             const sel = ed.selectedId === s.holeId || ed.activeHoleId === s.holeId;
             return (
-              <button key={s.holeId} data-testid="hole-row" title={hole.name || `Hole ${s.label}`}
+              <button key={s.holeId} data-testid="hole-row" title={`${hole.name || `Hole ${s.label}`}${slim && s.complete ? ` · ${fmtDist(s.length, u)} · Par ${s.par}` : ""}`}
                 onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
                 className={`flex items-center gap-2 rounded-[14px] py-1 text-left ${slim ? "justify-center px-1" : "pl-1 pr-2"} ${sel ? "bg-white/[0.16] text-zinc-50" : "text-zinc-300"}`}>
                 <span className="min-w-[24px] h-6 px-1 rounded-full flex items-center justify-center text-[11.5px] font-bold shrink-0" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink }} data-testid="hole-badge">{s.label}</span>
-                {!slim && <span className="text-[12.5px] tabular-nums truncate flex-1 min-w-0">{s.complete ? `${fmtDist(s.length, u)} · P${s.par}` : "unfinished"}</span>}
+                {/* (slim: just the number, its length and par for the tooltip and screen readers) */}
+                <span className={slim ? "sr-only" : "text-[12.5px] tabular-nums truncate flex-1 min-w-0"}>{s.complete ? `${fmtDist(s.length, u)} · P${s.par}` : "unfinished"}</span>
                 {!slim && (() => {
                   // (more than one tee: a dot for each color; a basket shared with another hole: a link)
                   const tees = holeTees(doc, s.holeId);
