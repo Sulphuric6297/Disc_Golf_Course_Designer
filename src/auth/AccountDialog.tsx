@@ -1,8 +1,9 @@
-// Your account: name, password, backup codes, and where you're signed in.
+// Your account: name, password, two-factor sign-in (on or off, your choice unless an admin
+// requires it), backup codes, and where you're signed in.
 import { useEffect, useState } from "react";
 import { Section } from "../components/ui";
 import { api, useAuth } from "./api";
-import { BackupCodes, Dialog, Form, Input, when } from "./parts";
+import { BackupCodes, CopyButton, Dialog, Form, Input, when } from "./parts";
 import { saveNow } from "./courses";
 
 interface SessionRow { id: string; current: boolean; createdAt: string; lastSeenAt: string; ip: string | null; userAgent: string | null }
@@ -24,6 +25,10 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
   const [pwDone, setPwDone] = useState(false);
   const [codesCode, setCodesCode] = useState("");
   const [codes, setCodes] = useState<string[] | null>(null);
+  // Two-factor: being set up here (its QR code), or a code to turn it off
+  const [enroll, setEnroll] = useState<{ secret: string; qr: string } | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const mfa = user.totpEnabled;
 
   const refresh = () => api<{ sessions: SessionRow[]; backupCodesLeft: number }>("GET", "me/sessions").then(setList);
   useEffect(() => { void refresh(); }, []);
@@ -41,26 +46,54 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
           {pwDone ? <p className="text-sm text-emerald-300">Password changed. Signed out everywhere else.</p> : (
             <Form compact submit="Change password" testid="change-password" onSubmit={async () => {
               if (pw.next !== pw.again) throw new Error("The new passwords don't match");
-              await api("POST", "me/password", { current: pw.current, next: pw.next, code: pw.code });
+              await api("POST", "me/password", { current: pw.current, next: pw.next, ...(mfa ? { code: pw.code } : {}) });
               setPwDone(true);
               void refresh();
             }}>
               <Input label="Current password" value={pw.current} onChange={v => setPw({ ...pw, current: v })} type="password" auto="current-password" />
               <Input label="New password" value={pw.next} onChange={v => setPw({ ...pw, next: v })} type="password" auto="new-password" />
               <Input label="New password again" value={pw.again} onChange={v => setPw({ ...pw, again: v })} type="password" auto="new-password" />
-              <Input label="Code from your app" value={pw.code} onChange={v => setPw({ ...pw, code: v })} auto="one-time-code" mono />
+              {mfa && <Input label="Code from your app" value={pw.code} onChange={v => setPw({ ...pw, code: v })} auto="one-time-code" mono />}
             </Form>
           )}
         </Section>
 
-        <Section title="Backup codes">
+        <Section title="Two-factor sign-in" testid="my-mfa">
+          {mfa ? (
+            user.mfaRequired
+              ? <p className="text-sm text-zinc-300">On. Your admin requires it for your account, so it can't be turned off here.</p>
+              : (
+                <Form compact submit="Turn it off" testid="mfa-off" onSubmit={async () => { await api("POST", "me/mfa/off", { code: mfaCode }); setMfaCode(""); setCodes(null); await load(); }}>
+                  <p className="text-sm text-zinc-300">On. Signing in asks for a code from your authenticator app after your password.</p>
+                  <Input label="Code from your app (to turn it off)" value={mfaCode} onChange={setMfaCode} auto="one-time-code" mono />
+                </Form>
+              )
+          ) : enroll ? (
+            <Form compact submit="Turn it on" testid="mfa-on" onSubmit={async () => { setCodes((await api<{ backupCodes: string[] }>("POST", "mfa/enroll/confirm", { code: mfaCode })).backupCodes); setEnroll(null); setMfaCode(""); await load(); void refresh(); }}>
+              <p className="text-sm text-zinc-300">Scan this with an authenticator app (Google Authenticator, 1Password, Authy and the like), then enter the code it shows.</p>
+              <img className="w-44 h-44 mx-auto rounded-lg bg-white p-2" alt="QR code for the authenticator app" src={`data:image/svg+xml;utf8,${encodeURIComponent(enroll.qr)}`} />
+              <div className="flex items-center gap-2">
+                <code className="flex-1 min-w-0 truncate text-xs text-zinc-300 font-mono" data-testid="mfa-secret">{enroll.secret}</code>
+                <CopyButton text={enroll.secret} label="Copy key" />
+              </div>
+              <Input label="Code from the app" value={mfaCode} onChange={setMfaCode} auto="one-time-code" mono />
+            </Form>
+          ) : (
+            <Form compact submit="Set it up" testid="mfa-start" onSubmit={async () => setEnroll(await api<{ secret: string; qr: string }>("POST", "mfa/enroll"))}>
+              <p className="text-sm text-zinc-300">Off. Turn it on and signing in will also ask for a code from an app on your phone, so a stolen password alone won't get anyone in.</p>
+            </Form>
+          )}
+        </Section>
+
+        {mfa && <Section title="Backup codes">
           {codes ? <BackupCodes codes={codes} /> : (
             <Form compact submit="New backup codes" onSubmit={async () => { setCodes((await api<{ backupCodes: string[] }>("POST", "me/backup-codes", { code: codesCode })).backupCodes); void refresh(); }}>
               <p className="text-sm text-zinc-300">{list ? `${list.backupCodesLeft} left` : "…"}</p>
               <Input label="Code from your app" value={codesCode} onChange={setCodesCode} auto="one-time-code" mono />
             </Form>
           )}
-        </Section>
+        </Section>}
+        {!mfa && codes && <Section title="Backup codes"><BackupCodes codes={codes} /></Section>}
 
         <Section title="Signed in">
           <ul className="space-y-1.5" data-testid="my-sessions">

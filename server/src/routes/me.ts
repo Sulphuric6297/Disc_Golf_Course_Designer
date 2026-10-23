@@ -24,11 +24,12 @@ export async function meRoutes(app: FastifyInstance, { sql, cfg }: Ctx) {
 
   app.post("/api/me/password", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async req => {
     const a = need(req);
-    const b = parse(z.object({ current: z.string().max(256), next: password, code }), req.body);
-    const [u] = await sql`select password_hash from users where id = ${a.user.id}`;
+    const b = parse(z.object({ current: z.string().max(256), next: password, code: code.optional() }), req.body);
+    const [u] = await sql`select password_hash, totp_enabled from users where id = ${a.user.id}`;
     if (!(await verify(u.password_hash, b.current).catch(() => false))) throw new ApiError(400, "Wrong current password");
     if (b.next.toLowerCase().includes(a.user.username.toLowerCase())) throw new ApiError(400, "Password: don't use your username in it");
-    await checkCode(a.user.id, b.code);
+    // (a code from the app too, when 2FA is on)
+    if (u.totp_enabled) await checkCode(a.user.id, b.code ?? "");
     await sql`update users set password_hash = ${await hash(b.next)} where id = ${a.user.id}`;
     // (signed out everywhere else)
     await sql`delete from sessions where user_id = ${a.user.id} and id <> ${a.sessionId}`;
@@ -47,6 +48,22 @@ export async function meRoutes(app: FastifyInstance, { sql, cfg }: Ctx) {
     });
     await audit(sql, req, "mfa.backup-codes-renewed");
     return { backupCodes: codes };
+  });
+
+  // Turning 2FA off: a code from the app first (not when an admin requires it)
+  app.post("/api/me/mfa/off", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async req => {
+    const a = need(req);
+    const b = parse(z.object({ code }), req.body);
+    const [u] = await sql`select totp_enabled, mfa_required from users where id = ${a.user.id}`;
+    if (u.mfa_required) throw new ApiError(403, "Your admin requires two-factor sign-in for your account");
+    if (!u.totp_enabled) return { ok: true };
+    await checkCode(a.user.id, b.code);
+    await sql.begin(async tx => {
+      await tx`update users set totp_enabled = false, totp_secret = null, totp_last_step = 0 where id = ${a.user.id}`;
+      await tx`delete from backup_codes where user_id = ${a.user.id}`;
+    });
+    await audit(sql, req, "mfa.disabled");
+    return { ok: true };
   });
 
   app.get("/api/me/sessions", async req => {

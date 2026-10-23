@@ -4,7 +4,7 @@ import { Section, Segmented } from "../components/ui";
 import { api, linkFor, useAuth } from "./api";
 import { CopyButton, Dialog, Form, Input, when } from "./parts";
 
-interface Person { id: string; username: string; displayName: string; isAdmin: boolean; disabled: boolean; totpEnabled: boolean; locked: boolean; createdAt: string; lastSeenAt: string | null }
+interface Person { id: string; username: string; displayName: string; isAdmin: boolean; disabled: boolean; totpEnabled: boolean; mfaRequired?: boolean; locked: boolean; createdAt: string; lastSeenAt: string | null }
 interface Invite { id: string; kind: "invite" | "reset"; isAdmin: boolean; note: string; username: string | null; expiresAt: string }
 interface Entry { id: number; at: string; action: string; detail: Record<string, unknown>; ip: string | null; username: string | null }
 
@@ -76,13 +76,14 @@ export function PeopleDialog({ onClose }: { onClose: () => void }) {
                   <div className="flex-1 min-w-[180px]">
                     <div className="text-zinc-100 font-medium">{p.displayName} <span className="text-zinc-500 font-normal">{p.username}</span></div>
                     <div className="text-[12px] text-zinc-500">
-                      {[p.isAdmin ? "Admin" : "Member", p.disabled && "Disabled", p.locked && "Resting after wrong passwords", !p.totpEnabled && "2FA not set up", `seen ${when(p.lastSeenAt)}`].filter(Boolean).join(" · ")}
+                      {[p.isAdmin ? "Admin" : "Member", p.disabled && "Disabled", p.locked && "Resting after wrong passwords", p.totpEnabled ? "2FA on" : "2FA off", p.mfaRequired && "2FA required", `seen ${when(p.lastSeenAt)}`].filter(Boolean).join(" · ")}
                     </div>
                   </div>
                   {p.id !== me.id && (
                     <div className="flex gap-3 text-xs">
                       <button className="text-zinc-300 hover:text-zinc-50" onClick={() => void act(() => api("POST", `admin/users/${p.id}`, { isAdmin: !p.isAdmin }))}>{p.isAdmin ? "Remove admin" : "Make admin"}</button>
                       <button className="text-zinc-300 hover:text-zinc-50" onClick={() => void act(() => api("POST", `admin/users/${p.id}`, { disabled: !p.disabled }))}>{p.disabled ? "Enable" : "Disable"}</button>
+                      <button className="text-zinc-300 hover:text-zinc-50" title={p.mfaRequired ? "Let them choose whether to use two-factor sign-in" : "Make them set up two-factor sign-in the next time they sign in"} onClick={() => void act(() => api("POST", `admin/users/${p.id}`, { mfaRequired: !p.mfaRequired }))} data-testid="require-mfa">{p.mfaRequired ? "Make 2FA optional" : "Require 2FA"}</button>
                       <button className="text-zinc-300 hover:text-zinc-50" onClick={() => void reset(p)}>Reset</button>
                       <button className="text-red-300 hover:text-red-200" onClick={() => { if (confirm(`Remove ${p.username}'s account?`)) void act(() => api("DELETE", `admin/users/${p.id}`)); }}>Remove</button>
                     </div>

@@ -22,6 +22,13 @@ export function need(req: FastifyRequest, stage: Stage = "full"): Auth {
   return a;
 }
 
+/** Signed in, or part way: setting up 2FA (it can be set up from a full session too). */
+export function needSetup(req: FastifyRequest): Auth {
+  const a = req.auth;
+  if (!a || (a.stage !== "full" && a.stage !== "mfa-setup")) throw new ApiError(401, "Sign in first");
+  return a;
+}
+
 export function needAdmin(req: FastifyRequest): Auth {
   const a = need(req);
   if (!a.user.isAdmin) throw new ApiError(403, "Admins only");
