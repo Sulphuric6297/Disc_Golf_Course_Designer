@@ -1,7 +1,12 @@
 // The first page after signing in: your courses and the ones shared with you, each with a small
-// map of its holes, to open with one click; a new course; search.
+// map of its holes, to open with one click; a new course; search. Beside them: what's waiting on
+// you (drafts, changes to review), Getting started, the help topics that matter most, and a tip.
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Eye, Loader2, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
+import { ArrowLeft, BookOpen, Eye, Lightbulb, ListChecks, Loader2, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
+import { TOPICS } from "../lib/guide";
+import { HelpGuide } from "../components/help/HelpGuide";
+import { openGettingStarted, useStart } from "../components/GettingStarted";
+import { useTouch } from "../components/useLayout";
 import { fmtDist } from "../lib/units";
 import { useCourse } from "../state/course";
 import { useAuth } from "./api";
@@ -10,6 +15,20 @@ import { AccountMenu } from "./AccountMenu";
 import { Logo } from "./parts";
 import { Woods } from "../components/Woods";
 import { Loading } from "../components/ui";
+
+/** The help topics most worth a look, in the order you'd need them. */
+const LEARN = ["first-course", "find-site", "tees-pins", "ground", "tee-here", "map-style", "print"];
+
+/** Tips, one at a time (a different one each visit). */
+const TIPS = [
+  "Press Ctrl+K and type what you're after, like \"tee sign\" or \"fairway width\". It finds any setting and takes you right to it.",
+  "On a phone, hold your finger on open ground. You get a menu right there: a tee here, a pin here, bend the hole here, or measure from here.",
+  "The Ground tool (G) paints the terrain. Raise a mound, flatten a tee pad, or smooth out a bumpy bit of survey data.",
+  "Turn your location on and walk the course. Tee here and Basket here put them right where you're standing, which beats guessing from a photo.",
+  "Pick a tree and pinch it with two fingers to make it bigger or smaller. Twist to turn tees and mandos the same way.",
+  "One hole can have several tees for different skill levels. Several holes can also finish at the same basket. The hole's panel has a button for each.",
+  "The painted map styles repaint as you change the course, so you can design straight on the printed map's look."
+];
 
 const ago = (t: number) => {
   const s = Math.max(0, (Date.now() - t) / 1000);
@@ -141,8 +160,42 @@ export function Home() {
     try { await newServerCourse(); showHome(false); } finally { setOpening(null); }
   };
 
+  // What's waiting on you: changes sent for your OK, and drafts of your own not published yet
+  const waiting = (list ?? []).filter(c => c.toReview > 0 || c.hasDraft);
+  const [help, setHelp] = useState<false | { topic?: string }>(false);
+  const touch = useTouch();
+  const start = useStart();
+  const startDone = [start.seen3d, start.checks, start.map, start.export].filter(Boolean).length + ((list ?? []).some(c => c.role === "owner") ? 1 : 0);
+  const [tip] = useState(() => TIPS[Math.floor(Math.random() * TIPS.length)]);
+  const learn = LEARN.map(id => TOPICS.find(t => t.id === id)).filter(Boolean) as typeof TOPICS;
+  /** Getting started: in the newest course (or a new one), its list open. */
+  const startTour = () => { openGettingStarted(); const c = mine[0] ?? shown[0]; void (c ? open(c.id) : fresh()); };
+  const side = (
+    <aside className="flex flex-col gap-4" data-testid="home-side">
+      <div className="glass rounded-[22px] p-4" data-testid="home-start">
+        <div className="flex items-center gap-2 text-[14px] font-bold text-zinc-50"><ListChecks size={17} className="text-orange-300" />Getting started</div>
+        <p className="text-[13px] text-zinc-400 mt-1.5 leading-snug">A short list of the main things to do, from finding your park to printing tee signs. It ticks itself off as you go, and Show me points at each one.</p>
+        <div className="mt-3 h-1 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-orange-300" style={{ width: `${(startDone / 7) * 100}%` }} /></div>
+        <button className="mt-3 w-full rounded-full px-3 py-2 text-[13px] font-semibold bg-white/[0.1] hover:bg-white/[0.16] text-zinc-50" onClick={startTour} disabled={!!opening} data-testid="home-start-open">{startDone ? "Pick up where you left off" : "Show me around"}</button>
+      </div>
+      <div className="glass rounded-[22px] p-4" data-testid="home-learn">
+        <div className="flex items-center gap-2 text-[14px] font-bold text-zinc-50"><BookOpen size={16} className="text-orange-300" />Learn the app</div>
+        <ul className="mt-2 -mx-1.5">
+          {learn.map(t => (
+            <li key={t.id}><button className="w-full text-left rounded-[12px] px-1.5 py-1.5 hover:bg-white/[0.07] text-[13px] text-zinc-200" onClick={() => setHelp({ topic: t.id })} data-testid={`home-learn-${t.id}`}>{t.title}</button></li>
+          ))}
+        </ul>
+        <button className="mt-1 text-[12.5px] font-semibold text-orange-300 hover:text-orange-200" onClick={() => setHelp({})} data-testid="home-help">The whole help guide ›</button>
+      </div>
+      <div className="glass rounded-[22px] p-4" data-testid="home-tip">
+        <div className="flex items-center gap-2 text-[13px] font-bold text-zinc-50"><Lightbulb size={15} className="text-amber-300" />Tip</div>
+        <p className="text-[13px] text-zinc-300 mt-1.5 leading-snug">{tip}</p>
+      </div>
+    </aside>
+  );
+
   const grid = (cs: ServerPlan[]) => (
-    <ul className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <ul className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
       {cs.map((c, i) => <Card key={c.id} c={c} big={i === 0 && cs.length > 2} opening={opening === c.id} onOpen={() => void open(c.id)} onRemove={() => { setNotice(""); void removeServerCourse(c.id, c).then(refresh, e => setNotice(`Couldn't remove "${c.name}": ${e instanceof Error ? e.message : "try again"}.`)); }} />)}
     </ul>
   );
@@ -166,7 +219,7 @@ export function Home() {
       </header>
 
       <main className="relative max-w-6xl mx-auto px-4 py-6 sm:py-8">
-        <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-6 lg:pr-[324px]">
           <div className="flex-1">
             <h1 className="text-3xl sm:text-[34px] font-bold tracking-[-0.025em] text-zinc-50">Courses</h1>
             <p className="text-zinc-400 text-sm mt-1">Hi {user.displayName.split(" ")[0]}.</p>
@@ -194,6 +247,24 @@ export function Home() {
             <button className="px-3 py-1.5 rounded-full bg-white/[0.1] hover:bg-white/[0.16] font-semibold" onClick={() => void refresh()}>Try again</button>
           </div>
         )}
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
+        <div className="min-w-0">
+        {waiting.length > 0 && (
+          <section className="mb-6" data-testid="home-waiting">
+            <h2 className="text-[15px] font-semibold text-zinc-200 mb-2.5">Needs you</h2>
+            <ul className="flex flex-col gap-2">
+              {waiting.slice(0, 4).map(c => (
+                <li key={c.id}>
+                  <button className="glass w-full rounded-[16px] px-4 py-2.5 flex items-center gap-3 text-left hover:ring-1 hover:ring-white/20" onClick={() => void open(c.id)} disabled={!!opening}>
+                    <span className="flex-1 min-w-0"><span className="block text-[14px] font-semibold text-zinc-50 truncate">{c.name}</span>
+                      <span className="block text-[12.5px] text-zinc-400">{c.toReview > 0 ? `${c.toReview} change${c.toReview === 1 ? "" : "s"} sent for your OK` : "Your draft isn't published yet"}</span></span>
+                    {opening === c.id ? <Loader2 size={16} className="animate-spin text-zinc-400" /> : <span className="text-[13px] font-semibold text-orange-300">Open</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         {list === null ? <Loading label="Loading your courses…" className="h-40" /> : list.length === 0 && failed ? null : list.length === 0 ? (
           <div className="glass text-center py-20 rounded-[24px]">
             <Logo size={48} />
@@ -213,7 +284,11 @@ export function Home() {
             </section>
           </>
         )}
+        </div>
+        {side}
+        </div>
       </main>
+      {help && <HelpGuide onClose={() => setHelp(false)} topic={help.topic} touch={touch} />}
     </div>
   );
 }
