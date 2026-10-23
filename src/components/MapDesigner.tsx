@@ -408,6 +408,23 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     }
     if (svgHost.current) fitTexts(svgHost.current);
   };
+  // A finger on the picked piece (or its corners) moves it, never the page under it: the browser
+  // is told not to scroll before it starts to (a style saying so isn't heard on a drawing's shapes)
+  useEffect(() => {
+    const el = pageEl.current;
+    if (!el || !editing) return;
+    const onStart = (ev: TouchEvent) => {
+      const id = useEditor.getState().designSel;
+      if (!id || ev.touches.length > 1) return;
+      const tg = ev.target as Element;
+      if (tg.closest?.("[data-corner]")) { ev.preventDefault(); return; }
+      const g = id.startsWith("label:") ? tg.closest?.("[data-label]") : tg.closest?.("[data-el]");
+      const under = g ? (id.startsWith("label:") ? `label:${g.getAttribute("data-label")}` : g.getAttribute("data-el")) : null;
+      if (under === id) ev.preventDefault();
+    };
+    el.addEventListener("touchstart", onStart, { passive: false });
+    return () => el.removeEventListener("touchstart", onStart);
+  }, [editing, page]);
   // A pinch on the picked piece (a phone) sizes it; anywhere else it zooms the page
   const pieceRef = useRef({ designSel, t, page });
   pieceRef.current = { designSel, t, page };
@@ -556,7 +573,12 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       {/* (A phone: the zoom buttons float over the page, in the thumb's reach; the picked piece's
           toolbar takes their place along the bottom) */}
       {compact && !designSel && <div className="glass absolute right-2 bottom-2 z-10 rounded-[22px] p-0.5">{zoomGroup}</div>}
-      {compact && toolbar && <div className="absolute inset-x-2 bottom-2 z-30 flex justify-center">{toolbar}</div>}
+      {compact && toolbar && (
+        <div className="absolute inset-x-2 bottom-2 z-30 flex flex-col items-center gap-1">
+          <div className="pointer-events-none rounded-full bg-black/55 px-2.5 py-0.5 text-[11.5px] text-zinc-200" data-testid="phone-hint">Drag it to move · pinch it to size</div>
+          {toolbar}
+        </div>
+      )}
       <div ref={box} className={`flex-1 overflow-auto ${compact ? "dg-scroll" : ""} cursor-grab`} data-testid="design-scroll" onPointerDown={onBoxDown} onPointerMove={onBoxMove} onPointerUp={onBoxUp} onPointerCancel={onBoxUp}>
         {/* (as wide as the page when zoomed in past the window, so all of it scrolls into view) */}
         <div className={`w-max min-w-full min-h-full flex items-center justify-center ${compact ? "p-2.5" : "p-6"}`} style={compact && designSel ? { paddingBottom: 72 } : undefined}>
