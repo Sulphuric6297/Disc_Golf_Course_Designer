@@ -1,7 +1,7 @@
 // The side panel follows the steps: what to do now, and the lists for it. The map stays the one
 // canvas; the steps never lock anything.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Link2, Info, X, ClipboardCheck, Download, Eye, EyeOff, MapPinned, Palette, Plus, Route, Trash2, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowRight, Link2, Info, X, ClipboardCheck, Download, Eye, EyeOff, MapPinned, Palette, Plus, Route, Trash2, Users, type LucideIcon } from "lucide-react";
 import { TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
 import { activeLayout, holeBaskets, holeTees } from "../lib/course";
 import { courseIssues, courseStats, courseTotals, levelsOnCourse, openIssues, playsOf, swapped, type SafetyIssue } from "../lib/holeStats";
@@ -19,6 +19,7 @@ import { Button, Facts, Field, HelpLink, Section, Segmented, Slider, TextInput, 
 import { DesignPanel } from "./DesignPanel";
 import { ExportPanel } from "./ExportPanel";
 import { useTouch } from "./useLayout";
+import { LockedRow } from "./DemoNote";
 import { SERVER } from "../auth/api";
 import { draftHoles } from "../auth/courses";
 import { NearbyCourses, NearbySafety } from "../auth/Nearby";
@@ -172,7 +173,11 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
         </Field>
       </Section>
       <BroughtIn />
-      {SERVER && <NearbyCourses />}
+      {SERVER ? <NearbyCourses /> : (
+        <Section title="Park" testid="nearby">
+          <div className="rounded-[16px] bg-white/[0.06] overflow-hidden"><LockedRow id="park" icon={<Users size={16} />} label="Other courses in this park" sub="Shown on this map, with a warning when holes get too close" /></div>
+        </Section>
+      )}
       <NextButton step="site" />
     </>
   );

@@ -2,7 +2,7 @@
 // each setting a "Show me" away (the guide closes and the setting is opened and pointed at).
 import { openGettingStarted } from "../GettingStarted";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Box, Download, Keyboard, MapPin, Palette, Route, Search, Share2, Smartphone, X, ArrowRight } from "lucide-react";
+import { BookOpen, Box, Download, Keyboard, Lock, MapPin, Palette, Route, Search, Share2, Smartphone, X, ArrowRight } from "lucide-react";
 import { SECTIONS, TOPICS, type GuideSection, type Topic } from "../../lib/guide";
 import { SERVER } from "../../auth/api";
 import { showSetting } from "../showSetting";
@@ -37,13 +37,19 @@ export const GESTURES: [string, string][] = [
   ["Drag the panel", "Up for more, down for more map; tap its handle to step through"]
 ];
 
-/** The topics this app has (sharing only on a server; file saving only without one). */
-const shownTopics = TOPICS.filter(t => t.server === undefined || t.server === SERVER);
+/** The topics this app has (file saving only without a server). In the demo the server's topics
+ * stay, each saying it's locked here. */
+const shownTopics = TOPICS.filter(t => t.server !== false || !SERVER);
 
 function TopicCard({ t, onShow, lit }: { t: Topic; onShow: (t: Topic) => void; lit: boolean }) {
   return (
     <article id={`help-${t.id}`} className={`rounded-[18px] bg-white/[0.05] p-4 ${lit ? "dg-found" : ""}`} data-testid="help-topic">
       <h3 className="text-[15px] font-semibold text-zinc-50">{t.title}</h3>
+      {t.server && !SERVER && (
+        <p className="mt-1.5 flex items-start gap-1.5 rounded-[12px] bg-sky-500/10 px-2.5 py-1.5 text-[12.5px] leading-snug text-sky-100" data-testid="help-locked">
+          <Lock size={13} className="mt-0.5 shrink-0" />This one's locked in the public demo. Host HyzerLab yourself and it works.
+        </p>
+      )}
       {t.body.split("\n\n").map((p, i) => <p key={i} className="text-[13.5px] leading-relaxed text-zinc-300 mt-1.5">{p}</p>)}
       {t.steps && (
         <ol className="mt-2 space-y-1.5">

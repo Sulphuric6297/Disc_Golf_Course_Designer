@@ -36,6 +36,13 @@ import { HoleStrip, ItemStrip } from "./HoleStrip";
 import { GettingStarted, openGettingStarted } from "../GettingStarted";
 import { useGps } from "../../state/gps";
 import { accountActions, CourseChip } from "../../auth/AccountMenu";
+import { LOCKED, showLocked, type LockedId } from "../DemoNote";
+
+/** The phone menu's rows for what a server adds, in the demo: there, with a lock. */
+const demoActions = () => (["comments", "history", "courses", "share", "account", "demo"] as LockedId[]).map(id => {
+  const Icon = LOCKED[id].icon;
+  return { label: id === "demo" ? "About the demo" : `${LOCKED[id].title} (locked)`, icon: <Icon size={19} />, run: () => showLocked(id), testid: `menu-locked-${id}` };
+});
 import { ViewerPanelBody } from "../../auth/ViewerPanel";
 import { SERVER } from "../../auth/api";
 import { CoursePageButton, SITE_TOKEN } from "../../auth/PublicSite";
@@ -395,7 +402,7 @@ function AppMenu({ onClose, onHelp, onGoTo, onOpenFile }: { onClose: () => void;
     { label: "Open a course file…", icon: <FolderOpen size={19} />, run: onOpenFile },
     { label: "Save as a file", icon: <Save size={19} />, run: () => saveCourseFile() },
     { label: "Help guide", icon: <HelpCircle size={19} />, run: onHelp, testid: "menu-help" },
-    ...accountActions()
+    ...(SERVER ? accountActions() : demoActions())
   ];
   return (
     <>
