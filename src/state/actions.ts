@@ -451,6 +451,29 @@ export const pickLayout = (id: string) => {
   useEditor.getState().set({ teeLevel: layout.tee });
 };
 
+/** A tee of a color put on every finished hole that has none: back from the tee it plays now for
+ * a longer color (gold behind blue), ahead for a shorter one, 50 ft a step, along the line. One
+ * undo step; how many were added. */
+export const addLayoutTees = (level: TeeLevel) => {
+  const doc = getDoc();
+  const made: CourseItem[] = [];
+  for (const hole of doc.holes) {
+    const tees = holeTees(doc, hole.id);
+    if (!tees.length || tees.some(t => t.level === level)) continue;
+    const s = holeStats(doc, hole);
+    if (!s.complete || s.line.length < 2) continue;
+    const from = tees.find(t => t.id === s.teeId) ?? tees[0];
+    const next = s.line[1];
+    const len = Math.hypot(next.x - from.x, next.y - from.y) || 1;
+    const steps = TEE_ORDER.indexOf(from.level) - TEE_ORDER.indexOf(level);
+    // (never past the first turn or the basket: at most most of the way there)
+    const d = Math.max(-len * 0.6, Math.min(steps * 50, 400));
+    made.push(createTee(hole.id, { x: from.x - ((next.x - from.x) / len) * d, y: from.y - ((next.y - from.y) / len) * d }, level));
+  }
+  if (made.length) changeDoc(d => ({ items: [...d.items, ...made] }));
+  return made.length;
+};
+
 /** The tee a hole is played from in the current layout. */
 export const layoutTee = (holeId: string) => {
   const doc = getDoc();

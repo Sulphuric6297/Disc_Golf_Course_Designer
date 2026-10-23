@@ -6,7 +6,8 @@ import { TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
 import { activeLayout, holeTees } from "../lib/course";
 import { courseIssues, courseStats, courseTotals, levelsOnCourse, openIssues, playsOf, swapped, type SafetyIssue } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
-import { pickLayout, select, uncutTrees } from "../state/actions";
+import { addLayoutTees, pickLayout, select, uncutTrees } from "../state/actions";
+import { toast } from "../state/toast";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
 import { SHOW_EVENT } from "./showSetting";
 import type { Layout, PinPosition, TeeLevel } from "../types";
@@ -177,11 +178,30 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
   );
 }
 
+/** The layout picked, where its holes have no tee of its color: they play from another one (so the
+ * layout plays like it), and its tees can be added to them all at once. */
+function LayoutGaps({ compact = false }: { compact?: boolean }) {
+  const doc = useCourse(s => s.doc);
+  const layout = doc.layouts.length > 1 ? activeLayout(doc) : undefined;
+  if (!layout) return null;
+  const missing = doc.holes.filter(h => { const t = holeTees(doc, h.id); return t.length > 0 && !t.some(x => x.level === layout.tee); }).length;
+  if (!missing) return null;
+  const color = TEE_LEVELS[layout.tee].label.toLowerCase();
+  const all = missing === doc.holes.length;
+  return (
+    <div className={`text-[11.5px] leading-snug text-zinc-300 ${compact ? "px-1 pt-1.5" : "mt-1 mb-2"}`} data-testid="layout-gaps">
+      {all ? `None of the holes have a ${color} tee yet, so this layout plays the same as the others.` : `${missing} hole${missing === 1 ? " has" : "s have"} no ${color} tee, so ${missing === 1 ? "it plays" : "they play"} from the nearest one.`}
+      <button className="block mt-1 font-semibold text-orange-300 hover:text-orange-200" onClick={() => { const n = addLayoutTees(layout.tee); if (n) toast(`Added ${n} ${color} tee${n === 1 ? "" : "s"}. Drag them where you want them.`, "success", true); }} data-testid="layout-add-tees">Add {color} tees to {all ? "every hole" : missing === 1 ? "that hole" : "those holes"}</button>
+    </div>
+  );
+}
+
 /** The layouts to pick from (the one worked on: its tees and pins stand out on the map). */
 export function LayoutPicker({ compact = false }: { compact?: boolean }) {
   const doc = useCourse(s => s.doc);
   if (doc.layouts.length < 2) return null;
   return (
+    <>
     <div role="radiogroup" aria-label="Layout" data-testid="layout-picker" className={`flex flex-wrap gap-1 ${compact ? "" : "mb-2"}`}>
       {doc.layouts.map(l => {
         const on = l.id === doc.activeLayout;
@@ -195,6 +215,8 @@ export function LayoutPicker({ compact = false }: { compact?: boolean }) {
         );
       })}
     </div>
+    <LayoutGaps compact={compact} />
+    </>
   );
 }
 

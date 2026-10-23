@@ -224,7 +224,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "layouts", section: "design", title: "Layouts",
-    body: "A layout plays each hole from one tee color to one pin. Say Main from the blue tees to pin A, and Long from the gold tees to pin B. Add one with Edit layouts.\n\nWith more than one, pick the one you're working on at the top of the holes column. Its tees and pins stand out on the map, the other layouts' shrink to faint dots, and new tees take its color. The lengths, par, tee signs and scorecard all follow it. A hole with no tee in its color plays from the nearest one, and its panel offers to add one.",
+    body: "A layout is one way to play the course: which tee and which pin every hole uses. They only matter once your holes have more than one tee or pin. Say Main plays the blue tees to pin A, and Long plays the gold tees to pin B, so the same holes give you a shorter and a longer course. If every hole has just one tee, every layout plays the same and switching does nothing.\n\nAdd one with Edit layouts. If its tee color is missing, the holes column offers to add those tees for you, set back (or ahead) of the ones you have, and you drag them where you want.\n\nWith more than one, pick the one you're working on at the top of the holes column. Its tees and pins stand out on the map, the other layouts' shrink to faint dots, and new tees take its color. The lengths, par, tee signs and scorecard all follow it. A hole with no tee in its color plays from the nearest one, and its panel offers to add one.",
     words: "layout tees pins main red blue gold long short active switch which",
     path: "Design › totals › Edit layouts",
     where: { step: "design", open: "course", find: "course-more", text: "Edit layouts" }
