@@ -4611,19 +4611,26 @@ export class CourseView {
 
   // ------------------------------------------------------------------ the brush (ground, painting)
 
-  private brushRing: THREE.Object3D | null = null;
-  /** The brush's circle on the ground under the pointer (null: hidden). */
+  private brushRing: { obj: THREE.Object3D; r: number } | null = null;
+  /** The brush's circle on the ground under the pointer (null: hidden). Made once for a size and
+   * moved after (made again every move, its line's material went with it, and that's slow). */
   private showBrush(at: P | null, r: number) {
-    if (this.brushRing) { this.fx.remove(this.brushRing); disposeObjectDeep(this.brushRing); this.brushRing = null; }
-    if (at) {
-      const ring: P[] = [];
-      for (let i = 0; i <= 48; i++) ring.push({ x: at.x + Math.cos((i / 48) * Math.PI * 2) * r, y: at.y + Math.sin((i / 48) * Math.PI * 2) * r });
+    if (!at) {
+      if (this.brushRing?.obj.visible) { this.brushRing.obj.visible = false; this.invalidate(); }
+      return;
+    }
+    if (!this.brushRing || this.brushRing.r !== r) {
+      if (this.brushRing) { this.fx.remove(this.brushRing.obj); disposeObjectDeep(this.brushRing.obj); }
+      const ring: THREE.Vector3[] = [];
+      for (let i = 0; i <= 48; i++) ring.push(new THREE.Vector3(Math.cos((i / 48) * Math.PI * 2) * r, 0, Math.sin((i / 48) * Math.PI * 2) * r));
       const g = new THREE.Group();
-      g.add(this.fatLine(this.drapeLine(ring, LIFT + 0.4), "#1c1917", 4, { depthTest: false, order: 29, opacity: 0.45 }));
-      g.add(this.fatLine(this.drapeLine(ring, LIFT + 0.4), "#fafaf9", 2, { depthTest: false, order: 30, opacity: 0.95 }));
-      this.brushRing = g;
+      g.add(this.fatLine(ring, "#1c1917", 4, { depthTest: false, order: 29, opacity: 0.45 }));
+      g.add(this.fatLine(ring, "#fafaf9", 2, { depthTest: false, order: 30, opacity: 0.95 }));
+      this.brushRing = { obj: g, r };
       this.fx.add(g);
     }
+    this.brushRing.obj.position.set(at.x, this.h(at.x, at.y) + LIFT + 0.4, at.y);
+    this.brushRing.obj.visible = true;
     this.invalidate();
   }
 
@@ -5214,7 +5221,7 @@ export class CourseView {
       // (the brush's circle where it would paint)
       const painting = this.tool.mode === "sculpt" || (this.tool.mode === "draw-area" && this.tool.shape === "paint");
       if (painting) this.showBrush(g ? { x: g.x, y: g.z } : null, this.tool.brush?.size ?? 20);
-      else if (this.brushRing) this.showBrush(null, 0);
+      else if (this.brushRing?.obj.visible) this.showBrush(null, 0);
       if (this.tool.mode === "measure") {
         // (only over the site: a tilted view's horizon would stretch the line across the screen)
         const w = this.doc.course.canvas;
