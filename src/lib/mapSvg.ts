@@ -6,7 +6,7 @@
 import { latitudeOf, sunFromOf } from "./mapLook";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
-import { activeLayout, areaObEdges, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, obSides, sharedWalks, teeAim, walkRoutes } from "./course";
+import { activeLayout, areaObEdges, beyondSides, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, sharedWalks, teeAim, walkRoutes } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
 import { courseTotals, holeStats, isOb, playsOf, type HoleStats } from "./holeStats";
 import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, type CanopyGrid } from "./forest";
@@ -441,7 +441,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
         const piece = subPath(g.points, a, b);
         if (piece.length < 2) continue;
         if (pathLength(piece) > pathLength(longest)) longest = piece;
-        const sides = l.obBeyond ? obSides(piece, holeLines, 300, !obPicked(doc, l).length) : null;
+        const sides = l.obBeyond ? beyondSides(l, piece, holeLines, !obPicked(doc, l).length) : null;
         if (l.kind === "fence" || l.kind === "walk") {
           edge(pathD(piece), o);
           if (sides?.length === 1) ticks(piece, -sides[0], o);

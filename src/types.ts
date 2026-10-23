@@ -181,6 +181,9 @@ export interface LineItem extends BaseItem {
   ob?: boolean;
   /** Out of bounds beyond it too (the road and beyond): OB from its edge on the holes' side. */
   obBeyond?: boolean;
+  /** OB and beyond: the side that is out (1: right of the way it was drawn, -1: left); unset: the
+   * app's guess, away from the holes. */
+  obToward?: 1 | -1;
   /** The holes it is OB for (unset: every hole it belongs to). OB and beyond starts at its edge
    * on their side. */
   obHoles?: string[];

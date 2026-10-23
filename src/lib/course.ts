@@ -304,6 +304,18 @@ export const obSides = (piece: P[], holeLines: P[][], reach = 300, one = false):
   if (!sides.size) return [1, -1];
   return one ? [total[1] >= total[-1] ? 1 : -1] : [...sides];
 };
+/** OB and beyond: the side the holes are on (OB starts at the edge there and runs away from them),
+ * as chosen, or the app's guess. */
+export const beyondSides = (l: Pick<LineItem, "obToward">, piece: P[], holeLines: P[][], one = false): (1 | -1)[] =>
+  l.obToward ? [l.obToward === 1 ? -1 : 1] : obSides(piece, holeLines, 300, one);
+/** Which way a side of a line faces, roughly, by the compass (1: right of the way it was drawn). */
+export const sideCompass = (pts: P[], side: 1 | -1) => {
+  const a = pts[0], b = pts[pts.length - 1];
+  const dx = b.x - a.x, dy = b.y - a.y;
+  // (right of the way it runs, with y down the plan: turned +90°; north is up)
+  const rx = -dy * side, ry = dx * side;
+  return Math.abs(rx) > Math.abs(ry) ? (rx > 0 ? "east" : "west") : ry > 0 ? "south" : "north";
+};
 /** The hole running closest along a piece of line, if any is within `reach` ft. */
 export const closestHole = (piece: P[], holes: { id: string; line: P[] }[], reach = 300) => {
   let best: { id: string; w: number } | null = null;

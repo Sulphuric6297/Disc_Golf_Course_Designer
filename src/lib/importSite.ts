@@ -286,8 +286,11 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   // trees close together in one, each stand its own woods (OpenStreetMap's woods, drawn by hand
   // and often over a whole hillside, give way to them)
   let woods: AreaItem[];
-  // (a survey that saw hardly a tree, old and thin or bare of leaves: the photo's woods still count)
-  const thinSurvey = !!lidar && lidar.trees.length < Math.max(40, (width * height) / 40_000);
+  // (a survey that saw hardly a tree where the photo and the map show woods, old and thin or bare
+  // of leaves: the photo's woods still count; an open field with few trees is just that)
+  const woodsSeen = [...mappedAs("woods"), ...found.woods].reduce((t, a) => t + Math.abs(polygonArea(a.points)), 0);
+  const expected = found.trees.length + woodsSeen / 1500;
+  const thinSurvey = !!lidar && lidar.trees.length < Math.max(40, (width * height) / 40_000) && expected >= 60 && expected > 4 * lidar.trees.length;
   if (lidar?.trees.length && !thinSurvey) {
     const { w: gw, h: gh, cell, stands } = treeStands(lidar.trees.map(t => ({ x: t[0], y: t[1], r: t[3] })), width, height);
     woods = stands.map(s => ({ ...createArea("woods", outlineToPlan(s.outline, gw, gh, gw * cell, gh * cell, 5)), importSource: "lidar" as const }) as AreaItem).filter(a => a.points.length >= 3);

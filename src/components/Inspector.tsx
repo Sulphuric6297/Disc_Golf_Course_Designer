@@ -4,7 +4,7 @@ import { BRUSH_SECTION } from "../lib/view";
 import { useEffect, useMemo, useState } from "react";
 import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X, Plus } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
-import { areaPath, areaRing, autoWalks, byNumber, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, obPicked, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
+import { areaPath, areaRing, autoWalks, byNumber, obFor, obSides, sideCompass, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, obPicked, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
@@ -408,7 +408,7 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
     if (line && v === "beyond") return markObBeyond(item.id);
     updateItem(item.id, {
       ob: v === "edge" ? true : v === "no" ? (wet ? false : undefined) : undefined,
-      ...(line ? { obBeyond: undefined, ...(v === "edge" ? {} : { obStretches: undefined, obHoles: undefined }) } : v === "edge" ? {} : { obStretches: undefined })
+      ...(line ? { obBeyond: undefined, obToward: undefined, ...(v === "edge" ? {} : { obStretches: undefined, obHoles: undefined }) } : v === "edge" ? {} : { obStretches: undefined })
     } as Partial<CourseItem>);
   };
   // (a line along its length, an area round its edge)
@@ -423,6 +423,19 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
       <Field label="Out of bounds">
         <Segmented label="Out of bounds" value={value} onChange={pick} options={options} />
       </Field>
+      {line?.obBeyond && item.ob === true && (() => {
+        // Which side is out: the app's guess (away from the holes beside it), or either side
+        const drawn = linePath(line);
+        const lines = courseStats(doc).filter(st => st.complete && obFor(doc, line, st.holeId)).map(st => st.line);
+        const guess = obSides(drawn, lines, 300, true)[0] === 1 ? -1 : 1;
+        const name = (s: 1 | -1) => `${sideCompass(drawn, s)[0].toUpperCase()}${sideCompass(drawn, s).slice(1)} side`;
+        return (
+          <Field label="Out of bounds to the">
+            <Segmented label="OB side" value={line.obToward ?? 0} onChange={v => updateItem(item.id, { obToward: v === 0 ? undefined : v } as Partial<CourseItem>)}
+              options={[{ value: 0, label: `Auto (${sideCompass(drawn, guess)})` }, { value: 1, label: name(1) }, { value: -1, label: name(-1) }]} />
+          </Field>
+        );
+      })()}
       {item.ob === true && (
         <Field label={line ? "OB along" : "OB along its edge"}>
           <div className="flex flex-col gap-1.5" data-testid="ob-stretches">

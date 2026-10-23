@@ -697,8 +697,9 @@ test("any area's edge OB: all round, or a stretch traced the long way round", as
   await expect(page.getByTestId("ob-stretches")).toContainText("All the way round");
   // Only a stretch: from the top's middle, round by the right, the bottom and the left, to near the top-left corner
   await page.getByTestId("ob-mark-stretch").click();
-  await clickPlan(page, 450, 300);
-  for (const [x, y] of [[560, 300], [600, 400], [600, 520], [520, 600], [400, 600], [300, 560], [300, 420], [300, 320], [360, 300]]) {
+  // (not at the edge's middle: that's the handle that adds a corner)
+  await clickPlan(page, 420, 300);
+  for (const [x, y] of [[520, 300], [560, 300], [600, 400], [600, 520], [520, 600], [400, 600], [300, 560], [300, 420], [300, 320], [360, 300]]) {
     const p = await screenOf(page, x, y);
     await page.mouse.move(p.x, p.y, { steps: 3 });
     await page.waitForTimeout(40);
@@ -724,4 +725,25 @@ test("a building drawn over trees: the trees standing in it go, one undo step", 
   // (a dropdown's list reads light on dark)
   const bg = await page.evaluate(() => { const o = document.createElement("option"); const s = document.createElement("select"); s.appendChild(o); document.body.appendChild(s); const c = getComputedStyle(o).backgroundColor; s.remove(); return c; });
   expect(bg).toBe("rgb(29, 38, 33)");
+});
+
+test("OB and beyond: the app's side, or either side chosen (named by the compass)", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 500 }, { x: 800, y: 500 });
+  await page.keyboard.press("Escape");
+  const id = await page.evaluate(() => {
+    (window as any).__dgEditor().set({ lineKind: "road" });
+    (window as any).__dgActions.addDrawn("line", [{ x: 150, y: 600 }, { x: 950, y: 600 }]);
+    (window as any).__dgEditor().set({ tool: "select" });
+    return (window as any).__dgEditor().selectedId;
+  });
+  const road = () => course(page).then(c => c.items.find((i: any) => i.id === id));
+  await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "OB and beyond" }).click();
+  // (the hole is north of the road: OB runs south, away from it)
+  const side = page.getByRole("radiogroup", { name: "OB side" });
+  await expect(side.getByRole("radio", { name: "Auto (south)" })).toHaveAttribute("aria-checked", "true");
+  await side.getByRole("radio", { name: "North side" }).click();
+  await expect.poll(async () => (await road()).obToward).toBe(-1);
+  await side.getByRole("radio", { name: /Auto/ }).click();
+  await expect.poll(async () => (await road()).obToward).toBeUndefined();
 });

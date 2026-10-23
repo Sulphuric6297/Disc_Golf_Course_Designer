@@ -14,6 +14,12 @@ const FT = 3.28084;
 // middle, height and crown radius (m), a conifer
 const TREES = [[30, 20, 18, 4.5, 0], [-40, -10, 25, 2.6, 1], [60, -70, 22, 5, 0], ...[-60, -40, -20, 0, 20].map(x => [x, -40, 16, 3.5, 0])];
 const W = 1200, H = 1000;
+/** The survey the app picks over the test site: the newest in the index. */
+const NEWEST = (() => {
+  const index = JSON.parse(readFileSync(new URL("../../public/lidar-index.json", import.meta.url), "utf8")) as { surveys: [string, number, number, number, number][] };
+  const over = index.surveys.filter(([, w, s, e, n]) => w <= SITE.lon && e >= SITE.lon && s <= SITE.lat && n >= SITE.lat).map(x => surveyYear(x[0])).sort((a, b) => b - a);
+  return `USGS LiDAR ${over[0]}`;
+})();
 const ref = { ...getGeoBounds({ lat: SITE.lat, lon: SITE.lon, label: "" }, W, H), width: W, height: H };
 const plan = (e: number, n: number) => ({ x: W / 2 + e * FT, y: H / 2 - n * FT });
 
@@ -74,9 +80,10 @@ test("trees measured from the air on import: cut down on a fairway, a stump to b
   await withLidar(page);
   await importSite(page);
   const doc = await course(page);
-  expect(doc.lidar.source).toBe("USGS LiDAR 2019");
+  // (the newest survey over the site, read by its year or its work code: the made-up one is served for it)
+  expect(doc.lidar.source).toBe(NEWEST);
   expect(doc.lidar.trees).toHaveLength(TREES.length);
-  expect(doc.site.elevationSource).toBe("USGS LiDAR 2019");
+  expect(doc.site.elevationSource).toBe(NEWEST);
   // (none guessed from the photo as well)
   expect(doc.items.filter((i: any) => i.type === "tree" || (i.type === "area" && i.kind === "woods"))).toHaveLength(0);
   const W2 = doc.canvas.width, H2 = doc.canvas.height;
@@ -148,7 +155,7 @@ test("an existing course measured from the air from the Site step (Undo takes it
   await page.getByRole("button", { name: /^1\s*Site$/ }).click();
   await page.getByTestId("measure-lidar").click();
   await expect.poll(async () => (await course(page)).lidar?.trees.length ?? 0, { timeout: 60_000 }).toBe(TREES.length);
-  await expect(page.getByTestId("lidar-info")).toContainText(`${TREES.length} trees measured from the air · USGS LiDAR 2019`);
+  await expect(page.getByTestId("lidar-info")).toContainText(`${TREES.length} trees measured from the air · ${NEWEST}`);
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).lidar).toBeUndefined();
 });

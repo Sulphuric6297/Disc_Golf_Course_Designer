@@ -70,12 +70,15 @@ test.describe("phone", () => {
     await page.getByTestId("hole-strip").getByRole("radio", { name: "4" }).tap();
     await expect.poll(async () => (await course(page)).holes[0].par).toBe(4);
     // Holding open ground beside the hole: a tee there, a bend
-    const g = await screenOf(page, 450, 560);
+    // (open ground a little above the hole on screen, clear of its fairway)
+    const m = await screenOf(page, 450, 500);
+    const g = { x: m.x, y: m.y - 70 };
     await longPress(page, g);
     await expect(page.getByTestId("map-menu-here")).toBeVisible();
     await page.getByRole("menuitem", { name: "Bend the hole here" }).tap();
     await expect.poll(async () => (await course(page)).holes[0].doglegs.length).toBe(1);
-    await longPress(page, await screenOf(page, 300, 560));
+    const m2 = await screenOf(page, 330, 500);
+    await longPress(page, { x: m2.x, y: m2.y - 70 });
     await page.getByRole("menuitem", { name: "Add a tee here" }).tap();
     await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "tee").length).toBe(2);
   });
@@ -405,6 +408,9 @@ test.describe("phone", () => {
     // At any zoom, no square on the tee, the basket or the hole's distance label; zoomed in on
     // the hole, all four are there
     const basket = (await course(page)).items.find((i: any) => i.type === "basket");
+    // (the sheet raised to half height, the map's room as it was measured for)
+    await page.getByTestId("sheet-handle").tap();
+    await settle(page);
     for (const zoom of [0.5, 0.7, 1, 1.4, 2.5]) {
       // (At once, not animated: the squares and the label are checked where they come to rest)
       await page.evaluate(z => { const v = (window as any).__dgView; v.fitHole((window as any).__dgCourse().holes[0].id, false); void v.controls.dollyTo(v.controls.distance / z, false); }, zoom);
