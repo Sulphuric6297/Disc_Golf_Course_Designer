@@ -159,7 +159,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
             options={[{ value: 0, label: `Auto (${s.parAuto})` }, ...[2, 3, 4, 5, 6].map(p => ({ value: p, label: String(p) }))]}
           />
         </Field>
-        <Field label="Foliage">
+        <Field label="Foliage" hint="Heavy foliage makes it play longer: its plays-like length and par.">
           <Segmented label="Foliage" value={hole.foliage ?? "auto"} onChange={v => set({ foliage: v === "auto" ? undefined : (v as "light" | "heavy") })} options={[{ value: "auto", label: `Auto (${s.foliage})` }, { value: "light", label: "Light" }, { value: "heavy", label: "Heavy" }]} />
         </Field>
         <Toggle label="Draw the fairway" checked={hole.fairway} onChange={v => set({ fairway: v })} />
@@ -191,7 +191,6 @@ function HoleInspector({ hole }: { hole: Hole }) {
       {walkNext && (
         <Section title={`Walk to hole ${nextNo}`} testid="hole-walk">
           <Slider label="Width" min={1} max={20} step={0.5} value={hole.walkWidth ?? doc.style.walkWidth ?? 6} onChange={v => set({ walkWidth: v })} format={v => fmtDist(v, u)} />
-          <Slider label="All walks" min={1} max={20} step={0.5} value={doc.style.walkWidth ?? 6} onChange={v => setAllWalks(v, false)} onDone={() => useCourse.getState().commit()} format={v => fmtDist(v, u)} />
           <SurfacePick value={hole.walkSurface} onChange={v => set({ walkSurface: v })} />
           <div className="flex flex-wrap gap-1.5">
             <Button small onClick={() => editWalks(hole.id)} testid="edit-walk">Edit the walk to hole {nextNo}</Button>
@@ -341,7 +340,7 @@ function WoodsMix({ item }: { item: AreaItem }) {
       <Slider label="Density" min={20} max={250} step={10} value={Math.round((item.density ?? 1) * 100)} onChange={v => set({ density: v / 100 })} onDone={done} format={v => (v === 100 ? "Usual" : v < 100 ? `Sparser (${v}%)` : `Denser (${v}%)`)} />
       <Slider label="Shortest trees" min={8} max={100} value={Math.round(lo)} onChange={v => set({ heights: [Math.min(v, hi - 2), hi] })} onDone={done} format={v => fmtDist(v, u)} />
       <Slider label="Tallest trees" min={12} max={130} value={Math.round(hi)} onChange={v => set({ heights: [lo, Math.max(v, lo + 2)] })} onDone={done} format={v => fmtDist(v, u)} />
-      {own && <Button small tone="ghost" onClick={() => set({ pines: undefined, bushes: undefined, density: undefined, heights: undefined }, true)} testid="woods-usual"><RotateCcw size={13} /> The landscape's usual</Button>}
+      {own && <Button small tone="ghost" onClick={() => set({ pines: undefined, bushes: undefined, density: undefined, heights: undefined }, true)} testid="woods-usual" title="The landscape's own mix again"><RotateCcw size={13} /> Reset</Button>}
       <div className="text-[11px] text-zinc-500 mt-1">Any of its trees: click it to change just that one.</div>
     </div>
   );
@@ -359,9 +358,9 @@ function WoodsTrees({ item }: { item: AreaItem }) {
   const draw = () => useEditor.getState().set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", patchFor: item.id });
   return (
     <>
-      <Field label="Trees" hint={mode === "custom" ? "The measured trees, plus drawn ones filling in the patches you draw." : mode === "none" ? "No trees in here." : mode === "drawn" ? "The app's own trees only." : "The measured trees, cleared where the holes play."}>
+      <Field label="Trees" hint={mode === "custom" ? "The measured trees, and generated ones filling the patches you draw." : mode === "none" ? "No trees in here." : mode === "drawn" ? "Generated trees only, not the measured ones." : "The measured trees, cleared where the holes play."}>
         <Segmented label="Trees" value={mode} onChange={v => updateItem(item.id, { trees: v === "measured" ? undefined : v } as Partial<CourseItem>)}
-          options={[{ value: "measured", label: "Measured" }, { value: "custom", label: "Custom" }, { value: "drawn", label: "Drawn" }, { value: "none", label: "None" }]} />
+          options={[{ value: "measured", label: "Measured" }, { value: "custom", label: "Filled in" }, { value: "drawn", label: "Generated" }, { value: "none", label: "None" }]} />
       </Field>
       {(mode === "drawn" || mode === "custom") && <WoodsMix item={item} />}
       {mode === "custom" && (
@@ -488,6 +487,11 @@ function ItemInspector({ item }: { item: CourseItem }) {
     </Field>
   );
   let body: JSX.Element | null = null;
+  // A length typed in the course's units (kept in feet)
+  const M = 3.28084;
+  const lenIn = (label: string, ft: number, min: number, max: number, onFt: (v: number) => void) => u === "m"
+    ? <NumberInput label={label} value={Math.round((ft / M) * 10) / 10} min={Math.round((min / M) * 10) / 10} max={Math.round((max / M) * 10) / 10} step={0.1} unit="m" onChange={v => onFt(Math.round(v * M * 10) / 10)} />
+    : <NumberInput label={label} value={ft} min={min} max={max} step={0.5} unit="ft" onChange={onFt} />;
   switch (item.type) {
     case "tee":
       body = (
@@ -496,8 +500,8 @@ function ItemInspector({ item }: { item: CourseItem }) {
             <Segmented label="Tee color" value={item.level} onChange={v => setTeeLevel(item.id, v)} options={TEE_ORDER.map(l => ({ value: l, label: TEE_LEVELS[l].label, title: `${TEE_LEVELS[l].skill} (${TEE_LEVELS[l].rating})` }))} />
           </Field>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Pad width"><NumberInput label="Pad width" value={item.padWidth} min={2} max={20} step={0.5} unit="ft" onChange={v => set({ padWidth: v })} /></Field>
-            <Field label="Pad length"><NumberInput label="Pad length" value={item.padLength} min={4} max={30} step={0.5} unit="ft" onChange={v => set({ padLength: v })} /></Field>
+            <Field label="Pad width">{lenIn("Pad width", item.padWidth, 2, 20, v => set({ padWidth: v }))}</Field>
+            <Field label="Pad length">{lenIn("Pad length", item.padLength, 4, 30, v => set({ padLength: v }))}</Field>
           </div>
           <Field label="Surface">
             <select aria-label="Tee surface" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.surface} onChange={e => set({ surface: e.target.value as TeeSurface })}>
@@ -515,7 +519,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
             <Segmented label="Pin position" value={item.position} onChange={v => set({ position: v })} options={PIN_POSITIONS.map(p => ({ value: p, label: p }))} />
           </Field>
           <Field label="Raised above the ground">
-            <NumberInput label="Raised" value={item.raised ?? 0} min={0} max={30} step={0.5} unit="ft" onChange={v => set({ raised: v || undefined })} />
+            {lenIn("Raised", item.raised ?? 0, 0, 30, v => set({ raised: v || undefined }))}
           </Field>
         </>
       );

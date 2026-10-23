@@ -225,8 +225,8 @@ test("the walk to the next tee becomes a line to reshape, in place of the automa
   await expect(page.getByTestId("edit-walk")).toHaveCount(0);
   await drag(page, await handleCenter(page, "corner", 1), await screenOf(page, 640, 560));
   await expect.poll(async () => (await course(page)).items.find((i: any) => i.kind === "walk").points[1].y).toBeLessThan(600);
-  // Nothing automatic left to edit in the Design step either
-  await page.getByRole("button", { name: "3 Map" }).click();
+  // Nothing automatic left to edit in the course's walks either
+  await page.getByTestId("course-totals-button").click();
   await expect(page.getByTestId("edit-walks")).toHaveCount(0);
   await page.keyboard.press("Control+z");
   await page.keyboard.press("Control+z");
@@ -353,16 +353,23 @@ test("one width for every walk to the next hole; a hole's own walk wider; all wa
   await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
   await addHole(page, { x: 800, y: 400 }, { x: 900, y: 700 });
   await page.keyboard.press("Escape");
+  // Every walk's width: the course's (Design, its totals)
+  const all = async (v: string) => {
+    if (!(await page.getByTestId("course-more").isVisible())) await page.getByTestId("course-totals-button").click();
+    await page.getByTestId("auto-walks").getByRole("slider", { name: "Walk width" }).fill(v);
+    await page.keyboard.press("Escape");
+  };
+  await all("12");
+  await expect.poll(async () => (await course(page)).style.walkWidth).toBe(12);
+  // One hole's own, in its panel
   await page.getByTestId("hole-row").first().click();
   const walk = page.getByTestId("hole-walk");
   await expect(walk).toBeVisible();
   await expect(walk).toContainText("Walk to hole 2");
-  await walk.getByRole("slider", { name: "All walks" }).fill("12");
-  await expect.poll(async () => (await course(page)).style.walkWidth).toBe(12);
   await walk.getByRole("slider", { name: "Width", exact: true }).fill("16");
   await expect.poll(async () => (await course(page)).holes[0].walkWidth).toBe(16);
   // All walks again: the hole's own width lets go
-  await walk.getByRole("slider", { name: "All walks" }).fill("8");
+  await all("8");
   await expect.poll(async () => (await course(page)).style.walkWidth).toBe(8);
   expect((await course(page)).holes[0].walkWidth).toBeUndefined();
 });

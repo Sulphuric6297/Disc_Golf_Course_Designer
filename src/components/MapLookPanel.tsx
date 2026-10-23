@@ -108,10 +108,14 @@ function PartColors({ p, s }: { p: LookPart; s: MapStyle }) {
   );
 }
 
+/** A part to show open the next time the panel opens (from the 3D view's light link). */
+let wanted: Part | null = null;
+export const openLookPart = (p: Part) => { wanted = p; };
+
 export function MapLookPanel() {
   const s = useCourse(c => c.doc.style);
   // (the trees open to start with: the part most changed)
-  const [open, setOpen] = useState<Part | null>("trees");
+  const [open, setOpen] = useState<Part | null>(() => { const w = wanted; wanted = null; return w ?? "trees"; });
   // (the part opened stays under the pointer while the one open before closes above it)
   const keep = useKeepInPlace();
   const theme = themeOf(s), parts = lookParts(s), lt = lightOf(s);
@@ -186,7 +190,7 @@ export function MapLookPanel() {
                         <WoodsOptions s={s} />
                         {painted && (
                           <>
-                            <LookSlider value={parts.trees.density} label="Density" min={0.4} max={1.6} step={0.05} format={pct} onDone={v => setPart("trees", { density: v })} />
+                            <LookSlider value={parts.trees.density} label="Tree spacing" min={0.4} max={1.6} step={0.05} format={x => `${x < 0.95 ? "Wider" : x > 1.05 ? "Closer" : "Usual"} · ${pct(x)}`} onDone={v => setPart("trees", { density: v })} />
                             <LookSlider value={parts.trees.size} label="Size" min={0.6} max={1.5} step={0.05} format={pct} onDone={v => setPart("trees", { size: v })} />
                             <LookSlider value={parts.trees.variety} label="Color variety" min={0} max={1} step={0.05} format={pct} onDone={v => setPart("trees", { variety: v })} />
                           </>
@@ -203,7 +207,7 @@ export function MapLookPanel() {
                     {p === "paths" && <PathOrder s={s} />}
                   </>
                 )}
-                {changed(p) && <button className="mt-2 text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => resetPart(p)}><RotateCcw size={12} /> Back to the style's own</button>}
+                {changed(p) && <button className="mt-2 text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => resetPart(p)} title="The map style's own again" data-testid="part-reset"><RotateCcw size={12} /> Reset</button>}
               </div>
             )}
           </div>

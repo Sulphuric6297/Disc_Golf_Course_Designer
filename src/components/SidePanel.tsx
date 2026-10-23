@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowRight, Info, X, ClipboardCheck, Download, Eye, EyeOff, MapPinned, Palette, Plus, Route, Trash2, type LucideIcon } from "lucide-react";
 import { TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
-import { activeLayout, holeTees } from "../lib/course";
+import { activeLayout, autoWalks, holeTees } from "../lib/course";
 import { courseIssues, courseStats, courseTotals, levelsOnCourse, openIssues, playsOf, swapped, type SafetyIssue } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
-import { select, uncutTrees } from "../state/actions";
+import { editWalks, select, uncutTrees } from "../state/actions";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
+import { setAllWalks } from "./Inspector";
 import type { Layout, PinPosition, TeeLevel } from "../types";
 import { refreshOsm } from "../state/osm";
 import { measureLidar } from "../state/lidar";
@@ -124,10 +125,10 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
               {ed.lidarBusy !== null
                 ? <span className="text-xs text-zinc-300" data-testid="lidar-busy">Measuring… {Math.round(ed.lidarBusy * 100)}%</span>
                 : <Button small onClick={() => void measureLidar()} testid="measure-lidar">{doc.lidar ? "Measure again" : "Measure trees and ground"}</Button>}
-              {doc.lidar && ed.lidarBusy === null && <Button small tone="danger" onClick={() => changeDoc(() => ({ lidar: undefined }))} testid="remove-lidar">Remove the trees</Button>}
+              {doc.lidar && ed.lidarBusy === null && <Button small tone="danger" onClick={() => changeDoc(() => ({ lidar: undefined }))} testid="remove-lidar">Remove the measured trees</Button>}
             </div>
             {doc.lidar && doc.lidar.trees.length > 0 && (
-              <details className="mt-2 group" data-testid="lidar-settings"><summary className="cursor-pointer list-none text-[12.5px] font-semibold text-zinc-200 flex items-center justify-between py-1">Tree settings <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
+              <details className="mt-2 group" data-testid="lidar-settings"><summary className="cursor-pointer list-none text-[12.5px] font-semibold text-zinc-200 flex items-center justify-between py-1">Measured trees <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
               <div className="mt-1" data-testid="lidar-min">
                 <Slider label="Smallest tree kept" min={0} max={60} step={1} value={doc.lidar.minHeight ?? 0}
                   format={v => (v ? `${fmtElev(v, doc.units).replace(/^[+−-]/, "")} and up` : "All")}
@@ -148,7 +149,7 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
                   // (trees drawn by hand standing on a measured one: the survey has them already)
                   const doubled = doc.items.filter(i => i.type === "tree" && doc.lidar!.trees.some(t => Math.hypot(t[0] - i.x, t[1] - i.y) < Math.max(6, t[3] * 0.5)));
                   return doubled.length > 0 ? (
-                    <div className="mt-2 text-[11px] text-zinc-400" data-testid="doubled-trees">{doubled.length} drawn tree{doubled.length === 1 ? "" : "s"} stand{doubled.length === 1 ? "s" : ""} on a measured one · <button className="text-orange-300 hover:text-orange-200" onClick={() => { const ids = new Set(doubled.map(i => i.id)); changeDoc(d => ({ items: d.items.filter(i => !ids.has(i.id)) })); }}>Remove the drawn ones</button></div>
+                    <div className="mt-2 text-[11px] text-zinc-400" data-testid="doubled-trees">{doubled.length} tree{doubled.length === 1 ? "" : "s"} placed by hand stand{doubled.length === 1 ? "s" : ""} on a measured one · <button className="text-orange-300 hover:text-orange-200" onClick={() => { const ids = new Set(doubled.map(i => i.id)); changeDoc(d => ({ items: d.items.filter(i => !ids.has(i.id)) })); }}>Remove those placed by hand</button></div>
                   ) : null;
                 })()}
                 <div className="mt-2" data-testid="lidar-clear">
@@ -266,6 +267,12 @@ export function HolesStep({ course = false }: { course?: boolean }) {
         {doc.holes.length > 1 && (
           <div className="mt-3" data-testid="auto-walks">
             <Toggle label="Walks to the next hole (automatic)" checked={doc.style.nextTee} onChange={v => changeDoc(d => ({ style: { ...d.style, nextTee: v } }))} />
+            {doc.style.nextTee && (
+              <>
+                <Slider label="Walk width" min={1} max={20} step={0.5} value={doc.style.walkWidth ?? 6} onChange={v => setAllWalks(v, false)} onDone={() => useCourse.getState().commit()} format={v => fmtDist(v, u)} />
+                {autoWalks(doc.items, stats, doc.holes).length > 0 && <Button small onClick={() => editWalks(null)} testid="edit-walks">Edit the walks</Button>}
+              </>
+            )}
           </div>
         )}
       </Section>

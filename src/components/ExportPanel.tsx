@@ -14,7 +14,6 @@ import { courseStats, holeStats } from "../lib/holeStats";
 import { holeLabel, holeNumber } from "../lib/course";
 import { VIDEO_SIZES, VIDEO_HOLD, type VideoResolution } from "../lib/video";
 import { autoSeconds, flightClock, flyoverOf, keySeconds } from "../lib/flight";
-import { FlyoverSettingsPanel } from "./FlyoverSettings";
 import { changeDoc, getDoc, useCourse } from "../state/course";
 import { download, fileName, saveCourseFile } from "../state/files";
 import { runExport, useExportJob, type JobControl } from "../state/exportJob";
@@ -57,9 +56,12 @@ export function ExportPanel() {
   const doc = useCourse(s => s.doc);
   const job = useExportJob(s => s.job);
   const busy = !!job;
-  const [signSize, setSignSize] = useState<SignSize>("18x12");
+  // (the course's sizes: the ones the Map step shows)
+  const signSize: SignSize = doc.style.signSize ?? "18x12";
+  const setSignSize = (v: SignSize) => setStyle({ signSize: v });
   const [pagePick, setPagePick] = useState<string>("all");
-  const [pageSize, setPageSize] = useState<HolePageSize>("letter");
+  const pageSize: HolePageSize = doc.style.holePageSize ?? "letter";
+  const setPageSize = (v: HolePageSize) => setStyle({ holePageSize: v });
   const [videoPick, setVideoPick] = useState<string>("all");
   const video = useVideoSettings();
   const geo = !!doc.site.bounds;
@@ -284,10 +286,8 @@ export function ExportPanel() {
             <Segmented label="Frame rate" value={video.fps} onChange={v => video.set({ fps: v })} options={[{ value: 30, label: "30 fps" }, { value: 60, label: "60 fps" }]} />
           </Field>
         </div>
-        <details className="mb-2 group" data-testid="video-camera">
-          <summary className="cursor-pointer text-xs font-semibold text-zinc-300 hover:text-zinc-50 py-1 select-none">Camera</summary>
-          <div className="pt-2"><FlyoverSettingsPanel /></div>
-        </details>
+        {/* (the camera is set where its flight is seen: a hole's view, Fly over, Camera) */}
+        <p className="text-[11.5px] text-zinc-500 mb-2" data-testid="video-camera-note">The camera, the ground and what shows on screen: from a tee, Camera.</p>
         {recording ? (
           <div className="mt-1" data-testid="video-progress-row">
             <div className="flex items-center justify-between text-xs text-zinc-300 mb-1">

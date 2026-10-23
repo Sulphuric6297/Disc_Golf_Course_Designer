@@ -58,7 +58,7 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { ho
       )}
       {hole && !only && (
         <div className="mb-2.5">
-          <Segmented label="Settings for" value={scope} onChange={setScope} options={[{ value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }, { value: "course", label: "All holes" }]} />
+          <Segmented label="Settings for" value={scope} onChange={setScope} options={[{ value: "course", label: "All holes" }, { value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }]} />
         </div>
       )}
       {!keyed && <Slider label="Height" min={10} max={250} step={5} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />}
@@ -84,7 +84,7 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { ho
           testid="flyover-apply"
           apply={ids => changeDoc(d => ({ holes: d.holes.map(h => (ids.includes(h.id) ? { ...h, flyover: forHole && hole!.flyover ? { ...hole!.flyover } : undefined } : h)) }))}
         />
-        {!forHole && <Button small onClick={() => changeDoc(() => ({ flyover: undefined }))} disabled={!doc.flyover} testid="flyover-defaults">Default flight</Button>}
+        {!forHole && <Button small onClick={() => changeDoc(() => ({ flyover: undefined }))} disabled={!doc.flyover} testid="flyover-defaults">Reset</Button>}
       </div>
     </div>
   );

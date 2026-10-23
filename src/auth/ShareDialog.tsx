@@ -131,7 +131,7 @@ function ViewerLook() {
   const set = (p: Partial<typeof pv>) => changeDoc(d => ({ style: { ...d.style, publicView: { ...d.style.publicView, ...p } } }));
   return (
     <div className="rounded-lg bg-white/[0.05] p-2.5 space-y-2" data-testid="public-view">
-      <div className="text-xs text-zinc-400">How the map and 3D look (every link)</div>
+      <div className="text-xs text-zinc-400">How the map and 3D look to visitors and to people who can only view (Update site after a change)</div>
       <Segmented label="Viewers' ground" value={pv.ground ?? "painted"} onChange={v => set({ ground: v as "painted" | "photo" })} options={[{ value: "painted", label: "Painted" }, { value: "photo", label: "Satellite photo" }]} />
       <div className="flex flex-wrap gap-x-4 gap-y-1">
         <label className="flex items-center gap-2 text-sm text-zinc-200"><input type="checkbox" checked={!!pv.contours} onChange={e => set({ contours: e.target.checked })} /> Contour lines</label>
@@ -163,14 +163,14 @@ function PublicSection({ id }: { id: string }) {
     setError("");
     try { await fn(); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : "Something went wrong"); }
   };
-  const update = () => act(async () => { await publishSite(id, setBusy); setBusy(""); });
+  // (the course saved first: the viewers' look below is part of it)
+  const update = () => act(async () => { await saveNow(); await publishSite(id, setBusy); setBusy(""); });
   const save = () => act(async () => {
     const body = { label: form.label, slug: form.slug.trim() || null, perms: form.perms, password: form.password || (editing === "new" ? null : undefined), expiresAt: form.expires ? new Date(form.expires).toISOString() : null };
     if (editing === "new") await api("POST", `courses/${id}/links`, body);
     else await api("PATCH", `courses/${id}/links/${editing}`, body);
     setEditing(null);
-    // (the site has what the links show, and the look: saved and published again)
-    await saveNow();
+    // (the site has what the links show: published again, so a new part is there)
     await publishSite(id, setBusy);
     setBusy("");
   });
@@ -185,6 +185,7 @@ function PublicSection({ id }: { id: string }) {
             {busy ? busy + "…" : site ? "Update site" : "Publish site"}
           </button>
         </div>
+        <div className="mt-3"><ViewerLook /></div>
       </Section>
       <Section title="Public links" testid="public-links">
         <ul className="space-y-2">
@@ -214,7 +215,6 @@ function PublicSection({ id }: { id: string }) {
               {form.slug && <span className="block text-[11px] text-zinc-500 mt-1">Easy to guess: add a password if only some should see it.</span>}
             </label>
             <Ticks parts={LINK_PARTS} value={form.perms} onChange={perms => setForm({ ...form, perms })} />
-            {(form.perms.map || form.perms.view3d) && <ViewerLook />}
             <div className="flex gap-2">
               <input className={inputCls} type="password" placeholder={editing === "new" ? "Password (optional)" : "New password (optional)"} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} aria-label="Password" />
               <input className={`${inputCls} w-40`} type="date" value={form.expires} onChange={e => setForm({ ...form, expires: e.target.value })} aria-label="Works until" />

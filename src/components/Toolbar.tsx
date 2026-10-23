@@ -22,7 +22,7 @@ export const TOOLS: { mode: ToolMode; key: string; label: string; short: string;
   { mode: "draw-line", key: "L", label: "Draw a line: OB line, path, road, fence, stream…", short: "Line", icon: <Spline size={18} />, group: 2 },
   { mode: "draw-structure", key: "S", label: "Build: bridge, boardwalk, stairs, wall, building, shelter, deck", short: "Build", icon: <House size={18} />, group: 2 },
   { mode: "add-tree", key: "R", label: "Tree", short: "Tree", icon: <TreeDeciduous size={18} />, group: 3 },
-  { mode: "add-amenity", key: "A", label: "Bench, trash can, sign, parking…", short: "Bench, sign", icon: <Armchair size={18} />, group: 3 },
+  { mode: "add-amenity", key: "A", label: "Amenities: bench, trash can, sign, parking…", short: "Amenities", icon: <Armchair size={18} />, group: 3 },
   { mode: "add-label", key: "K", label: "Text label", short: "Label", icon: <Type size={18} />, group: 3 },
   { mode: "measure", key: "D", label: "Measure distance and elevation", short: "Measure", icon: <Ruler size={18} />, group: 4 }
 ];

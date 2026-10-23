@@ -1,4 +1,4 @@
-import { test, expect, addHole, blankCourse, course, importSite, screenOf } from "./fixtures";
+import { test, expect, addHole, blankCourse, course, editorState, importSite, screenOf } from "./fixtures";
 import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
 import * as THREE from "three";
 import { create3dTree } from "../../src/three/trees";
@@ -27,19 +27,25 @@ test("3D: a sky when tilted (none looking straight down), lit by the course's su
   expect(sun0.y).toBeGreaterThan(0.5);
   await page.keyboard.press("3");
   await expect.poll(async () => (await scene(page)).sky).toBe(true);
-  // Light settings from the map view: the sun moves to the east and drops, the scene brightens
+  // The light is the course map's: the View panel names it and goes there (no second set of sliders)
   await page.getByTestId("scene-button").click();
-  const panel = page.getByTestId("scene-panel");
+  await expect(page.getByTestId("scene-panel").getByLabel("Sun height")).toHaveCount(0);
+  await page.getByTestId("light-link").click();
+  await expect.poll(async () => (await editorState(page)).step).toBe("map");
+  const panel = page.getByTestId("look-part-light");
   const set = async (label: string, value: string) => {
     const slider = panel.getByLabel(label);
     await slider.fill(value);
     await slider.dispatchEvent("pointerup");
   };
+  // Midday, the sun to the east and low, brighter: the 3D scene follows
+  await panel.getByRole("radio", { name: "Midday" }).click();
   // (the slider runs along the sun's arc, east through south to west: -90 is the east)
   await set("Sun from the", "-90");
   await expect.poll(async () => (await course(page)).style.sunFrom).toBe(90);
   await set("Sun height", "20");
   await set("Brightness", "0.2");
+  await page.getByRole("button", { name: "2 Design" }).click();
   await expect.poll(async () => (await scene(page)).sun.x).toBeGreaterThan(0.8);
   const lit = await scene(page);
   expect(lit.sun.y).toBeLessThan(0.4);

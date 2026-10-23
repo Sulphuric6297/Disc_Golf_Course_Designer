@@ -33,7 +33,8 @@ test("the Design step shows the printed map; its styles are the painted map in e
   expect(autumn.style.treeMix?.length).toBeGreaterThan(2);
   await expect(page.getByTestId("colors-trees-autumn")).toHaveAttribute("aria-checked", "true");
   // Title and toggles go straight onto the map
-  await page.getByTestId("fold-title").locator("summary").click();
+  // (the title's words: picked on the page, or in its list)
+  await page.getByTestId("page-elements").getByTestId("page-element").filter({ hasText: /^Title$/ }).click();
   await page.getByLabel("Map title").fill("Ridge Run");
   await expect(pageSvg).toContainText("Ridge Run");
   await page.getByRole("button", { name: "Show Legend" }).click();
@@ -155,7 +156,7 @@ test("light and shadow: the sun, shadows and brightness repaint the Forest map, 
     await light.getByRole("radio", { name: mode }).click();
     await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
   }
-  await light.getByRole("button", { name: "Back to the style's own" }).click();
+  await light.getByTestId("part-reset").click();
   await expect.poll(async () => { const s = (await course(page)).style; return [s.sunFrom, s.shadows, s.lightMode]; }).toEqual([undefined, undefined, undefined]);
   // Fine tuning: the picture's brightness, and its Reset
   const panel = page.getByTestId("light-shadow");

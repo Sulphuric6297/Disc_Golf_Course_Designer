@@ -12,7 +12,7 @@ import { Button, Field, Segmented, Slider } from "./ui";
 
 const shapeOf = (k: TreeKind | undefined): TreeShape => (k === "conifer" ? "conifer" : k === "bush" ? "bush" : "broadleaf");
 const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-/** The settings that make a tree its own (cleared by Back to natural). */
+/** The settings that make a tree its own (cleared by Reset). */
 const OWN = { species: undefined, seed: undefined, crownBase: undefined, lean: undefined, leanDir: undefined, limbs: undefined, trunk: undefined, fullness: undefined };
 
 export function TreeSettings({ item, set }: { item: TreeItem; set: (patch: Partial<TreeItem>, history?: boolean) => void }) {
@@ -60,7 +60,7 @@ export function TreeSettings({ item, set }: { item: TreeItem; set: (patch: Parti
       )}
       {own && (
         <div className="mb-2">
-          <Button small tone="ghost" onClick={() => set(OWN)} title="Its species' own shape and settings again" testid="tree-natural"><RotateCcw size={13} /> Back to natural</Button>
+          <Button small tone="ghost" onClick={() => set(OWN)} title="Its species' own shape and settings again" testid="tree-natural"><RotateCcw size={13} /> Reset</Button>
         </div>
       )}
     </div>

@@ -6,7 +6,7 @@ import { EyeOff, Minus, Plus, Scan, Trash2 } from "lucide-react";
 import { onPaintProgress, onPainted, renderPoster, withLivePaint } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
 import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
-import { useCourse, useEditor } from "../state/course";
+import { changeDoc, useCourse, useEditor } from "../state/course";
 import { holeLabel } from "../lib/course";
 import { useCanopy, useRelief } from "./useRelief";
 import { duplicateDesignSel, elementLabel, moveDesignEl, moveLabel, removeDesignSel, sizeDesignEl } from "./PageEditor";
@@ -31,8 +31,11 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const setPreview = (id: Preview | "general") => useEditor.getState().set({ designTab: id });
   const hole = useEditor(e => e.designHole);
   const setHole = (id: string) => useEditor.getState().set({ designHole: id });
-  const [signSize, setSignSize] = useState<SignSize>("18x12");
-  const [pageSize, setPageSize] = useState<HolePageSize>("letter");
+  // (the course's sizes: the same ones Export prints)
+  const signSize: SignSize = useCourse(c => c.doc.style.signSize) ?? "18x12";
+  const pageSize: HolePageSize = useCourse(c => c.doc.style.holePageSize) ?? "letter";
+  const setSignSize = (v: SignSize) => changeDoc(d => ({ style: { ...d.style, signSize: v } }));
+  const setPageSize = (v: HolePageSize) => changeDoc(d => ({ style: { ...d.style, holePageSize: v } }));
   const [zoom, setZoom] = useState<number | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });

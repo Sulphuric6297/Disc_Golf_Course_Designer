@@ -2,9 +2,6 @@
 import { ArrowRight, RotateCcw } from "lucide-react";
 import { ApplyToHoles } from "./ApplyToHoles";
 import { BASKET_MARKS, PAPER, basketMark, bestRotation } from "../lib/mapSvg";
-import { autoWalks } from "../lib/course";
-import { courseStats } from "../lib/holeStats";
-import { editWalks } from "../state/actions";
 import { CARD_DEFAULTS, SIGN_LOOKS, SIGN_PARTS, SIGN_SPOTS, signOf } from "../lib/teeSign";
 import { holeLabel } from "../lib/course";
 import { changeDoc, useCourse, useEditor } from "../state/course";
@@ -13,10 +10,8 @@ import { RESTRICTED } from "../lib/symbols";
 import { MapLookPanel } from "./MapLookPanel";
 import { useEffect, useRef, useState } from "react";
 import type { MapStyle, PaperSize, SignSettings } from "../types";
-import { Button, ColorInput, Field, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
+import { Button, ColorInput, Field, Section, Segmented, Slider, Toggle } from "./ui";
 import { PageElementPanel, PageSection } from "./PageEditor";
-import { setAllWalks } from "./Inspector";
-import { fmtDist } from "../lib/units";
 
 export const setStyle = (patch: Partial<MapStyle>, history = true) => {
   // View only: the look changes on this screen (sun, landscape…), never saved
@@ -56,7 +51,6 @@ export function WoodsOptions({ s }: { s: MapStyle }) {
   );
 }
 
-export const FROM = ["top", "top right", "right", "bottom right", "bottom", "bottom left", "left", "top left"];
 export const signed = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.round(Math.abs(x) * 100)}%`;
 
 /** The picture's tone: brightness, contrast, color, how painted, the hills (in the Light part). */
@@ -123,6 +117,10 @@ function TeeSignSettings() {
   // (from a hole: its sign settings to the holes picked; for all holes: the picked holes follow them)
   const applyTo = (ids: string[]) => changeDoc(d => ({ holes: d.holes.map(h => (ids.includes(h.id) ? { ...h, sign: forHole && hole!.sign ? JSON.parse(JSON.stringify(hole!.sign)) : undefined } : h)) }));
   if (!doc.holes.length) return null;
+  // (the tall classic sign, and the hole sheets, have a legend line and no designer's line; the
+  // others the other way round: a switch only where it does something)
+  const size = doc.style.signSize ?? "18x12";
+  const tallClassic = size === "letter" || size === "a4" || ((doc.style.sign?.look ?? "classic") === "classic" && size !== "18x12");
   return (
     <Section title="Tee signs" testid="sign-settings" right={reset}>
       <div className="grid grid-cols-2 gap-2 mb-3" role="radiogroup" aria-label="Tee sign look" data-testid="sign-looks">
@@ -147,9 +145,9 @@ function TeeSignSettings() {
       </Field>
       {eff.others === "faded" && <Slider label="How faded" min={0.05} max={0.9} step={0.05} value={eff.fade} onChange={v => patch({ fade: v }, false)} onDone={() => useCourse.getState().commit()} format={v => `${Math.round(v * 100)}%`} />}
       <div className="grid grid-cols-2 gap-x-3" data-testid="sign-parts">
-        {SIGN_PARTS.filter(p => p.id !== "courseMap").map(p => <Toggle key={p.id} label={p.label} checked={eff.show(p.id)} onChange={v => patch({ show: { ...own.show, [p.id]: v } })} />)}
+        {SIGN_PARTS.filter(p => p.id !== "courseMap" && (p.id === "legend" ? tallClassic : p.id === "designer" ? !tallClassic : true)).map(p => <Toggle key={p.id} label={p.label} checked={eff.show(p.id)} onChange={v => patch({ show: { ...own.show, [p.id]: v } })} />)}
       </div>
-      <Field label="Under the notes (wide signs)">
+      <Field label="Under the notes">
         <Segmented label="What goes under the notes" value={eff.spot} onChange={v => patch({ spot: v, show: { ...own.show, courseMap: undefined } })} options={SIGN_SPOTS.map(o => ({ value: o.id, label: o.label }))} />
       </Field>
       <div className="mt-2">
@@ -241,27 +239,17 @@ export function DesignPanel() {
           <Section title="Map style" testid="map-style">
             <MapLookPanel />
           </Section>
-      <Section title="On the map">
+      <Section title="Drawn on the map">
         <Toggle label="Throw lines" checked={s.throwLines} onChange={v => setStyle({ throwLines: v })} />
         <Toggle label="Distances on the lines" checked={s.distances} onChange={v => setStyle({ distances: v })} />
-        <Toggle label="Walks to the next hole (automatic)" checked={s.nextTee} onChange={v => setStyle({ nextTee: v })} />
-        {s.nextTee && (
-          <>
-            <Slider label="Walk width" min={1} max={20} step={0.5} value={s.walkWidth ?? 6} onChange={v => setAllWalks(v, false)} onDone={done} format={v => fmtDist(v, doc.units)} />
-            {autoWalks(doc.items, courseStats(doc), doc.holes).length > 0 && <div className="-mt-1 mb-1"><Button small onClick={() => editWalks(null)} testid="edit-walks">Edit the walks</Button></div>}
-          </>
-        )}
         <Toggle label="Putting circle (10 m)" checked={s.circle} onChange={v => setStyle({ circle: v })} />
         <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />
         <Toggle label="Hill shading" checked={s.hillshade} onChange={v => setStyle({ hillshade: v })} />
       </Section>
       <details className="mx-4 my-2 rounded-[16px] bg-white/[0.06] group" data-testid="fold-title">
-        <summary className="cursor-pointer list-none flex items-center justify-between px-3 py-2.5 text-[13.5px] font-medium text-zinc-100">Title block <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
+        <summary className="cursor-pointer list-none flex items-center justify-between px-3 py-2.5 text-[13.5px] font-medium text-zinc-100">Lettering <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
         <div className="px-3 pb-3">
-        <Field label="Title"><TextInput label="Map title" value={s.title} placeholder={doc.name} onChange={v => setStyle({ title: v })} /></Field>
-        <Field label="Subtitle"><TextInput label="Map subtitle" value={s.subtitle} placeholder={doc.site.location?.label ?? "Location, designer, year"} onChange={v => setStyle({ subtitle: v })} /></Field>
-        <Field label="Footer note"><TextInput label="Footer note" value={s.footer} placeholder="e.g. Please carry out what you carry in" onChange={v => setStyle({ footer: v })} /></Field>
-        <Field label="Lettering">
+        <Field label="Font">
           <Segmented label="Font" value={s.font} onChange={v => setStyle({ font: v })} options={[{ value: "Script", label: <span style={{ fontFamily: "Kaushan Script" }}>Script</span> }, { value: "Oswald", label: <span style={{ fontFamily: "Oswald" }}>Oswald</span> }, { value: "Inter", label: <span style={{ fontFamily: "Inter" }}>Inter</span> }, { value: "Bitter", label: <span style={{ fontFamily: "Bitter" }}>Bitter</span> }]} />
         </Field>
         <Slider label="Label size" min={0.7} max={1.6} step={0.05} value={s.labelScale} onChange={v => setStyle({ labelScale: v })} format={v => `${Math.round(v * 100)}%`} />

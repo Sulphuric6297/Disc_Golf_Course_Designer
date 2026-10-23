@@ -489,6 +489,9 @@ export interface MapStyle {
   /** How the course looks to those who only view it (shared, the public page), apart from the
    * editor's own display: the ground painted (unset) or the photo, contour lines, hill shading. */
   publicView?: { ground?: "painted" | "photo"; contours?: boolean; shading?: boolean };
+  /** The tee signs' and hole pages' size: the one designed (Map) and printed (Export). */
+  signSize?: "18x12" | "12x18" | "18x24" | "letter" | "a4";
+  holePageSize?: "letter" | "a4" | "card" | "square";
   /** The course map's frame, even on all four sides (unset: none, the map to the paper's edge). */
   frame?: "mat" | "line" | "band";
   /** Forest style: the treetops as painted maps have them (unset), or natural ones, as the 3D
