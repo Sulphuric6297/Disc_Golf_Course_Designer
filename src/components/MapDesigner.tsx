@@ -10,6 +10,7 @@ import { changeDoc, useCourse, useEditor } from "../state/course";
 import { holeLabel } from "../lib/course";
 import { useCanopy, useRelief } from "./useRelief";
 import { duplicateDesignSel, elementLabel, moveDesignEl, moveLabel, removeDesignSel, sizeDesignEl } from "./PageEditor";
+import { hideSignSel, movePiece, pieceLabel, sizePiece } from "./SignEditor";
 
 /** A phone or small tablet (touch first, small screen). */
 const PHONE = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches && typeof screen !== "undefined" && Math.min(screen.width, screen.height) < 900;
@@ -183,7 +184,9 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   // while dragged, then kept as shares of the page.
   const designSel = useEditor(e => e.designSel);
   const setEd = useEditor(e => e.set);
-  const editing = preview === "map" && !only;
+  // (a tee sign's pieces the same way: each piece of it, the hole's picture too)
+  const signEdit = preview === "sign" && !only;
+  const editing = (preview === "map" || preview === "sign") && !only;
   const svgHost = useRef<HTMLDivElement>(null);
   type Box = { x: number; y: number; w: number; h: number };
   const [selBox, setSelBox] = useState<Box | null>(null);
@@ -213,6 +216,22 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   }, [page, designSel, editing]);
   // (leaving the course map, or the Design step, lets go of what was picked)
   useEffect(() => { if (!editing) setEd({ designSel: null }); }, [editing, setEd]);
+  useEffect(() => { setEd({ designSel: null }); }, [preview, setEd]);
+  // A sign's pieces are picked anywhere in their outline, not only on their ink: each gets an
+  // unseen box the size of what it draws
+  useLayoutEffect(() => {
+    const host = svgHost.current;
+    if (!signEdit || !host) return;
+    for (const g of Array.from(host.querySelectorAll<SVGGElement>("[data-el]"))) {
+      if (g.querySelector(":scope > rect[data-hit]")) continue;
+      const b = g.getBBox();
+      const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      r.setAttribute("data-hit", "1");
+      r.setAttribute("x", String(b.x)); r.setAttribute("y", String(b.y)); r.setAttribute("width", String(b.width)); r.setAttribute("height", String(b.height));
+      r.setAttribute("fill", "none"); r.setAttribute("pointer-events", "all");
+      g.insertBefore(r, g.firstChild);
+    }
+  });
   useEffect(() => () => setEd({ designSel: null }), [setEd]);
   const onPageDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!editing || !page || e.button !== 0) return;
@@ -222,10 +241,10 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     const corner = (e.target as HTMLElement).closest?.("[data-corner]") as HTMLElement | null;
     if ((e.target as HTMLElement).closest?.("[data-page-bar]")) return;
     // (a label on the map, else what's on the page; the map itself stays where it is)
-    const tag = (e.target as Element).closest?.("[data-label]") as SVGGElement | null;
+    const tag = signEdit ? null : (e.target as Element).closest?.("[data-label]") as SVGGElement | null;
     const hit = (e.target as Element).closest?.("[data-el]") as SVGGElement | null;
     const id = corner ? designSel : tag ? `label:${tag.getAttribute("data-label")}` : hit?.getAttribute("data-el") ?? null;
-    if (!id || id === "map") { setEd({ designSel: null }); return; }
+    if (!id || (id === "map" && !signEdit)) { setEd({ designSel: null }); return; }
     const el = elOf(id);
     if (!el) return;
     const fresh = id !== designSel;
@@ -268,7 +287,10 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       setSelBox(d.box);
       return;
     }
-    if (d.mode === "move" && d.id.startsWith("label:")) {
+    if (signEdit) {
+      if (d.mode === "move") movePiece(d.id, d.dx / d.W, d.dy / d.H);
+      else sizePiece(d.id, d.f, d.anchor, d.W, d.H);
+    } else if (d.mode === "move" && d.id.startsWith("label:")) {
       const g = groundShift(d.dx, d.dy);
       moveLabel(d.id.slice(6), g.x, g.y);
     } else if (d.mode === "move") moveDesignEl(d.id, { x: d.box.x / d.W, y: d.box.y / d.H }, d.dx / d.W, d.dy / d.H);
@@ -284,14 +306,15 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       const mod = e.ctrlKey || e.metaKey;
       let used = true;
       if (e.key === "Escape") setEd({ designSel: null });
-      else if (!mod && (e.key === "Delete" || e.key === "Backspace")) removeDesignSel();
-      else if (mod && e.key.toLowerCase() === "d") duplicateDesignSel();
+      else if (!mod && (e.key === "Delete" || e.key === "Backspace")) (signEdit ? hideSignSel : removeDesignSel)();
+      else if (mod && e.key.toLowerCase() === "d" && !signEdit) duplicateDesignSel();
       else if (!mod && e.key.startsWith("Arrow") && page) {
         const el = elOf(designSel);
         if (!el) return;
         const b = boxOf(el), step = e.shiftKey ? 10 : 1;
         const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0, dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
-        if (designSel.startsWith("label:")) {
+        if (signEdit) movePiece(designSel, dx / page.width, dy / page.height);
+        else if (designSel.startsWith("label:")) {
           const g = groundShift(dx, dy);
           moveLabel(designSel.slice(6), g.x, g.y);
         } else moveDesignEl(designSel, { x: b.x / page.width, y: b.y / page.height }, dx / page.width, dy / page.height);
@@ -303,7 +326,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [editing, designSel, page, setEd]);
+  }, [editing, signEdit, designSel, page, setEd]);
 
   if (!page) return null;
   const margin = compact ? 20 : 48;
@@ -366,7 +389,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
             <div
               ref={svgHost}
               data-testid="design-page"
-              className={`shadow-2xl bg-white ${editing ? "[&_[data-el]:not([data-el=map])]:cursor-pointer" : ""}`}
+              className={`shadow-2xl bg-white ${signEdit ? "[&_[data-el]]:cursor-pointer" : editing ? "[&_[data-el]:not([data-el=map])]:cursor-pointer" : ""}`}
               style={{ width: page.width * k, height: page.height * k }}
               dangerouslySetInnerHTML={{ __html: held ?? html }}
             />
@@ -378,8 +401,8 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
                   return <div key={c} data-corner={c} data-testid="page-corner" className="absolute w-3 h-3 touch:w-6 touch:h-6 bg-white border-2 border-orange-500 rounded-sm pointer-events-auto" style={{ left: `calc(${cx * 100}% - ${compact ? 12 : 6}px)`, top: `calc(${cy * 100}% - ${compact ? 12 : 6}px)`, cursor: cx === cy ? "nwse-resize" : "nesw-resize", touchAction: "none" }} />;
                 })}
                 <div data-page-bar className="glass absolute left-0 flex items-center gap-1 pointer-events-auto rounded-full px-1.5 py-1 whitespace-nowrap" style={{ top: selBox.y * k > 40 ? -36 : undefined, bottom: selBox.y * k > 40 ? undefined : -36 }}>
-                  <span className="text-[11px] font-semibold text-zinc-200 px-1 max-w-[140px] truncate">{elementLabel(doc, designSel)}</span>
-                  {(() => { const gone = designSel.startsWith("text:") || designSel.startsWith("image:"); return <button className="p-1 rounded hover:bg-white/[0.13] text-zinc-300" aria-label={gone ? "Delete it" : "Hide it"} title={gone ? "Delete" : "Hide"} onClick={removeDesignSel}>{gone ? <Trash2 size={13} /> : <EyeOff size={13} />}</button>; })()}
+                  <span className="text-[11px] font-semibold text-zinc-200 px-1 max-w-[140px] truncate">{signEdit ? pieceLabel(designSel) : elementLabel(doc, designSel)}</span>
+                  {(() => { const gone = !signEdit && (designSel.startsWith("text:") || designSel.startsWith("image:")); return <button className="p-1 rounded hover:bg-white/[0.13] text-zinc-300" aria-label={gone ? "Delete it" : "Hide it"} title={gone ? "Delete" : "Hide"} onClick={signEdit ? hideSignSel : removeDesignSel}>{gone ? <Trash2 size={13} /> : <EyeOff size={13} />}</button>; })()}
                 </div>
               </div>
             )}

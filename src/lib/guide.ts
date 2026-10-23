@@ -469,8 +469,8 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "tee-signs", section: "map", title: "Tee signs",
-    body: "Pick the sign's look (Classic, Trailhead, Field guide or Open view) here, and its size above the preview. Then choose what goes on it.\n\nOther holes can be faded, hidden or shown, each part can be on or off, and Under the notes picks what goes there (the course map, the green, the hole's stats, or nothing). Settings can be for all holes or one hole, and Apply to holes… copies them.",
-    words: "tee sign look classic trailhead field guide open view size parts other holes under the notes",
+    body: "Pick a look to start from (Classic, Trailhead, Field guide or Open view) and the sign's size above the preview. Then lay it out however you like. Click any piece on the sign, like the hole number, the par or the hole's picture, and drag it where you want it. Pull a corner to make it bigger or smaller, and the arrow keys nudge it. Delete hides it.\n\nLayers lists every piece. Click a name to pick it, and the eye hides it or brings it back. The picked piece's settings are under Layers: its size, its font, its lettering and panel colors, and Reset to put it back where the look had it. Picking another look starts the layout over.\n\nChanges go to every hole, or pick Hole N to change just that hole's sign. Apply to holes… copies a hole's sign to others. Other holes on the map can be faded, hidden or shown.",
+    words: "tee sign look classic trailhead field guide open view size layers pieces move drag resize corner font color hide show reset layout canva other holes",
     path: "Map › Tee sign",
     where: { step: "map", tab: "sign", find: "sign-settings" }
   },

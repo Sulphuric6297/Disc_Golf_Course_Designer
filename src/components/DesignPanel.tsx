@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import type { MapStyle, PaperSize, ReliefLook, SignSettings } from "../types";
 import { Button, ColorInput, Field, Section, Segmented, Slider, Toggle } from "./ui";
 import { PageElementPanel, PageSection } from "./PageEditor";
+import { SignLayers, SignPieceSettings } from "./SignEditor";
 
 export const setStyle = (patch: Partial<MapStyle>, history = true) => {
   // View only: the look changes on this screen (sun, landscape…), never saved
@@ -113,7 +114,8 @@ function TeeSignSettings() {
   const active = useEditor(e => e.activeHoleId);
   const holeId = [designHole, active].find(id => id && doc.holes.some(h => h.id === id)) ?? doc.holes[0]?.id ?? null;
   const hole = doc.holes.find(h => h.id === holeId);
-  const [scope, setScope] = useState<"all" | "hole">("all");
+  const scope = useEditor(e => e.signScope);
+  const setScope = (v: "all" | "hole") => useEditor.getState().set({ signScope: v });
   const forHole = scope === "hole" && !!hole;
   // (what shows: a hole's own over the course's, or the course's alone)
   const eff = forHole ? signOf(doc, hole!.id) : signOf({ style: doc.style, holes: [] }, "");
@@ -126,17 +128,13 @@ function TeeSignSettings() {
   // (from a hole: its sign settings to the holes picked; for all holes: the picked holes follow them)
   const applyTo = (ids: string[]) => changeDoc(d => ({ holes: d.holes.map(h => (ids.includes(h.id) ? { ...h, sign: forHole && hole!.sign ? JSON.parse(JSON.stringify(hole!.sign)) : undefined } : h)) }));
   if (!doc.holes.length) return null;
-  // (the tall classic sign, and the hole sheets, have a legend line and no designer's line; the
-  // others the other way round: a switch only where it does something)
-  const size = doc.style.signSize ?? "18x12";
-  const tallClassic = size === "letter" || size === "a4" || ((doc.style.sign?.look ?? "classic") === "classic" && size !== "18x12");
   return (
     <Section title="Tee signs" testid="sign-settings" right={reset} help="tee-signs">
       <div className="grid grid-cols-2 gap-2 mb-3" role="radiogroup" aria-label="Tee sign look" data-testid="sign-looks">
         {SIGN_LOOKS.map(l => {
           const on = (doc.style.sign?.look ?? "classic") === l.id;
           return (
-            <button key={l.id} role="radio" aria-checked={on} data-testid={`sign-look-${l.id}`} onClick={() => setStyle({ sign: { ...doc.style.sign, look: l.id === "classic" ? undefined : l.id } })}
+            <button key={l.id} role="radio" aria-checked={on} data-testid={`sign-look-${l.id}`} onClick={() => setStyle({ sign: { ...doc.style.sign, look: l.id === "classic" ? undefined : l.id, layout: undefined } })}
               className={`text-left rounded-lg overflow-hidden bg-white/[0.07] ring-1 transition ${on ? "ring-2 ring-orange-400" : "ring-white/10 hover:ring-white/30"}`}>
               <img src={`${import.meta.env.BASE_URL}signs/${l.id}.jpg`} alt="" loading="lazy" className="block w-full aspect-[2/3] object-cover object-top" draggable={false} />
               <span className="block px-2 py-1 text-xs font-semibold text-zinc-100">{l.label}</span>
@@ -154,8 +152,11 @@ function TeeSignSettings() {
       </Field>
       {eff.others === "faded" && <Slider label="How faded" min={0.05} max={0.9} step={0.05} value={eff.fade} onChange={v => patch({ fade: v }, false)} onDone={() => useCourse.getState().commit()} format={v => `${Math.round(v * 100)}%`} />}
       <div className="grid grid-cols-2 gap-x-3" data-testid="sign-parts">
-        {SIGN_PARTS.filter(p => p.id !== "courseMap" && (p.id === "legend" ? tallClassic : p.id === "designer" ? !tallClassic : true)).map(p => <Toggle key={p.id} label={p.label} checked={eff.show(p.id)} onChange={v => patch({ show: { ...own.show, [p.id]: v } })} />)}
+        {SIGN_PARTS.filter(p => ["throwLine", "circle", "distances"].includes(p.id)).map(p => <Toggle key={p.id} label={p.label} checked={eff.show(p.id)} onChange={v => patch({ show: { ...own.show, [p.id]: v } })} />)}
       </div>
+      <div className="text-[12px] font-semibold text-zinc-400 mt-3 mb-1.5 px-1">Layers</div>
+      <SignLayers />
+      <SignPieceSettings />
       <Field label="Under the notes">
         <Segmented label="What goes under the notes" value={eff.spot} onChange={v => patch({ spot: v, show: { ...own.show, courseMap: undefined } })} options={SIGN_SPOTS.map(o => ({ value: o.id, label: o.label }))} />
       </Field>

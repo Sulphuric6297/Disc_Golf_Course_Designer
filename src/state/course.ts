@@ -147,6 +147,8 @@ type EditorStore = {
   designSel: string | null;
   /** The hole whose tee sign or hole page the Design step shows. */
   designHole: string | null;
+  /** Tee sign changes go to every hole, or to the shown hole alone. */
+  signScope: "all" | "hole";
   /** The checks (problems on the course) open over the map. */
   problemsOpen: boolean;
   /** The Map step's tab: what's shared by every download, or one of them (its page shown). */
@@ -218,6 +220,7 @@ export const useEditor = create<EditorStore>()(set => ({
   groundBrush: "raise",
   patchBrush: false,
   designSel: null,
+  signScope: "all",
   designHole: null,
   problemsOpen: false,
   designTab: "map",

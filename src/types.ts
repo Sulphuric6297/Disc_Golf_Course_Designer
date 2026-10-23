@@ -347,6 +347,18 @@ export type PaperSize = "letter" | "tabloid" | "18x24" | "24x36" | "36x48" | "a4
 /** The parts of a tee sign that can be shown or left out. */
 export type SignPart = "courseName" | "number" | "par" | "lengths" | "elevation" | "notes" | "courseMap" | "nextTee" | "north" | "scale" | "throwLine" | "circle" | "distances" | "holeOf" | "designer" | "legend";
 /** How tee signs look (the course's, and a hole's own over them). */
+/** A piece of a printout moved, sized or restyled by hand (lib/pieces): shifted by shares of the
+ * page, sized times its own (about the page's corner), its lettering's font and color, its panel's
+ * color, or hidden. */
+export interface PiecePlace {
+  dx?: number;
+  dy?: number;
+  scale?: number;
+  hidden?: boolean;
+  font?: string;
+  color?: string;
+  fill?: string;
+}
 export interface SignSettings {
   /** The other holes on a sign's map: faded (unset), left out, or as clear as its own. */
   others?: "faded" | "hidden" | "shown";
@@ -358,6 +370,8 @@ export interface SignSettings {
   spot?: SignSpot;
   /** How the signs look, for the whole course (unset: the first look; lib/signLooks). */
   look?: SignLook;
+  /** The sign's pieces moved, sized or restyled by hand (by piece; a hole's own over the course's). */
+  layout?: Record<string, PiecePlace>;
 }
 export type SignLook = "classic" | "trailhead" | "fieldguide" | "openview";
 /** A wide sign's spot under the notes: the course in miniature, the green up close, the hole's
