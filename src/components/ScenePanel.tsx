@@ -1,7 +1,7 @@
 // The view: what this device shows while working (the photo, lines, grass), and the course's own
 // landscape and basket band. The light is the course map's, set with its look on the Map step.
 import { useEffect, useRef, useState } from "react";
-import { ChevronRight, Layers, X } from "lucide-react";
+import { ChevronRight, Eye, X } from "lucide-react";
 import { FOCUS, POPOVER } from "./ui";
 import { useCourse, useEditor } from "../state/course";
 import { setStyle } from "./DesignPanel";
@@ -39,7 +39,7 @@ export function SceneButton({ className = "", big = false }: { className?: strin
         onClick={() => setOpen(o => !o)}
         data-testid="scene-button"
       >
-        <Layers size={big ? 20 : 16} />
+        <Eye size={big ? 20 : 16} />
       </button>
       {open && <ScenePanel onClose={() => setOpen(false)} big={big} />}
     </div>

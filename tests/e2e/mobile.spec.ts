@@ -204,7 +204,7 @@ test.describe("phone", () => {
 
   test("finding the park on a phone: search on top, the map, then the button at the bottom", async ({ page }) => {
     await page.getByTestId("welcome-find").tap();
-    const dialog = page.getByRole("dialog", { name: "Find your course site" });
+    const dialog = page.getByRole("dialog", { name: "Find your park" });
     await page.getByLabel("Search address").fill("Springfield Park");
     await dialog.getByRole("button", { name: /Springfield Park/ }).first().tap();
     await expect(page.getByTestId("site-size")).toBeVisible();

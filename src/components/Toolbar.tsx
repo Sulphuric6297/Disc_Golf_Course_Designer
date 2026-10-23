@@ -114,7 +114,8 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
         // What a drag on the map does: move the map, or draw a box to select things
         return [
           <div key="drag" className="flex shrink-0 gap-0.5 glass ring-1 ring-white/10 rounded-full p-0.5" role="radiogroup" aria-label="Drag on the map">
-            {([[false, "Move the map", <Hand key="i" size={13} />, "drag-pan"], [true, "Select", <BoxSelect key="i" size={13} />, "drag-select"]] as const).map(([on, label, icon, id]) => (
+            <span className="pl-2 pr-1 self-center text-[11px] text-zinc-400 whitespace-nowrap touch:hidden">Dragging the map:</span>
+            {([[false, "Moves it", <Hand key="i" size={13} />, "drag-pan"], [true, "Draws a box to select", <BoxSelect key="i" size={13} />, "drag-select"]] as const).map(([on, label, icon, id]) => (
               <button key={id} role="radio" aria-checked={ed.dragSelect === on} data-testid={id} title={on ? "Drag a box around things to select them (Shift+drag)" : "Drag to move the map"} onClick={() => set({ dragSelect: on })} className={`flex items-center gap-1 px-2 py-0.5 touch:py-1.5 touch:px-2.5 touch:text-[13px] whitespace-nowrap rounded-full text-xs font-semibold ${ed.dragSelect === on ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09]"}`}>
                 {icon}{label}
               </button>
@@ -200,7 +201,8 @@ const STEP_TOOLS: Record<string, ToolMode[]> = {
   export: ["select"]
 };
 
-const BAR_BTN = "relative w-10 h-10 rounded-xl flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
+// (on a wide screen, each tool's name under its icon)
+const BAR_BTN = "relative w-10 h-10 min-[1280px]:w-auto min-[1280px]:min-w-[48px] min-[1280px]:h-12 min-[1280px]:px-1.5 min-[1280px]:flex-col min-[1280px]:gap-0.5 rounded-xl flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
 
 export function Toolbar() {
   const ed = useEditor();
@@ -239,7 +241,7 @@ export function Toolbar() {
         : `${BAR_BTN} ${ed.tool === t.mode ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09] hover:text-zinc-50"}`}
     >
       {t.icon}
-      {inMenu ? <span className="flex-1">{t.short}</span> : null}
+      {inMenu ? <span className="flex-1">{t.short}</span> : <span className="hidden min-[1280px]:block text-[10px] font-semibold leading-none whitespace-nowrap">{t.short}</span>}
       <span className={inMenu ? "text-[11px] opacity-60 touch:hidden" : "absolute bottom-0.5 right-1 text-[8px] font-bold opacity-60 touch:hidden"}>{t.key}</span>
     </button>
   );

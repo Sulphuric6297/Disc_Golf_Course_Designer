@@ -116,7 +116,7 @@ test("fairway width handle and par override in the inspector", async ({ page }) 
   await page.getByRole("slider", { name: /Fairway width/ }).fill("60");
   await expect.poll(async () => (await course(page)).holes[0].fairwayWidth).toBe(60);
   expect((await course(page)).holes[0].fairwayShape).toEqual(before);
-  await page.getByTestId("fairway-shape").getByRole("button", { name: "Even width" }).click();
+  await page.getByTestId("fairway-shape").getByRole("button", { name: "Make it even" }).click();
   await expect.poll(async () => (await course(page)).holes[0].fairwayShape).toBeUndefined();
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).holes[0].fairwayShape).toEqual(before);

@@ -2813,7 +2813,7 @@ export class CourseView {
         el.className = "dg-issue";
         el.setAttribute("data-testid", "issue-marker");
         el.style.background = issue.level === "danger" ? "#dc2626" : issue.level === "warning" ? "#d97706" : "#2563eb";
-        el.title = issue.text;
+        el.title = `Checks: ${issue.text}`;
         el.textContent = issue.level === "info" ? "i" : "!";
         return el;
       }, at(issue.at, 2), -18);

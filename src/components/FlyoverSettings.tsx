@@ -22,7 +22,7 @@ const FLY_SHOW: [FlyShow, string][] = [
   ["circle", "Putting circle"],
   ["ob", "OB"],
   ["otherHoles", "Other holes"],
-  ["walks", "Walks"]
+  ["walks", "Paths to the next tee"]
 ];
 
 /** How flyovers fly: for one hole (`holeId`: its own settings, over the course's) or for all

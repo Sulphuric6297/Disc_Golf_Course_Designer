@@ -174,11 +174,11 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     // A phone: full screen, the search on top, the map in the middle, what comes in and the
     // button at the bottom (in the thumb's reach)
     return (
-      <div className="dg-compact fixed inset-0 z-50 bg-zinc-950 flex flex-col" role="dialog" aria-modal="true" aria-label="Find your course site">
+      <div className="dg-compact fixed inset-0 z-50 bg-zinc-950 flex flex-col" role="dialog" aria-modal="true" aria-label="Find your park">
         <div className="flex items-center gap-1 pl-1 pr-3 pt-[max(6px,env(safe-area-inset-top))] pb-1">
           <button className="w-11 h-11 flex items-center justify-center rounded-xl text-zinc-300 active:bg-white/[0.09]" onClick={close} aria-label="Close"><X size={22} /></button>
           <div className="flex-1 min-w-0">
-            <div className="font-bold text-zinc-50 text-[17px] leading-tight">Find your course site</div>
+            <div className="font-bold text-zinc-50 text-[17px] leading-tight">Find your park</div>
             <div className="text-[13px] text-zinc-400 truncate">Search, then frame the area the holes will use</div>
           </div>
         </div>
@@ -231,12 +231,12 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" role="dialog" aria-label="Find your course site">
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" role="dialog" aria-label="Find your park">
       <div className="glass border border-white/[0.12] rounded-2xl shadow-2xl w-full max-w-6xl h-[88vh] flex flex-col overflow-hidden">
         <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.08]">
           <MapPinned className="text-orange-400" size={20} />
           <div className="flex-1">
-            <div className="font-bold text-zinc-50">Find your course site</div>
+            <div className="font-bold text-zinc-50">Find your park</div>
             <div className="text-xs text-zinc-400">Search for the park, then frame the area the holes will use (drag the corners; Shift+drag draws a new one).</div>
           </div>
           <button className="p-1.5 rounded hover:bg-white/[0.09] text-zinc-400" onClick={close} aria-label="Close"><X size={18} /></button>

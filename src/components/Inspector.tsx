@@ -223,9 +223,9 @@ function HoleInspector({ hole }: { hole: Hole }) {
               <p className="text-[11px] text-zinc-400 leading-snug">
                 {hole.fairwayShape
                   ? `Shaped: ${hole.fairwayShape.map(f => fmtDist(f * hole.fairwayWidth, u)).join(" · ")}`
-                  : hole.fairwayShift ? "Shaped" : "Even width"}
+                  : hole.fairwayShift ? "Shaped" : "The same width all along. Drag the squares on its edges to shape it."}
               </p>
-              {(hole.fairwayShape || hole.fairwayShift) && <button className="shrink-0 text-xs text-orange-300 hover:text-orange-200" onClick={() => set({ fairwayShape: undefined, fairwayShift: undefined, fairwayStations: undefined })}>Even width</button>}
+              {(hole.fairwayShape || hole.fairwayShift) && <button className="shrink-0 text-xs text-orange-300 hover:text-orange-200" onClick={() => set({ fairwayShape: undefined, fairwayShift: undefined, fairwayStations: undefined })}>Make it even</button>}
             </div>
           </>
         )}
