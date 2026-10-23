@@ -604,7 +604,8 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
           <span className="text-xs tabular-nums text-zinc-300 w-8 text-right">{Math.round(painting * 100)}%</span>
         </div>
       )}
-      {doc.holes.length === 0 && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="glass rounded-[18px] px-4 py-3 text-sm text-zinc-200">No holes yet.</div></div>}
+      {/* (a map is a map without holes: only the pages made for a hole say there's none yet) */}
+      {doc.holes.length === 0 && (preview === "sign" || preview === "page") && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="glass rounded-[18px] px-4 py-3 text-sm text-zinc-200">No holes yet: tee signs and hole pages show once there's a hole.</div></div>}
     </div>
   );
 }

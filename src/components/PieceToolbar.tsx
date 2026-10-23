@@ -51,7 +51,7 @@ export function PieceToolbar({ t, id, onGrow, onPreviewFont, onEditText, onDone,
   return (
     <div className={`glass ring-1 ring-white/15 shadow-xl flex items-center gap-0.5 rounded-full px-1.5 py-1 ${docked ? "overflow-x-auto dg-scroll max-w-full" : ""}`} data-page-bar data-testid="piece-toolbar" role="toolbar" aria-label={`${p.label} settings`} onPointerDown={e => e.stopPropagation()}>
       <span className="text-[12px] touch:text-[13px] font-semibold text-zinc-300 pl-1.5 pr-1 max-w-[130px] truncate shrink-0" data-testid="piece-name">{p.label}</span>
-      {p.has.font && <div className="shrink-0"><FontPicker compact label="Font" value={p.font} inherit="The course's lettering" onPick={f => patchPicked(t, id, { font: f })} onPreview={onPreviewFont} used={fontsIn(doc)} testid="piece-font" /></div>}
+      {p.has.font && <div className="shrink-0"><FontPicker compact label="Font" value={p.font} inherit="Course font" onPick={f => patchPicked(t, id, { font: f })} onPreview={onPreviewFont} used={fontsIn(doc)} testid="piece-font" /></div>}
       {p.has.size && size !== null && (
         <span className="flex items-center shrink-0" data-testid="piece-size">
           <button className={b} aria-label="Smaller" title="Smaller" onClick={() => onGrow(1 / 1.12)}><Minus size={15} /></button>

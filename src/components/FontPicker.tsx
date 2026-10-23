@@ -123,7 +123,7 @@ export function FontPicker({ value, onPick, onPreview, used = [], inherit, label
         <ChevronDown size={14} className={`text-zinc-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && createPortal(
-        <div ref={sheet} className={`${TOUCH ? "fixed left-2 right-2 bottom-2" : "fixed"} z-[80] glass rounded-[18px] ring-1 ring-white/15 shadow-2xl p-2.5`} style={TOUCH || !at ? undefined : { left: at.left, top: at.top, width: at.width }} onKeyDown={onKey} role="dialog" aria-label="Fonts">
+        <div ref={sheet} className={`${TOUCH ? "fixed left-2 right-2 bottom-2" : "fixed"} z-[80] bg-zinc-900/[0.97] backdrop-blur rounded-[18px] ring-1 ring-white/15 shadow-2xl p-2.5`} style={TOUCH || !at ? undefined : { left: at.left, top: at.top, width: at.width }} onKeyDown={onKey} role="dialog" aria-label="Fonts">
           <label className="flex items-center gap-2 rounded-[12px] bg-white/[0.1] px-3 py-2">
             <Search size={15} className="text-zinc-400" />
             <input autoFocus={!TOUCH} className="flex-1 min-w-0 bg-transparent text-[14px] text-zinc-50 placeholder:text-zinc-400 focus:outline-none" placeholder="Search fonts" value={q} onChange={e => { setQ(e.target.value); setActive(-1); if (scroller.current) scroller.current.scrollTop = 0; }} aria-label="Search fonts" />
