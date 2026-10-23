@@ -17,7 +17,7 @@ import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
 import { FAIRWAY_STATIONS, beyondSides, areaObEdges, areaRing, isRing, ringStretch, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, fairwayOutline, mergeStretches, obFor, obPicked, obRanges, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
-import { boundsOf, dist, distanceToPath, inBounds, nearestAlong, offsetPath, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath, subPath } from "../lib/geom";
+import { boundsOf, centroid, dist, distanceToPath, inBounds, nearestAlong, offsetPath, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath, subPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
 import { conifersOf, treeMixOf } from "../lib/landscapes";
@@ -3952,6 +3952,8 @@ export class CourseView {
   /** Two fingers on the map, as on Google Earth: a pinch zooms around the point between them, a
    * twist turns the map around it (it stays under the fingers), a slide up or down tilts. */
   private pinch: { d: number; a: number; cy: number } | null = null;
+  /** Two fingers that came down on the thing picked: they size and turn it, not the map. */
+  private pinchItem: { id: string; base: CourseItem; d0: number; a0: number; aim: number } | null = null;
   private readonly twoFingers = (e: PointerEvent) => {
     const f = this.fingerAt.get(e.pointerId);
     if (!f) return;
@@ -3962,6 +3964,11 @@ export class CourseView {
     const d = Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a = Math.atan2(q.y - p.y, q.x - p.x), cx = (p.x + q.x) / 2, cy = (p.y + q.y) / 2;
     const was = this.pinch;
     this.pinch = { d, a, cy };
+    if (this.pinchItem) {
+      const patch = this.pinchedPatch(this.pinchItem, d / this.pinchItem.d0, ((a - this.pinchItem.a0) * 180) / Math.PI);
+      if (patch) this.cb.onChange(this.pinchItem.id, patch);
+      return;
+    }
     // (the map turns with the fingers and stays under them: around the ground between them)
     let da = a - was.a;
     if (da > Math.PI) da -= 2 * Math.PI; else if (da < -Math.PI) da += 2 * Math.PI;
@@ -3983,9 +3990,45 @@ export class CourseView {
     const [p, q] = [...this.touchIds].map(id => this.fingerAt.get(id)!);
     if (!p || !q) return;
     this.pinch = { d: Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a: Math.atan2(q.y - p.y, q.x - p.x), cy: (p.y + q.y) / 2 };
+    // (both fingers on or right by the thing picked: it's the thing they size and turn)
+    this.pinchItem = null;
+    const it = this.selectedId && !this.readOnly ? this.item(this.selectedId) : null;
+    if (it && !it.locked && it.type !== "basket") {
+      const box = this.screenBox(it.id);
+      const near = (f: { x: number; y: number }) => {
+        const r = this.container.getBoundingClientRect();
+        const x = f.x - r.left, y = f.y - r.top, m = 48;
+        return !!box && x >= box.x - m && x <= box.x + box.width + m && y >= box.y - m && y <= box.y + box.height + m;
+      };
+      if (near(p) && near(q)) this.pinchItem = { id: it.id, base: structuredClone(it), d0: this.pinch.d, a0: this.pinch.a, aim: it.type === "tee" ? teeAim(this.doc!.course, it) : 0 };
+    }
+  }
+  /** What two fingers on a thing make of it: bigger or smaller by `k`, turned by `turn` degrees. */
+  private pinchedPatch(pi: NonNullable<CourseView["pinchItem"]>, k: number, turn: number): Record<string, unknown> | null {
+    const b = pi.base;
+    const clampTo = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+    const round1 = (v: number) => Math.round(v * 10) / 10;
+    const spin = (p: P, c: P) => {
+      const r = (turn * Math.PI) / 180, dx = (p.x - c.x) * k, dy = (p.y - c.y) * k;
+      return { x: c.x + dx * Math.cos(r) - dy * Math.sin(r), y: c.y + dx * Math.sin(r) + dy * Math.cos(r) };
+    };
+    switch (b.type) {
+      case "tree": {
+        const h = b.height ?? b.radius * 2.6;
+        return { radius: round1(clampTo(b.radius * k, 1, 45)), height: Math.round(clampTo(h * k, 2, 120)) };
+      }
+      case "tee": return { padLength: round1(clampTo(b.padLength * k, 4, 30)), padWidth: round1(clampTo(b.padWidth * k, 2, 20)), rotation: Math.round(pi.aim + turn), aimFixed: true };
+      case "mando": case "amenity": case "dropzone": case "label": return { rotation: Math.round((b.rotation ?? 0) + turn) };
+      case "area": case "line": case "structure": {
+        const c = centroid(b.points);
+        return { points: b.points.map(p => spin(p, c)) };
+      }
+      default: return null;
+    }
   }
   private endPinch() {
     if (this.touchIds.size === 0) window.removeEventListener("pointermove", this.twoFingers);
+    if (this.pinchItem) { this.pinchItem = null; this.cb.onCommit(); }
     if (!this.pinch) return;
     this.pinch = null;
     this.snapNorth();

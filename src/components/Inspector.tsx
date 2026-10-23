@@ -12,7 +12,7 @@ import { courseStats, holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
 import { fairwayTrees } from "../lib/lidar";
 import { conifersOf } from "../lib/landscapes";
-import { addHoleOb, deleteSelection, duplicateSelection, markObBeyond, select, setTeeLevel, shareBasket } from "../state/actions";
+import { addHoleOb, deleteSelection, duplicateSelection, markObBeyond, startAnotherPin, startAnotherTee, startHoleToBasket, select, setTeeLevel, shareBasket } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
 import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface, BrushKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
@@ -139,6 +139,62 @@ function HoleInspector({ hole }: { hole: Hole }) {
           </div>
         )}
       </Section>
+      <Section title="How it's played" help="tees-pins" testid="how-played">
+        {(() => {
+          // (the layout worked on, on a hole with no tee of its color: played from the nearest)
+          const layout = doc.layouts.length > 1 ? doc.layouts.find(l => l.id === doc.activeLayout) : undefined;
+          if (!layout || !tees.length || tees.some(t => t.level === layout.tee)) return null;
+          const lvl = TEE_LEVELS[layout.tee];
+          return (
+            <div className="flex items-center gap-2 mb-2 text-[11px] text-zinc-300 leading-snug" data-testid="layout-missing-tee">
+              <span className="flex-1">No {lvl.label.toLowerCase()} tee yet: the {layout.name} layout plays this hole from the {TEE_LEVELS[tees.find(t => t.id === s.teeId)?.level ?? tees[0].level].label.toLowerCase()} one.</span>
+              <Button small onClick={() => useEditor.getState().set({ tool: "add-tee", teeLevel: layout.tee, activeHoleId: hole.id })}>Add one</Button>
+            </div>
+          );
+        })()}
+        <div className="flex flex-wrap gap-1.5 mb-2" data-testid="hole-tees">
+          {tees.map(t => (
+            <button key={t.id} className="flex items-center gap-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.14] px-2.5 py-1 text-xs text-zinc-100" onClick={() => select(t.id)} title={`${TEE_LEVELS[t.level].label} tee: pick it`}>
+              <span className="w-2.5 h-2.5 rounded-full ring-1 ring-black/40" style={{ background: TEE_LEVELS[t.level].color }} />
+              {TEE_LEVELS[t.level].label} <span className="text-zinc-400 tabular-nums">{fmtDist(holeStats(doc, hole, { id: "x", name: "", tee: t.level, pin: "A" }).length, u)}</span>
+            </button>
+          ))}
+          {baskets.map(b => (
+            <button key={b.id} className="flex items-center gap-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.14] px-2.5 py-1 text-xs text-zinc-100" onClick={() => select(b.id)} title={`Pin ${b.position}: pick it`}>
+              <span className="w-2.5 h-2.5 rounded-full border-2" style={{ borderColor: doc.style.basket }} />Pin {b.position}
+            </button>
+          ))}
+        </div>
+        {(() => {
+          // (which holes finish at its basket)
+          const others = doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => baskets.some(x => x.id === b.id)));
+          return others.length > 0 && <div className="text-[11.5px] text-zinc-400 mb-2" data-testid="shared-with">Its basket is shared with hole{others.length === 1 ? "" : "s"} {others.map(h => holeLabel(doc, h.id)).join(", ")}.</div>;
+        })()}
+        <div className="flex flex-col gap-1.5" data-testid="hole-grow">
+          <button className="flex items-start gap-2.5 text-left rounded-[12px] bg-white/[0.06] hover:bg-white/[0.11] px-2.5 py-2" onClick={() => startAnotherTee(hole.id)} data-testid="another-tee">
+            <span className="mt-0.5 w-4 h-2.5 rounded-sm shrink-0" style={{ background: TEE_LEVELS[TEE_ORDER.find(l => !tees.some(t => t.level === l)) ?? "red"].color }} />
+            <span><span className="block text-[13px] font-semibold text-zinc-100">Another tee for this hole</span><span className="block text-[11.5px] text-zinc-400">Shorter or longer, for another skill level. Same hole number.</span></span>
+          </button>
+          {s.complete && (
+            <button className="flex items-start gap-2.5 text-left rounded-[12px] bg-white/[0.06] hover:bg-white/[0.11] px-2.5 py-2" onClick={() => startHoleToBasket(hole.id)} data-testid="hole-to-basket">
+              <Plus size={16} className="mt-0.5 shrink-0 text-orange-300" />
+              <span><span className="block text-[13px] font-semibold text-zinc-100">New hole to this basket</span><span className="block text-[11.5px] text-zinc-400">A separate hole, with its own number, that finishes at this basket.</span></span>
+            </button>
+          )}
+          <button className="flex items-start gap-2.5 text-left rounded-[12px] bg-white/[0.06] hover:bg-white/[0.11] px-2.5 py-2" onClick={() => startAnotherPin(hole.id)} data-testid="another-pin">
+            <span className="mt-0.5 w-3.5 h-3.5 rounded-full border-2 shrink-0" style={{ borderColor: doc.style.basket }} />
+            <span><span className="block text-[13px] font-semibold text-zinc-100">Another pin position</span><span className="block text-[11.5px] text-zinc-400">The same hole to a different basket spot (pin B, C…).</span></span>
+          </button>
+        </div>
+        {doc.holes.length > 1 && (
+          <details className="mt-2"><summary className="cursor-pointer text-[11.5px] text-zinc-400 hover:text-zinc-200">Play to another hole's basket instead</summary>
+            <select aria-label="Basket" data-testid="share-basket" className="mt-1.5 w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
+              <option value="">Its own basket</option>
+              {doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => b.holeId === h.id)).map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}'s basket</option>)}
+            </select>
+          </details>
+        )}
+      </Section>
       {s.complete && (
         <Section title="Elevation profile">
           <ElevationProfile doc={doc} line={s.line} />
@@ -194,47 +250,6 @@ function HoleInspector({ hole }: { hole: Hole }) {
           </ul>
         </Section>
       )}
-      <Section title="Tees and pins" help="tees-pins">
-        {doc.holes.length > 1 && (
-          <Field label="Basket">
-            <select aria-label="Basket" data-testid="share-basket" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
-              <option value="">Its own</option>
-              {doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => b.holeId === h.id)).map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}'s</option>)}
-            </select>
-          </Field>
-        )}
-        {(() => {
-          // (the layout worked on, on a hole with no tee of its color: played from the nearest)
-          const layout = doc.layouts.length > 1 ? doc.layouts.find(l => l.id === doc.activeLayout) : undefined;
-          if (!layout || !tees.length || tees.some(t => t.level === layout.tee)) return null;
-          const lvl = TEE_LEVELS[layout.tee];
-          return (
-            <div className="flex items-center gap-2 mb-2 text-[11px] text-zinc-300 leading-snug" data-testid="layout-missing-tee">
-              <span className="flex-1">No {lvl.label.toLowerCase()} tee yet: the {layout.name} layout plays this hole from the {TEE_LEVELS[tees.find(t => t.id === s.teeId)?.level ?? tees[0].level].label.toLowerCase()} one.</span>
-              <Button small onClick={() => useEditor.getState().set({ tool: "add-tee", teeLevel: layout.tee })}>Add one</Button>
-            </div>
-          );
-        })()}
-        <ul className="space-y-1">
-          {tees.map(t => (
-            <li key={t.id}>
-              <button className="w-full flex items-center gap-2 text-left text-xs text-zinc-200 hover:bg-white/[0.09] rounded px-1.5 py-1" onClick={() => select(t.id)}>
-                <span className="w-3 h-3 rounded-sm border border-black/40" style={{ background: TEE_LEVELS[t.level].color }} />
-                {TEE_LEVELS[t.level].label} tee
-                <span className="ml-auto text-zinc-400">{fmtDist(holeStats(doc, hole, { id: "x", name: "", tee: t.level, pin: "A" }).length, u)}</span>
-              </button>
-            </li>
-          ))}
-          {baskets.map(b => (
-            <li key={b.id}>
-              <button className="w-full flex items-center gap-2 text-left text-xs text-zinc-200 hover:bg-white/[0.09] rounded px-1.5 py-1" onClick={() => select(b.id)}>
-                <span className="w-3 h-3 rounded-full border-2" style={{ borderColor: doc.style.basket }} />
-                Pin {b.position}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </Section>
       {s.complete && (
         <Section title="Flyover" help="flyover">
           <HoleFlight hole={hole} />

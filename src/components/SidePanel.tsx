@@ -1,9 +1,9 @@
 // The side panel follows the steps: what to do now, and the lists for it. The map stays the one
 // canvas; the steps never lock anything.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Info, X, ClipboardCheck, Download, Eye, EyeOff, MapPinned, Palette, Plus, Route, Trash2, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowRight, Link2, Info, X, ClipboardCheck, Download, Eye, EyeOff, MapPinned, Palette, Plus, Route, Trash2, type LucideIcon } from "lucide-react";
 import { TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
-import { activeLayout, holeTees } from "../lib/course";
+import { activeLayout, holeBaskets, holeTees } from "../lib/course";
 import { courseIssues, courseStats, courseTotals, levelsOnCourse, openIssues, playsOf, swapped, type SafetyIssue } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
 import { addLayoutTees, pickLayout, select, uncutTrees } from "../state/actions";
@@ -507,7 +507,18 @@ export function HolesColumn() {
                 onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
                 className={`flex items-center gap-2 rounded-[14px] pl-1 pr-2 py-1 text-left ${sel ? "bg-white/[0.16] text-zinc-50" : "text-zinc-300"}`}>
                 <span className="min-w-[24px] h-6 px-1 rounded-full flex items-center justify-center text-[11.5px] font-bold shrink-0" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink }} data-testid="hole-badge">{s.label}</span>
-                <span className="text-[12.5px] tabular-nums truncate">{s.complete ? `${fmtDist(s.length, u)} · P${s.par}` : "unfinished"}</span>
+                <span className="text-[12.5px] tabular-nums truncate flex-1 min-w-0">{s.complete ? `${fmtDist(s.length, u)} · P${s.par}` : "unfinished"}</span>
+                {(() => {
+                  // (more than one tee: a dot for each color; a basket shared with another hole: a link)
+                  const tees = holeTees(doc, s.holeId);
+                  const shared = holeBaskets(doc, s.holeId).some(b => b.holeId !== s.holeId || !!b.alsoHoles?.length);
+                  return (
+                    <span className="flex items-center gap-0.5 shrink-0" data-testid="hole-row-marks">
+                      {tees.length > 1 && tees.map(t => <span key={t.id} className="w-1.5 h-1.5 rounded-full ring-1 ring-black/40" style={{ background: TEE_LEVELS[t.level].color }} title={`${TEE_LEVELS[t.level].label} tee`} />)}
+                      {shared && <Link2 size={11} className="text-zinc-400 ml-0.5" aria-label="Shares its basket with another hole" />}
+                    </span>
+                  );
+                })()}
               </button>
             );
           })}

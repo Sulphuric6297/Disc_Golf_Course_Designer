@@ -167,6 +167,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { view?.setPose(ed.view === "2d" ? "top" : "tilt"); }, [view, ed.view]);
   // (a patch is drawn with the Area tool; leaving the tool drops the patch)
   useEffect(() => { if (ed.tool !== "draw-area" && ed.patchFor) useEditor.getState().set({ patchFor: null }); }, [ed.tool, ed.patchFor]);
+  // (and leaving the Tee tool drops a new hole on its way to a basket)
+  useEffect(() => { if (ed.tool !== "add-tee" && ed.holeToBasket) useEditor.getState().set({ holeToBasket: null }); }, [ed.tool, ed.holeToBasket]);
   useEffect(() => { view?.setGrass(ed.grass, ed.wind); }, [view, ed.grass, ed.wind]);
   // Covered by the Design step's page: the map view rests
   useEffect(() => { view?.setPaused(ed.step === "map" && !ed.teeView); }, [view, ed.step, ed.teeView]);

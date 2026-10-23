@@ -1,9 +1,10 @@
 // The tools along the bottom of the map, with the active tool's options and a hint above them.
+import { holeLabel } from "../lib/course";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Armchair, BoxSelect, Circle, CircleDot, Ellipsis, Hand, House, MousePointer2, PenLine, Pentagon, RectangleHorizontal, Redo2, Route, Ruler, Signpost, Spline, Square, Target, TreeDeciduous, Type, Undo2 } from "lucide-react";
 import { amenitySymbol, structureLegend, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
-import { useCourse, useEditor } from "../state/course";
+import { getDoc, useCourse, useEditor } from "../state/course";
 import type { AmenityKind, AreaKind, DrawShape, LineKind, StructureKind, ToolMode, TreeKind } from "../types";
 import { useTouch } from "./useLayout";
 
@@ -158,6 +159,20 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
 
 /** What to do with the active tool, worded for a mouse and keys or for a touch screen. */
 export function toolHint(ed: Editor, touch = false): string | undefined {
+  if (ed.tool === "add-tee" || ed.tool === "add-basket") {
+    const doc = getDoc();
+    const click = touch ? "Tap" : "Click";
+    if (ed.tool === "add-tee" && ed.holeToBasket) {
+      const b = doc.items.find(i => i.id === ed.holeToBasket);
+      const of = b && "holeId" in b && b.holeId ? ` hole ${holeLabel(doc, b.holeId)}'s` : " that";
+      return `${click} where the new hole's tee goes. It will play to${of} basket.`;
+    }
+    const hole = doc.holes.find(h => h.id === ed.activeHoleId);
+    if (!hole) return `Pick a hole first, then ${click.toLowerCase()} where its ${ed.tool === "add-tee" ? "new tee" : "new pin"} goes`;
+    return ed.tool === "add-tee"
+      ? `${click} where hole ${holeLabel(doc, hole.id)}'s ${TEE_LEVELS[ed.teeLevel].label.toLowerCase()} tee goes (same hole, another skill level)`
+      : `${click} where hole ${holeLabel(doc, hole.id)}'s next pin position goes`;
+  }
   const drawing = ed.tool === "draw-area" || ed.tool === "draw-line" || ed.tool === "draw-structure";
   const lineDrawn = ed.tool === "draw-line" || (ed.tool === "draw-structure" && STRUCTURE_KINDS[ed.structureKind].shape === "line");
   const shape = lineDrawn && (ed.drawShape === "box" || ed.drawShape === "circle") ? "freehand" : ed.drawShape;

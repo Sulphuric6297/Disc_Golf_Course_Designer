@@ -3,7 +3,7 @@ import { grownTree } from "../lib/lidar";
 import { CIRCLE_ONE_FT, PIN_POSITIONS, TEE_ORDER, generateId } from "../constants";
 import {
   createAmenity, createArea, createBasket, createDropZone, createLabel, createLine, createMando, createStructure, createTee, createTree,
-  insertHole, autoWalks, basketHoles, belongsTo, closestHole, holeBaskets, holeTees, itemHoleId, movedGroup, newHole, obPicked, obPieces, teeFor, wholeHoles, withoutStretch
+  insertHole, autoWalks, basketHoles, belongsTo, closestHole, holeBaskets, holeTees, itemHoleId, movedGroup, newHole, obPicked, obPieces, teeFor, wholeHoles, withoutStretch, holeLabel
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { courseStats, holeStats } from "../lib/holeStats";
@@ -139,9 +139,38 @@ export const addHole = (tee: P, basket: P, level: TeeLevel = editor().teeLevel) 
   return hole;
 };
 
+/** Another tee for a hole (shorter or longer, the same hole number): the Tee tool, in the first
+ * color it doesn't have yet. */
+export const startAnotherTee = (holeId: string) => {
+  const taken = new Set(holeTees(getDoc(), holeId).map(t => t.level));
+  const level = TEE_ORDER.find(l => !taken.has(l)) ?? editor().teeLevel;
+  useEditor.getState().set({ tool: "add-tee", teeLevel: level, activeHoleId: holeId, holeToBasket: null });
+};
+/** A new hole that finishes at a hole's basket: the Tee tool places its tee, and it's made. */
+export const startHoleToBasket = (holeId: string) => {
+  const basket = holeBaskets(getDoc(), holeId)[0];
+  if (!basket) return;
+  useEditor.getState().set({ tool: "add-tee", holeToBasket: basket.id });
+};
+/** Another pin position for a hole: the Pin tool. */
+export const startAnotherPin = (holeId: string) => useEditor.getState().set({ tool: "add-basket", activeHoleId: holeId, holeToBasket: null });
+
 /** A click with a placing tool. */
 export const placeAt = (mode: ToolMode, p: P) => {
   const ed = editor();
+  // (a new hole's tee, to a basket already there: the hole is made at once)
+  if (mode === "add-tee" && ed.holeToBasket) {
+    const b = getDoc().items.find(i => i.id === ed.holeToBasket && i.type === "basket") as BasketItem | undefined;
+    useEditor.getState().set({ holeToBasket: null });
+    if (b) {
+      const from = getDoc().holes.find(h => h.id === b.holeId);
+      const made = addHole(p, { x: b.x, y: b.y });
+      useEditor.getState().set({ tool: "select" });
+      const d = getDoc();
+      toast(`Hole ${holeLabel(d, made.id)} added. It plays to the same basket as hole ${from ? holeLabel(d, from.id) : ""}.`, "success", true);
+      return;
+    }
+  }
   const hole = mode === "add-mando" || mode === "add-dropzone" ? holeBeside(p) : workingHole();
   let item: CourseItem | null = null;
   if (mode === "add-tee") {

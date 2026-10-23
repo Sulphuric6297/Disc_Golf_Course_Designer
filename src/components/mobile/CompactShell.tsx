@@ -32,7 +32,7 @@ import { ExportProgressPill } from "../ExportProgress";
 import { ActionSheet, type SheetAction } from "./ActionSheet";
 import { BottomSheet, type Detent } from "./BottomSheet";
 import { HereButton } from "../MyLocation";
-import { HoleStrip } from "./HoleStrip";
+import { HoleStrip, ItemStrip } from "./HoleStrip";
 import { useGps } from "../../state/gps";
 import { accountActions, CourseChip } from "../../auth/AccountMenu";
 import { ViewerPanelBody } from "../../auth/ViewerPanel";
@@ -460,15 +460,18 @@ function usePanel({ onFindSite, onMore, phone = false }: { onFindSite: () => voi
   const selectedId = useEditor(e => e.selectedId);
   const meta = STEPS.find(s => s.id === step)!;
   // (a hole picked: its strip of settings in the tools' place, the hole kept in view above it)
-  const { hole: pickedHole } = useSelection();
+  const { hole: pickedHole, item: pickedItem, group: pickedGroup } = useSelection();
   // (a phone only: a tablet's side panel has the room for all of it, beside the map)
   const strip = phone && mode === "selection" && !!pickedHole && !readOnly;
-  const tools = (step === "design" || mode === "tool") && !strip;
+  // (anything else picked, on its own: its strip too)
+  const itemStrip = phone && mode === "selection" && !pickedHole && !!pickedItem && !pickedGroup.length && !readOnly;
+  const tools = (step === "design" || mode === "tool") && !strip && !itemStrip;
   const header = (
     <>
       {tools && <ToolStrip />}
       {mode === "tool" ? <ToolHeader /> : mode === "selection" ? <SelectionHeader onMore={onMore} /> : <StepHeader onFindSite={onFindSite} />}
       {strip && <HoleStrip hole={pickedHole} />}
+      {itemStrip && <ItemStrip key={pickedItem.id} item={pickedItem} />}
     </>
   );
   const body = mode === "selection" ? (
@@ -543,7 +546,8 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
     if (panel.mode === "tool" && prevMode.current !== "tool") setDetent("peek");
     prevMode.current = panel.mode;
   }, [panel.mode]);
-  const holePicked = !readOnly && !!ed.selectedId && getDoc().holes.some(h => h.id === ed.selectedId);
+  // (a hole or a thing picked: down to its strip, the map free above it)
+  const holePicked = !readOnly && !!ed.selectedId && (getDoc().holes.some(h => h.id === ed.selectedId) || getDoc().items.some(i => i.id === ed.selectedId));
   useLayoutEffect(() => {
     // (a hole: down to its strip, the map free above it; view only: its numbers come up)
     if (holePicked) setDetent("peek");
