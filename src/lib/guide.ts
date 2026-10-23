@@ -392,7 +392,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "card-style", section: "map", title: "Logo, colors and lettering",
-    body: "The course's look on every page: the header color and its lettering, the paper and text colors, and the font for headings. The course logo goes on the scorecard.",
+    body: "The course's look on every page: the header color and its lettering, the paper and text colors, and the font for the headings on tee signs, hole pages and the scorecard (any font: the same picker as everywhere). The course logo goes on the scorecard.",
     words: "logo colors lettering font header paper brand",
     path: "Map › General › Logo, colors and lettering",
     where: { step: "map", tab: "general", find: "card-style" }
@@ -434,8 +434,8 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "elevation", section: "map", title: "Elevation on the map",
-    body: "Elevation, in the parts of the map under Map style, picks how the painted map shows the ground's shape. The map style stays the same; only the hills and drops are drawn differently.\n\nShaded is soft light and shadow, with bare rock on cliffs. Cliff edges inks the top edge of every drop and puts the wall below it in shadow, so canyons and ledges stand out. Sketched draws short strokes down the steep slopes, like an old survey map. Contours draws lines at round heights and writes the heights on them, so you can read how high anything is. Terraces cuts the land into stepped layers, each a bit lighter than the one below. Off draws no elevation at all.\n\nEvery look uses the same sun as the rest of the map, and higher ground throws its shadow across what's below it. Its Hills slider makes any of them stronger or softer.",
-    words: "elevation hills hill shading relief canyon cliff cliffs edges sketched hachures contours heights terraces layers steps shading off flat topography slope",
+    body: "Elevation, in the parts of the map under Map style, picks how the painted map shows the ground's shape. The map style stays the same; only the hills and drops are drawn differently.\n\nShaded is soft light and shadow, with bare rock on cliffs. Cliff edges inks the top edge of every drop and puts the wall below it in shadow, so canyons and ledges stand out. Contours draws lines at round heights and writes the heights on them, so you can read how high anything is. Terraces cuts the land into stepped layers, each a bit lighter than the one below. Off draws no elevation at all.\n\nEvery look uses the same sun as the rest of the map, and higher ground throws its shadow across what's below it. Its Hills slider makes any of them stronger or softer.",
+    words: "elevation hills hill shading relief canyon cliff cliffs edges contours heights terraces layers steps shading off flat topography slope",
     path: "Map › Course map › Map style › Elevation",
     where: { step: "map", tab: "map", look: "elevation", find: "look-part-elevation" }
   },
@@ -448,8 +448,8 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "lettering", section: "map", title: "Lettering",
-    body: "The map's font and how big its labels are. The title's own words are edited on the page: click the title.",
-    words: "font lettering label size",
+    body: "The map's font, used for its title and labels, and how big the labels are. Click the title on the page to change its words. Every font setting has the same picker: about 1,800 Google fonts plus the app's own. Type part of a name or pick a kind (Good on signs, Sans, Serif, Display, Script). The fonts this course uses and the ones you used lately come first. Point at one and the picked piece shows it before you click. Your printouts carry the fonts with them.",
+    words: "font fonts lettering label size google fonts title",
     path: "Map › Course map › Lettering",
     where: { step: "map", tab: "map", find: "fold-title" }
   },
@@ -461,30 +461,30 @@ export const TOPICS: Topic[] = [
     where: { step: "map", tab: "map", find: "fold-paper" }
   },
   {
-    id: "on-the-page", section: "map", title: "On the page: title, hole guide, legend and more",
-    body: "Everything on the printed page is listed under On the page: the title, hole guide, legend, north arrow, scale bar and credits. The eye shows or hides each one.\n\nClick one (or click it on the page) to pick it. Drag it to move it, drag its corners to resize it, and set its words and colors in the panel. Back in place puts it back where it was. Add text and Add picture put your own stuff on the page.",
-    words: "title subtitle hole guide legend north arrow scale bar credits text picture image move resize hide",
-    path: "Map › Course map › On the page",
-    where: { step: "map", tab: "map", find: "page-elements" }
+    id: "printout-editing", section: "map", title: "Laying out a page",
+    body: "The course map, tee signs, hole pages and the scorecard all work the same way. Click anything on the page to pick it, and its settings show up in a toolbar right over it: the font, − and + for its size, the lettering and panel colors, bold and how its lines sit for text, and Reset, Duplicate and Hide or Delete.\n\nDrag a piece to move it. Pink lines show when it lines up with the page's edges or middle or with another piece, and it snaps there (hold Alt to drag freely). Pull a corner to resize it. Double-click text, or press Enter, to type right on the page. The arrow keys nudge what's picked, and Delete hides it.\n\nAdd, in the panel, puts in text, a picture, a QR code or one of your sponsors. Layers lists everything on the page. Click a name to pick it, and the eye hides it or brings it back.\n\nOn a phone, tap a piece to pick it and its toolbar comes up along the bottom. Drag it with one finger, and pinch it to make it bigger or smaller. Pinching anywhere else zooms the page.\n\nEvery font setting has the same picker: about 1,800 Google fonts plus the app's own. Type part of a name or pick a kind (Good on signs, Sans, Serif, Display, Script). The fonts this course uses and the ones you used lately come first. Point at one and the picked piece shows it before you click. Your printouts carry the fonts with them.",
+    words: "lay out layout page editor canva move drag resize snap guides align toolbar font size color bold text type hide delete duplicate reset layers add picture qr code phone pinch",
+    path: "Map › any tab",
+    where: { step: "map", tab: "sign", find: "print-layers" }
   },
   {
     id: "sponsors", section: "map", title: "Hole sponsors",
-    body: "Sponsors, under the tee sign's and hole page's Layers, holds the course's hole sponsors. Each one can have a logo, a line of text, or both, and can be on every hole or just the holes you pick.\n\nTo show them, Add a Sponsors piece to the sign. It shows that hole's sponsors side by side, so a sign with two sponsors shows both. Drag it where you want it and pull a corner to size it.",
-    words: "sponsor sponsors logo hole sponsor business advertiser text both several holes",
+    body: "Sponsors, in the panel of every printout, holds the course's hole sponsors. Each one can have a logo, a line of text, or both, and can be on every hole or only the holes you pick.\n\nEach sponsor goes on the page by itself: under Add, click a sponsor's name and drag it where you want it. A sponsor only shows on its own holes, so one layout works for every hole and each sign shows whoever sponsors it.",
+    words: "sponsor sponsors logo hole sponsor business advertiser text both several holes place",
     path: "Map › Tee sign › Sponsors",
-    where: { step: "map", tab: "sign", find: "sponsors" }
+    where: { step: "map", tab: "sign", find: "print-sponsors" }
   },
   {
-    id: "hole-pages", section: "map", title: "Hole pages",
-    body: "A hole page is one hole on a page of its own, for a yardage book, a binder at the first tee or a picture to share. Start from the usual page, or Just the hole: the hole's picture across the whole page with its number and nothing else.\n\nThen lay it out like a tee sign. Click any piece and drag it, pull a corner to resize it, and Delete hides it. Layers lists every piece, and its eye brings back anything hidden, like the par on Just the hole. The picked piece has its size, font and colors. Add puts in text, a picture, the hole's sponsors or a QR code, the same as on tee signs. Changes go to every hole, or pick Hole N to change just that one.",
-    words: "hole page yardage book just the hole picture whole page layers pieces move drag resize font color hide show layout",
-    path: "Map › Hole page",
-    where: { step: "map", tab: "page", find: "page-settings" }
+    id: "scorecard", section: "map", title: "Scorecard",
+    body: "The scorecard prints two to a page: the course's logo or name, lines for the date, par and course, and the score table with each hole's par and each layout's lengths. Set how many players it has rows for.\n\nIts pieces can be moved, sized and restyled like any page's, and anything you add (a QR code to the course page, a sponsor, a line of text) goes on both cards.",
+    words: "scorecard score card players rows logo par date qr sponsor",
+    path: "Map › Scorecard",
+    where: { step: "map", tab: "scorecard", find: "card-settings" }
   },
   {
     id: "tee-signs", section: "map", title: "Tee signs",
-    body: "Pick a look to start from (Classic, Trailhead, Field guide or Open view) and the sign's size above the preview. Then lay it out however you like. Click any piece on the sign, like the hole number, the par or the hole's picture, and drag it where you want it. Pull a corner to make it bigger or smaller, and the arrow keys nudge it. Delete hides it.\n\nLayers lists every piece. Click a name to pick it, and the eye hides it or brings it back. The picked piece's settings are under Layers: its size, its lettering and panel colors, Reset to put it back where the look had it, and its font. Font has every Google font, about 1,800 of them. Type part of a name to find one, or look through just the script or display ones, each shown in its own letters. Your printouts carry the fonts with them. Picking another look starts the layout over.\n\nAdd puts in text, a picture, the hole's sponsors or a QR code. Text can say {hole}, {par}, {length}, {course} or {name}, and each hole's sign fills in its own, so one layout works for the whole course. Anything you add can be on every hole or only the holes you pick.\n\nChanges go to every hole, or pick Hole N to change just that hole's sign. Apply to holes… copies a hole's sign to others. Other holes on the map can be faded, hidden or shown.",
-    words: "tee sign look classic trailhead field guide open view size layers pieces move drag resize corner font fonts google fonts typeface lettering color hide show reset layout canva other holes",
+    body: "Start from a look (Classic, Trailhead, Field guide or Open view) and pick the sign's size above the page. Then lay it out however you like: every piece of the sign can be moved, sized, restyled or hidden (Laying out a page). Picking another look starts the layout over.\n\nText you add can say {hole}, {par}, {length}, {course} or {name}, and each hole's sign fills in its own, so one layout works for the whole course.\n\nChanges go to every hole. To change one hole's sign, switch Every hole to Hole N only, over the page. Apply to holes… copies a hole's sign to others. The other holes on the sign's map can be faded, hidden or shown.",
+    words: "tee sign look classic trailhead field guide open view size every hole this hole only other holes apply",
     path: "Map › Tee sign",
     where: { step: "map", tab: "sign", find: "sign-settings" }
   },

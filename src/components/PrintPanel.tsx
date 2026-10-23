@@ -141,12 +141,15 @@ export function PrintPanel({ t, top, children }: { t: TargetKey; top?: React.Rea
   return (
     <>
       {top}
-      <Section title="Add" testid="print-add" help={t === "map" ? "page-editing" : "printout-editing"}>
+      <Section title="Add" testid="print-add" help="printout-editing">
         <AddPieces t={t} />
       </Section>
       <Section title={<span className="flex items-center gap-1.5"><LayersIcon size={14} /> Layers</span>} testid="print-layers">
         <p className="text-[11.5px] text-zinc-500 mb-1.5 px-1">Click a piece on the {TITLE[t].toLowerCase()} (or its name here). Its settings show right over it.</p>
         <Layers t={t} />
+        {t === "map" && Object.values(doc.style.labelAt ?? {}).some(o => o.hidden) && (
+          <button className="mt-2 text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => changeDoc(d => ({ style: { ...d.style, labelAt: Object.fromEntries(Object.entries(d.style.labelAt ?? {}).map(([k, o]) => [k, { ...o, hidden: undefined }])) } }))} data-testid="page-show-labels"><Eye size={12} /> Show the hidden labels on the map ({Object.values(doc.style.labelAt ?? {}).filter(o => o.hidden).length})</button>
+        )}
         {own && <button className="mt-2 text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => resetHoleOwn(t)} data-testid="hole-own-reset"><RotateCcw size={12} /> Hole {holeName(doc)} has its own changes: reset them</button>}
       </Section>
       {children}

@@ -34,9 +34,11 @@ test("the Design step shows the printed map; its styles are the painted map in e
   expect(autumn.style.treeMix?.length).toBeGreaterThan(2);
   await expect(page.getByTestId("colors-trees-autumn")).toHaveAttribute("aria-checked", "true");
   // Title and toggles go straight onto the map
-  // (the title's words: picked on the page, or in its list)
-  await page.getByTestId("page-elements").getByTestId("page-element").filter({ hasText: /^Title$/ }).click();
-  await page.getByLabel("Map title").fill("Ridge Run");
+  // (the title's words: picked in Layers, typed on the page)
+  await page.getByTestId("layer").filter({ hasText: /^Title$/ }).click();
+  await page.getByTestId("piece-edit-text").click();
+  await page.getByTestId("page-typing").fill("Ridge Run");
+  await page.getByTestId("page-typing").press("Enter");
   await expect(pageSvg).toContainText("Ridge Run");
   await page.getByRole("button", { name: "Show Legend" }).click();
   await expect(pageSvg).toContainText("LEGEND");
@@ -606,7 +608,7 @@ test("elevation on the Forest map: hills shade the painting, each Elevation look
   await expect.poll(async () => (await course(page)).style.hillshade).toBe(false);
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(shaded);
   const seen = new Set([shaded]);
-  for (const look of ["cliffs", "sketched", "contours", "terraces"]) {
+  for (const look of ["cliffs", "contours", "terraces"]) {
     await page.getByTestId(`elevation-${look}`).click();
     await expect.poll(async () => (await course(page)).style.reliefLook).toBe(look);
     await painted(page);
@@ -891,11 +893,11 @@ test("the course map's page edited like Canva: pick, drag, size, style, hide; te
   await expect(legend).toHaveCount(1);
   const box = (await legend.boundingBox())!;
   const pageBox = (await svg.boundingBox())!;
-  // Picked by a click: its settings in the panel
+  // Picked by a click: its settings in the toolbar right over it
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await expect.poll(async () => (await editorState(page)).designSel).toBe("legend");
   await expect(page.getByTestId("page-selection")).toBeVisible();
-  await expect(page.getByTestId("page-selected")).toContainText("Legend");
+  await expect(page.getByTestId("piece-toolbar")).toContainText("Legend");
   // Dragged to the middle of the page
   const to = { x: pageBox.x + pageBox.width / 2, y: pageBox.y + pageBox.height / 2 };
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -911,7 +913,7 @@ test("the course map's page edited like Canva: pick, drag, size, style, hide; te
   await expect.poll(async () => (await style()).page?.legend?.x).toBeUndefined();
   await page.keyboard.press("Control+y");
   await expect.poll(async () => (await style()).page?.legend?.x).toBeTruthy();
-  await page.getByTestId("page-reset").click();
+  await page.getByTestId("piece-reset").click();
   await expect.poll(async () => (await style()).page?.legend?.x).toBeUndefined();
   // Sized with a corner square
   const corner = page.getByTestId("page-corner").nth(3);
@@ -921,8 +923,10 @@ test("the course map's page edited like Canva: pick, drag, size, style, hide; te
   await page.mouse.move(c.x + 80, c.y + 80, { steps: 8 });
   await page.mouse.up();
   await expect.poll(async () => (await style()).page?.legend?.scale ?? 1).toBeGreaterThan(1.1);
-  // Its heading and panel; then Delete hides it
-  await page.getByLabel("Legend heading").fill("Key");
+  // Its heading, typed on the page; then Delete hides it
+  await page.getByTestId("piece-edit-text").click();
+  await page.getByTestId("page-typing").fill("Key");
+  await page.getByTestId("page-typing").press("Enter");
   await expect(svg).toContainText("KEY");
   await page.keyboard.press("Escape");
   await page.locator('[data-el="legend"]').click();
@@ -930,19 +934,22 @@ test("the course map's page edited like Canva: pick, drag, size, style, hide; te
   await expect.poll(async () => (await style()).legend).toBe(false);
   // The hole guide's columns
   await page.getByRole("button", { name: "Show Hole guide" }).click();
-  await page.getByTestId("page-element").filter({ hasText: "Hole guide" }).click();
-  await page.getByTestId("hole-guide-columns").getByText("Elevation").click();
+  await page.getByTestId("layer").filter({ hasText: "Hole guide" }).click();
+  await page.getByTestId("piece-more").click();
+  await page.getByTestId("piece-more-menu").getByText("Elevation").click();
   await expect(svg).toContainText("ELEV");
-  // The title hidden from its panel
-  await page.getByTestId("page-element").filter({ hasText: "Title" }).click();
-  await page.getByTestId("page-hide").click();
+  // The title hidden from its toolbar
+  await page.keyboard.press("Escape");
+  await page.getByTestId("layer").filter({ hasText: "Title" }).click();
+  await page.getByTestId("piece-remove").click();
   await expect.poll(async () => (await style()).page?.title?.hidden).toBe(true);
   await expect(svg.locator('[data-el="title"]')).toHaveCount(0);
   // Text: added, typed, dragged, deleted
-  await page.getByTestId("page-add-text").click();
+  await page.getByTestId("add-text").click();
   await expect.poll(async () => (await style()).texts?.length ?? 0).toBe(1);
-  await page.getByTestId("page-text").fill("Sponsored by Acme");
-  await page.getByTestId("page-text").blur();
+  await page.getByTestId("piece-edit-text").click();
+  await page.getByTestId("page-typing").fill("Sponsored by Acme");
+  await page.getByTestId("page-typing").press("Enter");
   await expect(svg).toContainText("Sponsored by Acme");
   const t0 = (await style()).texts[0];
   const added = svg.locator(`[data-el="text:${t0.id}"]`);
@@ -968,7 +975,7 @@ test("the map stays put on the Design page; its labels are dragged, hidden and p
   await page.getByRole("button", { name: "3 Map" }).click();
   const style = async () => (await course(page)).style;
   // (the map isn't one of the things to pick)
-  await expect(page.getByTestId("page-element").filter({ hasText: /^Map$/ })).toHaveCount(0);
+  await expect(page.getByTestId("layer").filter({ hasText: /^Map$/ })).toHaveCount(0);
   const num = page.getByTestId("design-page").locator(`[data-label="num:${hole.id}"]`);
   await expect(num).toHaveCount(1);
   const b = (await num.boundingBox())!;
@@ -982,7 +989,7 @@ test("the map stays put on the Design page; its labels are dragged, hidden and p
   // Drawn there now
   await expect.poll(async () => { const m = (await num.boundingBox())!; return Math.hypot(m.x + m.width / 2 - from.x - 60, m.y + m.height / 2 - from.y - 40); }).toBeLessThan(10);
   // Back in place; hidden; shown again
-  await page.getByTestId("page-reset").click();
+  await page.getByTestId("piece-reset").click();
   await expect.poll(async () => (await style()).labelAt?.[`num:${hole.id}`]).toBeUndefined();
   await num.click();
   await page.keyboard.press("Delete");
@@ -1070,6 +1077,39 @@ plain("tee sign extras: text filled in for each hole, a picture, the hole's spon
   plainExpect(s2).toContain("RIVER BANK");
   plainExpect(s1).not.toContain("Second only");
   plainExpect(s2).toContain("Second only");
+});
+
+plain("one sponsor on its own: placed by itself, only on its own holes", () => {
+  const doc = sample();
+  const [h1, h2] = doc.holes;
+  const art = { contours: null, hillshade: null };
+  doc.style.sponsors = [{ id: "s1", name: "Joe's Pizza", text: "JOE'S PIZZA", holes: [h2.id] }];
+  doc.style.sign = { extras: [{ id: "one", kind: "sponsor", sponsorId: "s1", x: 0.1, y: 0.8, w: 0.15 }] };
+  plainExpect(renderTeeSign(doc, h1.id, "18x12", art)!.svg).not.toContain("JOE'S PIZZA");
+  const s2 = renderTeeSign(doc, h2.id, "18x12", art)!.svg;
+  plainExpect(s2).toContain('<g data-el="x:one">');
+  plainExpect(s2).toContain("JOE'S PIZZA");
+});
+
+plain("the scorecard's pieces placed by hand (both cards alike), with what's added on both", () => {
+  const doc = sample();
+  doc.style.scorecard = { layout: { table: { dy: 0.05 } }, extras: [{ id: "q", kind: "qr", x: 0.85, y: 0.05, w: 0.08, url: "https://example.org" }], players: 3 };
+  const svg = renderScorecard(doc).svg;
+  plainExpect(svg).toContain('<g data-el="table" transform="translate(0 15.3) scale(1)">');
+  plainExpect(svg).toContain('<g data-pc="table" transform="translate(0 15.3) scale(1)">');
+  plainExpect(svg).toContain('<g data-el="x:q">');
+  plainExpect(svg).toContain('<g data-pc="x:q">');
+});
+
+plain("fonts are the same everywhere: the map's lettering and the headings take any font, a script keeps its own capitals", () => {
+  const doc = sample();
+  doc.style.font = "Bebas Neue";
+  doc.style.card = { font: "Pacifico" };
+  const sign = renderTeeSign(doc, doc.holes[0].id, "18x12", { contours: null, hillshade: null })!.svg;
+  plainExpect(sign).toContain("'Bebas Neue'");
+  plainExpect(sign).toContain("'Pacifico'");
+  // (lettering with a width to keep inside)
+  plainExpect(sign).toContain("data-fit=");
 });
 
 plain("hole pages: pieces placed by hand, and Just the hole (its picture across the page, its number, the rest a click away)", () => {
@@ -1167,7 +1207,8 @@ test("tee sign settings: one hole's own given to the holes picked (Apply to hole
   await page.getByRole("button", { name: "3 Map" }).click();
   await page.getByRole("tab", { name: "Tee sign" }).click();
   const panel = page.getByTestId("sign-settings");
-  await panel.getByRole("radio", { name: /^Hole \d/ }).click();
+  const scope = page.getByTestId("change-scope");
+  await scope.getByRole("radio", { name: /^Hole \d+ only/ }).click();
   await panel.getByRole("radio", { name: "Hidden" }).click();
   const signs = async () => (await course(page)).holes.map((h: any) => h.sign?.others);
   await expect.poll(signs).toContain("hidden");
@@ -1177,7 +1218,7 @@ test("tee sign settings: one hole's own given to the holes picked (Apply to hole
   await page.getByTestId("apply-holes").getByRole("button", { name: "Apply", exact: true }).click();
   await expect.poll(signs).toEqual(["hidden", "hidden"]);
   // From All holes: the picked hole follows them again
-  await panel.getByRole("radio", { name: "All holes" }).click();
+  await scope.getByRole("radio", { name: "Every hole" }).click();
   await panel.getByTestId("sign-apply").getByRole("button", { name: "Apply to holes…" }).click();
   await page.getByTestId("apply-holes").getByRole("button", { name: own === 0 ? "Hole 2" : "Hole 1" }).click();
   await page.getByTestId("apply-holes").getByRole("button", { name: "Apply", exact: true }).click();

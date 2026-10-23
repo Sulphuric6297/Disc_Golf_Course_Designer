@@ -41,7 +41,6 @@ export function StyleSlider<K extends keyof MapStyle>({ k, value, label, min, ma
 export const ELEVATION_LOOKS: { id: ReliefLook | "off"; label: string; hint: string }[] = [
   { id: "shaded", label: "Shaded", hint: "Soft light and shadow, with bare rock on cliffs. Easy on the eye." },
   { id: "cliffs", label: "Cliff edges", hint: "Every drop's top edge inked, with the walls below it in shadow. Canyons and ledges stand out." },
-  { id: "sketched", label: "Sketched", hint: "Hand-drawn strokes down the steep slopes, like an old survey map." },
   { id: "contours", label: "Contours", hint: "Lines at round heights with the heights written on them, so you can read how high anything is." },
   { id: "terraces", label: "Terraces", hint: "The land in stepped layers, each one a bit lighter than the one below." },
   { id: "off", label: "Off", hint: "No elevation drawn. The ground looks flat." }

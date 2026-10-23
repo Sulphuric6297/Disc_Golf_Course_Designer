@@ -338,6 +338,7 @@ export type DrawShape = "points" | "box" | "circle" | "freehand" | "paint";
 
 /** Ways to draw elevation: soft light and shadow; inked rims over darker walls; hand-drawn strokes
  * down the slopes; lit contour lines with their heights; the land in stepped layers. */
+/** ("sketched", no longer offered, is read as "cliffs") */
 export type ReliefLook = "shaded" | "cliffs" | "sketched" | "contours" | "terraces";
 export type MapTheme = "forest" | "illustrated" | "satellite" | "topo" | "minimal" | "night";
 

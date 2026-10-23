@@ -128,7 +128,7 @@ export function MapLookPanel() {
   const theme = themeOf(s), parts = lookParts(s), lt = lightOf(s);
   const mixed = (Object.keys(PART_LABEL) as Part[]).some(p => (p === "elevation" ? false : p === "light" ? !!s.lightMode || s.goldenSun !== undefined : partChanged(s, p)));
   // (how the ground's shape is drawn: Shaded unless picked)
-  const relief = !s.hillshade ? "off" : s.reliefLook ?? "shaded";
+  const relief = !s.hillshade ? "off" : s.reliefLook === "sketched" ? "cliffs" : s.reliefLook ?? "shaded";
   /** One part's setting changed (kept apart from its style's own). */
   const setPart = <K extends LookPart>(part: K, patch: Partial<LookParts[K]>) => setStyle({ lookParts: { ...s.lookParts, [part]: { ...s.lookParts?.[part], ...patch } } });
   const resetPart = (part: Part) => {
