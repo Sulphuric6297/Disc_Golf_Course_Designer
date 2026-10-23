@@ -891,7 +891,8 @@ test("the course map's page edited like Canva: pick, drag, size, style, hide; te
   await page.mouse.up();
   await expect.poll(async () => (await style()).page?.legend?.x ?? 0).toBeGreaterThan(0.2);
   expect((await style()).page.legend.x).toBeLessThan(0.7);
-  await expect.poll(async () => { const b = (await legend.boundingBox())!; return Math.abs(b.x + b.width / 2 - to.x); }).toBeLessThan(pageBox.width * 0.1);
+  // (the page is drawn again as the painting comes in: measured once it's there)
+  await expect.poll(async () => { const b = await legend.boundingBox(); return b ? Math.abs(b.x + b.width / 2 - to.x) : Infinity; }).toBeLessThan(pageBox.width * 0.1);
   // One undo step; then back in place
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await style()).page?.legend?.x).toBeUndefined();

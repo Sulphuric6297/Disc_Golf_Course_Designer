@@ -135,7 +135,8 @@ test.describe("phone", () => {
     await page.getByTestId("import-site").tap();
     await expect.poll(async () => (await course(page)).background, { timeout: 60_000 }).not.toBeNull();
     await expect.poll(async () => (await editorState(page)).step).toBe("design");
-    await expect(page.getByTestId("tool-hint")).toContainText("Tap where the tee goes");
+    // (the pointer first: a look round before the first hole)
+    await expect.poll(async () => (await editorState(page)).tool).toBe("select");
   });
 
   test("the sheet rests at peek, half and full: drag it, tap its handle, or use the arrow keys", async ({ page }) => {
