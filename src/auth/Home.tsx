@@ -2,7 +2,7 @@
 // map of its holes, to open with one click; a new course; search. Beside them: what's waiting on
 // you (drafts, changes to review), Getting started, the help topics that matter most, and a tip.
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, BookOpen, Eye, Lightbulb, ListChecks, Loader2, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
+import { ArrowLeft, BookOpen, Eye, Lightbulb, ListChecks, Loader2, Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
 import { TOPICS } from "../lib/guide";
 import { HelpGuide } from "../components/help/HelpGuide";
 import { openGettingStarted, useStart } from "../components/GettingStarted";
@@ -172,12 +172,13 @@ export function Home() {
   const startTour = () => { openGettingStarted(); const c = mine[0] ?? shown[0]; void (c ? open(c.id) : fresh()); };
   const side = (
     <aside className="flex flex-col gap-4" data-testid="home-side">
-      <div className="glass rounded-[22px] p-4" data-testid="home-start">
-        <div className="flex items-center gap-2 text-[14px] font-bold text-zinc-50"><ListChecks size={17} className="text-orange-300" />Getting started</div>
+      {start.onHome && <div className="glass rounded-[22px] p-4" data-testid="home-start">
+        <div className="flex items-center gap-2 text-[14px] font-bold text-zinc-50"><ListChecks size={17} className="text-orange-300" /><span className="flex-1">Getting started</span>
+          <button className="w-7 h-7 -m-1 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.08]" aria-label="Take Getting started off the dashboard" title="Take it off (Show Getting started under Learn the app brings it back)" onClick={() => start.set({ onHome: false })} data-testid="home-start-hide"><X size={15} /></button></div>
         <p className="text-[13px] text-zinc-400 mt-1.5 leading-snug">A short list of the main things to do, from finding your park to printing tee signs. It ticks itself off as you go, and Show me points at each one.</p>
         <div className="mt-3 h-1 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-orange-300" style={{ width: `${(startDone / 7) * 100}%` }} /></div>
         <button className="mt-3 w-full rounded-full px-3 py-2 text-[13px] font-semibold bg-white/[0.1] hover:bg-white/[0.16] text-zinc-50" onClick={startTour} disabled={!!opening} data-testid="home-start-open">{startDone ? "Pick up where you left off" : "Show me around"}</button>
-      </div>
+      </div>}
       <div className="glass rounded-[22px] p-4" data-testid="home-learn">
         <div className="flex items-center gap-2 text-[14px] font-bold text-zinc-50"><BookOpen size={16} className="text-orange-300" />Learn the app</div>
         <ul className="mt-2 -mx-1.5">
@@ -186,6 +187,7 @@ export function Home() {
           ))}
         </ul>
         <button className="mt-1 text-[12.5px] font-semibold text-orange-300 hover:text-orange-200" onClick={() => setHelp({})} data-testid="home-help">The whole help guide ›</button>
+        {!start.onHome && <button className="block mt-1.5 text-[12.5px] font-semibold text-zinc-400 hover:text-zinc-200" onClick={() => start.set({ onHome: true })} data-testid="home-start-show">Show Getting started</button>}
       </div>
       <div className="glass rounded-[22px] p-4" data-testid="home-tip">
         <div className="flex items-center gap-2 text-[13px] font-bold text-zinc-50"><Lightbulb size={15} className="text-amber-300" />Tip</div>

@@ -15,17 +15,18 @@ import { toast } from "../state/toast";
 import { FOCUS } from "./ui";
 
 /** `ticked`: items ticked off by hand (done another way, or not needed); `unticked`: ones untouched by hand. */
-type Flags = { open: boolean; folded: boolean; seen3d: boolean; checks: boolean; map: boolean; export: boolean; ticked: string[]; unticked: string[] };
+/** `onHome`: false once its card is taken off the dashboard (it can be put back). */
+type Flags = { open: boolean; folded: boolean; seen3d: boolean; checks: boolean; map: boolean; export: boolean; ticked: string[]; unticked: string[]; onHome: boolean };
 const KEY = "dg-getting-started";
 const load = (): Flags => {
-  const none = { open: false, folded: false, seen3d: false, checks: false, map: false, export: false, ticked: [] as string[], unticked: [] as string[] };
+  const none = { open: false, folded: false, seen3d: false, checks: false, map: false, export: false, ticked: [] as string[], unticked: [] as string[], onHome: true };
   try { return { ...none, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") }; } catch { return none; }
 };
 export const useStart = create<Flags & { set: (p: Partial<Flags>) => void }>(set => ({
   ...load(),
   set: p => set(s => {
     const next = { ...s, ...p };
-    try { localStorage.setItem(KEY, JSON.stringify({ open: next.open, folded: next.folded, seen3d: next.seen3d, checks: next.checks, map: next.map, export: next.export, ticked: next.ticked, unticked: next.unticked })); } catch { /* (private window: kept for now only) */ }
+    try { localStorage.setItem(KEY, JSON.stringify({ open: next.open, folded: next.folded, seen3d: next.seen3d, checks: next.checks, map: next.map, export: next.export, ticked: next.ticked, unticked: next.unticked, onHome: next.onHome })); } catch { /* (private window: kept for now only) */ }
     return next;
   })
 }));

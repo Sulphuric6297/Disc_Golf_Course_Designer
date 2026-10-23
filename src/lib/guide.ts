@@ -54,6 +54,12 @@ export const SECTIONS: { id: GuideSection; title: string; short?: string; intro:
 export const TOPICS: Topic[] = [
   // ------------------------------------------------------------------ Getting started
   {
+    id: "getting-started", section: "start", title: "Getting started",
+    body: "Getting started is a short list of the main things to do, from finding your park to printing tee signs. It ticks itself off as you do them, in any order, and each one's Show me takes you to the real control and points at it.\n\nDone something another way, or don't need it? Tap its circle to tick it off yourself, and tap again to untick it. Close the list with its ×. To bring it back, use the list button at the top (by the ?), the menu on a phone, search, or the Getting started button at the top of this guide. On the dashboard its card has an × too, and Show Getting started under Learn the app puts it back.",
+    words: "getting started tutorial tour checklist learn basics show me around tick off close bring back dashboard",
+    path: "The list button at the top · Help › Getting started"
+  },
+  {
     id: "steps", section: "start", title: "The four steps",
     body: "HyzerLab works in four steps along the top bar. Site brings in the real place. Design is where you lay out the holes. Map is the printed stuff, and Export makes the files.\n\nYou can jump between them whenever you like. They all work on the same course, so a change in one shows up in the others right away.",
     words: "workflow order site design map export tabs"
@@ -554,12 +560,12 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "gestures", section: "phone", title: "Touch gestures",
-    body: "One finger pans the map (or drags whatever you've picked). Pinch to zoom, twist two fingers to turn the map, and slide two fingers up or down to tilt into 3D. Tap picks things, and holding a finger on something opens its menu.\n\nHold a finger on open ground for what you can start there: Add a tee here or Add a pin here (for the hole you're on), Bend the hole here, New hole, tee here, or Measure from here.",
+    body: "One finger pans the map (or drags whatever you've picked). Pinch to zoom, twist two fingers to turn the map, and slide two fingers up or down to tilt into 3D. Tap picks things, and holding a finger on something opens its menu. With a path, woods or any shape picked, tap one of its corner points and a Delete point button comes up beside it.\n\nHold a finger on open ground for what you can start there: Add a tee here or Add a pin here (for the hole you're on), Bend the hole here, New hole, tee here, or Measure from here.",
     words: "gestures pinch tap hold long press tilt turn twist swipe menu here add a tee here add a pin here bend the hole here measure from here"
   },
   {
     id: "hole-strip", section: "phone", title: "Changing a hole on a phone",
-    body: "Tap a hole and the panel drops down to a short strip, so the hole stays in view above it. The strip has Par, Fairway, Tees, Pins, OB and Foliage, each showing what it's set to. Tap one to change it right there.\n\nFor the fairway's width, drag the dial sideways and the map follows as you go. Everything else about the hole is further up, so drag the panel up. The arrows by the hole's name go to the next and previous holes.",
-    words: "phone hole strip dial fairway width par tees pins ob foliage edit mobile"
+    body: "Tap a hole, a tree, a tee or any other thing, and the panel drops down to a short strip, so the map stays in view above it. Pinch a picked tree, tee or shape with two fingers to size it, and twist to turn it. The strip has Par, Fairway, Tees, Pins, OB and Foliage, each showing what it's set to. Tap one to change it right there.\n\nFor the fairway's width, drag the dial sideways and the map follows as you go. Everything else about the hole is further up, so drag the panel up. The arrows by the hole's name go to the next and previous holes.",
+    words: "phone hole strip dial fairway width par tees pins ob foliage edit mobile tree size height pinch twist move here"
   }
 ];
