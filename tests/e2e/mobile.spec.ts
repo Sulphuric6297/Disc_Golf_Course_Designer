@@ -1,7 +1,7 @@
 // Phones and tablets: the step bar, the bottom sheet (peek, half, full), tools by tap with Undo,
 // Cancel and Done, the selection in the sheet, long-press menus, the Design preview fitted to the
 // screen, the tee view, a phone on its side, a tablet, and the desktop layout left as it was.
-import { test, expect, course, editorState, tapPlan, longPress, touchDrag, pinch, screenOf } from "./fixtures";
+import { test, expect, course, editorState, tapPlan, longPress, touchDrag, touches, pinch, screenOf } from "./fixtures";
 import { devices, type Page } from "@playwright/test";
 import { writeFileSync } from "fs";
 import { createBasket, createEmptyCourse, createTee, newHole } from "../../src/lib/course";
@@ -519,6 +519,52 @@ test.describe("phone", () => {
     await expect(page.getByTestId("bottom-nav")).toBeVisible();
   });
 
+  test("the camera on a phone: the stick moves it, the arrows lift it, a drag turns it, a big button adds the keyframe", async ({ page }) => {
+    await oneHole(page);
+    await tapPlan(page, 450, 500);
+    await page.getByRole("button", { name: "View from the tee" }).tap();
+    await page.getByTestId("hud-freecam").tap();
+    await expect(page.getByTestId("camera-hud")).toBeVisible();
+    await expect(page.getByTestId("bottom-nav")).toHaveCount(0);
+    const pose = () => page.evaluate(() => (window as any).__dgView.freeKey());
+    await expect.poll(async () => (await pose()) !== null).toBe(true);
+    const p0 = await pose();
+    // The stick pushed up and held: forward
+    const st = (await page.getByTestId("cam-stick").boundingBox())!;
+    const c = { x: st.x + st.width / 2, y: st.y + st.height / 2 };
+    await touches(page, async send => {
+      await send("touchStart", [c]);
+      await send("touchMove", [{ x: c.x, y: c.y - 20 }]);
+      await send("touchMove", [{ x: c.x, y: c.y - 45 }]);
+      await page.waitForTimeout(700);
+      await send("touchEnd", []);
+    });
+    const p1 = await pose();
+    const ahead = { x: p0.lookX - p0.x, y: p0.lookY - p0.y }, n = Math.hypot(ahead.x, ahead.y);
+    expect(((p1.x - p0.x) * ahead.x + (p1.y - p0.y) * ahead.y) / n).toBeGreaterThan(5);
+    // (let go: it stops)
+    await page.waitForTimeout(200);
+    const still = await pose();
+    await page.waitForTimeout(300);
+    expect(Math.hypot((await pose()).x - still.x, (await pose()).y - still.y)).toBeLessThan(0.2);
+    // The up arrow held: higher
+    const up = (await page.getByTestId("cam-up").boundingBox())!;
+    await longPress(page, { x: up.x + up.width / 2, y: up.y + up.height / 2 }, 700);
+    expect((await pose()).alt).toBeGreaterThan(p1.alt + 5);
+    // A finger dragged across the view: it turns
+    const before = await pose();
+    await touchDrag(page, { x: 190, y: 380 }, { x: 80, y: 400 });
+    expect(Math.hypot((await pose()).lookX - before.lookX, (await pose()).lookY - before.lookY)).toBeGreaterThan(5);
+    // Big enough for a thumb; adds keyframe 1
+    const add = (await page.getByTestId("cam-add").boundingBox())!;
+    expect(add.height).toBeGreaterThanOrEqual(44);
+    await page.getByTestId("cam-add").tap();
+    await expect.poll(async () => ((await course(page)).holes[0].flyKeys ?? []).length).toBe(1);
+    await page.getByTestId("cam-done").tap();
+    await expect(page.getByTestId("camera-hud")).toHaveCount(0);
+    await expect(page.getByTestId("bottom-nav")).toBeVisible();
+  });
+
   test("touch targets: the step bar, tools and map buttons are at least 44 px", async ({ page }) => {
     await openGround(page);
     const small: string[] = [];
@@ -617,9 +663,12 @@ test("desktop at 1600 × 1000 keeps its layout: top bar steps, side panel, tool 
   await expect(page.getByTestId("tool-hint")).toContainText("another skill level");
   await page.keyboard.press("Escape");
   for (const id of ["bottom-nav", "sheet", "nav-rail", "side-sheet", "top-bar", "draw-bar"]) await expect(page.getByTestId(id)).toHaveCount(0);
-  // The selection's inspector floats on the right of the map
+  // What's picked opens down the map's left, next to the hole list (just the numbers while it
+  // shows): the map's right side stays clear
   await page.getByTestId("hole-row").click();
   const insp = (await page.getByTestId("inspector").boundingBox())!;
+  const main = (await page.locator("main").boundingBox())!;
   expect(insp.width).toBe(300);
-  expect(Math.round(insp.x + insp.width)).toBe(1600 - 10 - 150);
+  expect(Math.round(insp.x - main.x)).toBe(76);
+  expect(Math.round((await page.getByTestId("hole-list").boundingBox())!.width)).toBe(52);
 });

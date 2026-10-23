@@ -198,7 +198,7 @@ export async function drag(page: Page, from: { x: number; y: number }, to: { x: 
 type XY = { x: number; y: number };
 /** Raw touches through the DevTools protocol: a finger's press, moves and lift (pointer events
  * of type "touch", as on a phone). */
-async function touches(page: Page, run: (send: (type: "touchStart" | "touchMove" | "touchEnd", points: XY[]) => Promise<void>) => Promise<void>) {
+export async function touches(page: Page, run: (send: (type: "touchStart" | "touchMove" | "touchEnd", points: XY[]) => Promise<void>) => Promise<void>) {
   const cdp = await page.context().newCDPSession(page);
   try {
     await run(async (type, points) => { await cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points.map((p, i) => ({ x: p.x, y: p.y, id: i })) }); });

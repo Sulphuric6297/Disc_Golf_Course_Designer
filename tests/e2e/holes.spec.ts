@@ -481,3 +481,28 @@ test("a hole with two tees has two fairways, drawn as one where they overlap", a
   }, hole.id);
   await expect.poll(fair).toEqual({ meshes: 2, once: true });
 });
+
+test("a tee or basket picked opens its hole's panel, with it opened up under Tees and baskets", async ({ page }) => {
+  await blankCourse(page);
+  const hole = await addHole(page, { x: 400, y: 600 }, { x: 800, y: 600 });
+  await page.keyboard.press("Escape");
+  const tee = await page.evaluate(id => (window as any).__dgCourse().items.find((i: any) => i.type === "tee" && i.holeId === id).id, hole.id);
+  await page.evaluate(id => (window as any).__dgActions.select(id), tee);
+  const insp = page.getByTestId("inspector");
+  await expect(insp.getByTestId("inspector-title")).toHaveText("Hole 1");
+  await expect(page.getByTestId("selection-part")).toHaveText("Blue tee");
+  await expect(insp.getByTestId("hole-part-settings")).toHaveCount(1);
+  await expect(insp.getByRole("radiogroup", { name: "Tee color" })).toBeVisible();
+  // (the hole's own settings right there too)
+  await expect(insp.getByRole("radiogroup", { name: "Par" })).toBeVisible();
+  // The basket's row: it opens instead, and it's the one picked on the map
+  await insp.getByTestId("hole-part-basket").click();
+  await expect(insp.getByRole("radiogroup", { name: "Pin position" })).toBeVisible();
+  await expect(insp.getByRole("radiogroup", { name: "Tee color" })).toHaveCount(0);
+  const basket = await page.evaluate(id => (window as any).__dgCourse().items.find((i: any) => i.type === "basket" && i.holeId === id).id, hole.id);
+  expect((await editorState(page)).selectedId).toBe(basket);
+  // Clicked again: closed, and the hole is the pick
+  await insp.getByTestId("hole-part-basket").click();
+  await expect(insp.getByTestId("hole-part-settings")).toHaveCount(0);
+  expect((await editorState(page)).selectedId).toBe(hole.id);
+});

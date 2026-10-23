@@ -23,7 +23,8 @@ export const SHORTCUTS: [string, string][] = [
   ["Shift+drag", "Select with a box"], ["Shift+click", "Add to the selection, or take out"], ["Ctrl+A", "Select everything"],
   ["Del", "Delete the selection"], ["Ctrl+D", "Duplicate"], ["Ctrl+C / X / V", "Copy / cut / paste (where the pointer is)"], ["Arrows", "Nudge 1 ft (Shift: 10 ft) · other holes in the tee view"],
   ["Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"], ["Ctrl+S", "Save now"], ["2 / 3", "Top-down / 3D"], ["0 / F", "Whole course / zoom to selection"], ["[ / ]", "Previous / next hole"],
-  ["Ctrl+K or /", "Search: holes, tools, settings, help"], ["Q / E / N", "Turn left / right / north up"], ["+ / −", "Zoom"], ["?", "This guide"]
+  ["Ctrl+K or /", "Search: holes, tools, settings, help"], ["Q / E / N", "Turn left / right / north up"], ["+ / −", "Zoom"], ["?", "This guide"],
+  ["W A S D or arrows", "In the camera: move (Shift: faster)"], ["Space or E / Q", "In the camera: up / down"], ["Enter / U", "In the camera: add a keyframe / move the picked one here"], ["[ / ] in the camera", "Keyframe before / after"]
 ];
 
 export const GESTURES: [string, string][] = [
@@ -34,7 +35,8 @@ export const GESTURES: [string, string][] = [
   ["Tap", "Select a hole or a thing; with a tool, place it"],
   ["Hold", "A thing's menu: view from the tee, mark OB, duplicate, lock, delete"],
   ["Select, above the tools", "Drag a box around several things; tap one to add it or take it out"],
-  ["Drag the panel", "Up for more, down for more map; tap its handle to step through"]
+  ["Drag the panel", "Up for more, down for more map; tap its handle to step through"],
+  ["In the camera", "The stick moves it, the arrows take it up and down, drag the view to look"]
 ];
 
 /** The topics this app has (file saving only without a server). In the demo the server's topics

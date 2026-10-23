@@ -27,6 +27,7 @@ import { getView } from "../../state/view";
 import { MapDesigner } from "../MapDesigner";
 import { STEPS, STEP_ICONS, StepContent, touchWords } from "../SidePanel";
 import { TeeViewHud } from "../TeeViewHud";
+import { CameraHud } from "../CameraHud";
 import { TOOLS, toolHint, toolOptions } from "../Toolbar";
 import { ExportProgressPill } from "../ExportProgress";
 import { ActionSheet, type SheetAction } from "./ActionSheet";
@@ -617,7 +618,7 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
         {!immersive && <PhoneTopBar onMenu={openApp} />}
         {!immersive && <GettingStarted phone />}
         {!immersive && <DrawBar bottom={sheetH + 12} />}
-        {ed.teeView && <TeeViewHud compact />}
+        {ed.teeView && (ed.flyCam && !useCourse.getState().readOnly ? <CameraHud compact /> : <TeeViewHud compact />)}
         <ExportProgressPill top={immersive ? undefined : top + 4} />
         {toasts(immersive ? 96 : sheetH + 12)}
         {welcome && !immersive && (
@@ -667,7 +668,7 @@ function RailShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts 
         <MapViewport onContextMenu={onContextMenu} compact="rail" controlsTop={8} controlsRoom={immersive || design ? 0 : 999} />
         {design && <div className="absolute inset-0 z-20"><MapDesigner compact topInset={0} preview={ed.step === "export"} /></div>}
         {!immersive && <DrawBar bottom={12} />}
-        {ed.teeView && <TeeViewHud compact />}
+        {ed.teeView && (ed.flyCam && !useCourse.getState().readOnly ? <CameraHud compact /> : <TeeViewHud compact />)}
         <ExportProgressPill />
         {toasts(16)}
         {welcome && !immersive && <div className="absolute inset-0 z-10 flex items-center justify-center px-3 pointer-events-none">{welcome}</div>}

@@ -22,6 +22,7 @@ import { canShowLocation } from "../state/gps";
 import { landscapeOf } from "../lib/landscapes";
 import { paintedDetail, usePaintedGround } from "../state/paintedGround";
 import { getView, setLiveView } from "../state/view";
+import { cameraFrom } from "./FlyoverSettings";
 
 
 type MenuInfo = { clientX: number; clientY: number; itemId: string | null; ground: P | null };
@@ -77,7 +78,12 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       onObPickEnd: () => useEditor.getState().set({ obPick: null, pickCut: false }),
       onCutLine: (id, a, b) => cutStretch(id, a, b),
       onLidar: patch => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, ...patch } } : {})),
-      onFlyWait: waiting => useEditor.getState().set({ flyLoading: waiting })
+      onFlyWait: waiting => useEditor.getState().set({ flyLoading: waiting }),
+      onFlyKey: i => useEditor.getState().set({ flyKey: i }),
+      onFlyCam: i => {
+        const s = useEditor.getState();
+        if (s.selectedId) cameraFrom(s.selectedId, i);
+      }
     });
     setLiveView(v);
     (window as any).__dgView = v;
@@ -182,6 +188,9 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { view?.setGrass(ed.grass, ed.wind); }, [view, ed.grass, ed.wind]);
   // Covered by the Design step's page: the map view rests
   useEffect(() => { view?.setPaused(ed.step === "map" && !ed.teeView); }, [view, ed.step, ed.teeView]);
+  // (the picked keyframe stands out on the map; another hole picked, none is)
+  useEffect(() => { view?.setFlyKey(ed.flyKey); }, [view, ed.flyKey]);
+  useEffect(() => { if (!useEditor.getState().flyCam) useEditor.getState().set({ flyKey: null }); }, [ed.selectedId]);
   useEffect(() => {
     if (!view) return;
     if (ed.flyover && ed.teeView) view.flyover(ed.teeView, () => useEditor.getState().set({ flyover: false }));
@@ -195,8 +204,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const pad = "pointer-events-auto glass backdrop-blur rounded-lg shadow-lg shadow-black/30 ring-1 ring-white/10";
 
   // (on a computer, clear of the Selection panel at the top right: 150 to 450 px from the edge)
-  const obBar = ed.obPick && !ed.teeView && <ObPickBar view={view} cut={ed.pickCut} top={compact ? controlsTop + 8 : 12} right={!compact && ed.selectedId && ed.step !== "map" ? 462 : 8} />;
-  const plotBar = ed.plotLine && !ed.teeView && <PlotBar view={view} holeNumber={doc.holes.findIndex(h => h.id === ed.plotLine) + 1} top={compact ? controlsTop + 8 : 12} right={!compact && ed.selectedId && ed.step !== "map" ? 462 : 8} />;
+  const obBar = ed.obPick && !ed.teeView && <ObPickBar view={view} cut={ed.pickCut} top={compact ? controlsTop + 8 : 12} right={8} />;
+  const plotBar = ed.plotLine && !ed.teeView && <PlotBar view={view} holeNumber={doc.holes.findIndex(h => h.id === ed.plotLine) + 1} top={compact ? controlsTop + 8 : 12} right={8} />;
   if (compact) {
     return (
       <div className="absolute inset-0">
@@ -244,7 +253,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
             </div>
           )}
           {hover && (
-            <div className={`absolute ${ed.step === "design" && !ed.teeView ? "left-[208px]" : "left-3"} bottom-3 text-[11px] text-zinc-200 glass rounded-md px-2 py-1 pointer-events-none`} data-testid="hover-readout">
+            <div className={`absolute ${ed.step === "design" && !ed.teeView ? (ed.selectedId || ed.group.length ? "left-[400px]" : "left-[208px]") : "left-3"} bottom-3 text-[11px] text-zinc-200 glass rounded-md px-2 py-1 pointer-events-none`} data-testid="hover-readout">
               {doc.site.bounds ? `Elevation ${Math.round(doc.units === "m" ? elevation! / 3.28084 : elevation!)} ${doc.units}` : `Ground ${fmtElev(elevation!, doc.units)}`}
             </div>
           )}

@@ -30,7 +30,7 @@ import { create3dTree, getTreeSignature } from "../three/trees";
 import { createMeasuredWoods, createUnderbrush, createWoods, createWoodsWhere } from "../three/woods";
 import { standingTrees, grownTree, grownTrees } from "../lib/lidar";
 import type { WoodedGrid } from "../lib/forest";
-import { autoFlight, flightClock, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy, type Crown } from "../lib/flight";
+import { autoFlight, flightClock, flyoverOf, insertKey, keyFlight, keyTimes, keysFromFlight, type Air, type Canopy, type Crown } from "../lib/flight";
 import { VIDEO_HOLD, titleStrength } from "../lib/video";
 import { drawOverlay, holeTitle, overlayShow, type HoleTitle } from "./flyTitle";
 import { forestDetail, type Forest, type TreeSpot } from "../three/treeKit";
@@ -121,6 +121,9 @@ const STYLE = `
 .dg-h[data-handle=flykey]::after{content:attr(data-n)}
 .dg-h[data-handle=flyfoot]{width:12px;height:12px;border-radius:50%;background:#e0f2fe;border:2px solid #0284c7;cursor:move;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=flylook]{width:12px;height:12px;border-radius:50%;border:2.5px solid #38bdf8;background:rgba(15,23,42,.35);cursor:grab}
+.dg-h[data-handle=flykey][data-on]{background:#f97316;width:24px;height:24px;font-size:12.5px;line-height:20px;box-shadow:0 0 0 3px rgba(249,115,22,.35),0 1px 4px rgba(0,0,0,.5)}
+.dg-h[data-handle=flylook][data-on]{border-color:#f97316}
+.dg-h[data-handle=flyadd]{width:16px;height:16px;border-radius:50%;background:rgba(2,132,199,.85);border:2px solid #fff;cursor:copy;display:flex;align-items:center;justify-content:center;font:800 13px/1 Inter,sans-serif;color:#fff;opacity:.8;box-shadow:0 1px 3px rgba(0,0,0,.5)}.dg-h[data-handle=flyadd]::after{content:"+"}.dg-h[data-handle=flyadd]:hover{opacity:1}
 .dg-h[data-handle=mid]{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.6);border:2px solid #0891b2;cursor:copy}
 .dg-h[data-handle=mid][data-kind=line]{border-color:#f59e0b}
 .dg-h[data-handle=width]{width:13px;height:13px;border-radius:3px;background:#fff;border:2.5px solid #16a34a;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
@@ -251,6 +254,15 @@ export class CourseView {
   /** The tee the tee view stands on, when it isn't the layout's. */
   private povTee: string | null = null;
   private povLook = { yaw: 0, pitch: 0 };
+  /** The camera flown by hand, first person (making keyframes): where it is, which way it faces
+   * (plan angle and up/down, radians), and what moves it (the keys held, the joystick: forward,
+   * right, up, each -1 to 1; faster). */
+  private free: { x: number; y: number; z: number; yaw: number; pitch: number } | null = null;
+  private freeIn = { f: 0, s: 0, u: 0, fast: false };
+  /** The tee view's lens before flying by hand (put back after). */
+  private freeWas = 62;
+  /** The selected hole's picked keyframe (its handle stands out). */
+  private flyKeyOn: number | null = null;
   /** A flight under way: `dur` s of path, played over `play` s (`at`: path time at a moment; see flightClock). */
   /** A flyover holds its first picture until the hole's detail and textures are in and a few
    * frames are drawn (so it looks right from the start), ten seconds at most. */
@@ -881,6 +893,7 @@ export class CourseView {
     if (holeId === this.povHole) { this.povLook = { yaw: 0, pitch: 0 }; this.invalidate(); return; }
     this.povHole = holeId;
     this.povLook = { yaw: 0, pitch: 0 };
+    if (!holeId) this.freeCam(false);
     this.detailReady = this.updateDetail().catch(() => {});
     this.controls.enabled = !holeId;
     this.labelsLayer.style.display = holeId ? "none" : "";
@@ -1053,6 +1066,119 @@ export class CourseView {
     this.invalidate();
   }
 
+  // ------------------------------------------------------------------ the camera by hand
+
+  /** Flies the camera by hand, first person (over the tee view's hole), from keyframe `from` of
+   * it, or (null) from where the tee view stands; `false` back to the tee view. */
+  freeCam(from: FlyKey | null | false) {
+    if (from === false) {
+      if (this.free) this.povCam.fov = this.freeWas;
+      this.free = null;
+      this.freeIn = { f: 0, s: 0, u: 0, fast: false };
+      this.invalidate();
+      return;
+    }
+    if (!this.free) this.freeWas = this.povCam.fov;
+    this.freeGo(from);
+  }
+
+  /** The camera by hand put at keyframe `k` (null: where the tee view stands). */
+  freeGo(k: FlyKey | null) {
+    const doc = this.doc;
+    let eye: THREE.Vector3, target: THREE.Vector3, fov: number;
+    if (k) {
+      eye = new THREE.Vector3(k.x, this.h(k.x, k.y) + k.alt, k.y);
+      target = new THREE.Vector3(k.lookX, this.h(k.lookX, k.lookY) + (k.lookAlt ?? 3), k.lookY);
+      fov = k.fov ?? (doc ? flyoverOf(doc.course, doc.course.holes.find(h => h.id === this.povHole)).fov : 60);
+    } else {
+      const pose = this.povPose();
+      if (!pose) return;
+      eye = pose.eye;
+      target = pose.target;
+      fov = this.povCam.fov;
+    }
+    const d = target.clone().sub(eye);
+    const flat = Math.hypot(d.x, d.z);
+    this.free = { x: eye.x, y: eye.z, z: eye.y, yaw: Math.atan2(d.z, d.x), pitch: Math.atan2(d.y, Math.max(1e-3, flat)) };
+    this.povCam.fov = clamp(fov, 15, 110);
+    this.invalidate();
+  }
+
+  /** What moves the camera by hand: forward, right, up (each -1 to 1), and faster. */
+  freeMove(m: Partial<{ f: number; s: number; u: number; fast: boolean }>) {
+    Object.assign(this.freeIn, m);
+    this.invalidate();
+  }
+
+  /** The camera by hand's lens (field of view, degrees) set to `fov`; returns what it is. */
+  freeLens(fov?: number) {
+    if (fov !== undefined) { this.povCam.fov = clamp(fov, 15, 110); this.invalidate(); }
+    return Math.round(this.povCam.fov);
+  }
+
+  /** Where the camera by hand is, as a keyframe: its spot and height over the ground, what it
+   * looks at (where the middle of the picture meets the ground, or a way off along it when it
+   * looks over the horizon) and its lens. Null: not flying by hand. */
+  freeKey(): FlyKey | null {
+    const f = this.free;
+    if (!f) return null;
+    const dir = { x: Math.cos(f.yaw) * Math.cos(f.pitch), y: Math.sin(f.yaw) * Math.cos(f.pitch), z: Math.sin(f.pitch) };
+    // (out along the middle of the picture to the ground, 5 ft at a time; none in 1500 ft, 400 ft out)
+    let d = 400;
+    for (let s = 5; s <= 1500; s += 5) {
+      if (f.z + dir.z * s <= this.h(f.x + dir.x * s, f.y + dir.y * s)) { d = s; break; }
+    }
+    const lx = f.x + dir.x * d, ly = f.y + dir.y * d, lz = f.z + dir.z * d;
+    const r1 = (v: number) => Math.round(v * 10) / 10;
+    return { x: r1(f.x), y: r1(f.y), alt: r1(f.z - this.h(f.x, f.y)), lookX: r1(lx), lookY: r1(ly), lookAlt: r1(Math.max(0, lz - this.h(lx, ly))), fov: Math.round(this.povCam.fov) };
+  }
+
+  /** Moves the camera by hand on by `dt` s: level forward and to the side, the way it faces, and
+   * straight up or down (faster the higher it is); never into the ground. */
+  private stepFree(dt: number) {
+    const f = this.free, m = this.freeIn;
+    if (!f || (!m.f && !m.s && !m.u)) return false;
+    const alt = f.z - this.h(f.x, f.y);
+    const speed = clamp(alt * 0.6, 20, 150) * (m.fast ? 3 : 1) * Math.min(dt, 0.1);
+    f.x += (Math.cos(f.yaw) * m.f - Math.sin(f.yaw) * m.s) * speed;
+    f.y += (Math.sin(f.yaw) * m.f + Math.cos(f.yaw) * m.s) * speed;
+    f.z += m.u * speed * 0.7;
+    f.z = clamp(f.z, this.h(f.x, f.y) + 2, this.h(f.x, f.y) + 2000);
+    return true;
+  }
+
+  /** The selected hole's keyframe picked (null: none); its handle stands out on the map. */
+  setFlyKey(i: number | null) {
+    this.flyKeyOn = i;
+    this.markFlyKey();
+  }
+  private markFlyKey() {
+    for (const h of this.handles) {
+      if (h.kind !== "flykey" && h.kind !== "flylook") continue;
+      if (h.index === this.flyKeyOn) h.el.dataset.on = "";
+      else delete h.el.dataset.on;
+    }
+  }
+
+  private flyMidCache: { key: string; pts: THREE.Vector3[] } | null = null;
+  /** Halfway (in time) between each two keyframes of a hole: where the flight is there. */
+  private flyMids(holeId: string): THREE.Vector3[] {
+    const doc = this.doc, hole = doc?.course.holes.find(h => h.id === holeId);
+    const keys = hole?.flyKeys;
+    if (!doc || !hole || !keys || keys.length < 2) return [];
+    const set = flyoverOf(doc.course, hole);
+    const key = JSON.stringify([keys, set.speed, set.fov]);
+    if (this.flyMidCache?.key === key) return this.flyMidCache.pts;
+    const ground = (x: number, y: number) => this.h(x, y);
+    const f = keyFlight(keys, set, ground), at = keyTimes(keys, set, ground);
+    const pts = f ? at.slice(1).map((t, i) => {
+      const c = f.cam[Math.round((((at[i] + t) / 2) / f.dur) * (f.cam.length - 1))];
+      return new THREE.Vector3(c.x, c.z, c.y);
+    }) : [];
+    this.flyMidCache = { key, pts };
+    return pts;
+  }
+
   /** Where the tee view stands and looks (tee + eye height, toward the first point of the line). */
   private povPose(): { eye: THREE.Vector3; target: THREE.Vector3 } | null {
     const doc = this.doc;
@@ -1087,6 +1213,10 @@ export class CourseView {
       curveBetween(f.pts, i0, idx - i0, cam.position);
       cam.lookAt(curveBetween(f.look, i0, idx - i0, new THREE.Vector3()));
       cam.fov = f.fov[i0] + (f.fov[i1] - f.fov[i0]) * (idx - i0);
+    } else if (this.free) {
+      const f = this.free;
+      cam.position.set(f.x, f.z, f.y);
+      cam.lookAt(f.x + Math.cos(f.yaw) * Math.cos(f.pitch), f.z + Math.sin(f.pitch), f.y + Math.sin(f.yaw) * Math.cos(f.pitch));
     } else {
       const pose = this.povPose();
       if (!pose) return;
@@ -1395,6 +1525,7 @@ export class CourseView {
     this.raf = requestAnimationFrame(this.loop);
     const dt = this.clock.getDelta();
     if (this.controls.update(dt)) this.dirty = true;
+    if (!this.fly && this.stepFree(dt)) this.dirty = true;
     if (this.fly) {
       // Held on its first picture until everything's in (a few frames drawn after), then at most
       // a quarter second per frame: a slow first frame (or a tab coming back from the background)
@@ -3035,6 +3166,7 @@ export class CourseView {
       if (opts.index !== undefined) el.dataset.index = String(opts.index);
       if (opts.title) el.title = opts.title;
       Object.entries(opts.data ?? {}).forEach(([k, v]) => (el.dataset[k] = v));
+      if ((kind === "flykey" || kind === "flylook") && opts.index === this.flyKeyOn) el.dataset.on = "";
       this.handlesLayer.appendChild(el);
       this.handles.push({ el, kind, index: opts.index, world, start, visible: opts.visible });
     };
@@ -3214,11 +3346,29 @@ export class CourseView {
           end: () => this.cb.onCommit()
         };
       };
+      // (taking hold of any of a keyframe's handles picks it)
+      const picked = (i: number, d: Drag | null) => { this.cb.onFlyKey?.(i); return d; };
       keys.forEach((_, i) => {
-        add("flylook", () => { const k = hole()?.flyKeys?.[i]; return k ? at({ x: k.lookX, y: k.lookY }) : null; }, () => dragKey(i, true), { index: i, title: `Where keyframe ${i + 1} looks: drag` });
-        add("flyfoot", () => { const k = hole()?.flyKeys?.[i]; return k ? at(k) : null; }, () => dragKey(i, false), { index: i, title: `Keyframe ${i + 1} over the ground: drag to move it`, visible: tilted });
-        add("flykey", () => { const k = hole()?.flyKeys?.[i]; return k ? (tilted() ? new THREE.Vector3(k.x, this.h(k.x, k.y) + k.alt, k.y) : at(k)) : null; }, () => (tilted() ? dragHeight(i) : dragKey(i, false)), { index: i, title: `Flyover keyframe ${i + 1}: in 3D drag up or down for its height; from above, drag to move it`, data: { n: String(i + 1) } });
+        add("flylook", () => { const k = hole()?.flyKeys?.[i]; return k ? at({ x: k.lookX, y: k.lookY }) : null; }, () => picked(i, dragKey(i, true)), { index: i, title: `Where keyframe ${i + 1} looks: drag` });
+        add("flyfoot", () => { const k = hole()?.flyKeys?.[i]; return k ? at(k) : null; }, () => picked(i, dragKey(i, false)), { index: i, title: `Keyframe ${i + 1} over the ground: drag to move it`, visible: tilted });
+        add("flykey", () => { const k = hole()?.flyKeys?.[i]; return k ? (tilted() ? new THREE.Vector3(k.x, this.h(k.x, k.y) + k.alt, k.y) : at(k)) : null; }, () => picked(i, tilted() ? dragHeight(i) : dragKey(i, false)), { index: i, title: `Keyframe ${i + 1}: in 3D drag up or down for its height; from above, drag to move it. Double-click to look through it`, data: { n: String(i + 1) } });
       });
+      // A + halfway (in time) between each two: a click adds a keyframe there, right where the
+      // flight already goes
+      for (let i = 0; i + 1 < keys.length; i++) {
+        add("flyadd", () => {
+          const p = this.flyMids(holeId)[i];
+          return p ? (tilted() ? p.clone() : at({ x: p.x, y: p.z })) : null;
+        }, () => {
+          const doc = this.doc, h = hole();
+          if (!doc || !h?.flyKeys) return null;
+          const r = insertKey(h.flyKeys, i, flyoverOf(doc.course, h), (x, y) => this.h(x, y));
+          this.cb.onHoleChange(holeId, { flyKeys: r.keys });
+          this.cb.onCommit();
+          this.cb.onFlyKey?.(r.at);
+          return null;
+        }, { index: i, title: "Add a keyframe here" });
+      }
     }
     // Mid dots between each pair of line points: pulling one adds a turn there
     const n = s0.line.length;
@@ -5269,7 +5419,16 @@ export class CourseView {
     const x0 = e.clientX, y0 = e.clientY;
     const start = { ...this.povLook };
     const degPerPx = this.povCam.fov / Math.max(1, this.size.height);
+    const free = this.free, from = free ? { yaw: free.yaw, pitch: free.pitch } : null;
     const move = (ev: PointerEvent) => {
+      // (by hand: the camera turns the same way the view from a tee does)
+      if (free && from) {
+        if (this.free !== free) return;
+        free.yaw = from.yaw - (ev.clientX - x0) * degPerPx * DEG;
+        free.pitch = clamp(from.pitch + (ev.clientY - y0) * degPerPx * DEG, -85 * DEG, 85 * DEG);
+        this.invalidate();
+        return;
+      }
       this.povLook = {
         yaw: start.yaw - (ev.clientX - x0) * degPerPx * DEG,
         pitch: clamp(start.pitch + (ev.clientY - y0) * degPerPx * DEG, -70 * DEG, 50 * DEG)
@@ -5301,6 +5460,9 @@ export class CourseView {
 
   private onDoubleClick(e: MouseEvent) {
     if (this.povHole) return;
+    // (a keyframe's camera: looked through)
+    const fk = (e.target as HTMLElement).closest?.("[data-handle=flykey]") as HTMLElement | null;
+    if (fk?.dataset.index) { this.cb.onFlyCam?.(Number(fk.dataset.index)); return; }
     if (this.drawn()) {
       // The double-click's two clicks each added a point: drop the repeat, then finish
       if (this.drawPts.length >= 2 && dist(this.drawPts[this.drawPts.length - 1], this.drawPts[this.drawPts.length - 2]) < 3) this.drawPts.pop();
