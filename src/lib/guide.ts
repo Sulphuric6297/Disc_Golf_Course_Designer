@@ -97,6 +97,12 @@ export const TOPICS: Topic[] = [
     words: "tooltip hover icon label dimmed disabled"
   },
   {
+    id: "the-demo", section: "start", title: "The public demo",
+    body: "This is the public demo of HyzerLab. You can design a full course here: bring in a park, lay out the holes, and make the maps and tee signs. It all saves in this browser.\n\nThe parts that need other people have a lock on them: accounts, sharing, comments, drafts and history, the public course page, and courses that share a park. There's no server behind the demo to keep any of that. Tap one and it tells you what it does. To use them, run HyzerLab on your own server. It's free and open source, and the README walks you through the setup.",
+    words: "demo public locked lock self host host your own server account sharing comments github pages",
+    path: "Top bar › Demo", server: false
+  },
+  {
     id: "save-local", section: "start", title: "Saving (in this browser)",
     body: "Without an account, your course saves by itself in this browser. It only lives on this computer, though. Clear the browser's site data and it's gone.\n\nTo keep a copy, or move it to another computer, open the course menu (the little arrow next to the course name) and pick Save as a file. Open a course file… brings it back in.",
     words: "save file open download backup",
