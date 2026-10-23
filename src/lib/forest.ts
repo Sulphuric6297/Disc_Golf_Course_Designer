@@ -1639,7 +1639,9 @@ const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (
     // (then the shadow of higher ground, and less light where the ground sees less sky)
     const lit = Math.max(0.5, Math.min(1.4, 1 + (s - 1) * 0.9));
     const inShadow = 1 - (0.3 + 0.35 * shadowK) * castS[j];
-    const open = 1 - Math.min(0.4, (1 - skyS[j]) * 1.1);
+    // (only ground shut in on several sides, a canyon floor or a deep hollow: a hillside or a
+    // rolling park sees nearly all its sky and stays as bright as it was)
+    const open = 1 - Math.min(0.4, Math.max(0, 0.9 - skyS[j]) * 1.6);
     shade[j] = Math.max(0.3, lit * inShadow * open);
   }
   let k00 = 0, k10 = 0, k01 = 0, k11 = 0;
