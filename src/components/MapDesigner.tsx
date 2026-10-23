@@ -290,6 +290,9 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   // (a finger off the piece lets go of it only when it lifts without moving: the first of two
   // fingers pinching a small piece often lands just beside it)
   const tapOut = useRef<{ pid: number; x: number; y: number } | null>(null);
+  // (a finger picks a piece with a tap, when it lifts without moving: a drag across a piece not
+  // picked scrolls the page, as on any phone)
+  const tapPick = useRef<{ id: string; pid: number; x: number; y: number } | null>(null);
   const onPageDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!editing || !page || e.button !== 0 || typing) return;
     // (a field in the panel lets go, so keys like Delete go to what's picked on the page)
@@ -303,8 +306,8 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     const el = elOf(id);
     if (!el) return;
     const fresh = id !== designSel;
+    if (!corner && fresh && e.pointerType === "touch") { tapPick.current = { id, pid: e.pointerId, x: e.clientX, y: e.clientY }; return; }
     if (fresh) setEd({ designSel: id });
-    if (!corner && fresh && e.pointerType === "touch") return;
     e.preventDefault();
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -355,6 +358,11 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     }
   };
   const onPageUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const tp = tapPick.current;
+    if (tp && tp.pid === e.pointerId) {
+      tapPick.current = null;
+      if (Math.hypot(e.clientX - tp.x, e.clientY - tp.y) < 10) setEd({ designSel: tp.id });
+    }
     const out = tapOut.current;
     if (out && out.pid === e.pointerId) {
       tapOut.current = null;
@@ -443,8 +451,9 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       const near = 50 / k;
       if (mx < b.x - near || mx > b.x + b.w + near || my < b.y - near || my > b.y + b.h + near) return;
       ev.stopImmediatePropagation();
-      // (not a tap off it, and not a drag by the first finger)
+      // (not a tap off it or on another piece, and not a drag by the first finger)
       tapOut.current = null;
+      tapPick.current = null;
       const dr = drag.current;
       if (dr) { dr.el.setAttribute("transform", dr.orig); drag.current = null; setGuides({ x: [], y: [] }); }
       pinch = { id, g, orig: g.getAttribute("transform") ?? "", d: Math.max(1, spread(ev.touches)), box: b, mid: { x: b.x + b.w / 2, y: b.y + b.h / 2 }, f: 1 };
