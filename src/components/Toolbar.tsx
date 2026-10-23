@@ -202,7 +202,7 @@ const STEP_TOOLS: Record<string, ToolMode[]> = {
 };
 
 // (on a wide screen, each tool's name under its icon)
-const BAR_BTN = "relative w-10 h-10 min-[1280px]:w-auto min-[1280px]:min-w-[48px] min-[1280px]:h-12 min-[1280px]:px-1.5 min-[1280px]:flex-col min-[1280px]:gap-0.5 rounded-xl flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
+const BAR_BTN = "dg-toolbtn relative w-10 h-10 rounded-xl flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
 
 export function Toolbar() {
   const ed = useEditor();
@@ -241,7 +241,7 @@ export function Toolbar() {
         : `${BAR_BTN} ${ed.tool === t.mode ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09] hover:text-zinc-50"}`}
     >
       {t.icon}
-      {inMenu ? <span className="flex-1">{t.short}</span> : <span className="hidden min-[1280px]:block text-[10px] font-semibold leading-none whitespace-nowrap">{t.short}</span>}
+      {inMenu ? <span className="flex-1">{t.short}</span> : <span className="dg-toolname">{t.short}</span>}
       <span className={inMenu ? "text-[11px] opacity-60 touch:hidden" : "absolute bottom-0.5 right-1 text-[8px] font-bold opacity-60 touch:hidden"}>{t.key}</span>
     </button>
   );
