@@ -188,7 +188,7 @@ export function DesignPanel() {
           <Segmented label="Card font" value={s.card?.font ?? CARD_DEFAULTS.font} onChange={v => setStyle({ card: { ...s.card, font: v } })} options={[{ value: "Oswald", label: <span style={{ fontFamily: "Oswald" }}>Oswald</span> }, { value: "Bitter", label: <span style={{ fontFamily: "Bitter" }}>Bitter</span> }, { value: "Inter", label: <span style={{ fontFamily: "Inter" }}>Inter</span> }, { value: "Script", label: <span style={{ fontFamily: "Kaushan Script" }}>Script</span> }]} />
         </Field>
       </Section>
-      <Section title="Markings" testid="markings">
+      <Section title="Marks and colors" testid="markings">
         <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="Basket marks">
           {BASKET_MARKS.map(m => (
             <button
