@@ -58,7 +58,7 @@ test.describe("phone", () => {
     // The Hole tool offers your spot; the tee there, then walk to the basket
     await expect(page.getByTestId("here-bar")).toContainText("Tee here");
     await page.getByTestId("here-button").tap();
-    await expect.poll(async () => (await editorState(page)).drawPoints).toBe(1);
+    await expect.poll(() => page.evaluate(() => (window as any).__dgEditor().drawPoints)).toBe(1);
     await context.setGeolocation(geo(600, 500));
     await expect(page.getByTestId("draw-bar")).toContainText("Basket here");
     await page.waitForTimeout(600);
