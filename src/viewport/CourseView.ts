@@ -4067,7 +4067,8 @@ export class CourseView {
     this.endDragListeners = cleanup;
   }
 
-  /** Holding a finger still on an item opens its menu, like a right-click. */
+  /** Holding a finger still on an item opens its menu, like a right-click (on open ground: what
+   * can start there). */
   private startLongPress(e: PointerEvent, target: HTMLElement) {
     this.cancelLongPress();
     const id = e.pointerId, x = e.clientX, y = e.clientY;
@@ -4082,7 +4083,8 @@ export class CourseView {
       this.cancelLongPress();
       const domItem = (target.closest?.("[data-item-id]") as HTMLElement | null)?.dataset.itemId ?? null;
       const itemId = domItem ?? this.pick(x, y);
-      if (!itemId && !this.treeAtScreen(x, y)) return;
+      // (open ground too, to change: what can start there)
+      if (!itemId && !this.treeAtScreen(x, y) && (this.readOnly || !this.groundAt(x, y))) return;
       // The press is now the menu's: no tap, no drag, and the map stops following the finger
       this.endDragListeners?.();
       this.setDragging(false);
