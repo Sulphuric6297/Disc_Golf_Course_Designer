@@ -109,6 +109,7 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: (topic?
           <Search size={16} className="text-zinc-500 shrink-0" />
           <input
             ref={input}
+            autoFocus
             value={q}
             onChange={e => setQ(e.target.value)}
             onKeyDown={e => {

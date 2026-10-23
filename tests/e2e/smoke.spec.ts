@@ -168,6 +168,7 @@ test("search finds any setting and takes you to it, lit up; the help guide's Sho
   await page.keyboard.press("Escape");
   // A setting by a few of its words: the course's walks, opened and pointed at
   await page.keyboard.press("Control+k");
+  await expect(page.getByLabel("Go to")).toBeFocused();
   await page.keyboard.type("walk width");
   await expect(page.getByTestId("goto-option").first()).toContainText("Walks to the next hole");
   await page.keyboard.press("Enter");
@@ -175,10 +176,13 @@ test("search finds any setting and takes you to it, lit up; the help guide's Sho
   await expect(page.locator(".dg-found")).toHaveCount(1);
   // One on another step: the Map step's tee sign tab
   await page.keyboard.press("Escape");
+  await expect(page.getByTestId("course-more")).toHaveCount(0);
   await page.keyboard.press("Control+k");
+  await expect(page.getByLabel("Go to")).toBeFocused();
   await page.keyboard.type("tee sign look");
+  await expect(page.getByTestId("goto-option").first()).toContainText("Tee signs");
   await page.keyboard.press("Enter");
-  await expect.poll(async () => { const e = await editorState(page); return [e.step, e.designTab]; }).toEqual(["map", "sign"]);
+  await expect.poll(() => page.evaluate(() => { const e = (window as any).__dgEditor(); return [e.step, e.designTab]; })).toEqual(["map", "sign"]);
   await expect(page.getByTestId("sign-settings")).toBeVisible();
   // The help guide: chapters, a search of its own, and Show me
   await page.keyboard.press("?");
@@ -190,6 +194,6 @@ test("search finds any setting and takes you to it, lit up; the help guide's Sho
   const card = guide.getByTestId("help-topic").filter({ hasText: "Paper and turning the map" });
   await card.getByTestId("help-show-me").click();
   await expect(guide).toHaveCount(0);
-  await expect.poll(async () => (await editorState(page)).designTab).toBe("map");
+  await expect.poll(() => page.evaluate(() => (window as any).__dgEditor().designTab)).toBe("map");
   await expect(page.getByTestId("fold-paper")).toHaveAttribute("open", "");
 });
