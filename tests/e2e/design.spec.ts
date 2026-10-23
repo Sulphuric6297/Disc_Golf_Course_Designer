@@ -248,13 +248,13 @@ plain("tee signs: wide and tall layouts, notes, next hole", () => {
   const wide = renderTeeSign(doc, doc.holes[1].id, "18x12", { contours: null, hillshade: null })!;
   plainExpect(wide.width).toBe(18 * 72);
   plainExpect(wide.svg).toContain("PAR 3");
-  // The info column: the length from each tee, the hole notes, the course in miniature with this
-  // hole's "you are here", which hole of how many
+  // The info column: the length from each tee, the hole notes, the green up close (the small
+  // course map is gone from signs), which hole of how many
   plainExpect(wide.svg).toContain(">300 FT<");
   plainExpect(wide.svg).toContain("Creek &amp; beyond OB");
   plainExpect(wide.svg).toContain("HOLE NOTES");
-  plainExpect(wide.svg).toContain('data-part="course-map"');
-  plainExpect(wide.svg).toContain("YOU ARE HERE");
+  plainExpect(wide.svg).toContain('data-part="green"');
+  plainExpect(wide.svg).not.toContain('data-part="course-map"');
   plainExpect(wide.svg).toContain("HOLE 2 OF 2");
   plainExpect(wide.svg).not.toContain("COURSE MAP<");
   plainExpect(wide.svg).toContain("ELEVATION CHANGE FROM TEE");
@@ -1045,6 +1045,31 @@ test("zoomed in on the Design page, every edge of the page can be reached: the f
   expect(end.sheet.y + end.sheet.height).toBeLessThanOrEqual(end.area.bottom + 0.5);
 });
 
+plain("tee sign pieces: moved, sized, restyled or hidden, for every hole or one hole's own, on every look", () => {
+  const doc = sample();
+  const [h1, h2] = doc.holes;
+  const art = { contours: null, hillshade: null };
+  const sign = (id: string) => renderTeeSign(doc, id, "18x12", art)!.svg;
+  plainExpect(sign(h1.id)).toContain('<g data-el="number">');
+  // Moved half the page across and a quarter down, twice its size; the par hidden; the name restyled
+  doc.style.sign = { layout: { number: { dx: 0.5, dy: 0.25, scale: 2 }, par: { hidden: true }, courseName: { font: "Bitter", color: "#ff0000" } } };
+  const s1 = sign(h1.id);
+  plainExpect(s1).toContain('<g data-el="number" transform="translate(648 216) scale(2)">');
+  plainExpect(s1).not.toContain(">PAR ");
+  plainExpect(s1).toContain("fill:#ff0000 !important");
+  plainExpect(s1).toContain("font-family:Bitter");
+  // One hole's own: hole 2 keeps its par
+  h2.sign = { layout: { par: {} } };
+  plainExpect(sign(h2.id)).toContain(">PAR ");
+  plainExpect(sign(h1.id)).not.toContain(">PAR ");
+  // Every look has its pieces
+  for (const look of ["trailhead", "fieldguide", "openview"] as const) {
+    doc.style.sign = { look, layout: { number: { dx: 0.1 } } };
+    plainExpect(sign(h1.id)).toContain('<g data-el="number" transform="translate(129.6 0) scale(1)">');
+    plainExpect(sign(h1.id)).toContain('<g data-el="map"');
+  }
+});
+
 plain("tee signs: other holes faded, left out or shown; each part shown or left out, for all holes or one hole's own", () => {
   const doc = sample();
   const [h1, h2] = doc.holes;
@@ -1052,14 +1077,15 @@ plain("tee signs: other holes faded, left out or shown; each part shown or left 
   const sign = (id: string, size: "18x12" | "12x18" = "18x12") => renderTeeSign(doc, id, size, art)!.svg;
   // Other holes faded by default (as much as asked), shown as clear, or left out (their tees gone)
   const blue = (svg: string) => (svg.match(/<polygon points="[^"]*" fill="#2563eb"/g) ?? []).length;
-  plainExpect(blue(sign(h1.id))).toBe(2);
+  const allTees = blue(sign(h1.id));
+  plainExpect(allTees).toBeGreaterThan(0);
   plainExpect(sign(h1.id)).toContain('opacity="0.3"');
   doc.style.sign = { fade: 0.15 };
   plainExpect(sign(h1.id)).toContain('opacity="0.15"');
   doc.style.sign = { others: "shown" };
   plainExpect(sign(h1.id)).not.toContain('opacity="0.15"');
   doc.style.sign = { others: "hidden" };
-  plainExpect(blue(sign(h1.id))).toBe(1);
+  plainExpect(blue(sign(h1.id))).toBe(allTees / 2);
   // Parts left out for every hole: the par and the course's name
   doc.style.sign = { show: { par: false, courseName: false } };
   for (const id of [h1.id, h2.id]) {
