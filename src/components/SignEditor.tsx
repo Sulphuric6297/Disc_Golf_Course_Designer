@@ -60,10 +60,11 @@ export const extrasOf = (doc: CourseDoc) => (target() === "page" ? doc.style.hol
 const setExtras = (f: (xs: PrintExtra[]) => PrintExtra[], history = true) =>
   changeDoc(d => (target() === "page" ? { style: { ...d.style, holePage: { ...d.style.holePage, extras: f(d.style.holePage?.extras ?? []) } } } : { style: { ...d.style, sign: { ...d.style.sign, extras: f(d.style.sign?.extras ?? []) } } }), history);
 export const patchExtra = (id: string, patch: Partial<PrintExtra>, history = true) => setExtras(xs => xs.map(x => (x.id === id ? { ...x, ...patch } : x)), history);
-/** Something added in the middle of the page, and picked. */
+/** Something added near the middle of the page (each a step down and right of the one before, so
+ * none lands on another), and picked. */
 export const addExtra = (e: Omit<PrintExtra, "id" | "x" | "y" | "w"> & Partial<PrintExtra>) => {
   const id = generateId();
-  setExtras(xs => [...xs, { x: 0.38, y: 0.42, w: 0.24, ...e, id }]);
+  setExtras(xs => { const k = xs.length % 6; return [...xs, { x: 0.3 + k * 0.05, y: 0.3 + k * 0.08, w: 0.24, ...e, id }]; });
   useEditor.getState().set({ designSel: `x:${id}` });
 };
 
