@@ -412,9 +412,15 @@ test.describe("phone", () => {
     // At any zoom, no square on the tee, the basket or the hole's distance label; zoomed in on
     // the hole, all four are there
     const basket = (await course(page)).items.find((i: any) => i.type === "basket");
-    for (const zoom of [0.5, 0.7, 1, 1.4, 2.2]) {
-      // (At once, not animated: the squares and the label are checked where they come to rest)
-      await page.evaluate(z => { const v = (window as any).__dgView; v.fitHole((window as any).__dgCourse().holes[0].id, false); void v.controls.dollyTo(v.controls.distance / z, false); }, zoom);
+    for (const zoom of [0.5, 0.7, 1, 1.4, 2.5]) {
+      // (At once, not animated: the squares and the label are checked where they come to rest;
+      // zoomed in on the hole's middle, in the map's room above the sheet)
+      await page.evaluate(z => {
+        const v = (window as any).__dgView, id = (window as any).__dgCourse().holes[0].id;
+        const b = v.itemBounds(id), cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
+        const hw = Math.max(b.maxX - b.minX, 160) * 0.6 / z, hh = Math.max(b.maxY - b.minY, 96) * 0.6 / z;
+        v.fitBounds({ minX: cx - hw, minY: cy - hh, maxX: cx + hw, maxY: cy + hh }, { margin: 1.15, animate: false });
+      }, zoom);
       await page.waitForTimeout(400);
       const ends = [await screenOf(page, tee.x, tee.y, 1), await screenOf(page, basket.x, basket.y, 1)];
       const label = await page.getByTestId("hole-distance").evaluateAll(els => els.filter(e => (e as HTMLElement).offsetParent).map(e => e.getBoundingClientRect().toJSON()));
@@ -424,7 +430,7 @@ test.describe("phone", () => {
         for (const r of label) expect(c.x > r.left - 4 && c.x < r.right + 4 && c.y > r.top - 4 && c.y < r.bottom + 4, `zoom ${zoom}: a square on the label`).toBe(false);
       }
       // (a square on each edge at each of the four points along the hole)
-      if (zoom === 2.2) expect(squares.length).toBe(8);
+      if (zoom === 2.5) expect(squares.length).toBe(8);
     }
   });
 
