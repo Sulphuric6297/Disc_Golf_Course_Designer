@@ -452,7 +452,7 @@ function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
 // ---------------------------------------------------------------------------------- the panel
 
 /** The panel's header and content, for the bottom sheet and the side panel. */
-function usePanel({ onFindSite, onMore }: { onFindSite: () => void; onMore: () => void }) {
+function usePanel({ onFindSite, onMore, phone = false }: { onFindSite: () => void; onMore: () => void; phone?: boolean }) {
   const readOnly = useCourse(s => s.readOnly);
   const mode = useMode();
   const step = useEditor(e => e.step);
@@ -461,7 +461,8 @@ function usePanel({ onFindSite, onMore }: { onFindSite: () => void; onMore: () =
   const meta = STEPS.find(s => s.id === step)!;
   // (a hole picked: its strip of settings in the tools' place, the hole kept in view above it)
   const { hole: pickedHole } = useSelection();
-  const strip = mode === "selection" && !!pickedHole && !readOnly;
+  // (a phone only: a tablet's side panel has the room for all of it, beside the map)
+  const strip = phone && mode === "selection" && !!pickedHole && !readOnly;
   const tools = (step === "design" || mode === "tool") && !strip;
   const header = (
     <>
@@ -521,7 +522,7 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
   const [mainH, setMainH] = useState(700);
   const main = useRef<HTMLDivElement>(null);
   const { menus, openApp, openMore } = useMenus(onHelp, onGoTo);
-  const panel = usePanel({ onFindSite, onMore: openMore });
+  const panel = usePanel({ onFindSite, onMore: openMore, phone: true });
   const immersive = !!ed.teeView;
   // (No sheet under the welcome card: it is the first step's panel, with the same two choices)
   const sheet = !immersive && !welcome;

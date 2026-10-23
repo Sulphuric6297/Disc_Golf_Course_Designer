@@ -286,12 +286,7 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   // trees close together in one, each stand its own woods (OpenStreetMap's woods, drawn by hand
   // and often over a whole hillside, give way to them)
   let woods: AreaItem[];
-  // (a survey that saw hardly a tree where the photo and the map show woods, old and thin or bare
-  // of leaves: the photo's woods still count; an open field with few trees is just that)
-  const woodsSeen = [...mappedAs("woods"), ...found.woods].reduce((t, a) => t + Math.abs(polygonArea(a.points)), 0);
-  const expected = found.trees.length + woodsSeen / 1500;
-  const thinSurvey = !!lidar && lidar.trees.length < Math.max(40, (width * height) / 40_000) && expected >= 60 && expected > 4 * lidar.trees.length;
-  if (lidar?.trees.length && !thinSurvey) {
+  if (lidar?.trees.length) {
     const { w: gw, h: gh, cell, stands } = treeStands(lidar.trees.map(t => ({ x: t[0], y: t[1], r: t[3] })), width, height);
     woods = stands.map(s => ({ ...createArea("woods", outlineToPlan(s.outline, gw, gh, gw * cell, gh * cell, 5)), importSource: "lidar" as const }) as AreaItem).filter(a => a.points.length >= 3);
     if (woods.length) {
@@ -300,10 +295,9 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     }
   } else woods = found.woods.filter(a => !inside(centroid(a.points), "woods"));
   const water = found.water.filter(a => !inside(centroid(a.points), "water"));
-  const measuredNear = (t: P) => (lidar?.trees ?? []).some(m => Math.hypot(m[0] - t.x, m[1] - t.y) < 15);
   // (and never on a road, a building, parking or in water, as OpenStreetMap or the photo has them)
   const nowhere = treeFree([...mapped, ...found.water]);
-  const trees = lidar && !thinSurvey ? [] : found.trees.filter(t => !inside(t, "woods") && !inside(t, "water") && !measuredNear(t) && !nowhere(t));
+  const trees = lidar ? [] : found.trees.filter(t => !inside(t, "woods") && !inside(t, "water") && !nowhere(t));
   // Woods the survey saw few trees in (missed, or grown since): drawn trees fill in between the
   // measured ones, all through it (the "Filled in" choice, set as if by hand)
   if (lidar) {
@@ -316,7 +310,7 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     mapped = mapped.map(m => (m.type === "area" ? fillThin(m) : m));
     woods = woods.map(fillThin);
   }
-  const counted = [[lidar?.trees.length && !thinSurvey ? 0 : woods.length, "wooded area", "wooded areas"], [trees.length, "tree", "trees"], [water.length, "water area", "water areas"]] as const;
+  const counted = [[lidar?.trees.length ? 0 : woods.length, "wooded area", "wooded areas"], [trees.length, "tree", "trees"], [water.length, "water area", "water areas"]] as const;
   const said = counted.filter(([n]) => n > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
   if (said.length) notes.push(`On the photo: ${said.join(", ")}.`);
   mapped = [...mapped, ...woods, ...water];
