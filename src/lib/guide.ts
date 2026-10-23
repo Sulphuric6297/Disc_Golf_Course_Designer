@@ -364,8 +364,8 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "flyover", section: "view", title: "Flyovers",
-    body: "Fly over flies from behind the tee down the hole to the basket, like the TV broadcasts do. By default it works out the flight by itself.\n\nIf you want more control, switch the hole's Flyover to Keyframes. Each keyframe has its own height, view (field of view) and seconds, and + Keyframe adds one. Fly over plays it back.",
-    words: "flyover fly over drone camera keyframes broadcast",
+    body: "Fly over flies from behind the tee down the hole to the basket, like the TV broadcasts do. By default it works out the flight by itself.\n\nIf you want more control, switch the hole's Flyover to Keyframes. Each keyframe has its own height, view (field of view) and seconds, and + Keyframe adds one. Fly over plays it back.\n\nYou can place them right on the map too. Tilt the view into 3D and each keyframe's camera floats at its height, with the flight drawn where it flies. Drag a camera up or down to raise or lower it, drag the dot on the ground under it to move it, and drag the ring to change where it looks. From straight above, dragging a camera moves it.",
+    words: "flyover fly over drone camera keyframes broadcast height raise lower 3d drag place",
     path: "Design › a hole › Fly over",
     where: { step: "design", pick: "hole", find: "hole-flight" }
   },

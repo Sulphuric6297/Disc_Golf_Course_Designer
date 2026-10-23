@@ -322,3 +322,9 @@ select option:disabled {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
 }
+
+/* Dropdown lists: the browser draws them itself, light unless told the page is dark (its words
+   pale on white). Every one dark. */
+select {
+  color-scheme: dark;
+}

@@ -124,6 +124,7 @@ export function HoleFlight({ hole }: { hole: Hole }) {
               <button className="p-1 rounded text-zinc-400 hover:text-red-400 hover:bg-white/[0.09] disabled:opacity-30" aria-label={`Remove keyframe ${i + 1}`} disabled={keys.length <= 2} onClick={() => setKeys(keys.filter((_, j) => j !== i))}><Trash2 size={14} /></button>
             </div>
           ))}
+          <p className="text-[11.5px] text-zinc-500 px-0.5">In 3D each camera floats at its height on the map: drag it up or down, or the dot under it to move it.</p>
           <div className="flex gap-1.5 pt-1">
             <Button small onClick={() => setKeys([...keys.slice(0, -1), keyBetween(keys[keys.length - 2], keys[keys.length - 1]), keys[keys.length - 1]])} testid="fly-key-add"><Plus size={13} /> Keyframe</Button>
             <Button small onClick={() => set({ teeView: hole.id, flyover: true })} testid="fly-preview">Fly over</Button>

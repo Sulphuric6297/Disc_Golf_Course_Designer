@@ -317,6 +317,8 @@ test.describe("phone", () => {
     expect(area.kind).toBe("ob");
     expect(area.points.length).toBe(3);
     expect((await editorState(page)).tool).toBe("select");
+    // (the drawn area picked, its strip up: back to the tools)
+    await page.getByTestId("selection-back").tap();
     // Cancel drops what is being drawn
     await page.locator('[data-tool="draw-line"]').tap();
     await tapPlan(page, 300, 650);
@@ -612,7 +614,7 @@ test("desktop at 1600 × 1000 keeps its layout: top bar steps, side panel, tool 
   // (no prompt over the map with Select; a tool's own prompt when one is picked)
   await expect(page.getByTestId("tool-hint")).toHaveCount(0);
   await page.keyboard.press("t");
-  await expect(page.getByTestId("tool-hint")).toContainText("another tee");
+  await expect(page.getByTestId("tool-hint")).toContainText("another skill level");
   await page.keyboard.press("Escape");
   for (const id of ["bottom-nav", "sheet", "nav-rail", "side-sheet", "top-bar", "draw-bar"]) await expect(page.getByTestId(id)).toHaveCount(0);
   // The selection's inspector floats on the right of the map

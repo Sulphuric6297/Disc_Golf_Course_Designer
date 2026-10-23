@@ -450,7 +450,7 @@ function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
             <div className="text-[12px] text-zinc-400 truncate tabular-nums">{sub}</div>
           </div>
         ) : (
-          <button className="flex-1 min-w-0 pl-1.5 text-left rounded-[12px] active:bg-white/[0.07] focus:outline-none" onClick={onMenu} aria-label={`${name}: open the menu`}>
+          <button className="flex-1 min-w-0 min-h-11 pl-1.5 text-left rounded-[12px] active:bg-white/[0.07] focus:outline-none" onClick={onMenu} aria-label={`${name}: open the menu`}>
             <div className="text-[15px] font-bold text-zinc-50 truncate leading-tight flex items-center gap-1" data-testid="course-name"><span className="truncate">{name}</span><ChevronDown size={15} className="shrink-0 text-zinc-400" /></div>
             <div className="text-[12px] text-zinc-400 truncate tabular-nums">{sub}</div>
           </button>

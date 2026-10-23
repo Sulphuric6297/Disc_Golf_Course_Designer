@@ -119,6 +119,7 @@ const STYLE = `
 .dg-h[data-handle=walkout],.dg-h[data-handle=walkin]{width:13px;height:13px;border-radius:3px;background:#e2e8f0;border:2px dashed #475569;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=flykey]{width:20px;height:20px;border-radius:6px;background:#0284c7;border:2px solid #fff;color:#fff;font:800 11px/16px Inter,system-ui,sans-serif;text-align:center;cursor:grab;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .dg-h[data-handle=flykey]::after{content:attr(data-n)}
+.dg-h[data-handle=flyfoot]{width:12px;height:12px;border-radius:50%;background:#e0f2fe;border:2px solid #0284c7;cursor:move;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=flylook]{width:12px;height:12px;border-radius:50%;border:2.5px solid #38bdf8;background:rgba(15,23,42,.35);cursor:grab}
 .dg-h[data-handle=mid]{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.6);border:2px solid #0891b2;cursor:copy}
 .dg-h[data-handle=mid][data-kind=line]{border-color:#f59e0b}
@@ -2380,8 +2381,17 @@ export class CourseView {
       put(`flykeys:${flyHole.id}`, JSON.stringify([keys, hv, course.flyover, flyHole.flyover]), () => {
         const g = new THREE.Group();
         const f = keyFlight(keys, flyoverOf(course, flyHole), (x, y) => this.h(x, y));
-        if (f) g.add(this.fatLine(this.drapeLine(f.cam.map(c => ({ x: c.x, y: c.y })), 0.6), "#38bdf8", 2.5, { order: 8, dashed: 8 }));
-        for (const k of keys) g.add(this.fatLine(this.drapeLine([{ x: k.x, y: k.y }, { x: k.lookX, y: k.lookY }], 0.6), "#38bdf8", 1.5, { opacity: 0.7, order: 8 }));
+        // (the flight where it flies, at its own heights; its shadow on the ground; and each
+        // keyframe's camera on a stem from the ground, looking where it looks)
+        if (f) {
+          g.add(this.fatLine(f.cam.map(c => new THREE.Vector3(c.x, c.z, c.y)), "#38bdf8", 3, { order: 9 }));
+          g.add(this.fatLine(this.drapeLine(f.cam.map(c => ({ x: c.x, y: c.y })), 0.6), "#38bdf8", 1.5, { order: 8, dashed: 8, opacity: 0.55 }));
+        }
+        for (const k of keys) {
+          const ground = this.h(k.x, k.y), air = new THREE.Vector3(k.x, ground + k.alt, k.y);
+          g.add(this.fatLine([new THREE.Vector3(k.x, ground + 0.3, k.y), air], "#e0f2fe", 1.5, { opacity: 0.85, order: 9, dashed: 4 }));
+          g.add(this.fatLine([air, new THREE.Vector3(k.lookX, this.h(k.lookX, k.lookY) + 3, k.lookY)], "#38bdf8", 1.2, { opacity: 0.6, order: 8 }));
+        }
         return g;
       });
     }
@@ -2888,6 +2898,21 @@ export class CourseView {
    * ground behind it). Measured trees, the saplings grown since the survey and the trees planted in
    * woods; not the tree items (they're picked as items). A sapling under a big crown is in the list
    * too, after the big tree. */
+  /** Where along `ray` it first meets a tree standing at (x, y): its crown (an ellipsoid round
+   * the upper part, at least 3 ft across) or its trunk; Infinity if it misses. */
+  private rayHitsTree(ray: THREE.Ray, x: number, y: number, ground: number, height: number, radius: number) {
+    const rx = Math.max(1.5, radius), ry = Math.max(1.5, height * 0.34);
+    const o = new THREE.Vector3(ray.origin.x - x, ray.origin.y - (ground + height * 0.64), ray.origin.z - y), d = ray.direction.clone();
+    o.x /= rx; o.z /= rx; o.y /= ry; d.x /= rx; d.z /= rx; d.y /= ry;
+    const A = d.dot(d), B = 2 * o.dot(d), C = o.dot(o) - 1, disc = B * B - 4 * A * C;
+    let t = Infinity;
+    if (disc >= 0) { const tt = (-B - Math.sqrt(disc)) / (2 * A); if (tt > 0) t = tt; }
+    const a = new THREE.Vector3(x, ground, y), b = new THREE.Vector3(x, ground + height * 0.4, y), on = new THREE.Vector3();
+    const r = Math.max(1, radius * 0.12);
+    if (ray.distanceSqToSegment(a, b, on) <= r * r) t = Math.min(t, on.distanceTo(ray.origin));
+    return t;
+  }
+
   treesAtScreen(clientX: number, clientY: number, max = 6): NonNullable<ReturnType<CourseView["treeAt"]>>[] {
     const ray = this.ray(clientX, clientY).clone();
     const hits: { t: number; tree: NonNullable<ReturnType<CourseView["treeAt"]>> }[] = [];
@@ -3166,9 +3191,31 @@ export class CourseView {
           end: () => this.cb.onCommit()
         };
       };
+      // In 3D each keyframe's camera floats at its height: drag it up or down for the height, and
+      // the dot on the ground under it to move it. Seen from straight above, the camera moves.
+      const tilted = () => this.controls.polarAngle > 15 * DEG;
+      const dragHeight = (index: number): Drag | null => {
+        const list = hole()?.flyKeys?.map(k => ({ ...k }));
+        const k0 = list?.[index];
+        if (!list || !k0) return null;
+        const ground = this.h(k0.x, k0.y), foot = new THREE.Vector3(k0.x, ground, k0.y);
+        const facing = new THREE.Vector3().subVectors(this.camera.position, foot).setY(0);
+        if (facing.lengthSq() < 1e-6) return null;
+        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(facing.normalize(), foot);
+        return {
+          move: ev => {
+            const hit = new THREE.Vector3();
+            if (!this.ray(ev.clientX, ev.clientY).intersectPlane(plane, hit)) return;
+            list[index] = { ...list[index], alt: Math.round(clamp(hit.y - ground, 2, 1000)) };
+            this.cb.onHoleChange(holeId, { flyKeys: list.map(k => ({ ...k })) });
+          },
+          end: () => this.cb.onCommit()
+        };
+      };
       keys.forEach((_, i) => {
         add("flylook", () => { const k = hole()?.flyKeys?.[i]; return k ? at({ x: k.lookX, y: k.lookY }) : null; }, () => dragKey(i, true), { index: i, title: `Where keyframe ${i + 1} looks: drag` });
-        add("flykey", () => { const k = hole()?.flyKeys?.[i]; return k ? at(k) : null; }, () => dragKey(i, false), { index: i, title: `Flyover keyframe ${i + 1}: drag to move the camera`, data: { n: String(i + 1) } });
+        add("flyfoot", () => { const k = hole()?.flyKeys?.[i]; return k ? at(k) : null; }, () => dragKey(i, false), { index: i, title: `Keyframe ${i + 1} over the ground: drag to move it`, visible: tilted });
+        add("flykey", () => { const k = hole()?.flyKeys?.[i]; return k ? (tilted() ? new THREE.Vector3(k.x, this.h(k.x, k.y) + k.alt, k.y) : at(k)) : null; }, () => (tilted() ? dragHeight(i) : dragKey(i, false)), { index: i, title: `Flyover keyframe ${i + 1}: in 3D drag up or down for its height; from above, drag to move it`, data: { n: String(i + 1) } });
       });
     }
     // Mid dots between each pair of line points: pulling one adds a turn there
@@ -3772,8 +3819,18 @@ export class CourseView {
     let best: { id: string; score: number } | null = null;
     // A fingertip is less exact than a mouse pointer: reach a little further
     const reach = this.fingers ? 1.6 : 1;
+    // Trees: the one actually under the pointer, its crown or trunk, nearest the eye (tested in
+    // 3D: in a tilted view a tree's crown stands well above its foot, so the foot alone would
+    // pick the tree behind it)
+    const ray = this.ray(clientX, clientY);
+    let tree: { id: string; t: number } | null = null;
     for (const item of doc.course.items) {
-      if (item.type === "area" || item.type === "line" || item.type === "label" || item.type === "structure") continue;
+      if (item.type !== "tree") continue;
+      const t = this.rayHitsTree(ray, item.x, item.y, this.h(item.x, item.y), item.height ?? 30, item.radius * (item.width ?? 1) * (this.fingers ? 1.25 : 1));
+      if (t < (tree?.t ?? Infinity)) tree = { id: item.id, t };
+    }
+    for (const item of doc.course.items) {
+      if (item.type === "area" || item.type === "line" || item.type === "label" || item.type === "structure" || (item.type === "tree" && tree)) continue;
       const a = new THREE.Vector3(item.x, this.h(item.x, item.y) + 1, item.y);
       const s = this.project(a);
       if (!s) continue;
@@ -3786,6 +3843,9 @@ export class CourseView {
         if (!best || score < best.score) best = { id: item.id, score };
       }
     }
+    // (a tee, basket or other mark right there before a tree it stands in front of)
+    if (best && (!tree || !doc.course.items.some(i => i.id === best!.id && i.type === "tree"))) return best.id;
+    if (tree) return tree.id;
     if (best) return best.id;
     const g = this.groundAt(clientX, clientY);
     if (!g) return null;

@@ -20,7 +20,7 @@ function Swatch({ value, fallback, label, onChange, icon }: { value?: string; fa
       {icon === "letters"
         ? <span className="flex flex-col items-center leading-none"><span className="text-[14px] font-bold text-zinc-50">A</span><span className="mt-0.5 h-[4px] w-4 rounded-full ring-1 ring-white/30" style={{ background: value ?? fallback }} /></span>
         : <span className="h-4 w-4 rounded-[5px] ring-1 ring-white/40" style={{ background: value ?? fallback }} />}
-      <input type="color" aria-label={label} className="absolute inset-0 opacity-0 cursor-pointer" value={value ?? fallback} onChange={e => onChange(e.target.value)} onBlur={commit} />
+      <input type="color" aria-label={label} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" value={value ?? fallback} onChange={e => onChange(e.target.value)} onBlur={commit} />
     </label>
   );
 }
