@@ -1275,16 +1275,20 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       }
       // Relief in color, as on Swiss maps: slopes facing the sun a little warmer, slopes facing
       // away a little cooler, high ground a touch lighter than low (half as much on treetops)
+      // (strong enough that a canyon or a ridge reads at a glance: the slope away from the sun as
+      // much as half in shadow, the slope toward it warmed; treetops get a little less, so the
+      // woods stay woods)
       if (relief && s.hillshade) {
-        const tt = (rf - 1) * (h > 0 ? 0.8 : 1);
+        const tt = (rf - 1) * (h > 0 ? 0.7 : 1);
         if (tt > 0) {
-          const k = Math.min(0.3, tt);
-          cr += (255 - cr) * k * 0.3; cg += (240 - cg) * k * 0.24; cb += (196 - cb) * k * 0.1;
+          const k = Math.min(0.45, tt * 1.3);
+          cr += (255 - cr) * k * 0.42; cg += (244 - cg) * k * 0.36; cb += (206 - cb) * k * 0.16;
         } else {
-          const k = Math.min(0.35, -tt);
-          cr += (36 - cr) * k * 0.28; cg += (50 - cg) * k * 0.26; cb += (78 - cb) * k * 0.42;
+          const k = Math.min(0.6, -tt * 1.5);
+          cr += (28 - cr) * k * 0.62; cg += (38 - cg) * k * 0.58; cb += (58 - cb) * k * 0.55;
         }
-        const lift = ((rh!.elev - relief.lo) / (relief.hi - relief.lo) - 0.5) * 0.12;
+        // (and high ground a touch lighter than low, so which way is down reads too)
+        const lift = ((rh!.elev - relief.lo) / (relief.hi - relief.lo) - 0.5) * 0.16;
         cr *= 1 + lift; cg *= 1 + lift; cb *= 1 + lift * 0.7;
       }
       // The whole picture: brightness, contrast and color strength
