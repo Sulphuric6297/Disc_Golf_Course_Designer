@@ -83,6 +83,8 @@ const STYLE = `
 .dg-tee{pointer-events:auto;cursor:move;min-width:22px;height:22px;padding:0 5px;border-radius:999px;display:flex;align-items:center;justify-content:center;background:var(--c);color:var(--ink);font:800 12px/1 Oswald,Inter,system-ui,sans-serif;border:2px solid rgba(15,23,42,.85);box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .dg-basket .dg-shared{position:absolute;top:-15px;left:50%;transform:translateX(-50%);font:800 10px/1 Oswald,Inter,system-ui,sans-serif;font-style:normal;color:#fff;background:#0f172a;border-radius:6px;padding:2px 4px;white-space:nowrap}
 .dg-tee.alt{min-width:15px;height:15px;font-size:9px;padding:0 3px;opacity:.9}
+.dg-tee.off{min-width:11px;height:11px;font-size:0;padding:0;border-width:1.5px;opacity:.5}
+.dg-basket.off{opacity:.45;scale:.7}
 .dg-tee.sel,.dg-basket.sel,.dg-chip.sel{outline:3px solid ${SELECT};outline-offset:1px}
 .dg-basket{pointer-events:auto;cursor:move;width:20px;height:20px;border-radius:50%;background:#0f172a;border:2.5px solid var(--c);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .dg-basket::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--c)}
@@ -97,6 +99,7 @@ const STYLE = `
 .dg-issue{pointer-events:auto;cursor:help;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:900 12px/1 Inter,system-ui,sans-serif;color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.55)}
 .dg-measure{pointer-events:none;padding:1px 6px;border-radius:6px;background:#facc15;color:#1c1917;font:700 11px Inter,system-ui,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .dg-measure.total{background:#1c1917;color:#facc15}
+.dg-measure.live{background:rgba(28,25,23,.72);color:#fde68a;box-shadow:none}
 .dg-mpt{pointer-events:none;width:12px;height:12px;border-radius:50%;background:#facc15;border:2.5px solid #1c1917;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .dg-mpt.live{background:#fff;opacity:.85}
 .dg-h{position:absolute;left:0;top:0;pointer-events:auto;will-change:translate;box-sizing:border-box;touch-action:none}
@@ -1926,6 +1929,14 @@ export class CourseView {
     return drapedPoints(pts, (x, y) => this.h(x, y), Math.max(4, grid / 2), lift, closed);
   }
 
+  /** The tee colors and pins only the other layouts play (faded while this one is worked on). */
+  private otherLayouts() {
+    const course = this.doc!.course;
+    const on = course.layouts.find(l => l.id === course.activeLayout) ?? course.layouts[0];
+    const rest = course.layouts.filter(l => l !== on);
+    return { tees: new Set(rest.map(l => l.tee).filter(t => t !== on?.tee)), pins: new Set(rest.map(l => l.pin).filter(p => p !== on?.pin)) };
+  }
+
   // ------------------------------------------------------------------ scene sync: 3D objects
 
   private signature(item: CourseItem) {
@@ -2420,6 +2431,7 @@ export class CourseView {
     }
     // Throw lines, flight arcs and putting circles
     const tees = new Map(doc.stats.map(s => [s.holeId, s]));
+    const off = this.otherLayouts();
     for (const hole of course.holes) {
       const s = tees.get(hole.id);
       const sel = this.selectedId === hole.id || doc.activeHoleId === hole.id;
@@ -2428,10 +2440,12 @@ export class CourseView {
         const basket = basketFor(course, hole.id, doc.course.layouts.find(l => l.id === course.activeLayout)?.pin);
         if (!basket) continue;
         const main = s?.teeId === tee.id;
+        // (another layout's tee: its line only while its hole is picked)
+        const faded = !main && off.tees.has(tee.level);
         const line = smoothPath(throwLine(hole, tee, basket), 12);
-        put(`throw:${tee.id}`, JSON.stringify([line, hv, main, sel, clean && this.selectedId === hole.id]), () => {
+        put(`throw:${tee.id}`, JSON.stringify([line, hv, main, sel, faded, clean && this.selectedId === hole.id]), () => {
           const g = new THREE.Group();
-          if (clean ? this.selectedId !== hole.id : !st.throwLines && !sel) return g;
+          if (clean ? this.selectedId !== hole.id : (!st.throwLines || faded) && !sel) return g;
           g.add(this.fatLine(this.drapeLine(line, LIFT + 0.1), sel ? SELECT : main ? "#ffffff" : TEE_LEVELS[tee.level].color, sel ? 3.5 : main ? 2.5 : 1.5, { dashed: main ? undefined : 7, opacity: main ? 0.95 : 0.75, order: 6 }));
           return g;
         });
@@ -2639,6 +2653,7 @@ export class CourseView {
     const at = (p: P, lift = 0) => new THREE.Vector3(p.x, this.h(p.x, p.y) + lift, p.y);
     const mainTees = new Set(doc.stats.map(s => s.teeId));
     const mainBaskets = new Set(doc.stats.map(s => s.basketId));
+    const off = this.otherLayouts();
     const picked = new Set(this.group);
     const clean = this.readOnly;
     for (const item of course.items) {
@@ -2650,9 +2665,11 @@ export class CourseView {
         const lvl = TEE_LEVELS[t.level];
         const n = this.num(t.holeId);
         const main = mainTees.has(t.id);
-        put(`tee:${t.id}`, `${n}|${t.level}|${sel}|${main}|${clean}`, main ? 0 : 2, () => {
+        // (another layout's tee: small and faint while this one is worked on)
+        const faded = !main && !sel && off.tees.has(t.level);
+        put(`tee:${t.id}`, `${n}|${t.level}|${sel}|${main}|${faded}|${clean}`, main ? 0 : 2, () => {
           const el = document.createElement("div");
-          el.className = `dg-tee${main ? "" : " alt"}${sel ? " sel" : ""}`;
+          el.className = `dg-tee${main ? "" : " alt"}${faded ? " off" : ""}${sel ? " sel" : ""}`;
           el.dataset.itemId = t.id;
           el.setAttribute("data-testid", "tee-badge");
           el.style.setProperty("--c", lvl.color);
@@ -2669,9 +2686,10 @@ export class CourseView {
         const shared = !!b.alsoHoles?.length;
         const multi = holeBaskets(course, b.holeId).length > 1;
         const main = mainBaskets.has(b.id);
-        put(`basket:${b.id}`, `${n}|${b.position}|${multi}|${sel}|${main}|${course.style.basket}|${clean}`, main ? 1 : 3, () => {
+        const faded = !main && !sel && off.pins.has(b.position);
+        put(`basket:${b.id}`, `${n}|${b.position}|${multi}|${sel}|${main}|${faded}|${course.style.basket}|${clean}`, main ? 1 : 3, () => {
           const el = document.createElement("div");
-          el.className = `dg-basket${sel ? " sel" : ""}`;
+          el.className = `dg-basket${faded ? " off" : ""}${sel ? " sel" : ""}`;
           el.dataset.itemId = b.id;
           el.setAttribute("data-testid", "basket-badge");
           el.style.setProperty("--c", course.style.basket);
@@ -4755,8 +4773,10 @@ export class CourseView {
     this.drawMeasure();
   }
 
+  /** A click: the first point stays where it was put, each click after it moves the other end
+   * (Shift+click adds a turn instead: a path); Esc or another tool ends it. */
   private addMeasurePoint(p: THREE.Vector3, keepGoing: boolean) {
-    if (this.measurePts.length >= 2 && !keepGoing) this.measurePts = [];
+    if (this.measurePts.length >= 2 && !keepGoing) this.measurePts = [this.measurePts[0]];
     this.measurePts.push(p.clone());
     this.drawMeasure();
   }
@@ -4772,6 +4792,9 @@ export class CourseView {
     const pts = [...this.measurePts];
     if (this.measureCursor && pts.length === 1) pts.push(this.measureCursor);
     const units = this.doc?.course.units ?? "ft";
+    // (two points put down: where the next click would move the end to, faint, from the first)
+    const ahead = this.measureCursor && this.measurePts.length === 2 ? [this.measurePts[0], this.measureCursor] : null;
+    if (ahead && Math.hypot(ahead[1].x - this.measurePts[1].x, ahead[1].z - this.measurePts[1].z) < 0.5) ahead.length = 0;
     // A dot at each point (the pointer's end fainter)
     pts.forEach((v, i) => {
       const el = document.createElement("div");
@@ -4786,6 +4809,24 @@ export class CourseView {
       const g = new THREE.Group();
       g.add(this.fatLine(line, "#1c1917", 4.5, { depthTest: false, order: 29, opacity: 0.55 }));
       g.add(this.fatLine(line, "#facc15", 2, { depthTest: false, order: 30 }));
+      if (ahead?.length) {
+        const next = this.drapeLine(ahead.map(v => ({ x: v.x, y: v.z })), LIFT + 0.3);
+        g.add(this.fatLine(next, "#facc15", 1.5, { depthTest: false, order: 30, opacity: 0.6, dashed: 4 }));
+        const d = Math.hypot(ahead[1].x - ahead[0].x, ahead[1].z - ahead[0].z);
+        const dh = ahead[1].y - ahead[0].y;
+        const dot = document.createElement("div");
+        dot.className = "dg-ov dg-mpt live";
+        this.labelsLayer.appendChild(dot);
+        this.measureLabels.push({ el: dot, at: ahead[1].clone() });
+        if (d >= 0.5) {
+          const el = document.createElement("div");
+          el.className = "dg-ov dg-measure live";
+          el.setAttribute("data-testid", "measure-next");
+          el.textContent = `${fmtDist(d, units)}${Math.abs(dh) >= 1 ? ` · ${fmtElev(dh, units)}` : ""}`;
+          this.labelsLayer.appendChild(el);
+          this.measureLabels.push({ el, at: ahead[1].clone() });
+        }
+      }
       this.measureLine = g;
       this.fx.add(this.measureLine);
       let total = 0;
@@ -4876,8 +4917,9 @@ export class CourseView {
       if (this.tool.mode === "measure") {
         // (only over the site: a tilted view's horizon would stretch the line across the screen)
         const w = this.doc.course.canvas;
-        if (this.measurePts.length === 1 && g && g.x >= 0 && g.z >= 0 && g.x <= w.width && g.z <= w.height) {
-          this.measureCursor = g;
+        const over = !!g && g.x >= 0 && g.z >= 0 && g.x <= w.width && g.z <= w.height;
+        if ((this.measurePts.length === 1 || this.measurePts.length === 2) && (over || this.measureCursor)) {
+          this.measureCursor = over ? g : null;
           this.drawMeasure();
         }
         return;

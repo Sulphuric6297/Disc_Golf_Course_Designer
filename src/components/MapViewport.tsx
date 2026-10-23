@@ -9,6 +9,7 @@ import type { ViewDoc, ViewInfo } from "../viewport/types";
 import { changeDoc, useCourse, useEditor, updateItem, updateHole, useCourse as courseStore } from "../state/course";
 import { addBrushSection, addDrawn, addPatch, adoptTree, addHole, boxSelect, cutStretch, moveGroup, placeAt, select } from "../state/actions";
 import { courseIssues, courseStats, openIssues } from "../lib/holeStats";
+import { activeLayout } from "../lib/course";
 import { contoursOf, hillshadeCanvas } from "../lib/relief";
 import { terrainStats, heightAt } from "../lib/terrainGrid";
 import { niceScaleBar } from "../lib/view";
@@ -149,6 +150,9 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   // view or flyover opens)
   useEffect(() => { if (paintedOn && ed.teeView) void paintedDetail(doc, ed.teeView, view?.detailPx() ?? 3072); }, [view, paintedOn, ed.teeView, doc]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
+  // (new tees in the color of the layout worked on, whatever changed it: a pick, undo, another course)
+  const layoutTee = activeLayout(doc)?.tee;
+  useEffect(() => { if (layoutTee) useEditor.getState().set({ teeLevel: layoutTee }); }, [layoutTee]);
   useEffect(() => { view?.setReadOnly(viewOnly); }, [view, viewOnly]);
   useEffect(() => { view?.setShowStumps(ed.stumps); }, [view, ed.stumps]);
   useEffect(() => { view?.setGroup(ed.group); }, [view, ed.group]);

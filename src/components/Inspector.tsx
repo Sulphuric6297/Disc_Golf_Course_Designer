@@ -222,6 +222,18 @@ function HoleInspector({ hole }: { hole: Hole }) {
             </select>
           </Field>
         )}
+        {(() => {
+          // (the layout worked on, on a hole with no tee of its color: played from the nearest)
+          const layout = doc.layouts.length > 1 ? doc.layouts.find(l => l.id === doc.activeLayout) : undefined;
+          if (!layout || !tees.length || tees.some(t => t.level === layout.tee)) return null;
+          const lvl = TEE_LEVELS[layout.tee];
+          return (
+            <div className="flex items-center gap-2 mb-2 text-[11px] text-zinc-300 leading-snug" data-testid="layout-missing-tee">
+              <span className="flex-1">No {lvl.label.toLowerCase()} tee yet: the {layout.name} layout plays this hole from the {TEE_LEVELS[tees.find(t => t.id === s.teeId)?.level ?? tees[0].level].label.toLowerCase()} one.</span>
+              <Button small onClick={() => useEditor.getState().set({ tool: "add-tee", teeLevel: layout.tee })}>Add one</Button>
+            </div>
+          );
+        })()}
         <ul className="space-y-1">
           {tees.map(t => (
             <li key={t.id}>

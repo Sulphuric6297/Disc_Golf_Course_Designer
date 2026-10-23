@@ -224,8 +224,8 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "layouts", section: "design", title: "Layouts",
-    body: "A layout plays each hole from one tee to one pin (Main from the blue tees to pin A, say). Add a layout for another set; when there's more than one, pick the one shown above the holes. Its totals and the scorecard follow it.",
-    words: "layout tees pins main red blue",
+    body: "A layout plays each hole from one tee color to one pin (Main from the blue tees to pin A, say; Long from the gold tees to pin B). Add a layout in Edit layouts. With more than one, pick the one you're working on at the top of the holes column: its tees and pins stand out on the map while the other layouts' shrink to faint dots, new tees and holes take its color, and the lengths, par, tee signs and scorecard follow it. A hole with no tee of its color plays from the nearest one; its panel offers to add one.",
+    words: "layout tees pins main red blue gold long short active switch which",
     path: "Design › totals › Edit layouts",
     where: { step: "design", open: "course", find: "course-more", text: "Edit layouts" }
   },
@@ -289,7 +289,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "measure", section: "design", title: "Measure",
-    body: "The Measure tool (D): click along any line to see its length and the climb along it. Esc ends it.",
+    body: "The Measure tool (D): click a start point, then click anywhere: the distance and the climb from the start. The start stays put, so each click after it measures from the same spot (handy for checking a tee to several basket spots); a faint line shows where the next click would reach. Shift+click adds a turn instead, to measure along a path. Esc, or another tool, ends it.",
     words: "measure distance ruler length",
     path: "Design › Measure (D)"
   },

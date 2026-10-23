@@ -39,7 +39,7 @@ const HINTS: Partial<Record<ToolMode, string>> = {
   "add-tree": "Click to plant trees",
   "add-amenity": "Click to place it",
   "add-label": "Click to place a label, then type its text in the panel",
-  measure: "Click two points for distance and elevation change · Shift+click to keep going"
+  measure: "Click a start point, then click anywhere to measure from it · Shift+click adds a turn · Esc to finish"
 };
 
 /** The same, for a touch screen (no keys, no right button, no double-click). */
@@ -56,7 +56,7 @@ const TOUCH_HINTS: Partial<Record<ToolMode, string>> = {
   "add-tree": "Tap to plant trees",
   "add-amenity": "Tap to place it",
   "add-label": "Tap to place a label, then type its text",
-  measure: "Tap two points for the distance and elevation change"
+  measure: "Tap a start point, then tap anywhere to measure from it"
 };
 
 const SHAPES: Record<DrawShape, { label: string; title: string; icon: ReactNode }> = {

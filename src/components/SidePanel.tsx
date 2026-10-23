@@ -6,7 +6,7 @@ import { TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
 import { activeLayout, autoWalks, holeTees } from "../lib/course";
 import { courseIssues, courseStats, courseTotals, levelsOnCourse, openIssues, playsOf, swapped, type SafetyIssue } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
-import { editWalks, select, uncutTrees } from "../state/actions";
+import { editWalks, pickLayout, select, uncutTrees } from "../state/actions";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
 import { setAllWalks } from "./Inspector";
 import { SHOW_EVENT } from "./showSetting";
@@ -15,7 +15,7 @@ import { refreshOsm } from "../state/osm";
 import { measureLidar } from "../state/lidar";
 import { saplings, yearsSince } from "../lib/lidar";
 import { getView } from "../state/view";
-import { Button, Facts, Field, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
+import { Button, Facts, Field, HelpLink, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
 import { DesignPanel } from "./DesignPanel";
 import { ExportPanel } from "./ExportPanel";
 import { useTouch } from "./useLayout";
@@ -178,12 +178,33 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
   );
 }
 
-function LayoutEditor({ open, setOpen }: { open: boolean; setOpen: (f: (o: boolean) => boolean) => void }) {
+/** The layouts to pick from (the one worked on: its tees and pins stand out on the map). */
+export function LayoutPicker({ compact = false }: { compact?: boolean }) {
+  const doc = useCourse(s => s.doc);
+  if (doc.layouts.length < 2) return null;
+  return (
+    <div role="radiogroup" aria-label="Layout" data-testid="layout-picker" className={`flex flex-wrap gap-1 ${compact ? "" : "mb-2"}`}>
+      {doc.layouts.map(l => {
+        const on = l.id === doc.activeLayout;
+        return (
+          <button key={l.id} role="radio" aria-checked={on} onClick={() => pickLayout(l.id)}
+            title={`${l.name}: ${TEE_LEVELS[l.tee].label.toLowerCase()} tees to pin ${l.pin}`}
+            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold min-w-0 touch:py-2 ${on ? "bg-white/[0.18] text-zinc-50 ring-1 ring-white/25" : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.07]"}`}>
+            <span className="w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-black/40" style={{ background: TEE_LEVELS[l.tee].color }} />
+            <span className="truncate">{l.name}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function LayoutEditor({ open, setOpen, picker = true }: { open: boolean; setOpen: (f: (o: boolean) => boolean) => void; picker?: boolean }) {
   const doc = useCourse(s => s.doc);
   const setLayouts = (layouts: Layout[]) => changeDoc(() => ({ layouts }));
   return (
-    <Section title="Layout" right={<button className="text-xs text-orange-300 hover:text-orange-200" onClick={() => setOpen(o => !o)}>{open ? "Done" : "Edit layouts"}</button>}>
-      {doc.layouts.length > 1 && <Segmented label="Active layout" value={doc.activeLayout} onChange={v => changeDoc(() => ({ activeLayout: v }))} options={doc.layouts.map(l => ({ value: l.id, label: <span className="flex items-center gap-1 justify-center"><span className="w-2 h-2 rounded-full" style={{ background: TEE_LEVELS[l.tee].color }} />{l.name}</span> }))} />}
+    <Section title={<span className="flex items-center gap-1.5">Layouts <HelpLink topic="layouts" label="Layouts" /></span>} right={<button className="text-xs text-orange-300 hover:text-orange-200" onClick={() => setOpen(o => !o)}>{open ? "Done" : "Edit layouts"}</button>}>
+      {picker && <LayoutPicker />}
       {open && (
         <div className="mt-2 space-y-2" data-testid="layout-editor">
           {doc.layouts.map(l => (
@@ -200,7 +221,8 @@ function LayoutEditor({ open, setOpen }: { open: boolean; setOpen: (f: (o: boole
             const id = `layout-${generateId()}`;
             const used = new Set(doc.layouts.map(l => l.tee));
             const tee = TEE_ORDER.find(t => !used.has(t)) ?? "white";
-            changeDoc(d => ({ layouts: [...d.layouts, { id, name: TEE_LEVELS[tee].label, tee, pin: "A" }], activeLayout: id }));
+            changeDoc(d => ({ layouts: [...d.layouts, { id, name: TEE_LEVELS[tee].label, tee, pin: "A" }] }));
+            pickLayout(id);
           }}><Plus size={14} /> Add a layout</Button>
         </div>
       )}
@@ -230,7 +252,7 @@ export function HolesStep({ course = false }: { course?: boolean }) {
           <ToolCard icon={<Route size={18} />} title="New hole (H)" active={ed.tool === "add-hole"} onClick={() => ed.set({ tool: "add-hole" })} testid="new-hole" />
         </Section>
       )}
-      {!oneLayout && <LayoutEditor open={layoutsOpen} setOpen={setLayoutsOpen} />}
+      {!oneLayout && <LayoutEditor open={layoutsOpen} setOpen={setLayoutsOpen} picker={!course} />}
       <Section title={`${played} hole${played === 1 ? "" : "s"}`} testid={course ? "course-holes" : "hole-list"} right={oneLayout ? <button className="text-xs text-orange-300 hover:text-orange-200 touch:py-2" onClick={() => setLayoutsOpen(true)}>Edit layouts</button> : undefined}>
         {course ? null : doc.holes.length === 0 ? (
           <p className="text-xs text-zinc-400">No holes yet.</p>
@@ -465,6 +487,7 @@ export function HolesColumn() {
   return (
     <div className="absolute left-3 top-3 bottom-3 z-20 flex flex-col gap-2 pointer-events-none" data-testid="holes-column">
       <div className="glass pointer-events-auto rounded-[22px] p-1.5 flex flex-col gap-0.5 max-h-full min-h-0 w-[172px]" data-testid="hole-list">
+        {doc.layouts.length > 1 && <div className="pb-1 mb-0.5 border-b border-white/10"><LayoutPicker compact /></div>}
         <div className="overflow-y-auto min-h-0 flex flex-col gap-0.5">
           {stats.map(s => {
             const hole = doc.holes.find(h => h.id === s.holeId)!;

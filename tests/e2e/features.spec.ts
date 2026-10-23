@@ -151,6 +151,24 @@ test("measuring: distance and elevation change", async ({ page }) => {
   const a = await screenOf(page, 200, 200);
   expect(dot.width).toBeLessThan(20);
   expect(Math.hypot(dot.x + dot.width / 2 - a.x, dot.y + dot.height / 2 - a.y)).toBeLessThan(8);
+  // Another click: the first point stays, the other end moves there
+  await clickPlan(page, 200, 500);
+  await expect(page.getByTestId("measure-label")).toHaveText("300 ft");
+  const m = await page.evaluate(() => (window as any).__dgView.measurement());
+  expect(m.points).toHaveLength(2);
+  expect(Math.hypot(m.points[0].x - 200, m.points[0].y - 200)).toBeLessThan(2);
+  // (and where the next click would reach, faint, while the pointer moves)
+  const p = await screenOf(page, 600, 200);
+  await page.mouse.move(p.x, p.y, { steps: 4 });
+  await expect(page.getByTestId("measure-next")).toHaveText("400 ft");
+  // Shift+click adds a turn: a path, with its total
+  await page.keyboard.down("Shift");
+  await clickPlan(page, 500, 500);
+  await page.keyboard.up("Shift");
+  await expect(page.getByTestId("measure-label")).toHaveCount(2);
+  // Esc ends it
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("measure-point")).toHaveCount(0);
 });
 
 test("shapes by dragging: a rectangle and a circle", async ({ page }) => {

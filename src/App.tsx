@@ -18,7 +18,7 @@ import { SiteImportDialog } from "./components/SiteImportDialog";
 import { TeeViewHud } from "./components/TeeViewHud";
 import { MapDesigner } from "./components/MapDesigner";
 import { ExportProgressPill } from "./components/ExportProgress";
-import { Button } from "./components/ui";
+import { Button, HELP_EVENT } from "./components/ui";
 import { useLayout, useTouch } from "./components/useLayout";
 import { CompactShell, ItemMenu } from "./components/mobile/CompactShell";
 import { useCourse, useEditor, getDoc, changeDoc, updateItem } from "./state/course";
@@ -139,6 +139,11 @@ export default function App() {
   const [findSite, setFindSite] = useState(false);
   // (the help guide, open at a topic when one is asked for)
   const [help, setHelp] = useState<false | { topic?: string }>(false);
+  useEffect(() => {
+    const on = (e: Event) => setHelp({ topic: (e as CustomEvent).detail });
+    window.addEventListener(HELP_EVENT, on);
+    return () => window.removeEventListener(HELP_EVENT, on);
+  }, []);
   const touchUi = useTouch();
   const [goTo, setGoTo] = useState(false);
   const [menu, setMenu] = useState<{ clientX: number; clientY: number; itemId: string | null; ground: P | null; under?: string | null } | null>(null);

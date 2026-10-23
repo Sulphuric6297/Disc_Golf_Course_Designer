@@ -422,6 +422,14 @@ export const setTeeLevel = (teeId: string, level: TeeLevel) => {
   changeDoc(d => ({ items: d.items.map(i => (i.id === teeId ? { ...i, level } as CourseItem : other && i.id === other.id ? { ...i, level: tee.level } as CourseItem : i)) }));
 };
 
+/** The layout worked on: its tees and pins to the fore, new tees in its color. */
+export const pickLayout = (id: string) => {
+  const layout = getDoc().layouts.find(l => l.id === id);
+  if (!layout) return;
+  changeDoc(() => ({ activeLayout: id }));
+  useEditor.getState().set({ teeLevel: layout.tee });
+};
+
 /** The tee a hole is played from in the current layout. */
 export const layoutTee = (holeId: string) => {
   const doc = getDoc();

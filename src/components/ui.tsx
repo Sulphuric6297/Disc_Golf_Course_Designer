@@ -56,6 +56,16 @@ export const Section = ({ title, children, right, testid }: { title?: ReactNode;
   </section>
 );
 
+/** The help guide opened at a topic (a panel's ? button): the app listens for this. */
+export const HELP_EVENT = "dg-help";
+const askHelp = (topic: string) => window.dispatchEvent(new CustomEvent(HELP_EVENT, { detail: topic }));
+
+/** A small ? that opens the help guide at a topic. */
+export const HelpLink = ({ topic, label }: { topic: string; label: string }) => (
+  <button aria-label={`Help: ${label}`} data-testid={`help-${topic}`} onClick={() => askHelp(topic)}
+    className={`w-[18px] h-[18px] touch:w-7 touch:h-7 rounded-full inline-flex items-center justify-center text-[11px] font-bold text-zinc-300 bg-white/[0.09] hover:bg-white/[0.16] hover:text-zinc-50 ${FOCUS}`}>?</button>
+);
+
 /** A labelled control. A group, not a <label>: the controls inside carry their own names (a
  * <label> would also name every button in a button group after the whole field). */
 export const Field = ({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) => (

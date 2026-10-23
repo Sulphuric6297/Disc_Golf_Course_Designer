@@ -143,7 +143,7 @@ test("another tee and pin for a hole, and layouts pick between them", async ({ p
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("hole-row")).toContainText("400 ft");
   // (one layout: no switcher above the holes)
-  await expect(page.getByRole("radiogroup", { name: "Active layout" })).toHaveCount(0);
+  await expect(page.getByTestId("layout-picker")).toHaveCount(0);
   // A red layout to pin B
   // (the course's totals open its layouts)
   await page.getByTestId("course-totals-button").click();
@@ -155,9 +155,28 @@ test("another tee and pin for a hole, and layouts pick between them", async ({ p
   await last.getByRole("radiogroup", { name: "Layout pins" }).getByRole("radio", { name: "Pin B" }).click();
   // Red tee at 500 to pin B at (850, 650): about 354 ft
   await expect(page.getByTestId("hole-row")).toContainText("354 ft");
-  // Two layouts: the switcher stays once the editor is closed
+  // Two layouts: the switcher at the top of the holes column, the one worked on picked
   await page.getByRole("button", { name: "Done" }).click();
-  await expect(page.getByRole("radiogroup", { name: "Active layout" })).toBeVisible();
+  const picker = page.getByTestId("holes-column").getByRole("radiogroup", { name: "Layout" });
+  await expect(picker.getByRole("radio", { name: "Red" })).toHaveAttribute("aria-checked", "true");
+  // (its tees to the fore: the blue one, only the other layout's, a faint dot; new tees red)
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("course-more")).toHaveCount(0);
+  const blueTee = tees.find((t: any) => t.level === "blue").id;
+  const redTee = tees.find((t: any) => t.level === "red").id;
+  await expect(page.locator(`.dg-tee[data-item-id="${blueTee}"]`)).toHaveClass(/off/);
+  await expect(page.locator(`.dg-tee[data-item-id="${redTee}"]`)).not.toHaveClass(/off/);
+  expect(await page.evaluate(() => (window as any).__dgEditor().teeLevel)).toBe("red");
+  // Back to Main: blue to the fore, 400 ft again
+  await picker.getByRole("radio", { name: "Main" }).click();
+  await expect(page.getByTestId("hole-row")).toContainText("400 ft");
+  await expect(page.locator(`.dg-tee[data-item-id="${redTee}"]`)).toHaveClass(/off/);
+  await expect(page.locator(`.dg-tee[data-item-id="${blueTee}"]`)).not.toHaveClass(/off/);
+  expect(await page.evaluate(() => (window as any).__dgEditor().teeLevel)).toBe("blue");
+  // (the ? by Layouts opens the guide there)
+  await page.getByTestId("course-totals-button").click();
+  await page.getByTestId("help-layouts").click();
+  await expect(page.getByTestId("help-guide")).toContainText("faint dots");
 });
 
 test("hole numbers typed in (any number, others keep theirs); deleted with undo", async ({ page }) => {
