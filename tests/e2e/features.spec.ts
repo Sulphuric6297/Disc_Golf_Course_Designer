@@ -540,7 +540,7 @@ test("a tree made taller keeps its shape: its crown grows with it, and in 3D it 
 });
 
 plain("a tree's crown is drawn as wide as set, whatever its height (all the way along both sliders)", () => {
-  for (const [shape, natural] of [["deciduous", 0.75], ["conifer", 0.62], ["palm", 0.75]] as const) {
+  for (const [shape, natural] of [["deciduous", 0.75], ["conifer", 0.62]] as const) {
     for (const height of [3, 10, 40, 80, 110]) {
       for (const radius of [2, 5, 10, 20, 40]) {
         const drawn = height * natural * treeSpread((radius * 2) / height / natural);

@@ -150,7 +150,7 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
           <Chip key="gate" active={ed.mandoKind === "gate"} testid="mando-kind-gate" onClick={() => set({ mandoKind: "gate" })}>Gate</Chip>
         ];
       case "add-tree":
-        return (["deciduous", "conifer", "palm", "bush"] as TreeKind[]).map(k => <Chip key={k} active={ed.treeKind === k} onClick={() => set({ treeKind: k })}>{k === "deciduous" ? "Leafy tree" : k === "conifer" ? "Pine" : k === "palm" ? "Palm" : "Bush"}</Chip>);
+        return (["deciduous", "conifer", "bush"] as TreeKind[]).map(k => <Chip key={k} active={ed.treeKind === k} onClick={() => set({ treeKind: k })}>{k === "deciduous" ? "Leafy tree" : k === "conifer" ? "Pine" : "Bush"}</Chip>);
       default:
         return null;
     }

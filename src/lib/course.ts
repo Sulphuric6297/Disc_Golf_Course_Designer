@@ -110,6 +110,8 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
     }),
     // (A structure needs its points and a kind this version knows)
     items: Array.isArray(raw.items) ? raw.items.filter(i => i.type !== "structure" || (Array.isArray(i.points) && i.kind in STRUCTURE_KINDS)).map(i => {
+      // (palms are gone: one placed before is a leafy tree now)
+      if (i.type === "tree" && (i.treeType as string) === "palm") return { ...i, treeType: "deciduous" as const };
       // (a line's OB stretches: pairs of numbers, or none; the holes it's OB for: holes on the course)
       if (i.type !== "line" || (i.obStretches === undefined && i.obHoles === undefined)) return i;
       const ok = Array.isArray(i.obStretches) ? mergeStretches(i.obStretches.filter(st => Array.isArray(st) && st.length === 2 && st.every(v => Number.isFinite(v)))) : [];

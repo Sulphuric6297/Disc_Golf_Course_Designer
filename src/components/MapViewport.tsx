@@ -96,7 +96,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const shadeUrl = useMemo(() => (show.shading && !show.painted && terrain.relief > 1 && (doc.style.reliefScale ?? 1) > 0 ? hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, undefined, doc.style.reliefScale ?? 1).toDataURL() : null), [show.shading, show.painted, terrain.relief, doc.terrainHeights, doc.gridSize, doc.canvas, doc.style.reliefScale]);
   const issues = useMemo(() => (ed.step === "design" ? openIssues(doc, courseIssues(doc)).open : null), [ed.step, doc]);
   // From a tee and in flyovers: the ground in the Design look (the painted map), not the photo
-  const paintedOn = ((!!ed.teeView && ed.flyLook === "painted") || show.painted) && !!doc.holes.length;
+  // (from a tee: the editor's own pick, or for a viewer the course's look for viewers)
+  const paintedOn = ((!!ed.teeView && !viewOnly && ed.flyLook === "painted") || show.painted) && !!doc.holes.length;
   // (painted ahead while the course rests with a hole picked, so a flyover has less to wait for;
   // not while it's being changed: that would paint it over and over)
   const [restingDoc, setRestingDoc] = useState(doc);

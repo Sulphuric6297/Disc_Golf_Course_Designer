@@ -1,9 +1,10 @@
 // Who has the open course, and (for its owners) sharing it: viewers look, editors change, owners
 // also share and delete.
 import { useEffect, useState } from "react";
-import { inputCls, Section, Tabs } from "../components/ui";
+import { inputCls, Section, Segmented, Tabs } from "../components/ui";
+import { changeDoc, useCourse } from "../state/course";
 import { api, useAuth } from "./api";
-import { setApproval, useServerCourse, type Role } from "./courses";
+import { saveNow, setApproval, useServerCourse, type Role } from "./courses";
 import { CopyButton, Dialog, Form, when } from "./parts";
 import { LINK_DEFAULT, LINK_PARTS, PART_LABELS, PARTS, VIEWER_DEFAULT, type Part, type Perms } from "./perms";
 import { publishSite } from "./site";
@@ -123,6 +124,23 @@ function Ticks({ parts, value, onChange }: { parts: readonly Part[]; value: Perm
   );
 }
 
+/** How the map and 3D look to those who only look (a link's visitors, people who can view): the
+ * course's own, the same for every link. The painted map unless set otherwise. */
+function ViewerLook() {
+  const pv = useCourse(s => s.doc.style.publicView) ?? {};
+  const set = (p: Partial<typeof pv>) => changeDoc(d => ({ style: { ...d.style, publicView: { ...d.style.publicView, ...p } } }));
+  return (
+    <div className="rounded-lg bg-white/[0.05] p-2.5 space-y-2" data-testid="public-view">
+      <div className="text-xs text-zinc-400">How the map and 3D look (every link)</div>
+      <Segmented label="Viewers' ground" value={pv.ground ?? "painted"} onChange={v => set({ ground: v as "painted" | "photo" })} options={[{ value: "painted", label: "Painted" }, { value: "photo", label: "Satellite photo" }]} />
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        <label className="flex items-center gap-2 text-sm text-zinc-200"><input type="checkbox" checked={!!pv.contours} onChange={e => set({ contours: e.target.checked })} /> Contour lines</label>
+        {pv.ground === "photo" && <label className="flex items-center gap-2 text-sm text-zinc-200"><input type="checkbox" checked={pv.shading ?? true} onChange={e => set({ shading: e.target.checked })} /> Hill shading</label>}
+      </div>
+    </div>
+  );
+}
+
 interface Link { id: string; token: string; slug: string | null; label: string; perms: Perms; hasPassword: boolean; expiresAt: string | null; createdAt: string; revoked: boolean }
 const linkUrl = (l: { token: string; slug?: string | null }) => `${location.origin}/${l.slug || l.token}`;
 const partsOf = (p: Perms) => LINK_PARTS.filter(k => p[k]).map(k => PART_LABELS[k].replace(/ \(.*\)$/, "")).join(", ") || "Nothing";
@@ -151,7 +169,8 @@ function PublicSection({ id }: { id: string }) {
     if (editing === "new") await api("POST", `courses/${id}/links`, body);
     else await api("PATCH", `courses/${id}/links/${editing}`, body);
     setEditing(null);
-    // (the site has what the links show: published again, so a new part is there)
+    // (the site has what the links show, and the look: saved and published again)
+    await saveNow();
     await publishSite(id, setBusy);
     setBusy("");
   });
@@ -195,6 +214,7 @@ function PublicSection({ id }: { id: string }) {
               {form.slug && <span className="block text-[11px] text-zinc-500 mt-1">Easy to guess: add a password if only some should see it.</span>}
             </label>
             <Ticks parts={LINK_PARTS} value={form.perms} onChange={perms => setForm({ ...form, perms })} />
+            {(form.perms.map || form.perms.view3d) && <ViewerLook />}
             <div className="flex gap-2">
               <input className={inputCls} type="password" placeholder={editing === "new" ? "Password (optional)" : "New password (optional)"} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} aria-label="Password" />
               <input className={`${inputCls} w-40`} type="date" value={form.expires} onChange={e => setForm({ ...form, expires: e.target.value })} aria-label="Works until" />

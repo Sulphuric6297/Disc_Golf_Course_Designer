@@ -58,7 +58,7 @@ export interface DropZoneItem extends BaseItem {
   holeId?: string;
 }
 
-export type TreeKind = "deciduous" | "conifer" | "palm" | "bush";
+export type TreeKind = "deciduous" | "conifer" | "bush";
 export interface TreeItem extends BaseItem {
   type: "tree";
   /** Crown radius, ft. */
