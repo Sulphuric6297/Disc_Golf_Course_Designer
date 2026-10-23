@@ -5,7 +5,8 @@
 import { execFileSync } from "child_process";
 import { readFileSync } from "fs";
 
-const git = (...args) => execFileSync("git", args, { encoding: "utf8" });
+// (room for a big commit's changes, a merge of many: the whole of it is read, never cut short)
+const git = (...args) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 512 * 1024 * 1024 });
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
 // Addresses that are fine to publish: no-reply ones and example domains. (user@ an IP address
 // is a login in a local database's address, not an email.)
