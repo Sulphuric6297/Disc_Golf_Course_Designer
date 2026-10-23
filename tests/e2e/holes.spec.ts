@@ -164,14 +164,14 @@ test("another tee and pin for a hole, and layouts pick between them", async ({ p
   await expect(page.getByTestId("course-more")).toHaveCount(0);
   const blueTee = tees.find((t: any) => t.level === "blue").id;
   const redTee = tees.find((t: any) => t.level === "red").id;
-  await expect(page.locator(`.dg-tee[data-item-id="${blueTee}"]`)).toHaveClass(/off/);
-  await expect(page.locator(`.dg-tee[data-item-id="${redTee}"]`)).not.toHaveClass(/off/);
+  await expect(page.locator(`.dg-tee[data-item-id="${blueTee}"]`)).toHaveClass(/(^| )off( |$)/);
+  await expect(page.locator(`.dg-tee[data-item-id="${redTee}"]`)).not.toHaveClass(/(^| )off( |$)/);
   expect(await page.evaluate(() => (window as any).__dgEditor().teeLevel)).toBe("red");
   // Back to Main: blue to the fore, 400 ft again
   await picker.getByRole("radio", { name: "Main" }).click();
   await expect(page.getByTestId("hole-row")).toContainText("400 ft");
-  await expect(page.locator(`.dg-tee[data-item-id="${redTee}"]`)).toHaveClass(/off/);
-  await expect(page.locator(`.dg-tee[data-item-id="${blueTee}"]`)).not.toHaveClass(/off/);
+  await expect(page.locator(`.dg-tee[data-item-id="${redTee}"]`)).toHaveClass(/(^| )off( |$)/);
+  await expect(page.locator(`.dg-tee[data-item-id="${blueTee}"]`)).not.toHaveClass(/(^| )off( |$)/);
   expect(await page.evaluate(() => (window as any).__dgEditor().teeLevel)).toBe("blue");
   // (the ? by Layouts opens the guide there)
   await page.getByTestId("course-totals-button").click();
