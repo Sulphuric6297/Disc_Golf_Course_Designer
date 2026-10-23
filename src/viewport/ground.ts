@@ -456,6 +456,13 @@ export class Ground {
     this.buildDetail();
   }
 
+  /** The ground alone reshaped to heights being painted (nothing else on it moves till they're
+   * the course's own). */
+  previewHeights(heights: Record<string, number>) {
+    if (!this.lastDoc || !this.terrain) return;
+    this.reshape({ ...this.lastDoc, heights });
+  }
+
   private reshape(doc: ViewDoc) {
     this.redrape(doc, this.terrain, 0);
     this.colorTerrain(doc);

@@ -9,7 +9,7 @@
 // a thing opens its menu (the right-click).
 import { Woods } from "../Woods";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
-import { ListChecks, Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Search, Trash2, Undo2, Unlock, X } from "lucide-react";
+import { Menu, ChevronDown, ListChecks, Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Search, Trash2, Undo2, Unlock, X } from "lucide-react";
 import { STRUCTURE_KINDS } from "../../constants";
 import { holeLabel, holeNumber } from "../../lib/course";
 import { courseIssues, courseStats, courseTotals, holeStats, openIssues, playsOf } from "../../lib/holeStats";
@@ -440,11 +440,19 @@ function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
   return (
     <div className="absolute left-0 right-0 top-0 z-30 px-2 pt-[max(8px,env(safe-area-inset-top))] pointer-events-none" data-testid="top-bar">
       <div className="glass pointer-events-auto flex items-center gap-1 h-[56px] pl-1 pr-1 rounded-[22px]">
-        {SITE_TOKEN ? <CoursePageButton /> : <button className={iconBtn} aria-label="Menu: files, help" onClick={onMenu} data-testid="app-menu-button"><Logo /></button>}
-        <div className="flex-1 min-w-0 pl-0.5">
-          <div className="text-[15px] font-bold text-zinc-50 truncate leading-tight" data-testid="course-name">{name}</div>
-          <div className="text-[12px] text-zinc-400 truncate tabular-nums">{sub}</div>
-        </div>
+        {/* (the menu: a button that looks like one, and the course's name opens it too) */}
+        {SITE_TOKEN ? <CoursePageButton /> : <button className="w-11 h-11 shrink-0 flex items-center justify-center rounded-[14px] bg-white/[0.1] active:bg-white/[0.18] text-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400" aria-label="Menu: files, help" onClick={onMenu} data-testid="app-menu-button"><Menu size={22} /></button>}
+        {SITE_TOKEN ? (
+          <div className="flex-1 min-w-0 pl-0.5">
+            <div className="text-[15px] font-bold text-zinc-50 truncate leading-tight" data-testid="course-name">{name}</div>
+            <div className="text-[12px] text-zinc-400 truncate tabular-nums">{sub}</div>
+          </div>
+        ) : (
+          <button className="flex-1 min-w-0 pl-1.5 text-left rounded-[12px] active:bg-white/[0.07] focus:outline-none" onClick={onMenu} aria-label={`${name}: open the menu`}>
+            <div className="text-[15px] font-bold text-zinc-50 truncate leading-tight flex items-center gap-1" data-testid="course-name"><span className="truncate">{name}</span><ChevronDown size={15} className="shrink-0 text-zinc-400" /></div>
+            <div className="text-[12px] text-zinc-400 truncate tabular-nums">{sub}</div>
+          </button>
+        )}
         {SERVER && <CourseChip />}
         <ViewToggle />
       </div>

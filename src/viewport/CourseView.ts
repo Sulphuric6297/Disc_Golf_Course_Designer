@@ -4640,16 +4640,20 @@ export class CourseView {
     // (raise and lower: a quarter foot a dab at strength 1; flatten and smooth: how far a dab goes)
     const amount = b.ground === "raise" || b.ground === "lower" ? b.strength * 0.12 : Math.min(1, b.strength * 0.05);
     const level = heightAt(doc.heights, doc.gridSize, g0.x, g0.z);
-    let last: P = { x: g0.x, y: g0.z }, sent = 0;
+    let last: P = { x: g0.x, y: g0.z }, frame = 0;
     const put = (p: P) => dab(heights, doc.gridSize, W, H, p, b.size, b.ground, amount, level);
-    const send = (done: boolean) => {
-      sent = performance.now();
-      this.cb.onTerrain?.({ ...heights }, done);
+    // (while painting, only the ground itself reshapes, once a frame at most: the trees, lines,
+    // contours and the painted map follow once, when the stroke ends)
+    const show = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => { frame = 0; this.ground.previewHeights(heights); this.invalidate(); });
     };
+    const send = (done: boolean) => { if (done) this.cb.onTerrain?.({ ...heights }, true); else show(); };
     put(last);
+    show();
     this.setDragging(true);
     // (held still: it keeps working where the brush is)
-    const hold = window.setInterval(() => { put(last); if (performance.now() - sent > 140) send(false); }, 90);
+    const hold = window.setInterval(() => { put(last); show(); }, 90);
     return {
       move: ev => {
         const g = this.groundAt(ev.clientX, ev.clientY);
@@ -4659,10 +4663,11 @@ export class CourseView {
         for (let k = 1; k <= Math.floor(d / step); k++) put({ x: last.x + ((p.x - last.x) * k * step) / d, y: last.y + ((p.y - last.y) * k * step) / d });
         if (d >= step) last = p;
         this.showBrush(p, b.size);
-        if (performance.now() - sent > 140) send(false);
+        send(false);
       },
       end: () => {
         window.clearInterval(hold);
+        if (frame) cancelAnimationFrame(frame);
         this.setDragging(false);
         send(true);
       }

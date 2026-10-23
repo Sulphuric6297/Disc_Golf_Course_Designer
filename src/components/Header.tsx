@@ -4,7 +4,8 @@
 // light live with the map's own controls.
 import { ProblemsCount } from "./SidePanel";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, FilePlus, FolderOpen, HelpCircle, Save, Search, Trash2, MapPin, Route, Palette, Download } from "lucide-react";
+import { openGettingStarted, useStart } from "./GettingStarted";
+import { ChevronDown, FilePlus, FolderOpen, HelpCircle, ListChecks, Save, Search, Trash2, MapPin, Route, Palette, Download } from "lucide-react";
 import { STEPS } from "./SidePanel";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { deleteRecent, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../state/files";
@@ -25,6 +26,14 @@ const Logo = ({ size = 26 }: { size?: number }) => (
 export const BAR_BUTTON = `p-2 rounded-full text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.08] ${FOCUS}`;
 /** Each step's mark on the steps bar. */
 const STEP_ICONS = { site: MapPin, design: Route, map: Palette, export: Download } as const;
+
+/** Getting started, at the top: opens the list (lit while it's open). */
+function StartButton() {
+  const open = useStart(s => s.open);
+  return (
+    <button onClick={() => (open ? useStart.getState().set({ open: false }) : openGettingStarted())} className={`${BAR_BUTTON} ${open ? "!text-orange-300" : ""}`} aria-label="Getting started" aria-pressed={open} title="Getting started: the main things to do" data-testid="start-button"><ListChecks size={18} /></button>
+  );
+}
 
 export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => void }) {
   const name = useCourse(s => s.doc.name);
@@ -110,12 +119,9 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
       <div className="flex items-center gap-1">
         {ed.step === "design" && !readOnly && <ProblemsCount />}
         <button onClick={onGoTo} className={BAR_BUTTON} aria-label="Go to" title="Go to (Ctrl+K)" data-testid="goto-button"><Search size={18} /></button>
-        {SERVER ? <AccountMenu onHelp={onHelp} /> : (
-          <>
-            <button onClick={onHelp} className={BAR_BUTTON} aria-label="Help guide" title="Help guide (?)"><HelpCircle size={18} /></button>
-            <DemoNote />
-          </>
-        )}
+        {!readOnly && <StartButton />}
+        <button onClick={onHelp} className={BAR_BUTTON} aria-label="Help guide" title="Help guide (?)" data-testid="help-button"><HelpCircle size={18} /></button>
+        {SERVER ? <AccountMenu onHelp={onHelp} /> : <DemoNote />}
       </div>
     </header>
   );

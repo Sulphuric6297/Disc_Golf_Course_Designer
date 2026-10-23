@@ -11,19 +11,21 @@ import { select } from "../state/actions";
 import { getView } from "../state/view";
 import type { Where } from "../lib/guide";
 import { showSetting } from "./showSetting";
+import { toast } from "../state/toast";
 import { FOCUS } from "./ui";
 
-type Flags = { open: boolean; folded: boolean; seen3d: boolean; checks: boolean; map: boolean; export: boolean };
+/** `ticked`: items ticked off by hand (done another way, or not needed); `unticked`: ones untouched by hand. */
+type Flags = { open: boolean; folded: boolean; seen3d: boolean; checks: boolean; map: boolean; export: boolean; ticked: string[]; unticked: string[] };
 const KEY = "dg-getting-started";
 const load = (): Flags => {
-  const none = { open: false, folded: false, seen3d: false, checks: false, map: false, export: false };
+  const none = { open: false, folded: false, seen3d: false, checks: false, map: false, export: false, ticked: [] as string[], unticked: [] as string[] };
   try { return { ...none, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") }; } catch { return none; }
 };
 export const useStart = create<Flags & { set: (p: Partial<Flags>) => void }>(set => ({
   ...load(),
   set: p => set(s => {
     const next = { ...s, ...p };
-    try { localStorage.setItem(KEY, JSON.stringify({ open: next.open, folded: next.folded, seen3d: next.seen3d, checks: next.checks, map: next.map, export: next.export })); } catch { /* (private window: kept for now only) */ }
+    try { localStorage.setItem(KEY, JSON.stringify({ open: next.open, folded: next.folded, seen3d: next.seen3d, checks: next.checks, map: next.map, export: next.export, ticked: next.ticked, unticked: next.unticked })); } catch { /* (private window: kept for now only) */ }
     return next;
   })
 }));
@@ -57,6 +59,13 @@ export function GettingStarted({ phone = false }: { phone?: boolean }) {
     { id: "map", title: "Make your course map", done: st.map, where: { step: "map" }, say: "The Map step lays out the printed course map, tee signs and scorecard. Pick a look and it repaints." },
     { id: "export", title: "Print or share it", done: st.export, where: { step: "export" }, say: "Export makes the PDFs and image files, the flyover video and the GPS files." }
   ];
+  // (ticked or unticked by hand: that wins over what the course shows)
+  for (const i of items) { if (st.ticked.includes(i.id)) i.done = true; else if (st.unticked.includes(i.id)) i.done = false; }
+  const tick = (i: Item) => {
+    const on = !i.done;
+    st.set({ ticked: on ? [...st.ticked.filter(x => x !== i.id), i.id] : st.ticked.filter(x => x !== i.id), unticked: on ? st.unticked.filter(x => x !== i.id) : [...st.unticked.filter(x => x !== i.id), i.id] });
+  };
+  const close = () => { st.set({ open: false }); toast(phone ? "Getting started is in the menu (top left) whenever you want it back." : "Getting started is at the top, by the ?, whenever you want it back.", "info"); };
   const left = items.filter(i => !i.done).length;
   const done = items.length - left;
   const show = (i: Item) => {
@@ -74,13 +83,14 @@ export function GettingStarted({ phone = false }: { phone?: boolean }) {
           <span className="block mt-1.5 h-1 rounded-full bg-white/10 overflow-hidden"><span className="block h-full bg-orange-300 transition-[width] duration-500" style={{ width: `${(done / items.length) * 100}%` }} /></span>
           <span className="block mt-1 text-[11px] text-zinc-400">{left ? `${done} of ${items.length} done` : "All done. You know your way around."}</span>
         </button>
-        <button aria-label="Close Getting started" title="Close (open it again from Help)" className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.09] ${FOCUS}`} onClick={() => st.set({ open: false })} data-testid="getting-started-close"><X size={15} /></button>
+        <button aria-label="Close Getting started" title="Close (open it again from Help)" className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.09] ${FOCUS}`} onClick={close} data-testid="getting-started-close"><X size={15} /></button>
       </div>
       {!st.folded && (
         <ul className={`px-1.5 pb-1.5 ${phone ? "max-h-[42vh] overflow-y-auto" : ""}`}>
           {items.map(i => (
             <li key={i.id} className="flex items-center gap-2.5 rounded-[12px] px-2 py-1.5 hover:bg-white/[0.05]" data-testid={`start-${i.id}`} data-done={i.done || undefined}>
-              <span className={`w-[18px] h-[18px] shrink-0 rounded-full flex items-center justify-center ${i.done ? "bg-orange-300 text-zinc-950" : "ring-[1.5px] ring-zinc-500"}`}>{i.done && <Check size={12} strokeWidth={3} />}</span>
+              <button role="checkbox" aria-checked={i.done} aria-label={`${i.title}: ${i.done ? "done" : "not done"}`} title={i.done ? "Tick it off again" : "Tick it off"} onClick={() => tick(i)} data-testid={`start-tick-${i.id}`}
+                className={`w-[22px] h-[22px] touch:w-7 touch:h-7 shrink-0 rounded-full flex items-center justify-center ${FOCUS} ${i.done ? "bg-orange-300 text-zinc-950" : "ring-[1.5px] ring-zinc-500 hover:ring-orange-300"}`}>{i.done && <Check size={13} strokeWidth={3} />}</button>
               <span className={`flex-1 text-[13px] ${i.done ? "text-zinc-400 line-through decoration-zinc-600" : "text-zinc-100 font-semibold"}`}>{i.title}</span>
               {!i.done && <button className={`shrink-0 text-[12px] font-semibold text-orange-300 hover:text-orange-200 px-1.5 py-1 touch:py-2 rounded ${FOCUS}`} onClick={() => show(i)} data-testid={`start-show-${i.id}`}>Show me</button>}
             </li>
