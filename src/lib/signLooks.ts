@@ -10,7 +10,7 @@ import { holeStats, type HoleStats } from "./holeStats";
 import { northArrow, palette, scaleBar, wrapSvg } from "./mapSvg";
 import { fmtElev } from "./units";
 import { piecer } from "./pieces";
-import { autoRules, cardStyle, elevationProfile, esc, greenView, holeMap, miniCourseMap, signOf, SIGN_SIZES, wrap, type SignArt, type SignSize } from "./teeSign";
+import { autoRules, cardStyle, elevationProfile, esc, greenView, holeMap, miniCourseMap, signExtras, signOf, SIGN_SIZES, wrap, type SignArt, type SignSize } from "./teeSign";
 
 const n = (v: number) => (Math.round(v * 100) / 100).toString();
 type Box = { x: number; y: number; w: number; h: number };
@@ -167,6 +167,7 @@ export const renderTrailhead = (doc: CourseDoc, holeId: string, size: SignSize, 
     P.group(parts, at, "notes");
   }
   if (doc.designer && show("designer")) parts.push(P.wrap("designer", `<text x="${n(W - pad)}" y="${n(H - 10 * u)}" text-anchor="end" font-family="${card.body}" font-weight="600" font-size="${n(9 * u)}" letter-spacing="${n(0.8 * u)}" fill="${cream}" fill-opacity="0.5">DESIGNED BY ${esc(doc.designer.toUpperCase())}</text>`));
+  parts.push(signExtras(doc, holeId, st, W, H, P.wrap));
   return { svg: wrapSvg(W, H, P.page(parts.join(""))), width: W, height: H };
 };
 
@@ -252,6 +253,7 @@ export const renderFieldGuide = (doc: CourseDoc, holeId: string, size: SignSize,
   parts.push(P.wrap("footRule", `<line x1="${n(pad)}" x2="${n(W - pad)}" y1="${n(fy - 26 * u)}" y2="${n(fy - 26 * u)}" stroke="${ink}" stroke-opacity="0.3" stroke-width="${n(1 * u)}"/>`));
   if (rules) parts.push(P.wrap("notes", `<text x="${n(pad)}" y="${n(fy)}" font-family="${serif}" font-style="italic" font-weight="600" font-size="${n(15 * u)}" fill="${ink}" fill-opacity="0.85">${esc(wrap(rules, Math.floor((W - 2 * pad - 160 * u) / (15 * u * 0.5)))[0] ?? "")}</text>`));
   if (show("nextTee") && next?.complete && st.complete) parts.push(P.wrap("nextTee", `<text x="${n(W - pad)}" y="${n(fy)}" text-anchor="end" font-family="${serif}" font-style="italic" font-weight="600" font-size="${n(15 * u)}" fill="${ink}">Next: ${esc(next.label)} →</text>`));
+  parts.push(signExtras(doc, holeId, st, W, H, P.wrap));
   return { svg: wrapSvg(W, H, P.page(parts.join(""))), width: W, height: H };
 };
 
@@ -311,5 +313,6 @@ export const renderOpenView = (doc: CourseDoc, holeId: string, size: SignSize, o
       + `<text x="${n(ax - 36 * u)}" y="${n(ay)}" dominant-baseline="central" font-family="${card.head}" font-weight="700" font-size="${n(16 * u)}" letter-spacing="${n(1 * u)}" fill="${cream}">HOLE ${esc(next.label)} · ${Math.round(dist(from, to))} ${doc.units === "m" ? "M" : "FT"}</text></g>`);
     P.group(parts, at, "nextTee");
   }
+  parts.push(signExtras(doc, holeId, st, W, H, P.wrap));
   return { svg: wrapSvg(W, H, P.page(parts.join(""))), width: W, height: H };
 };

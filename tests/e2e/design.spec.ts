@@ -1046,6 +1046,32 @@ test("zoomed in on the Design page, every edge of the page can be reached: the f
   expect(end.sheet.y + end.sheet.height).toBeLessThanOrEqual(end.area.bottom + 0.5);
 });
 
+plain("tee sign extras: text filled in for each hole, a picture, the hole's sponsors, a QR code; on every hole or the ones picked", () => {
+  const doc = sample();
+  const [h1, h2] = doc.holes;
+  const art = { contours: null, hillshade: null };
+  const sign = (id: string) => renderTeeSign(doc, id, "18x12", art)!.svg;
+  doc.style.sponsors = [{ id: "s1", name: "Joe's Pizza", text: "JOE'S PIZZA" }, { id: "s2", name: "River Bank", text: "RIVER BANK", holes: [h2.id] }];
+  doc.style.sign = { extras: [
+    { id: "t", kind: "text", x: 0.1, y: 0.1, w: 0.3, text: "Hole {hole} · par {par}", size: 30 },
+    { id: "q", kind: "qr", x: 0.8, y: 0.05, w: 0.1, url: "https://example.org/course" },
+    { id: "sp", kind: "sponsors", x: 0.05, y: 0.8, w: 0.3 },
+    { id: "only2", kind: "text", x: 0.1, y: 0.3, w: 0.3, text: "Second only", holes: [h2.id] }
+  ] };
+  const s1 = sign(h1.id), s2 = sign(h2.id);
+  plainExpect(s1).toContain('<g data-el="x:t">');
+  plainExpect(s1).toMatch(/Hole 1 · par \d/);
+  plainExpect(s2).toMatch(/Hole 2 · par \d/);
+  plainExpect(s1).toContain('<g data-el="x:q">');
+  plainExpect(s1).toContain("HOLE SPONSOR<");
+  plainExpect(s1).toContain("JOE'S PIZZA");
+  plainExpect(s1).not.toContain("RIVER BANK");
+  plainExpect(s2).toContain("HOLE SPONSORS<");
+  plainExpect(s2).toContain("RIVER BANK");
+  plainExpect(s1).not.toContain("Second only");
+  plainExpect(s2).toContain("Second only");
+});
+
 plain("hole pages: pieces placed by hand, and Just the hole (its picture across the page, its number, the rest a click away)", () => {
   const doc = sample();
   const [h1] = doc.holes;

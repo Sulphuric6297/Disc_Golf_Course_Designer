@@ -168,26 +168,32 @@ export const addText = () => {
   useEditor.getState().set({ designSel: `text:${id}` });
 };
 
-/** A picture picked from the device, made at most 1200 px across (the course file stays light). */
-export const addImage = async (file: File) => {
+/** A picture picked from the device, made at most `max` px across (the course file stays light):
+ * as a data URL, and its height to width. */
+export const pictureFrom = async (file: File, max = 1200) => {
   const url = URL.createObjectURL(file);
   try {
     const img = new Image();
     img.src = url;
     await img.decode();
-    const k = Math.min(1, 1200 / Math.max(img.naturalWidth, img.naturalHeight));
+    const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
     const c = document.createElement("canvas");
     c.width = Math.max(1, Math.round(img.naturalWidth * k));
     c.height = Math.max(1, Math.round(img.naturalHeight * k));
     c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
-    const src = c.toDataURL(file.type === "image/jpeg" ? "image/jpeg" : "image/png", 0.9);
-    const id = generateId();
-    // (a quarter of the page across, in its own shape)
-    style(s => ({ images: [...(s.images ?? []), { id, src, x: 0.375, y: 0.4, w: 0.25, aspect: c.height / c.width }] }));
-    useEditor.getState().set({ designSel: `image:${id}` });
+    return { src: c.toDataURL(file.type === "image/jpeg" ? "image/jpeg" : "image/png", 0.9), aspect: c.height / c.width };
   } finally {
     URL.revokeObjectURL(url);
   }
+};
+
+/** A picture picked from the device, put on the course map's page. */
+export const addImage = async (file: File) => {
+  const { src, aspect } = await pictureFrom(file);
+  const id = generateId();
+  // (a quarter of the page across, in its own shape)
+  style(s => ({ images: [...(s.images ?? []), { id, src, x: 0.375, y: 0.4, w: 0.25, aspect }] }));
+  useEditor.getState().set({ designSel: `image:${id}` });
 };
 
 const FONTS = [

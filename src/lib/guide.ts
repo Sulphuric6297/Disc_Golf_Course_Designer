@@ -468,15 +468,22 @@ export const TOPICS: Topic[] = [
     where: { step: "map", tab: "map", find: "page-elements" }
   },
   {
+    id: "sponsors", section: "map", title: "Hole sponsors",
+    body: "Sponsors, under the tee sign's and hole page's Layers, holds the course's hole sponsors. Each one can have a logo, a line of text, or both, and can be on every hole or just the holes you pick.\n\nTo show them, Add a Sponsors piece to the sign. It shows that hole's sponsors side by side, so a sign with two sponsors shows both. Drag it where you want it and pull a corner to size it.",
+    words: "sponsor sponsors logo hole sponsor business advertiser text both several holes",
+    path: "Map › Tee sign › Sponsors",
+    where: { step: "map", tab: "sign", find: "sponsors" }
+  },
+  {
     id: "hole-pages", section: "map", title: "Hole pages",
-    body: "A hole page is one hole on a page of its own, for a yardage book, a binder at the first tee or a picture to share. Start from the usual page, or Just the hole: the hole's picture across the whole page with its number and nothing else.\n\nThen lay it out like a tee sign. Click any piece and drag it, pull a corner to resize it, and Delete hides it. Layers lists every piece, and its eye brings back anything hidden, like the par on Just the hole. The picked piece has its size, font and colors. Changes go to every hole, or pick Hole N to change just that one.",
+    body: "A hole page is one hole on a page of its own, for a yardage book, a binder at the first tee or a picture to share. Start from the usual page, or Just the hole: the hole's picture across the whole page with its number and nothing else.\n\nThen lay it out like a tee sign. Click any piece and drag it, pull a corner to resize it, and Delete hides it. Layers lists every piece, and its eye brings back anything hidden, like the par on Just the hole. The picked piece has its size, font and colors. Add puts in text, a picture, the hole's sponsors or a QR code, the same as on tee signs. Changes go to every hole, or pick Hole N to change just that one.",
     words: "hole page yardage book just the hole picture whole page layers pieces move drag resize font color hide show layout",
     path: "Map › Hole page",
     where: { step: "map", tab: "page", find: "page-settings" }
   },
   {
     id: "tee-signs", section: "map", title: "Tee signs",
-    body: "Pick a look to start from (Classic, Trailhead, Field guide or Open view) and the sign's size above the preview. Then lay it out however you like. Click any piece on the sign, like the hole number, the par or the hole's picture, and drag it where you want it. Pull a corner to make it bigger or smaller, and the arrow keys nudge it. Delete hides it.\n\nLayers lists every piece. Click a name to pick it, and the eye hides it or brings it back. The picked piece's settings are under Layers: its size, its font, its lettering and panel colors, and Reset to put it back where the look had it. Picking another look starts the layout over.\n\nChanges go to every hole, or pick Hole N to change just that hole's sign. Apply to holes… copies a hole's sign to others. Other holes on the map can be faded, hidden or shown.",
+    body: "Pick a look to start from (Classic, Trailhead, Field guide or Open view) and the sign's size above the preview. Then lay it out however you like. Click any piece on the sign, like the hole number, the par or the hole's picture, and drag it where you want it. Pull a corner to make it bigger or smaller, and the arrow keys nudge it. Delete hides it.\n\nLayers lists every piece. Click a name to pick it, and the eye hides it or brings it back. The picked piece's settings are under Layers: its size, its font, its lettering and panel colors, and Reset to put it back where the look had it. Picking another look starts the layout over.\n\nAdd puts in text, a picture, the hole's sponsors or a QR code. Text can say {hole}, {par}, {length}, {course} or {name}, and each hole's sign fills in its own, so one layout works for the whole course. Anything you add can be on every hole or only the holes you pick.\n\nChanges go to every hole, or pick Hole N to change just that hole's sign. Apply to holes… copies a hole's sign to others. Other holes on the map can be faded, hidden or shown.",
     words: "tee sign look classic trailhead field guide open view size layers pieces move drag resize corner font color hide show reset layout canva other holes",
     path: "Map › Tee sign",
     where: { step: "map", tab: "sign", find: "sign-settings" }

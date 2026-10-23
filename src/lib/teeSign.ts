@@ -12,7 +12,7 @@ import type { CanopyGrid } from "./forest";
 import type { Contours } from "./relief";
 import { profileAlong } from "./terrainGrid";
 import { fmtDist, fmtElev } from "./units";
-import { piecer } from "./pieces";
+import { extrasSvg, piecer, type HoleFacts } from "./pieces";
 
 export type SignSize = "18x12" | "12x18" | "18x24" | "letter" | "a4";
 export const SIGN_SIZES: Record<SignSize, { label: string; w: number; h: number }> = {
@@ -130,6 +130,16 @@ export const signOf = (doc: Pick<CourseDoc, "style" | "holes">, holeId: string) 
     place: (id: string) => h.layout?.[id] ?? g.layout?.[id]
   };
 };
+
+/** What a hole's own text fills in on its sign or page. */
+export const holeFacts = (doc: CourseDoc, holeId: string, st: { label: string; par: number; length: number; complete: boolean }): HoleFacts => ({
+  hole: st.label, par: st.complete ? String(st.par) : "–",
+  length: st.complete ? `${Math.round(doc.units === "m" ? st.length / FT_PER_M : st.length)} ${doc.units}` : "–",
+  course: (doc.style.title || doc.name || "").trim(), name: doc.holes.find(h => h.id === holeId)?.name ?? ""
+});
+/** A sign's extras, its last pieces. */
+export const signExtras = (doc: CourseDoc, holeId: string, st: Parameters<typeof holeFacts>[2], W: number, H: number, wrap: (id: string, c: string) => string) =>
+  extrasSvg(doc.style.sign?.extras, doc.style.sponsors, holeId, holeFacts(doc, holeId, st), W, H, doc.style.font, wrap);
 
 /** The course as a sign's map draws it: with only this hole when the others are left out (their
  * fairways, tees, baskets, mandos and drop zones gone; a basket it shares stays, as its own). */
@@ -285,6 +295,7 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   const legend = [shown.ob && `<tspan fill="${st0.ob}">■</tspan> OB`, shown.hazard && `<tspan fill="${st0.hazard}">■</tspan> Hazard`, shown.mando && `<tspan fill="#f97316">●</tspan> Mando / DZ`, `<tspan fill="${st0.basket}">●</tspan> Basket`].filter(Boolean).join("   ");
   if (show("legend")) parts.push(P.wrap("legend", `<text x="${n(m)}" y="${n(by)}" font-family="Inter, Arial, sans-serif" font-size="${n(8 * ts)}" fill="${pal.inkSoft}">${legend}</text>`));
   if (show("holeOf")) parts.push(P.wrap("holeOf", `<text x="${n(W - m)}" y="${n(by)}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="${n(8 * ts)}" fill="${pal.inkSoft}">Hole ${st.label} of ${doc.holes.length}${layout && doc.layouts.length > 1 ? ` · ${esc(layout.name)} layout` : ""}</text>`));
+  parts.push(signExtras(doc, holeId, st, W, H, P.wrap));
   return { svg: wrapSvg(W, H, P.page(parts.join(""))), width: W, height: H };
 };
 
@@ -634,5 +645,6 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
   // Which hole of how many, and who designed the course
   if (show("holeOf")) parts.push(P.wrap("holeOf", `<text x="${n(mx)}" y="${n(H - 20 * u)}" font-family="${card.head}" font-weight="700" font-size="${n(9 * u)}" letter-spacing="${n(1.4 * u)}" fill="${soft}">HOLE ${st.label} OF ${doc.holes.length}</text>`));
   if (doc.designer && show("designer")) parts.push(P.wrap("designer", `<text x="${n(col.w - mx)}" y="${n(H - 20 * u)}" text-anchor="end" font-family="${card.body}" font-weight="600" font-size="${n(7.5 * u)}" letter-spacing="${n(0.8 * u)}" fill="${soft}">DESIGNED BY ${esc(doc.designer.toUpperCase())}</text>`));
+  parts.push(signExtras(doc, holeId, st, W, H, P.wrap));
   return { svg: wrapSvg(W, H, P.page(parts.join(""))), width: W, height: H };
 };

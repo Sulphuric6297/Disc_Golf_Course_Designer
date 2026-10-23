@@ -9,9 +9,9 @@ import { activeLayout, holeBaskets, holeTees, throwLine } from "./course";
 import { dist, rotatePoint } from "./geom";
 import { holeStats } from "./holeStats";
 import { markingsInView, northArrow, palette, scaleBar, wrapSvg } from "./mapSvg";
-import { autoRules, cardStyle, elevationProfile as profile, holeMap, type SignArt } from "./teeSign";
+import { autoRules, cardStyle, elevationProfile as profile, holeFacts, holeMap, type SignArt } from "./teeSign";
 import { fmtDist, fmtElev } from "./units";
-import { piecer } from "./pieces";
+import { extrasSvg, piecer } from "./pieces";
 
 export type HolePageSize = "letter" | "a4" | "card" | "square";
 /** Page sizes (inches) and the resolution of their pictures (the square one is 1080 px). */
@@ -209,5 +209,6 @@ export const renderHolePage = (doc: CourseDoc, holeId: string, size: HolePageSiz
     const layout = activeLayout(doc);
     parts.push(P.wrap("holeOf", `<text x="${n(W - m)}" y="${n(by)}" text-anchor="end" font-family="${BODY}" font-size="${n(7.5 * u)}" fill="${SOFT}">Hole ${st.label} of ${doc.holes.length}${layout && doc.layouts.length > 1 ? ` · ${esc(layout.name)} layout` : ""}</text>`));
   }
+  parts.push(extrasSvg(sty.holePage?.extras, sty.sponsors, holeId, holeFacts(doc, holeId, st), W, H, sty.font, P.wrap));
   return { svg: wrapSvg(W, H, P.page(parts.join(""))), width: W, height: H };
 };

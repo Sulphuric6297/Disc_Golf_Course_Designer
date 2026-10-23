@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import type { MapStyle, PaperSize, ReliefLook, SignSettings } from "../types";
 import { Button, ColorInput, Field, Section, Segmented, Slider, Toggle } from "./ui";
 import { PageElementPanel, PageSection } from "./PageEditor";
-import { HolePageSettings, SignLayers, SignPieceSettings } from "./SignEditor";
+import { AddPieces, HolePageSettings, SignLayers, SignPieceSettings, Sponsors } from "./SignEditor";
 
 export const setStyle = (patch: Partial<MapStyle>, history = true) => {
   // View only: the look changes on this screen (sun, landscape…), never saved
@@ -154,9 +154,11 @@ function TeeSignSettings() {
       <div className="grid grid-cols-2 gap-x-3" data-testid="sign-parts">
         {SIGN_PARTS.filter(p => ["throwLine", "circle", "distances"].includes(p.id)).map(p => <Toggle key={p.id} label={p.label} checked={eff.show(p.id)} onChange={v => patch({ show: { ...own.show, [p.id]: v } })} />)}
       </div>
-      <div className="text-[12px] font-semibold text-zinc-400 mt-3 mb-1.5 px-1">Layers</div>
+      <div className="mt-3"><AddPieces /></div>
+      <div className="text-[12px] font-semibold text-zinc-400 mb-1.5 px-1">Layers</div>
       <SignLayers />
       <SignPieceSettings />
+      <Sponsors />
       <Field label="Under the notes">
         <Segmented label="What goes under the notes" value={eff.spot} onChange={v => patch({ spot: v, show: { ...own.show, courseMap: undefined } })} options={SIGN_SPOTS.map(o => ({ value: o.id, label: o.label }))} />
       </Field>
