@@ -4,7 +4,7 @@
 import { clamp } from "../constants";
 import type { AreaItem, CourseDoc, CourseItem, Hole, LineItem, P, SiteInfo, TreeItem } from "../types";
 import { FEET_PER_METER, getGeoBounds, type GeoBounds, type SiteSelection } from "./geo/core";
-import { canopyMask, detectTrees, waterRegions, woodsRegions } from "./geo/detect";
+import { canopyMask, detectTrees, treeStands, waterRegions, woodsRegions } from "./geo/detect";
 import { fetchBestElevationGrid } from "./geo/elevation";
 import { fetchLidar } from "./geo/lidarFetch";
 import { groundOnGrid } from "./lidar";
@@ -14,6 +14,7 @@ import { fetchTileFeatures } from "./geo/vectorTiles";
 import { createArea, createLine, createStructure, createTree } from "./course";
 import { centroid, clipPathToRect, clipPolygonToRect, pointInPolygon, polygonArea, simplify } from "./geom";
 import { reframe, toPlanXY, type GeoRef } from "./geoRef";
+import { treeFree } from "./treeFree";
 
 export type ImportedSite = {
   canvas: { width: number; height: number };
@@ -281,11 +282,35 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   // What OpenStreetMap maps already (its woods and water) needn't come again from the photo
   const mappedAs = (kind: string) => mapped.filter((m): m is AreaItem => m.type === "area" && m.kind === kind);
   const inside = (p: P, kind: string) => mappedAs(kind).some(a => pointInPolygon(p, a.points));
-  // (with the trees measured from the air, none guessed from the photo)
-  const woods = lidar ? [] : found.woods.filter(a => !inside(centroid(a.points), "woods"));
+  // With trees measured from the air, none guessed from the photo: the woods are their stands,
+  // trees close together in one, each stand its own woods (OpenStreetMap's woods, drawn by hand
+  // and often over a whole hillside, give way to them)
+  let woods: AreaItem[];
+  if (lidar?.trees.length) {
+    const { w: gw, h: gh, cell, stands } = treeStands(lidar.trees.map(t => ({ x: t[0], y: t[1], r: t[3] })), width, height);
+    woods = stands.map(s => ({ ...createArea("woods", outlineToPlan(s.outline, gw, gh, gw * cell, gh * cell, 5)), importSource: "lidar" as const }) as AreaItem).filter(a => a.points.length >= 3);
+    if (woods.length) {
+      mapped = mapped.filter(m => !(m.type === "area" && m.kind === "woods"));
+      notes.push(`The measured trees in ${woods.length} ${woods.length === 1 ? "stand" : "stands"} of woods.`);
+    }
+  } else woods = found.woods.filter(a => !inside(centroid(a.points), "woods"));
   const water = found.water.filter(a => !inside(centroid(a.points), "water"));
-  const trees = lidar ? [] : found.trees.filter(t => !inside(t, "woods") && !inside(t, "water"));
-  const counted = [[woods.length, "wooded area", "wooded areas"], [trees.length, "tree", "trees"], [water.length, "water area", "water areas"]] as const;
+  // (and never on a road, a building, parking or in water, as OpenStreetMap or the photo has them)
+  const nowhere = treeFree([...mapped, ...found.water]);
+  const trees = lidar ? [] : found.trees.filter(t => !inside(t, "woods") && !inside(t, "water") && !nowhere(t));
+  // Woods the survey saw few trees in (missed, or grown since): drawn trees fill in between the
+  // measured ones, all through it (the "Filled in" choice, set as if by hand)
+  if (lidar) {
+    const fillThin = (a: AreaItem): AreaItem => {
+      if (a.kind !== "woods" || a.trees) return a;
+      const area = Math.abs(polygonArea(a.points));
+      const n = lidar.trees.filter(t => pointInPolygon({ x: t[0], y: t[1] }, a.points)).length;
+      return area > 2000 && n < area / 3000 ? { ...a, trees: "custom", patches: [{ points: a.points.map(p => ({ ...p })), fill: 0.6 }] } : a;
+    };
+    mapped = mapped.map(m => (m.type === "area" ? fillThin(m) : m));
+    woods = woods.map(fillThin);
+  }
+  const counted = [[lidar?.trees.length ? 0 : woods.length, "wooded area", "wooded areas"], [trees.length, "tree", "trees"], [water.length, "water area", "water areas"]] as const;
   const said = counted.filter(([n]) => n > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
   if (said.length) notes.push(`On the photo: ${said.join(", ")}.`);
   mapped = [...mapped, ...woods, ...water];

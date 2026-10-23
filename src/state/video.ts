@@ -1,7 +1,7 @@
 // Flyover videos: the chosen size and frame rate (kept for next time, and used by the Record
 // button over the flyover), and recording one.
 import { create } from "zustand";
-import { getView } from "../components/MapViewport";
+import { getView } from "./view";
 import { holeNumber } from "../lib/course";
 import { VIDEO_SIZES, videoSuffix, type VideoFps, type VideoResolution } from "../lib/video";
 import { runExport } from "./exportJob";

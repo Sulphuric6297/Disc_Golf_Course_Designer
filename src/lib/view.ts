@@ -43,3 +43,6 @@ export const niceScaleBar = (pxPerFoot: number, targetPx = 120) => {
   const label = feet >= 5280 && feet % 5280 === 0 ? `${feet / 5280} mi` : `${feet.toLocaleString()} ft`;
   return { feet, px: feet * pxPerFoot, label };
 };
+
+/** A picked wood's underbrush sections and tree patches, outlined on the map (and their swatch in its panel). */
+export const BRUSH_SECTION = "#f59e0b", TREE_PATCH = "#a3e635";

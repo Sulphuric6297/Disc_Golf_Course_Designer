@@ -10,7 +10,7 @@ import { safeDoc } from "../lib/safeDoc";
 import { withGround, type GroundShare } from "../lib/sharedGround";
 import { getDoc } from "../state/course";
 import { toast } from "../state/toast";
-import { getView } from "../components/MapViewport";
+import { getView } from "../state/view";
 import { inputCls, Section } from "../components/ui";
 import { useCourse } from "../state/course";
 import type { CourseDoc, P } from "../types";
@@ -123,12 +123,13 @@ export function NearbyCourses() {
   const [withTrees, setWithTrees] = useState(true);
   const [withPlanted, setWithPlanted] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [opening, setOpening] = useState("");
   const [value, setValue] = useState(park);
   useEffect(() => { setValue(park); }, [park]);
   useEffect(() => { if (role === "owner") void api<{ park: string }[]>("GET", "courses").then(l => setParks([...new Set(l.map(c => c.park).filter(Boolean))]), () => {}); }, [role]);
   const savePark = async () => {
     if (!id || value.trim() === park) return;
-    await api("POST", `courses/${id}/park`, { park: value.trim() });
+    try { await api("POST", `courses/${id}/park`, { park: value.trim() }); } catch (e) { toast(`The park wasn't saved: ${e instanceof Error ? e.message : "try again"}.`, "error"); return; }
     useServerCourse.setState({ park: value.trim() });
     void load(id);
   };
@@ -156,12 +157,12 @@ export function NearbyCourses() {
                   <span className="block text-[11px] text-zinc-500">{n.samePark ? "Same park" : "On the same ground"}</span>
                   {concerns[i]?.length > 0 && <span className="block text-[11px] text-amber-300" data-testid="nearby-cross">{concerns[i].length} close call{concerns[i].length === 1 ? "" : "s"} with its holes</span>}
                 </span>
-                <button className="text-xs text-orange-300 hover:text-orange-200" onClick={() => void openServerCourse(n.id)}>Open</button>
+                <button className="text-xs text-orange-300 hover:text-orange-200 disabled:opacity-50" disabled={opening === n.id} onClick={() => { setOpening(n.id); void openServerCourse(n.id).finally(() => setOpening("")); }}>{opening === n.id ? "Opening…" : "Open"}</button>
               </li>
             ))}
           </ul>
           {sharing ? (
-            <div className="mt-3 rounded-lg border border-zinc-700 p-3 space-y-2" data-testid="share-ground">
+            <div className="mt-3 rounded-lg border border-white/[0.12] p-3 space-y-2" data-testid="share-ground">
               <p className="text-sm text-zinc-200">This course's ground into:</p>
               {list.filter(n => n.role !== "viewer").map(n => (
                 <label key={n.id} className="flex items-center gap-2 text-sm text-zinc-200">
@@ -172,9 +173,9 @@ export function NearbyCourses() {
               <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={withPlanted} onChange={e => setWithPlanted(e.target.checked)} data-testid="share-planted" /> And the trees planted by hand</label>
               <p className="text-[11px] text-zinc-500">Their holes, OB and everything drawn stay as they are. A tree cut down on one course stays on the others.</p>
               <div className="flex gap-2 justify-end">
-                <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded-lg" onClick={() => setSharing(null)}>Cancel</button>
+                <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/[0.09] rounded-lg" onClick={() => setSharing(null)}>Cancel</button>
                 <button className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" disabled={busy || !sharing.size}
-                  onClick={() => { setBusy(true); void shareGround([...sharing], { trees: withTrees, planted: withPlanted }).finally(() => { setBusy(false); setSharing(null); }); }} data-testid="share-ground-go">{busy ? "Copying…" : "Copy the ground"}</button>
+                  onClick={() => { setBusy(true); void shareGround([...sharing], { trees: withTrees, planted: withPlanted }).then(() => setSharing(null), e => toast(`The ground wasn't copied to every course: ${e instanceof Error ? e.message : "try again"}.`, "error")).finally(() => setBusy(false)); }} data-testid="share-ground-go">{busy ? "Copying…" : "Copy the ground"}</button>
               </div>
             </div>
           ) : list.some(n => n.role !== "viewer") && (

@@ -3,13 +3,14 @@ import { grownTree } from "../lib/lidar";
 import { CIRCLE_ONE_FT, PIN_POSITIONS, TEE_ORDER, generateId } from "../constants";
 import {
   createAmenity, createArea, createBasket, createDropZone, createLabel, createLine, createMando, createStructure, createTee, createTree,
-  insertHole, autoWalks, basketHoles, belongsTo, closestHole, holeBaskets, holeTees, itemHoleId, movedGroup, newHole, obPicked, obPieces, teeFor, wholeHoles, withoutStretch
+  insertHole, autoWalks, basketHoles, belongsTo, closestHole, holeBaskets, holeTees, itemHoleId, movedGroup, newHole, obPicked, obPieces, teeFor, wholeHoles, withoutStretch, holeLabel
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { courseStats, holeStats } from "../lib/holeStats";
-import type { BasketItem, CourseDoc, CourseItem, Hole, P, TeeLevel, ToolMode } from "../types";
-import { changeDoc, editor, getDoc, removeHole, removeItems, updateItem, useEditor } from "./course";
+import type { BasketItem, CourseDoc, CourseItem, Hole, P, TeeLevel, ToolMode, TreeItem } from "../types";
+import { changeDoc, editor, getDoc, removeHole, removeItems, updateItem, useEditor, useCourse } from "./course";
 import { toast } from "./toast";
+import { keepsTreesOut, treeFree } from "../lib/treeFree";
 
 /** Selects an item or a hole; selecting a hole's part makes that hole the one being worked on. */
 export const select = (id: string | null, add = false) => {
@@ -52,10 +53,28 @@ export const pickGroup = (ids: string[]) => {
   useEditor.getState().set({ group: live, selectedId: null });
 };
 
-/** What a drag box took in, alone or (Shift) with what was picked already. */
-export const boxSelect = (ids: string[], add: boolean) => {
+/** Most trees a drag box makes the course's own at once. */
+const BOX_TREES = 400;
+
+/** What a drag box took in, alone or (Shift) with what was picked already; the measured trees
+ * and saplings inside too, made the course's own in one undo step (and given back, as a click's
+ * are, if the pick is let go without a change). */
+export const boxSelect = (ids: string[], add: boolean, trees: { tree: AnyTree; look: TreeLook }[] = []) => {
   const ed = editor();
-  pickGroup([...(add ? (ed.group.length ? ed.group : partsOf(ed.selectedId)) : []), ...ids]);
+  if (lookedAt) letGoUntouched();
+  if (lookedAtGroup) letGroupGoUntouched();
+  const before = [...(add ? (ed.group.length ? ed.group : partsOf(ed.selectedId)) : []), ...ids];
+  let made: string[] = [];
+  if (trees.length) {
+    if (trees.length > BOX_TREES) toast(`${trees.length.toLocaleString()} trees in the box: the first ${BOX_TREES} are picked. Draw a smaller box for the rest.`, "info");
+    made = adoptTrees(trees.slice(0, BOX_TREES));
+  }
+  pickGroup([...before, ...made]);
+  if (!made.length) return;
+  // (one tree alone ends up simply picked: given back as a click's is)
+  const now = editor(), doc = useCourse.getState().doc;
+  if (now.group.length) lookedAtGroup = { ids: made, doc };
+  else if (now.selectedId && made.includes(now.selectedId)) lookedAt = { id: now.selectedId, doc };
 };
 
 /** Everything on the course that isn't locked (Ctrl+A). */
@@ -120,9 +139,38 @@ export const addHole = (tee: P, basket: P, level: TeeLevel = editor().teeLevel) 
   return hole;
 };
 
+/** Another tee for a hole (shorter or longer, the same hole number): the Tee tool, in the first
+ * color it doesn't have yet. */
+export const startAnotherTee = (holeId: string) => {
+  const taken = new Set(holeTees(getDoc(), holeId).map(t => t.level));
+  const level = TEE_ORDER.find(l => !taken.has(l)) ?? editor().teeLevel;
+  useEditor.getState().set({ tool: "add-tee", teeLevel: level, activeHoleId: holeId, holeToBasket: null });
+};
+/** A new hole that finishes at a hole's basket: the Tee tool places its tee, and it's made. */
+export const startHoleToBasket = (holeId: string) => {
+  const basket = holeBaskets(getDoc(), holeId)[0];
+  if (!basket) return;
+  useEditor.getState().set({ tool: "add-tee", holeToBasket: basket.id });
+};
+/** Another pin position for a hole: the Pin tool. */
+export const startAnotherPin = (holeId: string) => useEditor.getState().set({ tool: "add-basket", activeHoleId: holeId, holeToBasket: null });
+
 /** A click with a placing tool. */
 export const placeAt = (mode: ToolMode, p: P) => {
   const ed = editor();
+  // (a new hole's tee, to a basket already there: the hole is made at once)
+  if (mode === "add-tee" && ed.holeToBasket) {
+    const b = getDoc().items.find(i => i.id === ed.holeToBasket && i.type === "basket") as BasketItem | undefined;
+    useEditor.getState().set({ holeToBasket: null });
+    if (b) {
+      const from = getDoc().holes.find(h => h.id === b.holeId);
+      const made = addHole(p, { x: b.x, y: b.y });
+      useEditor.getState().set({ tool: "select" });
+      const d = getDoc();
+      toast(`Hole ${holeLabel(d, made.id)} added. It plays to the same basket as hole ${from ? holeLabel(d, from.id) : ""}.`, "success", true);
+      return;
+    }
+  }
   const hole = mode === "add-mando" || mode === "add-dropzone" ? holeBeside(p) : workingHole();
   let item: CourseItem | null = null;
   if (mode === "add-tee") {
@@ -182,8 +230,11 @@ export const addDrawn = (kind: "area" | "line" | "structure", points: P[], opts:
   const ed = editor();
   const made = kind === "area" ? createArea(ed.areaKind, points) : kind === "structure" ? createStructure(ed.structureKind, points) : createLine(ed.lineKind, points);
   const item = opts.straight && made.type !== "structure" ? { ...made, straight: true } : made;
-  changeDoc(d => ({ items: [...d.items, item] }));
+  // (a building, road, parking or water drawn over trees: those standing in it go, the same step)
+  const under = keepsTreesOut(item) ? new Set(getDoc().items.filter(i => i.type === "tree" && !i.locked && treeFree([item])(i)).map(i => i.id)) : new Set<string>();
+  changeDoc(d => ({ items: [...d.items.filter(i => !under.has(i.id)), item] }));
   select(item.id);
+  if (under.size) toast(`Took out ${under.size} tree${under.size === 1 ? "" : "s"} standing in it.`, "info", true);
 };
 
 export const deleteSelection = () => {
@@ -404,6 +455,54 @@ export const setTeeLevel = (teeId: string, level: TeeLevel) => {
   changeDoc(d => ({ items: d.items.map(i => (i.id === teeId ? { ...i, level } as CourseItem : other && i.id === other.id ? { ...i, level: tee.level } as CourseItem : i)) }));
 };
 
+/** A turn put in a hole's line at a spot (between the turns either side of where it's nearest). */
+export const bendHoleAt = (holeId: string, p: P) => {
+  const doc = getDoc();
+  const hole = doc.holes.find(h => h.id === holeId);
+  if (!hole) return;
+  const s = holeStats(doc, hole);
+  if (!s.complete || s.line.length < 2) return;
+  let at = 0, best = Infinity;
+  for (let i = 1; i < s.line.length; i++) {
+    const d = nearestOnSegment(p, s.line[i - 1], s.line[i]).distance;
+    if (d < best) { best = d; at = i - 1; }
+  }
+  const doglegs = [...hole.doglegs];
+  doglegs.splice(at, 0, { x: p.x, y: p.y });
+  changeDoc(d => ({ holes: d.holes.map(h => (h.id === holeId ? { ...h, doglegs } : h)) }));
+};
+
+/** The layout worked on: its tees and pins to the fore, new tees in its color. */
+export const pickLayout = (id: string) => {
+  const layout = getDoc().layouts.find(l => l.id === id);
+  if (!layout) return;
+  changeDoc(() => ({ activeLayout: id }));
+  useEditor.getState().set({ teeLevel: layout.tee });
+};
+
+/** A tee of a color put on every finished hole that has none: back from the tee it plays now for
+ * a longer color (gold behind blue), ahead for a shorter one, 50 ft a step, along the line. One
+ * undo step; how many were added. */
+export const addLayoutTees = (level: TeeLevel) => {
+  const doc = getDoc();
+  const made: CourseItem[] = [];
+  for (const hole of doc.holes) {
+    const tees = holeTees(doc, hole.id);
+    if (!tees.length || tees.some(t => t.level === level)) continue;
+    const s = holeStats(doc, hole);
+    if (!s.complete || s.line.length < 2) continue;
+    const from = tees.find(t => t.id === s.teeId) ?? tees[0];
+    const next = s.line[1];
+    const len = Math.hypot(next.x - from.x, next.y - from.y) || 1;
+    const steps = TEE_ORDER.indexOf(from.level) - TEE_ORDER.indexOf(level);
+    // (never past the first turn or the basket: at most most of the way there)
+    const d = Math.max(-len * 0.6, Math.min(steps * 50, 400));
+    made.push(createTee(hole.id, { x: from.x - ((next.x - from.x) / len) * d, y: from.y - ((next.y - from.y) / len) * d }, level));
+  }
+  if (made.length) changeDoc(d => ({ items: [...d.items, ...made] }));
+  return made.length;
+};
+
 /** The tee a hole is played from in the current layout. */
 export const layoutTee = (holeId: string) => {
   const doc = getDoc();
@@ -415,7 +514,7 @@ export const layoutTee = (holeId: string) => {
 export const withCentroid = <T extends { points: P[] }>(item: T): T & P => ({ ...item, ...centroid(item.points) });
 
 // For the automated tests and screenshots: build a course quickly without clicking every spot.
-if (typeof window !== "undefined") (window as any).__dgActions = { addHole, addDrawn, placeAt, select, pickGroup };
+if (typeof window !== "undefined") (window as any).__dgActions = { addHole, addDrawn, placeAt, select, pickGroup, updateItem, style: (patch: Partial<CourseDoc["style"]>) => changeDoc(d => ({ style: { ...d.style, ...patch } })), site: (patch: Partial<CourseDoc["site"]>) => changeDoc(d => ({ site: { ...d.site, ...patch } })) };
 
 /**
  * An OB line for a hole, ready to fine-tune with its handles: along the left or right of the
@@ -527,25 +626,103 @@ export const cutStretch = (id: string, a: number, b: number) => {
 
 /** An outline drawn as a patch of a woods area (trees: custom): drawn trees fill it in, as
  * thickly as the wood's last patch (half, for the first). One undo step; the wood stays selected. */
+/** An outline drawn as a section of underbrush in a wood (its own level; the last one's, or
+ * heavy for the first). One undo step; the wood stays selected. */
+export const addBrushSection = (areaId: string, points: P[]) => {
+  if (!getDoc().items.some(i => i.id === areaId && i.type === "area")) { toast("That wood is gone: draw the section again on another.", "info"); return; }
+  changeDoc(d => ({ items: d.items.map(i => (i.id === areaId && i.type === "area" ? { ...i, brush: [...(i.brush ?? []), { points, level: i.brush?.[i.brush.length - 1]?.level ?? "heavy" }] } : i)) }));
+  select(areaId);
+};
+
 export const addPatch = (areaId: string, points: P[]) => {
   if (!getDoc().items.some(i => i.id === areaId && i.type === "area")) { toast("That wood is gone: draw the patch again on another.", "info"); return; }
   changeDoc(d => ({ items: d.items.map(i => (i.id === areaId && i.type === "area" ? { ...i, trees: "custom" as const, patches: [...(i.patches ?? []), { points, fill: i.patches?.[i.patches.length - 1]?.fill ?? 0.5 }] } : i)) }));
   select(areaId);
 };
 
-/** A measured tree made the course's own: a tree item where it stands, as tall and wide as it was
- * measured (grown as the course asks), to drag and set like any other; the measured one is cut
- * down under it. One undo step; the new tree is picked. */
-export const adoptLidarTree = (k: number) => {
+type TreeLook = { variant: number; rotation: number; leaf: string } | null;
+
+/** Trees made the course's own at once (see adoptTree), one undo step: their new ids. */
+const adoptTrees = (list: { tree: AnyTree; look: TreeLook }[]) => {
   const doc = getDoc();
-  const t = doc.lidar?.trees[k];
-  if (!doc.lidar || !t) return;
-  const [x, y, h, r, conifer] = grownTree(t, doc.lidar.growYears ?? 0);
-  const tree = createTree({ x, y }, { height: Math.round(h), radius: Math.round(r), treeType: conifer ? "conifer" : "deciduous" });
-  const removed = [...new Set([...(doc.lidar.removed ?? []), k])].sort((a, b) => a - b);
-  changeDoc(d => ({ items: [...d.items, tree], lidar: d.lidar ? { ...d.lidar, removed, kept: (d.lidar.kept ?? []).filter(i => i !== k) } : d.lidar }));
-  select(tree.id);
+  const removed = new Set(doc.lidar?.removed ?? []), cut: P[] = [];
+  const items: TreeItem[] = [];
+  for (const { tree, look } of list) {
+    let made: TreeItem;
+    if (tree.kind === "measured") {
+      const t = doc.lidar?.trees[tree.k];
+      if (!doc.lidar || !t || removed.has(tree.k)) continue;
+      const [x, y, h, r, conifer] = grownTree(t, doc.lidar.growYears ?? 0);
+      made = createTree({ x, y }, { height: Math.round(h), radius: Math.round(r), treeType: conifer ? "conifer" : "deciduous" });
+      removed.add(tree.k);
+    } else {
+      made = createTree({ x: tree.x, y: tree.y }, { height: Math.round(tree.height), radius: Math.round(tree.width / 2), treeType: tree.conifer ? "conifer" : "deciduous" });
+      cut.push({ x: tree.x, y: tree.y });
+    }
+    items.push(look ? { ...made, variant: look.variant, rotation: look.rotation, leaf: look.leaf } : made);
+  }
+  if (!items.length) return [];
+  const taken = new Set(list.flatMap(({ tree }) => (tree.kind === "measured" ? [tree.k] : [])));
+  changeDoc(d => ({
+    ...(d.lidar ? { lidar: { ...d.lidar, removed: [...removed].sort((a, b) => a - b), kept: (d.lidar.kept ?? []).filter(i => !taken.has(i)) } } : {}),
+    ...(cut.length ? { cutTrees: [...(d.cutTrees ?? []), ...cut] } : {}),
+    items: [...d.items, ...items]
+  }));
+  return items.map(i => i.id);
 };
+
+// Trees a drag box made the course's own: let go without a change, that's undone
+let lookedAtGroup: { ids: string[]; doc: CourseDoc } | null = null;
+const letGroupGoUntouched = () => {
+  const l = lookedAtGroup;
+  lookedAtGroup = null;
+  if (l && useCourse.getState().doc === l.doc) useCourse.getState().undo();
+};
+if (typeof window !== "undefined") {
+  useEditor.subscribe(s => { if (lookedAtGroup && !lookedAtGroup.ids.every(id => s.group.includes(id))) letGroupGoUntouched(); });
+}
+type AnyTree = { kind: "measured"; k: number } | { kind: "spot"; x: number; y: number; height: number; width: number; conifer: boolean };
+
+// A tree made the course's own by a click only (to look at it, or change it): when it's let go
+// without a change, that's undone, so looking at a tree isn't an edit
+let lookedAt: { id: string; doc: CourseDoc } | null = null;
+const letGoUntouched = () => {
+  const l = lookedAt;
+  lookedAt = null;
+  if (l && useCourse.getState().doc === l.doc) useCourse.getState().undo();
+};
+if (typeof window !== "undefined") {
+  useEditor.subscribe((s, prev) => { if (lookedAt && prev.selectedId === lookedAt.id && s.selectedId !== lookedAt.id) letGoUntouched(); });
+}
+
+/** Any tree that isn't an item of its own (measured, a sapling grown since the survey, planted in
+ * a wood or a patch) made the course's own: a tree item where it stands, as tall and wide, its
+ * shape and leaf color as they were, picked to move and set like any other. Where it stood is
+ * cut (a measured one taken out, a planted one's spot kept clear). One undo step. */
+export const adoptTree = (tree: AnyTree, look: TreeLook = null, quiet = true) => {
+  if (lookedAt) letGoUntouched();
+  const doc = getDoc();
+  let made: TreeItem | null = null, patch: Partial<CourseDoc> = {};
+  if (tree.kind === "measured") {
+    const t = doc.lidar?.trees[tree.k];
+    if (!doc.lidar || !t) return;
+    const [x, y, h, r, conifer] = grownTree(t, doc.lidar.growYears ?? 0);
+    made = createTree({ x, y }, { height: Math.round(h), radius: Math.round(r), treeType: conifer ? "conifer" : "deciduous" });
+    const k = tree.k;
+    patch = { lidar: { ...doc.lidar, removed: [...new Set([...(doc.lidar.removed ?? []), k])].sort((a, b) => a - b), kept: (doc.lidar.kept ?? []).filter(i => i !== k) } };
+  } else {
+    made = createTree({ x: tree.x, y: tree.y }, { height: Math.round(tree.height), radius: Math.round(tree.width / 2), treeType: tree.conifer ? "conifer" : "deciduous" });
+    patch = { cutTrees: [...(doc.cutTrees ?? []), { x: tree.x, y: tree.y }] };
+  }
+  const item: TreeItem = look ? { ...made, variant: look.variant, rotation: look.rotation, leaf: look.leaf } : made;
+  changeDoc(d => ({ ...patch, items: [...d.items, item] }));
+  select(item.id);
+  if (quiet) lookedAt = { id: item.id, doc: useCourse.getState().doc };
+  return item.id;
+};
+
+/** A measured tree made the course's own (see adoptTree). */
+export const adoptLidarTree = (k: number, look: TreeLook = null) => adoptTree({ kind: "measured", k }, look, false);
 
 /** A sapling or planted tree cut down by hand: nothing stands there from now on. One undo step. */
 export const cutTreeAt = (p: P) => {
@@ -553,13 +730,8 @@ export const cutTreeAt = (p: P) => {
   toast("Tree cut down.", "success", true);
 };
 
-/** A sapling or planted tree made the course's own: a tree item where it stood, its size, to drag
- * and set like any other; the spot is cut under it. One undo step; the new tree is picked. */
-export const adoptTreeAt = (spot: { x: number; y: number; height: number; width: number; conifer: boolean }) => {
-  const tree = createTree({ x: spot.x, y: spot.y }, { height: Math.round(spot.height), radius: Math.round(spot.width / 2), treeType: spot.conifer ? "conifer" : "deciduous" });
-  changeDoc(d => ({ items: [...d.items, tree], cutTrees: [...(d.cutTrees ?? []), { x: spot.x, y: spot.y }] }));
-  select(tree.id);
-};
+/** A sapling or planted tree made the course's own (see adoptTree). */
+export const adoptTreeAt = (spot: { x: number; y: number; height: number; width: number; conifer: boolean }, look: TreeLook = null) => adoptTree({ kind: "spot", ...spot }, look, false);
 
 /** The trees cut down by hand (saplings, planted ones) all back. */
 export const uncutTrees = () => changeDoc(() => ({ cutTrees: undefined }));

@@ -24,7 +24,7 @@ function FlyoverLoading({ title, facts, on, stage }: { title: string; facts: str
     <div className={`absolute inset-0 z-30 flex flex-col items-center justify-center bg-zinc-950 pointer-events-auto transition-opacity duration-300 ${on ? "opacity-100" : "opacity-0"}`} data-testid="flyover-loading" role="status" aria-live="polite">
       <div className="text-xl font-semibold text-zinc-50 tracking-tight">{title}</div>
       <div className="mt-1 text-sm text-zinc-400">{facts}</div>
-      <div className="mt-6 w-40 h-0.5 rounded-full bg-zinc-800 overflow-hidden">
+      <div className="mt-6 w-40 h-0.5 rounded-full bg-white/[0.07] overflow-hidden">
         <div className="h-full w-1/3 rounded-full bg-orange-500 animate-[dgslide_1.2s_ease-in-out_infinite]" />
       </div>
       <div className="mt-3 text-xs text-zinc-500" data-testid="flyover-loading-line">{stage ? STAGE[stage] : "Preparing the flyover"}{secs >= 2 ? ` · ${secs} s` : ""}</div>
@@ -77,7 +77,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
     return (
       <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui>
         {loading}
-        <div className={`absolute left-2 right-2 top-[max(8px,env(safe-area-inset-top))] pointer-events-auto bg-zinc-950/80 rounded-2xl px-3 py-2.5 text-white shadow-2xl border border-white/10 max-w-[420px] ${ed.flyover ? "hidden" : ""}`} data-testid="tee-view-hud">
+        <div className={`absolute left-2 right-2 top-[max(8px,env(safe-area-inset-top))] pointer-events-auto glass rounded-2xl px-3 py-2.5 text-white shadow-2xl border border-white/10 max-w-[420px] ${ed.flyover ? "hidden" : ""}`} data-testid="tee-view-hud">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-[22px] font-bold" style={{ background: lvl.color, color: lvl.ink, fontFamily: "Oswald, Inter" }}>{s.label}</div>
             <div className="flex-1 min-w-0">
@@ -91,16 +91,16 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
           {hole.notes && <p className="text-[13px] text-zinc-200 mt-1 line-clamp-2">{hole.notes}</p>}
         </div>
         {!ed.flyover && !camera && <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+92px)] left-1/2 -translate-x-1/2 text-[13px] text-white/90 bg-black/45 rounded-full px-3 py-1 whitespace-nowrap">Drag to look around</div>}
-        <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto flex items-center gap-1 bg-zinc-950/85 rounded-[22px] p-1.5 border border-white/10 shadow-2xl">
+        <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto flex items-center gap-1 glass rounded-[22px] p-1.5 border border-white/10 shadow-2xl">
           <button className={bar} onClick={() => go(-1)}><ChevronLeft size={22} /><span>Previous</span></button>
           <button className={`${bar} ${ed.flyover ? "bg-orange-500" : ""}`} onClick={() => ed.set({ flyover: !ed.flyover })} data-testid="hud-flyover"><Plane size={20} /><span>{ed.flyover ? "Flying…" : "Fly over"}</span></button>
           <button className={bar} onClick={() => go(1)}><ChevronRight size={22} /><span>Next</span></button>
           {mayRecord && <button className={bar} onClick={() => void recordVideo([hole.id])} disabled={!!job} data-testid="hud-record"><Clapperboard size={20} /><span>{job?.kind === "video" ? `${Math.round((job.progress ?? 0) * 100)}%` : "Record"}</span></button>}
           {!readOnly && <button className={`${bar} ${camera ? "bg-white/15" : ""}`} onClick={() => setCamera(c => !c)} aria-pressed={camera} data-testid="hud-camera"><Camera size={20} /><span>Camera</span></button>}
-          <button className={bar} onClick={() => ed.set({ teeView: null, flyover: false })} data-testid="hud-close"><X size={20} /><span>Map</span></button>
+          <button className={bar} onClick={() => ed.set({ teeView: null, flyover: false })} data-testid="hud-close"><X size={20} /><span>Back</span></button>
         </div>
         {camera && (
-          <div className="absolute left-2 right-2 bottom-[calc(max(8px,env(safe-area-inset-bottom))+80px)] pointer-events-auto bg-zinc-950/90 rounded-2xl p-3 border border-white/10 shadow-2xl max-h-[45vh] overflow-y-auto">
+          <div className="absolute left-2 right-2 bottom-[calc(max(8px,env(safe-area-inset-bottom))+80px)] pointer-events-auto glass rounded-2xl p-3 border border-white/10 shadow-2xl max-h-[45vh] overflow-y-auto">
             <FlyoverSettingsPanel holeId={hole.id} />
           </div>
         )}
@@ -110,7 +110,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
   return (
     <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui>
       {loading}
-      <div className={`absolute top-4 left-4 pointer-events-auto bg-zinc-950/80 backdrop-blur rounded-2xl px-4 py-3 text-white shadow-2xl border border-white/10 w-[280px] ${ed.flyover ? "hidden" : ""}`} data-testid="tee-view-hud">
+      <div className={`absolute top-4 left-4 pointer-events-auto glass backdrop-blur rounded-2xl px-4 py-3 text-white shadow-2xl border border-white/10 w-[280px] ${ed.flyover ? "hidden" : ""}`} data-testid="tee-view-hud">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full flex items-center justify-center text-2xl font-bold" style={{ background: lvl.color, color: lvl.ink, fontFamily: "Oswald, Inter" }}>{s.label}</div>
           <div>
@@ -122,7 +122,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
         <div className="mt-2"><ElevationProfile doc={doc} line={s.line} height={70} /></div>
         {hole.notes && <p className="text-xs text-zinc-200 mt-1">{hole.notes}</p>}
       </div>
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-2 bg-zinc-950/85 backdrop-blur rounded-full px-2 py-1.5 border border-white/10 shadow-2xl">
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-2 glass backdrop-blur rounded-full px-2 py-1.5 border border-white/10 shadow-2xl">
         <button className="p-2 rounded-full hover:bg-white/10 text-white" aria-label="Previous hole" title="Previous hole (←)" onClick={() => go(-1)}><ChevronLeft size={18} /></button>
         <button className={`px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 ${ed.flyover ? "bg-orange-500 text-zinc-950" : "text-white hover:bg-white/10"}`} onClick={() => ed.set({ flyover: !ed.flyover })} data-testid="hud-flyover"><Plane size={15} /> {ed.flyover ? "Flying…" : "Fly over"}</button>
         <button className="p-2 rounded-full hover:bg-white/10 text-white" aria-label="Next hole" title="Next hole (→)" onClick={() => go(1)}><ChevronRight size={18} /></button>
@@ -139,7 +139,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
         <button className="px-3 py-1.5 rounded-full text-sm font-semibold text-white hover:bg-white/10 flex items-center gap-1.5" onClick={() => ed.set({ teeView: null, flyover: false })} data-testid="hud-close"><X size={15} /> Back to map</button>
       </div>
       {camera && (
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-[320px] pointer-events-auto bg-zinc-950/90 backdrop-blur rounded-2xl p-4 border border-white/10 shadow-2xl">
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-[320px] pointer-events-auto glass backdrop-blur rounded-2xl p-4 border border-white/10 shadow-2xl">
           <FlyoverSettingsPanel holeId={hole.id} />
         </div>
       )}

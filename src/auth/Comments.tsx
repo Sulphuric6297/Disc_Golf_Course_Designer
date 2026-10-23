@@ -6,7 +6,8 @@ import { create } from "zustand";
 import { Check, MessageCircle, MessageSquarePlus, RotateCcw, Trash2, X } from "lucide-react";
 import { holeLabel } from "../lib/course";
 import { getDoc, useCourse } from "../state/course";
-import { getView } from "../components/MapViewport";
+import { getView } from "../state/view";
+import { toast } from "../state/toast";
 import { inputCls } from "../components/ui";
 import type { CourseDoc, P } from "../types";
 import { api, useAuth } from "./api";
@@ -40,7 +41,12 @@ export async function loadComments() {
   const threads = await api<Thread[]>("GET", `courses/${id}/comments`);
   if (useServerCourse.getState().id === id) useComments.setState({ courseId: id, threads });
 }
-const act = async (fn: () => Promise<unknown>) => { await fn(); await loadComments(); };
+/** A change to the comments, then the list again; a failure said (true when it went through). */
+const act = async (fn: () => Promise<unknown>) => {
+  try { await fn(); } catch (e) { toast(`That didn't go through: ${e instanceof Error ? e.message : "try again"}.`, "error"); return false; }
+  await loadComments().catch(() => {});
+  return true;
+};
 
 export const openComments = (threadId?: string) => {
   useComments.setState({ panel: true, selected: threadId ?? cs().selected });
@@ -117,7 +123,7 @@ export function CommentLayer() {
         if (!inside(q)) return null;
         return (
           <button key={t.id} data-testid="comment-pin" aria-label={`Comment by ${t.author ?? "someone"}`}
-            className={`fixed z-20 -translate-x-1/2 -translate-y-full flex items-center justify-center w-7 h-7 rounded-full rounded-bl-none rotate-[-45deg] shadow-lg border-2 ${selected === t.id ? "bg-orange-500 border-white" : t.resolvedAt ? "bg-zinc-600 border-zinc-300" : "bg-sky-500 border-white"}`}
+            className={`fixed z-20 -translate-x-1/2 -translate-y-full flex items-center justify-center w-7 h-7 rounded-full rounded-bl-none rotate-[-45deg] shadow-lg border-2 ${selected === t.id ? "bg-orange-500 border-white" : t.resolvedAt ? "bg-white/[0.18] border-zinc-300" : "bg-sky-500 border-white"}`}
             // (a little above its spot: what it's on stays there to grab)
             style={{ left: q.x + 8, top: q.y - 12 }}
             onClick={() => { useComments.setState({ selected: t.id }); openComments(t.id); }}>
@@ -132,7 +138,7 @@ export function CommentLayer() {
             if (!p) return;
             useComments.setState({ placing: false, draftAt: { p, on: landOn(p, getDoc()) } });
           }}>
-          <div className="absolute left-1/2 -translate-x-1/2 top-3 px-3 py-1.5 rounded-lg bg-zinc-900/95 border border-zinc-700 text-sm text-zinc-100 pointer-events-none">Click where the comment goes · Esc to cancel</div>
+          <div className="absolute left-1/2 -translate-x-1/2 top-3 px-3 py-1.5 rounded-lg glass border border-white/[0.12] text-sm text-zinc-100 pointer-events-none">Click where the comment goes · Esc to cancel</div>
         </div>
       )}
       {draftAt && <Composer at={at(draftAt.p)} />}
@@ -152,16 +158,18 @@ function Composer({ at }: { at: { x: number; y: number } }) {
     try {
       const r = await api<{ id: string }>("POST", base(), { body: text, anchor: { x: d.p.x, y: d.p.y, on: d.on }, inDraft: inDraft() && useServerCourse.getState().draft });
       useComments.setState({ draftAt: null, selected: r.id, panel: true });
-      await loadComments();
+      await loadComments().catch(() => {});
+    } catch (e) {
+      toast(`The comment wasn't posted: ${e instanceof Error ? e.message : "try again"}.`, "error");
     } finally { setBusy(false); }
   };
   return (
-    <div className="fixed z-30 w-72 bg-zinc-900 rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 p-3" style={{ left: Math.min(at.x + 12, window.innerWidth - 300), top: Math.max(70, at.y - 40) }} data-testid="comment-composer"
+    <div className="fixed z-30 w-72 glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 p-3" style={{ left: Math.min(at.x + 12, window.innerWidth - 300), top: Math.max(70, at.y - 40) }} data-testid="comment-composer"
       onKeyDown={e => { if (e.key === "Escape") useComments.setState({ draftAt: null }); }}>
       <textarea ref={ref} className={`${inputCls} min-h-[72px]`} placeholder="Comment (@name to tell someone)" value={text} onChange={e => setText(e.target.value)} aria-label="Comment"
         onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void post(); }} />
       <div className="flex justify-end gap-2 mt-2">
-        <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded-lg" onClick={() => useComments.setState({ draftAt: null })}>Cancel</button>
+        <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/[0.09] rounded-lg" onClick={() => useComments.setState({ draftAt: null })}>Cancel</button>
         <button disabled={busy || !text.trim()} className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" onClick={() => void post()}>Post</button>
       </div>
     </div>
@@ -180,8 +188,8 @@ export function CommentsPanel() {
   const shown = useMemo(() => threads.filter(t => showResolved || !t.resolvedAt), [threads, showResolved]);
   if (!panel) return null;
   return (
-    <aside className="fixed right-0 top-14 bottom-0 z-30 w-[360px] max-w-full bg-zinc-900 border-l border-zinc-800 shadow-2xl flex flex-col" aria-label="Comments" data-testid="comments-panel">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800">
+    <aside className="fixed right-0 top-14 bottom-0 z-30 w-[360px] max-w-full glass-solid border-l border-white/[0.08] shadow-2xl flex flex-col" aria-label="Comments" data-testid="comments-panel">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.08]">
         <h2 className="font-bold text-zinc-50 flex-1">Comments <span className="text-zinc-500 font-normal">{open.length}</span></h2>
         <label className="flex items-center gap-1.5 text-xs text-zinc-400"><input type="checkbox" checked={showResolved} onChange={e => useComments.setState({ showResolved: e.target.checked })} /> Resolved</label>
         <button aria-label="Close" className="text-zinc-400 hover:text-zinc-50" onClick={() => useComments.setState({ panel: false })}><X size={18} /></button>
@@ -192,7 +200,7 @@ export function CommentsPanel() {
       <ol className="flex-1 overflow-y-auto p-3 space-y-2" data-testid="threads">
         {shown.length === 0 && <li className="text-sm text-zinc-500 px-1">{threads.length ? "No open comments." : "No comments yet."}</li>}
         {shown.map((t, i) => (
-          <li key={t.id} data-testid="thread" className={`rounded-xl border ${selected === t.id ? "border-orange-400/70 bg-zinc-800/60" : "border-zinc-800 bg-zinc-950/40"} ${t.resolvedAt ? "opacity-70" : ""}`}>
+          <li key={t.id} data-testid="thread" className={`rounded-xl border ${selected === t.id ? "border-orange-400/70 bg-white/[0.07]" : "border-white/[0.08] glass"} ${t.resolvedAt ? "opacity-70" : ""}`}>
             <ThreadView t={t} n={i + 1} doc={doc} me={me?.id ?? null} owner={role === "owner"} members={members} />
           </li>
         ))}
@@ -207,7 +215,7 @@ function ThreadView({ t, n, doc, me, owner, members }: { t: Thread; n: number; d
   const [edit, setEdit] = useState("");
   const what = onWhat(t, doc);
   const one = (c: CommentRow, first: boolean) => (
-    <div className={first ? "" : "mt-2 pl-3 border-l border-zinc-700"}>
+    <div className={first ? "" : "mt-2 pl-3 border-l border-white/[0.12]"}>
       <div className="flex items-baseline gap-2 text-[12px]">
         <span className="font-semibold text-zinc-100">{c.author ?? "Someone"}</span>
         <span className="text-zinc-500">{when(c.createdAt)}{c.editedAt ? " · edited" : ""}{c.inDraft ? " · in a draft" : ""}</span>
@@ -238,13 +246,13 @@ function ThreadView({ t, n, doc, me, owner, members }: { t: Thread; n: number; d
       {t.replies.map(r => <div key={r.id}>{one(r, false)}</div>)}
       <div className="mt-2 flex items-center gap-2">
         <input className={`${inputCls} flex-1`} placeholder="Reply" value={reply} onChange={e => setReply(e.target.value)} aria-label="Reply"
-          onKeyDown={e => { if (e.key === "Enter" && reply.trim()) { const b = reply; setReply(""); void act(() => api("POST", base(), { body: b, parentId: t.id })); } }} />
+          onKeyDown={e => { if (e.key === "Enter" && reply.trim()) { const b = reply; setReply(""); void act(() => api("POST", base(), { body: b, parentId: t.id })).then(ok => { if (!ok) setReply(b); }); } }} />
       </div>
       <div className="flex items-center gap-3 mt-2 text-xs">
         <button className="inline-flex items-center gap-1 text-zinc-300 hover:text-zinc-50" onClick={() => void act(() => api("PATCH", `${base()}/${t.id}`, { resolved: !t.resolvedAt }))} data-testid="resolve">
           {t.resolvedAt ? <><RotateCcw size={12} /> Re-open</> : <><Check size={12} /> Resolve</>}
         </button>
-        <select className="bg-zinc-800 rounded-lg px-1.5 py-0.5 text-xs text-zinc-200 max-w-[150px]" value={t.assigneeId ?? ""} aria-label="Assigned to"
+        <select className="bg-white/[0.07] rounded-lg px-1.5 py-0.5 text-xs text-zinc-200 max-w-[150px]" value={t.assigneeId ?? ""} aria-label="Assigned to"
           onChange={e => void act(() => api("PATCH", `${base()}/${t.id}`, { assigneeId: e.target.value || null }))}>
           <option value="">Not assigned</option>
           {members.map(m => <option key={m.userId} value={m.userId}>{m.displayName}</option>)}

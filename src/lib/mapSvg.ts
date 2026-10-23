@@ -3,9 +3,13 @@
 // tees, baskets, mandos, drop zones, distances), labels, and the frame (title, legend, hole table,
 // north arrow, scale bar). The same renderer draws a single hole for tee signs, turned so the tee
 // is at the bottom.
+import { extrasSvg } from "./pieces";
+import { fitAttr } from "./fitText";
+import { SCRIPT_FONTS } from "./fontKinds";
+import { latitudeOf, sunFromOf } from "./mapLook";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
-import { activeLayout, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, obSides, sharedWalks, teeAim, walkRoutes } from "./course";
+import { activeLayout, areaObEdges, beyondSides, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, sharedWalks, teeAim, walkRoutes } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
 import { courseTotals, holeStats, isOb, playsOf, type HoleStats } from "./holeStats";
 import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, type CanopyGrid } from "./forest";
@@ -136,9 +140,13 @@ export type MapLayers = {
   labelAt?: MapStyle["labelAt"];
 };
 
-export const fontStack = (f: string) => (f === "Oswald" || f === "Script" ? "Oswald, 'Arial Narrow', Arial, sans-serif" : f === "Bitter" ? "Bitter, Georgia, serif" : "Inter, Arial, sans-serif");
-/** The title's lettering (the brush script for "Script"). */
-export const titleStack = (f: string) => (f === "Script" ? "'Kaushan Script', 'Brush Script MT', cursive" : fontStack(f));
+const OWN_FONTS = new Set(["", "Oswald", "Inter", "Bitter", "Script"]);
+/** A font for labels: the app's own, or a Google font by name (a script's labels in Oswald). */
+export const fontStack = (f: string) => (f === "Oswald" || f === "Script" || SCRIPT_FONTS.has(f) ? "Oswald, 'Arial Narrow', Arial, sans-serif" : f === "Bitter" ? "Bitter, Georgia, serif" : OWN_FONTS.has(f) ? "Inter, Arial, sans-serif" : `'${f.replace(/'/g, "")}', Inter, Arial, sans-serif`);
+/** A font for titles: a script stays a script. */
+export const titleStack = (f: string) => (f === "Script" ? "'Kaushan Script', 'Brush Script MT', cursive" : SCRIPT_FONTS.has(f) ? `'${f.replace(/'/g, "")}', 'Kaushan Script', cursive` : fontStack(f));
+/** A script keeps its own capitals (a title in all capitals reads badly in one). */
+export const keepsCase = (f: string) => f === "Script" || SCRIPT_FONTS.has(f);
 
 export { BASKET_MARKS, basketMark };
 
@@ -355,7 +363,8 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   // Built things: bridges over the creeks, boardwalks, stairs, walls, buildings, shelters and decks
   const structures = items.filter(i => i.type === "structure") as StructureItem[];
   if (structures.length) {
-    const az = ((s.sunAngle ?? 315) * Math.PI) / 180;
+    // (where the sun really shines from, by the compass; turned with the map below)
+    const az = (sunFromOf(s, latitudeOf(doc.site)) * Math.PI) / 180;
     const draw: StructureDraw = {
       u: px(1), ft: 1, sun: rotatePoint({ x: Math.sin(az), y: -Math.cos(az) }, view.rotation), sunHeight: s.sunHeight ?? 38,
       // (The Forest painting casts their shadows itself)
@@ -413,7 +422,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       });
     };
     const edge = (d: string, o: number) => out.push(`<path d="${d}" fill="none" stroke="${obCase}" stroke-opacity="0.9" stroke-width="${n(px(3.6))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/><path d="${d}" fill="none" stroke="${obCol}" stroke-width="${n(px(1.9))}" stroke-linejoin="round" stroke-linecap="round" opacity="${n(o)}"/>`);
-    for (const a of areas) if (a.ob === true && a.kind !== "ob" && a.points.length >= 3) edge(pathD(a.points, true), dim(a.holeId, a.alsoHoles));
+    for (const a of areas) if (a.ob === true && a.kind !== "ob" && a.points.length >= 3) for (const piece of areaObEdges({ ...a, straight: true })) edge(pathD(piece), dim(a.holeId, a.alsoHoles));
     // (short ticks from an edge into the out-of-bounds side: a road and beyond)
     const ticks = (line: P[], side: number, o: number) => {
       const len = pathLength(line), step = px(9), out1: string[] = [];
@@ -439,7 +448,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
         const piece = subPath(g.points, a, b);
         if (piece.length < 2) continue;
         if (pathLength(piece) > pathLength(longest)) longest = piece;
-        const sides = l.obBeyond ? obSides(piece, holeLines, 300, !obPicked(doc, l).length) : null;
+        const sides = l.obBeyond ? beyondSides(l, piece, holeLines, !obPicked(doc, l).length) : null;
         if (l.kind === "fence" || l.kind === "walk") {
           edge(pathD(piece), o);
           if (sides?.length === 1) ticks(piece, -sides[0], o);
@@ -704,13 +713,16 @@ export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), dr
  * size, all at once.
  */
 export const withLivePaint = <T>(px: number, draw: () => T): T => {
-  const was = [paintLimit, paintLive] as const;
+  // (a print painting meanwhile, between frames, isn't this preview's: its size and its list)
+  const was = [paintLimit, paintLive, printDensity, printJobs] as const;
   paintLimit = px;
   paintLive = true;
+  printDensity = null;
+  printJobs = null;
   try {
     return draw();
   } finally {
-    [paintLimit, paintLive] = was;
+    [paintLimit, paintLive, printDensity, printJobs] = was;
   }
 };
 
@@ -745,10 +757,12 @@ export const onPaintProgress = (fn: (fraction: number | null) => void) => {
 const tellProgress = () => progressListeners.forEach(fn => fn(livePaint ? liveProgress : null));
 if (typeof window !== "undefined") (window as any).__dgPainting = paintingNow;
 
+/** The quick drafts shown while the sharp pictures paint (freed when no longer shown). */
+const draftUrls: string[] = [];
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
   const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
-  const look = [s.forest, s.treeCover, s.landscape, s.contours, s.trees, s.fairway, s.rough, s.tallGrass, s.water, s.path, s.nextTee, s.walkWidth, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale];
+  const look = [s.forest, s.treeCover, s.treeLook, s.landscape, s.treeMix, s.conifers, s.contours, s.trees, s.fairway, s.rough, s.tallGrass, s.water, s.path, s.nextTee, s.walkWidth, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale, s.reliefLook, s.mapLook, s.lookParts, s.lightMode, s.goldenSun, s.sunFrom, s.pathOrder, doc.site.location, doc.site.bounds];
   const key = JSON.stringify([paintLimit, printDensity, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), paintedFrom(doc), doc.canvas, doc.id]);
   // (A live preview may show a picture made for print; a print never uses a live one, which is a
   // blob only this page can read)
@@ -762,7 +776,9 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
     return { url: hit, view };
   }
   // (a print: its resolution, up to about 32 million pixels)
-  const density = printDensity !== null ? Math.min(printDensity, Math.sqrt(32e6 / Math.max(1, view.width * view.height))) : Math.min(3, Math.max(paintLimit < 2400 ? 1 : 1.5, paintLimit / Math.max(view.width, view.height)));
+  // (live: about as many pixels as the screen shows, `paintLimit` along the long side; a big poster
+  // isn't painted at print size while it's being designed)
+  const density = printDensity !== null ? Math.min(printDensity, Math.sqrt(32e6 / Math.max(1, view.width * view.height))) : Math.min(3, Math.max(0.3, paintLimit / Math.max(view.width, view.height)));
   const opts = { mode: s.forest ?? "everywhere", canopy, style: s, density } as const;
   // A photo-like picture: JPEG keeps it a tenth the size of a PNG
   const keep = (canvas: HTMLCanvasElement) => {
@@ -797,13 +813,30 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
     livePaint = job;
     liveProgress = 0;
     queueMicrotask(tellProgress);
-    void forestCanvasAsync(doc, view, layers.stats, opts, job.stop.signal, f => {
-      if (livePaint !== job) return;
-      liveProgress = f;
-      tellProgress();
-    })
+    // First a quick draft (a fifth of the pixels: shown in a moment), then the sharp picture
+    const toBlob = (canvas: HTMLCanvasElement) => new Promise<Blob>((res, rej) => canvas.toBlob(b => (b ? res(b) : rej(new Error("no picture"))), "image/jpeg", 0.9));
+    const draftDensity = density * 0.32;
+    const draft = draftDensity * Math.max(view.width, view.height) >= 500
+      ? forestCanvasAsync(doc, view, layers.stats, { ...opts, density: draftDensity }, job.stop.signal, f => { if (livePaint === job) { liveProgress = f * 0.3; tellProgress(); } })
+        .then(toBlob)
+        .then(blob => {
+          if (livePaint !== job) return;
+          const url = URL.createObjectURL(blob);
+          draftUrls.push(url);
+          while (draftUrls.length > 3) URL.revokeObjectURL(draftUrls.shift()!);
+          lastForView.set(viewKey, url);
+          lastLive = { url, view, doc: doc.id ?? "", limit: paintLimit };
+          paintedListeners.forEach(fn => fn());
+        })
+      : Promise.resolve();
+    void draft
+      .then(() => forestCanvasAsync(doc, view, layers.stats, opts, job.stop.signal, f => {
+        if (livePaint !== job) return;
+        liveProgress = 0.3 + f * 0.7;
+        tellProgress();
+      }))
       // (encoded off the page's thread, unlike toDataURL)
-      .then(canvas => new Promise<Blob>((res, rej) => canvas.toBlob(b => (b ? res(b) : rej(new Error("no picture"))), "image/jpeg", 0.9)))
+      .then(toBlob)
       .then(blob => {
         const url = URL.createObjectURL(blob);
         liveCache.set(key, url);
@@ -977,7 +1010,23 @@ export const bestRotation = (doc: CourseDoc) => {
  * full-bleed picture with the title laid over the emptiest corner; the others put the title on
  * top and the legend and hole table at the side (or below, on a tall page).
  */
+/** The course map's page, in its frame (see MapStyle.frame): the same on every side. */
 export const renderPoster = (doc: CourseDoc, opts: PosterOptions) => {
+  const out = posterPage(doc, opts);
+  const f = doc.style.frame;
+  if (!f) return out;
+  const { width: W, height: H } = out;
+  const t = Math.min(W, H) / 612; // 1 on a letter page's short side
+  const pal = palette(doc.style), ink = doc.style.card?.ink ?? "#1d2a1b", paper = doc.style.card?.paper ?? "#f4efe0";
+  const band = f === "mat" ? 14 * t : f === "band" ? 18 * t : 0;
+  const ring = (inset: number, w: number, c: string, o = 1) => `<rect x="${n(inset + w / 2)}" y="${n(inset + w / 2)}" width="${n(W - 2 * inset - w)}" height="${n(H - 2 * inset - w)}" fill="none" stroke="${c}" stroke-opacity="${o}" stroke-width="${n(w)}"/>`;
+  const art = f === "line" ? ring(10 * t, 1.2 * t, pal.ink ?? ink, 0.8) + ring(14 * t, 0.6 * t, pal.ink ?? ink, 0.5)
+    : f === "mat" ? ring(0, band, paper) + ring(band, 0.8 * t, ink, 0.45)
+    : ring(0, band, doc.style.card?.header ?? "#13311d") + ring(band, 1 * t, paper, 0.7);
+  return { ...out, svg: out.svg.replace(/<\/svg>\s*$/, `<g data-part="frame" pointer-events="none">${art}</g></svg>`) };
+};
+
+const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
   const s = doc.style;
   const pal = palette(s);
   const layout = activeLayout(doc);
@@ -1047,10 +1096,10 @@ export const renderPoster = (doc: CourseDoc, opts: PosterOptions) => {
       if (the) name = name.replace(/^the\s+/i, "");
       const course = /\s+disc\s+golf(\s+course)?$/i.test(name);
       if (course) name = name.replace(/\s+disc\s+golf(\s+course)?$/i, "");
-      const big = Math.min(54 * ts, ((W * 0.4) / Math.max(4, name.length)) * (s.font === "Script" ? 2.1 : 1.9));
-      let tw = name.length * big * (s.font === "Script" ? 0.48 : 0.6);
+      const big = Math.min(54 * ts, ((W * 0.4) / Math.max(4, name.length)) * (keepsCase(s.font) ? 2.1 : 1.9));
+      let tw = name.length * big * (keepsCase(s.font) ? 0.48 : 0.6);
       if (the) { out.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="${font}" font-weight="700" font-style="italic" font-size="${n(13 * ts)}" fill="${ink}" ${shadow}>THE</text>`); ty += 10 * ts; }
-      out.push(`<text x="${n(tx)}" y="${n(ty + big * 0.95)}" text-anchor="${anchor}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(big)}" fill="${ink}" ${shadow}>${esc(s.font === "Script" ? name : name.toUpperCase())}</text>`);
+      out.push(`<text${fitAttr(W * 0.42)} x="${n(tx)}" y="${n(ty + big * 0.95)}" text-anchor="${anchor}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(big)}" fill="${ink}" ${shadow}>${esc(keepsCase(s.font) ? name : name.toUpperCase())}</text>`);
       ty += big * 1.15;
       const golf = course || !/golf/i.test(title) ? "DISC GOLF COURSE" : "";
       out.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="${n(12 * ts)}" letter-spacing="${n(3.2 * ts)}" fill="${ink}" ${shadow}>${golf}</text>`);
@@ -1071,10 +1120,10 @@ export const renderPoster = (doc: CourseDoc, opts: PosterOptions) => {
       chips.forEach((c, i) => {
         const x0 = left ? tx + i * (cw + 8 * ts) : tx - (chips.length - i) * (cw + 8 * ts) + 8 * ts;
         const col = TEE_LEVELS[c.l.tee].color;
-        out.push(`<text x="${n(x0)}" y="${n(ty + 8 * ts)}" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(7 * ts)}" fill="${col}" ${shadow}>${esc(`${c.l.name} layout`.toUpperCase())}</text>`);
+        out.push(`<text${fitAttr(50 * ts)} x="${n(x0)}" y="${n(ty + 8 * ts)}" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(7 * ts)}" fill="${col}" ${shadow}>${esc(`${c.l.name} layout`.toUpperCase())}</text>`);
         out.push(`<rect x="${n(x0 + 52 * ts)}" y="${n(ty + 5.5 * ts)}" width="${n(cw - 52 * ts)}" height="${n(1.4 * ts)}" fill="${col}"/>`);
         out.push(`<rect x="${n(x0)}" y="${n(ty + 12 * ts)}" width="${n(cw)}" height="${n(chH)}" fill="#0b0f0a" fill-opacity="0.88"/>`);
-        out.push(`<text x="${n(x0 + cw / 2)}" y="${n(ty + 12 * ts + chH / 2)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(11 * ts)}" fill="${col === "#f8fafc" ? "#ffffff" : col}">PAR ${c.par} <tspan fill="#ffffff" fill-opacity="0.6">|</tspan> ${esc(fmtDist(c.len, doc.units, false))}${doc.units === "ft" ? "'" : " m"}</text>`);
+        out.push(`<text${fitAttr(cw - 8 * ts)} x="${n(x0 + cw / 2)}" y="${n(ty + 12 * ts + chH / 2)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(11 * ts)}" fill="${col === "#f8fafc" ? "#ffffff" : col}">PAR ${c.par} <tspan fill="#ffffff" fill-opacity="0.6">|</tspan> ${esc(fmtDist(c.len, doc.units, false))}${doc.units === "ft" ? "'" : " m"}</text>`);
       });
       if (chips.length) { tw = Math.max(tw, chips.length * (cw + 8 * ts)); ty += 12 * ts + chH; }
       const box = { x: left ? tx : tx - tw, y: ty0, w: tw, h: ty - ty0 + 4 * ts };
@@ -1153,9 +1202,11 @@ export const renderPoster = (doc: CourseDoc, opts: PosterOptions) => {
       const ax = t.align === "middle" ? X + tw / 2 : t.align === "end" ? X + tw : X;
       const pad = t.size * 0.4;
       const bgRect = t.bg && (t.bgOpacity ?? 1) > 0 ? `<rect x="${n(X - pad)}" y="${n(Y - pad)}" width="${n(tw + pad * 2)}" height="${n(th + pad * 2)}" rx="${n(pad)}" fill="${t.bg}" fill-opacity="${n(t.bgOpacity ?? 1)}"/>` : "";
-      const body = lines.map((l, i) => `<text x="${n(ax)}" y="${n(Y + t.size * (0.95 + i * 1.25))}" text-anchor="${t.align ?? "start"}" font-family="${titleStack(t.font ?? s.font)}" font-weight="${t.bold ? 700 : 400}"${t.italic ? ` font-style="italic"` : ""} font-size="${n(t.size)}" fill="${t.color}">${esc(l)}</text>`).join("");
+      const body = lines.map((l, i) => `<text x="${n(ax)}" y="${n(Y + t.size * (0.95 + i * 1.25))}" text-anchor="${t.align ?? "start"}" font-family="${titleStack(t.font || s.font)}" font-weight="${t.bold ? 700 : 400}"${t.italic ? ` font-style="italic"` : ""} font-size="${n(t.size)}" fill="${t.color}">${esc(l)}</text>`).join("");
       parts.push(`<g data-el="text:${t.id}" data-box="${n(X)} ${n(Y)} ${n(tw)} ${n(th)}"><rect x="${n(X)}" y="${n(Y)}" width="${n(tw)}" height="${n(th)}" fill="none" pointer-events="all"/>${bgRect}${body}</g>`);
     }
+    // Pictures, QR codes and sponsors added to the map (the course's own name filled in)
+    parts.push(extrasSvg(s.mapExtras, s.sponsors, "", { hole: "", par: "", length: "", course: title, name: "" }, W, H, s.font, (id, c) => `<g data-el="${id}">${c}</g>`));
     return { svg: wrapSvg(W, H, parts.join(""), opts.dpi), width: W, height: H, page };
   }
 
@@ -1167,7 +1218,7 @@ export const renderPoster = (doc: CourseDoc, opts: PosterOptions) => {
   const scale = Math.min(map.w / bw, map.h / bh);
   const view: MapView = { cx: center.x, cy: center.y, rotation, scale, width: map.w, height: map.h };
   const { svg } = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy }, "pm");
-  if (title) parts.push(`<text x="${n(m)}" y="${n(m + 30 * ts)}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(30 * ts)}" fill="${pal.ink}" letter-spacing="${n(s.font === "Script" ? 0 : 0.5 * ts)}">${esc(s.font === "Script" ? title : title.toUpperCase())}</text>`);
+  if (title) parts.push(`<text x="${n(m)}" y="${n(m + 30 * ts)}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(30 * ts)}" fill="${pal.ink}" letter-spacing="${n(keepsCase(s.font) ? 0 : 0.5 * ts)}">${esc(keepsCase(s.font) ? title : title.toUpperCase())}</text>`);
   const info = `${totals.complete} HOLES · PAR ${totals.par} · ${fmtDist(totals.length, doc.units).toUpperCase()}${layout && doc.layouts.length > 1 ? ` · ${layout.name.toUpperCase()} LAYOUT` : ""}`;
   parts.push(`<text x="${n(W - m)}" y="${n(m + 28 * ts)}" text-anchor="end" font-family="${font}" font-weight="600" font-size="${n(13 * ts)}" fill="${pal.inkSoft}">${esc(info)}</text>`);
   if (sub) parts.push(`<text x="${n(m)}" y="${n(m + 46 * ts)}" font-family="Inter, Arial, sans-serif" font-size="${n(9.5 * ts)}" fill="${pal.inkSoft}">${esc(sub)}</text>`);
@@ -1260,18 +1311,18 @@ const holeTable = (doc: CourseDoc, stats: HoleStats[], x: number, y: number, w: 
         const half = c.head.length * f * 0.3;
         const mid = c.x0 + c.cw / 2;
         rows.push(`<circle cx="${n(mid - half - f * 0.7)}" cy="${n(y - f * 0.35)}" r="${n(f * 0.38)}" fill="${c.dot}" stroke="#333" stroke-width="0.5"/><text x="${n(mid + f * 0.3)}" y="${n(y)}" text-anchor="middle" font-family="${font}" font-weight="700" font-size="${n(f * 1.05)}" fill="${pal.panelInk}">${esc(c.head)}</text>`);
-      } else rows.push(`<text x="${n(cellX(c))}" y="${n(y)}" text-anchor="${c.left ? "start" : "middle"}" font-family="${font}" font-weight="700" font-size="${n(f * 1.15)}" fill="${pal.panelInk}">${c.head}</text>`);
+      } else rows.push(`<text${fitAttr(c.cw)} x="${n(cellX(c))}" y="${n(y)}" text-anchor="${c.left ? "start" : "middle"}" font-family="${font}" font-weight="700" font-size="${n(f * 1.15)}" fill="${pal.panelInk}">${c.head}</text>`);
     });
     stats.forEach((st, r) => {
       const yy = y + (r + 1) * rowH + 4 * ts;
       if (r % 2 === 0) rows.push(`<rect x="${n(x - 4 * ts)}" y="${n(yy - rowH * 0.72)}" width="${n(w + 8 * ts)}" height="${n(rowH)}" fill="${pal.panelInk}" fill-opacity="0.05"/>`);
       rows.push(`<text x="${n(x + 6 * ts)}" y="${n(yy)}" text-anchor="middle" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">${st.label}</text>`);
-      placedCols.forEach(c => rows.push(`<text x="${n(cellX(c))}" y="${n(yy)}" text-anchor="${c.left ? "start" : "middle"}" font-family="Inter, Arial, sans-serif" font-size="${n(f)}" fill="${pal.panelInk}">${esc(clip(c.cell(r), c))}</text>`));
+      placedCols.forEach(c => rows.push(`<text${fitAttr(c.cw)} x="${n(cellX(c))}" y="${n(yy)}" text-anchor="${c.left ? "start" : "middle"}" font-family="Inter, Arial, sans-serif" font-size="${n(f)}" fill="${pal.panelInk}">${esc(clip(c.cell(r), c))}</text>`));
     });
     const yy = y + (stats.length + 1) * rowH + 8 * ts;
     rows.push(`<line x1="${n(x - 4 * ts)}" x2="${n(x + w + 4 * ts)}" y1="${n(yy - rowH * 0.8)}" y2="${n(yy - rowH * 0.8)}" stroke="${pal.panelInk}" stroke-opacity="0.4"/>`);
     rows.push(`<text x="${n(x)}" y="${n(yy)}" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">TOTAL</text>`);
-    placedCols.forEach(c => { if (c.total) rows.push(`<text x="${n(cellX(c))}" y="${n(yy)}" text-anchor="${c.left ? "start" : "middle"}" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">${c.total}</text>`); });
+    placedCols.forEach(c => { if (c.total) rows.push(`<text${fitAttr(c.cw)} x="${n(cellX(c))}" y="${n(yy)}" text-anchor="${c.left ? "start" : "middle"}" font-family="${font}" font-weight="700" font-size="${n(f)}" fill="${pal.panelInk}">${c.total}</text>`); });
     return { svg: rows.join(""), bottom: yy + 4 * ts };
   }
   // Horizontal: holes across, rows for par and each layout (two blocks of up to 9 or 12 holes)

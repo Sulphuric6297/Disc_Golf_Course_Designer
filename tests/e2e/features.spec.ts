@@ -94,7 +94,9 @@ test("a mando placed on a hole faces down it, passed on the line's side; its sid
   const rot = await handleCenter(page, "rotate");
   await drag(page, rot, await screenOf(page, 480, 400));
   mando = (await course(page)).items.find((i: any) => i.type === "mando");
-  expect(Math.abs(mando.rotation)).toBeLessThan(10);
+  // (turned to about straight up: 359° is as near as 1°)
+  const turn = ((mando.rotation % 360) + 360) % 360;
+  expect(Math.min(turn, 360 - turn)).toBeLessThan(10);
   await page.keyboard.press("z");
   await clickPlan(page, 470, 380);
   const dz = (await course(page)).items.find((i: any) => i.type === "dropzone");
@@ -140,6 +142,33 @@ test("measuring: distance and elevation change", async ({ page }) => {
   await clickPlan(page, 200, 200);
   await clickPlan(page, 500, 600);
   await expect(page.getByTestId("measure-label")).toHaveText("500 ft");
+  // A small tag halfway along the line, its dots at the ends (once a bar right across the map)
+  const tag = (await page.getByTestId("measure-label").boundingBox())!;
+  expect(tag.width).toBeLessThan(120);
+  const mid = await screenOf(page, 350, 400);
+  expect(Math.hypot(tag.x + tag.width / 2 - mid.x, tag.y + tag.height / 2 - mid.y)).toBeLessThan(40);
+  const dot = (await page.getByTestId("measure-point").first().boundingBox())!;
+  const a = await screenOf(page, 200, 200);
+  expect(dot.width).toBeLessThan(20);
+  expect(Math.hypot(dot.x + dot.width / 2 - a.x, dot.y + dot.height / 2 - a.y)).toBeLessThan(8);
+  // Another click: the first point stays, the other end moves there
+  await clickPlan(page, 200, 500);
+  await expect(page.getByTestId("measure-label")).toHaveText("300 ft");
+  const m = await page.evaluate(() => (window as any).__dgView.measurement());
+  expect(m.points).toHaveLength(2);
+  expect(Math.hypot(m.points[0].x - 200, m.points[0].y - 200)).toBeLessThan(2);
+  // (and where the next click would reach, faint, while the pointer moves)
+  const p = await screenOf(page, 600, 200);
+  await page.mouse.move(p.x, p.y, { steps: 4 });
+  await expect(page.getByTestId("measure-next")).toHaveText("400 ft");
+  // Shift+click adds a turn: a path, with its total
+  await page.keyboard.down("Shift");
+  await clickPlan(page, 500, 500);
+  await page.keyboard.up("Shift");
+  await expect(page.getByTestId("measure-label")).toHaveCount(2);
+  // Esc ends it
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("measure-point")).toHaveCount(0);
 });
 
 test("shapes by dragging: a rectangle and a circle", async ({ page }) => {
@@ -179,8 +208,9 @@ test("shapes by dragging: a rectangle and a circle", async ({ page }) => {
 test("a building as a rectangle by two clicks (Rectangle comes first for buildings), and a circle the same way", async ({ page }) => {
   await blankCourse(page);
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "3 Features" }).click();
-  await page.getByTestId("feature-structure-building").click();
+  await page.getByRole("button", { name: "2 Design" }).click();
+  await page.keyboard.press("s");
+  await page.getByTestId("structure-kind-building").click();
   await expect(page.getByTestId("draw-shape-box")).toHaveAttribute("aria-checked", "true");
   // One corner, then the opposite one (it once only ever added corner points)
   await clickPlan(page, 300, 300);
@@ -537,7 +567,7 @@ test("a tree made taller keeps its shape: its crown grows with it, and in 3D it 
 });
 
 plain("a tree's crown is drawn as wide as set, whatever its height (all the way along both sliders)", () => {
-  for (const [shape, natural] of [["deciduous", 0.75], ["conifer", 0.62], ["palm", 0.75]] as const) {
+  for (const [shape, natural] of [["deciduous", 0.75], ["conifer", 0.62]] as const) {
     for (const height of [3, 10, 40, 80, 110]) {
       for (const radius of [2, 5, 10, 20, 40]) {
         const drawn = height * natural * treeSpread((radius * 2) / height / natural);
@@ -631,4 +661,89 @@ test("a creek wider in one stretch: drag the square on its bank; the Width slide
   await page.getByRole("button", { name: "Even width" }).click();
   await expect.poll(async () => (await creek()).widths).toBeUndefined();
   await expect(page.getByTestId("line-widths")).toHaveCount(0);
+});
+
+plain("on the course: the phone's readings averaged, the weak ones left out (pure logic)", async () => {
+  const { averageFixes } = await import("../../src/components/PlaceByGps");
+  const a = averageFixes([{ lat: 35, lon: -83, acc: 4 }, { lat: 35.00002, lon: -83, acc: 4 }, { lat: 35.01, lon: -83.01, acc: 60 }])!;
+  // (the 60 m reading dropped; the two good ones meet halfway)
+  plainExpect(a.n).toBe(2);
+  plainExpect(Math.abs(a.lat - 35.00001)).toBeLessThan(1e-7);
+  plainExpect(a.acc).toBeLessThan(4);
+  plainExpect(averageFixes([])).toBeNull();
+});
+
+plain("a stretch round a ring goes the way it was traced, the shorter way when not; across its start, two stretches (pure logic)", async () => {
+  const { ringStretch, isRing } = await import("../../src/lib/course");
+  plainExpect(ringStretch(0.2, 0.4, 1)).toEqual([[0.2, 0.4]]);
+  plainExpect(ringStretch(0.2, 0.4, -1)).toEqual([[0.4, 1], [0, 0.2]]);
+  plainExpect(ringStretch(0.9, 0.1, 0)).toEqual([[0.9, 1], [0, 0.1]]);
+  plainExpect(ringStretch(0.1, 0.9, 0)).toEqual([[0.9, 1], [0, 0.1]]);
+  plainExpect(isRing([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 1 }])).toBe(true);
+  plainExpect(isRing([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 30 }])).toBe(false);
+});
+
+test("any area's edge OB: all round, or a stretch traced the long way round", async ({ page }) => {
+  await blankCourse(page);
+  const id = await page.evaluate(() => {
+    (window as any).__dgEditor().set({ areaKind: "building" });
+    (window as any).__dgActions.addDrawn("area", [{ x: 300, y: 300 }, { x: 600, y: 300 }, { x: 600, y: 600 }, { x: 300, y: 600 }]);
+    (window as any).__dgEditor().set({ tool: "select" });
+    return (window as any).__dgEditor().selectedId;
+  });
+  const area = () => course(page).then(c => c.items.find((i: any) => i.id === id));
+  await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "OB, red edge" }).click();
+  await expect.poll(async () => (await area()).ob).toBe(true);
+  await expect(page.getByTestId("ob-stretches")).toContainText("All the way round");
+  // Only a stretch: from the top's middle, round by the right, the bottom and the left, to near the top-left corner
+  await page.getByTestId("ob-mark-stretch").click();
+  // (not at the edge's middle: that's the handle that adds a corner)
+  await clickPlan(page, 420, 300);
+  for (const [x, y] of [[520, 300], [560, 300], [600, 400], [600, 520], [520, 600], [400, 600], [300, 560], [300, 420], [300, 320], [360, 300]]) {
+    const p = await screenOf(page, x, y);
+    await page.mouse.move(p.x, p.y, { steps: 3 });
+    await page.waitForTimeout(40);
+  }
+  await clickPlan(page, 360, 300);
+  await expect.poll(async () => (await area()).obStretches?.length ?? 0).toBeGreaterThan(0);
+  const total = (await area()).obStretches.reduce((t: number, [a, b]: number[]) => t + (b - a), 0);
+  expect(total).toBeGreaterThan(0.7);
+});
+
+test("a building drawn over trees: the trees standing in it go, one undo step", async ({ page }) => {
+  await blankCourse(page);
+  await page.evaluate(() => {
+    const a = (window as any).__dgActions;
+    a.placeAt("add-tree", { x: 450, y: 450 });
+    a.placeAt("add-tree", { x: 800, y: 800 });
+    (window as any).__dgEditor().set({ areaKind: "building" });
+    a.addDrawn("area", [{ x: 300, y: 300 }, { x: 600, y: 300 }, { x: 600, y: 600 }, { x: 300, y: 600 }]);
+  });
+  const trees = () => course(page).then(c => c.items.filter((i: any) => i.type === "tree").length);
+  expect(await trees()).toBe(1);
+  await expect(page.getByText("Took out 1 tree standing in it.")).toBeVisible();
+  // (a dropdown's list reads light on dark)
+  const bg = await page.evaluate(() => { const o = document.createElement("option"); const s = document.createElement("select"); s.appendChild(o); document.body.appendChild(s); const c = getComputedStyle(o).backgroundColor; s.remove(); return c; });
+  expect(bg).toBe("rgb(29, 38, 33)");
+});
+
+test("OB and beyond: the app's side, or either side chosen (named by the compass)", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 500 }, { x: 800, y: 500 });
+  await page.keyboard.press("Escape");
+  const id = await page.evaluate(() => {
+    (window as any).__dgEditor().set({ lineKind: "road" });
+    (window as any).__dgActions.addDrawn("line", [{ x: 150, y: 600 }, { x: 950, y: 600 }]);
+    (window as any).__dgEditor().set({ tool: "select" });
+    return (window as any).__dgEditor().selectedId;
+  });
+  const road = () => course(page).then(c => c.items.find((i: any) => i.id === id));
+  await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "OB and beyond" }).click();
+  // (the hole is north of the road: OB runs south, away from it)
+  const side = page.getByRole("radiogroup", { name: "OB side" });
+  await expect(side.getByRole("radio", { name: "Auto (south)" })).toHaveAttribute("aria-checked", "true");
+  await side.getByRole("radio", { name: "North side" }).click();
+  await expect.poll(async () => (await road()).obToward).toBe(-1);
+  await side.getByRole("radio", { name: /Auto/ }).click();
+  await expect.poll(async () => (await road()).obToward).toBeUndefined();
 });

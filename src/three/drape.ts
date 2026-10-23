@@ -86,8 +86,10 @@ export const drapedPoints = (pts: P[], groundAt: (x: number, y: number) => numbe
 };
 
 /** A ribbon of real width along a polyline, on the ground (paths, roads, streams). */
-export const drapedRibbon = (pts: P[], width: number | ((t: number) => number), groundAt: (x: number, y: number) => number, step: number, lift: number) => {
+export const drapedRibbon = (pts: P[], width: number | ((t: number) => number), groundAt: (x: number, y: number) => number, step0: number, lift: number) => {
   const pos: number[] = [];
+  // (every few feet along it: the ground's own cells are finer than a path's bends)
+  const step = Math.min(step0, 4);
   const dense: P[] = [];
   for (let i = 0; i < pts.length; i++) {
     const a = pts[i], b = pts[i + 1];
@@ -100,17 +102,25 @@ export const drapedRibbon = (pts: P[], width: number | ((t: number) => number), 
   const along = [0];
   for (let i = 1; i < dense.length; i++) along.push(along[i - 1] + Math.hypot(dense[i].x - dense[i - 1].x, dense[i].y - dense[i - 1].y));
   const total = along[along.length - 1] || 1;
-  const side = dense.map((p, i) => {
+  // Across the ribbon, several points, each at the highest ground near it (a ridge under the
+  // middle of a path, or the ground's triangles rising between samples, never poke through)
+  const ACROSS = 4;
+  const top = (x: number, y: number) => Math.max(groundAt(x, y), groundAt(x + 1.2, y), groundAt(x - 1.2, y), groundAt(x, y + 1.2), groundAt(x, y - 1.2));
+  const rows = dense.map((p, i) => {
     const a = dense[Math.max(0, i - 1)], b = dense[Math.min(dense.length - 1, i + 1)];
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
     const n = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
     const half = (typeof width === "number" ? width : width(along[i] / total)) / 2;
-    const l = { x: p.x + n.x * half, y: p.y + n.y * half }, r = { x: p.x - n.x * half, y: p.y - n.y * half };
-    return { l: [l.x, groundAt(l.x, l.y) + lift, l.y], r: [r.x, groundAt(r.x, r.y) + lift, r.y] };
+    const row: number[][] = [];
+    for (let k = 0; k <= ACROSS; k++) {
+      const t = (k / ACROSS) * 2 - 1, x = p.x + n.x * half * t, y = p.y + n.y * half * t;
+      row.push([x, top(x, y) + lift, y]);
+    }
+    return row;
   });
-  for (let i = 1; i < side.length; i++) {
-    const a = side[i - 1], b = side[i];
-    pos.push(...a.l, ...b.l, ...a.r, ...a.r, ...b.l, ...b.r);
+  for (let i = 1; i < rows.length; i++) {
+    const a = rows[i - 1], b = rows[i];
+    for (let k = 0; k < ACROSS; k++) pos.push(...a[k], ...b[k], ...a[k + 1], ...a[k + 1], ...b[k], ...b[k + 1]);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));

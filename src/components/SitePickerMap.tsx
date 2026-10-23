@@ -239,5 +239,5 @@ export function SitePickerMap({
     handlesRef.current = markers;
   }, [selection]);
 
-  return <div ref={containerRef} className="absolute inset-0 bg-zinc-800" />;
+  return <div ref={containerRef} className="absolute inset-0 bg-white/[0.07]" />;
 }

@@ -14,17 +14,201 @@ body {
 
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Inter', -apple-system, 'SF Pro Text', system-ui, sans-serif;
+  letter-spacing: -0.006em;
   @apply bg-zinc-950 text-zinc-200 antialiased selection:bg-sky-500/30 selection:text-sky-100;
 }
 
-/* The keyboard's focus: one sky-blue ring everywhere (a mouse click shows none) */
+/* The keyboard's focus: one pond-blue ring everywhere (a mouse click shows none) */
 :where(button, a, [role="button"], [tabindex]):focus-visible {
-  outline: 2px solid #38bdf8;
+  outline: 2px solid #78bad0;
   outline-offset: 1px;
+}
+
+/* Glass: what floats over the map and the woods (the bars, panels, sheets), tinted by what's behind */
+.glass {
+  background: rgba(22, 30, 22, 0.58);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+/* Frosted, nearly solid: lists that open over text (address suggestions), read at a glance */
+.glass-solid {
+  background: rgba(24, 32, 24, 0.95);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 14px 34px rgba(0, 0, 0, 0.45);
+}
+/* A setting found by search: lit up for a moment (components/showSetting) */
+.dg-found {
+  border-radius: 12px;
+  animation: dg-found 2.2s ease-out;
+}
+@keyframes dg-found {
+  0%, 30% { box-shadow: 0 0 0 3px rgba(162, 207, 106, 0.95), 0 0 24px rgba(162, 207, 106, 0.45); background-color: rgba(162, 207, 106, 0.12); }
+  100% { box-shadow: 0 0 0 3px rgba(162, 207, 106, 0), 0 0 24px rgba(162, 207, 106, 0); background-color: transparent; }
+}
+
+/* What a button is, when the mouse rests on it (components/tooltips) */
+.dg-tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
+  max-width: 260px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: rgba(24, 32, 24, 0.96);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.16), 0 8px 22px rgba(0, 0, 0, 0.4);
+  color: #f1f3ec;
+  font: 500 12px/1.35 Inter, -apple-system, "SF Pro Text", system-ui, sans-serif;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.dg-tip.show { opacity: 1; }
+@media (hover: none) { .dg-tip { display: none; } }
+
+/* (a phone or a slow machine without the blur: the glass solid enough to read) */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: rgba(24, 31, 24, 0.94); }
+}
+
+/* The woods behind the app: a forest at sunrise, blurred and dimmed */
+.woods {
+  position: fixed;
+  inset: -40px;
+  z-index: 0;
+  background: #111511 center / cover no-repeat;
+  filter: blur(18px) brightness(0.5) saturate(1.2);
+  pointer-events: none;
+}
+
+/* Every button answers the pointer: a soft glassy lightening (one with its own hover keeps it) */
+:where(button, [role="button"], a[href], summary) {
+  transition: background-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease, filter 0.15s ease;
+}
+:where(button:not(:disabled):hover, [role="button"]:hover, a[href]:hover, summary:hover) {
+  box-shadow: inset 0 0 0 999px rgba(255, 255, 255, 0.07);
+}
+:where(button:not(:disabled):active, [role="button"]:active, a[href]:active) {
+  box-shadow: inset 0 0 0 999px rgba(255, 255, 255, 0.12);
+}
+/* (glass that's a button: its glass brighter) */
+.glass:is(button, a):not(:disabled):hover {
+  background: rgba(46, 60, 44, 0.62);
+}
+
+/* A switch (a checkbox drawn as one) */
+.switch {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  position: relative;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+.switch::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.18s ease;
+}
+.switch:checked { background: #a2cf6a; }
+.switch:checked::before { transform: translateX(14px); }
+
+/* A slider: a soft track filled in fern green up to a round white knob (--fill: how far) */
+.slider {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+}
+.slider::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #a2cf6a var(--fill, 50%), rgba(255, 255, 255, 0.14) var(--fill, 50%));
+}
+.slider::-moz-range-track {
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #a2cf6a var(--fill, 50%), rgba(255, 255, 255, 0.14) var(--fill, 50%));
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -7.5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 :where(input, select, textarea):focus-visible {
   outline: none;
+}
+/* The tool bar: on a wide screen (with a mouse), each tool's name under its icon */
+.dg-toolname {
+  display: none;
+}
+@media (min-width: 1280px) and (pointer: fine) {
+  .dg-toolbtn {
+    width: auto;
+    min-width: 48px;
+    height: 48px;
+    padding: 0 6px;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .dg-toolname {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+  }
+}
+
+/* Getting started's note pointing at a control */
+.dg-coach {
+  position: fixed;
+  z-index: 70;
+  padding: 9px 12px;
+  border-radius: 14px;
+  background: #f4f4f5;
+  color: #18181b;
+  font: 500 13px/1.4 Inter, system-ui, sans-serif;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  animation: dgfade 0.25s ease both;
+  pointer-events: none;
+}
+
+/* A dropdown's list: the see-through field colour would leave it white, its words pale on it */
+select option,
+select optgroup {
+  background-color: #1d2621;
+  color: #f4f4f5;
+}
+select option:disabled {
+  color: #71717a;
 }
 
 /* Site picker: selected area size label */
@@ -137,4 +321,10 @@ body {
 @keyframes dgslide {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
+}
+
+/* Dropdown lists: the browser draws them itself, light unless told the page is dark (its words
+   pale on white). Every one dark. */
+select {
+  color-scheme: dark;
 }

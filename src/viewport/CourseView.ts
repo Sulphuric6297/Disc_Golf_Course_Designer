@@ -6,6 +6,7 @@
 // It can also look from a tee down its hole, and fly over a hole.
 //
 // Plan (x, y) is world (x, z) with Y up; plan units are feet.
+import { BRUSH_SECTION, TREE_PATCH } from "../lib/view";
 import * as THREE from "three";
 import CameraControls from "camera-controls";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
@@ -15,39 +16,44 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
-import { FAIRWAY_STATIONS, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, fairwayOutline, mergeStretches, obFor, obPicked, obRanges, obSides, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
-import { boundsOf, dist, distanceToPath, inBounds, nearestAlong, offsetPath, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath, subPath } from "../lib/geom";
+import { FAIRWAY_STATIONS, beyondSides, areaObEdges, areaRing, isRing, ringStretch, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, fairwayOutline, mergeStretches, obFor, obPicked, obRanges, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
+import { boundsOf, centroid, dist, distanceToPath, inBounds, nearestAlong, offsetPath, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath, subPath } from "../lib/geom";
 import { parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
-import { landscapeOf } from "../lib/landscapes";
+import { conifersOf, treeMixOf } from "../lib/landscapes";
 import { fmtArea, fmtDist, fmtElev } from "../lib/units";
-import { createAmenity, createBasket, createDropZone, createMando, createTeePad, fitTeePad } from "../three/courseModels";
+import { BASKET_BAND, createAmenity, createBasket, createDropZone, createMando, createTeePad, fitTeePad } from "../three/courseModels";
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
+import { dab, strokeOutline } from "../lib/brush";
 import { disposeObjectDeep } from "../three/dispose";
 import { create3dTree, getTreeSignature } from "../three/trees";
-import { createMeasuredWoods, createWoods, createWoodsWhere } from "../three/woods";
-import { standingTrees, grownTrees } from "../lib/lidar";
+import { createMeasuredWoods, createUnderbrush, createWoods, createWoodsWhere } from "../three/woods";
+import { standingTrees, grownTree, grownTrees } from "../lib/lidar";
 import type { WoodedGrid } from "../lib/forest";
 import { autoFlight, flightClock, flyoverOf, keyFlight, keysFromFlight, type Air, type Canopy, type Crown } from "../lib/flight";
 import { VIDEO_HOLD, titleStrength } from "../lib/video";
 import { drawOverlay, holeTitle, overlayShow, type HoleTitle } from "./flyTitle";
 import { forestDetail, type Forest, type TreeSpot } from "../three/treeKit";
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
+import { Tufts } from "../three/tufts";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
-import { createStructure } from "../three/structures";
+import { createFence, createStructure } from "../three/structures";
 import { isLineKind, orientedBox, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
-import type { AmenityItem, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem } from "../types";
+import type { AmenityItem, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
 import type { FlightFrames, FlyoverVideo, FrameInfo, RecordOptions } from "./flyoverVideo";
-import type { P, ViewCallbacks, ViewDoc, ViewInfo, ViewTool } from "./types";
+import type { LocationMark, P, ViewCallbacks, ViewDoc, ViewInfo, ViewTool } from "./types";
 
 CameraControls.install({ THREE });
 const { ACTION } = CameraControls;
 
 const DEG = Math.PI / 180;
-const SUN_INTENSITY = 2.4;
-const HEMI_INTENSITY = 0.9;
+// The light of ez-tree's demo (photographed leaves and bark read true under it): a strong sun, a
+// soft even sky, and Neutral tone mapping at twice the exposure
+const SUN_INTENSITY = 5;
+const HEMI_INTENSITY = 0.5;
+const EXPOSURE = 2;
 const CLICK_PX = 4;
 /** A finger moves a little in a tap (more than a mouse in a click). */
 const TOUCH_SLOP = 10;
@@ -78,6 +84,8 @@ const STYLE = `
 .dg-tee{pointer-events:auto;cursor:move;min-width:22px;height:22px;padding:0 5px;border-radius:999px;display:flex;align-items:center;justify-content:center;background:var(--c);color:var(--ink);font:800 12px/1 Oswald,Inter,system-ui,sans-serif;border:2px solid rgba(15,23,42,.85);box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .dg-basket .dg-shared{position:absolute;top:-15px;left:50%;transform:translateX(-50%);font:800 10px/1 Oswald,Inter,system-ui,sans-serif;font-style:normal;color:#fff;background:#0f172a;border-radius:6px;padding:2px 4px;white-space:nowrap}
 .dg-tee.alt{min-width:15px;height:15px;font-size:9px;padding:0 3px;opacity:.9}
+.dg-tee.off{min-width:11px;height:11px;font-size:0;padding:0;border-width:1.5px;opacity:.5}
+.dg-basket.off{opacity:.45;scale:.7}
 .dg-tee.sel,.dg-basket.sel,.dg-chip.sel{outline:3px solid ${SELECT};outline-offset:1px}
 .dg-basket{pointer-events:auto;cursor:move;width:20px;height:20px;border-radius:50%;background:#0f172a;border:2.5px solid var(--c);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .dg-basket::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--c)}
@@ -91,7 +99,19 @@ const STYLE = `
 .dg-area{pointer-events:none;font:700 11px Inter,system-ui,sans-serif;color:#fff;text-shadow:0 0 3px #000,0 0 2px #000;opacity:.9}
 .dg-issue{pointer-events:auto;cursor:help;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:900 12px/1 Inter,system-ui,sans-serif;color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.55)}
 .dg-measure{pointer-events:none;padding:1px 6px;border-radius:6px;background:#facc15;color:#1c1917;font:700 11px Inter,system-ui,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.dg-ptmenu{position:absolute;z-index:40;transform:translate(-50%,-100%);padding:9px 14px;border-radius:999px;background:#fafaf9;color:#b91c1c;font:700 14px/1 Inter,system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.45);white-space:nowrap;border:0;pointer-events:auto}
+.dg-ptmenu:disabled{color:#71717a}
 .dg-measure.total{background:#1c1917;color:#facc15}
+.dg-me{pointer-events:none;width:20px;height:20px;border-radius:50%;background:#0a84ff;border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.55);position:absolute}
+.dg-me::after{content:"";position:absolute;inset:-9px;border-radius:50%;background:rgba(10,132,255,.35);animation:dgme 2s ease-out infinite;z-index:-1}
+.dg-me.dim{background:#8e8e93}.dg-me.dim::after{display:none}
+.dg-me i{position:absolute;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;background:conic-gradient(from -28deg,rgba(10,132,255,.55),rgba(10,132,255,0) 56deg,rgba(10,132,255,0) 304deg,rgba(10,132,255,.55));-webkit-mask:radial-gradient(circle,#000 30%,transparent 72%);mask:radial-gradient(circle,#000 30%,transparent 72%);z-index:-2}
+.dg-me.dim i{display:none}
+@keyframes dgme{0%{transform:scale(.6);opacity:1}100%{transform:scale(1.6);opacity:0}}
+.dg-me-tag{pointer-events:none;padding:3px 8px;border-radius:999px;background:rgba(15,23,20,.82);color:#f8fafc;font:700 11.5px Inter,system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.45);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.dg-measure.live{background:rgba(28,25,23,.72);color:#fde68a;box-shadow:none}
+.dg-mpt{pointer-events:none;width:12px;height:12px;border-radius:50%;background:#facc15;border:2.5px solid #1c1917;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.dg-mpt.live{background:#fff;opacity:.85}
 .dg-h{position:absolute;left:0;top:0;pointer-events:auto;will-change:translate;box-sizing:border-box;touch-action:none}
 .dg-h[data-handle=corner],.dg-h[data-handle=dogleg]{width:14px;height:14px;border-radius:50%;background:#fff;border:2.5px solid #0891b2;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=dogleg]{border-color:#f59e0b}
@@ -99,6 +119,7 @@ const STYLE = `
 .dg-h[data-handle=walkout],.dg-h[data-handle=walkin]{width:13px;height:13px;border-radius:3px;background:#e2e8f0;border:2px dashed #475569;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=flykey]{width:20px;height:20px;border-radius:6px;background:#0284c7;border:2px solid #fff;color:#fff;font:800 11px/16px Inter,system-ui,sans-serif;text-align:center;cursor:grab;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .dg-h[data-handle=flykey]::after{content:attr(data-n)}
+.dg-h[data-handle=flyfoot]{width:12px;height:12px;border-radius:50%;background:#e0f2fe;border:2px solid #0284c7;cursor:move;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=flylook]{width:12px;height:12px;border-radius:50%;border:2.5px solid #38bdf8;background:rgba(15,23,42,.35);cursor:grab}
 .dg-h[data-handle=mid]{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.6);border:2px solid #0891b2;cursor:copy}
 .dg-h[data-handle=mid][data-kind=line]{border-color:#f59e0b}
@@ -172,7 +193,6 @@ export class CourseView {
   private shapesGroup = new THREE.Group();
   /** Other courses on the same ground: their holes, drawn faintly over this one's map. */
   private nearbyGroup = new THREE.Group();
-  private arcsGroup = new THREE.Group();
   private fx = new THREE.Group();
   private labelsLayer: HTMLDivElement;
   private handlesLayer: HTMLDivElement;
@@ -228,6 +248,8 @@ export class CourseView {
   // Tee view and flyover
   private povCam = new THREE.PerspectiveCamera(62, 16 / 9, 0.3, 30000);
   private povHole: string | null = null;
+  /** The tee the tee view stands on, when it isn't the layout's. */
+  private povTee: string | null = null;
   private povLook = { yaw: 0, pitch: 0 };
   /** A flight under way: `dur` s of path, played over `play` s (`at`: path time at a moment; see flightClock). */
   /** A flyover holds its first picture until the hole's detail and textures are in and a few
@@ -239,6 +261,10 @@ export class CourseView {
   private plotHole: string | null = null;
   /** Marking a stretch of OB along a line: the line, and where along it the stretch starts (0..1). */
   private obPick: { id: string; from: number | null; cut: boolean } | null = null;
+  /** While marking a stretch round a ring: how far round the pointer has gone from its start (and
+   * where it was last), which way the stretch goes; and the stretch shown so far. */
+  private obTravel = { sum: 0, last: 0 };
+  private obPreview: THREE.Object3D | null = null;
   /** The trees measured from the air that are cut down (cleared for play, or taken out), and those
    * kept standing where they would be (by index). */
   private lidarState: { stand: number[]; cut: number[]; kept: number[] } | null = null;
@@ -258,6 +284,8 @@ export class CourseView {
   private skyBox: Sky;
   /** Grass blades near the camera, in 3D (see three/grass). */
   readonly grass = new Grass();
+  /** Tufts of grass and wildflowers (ez-tree's demo's) among the blades. */
+  readonly tufts = new Tufts(this.grass);
   private grassInputs: unknown[] = [];
   /** The sky as an environment for water to reflect (made again when the sun moves). */
   private skyEnv: THREE.WebGLRenderTarget | null = null;
@@ -265,6 +293,7 @@ export class CourseView {
   private grassBuilt = 0;
   private grassTimer = 0;
   private lastSky = false;
+  private readonly haze = new THREE.FogExp2(0xffffff, 0);
   private grassTerrainRef: unknown = null;
   private grassPhoto: unknown = null;
   private grassSetting: GrassQuality | "auto" = "auto";
@@ -297,8 +326,8 @@ export class CourseView {
     this.maxRatio = Math.min(window.devicePixelRatio || 1, this.mobile ? 1.5 : 2);
     this.renderer.setPixelRatio(this.maxRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
+    this.renderer.toneMappingExposure = EXPOSURE;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
@@ -321,16 +350,16 @@ export class CourseView {
     container.appendChild(this.labelsLayer);
     container.appendChild(this.handlesLayer);
 
-    // A dusky backdrop behind the site when tilted, in the app's dark palette
+    // A dusky backdrop behind the site, the deep green of the woods (the app's palette)
     {
       const c = document.createElement("canvas");
       c.width = 2;
       c.height = 256;
       const g = c.getContext("2d")!;
       const grad = g.createLinearGradient(0, 0, 0, 256);
-      grad.addColorStop(0, "#101418");
-      grad.addColorStop(0.6, "#1d252b");
-      grad.addColorStop(1, "#2c3a36");
+      grad.addColorStop(0, "#0e1810");
+      grad.addColorStop(0.6, "#16261a");
+      grad.addColorStop(1, "#203524");
       g.fillStyle = grad;
       g.fillRect(0, 0, 2, 256);
       this.sky = new THREE.CanvasTexture(c);
@@ -391,11 +420,18 @@ export class CourseView {
     c.polarRotateSpeed = 0.7;
     c.dollyToCursor = true;
     c.addEventListener("controlend", () => this.snapNorth());
-    c.addEventListener("controlstart", () => { this.posePinned = false; });
+    c.addEventListener("controlstart", () => { this.posePinned = false; this.autoFit = null; this.onUserMove?.(); });
     c.addEventListener("rest", () => { this.posePinned = false; });
 
     this.ground = new Ground(this.renderer, () => this.invalidate(true));
-    this.scene.add(this.ground.group, this.shapesGroup, this.arcsGroup, this.itemsGroup, this.nearbyGroup, this.fx, this.skyBox, this.grass.group);
+    this.scene.add(this.ground.group, this.shapesGroup, this.itemsGroup, this.nearbyGroup, this.fx, this.skyBox, this.grass.group, this.tufts.group);
+    // (the scene and the items' group never move. A frame works out again only the woods' matrices
+    // (their trees near the camera change); each item's are set as it's placed)
+    this.scene.matrixAutoUpdate = false;
+    this.itemsGroup.matrixAutoUpdate = false;
+    this.itemsGroup.updateMatrixWorld = force => {
+      for (const c of this.itemsGroup.children) if (!c.userData.placed || force) c.updateMatrixWorld(force);
+    };
     {
       const gl = this.renderer.getContext();
       const info = gl.getExtension("WEBGL_debug_renderer_info");
@@ -503,6 +539,24 @@ export class CourseView {
     if (on === this.readOnly) return;
     this.readOnly = on;
     this.syncHandles();
+    if (this.doc) { this.syncShapes(); this.syncOverlays(); this.invalidate(); }
+  }
+
+  /** The stumps of cut-down trees everywhere (close enough to see), not only on the hole picked. */
+  private showStumps = false;
+  setShowStumps(on: boolean) {
+    if (on === this.showStumps) return;
+    this.showStumps = on;
+    this.invalidate();
+  }
+
+  /** The hole a thing is part of (its tee, its basket), for a map only looked at: only holes are
+   * picked there. */
+  private holeFor(id: string | null): string | null {
+    if (!id) return null;
+    if (this.hole(id)) return id;
+    const it = this.item(id);
+    return it && (it.type === "tee" || it.type === "basket") ? it.holeId ?? null : null;
   }
 
   setSelection(id: string | null) {
@@ -584,6 +638,29 @@ export class CourseView {
   /** Fit plan bounds in view, keeping the current rotation and tilt. */
   /** Pixels on the right covered by a panel: fitting keeps things clear of them. */
   rightInset = 0;
+  /** Pixels on the left covered by a panel (the holes column). */
+  leftInset = 0;
+  /** The fit the map was last put at, until it is moved by hand. */
+  private autoFit: (() => void) | null = null;
+  /** A panel over the map's left side shown or gone: the map slides over by half of it, so what
+   * was in the middle stays in the middle of what can be seen. */
+  setLeftInset(px: number) {
+    const delta = px - this.leftInset;
+    this.leftInset = px;
+    if (!delta || !this.fitted || this.size.height < 2) return;
+    // (still as fitted, untouched: fitted again, around the panel)
+    if (this.autoFit) return this.autoFit();
+    const worldPerPx = (2 * this.controls.distance * Math.tan((this.camera.fov * DEG) / 2)) / this.size.height;
+    const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+    right.y = 0;
+    if (right.lengthSq() < 1e-6) return;
+    right.normalize().multiplyScalar(-(delta / 2) * worldPerPx);
+    const t = this.controls.getTarget(new THREE.Vector3(), true).add(right);
+    void this.controls.moveTo(t.x, t.y, t.z, false);
+    this.controls.update(0);
+    this.camera.updateMatrixWorld();
+    this.invalidate();
+  }
   /** Pixels at the bottom and top covered by panels (a phone's bottom sheet; its top bar). */
   bottomInset = 0;
   topInset = 0;
@@ -604,26 +681,29 @@ export class CourseView {
   fitBounds(b: { minX: number; minY: number; maxX: number; maxY: number }, opts: { minSpan?: number; margin?: number; animate?: boolean } = {}) {
     const doc = this.doc;
     if (!doc) return;
+    this.autoFit = null;
     const margin = opts.margin ?? 1.2;
     const minSpan = opts.minSpan ?? 0;
     const w = Math.max(b.maxX - b.minX, minSpan, 1) * margin;
     const d = Math.max(b.maxY - b.minY, minSpan * 0.6, 1) * margin;
     const inset = clamp(this.rightInset, 0, this.size.width * 0.5);
+    const leftIn = clamp(this.leftInset, 0, this.size.width * 0.3);
     const covered = clamp(this.bottomInset, 0, this.size.height * 0.6) + clamp(this.topInset, 0, this.size.height * 0.3);
     const H = Math.max(1, this.size.height);
-    const aspect = (this.size.width - inset) / H;
+    const aspect = Math.max(1, this.size.width - inset - leftIn) / H;
     const t = Math.tan((this.camera.fov * DEG) / 2);
     const dist = clamp(Math.max(d / (2 * t), w / (2 * t * aspect)) * (H / Math.max(1, H - covered)), this.controls.minDistance, this.controls.maxDistance);
     let cx = (b.minX + b.maxX) / 2;
     let cy = (b.minY + b.maxY) / 2;
     const worldPerPx = (2 * dist * t) / H;
-    if (inset > 0) {
-      // Look a little right of the middle, so the middle lands in the visible part
+    if (inset !== leftIn) {
+      // Look a little off the middle, so the middle lands in the visible part
       const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
       right.y = 0;
       if (right.lengthSq() > 1e-6) right.normalize();
-      cx += right.x * (inset / 2) * worldPerPx;
-      cy += right.z * (inset / 2) * worldPerPx;
+      const off = (inset - leftIn) / 2;
+      cx += right.x * off * worldPerPx;
+      cy += right.z * off * worldPerPx;
     }
     // (And between the top and bottom panels)
     const shift = this.insetShift(dist);
@@ -644,6 +724,7 @@ export class CourseView {
     const doc = this.doc;
     if (!doc) return;
     this.fitBounds({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, { margin: 1, animate });
+    this.autoFit = () => this.fitSite(false);
   }
 
   /** Fit the holes (or the whole site when there are none). */
@@ -653,6 +734,7 @@ export class CourseView {
     const pts = doc.course.items.filter(i => i.type === "tee" || i.type === "basket") as P[];
     if (pts.length < 2) return this.fitSite(animate);
     this.fitBounds(boundsOf(pts), { margin: 1.25, minSpan: 300, animate });
+    this.autoFit = () => this.fitCourse(false);
   }
 
   /** Fit one hole (tee to basket, with its fairway). */
@@ -672,10 +754,10 @@ export class CourseView {
     if (!b) return;
     const box = this.screenBox(id);
     const m = 24;
-    const visibleW = this.size.width - rightInset;
+    const left = this.leftInset, visibleW = this.size.width - rightInset;
     const top = this.topInset, visibleH = this.size.height - this.bottomInset;
-    if (box && box.x >= m && box.y >= top + m && box.x + box.width <= visibleW - m && box.y + box.height <= visibleH - m) return;
-    if (box && (box.width > visibleW - 2 * m || box.height > visibleH - top - 2 * m)) {
+    if (box && box.x >= left + m && box.y >= top + m && box.x + box.width <= visibleW - m && box.y + box.height <= visibleH - m) return;
+    if (box && (box.width > visibleW - left - 2 * m || box.height > visibleH - top - 2 * m)) {
       this.fitBounds(b, { margin: 1.3 });
       return;
     }
@@ -771,6 +853,7 @@ export class CourseView {
     cancelAnimationFrame(this.raf);
     clearTimeout(this.grassTimer);
     this.grass.dispose();
+    this.tufts.dispose();
     this.skyEnv?.dispose();
     this.ro.disconnect();
     this.disposers.forEach(d => d());
@@ -787,10 +870,15 @@ export class CourseView {
 
   // ------------------------------------------------------------------ tee view and flyover
 
-  /** Look from a hole's tee down the hole (null: back to the map). */
-  setTeeView(holeId: string | null) {
+  /** Look from a hole's tee down the hole (null: back to the map); `teeId`: from that tee of it
+   * (another skill level's), not the one the layout plays. */
+  setTeeView(holeId: string | null, teeId: string | null = null) {
     this.fly = null;
-    if (holeId === this.povHole) return;
+    const tee = teeId && holeId ? this.doc?.course.items.find(i => i.id === teeId && i.type === "tee" && i.holeId === holeId) : null;
+    const nextTee = tee ? tee.id : null;
+    if (holeId === this.povHole && nextTee === this.povTee) return;
+    this.povTee = nextTee;
+    if (holeId === this.povHole) { this.povLook = { yaw: 0, pitch: 0 }; this.invalidate(); return; }
     this.povHole = holeId;
     this.povLook = { yaw: 0, pitch: 0 };
     this.detailReady = this.updateDetail().catch(() => {});
@@ -971,7 +1059,8 @@ export class CourseView {
     if (!doc || !this.povHole) return null;
     const s = doc.stats.find(x => x.holeId === this.povHole);
     if (!s || s.line.length < 2) return null;
-    const tee = s.line[0];
+    const own = this.povTee ? doc.course.items.find(i => i.id === this.povTee) : null;
+    const tee = own ? { x: own.x, y: own.y } : s.line[0];
     const next = s.line[1];
     const eye = new THREE.Vector3(tee.x, this.h(tee.x, tee.y) + EYE_HEIGHT_FT + 0.35, tee.y);
     const base = Math.atan2(next.y - tee.y, next.x - tee.x) + this.povLook.yaw;
@@ -1016,7 +1105,6 @@ export class CourseView {
     this.updateForests(cam.position);
     waterUniforms.uTime.value = this.clock.elapsedTime;
     waterUniforms.uWind.value = this.wind ? 1 : 0.25;
-    this.arcsGroup.visible = true;
     this.fx.visible = false;
     const hidden = this.fly ? this.hideForFlight() : [];
     this.ground.detailActive(true);
@@ -1062,8 +1150,7 @@ export class CourseView {
       // (whose it is: the flown hole's, or another's)
       const own = (holes: (string | undefined)[]) => holes.includes(holeId);
       let show = true;
-      if (kind === "arc") show = f.discFlight && (id === holeId || f.otherHoles);
-      else if (kind === "throw") show = f.playLine && (!!it && it.type === "tee" && (own([it.holeId]) || f.otherHoles));
+      if (kind === "throw") show = f.playLine && (!!it && it.type === "tee" && (own([it.holeId]) || f.otherHoles));
       else if (kind === "circle") show = f.circle && (!!it && it.type === "basket" && (own(basketHoles(it)) || f.otherHoles));
       else if (kind === "walk") show = f.walks;
       else if ((kind === "line" || kind === "area") && it && (it.type === "line" || it.type === "area")) {
@@ -1493,7 +1580,6 @@ export class CourseView {
     }
     this.camera.updateMatrixWorld();
     const tilted = this.controls.polarAngle > TILT_TOP;
-    this.arcsGroup.visible = tilted;
     this.ground.detailActive(dist < 250);
     // Tilted, the course is a place: sky, haze, land to the horizon and grass up close
     this.lastSky = false;
@@ -1559,8 +1645,11 @@ export class CourseView {
     // Thin haze over the site, thick toward the horizon: distance reads as distance
     // (thinner in a video: it reaches farther)
     const thin = this.videoDetail ? 0.5 : 1;
-    this.scene.fog = new THREE.FogExp2(haze.getHex(THREE.LinearSRGBColorSpace), (eyeLevel ? 0.8 / (span * 2.4) : 0.7 / (span * 3.2)) * thin);
-    (this.scene.fog as THREE.FogExp2).color.copy(haze);
+    // (one haze, its density and color set each picture: a new one would have every material
+    // worked out again, each frame)
+    this.haze.density = (eyeLevel ? 0.8 / (span * 2.4) : 0.7 / (span * 3.2)) * thin;
+    this.haze.color.copy(haze);
+    this.scene.fog = this.haze;
     this.scene.background = haze;
     return () => {
       this.scene.fog = prevFog;
@@ -1575,8 +1664,10 @@ export class CourseView {
     const doc = this.doc;
     const q = this.grassQuality();
     this.grass.setQuality(on && doc ? q : 0);
+    this.tufts.setQuality(on && doc ? q : 0);
     if (!doc || !on || !q) {
       this.grass.group.visible = false;
+      this.tufts.group.visible = false;
       return;
     }
     // What grows where: painted again when the course changed (at most a few times a second
@@ -1605,7 +1696,9 @@ export class CourseView {
     }
     const p = cam.position;
     const t = this.clock.elapsedTime;
-    this.grass.update(p, this.h(clamp(p.x, 0, doc.canvas.width), clamp(p.z, 0, doc.canvas.height)), t, this.wind && this.povHole ? 0.14 : 0.05);
+    const wind = this.wind && this.povHole ? 0.14 : 0.05;
+    this.grass.update(p, this.h(clamp(p.x, 0, doc.canvas.width), clamp(p.z, 0, doc.canvas.height)), t, wind);
+    this.tufts.update(p, t, wind, this.grass.group.visible);
   }
 
   /** What a stretch of water mirrors on its banks: woods close by (high and dark) or open grass. */
@@ -1730,7 +1823,7 @@ export class CourseView {
     const shadows = clamp(doc.sun?.shadows ?? 0.65, 0, 1);
     this.sun.intensity = SUN_INTENSITY * strength;
     this.hemi.intensity = HEMI_INTENSITY * (0.45 + 0.55 * Math.min(1, strength * 1.2)) * (1.55 - 0.85 * shadows);
-    this.renderer.toneMappingExposure = 1.05 * Math.pow(2, (doc.sun?.light ?? 0) * 1.6);
+    this.renderer.toneMappingExposure = EXPOSURE * Math.pow(2, (doc.sun?.light ?? 0) * 1.6);
     // The sky's sun, and its haze: blue-grey at midday, warmer when the sun is low
     {
       const sm = this.skyBox.material as THREE.ShaderMaterial;
@@ -1859,16 +1952,24 @@ export class CourseView {
     return drapedPoints(pts, (x, y) => this.h(x, y), Math.max(4, grid / 2), lift, closed);
   }
 
+  /** The tee colors and pins only the other layouts play (faded while this one is worked on). */
+  private otherLayouts() {
+    const course = this.doc!.course;
+    const on = course.layouts.find(l => l.id === course.activeLayout) ?? course.layouts[0];
+    const rest = course.layouts.filter(l => l !== on);
+    return { tees: new Set(rest.map(l => l.tee).filter(t => t !== on?.tee)), pins: new Set(rest.map(l => l.pin).filter(p => p !== on?.pin)) };
+  }
+
   // ------------------------------------------------------------------ scene sync: 3D objects
 
   private signature(item: CourseItem) {
     const doc = this.doc!;
     switch (item.type) {
       case "tee": return JSON.stringify([item.level, item.padLength, item.padWidth, item.surface, this.num(item.holeId)]);
-      case "basket": return doc.course.style.basket;
+      case "basket": return JSON.stringify([doc.course.style.basketBand ?? BASKET_BAND, this.num(item.holeId)]);
       case "mando": return item.side;
       case "dropzone": return "dz";
-      case "tree": return getTreeSignature(item as TreeItem) + item.id;
+      case "tree": return getTreeSignature(item as TreeItem) + item.id + (this.doc ? `|${this.doc.course.style.trees}|${this.doc.course.style.landscape ?? ""}|${this.doc.course.style.treeMix?.join() ?? ""}` : "");
       case "amenity": return item.kind;
       default: return "";
     }
@@ -1878,10 +1979,10 @@ export class CourseView {
     const doc = this.doc!;
     switch (item.type) {
       case "tee": return createTeePad(item, this.num(item.holeId));
-      case "basket": return createBasket(doc.course.style.basket);
+      case "basket": return createBasket(doc.course.style.basketBand ?? BASKET_BAND, this.num(item.holeId));
       case "mando": return createMando(item.side);
       case "dropzone": return createDropZone();
-      case "tree": return create3dTree(item);
+      case "tree": { const st = doc.course.style; return create3dTree(item, { color: st.trees, mix: treeMixOf(st) }); }
       case "amenity": return createAmenity(item.kind);
       default: return null;
     }
@@ -1935,6 +2036,10 @@ export class CourseView {
         this.shadowsDirty = true;
       }
       this.place(entry.obj, item);
+      // (an item stays where it's placed: its matrices worked out here, not again every frame for
+      // the thousands of parts the trees, tees and baskets are made of)
+      entry.obj.userData.placed = true;
+      entry.obj.updateMatrixWorld(true);
     }
     for (const [id, entry] of this.objects) {
       if (seen.has(id)) continue;
@@ -1983,6 +2088,14 @@ export class CourseView {
     // paths and roads painted already; the rules (OB, hazards), water and what stands up stay
     const painted = !!this.ground.paintedTexture;
     this.shapesPainted = painted;
+    // A map only looked at (shared to view, the public page): what stands there, rendered, and
+    // the rules (OB, hazards, mandos); not the editor's outlines and dashes
+    const clean = this.readOnly;
+    // Paths and roads stack where they cross as the style says (bottom first): each tier drawn
+    // after the ones under it
+    const tiers: PathTier[] = st.pathOrder?.length === 4 ? st.pathOrder : ["dirt", "gravel", "walkway", "road"];
+    const tierOf = (kind: string, surface?: string): PathTier => (kind === "road" ? "road" : surface === "paved" ? "walkway" : surface === "gravel" || surface === "woodchips" ? "gravel" : "dirt");
+    const tierOrder = (t: PathTier) => 2.05 + tiers.indexOf(t) * 0.15;
 
     // Fairways (under everything else): one from each tee of a hole, and where fairways meet (a
     // hole's tees, holes sharing a basket) they make one: drawn once where they overlap, their
@@ -2037,7 +2150,11 @@ export class CourseView {
         else if (it.type === "line" && !play && it.kind !== "ob" && it.kind !== "fence") lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 + 3 });
         else if (it.type === "tee") discs.push({ p: it, r: Math.max(12, it.padLength) });
         else if (it.type === "basket") discs.push({ p: it, r: CIRCLE_ONE_FT * 0.6 });
-        else if (it.type === "structure" && !play) lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 6 });
+        else if (it.type === "structure" && !play) {
+          // (a building, shelter or deck: none inside it, nor right against its walls)
+          if (STRUCTURE_KINDS[it.kind].shape === "outline") { polys.push(it.points); lines.push({ pts: [...it.points, it.points[0]], half: 4 }); }
+          else lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 6 });
+        }
       }
       type Box = { minX: number; minY: number; maxX: number; maxY: number };
       const shapes = polys.filter(pp => pp.length >= 3).map(pts => ({ pts, closed: [...pts, pts[0]], box: boundsOf(pts) }));
@@ -2081,7 +2198,11 @@ export class CourseView {
         // (and woods given drawn trees or none: no measured ones there)
         if (it.type === "area" && (["water", "parking", "building"].includes(it.kind) || (it.kind === "woods" && (it.trees === "drawn" || it.trees === "none")))) polys.push(this.shapeOf(it).pts);
         else if (it.type === "line" && ["road", "path", "walk", "stream"].includes(it.kind)) lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 });
-        else if (it.type === "structure") lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 2 });
+        else if (it.type === "structure") {
+          // (a building's outline: none inside it, nor with its trunk against the walls)
+          if (STRUCTURE_KINDS[it.kind].shape === "outline") { polys.push(it.points); lines.push({ pts: [...it.points, it.points[0]], half: 3 }); }
+          else lines.push({ pts: it.points, half: (it.width ?? 6) / 2 + 2 });
+        }
       }
       const shapes = polys.filter(pp => pp.length >= 3).map(pts => ({ pts, box: boundsOf(pts) }));
       const paths = lines.filter(l => l.pts.length > 1).map(l => ({ ...l, box: boundsOf(l.pts) }));
@@ -2128,24 +2249,28 @@ export class CourseView {
         return { stand, cut, kept: clearing ? stand.filter(k => keptSet.has(k) && forPlay.test({ x: lidar.trees[k][0], y: lidar.trees[k][1] }, lidar.trees[k][3] * 0.3)) : [] };
       });
       this.lidarState = state;
-      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, state.cut, hv, st.trees, st.landscape]), () => {
-        const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, landscapeOf(st).mix);
+      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, state.cut, hv, st.trees, st.landscape, st.treeMix, st.conifers]), () => {
+        const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, treeMixOf(st));
         this.shadowsDirty = true;
         return woods;
       }, this.itemsGroup, true);
     }
-    // Areas: fill plus outline
+    // Areas: fill plus outline (and a red OB edge, all round or along its stretches)
+    const obEdge = (a: AreaItem, g: THREE.Group) => {
+      for (const piece of areaObEdges({ ...a, straight: true })) g.add(this.fatLine(this.drapeLine(piece, LIFT + 0.05), color("ob")!, 3, { order: 5 }));
+    };
     const areas = (course.items.filter(i => i.type === "area") as AreaItem[]).map(a => ({ ...a, points: this.shapeOf(a).pts })).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
     areas.forEach((a, order) => {
       const meta = AREA_KINDS[a.kind];
       const c = color(a.kind) ?? meta.color;
-      put(`area:${a.id}`, JSON.stringify([a.points, a.kind, hv, c, photo, order, a.ob, a.kind === "water" ? this.waterShore(a.points) : 0, painted]), () => {
+      put(`area:${a.id}`, JSON.stringify([a.points, a.kind, hv, c, photo, order, a.ob, a.obStretches, a.kind === "water" ? this.waterShore(a.points) : 0, painted, clean]), () => {
         const g = new THREE.Group();
         const fill = photo ? meta.fill : Math.min(0.9, meta.fill + 0.35);
         const rule = a.kind === "ob" || a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo";
-        if (painted && a.kind !== "water") {
+        // (on the painted ground, or looked at only: no translucent fills, only the rules' edges)
+        if ((painted || clean) && a.kind !== "water") {
           if (rule) g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, 3, { order: 4, dashed: a.kind === "ob" ? undefined : 6 }));
-          if (a.ob === true && a.kind !== "ob") g.add(this.fatLine(this.drapeLine(a.points, LIFT + 0.05, true), color("ob")!, 3, { order: 5 }));
+          if (a.ob === true && a.kind !== "ob") obEdge(a, g);
           return g;
         }
         if (a.kind === "water") {
@@ -2175,7 +2300,7 @@ export class CourseView {
           pond.renderOrder = 2;
           pond.receiveShadow = true;
           g.add(pond);
-          if (a.ob === true) g.add(this.fatLine(this.drapeLine(a.points, LIFT + 0.05, true), color("ob")!, 3, { order: 5 }));
+          if (a.ob === true) obEdge(a, g);
           return g;
         }
         // (A woods' floor goes under the fairways and paths through it, and under its ponds)
@@ -2184,13 +2309,13 @@ export class CourseView {
           drapedPolygon(a.points, (x, y) => this.h(x, y), doc.gridSize, floor ? 0.08 : 0.15 + order * 0.01),
           new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: floor ? Math.min(fill, 0.45) : fill, depthWrite: false, polygonOffset: true, polygonOffsetFactor: floor ? -1 : -4, polygonOffsetUnits: floor ? -2 : -8 })
         );
-        mesh.renderOrder = floor ? 0.5 : 2 + order * 0.001;
+        mesh.renderOrder = floor ? 0.5 : a.kind === "parking" ? tierOrder("road") : 2 + order * 0.001;
         mesh.receiveShadow = true;
         g.add(mesh);
         const w = a.kind === "ob" || a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo" ? 3 : 1.5;
-        g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, w, { order: 4, dashed: a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo" ? 6 : undefined }));
+        if (w === 3 || !clean) g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, w, { order: 4, dashed: a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo" ? 6 : undefined }));
         // Marked OB (water, say): its red OB edge
-        if (a.ob === true && a.kind !== "ob") g.add(this.fatLine(this.drapeLine(a.points, LIFT + 0.05, true), color("ob")!, 3, { order: 5 }));
+        if (a.ob === true && a.kind !== "ob") obEdge(a, g);
         return g;
       });
       // Woods: trees standing in it (shadows and all)
@@ -2198,14 +2323,35 @@ export class CourseView {
       // between the measured ones as thickly as it asks; none when it says so)
       if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn")) {
         const here = clearings.near(boundsOf(a.points));
-        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, here.key, cutKey]), () => {
-          const land = landscapeOf(st);
+        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, cutKey, a.pines, a.bushes, a.density, a.heights]), () => {
           this.plantings++;
-          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, (p, r) => here.test(p, r) || cutAt(p));
+          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), (p, r) => here.test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.2, a.density ?? 1)), { pines: a.pines, bushes: a.bushes, heights: a.heights });
           woods.traverse(o => { o.userData.itemId = a.id; });
           this.shadowsDirty = true;
           return woods;
         }, this.itemsGroup, true);
+      }
+      // Underbrush beneath a wood (measured or drawn): its own bushes and young trees, kept off
+      // the fairways, paths and water, and off the spots cut by hand
+      if (a.kind === "woods" && a.trees !== "none" && (a.underbrush || a.brush?.some(b => b.level !== "none"))) {
+        const here = clearings.near(boundsOf(a.points));
+        const sections = (a.brush ?? []).filter(b => b.points.length >= 3);
+        const inSection = (p: P) => sections.some(b => pointInPolygon(p, b.points));
+        const edge = Math.min(1, Math.max(0, a.brushEdge ?? 0.6));
+        // (`over`: the sections drawn after this one, which have their say where they overlap it)
+        const plant = (key: string, outline: P[], level: "light" | "medium" | "heavy", kind: BrushKind, outside: boolean, over: P[][] = []) =>
+          put(key, JSON.stringify([outline, level, kind, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, cutKey, outside ? sections.map(b => b.points) : over, edge, a.points]), () => {
+            this.plantings++;
+            // (the wood's own level stays out of its sections; a section keeps to the wood)
+            const keepOut = (p: P, r: number) => here.test(p, r) || cutAt(p) || (outside ? inSection(p) : !pointInPolygon(p, a.points) || over.some(o => pointInPolygon(p, o)));
+            const brush = createUnderbrush(outline, (x, y) => this.h(x, y), st.trees, treeMixOf(st), keepOut, level, edge, a.points, kind);
+            brush.traverse(o => { o.userData.itemId = a.id; });
+            this.shadowsDirty = true;
+            return brush;
+          }, this.itemsGroup, true);
+        const kind = a.brushKind ?? "mixed";
+        if (a.underbrush) plant(`woods:${a.id}:under`, a.points, a.underbrush, kind, true);
+        sections.forEach((b, i) => { if (b.level !== "none") plant(`woods:${a.id}:under:${i}`, b.points, b.level, b.kind ?? kind, false, sections.slice(i + 1).map(s => s.points)); });
       }
       // Custom: the measured trees stand as usual, and each patch drawn inside is filled in with
       // drawn trees as thickly as it says, never under a measured crown; outlined while picked
@@ -2214,13 +2360,12 @@ export class CourseView {
         a.patches.forEach((patch, i) => {
           const here = clearings.near(boundsOf(patch.points));
           const fill = Math.min(1, Math.max(0.1, patch.fill));
-          put(`woods:${a.id}:patch:${i}`, JSON.stringify([patch.points, fill, hv, st.trees, st.landscape, here.key, this.lidarKey, cutKey]), () => {
-            const land = landscapeOf(st);
+          put(`woods:${a.id}:patch:${i}`, JSON.stringify([patch.points, fill, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, this.lidarKey, cutKey, a.pines, a.bushes, a.heights]), () => {
             this.plantings++;
             const box = boundsOf(patch.points);
             const near = standing.map(k => trees[k]).filter(t => t && t[0] >= box.minX - 40 && t[0] <= box.maxX + 40 && t[1] >= box.minY - 40 && t[1] <= box.maxY + 40);
             const keepOut = (p: P, reach: number) => here.test(p, reach) || cutAt(p) || near.some(t => Math.hypot(t[0] - p.x, t[1] - p.y) < t[3] * 0.8 + 4);
-            const woods = createWoods(patch.points, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, keepOut, 22 / Math.sqrt(fill));
+            const woods = createWoods(patch.points, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), keepOut, 22 / Math.sqrt(fill), { pines: a.pines, bushes: a.bushes, heights: a.heights });
             woods.traverse(o => { o.userData.itemId = a.id; });
             this.shadowsDirty = true;
             return woods;
@@ -2236,22 +2381,30 @@ export class CourseView {
       put(`flykeys:${flyHole.id}`, JSON.stringify([keys, hv, course.flyover, flyHole.flyover]), () => {
         const g = new THREE.Group();
         const f = keyFlight(keys, flyoverOf(course, flyHole), (x, y) => this.h(x, y));
-        if (f) g.add(this.fatLine(this.drapeLine(f.cam.map(c => ({ x: c.x, y: c.y })), 0.6), "#38bdf8", 2.5, { order: 8, dashed: 8 }));
-        for (const k of keys) g.add(this.fatLine(this.drapeLine([{ x: k.x, y: k.y }, { x: k.lookX, y: k.lookY }], 0.6), "#38bdf8", 1.5, { opacity: 0.7, order: 8 }));
+        // (the flight where it flies, at its own heights; its shadow on the ground; and each
+        // keyframe's camera on a stem from the ground, looking where it looks)
+        if (f) {
+          g.add(this.fatLine(f.cam.map(c => new THREE.Vector3(c.x, c.z, c.y)), "#38bdf8", 3, { order: 9 }));
+          g.add(this.fatLine(this.drapeLine(f.cam.map(c => ({ x: c.x, y: c.y })), 0.6), "#38bdf8", 1.5, { order: 8, dashed: 8, opacity: 0.55 }));
+        }
+        for (const k of keys) {
+          const ground = this.h(k.x, k.y), air = new THREE.Vector3(k.x, ground + k.alt, k.y);
+          g.add(this.fatLine([new THREE.Vector3(k.x, ground + 0.3, k.y), air], "#e0f2fe", 1.5, { opacity: 0.85, order: 9, dashed: 4 }));
+          g.add(this.fatLine([air, new THREE.Vector3(k.lookX, this.h(k.lookX, k.lookY) + 3, k.lookY)], "#38bdf8", 1.2, { opacity: 0.6, order: 8 }));
+        }
         return g;
       });
     }
     // The painted map's own woods: trees standing on it
     const pw = painted && !measured ? this.paintedWoods : null;
     if (pw) {
-      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, clearings.key, cutKey]), () => {
-        const land = landscapeOf(st);
+      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, st.treeMix, st.conifers, clearings.key, cutKey]), () => {
         const inside = (p: P) => {
           const c = Math.floor((p.x - pw.x0) / pw.ftPerCell), r = Math.floor((p.y - pw.y0) / pw.ftPerCell);
           return c >= 0 && r >= 0 && c < pw.cols && r < pw.rows && pw.data[r * pw.cols + c] === 1;
         };
         // (as thick as the painting's tree cover)
-        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, land.conifers, land.mix, (p, r) => clearings.test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.15, pw.cover)));
+        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), (p, r) => clearings.test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.15, pw.cover)));
         this.shadowsDirty = true;
         return woods;
       }, this.itemsGroup, true);
@@ -2267,9 +2420,9 @@ export class CourseView {
       // Marked OB: along all of it or its stretches; OB "and beyond" from its edge on the holes' side
       const obParts = l.ob === true && l.kind !== "ob" && l.points.length >= 2 ? obRanges(l).map(([a, b]) => {
         const piece = subPath(this.shapeOf(l).pts, a, b);
-        return { a, b, piece, sides: l.obBeyond ? obSides(piece, doc.stats.filter(st => st.complete && obFor(course, l, st.holeId)).map(st => st.line), 300, !obPicked(course, l).length) : null };
+        return { a, b, piece, sides: l.obBeyond ? beyondSides(l, piece, doc.stats.filter(st => st.complete && obFor(course, l, st.holeId)).map(st => st.line), !obPicked(course, l).length) : null };
       }).filter(o => o.piece.length >= 2) : [];
-      put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, l.widths, hv, c, l.ob, l.kind === "stream" ? this.waterShore(l.points) : 0, obParts.map(o => [o.a, o.b, o.sides])]), () => {
+      put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, l.widths, hv, c, l.ob, l.obToward, l.kind === "stream" ? this.waterShore(l.points) : 0, obParts.map(o => [o.a, o.b, o.sides]), st.pathOrder, l.fenceStyle, l.fenceHeight]), () => {
         const g = new THREE.Group();
         const pts = this.shapeOf(l).pts;
         // (wider or narrower along the way: a creek that opens out)
@@ -2293,15 +2446,18 @@ export class CourseView {
         if (width > 0 && l.points.length >= 2) {
           const ribbon = new THREE.Mesh(
             drapedRibbon(pts, along, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.18),
-            l.kind === "stream" ? waterMaterial(c, ...this.waterShore(l.points)) : new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
+            l.kind === "stream" ? waterMaterial(c, ...this.waterShore(l.points)) : new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 1, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
           );
           // (walks to the next hole over every other path)
-          ribbon.renderOrder = l.kind === "walk" ? 2.6 : 2;
+          // (a walk to the next hole over the paths of its own kind it crosses)
+          ribbon.renderOrder = l.kind === "stream" ? 2 : tierOrder(tierOf(l.kind, l.surface)) + (l.kind === "walk" ? 0.07 : 0);
           ribbon.receiveShadow = true;
           g.add(ribbon);
         } else {
           g.add(this.fatLine(this.drapeLine(pts, l.kind === "walk" ? LIFT + 0.15 : LIFT), c, l.kind === "ob" ? 3.5 : 2.5, { order: l.kind === "walk" ? 6 : 5, dashed: l.kind === "walk" ? 5 : l.kind === "fence" ? 2 : undefined }));
         }
+        // (a fence stands up along its line: posts and rails, boards, or chain link)
+        if (l.kind === "fence") { const fence = createFence(pts, (x, y) => this.h(x, y), l.fenceHeight ?? 4, l.fenceStyle ?? "rail"); this.shadowsDirty = true; g.add(fence); }
         // (a walk with a width: its dashes along the middle too)
         if (l.kind === "walk" && width > 0) g.add(this.fatLine(this.drapeLine(pts, LIFT + 0.15), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 6 }));
         return g;
@@ -2320,6 +2476,7 @@ export class CourseView {
     }
     // Throw lines, flight arcs and putting circles
     const tees = new Map(doc.stats.map(s => [s.holeId, s]));
+    const off = this.otherLayouts();
     for (const hole of course.holes) {
       const s = tees.get(hole.id);
       const sel = this.selectedId === hole.id || doc.activeHoleId === hole.id;
@@ -2328,37 +2485,20 @@ export class CourseView {
         const basket = basketFor(course, hole.id, doc.course.layouts.find(l => l.id === course.activeLayout)?.pin);
         if (!basket) continue;
         const main = s?.teeId === tee.id;
+        // (another layout's tee: its line only while its hole is picked)
+        const faded = !main && off.tees.has(tee.level);
         const line = smoothPath(throwLine(hole, tee, basket), 12);
-        put(`throw:${tee.id}`, JSON.stringify([line, hv, main, sel]), () => {
+        put(`throw:${tee.id}`, JSON.stringify([line, hv, main, sel, faded, clean && this.selectedId === hole.id]), () => {
           const g = new THREE.Group();
-          if (!st.throwLines && !sel) return g;
+          if (clean ? this.selectedId !== hole.id : (!st.throwLines || faded) && !sel) return g;
           g.add(this.fatLine(this.drapeLine(line, LIFT + 0.1), sel ? SELECT : main ? "#ffffff" : TEE_LEVELS[tee.level].color, sel ? 3.5 : main ? 2.5 : 1.5, { dashed: main ? undefined : 7, opacity: main ? 0.95 : 0.75, order: 6 }));
           return g;
         });
-        if (main && line.length >= 2) {
-          put(`arc:${hole.id}`, JSON.stringify([line, hv, st.discFlight !== false]), () => {
-            if (st.discFlight === false) return new THREE.Group();
-            // The disc's flight: up from the tee and down to the basket, about 15% of the length high at most
-            const len = pathLength(line);
-            const pts: THREE.Vector3[] = [];
-            const n = 48;
-            for (let i = 0; i <= n; i++) {
-              const t = i / n;
-              const p = pointAlong(line, t * len).point;
-              const peak = Math.min(60, len * 0.12);
-              const lift = 5 + Math.sin(Math.PI * Math.pow(t, 0.8)) * peak - t * 2.5;
-              pts.push(new THREE.Vector3(p.x, this.h(p.x, p.y) + lift, p.y));
-            }
-            const g = new THREE.Group();
-            g.add(this.fatLine(pts, "#fde68a", 2, { opacity: 0.85, dashed: 4, order: 7 }));
-            return g;
-          }, this.arcsGroup);
-        }
       }
       for (const b of holeBaskets(course, hole.id)) {
-        put(`circle:${b.id}`, JSON.stringify([b.x, b.y, hv, st.circle]), () => {
+        put(`circle:${b.id}`, JSON.stringify([b.x, b.y, hv, st.circle, clean]), () => {
           const g = new THREE.Group();
-          if (!st.circle) return g;
+          if (!st.circle || clean) return g;
           const ring: P[] = [];
           for (let i = 0; i < 64; i++) ring.push({ x: b.x + Math.cos((i / 64) * Math.PI * 2) * CIRCLE_ONE_FT, y: b.y + Math.sin((i / 64) * Math.PI * 2) * CIRCLE_ONE_FT });
           g.add(this.fatLine(this.drapeLine(ring, 0.3, true), "#ffffff", 1.2, { opacity: 0.55, dashed: 3, order: 3 }));
@@ -2372,19 +2512,20 @@ export class CourseView {
       for (const { from, to, a } of autoWalks(doc.course.items, doc.stats, course.holes)) {
         const hole = course.holes.find(h => h.id === a.holeId);
         const wide = hole?.walkWidth ?? st.walkWidth, surface = hole?.walkSurface;
-        put(`walk:${a.holeId}`, JSON.stringify([from, to, hv, wide, surface, painted, st.path]), () => {
+        put(`walk:${a.holeId}`, JSON.stringify([from, to, hv, wide, surface, painted, st.path, clean]), () => {
           const g = new THREE.Group();
           if (dist(from, to) < 10) return g;
-          if (wide && !painted) {
+          // (a path on the ground, as wide as walks are set, in its surface's color; on the painted
+          // ground the painting has it)
+          if (!painted) {
             const mesh = new THREE.Mesh(
-              drapedRibbon([from, to], wide, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.17),
+              drapedRibbon([from, to], wide ?? 6, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.17),
               new THREE.MeshLambertMaterial({ color: surface && surface !== "dirt" ? PATH_SURFACES[surface].color : st.path, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
             );
-            // (walks to the next hole over every other path)
-            mesh.renderOrder = 2.6;
+            // (walks to the next hole over the paths of their own kind they cross, under the kinds above)
+            mesh.renderOrder = tierOrder(tierOf("walk", surface)) + 0.07;
             g.add(mesh);
           }
-          g.add(this.fatLine(this.drapeLine([from, to], LIFT + 0.15), "#e2e8f0", 1.6, { dashed: 2.5, opacity: 0.85, order: 6 }));
           return g;
         });
       }
@@ -2499,7 +2640,14 @@ export class CourseView {
       });
       const rings = w ? [[...edge(w), ...edge(-w).reverse()]] : [pts];
       for (const r of rings) g.add(this.fatLine(this.drapeLine(r, LIFT + 0.3, true), color, 3, { opacity, order: 9, depthTest: false }));
-    } else if (item.type === "area") g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2, true), color, 3.5, { opacity, order: 9 }));
+    } else if (item.type === "area") {
+      g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2, true), color, 3.5, { opacity, order: 9 }));
+      // (a wood's underbrush sections and tree patches, while it's the one picked)
+      if (id === this.selectedId && item.kind === "woods") {
+        for (const b of item.brush ?? []) if (b.points.length >= 3) g.add(this.fatLine(this.drapeLine(b.points, LIFT + 0.25, true), BRUSH_SECTION, 3, { opacity, order: 9, dashed: 6, depthTest: false }));
+        for (const p of item.patches ?? []) if (p.points.length >= 3) g.add(this.fatLine(this.drapeLine(p.points, LIFT + 0.25, true), TREE_PATCH, 3, { opacity, order: 9, dashed: 6, depthTest: false }));
+      }
+    }
     else if (item.type === "line") g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2), color, 5, { opacity: opacity * 0.6, order: 9 }));
     else {
       const r = item.type === "tree" ? item.radius * (item.width ?? 1) * 1.05 : item.type === "tee" ? item.padLength * 0.62 : item.type === "basket" ? 3 : 3.5;
@@ -2550,22 +2698,29 @@ export class CourseView {
     const at = (p: P, lift = 0) => new THREE.Vector3(p.x, this.h(p.x, p.y) + lift, p.y);
     const mainTees = new Set(doc.stats.map(s => s.teeId));
     const mainBaskets = new Set(doc.stats.map(s => s.basketId));
+    const off = this.otherLayouts();
     const picked = new Set(this.group);
+    const clean = this.readOnly;
     for (const item of course.items) {
       const sel = item.id === this.selectedId || picked.has(item.id);
+      if (clean && (item.type === "tee" || item.type === "basket") && !(item.type === "tee" ? mainTees : mainBaskets).has(item.id)) continue;
+      if (clean && (item.type === "mando" || item.type === "dropzone" || item.type === "amenity")) continue;
       if (item.type === "tee") {
         const t = item as TeeItem;
         const lvl = TEE_LEVELS[t.level];
         const n = this.num(t.holeId);
         const main = mainTees.has(t.id);
-        put(`tee:${t.id}`, `${n}|${t.level}|${sel}|${main}`, main ? 0 : 2, () => {
+        // (another layout's tee: small and faint while this one is worked on)
+        const faded = !main && !sel && off.tees.has(t.level);
+        put(`tee:${t.id}`, `${n}|${t.level}|${sel}|${main}|${faded}|${clean}`, main ? 0 : 2, () => {
           const el = document.createElement("div");
-          el.className = `dg-tee${main ? "" : " alt"}${sel ? " sel" : ""}`;
+          el.className = `dg-tee${main ? "" : " alt"}${faded ? " off" : ""}${sel ? " sel" : ""}`;
           el.dataset.itemId = t.id;
           el.setAttribute("data-testid", "tee-badge");
           el.style.setProperty("--c", lvl.color);
           el.style.setProperty("--ink", lvl.ink);
-          el.title = `Hole ${n} · ${lvl.label} tee: drag to move`;
+          el.title = clean ? `Hole ${n}` : `Hole ${n} · ${lvl.label} tee: drag to move`;
+          if (clean) el.style.cursor = "pointer";
           el.textContent = String(n);
           return el;
         }, at(t, 1), 0);
@@ -2576,14 +2731,16 @@ export class CourseView {
         const shared = !!b.alsoHoles?.length;
         const multi = holeBaskets(course, b.holeId).length > 1;
         const main = mainBaskets.has(b.id);
-        put(`basket:${b.id}`, `${n}|${b.position}|${multi}|${sel}|${main}|${course.style.basket}`, main ? 1 : 3, () => {
+        const faded = !main && !sel && off.pins.has(b.position);
+        put(`basket:${b.id}`, `${n}|${b.position}|${multi}|${sel}|${main}|${faded}|${course.style.basket}|${clean}`, main ? 1 : 3, () => {
           const el = document.createElement("div");
-          el.className = `dg-basket${sel ? " sel" : ""}`;
+          el.className = `dg-basket${faded ? " off" : ""}${sel ? " sel" : ""}`;
           el.dataset.itemId = b.id;
           el.setAttribute("data-testid", "basket-badge");
           el.style.setProperty("--c", course.style.basket);
           el.style.opacity = main ? "1" : "0.75";
-          el.title = `Hole ${n} basket${multi ? ` (pin ${b.position})` : ""}: drag to move`;
+          el.title = clean ? `Hole ${n}` : `Hole ${n} basket${multi ? ` (pin ${b.position})` : ""}: drag to move`;
+          if (clean) el.style.cursor = "pointer";
           if (multi) {
             const tag = document.createElement("b");
             tag.textContent = b.position;
@@ -2614,10 +2771,11 @@ export class CourseView {
         }, at(item, 3), isM ? 0 : -10, 0);
       } else if (item.type === "label") {
         const l = item as LabelItem;
-        put(`txt:${l.id}`, `${l.text}|${l.color}|${l.fontSize}|${sel}`, 2, () => {
+        put(`txt:${l.id}`, `${l.text}|${l.color}|${l.fontSize}|${sel}|${clean}`, 2, () => {
           const el = document.createElement("div");
           el.className = "dg-text";
-          el.dataset.itemId = l.id;
+          if (clean) el.style.pointerEvents = "none";
+          else el.dataset.itemId = l.id;
           el.style.color = l.color;
           el.style.fontSize = `${clamp(l.fontSize, 9, 40)}px`;
           if (sel) el.style.outline = `2px solid ${SELECT}`;
@@ -2633,13 +2791,15 @@ export class CourseView {
         }, at(item, 0.5), 0, 0);
       }
     }
-    // Distance chips on each throw line
+    // Distance chips on each throw line (on a map looked at: the hole picked only)
     for (const s of doc.stats) {
-      if (!s.complete) continue;
+      if (!s.complete || (clean && s.holeId !== this.selectedId)) continue;
       // Halfway, or nearby where no mando or drop zone sits (nor, on the selected hole, the dot
       // halfway along each leg that bends it)
       const marks: { p: P; r: number }[] = course.items.filter(i => i.type === "mando" || i.type === "dropzone").map(p => ({ p, r: 28 }));
-      if (s.holeId === this.selectedId) for (let i = 1; i < s.line.length; i++) marks.push({ p: { x: (s.line[i - 1].x + s.line[i].x) / 2, y: (s.line[i - 1].y + s.line[i].y) / 2 }, r: Math.max(28, s.length * 0.1) });
+      // (a dot's clearance at least the chip's half width on screen, zoomed out too)
+      const chipR = (60 * 2 * this.controls.distance * Math.tan((this.camera.fov * DEG) / 2)) / Math.max(1, this.size.height);
+      if (s.holeId === this.selectedId) for (let i = 1; i < s.line.length; i++) marks.push({ p: { x: (s.line[i - 1].x + s.line[i].x) / 2, y: (s.line[i - 1].y + s.line[i].y) / 2 }, r: Math.max(28, s.length * 0.1, chipR) });
       const mid = [0.5, 0.35, 0.65, 0.25, 0.75].map(f => pointAlong(s.line, s.length * f).point).find(q => marks.every(m => dist(m.p, q) > m.r)) ?? pointAlong(s.line, s.length / 2).point;
       const text = `${fmtDist(s.length, course.units)}`;
       const extra = `P${s.par}${Math.abs(s.elevationChange) >= 3 ? ` · ${fmtElev(s.elevationChange, course.units)}` : ""}`;
@@ -2655,7 +2815,7 @@ export class CourseView {
       }, at(mid, 1), 0, 110);
     }
     // Walks leaving a basket that holes share: which hole each goes to
-    if (course.style.nextTee) {
+    if (course.style.nextTee && !clean) {
       for (const r of sharedWalks(walkRoutes(course.items, doc.stats, course.holes))) {
         const len = pathLength(r.points);
         const text = `→ ${r.b.label}`;
@@ -2670,13 +2830,13 @@ export class CourseView {
     }
     // Problems (Review step)
     (doc.issues ?? []).forEach((issue, i) => {
-      if (issue.level === "info" && !issue.holes.length) return;
+      if (clean || (issue.level === "info" && !issue.holes.length)) return;
       put(`issue:${i}`, `${issue.text}|${issue.level}`, 0, () => {
         const el = document.createElement("div");
         el.className = "dg-issue";
         el.setAttribute("data-testid", "issue-marker");
         el.style.background = issue.level === "danger" ? "#dc2626" : issue.level === "warning" ? "#d97706" : "#2563eb";
-        el.title = issue.text;
+        el.title = `Checks: ${issue.text}`;
         el.textContent = issue.level === "info" ? "i" : "!";
         return el;
       }, at(issue.at, 2), -18);
@@ -2684,7 +2844,7 @@ export class CourseView {
     // Trees measured from the air that are cut down: a stump to bring each back; those kept where
     // they'd be cut, a ring to cut them down after all
     const lidar = course.lidar, ls = this.lidarState;
-    if (lidar && ls) {
+    if (lidar && ls && !clean) {
       const mark = (k: number, kept: boolean) => {
         // (a sapling grown since the survey isn't in the list: no stump for it)
         const t = lidar.trees[k];
@@ -2712,8 +2872,9 @@ export class CourseView {
 
   /** Whether a stump (or a kept tree's ring) shows: close enough to see, or on the hole picked. */
   private stumpShown(o: Overlay, picked: { line: P[]; half: number } | null) {
-    if (1 / this.upp(o.anchor) >= 0.8) return true;
-    return !!picked && distanceToPath({ x: o.anchor.x, y: o.anchor.z }, picked.line) < picked.half;
+    if (this.readOnly) return false;
+    if (picked && distanceToPath({ x: o.anchor.x, y: o.anchor.z }, picked.line) < picked.half) return true;
+    return this.showStumps && 1 / this.upp(o.anchor) >= 0.8;
   }
 
   /** A measured tree cut down (taken out, or cleared for play) or brought back, one undo step. */
@@ -2734,6 +2895,90 @@ export class CourseView {
   }
 
   /** The measured tree standing at a spot (its trunk within reach), if any. */
+  /** The trees under the pointer, nearest the eye first, by the shapes they're drawn with: a
+   * trunk, and a crown round its upper part (a crown seen from the side or tilted is far from the
+   * ground behind it). Measured trees, the saplings grown since the survey and the trees planted in
+   * woods; not the tree items (they're picked as items). A sapling under a big crown is in the list
+   * too, after the big tree. */
+  /** Where along `ray` it first meets a tree standing at (x, y): its crown (an ellipsoid round
+   * the upper part, at least 3 ft across) or its trunk; Infinity if it misses. */
+  private rayHitsTree(ray: THREE.Ray, x: number, y: number, ground: number, height: number, radius: number) {
+    const rx = Math.max(1.5, radius), ry = Math.max(1.5, height * 0.34);
+    const o = new THREE.Vector3(ray.origin.x - x, ray.origin.y - (ground + height * 0.64), ray.origin.z - y), d = ray.direction.clone();
+    o.x /= rx; o.z /= rx; o.y /= ry; d.x /= rx; d.z /= rx; d.y /= ry;
+    const A = d.dot(d), B = 2 * o.dot(d), C = o.dot(o) - 1, disc = B * B - 4 * A * C;
+    let t = Infinity;
+    if (disc >= 0) { const tt = (-B - Math.sqrt(disc)) / (2 * A); if (tt > 0) t = tt; }
+    const a = new THREE.Vector3(x, ground, y), b = new THREE.Vector3(x, ground + height * 0.4, y), on = new THREE.Vector3();
+    const r = Math.max(1, radius * 0.12);
+    if (ray.distanceSqToSegment(a, b, on) <= r * r) t = Math.min(t, on.distanceTo(ray.origin));
+    return t;
+  }
+
+  treesAtScreen(clientX: number, clientY: number, max = 6): NonNullable<ReturnType<CourseView["treeAt"]>>[] {
+    const ray = this.ray(clientX, clientY).clone();
+    const hits: { t: number; tree: NonNullable<ReturnType<CourseView["treeAt"]>> }[] = [];
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), onRay = new THREE.Vector3(), c = new THREE.Vector3(), o = new THREE.Vector3(), d = new THREE.Vector3();
+    // (a crown: an ellipsoid round the upper part; at least 3 ft across, so a sprout can be hit)
+    const crownHit = (x: number, y: number, ground: number, height: number, radius: number) => {
+      const rx = Math.max(1.5, radius), ry = Math.max(1.5, height * 0.34);
+      c.set(x, ground + height * 0.64, y);
+      o.copy(ray.origin).sub(c); d.copy(ray.direction);
+      o.x /= rx; o.z /= rx; o.y /= ry; d.x /= rx; d.z /= rx; d.y /= ry;
+      const A = d.dot(d), B = 2 * o.dot(d), C = o.dot(o) - 1, disc = B * B - 4 * A * C;
+      if (disc < 0) return Infinity;
+      const t = (-B - Math.sqrt(disc)) / (2 * A);
+      return t > 0 ? t : Infinity;
+    };
+    const test = (x: number, y: number, ground: number, height: number, radius: number, tree: NonNullable<ReturnType<CourseView["treeAt"]>>) => {
+      let t = crownHit(x, y, ground, height, radius);
+      // (its trunk, below the crown)
+      a.set(x, ground, y); b.set(x, ground + height * 0.4, y);
+      const r = Math.max(1, radius * 0.12);
+      if (ray.distanceSqToSegment(a, b, onRay) <= r * r) t = Math.min(t, onRay.distanceTo(ray.origin));
+      if (t < Infinity) hits.push({ t, tree });
+    };
+    const lidar = this.doc?.course.lidar, ls = this.lidarState;
+    if (lidar && ls) {
+      for (const k of ls.stand) {
+        const tr = lidar.trees[k];
+        if (!tr) continue;
+        const [x, y, h, r] = grownTree(tr, lidar.growYears ?? 0);
+        test(x, y, this.h(x, y), h, r, { kind: "measured", k });
+      }
+    }
+    for (const g of this.itemsGroup.children) {
+      const spots = g.userData.spots as TreeSpot[] | undefined;
+      if (!spots) continue;
+      // (the measured forest: its measured trees are tested above by index; its saplings here)
+      const measuredCount = g.userData.measured ? (lidar?.trees.length ?? 0) : 0;
+      const indexOf = g.userData.indexes as number[] | undefined;
+      spots.forEach((s, i) => {
+        if (measuredCount && indexOf && indexOf[i] < measuredCount) return;
+        test(s.x, s.y, s.ground, s.height, s.width / 2, { kind: "spot", x: s.x, y: s.y, height: s.height, width: s.width, conifer: s.shape === "conifer" });
+      });
+    }
+    return hits.sort((p, q) => p.t - q.t).slice(0, max).map(h => h.tree);
+  }
+
+  /** How a tree looks where it stands (its shape variant, turn and leaf color), so a tree made the
+   * course's own looks just the same. */
+  lookOf(tree: NonNullable<ReturnType<CourseView["treeAt"]>>): { variant: number; rotation: number; leaf: string } | null {
+    for (const g of this.itemsGroup.children) {
+      const spots = g.userData.spots as TreeSpot[] | undefined;
+      if (!spots) continue;
+      const indexOf = g.userData.indexes as number[] | undefined;
+      const i = tree.kind === "measured" ? (g.userData.measured && indexOf ? indexOf.indexOf(tree.k) : -1) : spots.findIndex(s => Math.abs(s.x - tree.x) < 0.05 && Math.abs(s.y - tree.y) < 0.05);
+      if (i >= 0) { const s = spots[i]; return { variant: s.variant, rotation: Math.round((-s.turn / DEG) * 10) / 10, leaf: `#${s.tint.getHexString()}` }; }
+    }
+    return null;
+  }
+
+  /** The nearest tree under the pointer (see treesAtScreen). */
+  treeAtScreen(clientX: number, clientY: number): ReturnType<CourseView["treeAt"]> {
+    return this.treesAtScreen(clientX, clientY, 1)[0] ?? null;
+  }
+
   /** Any tree standing at a spot that isn't an item of its own: a measured one (its index), or a
    * sapling or planted tree (where it stands and its size). */
   treeAt(p: P): { kind: "measured"; k: number } | { kind: "spot"; x: number; y: number; height: number; width: number; conifer: boolean } | null {
@@ -2777,7 +3022,7 @@ export class CourseView {
     const hole = this.hole(holeId);
     const drawing = this.drawn() ? this.drawPts.length : -1;
     const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" || sel.type === "line" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
-    const obKey = `${sel?.type === "line" ? `${sel.ob}:${sel.obStretches?.length ?? 0}` : ""}|${this.obPick ? `${this.obPick.id}:${this.obPick.from}:${this.obPick.cut}` : ""}`;
+    const obKey = `${sel?.type === "line" || sel?.type === "area" ? `${sel.ob}:${sel.obStretches?.length ?? 0}` : ""}|${this.obPick ? `${this.obPick.id}:${this.obPick.from}:${this.obPick.cut}` : ""}`;
     if (`${this.readOnly}${key}${obKey}` === this.handleKey) return;
     this.handleKey = `${this.readOnly}${key}${obKey}`;
     this.handles.forEach(h => h.el.remove());
@@ -2794,10 +3039,10 @@ export class CourseView {
       this.handles.push({ el, kind, index: opts.index, world, start, visible: opts.visible });
     };
     // Marking a stretch of OB: where it starts, once clicked
-    const pick = this.obPick, picked = pick && pick.from !== null ? (this.item(pick.id) as LineItem | null) : null;
-    if (pick && picked?.type === "line") {
+    const pick = this.obPick, picked = pick && pick.from !== null ? (this.item(pick.id) as LineItem | AreaItem | null) : null;
+    if (pick && (picked?.type === "line" || picked?.type === "area")) {
       add("obmark", () => {
-        const pts = this.shapeOf(picked).pts, p = pointAlong(pts, (pick.from ?? 0) * pathLength(pts)).point;
+        const pts = this.obPath(picked), p = pointAlong(pts, (pick.from ?? 0) * pathLength(pts)).point;
         return new THREE.Vector3(p.x, this.h(p.x, p.y) + 0.3, p.y);
       }, () => null);
     }
@@ -2824,7 +3069,7 @@ export class CourseView {
       this.turnHandle(sel.id, add);
     }
     if (sel.type === "line" && sel.kind === "stream") this.lineWidthHandles(sel.id, add);
-    if (sel.type === "line" && sel.ob === true && sel.obStretches?.length && !sel.locked) this.obStretchHandles(sel.id, add);
+    if ((sel.type === "line" || sel.type === "area") && sel.ob === true && sel.obStretches?.length && !sel.locked) this.obStretchHandles(sel.id, add);
     if (sel.type === "structure" && !isLineKind(sel.kind)) this.outlineHandles(sel.id, add);
     else if (sel.type === "tree") {
       const id = sel.id;
@@ -2948,9 +3193,31 @@ export class CourseView {
           end: () => this.cb.onCommit()
         };
       };
+      // In 3D each keyframe's camera floats at its height: drag it up or down for the height, and
+      // the dot on the ground under it to move it. Seen from straight above, the camera moves.
+      const tilted = () => this.controls.polarAngle > 15 * DEG;
+      const dragHeight = (index: number): Drag | null => {
+        const list = hole()?.flyKeys?.map(k => ({ ...k }));
+        const k0 = list?.[index];
+        if (!list || !k0) return null;
+        const ground = this.h(k0.x, k0.y), foot = new THREE.Vector3(k0.x, ground, k0.y);
+        const facing = new THREE.Vector3().subVectors(this.camera.position, foot).setY(0);
+        if (facing.lengthSq() < 1e-6) return null;
+        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(facing.normalize(), foot);
+        return {
+          move: ev => {
+            const hit = new THREE.Vector3();
+            if (!this.ray(ev.clientX, ev.clientY).intersectPlane(plane, hit)) return;
+            list[index] = { ...list[index], alt: Math.round(clamp(hit.y - ground, 2, 1000)) };
+            this.cb.onHoleChange(holeId, { flyKeys: list.map(k => ({ ...k })) });
+          },
+          end: () => this.cb.onCommit()
+        };
+      };
       keys.forEach((_, i) => {
         add("flylook", () => { const k = hole()?.flyKeys?.[i]; return k ? at({ x: k.lookX, y: k.lookY }) : null; }, () => dragKey(i, true), { index: i, title: `Where keyframe ${i + 1} looks: drag` });
-        add("flykey", () => { const k = hole()?.flyKeys?.[i]; return k ? at(k) : null; }, () => dragKey(i, false), { index: i, title: `Flyover keyframe ${i + 1}: drag to move the camera`, data: { n: String(i + 1) } });
+        add("flyfoot", () => { const k = hole()?.flyKeys?.[i]; return k ? at(k) : null; }, () => dragKey(i, false), { index: i, title: `Keyframe ${i + 1} over the ground: drag to move it`, visible: tilted });
+        add("flykey", () => { const k = hole()?.flyKeys?.[i]; return k ? (tilted() ? new THREE.Vector3(k.x, this.h(k.x, k.y) + k.alt, k.y) : at(k)) : null; }, () => (tilted() ? dragHeight(i) : dragKey(i, false)), { index: i, title: `Flyover keyframe ${i + 1}: in 3D drag up or down for its height; from above, drag to move it`, data: { n: String(i + 1) } });
       });
     }
     // Mid dots between each pair of line points: pulling one adds a turn there
@@ -3249,11 +3516,11 @@ export class CourseView {
   /** The ends of a line's OB stretches: each dragged along the line (a stretch dragged to nothing
    * goes). */
   private obStretchHandles(id: string, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
-    const it = () => this.item(id) as LineItem | null;
+    const it = () => this.item(id) as LineItem | AreaItem | null;
     const first = it();
     if (!first?.obStretches) return;
-    const at = (l: LineItem, t: number) => {
-      const pts = this.shapeOf(l).pts;
+    const at = (l: LineItem | AreaItem, t: number) => {
+      const pts = this.obPath(l);
       return pointAlong(pts, t * pathLength(pts)).point;
     };
     first.obStretches.forEach((_, k) => {
@@ -3270,7 +3537,7 @@ export class CourseView {
             move: ev => {
               const l = it(), g = this.groundAt(ev.clientX, ev.clientY);
               if (!l?.obStretches?.[k] || !g) return;
-              const t = nearestAlong(this.shapeOf(l).pts, { x: g.x, y: g.z }).t;
+              const t = nearestAlong(this.obPath(l), { x: g.x, y: g.z }).t;
               this.cb.onChange(id, { obStretches: l.obStretches.map((st, j) => (j === k ? (end ? [st[0], t] : [t, st[1]]) : st)) });
             },
             end: () => {
@@ -3300,9 +3567,10 @@ export class CourseView {
   /** Mark a stretch of OB along a line starting at a spot on it (from its right-click menu): then
    * a click where it ends. */
   startObPick(id: string, from: P, cut = false) {
-    const l = this.item(id) as LineItem | null;
-    if (l?.type !== "line") return;
-    this.obPick = { id, from: nearestAlong(this.shapeOf(l).pts, from).t, cut };
+    const l = this.item(id) as LineItem | AreaItem | null;
+    if (l?.type !== "line" && l?.type !== "area") return;
+    this.obPick = { id, from: nearestAlong(this.obPath(l), from).t, cut: cut && l.type === "line" };
+    this.obTravel = { sum: 0, last: this.obPick.from ?? 0 };
     this.syncHandles();
     this.updateCursor();
     this.invalidate();
@@ -3310,32 +3578,64 @@ export class CourseView {
 
   /** A click while marking a stretch of OB: on the line, its start, then its end (then done). */
   private obPickClick(p: P) {
-    const pick = this.obPick, l = pick ? (this.item(pick.id) as LineItem | null) : null;
-    if (!pick || l?.type !== "line") return this.endObPick();
-    const pts = this.shapeOf(l).pts, near = nearestAlong(pts, p);
-    // (near the line: within its width, a few steps, or a few pixels of it)
-    const reach = Math.max((l.width ?? LINE_KINDS[l.kind].width) / 2 + 12, 20 * this.upp(new THREE.Vector3(p.x, this.h(p.x, p.y), p.y)));
+    const pick = this.obPick, l = pick ? (this.item(pick.id) as LineItem | AreaItem | null) : null;
+    if (!pick || (l?.type !== "line" && l?.type !== "area")) return this.endObPick();
+    const pts = this.obPath(l), near = nearestAlong(pts, p);
+    // (near the line or the edge: within its width, a few steps, or a few pixels of it)
+    const reach = Math.max((l.type === "line" ? (l.width ?? LINE_KINDS[l.kind].width) / 2 : 0) + 12, 20 * this.upp(new THREE.Vector3(p.x, this.h(p.x, p.y), p.y)));
     if (near.distance > reach) return;
     if (pick.from === null) {
       this.obPick = { ...pick, from: near.t };
+      this.obTravel = { sum: 0, last: near.t };
       this.syncHandles();
       this.invalidate();
       return;
     }
     if (Math.abs(near.t - pick.from) * pathLength(pts) < 2) return;
-    if (pick.cut) {
+    // Round a ring: the way the pointer went round from the start (a finger: the shorter way)
+    const ring = isRing(pts);
+    const added: [number, number][] = ring ? ringStretch(pick.from, near.t, Math.abs(this.obTravel.sum) > 0.01 ? Math.sign(this.obTravel.sum) : 0) : [[pick.from, near.t]];
+    if (pick.cut && l.type === "line") {
       this.endObPick();
       this.cb.onCutLine(l.id, pick.from, near.t);
       return;
     }
     // (only along its stretches from now: marked OB all along, it was OB everywhere)
     const had = l.ob === true ? l.obStretches ?? [] : [];
-    this.cb.onChange(l.id, { ob: true, obStretches: mergeStretches([...had, [pick.from, near.t]]) });
+    this.cb.onChange(l.id, { ob: true, obStretches: mergeStretches([...had, ...added]) });
     this.cb.onCommit();
     this.endObPick();
   }
 
+  /** What OB stretches run along: a line as drawn, or an area's edge all the way round. */
+  private obPath(i: LineItem | AreaItem) {
+    return i.type === "line" ? this.shapeOf(i).pts : areaRing({ ...i, straight: true, points: this.shapeOf(i).pts });
+  }
+
+  /** The stretch so far while marking one round a ring (from its start to the pointer, the way it went). */
+  private obPickHover(p: P) {
+    const pick = this.obPick, l = pick ? (this.item(pick.id) as LineItem | AreaItem | null) : null;
+    if (this.obPreview) { this.fx.remove(this.obPreview); disposeObjectDeep(this.obPreview); this.obPreview = null; }
+    if (!pick || pick.from === null || (l?.type !== "line" && l?.type !== "area")) return;
+    const pts = this.obPath(l);
+    const t = nearestAlong(pts, p).t;
+    let d = t - this.obTravel.last;
+    const ring = isRing(pts);
+    if (ring) d = ((d + 1.5) % 1) - 0.5;
+    this.obTravel = { sum: this.obTravel.sum + d, last: t };
+    const parts = ring ? ringStretch(pick.from, t, Math.abs(this.obTravel.sum) > 0.01 ? Math.sign(this.obTravel.sum) : 0) : [[Math.min(pick.from, t), Math.max(pick.from, t)] as [number, number]];
+    const g = new THREE.Group();
+    for (const [a, b] of parts) {
+      const piece = subPath(pts, a, b);
+      if (piece.length >= 2) g.add(this.fatLine(this.drapeLine(piece, LIFT + 0.4), pick.cut ? "#f8fafc" : "#ef4444", 4, { dashed: 6, depthTest: false, order: 29, opacity: 0.9 }));
+    }
+    this.obPreview = g;
+    this.fx.add(g);
+    this.invalidate();
+  }
+
   private endObPick() {
+    if (this.obPreview) { this.fx.remove(this.obPreview); disposeObjectDeep(this.obPreview); this.obPreview = null; }
     if (!this.obPick) return;
     this.obPick = null;
     this.syncHandles();
@@ -3436,6 +3736,7 @@ export class CourseView {
     // (the hole picked: the stumps on its fairway show however far out)
     const pickedHole = this.hole(this.selectedId), pickedStats = pickedHole && doc?.stats.find(x => x.holeId === pickedHole.id);
     const picked = pickedHole && pickedStats?.complete ? { line: pickedStats.line, half: pickedHole.fairwayWidth / 2 + 25 } : null;
+    const focusHole = this.holeFor(this.selectedId) ?? this.holeFor(this.hoverId) ?? this.doc?.activeHoleId ?? null;
     for (const o of list) {
       const s = this.project(o.anchor);
       if (!s || s.x < -60 || s.y < -60 || s.x > this.size.width + 60 || s.y > this.size.height + 60 || (o.key?.startsWith("stump:") && !this.stumpShown(o, picked))) {
@@ -3447,6 +3748,8 @@ export class CourseView {
         const foot = o.anchor.clone().setY(o.anchor.y - 2), top = this.project(foot.clone().setY(foot.y + BASKET_FT)), low = this.project(foot);
         if (top && low && Math.hypot(top.x - low.x, top.y - low.y) >= BASKET_SEEN_PX) { o.el.style.display = "none"; continue; }
       }
+      // In 3D, a hole's distance chip only for the hole picked or pointed at (they crowd the view)
+      if (tilted && o.key?.startsWith("dist:") && o.key !== `dist:${focusHole}`) { o.el.style.display = "none"; continue; }
       // Distance chips only when their hole is long enough on screen
       if (o.minPx && doc) {
         const key = [...this.overlays.entries()].find(([, v]) => v === o)?.[0] ?? "";
@@ -3489,7 +3792,8 @@ export class CourseView {
       el.style.translate = `${Math.round(s.x - el.offsetWidth / 2)}px ${Math.round(s.y - el.offsetHeight / 2 + dy)}px`;
     };
     this.layoutOverlays();
-    for (const m of this.measureLabels) place(m.el, m.at, -12);
+    for (const m of this.measureLabels) place(m.el, m.at, m.el.classList.contains("dg-mpt") ? 0 : -14);
+    this.placeMe(place);
     if (this.draftLabel && this.draftAt) place(this.draftLabel, this.draftAt, -22);
     for (const h of this.handles) {
       let w: THREE.Vector3 | null = null;
@@ -3517,8 +3821,18 @@ export class CourseView {
     let best: { id: string; score: number } | null = null;
     // A fingertip is less exact than a mouse pointer: reach a little further
     const reach = this.fingers ? 1.6 : 1;
+    // Trees: the one actually under the pointer, its crown or trunk, nearest the eye (tested in
+    // 3D: in a tilted view a tree's crown stands well above its foot, so the foot alone would
+    // pick the tree behind it)
+    const ray = this.ray(clientX, clientY);
+    let tree: { id: string; t: number } | null = null;
     for (const item of doc.course.items) {
-      if (item.type === "area" || item.type === "line" || item.type === "label" || item.type === "structure") continue;
+      if (item.type !== "tree") continue;
+      const t = this.rayHitsTree(ray, item.x, item.y, this.h(item.x, item.y), item.height ?? 30, item.radius * (item.width ?? 1) * (this.fingers ? 1.25 : 1));
+      if (t < (tree?.t ?? Infinity)) tree = { id: item.id, t };
+    }
+    for (const item of doc.course.items) {
+      if (item.type === "area" || item.type === "line" || item.type === "label" || item.type === "structure" || (item.type === "tree" && tree)) continue;
       const a = new THREE.Vector3(item.x, this.h(item.x, item.y) + 1, item.y);
       const s = this.project(a);
       if (!s) continue;
@@ -3531,6 +3845,9 @@ export class CourseView {
         if (!best || score < best.score) best = { id: item.id, score };
       }
     }
+    // (a tee, basket or other mark right there before a tree it stands in front of)
+    if (best && (!tree || !doc.course.items.some(i => i.id === best!.id && i.type === "tree"))) return best.id;
+    if (tree) return tree.id;
     if (best) return best.id;
     const g = this.groundAt(clientX, clientY);
     if (!g) return null;
@@ -3708,6 +4025,8 @@ export class CourseView {
   /** Two fingers on the map, as on Google Earth: a pinch zooms around the point between them, a
    * twist turns the map around it (it stays under the fingers), a slide up or down tilts. */
   private pinch: { d: number; a: number; cy: number } | null = null;
+  /** Two fingers that came down on the thing picked: they size and turn it, not the map. */
+  private pinchItem: { id: string; base: CourseItem; d0: number; a0: number; aim: number } | null = null;
   private readonly twoFingers = (e: PointerEvent) => {
     const f = this.fingerAt.get(e.pointerId);
     if (!f) return;
@@ -3718,6 +4037,11 @@ export class CourseView {
     const d = Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a = Math.atan2(q.y - p.y, q.x - p.x), cx = (p.x + q.x) / 2, cy = (p.y + q.y) / 2;
     const was = this.pinch;
     this.pinch = { d, a, cy };
+    if (this.pinchItem) {
+      const patch = this.pinchedPatch(this.pinchItem, d / this.pinchItem.d0, ((a - this.pinchItem.a0) * 180) / Math.PI);
+      if (patch) this.cb.onChange(this.pinchItem.id, patch);
+      return;
+    }
     // (the map turns with the fingers and stays under them: around the ground between them)
     let da = a - was.a;
     if (da > Math.PI) da -= 2 * Math.PI; else if (da < -Math.PI) da += 2 * Math.PI;
@@ -3739,9 +4063,45 @@ export class CourseView {
     const [p, q] = [...this.touchIds].map(id => this.fingerAt.get(id)!);
     if (!p || !q) return;
     this.pinch = { d: Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a: Math.atan2(q.y - p.y, q.x - p.x), cy: (p.y + q.y) / 2 };
+    // (both fingers on or right by the thing picked: it's the thing they size and turn)
+    this.pinchItem = null;
+    const it = this.selectedId && !this.readOnly ? this.item(this.selectedId) : null;
+    if (it && !it.locked && it.type !== "basket") {
+      const box = this.screenBox(it.id);
+      const near = (f: { x: number; y: number }) => {
+        const r = this.container.getBoundingClientRect();
+        const x = f.x - r.left, y = f.y - r.top, m = 48;
+        return !!box && x >= box.x - m && x <= box.x + box.width + m && y >= box.y - m && y <= box.y + box.height + m;
+      };
+      if (near(p) && near(q)) this.pinchItem = { id: it.id, base: structuredClone(it), d0: this.pinch.d, a0: this.pinch.a, aim: it.type === "tee" ? teeAim(this.doc!.course, it) : 0 };
+    }
+  }
+  /** What two fingers on a thing make of it: bigger or smaller by `k`, turned by `turn` degrees. */
+  private pinchedPatch(pi: NonNullable<CourseView["pinchItem"]>, k: number, turn: number): Record<string, unknown> | null {
+    const b = pi.base;
+    const clampTo = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+    const round1 = (v: number) => Math.round(v * 10) / 10;
+    const spin = (p: P, c: P) => {
+      const r = (turn * Math.PI) / 180, dx = (p.x - c.x) * k, dy = (p.y - c.y) * k;
+      return { x: c.x + dx * Math.cos(r) - dy * Math.sin(r), y: c.y + dx * Math.sin(r) + dy * Math.cos(r) };
+    };
+    switch (b.type) {
+      case "tree": {
+        const h = b.height ?? b.radius * 2.6;
+        return { radius: round1(clampTo(b.radius * k, 1, 45)), height: Math.round(clampTo(h * k, 2, 120)) };
+      }
+      case "tee": return { padLength: round1(clampTo(b.padLength * k, 4, 30)), padWidth: round1(clampTo(b.padWidth * k, 2, 20)), rotation: Math.round(pi.aim + turn), aimFixed: true };
+      case "mando": case "amenity": case "dropzone": case "label": return { rotation: Math.round((b.rotation ?? 0) + turn) };
+      case "area": case "line": case "structure": {
+        const c = centroid(b.points);
+        return { points: b.points.map(p => spin(p, c)) };
+      }
+      default: return null;
+    }
   }
   private endPinch() {
     if (this.touchIds.size === 0) window.removeEventListener("pointermove", this.twoFingers);
+    if (this.pinchItem) { this.pinchItem = null; this.cb.onCommit(); }
     if (!this.pinch) return;
     this.pinch = null;
     this.snapNorth();
@@ -3781,6 +4141,37 @@ export class CourseView {
 
   /** A finger on a handle: it moves once the finger does (a handle's hit area is big for a finger,
    * so a tap on a hole's line often lands on one); a tap selects what the handle belongs to. */
+  /** A small Delete point button by a corner tapped with a finger (an area keeps 3, a line 2). */
+  private pointMenu(h: Handle, id: string, index: number) {
+    document.querySelectorAll(".dg-ptmenu").forEach(n => n.remove());
+    const it = this.item(id) as AreaItem | LineItem | StructureItem | null;
+    if (!it || !("points" in it) || it.locked) return;
+    const min = it.type === "line" || (it.type === "structure" && STRUCTURE_KINDS[it.kind].shape !== "outline") ? 2 : 3;
+    const btn = document.createElement("button");
+    btn.className = "dg-ptmenu";
+    btn.setAttribute("data-testid", "delete-point");
+    const can = it.points.length > min;
+    btn.textContent = can ? "Delete point" : `Needs at least ${min} points`;
+    btn.disabled = !can;
+    const r = h.el.getBoundingClientRect(), box = this.container.getBoundingClientRect();
+    btn.style.left = `${r.left + r.width / 2 - box.left}px`;
+    btn.style.top = `${r.top - box.top - 10}px`;
+    const gone = () => { btn.remove(); window.removeEventListener("pointerdown", away, true); };
+    const away = (ev: PointerEvent) => { if (ev.target !== btn) gone(); };
+    btn.addEventListener("click", ev => {
+      ev.stopPropagation();
+      const cur = this.item(id) as AreaItem | LineItem | StructureItem | null;
+      if (cur && "points" in cur && cur.points.length > min) {
+        this.cb.onChange(id, { points: cur.points.filter((_, k) => k !== index), ...(cur.type === "line" ? { widths: widthsWithout(cur, index) } : {}) });
+        this.cb.onCommit();
+      }
+      gone();
+    });
+    this.container.appendChild(btn);
+    window.setTimeout(() => window.addEventListener("pointerdown", away, true), 0);
+    window.setTimeout(gone, 6000);
+  }
+
   private fingerOnHandle(e: PointerEvent, h: Handle) {
     const x0 = e.clientX, y0 = e.clientY, id = e.pointerId, began = performance.now();
     let drag: Drag | null = null, moved = false;
@@ -3806,6 +4197,8 @@ export class CourseView {
       } else if (!moved && !pinched && ev.type === "pointerup") {
         const owner = this.selectedId ?? this.doc?.activeHoleId ?? null;
         if (owner && owner !== this.selectedId) this.cb.onSelect(owner);
+        // (a corner of the thing picked, tapped: a Delete point button by it, as a finger can't double-tap it reliably)
+        else if (h.kind === "corner" && h.index !== undefined && this.selectedId) this.pointMenu(h, this.selectedId, h.index);
       }
       this.invalidate();
     };
@@ -3823,7 +4216,8 @@ export class CourseView {
     this.endDragListeners = cleanup;
   }
 
-  /** Holding a finger still on an item opens its menu, like a right-click. */
+  /** Holding a finger still on an item opens its menu, like a right-click (on open ground: what
+   * can start there). */
   private startLongPress(e: PointerEvent, target: HTMLElement) {
     this.cancelLongPress();
     const id = e.pointerId, x = e.clientX, y = e.clientY;
@@ -3838,8 +4232,8 @@ export class CourseView {
       this.cancelLongPress();
       const domItem = (target.closest?.("[data-item-id]") as HTMLElement | null)?.dataset.itemId ?? null;
       const itemId = domItem ?? this.pick(x, y);
-      const ground = this.groundAt(x, y);
-      if (!itemId && !(ground && this.treeAt({ x: ground.x, y: ground.z }))) return;
+      // (open ground too, to change: what can start there)
+      if (!itemId && !this.treeAtScreen(x, y) && (this.readOnly || !this.groundAt(x, y))) return;
       // The press is now the menu's: no tap, no drag, and the map stops following the finger
       this.endDragListeners?.();
       this.setDragging(false);
@@ -3885,7 +4279,7 @@ export class CourseView {
       const up = (ev: PointerEvent) => {
         if (ev.pointerId !== id) return;
         window.removeEventListener("pointerup", up, true);
-        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5 && !this.readOnly) {
           const domItem = (target.closest?.("[data-item-id]") as HTMLElement | null)?.dataset.itemId ?? null;
           const g = this.groundAt(ev.clientX, ev.clientY);
           this.cb.onContextMenu({ clientX: ev.clientX, clientY: ev.clientY, itemId: domItem ?? this.pick(ev.clientX, ev.clientY), ground: g ? { x: g.x, y: g.z } : null });
@@ -4013,6 +4407,12 @@ export class CourseView {
       });
       return;
     }
+    if (tool.mode === "sculpt") {
+      // The ground tool: a drag paints, a tap is one dab (two fingers still move the map)
+      e.stopPropagation();
+      this.gesture(e, { drag: s => this.sculptDrag(s), click: groundClick(p => { const d = this.sculptDrag(e, p); d?.end(e); }) });
+      return;
+    }
     if (this.drawn(tool)) {
       // A rectangle, circle or freehand shape is dragged out (clicking still adds points); with a
       // finger too, so the map stays put (two fingers still move it)
@@ -4023,6 +4423,12 @@ export class CourseView {
       this.gesture(e, {
         drag: shaped ? s => this.shapeDrag(s, shape) : panOrNothing,
         click: groundClick(p0 => {
+          // (painting: a tap paints a round spot)
+          if (shape === "paint") {
+            const out = strokeOutline([p0], this.tool.brush?.size ?? 20);
+            if (out) { this.drawPts = out; if (!this.finishDrawing()) this.cancelDrawing(); }
+            return;
+          }
           // A rectangle or a circle by clicks: one corner (or the middle), then the other corner
           // (or the edge); dragging one out works too
           if (shape === "box" || shape === "circle") {
@@ -4066,12 +4472,31 @@ export class CourseView {
       });
       return;
     }
-    // Select mode
-    const hit = domItem ?? this.pick(e.clientX, e.clientY);
+    // Select mode (on a map only looked at, a hole or nothing)
+    const hit = this.readOnly ? this.holeFor(domItem ?? this.pick(e.clientX, e.clientY)) : domItem ?? this.pick(e.clientX, e.clientY);
+    // A tree under the pointer, over nothing or over an area or line (most trees stand in a wood):
+    // a click opens the tree's menu (cut it, make it the course's own, or select the wood)
+    const hitItem = hit ? this.item(hit) : null;
+    // (over a hole's line or fairway too: a tree stands above it; tees, baskets, signs and the
+    // course's own trees still come first)
+    const overBig = !hit || (!!hitItem && (hitItem.type === "area" || hitItem.type === "line" || hitItem.type === "structure")) || (!hitItem && !!this.hole(hit));
+    if (overBig && !e.shiftKey && !tool.dragSelect && !this.readOnly) {
+      const tree = this.treeAtScreen(e.clientX, e.clientY);
+      if (tree) {
+        const moves = !!hitItem && hit === this.selectedId && !hitItem.locked;
+        if (moves) e.stopPropagation(); else stop();
+        this.gesture(e, {
+          // (picked like any tree: the same panel, moved once picked, deleted with Del)
+          click: () => this.cb.onAdoptTree(tree, this.lookOf(tree)),
+          drag: moves ? s => this.itemDrag(s, hit!) : panOrNothing
+        });
+        return;
+      }
+    }
     // Shift (or the Drag to select option): a drag draws a box to pick things with; Shift+click
     // adds a thing to the ones picked (or takes it out)
-    const add = e.shiftKey && !touch;
-    const boxing = add || !!tool.dragSelect;
+    const add = e.shiftKey && !touch && !this.readOnly;
+    const boxing = !this.readOnly && (add || !!tool.dragSelect);
     if (!hit) {
       if (boxing) {
         e.stopPropagation();
@@ -4080,12 +4505,7 @@ export class CourseView {
       }
       stop();
       this.gesture(e, {
-        click: ev => {
-          const g = this.groundAt(ev.clientX, ev.clientY);
-          const tree = g && ev.pointerType !== "touch" ? this.treeAt({ x: g.x, y: g.z }) : null;
-          if (tree) this.cb.onContextMenu({ clientX: ev.clientX, clientY: ev.clientY, itemId: null, ground: { x: g!.x, y: g!.z } });
-          else this.cb.onSelect(null);
-        },
+        click: () => this.cb.onSelect(null),
         drag: panOrNothing
       });
       return;
@@ -4113,7 +4533,7 @@ export class CourseView {
     // Holes, areas and lines move only once selected (dragging across the map still pans, or
     // draws a box); a hole itself never moves (move its tee or basket); a locked item never moves
     // With a finger, everything moves only once picked: a drag across a thing pans the map
-    const big = !item || item.type === "area" || item.type === "line" || item.type === "structure" || touch;
+    const big = !item || item.type === "area" || item.type === "line" || item.type === "structure" || item.type === "tree" || touch;
     if ((big && hit !== this.selectedId) || !item || item.locked) {
       if (boxing) e.stopPropagation();
       else stop();
@@ -4154,9 +4574,32 @@ export class CourseView {
         this.marquee = null;
         const r = { l: Math.min(x0, x1), r: Math.max(x0, x1), t: Math.min(y0, y1), b: Math.max(y0, y1) };
         if (r.r - r.l < 3 && r.b - r.t < 3) return;
-        this.cb.onBoxSelect(this.itemsIn(r), add);
+        this.cb.onBoxSelect(this.itemsIn(r), add, this.treesIn(r));
       }
     };
+  }
+
+  /** The measured trees and the saplings grown since the survey standing inside a rectangle on
+   * the screen (their trunks), each with its look: to be made the course's own and picked. */
+  private treesIn(r: { l: number; r: number; t: number; b: number }) {
+    const lidar = this.doc?.course.lidar, ls = this.lidarState;
+    const out: { tree: NonNullable<ReturnType<CourseView["treeAt"]>>; look: ReturnType<CourseView["lookOf"]> }[] = [];
+    if (!lidar || !ls) return out;
+    const inside = (x: number, y: number) => {
+      const s = this.project(new THREE.Vector3(x, this.h(x, y), y));
+      return !!s && s.x >= r.l && s.x <= r.r && s.y >= r.t && s.y <= r.b;
+    };
+    for (const g of this.itemsGroup.children) {
+      if (!g.userData.measured) continue;
+      const spots = g.userData.spots as TreeSpot[], indexOf = g.userData.indexes as number[] | undefined;
+      spots.forEach((s, i) => {
+        if (!inside(s.x, s.y)) return;
+        const k = indexOf?.[i] ?? -1;
+        const look = { variant: s.variant, rotation: Math.round((-s.turn / DEG) * 10) / 10, leaf: `#${s.tint.getHexString()}` };
+        out.push({ tree: k >= 0 && k < lidar.trees.length ? { kind: "measured", k } : { kind: "spot", x: s.x, y: s.y, height: s.height, width: s.width, conifer: s.shape === "conifer" }, look });
+      });
+    }
+    return out;
   }
 
   /** The things inside a rectangle on the screen (container pixels). */
@@ -4225,7 +4668,7 @@ export class CourseView {
   }
 
   /** Drags out a new area or line: a rectangle (square to the screen), a circle from its middle, or freehand. */
-  private shapeDrag(start: PointerEvent, shape: "box" | "circle" | "freehand"): { move: (ev: PointerEvent) => void; end: (ev: PointerEvent) => void } | null {
+  private shapeDrag(start: PointerEvent, shape: "box" | "circle" | "freehand" | "paint"): { move: (ev: PointerEvent) => void; end: (ev: PointerEvent) => void } | null {
     const g0 = this.groundAt(start.clientX, start.clientY);
     if (!g0) return null;
     const a = { x: g0.x, y: g0.z };
@@ -4241,6 +4684,13 @@ export class CourseView {
         const pts = this.shapePoints(shape, { x: start.clientX, y: start.clientY }, { x: ev.clientX, y: ev.clientY });
         if (!pts) return;
         this.drawPts = pts;
+      } else if (shape === "paint") {
+        // (painted: the brush's track, its outline shown as it goes)
+        const b = ground(ev.clientX, ev.clientY);
+        const r = this.tool.brush?.size ?? 20;
+        if (b && dist(free[free.length - 1], b) >= Math.max(step, r / 5)) free.push(b);
+        this.drawPts = strokeOutline(free, r) ?? [];
+        this.showBrush(b, r);
       } else {
         const b = ground(ev.clientX, ev.clientY);
         if (b && dist(free[free.length - 1], b) >= step) free.push(b);
@@ -4260,6 +4710,79 @@ export class CourseView {
         this.shaping = false;
         if (shape === "freehand") this.drawPts = simplify(this.drawPts, step * 0.5);
         if (!this.finishDrawing()) this.cancelDrawing();
+      }
+    };
+  }
+
+  // ------------------------------------------------------------------ the brush (ground, painting)
+
+  private brushRing: { obj: THREE.Object3D; r: number } | null = null;
+  /** The brush's circle on the ground under the pointer (null: hidden). Made once for a size and
+   * moved after (made again every move, its line's material went with it, and that's slow). */
+  private showBrush(at: P | null, r: number) {
+    if (!at) {
+      if (this.brushRing?.obj.visible) { this.brushRing.obj.visible = false; this.invalidate(); }
+      return;
+    }
+    if (!this.brushRing || this.brushRing.r !== r) {
+      if (this.brushRing) { this.fx.remove(this.brushRing.obj); disposeObjectDeep(this.brushRing.obj); }
+      const ring: THREE.Vector3[] = [];
+      for (let i = 0; i <= 48; i++) ring.push(new THREE.Vector3(Math.cos((i / 48) * Math.PI * 2) * r, 0, Math.sin((i / 48) * Math.PI * 2) * r));
+      const g = new THREE.Group();
+      g.add(this.fatLine(ring, "#1c1917", 4, { depthTest: false, order: 29, opacity: 0.45 }));
+      g.add(this.fatLine(ring, "#fafaf9", 2, { depthTest: false, order: 30, opacity: 0.95 }));
+      this.brushRing = { obj: g, r };
+      this.fx.add(g);
+    }
+    this.brushRing.obj.position.set(at.x, this.h(at.x, at.y) + LIFT + 0.4, at.y);
+    this.brushRing.obj.visible = true;
+    this.invalidate();
+  }
+
+  /** The ground tool's stroke: dabs along the drag and, held still, again and again where it is;
+   * the ground sent on live (a few times a second) and once more when let go, as one undo step. */
+  private sculptDrag(start: PointerEvent, at0?: P): { move: (ev: PointerEvent) => void; end: (ev: PointerEvent) => void } | null {
+    const doc = this.doc;
+    if (!doc || this.readOnly) return null;
+    const g0 = at0 ? { x: at0.x, z: at0.y } : this.groundAt(start.clientX, start.clientY);
+    if (!g0) return null;
+    const b = this.tool.brush ?? { size: 25, strength: 5, ground: "raise" as const };
+    const heights: Record<string, number> = { ...doc.heights };
+    const original: Record<string, number> = { ...(doc.course.terrainOriginal ?? {}) };
+    const W = doc.course.canvas.width, H = doc.course.canvas.height;
+    // (raise and lower: a quarter foot a dab at strength 1; flatten and smooth: how far a dab goes)
+    const amount = b.ground === "raise" || b.ground === "lower" ? b.strength * 0.12 : Math.min(1, b.strength * 0.05);
+    const level = heightAt(doc.heights, doc.gridSize, g0.x, g0.z);
+    let last: P = { x: g0.x, y: g0.z }, frame = 0;
+    const put = (p: P) => dab(heights, doc.gridSize, W, H, p, b.size, b.ground, amount, level, original);
+    // (while painting, only the ground itself reshapes, once a frame at most: the trees, lines,
+    // contours and the painted map follow once, when the stroke ends)
+    const show = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => { frame = 0; this.ground.previewHeights(heights); this.invalidate(); });
+    };
+    const send = (done: boolean) => { if (done) this.cb.onTerrain?.({ ...heights }, true, { ...original }); else show(); };
+    put(last);
+    show();
+    this.setDragging(true);
+    // (held still: it keeps working where the brush is)
+    const hold = window.setInterval(() => { put(last); show(); }, 90);
+    return {
+      move: ev => {
+        const g = this.groundAt(ev.clientX, ev.clientY);
+        if (!g) return;
+        const p = { x: g.x, y: g.z };
+        const d = dist(last, p), step = Math.max(1, b.size / 4);
+        for (let k = 1; k <= Math.floor(d / step); k++) put({ x: last.x + ((p.x - last.x) * k * step) / d, y: last.y + ((p.y - last.y) * k * step) / d });
+        if (d >= step) last = p;
+        this.showBrush(p, b.size);
+        send(false);
+      },
+      end: () => {
+        window.clearInterval(hold);
+        if (frame) cancelAnimationFrame(frame);
+        this.setDragging(false);
+        send(true);
       }
     };
   }
@@ -4501,7 +5024,7 @@ export class CourseView {
     this.fx.add(g);
     if (!this.draftLabel) {
       this.draftLabel = document.createElement("div");
-      this.draftLabel.className = "dg-measure total";
+      this.draftLabel.className = "dg-ov dg-measure total";
       this.draftLabel.setAttribute("data-testid", "draft-label");
       this.draftLabel.style.position = "absolute";
       this.labelsLayer.appendChild(this.draftLabel);
@@ -4532,6 +5055,116 @@ export class CourseView {
     this.zoomAt(e.clientX, e.clientY, Math.exp(delta));
   }
 
+  // ------------------------------------------------------------------ you, on the map (GPS)
+
+  /** Called when someone moves the map by hand (the map stops following you). */
+  onUserMove: (() => void) | null = null;
+  private me: { mark: LocationMark; dot: HTMLDivElement; cone: HTMLElement; tag: HTMLDivElement; at: THREE.Vector3; ring: THREE.Object3D | null } | null = null;
+
+  /** You on the map (null: not shown); `follow`: the map keeps you in the middle of what's visible. */
+  setLocation(mark: LocationMark | null, follow = false) {
+    if (!mark) {
+      if (this.me) {
+        this.me.dot.remove();
+        this.me.tag.remove();
+        if (this.me.ring) { this.fx.remove(this.me.ring); disposeObjectDeep(this.me.ring); }
+        this.me = null;
+        this.invalidate();
+      }
+      return;
+    }
+    if (!this.me) {
+      const dot = document.createElement("div");
+      dot.className = "dg-ov dg-me";
+      dot.setAttribute("data-testid", "my-location");
+      const cone = document.createElement("i");
+      dot.appendChild(cone);
+      const tag = document.createElement("div");
+      tag.className = "dg-ov dg-me-tag";
+      tag.setAttribute("data-testid", "my-location-tag");
+      this.labelsLayer.append(dot, tag);
+      this.me = { mark, dot, cone, tag, at: new THREE.Vector3(), ring: null };
+    }
+    const me = this.me;
+    const was = me.mark;
+    me.mark = mark;
+    me.at.set(mark.at.x, this.h(mark.at.x, mark.at.y) + 1, mark.at.y);
+    me.dot.classList.toggle("dim", mark.dim);
+    me.tag.textContent = mark.tag;
+    me.tag.style.visibility = mark.tag ? "" : "hidden";
+    // The circle of how sure it is, and the dashed line on to the basket
+    const moved = !me.ring || was.acc !== mark.acc || was.at.x !== mark.at.x || was.at.y !== mark.at.y || was.to?.x !== mark.to?.x || was.to?.y !== mark.to?.y || was.dim !== mark.dim;
+    if (moved) {
+      if (me.ring) { this.fx.remove(me.ring); disposeObjectDeep(me.ring); }
+      const g = new THREE.Group();
+      const r = Math.max(4, mark.acc);
+      const ring: P[] = [];
+      for (let i = 0; i < 72; i++) ring.push({ x: mark.at.x + Math.cos((i / 72) * Math.PI * 2) * r, y: mark.at.y + Math.sin((i / 72) * Math.PI * 2) * r });
+      const color = mark.dim ? "#8e8e93" : "#0a84ff";
+      const disc = new THREE.Mesh(drapedPolygon(ring, (x, y) => this.h(x, y), this.doc?.gridSize ?? 20, 0.4), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.16, depthWrite: false, depthTest: false }));
+      disc.renderOrder = 27;
+      g.add(disc);
+      g.add(this.fatLine(this.drapeLine(ring, 0.5, true), color, 1.5, { opacity: 0.55, depthTest: false, order: 28 }));
+      if (mark.to) g.add(this.fatLine(this.drapeLine([mark.at, mark.to], LIFT + 0.35), "#ffffff", 2, { dashed: 6, opacity: 0.85, depthTest: false, order: 28 }));
+      me.ring = g;
+      this.fx.add(g);
+    }
+    if (follow) {
+      const shift = this.insetShift(this.controls.distance);
+      const cx = mark.at.x + shift.x, cy = mark.at.y + shift.y;
+      void this.controls.moveTo(cx, this.h(cx, cy), cy, true);
+    }
+    this.invalidate();
+  }
+
+  /** A spot for the tool in hand, as if tapped there (where you stand, from the GPS): a new hole's
+   * tee and then its basket, another tee or pin. False: not taken (the basket right by the tee). */
+  toolPoint(p: P) {
+    const mode = this.tool.mode;
+    if (mode === "add-hole") {
+      if (!this.holeStart) {
+        this.holeStart = p;
+        this.cursor = p;
+        this.drawDraft();
+        this.cb.onDrawProgress(1);
+        return true;
+      }
+      if (dist(this.holeStart, p) <= 10) return false;
+      const start = this.holeStart;
+      this.holeStart = null;
+      this.clearDraft();
+      this.cb.onDrawProgress(0);
+      this.cb.onHole(start, p);
+      return true;
+    }
+    if (mode === "add-tee" || mode === "add-basket") { this.cb.onPlace(mode, p); return true; }
+    return false;
+  }
+
+  /** The measure tool started at a spot (from the map's menu): the next tap measures from there. */
+  measureFrom(p: P) {
+    this.measurePts = [new THREE.Vector3(p.x, this.h(p.x, p.y), p.y)];
+    this.measureCursor = null;
+    this.drawMeasure();
+  }
+
+  /** Puts the dot (and its cone, turned the way you face on the screen) where you are. */
+  private placeMe(place: (el: HTMLElement, world: THREE.Vector3 | null, dy?: number) => void) {
+    const me = this.me;
+    if (!me) return;
+    place(me.dot, me.at);
+    place(me.tag, me.at, 26);
+    const f = me.mark.facing;
+    if (f === null) { me.cone.style.display = "none"; return; }
+    // (the way you face, as the screen shows it: north is -y on the plan, east +x)
+    const a = this.project(me.at);
+    const ahead = new THREE.Vector3(me.mark.at.x + Math.sin(f * DEG) * 30, me.at.y, me.mark.at.y - Math.cos(f * DEG) * 30);
+    const b = this.project(ahead);
+    if (!a || !b) { me.cone.style.display = "none"; return; }
+    me.cone.style.display = "";
+    me.cone.style.transform = `rotate(${Math.atan2(b.x - a.x, -(b.y - a.y))}rad)`;
+  }
+
   private measurePts: THREE.Vector3[] = [];
   private measureCursor: THREE.Vector3 | null = null;
   private measureLine: THREE.Object3D | null = null;
@@ -4549,8 +5182,10 @@ export class CourseView {
     this.drawMeasure();
   }
 
+  /** A click: the first point stays where it was put, each click after it moves the other end
+   * (Shift+click adds a turn instead: a path); Esc or another tool ends it. */
   private addMeasurePoint(p: THREE.Vector3, keepGoing: boolean) {
-    if (this.measurePts.length >= 2 && !keepGoing) this.measurePts = [];
+    if (this.measurePts.length >= 2 && !keepGoing) this.measurePts = [this.measurePts[0]];
     this.measurePts.push(p.clone());
     this.drawMeasure();
   }
@@ -4566,16 +5201,52 @@ export class CourseView {
     const pts = [...this.measurePts];
     if (this.measureCursor && pts.length === 1) pts.push(this.measureCursor);
     const units = this.doc?.course.units ?? "ft";
+    // (two points put down: where the next click would move the end to, faint, from the first)
+    const ahead = this.measureCursor && this.measurePts.length === 2 ? [this.measurePts[0], this.measureCursor] : null;
+    if (ahead && Math.hypot(ahead[1].x - this.measurePts[1].x, ahead[1].z - this.measurePts[1].z) < 0.5) ahead.length = 0;
+    // A dot at each point (the pointer's end fainter)
+    pts.forEach((v, i) => {
+      const el = document.createElement("div");
+      el.className = `dg-ov dg-mpt${i >= this.measurePts.length ? " live" : ""}`;
+      el.setAttribute("data-testid", "measure-point");
+      this.labelsLayer.appendChild(el);
+      this.measureLabels.push({ el, at: v.clone() });
+    });
     if (pts.length >= 2) {
-      this.measureLine = this.fatLine(this.drapeLine(pts.map(v => ({ x: v.x, y: v.z })), LIFT + 0.3), "#facc15", 3, { depthTest: false, order: 30 });
+      // (a thin line on a dark casing: it reads over grass, photo and woods alike)
+      const line = this.drapeLine(pts.map(v => ({ x: v.x, y: v.z })), LIFT + 0.3);
+      const g = new THREE.Group();
+      g.add(this.fatLine(line, "#1c1917", 4.5, { depthTest: false, order: 29, opacity: 0.55 }));
+      g.add(this.fatLine(line, "#facc15", 2, { depthTest: false, order: 30 }));
+      if (ahead?.length) {
+        const next = this.drapeLine(ahead.map(v => ({ x: v.x, y: v.z })), LIFT + 0.3);
+        g.add(this.fatLine(next, "#facc15", 1.5, { depthTest: false, order: 30, opacity: 0.6, dashed: 4 }));
+        const d = Math.hypot(ahead[1].x - ahead[0].x, ahead[1].z - ahead[0].z);
+        const dh = ahead[1].y - ahead[0].y;
+        const dot = document.createElement("div");
+        dot.className = "dg-ov dg-mpt live";
+        this.labelsLayer.appendChild(dot);
+        this.measureLabels.push({ el: dot, at: ahead[1].clone() });
+        if (d >= 0.5) {
+          const el = document.createElement("div");
+          el.className = "dg-ov dg-measure live";
+          el.setAttribute("data-testid", "measure-next");
+          el.textContent = `${fmtDist(d, units)}${Math.abs(dh) >= 1 ? ` · ${fmtElev(dh, units)}` : ""}`;
+          this.labelsLayer.appendChild(el);
+          this.measureLabels.push({ el, at: ahead[1].clone() });
+        }
+      }
+      this.measureLine = g;
       this.fx.add(this.measureLine);
       let total = 0;
       for (let i = 1; i < pts.length; i++) {
         const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
         total += d;
         const dh = pts[i].y - pts[i - 1].y;
+        // (the pointer still on the point just put down: no "0 ft" tag)
+        if (d < 0.5) continue;
         const el = document.createElement("div");
-        el.className = "dg-measure";
+        el.className = "dg-ov dg-measure";
         el.setAttribute("data-testid", "measure-label");
         el.textContent = `${fmtDist(d, units)}${Math.abs(dh) >= 1 ? ` · ${fmtElev(dh, units)}` : ""}`;
         this.labelsLayer.appendChild(el);
@@ -4583,7 +5254,7 @@ export class CourseView {
       }
       if (pts.length > 2) {
         const el = document.createElement("div");
-        el.className = "dg-measure total";
+        el.className = "dg-ov dg-measure total";
         el.textContent = `Total ${fmtDist(total, units)}`;
         this.labelsLayer.appendChild(el);
         this.measureLabels.push({ el, at: pts[pts.length - 1].clone() });
@@ -4652,9 +5323,17 @@ export class CourseView {
       if (!p || !this.doc) return;
       const g = this.groundAt(p.x, p.y);
       this.cb.onHover(g ? { x: g.x, y: g.z } : null);
+      if (this.obPick && g) { this.obPickHover({ x: g.x, y: g.z }); return; }
+      // (the brush's circle where it would paint)
+      const painting = this.tool.mode === "sculpt" || (this.tool.mode === "draw-area" && this.tool.shape === "paint");
+      if (painting) this.showBrush(g ? { x: g.x, y: g.z } : null, this.tool.brush?.size ?? 20);
+      else if (this.brushRing?.obj.visible) this.showBrush(null, 0);
       if (this.tool.mode === "measure") {
-        if (this.measurePts.length === 1 && g) {
-          this.measureCursor = g;
+        // (only over the site: a tilted view's horizon would stretch the line across the screen)
+        const w = this.doc.course.canvas;
+        const over = !!g && g.x >= 0 && g.z >= 0 && g.x <= w.width && g.z <= w.height;
+        if ((this.measurePts.length === 1 || this.measurePts.length === 2) && (over || this.measureCursor)) {
+          this.measureCursor = over ? g : null;
           this.drawMeasure();
         }
         return;
@@ -4679,7 +5358,8 @@ export class CourseView {
       const target = document.elementFromPoint(p.x, p.y) as HTMLElement | null;
       if (this.tool.mode === "select") {
         const dom = (target?.closest?.("[data-item-id]") as HTMLElement | null)?.dataset.itemId ?? null;
-        this.setHover(dom ?? (target?.closest?.("[data-handle]") ? null : this.pick(p.x, p.y)));
+        const over = dom ?? (target?.closest?.("[data-handle]") ? null : this.pick(p.x, p.y));
+        this.setHover(this.readOnly ? this.holeFor(over) : over);
       } else {
         this.setHover(null);
         this.updateGhost(g);
@@ -4721,7 +5401,7 @@ export class CourseView {
         disposeObjectDeep(this.ghost);
       }
       this.ghostKey = kind;
-      const obj = kind === "basket" ? createBasket(this.doc.course.style.basket)
+      const obj = kind === "basket" ? createBasket(this.doc.course.style.basketBand ?? BASKET_BAND)
         : kind === "mando" ? createMando("right")
         : kind === "dropzone" ? createDropZone()
         : kind === "amenity" ? createAmenity("bench")

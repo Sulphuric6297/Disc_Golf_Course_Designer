@@ -8,7 +8,7 @@ import { courseStats, courseTotals } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
 import { select } from "../state/actions";
 import { useCourse, useEditor } from "../state/course";
-import { getView } from "../components/MapViewport";
+import { getView } from "../state/view";
 import { Section, Facts } from "../components/ui";
 import { copyCourse, holesOf } from "./courses";
 import { useAllowed } from "./perms";
@@ -31,7 +31,7 @@ export function ViewerPanelBody() {
         <h2 className="text-lg font-bold text-zinc-50 leading-tight">{doc.name || "Untitled course"}</h2>
         {doc.designer && <p className="text-sm text-zinc-400">{doc.designer}</p>}
         {mayCopy && (
-          <button className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 touch:py-2.5 text-sm font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700" onClick={() => void copyCourse()} data-testid="copy-course">
+          <button className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 touch:py-2.5 text-sm font-semibold bg-white/[0.07] hover:bg-white/[0.13] text-zinc-100 border border-white/[0.12]" onClick={() => void copyCourse()} data-testid="copy-course">
             <Copy size={14} /> Make a copy
           </button>
         )}
@@ -44,7 +44,7 @@ export function ViewerPanelBody() {
       {picked && hole && picked.complete && (may3d || mayFly) && (
         <Section testid="viewer-views">
           <div className="flex flex-wrap gap-2">
-            {may3d && <button className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 touch:py-2.5 text-sm font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700" onClick={() => useEditor.getState().set({ teeView: picked.holeId, flyover: false })} data-testid="viewer-tee">From the tee</button>}
+            {may3d && <button className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 touch:py-2.5 text-sm font-semibold bg-white/[0.07] hover:bg-white/[0.13] text-zinc-100 border border-white/[0.12]" onClick={() => useEditor.getState().set({ teeView: picked.holeId, flyover: false })} data-testid="viewer-tee">From the tee</button>}
             {mayFly && <button className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 touch:py-2.5 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950" onClick={() => useEditor.getState().set({ view: "3d", teeView: picked.holeId, flyover: true })} data-testid="viewer-fly">▶ Fly over</button>}
           </div>
         </Section>
@@ -54,7 +54,7 @@ export function ViewerPanelBody() {
           {picked.complete ? (
             <dl className="grid grid-cols-2 gap-1.5">
               {holeFacts({ ...picked, elevation: picked.elevationChange }, u).map(([k, v]) => (
-                <div key={k} className="bg-zinc-800/60 rounded-lg px-2 py-1.5"><dt className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">{k}</dt><dd className="text-sm font-semibold text-zinc-100">{v}</dd></div>
+                <div key={k} className="bg-white/[0.07] rounded-lg px-2 py-1.5"><dt className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">{k}</dt><dd className="text-sm font-semibold text-zinc-100">{v}</dd></div>
               ))}
             </dl>
           ) : <p className="text-xs text-zinc-400">Unfinished</p>}
@@ -71,7 +71,7 @@ export function ViewerPanelBody() {
               return (
                 <li key={s.holeId}>
                   <button data-testid="hole-row" onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
-                    className={`w-full flex items-center gap-2 rounded-lg px-2 py-1.5 touch:py-2.5 text-left transition-colors ${sel ? "bg-orange-500/15 ring-1 ring-orange-400/60" : "hover:bg-zinc-800"}`}>
+                    className={`w-full flex items-center gap-2 rounded-lg px-2 py-1.5 touch:py-2.5 text-left transition-colors ${sel ? "bg-orange-500/15 ring-1 ring-orange-400/60" : "hover:bg-white/[0.09]"}`}>
                     <span className="min-w-[1.5rem] h-6 px-1 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink }}>{s.label}</span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm text-zinc-100 truncate">{h.name || `Hole ${s.label}`}</span>
@@ -90,7 +90,7 @@ export function ViewerPanelBody() {
 }
 
 export const ViewerPanel = () => (
-  <aside className="w-[340px] shrink-0 bg-zinc-900 border-r border-zinc-800 overflow-y-auto" aria-label="Course" data-testid="side-panel">
+  <aside className="glass w-[340px] shrink-0 rounded-[24px] overflow-y-auto" aria-label="Course" data-testid="side-panel">
     <ViewerPanelBody />
   </aside>
 );

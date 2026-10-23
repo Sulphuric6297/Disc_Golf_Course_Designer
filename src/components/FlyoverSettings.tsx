@@ -8,7 +8,7 @@ import { holeLabel } from "../lib/course";
 import { fmtDist } from "../lib/units";
 import { changeDoc, updateHole, useCourse, useEditor } from "../state/course";
 import type { FlyKey, FlyoverSettings, FlyShow, Hole } from "../types";
-import { getView } from "./MapViewport";
+import { getView } from "../state/view";
 import { ApplyToHoles } from "./ApplyToHoles";
 import { Button, NumberInput, Segmented, Slider, Toggle } from "./ui";
 
@@ -18,12 +18,11 @@ const FLY_SHOW: [FlyShow, string][] = [
   ["badge", "Hole badge"],
   ["pinDistance", "Distance to the pin"],
   ["courseName", "Course name"],
-  ["discFlight", "Disc flight"],
   ["playLine", "Line of play"],
   ["circle", "Putting circle"],
   ["ob", "OB"],
   ["otherHoles", "Other holes"],
-  ["walks", "Walks"]
+  ["walks", "Paths to the next tee"]
 ];
 
 /** How flyovers fly: for one hole (`holeId`: its own settings, over the course's) or for all
@@ -47,15 +46,9 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { ho
       : changeDoc(d => ({ flyover: { ...d.flyover, ...patch } }), false);
   const done = () => useCourse.getState().commit();
   const ft = (v: number) => fmtDist(v, u);
-  // A switch: one undo step. The disc's flight for all holes is the yellow lines everywhere too
-  // (the map's, the tee view's); for one hole, on brings the lines back
+  // A switch: one undo step
   const showPart = (k: FlyShow, v: boolean) =>
-    changeDoc(d => {
-      const lines = k !== "discFlight" ? d.style : !forHole ? { ...d.style, discFlight: v ? undefined : false } : v ? { ...d.style, discFlight: undefined } : d.style;
-      return forHole
-        ? { style: lines, holes: d.holes.map(h => (h.id === hole!.id ? { ...h, flyover: { ...h.flyover, [k]: v } } : h)) }
-        : { style: lines, flyover: { ...d.flyover, [k]: v } };
-    });
+    changeDoc(d => (forHole ? { holes: d.holes.map(h => (h.id === hole!.id ? { ...h, flyover: { ...h.flyover, [k]: v } } : h)) } : { flyover: { ...d.flyover, [k]: v } }));
   return (
     <div data-testid="flyover-settings">
       {ground && (
@@ -65,23 +58,23 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { ho
       )}
       {hole && !only && (
         <div className="mb-2.5">
-          <Segmented label="Settings for" value={scope} onChange={setScope} options={[{ value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }, { value: "course", label: "All holes" }]} />
+          <Segmented label="Settings for" value={scope} onChange={setScope} options={[{ value: "course", label: "All holes" }, { value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }]} />
         </div>
       )}
-      {!keyed && <Slider label="Height" min={10} max={250} step={5} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />}
+      {!keyed && <Slider label="Camera height" min={10} max={250} step={5} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />}
       <Slider label="Speed" min={0.25} max={3} step={0.05} value={f.speed} onChange={v => set({ speed: v })} onDone={done} format={v => `${Math.round(v * 100) / 100}×`} />
       <Slider label="Field of view" min={20} max={100} value={f.fov} onChange={v => set({ fov: v })} onDone={done} format={v => `${v}°`} />
       {!keyed && (
         <>
-          <Slider label="Start behind the tee" min={0} max={400} step={5} value={f.behind} onChange={v => set({ behind: v })} onDone={done} format={ft} />
-          <Slider label="To the side" min={-200} max={200} step={5} value={f.side} onChange={v => set({ side: v })} onDone={done} format={v => (v === 0 ? "On the line" : `${ft(Math.abs(v))} ${v > 0 ? "right" : "left"}`)} />
-          <Slider label="Look ahead" min={30} max={500} step={10} value={f.lookAhead} onChange={v => set({ lookAhead: v })} onDone={done} format={ft} />
+          <Slider label="Camera starts behind the tee" min={0} max={400} step={5} value={f.behind} onChange={v => set({ behind: v })} onDone={done} format={ft} />
+          <Slider label="Camera off to the side" min={-200} max={200} step={5} value={f.side} onChange={v => set({ side: v })} onDone={done} format={v => (v === 0 ? "On the line" : `${ft(Math.abs(v))} ${v > 0 ? "right" : "left"}`)} />
+          <Slider label="Camera looks ahead" min={30} max={500} step={10} value={f.lookAhead} onChange={v => set({ lookAhead: v })} onDone={done} format={ft} />
         </>
       )}
       <div className="text-xs text-zinc-300 mt-2.5 mb-0.5">On screen</div>
       <div className="grid grid-cols-2 gap-x-2 mb-2" data-testid="flyover-show">
         {FLY_SHOW.map(([k, label]) => (
-          <Toggle key={k} label={label} checked={f[k] && (k !== "discFlight" || doc.style.discFlight !== false)} onChange={v => showPart(k, v)} />
+          <Toggle key={k} label={label} checked={f[k]} onChange={v => showPart(k, v)} />
         ))}
       </div>
       {/* (from a hole: its settings to the holes picked; for all holes: the picked holes follow them) */}
@@ -91,7 +84,7 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true }: { ho
           testid="flyover-apply"
           apply={ids => changeDoc(d => ({ holes: d.holes.map(h => (ids.includes(h.id) ? { ...h, flyover: forHole && hole!.flyover ? { ...hole!.flyover } : undefined } : h)) }))}
         />
-        {!forHole && <Button small onClick={() => changeDoc(() => ({ flyover: undefined }))} disabled={!doc.flyover} testid="flyover-defaults">Default flight</Button>}
+        {!forHole && <Button small onClick={() => changeDoc(() => ({ flyover: undefined }))} disabled={!doc.flyover} testid="flyover-defaults">Reset</Button>}
       </div>
     </div>
   );
@@ -128,9 +121,10 @@ export function HoleFlight({ hole }: { hole: Hole }) {
               <NumberInput label={`Keyframe ${i + 1} height`} value={Math.round(k.alt)} min={2} max={1000} onChange={v => edit(i, { alt: v })} />
               <NumberInput label={`Keyframe ${i + 1} field of view`} value={k.fov ?? f.fov} min={15} max={110} onChange={v => edit(i, { fov: v })} />
               {i === 0 ? <span className="text-xs text-zinc-500 text-center">0</span> : <NumberInput label={`Keyframe ${i + 1} seconds`} value={k.secs ?? NaN} min={0.5} max={60} step={0.5} onChange={v => edit(i, { secs: v })} />}
-              <button className="p-1 rounded text-zinc-400 hover:text-red-400 hover:bg-zinc-800 disabled:opacity-30" aria-label={`Remove keyframe ${i + 1}`} disabled={keys.length <= 2} onClick={() => setKeys(keys.filter((_, j) => j !== i))}><Trash2 size={14} /></button>
+              <button className="p-1 rounded text-zinc-400 hover:text-red-400 hover:bg-white/[0.09] disabled:opacity-30" aria-label={`Remove keyframe ${i + 1}`} disabled={keys.length <= 2} onClick={() => setKeys(keys.filter((_, j) => j !== i))}><Trash2 size={14} /></button>
             </div>
           ))}
+          <p className="text-[11.5px] text-zinc-500 px-0.5">In 3D each camera floats at its height on the map: drag it up or down, or the dot under it to move it.</p>
           <div className="flex gap-1.5 pt-1">
             <Button small onClick={() => setKeys([...keys.slice(0, -1), keyBetween(keys[keys.length - 2], keys[keys.length - 1]), keys[keys.length - 1]])} testid="fly-key-add"><Plus size={13} /> Keyframe</Button>
             <Button small onClick={() => set({ teeView: hole.id, flyover: true })} testid="fly-preview">Fly over</Button>

@@ -1,22 +1,26 @@
 // The panel for what is selected: a hole (par, fairway, notes, numbers, profile) or one item.
+import { PlaceByGps } from "./PlaceByGps";
+import { BRUSH_SECTION } from "../lib/view";
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X } from "lucide-react";
+import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X, Plus } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
-import { areaPath, autoWalks, byNumber, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, obPicked, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
+import { areaPath, areaRing, byNumber, obFor, obSides, sideCompass, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, obPicked, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import { STRUCTURE_INK } from "../lib/symbols";
 import { courseStats, holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
 import { fairwayTrees } from "../lib/lidar";
-import { addHoleOb, deleteSelection, duplicateSelection, editWalks, markObBeyond, select, setTeeLevel, shareBasket } from "../state/actions";
+import { conifersOf } from "../lib/landscapes";
+import { addHoleOb, deleteSelection, duplicateSelection, markObBeyond, startAnotherPin, startAnotherTee, startHoleToBasket, select, setTeeLevel, shareBasket } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface, TreeKind } from "../types";
+import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface, BrushKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
+import { TreeSettings } from "./TreeSettings";
 import { HoleFlight } from "./FlyoverSettings";
 import { HoleSteps } from "./HoleSteps";
-import { getView } from "./MapViewport";
-import { Button, ColorInput, Field, NumberInput, Section, Segmented, Slider, Facts, TextInput, Toggle } from "./ui";
+import { getView } from "../state/view";
+import { Button, ChoiceList, ColorInput, Field, NumberInput, Section, Segmented, Slider, Facts, TextInput, Toggle } from "./ui";
 
 const shapeText = { straight: "Straight", left: "Turns left", right: "Turns right", "s-curve": "S-curve" };
 /** A small size to the half foot (or tenth of a meter): "2.5 ft". */
@@ -48,7 +52,7 @@ function HoleNumberInput({ holeId, value }: { holeId: string; value: string }) {
         aria-label="Hole number"
         data-testid="hole-number"
         inputMode="numeric"
-        className="w-16 touch:w-20 h-8 touch:h-11 rounded-lg bg-zinc-800 border border-zinc-700 text-center text-sm touch:text-base font-bold text-zinc-50 focus:outline-none focus:ring-2 focus:ring-sky-400/80"
+        className="w-16 touch:w-20 h-8 touch:h-11 rounded-lg bg-white/[0.07] border border-white/[0.12] text-center text-sm touch:text-base font-bold text-zinc-50 focus:outline-none focus:ring-2 focus:ring-sky-400/80"
         value={text}
         onChange={e => setText(e.target.value.replace(/[^0-9/, &]/g, "").slice(0, 16))}
         onFocus={e => e.target.select()}
@@ -97,9 +101,6 @@ function HoleInspector({ hole }: { hole: Hole }) {
   const doc = useCourse(s => s.doc);
   const s = useMemo(() => holeStats(doc, hole), [doc, hole]);
   const label = holeLabel(doc, hole.id);
-  // The walk on to the next tee, while it is the automatic one
-  const walkNext = useMemo(() => (doc.style.nextTee ? autoWalks(doc.items, courseStats(doc), doc.holes).find(w => w.a.holeId === hole.id) ?? null : null), [doc, hole.id]);
-  const nextNo = walkNext ? holeLabel(doc, walkNext.b.holeId) : "";
   const u = doc.units;
   const tees = holeTees(doc, hole.id);
   const baskets = holeBaskets(doc, hole.id);
@@ -138,6 +139,62 @@ function HoleInspector({ hole }: { hole: Hole }) {
           </div>
         )}
       </Section>
+      <Section title="How it's played" help="tees-pins" testid="how-played">
+        {(() => {
+          // (the layout worked on, on a hole with no tee of its color: played from the nearest)
+          const layout = doc.layouts.length > 1 ? doc.layouts.find(l => l.id === doc.activeLayout) : undefined;
+          if (!layout || !tees.length || tees.some(t => t.level === layout.tee)) return null;
+          const lvl = TEE_LEVELS[layout.tee];
+          return (
+            <div className="flex items-center gap-2 mb-2 text-[11px] text-zinc-300 leading-snug" data-testid="layout-missing-tee">
+              <span className="flex-1">No {lvl.label.toLowerCase()} tee yet: the {layout.name} layout plays this hole from the {TEE_LEVELS[tees.find(t => t.id === s.teeId)?.level ?? tees[0].level].label.toLowerCase()} one.</span>
+              <Button small onClick={() => useEditor.getState().set({ tool: "add-tee", teeLevel: layout.tee, activeHoleId: hole.id })}>Add one</Button>
+            </div>
+          );
+        })()}
+        <div className="flex flex-wrap gap-1.5 mb-2" data-testid="hole-tees">
+          {tees.map(t => (
+            <button key={t.id} className="flex items-center gap-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.14] px-2.5 py-1 text-xs text-zinc-100" onClick={() => select(t.id)} title={`${TEE_LEVELS[t.level].label} tee: pick it`}>
+              <span className="w-2.5 h-2.5 rounded-full ring-1 ring-black/40" style={{ background: TEE_LEVELS[t.level].color }} />
+              {TEE_LEVELS[t.level].label} <span className="text-zinc-400 tabular-nums">{fmtDist(holeStats(doc, hole, { id: "x", name: "", tee: t.level, pin: "A" }).length, u)}</span>
+            </button>
+          ))}
+          {baskets.map(b => (
+            <button key={b.id} className="flex items-center gap-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.14] px-2.5 py-1 text-xs text-zinc-100" onClick={() => select(b.id)} title={`Pin ${b.position}: pick it`}>
+              <span className="w-2.5 h-2.5 rounded-full border-2" style={{ borderColor: doc.style.basket }} />Pin {b.position}
+            </button>
+          ))}
+        </div>
+        {(() => {
+          // (which holes finish at its basket)
+          const others = doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => baskets.some(x => x.id === b.id)));
+          return others.length > 0 && <div className="text-[11.5px] text-zinc-400 mb-2" data-testid="shared-with">Its basket is shared with hole{others.length === 1 ? "" : "s"} {others.map(h => holeLabel(doc, h.id)).join(", ")}.</div>;
+        })()}
+        <div className="flex flex-col gap-1.5" data-testid="hole-grow">
+          <button className="flex items-start gap-2.5 text-left rounded-[12px] bg-white/[0.06] hover:bg-white/[0.11] px-2.5 py-2" onClick={() => startAnotherTee(hole.id)} data-testid="another-tee">
+            <span className="mt-0.5 w-4 h-2.5 rounded-sm shrink-0" style={{ background: TEE_LEVELS[TEE_ORDER.find(l => !tees.some(t => t.level === l)) ?? "red"].color }} />
+            <span><span className="block text-[13px] font-semibold text-zinc-100">Another tee for this hole</span><span className="block text-[11.5px] text-zinc-400">Shorter or longer, for another skill level. Same hole number.</span></span>
+          </button>
+          {s.complete && (
+            <button className="flex items-start gap-2.5 text-left rounded-[12px] bg-white/[0.06] hover:bg-white/[0.11] px-2.5 py-2" onClick={() => startHoleToBasket(hole.id)} data-testid="hole-to-basket">
+              <Plus size={16} className="mt-0.5 shrink-0 text-orange-300" />
+              <span><span className="block text-[13px] font-semibold text-zinc-100">New hole to this basket</span><span className="block text-[11.5px] text-zinc-400">A separate hole, with its own number, that finishes at this basket.</span></span>
+            </button>
+          )}
+          <button className="flex items-start gap-2.5 text-left rounded-[12px] bg-white/[0.06] hover:bg-white/[0.11] px-2.5 py-2" onClick={() => startAnotherPin(hole.id)} data-testid="another-pin">
+            <span className="mt-0.5 w-3.5 h-3.5 rounded-full border-2 shrink-0" style={{ borderColor: doc.style.basket }} />
+            <span><span className="block text-[13px] font-semibold text-zinc-100">Another pin position</span><span className="block text-[11.5px] text-zinc-400">The same hole to a different basket spot (pin B, C…).</span></span>
+          </button>
+        </div>
+        {doc.holes.length > 1 && (
+          <details className="mt-2"><summary className="cursor-pointer text-[11.5px] text-zinc-400 hover:text-zinc-200">Play to another hole's basket instead</summary>
+            <select aria-label="Basket" data-testid="share-basket" className="mt-1.5 w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
+              <option value="">Its own basket</option>
+              {doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => b.holeId === h.id)).map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}'s basket</option>)}
+            </select>
+          </details>
+        )}
+      </Section>
       {s.complete && (
         <Section title="Elevation profile">
           <ElevationProfile doc={doc} line={s.line} />
@@ -146,7 +203,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
           </div>
         </Section>
       )}
-      <Section title="Par and play">
+      <Section title="Par and play" help="par">
         <Field label="Par">
           <Segmented
             label="Par"
@@ -155,7 +212,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
             options={[{ value: 0, label: `Auto (${s.parAuto})` }, ...[2, 3, 4, 5, 6].map(p => ({ value: p, label: String(p) }))]}
           />
         </Field>
-        <Field label="Foliage">
+        <Field label="Foliage" hint="Heavy foliage makes it play longer: its plays-like length and par.">
           <Segmented label="Foliage" value={hole.foliage ?? "auto"} onChange={v => set({ foliage: v === "auto" ? undefined : (v as "light" | "heavy") })} options={[{ value: "auto", label: `Auto (${s.foliage})` }, { value: "light", label: "Light" }, { value: "heavy", label: "Heavy" }]} />
         </Field>
         <Toggle label="Draw the fairway" checked={hole.fairway} onChange={v => set({ fairway: v })} />
@@ -166,9 +223,9 @@ function HoleInspector({ hole }: { hole: Hole }) {
               <p className="text-[11px] text-zinc-400 leading-snug">
                 {hole.fairwayShape
                   ? `Shaped: ${hole.fairwayShape.map(f => fmtDist(f * hole.fairwayWidth, u)).join(" · ")}`
-                  : hole.fairwayShift ? "Shaped" : "Even width"}
+                  : hole.fairwayShift ? "Shaped" : "The same width all along. Drag the squares on its edges to shape it."}
               </p>
-              {(hole.fairwayShape || hole.fairwayShift) && <button className="shrink-0 text-xs text-orange-300 hover:text-orange-200" onClick={() => set({ fairwayShape: undefined, fairwayShift: undefined, fairwayStations: undefined })}>Even width</button>}
+              {(hole.fairwayShape || hole.fairwayShift) && <button className="shrink-0 text-xs text-orange-300 hover:text-orange-200" onClick={() => set({ fairwayShape: undefined, fairwayShift: undefined, fairwayStations: undefined })}>Make it even</button>}
             </div>
           </>
         )}
@@ -184,23 +241,6 @@ function HoleInspector({ hole }: { hole: Hole }) {
           </div>
         )}
       </Section>
-      {walkNext && (
-        <Section title={`Walk to hole ${nextNo}`} testid="hole-walk">
-          <Slider label="Width" min={1} max={20} step={0.5} value={hole.walkWidth ?? doc.style.walkWidth ?? 6} onChange={v => set({ walkWidth: v })} format={v => fmtDist(v, u)} />
-          <Slider label="All walks" min={1} max={20} step={0.5} value={doc.style.walkWidth ?? 6} onChange={v => setAllWalks(v, false)} onDone={() => useCourse.getState().commit()} format={v => fmtDist(v, u)} />
-          <SurfacePick value={hole.walkSurface} onChange={v => set({ walkSurface: v })} />
-          <div className="flex flex-wrap gap-1.5">
-            <Button small onClick={() => editWalks(hole.id)} testid="edit-walk">Edit the walk to hole {nextNo}</Button>
-            {hole.walkOut && <Button small onClick={() => set({ walkOut: undefined })} testid="walk-out-reset">Start off the green again</Button>}
-            <Button small tone="danger" onClick={() => set({ walkOff: true })} testid="walk-remove"><Trash2 size={13} /> Remove this walk</Button>
-          </div>
-        </Section>
-      )}
-      {hole.walkOff && doc.style.nextTee && (
-        <Section title="Walk to the next hole" testid="hole-walk-off">
-          <Button small onClick={() => set({ walkOff: undefined })} testid="walk-restore">Add the walk back</Button>
-        </Section>
-      )}
       {s.complete && (
         <Section title="In play">
           <ul className="text-xs text-zinc-300 space-y-1" data-testid="hole-in-play">
@@ -210,37 +250,8 @@ function HoleInspector({ hole }: { hole: Hole }) {
           </ul>
         </Section>
       )}
-      <Section title="Tees and pins">
-        {doc.holes.length > 1 && (
-          <Field label="Basket">
-            <select aria-label="Basket" data-testid="share-basket" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
-              <option value="">Its own</option>
-              {doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => b.holeId === h.id)).map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}'s</option>)}
-            </select>
-          </Field>
-        )}
-        <ul className="space-y-1">
-          {tees.map(t => (
-            <li key={t.id}>
-              <button className="w-full flex items-center gap-2 text-left text-xs text-zinc-200 hover:bg-zinc-800 rounded px-1.5 py-1" onClick={() => select(t.id)}>
-                <span className="w-3 h-3 rounded-sm border border-black/40" style={{ background: TEE_LEVELS[t.level].color }} />
-                {TEE_LEVELS[t.level].label} tee
-                <span className="ml-auto text-zinc-400">{fmtDist(holeStats(doc, hole, { id: "x", name: "", tee: t.level, pin: "A" }).length, u)}</span>
-              </button>
-            </li>
-          ))}
-          {baskets.map(b => (
-            <li key={b.id}>
-              <button className="w-full flex items-center gap-2 text-left text-xs text-zinc-200 hover:bg-zinc-800 rounded px-1.5 py-1" onClick={() => select(b.id)}>
-                <span className="w-3 h-3 rounded-full border-2" style={{ borderColor: doc.style.basket }} />
-                Pin {b.position}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </Section>
       {s.complete && (
-        <Section title="Flyover">
+        <Section title="Flyover" help="flyover">
           <HoleFlight hole={hole} />
         </Section>
       )}
@@ -252,7 +263,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
 function SurfacePick({ value, onChange }: { value?: PathSurface; onChange: (v: PathSurface | undefined) => void }) {
   return (
     <Field label="Surface">
-      <select aria-label="Surface" data-testid="path-surface" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={value ?? "dirt"} onChange={e => onChange(e.target.value === "dirt" ? undefined : (e.target.value as PathSurface))}>
+      <select aria-label="Surface" data-testid="path-surface" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={value ?? "dirt"} onChange={e => onChange(e.target.value === "dirt" ? undefined : (e.target.value as PathSurface))}>
         {(Object.keys(PATH_SURFACES) as PathSurface[]).map(k => <option key={k} value={k}>{PATH_SURFACES[k].label}</option>)}
       </select>
     </Field>
@@ -260,15 +271,94 @@ function SurfacePick({ value, onChange }: { value?: PathSurface; onChange: (v: P
 }
 
 /** A hole's chip in a pick of holes. */
-const holeChip = (on: boolean) => `px-2 py-1 touch:py-2 rounded-md text-xs font-semibold border ${on ? "bg-orange-500/20 border-orange-400 text-orange-100" : "border-zinc-700 text-zinc-300 hover:border-zinc-500"}`;
+const holeChip = (on: boolean) => `px-2 py-1 touch:py-2 rounded-md text-xs font-semibold border ${on ? "bg-orange-500/20 border-orange-400 text-orange-100" : "border-white/[0.12] text-zinc-300 hover:border-zinc-500"}`;
 
 /** Whether water, a creek, a road, a fence or a path is out of bounds (and shown so on the map);
  * a line OB beyond it too, and along all of it or stretches of it. */
 /** A woods area's trees in 3D: measured from the air, drawn, or none (with measured trees only). */
+const BRUSH_LEVELS = [{ value: "none", label: "None" }, { value: "light", label: "Light" }, { value: "medium", label: "Medium" }, { value: "heavy", label: "Heavy" }] as const;
+type BrushLevel = (typeof BRUSH_LEVELS)[number]["value"];
+
+const BRUSH_KINDS: { value: BrushKind; label: string }[] = [{ value: "mixed", label: "A mix" }, { value: "thicket", label: "Thicket" }, { value: "briars", label: "Briars & thorns" }, { value: "weeds", label: "Weeds" }];
+const kindSelect = "bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80";
+
+/** A wood's underbrush: its own level and kind, and sections drawn inside it with their own. */
+function WoodsBrush({ item }: { item: AreaItem }) {
+  const drawing = useEditor(e => e.patchFor === item.id && e.patchBrush);
+  const sections = item.brush ?? [];
+  const setSections = (next: { points: P[]; level: BrushLevel; kind?: BrushKind }[]) => updateItem(item.id, { brush: next.length ? next : undefined } as Partial<CourseItem>);
+  const draw = () => useEditor.getState().set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", patchFor: item.id, patchBrush: true });
+  const kind = item.brushKind ?? "mixed";
+  return (
+    <div className="mb-3" data-testid="woods-brush">
+      <Field label={sections.length ? "Underbrush (the rest of the wood)" : "Underbrush"} help="woods" hint="Bushes, thickets, briars and weeds under the trees. It stays off fairways and paths.">
+        <Segmented label="Underbrush" value={item.underbrush ?? "none"} onChange={v => updateItem(item.id, { underbrush: v === "none" ? undefined : v } as Partial<CourseItem>)} options={[...BRUSH_LEVELS]} />
+      </Field>
+      {(item.underbrush || sections.length > 0) && (
+        <label className="flex items-center gap-2 mb-3 text-xs text-zinc-400">
+          <span className="w-16 shrink-0">What grows</span>
+          <select aria-label="What the underbrush is" data-testid="brush-kind" className={`${kindSelect} flex-1 min-w-0`} value={kind} onChange={e => updateItem(item.id, { brushKind: e.target.value === "mixed" ? undefined : e.target.value } as Partial<CourseItem>)}>
+            {BRUSH_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
+          </select>
+        </label>
+      )}
+      {sections.length > 0 && <div className="text-[11px] text-zinc-500 mb-1.5"><span className="inline-block w-3 border-t-2 border-dashed align-middle mr-1.5" style={{ borderColor: BRUSH_SECTION }} />Sections, outlined on the map: each its own underbrush (where they overlap, the later one's).</div>}
+      {sections.map((b, k) => (
+        <div key={k} className="rounded-lg bg-white/[0.07] p-2 mb-1.5" data-testid="brush-section">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-semibold text-zinc-300">Section {k + 1}</span>
+            <button className="p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-white/[0.09]" aria-label={`Remove section ${k + 1}`} title="Remove" onClick={() => setSections(sections.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
+          </div>
+          <Segmented label={`Section ${k + 1} underbrush`} value={b.level} onChange={v => setSections(sections.map((q, m) => (m === k ? { ...q, level: v } : q)))} options={[...BRUSH_LEVELS]} />
+          {b.level !== "none" && (
+            <select aria-label={`Section ${k + 1}: what grows`} className={`${kindSelect} w-full mt-1.5`} value={b.kind ?? ""} onChange={e => setSections(sections.map((q, m) => (m === k ? { ...q, kind: (e.target.value || undefined) as BrushKind | undefined } : q)))}>
+              <option value="">As the rest ({BRUSH_KINDS.find(x => x.value === kind)!.label.toLowerCase()})</option>
+              {BRUSH_KINDS.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}
+            </select>
+          )}
+        </div>
+      ))}
+      {drawing
+        ? <div className="text-xs text-orange-300">Draw around the part of the wood with the mouse held down (a finger on a phone); let go to finish. Esc cancels.</div>
+        : <Button small onClick={draw} testid="brush-draw-section" title="Draw around part of this wood to give it its own underbrush"><Plus size={13} /> Draw a section with its own underbrush</Button>}
+      {(item.underbrush || sections.some(b => b.level !== "none")) && (
+        <div className="mt-2">
+          <Slider label="Thicker at the edges" min={0} max={100} step={5} value={Math.round((item.brushEdge ?? 0.6) * 100)}
+            onChange={v => updateItem(item.id, { brushEdge: v / 100 } as Partial<CourseItem>, false)} onDone={() => useCourse.getState().commit()}
+            format={v => (v === 0 ? "Even everywhere" : `${100 - v}% as much deep inside`)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** How a wood the app plants fills itself: its mix of pines and bushes, how thick, how tall. */
+function WoodsMix({ item }: { item: AreaItem }) {
+  const style = useCourse(s => s.doc.style);
+  const u = useCourse(s => s.doc.units);
+  const set = (patch: Partial<AreaItem>, history = false) => updateItem(item.id, patch as Partial<CourseItem>, history);
+  const done = () => useCourse.getState().commit();
+  const [lo, hi] = item.heights ?? [38, 72];
+  const own = item.pines !== undefined || item.bushes !== undefined || item.density !== undefined || item.heights !== undefined;
+  return (
+    <div className="mb-3" data-testid="woods-mix">
+      <div className="text-xs text-zinc-400 mb-1">The trees it grows</div>
+      <Slider label="Pines" min={0} max={100} step={5} value={Math.round((item.pines ?? conifersOf(style)) * 100)} onChange={v => set({ pines: v / 100 })} onDone={done} format={v => `${v}%`} />
+      <Slider label="Bushes" min={0} max={80} step={5} value={Math.round((item.bushes ?? 0) * 100)} onChange={v => set({ bushes: v ? v / 100 : undefined })} onDone={done} format={v => (v ? `${v}%` : "None")} />
+      <Slider label="Density" min={20} max={250} step={10} value={Math.round((item.density ?? 1) * 100)} onChange={v => set({ density: v / 100 })} onDone={done} format={v => (v === 100 ? "Usual" : v < 100 ? `Sparser (${v}%)` : `Denser (${v}%)`)} />
+      <Slider label="Shortest trees" min={8} max={100} value={Math.round(lo)} onChange={v => set({ heights: [Math.min(v, hi - 2), hi] })} onDone={done} format={v => fmtDist(v, u)} />
+      <Slider label="Tallest trees" min={12} max={130} value={Math.round(hi)} onChange={v => set({ heights: [lo, Math.max(v, lo + 2)] })} onDone={done} format={v => fmtDist(v, u)} />
+      {own && <Button small tone="ghost" onClick={() => set({ pines: undefined, bushes: undefined, density: undefined, heights: undefined }, true)} testid="woods-usual" title="The landscape's own mix again"><RotateCcw size={13} /> Reset</Button>}
+      <div className="text-[11px] text-zinc-500 mt-1">Any of its trees: click it to change just that one.</div>
+    </div>
+  );
+}
+
 function WoodsTrees({ item }: { item: AreaItem }) {
   const measured = useCourse(s => !!s.doc.lidar?.trees.length);
   const drawing = useEditor(e => e.patchFor === item.id);
-  if (!measured) return null;
+  // (a course without measured trees: the wood grows its own, set here)
+  if (!measured) return <WoodsMix item={item} />;
   const mode = item.trees ?? "measured";
   const patches = item.patches ?? [];
   const setPatches = (next: { points: P[]; fill: number }[], history = true) => updateItem(item.id, { patches: next.length ? next : undefined } as Partial<CourseItem>, history);
@@ -276,10 +366,16 @@ function WoodsTrees({ item }: { item: AreaItem }) {
   const draw = () => useEditor.getState().set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", patchFor: item.id });
   return (
     <>
-      <Field label="Trees" hint={mode === "custom" ? "The measured trees, plus drawn ones filling in the patches you draw." : mode === "none" ? "No trees in here." : mode === "drawn" ? "The app's own trees only." : "The measured trees, cleared where the holes play."}>
-        <Segmented label="Trees" value={mode} onChange={v => updateItem(item.id, { trees: v === "measured" ? undefined : v } as Partial<CourseItem>)}
-          options={[{ value: "measured", label: "Measured" }, { value: "custom", label: "Custom" }, { value: "drawn", label: "Drawn" }, { value: "none", label: "None" }]} />
+      <Field label="Trees in these woods" help="woods">
+        <ChoiceList label="Trees in these woods" testid="woods-trees" value={mode} onChange={v => updateItem(item.id, { trees: v === "measured" ? undefined : v } as Partial<CourseItem>)}
+          options={[
+            { value: "measured", label: "Real trees", hint: "The trees the aerial survey (LiDAR) found here, at their real size and spot. Trees in a fairway are cut down." },
+            { value: "custom", label: "Real trees plus fill-in", hint: "The real trees, plus trees the app plants in patches you draw. Use it where the survey missed trees or new ones have grown." },
+            { value: "drawn", label: "Planted by the app", hint: "Ignores the survey here. The app plants its own trees, using the mix below." },
+            { value: "none", label: "No trees", hint: "Clears every tree in these woods, even ones the survey found." }
+          ]} />
       </Field>
+      {(mode === "drawn" || mode === "custom") && <WoodsMix item={item} />}
       {mode === "custom" && (
         <div className="mb-3" data-testid="woods-patches">
           {patches.map((p, k) => (
@@ -288,7 +384,7 @@ function WoodsTrees({ item }: { item: AreaItem }) {
               <input type="range" aria-label={`Patch ${k + 1} density`} min={0.1} max={1} step={0.1} value={p.fill} className="flex-1 accent-orange-500"
                 onChange={e => setPatches(patches.map((q, m) => (m === k ? { ...q, fill: parseFloat(e.target.value) } : q)), false)} onPointerUp={() => useCourse.getState().commit()} onKeyUp={() => useCourse.getState().commit()} />
               <span className="text-xs text-zinc-400 tabular-nums w-9 text-right">{Math.round(p.fill * 100)}%</span>
-              <button className="p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-zinc-800" aria-label={`Remove patch ${k + 1}`} title="Remove" onClick={() => setPatches(patches.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
+              <button className="p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-white/[0.09]" aria-label={`Remove patch ${k + 1}`} title="Remove" onClick={() => setPatches(patches.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
             </div>
           ))}
           {!patches.length && <div className="text-[11px] text-zinc-500 mb-1">No patches yet.</div>}
@@ -308,39 +404,54 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
   const wet = item.kind === "water" || item.kind === "stream";
   const line = item.type === "line" ? item : null;
   const value = item.ob === true ? (line?.obBeyond ? "beyond" : "edge") : item.ob === false || !wet ? "no" : "yes";
-  const options = [{ value: "no", label: "Not OB" }, ...(wet ? [{ value: "yes", label: "OB" }] : []), { value: "edge", label: "OB, red edge" }, ...(line ? [{ value: "beyond", label: "OB and beyond" }] : [])];
+  const options = [{ value: "no", label: "Not OB" }, ...(wet ? [{ value: "yes", label: "OB (no line)" }] : []), { value: "edge", label: "OB, red edge" }, ...(line ? [{ value: "beyond", label: "OB and beyond" }] : [])];
   const pick = (v: string) => {
     if (line && v === "beyond") return markObBeyond(item.id);
     updateItem(item.id, {
       ob: v === "edge" ? true : v === "no" ? (wet ? false : undefined) : undefined,
-      ...(line ? { obBeyond: undefined, ...(v === "edge" ? {} : { obStretches: undefined, obHoles: undefined }) } : {})
+      ...(line ? { obBeyond: undefined, obToward: undefined, ...(v === "edge" ? {} : { obStretches: undefined, obHoles: undefined }) } : v === "edge" ? {} : { obStretches: undefined })
     } as Partial<CourseItem>);
   };
-  const len = line ? pathLength(linePath(line)) : 0;
+  // (a line along its length, an area round its edge)
+  const len = line ? pathLength(linePath(line)) : item.type === "area" ? pathLength(areaRing(item)) : 0;
+  const stretches = item.obStretches;
   const markStretch = () => useEditor.getState().set({ obPick: item.id, pickCut: false, tool: "select" });
   // The holes it is OB for (none picked: all of them)
   const picked = line ? obPicked(doc, line) : [];
   const setObHoles = (ids: string[]) => updateItem(item.id, { obHoles: ids.length ? ids : undefined } as Partial<CourseItem>);
   return (
     <>
-      <Field label="Out of bounds">
+      <Field label="Out of bounds" help="ob">
         <Segmented label="Out of bounds" value={value} onChange={pick} options={options} />
       </Field>
-      {line && item.ob === true && (
-        <Field label="OB along">
+      {line?.obBeyond && item.ob === true && (() => {
+        // Which side is out: the app's guess (away from the holes beside it), or either side
+        const drawn = linePath(line);
+        const lines = courseStats(doc).filter(st => st.complete && obFor(doc, line, st.holeId)).map(st => st.line);
+        const guess = obSides(drawn, lines, 300, true)[0] === 1 ? -1 : 1;
+        const name = (s: 1 | -1) => `${sideCompass(drawn, s)[0].toUpperCase()}${sideCompass(drawn, s).slice(1)} side`;
+        return (
+          <Field label="Out of bounds to the">
+            <Segmented label="OB side" value={line.obToward ?? 0} onChange={v => updateItem(item.id, { obToward: v === 0 ? undefined : v } as Partial<CourseItem>)}
+              options={[{ value: 0, label: `Auto (${sideCompass(drawn, guess)})` }, { value: 1, label: name(1) }, { value: -1, label: name(-1) }]} />
+          </Field>
+        );
+      })()}
+      {item.ob === true && (
+        <Field label={line ? "OB along" : "OB along its edge"}>
           <div className="flex flex-col gap-1.5" data-testid="ob-stretches">
-            {line.obStretches?.length ? line.obStretches.map(([a, b], k) => (
+            {stretches?.length ? stretches.map(([a, b], k) => (
               <div key={k} className="flex items-center gap-2 text-sm text-zinc-200" data-testid="ob-stretch">
                 <span className="flex-1 tabular-nums">{fmtDist(Math.min(a, b) * len, units, false)} to {fmtDist(Math.max(a, b) * len, units)}</span>
-                <button className="p-1 rounded hover:bg-zinc-800 text-zinc-400" aria-label={`Remove stretch ${k + 1}`} onClick={() => {
-                  const rest = line.obStretches!.filter((_, j) => j !== k);
+                <button className="p-1 rounded hover:bg-white/[0.09] text-zinc-400" aria-label={`Remove stretch ${k + 1}`} onClick={() => {
+                  const rest = stretches.filter((_, j) => j !== k);
                   updateItem(item.id, (rest.length ? { obStretches: rest } : { obStretches: undefined, ob: undefined }) as Partial<CourseItem>);
                 }}><X size={14} /></button>
               </div>
-            )) : <span className="text-sm text-zinc-200">All of it</span>}
+            )) : <span className="text-sm text-zinc-200">{line ? "All of it" : "All the way round"}</span>}
             <div className="flex gap-1.5">
-              <Button small onClick={markStretch} testid="ob-mark-stretch">{line.obStretches?.length ? "Add a stretch" : "Only a stretch"}</Button>
-              {!!line.obStretches?.length && <Button small onClick={() => updateItem(item.id, { obStretches: undefined } as Partial<CourseItem>)} testid="ob-all">All of it</Button>}
+              <Button small onClick={markStretch} testid="ob-mark-stretch">{stretches?.length ? "Add a stretch" : "Only a stretch"}</Button>
+              {!!stretches?.length && <Button small onClick={() => updateItem(item.id, { obStretches: undefined } as Partial<CourseItem>)} testid="ob-all">{line ? "All of it" : "All the way round"}</Button>}
             </div>
           </div>
         </Field>
@@ -364,7 +475,7 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
 function TurnShape({ item }: { item: AreaItem | LineItem | StructureItem }) {
   if (item.locked || item.points.length < 2) return null;
   const turn = (deg: number) => updateItem(item.id, turnShape(item.points, item, (deg * Math.PI) / 180) as Partial<CourseItem>);
-  const b = "flex-1 h-8 touch:h-11 rounded-lg border border-zinc-700 hover:border-zinc-500 text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1";
+  const b = "flex-1 h-8 touch:h-11 rounded-lg border border-white/[0.12] hover:border-zinc-500 text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1";
   return (
     <Field label="Turn">
       <div className="flex gap-1.5" data-testid="turn-shape">
@@ -398,25 +509,33 @@ function ItemInspector({ item }: { item: CourseItem }) {
     </Field>
   ) : (
     <Field label="Belongs to">
-      <select aria-label="Belongs to hole" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={("holeId" in item && item.holeId) || ""} onChange={e => set({ holeId: e.target.value || undefined })}>
+      <select aria-label="Belongs to hole" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={("holeId" in item && item.holeId) || ""} onChange={e => set({ holeId: e.target.value || undefined })}>
         {holeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </Field>
   );
   let body: JSX.Element | null = null;
+  // A length typed in the course's units (kept in feet)
+  const M = 3.28084;
+  const lenIn = (label: string, ft: number, min: number, max: number, onFt: (v: number) => void) => u === "m"
+    ? <NumberInput label={label} value={Math.round((ft / M) * 10) / 10} min={Math.round((min / M) * 10) / 10} max={Math.round((max / M) * 10) / 10} step={0.1} unit="m" onChange={v => onFt(Math.round(v * M * 10) / 10)} />
+    : <NumberInput label={label} value={ft} min={min} max={max} step={0.5} unit="ft" onChange={onFt} />;
   switch (item.type) {
     case "tee":
       body = (
         <>
+          {holeStats(doc, doc.holes.find(h => h.id === item.holeId) ?? doc.holes[0]).complete && doc.holes.some(h => h.id === item.holeId) && (
+            <div className="mb-3"><Button small onClick={() => useEditor.getState().set({ teeView: item.holeId, teeViewTee: item.id, flyover: false })} testid="tee-view-this"><Eye size={14} /> View from this tee</Button></div>
+          )}
           <Field label="Tee color (skill level)">
             <Segmented label="Tee color" value={item.level} onChange={v => setTeeLevel(item.id, v)} options={TEE_ORDER.map(l => ({ value: l, label: TEE_LEVELS[l].label, title: `${TEE_LEVELS[l].skill} (${TEE_LEVELS[l].rating})` }))} />
           </Field>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Pad width"><NumberInput label="Pad width" value={item.padWidth} min={2} max={20} step={0.5} unit="ft" onChange={v => set({ padWidth: v })} /></Field>
-            <Field label="Pad length"><NumberInput label="Pad length" value={item.padLength} min={4} max={30} step={0.5} unit="ft" onChange={v => set({ padLength: v })} /></Field>
+            <Field label="Pad width">{lenIn("Pad width", item.padWidth, 2, 20, v => set({ padWidth: v }))}</Field>
+            <Field label="Pad length">{lenIn("Pad length", item.padLength, 4, 30, v => set({ padLength: v }))}</Field>
           </div>
           <Field label="Surface">
-            <select aria-label="Tee surface" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.surface} onChange={e => set({ surface: e.target.value as TeeSurface })}>
+            <select aria-label="Tee surface" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.surface} onChange={e => set({ surface: e.target.value as TeeSurface })}>
               {(Object.keys(TEE_SURFACES) as TeeSurface[]).map(k => <option key={k} value={k}>{TEE_SURFACES[k].label}</option>)}
             </select>
           </Field>
@@ -431,7 +550,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
             <Segmented label="Pin position" value={item.position} onChange={v => set({ position: v })} options={PIN_POSITIONS.map(p => ({ value: p, label: p }))} />
           </Field>
           <Field label="Raised above the ground">
-            <NumberInput label="Raised" value={item.raised ?? 0} min={0} max={30} step={0.5} unit="ft" onChange={v => set({ raised: v || undefined })} />
+            {lenIn("Raised", item.raised ?? 0, 0, 30, v => set({ raised: v || undefined }))}
           </Field>
         </>
       );
@@ -453,13 +572,14 @@ function ItemInspector({ item }: { item: CourseItem }) {
       body = (
         <>
           <Field label="Kind">
-            <select aria-label="Area kind" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as AreaKind })}>
+            <select aria-label="Area kind" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as AreaKind })}>
               {(Object.keys(AREA_KINDS) as AreaKind[]).map(k => <option key={k} value={k}>{AREA_KINDS[k].label}</option>)}
             </select>
           </Field>
           <Field label="Name on the map (optional)"><TextInput label="Area name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
-          {item.kind === "water" && <ObChoice item={item} />}
+          {item.kind !== "ob" && <ObChoice item={item} />}
           {item.kind === "woods" && <WoodsTrees item={item} />}
+          {item.kind === "woods" && <WoodsBrush item={item} />}
           {(item.kind === "ob" || item.kind === "hazard") && holePicker}
           {item.kind !== "parking" && item.kind !== "building" && <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />}
           <TurnShape item={item} />
@@ -471,7 +591,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
       body = (
         <>
           <Field label="Kind">
-            <select aria-label="Line kind" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as LineKind })}>
+            <select aria-label="Line kind" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as LineKind })}>
               {(Object.keys(LINE_KINDS) as LineKind[]).map(k => <option key={k} value={k}>{LINE_KINDS[k].label}</option>)}
             </select>
           </Field>
@@ -483,6 +603,14 @@ function ItemInspector({ item }: { item: CourseItem }) {
             </div>
           )}
           {(item.kind === "path" || item.kind === "walk") && <SurfacePick value={item.surface} onChange={v => set({ surface: v })} />}
+          {item.kind === "fence" && (
+            <>
+              <Field label="Fence">
+                <Segmented label="What the fence is" value={item.fenceStyle ?? "rail"} onChange={v => set({ fenceStyle: v === "rail" ? undefined : v })} options={[{ value: "rail", label: "Posts and rails" }, { value: "boards", label: "Boards" }, { value: "chain", label: "Chain link" }]} />
+              </Field>
+              <Slider label="Height" min={2} max={12} step={0.5} value={item.fenceHeight ?? 4} onChange={v => set({ fenceHeight: v })} format={v => fmtDist(v, u)} />
+            </>
+          )}
           <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />
           <Field label="Name on the map (optional)"><TextInput label="Line name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
           {item.kind !== "ob" && item.kind !== "walk" && <ObChoice item={item} />}
@@ -501,7 +629,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
       body = (
         <>
           <Field label="Kind">
-            <select aria-label="Structure kind" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as StructureKind })}>
+            <select aria-label="Structure kind" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as StructureKind })}>
               {kinds.map(k => <option key={k} value={k}>{STRUCTURE_KINDS[k].label}</option>)}
             </select>
           </Field>
@@ -513,7 +641,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
                 {BUILDING_LOOKS.map(l => {
                   const on = structureRoof(item) === l.roof && item.wallColor === l.wallColor && item.roofColor === l.roofColor;
                   return (
-                    <button key={l.id} role="radio" aria-checked={on} data-testid={`building-look-${l.id}`} onClick={() => set({ roof: l.roof as RoofKind, wallColor: l.wallColor, roofColor: l.roofColor })} className={`rounded-md border px-1.5 py-1 flex items-center gap-1.5 text-[11px] font-semibold ${on ? "border-orange-500 bg-orange-500/10 text-zinc-100" : "border-zinc-700 text-zinc-300 hover:border-zinc-500"}`}>
+                    <button key={l.id} role="radio" aria-checked={on} data-testid={`building-look-${l.id}`} onClick={() => set({ roof: l.roof as RoofKind, wallColor: l.wallColor, roofColor: l.roofColor })} className={`rounded-md border px-1.5 py-1 flex items-center gap-1.5 text-[11px] font-semibold ${on ? "border-orange-500 bg-orange-500/10 text-zinc-100" : "border-white/[0.12] text-zinc-300 hover:border-zinc-500"}`}>
                       <span className="w-3 h-3 rounded-sm" style={{ background: `linear-gradient(135deg, ${l.roofColor} 50%, ${l.wallColor} 50%)` }} />
                       {l.label}
                     </button>
@@ -547,22 +675,13 @@ function ItemInspector({ item }: { item: CourseItem }) {
       break;
     }
     case "tree":
-      body = (
-        <>
-          <Field label="Kind">
-            <Segmented label="Tree kind" value={item.treeType ?? "deciduous"} onChange={v => set({ treeType: v as TreeKind })} options={[{ value: "deciduous", label: "Leafy" }, { value: "conifer", label: "Pine" }, { value: "palm", label: "Palm" }, { value: "bush", label: "Bush" }]} />
-          </Field>
-          <Slider label="Crown radius" min={2} max={40} value={Math.round(item.radius)} onChange={v => set({ radius: v })} format={v => fmtDist(v, u)} />
-          {/* (taller or shorter keeps its shape: the crown grows or shrinks with it) */}
-          <Slider label="Height" min={3} max={110} value={Math.round(item.height ?? item.radius * 2.6)} onChange={v => { const h0 = item.height ?? item.radius * 2.6; set({ height: v, radius: Math.max(2, Math.min(40, Math.round(item.radius * (v / h0) * 10) / 10)) }); }} format={v => fmtDist(v, u)} />
-        </>
-      );
+      body = <TreeSettings item={item} set={(patch, history = true) => set(patch as Record<string, unknown>, history)} />;
       break;
     case "amenity":
       body = (
         <>
           <Field label="Kind">
-            <select aria-label="Amenity kind" className="w-full bg-zinc-800 rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as AmenityKind })}>
+            <select aria-label="Amenity kind" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as AmenityKind })}>
               {(Object.keys(AMENITY_KINDS) as AmenityKind[]).map(k => <option key={k} value={k}>{AMENITY_KINDS[k].label}</option>)}
             </select>
           </Field>
@@ -646,7 +765,7 @@ function GroupInspector({ items }: { items: CourseItem[] }) {
     <Section>
       <div className="text-sm font-bold text-zinc-50 mb-2" data-testid="inspector-title">{items.length} selected</div>
       <div className="flex flex-wrap gap-1.5" data-testid="group-kinds">
-        {parts.map(p => <span key={p} className="px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 text-xs text-zinc-200">{p}</span>)}
+        {parts.map(p => <span key={p} className="px-2 py-0.5 rounded-full bg-white/[0.07] border border-white/[0.12] text-xs text-zinc-200">{p}</span>)}
       </div>
     </Section>
   );
@@ -658,6 +777,7 @@ export function InspectorBody() {
   return (
     <>
       {hole ? <HoleInspector hole={hole} /> : item ? <ItemInspector item={item} /> : group.length ? <GroupInspector items={group} /> : null}
+      {item && "x" in item && "y" in item && item.type !== "area" && item.type !== "line" && item.type !== "structure" && <PlaceByGps item={item as never} />}
       {hole && <div className="px-4 pb-3"><Button small full onClick={() => getView()?.fitHole(hole.id)}>Zoom to this hole</Button></div>}
     </>
   );
@@ -675,7 +795,7 @@ export function InspectorActions({ big = false, close = true }: { big?: boolean;
       changeDoc(d => ({ items: d.items.map(i => (ids.has(i.id) ? { ...i, locked: !locked } : i)) }));
     }
   };
-  const base = big ? "w-11 h-11 flex items-center justify-center rounded-xl text-zinc-300 hover:bg-zinc-800" : "p-1.5 rounded text-zinc-400 hover:bg-zinc-800";
+  const base = big ? "w-11 h-11 flex items-center justify-center rounded-xl text-zinc-300 hover:bg-white/[0.09]" : "p-1.5 rounded text-zinc-400 hover:bg-white/[0.09]";
   const b = `${base} hover:text-zinc-50`;
   const sz = big ? 19 : 15;
   return (
@@ -696,7 +816,7 @@ export function Inspector() {
   }, [open]);
   if (!open) return null;
   return (
-    <aside className="absolute top-3 right-[150px] w-[300px] max-h-[calc(100%-120px)] overflow-y-auto bg-zinc-900/95 backdrop-blur rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 z-20" data-testid="inspector" aria-label="Selection">
+    <aside className="absolute top-3 right-[150px] w-[300px] max-h-[calc(100%-120px)] overflow-y-auto glass backdrop-blur rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 z-20" data-testid="inspector" aria-label="Selection">
       <div className="flex items-center gap-0.5 px-2 pt-2">
         {hole && <HoleSteps holeId={hole.id} />}
         <div className="flex-1" />

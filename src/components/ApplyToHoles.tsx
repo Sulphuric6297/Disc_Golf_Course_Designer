@@ -22,7 +22,7 @@ export function ApplyToHoles({ fromId, apply, testid }: { fromId?: string; apply
     <div data-testid={testid}>
       <Button small onClick={() => (open ? close() : setOpen(true))}>Apply to holes…</Button>
       {open && (
-        <div role="dialog" aria-label="Apply to holes" className="mt-1.5 rounded-lg border border-zinc-700 bg-zinc-900 p-2" data-testid="apply-holes">
+        <div role="dialog" aria-label="Apply to holes" className="mt-1.5 rounded-lg border border-white/[0.12] glass p-2" data-testid="apply-holes">
           <Toggle label="All holes" checked={all} onChange={v => setPicked(v ? others.map(h => h.id) : [])} />
           <div className="grid grid-cols-6 gap-1 my-1.5">
             {others.map(h => {
@@ -32,7 +32,7 @@ export function ApplyToHoles({ fromId, apply, testid }: { fromId?: string; apply
                   key={h.id}
                   aria-pressed={on}
                   aria-label={`Hole ${holeLabel(doc, h.id)}`}
-                  className={`rounded-md py-1 touch:py-2.5 text-xs font-semibold border ${on ? "bg-orange-500 border-orange-400 text-zinc-950" : "bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700"}`}
+                  className={`rounded-md py-1 touch:py-2.5 text-xs font-semibold border ${on ? "bg-orange-500 border-orange-400 text-zinc-950" : "bg-white/[0.07] border-white/[0.12] text-zinc-300 hover:bg-white/[0.13]"}`}
                   onClick={() => setPicked(p => (on ? p.filter(x => x !== h.id) : [...p, h.id]))}
                 >
                   {holeLabel(doc, h.id)}

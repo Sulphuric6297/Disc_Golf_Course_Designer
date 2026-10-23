@@ -40,6 +40,90 @@ async function oneHole(page: Page) {
 test.describe("phone", () => {
   test.use(device("iPhone 13"));
 
+  test("a hole picked: the strip under the map, its dial widening the fairway live (one undo step); holding open ground offers a tee, a bend, a new hole", async ({ page }) => {
+    await oneHole(page);
+    const hole = (await course(page)).holes[0];
+    await page.evaluate(id => (window as any).__dgActions.select(id), hole.id);
+    await expect(page.getByTestId("hole-strip")).toBeVisible();
+    await settle(page);
+    expect(await detent(page)).toBe("peek");
+    // (the tools make way for it)
+    await expect(page.getByTestId("tool-strip")).toHaveCount(0);
+    // The hole in the map above the sheet
+    const sheetTop = (await sheet(page).boundingBox())!.y;
+    const mid = await screenOf(page, 450, 500);
+    expect(mid.y).toBeLessThan(sheetTop);
+    // Fairway: the dial dragged left widens it as it goes, one undo step in all
+    await page.getByTestId("strip-fairway").tap();
+    const dial = page.getByTestId("dial");
+    const w0 = (await course(page)).holes[0].fairwayWidth;
+    const past0 = await page.evaluate(() => (window as any).__dgHistory().past);
+    const b = (await dial.boundingBox())!;
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2 - 90, b.y + b.height / 2, { steps: 6 });
+    await expect.poll(async () => (await course(page)).holes[0].fairwayWidth).toBe(w0 + 10);
+    await page.mouse.up();
+    expect(await page.evaluate(() => (window as any).__dgHistory().past)).toBe(past0 + 1);
+    // Par: the choices in its place
+    await page.getByTestId("strip-par").tap();
+    await page.getByTestId("hole-strip").getByRole("radio", { name: "4" }).tap();
+    await expect.poll(async () => (await course(page)).holes[0].par).toBe(4);
+    // Holding open ground beside the hole: a tee there, a bend
+    // (open ground a little above the hole on screen, clear of its fairway)
+    const m = await screenOf(page, 450, 500);
+    const g = { x: m.x, y: m.y - 70 };
+    await longPress(page, g);
+    await expect(page.getByTestId("map-menu-here")).toBeVisible();
+    await page.getByRole("menuitem", { name: "Bend the hole here" }).tap();
+    await expect.poll(async () => (await course(page)).holes[0].doglegs.length).toBe(1);
+    const m2 = await screenOf(page, 330, 500);
+    await longPress(page, { x: m2.x, y: m2.y - 70 });
+    await page.getByRole("menuitem", { name: "Add a tee here" }).tap();
+    await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "tee").length).toBe(2);
+  });
+
+  test("where you are: the blue dot follows you, and a new hole's tee and basket go where you stand", async ({ page, context }) => {
+    await openGround(page);
+    // (the site placed on the earth; the phone's GPS at plan spots)
+    const bounds = { north: 40, south: 39.99, west: -90, east: -89.99 };
+    await page.evaluate(b => (window as any).__dgActions.site({ bounds: b }), bounds);
+    const { width, height } = (await course(page)).canvas;
+    const geo = (x: number, y: number) => ({ latitude: bounds.north - (y / height) * (bounds.north - bounds.south), longitude: bounds.west + (x / width) * (bounds.east - bounds.west), accuracy: 2 });
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation(geo(300, 500));
+    await page.getByTestId("locate-me").tap();
+    await expect(page.getByTestId("my-location")).toBeVisible();
+    // (followed: the dot in the map's middle, about)
+    const box = (await page.getByTestId("my-location").boundingBox())!;
+    const vp = page.viewportSize()!;
+    expect(Math.abs(box.x + box.width / 2 - vp.width / 2)).toBeLessThan(vp.width * 0.25);
+    // The Hole tool offers your spot; the tee there, then walk to the basket
+    await expect(page.getByTestId("here-bar")).toContainText("Tee here");
+    await page.getByTestId("here-button").tap();
+    await expect.poll(() => page.evaluate(() => (window as any).__dgEditor().drawPoints)).toBe(1);
+    await context.setGeolocation(geo(600, 500));
+    await expect(page.getByTestId("draw-bar")).toContainText("Basket here");
+    // (once the dot has come to the new spot)
+    await expect.poll(async () => {
+      const d = (await page.getByTestId("my-location").boundingBox())!, s = await screenOf(page, 600, 500);
+      return Math.hypot(d.x + d.width / 2 - s.x, d.y + d.height / 2 - s.y);
+    }).toBeLessThan(20);
+    await page.getByTestId("here-button").tap();
+    await expect.poll(async () => (await course(page)).holes.length).toBe(1);
+    const d = await course(page);
+    const tee = d.items.find((i: any) => i.type === "tee"), basket = d.items.find((i: any) => i.type === "basket");
+    expect(Math.hypot(tee.x - 300, tee.y - 500)).toBeLessThan(6);
+    expect(Math.hypot(basket.x - 600, basket.y - 500)).toBeLessThan(6);
+    // How far to the basket, under the dot
+    await expect(page.getByTestId("my-location-tag")).toContainText("to the basket");
+    // Off again: no dot, no offer
+    await page.evaluate(() => (window as any).__dgEditor().set({ tool: "add-hole" }));
+    await page.getByTestId("locate-me").tap();
+    await expect(page.getByTestId("my-location")).toHaveCount(0);
+    await expect(page.getByTestId("here-bar")).toHaveCount(0);
+  });
+
   test("a course file opens from the menu (which closes while the file is picked)", async ({ page }) => {
     await openGround(page);
     const doc = createEmptyCourse();
@@ -79,7 +163,7 @@ test.describe("phone", () => {
     await expect(page.getByTestId("compass")).toBeVisible();
     await above();
     // (with the panel lower, more of them)
-    await nav(page).getByRole("button", { name: /Holes/ }).tap();
+    await nav(page).getByRole("button", { name: /Design/ }).tap();
     await above();
   });
 
@@ -101,7 +185,7 @@ test.describe("phone", () => {
     await expect(page.getByRole("toolbar", { name: "Tools" })).toHaveCount(0);
     // (A course with a hole: an empty one shows the welcome card on the Site step instead)
     await oneHole(page);
-    const titles: Record<string, string> = { Site: "Your site", Holes: "Holes", Features: "OB, mandos and more", Review: "Review", Design: "Map design", Export: "Export" };
+    const titles: Record<string, string> = { Site: "Your site", Design: "Design", Map: "Map", Export: "Export" };
     for (const [label, title] of Object.entries(titles)) {
       await nav(page).getByRole("button", { name: new RegExp(label) }).tap();
       await expect.poll(async () => (await editorState(page)).step).toBe(label.toLowerCase());
@@ -109,18 +193,18 @@ test.describe("phone", () => {
       await expect(nav(page).getByRole("button", { name: new RegExp(label) })).toHaveAttribute("aria-current", "step");
     }
     // Tapping the step that is open shows more of its panel, and tapping again less
-    await nav(page).getByRole("button", { name: /Holes/ }).tap();
+    await nav(page).getByRole("button", { name: /Design/ }).tap();
     await settle(page);
     expect(await detent(page)).toBe("peek");
-    await nav(page).getByRole("button", { name: /Holes/ }).tap();
+    await nav(page).getByRole("button", { name: /Design/ }).tap();
     await expect.poll(() => detent(page)).toBe("half");
-    await nav(page).getByRole("button", { name: /Holes/ }).tap();
+    await nav(page).getByRole("button", { name: /Design/ }).tap();
     await expect.poll(() => detent(page)).toBe("peek");
   });
 
   test("finding the park on a phone: search on top, the map, then the button at the bottom", async ({ page }) => {
     await page.getByTestId("welcome-find").tap();
-    const dialog = page.getByRole("dialog", { name: "Find your course site" });
+    const dialog = page.getByRole("dialog", { name: "Find your park" });
     await page.getByLabel("Search address").fill("Springfield Park");
     await dialog.getByRole("button", { name: /Springfield Park/ }).first().tap();
     await expect(page.getByTestId("site-size")).toBeVisible();
@@ -134,8 +218,9 @@ test.describe("phone", () => {
     expect(go.y + go.height).toBeGreaterThan(vh * 0.85);
     await page.getByTestId("import-site").tap();
     await expect.poll(async () => (await course(page)).background, { timeout: 60_000 }).not.toBeNull();
-    await expect.poll(async () => (await editorState(page)).step).toBe("holes");
-    await expect(page.getByTestId("tool-hint")).toContainText("Tap where the tee goes");
+    await expect.poll(async () => (await editorState(page)).step).toBe("design");
+    // (the pointer first: a look round before the first hole)
+    await expect.poll(async () => (await editorState(page)).tool).toBe("select");
   });
 
   test("the sheet rests at peek, half and full: drag it, tap its handle, or use the arrow keys", async ({ page }) => {
@@ -217,7 +302,7 @@ test.describe("phone", () => {
 
   test("an area drawn with taps: Undo takes a point back, Done finishes it", async ({ page }) => {
     await oneHole(page);
-    await nav(page).getByRole("button", { name: /Features/ }).tap();
+    await nav(page).getByRole("button", { name: /Design/ }).tap();
     await page.locator('[data-tool="draw-area"]').tap();
     await page.getByTestId("area-kind-ob").tap();
     await expect(page.getByTestId("tool-hint")).toContainText("Tap the corners, then Done");
@@ -232,6 +317,8 @@ test.describe("phone", () => {
     expect(area.kind).toBe("ob");
     expect(area.points.length).toBe(3);
     expect((await editorState(page)).tool).toBe("select");
+    // (the drawn area picked, its strip up: back to the tools)
+    await page.getByTestId("selection-back").tap();
     // Cancel drops what is being drawn
     await page.locator('[data-tool="draw-line"]').tap();
     await tapPlan(page, 300, 650);
@@ -242,8 +329,8 @@ test.describe("phone", () => {
   });
 
   test("the app never scrolls as a whole when something low in the sheet is brought into view", async ({ page }) => {
+    // (on the Design step, its sheet peeking)
     await oneHole(page);
-    await nav(page).getByRole("button", { name: /Features/ }).tap();
     await settle(page);
     expect(await detent(page)).toBe("peek");
     const before = (await page.getByTestId("plan").boundingBox())!;
@@ -280,7 +367,7 @@ test.describe("phone", () => {
     await expect.poll(async () => (await course(page)).holes[0].par).toBe(4);
     await page.getByTestId("selection-back").tap();
     await expect.poll(async () => (await editorState(page)).selectedId).toBeNull();
-    await expect(page.getByTestId("sheet-title")).toHaveText("Holes");
+    await expect(page.getByTestId("sheet-title")).toHaveText("Design");
   });
 
   test("holding a finger on a tee opens its menu (the right-click); Delete there, and Undo", async ({ page }) => {
@@ -328,8 +415,14 @@ test.describe("phone", () => {
     // the hole, all four are there
     const basket = (await course(page)).items.find((i: any) => i.type === "basket");
     for (const zoom of [0.5, 0.7, 1, 1.4, 2.5]) {
-      // (At once, not animated: the squares and the label are checked where they come to rest)
-      await page.evaluate(z => { const v = (window as any).__dgView; v.fitHole((window as any).__dgCourse().holes[0].id, false); void v.controls.dollyTo(v.controls.distance / z, false); }, zoom);
+      // (At once, not animated: the squares and the label are checked where they come to rest;
+      // zoomed in on the hole's middle, in the map's room above the sheet)
+      await page.evaluate(z => {
+        const v = (window as any).__dgView, id = (window as any).__dgCourse().holes[0].id;
+        const b = v.itemBounds(id), cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
+        const hw = Math.max(b.maxX - b.minX, 160) * 0.6 / z, hh = Math.max(b.maxY - b.minY, 96) * 0.6 / z;
+        v.fitBounds({ minX: cx - hw, minY: cy - hh, maxX: cx + hw, maxY: cy + hh }, { margin: 1.15, animate: false });
+      }, zoom);
       await page.waitForTimeout(400);
       const ends = [await screenOf(page, tee.x, tee.y, 1), await screenOf(page, basket.x, basket.y, 1)];
       const label = await page.getByTestId("hole-distance").evaluateAll(els => els.filter(e => (e as HTMLElement).offsetParent).map(e => e.getBoundingClientRect().toJSON()));
@@ -359,15 +452,15 @@ test.describe("phone", () => {
     await expect.poll(scale).toBeLessThan(now * 0.85);
   });
 
-  test("the Design preview fits the phone's width (its four tabs too, whole); pinch and the buttons zoom it", async ({ page }) => {
+  test("the Map step's preview fits the phone's width (its five tabs too, whole); pinch and the buttons zoom it", async ({ page }) => {
     await oneHole(page);
-    await nav(page).getByRole("button", { name: /Design/ }).tap();
+    await nav(page).getByRole("button", { name: /Map/ }).tap();
     const pageBox = async () => (await page.getByTestId("design-page").boundingBox())!;
     await expect(page.getByTestId("design-page")).toBeVisible();
     const vw = page.viewportSize()!.width;
     const tabs = page.getByRole("tablist").first().getByRole("tab");
-    await expect(tabs).toHaveCount(4);
-    for (let i = 0; i < 4; i++) {
+    await expect(tabs).toHaveCount(5);
+    for (let i = 0; i < 5; i++) {
       const t = (await tabs.nth(i).boundingBox())!;
       expect(t.x).toBeGreaterThanOrEqual(0);
       expect(t.x + t.width).toBeLessThanOrEqual(vw);
@@ -387,9 +480,9 @@ test.describe("phone", () => {
     await expect.poll(zoom).toBeGreaterThan(fit);
   });
 
-  test("a pinch on the Design preview while the map paints still ends (the painting goes in once the fingers lift)", async ({ page }) => {
+  test("a pinch on the Map step's preview while the map paints still ends (the painting goes in once the fingers lift)", async ({ page }) => {
     await oneHole(page);
-    await nav(page).getByRole("button", { name: /Design/ }).tap();
+    await nav(page).getByRole("button", { name: /Map/ }).tap();
     await expect(page.getByTestId("design-page")).toBeVisible();
     const painting = () => page.evaluate(() => (window as any).__dgPainting());
     const zoom = async () => parseInt((await page.getByTestId("design-zoom").textContent()) ?? "0", 10);
@@ -448,15 +541,15 @@ test.describe("phone on its side", () => {
     await expect(page.getByTestId("bottom-nav")).toHaveCount(0);
     const side = page.getByTestId("side-sheet");
     await expect(side).toBeVisible();
-    await nav(page).getByRole("button", { name: /Review/ }).tap();
-    await expect(side.getByTestId("sheet-title")).toHaveText("Review");
+    await nav(page).getByRole("button", { name: /Export/ }).tap();
+    await expect(side.getByTestId("sheet-title")).toHaveText("Export");
     const mapW = async () => (await page.getByTestId("plan").boundingBox())!.width;
     const w = await mapW();
     await page.getByTestId("panel-toggle").tap();
     await expect(side).toHaveCount(0);
     await expect.poll(mapW).toBeGreaterThan(w + 200);
     // A step brings the panel back
-    await nav(page).getByRole("button", { name: /Holes/ }).tap();
+    await nav(page).getByRole("button", { name: /Design/ }).tap();
     await expect(side).toBeVisible();
     // (the map back at its width before the hole is tapped where it shows)
     await expect.poll(mapW).toBeLessThan(w + 2);
@@ -488,8 +581,8 @@ test.describe("tablet on its side", () => {
 
   test("a tablet on its side keeps the desktop layout; the top bar and tools fit on screen", async ({ page }) => {
     await oneHole(page);
-    await expect(page.getByTestId("side-panel")).toBeVisible();
-    await expect(page.getByRole("button", { name: "2 Holes" })).toBeVisible();
+    await expect(page.getByTestId("holes-column")).toBeVisible();
+    await expect(page.getByRole("button", { name: "2 Design" })).toBeVisible();
     await expect(page.getByTestId("bottom-nav")).toHaveCount(0);
     const vw = page.viewportSize()!.width;
     const tools = (await page.getByRole("toolbar", { name: "Tools" }).boundingBox())!;
@@ -508,21 +601,25 @@ test.describe("tablet on its side", () => {
 test("desktop at 1600 × 1000 keeps its layout: top bar steps, side panel, tool bar, no phone parts", async ({ page }) => {
   await oneHole(page);
   const header = (await page.locator("header").boundingBox())!;
-  expect(header.height).toBe(48);
+  expect(header.height).toBe(50);
+  // (the Site step's panel; Design has the holes down the map's side instead)
+  await page.getByRole("button", { name: "1 Site" }).click();
   const side = (await page.getByTestId("side-panel").boundingBox())!;
   expect(side.width).toBe(340);
-  expect(side.y).toBe(48);
-  await expect(page.getByRole("button", { name: "1 Site" })).toBeVisible();
+  // (the bar and the panel float, 10 px from the edges and from each other)
+  expect(side.y).toBe(70);
+  await page.getByRole("button", { name: "2 Design" }).click();
+  await expect(page.getByTestId("holes-column")).toBeVisible();
   await expect(page.getByRole("toolbar", { name: "Tools" })).toBeVisible();
   // (no prompt over the map with Select; a tool's own prompt when one is picked)
   await expect(page.getByTestId("tool-hint")).toHaveCount(0);
   await page.keyboard.press("t");
-  await expect(page.getByTestId("tool-hint")).toContainText("another tee");
+  await expect(page.getByTestId("tool-hint")).toContainText("another skill level");
   await page.keyboard.press("Escape");
   for (const id of ["bottom-nav", "sheet", "nav-rail", "side-sheet", "top-bar", "draw-bar"]) await expect(page.getByTestId(id)).toHaveCount(0);
   // The selection's inspector floats on the right of the map
   await page.getByTestId("hole-row").click();
   const insp = (await page.getByTestId("inspector").boundingBox())!;
   expect(insp.width).toBe(300);
-  expect(Math.round(insp.x + insp.width)).toBe(1600 - 150);
+  expect(Math.round(insp.x + insp.width)).toBe(1600 - 10 - 150);
 });

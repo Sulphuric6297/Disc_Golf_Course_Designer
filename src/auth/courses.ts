@@ -8,11 +8,7 @@ import { create } from "zustand";
 import { generateId } from "../constants";
 import { createEmptyCourse, normalizeCourse } from "../lib/course";
 import { courseStats, courseTotals, playsOf } from "../lib/holeStats";
-import { canopyFor } from "../lib/forest";
-import { paintedForPrint, renderPoster } from "../lib/mapSvg";
-import { canvasBlob, svgToCanvas } from "../lib/raster";
 import { changesBetween, describeChanges, holesChanged, keepCourseHoles, keepTheirs, mergeCourse, type Merged } from "../lib/merge";
-import { reliefOf } from "../components/useRelief";
 import { safeDoc } from "../lib/safeDoc";
 import type { PlanMeta } from "../lib/storage";
 import { getDoc, useCourse, useEditor } from "../state/course";
@@ -53,6 +49,8 @@ export const useServerCourse = create<{
   draft: boolean;
   /** An owner saving straight into the course ("Publish as I go"). */
   live: boolean;
+  /** When the draft was last saved by hand (Save draft). */
+  savedAt?: number;
   /** The course moved on since the draft started (Update draft brings its changes in). */
   behind: boolean;
   /** The owner's switch: editors' drafts wait for the owner's OK. */
@@ -142,6 +140,8 @@ async function makeThumbnail(doc = getDoc()) {
   thumbFor = doc;
   thumbAt = Date.now();
   try {
+    // (the painter loaded only when a picture is made: the course list doesn't wait for it)
+    const [{ canopyFor }, { paintedForPrint, renderPoster }, { canvasBlob, svgToCanvas }, { reliefOf }] = await Promise.all([import("../lib/forest"), import("../lib/mapSvg"), import("../lib/raster"), import("../components/useRelief")]);
     const art = { ...reliefOf(doc), canopy: await canopyFor(doc) };
     const p = await paintedForPrint(page => (72 * THUMB_PX) / page.width, () => renderPoster(doc, art));
     const canvas = await svgToCanvas(p.svg, p.width, p.height, (72 * THUMB_PX) / p.width);
@@ -161,6 +161,15 @@ const thumbnailSoon = () => {
   (idle ? (f: () => void) => idle(f, { timeout: 10_000 }) : (f: () => void) => setTimeout(f, 3000))(() => void thumbnailNow());
 };
 
+/** Your draft saved by hand, named: saved now, then kept in the history to come back to. */
+export async function saveDraftAs(note: string) {
+  const id = state().id;
+  if (!id || !inDraft()) return;
+  await saveNow();
+  await api("POST", `courses/${id}/draft/save`, { note: note.trim() });
+  set({ savedAt: Date.now() });
+}
+
 /** Saves now (waiting for one already going). */
 export async function saveNow() {
   window.clearTimeout(timer);
@@ -169,6 +178,12 @@ export async function saveNow() {
   await saving;
   if (again) { again = false; await saveNow(); }
 }
+
+// (the tab closed or reloaded after a save failed: the browser asks first, the changes not on
+// the server; a save only waiting its moment goes on its own)
+if (typeof window !== "undefined") window.addEventListener("beforeunload", e => {
+  if (state().status === "error") { e.preventDefault(); e.returnValue = ""; }
+});
 
 export const startServerAutosave = () => {
   const stopSaving = useCourse.subscribe((s, prev) => {
@@ -181,7 +196,7 @@ export const startServerAutosave = () => {
   // only the views the viewer may see
   const keepSelect = useEditor.subscribe(e => {
     if (!useCourse.getState().readOnly) return;
-    if (e.tool !== "select" || e.step !== "holes") e.set({ tool: "select", step: "holes" });
+    if (e.tool !== "select" || e.step !== "design") e.set({ tool: "select", step: "design" });
     const may = (k: keyof Perms) => state().role !== "viewer" || ((state().perms ?? {})[k] ?? k !== "downloads");
     if (e.view === "3d" && !may("view3d")) e.set({ view: "2d" });
     else if (e.view === "2d" && !may("map") && may("view3d")) e.set({ view: "3d" });
@@ -273,9 +288,9 @@ export const listServerCourses = async (): Promise<ServerPlan[]> =>
   (await api<(Omit<ServerPlan, "updatedAt"> & { updatedAt: string })[]>("GET", "courses")).map(c => ({ ...c, updatedAt: new Date(c.updatedAt).getTime() }));
 
 /** Deletes a course you own; takes one shared with you off your list. */
-export async function removeServerCourse(id: string) {
-  const list = await listServerCourses();
-  const c = list.find(x => x.id === id);
+export async function removeServerCourse(id: string, known?: ServerPlan) {
+  // (the list's own entry when there is one: asked at once, not after fetching the list again)
+  const c = known ?? (await listServerCourses()).find(x => x.id === id);
   if (!c) return;
   const owner = c.role === "owner";
   if (!confirm(owner ? `Delete "${c.name}" for everyone?` : `Take "${c.name}" off your list?`)) return;

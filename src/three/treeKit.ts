@@ -5,16 +5,19 @@
 // underneath). A few shapes of each kind are made once, at unit height, and shared by every tree:
 // woods draw them instanced, a close version near the camera and a lighter one farther away.
 import * as THREE from "three";
+import { EZ_VARIANTS, ezLoaded, ezProto, ezTint, ezTree, type TreeSpec } from "./ezShapes";
 
 export type TreeShape = "broadleaf" | "conifer" | "bush";
-export type Detail = "near" | "far";
+export type Detail = "near" | "mid" | "far" | "brush";
 
 /** Shapes made of each kind (trees pick one by their id, so each keeps its own). */
-export const VARIANTS: Record<TreeShape, number> = { broadleaf: 4, conifer: 3, bush: 2 };
+export const VARIANTS: Record<TreeShape, number> = EZ_VARIANTS;
+/** The hand-built shapes from before ez-tree (the tree lab shows them beside the new ones). */
+export const CLASSIC_VARIANTS: Record<TreeShape, number> = { broadleaf: 4, conifer: 3, bush: 2 };
 
 type V3 = THREE.Vector3;
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
-const seeded = (seed: number) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+export const seeded = (seed: number) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
 // ---------------------------------------------------------------- textures (drawn once)
 
@@ -229,7 +232,7 @@ export const barkMaterial = () => {
 
 // ---------------------------------------------------------------- geometry builders
 
-class Builder {
+export class Builder {
   pos: number[] = [];
   nor: number[] = [];
   uv: number[] = [];
@@ -257,7 +260,7 @@ class Builder {
 }
 
 /** A tapered tube from a to b (radius ra to rb), `sides` around. */
-const tube = (b: Builder, a: V3, e: V3, ra: number, rb: number, sides: number, shadeA = 0.75, shadeB = 1) => {
+export const tube = (b: Builder, a: V3, e: V3, ra: number, rb: number, sides: number, shadeA = 0.75, shadeB = 1) => {
   const dir = e.clone().sub(a);
   const len = dir.length();
   if (len < 1e-5) return;
@@ -283,7 +286,7 @@ const tube = (b: Builder, a: V3, e: V3, ra: number, rb: number, sides: number, s
  * A leaf card at p, roughly facing `facing`, `size` across, lit with `normal` (the crown's),
  * shaded `shade` (darker inside the crown), one of the atlas's four sprays.
  */
-const card = (b: Builder, p: V3, facing: V3, size: number, spin: number, normal: V3, shade: number, cell: number) => {
+export const card = (b: Builder, p: V3, facing: V3, size: number, spin: number, normal: V3, shade: number, cell: number) => {
   const n = facing.clone().normalize();
   const t1 = (Math.abs(n.y) < 0.95 ? v3(0, 1, 0) : v3(1, 0, 0)).cross(n).normalize();
   const t2 = n.clone().cross(t1).normalize();
@@ -299,12 +302,14 @@ const card = (b: Builder, p: V3, facing: V3, size: number, spin: number, normal:
   b.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
 };
 
-const smooth = (a: number, b: number, x: number) => {
+export const smooth = (a: number, b: number, x: number) => {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
 };
 
-export type TreeProto = { bark: THREE.BufferGeometry; leaves: THREE.BufferGeometry; needles: boolean };
+/** A shape: its bark and leaves (and their own materials, for ez-tree's), and how wide it is
+ * for its height. */
+export type TreeProto = { bark: THREE.BufferGeometry; leaves: THREE.BufferGeometry; needles: boolean; barkMat?: THREE.Material; leafMat?: THREE.Material; natural?: number };
 
 /**
  * A broadleaf tree (or a bush) of height 1: trunk, limbs forking toward the crown's edge, and
@@ -439,16 +444,26 @@ const conifer = (variant: number, detail: Detail): TreeProto => {
 
 const protos = new Map<string, TreeProto>();
 
-/** A tree shape (made once, shared): unit height, standing on its base at the origin. */
-export const treeProto = (shape: TreeShape, variant: number, detail: Detail): TreeProto => {
-  const key = `${shape}|${variant}|${detail}`;
+/** A tree shape (made once, shared): unit height, standing on its base at the origin. ez-tree's,
+ * or (`classic`) the hand-built ones from before. */
+export const treeProto = (shape: TreeShape, variant: number, detail: Detail, classic = false): TreeProto => {
+  const key = `${shape}|${variant}|${detail}|${classic}`;
   let p = protos.get(key);
   if (!p) {
-    p = shape === "conifer" ? conifer(variant, detail) : broadleaf(variant, detail, shape === "bush");
+    // (the classic shapes have two levels: their far one serves the middle distance too)
+    const d = classic && (detail === "mid" || detail === "brush") ? "far" : detail;
+    // (without ez-tree, outside a browser, the hand-built shapes stand in)
+    const old = classic || !ezLoaded();
+    p = old ? (shape === "conifer" ? conifer(variant % CLASSIC_VARIANTS.conifer, d as "near" | "far") : broadleaf(variant % CLASSIC_VARIANTS[shape], d as "near" | "far", shape === "bush")) : ezProto(shape, variant, detail);
     protos.set(key, p);
   }
   return p;
 };
+
+/** How wide a shape stands for its height (its own, or the kind's usual). */
+const naturalOf = (shape: TreeShape, proto: TreeProto) => proto.natural ?? (shape === "conifer" ? 0.62 : shape === "bush" ? 1.3 : 0.75);
+/** The color a tree's leaves take: ez-tree's photographed leaves gently, the classic ones fully. */
+const leafTint = (proto: TreeProto, tint: THREE.Color) => (proto.leafMat ? ezTint(tint) : tint);
 
 /** Which shape a tree takes (the same one every time for the same tree). */
 export const variantOf = (id: string, shape: TreeShape) => {
@@ -464,14 +479,13 @@ export const treeSpread = (asked: number) => Math.min(50, Math.max(0.02, asked))
 const woodsSpread = (asked: number) => Math.min(1.5, Math.max(0.72, asked));
 
 /** One tree as meshes (shared shape and materials): `height` ft tall, `width` ft across the crown. */
-export const treeMeshes = (shape: TreeShape, variant: number, height: number, width: number, tint: THREE.Color, detail: Detail = "near") => {
-  const proto = treeProto(shape, variant, detail);
+export const treeMeshes = (shape: TreeShape, variant: number, height: number, width: number, tint: THREE.Color, detail: Detail = "near", classic = false, spec?: TreeSpec) => {
+  const proto = spec && !classic && ezLoaded() ? ezTree(shape, spec, detail) : treeProto(shape, variant, detail, classic);
   const group = new THREE.Group();
-  const natural = shape === "conifer" ? 0.62 : shape === "bush" ? 1.3 : 0.75;
-  const sx = treeSpread(width / height / natural);
-  const leafMat = (leafMaterial(proto.needles) as THREE.MeshStandardMaterial);
-  const bark = new THREE.Mesh(proto.bark, barkMaterial());
-  const leaves = new THREE.Mesh(proto.leaves, tintedFoliage(leafMat, tint));
+  const sx = treeSpread(width / height / naturalOf(shape, proto));
+  const leafMat = (proto.leafMat ?? leafMaterial(proto.needles)) as THREE.MeshStandardMaterial;
+  const bark = new THREE.Mesh(proto.bark, proto.barkMat ?? barkMaterial());
+  const leaves = new THREE.Mesh(proto.leaves, tintedFoliage(leafMat, leafTint(proto, tint)));
   for (const m of [bark, leaves]) {
     m.scale.set(height * sx, height, height * sx);
     m.castShadow = true;
@@ -484,7 +498,7 @@ export const treeMeshes = (shape: TreeShape, variant: number, height: number, wi
 /** Foliage tinted for one tree: a light copy of the shared material (same shader and texture). */
 const tintCache = new Map<string, THREE.Material>();
 const tintedFoliage = (base: THREE.MeshStandardMaterial, tint: THREE.Color) => {
-  const key = `${base.customProgramCacheKey()}|${tint.getHexString()}`;
+  const key = `${base.name || base.customProgramCacheKey()}|${tint.getHexString()}`;
   let m = tintCache.get(key);
   if (!m) {
     const c = base.clone();
@@ -502,8 +516,10 @@ const tintedFoliage = (base: THREE.MeshStandardMaterial, tint: THREE.Color) => {
 
 export type TreeSpot = { x: number; y: number; ground: number; height: number; width: number; shape: TreeShape; variant: number; tint: THREE.Color; turn: number; lean: number };
 
-/** Trees nearer than this to the camera use the close shapes, ft (less without a graphics card). */
+/** Trees nearer than this to the camera use the close shapes, ft (less without a graphics card);
+ * the middle ones out to `midOf(nearFt)`, the rest the far ones. */
 export const forestDetail = { nearFt: 260, version: 0 };
+export const midOf = (nearFt: number) => nearFt * 3;
 
 /**
  * Many trees, drawn instanced by shape: close ones in full detail, the rest in a lighter
@@ -511,12 +527,14 @@ export const forestDetail = { nearFt: 260, version: 0 };
  */
 export class Forest {
   readonly group = new THREE.Group();
-  private sets: { spots: TreeSpot[]; near: THREE.InstancedMesh[]; far: THREE.InstancedMesh[] }[] = [];
+  private sets: { spots: TreeSpot[]; near: THREE.InstancedMesh[]; mid: THREE.InstancedMesh[]; far: THREE.InstancedMesh[]; tint: (s: TreeSpot) => THREE.Color }[] = [];
   private last = new THREE.Vector3(Infinity, 0, 0);
   private version = -1;
   private matrices: THREE.Matrix4[][] = [];
 
-  constructor(spots: TreeSpot[]) {
+  /** `maxFt`: not drawn past this far from the eye; `ladder`: its versions close, middle and far
+   * off, and where the first gives way (underbrush: lighter ones, the middle only close by). */
+  constructor(spots: TreeSpot[], private maxFt = Infinity, private ladder: { levels: [Detail, Detail, Detail]; nearFt?: number; midFt?: number } = { levels: ["near", "mid", "far"] }) {
     this.group.name = "forest";
     const byShape = new Map<string, TreeSpot[]>();
     for (const s of spots) {
@@ -527,22 +545,24 @@ export class Forest {
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3();
     for (const [key, list] of byShape) {
       const [shape, variant] = key.split("|");
-      const near = treeProto(shape as TreeShape, +variant, "near"), far = treeProto(shape as TreeShape, +variant, "far");
+      const [l0, l1, l2] = this.ladder.levels;
+      const near = treeProto(shape as TreeShape, +variant, l0), mid = treeProto(shape as TreeShape, +variant, l1), far = treeProto(shape as TreeShape, +variant, l2);
       const make = (proto: TreeProto) => {
-        const leafMat = leafMaterial(proto.needles);
-        return [new THREE.InstancedMesh(proto.bark, barkMaterial(), list.length), new THREE.InstancedMesh(proto.leaves, leafMat, list.length)];
+        const leafMat = proto.leafMat ?? leafMaterial(proto.needles);
+        return [new THREE.InstancedMesh(proto.bark, proto.barkMat ?? barkMaterial(), list.length), new THREE.InstancedMesh(proto.leaves, leafMat, list.length)];
       };
-      const nearMeshes = make(near), farMeshes = make(far);
+      const nearMeshes = make(near), midMeshes = make(mid), farMeshes = make(far);
       const mats: THREE.Matrix4[] = [];
+      // (photographed leaves take each tree's tint gently)
+      const tintOf = (s: TreeSpot) => leafTint(near, s.tint);
       list.forEach((s, i) => {
-        const natural = s.shape === "conifer" ? 0.62 : s.shape === "bush" ? 1.3 : 0.75;
-        const sx = woodsSpread(s.width / s.height / natural);
+        const sx = woodsSpread(s.width / s.height / naturalOf(s.shape, near));
         e.set(s.lean * Math.cos(s.turn), s.turn, s.lean * Math.sin(s.turn));
         m.compose(p.set(s.x, s.ground, s.y), q.setFromEuler(e), sc.set(s.height * sx, s.height, s.height * sx));
         mats.push(m.clone());
-        for (const mesh of [...nearMeshes, ...farMeshes]) mesh.setColorAt(i, s.tint);
+        for (const mesh of [...nearMeshes, ...midMeshes, ...farMeshes]) mesh.setColorAt(i, tintOf(s));
       });
-      for (const mesh of [...nearMeshes, ...farMeshes]) {
+      for (const mesh of [...nearMeshes, ...midMeshes, ...farMeshes]) {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.frustumCulled = false;
@@ -550,10 +570,10 @@ export class Forest {
         this.group.add(mesh);
       }
       // Bark stays its own color (only the leaves take the tint)
-      for (const mesh of [nearMeshes[0], farMeshes[0]]) {
+      for (const mesh of [nearMeshes[0], midMeshes[0], farMeshes[0]]) {
         for (let i = 0; i < list.length; i++) mesh.setColorAt(i, new THREE.Color(1, 1, 1));
       }
-      this.sets.push({ spots: list, near: nearMeshes, far: farMeshes });
+      this.sets.push({ spots: list, near: nearMeshes, mid: midMeshes, far: farMeshes, tint: tintOf });
       this.matrices.push(mats);
     }
     this.update(new THREE.Vector3(Infinity, 0, Infinity));
@@ -565,27 +585,25 @@ export class Forest {
     if (this.last.distanceToSquared(eye) < 30 * 30 && Number.isFinite(this.last.x) && this.version === forestDetail.version) return;
     this.version = forestDetail.version;
     this.last.copy(eye);
-    const r2 = forestDetail.nearFt * forestDetail.nearFt;
+    const nearFt = this.ladder.nearFt ?? forestDetail.nearFt, midFt = this.ladder.midFt ?? midOf(forestDetail.nearFt);
+    const r2 = nearFt * nearFt, m2 = midFt * midFt;
     this.sets.forEach((set, si) => {
-      let n = 0, f = 0;
+      const n = [0, 0, 0];
+      const levels = [set.near, set.mid, set.far];
       set.spots.forEach((s, i) => {
         const dx = s.x - eye.x, dz = s.y - eye.z, dy = s.ground + s.height * 0.5 - eye.y;
-        const close = dx * dx + dz * dz + dy * dy < r2;
+        const d2 = dx * dx + dz * dz + dy * dy;
+        if (d2 > this.maxFt * this.maxFt) return;
+        const l = d2 < r2 ? 0 : d2 < m2 ? 1 : 2;
         const mat = this.matrices[si][i];
-        if (close) {
-          set.near[0].setMatrixAt(n, mat);
-          set.near[1].setMatrixAt(n, mat);
-          set.near[1].setColorAt(n, s.tint);
-          n++;
-        } else {
-          set.far[0].setMatrixAt(f, mat);
-          set.far[1].setMatrixAt(f, mat);
-          set.far[1].setColorAt(f, s.tint);
-          f++;
-        }
+        levels[l][0].setMatrixAt(n[l], mat);
+        levels[l][1].setMatrixAt(n[l], mat);
+        levels[l][1].setColorAt(n[l], set.tint(s));
+        n[l]++;
       });
-      for (const mesh of set.near) { mesh.count = n; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; mesh.visible = n > 0; }
-      for (const mesh of set.far) { mesh.count = f; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; mesh.visible = f > 0; }
+      levels.forEach((meshes, l) => {
+        for (const mesh of meshes) { mesh.count = n[l]; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; mesh.visible = n[l] > 0; }
+      });
     });
   }
 

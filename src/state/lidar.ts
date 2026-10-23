@@ -20,6 +20,7 @@ export const measureLidar = async () => {
     changeDoc(doc => ({
       lidar: { source: got.source, trees: got.trees },
       terrainHeights: g.heights,
+      terrainOriginal: undefined,
       site: { ...doc.site, baseElevationFt: Math.round(g.min * 10) / 10, elevationSource: got.source }
     }));
     toast(`${got.trees.length.toLocaleString()} trees measured from the air (${got.source}).`, "success", false, undefined, 8000);

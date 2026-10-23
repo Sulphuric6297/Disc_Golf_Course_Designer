@@ -7,8 +7,9 @@
 // Tools are a row of labelled buttons at the top of the panel; drawing gets Undo, Cancel and Done
 // buttons over the map (there is no Enter, Backspace or Esc on a phone), and holding a finger on
 // a thing opens its menu (the right-click).
+import { Woods } from "../Woods";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
-import { Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Trash2, Undo2, Unlock, X } from "lucide-react";
+import { Menu, ChevronDown, ListChecks, Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Search, Trash2, Undo2, Unlock, X } from "lucide-react";
 import { STRUCTURE_KINDS } from "../../constants";
 import { holeLabel, holeNumber } from "../../lib/course";
 import { courseIssues, courseStats, courseTotals, holeStats, openIssues, playsOf } from "../../lib/holeStats";
@@ -21,7 +22,8 @@ import type { PlanMeta } from "../../lib/storage";
 import type { CourseItem, P } from "../../types";
 import { HoleSteps } from "../HoleSteps";
 import { InspectorBody, groupSummary, itemTitle, useSelection } from "../Inspector";
-import { MapViewport, getView } from "../MapViewport";
+import { MapViewport } from "../MapViewport";
+import { getView } from "../../state/view";
 import { MapDesigner } from "../MapDesigner";
 import { STEPS, STEP_ICONS, StepContent, touchWords } from "../SidePanel";
 import { TeeViewHud } from "../TeeViewHud";
@@ -29,16 +31,23 @@ import { TOOLS, toolHint, toolOptions } from "../Toolbar";
 import { ExportProgressPill } from "../ExportProgress";
 import { ActionSheet, type SheetAction } from "./ActionSheet";
 import { BottomSheet, type Detent } from "./BottomSheet";
+import { HereButton } from "../MyLocation";
+import { HoleStrip, ItemStrip } from "./HoleStrip";
+import { GettingStarted, openGettingStarted } from "../GettingStarted";
+import { useGps } from "../../state/gps";
 import { accountActions, CourseChip } from "../../auth/AccountMenu";
 import { ViewerPanelBody } from "../../auth/ViewerPanel";
 import { SERVER } from "../../auth/api";
+import { CoursePageButton, SITE_TOKEN } from "../../auth/PublicSite";
 
-export type MenuInfo = { clientX: number; clientY: number; itemId: string | null; ground: P | null };
+export type MenuInfo = { clientX: number; clientY: number; itemId: string | null; ground: P | null; under?: string | null };
 
 type ShellProps = {
   layout: "phone" | "rail";
   onFindSite: () => void;
   onHelp: () => void;
+  /** Search: holes, tools, settings and help. */
+  onGoTo: () => void;
   onContextMenu: (info: MenuInfo) => void;
   /** The welcome card for an empty course, when it shows. */
   welcome: ReactNode;
@@ -48,7 +57,7 @@ type ShellProps = {
 
 const TOOL_TITLES: Record<string, string> = {
   "add-hole": "New hole", "add-tee": "Another tee", "add-basket": "Another pin", "add-mando": "Mando", "add-dropzone": "Drop zone",
-  "draw-area": "Draw an area", "draw-line": "Draw a line", "draw-structure": "Build", "add-tree": "Trees", "add-amenity": "Benches, signs, parking",
+  "draw-area": "Draw an area", "draw-line": "Draw a line", sculpt: "Shape the ground", "draw-structure": "Build", "add-tree": "Trees", "add-amenity": "Amenities",
   "add-label": "Text label", measure: "Measure"
 };
 
@@ -60,16 +69,14 @@ const keepPut = (e: UIEvent<HTMLElement>) => {
 };
 
 /** How tall the sheet is when a step opens (the map first where the step is about the map). */
-const STEP_DETENT: Record<Step, Detent> = { site: "half", holes: "peek", features: "peek", review: "half", design: "peek", export: "half" };
+const STEP_DETENT: Record<Step, Detent> = { site: "half", design: "peek", map: "peek", export: "half" };
 
 const Logo = ({ size = 30 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden>
-    <circle cx="32" cy="32" r="30" fill="#f97316" />
-    <path d="M17 24h30M19 24l4 17h18l4-17M32 10v44M24 41l8 9 8-9" stroke="white" strokeWidth="4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
+  // (the badge: a fairway through the woods at sunrise)
+  <img src={`${import.meta.env.BASE_URL}logo-128.png`} width={size} height={size} alt="" aria-hidden className="block rounded-full shrink-0 drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]" draggable={false} />
 );
 
-const iconBtn = "w-11 h-11 shrink-0 flex items-center justify-center rounded-xl text-zinc-300 active:bg-zinc-700 hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 disabled:opacity-30";
+const iconBtn = "w-11 h-11 shrink-0 flex items-center justify-center rounded-xl text-zinc-300 active:bg-white/[0.13] hover:bg-white/[0.09] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 disabled:opacity-30";
 
 /** What the panel shows: the active tool, the selection, or the step. */
 function useMode() {
@@ -108,7 +115,7 @@ function goStep(id: Step, setDetent: (d: Detent) => void, toggle: () => void) {
 function BottomNav({ onStep }: { onStep: (s: Step) => void }) {
   const step = useEditor(e => e.step);
   return (
-    <nav aria-label="Steps" className="shrink-0 relative z-40 bg-zinc-950 border-t border-white/10 pb-[env(safe-area-inset-bottom)]" data-testid="bottom-nav">
+    <nav aria-label="Steps" className="glass shrink-0 relative z-40 mx-2 mt-1.5 mb-[max(8px,env(safe-area-inset-bottom))] rounded-[30px]" data-testid="bottom-nav">
       <ol className="flex px-1">
         {STEPS.map((s, i) => {
           const Icon = STEP_ICONS[s.id];
@@ -118,9 +125,9 @@ function BottomNav({ onStep }: { onStep: (s: Step) => void }) {
               <button
                 onClick={() => onStep(s.id)}
                 aria-current={on ? "step" : undefined}
-                className="w-full h-[62px] flex flex-col items-center justify-center gap-1 focus:outline-none focus-visible:bg-zinc-900 rounded-xl"
+                className="w-full h-[60px] flex flex-col items-center justify-center gap-1 focus:outline-none focus-visible:bg-white/[0.08] rounded-[26px]"
               >
-                <span className={`flex items-center justify-center w-[52px] h-[30px] rounded-full transition-colors ${on ? "bg-orange-500/20 text-orange-300" : "text-zinc-400"}`}><Icon size={21} strokeWidth={on ? 2.4 : 2} /></span>
+                <span className={`flex items-center justify-center w-[52px] h-[30px] rounded-full transition-colors ${on ? "bg-white/[0.12] text-orange-300" : "text-zinc-400"}`}><Icon size={21} strokeWidth={on ? 2.4 : 2} /></span>
                 <span className={`text-[12px] leading-none font-semibold tracking-tight ${on ? "text-zinc-50" : "text-zinc-400"}`}><span className="sr-only">Step {i + 1}: </span>{s.label}</span>
               </button>
             </li>
@@ -134,7 +141,7 @@ function BottomNav({ onStep }: { onStep: (s: Step) => void }) {
 function NavRail({ onStep, onMenu, panelOpen, onPanel }: { onStep: (s: Step) => void; onMenu: () => void; panelOpen: boolean; onPanel: () => void }) {
   const step = useEditor(e => e.step);
   return (
-    <nav aria-label="Steps" className="w-[72px] shrink-0 relative z-40 flex flex-col items-center bg-zinc-950 border-r border-white/10 pl-[env(safe-area-inset-left)] py-1 box-content" data-testid="nav-rail">
+    <nav aria-label="Steps" className="glass w-[72px] shrink-0 relative z-40 flex flex-col items-center my-2 ml-[max(8px,env(safe-area-inset-left))] rounded-[26px] py-1" data-testid="nav-rail">
       <button className={`${iconBtn} [@media(max-height:400px)]:h-10`} aria-label="Menu: files, help" onClick={onMenu} data-testid="app-menu-button"><Logo size={28} /></button>
       <ol className="flex-1 min-h-0 flex flex-col justify-center w-full">
         {STEPS.map((s, i) => {
@@ -142,7 +149,7 @@ function NavRail({ onStep, onMenu, panelOpen, onPanel }: { onStep: (s: Step) => 
           const on = step === s.id;
           return (
             <li key={s.id} className="flex-1 min-h-0 max-h-[52px]">
-              <button onClick={() => onStep(s.id)} aria-current={on ? "step" : undefined} className="w-full h-full flex flex-col items-center justify-center gap-0.5 focus:outline-none focus-visible:bg-zinc-900">
+              <button onClick={() => onStep(s.id)} aria-current={on ? "step" : undefined} className="w-full h-full flex flex-col items-center justify-center gap-0.5 focus:outline-none focus-visible:bg-white/[0.06]">
                 <span className={`flex items-center justify-center w-[46px] h-[26px] rounded-full ${on ? "bg-orange-500/20 text-orange-300" : "text-zinc-400"}`}><Icon size={19} strokeWidth={on ? 2.4 : 2} /></span>
                 <span className={`text-[11px] leading-none font-semibold ${on ? "text-zinc-50" : "text-zinc-400"}`}><span className="sr-only">Step {i + 1}: </span>{s.label}</span>
               </button>
@@ -165,12 +172,11 @@ function StepHeader({ onFindSite }: { onFindSite: () => void }) {
   const sum = useSummary();
   const i = STEPS.findIndex(s => s.id === step);
   const meta = STEPS[i];
-  const chip = (text: string) => <span className="shrink-0 text-[13px] font-semibold text-zinc-200 bg-zinc-800 rounded-full px-3 py-1.5 tabular-nums">{text}</span>;
+  const chip = (text: string) => <span className="shrink-0 text-[13px] font-semibold text-zinc-200 bg-white/[0.07] rounded-full px-3 py-1.5 tabular-nums">{text}</span>;
   const right =
     step === "site" ? (!site.bounds ? <button className="shrink-0 h-10 px-4 rounded-full bg-orange-500 text-zinc-950 text-[14px] font-bold active:bg-orange-600" onClick={onFindSite}>Find your park</button> : site.bounds ? chip(`${((canvas.width * canvas.height) / 43560).toFixed(1)} acres`) : null)
-    : step === "holes" || step === "features" ? (sum.holes ? chip(`${sum.holes} hole${sum.holes === 1 ? "" : "s"} · Par ${sum.par}`) : null)
-    : step === "review" ? chip(sum.issues ? `${sum.issues} check${sum.issues === 1 ? "" : "s"}` : "No problems")
-    : step === "design" ? chip(look)
+    : step === "design" ? (sum.holes ? chip(`${sum.holes} hole${sum.holes === 1 ? "" : "s"} · Par ${sum.par}`) : null)
+    : step === "map" ? chip(look)
     : null;
   return (
     <div className="touch-none flex items-center gap-3 px-4 pb-3" data-testid="sheet-header">
@@ -217,10 +223,11 @@ function Tools() {
             <button
               key={t.mode}
               data-tool={t.mode}
+              data-testid={`tool-${t.mode}`}
               aria-label={touchWords(t.label)}
               aria-pressed={on}
               onClick={() => pick(t.mode)}
-              className={`shrink-0 min-w-[56px] h-[54px] px-1.5 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${on ? "bg-orange-500 text-zinc-950 shadow-lg shadow-orange-900/40" : "text-zinc-300 active:bg-zinc-700 bg-zinc-800/60"}`}
+              className={`shrink-0 min-w-[56px] h-[54px] px-1.5 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${on ? "bg-orange-500 text-zinc-950 shadow-lg shadow-orange-900/40" : "text-zinc-300 active:bg-white/[0.13] bg-white/[0.07]"}`}
             >
               {t.icon}
               <span className="text-[11px] leading-none font-semibold whitespace-nowrap">{t.short}</span>
@@ -228,7 +235,7 @@ function Tools() {
           );
         })}
       </div>
-      <div className="w-px h-9 bg-zinc-700/80 mx-0.5 shrink-0" />
+      <div className="w-px h-9 bg-white/[0.12] mx-0.5 shrink-0" />
       <button className={`${iconBtn} h-[54px] w-10`} aria-label="Undo" disabled={!canUndo} onClick={() => useCourse.getState().undo()}><Undo2 size={20} /></button>
       <button className={`${iconBtn} h-[54px] w-10`} aria-label="Redo" disabled={!canRedo} onClick={() => useCourse.getState().redo()}><Redo2 size={20} /></button>
     </div>
@@ -249,7 +256,9 @@ function ToolHeader() {
         </div>
         <button className={iconBtn} aria-label="Back to Select" title="Back to Select" onClick={() => { stopDrawing(); ed.set({ tool: "select" }); }} data-testid="tool-close"><X size={20} /></button>
       </div>
-      {options && <div className="mt-2.5 px-4 flex gap-1.5 overflow-x-auto dg-noscrollbar dg-fade-r touch-pan-x" data-testid="tool-options">{options}<span className="shrink-0 w-4" aria-hidden /></div>}
+      {options && <div className="mt-2.5 px-4 flex gap-1.5 overflow-x-auto dg-noscrollbar dg-fade-r touch-pan-x" data-testid="tool-options">{options.filter(o => (o as { key?: string } | null)?.key !== "brush")}<span className="shrink-0 w-4" aria-hidden /></div>}
+      {/* (the brush's size and strength on a row of their own: there's no room beside the rest) */}
+      {options?.some(o => (o as { key?: string } | null)?.key === "brush") && <div className="mt-2 px-4 flex">{options.find(o => (o as { key?: string } | null)?.key === "brush")}</div>}
     </div>
   );
 }
@@ -260,16 +269,17 @@ function DrawBar({ bottom }: { bottom: number }) {
   const n = useEditor(e => e.drawPoints);
   const structureKind = useEditor(e => e.structureKind);
   const teeView = useEditor(e => e.teeView);
+  const gpsOn = useGps(g => g.mode !== "off");
   if (teeView) return null;
   const kind = tool === "draw-area" ? "area" : tool === "draw-line" ? "line" : tool === "draw-structure" ? (STRUCTURE_KINDS[structureKind].shape === "outline" ? "area" : "line") : null;
-  const pill = "absolute left-1/2 -translate-x-1/2 z-30 w-max max-w-[calc(100%-16px)] flex items-center gap-1 p-1.5 rounded-full bg-zinc-900/95 border border-white/10 shadow-2xl transition-[bottom] duration-300";
+  const pill = "absolute left-1/2 -translate-x-1/2 z-30 w-max max-w-[calc(100%-16px)] flex items-center gap-1 p-1.5 rounded-full glass border border-white/10 shadow-2xl transition-[bottom] duration-300";
   const btn = "h-11 px-4 rounded-full flex items-center gap-1.5 text-[15px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
   if (kind && n > 0) {
     const need = kind === "area" ? 3 : 2;
     return (
       <div className={pill} style={{ bottom }} role="toolbar" aria-label="Drawing" data-testid="draw-bar">
-        <button className={`${btn} text-zinc-200 active:bg-zinc-700`} onClick={() => getView()?.undoPoint()} data-testid="draw-undo"><Undo2 size={18} /> Undo</button>
-        <button className={`${btn} text-zinc-200 active:bg-zinc-700`} onClick={() => getView()?.cancelDrawing()} data-testid="draw-cancel"><X size={18} /> Cancel</button>
+        <button className={`${btn} text-zinc-200 active:bg-white/[0.13]`} onClick={() => getView()?.undoPoint()} data-testid="draw-undo"><Undo2 size={18} /> Undo</button>
+        <button className={`${btn} text-zinc-200 active:bg-white/[0.13]`} onClick={() => getView()?.cancelDrawing()} data-testid="draw-cancel"><X size={18} /> Cancel</button>
         <button className={`${btn} bg-orange-500 text-zinc-950 disabled:opacity-40 active:bg-orange-600`} disabled={n < need} onClick={() => getView()?.finishDrawing()} data-testid="draw-done">
           <Check size={18} strokeWidth={3} /> Done
           <span className="text-[13px] font-medium opacity-80 tabular-nums">{n < need ? `${n}/${need}` : n}</span>
@@ -277,11 +287,23 @@ function DrawBar({ bottom }: { bottom: number }) {
       </div>
     );
   }
+  // (where you stand, once you've shown it on the map: a button beside the words)
+  const here = `${btn} bg-sky-500/90 text-white active:bg-sky-600 disabled:opacity-90`;
   if (tool === "add-hole" && n === 1) {
     return (
       <div className={pill} style={{ bottom }} role="toolbar" aria-label="New hole" data-testid="draw-bar">
-        <span className="pl-3 pr-1 text-[15px] text-zinc-100 font-semibold">Now tap the basket spot</span>
-        <button className={`${btn} text-zinc-200 active:bg-zinc-700`} onClick={() => getView()?.cancelDrawing()} data-testid="draw-cancel"><X size={18} /> Cancel</button>
+        <span className="pl-3 pr-1 text-[15px] text-zinc-100 font-semibold">{gpsOn ? "Basket spot" : "Now tap the basket spot"}</span>
+        <HereButton what="basket" className={here} />
+        <button className={`${btn} text-zinc-200 active:bg-white/[0.13]`} onClick={() => getView()?.cancelDrawing()} data-testid="draw-cancel"><X size={18} /> Cancel</button>
+      </div>
+    );
+  }
+  if (gpsOn && (tool === "add-hole" || tool === "add-tee" || tool === "add-basket")) {
+    const what = tool === "add-basket" ? "pin" : "tee";
+    return (
+      <div className={pill} style={{ bottom }} role="toolbar" aria-label="Where you stand" data-testid="here-bar">
+        <span className="pl-3 pr-1 text-[15px] text-zinc-100 font-semibold">Tap the map, or</span>
+        <HereButton what={what} className={here} />
       </div>
     );
   }
@@ -362,15 +384,17 @@ export function ItemMenu({ itemId, onClose }: { itemId: string; onClose: () => v
 
 // ---------------------------------------------------------------------------------- app menu
 
-function AppMenu({ onClose, onHelp, onOpenFile }: { onClose: () => void; onHelp: () => void; onOpenFile: () => void }) {
+function AppMenu({ onClose, onHelp, onGoTo, onOpenFile }: { onClose: () => void; onHelp: () => void; onGoTo: () => void; onOpenFile: () => void }) {
   const [recent, setRecent] = useState<PlanMeta[]>([]);
   const name = useCourse(s => s.doc.name);
   useEffect(() => { void recentCourses().then(setRecent); }, []);
   const actions: SheetAction[] = [
+    { label: "Search settings and help", icon: <Search size={19} />, run: onGoTo, testid: "menu-search" },
+    { label: "Getting started", icon: <ListChecks size={19} />, run: openGettingStarted, testid: "menu-getting-started" },
     { label: "New course", icon: <FilePlus size={19} />, run: () => void newCourse() },
     { label: "Open a course file…", icon: <FolderOpen size={19} />, run: onOpenFile },
     { label: "Save as a file", icon: <Save size={19} />, run: () => saveCourseFile() },
-    { label: "Help and gestures", icon: <HelpCircle size={19} />, run: onHelp, testid: "menu-help" },
+    { label: "Help guide", icon: <HelpCircle size={19} />, run: onHelp, testid: "menu-help" },
     ...accountActions()
   ];
   return (
@@ -381,7 +405,7 @@ function AppMenu({ onClose, onHelp, onOpenFile }: { onClose: () => void; onHelp:
             <div className="px-4 pt-2.5 pb-1 text-[12px] uppercase tracking-wider font-bold text-zinc-500">{SERVER ? "Courses" : "Recent courses"}</div>
             <div className="flex gap-2 overflow-x-auto dg-noscrollbar px-4 pb-3 touch-pan-x">
               {recent.map(r => (
-                <div key={r.id} className="shrink-0 flex items-center bg-zinc-800 rounded-xl" data-testid="recent-course">
+                <div key={r.id} className="shrink-0 flex items-center bg-white/[0.07] rounded-xl" data-testid="recent-course">
                   <button className="text-left pl-3 pr-1 py-2 min-h-[48px]" onClick={() => { onClose(); void openRecent(r.id); }}>
                     <span className="block text-[14px] text-zinc-100 max-w-[180px] truncate">{r.name}</span>
                     <span className="block text-[12px] text-zinc-400">{r.holes} hole{r.holes === 1 ? "" : "s"} · {new Date(r.updatedAt).toLocaleDateString()}</span>
@@ -401,9 +425,9 @@ function ViewToggle({ vertical = false }: { vertical?: boolean }) {
   const view = useEditor(e => e.view);
   const set = useEditor(e => e.set);
   return (
-    <div className={`flex ${vertical ? "flex-col" : ""} bg-zinc-800/90 rounded-xl p-0.5 shrink-0`} role="radiogroup" aria-label="View">
+    <div className={`flex ${vertical ? "flex-col" : ""} bg-white/[0.07] rounded-xl p-0.5 shrink-0`} role="radiogroup" aria-label="View">
       {(["2d", "3d"] as const).map(v => (
-        <button key={v} role="radio" aria-checked={view === v} onClick={() => set({ view: v })} className={`${vertical ? "w-11 h-9" : "w-10 h-10"} rounded-[10px] text-[14px] font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${view === v ? "bg-zinc-100 text-zinc-900" : "text-zinc-300"}`}>
+        <button key={v} role="radio" aria-checked={view === v} onClick={() => set({ view: v })} data-testid={`view-${v}`} className={`${vertical ? "w-11 h-9" : "w-10 h-10"} rounded-[10px] text-[14px] font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${view === v ? "bg-zinc-100 text-zinc-900" : "text-zinc-300"}`}>
           {v.toUpperCase()}
         </button>
       ))}
@@ -417,12 +441,20 @@ function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
   const sub = sum.complete ? `${sum.complete} hole${sum.complete === 1 ? "" : "s"} · Par ${sum.par} · ${fmtDist(sum.length, sum.units)}` : "HyzerLab";
   return (
     <div className="absolute left-0 right-0 top-0 z-30 px-2 pt-[max(8px,env(safe-area-inset-top))] pointer-events-none" data-testid="top-bar">
-      <div className="pointer-events-auto flex items-center gap-1 h-[56px] pl-1 pr-1 rounded-2xl bg-zinc-900/90 border border-white/10 shadow-[0_8px_30px_rgba(0,0,0,0.35)]">
-        <button className={iconBtn} aria-label="Menu: files, help" onClick={onMenu} data-testid="app-menu-button"><Logo /></button>
-        <div className="flex-1 min-w-0 pl-0.5">
-          <div className="text-[15px] font-bold text-zinc-50 truncate leading-tight" data-testid="course-name">{name}</div>
-          <div className="text-[12px] text-zinc-400 truncate tabular-nums">{sub}</div>
-        </div>
+      <div className="glass pointer-events-auto flex items-center gap-1 h-[56px] pl-1 pr-1 rounded-[22px]">
+        {/* (the menu: a button that looks like one, and the course's name opens it too) */}
+        {SITE_TOKEN ? <CoursePageButton /> : <button className="w-11 h-11 shrink-0 flex items-center justify-center rounded-[14px] bg-white/[0.1] active:bg-white/[0.18] text-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400" aria-label="Menu: files, help" onClick={onMenu} data-testid="app-menu-button"><Menu size={22} /></button>}
+        {SITE_TOKEN ? (
+          <div className="flex-1 min-w-0 pl-0.5">
+            <div className="text-[15px] font-bold text-zinc-50 truncate leading-tight" data-testid="course-name">{name}</div>
+            <div className="text-[12px] text-zinc-400 truncate tabular-nums">{sub}</div>
+          </div>
+        ) : (
+          <button className="flex-1 min-w-0 min-h-11 pl-1.5 text-left rounded-[12px] active:bg-white/[0.07] focus:outline-none" onClick={onMenu} aria-label={`${name}: open the menu`}>
+            <div className="text-[15px] font-bold text-zinc-50 truncate leading-tight flex items-center gap-1" data-testid="course-name"><span className="truncate">{name}</span><ChevronDown size={15} className="shrink-0 text-zinc-400" /></div>
+            <div className="text-[12px] text-zinc-400 truncate tabular-nums">{sub}</div>
+          </button>
+        )}
         {SERVER && <CourseChip />}
         <ViewToggle />
       </div>
@@ -433,18 +465,26 @@ function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
 // ---------------------------------------------------------------------------------- the panel
 
 /** The panel's header and content, for the bottom sheet and the side panel. */
-function usePanel({ onFindSite, onMore }: { onFindSite: () => void; onMore: () => void }) {
+function usePanel({ onFindSite, onMore, phone = false }: { onFindSite: () => void; onMore: () => void; phone?: boolean }) {
   const readOnly = useCourse(s => s.readOnly);
   const mode = useMode();
   const step = useEditor(e => e.step);
   const tool = useEditor(e => e.tool);
   const selectedId = useEditor(e => e.selectedId);
   const meta = STEPS.find(s => s.id === step)!;
-  const tools = step === "holes" || step === "features" || mode === "tool";
+  // (a hole picked: its strip of settings in the tools' place, the hole kept in view above it)
+  const { hole: pickedHole, item: pickedItem, group: pickedGroup } = useSelection();
+  // (a phone only: a tablet's side panel has the room for all of it, beside the map)
+  const strip = phone && mode === "selection" && !!pickedHole && !readOnly;
+  // (anything else picked, on its own: its strip too)
+  const itemStrip = phone && mode === "selection" && !pickedHole && !!pickedItem && !pickedGroup.length && !readOnly;
+  const tools = (step === "design" || mode === "tool") && !strip && !itemStrip;
   const header = (
     <>
       {tools && <ToolStrip />}
       {mode === "tool" ? <ToolHeader /> : mode === "selection" ? <SelectionHeader onMore={onMore} /> : <StepHeader onFindSite={onFindSite} />}
+      {strip && <HoleStrip hole={pickedHole} />}
+      {itemStrip && <ItemStrip key={pickedItem.id} item={pickedItem} />}
     </>
   );
   const body = mode === "selection" ? (
@@ -474,7 +514,7 @@ export function CompactShell(props: ShellProps) {
   return props.layout === "phone" ? <PhoneShell {...props} /> : <RailShell {...props} />;
 }
 
-function useMenus(onHelp: () => void) {
+function useMenus(onHelp: () => void, onGoTo: () => void) {
   const [appMenu, setAppMenu] = useState(false);
   const [more, setMore] = useState(false);
   const selectedId = useEditor(e => e.selectedId);
@@ -483,22 +523,22 @@ function useMenus(onHelp: () => void) {
   const menus = (
     <>
       <input ref={file} type="file" className="hidden" aria-label="Open course file" onChange={e => { const f = e.target.files?.[0]; if (f) void openCourseFile(f); e.target.value = ""; }} />
-      {appMenu && <AppMenu onClose={() => setAppMenu(false)} onHelp={onHelp} onOpenFile={() => file.current?.click()} />}
+      {appMenu && <AppMenu onClose={() => setAppMenu(false)} onHelp={onHelp} onGoTo={onGoTo} onOpenFile={() => file.current?.click()} />}
       {more && selectedId && <ItemMenu itemId={selectedId} onClose={() => setMore(false)} />}
     </>
   );
   return { menus, openApp: () => setAppMenu(true), openMore: () => setMore(true) };
 }
 
-function PhoneShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: ShellProps) {
+function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts }: ShellProps) {
   const ed = useEditor();
   const readOnly = useCourse(s => s.readOnly);
   const [detent, setDetent] = useState<Detent>(() => STEP_DETENT[useEditor.getState().step]);
   const [restH, setRestH] = useState(180);
   const [mainH, setMainH] = useState(700);
   const main = useRef<HTMLDivElement>(null);
-  const { menus, openApp, openMore } = useMenus(onHelp);
-  const panel = usePanel({ onFindSite, onMore: openMore });
+  const { menus, openApp, openMore } = useMenus(onHelp, onGoTo);
+  const panel = usePanel({ onFindSite, onMore: openMore, phone: true });
   const immersive = !!ed.teeView;
   // (No sheet under the welcome card: it is the first step's panel, with the same two choices)
   const sheet = !immersive && !welcome;
@@ -519,10 +559,24 @@ function PhoneShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: Shel
     if (panel.mode === "tool" && prevMode.current !== "tool") setDetent("peek");
     prevMode.current = panel.mode;
   }, [panel.mode]);
+  // (a hole or a thing picked: down to its strip, the map free above it)
+  const holePicked = !readOnly && !!ed.selectedId && (getDoc().holes.some(h => h.id === ed.selectedId) || getDoc().items.some(i => i.id === ed.selectedId));
   useLayoutEffect(() => {
-    // (view only: its numbers come up)
-    if (ed.selectedId) setDetent(d => (d === "full" ? "half" : readOnly && d === "peek" ? "half" : d));
+    // (a hole: down to its strip, the map free above it; view only: its numbers come up)
+    if (holePicked) setDetent("peek");
+    else if (ed.selectedId) setDetent(d => (d === "full" ? "half" : readOnly && d === "peek" ? "half" : d));
   }, [ed.selectedId]);
+  // (a piece picked on a printout's page: the sheet down, the page and its toolbar free above it)
+  useLayoutEffect(() => {
+    if (ed.designSel && (ed.step === "map" || ed.step === "export")) setDetent("peek");
+  }, [ed.designSel]);
+  // (and the hole brought into the map above the sheet once the sheet has its height)
+  useEffect(() => {
+    if (!holePicked || !ed.selectedId) return;
+    const id = ed.selectedId;
+    const t = window.setTimeout(() => getView()?.reveal(id), 320);
+    return () => window.clearTimeout(t);
+  }, [ed.selectedId, holePicked, sheetH]);
 
   // Fitting holes and items keeps them clear of the sheet (set before the fit that follows a
   // pick from the list)
@@ -538,21 +592,23 @@ function PhoneShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: Shel
   const toggle = useCallback(() => setDetent(d => (d === "peek" ? "half" : "peek")), []);
   const onStep = (s: Step) => goStep(s, setDetent, toggle);
   const top = 72; // below the top bar
-  const design = ed.step === "design" && !ed.teeView;
+  const design = (ed.step === "map" || ed.step === "export") && !ed.teeView;
   // (Room for the map's buttons: between the top bar and the sheet, less the drawing buttons;
   // none under the welcome card or the Design preview)
   const controlsRoom = welcome || design ? 0 : mainH - sheetH - top - 12 - (ed.drawPoints > 0 ? 64 : 0);
 
   return (
-    <div className="dg-compact fixed inset-0 flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden" data-layout="phone" onScroll={keepPut}>
+    <div className="dg-compact fixed inset-0 flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden isolate" data-layout="phone" onScroll={keepPut}>
+      <Woods />
       <main ref={main} className="relative flex-1 min-h-0">
         <MapViewport onContextMenu={onContextMenu} compact="phone" controlsTop={top} controlsRoom={immersive ? 0 : controlsRoom} />
         {design && (
           <div className="absolute inset-x-0 top-0 z-20" style={{ bottom: sheetH }}>
-            <MapDesigner compact topInset={top} />
+            <MapDesigner compact topInset={top} preview={ed.step === "export"} />
           </div>
         )}
         {!immersive && <PhoneTopBar onMenu={openApp} />}
+        {!immersive && <GettingStarted phone />}
         {!immersive && <DrawBar bottom={sheetH + 12} />}
         {ed.teeView && <TeeViewHud compact />}
         <ExportProgressPill top={immersive ? undefined : top + 4} />
@@ -573,10 +629,10 @@ function PhoneShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: Shel
   );
 }
 
-function RailShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: ShellProps) {
+function RailShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts }: ShellProps) {
   const ed = useEditor();
   const [open, setOpen] = useState(true);
-  const { menus, openApp, openMore } = useMenus(onHelp);
+  const { menus, openApp, openMore } = useMenus(onHelp, onGoTo);
   const panel = usePanel({ onFindSite, onMore: openMore });
   const immersive = !!ed.teeView;
   const body = useRef<HTMLDivElement>(null);
@@ -589,19 +645,20 @@ function RailShell({ onFindSite, onHelp, onContextMenu, welcome, toasts }: Shell
     setOpen(true);
     goStep(s, () => {}, () => setOpen(o => !o));
   };
-  const design = ed.step === "design" && !ed.teeView;
+  const design = (ed.step === "map" || ed.step === "export") && !ed.teeView;
   return (
-    <div className="dg-compact fixed inset-0 flex bg-zinc-950 text-zinc-100 overflow-hidden" data-layout="rail" onScroll={keepPut}>
+    <div className="dg-compact fixed inset-0 flex bg-zinc-950 text-zinc-100 overflow-hidden isolate" data-layout="rail" onScroll={keepPut}>
+      <Woods />
       {!immersive && <NavRail onStep={onStep} onMenu={openApp} panelOpen={open} onPanel={() => setOpen(o => !o)} />}
       {!immersive && open && (
-        <aside className="dg-side w-[300px] [@media(min-height:600px)]:w-[340px] shrink-0 flex flex-col bg-zinc-900 border-r border-white/10 relative z-30" aria-label={panel.mode === "selection" ? "Selection" : "Step panel"} data-testid="side-sheet">
+        <aside className="glass dg-side w-[300px] [@media(min-height:600px)]:w-[340px] shrink-0 flex flex-col m-2 ml-2 rounded-[24px] overflow-hidden relative z-30" aria-label={panel.mode === "selection" ? "Selection" : "Step panel"} data-testid="side-sheet">
           <div className="shrink-0 pt-2">{panel.header}</div>
           <div ref={body} className="dg-scroll flex-1 min-h-0 overflow-y-auto pb-[env(safe-area-inset-bottom)]">{panel.body}</div>
         </aside>
       )}
       <main className="relative flex-1 min-w-0">
         <MapViewport onContextMenu={onContextMenu} compact="rail" controlsTop={8} controlsRoom={immersive || design ? 0 : 999} />
-        {design && <div className="absolute inset-0 z-20"><MapDesigner compact topInset={0} /></div>}
+        {design && <div className="absolute inset-0 z-20"><MapDesigner compact topInset={0} preview={ed.step === "export"} /></div>}
         {!immersive && <DrawBar bottom={12} />}
         {ed.teeView && <TeeViewHud compact />}
         <ExportProgressPill />

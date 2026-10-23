@@ -1,13 +1,13 @@
 // In front of the app on a HyzerLab server: first-run setup, invite and reset links, signing in,
 // and 2FA (set up, or a code) before anything else. Signed in, the app and the account dialogs.
-import { useEffect, useState, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 import { api, useAuth } from "./api";
+import { Loading, LoadingScreen } from "../components/ui";
 import { BackupCodes, CopyButton, Form, Input, Screen } from "./parts";
 import { AccountDialog } from "./AccountDialog";
 import { PeopleDialog } from "./PeopleDialog";
-import { ShareDialog } from "./ShareDialog";
 import { Home } from "./Home";
-import { getView } from "../components/MapViewport";
+import { getView, onLiveView } from "../state/view";
 import { HistoryDialog, PreviewBar, PublishDialog, ReviewDialog, UpdateDialog } from "./ChangesDialogs";
 import { CommentLayer, CommentsPanel, loadComments, useCommentKeys, useComments } from "./Comments";
 import { useServerCourse } from "./courses";
@@ -22,6 +22,9 @@ const linkToken = () => {
 };
 const clearLink = () => history.replaceState(null, "", location.pathname + location.search);
 
+// (loaded when opened: publishing a site brings the map painter with it)
+const ShareDialog = lazy(() => import("./ShareDialog").then(m => ({ default: m.ShareDialog })));
+
 export function AuthGate({ children }: { children: ReactNode }) {
   const { session, load, dialog, open, home } = useAuth();
   const [token, setToken] = useState(linkToken);
@@ -31,10 +34,22 @@ export function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => { load().catch(() => setFailed(true)); }, [load]);
   // (the map behind the course list rests: it would draw for nothing)
   useEffect(() => { getView()?.setPaused(home); }, [home]);
+  // (the map loads after the course list shows: it starts resting if the list is up)
+  useEffect(() => onLiveView(v => v?.setPaused(useAuth.getState().home)), []);
   const after = () => load();
+  // (the editor, a few MB, loads once the course list is up: the list never waits on it)
+  const listShown = useAuth(s => s.listShown);
+  const [warm, setWarm] = useState(!home);
+  useEffect(() => {
+    if (warm) return;
+    if (!home || listShown) { setWarm(true); return; }
+    // (a list that's slow to come: the editor after a few seconds anyway)
+    const id = window.setTimeout(() => setWarm(true), 4000);
+    return () => window.clearTimeout(id);
+  }, [home, warm, listShown]);
 
   if (failed) return <Screen title="Can't reach the server"><button className="text-sm text-orange-300" onClick={() => location.reload()}>Try again</button></Screen>;
-  if (!session) return <div className="min-h-[100dvh] bg-zinc-950" aria-busy="true" />;
+  if (!session) return <LoadingScreen label="Loading…" />;
 
   // Backup codes, shown once, right after 2FA is set up
   if (codes) {
@@ -55,11 +70,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (session.stage === "full" && session.user) {
     return (
       <>
-        {children}
+        {warm && children}
         {home && <Home />}
         {dialog === "account" && <AccountDialog onClose={() => open(null)} />}
         {dialog === "people" && session.user.isAdmin && <PeopleDialog onClose={() => open(null)} />}
-        {dialog === "share" && <ShareDialog onClose={() => open(null)} />}
+        {dialog === "share" && <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center"><div className="glass-solid rounded-2xl px-5 py-4"><Loading label="Opening Share…" /></div></div>}><ShareDialog onClose={() => open(null)} /></Suspense>}
         {dialog === "publish" && <PublishDialog onClose={() => open(null)} />}
         {dialog === "update" && <UpdateDialog onClose={() => open(null)} />}
         {dialog === "history" && <HistoryDialog onClose={() => open(null)} />}
@@ -113,7 +128,7 @@ function LinkScreen({ token, onDone, onBad }: { token: string; onDone: () => Pro
   const [password, setPassword] = useState("");
   const [again, setAgain] = useState("");
   useEffect(() => { api<{ kind: "invite" | "reset"; username: string | null }>("GET", `invites/${token}`).then(setInfo, () => setInfo(false)); }, [token]);
-  if (info === null) return <div className="min-h-[100dvh] bg-zinc-950" aria-busy="true" />;
+  if (info === null) return <LoadingScreen label="Loading…" />;
   if (info === false) {
     return (
       <Screen title="Link expired">
@@ -146,7 +161,7 @@ function SetUp2fa({ onDone }: { onDone: (codes: string[]) => void }) {
   useEffect(() => { void api<{ secret: string; qr: string }>("POST", "mfa/enroll").then(setEnroll); }, []);
   return (
     <Screen title="Set up two-factor sign-in">
-      {!enroll ? <div className="h-64" aria-busy="true" /> : (
+      {!enroll ? <Loading label="Loading…" className="h-64" /> : (
         <Form submit="Turn on" testid="mfa-setup" onSubmit={async () => onDone((await api<{ backupCodes: string[] }>("POST", "mfa/enroll/confirm", { code })).backupCodes)}>
           <p className="text-sm text-zinc-300">Scan with an authenticator app.</p>
           <img className="w-48 h-48 mx-auto rounded-lg bg-white p-2" alt="QR code for the authenticator app" src={`data:image/svg+xml;utf8,${encodeURIComponent(enroll.qr)}`} />

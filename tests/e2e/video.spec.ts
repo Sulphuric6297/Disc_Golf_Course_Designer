@@ -54,7 +54,7 @@ test("record a hole's flyover from the Export step: progress, then a real video 
   test.setTimeout(420_000);
   await twoHoles(page);
   await watchToasts(page);
-  await page.getByRole("button", { name: "6 Export" }).click();
+  await page.getByRole("button", { name: "4 Export" }).click();
   const section = page.getByTestId("video-export");
   await section.getByTestId("video-holes").selectOption({ label: "Hole 1" });
   await expect(section.getByTestId("video-record")).toHaveText(/Record hole 1/);
@@ -93,18 +93,18 @@ test("cancel stops a recording, and leaving the Export step doesn't", async ({ p
   await watchToasts(page);
   let downloads = 0;
   page.on("download", () => downloads++);
-  await page.getByRole("button", { name: "6 Export" }).click();
+  await page.getByRole("button", { name: "4 Export" }).click();
   await expect(page.getByTestId("video-record")).toHaveText(/Record the course/);
   await page.getByTestId("video-record").click();
   await expect.poll(async () => Number(await page.getByTestId("video-progress").getAttribute("aria-valuenow")), { timeout: 60_000 }).toBeGreaterThan(1);
   // Off to another step: the recording goes on, shown over the map
-  await page.getByRole("button", { name: "2 Holes" }).click();
+  await page.getByRole("button", { name: "2 Design" }).click();
   const pill = page.getByTestId("export-progress-pill");
   await expect(pill).toContainText("Course flyover video");
   const at = Number(await pill.getByRole("progressbar").getAttribute("aria-valuenow"));
   await expect.poll(async () => Number(await pill.getByRole("progressbar").getAttribute("aria-valuenow")), { timeout: 60_000 }).toBeGreaterThan(at);
   // Back, and cancel
-  await page.getByRole("button", { name: "6 Export" }).click();
+  await page.getByRole("button", { name: "4 Export" }).click();
   await page.getByTestId("video-cancel").click();
   await expect(page.getByTestId("video-progress")).toBeHidden();
   await expect.poll(() => toasts(page), { timeout: 30_000 }).toContain("Cancelled: Course flyover video.");
@@ -112,7 +112,7 @@ test("cancel stops a recording, and leaving the Export step doesn't", async ({ p
   await page.waitForTimeout(500);
   expect(downloads).toBe(0);
   // The map still works: the view from the first tee
-  await page.getByRole("button", { name: "2 Holes" }).click();
+  await page.getByRole("button", { name: "2 Design" }).click();
   await page.getByTestId("hole-row").first().click();
   await page.getByTestId("tee-view").click();
   await expect(page.getByTestId("tee-view-hud")).toContainText("Par 3 · 250 ft");
@@ -176,7 +176,7 @@ test("without WebCodecs, the flyover is recorded in real time with a MediaRecord
   });
   await page.reload();
   await twoHoles(page);
-  await page.getByRole("button", { name: "6 Export" }).click();
+  await page.getByRole("button", { name: "4 Export" }).click();
   await page.getByTestId("video-holes").selectOption({ label: "Hole 1" });
   const downloading = page.waitForEvent("download", { timeout: 150_000 });
   const started = Date.now();
@@ -220,7 +220,7 @@ test("in real time, getting the next hole ready is left out of the video (its fr
       } };
     };
   });
-  await page.getByRole("button", { name: "6 Export" }).click();
+  await page.getByRole("button", { name: "4 Export" }).click();
   await page.getByTestId("video-holes").selectOption("all");
   const downloading = page.waitForEvent("download", { timeout: 200_000 });
   await page.getByTestId("video-record").click();
@@ -263,7 +263,7 @@ test("where the browser encodes H.264, the video is an MP4", async ({ page }) =>
   });
   await page.reload();
   await twoHoles(page, [160, 90]);
-  await page.getByRole("button", { name: "6 Export" }).click();
+  await page.getByRole("button", { name: "4 Export" }).click();
   await page.getByTestId("video-holes").selectOption({ label: "Hole 2" });
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 120_000 }), page.getByTestId("video-record").click()]);
   expect(download.suggestedFilename()).toBe("new-disc-golf-course-hole-2-flyover.mp4");

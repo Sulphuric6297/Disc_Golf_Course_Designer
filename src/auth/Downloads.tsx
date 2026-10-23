@@ -17,7 +17,7 @@ export function Downloads() {
   const [busy, setBusy] = useState("");
   if (!files) return null;
   const go = (what: string, fn: () => Promise<void> | void) => async () => { setBusy(what); try { await fn(); } finally { setBusy(""); } };
-  const btn = "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 disabled:opacity-50";
+  const btn = "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold bg-white/[0.07] hover:bg-white/[0.13] text-zinc-100 border border-white/[0.12] disabled:opacity-50";
   return (
     <Section title="Downloads" testid="downloads">
       <div className="flex flex-wrap gap-2">

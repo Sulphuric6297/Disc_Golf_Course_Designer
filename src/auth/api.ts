@@ -21,7 +21,7 @@ export async function api<T = unknown>(method: "GET" | "POST" | "PUT" | "PATCH" 
 }
 
 export type Stage = "mfa" | "mfa-setup" | "full";
-export interface User { id: string; username: string; displayName: string; isAdmin: boolean; totpEnabled: boolean }
+export interface User { id: string; username: string; displayName: string; isAdmin: boolean; totpEnabled: boolean; mfaRequired?: boolean }
 export interface Session { needsSetup: boolean; stage: Stage | null; user: User | null }
 
 type Dialog = null | "account" | "people" | "share" | "publish" | "history" | "review" | "update";
@@ -38,6 +38,11 @@ export const useAuth = create<{
   load: () => Promise<void>;
   signOut: () => Promise<void>;
   open: (d: Dialog) => void;
+  /** The share dialog's tab to open on (people, or the public link). */
+  shareTab: "people" | "public";
+  /** The course list has been drawn (the editor may load behind it now). */
+  listShown: boolean;
+  share: (tab: "people" | "public") => void;
 }>((set, get) => ({
   session: null,
   dialog: null,
@@ -51,7 +56,10 @@ export const useAuth = create<{
     set({ dialog: null, home: true });
     await get().load();
   },
-  open: dialog => set({ dialog })
+  open: dialog => set({ dialog, shareTab: "people" }),
+  shareTab: "people",
+  listShown: false,
+  share: shareTab => set({ dialog: "share", shareTab })
 }));
 
 /** A link for an invite or a reset: the token after #, so it never reaches a server's logs. */

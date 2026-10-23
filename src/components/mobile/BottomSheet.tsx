@@ -228,7 +228,7 @@ export function BottomSheet({ detent, onDetent, header, children, peekExtra = 0,
       aria-label={label}
       data-testid="sheet"
       data-detent={detent}
-      className={`dg-sheet absolute left-0 right-0 bottom-0 z-30 flex flex-col bg-zinc-900 border-t border-white/10 rounded-t-[22px] shadow-[0_-6px_24px_rgba(0,0,0,0.4)] will-change-transform ${dragging ? "" : "transition-transform duration-300 ease-[cubic-bezier(0.2,0.9,0.3,1)] motion-reduce:transition-none"}`}
+      className={`dg-sheet glass absolute left-0 right-0 bottom-0 z-30 flex flex-col rounded-t-[28px] will-change-transform ${dragging ? "" : "transition-transform duration-300 ease-[cubic-bezier(0.2,0.9,0.3,1)] motion-reduce:transition-none"}`}
       style={{ height: full, transform: offset(rest) }}
       onClickCapture={e => { if (swallowClick.current) { e.preventDefault(); e.stopPropagation(); } }}
     >
@@ -236,14 +236,14 @@ export function BottomSheet({ detent, onDetent, header, children, peekExtra = 0,
       <div ref={head} className="shrink-0 select-none" onPointerDown={onHeadDown}>
         <button
           type="button"
-          className="w-full flex justify-center pt-2 pb-1.5 touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 rounded-t-[22px]"
+          className="w-full flex justify-center pt-2 pb-1.5 touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 rounded-t-[28px]"
           aria-label={`Panel: ${NAMES[detent]}. Show it ${NAMES[next]}`}
           aria-expanded={detent !== "peek"}
           data-testid="sheet-handle"
           onClick={() => onDetent(next)}
           onKeyDown={onKey}
         >
-          <span className="block w-10 h-[5px] rounded-full bg-zinc-500/80" aria-hidden />
+          <span className="block w-9 h-[5px] rounded-full bg-white/30" aria-hidden />
         </button>
         {header}
       </div>

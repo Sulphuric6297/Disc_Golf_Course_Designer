@@ -10,7 +10,7 @@ export interface Auth {
   sessionId: string;
   stage: Stage;
   mfaAttempts: number;
-  user: { id: string; username: string; displayName: string; isAdmin: boolean; totpEnabled: boolean };
+  user: { id: string; username: string; displayName: string; isAdmin: boolean; totpEnabled: boolean; mfaRequired: boolean };
 }
 
 /** A session between the password and the code (or 2FA setup) lasts this long. */
@@ -31,7 +31,7 @@ export async function loadAuth(sql: Sql, req: FastifyRequest): Promise<Auth | nu
   if (!token) return null;
   const [row] = await sql`
     select s.id, s.stage, s.mfa_attempts, s.last_seen_at, s.created_at,
-      u.id as user_id, u.username, u.display_name, u.is_admin, u.totp_enabled
+      u.id as user_id, u.username, u.display_name, u.is_admin, u.totp_enabled, u.mfa_required
     from sessions s join users u on u.id = s.user_id
     where s.token_hash = ${sha256(token)} and s.expires_at > now() and not u.disabled`;
   if (!row) return null;
@@ -43,7 +43,7 @@ export async function loadAuth(sql: Sql, req: FastifyRequest): Promise<Auth | nu
     sessionId: row.id,
     stage: row.stage,
     mfaAttempts: row.mfa_attempts,
-    user: { id: row.user_id, username: row.username, displayName: row.display_name, isAdmin: row.is_admin, totpEnabled: row.totp_enabled }
+    user: { id: row.user_id, username: row.username, displayName: row.display_name, isAdmin: row.is_admin, totpEnabled: row.totp_enabled, mfaRequired: row.mfa_required }
   };
 }
 

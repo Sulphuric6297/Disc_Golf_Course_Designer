@@ -1,5 +1,5 @@
 import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
-import { test, expect, addHole, course, geoAt, importSite, STAND } from "./fixtures";
+import { test, expect, addHole, course, editorState, geoAt, importSite, STAND } from "./fixtures";
 import { osmFeaturesFrom, overpassQuery } from "../../src/lib/geo/osm";
 import { clipPathToRect, clipPolygonToRect, pointInPolygon as inPoly, polygonArea as polyArea } from "../../src/lib/geom";
 import { boxFill, traceOutline, waterRegions, woodsRegions, type Canopy } from "../../src/lib/geo/detect";
@@ -54,10 +54,11 @@ test("bringing in a site: photo, elevation, trees, and OpenStreetMap paths and w
   expect(doc.items.filter((i: any) => i.type === "area" && i.kind === "water")).toHaveLength(1);
   expect(summary).toMatch(/On the photo: 1 wooded area, \d+ trees?\./);
   expect(doc.name).toBe("Springfield Park Disc Golf Course");
-  // Straight on to laying out holes
-  await expect(page.getByTestId("tool-hint")).toContainText("Click where the tee goes");
+  // On the Design step with the pointer: a look around first, not a hole at the first click
+  await expect.poll(async () => (await editorState(page)).tool).toBe("select");
+  await expect(page.getByTestId("tool-hint")).toHaveCount(0);
   // Listed with what came in by itself, to take out at once
-  await page.getByRole("button", { name: /^3\s*Features$/ }).click();
+  await page.getByRole("button", { name: /^1\s*Site$/ }).click();
   await expect(page.getByTestId("photo-found")).toContainText(/^1 area and \d+ trees? from the photo/);
 });
 
@@ -69,9 +70,9 @@ test("a hole up the hill: elevation change and par on the real terrain", async (
   const top = { x: mid.x + 120 * 3.28084, y: mid.y - 120 * 3.28084 };
   await addHole(page, { x: top.x - 300, y: top.y + 150 }, top);
   const row = page.getByTestId("hole-row");
-  await expect(row).toContainText(/\+\d+(\.\d)? ft/);
   await page.keyboard.press("Escape");
   await row.click();
+  await expect(page.getByTestId("hole-stats")).toContainText(/\+\d+(\.\d)? ft/);
   await expect(page.getByTestId("hole-stats")).toContainText(/uphill/i);
   await expect(page.getByTestId("elevation-profile")).toBeVisible();
   // (its heights with their unit: bare four-figure heights read as years)
@@ -254,8 +255,8 @@ test("making the site bigger keeps the design on the same ground", async ({ page
   await page.mouse.down();
   await page.mouse.move(nw.x - 90, nw.y - 60, { steps: 10 });
   await page.mouse.up();
-  await page.getByText("Trees found on the photo").click();
-  await page.getByText("Paths, water, roads and parking").click();
+  await page.getByText("Trees spotted on the satellite photo").click();
+  await page.getByText("Paths, roads, water and buildings").click();
   await page.getByTestId("import-site").click();
   await expect.poll(async () => (await course(page)).canvas.width, { timeout: 90_000 }).toBeGreaterThan(W + 100);
   expect((await course(page)).canvas.height).toBeGreaterThan(H + 50);

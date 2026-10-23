@@ -6,31 +6,39 @@ import { contoursOf, reliefExaggeration } from "../../src/lib/relief";
 import { dist, distanceToPath } from "../../src/lib/geom";
 import { BASKET_MARKS, basketMark, bestRotation, renderPoster } from "../../src/lib/mapSvg";
 import { renderScorecard, renderTeeSign } from "../../src/lib/teeSign";
+import { renderHolePage } from "../../src/lib/holePage";
 import { tallGrassOf } from "../../src/lib/landscapes";
+
+/** The map's painting finished (a quick draft shows first, then the sharp picture). */
+const painted = (page: import("@playwright/test").Page) => expect.poll(() => page.evaluate(() => !(window as any).__dgPainting()), { timeout: 90_000 }).toBe(true);
 
 test("the Design step shows the printed map; its styles are the painted map in each landscape", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await addHole(page, { x: 700, y: 650 }, { x: 700, y: 300 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const pageSvg = page.getByTestId("design-page");
   await expect(pageSvg.locator("svg")).toBeVisible();
   // Forest is the default: the title over the map, the layout's par and length on a chip
   await expect(pageSvg).toContainText("DISC GOLF COURSE");
   await expect(pageSvg).toContainText(/PAR 6 \| 700'/);
   await expect(pageSvg.locator("image").first()).toBeVisible();
-  // One style, the painted Forest map: the styles are its landscapes (colors and woods)
-  await expect(page.getByTestId("styles").getByRole("radio")).toHaveCount(6);
+  // The painted Forest map; the trees' part open, its leaf colors as pictures (autumn: several colors)
+  await expect(page.getByTestId("colors-trees").getByRole("radio")).toHaveCount(4);
   await expect(page.getByTestId("theme-illustrated")).toHaveCount(0);
-  await page.getByTestId("style-autumn").click();
-  await expect.poll(async () => (await course(page)).style.landscape).toBe("autumn");
+  await page.getByTestId("colors-trees-autumn").click();
+  await expect.poll(async () => (await course(page)).style.trees).toBe("#7a4b26");
   const autumn = await course(page);
   expect(autumn.style.theme).toBe("forest");
-  expect(autumn.style.trees).toBe("#7a4b26");
-  await expect(page.getByTestId("style-autumn")).toHaveAttribute("aria-checked", "true");
+  expect(autumn.style.treeMix?.length).toBeGreaterThan(2);
+  await expect(page.getByTestId("colors-trees-autumn")).toHaveAttribute("aria-checked", "true");
   // Title and toggles go straight onto the map
-  await page.getByLabel("Map title").fill("Ridge Run");
+  // (the title's words: picked in Layers, typed on the page)
+  await page.getByTestId("layer").filter({ hasText: /^Title$/ }).click();
+  await page.getByTestId("piece-edit-text").click();
+  await page.getByTestId("page-typing").fill("Ridge Run");
+  await page.getByTestId("page-typing").press("Enter");
   await expect(pageSvg).toContainText("Ridge Run");
   await page.getByRole("button", { name: "Show Legend" }).click();
   await expect(pageSvg).toContainText("LEGEND");
@@ -51,7 +59,8 @@ test("turning the map to fill the page", async ({ page }) => {
   await addHole(page, { x: 550, y: 600 }, { x: 850, y: 350 });
   await addHole(page, { x: 900, y: 300 }, { x: 1200, y: 100 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
+  await page.getByTestId("fold-paper").locator("summary").click();
   await page.getByTestId("best-rotation").click();
   await expect.poll(async () => Math.abs((await course(page)).style.rotation)).toBeGreaterThan(20);
   await page.getByRole("button", { name: "North up" }).click();
@@ -59,14 +68,16 @@ test("turning the map to fill the page", async ({ page }) => {
 });
 
 test("tree cover: sparse woods leave grass between the trees", async ({ page }) => {
+  test.setTimeout(300_000);
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   // How light the painted land is (dark canopy against lighter grass)
   const lightness = async () => {
+    await painted(page);
     const href = await painting.getAttribute("href");
     return page.evaluate(async (url: string) => {
       const img = new Image();
@@ -84,6 +95,7 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
     }, href!);
   };
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
+  await painted(page);
   const dense = await lightness();
   // (the share of the land lighter than all but a quarter of the thick woods)
   const light = dense[Math.floor(dense.length * 0.75)];
@@ -96,11 +108,22 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
   await expect.poll(async () => (await course(page)).style.treeCover).toBe(0.2);
   await expect(page.getByTestId("forest-options")).toContainText("Sparse");
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
+  await painted(page);
   // Grass between the trees: far more of the land is lighter
   expect(share(await lightness())).toBeGreaterThan(share(dense) + 0.2);
   // One undo step brings the thick woods back
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).style.treeCover).toBe(1);
+  // Each map style repaints it; Classic again is as it was
+  const styles = page.getByTestId("map-styles");
+  for (const [name, id] of [["Brushwood", "brushwood"], ["Hollow", "hollow"], ["Golden hour", "golden"], ["Storybook", "storybook"], ["Gouache", "gouache"]]) {
+    const before = await painting.getAttribute("href");
+    await styles.getByRole("radio", { name }).click();
+    await expect.poll(async () => (await course(page)).style.mapLook).toBe(id);
+    await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
+  }
+  await styles.getByRole("radio", { name: "Classic" }).click();
+  await expect.poll(async () => (await course(page)).style.mapLook).toBeUndefined();
 });
 
 test("light and shadow: the sun, shadows and brightness repaint the Forest map, and Reset brings them back", async ({ page }) => {
@@ -108,40 +131,54 @@ test("light and shadow: the sun, shadows and brightness repaint the Forest map, 
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
-  const panel = page.getByTestId("light-shadow");
-  await expect(panel).toBeVisible();
-  const set = async (label: string, value: string) => {
+  await painted(page);
+  const set = async (panel: import("@playwright/test").Locator, label: string, value: string) => {
     const slider = panel.getByLabel(label);
     await slider.fill(value);
     await slider.dispatchEvent("pointerup");
   };
+  // The sun, in the map style's Light part: by the compass, along its real path (east to west)
+  const light = page.getByTestId("look-part-light");
+  await light.getByRole("button", { name: /Light and shadow/ }).click();
   let before = await painting.getAttribute("href");
-  await set("Sun from the", "90");
-  await expect.poll(async () => (await course(page)).style.sunAngle).toBe(90);
-  await expect(panel).toContainText("right");
+  await set(light, "Sun from the", "90");
+  await expect.poll(async () => (await course(page)).style.sunFrom).toBe(270);
+  await expect(light).toContainText("west");
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
   before = await painting.getAttribute("href");
-  await set("Shadows", "1");
+  await set(light, "Shadows", "1");
   await expect.poll(async () => (await course(page)).style.shadows).toBe(1);
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
+  // Golden hour and night repaint it too
+  for (const mode of ["Golden hour", "Night"]) {
+    before = await painting.getAttribute("href");
+    await light.getByRole("radio", { name: mode }).click();
+    await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
+  }
+  await light.getByTestId("part-reset").click();
+  await expect.poll(async () => { const s = (await course(page)).style; return [s.sunFrom, s.shadows, s.lightMode]; }).toEqual([undefined, undefined, undefined]);
+  // Fine tuning: the picture's brightness, and its Reset
+  const panel = page.getByTestId("light-shadow");
   before = await painting.getAttribute("href");
-  await set("Brightness", "0.3");
+  await set(panel, "Brightness", "0.3");
   await expect.poll(async () => (await course(page)).style.light).toBe(0.3);
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
   await panel.getByRole("button", { name: "Reset" }).click();
-  await expect.poll(async () => { const s = (await course(page)).style; return [s.sunAngle, s.shadows, s.light]; }).toEqual([315, 0.65, 0]);
+  await expect.poll(async () => (await course(page)).style.light).toBe(0);
 });
 
 test("picking a basket mark changes the map's baskets", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const pageSvg = page.getByTestId("design-page");
+  // (the marks are shared by every page: the General tab)
+  await page.getByRole("tab", { name: "General" }).click();
   await expect(page.getByTestId("basket-mark-basket")).toHaveAttribute("aria-checked", "true");
   await expect(pageSvg.locator('[data-mark="basket"]')).toHaveCount(1);
   await page.getByTestId("basket-mark-flag").click();
@@ -152,9 +189,10 @@ test("picking a basket mark changes the map's baskets", async ({ page }) => {
   await page.getByTestId("basket-mark-number").click();
   await expect.poll(async () => (await course(page)).style.basketMark).toBe("number");
   await expect(pageSvg.locator('[data-mark="number"]')).toContainText("1");
-  // Another style keeps the mark chosen
-  await page.getByTestId("style-pines").click();
-  await expect.poll(async () => (await course(page)).style.landscape).toBe("pines");
+  // Another color keeps the mark chosen
+  await page.getByRole("tab", { name: "Course map" }).click();
+  await page.getByTestId("colors-trees-deep").click();
+  await expect.poll(async () => (await course(page)).style.trees).toBe("#2a3d2e");
   expect((await course(page)).style.basketMark).toBe("number");
 });
 
@@ -199,21 +237,55 @@ plain("course map page: title, layout chips, holes and credits", () => {
   plainExpect(f.svg).toContain("GOLD LAYOUT");
 });
 
+plain("the course map's frame: even on all four sides, or none", () => {
+  const doc = sample();
+  plainExpect(renderPoster(doc, { contours: null, hillshade: null } as never).svg).not.toContain('data-part="frame"');
+  for (const frame of ["mat", "line", "band"] as const) {
+    doc.style.frame = frame;
+    plainExpect(renderPoster(doc, { contours: null, hillshade: null } as never).svg).toContain('data-part="frame"');
+  }
+});
+
 plain("tee signs: wide and tall layouts, notes, next hole", () => {
   const doc = sample();
   const wide = renderTeeSign(doc, doc.holes[1].id, "18x12", { contours: null, hillshade: null })!;
   plainExpect(wide.width).toBe(18 * 72);
   plainExpect(wide.svg).toContain("PAR 3");
-  // The info column: the length from each tee, the hole notes, the course in miniature with this
-  // hole's "you are here", which hole of how many
+  // The info column: the length from each tee, the hole notes, the green up close (the small
+  // course map is gone from signs), which hole of how many
   plainExpect(wide.svg).toContain(">300 FT<");
   plainExpect(wide.svg).toContain("Creek &amp; beyond OB");
   plainExpect(wide.svg).toContain("HOLE NOTES");
-  plainExpect(wide.svg).toContain('data-part="course-map"');
-  plainExpect(wide.svg).toContain("YOU ARE HERE");
+  plainExpect(wide.svg).toContain('data-part="green"');
+  plainExpect(wide.svg).not.toContain('data-part="course-map"');
   plainExpect(wide.svg).toContain("HOLE 2 OF 2");
   plainExpect(wide.svg).not.toContain("COURSE MAP<");
   plainExpect(wide.svg).toContain("ELEVATION CHANGE FROM TEE");
+  // The spot under the notes: the green up close, the hole's numbers, or nothing
+  doc.style.sign = { spot: "green" };
+  const green = renderTeeSign(doc, doc.holes[1].id, "18x12", { contours: null, hillshade: null })!;
+  plainExpect(green.svg).toContain('data-part="green"');
+  plainExpect(green.svg).not.toContain('data-part="course-map"');
+  doc.style.sign = { spot: "stats" };
+  const stats = renderTeeSign(doc, doc.holes[1].id, "18x12", { contours: null, hillshade: null })!;
+  plainExpect(stats.svg).toContain('data-part="hole-stats"');
+  plainExpect(stats.svg).toContain("TO THE NEXT TEE");
+  doc.style.sign = { show: { courseMap: false } };
+  const none = renderTeeSign(doc, doc.holes[1].id, "18x12", { contours: null, hillshade: null })!;
+  plainExpect(none.svg).not.toContain('data-part="course-map"');
+  // Trailhead: the number on its tab, each tee's length on a chip; wide, the spot beside the climb
+  doc.style.sign = { look: "trailhead", spot: "green" };
+  const trail = renderTeeSign(doc, doc.holes[1].id, "18x12", { contours: null, hillshade: null })!;
+  plainExpect(trail.width).toBe(18 * 72);
+  plainExpect(trail.svg).toContain('data-part="tee-chip"');
+  plainExpect(trail.svg).toContain('data-part="spot-green"');
+  plainExpect(trail.svg).toContain("HOLE 2 OF 2");
+  const trailTall = renderTeeSign(doc, doc.holes[1].id, "12x18", { contours: null, hillshade: null })!;
+  plainExpect(trailTall.svg).toContain('data-part="hole-map"');
+  plainExpect(trailTall.svg).not.toContain('data-part="spot-green"');
+  // (the hole sheets keep their own page)
+  plainExpect(renderTeeSign(doc, doc.holes[1].id, "letter", { contours: null, hillshade: null })!.svg).not.toContain('data-part="tee-chip"');
+  doc.style.sign = undefined;
   const first = renderTeeSign(doc, doc.holes[0].id, "12x18", { contours: null, hillshade: null })!;
   plainExpect(first.height).toBe(18 * 72);
   plainExpect(first.svg).toContain("HOLE 2 ·");
@@ -483,7 +555,8 @@ test("choosing PDGA marking colors in the Design step", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
+  await page.getByRole("tab", { name: "General" }).click();
   await expect(page.getByTestId("markings-map")).toHaveAttribute("aria-checked", "true");
   await page.getByTestId("markings-pdga").click();
   await expect.poll(async () => (await course(page)).style.markings).toBe("pdga");
@@ -518,19 +591,33 @@ plain("elevation on the map: relief exaggerated to suit the course, tidy contour
   plainExpect(renderPoster(doc, { contours, hillshade: null }).svg).toMatch(/>3\d\d<\/text>/);
 });
 
-test("elevation on the Forest map: hills shade the painting, contour lines are painted in on request, Hills fine-tunes the relief", async ({ page }) => {
+test("elevation on the Forest map: hills shade the painting, each Elevation look paints its own, contour lines are painted in on request, Hills fine-tunes the relief", async ({ page }) => {
   test.setTimeout(150_000);
   await importSite(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
+  await painted(page);
   const shaded = await painting.getAttribute("href");
-  // Hill shading off: a different picture (the hill's light and shade gone)
-  await page.getByLabel("Hill shading").uncheck();
+  // Elevation off: a different picture (the hill's light and shade gone); each other look its own
+  // (in the map's parts, under Light and shadow)
+  await page.getByTestId("look-part-elevation").getByRole("button").first().click();
+  await page.getByTestId("elevation-off").click();
+  await expect.poll(async () => (await course(page)).style.hillshade).toBe(false);
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(shaded);
-  await page.getByLabel("Hill shading").check();
+  const seen = new Set([shaded]);
+  for (const look of ["cliffs", "contours", "terraces"]) {
+    await page.getByTestId(`elevation-${look}`).click();
+    await expect.poll(async () => (await course(page)).style.reliefLook).toBe(look);
+    await painted(page);
+    const href = await painting.getAttribute("href");
+    expect(seen.has(href)).toBe(false);
+    seen.add(href);
+  }
+  await page.getByTestId("elevation-shaded").click();
+  await expect.poll(async () => (await course(page)).style.reliefLook).toBeUndefined();
   await expect.poll(async () => painting.getAttribute("href")).toBe(shaded);
   // Contour lines: painted into the land, not drawn over it
   await page.getByLabel("Contour lines").check();
@@ -540,6 +627,7 @@ test("elevation on the Forest map: hills shade the painting, contour lines are p
   await page.getByLabel("Contour lines").uncheck();
   await expect.poll(async () => painting.getAttribute("href")).toBe(shaded);
   // Hills: the relief fine-tuned, from flat (the same as no hill shading) to stronger
+  // (in the Elevation part, still open)
   const hills = page.getByLabel("Hills");
   await hills.fill("0");
   await hills.dispatchEvent("pointerup");
@@ -564,10 +652,11 @@ test("painted water: a pond is lighter at its rim and in the shallows, deep and 
     (window as any).__dgEditor().set({ areaKind: "water" });
     (window as any).__dgActions.addDrawn("area", pts);
   });
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
+  await painted(page);
   await page.waitForTimeout(1500);
   // Along the row through the pond's middle (its widest): the water's edge against its middle
   const profile = await page.evaluate(async (url: string) => {
@@ -607,10 +696,11 @@ test("tall grass is painted its own way: lighter, straw-colored tufts, not the g
     (window as any).__dgEditor().set({ areaKind: "rough" });
     (window as any).__dgActions.addDrawn("area", [{ x: 150, y: 700 }, { x: 500, y: 700 }, { x: 500, y: 860 }, { x: 150, y: 860 }]);
   });
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
+  await painted(page);
   await page.waitForTimeout(1500);
   // Straw-green pixels (red near green, both well over blue): the tall grass; the grass and the
   // fairway are much greener
@@ -630,7 +720,8 @@ test("tall grass is painted its own way: lighter, straw-colored tufts, not the g
   }, url);
   // (about a quarter of the page here; a few percent without it)
   expect(await straw((await painting.getAttribute("href"))!)).toBeGreaterThan(0.1);
-  // Its own color, to set
+  // Its own color, to set (in the grass's part)
+  await page.getByTestId("look-part-grass").getByRole("button", { name: /Grass/ }).first().click();
   await expect(page.getByLabel("Tall grass")).toBeVisible();
 });
 
@@ -655,7 +746,7 @@ test.describe("on a phone", () => {
     await blankCourse(page);
     await page.evaluate(() => {
       (window as any).__dgActions.addHole({ x: 300, y: 700 }, { x: 650, y: 700 }, "blue");
-      (window as any).__dgEditor().set({ step: "design", tool: "select" });
+      (window as any).__dgEditor().set({ step: "map", tool: "select" });
     });
     const painting = page.getByTestId("design-page").locator("image").first();
     await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/, { timeout: 30_000 });
@@ -671,7 +762,7 @@ test("the page never freezes while the map paints: it paints between frames, the
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await addHole(page, { x: 700, y: 650 }, { x: 900, y: 350 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/, { timeout: 60_000 });
   const before = await painting.getAttribute("href");
@@ -706,14 +797,15 @@ test("no explainers: the steps' panels and the printed pages say what things are
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
   const explainers = [/Make the course map beautiful/, /Click a tee spot, then a basket spot/, /A layout plays each hole/, /Quick OB/, /Draw around it/, /Anyone with the link/, /budgets usually run/, /The same sun lights/, /Short on fairways/, /stay clear\. Lone trees/, /Made with/, /PDGA par guidelines/, /Play safe/];
-  for (const step of ["1 Site", "2 Holes", "3 Features", "4 Review", "5 Design", "6 Export"]) {
+  for (const step of ["1 Site", "2 Design", "3 Map", "4 Export"]) {
     await page.getByRole("button", { name: step }).click();
-    const text = (await page.getByTestId("side-panel").textContent()) ?? "";
+    // (Design has no side panel: the holes down the map's side)
+    const text = (await page.getByTestId(step === "2 Design" ? "holes-column" : "side-panel").textContent()) ?? "";
     for (const e of explainers) expect(text, `${step}: ${e}`).not.toMatch(e);
   }
   // The printed pages: the course map, a tee sign, the scorecard
   for (const tab of ["Course map", "Tee sign", "Scorecard"]) {
-    await page.getByRole("button", { name: "5 Design" }).click();
+    await page.getByRole("button", { name: "3 Map" }).click();
     await page.getByRole("tab", { name: tab }).click();
     const text = (await page.getByTestId("design-page").textContent()) ?? "";
     for (const e of explainers) expect(text, `${tab}: ${e}`).not.toMatch(e);
@@ -742,10 +834,11 @@ test("trees placed on a fairway are painted where and as they were placed, and t
   await blankCourse(page);
   await addHole(page, { x: 300, y: 500 }, { x: 700, y: 500 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
+  await painted(page);
   // The share of the land in canopy shade (much darker than the grass)
   const dark = async () => {
     const href = await painting.getAttribute("href");
@@ -789,7 +882,7 @@ test("the course map's page edited like Canva: pick, drag, size, style, hide; te
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
   await page.getByTestId("hole-row").click();
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const svg = page.getByTestId("design-page");
   const style = async () => (await course(page)).style;
   // (Delete on the page with nothing picked never deletes the hole picked on the map)
@@ -800,11 +893,11 @@ test("the course map's page edited like Canva: pick, drag, size, style, hide; te
   await expect(legend).toHaveCount(1);
   const box = (await legend.boundingBox())!;
   const pageBox = (await svg.boundingBox())!;
-  // Picked by a click: its settings in the panel
+  // Picked by a click: its settings in the toolbar right over it
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await expect.poll(async () => (await editorState(page)).designSel).toBe("legend");
   await expect(page.getByTestId("page-selection")).toBeVisible();
-  await expect(page.getByTestId("page-selected")).toContainText("Legend");
+  await expect(page.getByTestId("piece-toolbar")).toContainText("Legend");
   // Dragged to the middle of the page
   const to = { x: pageBox.x + pageBox.width / 2, y: pageBox.y + pageBox.height / 2 };
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -813,13 +906,14 @@ test("the course map's page edited like Canva: pick, drag, size, style, hide; te
   await page.mouse.up();
   await expect.poll(async () => (await style()).page?.legend?.x ?? 0).toBeGreaterThan(0.2);
   expect((await style()).page.legend.x).toBeLessThan(0.7);
-  await expect.poll(async () => { const b = (await legend.boundingBox())!; return Math.abs(b.x + b.width / 2 - to.x); }).toBeLessThan(pageBox.width * 0.1);
+  // (the page is drawn again as the painting comes in: measured once it's there)
+  await expect.poll(async () => { const b = await legend.boundingBox(); return b ? Math.abs(b.x + b.width / 2 - to.x) : Infinity; }).toBeLessThan(pageBox.width * 0.1);
   // One undo step; then back in place
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await style()).page?.legend?.x).toBeUndefined();
   await page.keyboard.press("Control+y");
   await expect.poll(async () => (await style()).page?.legend?.x).toBeTruthy();
-  await page.getByTestId("page-reset").click();
+  await page.getByTestId("piece-reset").click();
   await expect.poll(async () => (await style()).page?.legend?.x).toBeUndefined();
   // Sized with a corner square
   const corner = page.getByTestId("page-corner").nth(3);
@@ -829,8 +923,10 @@ test("the course map's page edited like Canva: pick, drag, size, style, hide; te
   await page.mouse.move(c.x + 80, c.y + 80, { steps: 8 });
   await page.mouse.up();
   await expect.poll(async () => (await style()).page?.legend?.scale ?? 1).toBeGreaterThan(1.1);
-  // Its heading and panel; then Delete hides it
-  await page.getByLabel("Legend heading").fill("Key");
+  // Its heading, typed on the page; then Delete hides it
+  await page.getByTestId("piece-edit-text").click();
+  await page.getByTestId("page-typing").fill("Key");
+  await page.getByTestId("page-typing").press("Enter");
   await expect(svg).toContainText("KEY");
   await page.keyboard.press("Escape");
   await page.locator('[data-el="legend"]').click();
@@ -838,19 +934,22 @@ test("the course map's page edited like Canva: pick, drag, size, style, hide; te
   await expect.poll(async () => (await style()).legend).toBe(false);
   // The hole guide's columns
   await page.getByRole("button", { name: "Show Hole guide" }).click();
-  await page.getByTestId("page-element").filter({ hasText: "Hole guide" }).click();
-  await page.getByTestId("hole-guide-columns").getByText("Elevation").click();
+  await page.getByTestId("layer").filter({ hasText: "Hole guide" }).click();
+  await page.getByTestId("piece-more").click();
+  await page.getByTestId("piece-more-menu").getByText("Elevation").click();
   await expect(svg).toContainText("ELEV");
-  // The title hidden from its panel
-  await page.getByTestId("page-element").filter({ hasText: "Title" }).click();
-  await page.getByTestId("page-hide").click();
+  // The title hidden from its toolbar
+  await page.keyboard.press("Escape");
+  await page.getByTestId("layer").filter({ hasText: "Title" }).click();
+  await page.getByTestId("piece-remove").click();
   await expect.poll(async () => (await style()).page?.title?.hidden).toBe(true);
   await expect(svg.locator('[data-el="title"]')).toHaveCount(0);
   // Text: added, typed, dragged, deleted
-  await page.getByTestId("page-add-text").click();
+  await page.getByTestId("add-text").click();
   await expect.poll(async () => (await style()).texts?.length ?? 0).toBe(1);
-  await page.getByTestId("page-text").fill("Sponsored by Acme");
-  await page.getByTestId("page-text").blur();
+  await page.getByTestId("piece-edit-text").click();
+  await page.getByTestId("page-typing").fill("Sponsored by Acme");
+  await page.getByTestId("page-typing").press("Enter");
   await expect(svg).toContainText("Sponsored by Acme");
   const t0 = (await style()).texts[0];
   const added = svg.locator(`[data-el="text:${t0.id}"]`);
@@ -873,10 +972,10 @@ test("the map stays put on the Design page; its labels are dragged, hidden and p
   await blankCourse(page);
   const hole = await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const style = async () => (await course(page)).style;
   // (the map isn't one of the things to pick)
-  await expect(page.getByTestId("page-element").filter({ hasText: /^Map$/ })).toHaveCount(0);
+  await expect(page.getByTestId("layer").filter({ hasText: /^Map$/ })).toHaveCount(0);
   const num = page.getByTestId("design-page").locator(`[data-label="num:${hole.id}"]`);
   await expect(num).toHaveCount(1);
   const b = (await num.boundingBox())!;
@@ -890,7 +989,7 @@ test("the map stays put on the Design page; its labels are dragged, hidden and p
   // Drawn there now
   await expect.poll(async () => { const m = (await num.boundingBox())!; return Math.hypot(m.x + m.width / 2 - from.x - 60, m.y + m.height / 2 - from.y - 40); }).toBeLessThan(10);
   // Back in place; hidden; shown again
-  await page.getByTestId("page-reset").click();
+  await page.getByTestId("piece-reset").click();
   await expect.poll(async () => (await style()).labelAt?.[`num:${hole.id}`]).toBeUndefined();
   await num.click();
   await page.keyboard.press("Delete");
@@ -905,7 +1004,7 @@ test("the Design page zooms with the wheel and pans with a press and drag", asyn
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const zoom = async () => parseInt((await page.getByTestId("design-zoom").textContent()) ?? "0");
   await expect.poll(zoom).toBeGreaterThan(0);
   const z0 = await zoom();
@@ -931,7 +1030,7 @@ test("zoomed in on the Design page, every edge of the page can be reached: the f
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await expect.poll(async () => parseInt((await page.getByTestId("design-zoom").textContent()) ?? "0")).toBeGreaterThan(0);
   for (let i = 0; i < 6; i++) await page.getByTestId("map-designer").getByRole("button", { name: "Zoom in", exact: true }).click();
   const scroller = page.getByTestId("design-scroll");
@@ -954,6 +1053,109 @@ test("zoomed in on the Design page, every edge of the page can be reached: the f
   expect(end.sheet.y + end.sheet.height).toBeLessThanOrEqual(end.area.bottom + 0.5);
 });
 
+plain("tee sign extras: text filled in for each hole, a picture, the hole's sponsors, a QR code; on every hole or the ones picked", () => {
+  const doc = sample();
+  const [h1, h2] = doc.holes;
+  const art = { contours: null, hillshade: null };
+  const sign = (id: string) => renderTeeSign(doc, id, "18x12", art)!.svg;
+  doc.style.sponsors = [{ id: "s1", name: "Joe's Pizza", text: "JOE'S PIZZA" }, { id: "s2", name: "River Bank", text: "RIVER BANK", holes: [h2.id] }];
+  doc.style.sign = { extras: [
+    { id: "t", kind: "text", x: 0.1, y: 0.1, w: 0.3, text: "Hole {hole} · par {par}", size: 30 },
+    { id: "q", kind: "qr", x: 0.8, y: 0.05, w: 0.1, url: "https://example.org/course" },
+    { id: "sp", kind: "sponsors", x: 0.05, y: 0.8, w: 0.3 },
+    { id: "only2", kind: "text", x: 0.1, y: 0.3, w: 0.3, text: "Second only", holes: [h2.id] }
+  ] };
+  const s1 = sign(h1.id), s2 = sign(h2.id);
+  plainExpect(s1).toContain('<g data-el="x:t">');
+  plainExpect(s1).toMatch(/Hole 1 · par \d/);
+  plainExpect(s2).toMatch(/Hole 2 · par \d/);
+  plainExpect(s1).toContain('<g data-el="x:q">');
+  plainExpect(s1).toContain("HOLE SPONSOR<");
+  plainExpect(s1).toContain("JOE'S PIZZA");
+  plainExpect(s1).not.toContain("RIVER BANK");
+  plainExpect(s2).toContain("HOLE SPONSORS<");
+  plainExpect(s2).toContain("RIVER BANK");
+  plainExpect(s1).not.toContain("Second only");
+  plainExpect(s2).toContain("Second only");
+});
+
+plain("one sponsor on its own: placed by itself, only on its own holes", () => {
+  const doc = sample();
+  const [h1, h2] = doc.holes;
+  const art = { contours: null, hillshade: null };
+  doc.style.sponsors = [{ id: "s1", name: "Joe's Pizza", text: "JOE'S PIZZA", holes: [h2.id] }];
+  doc.style.sign = { extras: [{ id: "one", kind: "sponsor", sponsorId: "s1", x: 0.1, y: 0.8, w: 0.15 }] };
+  plainExpect(renderTeeSign(doc, h1.id, "18x12", art)!.svg).not.toContain("JOE'S PIZZA");
+  const s2 = renderTeeSign(doc, h2.id, "18x12", art)!.svg;
+  plainExpect(s2).toContain('<g data-el="x:one">');
+  plainExpect(s2).toContain("JOE'S PIZZA");
+});
+
+plain("the scorecard's pieces placed by hand (both cards alike), with what's added on both", () => {
+  const doc = sample();
+  doc.style.scorecard = { layout: { table: { dy: 0.05 } }, extras: [{ id: "q", kind: "qr", x: 0.85, y: 0.05, w: 0.08, url: "https://example.org" }], players: 3 };
+  const svg = renderScorecard(doc).svg;
+  plainExpect(svg).toContain('<g data-el="table" transform="translate(0 15.3) scale(1)">');
+  plainExpect(svg).toContain('<g data-pc="table" transform="translate(0 15.3) scale(1)">');
+  plainExpect(svg).toContain('<g data-el="x:q">');
+  plainExpect(svg).toContain('<g data-pc="x:q">');
+});
+
+plain("fonts are the same everywhere: the map's lettering and the headings take any font, a script keeps its own capitals", () => {
+  const doc = sample();
+  doc.style.font = "Bebas Neue";
+  doc.style.card = { font: "Pacifico" };
+  const sign = renderTeeSign(doc, doc.holes[0].id, "18x12", { contours: null, hillshade: null })!.svg;
+  plainExpect(sign).toContain("'Bebas Neue'");
+  plainExpect(sign).toContain("'Pacifico'");
+  // (lettering with a width to keep inside)
+  plainExpect(sign).toContain("data-fit=");
+});
+
+plain("hole pages: pieces placed by hand, and Just the hole (its picture across the page, its number, the rest a click away)", () => {
+  const doc = sample();
+  const [h1] = doc.holes;
+  const art = { contours: null, hillshade: null };
+  const page = () => renderHolePage(doc, h1.id, "letter", art)!.svg;
+  plainExpect(page()).toContain('<g data-el="par">');
+  doc.style.holePage = { layout: { par: { dx: 0.1, dy: 0, scale: 1 } } };
+  plainExpect(page()).toContain('<g data-el="par" transform="translate(61.2 0) scale(1)">');
+  doc.style.holePage = { look: "justhole" };
+  const just = page();
+  plainExpect(just).toContain('<g data-el="map">');
+  plainExpect(just).toContain('<g data-el="number">');
+  plainExpect(just).not.toContain(">PAR ");
+  plainExpect(just).not.toContain("HOLE NOTES");
+  // The par brought back
+  doc.style.holePage = { look: "justhole", layout: { par: { hidden: false } } };
+  plainExpect(page()).toContain(">PAR ");
+});
+
+plain("tee sign pieces: moved, sized, restyled or hidden, for every hole or one hole's own, on every look", () => {
+  const doc = sample();
+  const [h1, h2] = doc.holes;
+  const art = { contours: null, hillshade: null };
+  const sign = (id: string) => renderTeeSign(doc, id, "18x12", art)!.svg;
+  plainExpect(sign(h1.id)).toContain('<g data-el="number">');
+  // Moved half the page across and a quarter down, twice its size; the par hidden; the name restyled
+  doc.style.sign = { layout: { number: { dx: 0.5, dy: 0.25, scale: 2 }, par: { hidden: true }, courseName: { font: "Bitter", color: "#ff0000" } } };
+  const s1 = sign(h1.id);
+  plainExpect(s1).toContain('<g data-el="number" transform="translate(648 216) scale(2)">');
+  plainExpect(s1).not.toContain(">PAR ");
+  plainExpect(s1).toContain("fill:#ff0000 !important");
+  plainExpect(s1).toContain("font-family:Bitter");
+  // One hole's own: hole 2 keeps its par
+  h2.sign = { layout: { par: {} } };
+  plainExpect(sign(h2.id)).toContain(">PAR ");
+  plainExpect(sign(h1.id)).not.toContain(">PAR ");
+  // Every look has its pieces
+  for (const look of ["trailhead", "fieldguide", "openview"] as const) {
+    doc.style.sign = { look, layout: { number: { dx: 0.1 } } };
+    plainExpect(sign(h1.id)).toContain('<g data-el="number" transform="translate(129.6 0) scale(1)">');
+    plainExpect(sign(h1.id)).toContain('<g data-el="map"');
+  }
+});
+
 plain("tee signs: other holes faded, left out or shown; each part shown or left out, for all holes or one hole's own", () => {
   const doc = sample();
   const [h1, h2] = doc.holes;
@@ -961,14 +1163,15 @@ plain("tee signs: other holes faded, left out or shown; each part shown or left 
   const sign = (id: string, size: "18x12" | "12x18" = "18x12") => renderTeeSign(doc, id, size, art)!.svg;
   // Other holes faded by default (as much as asked), shown as clear, or left out (their tees gone)
   const blue = (svg: string) => (svg.match(/<polygon points="[^"]*" fill="#2563eb"/g) ?? []).length;
-  plainExpect(blue(sign(h1.id))).toBe(2);
+  const allTees = blue(sign(h1.id));
+  plainExpect(allTees).toBeGreaterThan(0);
   plainExpect(sign(h1.id)).toContain('opacity="0.3"');
   doc.style.sign = { fade: 0.15 };
   plainExpect(sign(h1.id)).toContain('opacity="0.15"');
   doc.style.sign = { others: "shown" };
   plainExpect(sign(h1.id)).not.toContain('opacity="0.15"');
   doc.style.sign = { others: "hidden" };
-  plainExpect(blue(sign(h1.id))).toBe(1);
+  plainExpect(blue(sign(h1.id))).toBe(allTees / 2);
   // Parts left out for every hole: the par and the course's name
   doc.style.sign = { show: { par: false, courseName: false } };
   for (const id of [h1.id, h2.id]) {
@@ -987,7 +1190,7 @@ test("while the Design preview paints, a bar shows how far along it is, gone whe
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   const bar = page.getByTestId("paint-progress");
   await expect(bar).toBeVisible({ timeout: 20_000 });
   await expect(bar).toContainText("Painting the map");
@@ -1001,9 +1204,11 @@ test("tee sign settings: one hole's own given to the holes picked (Apply to hole
   await addHole(page, { x: 300, y: 500 }, { x: 700, y: 500 });
   await addHole(page, { x: 300, y: 700 }, { x: 700, y: 700 });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
+  await page.getByRole("tab", { name: "Tee sign" }).click();
   const panel = page.getByTestId("sign-settings");
-  await panel.getByRole("radio", { name: /^Hole / }).click();
+  const scope = page.getByTestId("change-scope");
+  await scope.getByRole("radio", { name: /^Hole \d+ only/ }).click();
   await panel.getByRole("radio", { name: "Hidden" }).click();
   const signs = async () => (await course(page)).holes.map((h: any) => h.sign?.others);
   await expect.poll(signs).toContain("hidden");
@@ -1013,7 +1218,7 @@ test("tee sign settings: one hole's own given to the holes picked (Apply to hole
   await page.getByTestId("apply-holes").getByRole("button", { name: "Apply", exact: true }).click();
   await expect.poll(signs).toEqual(["hidden", "hidden"]);
   // From All holes: the picked hole follows them again
-  await panel.getByRole("radio", { name: "All holes" }).click();
+  await scope.getByRole("radio", { name: "Every hole" }).click();
   await panel.getByTestId("sign-apply").getByRole("button", { name: "Apply to holes…" }).click();
   await page.getByTestId("apply-holes").getByRole("button", { name: own === 0 ? "Hole 2" : "Hole 1" }).click();
   await page.getByTestId("apply-holes").getByRole("button", { name: "Apply", exact: true }).click();

@@ -27,7 +27,7 @@ export function DemoNote() {
     <div className="relative" ref={ref}>
       <button className="px-2.5 py-1 rounded-full text-[12px] font-semibold bg-sky-500/15 text-sky-200 border border-sky-500/30 hover:bg-sky-500/25" onClick={() => setOpen(o => !o)} aria-expanded={open} data-testid="demo-note">Demo</button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-80 bg-zinc-900 rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 p-4 z-50 text-sm" role="dialog" aria-label="The demo">
+        <div className="absolute right-0 top-full mt-1 w-80 glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 p-4 z-50 text-sm" role="dialog" aria-label="The demo">
           <p className="text-zinc-100 font-semibold">The demo</p>
           <p className="text-zinc-300 mt-1">Everything to design a course, kept in this browser.</p>
           <p className="text-zinc-100 font-semibold mt-3">On your own server, HyzerLab adds</p>

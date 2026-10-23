@@ -34,7 +34,7 @@ test("long holes get par 4 and 5 by the PDGA's effective length", async ({ page 
   const rows = page.getByTestId("hole-row");
   await expect(rows.nth(0)).toContainText("P4");
   await expect(rows.nth(1)).toContainText("P5");
-  await expect(page.getByTestId("course-totals")).toContainText("9");
+  await expect(page.getByTestId("course-totals-button")).toContainText(/9\s*par/);
 });
 
 test("bending the throw line: pull the middle dot to add a dogleg, double-click to remove it", async ({ page }) => {
@@ -116,7 +116,7 @@ test("fairway width handle and par override in the inspector", async ({ page }) 
   await page.getByRole("slider", { name: /Fairway width/ }).fill("60");
   await expect.poll(async () => (await course(page)).holes[0].fairwayWidth).toBe(60);
   expect((await course(page)).holes[0].fairwayShape).toEqual(before);
-  await page.getByTestId("fairway-shape").getByRole("button", { name: "Even width" }).click();
+  await page.getByTestId("fairway-shape").getByRole("button", { name: "Make it even" }).click();
   await expect.poll(async () => (await course(page)).holes[0].fairwayShape).toBeUndefined();
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).holes[0].fairwayShape).toEqual(before);
@@ -143,8 +143,10 @@ test("another tee and pin for a hole, and layouts pick between them", async ({ p
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("hole-row")).toContainText("400 ft");
   // (one layout: no switcher above the holes)
-  await expect(page.getByRole("radiogroup", { name: "Active layout" })).toHaveCount(0);
+  await expect(page.getByTestId("layout-picker")).toHaveCount(0);
   // A red layout to pin B
+  // (the course's totals open its layouts)
+  await page.getByTestId("course-totals-button").click();
   await page.getByRole("button", { name: "Edit layouts" }).click();
   await page.getByRole("button", { name: "Add a layout" }).click();
   const editor = page.getByTestId("layout-editor");
@@ -153,9 +155,30 @@ test("another tee and pin for a hole, and layouts pick between them", async ({ p
   await last.getByRole("radiogroup", { name: "Layout pins" }).getByRole("radio", { name: "Pin B" }).click();
   // Red tee at 500 to pin B at (850, 650): about 354 ft
   await expect(page.getByTestId("hole-row")).toContainText("354 ft");
-  // Two layouts: the switcher stays once the editor is closed
+  // Two layouts: the switcher at the top of the holes column, the one worked on picked
   await page.getByRole("button", { name: "Done" }).click();
-  await expect(page.getByRole("radiogroup", { name: "Active layout" })).toBeVisible();
+  const picker = page.getByTestId("holes-column").getByRole("radiogroup", { name: "Layout" });
+  await expect(picker.getByRole("radio").nth(1)).toHaveAttribute("aria-checked", "true");
+  // (its tees to the fore: the blue one, only the other layout's, a faint dot; new tees red)
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("course-more")).toHaveCount(0);
+  const blueTee = tees.find((t: any) => t.level === "blue").id;
+  const redTee = tees.find((t: any) => t.level === "red").id;
+  await expect(page.locator(`.dg-tee[data-item-id="${blueTee}"]`)).toHaveClass(/(^| )off( |$)/);
+  await expect(page.locator(`.dg-tee[data-item-id="${redTee}"]`)).not.toHaveClass(/(^| )off( |$)/);
+  expect(await page.evaluate(() => (window as any).__dgEditor().teeLevel)).toBe("red");
+  // Back to Main: blue to the fore, 400 ft again
+  await picker.getByRole("radio", { name: "Main" }).click();
+  await expect(page.getByTestId("hole-row")).toContainText("400 ft");
+  await expect(page.locator(`.dg-tee[data-item-id="${redTee}"]`)).toHaveClass(/(^| )off( |$)/);
+  await expect(page.locator(`.dg-tee[data-item-id="${blueTee}"]`)).not.toHaveClass(/(^| )off( |$)/);
+  expect(await page.evaluate(() => (window as any).__dgEditor().teeLevel)).toBe("blue");
+  // (the ? by Layouts: a tip, and on to the guide's page)
+  await page.getByTestId("course-totals-button").click();
+  await page.getByTestId("help-layouts").click();
+  await expect(page.getByTestId("help-tip")).toContainText("Layouts");
+  await page.getByTestId("help-tip-more").click();
+  await expect(page.getByTestId("help-guide")).toBeVisible();
 });
 
 test("hole numbers typed in (any number, others keep theirs); deleted with undo", async ({ page }) => {
@@ -203,32 +226,8 @@ test("dragging a tee moves it and the hole's length follows", async ({ page }) =
   const to = await screenOf(page, 300, 700);
   await drag(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, to);
   await expect.poll(async () => Math.round((await course(page)).items.find((i: any) => i.type === "tee").x / 10)).toBe(30);
-  await expect(page.getByTestId("hole-row")).toContainText("500 ft");
-});
-
-test("the walk to the next tee becomes a line to reshape, in place of the automatic one; Undo brings that back", async ({ page }) => {
-  await blankCourse(page);
-  await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
-  await addHole(page, { x: 700, y: 600 }, { x: 700, y: 300 });
-  await page.keyboard.press("Escape");
-  await page.getByTestId("hole-row").first().click();
-  await page.getByTestId("edit-walk").click();
-  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "line" && i.kind === "walk").length).toBe(1);
-  const walk = (await course(page)).items.find((i: any) => i.kind === "walk");
-  // From just off the basket to just behind the next tee, selected, with points to pull
-  expect(Math.hypot(walk.points[0].x - 650, walk.points[0].y - 700)).toBeLessThan(40);
-  expect(Math.hypot(walk.points[3].x - 700, walk.points[3].y - 600)).toBeLessThan(40);
-  expect((await editorState(page)).selectedId).toBe(walk.id);
-  await expect(page.getByTestId("edit-walk")).toHaveCount(0);
-  await drag(page, await handleCenter(page, "corner", 1), await screenOf(page, 640, 560));
-  await expect.poll(async () => (await course(page)).items.find((i: any) => i.kind === "walk").points[1].y).toBeLessThan(600);
-  // Nothing automatic left to edit in the Design step either
-  await page.getByRole("button", { name: "5 Design" }).click();
-  await expect(page.getByTestId("edit-walks")).toHaveCount(0);
-  await page.keyboard.press("Control+z");
-  await page.keyboard.press("Control+z");
-  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.kind === "walk").length).toBe(0);
-  await expect(page.getByTestId("edit-walks")).toBeVisible();
+  // (to the foot, as near as a pixel of the map lands)
+  await expect(page.getByTestId("hole-row")).toContainText(/(499|500|501) ft/);
 });
 
 test("bending a hole: Bend left and Bend right curve it, Straighten undoes it", async ({ page }) => {
@@ -345,25 +344,6 @@ test("plotting a hole's line by hand: clicks along it (Backspace takes one back)
   expect(await turns()).toEqual(before);
 });
 
-test("one width for every walk to the next hole; a hole's own walk wider; all walks again", async ({ page }) => {
-  await blankCourse(page);
-  await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
-  await addHole(page, { x: 800, y: 400 }, { x: 900, y: 700 });
-  await page.keyboard.press("Escape");
-  await page.getByTestId("hole-row").first().click();
-  const walk = page.getByTestId("hole-walk");
-  await expect(walk).toBeVisible();
-  await expect(walk).toContainText("Walk to hole 2");
-  await walk.getByRole("slider", { name: "All walks" }).fill("12");
-  await expect.poll(async () => (await course(page)).style.walkWidth).toBe(12);
-  await walk.getByRole("slider", { name: "Width", exact: true }).fill("16");
-  await expect.poll(async () => (await course(page)).holes[0].walkWidth).toBe(16);
-  // All walks again: the hole's own width lets go
-  await walk.getByRole("slider", { name: "All walks" }).fill("8");
-  await expect.poll(async () => (await course(page)).style.walkWidth).toBe(8);
-  expect((await course(page)).holes[0].walkWidth).toBeUndefined();
-});
-
 test("a hole with two numbers (1/2): shown as both, counted twice; a new hole doesn't take either", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
@@ -375,7 +355,7 @@ test("a hole with two numbers (1/2): shown as both, counted twice; a new hole do
   await expect(page.getByTestId("inspector-title")).toHaveText("Hole 1/2");
   await expect(page.getByTestId("hole-row").first()).toContainText("1/2");
   // Counted twice, as on the scorecard; its badge holds both numbers
-  await expect(page.getByTestId("hole-list")).toContainText("2 holes");
+  await expect(page.getByTestId("course-totals-button")).toContainText(/2\s*holes/);
   expect(await page.getByTestId("hole-badge").first().evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 100, minY: 100, maxX: 1000, maxY: 900 }, { animate: false }));
   const b = await addHole(page, { x: 600, y: 600 }, { x: 900, y: 600 });
@@ -416,48 +396,6 @@ test("from hole to hole: the panel's arrows and [ ] go to the previous and next 
   await page.keyboard.press("Control+Alt+Backspace");
   await page.waitForTimeout(300);
   expect((await course(page)).holes).toHaveLength(3);
-});
-
-test("automatic walks to the next hole turned off and on from the Holes step", async ({ page }) => {
-  await blankCourse(page);
-  const a = await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
-  await addHole(page, { x: 800, y: 400 }, { x: 900, y: 700 });
-  await page.keyboard.press("Escape");
-  const walk = () => page.evaluate(id => !!(window as any).__dgView.scene.getObjectByName(`walk:${id}`), a.id);
-  await expect.poll(walk).toBe(true);
-  const toggle = page.getByTestId("auto-walks").getByText("Walks to the next hole (automatic)");
-  await toggle.click();
-  await expect.poll(async () => (await course(page)).style.nextTee).toBe(false);
-  await expect.poll(walk).toBe(false);
-  await toggle.click();
-  await expect.poll(async () => (await course(page)).style.nextTee).toBe(true);
-  await expect.poll(walk).toBe(true);
-});
-
-test("one automatic walk picked on the map and removed (and added back), the others kept", async ({ page }) => {
-  await blankCourse(page);
-  const a = await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
-  const b = await addHole(page, { x: 800, y: 400 }, { x: 900, y: 700 });
-  await addHole(page, { x: 700, y: 900 }, { x: 400, y: 900 });
-  await page.keyboard.press("Escape");
-  await page.keyboard.press("v");
-  await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 100, minY: 200, maxX: 1000, maxY: 1000 }, { animate: false }));
-  const walk = (id: string) => page.evaluate(i => !!(window as any).__dgView.scene.getObjectByName(`walk:${i}`), id);
-  await expect.poll(() => walk(a.id)).toBe(true);
-  // The walk from hole 1's basket to hole 2's tee, clicked in its middle (off the throw lines)
-  const s = await page.evaluate(() => {
-    const d = (window as any).__dgCourse();
-    const bk = d.items.find((i: any) => i.type === "basket" && i.holeId === d.holes[0].id), tee = d.items.find((i: any) => i.type === "tee" && i.holeId === d.holes[1].id);
-    return (window as any).__dgView.toClient((bk.x + tee.x) / 2, (bk.y + tee.y) / 2);
-  });
-  await page.mouse.click(s.x, s.y);
-  await expect.poll(async () => (await editorState(page)).selectedId).toBe(a.id);
-  await page.getByTestId("walk-remove").click();
-  await expect.poll(async () => (await course(page)).holes[0].walkOff).toBe(true);
-  await expect.poll(() => walk(a.id)).toBe(false);
-  expect(await walk(b.id)).toBe(true);
-  await page.getByTestId("walk-restore").click();
-  await expect.poll(() => walk(a.id)).toBe(true);
 });
 
 plainHoles("a tee pad on sloping ground tilts with it (up to 8 degrees), raised clear and built down: the ground never cuts through", () => {
@@ -503,33 +441,6 @@ plainHoles("a tee pad on sloping ground tilts with it (up to 8 degrees), raised 
     plainHolesExpect(p.intersectsBox(board)).toBe(false);
     plainHolesExpect(p.max.y).toBeGreaterThan(board.min.y);
   }
-});
-
-test("walks leaving a basket that two holes share say which hole each goes to, on the map and the printed map", async ({ page }) => {
-  await blankCourse(page);
-  await page.evaluate(() => {
-    const a = (window as any).__dgActions;
-    // Holes 1 and 2 both end at the basket at (650, 700); hole 3 elsewhere
-    a.addHole({ x: 300, y: 700 }, { x: 650, y: 700 }, "blue");
-    a.addHole({ x: 650, y: 350 }, { x: 650, y: 700 }, "blue");
-    a.addHole({ x: 900, y: 500 }, { x: 1150, y: 500 }, "blue");
-    a.select(null);
-    (window as any).__dgEditor().set({ tool: "select" });
-  });
-  const tags = page.getByTestId("walk-tag");
-  await expect(tags).toHaveCount(2);
-  await expect(tags.filter({ hasText: "→ 2" })).toHaveCount(1);
-  await expect(tags.filter({ hasText: "→ 3" })).toHaveCount(1);
-  // On the printed map too (each one movable like the other labels)
-  await page.getByRole("button", { name: "5 Design" }).click();
-  await expect(page.getByTestId("design-page").locator('[data-label^="walk:"]')).toHaveCount(2, { timeout: 60_000 });
-  await expect(page.getByTestId("design-page")).toContainText("→ 3");
-  // Hole 2 taken out: one walk from that basket, no tag
-  await page.getByRole("button", { name: "2 Holes" }).click();
-  await page.evaluate(() => { const w = window as any; w.__dgActions.select(w.__dgCourse().holes[1].id); });
-  await page.keyboard.press("Delete");
-  await expect.poll(async () => (await course(page)).holes.length).toBe(2);
-  await expect(tags).toHaveCount(0);
 });
 
 plainHoles("each tee of a hole has a line of play of its own to the basket, past the turns it is already beyond", () => {

@@ -3,12 +3,12 @@
 // how you edit, review and history; then comments, share, notices and your account. The same
 // choices for the phone's app menu.
 import { useEffect, useRef, useState } from "react";
-import { HelpCircle, History, Inbox, LayoutGrid, LogOut, MessageCircle, Send, Share2, Trash2, UserRound, Users } from "lucide-react";
+import { HelpCircle, History, Inbox, Save, LayoutGrid, LogOut, MessageCircle, Send, Share2, Trash2, UserRound, Users } from "lucide-react";
 import { FOCUS, MENU_ROW, MenuRow, POPOVER } from "../components/ui";
 import { NoticeBell } from "./Notices";
 import { useComments } from "./Comments";
 import { SERVER, useAuth } from "./api";
-import { discardDraft, draftChangeCount, draftChanges, inDraft, keepMine, reloadTheirs, saveNow, setLive, thumbnailNow, useServerCourse } from "./courses";
+import { discardDraft, draftChangeCount, draftChanges, inDraft, keepMine, reloadTheirs, saveDraftAs, saveNow, setLive, thumbnailNow, useServerCourse } from "./courses";
 import { useCourse } from "../state/course";
 import { useAllowed } from "./perms";
 
@@ -35,7 +35,7 @@ function useMenu() {
 
 const ROW = MENU_ROW, Row = MenuRow;
 /** The icon buttons along the bar (comments, share, notices). */
-const BAR = `relative p-2 rounded-lg text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 ${FOCUS}`;
+const BAR = `relative p-2 rounded-lg text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.09] ${FOCUS}`;
 
 /** The open course: how it's being changed, and what can be done about it. */
 export function CourseChip() {
@@ -55,7 +55,7 @@ export function CourseChip() {
             <p className="text-zinc-200 mb-2">{conflict}.</p>
             <div className="flex gap-2">
               <button className="flex-1 rounded-lg px-2 py-1.5 bg-orange-500 hover:bg-orange-400 text-zinc-950 font-semibold" onClick={() => { m.setOpen(false); void reloadTheirs(); }}>Open theirs</button>
-              <button className="flex-1 rounded-lg px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700" onClick={() => { m.setOpen(false); void keepMine(); }}>Save mine</button>
+              <button className="flex-1 rounded-lg px-2 py-1.5 bg-white/[0.07] hover:bg-white/[0.13] text-zinc-100 border border-white/[0.12]" onClick={() => { m.setOpen(false); void keepMine(); }}>Save mine</button>
             </div>
           </div>
         )}
@@ -73,7 +73,7 @@ export function CourseChip() {
   const label = !drafting ? "Live" : n ? `Draft · ${n} change${n === 1 ? "" : "s"}` : "Draft";
   return (
     <div className="relative flex items-center gap-1.5" ref={m.ref}>
-      {status === "error" && <span className="text-[12px] text-red-300">Can't save</span>}
+      {status === "error" && <button className="text-[12px] text-red-300 hover:text-red-200 underline underline-offset-2" onClick={() => void saveNow()} title="The last changes aren't on the server yet" data-testid="save-retry">Not saved · try again</button>}
       <button
         className={`inline-flex items-center gap-1.5 pl-2.5 pr-2 py-1 rounded-full text-[12px] font-semibold ${FOCUS} ${drafting ? "bg-orange-500/15 text-orange-200" : "bg-emerald-500/10 text-emerald-200"}`}
         onClick={() => m.setOpen(o => !o)} aria-haspopup="menu" aria-expanded={m.open} data-testid="course-chip"
@@ -92,9 +92,15 @@ export function CourseChip() {
           {drafting && (
             <>
               <div className="px-3 py-1.5 text-[12px] text-zinc-400">{draft ? draftChanges() : "No changes in your draft yet"}</div>
+              {draft && (
+                <form className="flex items-center gap-1.5 px-3 py-1.5" data-testid="save-draft" onSubmit={e => { e.preventDefault(); const f = e.currentTarget; const name = (f.elements.namedItem("name") as HTMLInputElement).value; void choose(() => saveDraftAs(name)); }}>
+                  <input name="name" aria-label="Name for this save" placeholder="Name this save (optional)" className="flex-1 min-w-0 bg-white/[0.07] rounded-full px-3 py-1.5 text-[13px] text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-400/80" />
+                  <button type="submit" className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[12.5px] font-semibold bg-white/[0.12] text-zinc-50"><Save size={13} /> Save draft</button>
+                </form>
+              )}
               {n > 0 && <Row icon={<Send size={15} />} onClick={() => { m.setOpen(false); open("publish"); }}>{sends ? "Send to the owner…" : "Publish…"}</Row>}
               {draft && <Row icon={<Trash2 size={15} />} danger testid="discard-draft" onClick={() => { if (confirm("Throw away your draft? The course stays as it is.")) void choose(discardDraft); }}>Discard draft</Row>}
-              <div className="border-t border-zinc-800 my-1" />
+              <div className="border-t border-white/[0.08] my-1" />
             </>
           )}
           {role === "owner" && (
@@ -110,7 +116,7 @@ export function CourseChip() {
               <button className={`${ROW} ${drafting ? "text-orange-200" : ""}`} role="menuitemradio" aria-checked={drafting} data-testid="mode-draft" onClick={() => void choose(() => setLive(false))}>
                 <span><span className="block">Work in a draft</span><span className="block text-[12px] text-zinc-500">Publish when it's ready</span></span>
               </button>
-              <div className="border-t border-zinc-800 my-1" />
+              <div className="border-t border-white/[0.08] my-1" />
               {pending > 0 && <Row icon={<Inbox size={15} />} testid="review-button" onClick={() => { m.setOpen(false); open("review"); }}>{pending} to review</Row>}
             </>
           )}
@@ -154,7 +160,7 @@ export function AccountMenu({ home = false, onHelp }: { home?: boolean; onHelp?:
       )}
       <NoticeBell />
       <div className="relative" ref={m.ref}>
-        <button className={`ml-1 w-8 h-8 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-[11px] font-bold flex items-center justify-center ${FOCUS} ${m.open ? "ring-2 ring-sky-400" : ""}`} aria-label="Account" title={user.displayName} aria-haspopup="menu" aria-expanded={m.open} onClick={() => m.setOpen(o => !o)} data-testid="account-menu">
+        <button className={`ml-1 w-8 h-8 rounded-full bg-white/[0.07] hover:bg-white/[0.13] text-zinc-100 text-[11px] font-bold flex items-center justify-center ${FOCUS} ${m.open ? "ring-2 ring-sky-400" : ""}`} aria-label="Account" title={user.displayName} aria-haspopup="menu" aria-expanded={m.open} onClick={() => m.setOpen(o => !o)} data-testid="account-menu">
           {initials(user.displayName)}
         </button>
         {m.open && (
@@ -163,8 +169,8 @@ export function AccountMenu({ home = false, onHelp }: { home?: boolean; onHelp?:
             {!home && <Row icon={<LayoutGrid size={15} />} testid="courses-button" onClick={() => { m.setOpen(false); goHome(); }}>Courses</Row>}
             <Row icon={<UserRound size={15} />} onClick={() => { m.setOpen(false); open("account"); }}>Account</Row>
             {user.isAdmin && <Row icon={<Users size={15} />} onClick={() => { m.setOpen(false); open("people"); }}>People</Row>}
-            {onHelp && <Row icon={<HelpCircle size={15} />} onClick={() => { m.setOpen(false); onHelp(); }}>Shortcuts and help</Row>}
-            <div className="border-t border-zinc-800 my-1" />
+            {onHelp && <Row icon={<HelpCircle size={15} />} onClick={() => { m.setOpen(false); onHelp(); }}>Help guide</Row>}
+            <div className="border-t border-white/[0.08] my-1" />
             <Row icon={<LogOut size={15} />} onClick={() => { m.setOpen(false); void signOut(); }}>Sign out</Row>
           </div>
         )}

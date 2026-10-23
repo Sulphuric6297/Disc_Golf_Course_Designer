@@ -49,6 +49,8 @@ export type ViewTool = {
   shape: DrawShape;
   /** Select: a drag on the map draws a box to pick things with (instead of moving the map). */
   dragSelect?: boolean;
+  /** The brush (the ground tool, and painting areas): its radius (ft), how strong, what it does to the ground. */
+  brush?: { size: number; strength: number; ground: "raise" | "lower" | "flatten" | "smooth" | "restore" };
 };
 
 export type ViewInfo = {
@@ -62,11 +64,21 @@ export type ViewInfo = {
   height: number;
 };
 
+/** You, on the map (the phone's GPS): where, how sure (ft), which way you face (degrees from
+ * north), greyed when old or weak; `tag`: words under the dot; `to`: a dashed line to there. */
+export type LocationMark = { at: P; acc: number; facing: number | null; dim: boolean; tag: string; to: P | null };
+
 export type ViewCallbacks = {
+  /** The ground painted with the ground tool: all its heights (live while painting; `done` once let go). */
+  onTerrain?: (heights: Record<string, number>, done: boolean, original?: Record<string, number>) => void;
   /** A thing picked (or nothing); `add`: Shift+click, into or out of the things picked together. */
   onSelect: (id: string | null, add?: boolean) => void;
+  /** A tree that isn't an item (measured, a sapling, planted in a wood) clicked: made the course's
+   * own and picked, looking as it did. */
+  onAdoptTree: (tree: { kind: "measured"; k: number } | { kind: "spot"; x: number; y: number; height: number; width: number; conifer: boolean }, look: { variant: number; rotation: number; leaf: string } | null) => void;
   /** What a drag box took in; `add`: with what was picked already. */
-  onBoxSelect: (ids: string[], add: boolean) => void;
+  /** `trees`: the trees inside that aren't items yet (measured ones, saplings), with their looks. */
+  onBoxSelect: (ids: string[], add: boolean, trees?: { tree: { kind: "measured"; k: number } | { kind: "spot"; x: number; y: number; height: number; width: number; conifer: boolean }; look: { variant: number; rotation: number; leaf: string } | null }[]) => void;
   /** Live: the things picked together moved by (dx, dy) from where they were in `base`. */
   onMoveGroup: (base: CourseDoc, ids: string[], dx: number, dy: number) => void;
   /** A click with a placing tool (tee, basket, mando, drop zone, tree, amenity, label). */
@@ -84,7 +96,8 @@ export type ViewCallbacks = {
   onPose: (pose: "top" | "tilt") => void;
   /** Tee view: moved to another hole with the arrow keys, or closed. */
   onTeeView: (holeId: string | null) => void;
-  onContextMenu: (info: { clientX: number; clientY: number; itemId: string | null; ground: P | null }) => void;
+  /** `under`: an area or line under a tree that was clicked (to select it from the tree's menu). */
+  onContextMenu: (info: { clientX: number; clientY: number; itemId: string | null; ground: P | null; under?: string | null }) => void;
   onDrawProgress: (points: number) => void;
   /** Plotting a hole's line by hand ended (finished or cancelled). */
   onPlotEnd: () => void;

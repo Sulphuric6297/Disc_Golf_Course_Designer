@@ -389,7 +389,10 @@ export class Ground {
     }
     // The theme's ground color, a little lighter up high and darker down low so slopes read
     // (or the elevation colors, when the elevation overlay is on)
-    const flat = new THREE.Color(doc.groundColor);
+    // (darker than set, as much as the scene's light brightens it, and never yellower than a grass
+    // green: the plan's ground a woodsy green, not a washed-out yellow)
+    const hsl = new THREE.Color(doc.groundColor).getHSL({ h: 0, s: 0, l: 0 });
+    const flat = new THREE.Color().setHSL(Math.max(hsl.h, 0.28), hsl.s * 0.85, hsl.l * 0.8).multiplyScalar(0.45);
     const c = new THREE.Color();
     const { min, relief } = doc.terrain;
     const tint = false;
@@ -399,7 +402,8 @@ export class Ground {
         const [r, g, b] = elevationColor(t);
         c.setRGB((r / 255) * 0.85, (g / 255) * 0.85, (b / 255) * 0.85, THREE.SRGBColorSpace);
       } else {
-        c.copy(flat).offsetHSL(0, 0, (t - 0.5) * 0.12);
+        // (by a share, not a step: low ground a little darker, never black)
+        c.copy(flat).multiplyScalar(1 + (t - 0.5) * 0.35);
       }
       attr.setXYZ(i, c.r, c.g, c.b);
     }
@@ -450,6 +454,13 @@ export class Ground {
     this.group.add(mapPlane);
     this.detailPlane = null;
     this.buildDetail();
+  }
+
+  /** The ground alone reshaped to heights being painted (nothing else on it moves till they're
+   * the course's own). */
+  previewHeights(heights: Record<string, number>) {
+    if (!this.lastDoc || !this.terrain) return;
+    this.reshape({ ...this.lastDoc, heights });
   }
 
   private reshape(doc: ViewDoc) {

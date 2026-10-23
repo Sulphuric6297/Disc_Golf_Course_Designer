@@ -83,6 +83,6 @@ export function withGround(to: CourseDoc, from: CourseDoc, share: boolean | Grou
       sharedTrees = [...new Set([...(to.site.sharedTrees ?? []), ...added.map(i => i.id)])];
     }
   }
-  return { ...to, items, terrainHeights: heights, lidar, site: { ...to.site, sharedTrees, elevationSource: from.site.elevationSource ?? to.site.elevationSource } };
+  return { ...to, items, terrainHeights: heights, terrainOriginal: undefined, lidar, site: { ...to.site, sharedTrees, elevationSource: from.site.elevationSource ?? to.site.elevationSource } };
 }
 

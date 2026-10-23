@@ -58,7 +58,7 @@ export interface DropZoneItem extends BaseItem {
   holeId?: string;
 }
 
-export type TreeKind = "deciduous" | "conifer" | "palm" | "bush";
+export type TreeKind = "deciduous" | "conifer" | "bush";
 export interface TreeItem extends BaseItem {
   type: "tree";
   /** Crown radius, ft. */
@@ -67,6 +67,24 @@ export interface TreeItem extends BaseItem {
   width?: number;
   treeType?: TreeKind;
   color: string;
+  /** Its shape among the kind's variants, and its exact leaf color: a tree made the course's own
+   * from a wood or the survey keeps the look it had there. */
+  variant?: number;
+  leaf?: string;
+  /** Its species within the kind (an oak or an ash, a round or an airy bush…) and its seed: a new
+   * seed grows a different tree of the same species. */
+  species?: string;
+  seed?: number;
+  /** Where its branches start, a share of the trunk (unset: the species' own). */
+  crownBase?: number;
+  /** Lean from upright, degrees, toward `leanDir` (degrees clockwise from north). */
+  lean?: number;
+  leanDir?: number;
+  /** Main limbs off the trunk (a pine: its branches up the trunk). */
+  limbs?: number;
+  /** Trunk thickness and leaves, 1 = the species' own. */
+  trunk?: number;
+  fullness?: number;
   /** Found on the imported aerial photo (replaced on re-import). */
   importSource?: "photo";
 }
@@ -87,6 +105,9 @@ export interface LabelItem extends BaseItem {
 
 /** Areas drawn on the map. OB and hazards are what play cares about; the rest make the map read. */
 export type AreaKind = "ob" | "hazard" | "casual" | "water" | "fairway" | "green" | "woods" | "rough" | "nogo" | "parking" | "building" | "sand";
+/** What a wood's underbrush is: a mix, or mostly thicket shrubs, briars and thorns, or weeds. */
+export type BrushKind = "mixed" | "thicket" | "briars" | "weeds";
+
 export interface AreaItem extends BaseItem {
   /** Straight between its corners (unset: a smooth curve through them, but parking and buildings). */
   straight?: boolean;
@@ -101,6 +122,9 @@ export interface AreaItem extends BaseItem {
   label?: string;
   /** Out of bounds: water is unless set false; true also draws the red OB edge on the map. */
   ob?: boolean;
+  /** The stretches of its edge that are OB, each from-to as fractions round it from its first
+   * point (unset: all the way round). */
+  obStretches?: [number, number][];
   /** Woods: which trees stand in it in 3D: those measured from the air (the default, when the
    * course has them), custom (the measured ones, plus `patches` of drawn trees filling in where
    * the survey saw none or they've grown since), drawn trees only, or none (measured ones inside
@@ -109,12 +133,32 @@ export interface AreaItem extends BaseItem {
   /** Custom: patches drawn inside the wood where drawn trees fill in between the measured ones,
    * each as thickly as its `fill` says (0.1 to 1). */
   patches?: { points: P[]; fill: number }[];
+  /** Woods filled by the app: its mix (shares of pines and of bushes; the rest leafy), how thick
+   * (1 = usual), and its trees' heights (ft). Unset: the landscape's. */
+  pines?: number;
+  bushes?: number;
+  density?: number;
+  heights?: [number, number];
+  /** Underbrush beneath its trees: bushes and young trees, light to heavy (unset: none). */
+  underbrush?: "light" | "medium" | "heavy";
+  /** What the underbrush is: a mix (unset), thicket shrubs, briars and thorns, or weeds. */
+  brushKind?: BrushKind;
+  /** Sections of the wood with underbrush of their own (none, or light to heavy, and its own
+   * kind, unset: the wood's): the wood's own setting covers the rest. */
+  brush?: { points: P[]; level: "none" | "light" | "medium" | "heavy"; kind?: BrushKind }[];
+  /** How much thicker underbrush grows along the wood's edge, where light gets in, than deep
+   * inside: 0 even everywhere, 1 almost none deep inside (unset: 0.6). */
+  brushEdge?: number;
   /** Brought in from OpenStreetMap, or found on the satellite photo (replaced on re-import). */
-  importSource?: "osm" | "photo";
+  importSource?: "osm" | "photo" | "lidar";
 }
 
 /** Lines drawn on the map: OB lines (the line itself is OB), paths, roads, fences, streams. */
+/** The tiers paths and roads stack in where they cross. */
+export type PathTier = "dirt" | "gravel" | "walkway" | "road";
 export type LineKind = "ob" | "path" | "road" | "fence" | "stream" | "walk";
+/** A fence in 3D: wooden posts with two rails, solid boards, or chain link on metal posts. */
+export type FenceStyle = "rail" | "boards" | "chain";
 /** What a path or a walk between holes is made of. */
 export type PathSurface = "dirt" | "gravel" | "woodchips" | "grass" | "paved";
 export interface LineItem extends BaseItem {
@@ -132,6 +176,9 @@ export interface LineItem extends BaseItem {
   surface?: PathSurface;
   /** Straight between its points (paths, walks, streams and roads curve through them unless set). */
   straight?: boolean;
+  /** A fence: how it's built in 3D (unset: posts and rails), and how tall, ft (unset: 4). */
+  fenceStyle?: FenceStyle;
+  fenceHeight?: number;
   holeId?: string;
   label?: string;
   /** Out of bounds: a stream is unless set false; a road, fence or path is when true (and then
@@ -139,6 +186,9 @@ export interface LineItem extends BaseItem {
   ob?: boolean;
   /** Out of bounds beyond it too (the road and beyond): OB from its edge on the holes' side. */
   obBeyond?: boolean;
+  /** OB and beyond: the side that is out (1: right of the way it was drawn, -1: left); unset: the
+   * app's guess, away from the holes. */
+  obToward?: 1 | -1;
   /** The holes it is OB for (unset: every hole it belongs to). OB and beyond starts at its edge
    * on their side. */
   obHoles?: string[];
@@ -194,6 +244,8 @@ export interface Hole {
   flyover?: Partial<FlyoverSettings>;
   /** This hole's own tee sign settings (over the course's). */
   sign?: SignSettings;
+  /** This hole's own hole page pieces (over the course's). */
+  page?: { layout?: Record<string, PiecePlace> };
   /** Shown name, e.g. "The Gauntlet" (optional). */
   name?: string;
   /** Par set by hand; unset: worked out from the hole's length, elevation and shape. */
@@ -268,7 +320,6 @@ export interface FlyoverSettings {
   badge: boolean;
   pinDistance: boolean;
   courseName: boolean;
-  discFlight: boolean;
   playLine: boolean;
   circle: boolean;
   ob: boolean;
@@ -277,7 +328,7 @@ export interface FlyoverSettings {
 }
 
 /** What a flyover can show or hide. */
-export type FlyShow = "title" | "badge" | "pinDistance" | "courseName" | "discFlight" | "playLine" | "circle" | "ob" | "otherHoles" | "walks";
+export type FlyShow = "title" | "badge" | "pinDistance" | "courseName" | "playLine" | "circle" | "ob" | "otherHoles" | "walks";
 
 /** A layout picks which tee and pin each hole uses (e.g. "Blue", long tees to B pins). */
 export interface Layout {
@@ -288,8 +339,12 @@ export interface Layout {
 }
 
 /** How a new area or line is drawn: point by point, a dragged rectangle or circle, or freehand. */
-export type DrawShape = "points" | "box" | "circle" | "freehand";
+export type DrawShape = "points" | "box" | "circle" | "freehand" | "paint";
 
+/** Ways to draw elevation: soft light and shadow; inked rims over darker walls; hand-drawn strokes
+ * down the slopes; lit contour lines with their heights; the land in stepped layers. */
+/** ("sketched", no longer offered, is read as "cliffs") */
+export type ReliefLook = "shaded" | "cliffs" | "sketched" | "contours" | "terraces";
 export type MapTheme = "forest" | "illustrated" | "satellite" | "topo" | "minimal" | "night";
 
 /** A basket's mark on the printed map: side view, side view in a round badge, a pin flag, target
@@ -300,6 +355,64 @@ export type PaperSize = "letter" | "tabloid" | "18x24" | "24x36" | "36x48" | "a4
 /** The parts of a tee sign that can be shown or left out. */
 export type SignPart = "courseName" | "number" | "par" | "lengths" | "elevation" | "notes" | "courseMap" | "nextTee" | "north" | "scale" | "throwLine" | "circle" | "distances" | "holeOf" | "designer" | "legend";
 /** How tee signs look (the course's, and a hole's own over them). */
+/** A piece of a printout moved, sized or restyled by hand (lib/pieces): shifted by shares of the
+ * page, sized times its own (about the page's corner), its lettering's font and color, its panel's
+ * color, or hidden. */
+export interface PiecePlace {
+  dx?: number;
+  dy?: number;
+  scale?: number;
+  hidden?: boolean;
+  font?: string;
+  color?: string;
+  fill?: string;
+}
+/** Something put on a tee sign or hole page: text (its {hole}, {par}, {length}, {course} and
+ * {name} filled in for each hole), a picture, the hole's sponsors, or a QR code. Where it was put,
+ * as shares of the page (top-left corner, width); on every hole, or the holes listed. */
+export interface PrintExtra {
+  id: string;
+  kind: "text" | "image" | "sponsors" | "sponsor" | "qr";
+  /** The sponsor a "sponsor" piece shows (only on that sponsor's holes). */
+  sponsorId?: string;
+  /** How solid a picture is (0..1). */
+  opacity?: number;
+  /** Left off the page for now (Layers' eye brings it back). */
+  hidden?: boolean;
+  x: number;
+  y: number;
+  w: number;
+  text?: string;
+  /** Letter size, points. */
+  size?: number;
+  color?: string;
+  bold?: boolean;
+  align?: "start" | "middle" | "end";
+  font?: string;
+  /** A picture (a data URL) and its height to width. */
+  src?: string;
+  aspect?: number;
+  /** Where a QR code takes you. */
+  url?: string;
+  holes?: string[];
+}
+/** A hole sponsor: a logo, a line of text, or both, on every hole or the holes listed. */
+export interface Sponsor {
+  id: string;
+  name: string;
+  logo?: string;
+  aspect?: number;
+  text?: string;
+  url?: string;
+  holes?: string[];
+}
+/** How hole pages look, and their pieces placed by hand (the course's; a hole's own over it). */
+export interface HolePageSettings {
+  /** The usual page, or the hole's picture across the whole page with its number (unset: usual). */
+  look?: "standard" | "justhole";
+  layout?: Record<string, PiecePlace>;
+  extras?: PrintExtra[];
+}
 export interface SignSettings {
   /** The other holes on a sign's map: faded (unset), left out, or as clear as its own. */
   others?: "faded" | "hidden" | "shown";
@@ -307,7 +420,19 @@ export interface SignSettings {
   fade?: number;
   /** Parts shown or left out (unset: as by default). */
   show?: Partial<Record<SignPart, boolean>>;
+  /** What fills a wide sign's spot under the notes (unset: the course map). */
+  spot?: SignSpot;
+  /** How the signs look, for the whole course (unset: the first look; lib/signLooks). */
+  look?: SignLook;
+  /** The sign's pieces moved, sized or restyled by hand (by piece; a hole's own over the course's). */
+  layout?: Record<string, PiecePlace>;
+  /** Text, pictures, sponsors and QR codes put on the signs. */
+  extras?: PrintExtra[];
 }
+export type SignLook = "classic" | "trailhead" | "fieldguide" | "openview";
+/** A wide sign's spot under the notes: the course in miniature, the green up close, the hole's
+ * numbers, or nothing. */
+export type SignSpot = "courseMap" | "green" | "stats" | "none";
 
 /** What is on the course map's page besides the map, each one moved, sized, colored or hidden by
  * hand in the Design step ("map" is the map itself: moved and zoomed on the page). */
@@ -339,7 +464,8 @@ export interface PageText {
   /** Letter size, points (on the page as printed). */
   size: number;
   color: string;
-  font?: MapStyle["font"];
+  /** The course's lettering, or any Google font by name. */
+  font?: string;
   bold?: boolean;
   italic?: boolean;
   align?: "start" | "middle" | "end";
@@ -370,6 +496,8 @@ export interface MapStyle {
   images?: PageImage[];
   /** Hills: how strongly the ground's relief shows on the map, times the automatic (0: flat). */
   reliefScale?: number;
+  /** How the painted map draws the ground's shape when hill shading is on (unset: shaded). */
+  reliefLook?: ReliefLook;
   /** Where the legend (and hole table) panel sits on the course map: its top-left corner as a
    * share of the page's width and height (unset: a free corner). */
   legendAt?: { x: number; y: number };
@@ -399,6 +527,8 @@ export interface MapStyle {
   path: string;
   trees: string;
   basket: string;
+  /** The baskets' band in 3D (unset: yellow, as most are). */
+  basketBand?: string;
   /** How baskets are drawn on printed maps and tee signs. */
   basketMark: BasketMark;
   /** Colors for regulated areas: the common map habit (red OB, purple out of play) or the PDGA
@@ -416,23 +546,56 @@ export interface MapStyle {
   nextTee: boolean;
   /** Putting circle (10 m) around each basket. */
   circle: boolean;
-  /** The disc's flight over each hole in 3D (the yellow arcs) anywhere: the map, the tee view and
-   * flyovers (unset: shown). */
-  discFlight?: boolean;
   legend: boolean;
   holeTable: boolean;
   north: boolean;
   scale: boolean;
   /** Lettering: "Script" sets the title in a brush script (the rest in Oswald). */
-  font: "Inter" | "Oswald" | "Bitter" | "Script";
+  /** The course's lettering: the app's own (Script, Oswald, Inter, Bitter) or any Google font. */
+  font: string;
   /** Forest style: where to paint woods (everywhere off the fairways, where the photo shows trees,
    * or only drawn woods and single trees). */
   forest: "everywhere" | "photo" | "woods";
   /** Forest style: how thick the woods are, from a few scattered clumps (0.1) to solid canopy (1). */
   treeCover: number;
+  /** The painted map's look (lib/mapLook): its style (unset: classic), and any part of it changed
+   * on its own; the light: golden hour, midday or night (unset: the style's), the golden sun's
+   * strength (0..1), and where the sun shines from by the compass (unset: the afternoon's). */
+  mapLook?: import("./lib/mapLook").LookTheme;
+  lookParts?: { [K in import("./lib/mapLook").LookPart]?: Partial<import("./lib/mapLook").LookParts[K]> };
+  lightMode?: import("./lib/mapLook").LightMode;
+  goldenSun?: number;
+  sunFrom?: number;
+  /** How paths and roads stack where they cross, bottom first (unset: dirt, gravel and wood
+   * chips, paved walkways, roads and parking): on the painted map and in 3D. */
+  pathOrder?: PathTier[];
+  /** How the course looks to those who only view it (shared, the public page), apart from the
+   * editor's own display: the ground painted (unset) or the photo, contour lines, hill shading. */
+  publicView?: { ground?: "painted" | "photo"; contours?: boolean; shading?: boolean };
+  /** The tee signs' and hole pages' size: the one designed (Map) and printed (Export). */
+  signSize?: "18x12" | "12x18" | "18x24" | "letter" | "a4";
+  holePageSize?: "letter" | "a4" | "card" | "square";
+  holePage?: HolePageSettings;
+  /** The course's hole sponsors (each placed on tee signs, hole pages, the scorecard or the map). */
+  sponsors?: Sponsor[];
+  /** The scorecard's pieces placed by hand, and what's added to it. */
+  scorecard?: { layout?: Record<string, PiecePlace>; extras?: PrintExtra[]; players?: number };
+  /** Pictures, QR codes and sponsors added to the course map (its text has its own list). */
+  mapExtras?: PrintExtra[];
+  /** The course map's frame, even on all four sides (unset: none, the map to the paper's edge). */
+  frame?: "mat" | "line" | "band";
+  /** Forest style: the treetops as painted maps have them (unset), or natural ones, as the 3D
+   * trees are seen from above: leaf clusters with gaps between, pines in tiers of boughs. */
+  treeLook?: "classic" | "natural";
   /** What the land is like (lib/landscapes): its natural colors in 3D, and on the painted map
    * when picked. Unset: a wooded park. */
   landscape?: "woods" | "park" | "pines" | "dry" | "autumn" | "desert";
+  /** The woods' leaf colors tree by tree (autumn's reds and golds; empty: one color), on the map
+   * and in 3D. Unset: the landscape's. */
+  treeMix?: string[];
+  /** Share of the woods' trees that are pines (0..1), on the map and in 3D. Unset: the landscape's
+   * (and on the painted styles, the style's own). */
+  conifers?: number;
   /** Light on the painted map: where the sun comes from (degrees clockwise from the top of the
    * page) and how high it is (degrees; low sun, long shadows). */
   sunAngle: number;
@@ -495,6 +658,9 @@ export interface CourseDoc {
    * survey and the trees the app plants in woods and patches. None stands within 4 ft of one. */
   cutTrees?: P[];
   terrainHeights: Record<string, number>;
+  /** The heights as measured, for the grid points the Ground tool has changed (so its Restore
+   * brush can put them back). Bringing the site's ground in again clears it. */
+  terrainOriginal?: Record<string, number>;
   /** Painted ground (lib/groundPaint): a material per painted square foot, keyed "i,j". */
   groundPaint: Record<string, number>;
   /** The aerial photo covering the plan (a data URL), or none. */
@@ -536,4 +702,5 @@ export type ToolMode =
   | "draw-area"
   | "draw-line"
   | "draw-structure"
+  | "sculpt"
   | "measure";

@@ -270,21 +270,48 @@ const spread = (k: number, salt: number) => {
   return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
 };
 
-/** The trees the survey couldn't see that would stand `years` later: saplings that came up at
- * the woods' edges and in their gaps (where the light gets in), one for a share of the measured
- * trees rising with the years, each born some year since and grown from a 2 ft shoot, fast and
- * narrow. Only those tall enough to count (6 ft) are returned. */
+/** The trees the survey couldn't see that would stand `years` later: saplings that came up in
+ * the open gaps of a wood and at its edges (where the light gets in), one for a share of the
+ * measured trees rising with the years, each born some year since and grown from a 2 ft shoot,
+ * fast and narrow. Never under or against a crown: each stands clear of every measured tree's
+ * crown (as it will have grown) by 3 ft, and 8 ft from another sapling; where a tree has no such
+ * gap near it, none comes up. Only those tall enough to count (6 ft) are returned. */
 export const saplings = (trees: LidarTree[], years: number): LidarTree[] => {
   const out: LidarTree[] = [];
   if (years < 2) return out;
   const share = Math.min(0.45, years * 0.03);
+  // (the measured trees by 40 ft cell, with their crowns as they will have grown)
+  const CELL = 40, cells = new Map<string, LidarTree[]>();
+  const grownAll = trees.map(t => grownTree(t, years));
+  for (const t of grownAll) {
+    const key = `${Math.floor(t[0] / CELL)},${Math.floor(t[1] / CELL)}`;
+    (cells.get(key) ?? cells.set(key, []).get(key)!).push(t);
+  }
+  const placed: P[] = [];
+  const clear = (x: number, y: number) => {
+    const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
+    for (let i = cx - 2; i <= cx + 2; i++) for (let j = cy - 2; j <= cy + 2; j++) {
+      for (const t of cells.get(`${i},${j}`) ?? []) if (Math.hypot(t[0] - x, t[1] - y) < t[3] + 3) return false;
+    }
+    return !placed.some(q => Math.hypot(q.x - x, q.y - y) < 8);
+  };
   trees.forEach((t, k) => {
     if (spread(k, 1) >= share) return;
-    const [x, y, , r, conifer] = t;
-    const a = spread(k, 2) * Math.PI * 2, d = r * (1.1 + spread(k, 3) * 1.2);
-    const born = spread(k, 4) * (years - 1);
-    const g = grownTree([x + Math.cos(a) * d, y + Math.sin(a) * d, 2, 0.8, conifer], years - born, true);
-    if (g[2] >= 6) out.push([Math.round(g[0] * 10) / 10, Math.round(g[1] * 10) / 10, g[2], g[3], conifer]);
+    const [x, y, , , conifer] = t;
+    const r = grownAll[k][3];
+    // (a few spots round the tree, just past its crown and further out; the first clear one)
+    for (let n = 0; n < 6; n++) {
+      const a = spread(k, 2 + n * 3) * Math.PI * 2, d = r + 4 + spread(k, 3 + n * 3) * (r + 14);
+      const px = x + Math.cos(a) * d, py = y + Math.sin(a) * d;
+      if (!clear(px, py)) continue;
+      const born = spread(k, 4) * (years - 1);
+      const g = grownTree([px, py, 2, 0.8, conifer], years - born, true);
+      if (g[2] >= 6) {
+        out.push([Math.round(g[0] * 10) / 10, Math.round(g[1] * 10) / 10, g[2], g[3], conifer]);
+        placed.push({ x: px, y: py });
+      }
+      break;
+    }
   });
   return out;
 };
@@ -306,7 +333,9 @@ export const grownTrees = (lidar: NonNullable<CourseDoc["lidar"]>) => {
 /** Years since a survey (by the year in its name), or 0. */
 export const yearsSince = (name: string) => { const y = surveyYear(name); return y ? Math.max(0, new Date().getFullYear() - y) : 0; };
 
-export const surveyYear = (name: string) => Math.max(0, ...(name.match(/(19|20)\d\d/g) ?? []).map(Number));
+/** A survey's year from its name: "…_2019", or USGS's newer work codes ("KY_Western_1_A22": 2022). */
+export const surveyYear = (name: string) =>
+  Math.max(0, ...(name.match(/(19|20)\d\d/g) ?? []).map(Number), ...[...name.matchAll(/(?:^|_)[A-Z](\d\d)(?=_|$)/g)].map(m => 2000 + Number(m[1])));
 
 /** Which measured trees stand: those on a fairway, a tee or a basket's circle (as
  * `cleared` says) are cut down unless kept; any taken out are gone. */

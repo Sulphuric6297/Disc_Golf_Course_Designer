@@ -1,9 +1,10 @@
 // Who has the open course, and (for its owners) sharing it: viewers look, editors change, owners
 // also share and delete.
 import { useEffect, useState } from "react";
-import { inputCls, Section, Tabs } from "../components/ui";
+import { inputCls, Section, Segmented, Tabs } from "../components/ui";
+import { changeDoc, useCourse } from "../state/course";
 import { api, useAuth } from "./api";
-import { setApproval, useServerCourse, type Role } from "./courses";
+import { saveNow, setApproval, useServerCourse, type Role } from "./courses";
 import { CopyButton, Dialog, Form, when } from "./parts";
 import { LINK_DEFAULT, LINK_PARTS, PART_LABELS, PARTS, VIEWER_DEFAULT, type Part, type Perms } from "./perms";
 import { publishSite } from "./site";
@@ -20,7 +21,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
   const [newRole, setNewRole] = useState<Role>("editor");
   const [error, setError] = useState("");
   const [seeing, setSeeing] = useState<string | null>(null);
-  const [tab, setTab] = useState<"people" | "public">("people");
+  const [tab, setTab] = useState<"people" | "public">(() => useAuth.getState().shareTab);
   const owner = role === "owner";
 
   const refresh = async () => { if (id) setMembers(await api<Member[]>("GET", `courses/${id}/members`)); };
@@ -51,7 +52,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
                   <span className="sr-only">Username</span>
                   <input className={inputCls} list="share-people" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} autoCapitalize="none" spellCheck={false} aria-label="Username" />
                 </label>
-                <select className="shrink-0 w-28 bg-zinc-800 rounded-lg px-2 py-1.5 text-sm touch:py-2.5 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80" value={newRole} onChange={e => setNewRole(e.target.value as Role)} aria-label="Role">
+                <select className="shrink-0 w-28 bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm touch:py-2.5 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80" value={newRole} onChange={e => setNewRole(e.target.value as Role)} aria-label="Role">
                   {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
               </div>
@@ -79,14 +80,14 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
               </div>
             );
           })()}
-          <ul className="divide-y divide-zinc-800" data-testid="members">
+          <ul className="divide-y divide-white/[0.08]" data-testid="members">
             {members.map(m => (
               <li key={m.userId} className="py-2 flex items-center gap-2 text-sm">
                 <div className="flex-1 min-w-0">
                   <span className="text-zinc-100">{m.displayName}</span> <span className="text-zinc-500">{m.username}{m.userId === me.id ? " · you" : ""}</span>
                 </div>
                 {owner ? (
-                  <select className="bg-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100" value={m.role} aria-label={`Role for ${m.username}`}
+                  <select className="bg-white/[0.07] rounded-lg px-2 py-1 text-xs text-zinc-100" value={m.role} aria-label={`Role for ${m.username}`}
                     onChange={e => void change(() => api("POST", `courses/${id}/members`, { username: m.username, role: e.target.value }))}>
                     {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
@@ -123,6 +124,23 @@ function Ticks({ parts, value, onChange }: { parts: readonly Part[]; value: Perm
   );
 }
 
+/** How the map and 3D look to those who only look (a link's visitors, people who can view): the
+ * course's own, the same for every link. The painted map unless set otherwise. */
+function ViewerLook() {
+  const pv = useCourse(s => s.doc.style.publicView) ?? {};
+  const set = (p: Partial<typeof pv>) => changeDoc(d => ({ style: { ...d.style, publicView: { ...d.style.publicView, ...p } } }));
+  return (
+    <div className="rounded-lg bg-white/[0.05] p-2.5 space-y-2" data-testid="public-view">
+      <div className="text-xs text-zinc-400">How the map and 3D look to visitors and to people who can only view (Update site after a change)</div>
+      <Segmented label="Viewers' ground" value={pv.ground ?? "painted"} onChange={v => set({ ground: v as "painted" | "photo" })} options={[{ value: "painted", label: "Painted" }, { value: "photo", label: "Satellite photo" }]} />
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        <label className="flex items-center gap-2 text-sm text-zinc-200"><input type="checkbox" checked={!!pv.contours} onChange={e => set({ contours: e.target.checked })} /> Contour lines</label>
+        {pv.ground === "photo" && <label className="flex items-center gap-2 text-sm text-zinc-200"><input type="checkbox" checked={pv.shading ?? true} onChange={e => set({ shading: e.target.checked })} /> Hill shading</label>}
+      </div>
+    </div>
+  );
+}
+
 interface Link { id: string; token: string; slug: string | null; label: string; perms: Perms; hasPassword: boolean; expiresAt: string | null; createdAt: string; revoked: boolean }
 const linkUrl = (l: { token: string; slug?: string | null }) => `${location.origin}/${l.slug || l.token}`;
 const partsOf = (p: Perms) => LINK_PARTS.filter(k => p[k]).map(k => PART_LABELS[k].replace(/ \(.*\)$/, "")).join(", ") || "Nothing";
@@ -145,7 +163,8 @@ function PublicSection({ id }: { id: string }) {
     setError("");
     try { await fn(); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : "Something went wrong"); }
   };
-  const update = () => act(async () => { await publishSite(id, setBusy); setBusy(""); });
+  // (the course saved first: the viewers' look below is part of it)
+  const update = () => act(async () => { await saveNow(); await publishSite(id, setBusy); setBusy(""); });
   const save = () => act(async () => {
     const body = { label: form.label, slug: form.slug.trim() || null, perms: form.perms, password: form.password || (editing === "new" ? null : undefined), expiresAt: form.expires ? new Date(form.expires).toISOString() : null };
     if (editing === "new") await api("POST", `courses/${id}/links`, body);
@@ -157,7 +176,7 @@ function PublicSection({ id }: { id: string }) {
   });
   return (
     <>
-      <Section title="Public site" testid="public-site-settings">
+      <Section title="Public site" testid="public-site-settings" help="public-site">
         <div className="flex items-center gap-3 text-sm">
           <span className="flex-1 text-zinc-300" data-testid="site-state">
             {site ? <>Shows version {site.version} · {when(site.publishedAt)}{site.version < version ? <span className="text-amber-300"> · the course changed since</span> : null}</> : "Not published yet"}
@@ -166,11 +185,12 @@ function PublicSection({ id }: { id: string }) {
             {busy ? busy + "…" : site ? "Update site" : "Publish site"}
           </button>
         </div>
+        <div className="mt-3"><ViewerLook /></div>
       </Section>
-      <Section title="Public links" testid="public-links">
+      <Section title="Public links" testid="public-links" help="public-links">
         <ul className="space-y-2">
           {links.map(l => (
-            <li key={l.id} className={`rounded-lg bg-zinc-800/50 p-2.5 text-sm ${l.revoked ? "opacity-60" : ""}`} data-testid="link">
+            <li key={l.id} className={`rounded-lg bg-white/[0.07] p-2.5 text-sm ${l.revoked ? "opacity-60" : ""}`} data-testid="link">
               <div className="flex items-center gap-2">
                 <span className="flex-1 min-w-0 truncate text-zinc-100 font-medium">{l.label || "Public link"}{l.revoked ? " · off" : ""}{l.hasPassword ? " · password" : ""}{l.expiresAt ? ` · until ${new Date(l.expiresAt).toLocaleDateString()}` : ""}</span>
                 {!l.revoked && <CopyButton text={linkUrl(l)} label="Copy link" />}
@@ -187,7 +207,7 @@ function PublicSection({ id }: { id: string }) {
           ))}
         </ul>
         {editing ? (
-          <div className="mt-3 rounded-lg bg-zinc-800/50 p-3 space-y-2" data-testid="link-form">
+          <div className="mt-3 rounded-lg bg-white/[0.07] p-3 space-y-2" data-testid="link-form">
             <input className={inputCls} placeholder="Label (where it's shared)" value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} aria-label="Label" />
             <label className="block">
               <span className="flex items-center gap-2"><span className="text-xs text-zinc-400 shrink-0">{location.host}/</span>
@@ -200,7 +220,7 @@ function PublicSection({ id }: { id: string }) {
               <input className={`${inputCls} w-40`} type="date" value={form.expires} onChange={e => setForm({ ...form, expires: e.target.value })} aria-label="Works until" />
             </div>
             <div className="flex gap-2 justify-end">
-              <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded-lg" onClick={() => setEditing(null)}>Cancel</button>
+              <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/[0.09] rounded-lg" onClick={() => setEditing(null)}>Cancel</button>
               <button className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" disabled={!!busy} onClick={() => void save()} data-testid="save-link">{busy ? busy + "…" : editing === "new" ? "Make link" : "Save"}</button>
             </div>
           </div>

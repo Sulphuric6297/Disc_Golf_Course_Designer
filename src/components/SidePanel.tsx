@@ -1,20 +1,21 @@
 // The side panel follows the steps: what to do now, and the lists for it. The map stays the one
 // canvas; the steps never lock anything.
-import { useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, CircleDot, ClipboardCheck, Download, Eye, EyeOff, Info, MapPinned, Palette, Pentagon, Plus, Route, Signpost, Spline, Trash2, TreeDeciduous, type LucideIcon } from "lucide-react";
-import { AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
-import { activeLayout, holeTees } from "../lib/course";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AlertTriangle, ArrowRight, Link2, Info, X, ClipboardCheck, Download, Eye, EyeOff, MapPinned, Palette, Plus, Route, Trash2, type LucideIcon } from "lucide-react";
+import { TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
+import { activeLayout, holeBaskets, holeTees } from "../lib/course";
 import { courseIssues, courseStats, courseTotals, levelsOnCourse, openIssues, playsOf, swapped, type SafetyIssue } from "../lib/holeStats";
 import { fmtDist, fmtElev, toUnits } from "../lib/units";
-import { select, uncutTrees } from "../state/actions";
+import { addLayoutTees, pickLayout, select, uncutTrees } from "../state/actions";
+import { toast } from "../state/toast";
 import { changeDoc, useCourse, useEditor, type Step } from "../state/course";
-import type { AreaKind, Layout, LineKind, PinPosition, StructureKind, TeeLevel, ToolMode } from "../types";
+import { SHOW_EVENT } from "./showSetting";
+import type { Layout, PinPosition, TeeLevel } from "../types";
 import { refreshOsm } from "../state/osm";
 import { measureLidar } from "../state/lidar";
 import { saplings, yearsSince } from "../lib/lidar";
-import { getView } from "./MapViewport";
-import { structureIcon } from "./Toolbar";
-import { Button, Facts, Field, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
+import { getView } from "../state/view";
+import { Button, Facts, Field, HelpLink, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
 import { DesignPanel } from "./DesignPanel";
 import { ExportPanel } from "./ExportPanel";
 import { useTouch } from "./useLayout";
@@ -24,15 +25,13 @@ import { NearbyCourses, NearbySafety } from "../auth/Nearby";
 
 export const STEPS: { id: Step; label: string; title: string }[] = [
   { id: "site", label: "Site", title: "Your site" },
-  { id: "holes", label: "Holes", title: "Holes" },
-  { id: "features", label: "Features", title: "OB, mandos and more" },
-  { id: "review", label: "Review", title: "Review" },
-  { id: "design", label: "Design", title: "Map design" },
+  { id: "design", label: "Design", title: "Design" },
+  { id: "map", label: "Map", title: "Map" },
   { id: "export", label: "Export", title: "Export" }
 ];
 
 /** The steps' icons (the phone's step bar and rail). */
-export const STEP_ICONS: Record<Step, LucideIcon> = { site: MapPinned, holes: Route, features: Signpost, review: ClipboardCheck, design: Palette, export: Download };
+export const STEP_ICONS: Record<Step, LucideIcon> = { site: MapPinned, design: Route, map: Palette, export: Download };
 
 /** Mouse words for a touch screen: tap instead of click, hold instead of right-click, no key letters. */
 export const touchWords = (text: string) =>
@@ -56,7 +55,7 @@ const NextButton = ({ step }: { step: Step }) => {
 const ToolCard = ({ icon, title, onClick, active, testid }: { icon: ReactNode; title: string; onClick: () => void; active?: boolean; testid?: string }) => {
   const touch = useTouch();
   return (
-    <button onClick={onClick} data-testid={testid} className={`w-full text-left flex gap-3 items-center rounded-lg px-3 py-2 touch:py-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${active ? "bg-orange-500/10 ring-1 ring-orange-500/40" : "bg-zinc-800/60 hover:bg-zinc-800"}`}>
+    <button onClick={onClick} data-testid={testid} className={`w-full text-left flex gap-3 items-center rounded-lg px-3 py-2 touch:py-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${active ? "bg-orange-500/10 ring-1 ring-orange-500/40" : "bg-white/[0.07] hover:bg-white/[0.09]"}`}>
       <span className={active ? "text-orange-300" : "text-zinc-400"}>{icon}</span>
       <span>
         <span className="block text-sm font-semibold text-zinc-100">{touch ? touchWords(title) : title}</span>
@@ -64,6 +63,34 @@ const ToolCard = ({ icon, title, onClick, active, testid }: { icon: ReactNode; t
     </button>
   );
 };
+
+/** What was brought in by itself (from the photo, from OpenStreetMap), to take out at once. */
+function BroughtIn() {
+  const doc = useCourse(s => s.doc);
+  const photoTrees = doc.items.filter(i => i.type === "tree" && i.importSource === "photo").length;
+  const photoAreas = doc.items.filter(i => i.type === "area" && i.importSource === "photo").length;
+  const osm = doc.items.filter(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm").length;
+  return (
+    <>
+      {(photoTrees > 0 || photoAreas > 0 || osm > 0) && (
+        <Section title="Brought in automatically" help="brought-in">
+          {(photoTrees > 0 || photoAreas > 0) && (
+            <div className="flex items-center justify-between text-xs text-zinc-300 mb-1.5" data-testid="photo-found">
+              {[photoAreas ? `${photoAreas} area${photoAreas > 1 ? "s" : ""}` : "", photoTrees ? `${photoTrees} trees` : ""].filter(Boolean).join(" and ")} from the photo
+              <Button small tone="danger" onClick={() => changeDoc(d => ({ items: d.items.filter(i => !((i.type === "tree" || i.type === "area") && i.importSource === "photo")) }))}>Remove all</Button>
+            </div>
+          )}
+          {osm > 0 && (
+            <div className="flex items-center justify-between text-xs text-zinc-300">
+              {osm} shapes from OpenStreetMap
+              <Button small tone="danger" onClick={() => changeDoc(d => ({ items: d.items.filter(i => !((i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm")) }))}>Remove all</Button>
+            </div>
+          )}
+        </Section>
+      )}
+    </>
+  );
+}
 
 function SiteStep({ onFindSite }: { onFindSite: () => void }) {
   const doc = useCourse(s => s.doc);
@@ -90,24 +117,26 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <Button small onClick={onFindSite}>Resize or re-import the site</Button>
-            <Button small onClick={() => void refreshOsm()} testid="refresh-osm">Update paths, roads and water</Button>
+            <Button small onClick={() => refreshOsm()} testid="refresh-osm">Update paths, roads and water</Button>
           </div>
-          <div className="mt-3 pt-2 border-t border-white/10" data-testid="lidar-info">
-            <div className="text-xs text-zinc-400 mb-1.5">{doc.lidar ? `${doc.lidar.trees.length.toLocaleString()} trees measured from the air · ${doc.lidar.source}` : "Trees and ground from LiDAR"}</div>
+          <div className={`mt-3 ${doc.lidar ? "pt-2 border-t border-white/10" : "rounded-[16px] bg-orange-500/[0.12] ring-1 ring-orange-400/30 p-3"}`} data-testid="lidar-info">
+            {!doc.lidar && <div className="text-[13.5px] font-semibold text-orange-100 mb-0.5 flex items-center gap-1.5">Real trees and ground <HelpLink topic="lidar" label="Real trees and ground" /></div>}
+            <div className="text-xs text-zinc-400 mb-1.5 flex items-center gap-1.5">{doc.lidar ? <>{`${doc.lidar.trees.length.toLocaleString()} trees measured from the air · ${doc.lidar.source}`} <HelpLink topic="lidar" label="Measured trees" /></> : "Each tree's real spot and height, and the bare ground, from an aerial survey (LiDAR) where one has been flown."}</div>
             <div className="flex flex-wrap gap-1.5">
               {ed.lidarBusy !== null
                 ? <span className="text-xs text-zinc-300" data-testid="lidar-busy">Measuring… {Math.round(ed.lidarBusy * 100)}%</span>
                 : <Button small onClick={() => void measureLidar()} testid="measure-lidar">{doc.lidar ? "Measure again" : "Measure trees and ground"}</Button>}
-              {doc.lidar && ed.lidarBusy === null && <Button small tone="danger" onClick={() => changeDoc(() => ({ lidar: undefined }))} testid="remove-lidar">Remove the trees</Button>}
+              {doc.lidar && ed.lidarBusy === null && <Button small tone="danger" onClick={() => changeDoc(() => ({ lidar: undefined }))} testid="remove-lidar">Remove the measured trees</Button>}
             </div>
             {doc.lidar && doc.lidar.trees.length > 0 && (
-              <div className="mt-2" data-testid="lidar-min">
-                <Slider label="Smallest tree kept" min={0} max={60} step={1} value={doc.lidar.minHeight ?? 0}
+              <details className="mt-2 group" data-testid="lidar-settings"><summary className="cursor-pointer list-none text-[12.5px] font-semibold text-zinc-200 flex items-center justify-between py-1">Measured tree settings <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
+              <div className="mt-1" data-testid="lidar-min">
+                <Slider label="Leave out trees shorter than" min={0} max={60} step={1} value={doc.lidar.minHeight ?? 0}
                   format={v => (v ? `${fmtElev(v, doc.units).replace(/^[+−-]/, "")} and up` : "All")}
                   onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, minHeight: v || undefined } } : {}), false)} onDone={() => useCourse.getState().commit()} />
                 <div className="text-[11px] text-zinc-500">{(() => { const m = doc.lidar.minHeight ?? 0; const n = m ? doc.lidar.trees.filter(t => t[2] >= m).length : doc.lidar.trees.length; return `${n.toLocaleString()} of ${doc.lidar.trees.length.toLocaleString()} kept`; })()}</div>
                 <div className="mt-2" data-testid="lidar-grow">
-                  <Slider label="Grown since the survey" min={0} max={25} step={1} value={doc.lidar.growYears ?? 0}
+                  <Slider label="Growth since the survey" min={0} max={25} step={1} value={doc.lidar.growYears ?? 0}
                     format={v => (v ? `${v} year${v === 1 ? "" : "s"} · ${saplings(doc.lidar!.trees, v).length.toLocaleString()} new` : "As measured")}
                     onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, growYears: v || undefined } } : {}), false)} onDone={() => useCourse.getState().commit()} />
                   {yearsSince(doc.lidar.source) > 0 && (doc.lidar.growYears ?? 0) !== yearsSince(doc.lidar.source) && (
@@ -121,15 +150,16 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
                   // (trees drawn by hand standing on a measured one: the survey has them already)
                   const doubled = doc.items.filter(i => i.type === "tree" && doc.lidar!.trees.some(t => Math.hypot(t[0] - i.x, t[1] - i.y) < Math.max(6, t[3] * 0.5)));
                   return doubled.length > 0 ? (
-                    <div className="mt-2 text-[11px] text-zinc-400" data-testid="doubled-trees">{doubled.length} drawn tree{doubled.length === 1 ? "" : "s"} stand{doubled.length === 1 ? "s" : ""} on a measured one · <button className="text-orange-300 hover:text-orange-200" onClick={() => { const ids = new Set(doubled.map(i => i.id)); changeDoc(d => ({ items: d.items.filter(i => !ids.has(i.id)) })); }}>Remove the drawn ones</button></div>
+                    <div className="mt-2 text-[11px] text-zinc-400" data-testid="doubled-trees">{doubled.length} tree{doubled.length === 1 ? "" : "s"} placed by hand stand{doubled.length === 1 ? "s" : ""} on a measured one · <button className="text-orange-300 hover:text-orange-200" onClick={() => { const ids = new Set(doubled.map(i => i.id)); changeDoc(d => ({ items: d.items.filter(i => !ids.has(i.id)) })); }}>Remove those placed by hand</button></div>
                   ) : null;
                 })()}
                 <div className="mt-2" data-testid="lidar-clear">
-                  <Toggle label="Cut trees off the fairways" hint="Off: the measured trees stand where the holes play, cut by hand only" checked={doc.lidar.clearFairways !== false}
+                  <Toggle label="Clear trees from the fairways" hint="Turn it off to keep the real trees where the holes play and cut them by hand instead." checked={doc.lidar.clearFairways !== false}
                     onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, clearFairways: v ? undefined : false } } : {}))} />
                 </div>
 
               </div>
+              </details>
             )}
           </div>
         </Section>
@@ -141,28 +171,65 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
           <Segmented label="Units" value={doc.units} onChange={v => set({ units: v })} options={[{ value: "ft", label: "Feet" }, { value: "m", label: "Meters" }]} />
         </Field>
       </Section>
-      <Section title="Map display">
-        <Toggle label="Satellite photo" checked={ed.photo} onChange={v => ed.set({ photo: v })} />
-        <Toggle label="Contour lines" checked={ed.contours} onChange={v => ed.set({ contours: v })} />
-        <Toggle label="Hill shading" checked={ed.shading} onChange={v => ed.set({ shading: v })} />
-        <Toggle label="Ground texture up close" checked={ed.groundDetail} onChange={v => ed.set({ groundDetail: v })} />
-      </Section>
+      <BroughtIn />
       {SERVER && <NearbyCourses />}
       <NextButton step="site" />
     </>
   );
 }
 
-function LayoutEditor({ open, setOpen }: { open: boolean; setOpen: (f: (o: boolean) => boolean) => void }) {
+/** The layout picked, where its holes have no tee of its color: they play from another one (so the
+ * layout plays like it), and its tees can be added to them all at once. */
+function LayoutGaps({ compact = false }: { compact?: boolean }) {
+  const doc = useCourse(s => s.doc);
+  const layout = doc.layouts.length > 1 ? activeLayout(doc) : undefined;
+  if (!layout) return null;
+  const missing = doc.holes.filter(h => { const t = holeTees(doc, h.id); return t.length > 0 && !t.some(x => x.level === layout.tee); }).length;
+  if (!missing) return null;
+  const color = TEE_LEVELS[layout.tee].label.toLowerCase();
+  const all = missing === doc.holes.length;
+  return (
+    <div className={`text-[11.5px] leading-snug text-zinc-300 ${compact ? "px-1 pt-1.5" : "mt-1 mb-2"}`} data-testid="layout-gaps">
+      {all ? `None of the holes have a ${color} tee yet, so this layout plays the same as the others.` : `${missing} hole${missing === 1 ? " has" : "s have"} no ${color} tee, so ${missing === 1 ? "it plays" : "they play"} from the nearest one.`}
+      <button className="block mt-1 font-semibold text-orange-300 hover:text-orange-200" onClick={() => { const n = addLayoutTees(layout.tee); if (n) toast(`Added ${n} ${color} tee${n === 1 ? "" : "s"}. Drag them where you want them.`, "success", true); }} data-testid="layout-add-tees">Add {color} tees to {all ? "every hole" : missing === 1 ? "that hole" : "those holes"}</button>
+    </div>
+  );
+}
+
+/** The layouts to pick from (the one worked on: its tees and pins stand out on the map). */
+export function LayoutPicker({ compact = false }: { compact?: boolean }) {
+  const doc = useCourse(s => s.doc);
+  if (doc.layouts.length < 2) return null;
+  return (
+    <>
+    <div role="radiogroup" aria-label="Layout" data-testid="layout-picker" className={`flex flex-wrap gap-1 ${compact ? "" : "mb-2"}`}>
+      {doc.layouts.map(l => {
+        const on = l.id === doc.activeLayout;
+        return (
+          <button key={l.id} role="radio" aria-checked={on} onClick={() => pickLayout(l.id)}
+            title={`${l.name}: ${TEE_LEVELS[l.tee].label.toLowerCase()} tees to pin ${l.pin}`}
+            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold min-w-0 touch:py-2 ${on ? "bg-white/[0.18] text-zinc-50 ring-1 ring-white/25" : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.07]"}`}>
+            <span className="w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-black/40" style={{ background: TEE_LEVELS[l.tee].color }} />
+            <span className="truncate">{l.name}</span>
+          </button>
+        );
+      })}
+    </div>
+    <LayoutGaps compact={compact} />
+    </>
+  );
+}
+
+function LayoutEditor({ open, setOpen, picker = true }: { open: boolean; setOpen: (f: (o: boolean) => boolean) => void; picker?: boolean }) {
   const doc = useCourse(s => s.doc);
   const setLayouts = (layouts: Layout[]) => changeDoc(() => ({ layouts }));
   return (
-    <Section title="Layout" right={<button className="text-xs text-orange-300 hover:text-orange-200" onClick={() => setOpen(o => !o)}>{open ? "Done" : "Edit layouts"}</button>}>
-      {doc.layouts.length > 1 && <Segmented label="Active layout" value={doc.activeLayout} onChange={v => changeDoc(() => ({ activeLayout: v }))} options={doc.layouts.map(l => ({ value: l.id, label: <span className="flex items-center gap-1 justify-center"><span className="w-2 h-2 rounded-full" style={{ background: TEE_LEVELS[l.tee].color }} />{l.name}</span> }))} />}
+    <Section title="Layouts" help="layouts" right={<button className="text-xs text-orange-300 hover:text-orange-200" onClick={() => setOpen(o => !o)}>{open ? "Done" : "Edit layouts"}</button>}>
+      {picker && <LayoutPicker />}
       {open && (
         <div className="mt-2 space-y-2" data-testid="layout-editor">
           {doc.layouts.map(l => (
-            <div key={l.id} className="bg-zinc-800/60 rounded-lg p-2 space-y-1.5">
+            <div key={l.id} className="bg-white/[0.07] rounded-lg p-2 space-y-1.5">
               <div className="flex gap-1.5">
                 <TextInput label="Layout name" value={l.name} onChange={v => setLayouts(doc.layouts.map(x => (x.id === l.id ? { ...x, name: v } : x)))} />
                 {doc.layouts.length > 1 && <button aria-label="Remove layout" className="text-zinc-400 hover:text-red-400 px-1" onClick={() => changeDoc(d => ({ layouts: d.layouts.filter(x => x.id !== l.id), activeLayout: d.activeLayout === l.id ? d.layouts.find(x => x.id !== l.id)!.id : d.activeLayout }))}><Trash2 size={14} /></button>}
@@ -175,7 +242,8 @@ function LayoutEditor({ open, setOpen }: { open: boolean; setOpen: (f: (o: boole
             const id = `layout-${generateId()}`;
             const used = new Set(doc.layouts.map(l => l.tee));
             const tee = TEE_ORDER.find(t => !used.has(t)) ?? "white";
-            changeDoc(d => ({ layouts: [...d.layouts, { id, name: TEE_LEVELS[tee].label, tee, pin: "A" }], activeLayout: id }));
+            changeDoc(d => ({ layouts: [...d.layouts, { id, name: TEE_LEVELS[tee].label, tee, pin: "A" }] }));
+            pickLayout(id);
           }}><Plus size={14} /> Add a layout</Button>
         </div>
       )}
@@ -183,7 +251,9 @@ function LayoutEditor({ open, setOpen }: { open: boolean; setOpen: (f: (o: boole
   );
 }
 
-function HolesStep() {
+/** The holes: the new hole tool, the layouts, each hole to pick, the course's totals (the phone's
+ * sheet). `course`: only what is the whole course's (the holes column has the rest). */
+export function HolesStep({ course = false }: { course?: boolean }) {
   const doc = useCourse(s => s.doc);
   // (in a draft on a HyzerLab server: the holes it changes)
   const changed = useMemo(() => (SERVER ? draftHoles(doc) : new Set<string>()), [doc]);
@@ -198,12 +268,14 @@ function HolesStep() {
   const oneLayout = doc.layouts.length < 2 && !layoutsOpen;
   return (
     <>
-      <Section>
-        <ToolCard icon={<Route size={18} />} title="New hole (H)" active={ed.tool === "add-hole"} onClick={() => ed.set({ tool: "add-hole" })} testid="new-hole" />
-      </Section>
-      {!oneLayout && <LayoutEditor open={layoutsOpen} setOpen={setLayoutsOpen} />}
-      <Section title={`${played} hole${played === 1 ? "" : "s"}`} testid="hole-list" right={oneLayout ? <button className="text-xs text-orange-300 hover:text-orange-200 touch:py-2" onClick={() => setLayoutsOpen(true)}>Edit layouts</button> : undefined}>
-        {doc.holes.length === 0 ? (
+      {!course && (
+        <Section>
+          <ToolCard icon={<Route size={18} />} title="New hole (H)" active={ed.tool === "add-hole"} onClick={() => ed.set({ tool: "add-hole" })} testid="new-hole" />
+        </Section>
+      )}
+      {!oneLayout && <LayoutEditor open={layoutsOpen} setOpen={setLayoutsOpen} picker={!course} />}
+      <Section title={`${played} hole${played === 1 ? "" : "s"}`} testid={course ? "course-holes" : "hole-list"} right={oneLayout ? <button className="text-xs text-orange-300 hover:text-orange-200 touch:py-2" onClick={() => setLayoutsOpen(true)}>Edit layouts</button> : undefined}>
+        {course ? null : doc.holes.length === 0 ? (
           <p className="text-xs text-zinc-400">No holes yet.</p>
         ) : (
           <ol className="space-y-0.5">
@@ -216,7 +288,7 @@ function HolesStep() {
                   <button
                     data-testid="hole-row"
                     onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
-                    className={`w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${sel ? "bg-orange-500/15 ring-1 ring-orange-400/60" : "hover:bg-zinc-800"}`}
+                    className={`w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${sel ? "bg-orange-500/15 ring-1 ring-orange-400/60" : "hover:bg-white/[0.09]"}`}
                   >
                     <span className="min-w-[1.5rem] h-6 px-1 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 whitespace-nowrap" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink, fontFamily: "Oswald, Inter" }} data-testid="hole-badge">{s.label}</span>
                     <span className="flex-1 min-w-0">
@@ -234,97 +306,9 @@ function HolesStep() {
           </ol>
         )}
         {totals.complete > 0 && (
-          <div className="mt-3"><Facts testid="course-totals" items={[["Par", totals.par], ["Length", fmtDist(totals.length, u)], ["Walking", fmtDist(totals.walk, u)]]} /></div>
-        )}
-        {doc.holes.length > 1 && (
-          <div className="mt-3" data-testid="auto-walks">
-            <Toggle label="Walks to the next hole (automatic)" checked={doc.style.nextTee} onChange={v => changeDoc(d => ({ style: { ...d.style, nextTee: v } }))} />
-          </div>
+          <div className={course ? "" : "mt-3"}><Facts testid="course-totals" items={[["Par", totals.par], ["Length", fmtDist(totals.length, u)], ["Walking", fmtDist(totals.walk, u)]]} /></div>
         )}
       </Section>
-      <NextButton step="holes" />
-    </>
-  );
-}
-
-function FeaturesStep() {
-  const doc = useCourse(s => s.doc);
-  const ed = useEditor();
-  const area = (kind: AreaKind) => (
-    <ToolCard key={kind} icon={<Pentagon size={17} style={{ color: AREA_KINDS[kind].color }} />} title={AREA_KINDS[kind].label} active={ed.tool === "draw-area" && ed.areaKind === kind} onClick={() => ed.set({ tool: "draw-area", areaKind: kind })} testid={`feature-area-${kind}`} />
-  );
-  const line = (kind: LineKind) => (
-    <ToolCard key={kind} icon={<Spline size={17} style={{ color: LINE_KINDS[kind].color }} />} title={LINE_KINDS[kind].label} active={ed.tool === "draw-line" && ed.lineKind === kind} onClick={() => ed.set({ tool: "draw-line", lineKind: kind })} testid={`feature-line-${kind}`} />
-  );
-  const built = (kind: StructureKind) => (
-    <ToolCard key={kind} icon={<span className="inline-block" dangerouslySetInnerHTML={{ __html: structureIcon(kind, 18, `card-${kind}`) }} />} title={STRUCTURE_KINDS[kind].label} active={ed.tool === "draw-structure" && ed.structureKind === kind} onClick={() => ed.set({ tool: "draw-structure", structureKind: kind, drawShape: STRUCTURE_KINDS[kind].shape === "outline" ? "box" : "points" })} testid={`feature-structure-${kind}`} />
-  );
-  const tool = (mode: ToolMode, icon: ReactNode, title: string) => (
-    <ToolCard key={mode} icon={icon} title={title} active={ed.tool === mode} onClick={() => ed.set({ tool: mode })} testid={`feature-${mode}`} />
-  );
-  const photoTrees = doc.items.filter(i => i.type === "tree" && i.importSource === "photo").length;
-  const photoAreas = doc.items.filter(i => i.type === "area" && i.importSource === "photo").length;
-  const osm = doc.items.filter(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm").length;
-  return (
-    <>
-      <Section title="Rules of play">
-        <div className="space-y-1.5">
-          {area("ob")}
-          {line("ob")}
-          {area("hazard")}
-          {tool("add-mando", <Signpost size={17} className="text-orange-400" />, "Mando (M)")}
-          {tool("add-dropzone", <CircleDot size={17} className="text-orange-400" />, "Drop zone (Z)")}
-        </div>
-      </Section>
-      <Section title="The land">
-        <div className="space-y-1.5">
-          {area("water")}
-          {line("stream")}
-          {area("woods")}
-          {tool("add-tree", <TreeDeciduous size={17} className="text-green-400" />, "Trees (R)")}
-          {area("fairway")}
-          {area("nogo")}
-          {area("casual")}
-        </div>
-      </Section>
-      <Section title="Getting around">
-        <div className="space-y-1.5">
-          {line("path")}
-          {line("walk")}
-          {line("road")}
-          {line("fence")}
-          {area("parking")}
-          {tool("add-amenity", <Info size={17} className="text-sky-400" />, "Benches, signs, parking… (A)")}
-        </div>
-      </Section>
-      <Section title="Buildings and bridges (S)" testid="feature-structures">
-        <div className="space-y-1.5">
-          {built("bridge")}
-          {built("boardwalk")}
-          {built("stairs")}
-          {built("wall")}
-          {built("building")}
-          {built("shelter")}
-          {built("deck")}
-        </div>
-      </Section>
-      {(photoTrees > 0 || photoAreas > 0 || osm > 0) && (
-        <Section title="Brought in automatically">
-          {(photoTrees > 0 || photoAreas > 0) && (
-            <div className="flex items-center justify-between text-xs text-zinc-300 mb-1.5" data-testid="photo-found">
-              {[photoAreas ? `${photoAreas} area${photoAreas > 1 ? "s" : ""}` : "", photoTrees ? `${photoTrees} trees` : ""].filter(Boolean).join(" and ")} from the photo
-              <Button small tone="danger" onClick={() => changeDoc(d => ({ items: d.items.filter(i => !((i.type === "tree" || i.type === "area") && i.importSource === "photo")) }))}>Remove all</Button>
-            </div>
-          )}
-          {osm > 0 && (
-            <div className="flex items-center justify-between text-xs text-zinc-300">
-              {osm} shapes from OpenStreetMap
-              <Button small tone="danger" onClick={() => changeDoc(d => ({ items: d.items.filter(i => !((i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm")) }))}>Remove all</Button>
-            </div>
-          )}
-        </Section>
-      )}
-      <NextButton step="features" />
     </>
   );
 }
@@ -333,7 +317,8 @@ const IssueIcon = ({ level }: { level: SafetyIssue["level"] }) => (
   level === "info" ? <Info size={14} className="text-sky-400 shrink-0 mt-0.5" /> : <AlertTriangle size={14} className={`${level === "danger" ? "text-red-400" : "text-amber-400"} shrink-0 mt-0.5`} />
 );
 
-function ReviewStep() {
+/** The course checked: its numbers, the problems found (each shown on the map too), the holes. */
+export function ReviewStep() {
   const doc = useCourse(s => s.doc);
   const stats = courseStats(doc);
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
@@ -356,7 +341,7 @@ function ReviewStep() {
         <p className="text-xs text-zinc-500 mt-1">{totals.complete ? `Average hole ${fmtDist(totals.length / totals.complete, u)} · ` : ""}Par mix {Object.entries(totals.parCounts).map(([p, n]) => `${n}×${p}`).join(" ") || "–"}</p>
         {levels.length > 0 && <p className="text-[11px] text-zinc-500 mt-2">Tee colors on the course: {levels.map(l => TEE_LEVELS[l].label).join(", ")}.</p>}
       </Section>
-      <Section title={`Checks (${issues.length})`} testid="issues">
+      <Section title={`Checks (${issues.length})`} testid="issues" help="checks">
         {issues.length === 0 ? (
           <p className="text-xs text-emerald-300">No problems found.</p>
         ) : (
@@ -364,7 +349,7 @@ function ReviewStep() {
             {issues.map(issue => (
               <li key={issue.id} className="flex items-start gap-1 group">
                 <button
-                  className="flex-1 min-w-0 flex gap-2 items-start text-left text-xs text-zinc-200 hover:bg-zinc-800 rounded px-1.5 py-1"
+                  className="flex-1 min-w-0 flex gap-2 items-start text-left text-xs text-zinc-200 hover:bg-white/[0.09] rounded px-1.5 py-1"
                   data-testid="issue-row"
                   onClick={() => {
                     if (issue.holes[0]) select(issue.holes[0]);
@@ -374,7 +359,7 @@ function ReviewStep() {
                   <IssueIcon level={issue.level} />
                   {issue.text}
                 </button>
-                <button className="shrink-0 p-1 touch:p-2.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800" title="Ignore" aria-label="Ignore" data-testid="issue-ignore" onClick={() => ignore(issue.id, true)}>
+                <button className="shrink-0 p-1 touch:p-2.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.09]" title="Ignore" aria-label="Ignore" data-testid="issue-ignore" onClick={() => ignore(issue.id, true)}>
                   <EyeOff size={13} />
                 </button>
               </li>
@@ -391,7 +376,7 @@ function ReviewStep() {
                 {ignored.map(issue => (
                   <li key={issue.id} className="flex items-start gap-1 text-xs text-zinc-500" data-testid="ignored-row">
                     <span className="flex-1 min-w-0 flex gap-2 items-start px-1.5 py-1"><IssueIcon level={issue.level} />{issue.text}</span>
-                    <button className="shrink-0 p-1 touch:p-2.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800" title="Check again" aria-label="Check again" onClick={() => ignore(issue.id, false)}>
+                    <button className="shrink-0 p-1 touch:p-2.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.09]" title="Check again" aria-label="Check again" onClick={() => ignore(issue.id, false)}>
                       <Eye size={13} />
                     </button>
                   </li>
@@ -400,7 +385,7 @@ function ReviewStep() {
             )}
           </div>
         )}
-        <div className="mt-3 border-t border-zinc-800 pt-2">
+        <div className="mt-3 border-t border-white/[0.08] pt-2">
           <Field label="Safe distance between holes">
             <Segmented label="Safe distance" value={doc.rules.safetyGapFt ?? 0} onChange={v => set({ safetyGapFt: v || undefined })} options={[{ value: 0, label: "Auto" }, { value: 50, label: "50 ft" }, { value: 75, label: "75 ft" }, { value: 100, label: "100 ft" }, { value: 150, label: "150 ft" }]} />
           </Field>
@@ -413,7 +398,7 @@ function ReviewStep() {
           </thead>
           <tbody>
             {stats.map(s => (
-              <tr key={s.holeId} className="hover:bg-zinc-800 cursor-pointer" onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}>
+              <tr key={s.holeId} className="hover:bg-white/[0.09] cursor-pointer" onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}>
                 <td className="py-0.5">{s.label}</td>
                 <td className="text-right">{s.par}</td>
                 <td className="text-right">{s.complete ? fmtDist(s.length, u, false) : "–"}</td>
@@ -425,23 +410,136 @@ function ReviewStep() {
         </table>
       </Section>
       {SERVER && <NearbySafety />}
-      <NextButton step="review" />
     </>
   );
 }
 
-/** The step's own content (lists, settings and tools), under its heading. */
+/** The step's own content (lists, settings and tools), under its heading. (Design on a big
+ * screen has none: the map is the step, see HolesColumn and Problems.) */
 export function StepContent({ onFindSite }: { onFindSite: () => void }) {
   const step = useEditor(e => e.step);
   return (
     <>
       {step === "site" && <SiteStep onFindSite={onFindSite} />}
-      {step === "holes" && <HolesStep />}
-      {step === "features" && <FeaturesStep />}
-      {step === "review" && <ReviewStep />}
-      {step === "design" && <DesignPanel />}
+      {step === "design" && <HolesStep />}
+      {step === "design" && <Section title="Checks" testid="checks-link"><ProblemsCount full /></Section>}
+      {step === "map" && <DesignPanel />}
       {step === "export" && <ExportPanel />}
     </>
+  );
+}
+
+/** The problems found on the course, as a count to open them by (green when there are none). */
+export function ProblemsCount({ full }: { full?: boolean }) {
+  const doc = useCourse(s => s.doc);
+  const open = useEditor(e => e.problemsOpen);
+  const n = useMemo(() => openIssues(doc, courseIssues(doc)).open.length, [doc]);
+  return (
+    <button
+      data-testid="problems-button"
+      aria-expanded={open}
+      onClick={() => useEditor.getState().set({ problemsOpen: !open })}
+      className={`${full ? "w-full justify-center" : ""} inline-flex items-center gap-2 h-9 px-3 rounded-full text-[12.5px] font-semibold ${n ? "bg-red-500/[0.18] text-red-200 ring-1 ring-red-400/40" : "bg-emerald-500/[0.14] text-emerald-200"}`}
+    >
+      {n ? <span className="w-[18px] h-[18px] rounded-full bg-red-400 text-red-950 text-[11px] font-bold leading-[18px] text-center">{n}</span> : <ClipboardCheck size={15} />}
+      {n ? `Problem${n === 1 ? "" : "s"}` : "No problems"}
+    </button>
+  );
+}
+
+/** The checks, opened from the problems count: a glass panel over the map's right side. */
+export function ProblemsPanel() {
+  const open = useEditor(e => e.problemsOpen);
+  if (!open) return null;
+  return (
+    <div className="glass-solid absolute right-3 top-3 bottom-3 z-30 w-[340px] max-w-[calc(100%-24px)] rounded-[24px] overflow-y-auto" role="dialog" aria-label="Checks" data-testid="problems-panel">
+      <div className="flex items-center justify-between px-4 pt-3.5">
+        <h2 className="text-[17px] font-bold text-zinc-50">Checks</h2>
+        <button className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-50" aria-label="Close checks" onClick={() => useEditor.getState().set({ problemsOpen: false })}><X size={16} /></button>
+      </div>
+      <ReviewStep />
+    </div>
+  );
+}
+
+/** The holes, floating down the map's left side (Design): each to fly to and pick, a new one, the
+ * course's totals and layouts behind a button. */
+export function HolesColumn() {
+  const doc = useCourse(s => s.doc);
+  const ed = useEditor();
+  const stats = courseStats(doc);
+  const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
+  const [more, setMore] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  // (opened by search: a course setting asked for)
+  useEffect(() => {
+    const on = (e: Event) => { if ((e as CustomEvent).detail === "course") setMore(true); };
+    window.addEventListener(SHOW_EVENT, on);
+    return () => window.removeEventListener(SHOW_EVENT, on);
+  }, []);
+  // (the course popover closes with Esc or a click elsewhere, like the other menus)
+  useEffect(() => {
+    if (!more) return;
+    const down = (e: PointerEvent) => { if (!moreRef.current?.contains(e.target as Node)) setMore(false); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setMore(false); } };
+    window.addEventListener("pointerdown", down, true);
+    window.addEventListener("keydown", key, true);
+    return () => { window.removeEventListener("pointerdown", down, true); window.removeEventListener("keydown", key, true); };
+  }, [more]);
+  const u = doc.units;
+  // (Fitting the map keeps clear of the column: its width and margins)
+  useEffect(() => {
+    let raf = 0;
+    const set = () => { const v = getView(); if (v) v.setLeftInset(196); else raf = requestAnimationFrame(set); };
+    set();
+    return () => { cancelAnimationFrame(raf); getView()?.setLeftInset(0); };
+  }, []);
+  return (
+    <div className="absolute left-3 top-3 bottom-3 z-20 flex flex-col gap-2 pointer-events-none" data-testid="holes-column">
+      <div className="glass pointer-events-auto rounded-[22px] p-1.5 flex flex-col gap-0.5 max-h-full min-h-0 w-[172px]" data-testid="hole-list">
+        {doc.layouts.length > 1 && <div className="pb-1 mb-0.5 border-b border-white/10"><LayoutPicker compact /></div>}
+        <div className="overflow-y-auto min-h-0 flex flex-col gap-0.5">
+          {stats.map(s => {
+            const hole = doc.holes.find(h => h.id === s.holeId)!;
+            const sel = ed.selectedId === s.holeId || ed.activeHoleId === s.holeId;
+            return (
+              <button key={s.holeId} data-testid="hole-row" title={hole.name || `Hole ${s.label}`}
+                onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
+                className={`flex items-center gap-2 rounded-[14px] pl-1 pr-2 py-1 text-left ${sel ? "bg-white/[0.16] text-zinc-50" : "text-zinc-300"}`}>
+                <span className="min-w-[24px] h-6 px-1 rounded-full flex items-center justify-center text-[11.5px] font-bold shrink-0" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink }} data-testid="hole-badge">{s.label}</span>
+                <span className="text-[12.5px] tabular-nums truncate flex-1 min-w-0">{s.complete ? `${fmtDist(s.length, u)} · P${s.par}` : "unfinished"}</span>
+                {(() => {
+                  // (more than one tee: a dot for each color; a basket shared with another hole: a link)
+                  const tees = holeTees(doc, s.holeId);
+                  const shared = holeBaskets(doc, s.holeId).some(b => b.holeId !== s.holeId || !!b.alsoHoles?.length);
+                  return (
+                    <span className="flex items-center gap-0.5 shrink-0" data-testid="hole-row-marks">
+                      {tees.length > 1 && tees.map(t => <span key={t.id} className="w-1.5 h-1.5 rounded-full ring-1 ring-black/40" style={{ background: TEE_LEVELS[t.level].color }} title={`${TEE_LEVELS[t.level].label} tee`} />)}
+                      {shared && <Link2 size={11} className="text-zinc-400 ml-0.5" aria-label="Shares its basket with another hole" />}
+                    </span>
+                  );
+                })()}
+              </button>
+            );
+          })}
+        </div>
+        <button data-testid="new-hole" onClick={() => ed.set({ tool: "add-hole" })} className={`flex items-center gap-2 rounded-[14px] pl-1 pr-2 py-1 text-[12.5px] font-semibold ${ed.tool === "add-hole" ? "bg-orange-500 text-zinc-950" : "text-orange-300"}`}>
+          <span className={`w-6 h-6 rounded-full flex items-center justify-center ${ed.tool === "add-hole" ? "bg-zinc-950/20" : "bg-orange-500 text-zinc-950"}`}><Plus size={14} /></span>New hole
+        </button>
+      </div>
+      <div className="glass pointer-events-auto rounded-[18px] mt-auto relative" ref={moreRef}>
+        <button className="w-full flex gap-3 items-end px-3.5 py-2 text-left" onClick={() => setMore(m => !m)} aria-expanded={more} data-testid="course-totals-button">
+          {[[totals.complete, "holes"], [totals.par, "par"], [fmtDist(totals.length, u), "total"]].map(([v, k]) => (
+            <span key={k as string}><span className="block text-[15px] font-bold text-zinc-50 leading-tight tabular-nums">{v}</span><span className="text-[11px] text-zinc-400">{k}</span></span>
+          ))}
+        </button>
+        {more && (
+          <div className="glass-solid absolute left-0 bottom-full mb-2 w-[320px] rounded-[20px] max-h-[70vh] overflow-y-auto" data-testid="course-more">
+            <HolesStep course />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -450,10 +548,10 @@ export function SidePanel({ onFindSite }: { onFindSite: () => void }) {
   const i = STEPS.findIndex(s => s.id === step);
   const meta = STEPS[i];
   return (
-    <aside className="w-[340px] shrink-0 bg-zinc-900 overflow-y-auto" aria-label="Step panel" data-testid="side-panel">
+    <aside className="glass w-[340px] shrink-0 rounded-[24px] overflow-y-auto" aria-label="Step panel" data-testid="side-panel">
       <div className="px-4 pt-4 pb-1">
-        <div className="text-[11px] text-zinc-500">Step {i + 1} of {STEPS.length}</div>
-        <h2 className="text-base font-semibold text-zinc-50">{meta.title}</h2>
+        <div className="text-[11.5px] font-semibold text-orange-300">Step {i + 1} of {STEPS.length}</div>
+        <h2 className="text-[22px] leading-tight font-bold tracking-[-0.02em] text-zinc-50">{meta.title}</h2>
       </div>
       <StepContent onFindSite={onFindSite} />
     </aside>

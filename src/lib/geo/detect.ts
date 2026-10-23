@@ -291,6 +291,30 @@ export const woodsRegions = (canopy: Canopy, minAreaM2 = 400): Region[] => {
   return components(m, w, h, Math.ceil(minAreaM2 / (mpp * mpp))).map(c => ({ outline: traceOutline(w, h, c), areaPx: c.length }));
 };
 
+/** Stands of trees measured from the air: their crowns (plan ft) joined wherever they come within
+ * `gapFt` of each other, each stand of at least `minTrees` trees traced around its crowns (in
+ * cells of `cell` ft, so a stand's outline is in cells: times `cell` for plan ft). Trees farther
+ * apart than the gap, across a fairway, a road or a clearing, fall in stands of their own. */
+export const treeStands = (trees: { x: number; y: number; r: number }[], width: number, height: number, gapFt = 14, minTrees = 6, cell = 4) => {
+  const w = Math.ceil(width / cell) + 1, h = Math.ceil(height / cell) + 1;
+  const mask = new Uint8Array(w * h);
+  const cellOf: number[] = [];
+  for (const t of trees) {
+    const cx = t.x / cell, cy = t.y / cell, r = Math.max(4, t.r) / cell;
+    cellOf.push(Math.min(h - 1, Math.max(0, Math.round(cy))) * w + Math.min(w - 1, Math.max(0, Math.round(cx))));
+    for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(h - 1, Math.ceil(cy + r)); y++)
+      for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(w - 1, Math.ceil(cx + r)); x++)
+        if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) mask[y * w + x] = 1;
+  }
+  const m = close(mask, w, h, Math.max(1, Math.round(gapFt / 2 / cell)));
+  const comps = components(m, w, h, 4);
+  const label = new Int32Array(w * h).fill(-1);
+  comps.forEach((c, k) => { for (const i of c) label[i] = k; });
+  const count = new Array(comps.length).fill(0);
+  for (const i of cellOf) if (label[i] >= 0) count[label[i]]++;
+  return { w, h, cell, stands: comps.flatMap((c, k) => (count[k] >= minTrees ? [{ outline: traceOutline(w, h, c), trees: count[k], areaPx: c.length }] : [])) };
+};
+
 /** How much of its most snug box (turned every 5 degrees) a shape fills: about 1 for a rectangle
  * (a pool, a court, a roof), about 0.79 for a round pond. */
 export const boxFill = (outline: { x: number; y: number }[], areaPx: number) => {

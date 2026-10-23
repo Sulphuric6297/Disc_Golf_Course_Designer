@@ -1,24 +1,31 @@
-// "Go to" (Ctrl+K): a hole, a step, a tool or a named thing on the map, found by typing.
+// Search (Ctrl+K): a hole, a step, a tool, a named thing on the map, or any setting or feature in
+// the guide, found by typing; picked, it takes you there (a setting: opened and pointed at).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Hash, MapPin, Search, Wrench, Zap } from "lucide-react";
+import { BookOpen, Hash, MapPin, Search, SlidersHorizontal, Wrench, Zap } from "lucide-react";
+import { SECTIONS, TOPICS } from "../lib/guide";
+import { SERVER } from "../auth/api";
+import { showSetting } from "./showSetting";
+import { openGettingStarted } from "./GettingStarted";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS } from "../constants";
 import { holeLabel } from "../lib/course";
 import { courseStats } from "../lib/holeStats";
 import { fmtDist } from "../lib/units";
 import { select } from "../state/actions";
 import { useCourse, useEditor } from "../state/course";
-import { getView } from "./MapViewport";
+import { getView } from "../state/view";
 import { STEPS } from "./SidePanel";
 import { TOOLS } from "./Toolbar";
 import type { CourseItem } from "../types";
 
-/** `find`: what typing matches (its name, not its figures); `nums`: a hole's numbers, first when typed. */
-type Entry = { key: string; text: string; find: string; sub?: string; icon: ReactNode; run: () => void; nums?: string[] };
+/** `find`: what typing matches (its name, not its figures); `nums`: a hole's numbers, first when
+ * typed; `rank`: ties go to holes and steps first, then tools, then settings. */
+type Entry = { key: string; text: string; find: string; sub?: string; icon: ReactNode; run: () => void; nums?: string[]; rank?: number };
 
-/** The map shows on every step but Design: going to something on it leaves the Design page. */
+/** Going to something on the map: the Design step, where the map is to work on (the Map and
+ * Export steps show the printed page over it). */
 const toMap = () => {
   const ed = useEditor.getState();
-  if (ed.step === "design" || ed.teeView) ed.set({ step: "holes", teeView: null, flyover: false });
+  if (ed.step === "map" || ed.step === "export" || ed.teeView) ed.set({ step: "design", teeView: null, flyover: false });
 };
 
 /** What a named thing on the map is called, and what kind it is. */
@@ -29,7 +36,7 @@ const named = (i: CourseItem): { name: string; kind: string } | null => {
   return { name: i.label, kind };
 };
 
-export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => void }) {
+export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: (topic?: string) => void }) {
   const doc = useCourse(s => s.doc);
   const [q, setQ] = useState("");
   const [at, setAt] = useState(0);
@@ -56,8 +63,19 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => v
     }
     out.push(
       { key: "act:fit", text: "Whole course", find: "whole course fit", sub: "0", icon: <Zap size={15} />, run: () => { toMap(); requestAnimationFrame(() => getView()?.fitCourse()); } },
-      { key: "act:help", text: "Keyboard shortcuts", find: "keyboard shortcuts help", sub: "?", icon: <Zap size={15} />, run: onHelp }
+      { key: "act:start", text: "Getting started", find: "getting started tutorial tour learn basics checklist show me around new", icon: <BookOpen size={15} />, run: openGettingStarted },
+      { key: "act:help", text: "Help guide", find: "help guide manual how to keyboard shortcuts", sub: "?", icon: <BookOpen size={15} />, run: () => onHelp() }
     );
+    // Every setting and feature (from the guide): there and pointed at, or its page in the guide
+    const section = (id: string) => SECTIONS.find(s => s.id === id)?.title ?? "";
+    for (const t of TOPICS) {
+      if (t.server !== undefined && t.server !== SERVER) continue;
+      out.push({
+        key: `set:${t.id}`, text: t.title, find: `${t.title} ${t.words ?? ""} ${t.path ?? ""}`, sub: t.path ?? section(t.section),
+        icon: t.where ? <SlidersHorizontal size={15} /> : <BookOpen size={15} />, rank: -1,
+        run: () => { if (t.where) void showSetting(t.where); else onHelp(t.id); }
+      });
+    }
     return out;
   }, [doc, onHelp]);
 
@@ -65,9 +83,16 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => v
     const t = q.trim().toLowerCase();
     if (!t) return all.filter(e => e.key.startsWith("hole:") || e.key.startsWith("step:"));
     const rank = (e: Entry) => +!!e.nums?.includes(t);
+    // (every word typed starting a word in it, as Spotlight does: "sign size", "walk width"; never
+    // the middle of one: "sign" isn't in "Design")
+    const words = t.split(/\s+/).filter(Boolean);
+    const has = (e: Entry) => { const f = `${e.text} ${e.find}`.toLowerCase().split(/[^a-z0-9]+/); return words.every(w => f.some(x => x.startsWith(w))); };
+    const exact = (e: Entry) => +(e.text.toLowerCase() === t);
+    const starts = (e: Entry) => +e.text.toLowerCase().startsWith(t);
+    const inTitle = (e: Entry) => { const f = e.text.toLowerCase().split(/[^a-z0-9]+/); return +words.every(w => f.some(x => x.startsWith(w))); };
     return all
-      .filter(e => rank(e) || e.find.toLowerCase().includes(t))
-      .sort((a, b) => rank(b) - rank(a) || +b.text.toLowerCase().startsWith(t) - +a.text.toLowerCase().startsWith(t))
+      .filter(e => rank(e) || has(e))
+      .sort((a, b) => rank(b) - rank(a) || exact(b) - exact(a) || starts(b) - starts(a) || inTitle(b) - inTitle(a) || (b.rank ?? 0) - (a.rank ?? 0))
       .slice(0, 40);
   }, [all, q]);
 
@@ -82,11 +107,12 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => v
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center pt-[12vh] bg-black/50" onMouseDown={e => e.target === e.currentTarget && onClose()} data-testid="goto">
-      <div className="w-[520px] max-w-[calc(100%-24px)] bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-white/10 overflow-hidden" role="dialog" aria-label="Go to">
+      <div className="w-[520px] max-w-[calc(100%-24px)] glass-solid rounded-2xl shadow-2xl ring-1 ring-white/10 overflow-hidden" role="dialog" aria-label="Go to">
         <div className="flex items-center gap-2 px-3 shadow-[0_1px_0_0_rgba(255,255,255,0.06)]">
           <Search size={16} className="text-zinc-500 shrink-0" />
           <input
             ref={input}
+            autoFocus
             value={q}
             onChange={e => setQ(e.target.value)}
             onKeyDown={e => {
@@ -95,11 +121,11 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: () => v
               else if (e.key === "ArrowUp") { e.preventDefault(); setAt(a => Math.max(0, a - 1)); }
               else if (e.key === "Enter") { e.preventDefault(); run(shown[at]); }
             }}
-            placeholder="Hole, step, tool or name"
+            placeholder="Search holes, tools, settings and help"
             aria-label="Go to"
             className="flex-1 bg-transparent py-3 text-[15px] text-zinc-100 placeholder:text-zinc-500 focus:outline-none touch:text-base"
           />
-          <kbd className="text-[10px] text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5 touch:hidden">Esc</kbd>
+          <kbd className="text-[10px] text-zinc-500 border border-white/[0.12] rounded px-1.5 py-0.5 touch:hidden">Esc</kbd>
         </div>
         <ul ref={list} className="max-h-[50vh] overflow-y-auto py-1" role="listbox" aria-label="Results">
           {shown.length === 0 && <li className="px-4 py-3 text-sm text-zinc-500">Nothing found</li>}

@@ -1,39 +1,49 @@
 // Turning the SVG pages into pictures and PDFs, in the browser: an SVG is drawn into a canvas at
 // the wanted resolution, and a PDF is written with one full-page JPEG per page (no library needed).
 
-/** Fonts for exported pictures: an SVG drawn as an image can't use the page's web fonts, so the
- * map's fonts are fetched once and embedded (if they can't be, the usual fallbacks are used). */
-let fontCss: Promise<string> | null = null;
+import { fontCssUrl, fontsInSvg } from "./fontLoad";
+import { fitSvgString } from "./fitText";
+
 const FONT_CSS_URL = "https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Oswald:wght@500;700&family=Bitter:wght@700&family=Kaushan+Script&display=swap";
 
-export const embeddedFonts = () => {
-  if (!fontCss) {
-    fontCss = (async () => {
-      try {
-        const css = await (await fetch(FONT_CSS_URL)).text();
-        // Only the Latin files (one per family and weight)
-        const blocks = css.split("/* ").filter(b => b.startsWith("latin */"));
-        const out: string[] = [];
-        for (const b of blocks) {
-          const url = /url\((https:[^)]+\.woff2)\)/.exec(b)?.[1];
-          if (!url) continue;
-          const buf = new Uint8Array(await (await fetch(url)).arrayBuffer());
-          let bin = "";
-          for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-          out.push(b.slice(b.indexOf("@font-face")).replace(url, `data:font/woff2;base64,${btoa(bin)}`));
-        }
-        return out.join("\n");
-      } catch {
-        return "";
-      }
-    })();
+/** A stylesheet's fonts as data (only its Latin files, one per family and weight). */
+const inlineFonts = async (cssUrl: string) => {
+  const res = await fetch(cssUrl);
+  if (!res.ok) throw new Error("No such font.");
+  const css = await res.text();
+  const split = css.split("/* ");
+  const blocks = split.some(b => b.startsWith("latin */")) ? split.filter(b => b.startsWith("latin */")) : css.split("@font-face").slice(1).map(b => `@font-face${b}`);
+  const out: string[] = [];
+  for (const b of blocks) {
+    const url = /url\((https:[^)]+\.woff2)\)/.exec(b)?.[1];
+    if (!url) continue;
+    const buf = new Uint8Array(await (await fetch(url)).arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+    out.push(b.slice(b.indexOf("@font-face")).replace(url, `data:font/woff2;base64,${btoa(bin)}`));
   }
-  return fontCss;
+  return out.join("\n");
+};
+
+/** Fonts for exported pictures: an SVG drawn as an image can't use the page's web fonts, so the
+ * map's fonts are fetched once and embedded, and with them any Google font a tee sign or hole
+ * page was set in (bold too where it has one; if one can't be had, the usual fallbacks are used). */
+let fontCss: Promise<string> | null = null;
+const moreCss = new Map<string, Promise<string>>();
+export const embeddedFonts = (more: string[] = []) => {
+  if (!fontCss) fontCss = inlineFonts(FONT_CSS_URL).catch(() => "");
+  const extra = more.map(f => {
+    if (!moreCss.has(f)) moreCss.set(f, inlineFonts(fontCssUrl(f)).catch(() => inlineFonts(fontCssUrl(f, false))).catch(() => ""));
+    return moreCss.get(f)!;
+  });
+  return Promise.all([fontCss, ...extra]).then(all => all.filter(Boolean).join("\n"));
 };
 
 /** An SVG document (with its viewBox in points) drawn at `dpi` into a canvas. */
 export const svgToCanvas = async (svg: string, widthPt: number, heightPt: number, dpi = 150) => {
-  const css = await embeddedFonts();
+  // (lettering kept inside its panels, measured in the fonts it prints in)
+  svg = await fitSvgString(svg);
+  const css = await embeddedFonts(fontsInSvg(svg));
   const withFonts = css ? svg.replace(/(<svg[^>]*>)/, `$1<style>${css}</style>`) : svg;
   const w = Math.round((widthPt / 72) * dpi), h = Math.round((heightPt / 72) * dpi);
   const sized = withFonts.replace(/<svg([^>]*?) width="[^"]*" height="[^"]*"/, `<svg$1 width="${w}" height="${h}"`);

@@ -2,8 +2,10 @@
 // as a file, the courses opened before), the steps in the middle, and on the right the search,
 // then the course's state and the account (on a server) or the demo note. 2D/3D and the
 // light live with the map's own controls.
+import { ProblemsCount } from "./SidePanel";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, FilePlus, FolderOpen, HelpCircle, Save, Search, Trash2 } from "lucide-react";
+import { openGettingStarted, useStart } from "./GettingStarted";
+import { ChevronDown, FilePlus, FolderOpen, HelpCircle, ListChecks, Save, Search, Trash2, MapPin, Route, Palette, Download } from "lucide-react";
 import { STEPS } from "./SidePanel";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { deleteRecent, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../state/files";
@@ -11,19 +13,27 @@ import type { PlanMeta } from "../lib/storage";
 import { AccountMenu, goHome } from "../auth/AccountMenu";
 import { useAllowed } from "../auth/perms";
 import { DemoNote } from "./DemoNote";
-import { SITE_TOKEN } from "../auth/PublicSite";
+import { CoursePageButton, SITE_TOKEN } from "../auth/PublicSite";
 import { SERVER } from "../auth/api";
 import { FOCUS, MENU_HEAD, MenuRow, POPOVER } from "./ui";
 
 const Logo = ({ size = 26 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden>
-    <circle cx="32" cy="32" r="30" fill="#f97316" />
-    <path d="M17 24h30M19 24l4 17h18l4-17M32 10v44M24 41l8 9 8-9" stroke="#18181b" strokeWidth="4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
+  // (the badge: a fairway through the woods at sunrise)
+  <img src={`${import.meta.env.BASE_URL}logo-128.png`} width={size} height={size} alt="" aria-hidden className="block rounded-full shrink-0 drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]" draggable={false} />
 );
 
 /** The icon buttons along the bar. */
-export const BAR_BUTTON = `p-2 rounded-lg text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 ${FOCUS}`;
+export const BAR_BUTTON = `p-2 rounded-full text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.08] ${FOCUS}`;
+/** Each step's mark on the steps bar. */
+const STEP_ICONS = { site: MapPin, design: Route, map: Palette, export: Download } as const;
+
+/** Getting started, at the top: opens the list (lit while it's open). */
+function StartButton() {
+  const open = useStart(s => s.open);
+  return (
+    <button onClick={() => (open ? useStart.getState().set({ open: false }) : openGettingStarted())} className={`${BAR_BUTTON} ${open ? "!text-orange-300" : ""}`} aria-label="Getting started" aria-pressed={open} title="Getting started: the main things to do" data-testid="start-button"><ListChecks size={18} /></button>
+  );
+}
 
 export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => void }) {
   const name = useCourse(s => s.doc.name);
@@ -48,18 +58,19 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
   }, [menu]);
 
   return (
-    <header className="h-12 shrink-0 bg-zinc-950 flex items-center gap-2 px-3 z-30 shadow-[0_1px_0_0_rgba(255,255,255,0.06)]">
-      {SERVER ? <button className={`shrink-0 rounded-full ${FOCUS}`} aria-label="Courses" title="Courses" onClick={goHome} data-testid="logo-home"><Logo /></button> : <Logo />}
+    <header className="glass relative h-[50px] shrink-0 mx-2.5 mt-2.5 rounded-[22px] flex items-center gap-2 pl-2.5 pr-2 z-30">
+      {/* (a course page's visitor: back to the page, not to a course list they don't have) */}
+      {SITE_TOKEN ? <><CoursePageButton /><Logo /></> : SERVER ? <button className={`shrink-0 rounded-full ${FOCUS}`} aria-label="Courses" title="Courses" onClick={goHome} data-testid="logo-home"><Logo /></button> : <Logo />}
       <div className="flex items-center min-w-0" ref={menuRef}>
         {readOnly ? <span className="text-zinc-50 font-semibold text-sm px-1.5 py-1 max-w-[230px] truncate" data-testid="course-title">{name}</span> : <input
           aria-label="Course name"
-          className={`bg-transparent text-zinc-50 font-semibold text-sm px-1.5 py-1 rounded-md hover:bg-zinc-900 focus:bg-zinc-900 w-[150px] xl:w-[220px] truncate ${FOCUS}`}
+          className={`bg-transparent text-zinc-50 font-semibold text-sm px-1.5 py-1 rounded-lg hover:bg-white/[0.07] focus:bg-white/[0.07] w-[150px] xl:w-[220px] truncate ${FOCUS}`}
           value={name}
           onChange={e => changeDoc(() => ({ name: e.target.value }), false)}
           onBlur={() => useCourse.getState().commit()}
         />}
         {!SITE_TOKEN && <div className="relative">
-          <button className={`p-1 rounded-md text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 ${FOCUS}`} onClick={() => setMenu(m => !m)} aria-label="Course menu" title="New, open, save as a file…" aria-haspopup="menu" aria-expanded={menu} data-testid="file-menu">
+          <button className={`p-1 rounded-lg text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.07] ${FOCUS}`} onClick={() => setMenu(m => !m)} aria-label="Course menu" title="New, open, save as a file…" aria-haspopup="menu" aria-expanded={menu} data-testid="file-menu">
             <ChevronDown size={14} />
           </button>
           {menu && (
@@ -70,7 +81,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
               <div className={MENU_HEAD}>{SERVER ? "Courses" : "Recent courses"}</div>
               {recent.length === 0 && <div className="px-3 py-1.5 text-xs text-zinc-500">None yet.</div>}
               {recent.map(r => (
-                <div key={r.id} className="flex items-center hover:bg-zinc-800" data-testid="recent-course">
+                <div key={r.id} className="flex items-center hover:bg-white/[0.09]" data-testid="recent-course">
                   <button className={`flex-1 text-left px-3 py-1.5 text-sm text-zinc-200 ${FOCUS}`} onClick={() => { setMenu(false); void openRecent(r.id); }}>
                     {r.name}
                     <span className="block text-[11px] text-zinc-500">{r.holes} hole{r.holes === 1 ? "" : "s"} · {new Date(r.updatedAt).toLocaleDateString()}</span>
@@ -85,7 +96,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
       </div>
 
       {readOnly ? <div className="flex-1" /> : <nav aria-label="Steps" className="flex-1 min-w-0 flex justify-center overflow-hidden">
-        <ol className="flex items-center gap-0.5">
+        <ol className="flex items-center gap-0.5 p-[3px] rounded-full bg-white/[0.06]">
           {STEPS.map((s, i) => {
             const on = ed.step === s.id;
             return (
@@ -93,9 +104,10 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
                 <button
                   onClick={() => ed.set({ step: s.id, tool: "select" })}
                   aria-current={on ? "step" : undefined}
-                  className={`flex items-center gap-1.5 px-2 xl:px-2.5 py-1 rounded-md text-[13px] transition-colors ${FOCUS} ${on ? "bg-zinc-800 text-zinc-50 font-semibold" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"}`}
+                  className={`flex items-center gap-1.5 px-2.5 xl:px-3 py-[5px] rounded-full text-[13px] transition-colors ${FOCUS} ${on ? "bg-white/[0.16] text-zinc-50 font-semibold shadow-[inset_0_0.5px_0_rgba(255,255,255,0.25)]" : "text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.06]"}`}
                 >
-                  <span className={`w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center ${on ? "bg-orange-500 text-zinc-950" : "bg-zinc-800 text-zinc-400"}`}>{i + 1}</span>
+                  {(() => { const Icon = STEP_ICONS[s.id]; return <Icon size={14} strokeWidth={2} className={on ? "text-orange-300" : ""} aria-hidden />; })()}
+                  <span className="sr-only">{i + 1} </span>
                   {s.label}
                 </button>
               </li>
@@ -105,13 +117,11 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
       </nav>}
 
       <div className="flex items-center gap-1">
+        {ed.step === "design" && !readOnly && <ProblemsCount />}
         <button onClick={onGoTo} className={BAR_BUTTON} aria-label="Go to" title="Go to (Ctrl+K)" data-testid="goto-button"><Search size={18} /></button>
-        {SERVER ? <AccountMenu onHelp={onHelp} /> : (
-          <>
-            <button onClick={onHelp} className={BAR_BUTTON} aria-label="Keyboard shortcuts and help" title="Shortcuts and help (?)"><HelpCircle size={18} /></button>
-            <DemoNote />
-          </>
-        )}
+        {!readOnly && <StartButton />}
+        <button onClick={onHelp} className={BAR_BUTTON} aria-label="Help guide" title="Help guide (?)" data-testid="help-button"><HelpCircle size={18} /></button>
+        {SERVER ? <AccountMenu onHelp={onHelp} /> : <DemoNote />}
       </div>
     </header>
   );

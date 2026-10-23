@@ -89,6 +89,15 @@ float gNoise( vec2 p ) {
 }
 `;
 
+/** The blades' shader head (their maps, the ground's height, noise), for the tufts to share. */
+export const GRASS_VERT_HEAD = VERT_HEAD;
+
+/** Where the tufts get the same maps as the blades (kept up to date with them). */
+export type GrassUniformSource = {
+  uniformsFor(far: number, owner: object): Record<string, THREE.IUniform>;
+  releaseUniforms(owner: object): void;
+};
+
 const VERT_BODY = /* glsl */ `
   vec2 wp = uOrigin + aSpot;
   vec2 j = vec2( gHash( wp * 0.917 + 1.3 ), gHash( wp * 1.731 + 7.1 ) );
@@ -192,7 +201,7 @@ const patchGeometry = (half: number, perSqFt: number) => {
 
 type Patch = { mesh: THREE.Mesh; mat: THREE.MeshLambertMaterial; span: number; count: number; uniforms: Record<string, THREE.IUniform> };
 
-export class Grass {
+export class Grass implements GrassUniformSource {
   readonly group = new THREE.Group();
   private patches: Patch[] = [];
   private quality: GrassQuality = 0;
@@ -207,6 +216,43 @@ export class Grass {
   private photoMix = 0;
   /** Blades drawn in the last frame (both patches), for tests and the frame-rate guard. */
   blades = 0;
+  /** Uniforms lent out (the tufts'), by who has them. */
+  private lent = new Map<object, Record<string, THREE.IUniform>[]>();
+  private allUniforms() {
+    return [...this.patches.map(p => p.uniforms), ...[...this.lent.values()].flat()];
+  }
+
+  /** A set of the blades' uniforms (the same maps, kept up to date), thinning out toward `far`. */
+  uniformsFor(far: number, owner: object) {
+    const u = this.uniformSet(30, far, 0, 0);
+    this.lent.set(owner, [...(this.lent.get(owner) ?? []), u]);
+    return u;
+  }
+  releaseUniforms(owner: object) {
+    this.lent.delete(owner);
+  }
+  private uniformSet(near: number, far: number, hole: number, width: number): Record<string, THREE.IUniform> {
+    return {
+      uOrigin: { value: new THREE.Vector2() },
+      uField: { value: this.field },
+      uTint: { value: this.tint },
+      uRect: { value: this.rect },
+      uHeights: { value: this.heights },
+      uTerrain: { value: this.terrain },
+      uCells: { value: this.cells },
+      uPhoto: { value: this.photo },
+      uPhotoRect: { value: this.photoRect },
+      uPhotoMix: { value: this.photoMix },
+      uEye: { value: new THREE.Vector3() },
+      uNear: { value: near },
+      uFar: { value: far },
+      uHole: { value: hole },
+      uWidth: { value: width },
+      uDensity: { value: 1 },
+      uTime: { value: 0 },
+      uWind: { value: 0.12 }
+    };
+  }
 
   constructor() {
     this.group.name = "grass";
@@ -236,9 +282,9 @@ export class Grass {
     this.field = make(maps.field, false);
     this.tint = make(maps.color, true);
     this.rect.set(maps.rect.x, maps.rect.y, maps.rect.width, maps.rect.height);
-    for (const p of this.patches) {
-      p.uniforms.uField.value = this.field;
-      p.uniforms.uTint.value = this.tint;
+    for (const u of this.allUniforms()) {
+      u.uField.value = this.field;
+      u.uTint.value = this.tint;
     }
   }
 
@@ -251,7 +297,7 @@ export class Grass {
     this.heights = tex;
     this.terrain.set(t.x, t.y, t.width, t.height);
     this.cells.set(t.cols - 1, t.rows - 1);
-    for (const p of this.patches) p.uniforms.uHeights.value = tex;
+    for (const u of this.allUniforms()) u.uHeights.value = tex;
   }
 
   /** The aerial photo the blades take their color from (`mix` 0: the course's colors only). */
@@ -259,9 +305,9 @@ export class Grass {
     this.photo = photo;
     this.photoRect.set(rect.x, rect.y, rect.width, rect.height);
     this.photoMix = photo ? mix : 0;
-    for (const p of this.patches) {
-      p.uniforms.uPhoto.value = photo;
-      p.uniforms.uPhotoMix.value = this.photoMix;
+    for (const u of this.allUniforms()) {
+      u.uPhoto.value = photo;
+      u.uPhotoMix.value = this.photoMix;
     }
   }
 
@@ -276,26 +322,7 @@ export class Grass {
     const lv = LEVELS[this.quality];
     const add = (half: number, perSqFt: number, width: number, near: number, far: number, hole: number) => {
       const { geo, span, count } = patchGeometry(half, perSqFt);
-      const uniforms: Record<string, THREE.IUniform> = {
-        uOrigin: { value: new THREE.Vector2() },
-        uField: { value: this.field },
-        uTint: { value: this.tint },
-        uRect: { value: this.rect },
-        uHeights: { value: this.heights },
-        uTerrain: { value: this.terrain },
-        uCells: { value: this.cells },
-        uPhoto: { value: this.photo },
-        uPhotoRect: { value: this.photoRect },
-        uPhotoMix: { value: this.photoMix },
-        uEye: { value: new THREE.Vector3() },
-        uNear: { value: near },
-        uFar: { value: far },
-        uHole: { value: hole },
-        uWidth: { value: width },
-        uDensity: { value: 1 },
-        uTime: { value: 0 },
-        uWind: { value: 0.12 }
-      };
+      const uniforms = this.uniformSet(near, far, hole, width);
       const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide });
       mat.onBeforeCompile = shader => {
         Object.assign(shader.uniforms, uniforms);

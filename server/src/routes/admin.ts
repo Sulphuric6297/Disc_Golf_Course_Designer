@@ -23,13 +23,13 @@ export async function adminRoutes(app: FastifyInstance, { sql }: Ctx) {
   app.get("/api/admin/users", async req => {
     needAdmin(req);
     const rows = await sql`
-      select u.id, u.username, u.display_name, u.is_admin, u.disabled, u.totp_enabled, u.created_at,
+      select u.id, u.username, u.display_name, u.is_admin, u.disabled, u.totp_enabled, u.mfa_required, u.created_at,
         u.locked_until > now() as locked,
         (select max(last_seen_at) from sessions s where s.user_id = u.id and s.stage = 'full') as last_seen_at
       from users u order by lower(u.username)`;
     return rows.map(r => ({
       id: r.id, username: r.username, displayName: r.display_name, isAdmin: r.is_admin, disabled: r.disabled,
-      totpEnabled: r.totp_enabled, locked: !!r.locked, createdAt: r.created_at, lastSeenAt: r.last_seen_at
+      totpEnabled: r.totp_enabled, mfaRequired: r.mfa_required, locked: !!r.locked, createdAt: r.created_at, lastSeenAt: r.last_seen_at
     }));
   });
 
@@ -64,7 +64,11 @@ export async function adminRoutes(app: FastifyInstance, { sql }: Ctx) {
   app.post<Id>("/api/admin/users/:id", async req => {
     const { id } = parse(uuid, req.params);
     const u = await other(req, id);
-    const b = parse(z.object({ disabled: z.boolean().optional(), isAdmin: z.boolean().optional() }), req.body);
+    const b = parse(z.object({ disabled: z.boolean().optional(), isAdmin: z.boolean().optional(), mfaRequired: z.boolean().optional() }), req.body);
+    if (b.mfaRequired !== undefined) {
+      await sql`update users set mfa_required = ${b.mfaRequired} where id = ${id}`;
+      await audit(sql, req, b.mfaRequired ? "user.mfa-required" : "user.mfa-optional", { username: u.username });
+    }
     if (b.disabled !== undefined) {
       await sql`update users set disabled = ${b.disabled} where id = ${id}`;
       if (b.disabled) await sql`delete from sessions where user_id = ${id}`;

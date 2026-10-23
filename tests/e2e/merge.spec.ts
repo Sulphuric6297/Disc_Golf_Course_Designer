@@ -67,7 +67,7 @@ test("what a draft changes, counted", () => {
 test("a version's name from what changed; the holes a draft changes (a moved basket counts)", () => {
   const before = doc([hole("a"), hole("b")], [{ id: "t", type: "tee", holeId: "a", x: 0 }, { id: "k", type: "basket", holeId: "b", x: 0 }]);
   const after = doc([hole("a"), hole("b"), hole("c")], [{ id: "t", type: "tee", holeId: "a", x: 0 }, { id: "k", type: "basket", holeId: "b", x: 9 }, { id: "z", type: "tree" }]);
-  expect(describeChanges(before, after)).toBe("Holes: 1 added · Features: 1 added");
+  expect(describeChanges(before, after)).toBe("Holes: 1 added · On the map: 1 added");
   expect([...holesChanged(before, after)].sort()).toEqual(["b", "c"]);
   expect(describeChanges(before, before)).toBe("No changes");
 });

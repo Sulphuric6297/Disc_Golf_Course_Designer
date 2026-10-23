@@ -27,7 +27,7 @@ export const defaultStyle = (): MapStyle => ({
   hillshade: true,
   throwLines: false,
   distances: false,
-  nextTee: true,
+  nextTee: false,
   circle: false,
   legend: false,
   holeTable: false,
@@ -97,7 +97,7 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
     site: { ...base.site, ...(raw.site ?? {}) },
     canvas: raw.canvas && raw.canvas.width > 0 && raw.canvas.height > 0 ? raw.canvas : base.canvas,
     // (Courses saved before there was a choice of basket marks keep the mark their style had)
-    style: forestStyle({ ...base.style, ...(raw.style && !raw.style.basketMark ? { basketMark: raw.style.theme === "forest" || !raw.style.theme ? "basket" : "target" } : {}), ...(raw.style ?? {}) }),
+    style: forestStyle({ ...base.style, ...(raw.style && !raw.style.basketMark ? { basketMark: raw.style.theme === "forest" || !raw.style.theme ? "basket" : "target" } : {}), ...(raw.style ?? {}), nextTee: false }),
     rules: { ...base.rules, ...(raw.rules ?? {}), prices: { ...base.rules.prices, ...(raw.rules?.prices ?? {}) } },
     holes: (raw.holes ?? []).map(h => {
       const stations = Array.isArray(h.fairwayStations) && h.fairwayStations.length > 0 && h.fairwayStations.every((v, i, a) => Number.isFinite(v) && v > 0 && v < 1 && (i === 0 || v > a[i - 1])) ? h.fairwayStations : undefined;
@@ -110,6 +110,8 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
     }),
     // (A structure needs its points and a kind this version knows)
     items: Array.isArray(raw.items) ? raw.items.filter(i => i.type !== "structure" || (Array.isArray(i.points) && i.kind in STRUCTURE_KINDS)).map(i => {
+      // (palms are gone: one placed before is a leafy tree now)
+      if (i.type === "tree" && (i.treeType as string) === "palm") return { ...i, treeType: "deciduous" as const };
       // (a line's OB stretches: pairs of numbers, or none; the holes it's OB for: holes on the course)
       if (i.type !== "line" || (i.obStretches === undefined && i.obHoles === undefined)) return i;
       const ok = Array.isArray(i.obStretches) ? mergeStretches(i.obStretches.filter(st => Array.isArray(st) && st.length === 2 && st.every(v => Number.isFinite(v)))) : [];
@@ -118,6 +120,7 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
     }) : [],
     layouts: raw.layouts?.length ? raw.layouts : base.layouts,
     terrainHeights: raw.terrainHeights ?? {},
+    terrainOriginal: raw.terrainOriginal && typeof raw.terrainOriginal === "object" ? raw.terrainOriginal : undefined,
     groundPaint: raw.groundPaint ?? {},
     lidar: raw.lidar && typeof raw.lidar.source === "string" && Array.isArray(raw.lidar.trees) ? raw.lidar : undefined,
     ignoredChecks: Array.isArray(raw.ignoredChecks) ? raw.ignoredChecks.filter(x => typeof x === "string") : undefined,
@@ -199,7 +202,7 @@ export const linePath = (l: Pick<LineItem, "kind" | "straight" | "points">, perS
 
 /** Where along a line it is out of bounds, as fractions of it as drawn (in order): its stretches,
  * or all of it. */
-export const obRanges = (l: Pick<LineItem, "obStretches">): [number, number][] =>
+export const obRanges = (l: { obStretches?: [number, number][] }): [number, number][] =>
   l.obStretches?.length ? l.obStretches.map(([a, b]): [number, number] => [Math.max(0, Math.min(a, b)), Math.min(1, Math.max(a, b))]).sort((x, y) => x[0] - y[0]) : [[0, 1]];
 /** Stretches put in order, overlapping ones joined and any next to nothing left out. */
 export const mergeStretches = (list: [number, number][]): [number, number][] => {
@@ -247,6 +250,26 @@ export const withoutStretch = (l: LineItem, a: number, b: number, newId = genera
   };
   return [piece(0, from, l.id), piece(to, 1, newId())].filter((x): x is LineItem => !!x);
 };
+/** Whether a path comes back to where it starts (an area's edge, a line drawn round in a ring). */
+export const isRing = (pts: P[]) => pts.length > 3 && dist(pts[0], pts[pts.length - 1]) < 3;
+/**
+ * A stretch round a ring from `from` to `to` (fractions round it), the way it was gone round:
+ * `dir` 1 forward (as drawn), -1 back; 0: the shorter way. Crossing where the ring starts, it is
+ * two stretches.
+ */
+export const ringStretch = (from: number, to: number, dir: number): [number, number][] => {
+  let d = dir;
+  if (!d) { const fwd = (((to - from) % 1) + 1) % 1; d = fwd <= 0.5 ? 1 : -1; }
+  const [a, b] = d > 0 ? [from, to] : [to, from];
+  return a <= b ? [[a, b]] : [[a, 1], [0, b]];
+};
+/** An area's edge as drawn, closed (back to where it starts): what its OB stretches run round. */
+export const areaRing = (a: Pick<AreaItem, "kind" | "straight" | "points">) => { const p = areaPath(a); return p.length ? [...p, p[0]] : p; };
+/** An area's red OB edge as drawn: all the way round, or each of its stretches. */
+export const areaObEdges = (a: Pick<AreaItem, "kind" | "straight" | "points" | "obStretches">): P[][] => {
+  const ring = areaRing(a);
+  return obRanges(a).map(([x, y]) => subPath(ring, x, y)).filter(p => p.length >= 2 && pathLength(p) > 0.5);
+};
 /** A line's out-of-bounds pieces as drawn: all of it, or each of its stretches. */
 export const obPieces = (l: Pick<LineItem, "kind" | "straight" | "points" | "obStretches">): P[][] => {
   const drawn = linePath(l);
@@ -281,6 +304,18 @@ export const obSides = (piece: P[], holeLines: P[][], reach = 300, one = false):
   }
   if (!sides.size) return [1, -1];
   return one ? [total[1] >= total[-1] ? 1 : -1] : [...sides];
+};
+/** OB and beyond: the side the holes are on (OB starts at the edge there and runs away from them),
+ * as chosen, or the app's guess. */
+export const beyondSides = (l: Pick<LineItem, "obToward">, piece: P[], holeLines: P[][], one = false): (1 | -1)[] =>
+  l.obToward ? [l.obToward === 1 ? -1 : 1] : obSides(piece, holeLines, 300, one);
+/** Which way a side of a line faces, roughly, by the compass (1: right of the way it was drawn). */
+export const sideCompass = (pts: P[], side: 1 | -1) => {
+  const a = pts[0], b = pts[pts.length - 1];
+  const dx = b.x - a.x, dy = b.y - a.y;
+  // (right of the way it runs, with y down the plan: turned +90°; north is up)
+  const rx = -dy * side, ry = dx * side;
+  return Math.abs(rx) > Math.abs(ry) ? (rx > 0 ? "east" : "west") : ry > 0 ? "south" : "north";
 };
 /** The hole running closest along a piece of line, if any is within `reach` ft. */
 export const closestHole = (piece: P[], holes: { id: string; line: P[] }[], reach = 300) => {

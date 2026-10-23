@@ -1,8 +1,8 @@
-import { test, expect, addHole, blankCourse, course, importSite, screenOf } from "./fixtures";
+import { test, expect, addHole, blankCourse, course, editorState, importSite, screenOf } from "./fixtures";
 import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
 import * as THREE from "three";
 import { create3dTree } from "../../src/three/trees";
-import { BASKET_NEAR, createBasket } from "../../src/three/courseModels";
+import { BASKET_LINKS, BASKET_NEAR, createBasket } from "../../src/three/courseModels";
 
 const grassSetting = (page: import("@playwright/test").Page) => page.evaluate(() => (window as any).__dgEditor().grass);
 
@@ -20,25 +20,32 @@ test("3D: a sky when tilted (none looking straight down), lit by the course's su
   await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
   await page.keyboard.press("Escape");
   await expect.poll(async () => (await scene(page)).sky).toBe(false);
-  // The default sun: from the north-west (the top left of the map), as on the painted map
+  // The default sun: the afternoon's, from the south-west (the sun never shines from the north here)
   const sun0 = (await scene(page)).sun;
   expect(sun0.x).toBeLessThan(0);
-  expect(sun0.z).toBeLessThan(0);
+  expect(sun0.z).toBeGreaterThan(0);
   expect(sun0.y).toBeGreaterThan(0.5);
   await page.keyboard.press("3");
   await expect.poll(async () => (await scene(page)).sky).toBe(true);
-  // Light settings from the map view: the sun moves to the east and drops, the scene brightens
+  // The light is the course map's: the View panel names it and goes there (no second set of sliders)
   await page.getByTestId("scene-button").click();
-  const panel = page.getByTestId("scene-panel");
+  await expect(page.getByTestId("scene-panel").getByLabel("Sun height")).toHaveCount(0);
+  await page.getByTestId("light-link").click();
+  await expect.poll(async () => (await editorState(page)).step).toBe("map");
+  const panel = page.getByTestId("look-part-light");
   const set = async (label: string, value: string) => {
     const slider = panel.getByLabel(label);
     await slider.fill(value);
     await slider.dispatchEvent("pointerup");
   };
-  await set("Sun from the", "90");
-  await expect.poll(async () => (await course(page)).style.sunAngle).toBe(90);
+  // Midday, the sun to the east and low, brighter: the 3D scene follows
+  await panel.getByRole("radio", { name: "Midday" }).click();
+  // (the slider runs along the sun's arc, east through south to west: -90 is the east)
+  await set("Sun from the", "-90");
+  await expect.poll(async () => (await course(page)).style.sunFrom).toBe(90);
   await set("Sun height", "20");
   await set("Brightness", "0.2");
+  await page.getByRole("button", { name: "2 Design" }).click();
   await expect.poll(async () => (await scene(page)).sun.x).toBeGreaterThan(0.8);
   const lit = await scene(page);
   expect(lit.sun.y).toBeLessThan(0.4);
@@ -62,7 +69,7 @@ test("3D grass: blades near the ground when tilted, none from straight above; th
   await expect.poll(() => grassSetting(page)).toBe(2);
   await page.keyboard.press("3");
   await page.getByTestId("scene-button").click();
-  await page.getByTestId("scene-panel").getByRole("radio", { name: "Low" }).click();
+  await page.getByTestId("scene-panel").getByRole("radio", { name: "Low", exact: true }).click();
   await expect.poll(() => grassSetting(page)).toBe(1);
   // Down low over the fairway: blades
   const look = (eye: number[], at: number[]) => page.evaluate(([e, a]) => {
@@ -77,7 +84,7 @@ test("3D grass: blades near the ground when tilted, none from straight above; th
   await expect.poll(async () => (await scene(page)).grass.quality).toBe(0);
   expect((await scene(page)).grass.visible).toBe(false);
   // Looking straight down: none (they couldn't be seen)
-  await page.getByTestId("scene-panel").getByRole("radio", { name: "Low" }).click();
+  await page.getByTestId("scene-panel").getByRole("radio", { name: "Low", exact: true }).click();
   await expect.poll(async () => (await scene(page)).grass.visible).toBe(true);
   await look([560, 200, 700], [560, 0, 700.01]);
   await expect.poll(async () => (await scene(page)).grass.visible).toBe(false);
@@ -368,7 +375,7 @@ test("the map view rests while the Design step's page covers it, and draws the c
   await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
   await page.keyboard.press("Escape");
   const info = () => page.evaluate(() => (window as any).__dgView.drawInfo() as { paused: boolean; frames: number });
-  await page.getByRole("button", { name: "5 Design" }).click();
+  await page.getByRole("button", { name: "3 Map" }).click();
   await expect.poll(async () => (await info()).paused).toBe(true);
   const before = (await info()).frames;
   // Changes to the course while it rests: nothing drawn
@@ -379,7 +386,7 @@ test("the map view rests while the Design step's page covers it, and draws the c
   await page.waitForTimeout(500);
   expect((await info()).frames).toBe(before);
   // Back on the map: drawing again
-  await page.getByRole("button", { name: "2 Holes" }).click();
+  await page.getByRole("button", { name: "2 Design" }).click();
   await expect.poll(async () => (await info()).paused).toBe(false);
   await expect.poll(async () => (await info()).frames).toBeGreaterThan(before);
 });
@@ -407,35 +414,38 @@ test("in 3D a basket close enough to see is drawn at its real size, not as a bad
   await expect(badge).toBeVisible();
 });
 
-plain("a basket in 3D is built like a real one: its band on top, chains hanging from under it to a collar over a wire tray, at real size (pure logic)", () => {
-  const lod = createBasket("#e11d48").children[0] as THREE.LOD;
-  const [near, far] = lod.levels;
+plain("a basket in 3D is built like a real one, at a championship basket's size: its band on top, chains of links hanging from under it to a collar over a wire tray (pure logic)", () => {
+  const lod = createBasket("#e11d48", "7").children[0] as THREE.LOD;
+  const [near, mid, far] = lod.levels;
   const part = (level: { object: THREE.Object3D }, name: string) => {
     const mesh = level.object.getObjectByName(name) as THREE.Mesh;
     mesh.geometry.computeBoundingBox();
     return { box: mesh.geometry.boundingBox!, mesh };
   };
-  // About 4.6 ft to the top of its band, which is about 2 ft across and painted the band color
+  // About 4.7 ft (143 cm) to the top of its cap; the band about 1.9 ft (57 cm) across, painted the band color
   const all = new THREE.Box3().setFromObject(near.object);
-  plainExpect(all.max.y).toBeGreaterThan(4.5);
+  plainExpect(all.max.y).toBeGreaterThan(4.55);
   plainExpect(all.max.y).toBeLessThan(4.8);
   const band = part(near, "band");
-  plainExpect(band.box.max.y).toBeCloseTo(4.6, 1);
-  plainExpect(band.box.max.x - band.box.min.x).toBeGreaterThan(2);
+  plainExpect(band.box.max.y).toBeCloseTo(4.62, 1);
+  plainExpect(band.box.max.x - band.box.min.x).toBeCloseTo(1.88, 1);
   plainExpect((band.mesh.material as THREE.MeshStandardMaterial).color.getHexString()).toBe("e11d48");
-  // The chains: solid links of chain (not lines), from under the band down to a collar just over the tray
+  // The chains: links (many small rings, not lines), from under the band down to a collar just over the tray
   const chains = part(near, "chains");
-  plainExpect(chains.mesh.isMesh).toBe(true);
-  plainExpect(chains.box.max.y).toBeCloseTo(4.3, 1);
+  plainExpect(chains.mesh.geometry.getAttribute("position").count).toBeGreaterThan(20000);
+  plainExpect(chains.box.max.y).toBeGreaterThan(4.35);
+  plainExpect(chains.box.max.y).toBeLessThan(4.62);
   plainExpect(chains.box.min.y).toBeGreaterThan(2.7);
   plainExpect(chains.box.min.y).toBeLessThan(3);
-  // The tray: its rim about 2.6 ft up and 2.2 ft across, its bottom about 1.85 ft up
+  // The tray: its rim about 2.66 ft (81 cm) up and 2.2 ft (67 cm) across, its wire bottom about 1.88 ft up
   const wires = part(near, "wires");
   plainExpect(wires.box.max.x - wires.box.min.x).toBeGreaterThan(2.2);
   plainExpect(wires.box.max.x - wires.box.min.x).toBeLessThan(2.4);
-  plainExpect(part(near, "tray-bottom").box.max.y).toBeCloseTo(1.87, 1);
-  // Farther off, a lighter one (no thin wires to glitter)
-  plainExpect(lod.levels[1].distance).toBe(BASKET_NEAR);
+  plainExpect(wires.box.min.y).toBeCloseTo(1.86, 1);
+  // Farther off, lighter ones: smooth strands, then a see-through cone and no thin wires to glitter
+  plainExpect(mid.distance).toBe(BASKET_LINKS);
+  plainExpect(part(mid, "chains").mesh.geometry.getAttribute("position").count).toBeLessThan(chains.mesh.geometry.getAttribute("position").count / 4);
+  plainExpect(far.distance).toBe(BASKET_NEAR);
   plainExpect(far.object.getObjectByName("wires")).toBeUndefined();
 });
 
@@ -443,7 +453,10 @@ plain("a placed pine is darker and bluer than a broadleaf tree of the same color
   const leaves = (treeType: string) => {
     const g = create3dTree({ id: "t1", type: "tree", x: 0, y: 0, radius: 10, height: 40, color: "#4f8a3c", treeType } as any);
     const hsl = { h: 0, s: 0, l: 0 };
-    (g.children[1] as any).material.color.getHSL(hsl);
+    // (its leaves: the two-sided material, in its nearest version)
+    let leaf: any = null;
+    g.traverse((o: any) => { if (!leaf && o.isMesh && o.material?.side === 2) leaf = o; });
+    leaf.material.color.getHSL(hsl);
     return hsl;
   };
   const pine = leaves("conifer"), broad = leaves("deciduous");

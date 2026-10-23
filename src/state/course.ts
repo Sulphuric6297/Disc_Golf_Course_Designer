@@ -1,6 +1,6 @@
 // The open course (the saved document) with undo and redo, and the editor's own state.
 import { create } from "zustand";
-import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, PinPosition, DrawShape, StructureKind } from "../types";
+import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, DrawShape, StructureKind } from "../types";
 import { byNumber, createEmptyCourse, holeNumber, holeNumbers } from "../lib/course";
 
 const HISTORY = 120;
@@ -113,7 +113,9 @@ export const setHoleNumber = (holeId: string, n: number, also: number[] = []) =>
 
 // --- Editor state (not saved with the course) ---
 
-export type Step = "site" | "holes" | "features" | "review" | "design" | "export";
+/** The steps: the site, the course drawn on it (holes, features and their checks), the map's look
+ * (and the signs and cards), and what goes out (downloads, the public link). */
+export type Step = "site" | "design" | "map" | "export";
 
 type EditorStore = {
   step: Step;
@@ -133,16 +135,29 @@ type EditorStore = {
   lidarBusy: number | null;
   /** Drawing a patch of drawn trees inside this woods area (its id). */
   patchFor: string | null;
+  /** The Tee tool placing a new hole's tee that plays to this basket (one already there). */
+  holeToBasket: string | null;
+  /** The brush (the ground tool and painting areas): radius (ft), strength (1 to 10), and what it does to the ground. */
+  brushSize: number;
+  brushStrength: number;
+  groundBrush: "raise" | "lower" | "flatten" | "smooth" | "restore";
+  /** Drawing a section of underbrush (not of trees) for `patchFor`. */
+  patchBrush: boolean;
   /** What is picked on the Design page's course map: "title", "legend"... or "text:ID", "image:ID". */
   designSel: string | null;
   /** The hole whose tee sign or hole page the Design step shows. */
   designHole: string | null;
+  /** Tee sign changes go to every hole, or to the shown hole alone. */
+  signScope: "all" | "hole";
+  /** The checks (problems on the course) open over the map. */
+  problemsOpen: boolean;
+  /** The Map step's tab: what's shared by every download, or one of them (its page shown). */
+  designTab: "general" | "map" | "sign" | "page" | "scorecard";
   /** The hole being worked on (its parts get handles; new tees, baskets and mandos join it). */
   activeHoleId: string | null;
   view: "2d" | "3d";
   /** Options for the tools. */
   teeLevel: TeeLevel;
-  pin: PinPosition;
   areaKind: AreaKind;
   lineKind: LineKind;
   /** What the Build tool draws: a bridge, boardwalk, stairs, wall, building, shelter or deck. */
@@ -155,6 +170,8 @@ type EditorStore = {
   treeKind: TreeKind;
   /** Looking from a tee down its hole (the hole's id), or flying over it. */
   teeView: string | null;
+  /** The tee the tee view stands on (another skill level's), unset: the layout's. */
+  teeViewTee?: string | null;
   flyover: boolean;
   /** A flyover still waiting for its pictures (the loading screen shows): what it waits on. */
   flyLoading: "map" | "detail" | "textures" | null;
@@ -169,6 +186,8 @@ type EditorStore = {
   grass: "auto" | 0 | 1 | 2 | 3;
   /** Grass sways in the wind (from a tee and in flyovers). */
   wind: boolean;
+  /** The stumps of the measured trees cut down, everywhere (not only on the hole picked). */
+  stumps: boolean;
   /** The ground from a tee, in flyovers and videos: the painted map (the Design look) or the photo. */
   flyLook: "painted" | "photo";
   set: (patch: Partial<Omit<EditorStore, "set">>) => void;
@@ -195,12 +214,19 @@ export const useEditor = create<EditorStore>()(set => ({
   pickCut: false,
   lidarBusy: null,
   patchFor: null,
+  holeToBasket: null,
+  brushSize: 25,
+  brushStrength: 5,
+  groundBrush: "raise",
+  patchBrush: false,
   designSel: null,
+  signScope: "all",
   designHole: null,
+  problemsOpen: false,
+  designTab: "map",
   activeHoleId: null,
   view: "2d",
   teeLevel: "blue",
-  pin: "A",
   areaKind: "ob",
   lineKind: "ob",
   structureKind: "bridge",
@@ -218,6 +244,7 @@ export const useEditor = create<EditorStore>()(set => ({
   groundDetail: true,
   grass: "auto",
   wind: true,
+  stumps: false,
   flyLook: "painted",
   ...(typeof localStorage !== "undefined" ? savedDisplay() : {}),
   set: patch => {

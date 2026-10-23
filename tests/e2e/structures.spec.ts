@@ -67,11 +67,11 @@ const MATERIALS: Record<StructureKind, string[]> = {
 
 test("a boardwalk, stairs and a wall drawn from the Features list, click by click", async ({ page }) => {
   await blankCourse(page);
-  await page.getByRole("button", { name: "3 Features" }).click();
-  await expect(page.getByTestId("feature-structures")).toBeVisible();
+  await page.getByRole("button", { name: "2 Design" }).click();
   let x = 250;
   for (const kind of ["boardwalk", "stairs", "wall"] as const) {
-    await page.getByTestId(`feature-structure-${kind}`).click();
+    await page.keyboard.press("s");
+    await page.getByTestId(`structure-kind-${kind}`).click();
     await expect.poll(async () => (await editorState(page)).tool).toBe("draw-structure");
     await clickPlan(page, x, 400);
     await clickPlan(page, x + 40, 470, { double: true });
@@ -88,10 +88,11 @@ test("a boardwalk, stairs and a wall drawn from the Features list, click by clic
 
 test("a building, a shelter and a deck dragged out as rectangles; kind and roof in the inspector", async ({ page }) => {
   await blankCourse(page);
-  await page.getByRole("button", { name: "3 Features" }).click();
+  await page.getByRole("button", { name: "2 Design" }).click();
   let x = 250;
   for (const kind of ["building", "shelter", "deck"] as const) {
-    await page.getByTestId(`feature-structure-${kind}`).click();
+    await page.keyboard.press("s");
+    await page.getByTestId(`structure-kind-${kind}`).click();
     await page.getByTestId("draw-shape-box").click();
     await drag(page, await screenOf(page, x, 400), await screenOf(page, x + 60, 440), 3);
     await expect.poll(async () => (await structures(page)).map((s: any) => s.kind)).toContain(kind);
@@ -145,8 +146,9 @@ test("reshaping a building with its corner and mid handles, moving it, deleting 
 test("buildings like the Security Camera Planner's: looks, roofs, colors, turning, height; a shelter as a gazebo", async ({ page }) => {
   await blankCourse(page);
   await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 300, minY: 300, maxX: 700, maxY: 600 }, { animate: false }));
-  await page.getByRole("button", { name: "3 Features" }).click();
-  await page.getByTestId("feature-structure-building").click();
+  await page.getByRole("button", { name: "2 Design" }).click();
+  await page.keyboard.press("s");
+  await page.getByTestId("structure-kind-building").click();
   await clickPlan(page, 400, 400);
   await clickPlan(page, 480, 450);
   await expect.poll(async () => (await structures(page)).length).toBe(1);
@@ -300,17 +302,18 @@ plain("a roof's lit face follows the map's sun", () => {
   const doc = builtCourse();
   doc.items = doc.items.filter(i => i.type !== "structure" || i.kind === "building");
   doc.style.theme = "illustrated";
-  const faces = (sunAngle: number) => {
-    doc.style.sunAngle = sunAngle;
+  const faces = (sunFrom: number) => {
+    doc.style.sunFrom = sunFrom;
     const svg = renderPoster(doc, { contours: null, hillshade: null }).svg;
     const roof = svg.slice(svg.indexOf('data-structure="building"'));
     return [...roof.matchAll(/<path d="[^"]+Z" fill="(#[0-9a-f]{6})" stroke=/g)].slice(0, 2).map(m => m[1]);
   };
-  // Sun from the top of the page (north): the north face is the lighter
-  const north = faces(0), south = faces(180);
-  plainExpect(north).toHaveLength(2);
-  plainExpect(north[0]).not.toBe(north[1]);
-  plainExpect(south).toEqual([north[1], north[0]]);
+  // The sun from the south: the south face is the lighter; low in the north-east (a summer morning,
+  // as far north as the sun goes here): the north face is (the sun never shines from due north)
+  const lum = (h: string) => parseInt(h.slice(1, 3), 16) + parseInt(h.slice(3, 5), 16) + parseInt(h.slice(5, 7), 16);
+  const fromSouth = faces(180), fromNorthEast = faces(60);
+  plainExpect(fromSouth).toHaveLength(2);
+  plainExpect(lum(fromSouth[0]) > lum(fromSouth[1])).not.toBe(lum(fromNorthEast[0]) > lum(fromNorthEast[1]));
 });
 
 plain("older courses still load and draw: the building area, the bridge and shelter pictograms; a structure with defaults", () => {

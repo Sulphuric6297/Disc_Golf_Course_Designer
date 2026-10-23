@@ -6,7 +6,7 @@ import QRCode from "qrcode";
 import { z } from "zod";
 import type { Ctx } from "../app.js";
 import { backupCodeHash, base32, checkTotp, newBackupCode, open, sameText, seal, sha256, totpUri } from "../crypto.js";
-import { ApiError, audit, code, displayName, need, parse, password, username } from "../http.js";
+import { ApiError, audit, code, displayName, need, needSetup, parse, password, username } from "../http.js";
 import { endSession, startSession } from "../sessions.js";
 
 /** Wrong passwords before an account rests, and for how long. */
@@ -50,14 +50,15 @@ export async function authRoutes(app: FastifyInstance, { sql, cfg, setup, authLi
     });
     setup.done();
     await audit(sql, req, "setup.admin-created", { username: b.username }, user.id);
-    await startSession(sql, cfg, req, reply, user.id, "mfa-setup");
-    return { stage: "mfa-setup" };
+    // (2FA is the admin's own choice, as for everyone: set up later from the account)
+    await startSession(sql, cfg, req, reply, user.id, "full");
+    return { stage: "full" };
   });
 
   // --- Password
   app.post("/api/login", strict, async (req, reply) => {
     const b = parse(z.object({ username: z.string().trim().max(64), password: z.string().max(256) }), req.body);
-    const [u] = await sql`select id, password_hash, totp_enabled, disabled, locked_until from users where lower(username) = lower(${b.username})`;
+    const [u] = await sql`select id, password_hash, totp_enabled, mfa_required, disabled, locked_until from users where lower(username) = lower(${b.username})`;
     const wrong = new ApiError(401, "Wrong username or password");
     if (!u) { await verify(dummyHash, b.password).catch(() => false); throw wrong; }
     const ok = await verify(u.password_hash, b.password).catch(() => false);
@@ -72,14 +73,15 @@ export async function authRoutes(app: FastifyInstance, { sql, cfg, setup, authLi
     }
     if (u.disabled) { await audit(sql, req, "login.disabled", {}, u.id); throw wrong; }
     await sql`update users set failed_logins = 0, locked_until = null where id = ${u.id}`;
-    const stage = u.totp_enabled ? "mfa" : "mfa-setup";
+    // (a code when it's on; set up first when an admin requires it; otherwise straight in)
+    const stage = u.totp_enabled ? "mfa" : u.mfa_required ? "mfa-setup" : "full";
     await startSession(sql, cfg, req, reply, u.id, stage);
     return { stage };
   });
 
   // --- 2FA set up: a new secret (as a QR code), then a code from the app turns it on
   app.post("/api/mfa/enroll", strict, async req => {
-    const a = need(req, "mfa-setup");
+    const a = needSetup(req);
     const secret = randomBytes(20);
     // (a new secret: codes used with the old one say nothing about it)
     await sql`update users set totp_secret = ${seal(secret, cfg.appSecret)}, totp_enabled = false, totp_last_step = 0 where id = ${a.user.id}`;
@@ -89,7 +91,7 @@ export async function authRoutes(app: FastifyInstance, { sql, cfg, setup, authLi
   });
 
   app.post("/api/mfa/enroll/confirm", strict, async (req, reply) => {
-    const a = need(req, "mfa-setup");
+    const a = needSetup(req);
     const b = parse(z.object({ code }), req.body);
     const [u] = await sql`select totp_secret, totp_last_step from users where id = ${a.user.id}`;
     if (!u?.totp_secret) throw new ApiError(400, "Set up 2FA first");
@@ -172,7 +174,8 @@ export async function authRoutes(app: FastifyInstance, { sql, cfg, setup, authLi
         return u;
       });
       await audit(sql, req, "invite.accepted", { username: b.username, admin: i.is_admin }, user.id);
-      await startSession(sql, cfg, req, reply, user.id, "mfa-setup");
+      await startSession(sql, cfg, req, reply, user.id, "full");
+      return { stage: "full" };
     } else {
       const b = parse(z.object({ password }), req.body);
       notSameAsName(b.password, i.username);
@@ -185,8 +188,11 @@ export async function authRoutes(app: FastifyInstance, { sql, cfg, setup, authLi
         await tx`delete from sessions where user_id = ${i.user_id}`;
       });
       await audit(sql, req, "reset.used", {}, i.user_id);
-      await startSession(sql, cfg, req, reply, i.user_id, "mfa-setup");
+      // (2FA again only where an admin requires it)
+      const [r] = await sql`select mfa_required from users where id = ${i.user_id}`;
+      const stage = r?.mfa_required ? "mfa-setup" : "full";
+      await startSession(sql, cfg, req, reply, i.user_id, stage);
+      return { stage };
     }
-    return { stage: "mfa-setup" };
   });
 }
