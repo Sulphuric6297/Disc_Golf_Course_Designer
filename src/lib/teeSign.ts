@@ -102,7 +102,7 @@ export const SIGN_LOOKS: { id: SignLook; label: string }[] = [{ id: "classic", l
 
 /** What a wide sign's spot under the notes can hold. */
 export const SIGN_SPOTS: { id: SignSpot; label: string }[] = [
-  { id: "courseMap", label: "Course map" }, { id: "green", label: "The green" }, { id: "stats", label: "Hole stats" }, { id: "none", label: "Nothing" }
+  { id: "green", label: "The green" }, { id: "stats", label: "Hole stats" }, { id: "none", label: "Nothing" }
 ];
 
 /** The parts of a tee sign, in the order they are set. */
@@ -122,8 +122,8 @@ export const signOf = (doc: Pick<CourseDoc, "style" | "holes">, holeId: string) 
     others: h.others ?? g.others ?? "faded",
     fade: h.fade ?? g.fade ?? 0.3,
     show: (p: SignPart) => h.show?.[p] ?? g.show?.[p] ?? SIGN_SHOW[p],
-    // (a course map left out before there was a choice: nothing there)
-    spot: (h.spot ?? g.spot ?? ((h.show?.courseMap ?? g.show?.courseMap) === false ? "none" : "courseMap")) as SignSpot,
+    // (the small course map is gone from signs, too rough to be of use: the green in its place)
+    spot: (() => { const s = h.spot ?? g.spot ?? ((h.show?.courseMap ?? g.show?.courseMap) === false ? "none" : "green"); return (s === "courseMap" ? "green" : s) as SignSpot; })(),
     look: (g.look ?? "classic") as SignLook
   };
 };
