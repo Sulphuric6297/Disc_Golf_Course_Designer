@@ -184,7 +184,7 @@ test("search finds any setting and takes you to it, lit up; the help guide's Sho
   await page.keyboard.press("?");
   const guide = page.getByRole("dialog", { name: "Help guide" });
   await expect(guide).toContainText("The four steps");
-  await guide.getByTestId("help-chapters").getByRole("button", { name: "Map: the printed course map, signs and cards" }).click();
+  await guide.getByTestId("help-chapters").getByRole("button", { name: "Map", exact: true }).click();
   await expect(guide).toContainText("Paper and turning the map");
   await guide.getByTestId("help-search").fill("paper size");
   const card = guide.getByTestId("help-topic").filter({ hasText: "Paper and turning the map" });

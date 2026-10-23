@@ -30,7 +30,7 @@ export function StepsArt() {
             <rect x={x - 58} y={22} width={116} height={146} rx={18} fill={C.panel} stroke={C.line} />
             <g transform={`translate(${x} 78)`}>{art}</g>
             <T x={x} y={128} size={14}>{title}</T>
-            <T x={x} y={148} size={11} color={C.soft} weight={500}>{sub}</T>
+            <T x={x} y={148} size={10} color={C.soft} weight={500}>{sub}</T>
             {i < 3 && <path d={`M${x + 62} 95 l12 0 m-5 -5 l5 5 l-5 5`} stroke={C.fern} strokeWidth={2.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />}
           </g>
         );
@@ -61,7 +61,7 @@ export function HoleArt() {
       <T x={203} y={142} size={11} weight={700}>350 ft · P3</T>
       <T x={240} y={186} size={10.5} color={C.text} weight={500}>Dogleg: drag the middle dot</T>
       <path d="M470 70 Q520 30 545 -5" stroke={C.sand} strokeWidth={3} strokeDasharray="5 5" fill="none" />
-      <T x={515} y={14} size={10.5} color={C.sand} weight={600}>Walk on</T>
+      <T x={548} y={56} size={10.5} color={C.sand} weight={600} anchor="end">Walk on</T>
     </Frame>
   );
 }

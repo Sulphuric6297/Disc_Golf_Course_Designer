@@ -142,7 +142,7 @@ export function HelpGuide({ onClose, topic, touch = false }: { onClose: () => vo
               <li key={s.id} className="shrink-0">
                 <button onClick={() => { setQ(""); setSection(s.id); }} aria-current={!found && section === s.id ? "page" : undefined}
                   className={`w-full flex items-center gap-2.5 rounded-[12px] px-3 py-2 text-left text-[13.5px] whitespace-nowrap ${!found && section === s.id ? "bg-white/[0.14] text-zinc-50 font-semibold" : "text-zinc-300"}`}>
-                  <span className={!found && section === s.id ? "text-orange-300" : "text-zinc-500"}>{ICONS[s.id]}</span>{s.title}
+                  <span className={!found && section === s.id ? "text-orange-300" : "text-zinc-500"}>{ICONS[s.id]}</span>{s.short ?? s.title}
                 </button>
               </li>
             ))}

@@ -36,15 +36,16 @@ export interface Topic {
   server?: boolean;
 }
 
-export const SECTIONS: { id: GuideSection; title: string; intro: string }[] = [
+/** `short`: its name in the list of chapters. */
+export const SECTIONS: { id: GuideSection; title: string; short?: string; intro: string }[] = [
   { id: "start", title: "Getting started", intro: "HyzerLab lays out a disc golf course on the real ground, then makes everything the course needs: a printed map, tee signs, hole pages, a scorecard, videos and GPS files. You work through four steps, left to right along the top bar." },
   { id: "site", title: "Site", intro: "The Site step brings in the real place: the satellite photo, the ground's elevation, the trees and the paths, roads and water around it." },
   { id: "design", title: "Design", intro: "The Design step is the course itself, on the map: holes, tees and baskets, OB, mandos, paths, trees and everything else that stands there. Pick anything to change it in its panel." },
-  { id: "view", title: "3D, tee views and flyovers", intro: "The map is one view in 2D and 3D. Look at a hole from its tee, fly over it, and record the flight as a video." },
-  { id: "map", title: "Map: the printed course map, signs and cards", intro: "The Map step designs what is printed: the course map, the tee signs, the hole pages and the scorecard. The tabs at the top pick which one you see; the panel shows only that one's settings." },
+  { id: "view", title: "3D, tee views and flyovers", short: "3D and flyovers", intro: "The map is one view in 2D and 3D. Look at a hole from its tee, fly over it, and record the flight as a video." },
+  { id: "map", title: "Map: the printed course map, signs and cards", short: "Map", intro: "The Map step designs what is printed: the course map, the tee signs, the hole pages and the scorecard. The tabs at the top pick which one you see; the panel shows only that one's settings." },
   { id: "export", title: "Export", intro: "The Export step makes the files: PDFs and pictures to print, videos, and GPS and spreadsheet files for the course crew." },
-  { id: "share", title: "Saving, sharing and working together", intro: "On a HyzerLab server the course is saved as you go, with its history. Share it with people, work in drafts, and publish a public course page." },
-  { id: "phone", title: "On a phone or tablet", intro: "Everything works by touch. On a phone the steps are along the bottom and the panel is a sheet you pull up and down." },
+  { id: "share", title: "Saving, sharing and working together", short: "Sharing", intro: "On a HyzerLab server the course is saved as you go, with its history. Share it with people, work in drafts, and publish a public course page." },
+  { id: "phone", title: "On a phone or tablet", short: "Phone and tablet", intro: "Everything works by touch. On a phone the steps are along the bottom and the panel is a sheet you pull up and down." },
   { id: "keys", title: "Keyboard shortcuts", intro: "Most tools have a key. Press ? any time to open this guide." }
 ];
 

@@ -4793,6 +4793,8 @@ export class CourseView {
         const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
         total += d;
         const dh = pts[i].y - pts[i - 1].y;
+        // (the pointer still on the point just put down: no "0 ft" tag)
+        if (d < 0.5) continue;
         const el = document.createElement("div");
         el.className = "dg-ov dg-measure";
         el.setAttribute("data-testid", "measure-label");
