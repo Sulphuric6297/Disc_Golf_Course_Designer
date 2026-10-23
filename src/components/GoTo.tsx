@@ -81,12 +81,13 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: (topic?
     const t = q.trim().toLowerCase();
     if (!t) return all.filter(e => e.key.startsWith("hole:") || e.key.startsWith("step:"));
     const rank = (e: Entry) => +!!e.nums?.includes(t);
-    // (every word typed somewhere in it: "sign size", "walk width")
+    // (every word typed starting a word in it, as Spotlight does: "sign size", "walk width"; never
+    // the middle of one: "sign" isn't in "Design")
     const words = t.split(/\s+/).filter(Boolean);
-    const has = (e: Entry) => { const f = `${e.text} ${e.find}`.toLowerCase(); return words.every(w => f.includes(w)); };
+    const has = (e: Entry) => { const f = `${e.text} ${e.find}`.toLowerCase().split(/[^a-z0-9]+/); return words.every(w => f.some(x => x.startsWith(w))); };
     const exact = (e: Entry) => +(e.text.toLowerCase() === t);
     const starts = (e: Entry) => +e.text.toLowerCase().startsWith(t);
-    const inTitle = (e: Entry) => +words.every(w => e.text.toLowerCase().includes(w));
+    const inTitle = (e: Entry) => { const f = e.text.toLowerCase().split(/[^a-z0-9]+/); return +words.every(w => f.some(x => x.startsWith(w))); };
     return all
       .filter(e => rank(e) || has(e))
       .sort((a, b) => rank(b) - rank(a) || exact(b) - exact(a) || starts(b) - starts(a) || inTitle(b) - inTitle(a) || (b.rank ?? 0) - (a.rank ?? 0))

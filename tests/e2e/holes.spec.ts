@@ -158,7 +158,7 @@ test("another tee and pin for a hole, and layouts pick between them", async ({ p
   // Two layouts: the switcher at the top of the holes column, the one worked on picked
   await page.getByRole("button", { name: "Done" }).click();
   const picker = page.getByTestId("holes-column").getByRole("radiogroup", { name: "Layout" });
-  await expect(picker.getByRole("radio", { name: "Red" })).toHaveAttribute("aria-checked", "true");
+  await expect(picker.getByRole("radio").nth(1)).toHaveAttribute("aria-checked", "true");
   // (its tees to the fore: the blue one, only the other layout's, a faint dot; new tees red)
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("course-more")).toHaveCount(0);
