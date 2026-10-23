@@ -1,9 +1,9 @@
 // Painting with a brush: the ground raised, lowered, flattened or smoothed under it (soft at its
 // edge, so what's painted blends into the ground round it), and a painted stroke turned into an
-// area's outline (smooth all the way round).
+// area's outline (a few corners, drawn as a smooth curve).
 import type { P } from "../types";
 import { traceOutline } from "./geo/detect";
-import { simplify, smoothClosed } from "./geom";
+import { simplify } from "./geom";
 
 export type GroundBrush = "raise" | "lower" | "flatten" | "smooth";
 
@@ -90,6 +90,7 @@ export const strokeOutline = (path: P[], radius: number): P[] | null => {
   }
   if (best.length < 3) return null;
   const outline = traceOutline(w, h, best).map(p => ({ x: minX + p.x * cell, y: minY + p.y * cell }));
-  const simple = simplify([...outline, outline[0]], cell * 0.6).slice(0, -1);
-  return simple.length >= 3 ? smoothClosed(simple, 2) : null;
+  // (few corners, so it's easy to reshape after: the area draws itself curved through them)
+  const simple = simplify([...outline, outline[0]], Math.max(cell, radius * 0.14)).slice(0, -1);
+  return simple.length >= 3 ? simple : null;
 };
