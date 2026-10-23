@@ -931,10 +931,12 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   })();
   yield;
   // The ground's relief (hill shading), from the terrain, lit from the same side
-  const relief = reliefGrid(doc, s.hillshade || s.contours, W, H, toPlan, L);
+  const relief = reliefGrid(doc, s.hillshade || s.contours, W, H, toPlan, L, shadowK);
   // Contour lines painted in (when shown): a tidy interval for the course's rise and fall
   const contourIv = s.contours && relief ? contourInterval(relief.hi - relief.lo) : 0;
   const lxyL = Math.hypot(L.x, L.y) || 1;
+  // Bare rock, a warm gray-tan
+  const rockColor = [186, 172, 152];
 
   yield;
   // ---------------------------------------------------------------- paint
@@ -1129,6 +1131,16 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
           const g0 = grassColor(look.grass.style, X, Y, look.grass.texture, mott, grain, x, y);
           const kk = look.grass.bright * lit;
           cr = g0[0] * kk; cg = g0[1] * kk; cb = g0[2] * kk;
+        }
+        // Cliffs and steep banks: bare rock in ledges across the slope (the layers of a canyon
+        // wall), broken up at its edge, lit like the ground round it
+        if (rh && s.hillshade && rh.rock > 0.02) {
+          const ledge = rh.elev / 11 + (fbm(x / pt * 0.03 + 70, y / pt * 0.03) - 0.5) * 2.2 + (noise(x / pt * 0.4, y / pt * 0.4) - 0.5) * 0.25;
+          const fr = ledge - Math.floor(ledge);
+          const band = 0.88 + 0.18 * smooth(0.1, 0.5, fr) - 0.16 * smooth(0.86, 1, fr);
+          const rv = (0.78 + (grain - 0.5) * 0.3 + mott * 0.16) * band * lit;
+          const ra = smooth(0.15, 0.75, rh.rock + (fbm(x / pt * 0.12 + 90, y / pt * 0.12) - 0.5) * 0.6);
+          cr += (rockColor[0] * rv - cr) * ra; cg += (rockColor[1] * rv - cg) * ra; cb += (rockColor[2] * rv - cb) * ra;
         }
         // The floor under the trees, well inside the woods (fading out toward their edges)
         const deep = smooth(0.55, 0.95, S(inWoods, 0) / 255);
@@ -1503,18 +1515,69 @@ export const contourInterval = (range: number) => {
 };
 
 /**
+ * What the light does over the ground itself, worked out on the terrain's own grid (coarser on a
+ * big site): how much of it is in the shadow of higher ground toward the sun (a canyon wall's
+ * shadow across the floor, soft at its edge), how much of the sky it sees (low in a canyon or a
+ * hollow: the floor and the foot of the walls darker, so depth reads without the sun), and how
+ * steep it is (cliffs and steep banks drawn as bare rock). Plan direction `dir` points at the sun.
+ */
+const terrainLights = new WeakMap<object, { key: string; v: { cols: number; rows: number; grid: number; cast: Float32Array; sky: Float32Array; rock: Float32Array } }>();
+const terrainLight = (doc: CourseDoc, dir: P, tanEl: number, hills: number) => {
+  const key = `${dir.x.toFixed(3)},${dir.y.toFixed(3)},${tanEl.toFixed(3)},${hills}`;
+  const hit = terrainLights.get(doc.terrainHeights);
+  if (hit && hit.key === key) return hit.v;
+  const tg = terrainGrid(doc);
+  const stride = Math.max(1, Math.ceil(Math.sqrt((tg.cols * tg.rows) / 40000)));
+  const cols = Math.ceil(tg.cols / stride), rows = Math.ceil(tg.rows / stride), G = tg.grid * stride;
+  const z = (x: number, y: number) => {
+    const fx = Math.max(0, Math.min(tg.cols - 1.001, x / tg.grid)), fy = Math.max(0, Math.min(tg.rows - 1.001, y / tg.grid));
+    const ix = fx | 0, iy = fy | 0, tx = fx - ix, ty = fy - iy, j = iy * tg.cols + ix, d = tg.data;
+    return ((d[j] * (1 - tx) + d[j + 1] * tx) * (1 - ty) + (d[j + tg.cols] * (1 - tx) + d[j + tg.cols + 1] * tx) * ty) * hills;
+  };
+  let top = -Infinity;
+  for (let k = 0; k < tg.data.length; k++) top = Math.max(top, tg.data[k] * hills);
+  const cast = new Float32Array(cols * rows), sky = new Float32Array(cols * rows), rock = new Float32Array(cols * rows);
+  const elA = Math.atan(tanEl), soft = (2.5 * Math.PI) / 180;
+  const far = Math.min(2000, Math.max(tg.cols, tg.rows) * tg.grid);
+  const skyR = 400, dirs = Array.from({ length: 8 }, (_, k) => ({ x: Math.cos((k * Math.PI) / 4), y: Math.sin((k * Math.PI) / 4) }));
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const x = c * G, y = r * G, h0 = z(x, y), j = r * cols + c;
+    // (the highest the ground toward the sun rises above the level here, as an angle)
+    let best = -1;
+    for (let d = G; d <= far; d += d < 200 ? G : G * 2) {
+      if ((top - h0) / d < best) break;
+      best = Math.max(best, (z(x + dir.x * d, y + dir.y * d) - h0) / d);
+    }
+    cast[j] = smooth(elA - soft, elA + soft, Math.atan(best));
+    let seen = 0;
+    for (const u of dirs) {
+      let b = 0;
+      for (let d = G; d <= skyR; d += d < 100 ? G : G * 2) b = Math.max(b, (z(x + u.x * d, y + u.y * d) - h0) / d);
+      seen += Math.sin(Math.atan(b));
+    }
+    sky[j] = 1 - seen / dirs.length;
+    const gx = (z(x + G, y) - z(x - G, y)) / (2 * G), gy = (z(x, y + G) - z(x, y - G)) / (2 * G);
+    rock[j] = smooth(0.62, 1.05, Math.hypot(gx, gy));
+  }
+  const v = { cols, rows, grid: G, cast, sky, rock };
+  terrainLights.set(doc.terrainHeights, { key, v });
+  return v;
+};
+
+/**
  * The ground's shape as the painting sees it, on a coarse grid of screen pixels (looked up
  * smoothly in between): how it is lit, its height and its slope. The relief is exaggerated just
  * enough that a gentle course's rises still show and a steep one's don't go black, and it is lit
  * from the sun and two softer lights to either side (so slopes in line with the sun still show).
  */
-const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (x: number, y: number) => P, L: { x: number; y: number; z: number }) => {
+const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (x: number, y: number) => P, L: { x: number; y: number; z: number }, shadowK = 0.65) => {
   const heights = doc.terrainHeights;
   if (!on || !heights || Object.keys(heights).length < 4) return null;
   const tg = terrainGrid(doc);
   const step = 8;
   const gw = Math.ceil(W / step) + 2, gh = Math.ceil(H / step) + 2;
   const elev = new Float32Array(gw * gh), sx = new Float32Array(gw * gh), sy = new Float32Array(gw * gh), shade = new Float32Array(gw * gh);
+  const castS = new Float32Array(gw * gh), skyS = new Float32Array(gw * gh), rockS = new Float32Array(gw * gh);
   const e = Math.max(2, doc.gridSize / 2);
   // Beyond the measured ground the edge heights carry on (no cliff at the site's edge)
   const at = (p: P) => {
@@ -1547,6 +1610,20 @@ const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (
   const p90 = slopes[Math.floor(slopes.length * 0.9)] ?? 0;
   const hills = doc.style.reliefScale ?? 1;
   if (hi - lo < 0.5 || p90 < 0.002 || hills <= 0) return null;
+  // The ground's own shadows, how much sky it sees and its rock, looked up for each cell (the sun
+  // turned from the page into plan feet)
+  const c0 = toPlan(W / 2, H / 2), cr0 = toPlan(W / 2 + 1, H / 2), cd0 = toPlan(W / 2, H / 2 + 1);
+  const ldx = L.x * (cr0.x - c0.x) + L.y * (cd0.x - c0.x), ldy = L.x * (cr0.y - c0.y) + L.y * (cd0.y - c0.y), ldl = Math.hypot(ldx, ldy) || 1;
+  const tl = terrainLight(doc, { x: ldx / ldl, y: ldy / ldl }, L.z / Math.max(0.05, Math.hypot(L.x, L.y)), hills);
+  const fromTl = (f: Float32Array, p: P) => {
+    const fx = Math.max(0, Math.min(tl.cols - 1.001, p.x / tl.grid)), fy = Math.max(0, Math.min(tl.rows - 1.001, p.y / tl.grid));
+    const ix = fx | 0, iy = fy | 0, tx = fx - ix, ty = fy - iy, j = iy * tl.cols + ix;
+    return (f[j] * (1 - tx) + f[j + 1] * tx) * (1 - ty) + (f[j + tl.cols] * (1 - tx) + f[j + tl.cols + 1] * tx) * ty;
+  };
+  for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+    const p = toPlan(gx * step, gy * step), j = gy * gw + gx;
+    castS[j] = fromTl(tl.cast, p); skyS[j] = fromTl(tl.sky, p); rockS[j] = fromTl(tl.rock, p);
+  }
   // Steep enough to read: the steeper slopes shown at about 20 degrees, whatever the course (and
   // as much more or less as the Hills setting asks)
   const exag = reliefExaggeration(p90) * hills;
@@ -1559,7 +1636,11 @@ const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (
     const dzx = sx[j] * exag, dzy = sy[j] * exag, len = Math.hypot(dzx, dzy, 1);
     let s = 0;
     for (const l of lights) s += l.w * Math.max(0, (-dzx * l.x - dzy * l.y + l.z) / len) / l.z;
-    shade[j] = Math.max(0.5, Math.min(1.4, 1 + (s - 1) * 0.9));
+    // (then the shadow of higher ground, and less light where the ground sees less sky)
+    const lit = Math.max(0.5, Math.min(1.4, 1 + (s - 1) * 0.9));
+    const inShadow = 1 - (0.3 + 0.35 * shadowK) * castS[j];
+    const open = 1 - Math.min(0.4, (1 - skyS[j]) * 1.1);
+    shade[j] = Math.max(0.3, lit * inShadow * open);
   }
   let k00 = 0, k10 = 0, k01 = 0, k11 = 0;
   const cell = (x: number, y: number) => {
@@ -1569,12 +1650,12 @@ const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (
     return j;
   };
   const look = (f: Float32Array, j: number) => f[j] * k00 + f[j + 1] * k10 + f[j + gw] * k01 + f[j + gw + 1] * k11;
-  const here = { shade: 1, elev: 0, sx: 0, sy: 0 };
+  const here = { shade: 1, elev: 0, sx: 0, sy: 0, rock: 0 };
   return {
     /** Everything at a pixel at once (one lookup of its cell): light, height, slope (per pixel). */
     at: (x: number, y: number, withSlope: boolean) => {
       const j = cell(x, y);
-      here.shade = look(shade, j); here.elev = look(elev, j);
+      here.shade = look(shade, j); here.elev = look(elev, j); here.rock = look(rockS, j);
       if (withSlope) { here.sx = look(sx, j) * ftPerPx; here.sy = look(sy, j) * ftPerPx; }
       return here;
     },

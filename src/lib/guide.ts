@@ -434,8 +434,8 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "drawn-on-map", section: "map", title: "Drawn on the map",
-    body: "Extra lines on the printed map: throw lines, the distances on them, the putting circle, contour lines and hill shading. These only change the printed map, not the map you work on.",
-    words: "throw lines distances putting circle contour lines hill shading",
+    body: "Extra lines on the printed map: throw lines, the distances on them, the putting circle, contour lines and hill shading. These only change the printed map, not the map you work on.\n\nHill shading is what makes the ground's shape show. Slopes facing away from the sun are darker, high ground throws its shadow across what's below it, and the bottom of a canyon or hollow is a little darker since it sees less sky. Cliffs and steep banks show as bare rock in layers. Hills under Light and shadow makes all of it stronger or softer.",
+    words: "throw lines distances putting circle contour lines hill shading canyon cliff rock steep elevation shadow valley",
     path: "Map › Course map › Drawn on the map",
     where: { step: "map", tab: "map", find: "map-style", text: "Drawn on the map" }
   },
