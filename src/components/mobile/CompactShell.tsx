@@ -9,7 +9,7 @@
 // a thing opens its menu (the right-click).
 import { Woods } from "../Woods";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
-import { Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Search, Trash2, Undo2, Unlock, X } from "lucide-react";
+import { ListChecks, Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Search, Trash2, Undo2, Unlock, X } from "lucide-react";
 import { STRUCTURE_KINDS } from "../../constants";
 import { holeLabel, holeNumber } from "../../lib/course";
 import { courseIssues, courseStats, courseTotals, holeStats, openIssues, playsOf } from "../../lib/holeStats";
@@ -33,6 +33,7 @@ import { ActionSheet, type SheetAction } from "./ActionSheet";
 import { BottomSheet, type Detent } from "./BottomSheet";
 import { HereButton } from "../MyLocation";
 import { HoleStrip, ItemStrip } from "./HoleStrip";
+import { GettingStarted, openGettingStarted } from "../GettingStarted";
 import { useGps } from "../../state/gps";
 import { accountActions, CourseChip } from "../../auth/AccountMenu";
 import { ViewerPanelBody } from "../../auth/ViewerPanel";
@@ -222,6 +223,7 @@ function Tools() {
             <button
               key={t.mode}
               data-tool={t.mode}
+              data-testid={`tool-${t.mode}`}
               aria-label={touchWords(t.label)}
               aria-pressed={on}
               onClick={() => pick(t.mode)}
@@ -386,6 +388,7 @@ function AppMenu({ onClose, onHelp, onGoTo, onOpenFile }: { onClose: () => void;
   useEffect(() => { void recentCourses().then(setRecent); }, []);
   const actions: SheetAction[] = [
     { label: "Search settings and help", icon: <Search size={19} />, run: onGoTo, testid: "menu-search" },
+    { label: "Getting started", icon: <ListChecks size={19} />, run: openGettingStarted, testid: "menu-getting-started" },
     { label: "New course", icon: <FilePlus size={19} />, run: () => void newCourse() },
     { label: "Open a course file…", icon: <FolderOpen size={19} />, run: onOpenFile },
     { label: "Save as a file", icon: <Save size={19} />, run: () => saveCourseFile() },
@@ -422,7 +425,7 @@ function ViewToggle({ vertical = false }: { vertical?: boolean }) {
   return (
     <div className={`flex ${vertical ? "flex-col" : ""} bg-white/[0.07] rounded-xl p-0.5 shrink-0`} role="radiogroup" aria-label="View">
       {(["2d", "3d"] as const).map(v => (
-        <button key={v} role="radio" aria-checked={view === v} onClick={() => set({ view: v })} className={`${vertical ? "w-11 h-9" : "w-10 h-10"} rounded-[10px] text-[14px] font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${view === v ? "bg-zinc-100 text-zinc-900" : "text-zinc-300"}`}>
+        <button key={v} role="radio" aria-checked={view === v} onClick={() => set({ view: v })} data-testid={`view-${v}`} className={`${vertical ? "w-11 h-9" : "w-10 h-10"} rounded-[10px] text-[14px] font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${view === v ? "bg-zinc-100 text-zinc-900" : "text-zinc-300"}`}>
           {v.toUpperCase()}
         </button>
       ))}
@@ -591,6 +594,7 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
           </div>
         )}
         {!immersive && <PhoneTopBar onMenu={openApp} />}
+        {!immersive && <GettingStarted phone />}
         {!immersive && <DrawBar bottom={sheetH + 12} />}
         {ed.teeView && <TeeViewHud compact />}
         <ExportProgressPill top={immersive ? undefined : top + 4} />

@@ -48,6 +48,28 @@ export const spotlight = (el: HTMLElement) => {
   window.setTimeout(() => el.classList.remove("dg-found"), 2400);
 };
 
+/** A short note pointing at a control (below it, or above when there's no room), gone on the next
+ * touch or after a while. */
+export const coach = (el: HTMLElement, text: string) => {
+  document.querySelectorAll(".dg-coach").forEach(n => n.remove());
+  const r = el.getBoundingClientRect();
+  const tip = document.createElement("div");
+  tip.className = "dg-coach";
+  tip.setAttribute("role", "status");
+  tip.setAttribute("data-testid", "coach");
+  tip.textContent = text;
+  document.body.appendChild(tip);
+  const w = Math.min(280, window.innerWidth - 16), h = tip.offsetHeight;
+  const below = r.bottom + 10 + h < window.innerHeight;
+  tip.style.width = `${w}px`;
+  tip.style.left = `${Math.max(8, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 8))}px`;
+  tip.style.top = `${below ? r.bottom + 10 : Math.max(8, r.top - 10 - tip.offsetHeight)}px`;
+  tip.dataset.side = below ? "below" : "above";
+  const gone = () => { tip.remove(); window.removeEventListener("pointerdown", gone, true); };
+  window.setTimeout(() => window.addEventListener("pointerdown", gone, true), 300);
+  window.setTimeout(gone, 12_000);
+};
+
 export async function showSetting(w: Where) {
   const ed = useEditor.getState();
   if (w.step) ed.set({ step: w.step, teeView: null, flyover: false, tool: "select" });
@@ -71,11 +93,17 @@ export async function showSetting(w: Where) {
     if (!SERVER) { toast("Sharing is on a HyzerLab server, with an account.", "info"); return; }
     useAuth.getState().share(w.open === "share-public" ? "public" : "people");
   } else if (w.open) askOpen(w.open);
-  if (!w.find) return;
+  if (!w.find) { if (w.say) toast(w.say, "info", false, undefined, 9000); return; }
   // (the panel drawn, maybe after its code loads)
   for (let k = 0; k < 90; k++) {
     await frame();
     const el = locate(w);
-    if (el && el.getBoundingClientRect().height > 0) { if (w.look) await frame(); spotlight(locate(w) ?? el); return; }
+    if (el && el.getBoundingClientRect().height > 0) {
+      if (w.look) await frame();
+      const at = locate(w) ?? el;
+      spotlight(at);
+      if (w.say) window.setTimeout(() => coach(at, w.say!), 350);
+      return;
+    }
   }
 }

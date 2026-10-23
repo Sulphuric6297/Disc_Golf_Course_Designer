@@ -1,5 +1,6 @@
 // The help guide: every feature and setting, chapter by chapter, with pictures; searchable, and
 // each setting a "Show me" away (the guide closes and the setting is opened and pointed at).
+import { openGettingStarted } from "../GettingStarted";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Box, Download, Keyboard, MapPin, Palette, Route, Search, Share2, Smartphone, X, ArrowRight } from "lucide-react";
 import { SECTIONS, TOPICS, type GuideSection, type Topic } from "../../lib/guide";
@@ -131,6 +132,7 @@ export function HelpGuide({ onClose, topic, touch = false }: { onClose: () => vo
           <div className="flex items-center gap-2 px-4 pt-4 pb-2">
             <BookOpen size={18} className="text-orange-300" />
             <h2 className="flex-1 font-bold text-zinc-50 text-[17px]">Help</h2>
+            <button className="text-[12.5px] font-semibold text-orange-300 hover:text-orange-200" onClick={() => { openGettingStarted(); onClose(); }} data-testid="help-getting-started">Getting started</button>
             <button aria-label="Close" className="md:hidden w-10 h-10 -m-2 flex items-center justify-center text-zinc-400" onClick={onClose}><X size={20} /></button>
           </div>
           <label className="mx-3 mb-2 flex items-center gap-2 rounded-full bg-white/[0.07] px-3">

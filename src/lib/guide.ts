@@ -16,6 +16,8 @@ export interface Where {
   pick?: "hole" | "tee" | "basket" | "woods" | "water" | "line" | "tree" | "structure" | "walk";
   /** The control: its test id, and within it a row by its words. */
   find?: string;
+  /** A sentence to point at it with (Getting started's Show me). */
+  say?: string;
   text?: string;
 }
 

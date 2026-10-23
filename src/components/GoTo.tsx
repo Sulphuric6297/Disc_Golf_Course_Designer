@@ -5,6 +5,7 @@ import { BookOpen, Hash, MapPin, Search, SlidersHorizontal, Wrench, Zap } from "
 import { SECTIONS, TOPICS } from "../lib/guide";
 import { SERVER } from "../auth/api";
 import { showSetting } from "./showSetting";
+import { openGettingStarted } from "./GettingStarted";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS } from "../constants";
 import { holeLabel } from "../lib/course";
 import { courseStats } from "../lib/holeStats";
@@ -62,6 +63,7 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: (topic?
     }
     out.push(
       { key: "act:fit", text: "Whole course", find: "whole course fit", sub: "0", icon: <Zap size={15} />, run: () => { toMap(); requestAnimationFrame(() => getView()?.fitCourse()); } },
+      { key: "act:start", text: "Getting started", find: "getting started tutorial tour learn basics checklist show me around new", icon: <BookOpen size={15} />, run: openGettingStarted },
       { key: "act:help", text: "Help guide", find: "help guide manual how to keyboard shortcuts", sub: "?", icon: <BookOpen size={15} />, run: () => onHelp() }
     );
     // Every setting and feature (from the guide): there and pointed at, or its page in the guide

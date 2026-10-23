@@ -19,6 +19,7 @@ import { TeeViewHud } from "./components/TeeViewHud";
 import { MapDesigner } from "./components/MapDesigner";
 import { ExportProgressPill } from "./components/ExportProgress";
 import { Button, HELP_EVENT } from "./components/ui";
+import { GettingStarted, openGettingStarted } from "./components/GettingStarted";
 import { useLayout, useTouch } from "./components/useLayout";
 import { CompactShell, ItemMenu } from "./components/mobile/CompactShell";
 import { useCourse, useEditor, getDoc, changeDoc, updateItem } from "./state/course";
@@ -301,6 +302,7 @@ export default function App() {
         <Button tone="primary" full onClick={() => setFindSite(true)} testid="welcome-find"><MapPinned size={16} /> Find your park</Button>
         <Button full onClick={() => useEditor.getState().set({ step: "design", tool: "add-hole" })} testid="welcome-blank">Start on open ground</Button>
       </div>
+      <button className="mt-3 text-[13px] font-semibold text-orange-300 hover:text-orange-200" onClick={openGettingStarted} data-testid="welcome-tour">New here? Show me around</button>
     </div>
   );
   const dialogs = (
@@ -334,6 +336,7 @@ export default function App() {
     <div className="h-screen w-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden relative isolate">
       <Woods />
       <Header onHelp={() => setHelp({})} onGoTo={() => setGoTo(true)} />
+      {!ed.teeView && <div className="fixed inset-0 pointer-events-none z-30"><div className="relative w-full h-full"><GettingStarted /></div></div>}
       <div className="flex-1 flex min-h-0 gap-2.5 p-2.5 relative">
         {readOnly ? <ViewerPanel /> : ed.step !== "design" && <SidePanel onFindSite={() => setFindSite(true)} />}
         <main className="flex-1 relative min-w-0 rounded-[20px] overflow-hidden ring-1 ring-white/10">
