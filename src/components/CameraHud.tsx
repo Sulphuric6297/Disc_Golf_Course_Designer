@@ -222,6 +222,9 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
   const play = () => ed.set({ flyover: true });
   const setLensTo = (v: number) => setLens(getView()?.freeLens(v) ?? v);
   const go = (i: number) => { getView()?.freeGo(keys[i]); ed.set({ flyKey: i }); };
+  const addBtn = (
+    <button className={`shrink-0 rounded-full ${compact ? "flex-[2] h-11 px-4 text-[14px] justify-center" : "h-9 px-4 text-[13.5px]"} font-bold flex items-center gap-1.5 bg-orange-500 text-zinc-950 hover:bg-orange-400`} onClick={addKeyHere} title={at !== null ? `Add a keyframe here, after keyframe ${at + 1} (Enter)` : "Add a keyframe right here, looking where the camera looks (Enter)"} data-testid="cam-add"><Plus size={16} /> Add keyframe</button>
+  );
   // The keyframes in order, along the bottom with the camera's buttons: tap one to go to it (and
   // change it), Add keyframe at the end to add one where the camera is
   const strip = (
@@ -237,7 +240,8 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
         {!keys.length && <span className="text-[12.5px] text-zinc-300 px-1 whitespace-nowrap">No keyframes yet</span>}
       </div>
       <button className="shrink-0 w-8 h-8 rounded-lg text-zinc-300 hover:bg-white/10 flex items-center justify-center disabled:opacity-30" aria-label="Keyframe after ( ] )" title="Keyframe after ( ] )" disabled={!keys.length} onClick={() => jump(1)}><ChevronRight size={18} /></button>
-      <button className={`shrink-0 ml-auto rounded-full ${compact ? "h-11 px-4 text-[14px]" : "h-9 px-4 text-[13.5px]"} font-bold flex items-center gap-1.5 bg-orange-500 text-zinc-950 hover:bg-orange-400`} onClick={addKeyHere} title={at !== null ? `Add a keyframe here, after keyframe ${at + 1} (Enter)` : "Add a keyframe right here, looking where the camera looks (Enter)"} data-testid="cam-add"><Plus size={16} /> Add keyframe</button>
+      {!compact && <span className="ml-auto" />}
+      {!compact && addBtn}
     </div>
   );
   const pill = "rounded-full px-3.5 py-2 text-[13.5px] font-semibold flex items-center gap-1.5 text-white hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-transparent";
@@ -270,9 +274,10 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
           {strip}
           <div className="mt-1.5 px-1 text-[12px] text-zinc-300 truncate" data-testid="cam-status">{status}</div>
           <div className="mt-1.5 flex items-center gap-1">
-            {at !== null && <button className="flex-1 h-11 rounded-2xl bg-white/[0.1] text-white text-[13.5px] font-semibold flex items-center justify-center gap-1 active:bg-white/20 disabled:opacity-40" onClick={updateKeyHere} disabled={!moved} data-testid="cam-update"><RefreshCw size={15} /> Update {at + 1}</button>}
+            {addBtn}
+            {at !== null && <button className="flex-1 h-11 rounded-2xl bg-white/[0.1] text-white text-[13px] font-semibold flex items-center justify-center gap-1 active:bg-white/20 disabled:opacity-40" onClick={updateKeyHere} disabled={!moved} data-testid="cam-update"><RefreshCw size={14} /> Update {at + 1}</button>}
             {at !== null && <button className="w-11 h-11 rounded-2xl text-white flex items-center justify-center active:bg-white/15" onClick={removeKey} aria-label={`Remove keyframe ${at + 1}`} data-testid="cam-remove"><Trash2 size={16} /></button>}
-            <button className="flex-1 h-11 rounded-2xl text-white text-[13.5px] font-semibold flex items-center justify-center gap-1 active:bg-white/15 disabled:opacity-40" onClick={play} disabled={keys.length < 2} data-testid="cam-play"><Play size={15} /> Play</button>
+            <button className="w-11 h-11 rounded-2xl text-white flex items-center justify-center active:bg-white/15 disabled:opacity-40" onClick={play} disabled={keys.length < 2} aria-label="Play" title="Play" data-testid="cam-play"><Play size={17} /></button>
           </div>
         </div>
       </div>
