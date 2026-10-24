@@ -251,7 +251,10 @@ export function DesignPanel() {
         {!(s.hillshade && s.reliefLook === "contours") && <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />}
       </Section>
       <Fold title="Lettering" testid="fold-title">
-        <Field label="Font (the title and the map's labels)">
+        <Field label="Title font (on the map and the signs)">
+          <FontPicker label="Title font" value={s.titleFont} inherit="Same as the map's" onPick={f => setStyle({ titleFont: f ?? undefined })} used={fontsIn(doc)} testid="title-font" />
+        </Field>
+        <Field label="Font (the map's labels)">
           <FontPicker label="Map font" value={s.font} onPick={f => setStyle({ font: f ?? "Script" })} used={fontsIn(doc)} testid="map-font" />
         </Field>
         <Slider label="Label size" min={0.7} max={1.6} step={0.05} value={s.labelScale} onChange={v => setStyle({ labelScale: v })} format={v => `${Math.round(v * 100)}%`} />

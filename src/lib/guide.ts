@@ -467,8 +467,8 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "lettering", section: "map", title: "Lettering",
-    body: "The map's font, used for its title and labels, and how big the labels are. Click the title on the page to change its words. Every font setting has the same picker: about 1,800 Google fonts plus the app's own. Type part of a name or pick a kind (Good on signs, Sans, Serif, Display, Script). The fonts this course uses and the ones you used lately come first. Point at one and the picked piece shows it before you click. Your printouts carry the fonts with them.",
-    words: "font fonts lettering label size google fonts title",
+    body: "Title font sets the course's title in a font of its own, on the map and the tee signs. Left as Same as the map's, it follows the map's font. Font is for the map's labels, and Label size is how big they are. Click the title on the page to change its words or its font. Every font setting has the same picker: about 1,800 Google fonts plus the app's own. Type part of a name or pick a kind (Good on signs, Sans, Serif, Display, Script). The fonts this course uses and the ones you used lately come first. Point at one and the picked piece shows it before you click. Your printouts carry the fonts with them.",
+    words: "font fonts lettering label size google fonts title title font heading",
     path: "Map › Course map › Lettering",
     where: { step: "map", tab: "map", find: "fold-title" }
   },

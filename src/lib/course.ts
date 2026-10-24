@@ -59,6 +59,9 @@ export const defaultRules = (): CourseRules => ({
   prices: { basket: 450, teePad: 350, sign: 120, bench: 300, trash: 150, kiosk: 1200, sleeve: 40 }
 });
 
+/** The font the course's title is set in. */
+export const titleFontOf = (s: { font: string; titleFont?: string }) => s.titleFont || s.font;
+
 /** The line under the course's name, as printed (none: ""). */
 export const taglineOf = (s: { tagline?: string }) => (s.tagline ?? "Disc golf course").trim().toUpperCase();
 

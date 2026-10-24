@@ -5,7 +5,7 @@ import { fitAttr, capAttr } from "./fitText";
 import { CIRCLE_ONE_FT, FT_PER_M, TEE_LEVELS } from "../constants";
 import type { AreaItem, BasketItem, CourseDoc, CourseItem, LineItem, P, SignLook, SignPart, SignSpot } from "../types";
 import { renderFieldGuide, renderOpenView, renderTrailhead } from "./signLooks";
-import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, obFor, obPieces, throwLine, taglineOf } from "./course";
+import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, obFor, obPieces, throwLine, taglineOf, titleFontOf } from "./course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, rotatePoint, smoothPath } from "./geom";
 import { holeStats, playedHoles, type HoleStats } from "./holeStats";
 import { fontStack, keepsCase, markingsInView, northArrow, palette, renderMapLayers, scaleBar, titleStack, wrapSvg, type MapView } from "./mapSvg";
@@ -339,8 +339,8 @@ export const renderScorecard = (doc: CourseDoc, players = doc.style.scorecard?.p
     if (sty.logo) out.push(`<image href="${sty.logo}" x="${m}" y="${n(top + 16)}" width="${logoW}" height="${logoH}" preserveAspectRatio="xMinYMid meet"/>`);
     else {
       const name = (sty.title || doc.name || "").replace(/\s+disc\s+golf(\s+course)?$/i, "").trim() || "Disc Golf";
-      const size = Math.min(30, (logoW / Math.max(4, name.length)) * (keepsCase(sty.font) ? 2.1 : 1.75));
-      out.push(`<text${fitAttr(logoW)} x="${m}" y="${n(top + 44)}" font-family="${titleStack(sty.font)}" font-weight="700" font-size="${n(size)}" fill="${card.header}">${esc(keepsCase(sty.font) ? name : name.toUpperCase())}</text>`);
+      const size = Math.min(30, (logoW / Math.max(4, name.length)) * (keepsCase(titleFontOf(sty)) ? 2.1 : 1.75));
+      out.push(`<text${fitAttr(logoW)} x="${m}" y="${n(top + 44)}" font-family="${titleStack(titleFontOf(sty))}" font-weight="700" font-size="${n(size)}" fill="${card.header}">${esc(keepsCase(titleFontOf(sty)) ? name : name.toUpperCase())}</text>`);
       if (taglineOf(sty)) out.push(`<text x="${m}" y="${n(top + 60)}" font-family="${card.body}" font-weight="800" font-size="7" letter-spacing="2" fill="${card.header}">${esc(taglineOf(sty))}</text>`);
     }
     P.group(out, at, "logo", copy);
@@ -560,8 +560,8 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
   const bandH = 128 * u;
   parts.push(P.wrap("band", `<rect width="${n(col.w)}" height="${n(bandH)}" fill="${card.header}" data-fill="1"/><rect y="${n(bandH - 5 * u)}" width="${n(col.w)}" height="${n(5 * u)}" fill="${lvl.color}"/>`));
   at = parts.length;
-  const nameSize = Math.min(40 * u, ((cw * 0.95) / Math.max(4, name.length)) * (keepsCase(sty.font) ? 2.1 : 1.75));
-  if (show("courseName")) parts.push(`<text${fitAttr(cw)} x="${n(cx)}" y="${n(bandH * 0.52)}" text-anchor="middle" font-family="${titleStack(sty.font)}" font-weight="700" font-size="${n(nameSize)}" fill="${card.accent}">${esc(keepsCase(sty.font) ? name : name.toUpperCase())}</text>`);
+  const nameSize = Math.min(40 * u, ((cw * 0.95) / Math.max(4, name.length)) * (keepsCase(titleFontOf(sty)) ? 2.1 : 1.75));
+  if (show("courseName")) parts.push(`<text${fitAttr(cw)} x="${n(cx)}" y="${n(bandH * 0.52)}" text-anchor="middle" font-family="${titleStack(titleFontOf(sty))}" font-weight="700" font-size="${n(nameSize)}" fill="${card.accent}">${esc(keepsCase(titleFontOf(sty)) ? name : name.toUpperCase())}</text>`);
   if (show("courseName") && taglineOf(sty)) parts.push(`<text${fitAttr(cw)} x="${n(cx)}" y="${n(bandH * 0.52 + 22 * u)}" text-anchor="middle" font-family="${card.body}" font-weight="800" font-size="${n(7.5 * u)}" letter-spacing="${n(2.6 * u)}" fill="${card.accent}" fill-opacity="0.75">${esc(taglineOf(sty))}</text>`);
   P.group(parts, at, "courseName");
   // The number, big, and its par on a tag in the tee's color (each when shown)

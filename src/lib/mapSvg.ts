@@ -9,7 +9,7 @@ import { SCRIPT_FONTS } from "./fontKinds";
 import { latitudeOf, sunFromOf } from "./mapLook";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
-import { activeLayout, areaObEdges, beyondSides, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, sharedWalks, teeAim, walkRoutes, taglineOf } from "./course";
+import { activeLayout, areaObEdges, beyondSides, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, sharedWalks, teeAim, walkRoutes, taglineOf, titleFontOf } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
 import { courseTotals, holeStats, isOb, playsOf, type HoleStats } from "./holeStats";
 import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, type CanopyGrid } from "./forest";
@@ -1097,10 +1097,10 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
       if (the) name = name.replace(/^the\s+/i, "");
       const course = /\s+disc\s+golf(\s+course)?$/i.test(name);
       if (course) name = name.replace(/\s+disc\s+golf(\s+course)?$/i, "");
-      const big = Math.min(54 * ts, ((W * 0.4) / Math.max(4, name.length)) * (keepsCase(s.font) ? 2.1 : 1.9));
-      let tw = name.length * big * (keepsCase(s.font) ? 0.48 : 0.6);
+      const big = Math.min(54 * ts, ((W * 0.4) / Math.max(4, name.length)) * (keepsCase(titleFontOf(s)) ? 2.1 : 1.9));
+      let tw = name.length * big * (keepsCase(titleFontOf(s)) ? 0.48 : 0.6);
       if (the) { out.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="${font}" font-weight="700" font-style="italic" font-size="${n(13 * ts)}" fill="${ink}" ${shadow}>THE</text>`); ty += 10 * ts; }
-      out.push(`<text${fitAttr(W * 0.42)} x="${n(tx)}" y="${n(ty + big * 0.95)}" text-anchor="${anchor}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(big)}" fill="${ink}" ${shadow}>${esc(keepsCase(s.font) ? name : name.toUpperCase())}</text>`);
+      out.push(`<text${fitAttr(W * 0.42)} x="${n(tx)}" y="${n(ty + big * 0.95)}" text-anchor="${anchor}" font-family="${titleStack(titleFontOf(s))}" font-weight="700" font-size="${n(big)}" fill="${ink}" ${shadow}>${esc(keepsCase(titleFontOf(s)) ? name : name.toUpperCase())}</text>`);
       ty += big * 1.15;
       const golf = course || !/golf/i.test(title) ? taglineOf(s) : "";
       out.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="${n(12 * ts)}" letter-spacing="${n(3.2 * ts)}" fill="${ink}" ${shadow}>${golf}</text>`);
@@ -1219,7 +1219,7 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
   const scale = Math.min(map.w / bw, map.h / bh);
   const view: MapView = { cx: center.x, cy: center.y, rotation, scale, width: map.w, height: map.h };
   const { svg, toScreen } = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy }, "pm");
-  if (title) parts.push(`<text x="${n(m)}" y="${n(m + 30 * ts)}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(30 * ts)}" fill="${pal.ink}" letter-spacing="${n(keepsCase(s.font) ? 0 : 0.5 * ts)}">${esc(keepsCase(s.font) ? title : title.toUpperCase())}</text>`);
+  if (title) parts.push(`<text x="${n(m)}" y="${n(m + 30 * ts)}" font-family="${titleStack(titleFontOf(s))}" font-weight="700" font-size="${n(30 * ts)}" fill="${pal.ink}" letter-spacing="${n(keepsCase(titleFontOf(s)) ? 0 : 0.5 * ts)}">${esc(keepsCase(titleFontOf(s)) ? title : title.toUpperCase())}</text>`);
   const info = `${totals.complete} HOLES · PAR ${totals.par} · ${fmtDist(totals.length, doc.units).toUpperCase()}${layout && doc.layouts.length > 1 ? ` · ${layout.name.toUpperCase()} LAYOUT` : ""}`;
   parts.push(`<text x="${n(W - m)}" y="${n(m + 28 * ts)}" text-anchor="end" font-family="${font}" font-weight="600" font-size="${n(13 * ts)}" fill="${pal.inkSoft}">${esc(info)}</text>`);
   if (sub) parts.push(`<text x="${n(m)}" y="${n(m + 46 * ts)}" font-family="Inter, Arial, sans-serif" font-size="${n(9.5 * ts)}" fill="${pal.inkSoft}">${esc(sub)}</text>`);

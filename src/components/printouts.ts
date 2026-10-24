@@ -196,9 +196,9 @@ export const pickedOf = (doc: CourseDoc, t: TargetKey, id: string): Picked | nul
     // (its words: the title and its subtitle, a line each; the footer note; a panel's heading)
     const words = e.id === "title" ? [s.title || doc.name, subtitleOf(doc)].filter(Boolean).join("\n") : e.id === "credit" ? s.footer : e.id === "legend" ? o.heading ?? "Legend" : e.id === "holes" ? o.heading ?? "" : undefined;
     return {
-      label: e.label, kind: "piece", scale: o.scale ?? 1, color: o.ink, fill: o.bg, text: words, opacity: o.opacity, rot: o.rot,
-      // (the map itself stays square and solid on its page)
-      has: { ...none, color: e.id === "title" || panel || e.id === "credit", fill: panel || e.id === "title", text: words !== undefined, opacity: e.id !== "map", turn: e.id !== "map" },
+      label: e.label, kind: "piece", scale: o.scale ?? 1, color: o.ink, fill: o.bg, text: words, opacity: o.opacity, rot: o.rot, font: e.id === "title" ? s.titleFont : undefined,
+      // (the map itself stays square and solid on its page; the title in a font of its own)
+      has: { ...none, font: e.id === "title", color: e.id === "title" || panel || e.id === "credit", fill: panel || e.id === "title", text: words !== undefined, opacity: e.id !== "map", turn: e.id !== "map" },
       removable: false, duplicable: false, changed: o.x !== undefined || o.y !== undefined || o.scale !== undefined || !!o.ink || !!o.bg || !!o.rot || o.opacity !== undefined
     };
   }
@@ -246,6 +246,7 @@ export const patchPicked = (t: TargetKey, id: string, p: Patch, history = true) 
       if (e.id === "credit") return changeDoc(d => ({ style: { ...d.style, footer: v.trim() } }), history);
       return patchPage(e.id, { heading: v.trim() || undefined }, history);
     }
+    if (e?.kind === "built" && e.id === "title" && "font" in p) return changeDoc(d => ({ style: { ...d.style, titleFont: p.font || undefined } }), history);
     if (e?.kind === "built") return patchPage(e.id, { ...("color" in p ? { ink: p.color } : {}), ...("fill" in p ? { bg: p.fill } : {}), ...("rot" in p ? { rot: p.rot || undefined } : {}), ...("opacity" in p ? { opacity: p.opacity } : {}) }, history);
     return;
   }
