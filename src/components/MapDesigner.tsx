@@ -2,7 +2,7 @@
 // exactly as it will print, updating as the style changes, and laid out by hand right on it.
 import { Woods } from "./Woods";
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Minus, Plus, Scan } from "lucide-react";
+import { Minus, Plus, RotateCw, Scan } from "lucide-react";
 import { onPaintProgress, onPainted, renderPoster, withLivePaint } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
 import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
@@ -202,7 +202,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const [hover, setHover] = useState<{ id: string; box: Box } | null>(null);
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
   const [typing, setTyping] = useState<{ id: string; text: string; box: Box } | null>(null);
-  const drag = useRef<{ mode: "move" | "size"; id: string; el: SVGGElement; orig: string; cx: number; cy: number; pid: number; k: number; W: number; H: number; box: Box; anchor: { x: number; y: number }; corner: { x: number; y: number }; f: number; dx: number; dy: number; lines: { x: number[]; y: number[] } } | null>(null);
+  const drag = useRef<{ mode: "move" | "size" | "turn"; rot0?: number; a0?: number; c?: { x: number; y: number }; rot?: number; id: string; el: SVGGElement; orig: string; cx: number; cy: number; pid: number; k: number; W: number; H: number; box: Box; anchor: { x: number; y: number }; corner: { x: number; y: number }; f: number; dx: number; dy: number; lines: { x: number[]; y: number[] } } | null>(null);
   const elOf = (id: string) =>
     svgHost.current?.querySelector(id.startsWith("label:") ? `[data-label="${CSS.escape(id.slice(6))}"]` : `[data-el="${CSS.escape(id)}"]`) as SVGGElement | null;
   const boxOf = (el: Element): Box => {
@@ -258,13 +258,32 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     }
   }, [page, held, fontsIn2, editing]);
 
-  /** What's under the pointer: a piece (or a label on the course map). */
-  const pieceAt = (target: EventTarget | null) => {
+  /** What's under the pointer: a label on the course map, or the smallest piece whose box takes in
+   * the point (pieces overlap: a title over a panel, a panel's box reaching over its neighbor; the
+   * one meant is the smaller, as in any design app). */
+  const pieceAt = (target: EventTarget | null, cx: number, cy: number) => {
     const tag = t === "map" ? (target as Element).closest?.("[data-label]") : null;
     if (tag) return `label:${tag.getAttribute("data-label")}`;
-    const hit = (target as Element).closest?.("[data-el]");
-    const id = hit?.getAttribute("data-el") ?? null;
-    return pickable(id) ? id : null;
+    const host = svgHost.current;
+    if (!host) return null;
+    const hr = host.getBoundingClientRect(), k = kRef.current, px = (cx - hr.left) / k, py = (cy - hr.top) / k;
+    let best: string | null = null, area = Infinity;
+    for (const g of Array.from(host.querySelectorAll("[data-el]"))) {
+      const id = g.getAttribute("data-el");
+      if (!pickable(id)) continue;
+      const b = boxOf(g);
+      if (px < b.x || px > b.x + b.w || py < b.y || py > b.y + b.h) continue;
+      if (b.w * b.h < area) { area = b.w * b.h; best = id; }
+    }
+    return best;
+  };
+  /** A piece that fills most of the page (the map, a full-page panel or picture): a tap on it
+   * while something else is picked lets go, the way a tap on a design's background does. */
+  const fillsPage = (id: string) => {
+    const el = elOf(id), { W, H } = dims();
+    if (!el) return false;
+    const b = boxOf(el);
+    return b.w * b.h > W * H * 0.5;
   };
   /** Where things line up: the page's edges and middle, and every other piece's. */
   const linesFor = (id: string) => {
@@ -289,6 +308,8 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
 
   // (a finger off the piece lets go of it only when it lifts without moving: the first of two
   // fingers pinching a small piece often lands just beside it)
+  // (the angle shown while a piece is being turned)
+  const [turning, setTurning] = useState<number | null>(null);
   const tapOut = useRef<{ pid: number; x: number; y: number } | null>(null);
   // (a finger picks a piece with a tap, when it lifts without moving: a drag across a piece not
   // picked scrolls the page, as on any phone)
@@ -299,14 +320,16 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     const active = document.activeElement as HTMLElement | null;
     if (active?.matches?.("input,textarea,select")) active.blur();
     const corner = (e.target as HTMLElement).closest?.("[data-corner]") as HTMLElement | null;
+    const turn = !!(e.target as HTMLElement).closest?.("[data-turn-handle]");
     if ((e.target as HTMLElement).closest?.("[data-page-bar]")) return;
-    const id = corner ? designSel : pieceAt(e.target);
+    let id = corner || turn ? designSel : pieceAt(e.target, e.clientX, e.clientY);
+    if (id && designSel && id !== designSel && !corner && !turn && fillsPage(id)) id = null;
     if (!id && e.pointerType === "touch" && designSel) { tapOut.current = { pid: e.pointerId, x: e.clientX, y: e.clientY }; return; }
     if (!id) { setEd({ designSel: null }); return; }
     const el = elOf(id);
     if (!el) return;
     const fresh = id !== designSel;
-    if (!corner && fresh && e.pointerType === "touch") { tapPick.current = { id, pid: e.pointerId, x: e.clientX, y: e.clientY }; return; }
+    if (!corner && !turn && fresh && e.pointerType === "touch") { tapPick.current = { id, pid: e.pointerId, x: e.clientX, y: e.clientY }; return; }
     if (fresh) setEd({ designSel: id });
     e.preventDefault();
     e.stopPropagation();
@@ -314,6 +337,17 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     const b = boxOf(el);
     const [sx, sy] = (corner?.dataset.corner ?? "1,1").split(",").map(Number);
     const { W, H } = dims();
+    if (turn) {
+      // (turned about its middle: the angle from the middle to the finger, from where it started)
+      const hr = svgHost.current!.getBoundingClientRect(), k = kRef.current;
+      const c = { x: hr.left + (b.x + b.w / 2) * k, y: hr.top + (b.y + b.h / 2) * k };
+      drag.current = {
+        mode: "turn", id, el, orig: el.getAttribute("style") ?? "", cx: e.clientX, cy: e.clientY, pid: e.pointerId, k, W, H, box: b, corner: { x: 0, y: 0 }, anchor: { x: 0, y: 0 }, f: 1, dx: 0, dy: 0, lines: { x: [], y: [] },
+        c, a0: Math.atan2(e.clientY - c.y, e.clientX - c.x), rot0: pickedOf(live, t, id)?.rot ?? 0, rot: pickedOf(live, t, id)?.rot ?? 0
+      };
+      setHover(null);
+      return;
+    }
     drag.current = {
       mode: corner ? "size" : "move", id, el, orig: el.getAttribute("transform") ?? "", cx: e.clientX, cy: e.clientY, pid: e.pointerId, k: kRef.current, W, H, box: b,
       corner: { x: b.x + sx * b.w, y: b.y + sy * b.h }, anchor: { x: b.x + (1 - sx) * b.w, y: b.y + (1 - sy) * b.h }, f: 1, dx: 0, dy: 0,
@@ -326,12 +360,28 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     if (!d) {
       // (the piece under the pointer, outlined: what a click picks)
       if (e.pointerType !== "mouse" || !editing || typing) return;
-      const id = pieceAt(e.target);
+      const id = pieceAt(e.target, e.clientX, e.clientY);
       if (!id || id === designSel) { if (hover) setHover(null); return; }
       if (hover?.id !== id) { const el = elOf(id); if (el) setHover({ id, box: boxOf(el) }); }
       return;
     }
     if (d.pid !== e.pointerId) return;
+    if (d.mode === "turn") {
+      const a = Math.atan2(e.clientY - d.c!.y, e.clientX - d.c!.x);
+      let r = d.rot0! + ((a - d.a0!) * 180) / Math.PI;
+      r = ((((r + 180) % 360) + 360) % 360) - 180;
+      // (straight, square and on the diagonals snap from a few degrees away; Shift: every 15)
+      if (e.shiftKey) r = Math.round(r / 15) * 15;
+      else { const q = Math.round(r / 45) * 45; if (Math.abs(r - q) < 4) r = q; }
+      r = Math.round(r);
+      d.rot = r;
+      // (live: on top of the turn it had, about its middle, until it's let go)
+      d.el.style.setProperty("transform-box", "fill-box");
+      d.el.style.setProperty("transform-origin", "center");
+      d.el.style.setProperty("rotate", `${r - d.rot0!}deg`);
+      setTurning(r);
+      return;
+    }
     let dx = (e.clientX - d.cx) / d.k, dy = (e.clientY - d.cy) / d.k;
     if (d.mode === "move") {
       // (snapped onto the nearest line within a few pixels, shown pink)
@@ -372,9 +422,17 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     if (!d || d.pid !== e.pointerId) return;
     drag.current = null;
     setGuides({ x: [], y: [] });
+    if (d.mode === "turn") {
+      setTurning(null);
+      if (d.orig) d.el.setAttribute("style", d.orig); else d.el.removeAttribute("style");
+      if (d.rot !== d.rot0) patchPicked(t, d.id, { rot: d.rot });
+      return;
+    }
     if (Math.abs(e.clientX - d.cx) + Math.abs(e.clientY - d.cy) < 3) {
       d.el.setAttribute("transform", d.orig);
       setSelBox(d.box);
+      // (a finger tapping what's already picked: its words to type, as in any design app)
+      if (e.pointerType === "touch" && d.mode === "move" && !d.id.startsWith("label:") && pickedOf(live, t, d.id)?.has.text) startTyping(d.id);
       return;
     }
     if (d.mode === "move" && d.id.startsWith("label:")) {
@@ -386,7 +444,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   /** Double-click on text: type on the page. */
   const onPageDouble = (e: React.MouseEvent) => {
     if (!editing) return;
-    const id = pieceAt(e.target);
+    const id = pieceAt(e.target, e.clientX, e.clientY);
     if (id && pickedOf(doc, t, id)?.has.text) startTyping(id);
   };
   const startTyping = (id: string) => {
@@ -425,7 +483,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       const id = useEditor.getState().designSel;
       if (!id || ev.touches.length > 1) return;
       const tg = ev.target as Element;
-      if (tg.closest?.("[data-corner]")) { ev.preventDefault(); return; }
+      if (tg.closest?.("[data-corner],[data-turn-handle]")) { ev.preventDefault(); return; }
       const g = id.startsWith("label:") ? tg.closest?.("[data-label]") : tg.closest?.("[data-el]");
       const under = g ? (id.startsWith("label:") ? `label:${g.getAttribute("data-label")}` : g.getAttribute("data-el")) : null;
       if (under === id) ev.preventDefault();
@@ -617,6 +675,15 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
             {guides.y.map(y => <div key={`gy${y}`} className="absolute left-0 right-0 h-px pointer-events-none bg-pink-500" style={{ top: y * k }} data-testid="snap-guide" />)}
             {editing && designSel && selBox && (
               <div className="absolute pointer-events-none" data-testid="page-selection" style={{ left: selBox.x * k, top: selBox.y * k, width: selBox.w * k, height: selBox.h * k, outline: "2px solid #f97316", outlineOffset: 2 }}>
+                {!designSel.startsWith("label:") && !typing && pickedOf(live, t, designSel)?.has.turn && (
+                  <div className="absolute left-1/2 -top-9 touch:-top-12 -translate-x-1/2 flex flex-col items-center pointer-events-auto" style={{ touchAction: "none" }}>
+                    <div data-turn-handle data-testid="page-turn" title="Turn it (Shift: 15° at a time)" className="w-6 h-6 touch:w-9 touch:h-9 rounded-full bg-white border-2 border-orange-500 shadow flex items-center justify-center text-orange-500 cursor-grab" style={{ touchAction: "none" }}>
+                      <RotateCw size={compact ? 16 : 12} strokeWidth={2.6} />
+                    </div>
+                    <div className="w-px h-2.5 touch:h-3 bg-orange-500" />
+                  </div>
+                )}
+                {turning !== null && <div className="absolute left-1/2 -translate-x-1/2 -top-[68px] touch:-top-[84px] glass rounded-full px-2.5 py-1 text-[12px] font-semibold text-zinc-50 tabular-nums" data-testid="page-turn-angle">{turning}°</div>}
                 {!designSel.startsWith("label:") && !typing && ["0,0", "1,0", "0,1", "1,1"].map(c => {
                   const [cx, cy] = c.split(",").map(Number);
                   return <div key={c} data-corner={c} data-testid="page-corner" className="absolute w-3 h-3 touch:w-[18px] touch:h-[18px] bg-white border-2 border-orange-500 rounded-full pointer-events-auto" style={{ left: `calc(${cx * 100}% - ${compact ? 9 : 6}px)`, top: `calc(${cy * 100}% - ${compact ? 9 : 6}px)`, cursor: cx === cy ? "nwse-resize" : "nesw-resize", touchAction: "none" }} />;

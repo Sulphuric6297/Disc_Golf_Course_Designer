@@ -3,7 +3,7 @@
 // tees, baskets, mandos, drop zones, distances), labels, and the frame (title, legend, hole table,
 // north arrow, scale bar). The same renderer draws a single hole for tee signs, turned so the tee
 // is at the bottom.
-import { extrasSvg } from "./pieces";
+import { extrasSvg, turned } from "./pieces";
 import { fitAttr } from "./fitText";
 import { SCRIPT_FONTS } from "./fontKinds";
 import { latitudeOf, sunFromOf } from "./mapLook";
@@ -1060,14 +1060,14 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
     const pageEls = s.page ?? {};
     const el = (id: PageElementId): PageElementStyle => pageEls[id] ?? {};
     type Box = { x: number; y: number; w: number; h: number };
-    const placed = (id: string, o: { x?: number; y?: number; scale?: number; hidden?: boolean }, box: Box, content: string) => {
+    const placed = (id: string, o: { x?: number; y?: number; scale?: number; hidden?: boolean; rot?: number; opacity?: number }, box: Box, content: string) => {
       if (o.hidden) return;
       const k = o.scale ?? 1;
       // (kept at least partly on the page)
       const X = o.x !== undefined ? Math.max(10 - box.w * k, Math.min(W - 10, o.x * W)) : box.x;
       const Y = o.y !== undefined ? Math.max(10 - box.h * k, Math.min(H - 10, o.y * H)) : box.y;
       // (with a box to pick it by on the Design page, never drawn)
-      parts.push(`<g data-el="${id}" data-box="${n(X)} ${n(Y)} ${n(box.w * k)} ${n(box.h * k)}" transform="translate(${n(X)} ${n(Y)}) scale(${n(k)}) translate(${n(-box.x)} ${n(-box.y)})"><rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.w)}" height="${n(box.h)}" fill="none" pointer-events="all"/>${content}</g>`);
+      parts.push(`<g data-el="${id}" data-box="${n(X)} ${n(Y)} ${n(box.w * k)} ${n(box.h * k)}" transform="translate(${n(X)} ${n(Y)}) scale(${n(k)}) translate(${n(-box.x)} ${n(-box.y)})"><rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.w)}" height="${n(box.h)}" fill="none" pointer-events="all"/>${turned(content, o.rot, o.opacity)}</g>`);
     };
     // The map fills the page; the course fits inside a margin. Its labels can be dragged on the
     // Design page (the map's scale and turn say how far that is on the ground)
@@ -1192,7 +1192,7 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
     for (const im of s.images ?? []) {
       if (im.hidden) continue;
       const w = im.w * W, h = w * im.aspect, X = im.x * W, Y = im.y * H;
-      parts.push(`<g data-el="image:${im.id}" data-box="${n(X)} ${n(Y)} ${n(w)} ${n(h)}"><image href="${im.src}" x="${n(X)}" y="${n(Y)}" width="${n(w)}" height="${n(h)}" preserveAspectRatio="xMidYMid meet" opacity="${n(im.opacity ?? 1)}"/></g>`);
+      parts.push(`<g data-el="image:${im.id}" data-box="${n(X)} ${n(Y)} ${n(w)} ${n(h)}">${turned(`<image href="${im.src}" x="${n(X)}" y="${n(Y)}" width="${n(w)}" height="${n(h)}" preserveAspectRatio="xMidYMid meet" opacity="${n(im.opacity ?? 1)}"/>`, im.rot)}</g>`);
     }
     for (const t of s.texts ?? []) {
       if (t.hidden || !t.text.trim()) continue;
@@ -1203,7 +1203,7 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
       const pad = t.size * 0.4;
       const bgRect = t.bg && (t.bgOpacity ?? 1) > 0 ? `<rect x="${n(X - pad)}" y="${n(Y - pad)}" width="${n(tw + pad * 2)}" height="${n(th + pad * 2)}" rx="${n(pad)}" fill="${t.bg}" fill-opacity="${n(t.bgOpacity ?? 1)}"/>` : "";
       const body = lines.map((l, i) => `<text x="${n(ax)}" y="${n(Y + t.size * (0.95 + i * 1.25))}" text-anchor="${t.align ?? "start"}" font-family="${titleStack(t.font || s.font)}" font-weight="${t.bold ? 700 : 400}"${t.italic ? ` font-style="italic"` : ""} font-size="${n(t.size)}" fill="${t.color}">${esc(l)}</text>`).join("");
-      parts.push(`<g data-el="text:${t.id}" data-box="${n(X)} ${n(Y)} ${n(tw)} ${n(th)}"><rect x="${n(X)}" y="${n(Y)}" width="${n(tw)}" height="${n(th)}" fill="none" pointer-events="all"/>${bgRect}${body}</g>`);
+      parts.push(`<g data-el="text:${t.id}" data-box="${n(X)} ${n(Y)} ${n(tw)} ${n(th)}"><rect x="${n(X)}" y="${n(Y)}" width="${n(tw)}" height="${n(th)}" fill="none" pointer-events="all"/>${turned(bgRect + body, t.rot, t.opacity)}</g>`);
     }
     // Pictures, QR codes and sponsors added to the map (the course's own name filled in)
     parts.push(extrasSvg(s.mapExtras, s.sponsors, "", { hole: "", par: "", length: "", course: title, name: "" }, W, H, s.font, (id, c) => `<g data-el="${id}">${c}</g>`));

@@ -367,6 +367,10 @@ export interface PiecePlace {
   font?: string;
   color?: string;
   fill?: string;
+  /** Turned about its middle, degrees clockwise; how solid it is (0 to 1); its lettering slanted. */
+  rot?: number;
+  opacity?: number;
+  italic?: boolean;
 }
 /** Something put on a tee sign or hole page: text (its {hole}, {par}, {length}, {course} and
  * {name} filled in for each hole), a picture, the hole's sponsors, or a QR code. Where it was put,
@@ -388,6 +392,9 @@ export interface PrintExtra {
   size?: number;
   color?: string;
   bold?: boolean;
+  italic?: boolean;
+  /** Turned about its middle, degrees clockwise. */
+  rot?: number;
   align?: "start" | "middle" | "end";
   font?: string;
   /** A picture (a data URL) and its height to width. */
@@ -445,6 +452,9 @@ export interface PageElementStyle {
   y?: number;
   /** Its size, times its own. */
   scale?: number;
+  /** Turned about its middle (degrees clockwise), and how solid it is (0 to 1). */
+  rot?: number;
+  opacity?: number;
   hidden?: boolean;
   /** Its panel's color and how solid it is (0 none, 1 solid), and its text color. */
   bg?: string;
@@ -470,6 +480,9 @@ export interface PageText {
   bold?: boolean;
   italic?: boolean;
   align?: "start" | "middle" | "end";
+  /** Turned about its middle (degrees clockwise), and how solid it is (0 to 1). */
+  rot?: number;
+  opacity?: number;
   /** A panel behind it. */
   bg?: string;
   bgOpacity?: number;
@@ -486,6 +499,8 @@ export interface PageImage {
   w: number;
   aspect: number;
   opacity?: number;
+  /** Turned about its middle, degrees clockwise. */
+  rot?: number;
   hidden?: boolean;
 }
 
