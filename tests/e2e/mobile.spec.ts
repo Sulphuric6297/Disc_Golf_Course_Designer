@@ -194,7 +194,7 @@ test.describe("phone", () => {
         await expect(page.getByTestId("sheet-title")).toHaveCount(0);
         await expect(page.getByTestId("page-tools")).toBeVisible();
         await page.getByTestId("page-tool-fold-paper").tap();
-        await expect(page.getByTestId("page-tool-panel")).toContainText("Orientation");
+        await expect(page.getByTestId("page-tool-panel")).toContainText("Landscape");
         await expect(page.getByTestId("page-tool-panel").getByTestId("print-layers")).toHaveCount(0);
         await page.getByTestId("page-tool-done").tap();
         await expect(page.getByTestId("page-tool-panel")).toHaveCount(0);
