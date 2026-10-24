@@ -130,7 +130,7 @@ test("trees, benches and labels; delete, duplicate and lock", async ({ page }) =
   // A locked item doesn't delete
   const label = (await course(page)).items.find((i: any) => i.type === "label");
   await page.evaluate(id => (window as any).__dgActions.select(id), label.id);
-  await page.getByRole("button", { name: "Lock" }).click();
+  await page.getByTestId("inspector").getByRole("button", { name: "Lock", exact: true }).click();
   await page.keyboard.press("Delete");
   await expect(page.getByText("It's locked. Unlock it first.")).toBeVisible();
   expect((await course(page)).items.filter((i: any) => i.type === "label")).toHaveLength(1);
@@ -746,4 +746,30 @@ test("OB and beyond: the app's side, or either side chosen (named by the compass
   await expect.poll(async () => (await road()).obToward).toBe(-1);
   await side.getByRole("radio", { name: /Auto/ }).click();
   await expect.poll(async () => (await road()).obToward).toBeUndefined();
+});
+
+test("tall grass has no underbrush until you pick some; then it grows there in 3D, and its kind and sections are set like a wood's", async ({ page }) => {
+  await blankCourse(page);
+  const id = await page.evaluate(() => {
+    (window as any).__dgEditor().set({ areaKind: "rough" });
+    (window as any).__dgActions.addDrawn("area", [{ x: 300, y: 400 }, { x: 700, y: 400 }, { x: 700, y: 700 }, { x: 300, y: 700 }]);
+    const d = (window as any).__dgCourse();
+    const a = d.items[d.items.length - 1];
+    (window as any).__dgActions.select(a.id);
+    return a.id;
+  });
+  const insp = page.getByTestId("inspector");
+  const brush = insp.getByRole("radiogroup", { name: "Underbrush" });
+  await expect(brush.getByRole("radio", { name: "None" })).toHaveAttribute("aria-checked", "true");
+  const grows = () => page.evaluate(id => (window as any).__dgView.shapes.has(`woods:${id}:under`), id);
+  expect(await grows()).toBe(false);
+  await brush.getByRole("radio", { name: "Light" }).click();
+  await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === id).underbrush).toBe("light");
+  await expect.poll(grows, { timeout: 30_000 }).toBe(true);
+  // (what grows: weeds, say)
+  await insp.getByTestId("brush-kind").selectOption("weeds");
+  await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === id).brushKind).toBe("weeds");
+  // Back to none: gone again
+  await brush.getByRole("radio", { name: "None" }).click();
+  await expect.poll(grows, { timeout: 30_000 }).toBe(false);
 });

@@ -265,8 +265,8 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "areas", section: "design", title: "Areas: OB, hazards, water, woods, rough",
-    body: "The Area tool (O) draws a shape. Click its corners and finish with a double-click or Enter, or pick Rectangle, Circle, Freehand or Paint above the tools. Paint works like a real brush: drag it over the map and let go, and the shape comes out with a smooth edge. Set the brush size next to it. Pick its kind (OB, hazard, water, woods, tall grass, parking and so on) before you draw, or change it after in its panel.\n\nThe panel also has its name on the map and a Curved switch. Water, parking lots and buildings never have trees in them, so drawing one over trees takes those trees out. That's part of the same change, so one Undo brings them back.",
-    words: "area draw polygon rectangle circle freehand paint brush water woods grass rough hazard parking building",
+    body: "The Area tool (O) draws a shape. Click its corners and finish with a double-click or Enter, or pick Rectangle, Circle, Freehand or Paint above the tools. Paint works like a real brush: drag it over the map and let go, and the shape comes out with a smooth edge. Set the brush size next to it. Pick its kind (OB, hazard, water, woods, tall grass, parking and so on) before you draw, or change it after in its panel.\n\nThe panel also has its name on the map and a Curved switch. Tall grass can have underbrush too: bushes, briars and weeds growing up through it, set the same way as in woods. It's off until you pick some. Water, parking lots and buildings never have trees in them, so drawing one over trees takes those trees out. That's part of the same change, so one Undo brings them back.",
+    words: "area draw polygon rectangle circle freehand paint brush water woods grass rough tall grass underbrush weeds briars hazard parking building",
     path: "Design › Area (O)"
   },
   {

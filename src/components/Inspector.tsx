@@ -312,7 +312,8 @@ type BrushLevel = (typeof BRUSH_LEVELS)[number]["value"];
 const BRUSH_KINDS: { value: BrushKind; label: string }[] = [{ value: "mixed", label: "A mix" }, { value: "thicket", label: "Thicket" }, { value: "briars", label: "Briars & thorns" }, { value: "weeds", label: "Weeds" }];
 const kindSelect = "bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80";
 
-/** A wood's underbrush: its own level and kind, and sections drawn inside it with their own. */
+/** A wood's underbrush (or tall grass's: none unless asked for): its own level and kind, and
+ * sections drawn inside it with their own. */
 function WoodsBrush({ item }: { item: AreaItem }) {
   const drawing = useEditor(e => e.patchFor === item.id && e.patchBrush);
   const sections = item.brush ?? [];
@@ -321,7 +322,7 @@ function WoodsBrush({ item }: { item: AreaItem }) {
   const kind = item.brushKind ?? "mixed";
   return (
     <div className="mb-3" data-testid="woods-brush">
-      <Field label={sections.length ? "Underbrush (the rest of the wood)" : "Underbrush"} help="woods" hint="Bushes, thickets, briars and weeds under the trees. It stays off fairways and paths.">
+      <Field label={sections.length ? `Underbrush (the rest of the ${item.kind === "rough" ? "grass" : "wood"})` : "Underbrush"} help={item.kind === "rough" ? "areas" : "woods"} hint={item.kind === "rough" ? "Bushes, briars and weeds growing up through the long grass. None unless you pick some. It stays off fairways and paths." : "Bushes, thickets, briars and weeds under the trees. It stays off fairways and paths."}>
         <Segmented label="Underbrush" value={item.underbrush ?? "none"} onChange={v => updateItem(item.id, { underbrush: v === "none" ? undefined : v } as Partial<CourseItem>)} options={[...BRUSH_LEVELS]} />
       </Field>
       {(item.underbrush || sections.length > 0) && (
@@ -350,7 +351,7 @@ function WoodsBrush({ item }: { item: AreaItem }) {
       ))}
       {drawing
         ? <div className="text-xs text-orange-300">Draw around the part of the wood with the mouse held down (a finger on a phone); let go to finish. Esc cancels.</div>
-        : <Button small onClick={draw} testid="brush-draw-section" title="Draw around part of this wood to give it its own underbrush"><Plus size={13} /> Draw a section with its own underbrush</Button>}
+        : <Button small onClick={draw} testid="brush-draw-section" title={`Draw around part of this ${item.kind === "rough" ? "grass" : "wood"} to give it its own underbrush`}><Plus size={13} /> Draw a section with its own underbrush</Button>}
       {(item.underbrush || sections.some(b => b.level !== "none")) && (
         <div className="mt-2">
           <Slider label="Thicker at the edges" min={0} max={100} step={5} value={Math.round((item.brushEdge ?? 0.6) * 100)}
@@ -610,7 +611,7 @@ function ItemInspector({ item, bare = false }: { item: CourseItem; bare?: boolea
           <Field label="Name on the map (optional)"><TextInput label="Area name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
           {item.kind !== "ob" && <ObChoice item={item} />}
           {item.kind === "woods" && <WoodsTrees item={item} />}
-          {item.kind === "woods" && <WoodsBrush item={item} />}
+          {(item.kind === "woods" || item.kind === "rough") && <WoodsBrush item={item} />}
           {(item.kind === "ob" || item.kind === "hazard") && holePicker}
           {item.kind !== "parking" && item.kind !== "building" && <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />}
           <TurnShape item={item} />

@@ -2464,9 +2464,10 @@ export class CourseView {
           return woods;
         }, this.itemsGroup, true);
       }
-      // Underbrush beneath a wood (measured or drawn): its own bushes and young trees, kept off
-      // the fairways, paths and water, and off the spots cut by hand
-      if (a.kind === "woods" && a.trees !== "none" && (a.underbrush || a.brush?.some(b => b.level !== "none"))) {
+      // Underbrush beneath a wood (measured or drawn), or up through tall grass when it asks for
+      // some: its own bushes and young trees, kept off the fairways, paths and water, and off the
+      // spots cut by hand
+      if (((a.kind === "woods" && a.trees !== "none") || a.kind === "rough") && (a.underbrush || a.brush?.some(b => b.level !== "none"))) {
         const here = clearings.near(boundsOf(a.points));
         const sections = (a.brush ?? []).filter(b => b.points.length >= 3);
         const inSection = (p: P) => sections.some(b => pointInPolygon(p, b.points));
