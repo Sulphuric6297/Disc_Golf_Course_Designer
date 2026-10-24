@@ -180,7 +180,7 @@ test.describe("phone", () => {
     await expect(page.getByTestId("sheet-title")).toHaveText("Hole 1");
   });
 
-  test("the step bar switches steps and the sheet shows each one; no desktop panels", async ({ page }) => {
+  test("the step bar switches steps and the sheet shows each one (the Map step its page and a row of tools instead); no desktop panels", async ({ page }) => {
     await expect(page.getByTestId("side-panel")).toHaveCount(0);
     await expect(page.getByRole("toolbar", { name: "Tools" })).toHaveCount(0);
     // (A course with a hole: an empty one shows the welcome card on the Site step instead)
@@ -189,7 +189,16 @@ test.describe("phone", () => {
     for (const [label, title] of Object.entries(titles)) {
       await nav(page).getByRole("button", { name: new RegExp(label) }).tap();
       await expect.poll(async () => (await editorState(page)).step).toBe(label.toLowerCase());
-      await expect(page.getByTestId("sheet-title")).toHaveText(title);
+      if (label === "Map") {
+        // (no sheet over the page: its settings are a row of tools, each opening a short panel)
+        await expect(page.getByTestId("sheet-title")).toHaveCount(0);
+        await expect(page.getByTestId("page-tools")).toBeVisible();
+        await page.getByTestId("page-tool-fold-paper").tap();
+        await expect(page.getByTestId("page-tool-panel")).toContainText("Orientation");
+        await expect(page.getByTestId("page-tool-panel").getByTestId("print-layers")).toHaveCount(0);
+        await page.getByTestId("page-tool-done").tap();
+        await expect(page.getByTestId("page-tool-panel")).toHaveCount(0);
+      } else await expect(page.getByTestId("sheet-title")).toHaveText(title);
       await expect(nav(page).getByRole("button", { name: new RegExp(label) })).toHaveAttribute("aria-current", "step");
     }
     // Tapping the step that is open shows more of its panel, and tapping again less
@@ -387,7 +396,8 @@ test.describe("phone", () => {
     await longPress(page, await screenOf(page, tee.x, tee.y, 1));
     await page.getByTestId("menu-delete").tap();
     await expect.poll(async () => (await course(page)).items.some((i: any) => i.type === "tee")).toBe(false);
-    await page.getByTestId("tool-strip").getByRole("button", { name: "Undo" }).tap();
+    // (Undo on the top bar, always in reach)
+    await page.getByTestId("top-bar").getByTestId("undo").tap();
     await expect.poll(async () => (await course(page)).items.some((i: any) => i.type === "tee")).toBe(true);
     // A short press is a tap: no menu
     await tapPlan(page, 450, 500);
@@ -478,6 +488,38 @@ test.describe("phone", () => {
     await expect.poll(zoom).toBe(fit);
     await page.getByRole("button", { name: "Zoom in" }).tap();
     await expect.poll(zoom).toBeGreaterThan(fit);
+  });
+
+  test("a tee sign's pieces follow a slow finger (snapping doesn't hold them back), and a tap off the picked one lets go", async ({ page }) => {
+    await oneHole(page);
+    await nav(page).getByRole("button", { name: /Map/ }).tap();
+    await page.evaluate(() => (window as any).__dgEditor().set({ designTab: "sign", designSel: null }));
+    await expect(page.getByTestId("design-page").locator("[data-el=number]")).toBeAttached();
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type: string, pts: { x: number; y: number }[]) => cdp.send("Input.dispatchTouchEvent", { type: type as "touchStart", touchPoints: pts.map((p, i) => ({ ...p, id: i })) });
+    const left = (id: string) => page.evaluate(id => document.querySelector(`[data-testid=design-page] [data-el="${id}"]`)!.getBoundingClientRect().left, id);
+    for (const id of ["number", "par"]) {
+      await page.evaluate(id => (window as any).__dgEditor().set({ designSel: id }), id);
+      await expect(page.getByTestId("piece-toolbar")).toBeVisible();
+      const r = (await page.locator(`[data-testid=design-page] [data-el="${id}"]`).boundingBox())!;
+      const at = { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      // (a finger moving a pixel at a time: the piece stays with it nearly all the way)
+      await touch("touchStart", [at]);
+      let held = 0;
+      for (let k = 1; k <= 60; k++) {
+        await touch("touchMove", [{ x: at.x + k, y: at.y + k / 2 }]);
+        if (Math.abs((await left(id)) - r.x - k) > 2) held++;
+      }
+      await touch("touchEnd", []);
+      expect(held).toBeLessThan(15);
+      await expect.poll(async () => (await left(id)) - r.x).toBeGreaterThan(50);
+    }
+    // A tap beside what's picked (on another piece, or off the page) lets go of it
+    const band = (await page.locator("[data-testid=design-page] [data-el=courseName]").boundingBox())!;
+    await touch("touchStart", [{ x: band.x + band.width / 2, y: band.y + band.height / 2 }]);
+    await touch("touchEnd", []);
+    await expect.poll(async () => (await editorState(page)).designSel).toBe(null);
+    await cdp.detach();
   });
 
   test("a pinch on the Map step's preview while the map paints still ends (the painting goes in once the fingers lift)", async ({ page }) => {
