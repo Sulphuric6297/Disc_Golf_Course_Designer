@@ -1,0 +1,133 @@
+// A walk round the example course for someone new: a card at the top of the screen, one stop at
+// a time. Each stop takes the app there (the course, a hole, 3D, the view from a tee, the tools,
+// Checks, the printed map, Export) and lights up what it's about. Back and Next, or the arrow keys;
+// Esc or × leaves it, wherever it's got to.
+import { useEffect } from "react";
+import { create } from "zustand";
+import { ArrowLeft, ArrowRight, Compass, X } from "lucide-react";
+import { getDoc, useEditor } from "../state/course";
+import { getView } from "../state/view";
+import { select } from "../state/actions";
+import { openExample } from "../state/files";
+import { spotlight } from "./showSetting";
+import { useTouch } from "./useLayout";
+
+type Stop = { title: string; say: (touch: boolean) => string; go: () => void; find?: (touch: boolean) => string };
+
+const firstHole = () => getDoc().holes[0]?.id ?? null;
+const editor = (p: Parameters<ReturnType<typeof useEditor.getState>["set"]>[0]) => useEditor.getState().set({ tool: "select", teeView: null, flyover: false, problemsOpen: false, ...p });
+const fit = () => requestAnimationFrame(() => getView()?.fitCourse());
+const holeView = () => { const id = firstHole(); if (!id) return; select(id); requestAnimationFrame(() => getView()?.fitHole(id)); };
+
+const STOPS: Stop[] = [
+  {
+    title: "Welcome to Thunder Hollow",
+    say: () => "This is an example course, made in HyzerLab. It has 18 holes laid out on real ground, with its woods, water, paths and buildings. This walk shows you round it in about a minute.",
+    go: () => { editor({ step: "design", view: "2d", selectedId: null }); fit(); }
+  },
+  {
+    title: "The whole course",
+    say: t => `Every hole is drawn on the map: the tee, the basket and the line of play between them, with OB in red. ${t ? "Drag to move round and pinch to zoom." : "Drag to move round and scroll to zoom."}`,
+    go: () => { editor({ step: "design", view: "2d", selectedId: null }); fit(); }
+  },
+  {
+    title: "A hole",
+    say: () => "Pick any hole and its panel shows how long it is, its par, how much it climbs, and its tees and pins. Everything there can be changed.",
+    go: () => { editor({ step: "design", view: "2d" }); holeView(); },
+    find: () => "inspector"
+  },
+  {
+    title: "In 3D",
+    say: t => `The same course in 3D, with the real shape of the ground and every tree. ${t ? "Two fingers turn and tilt it." : "Right-drag to turn and tilt it."} 2D and 3D are at the top.`,
+    go: () => { editor({ step: "design", view: "3d" }); holeView(); }
+  },
+  {
+    title: "From the tee",
+    say: () => "Each hole can be seen from its tee, the way a player sees it. Fly over it plays the whole hole from tee to basket.",
+    go: () => { const id = firstHole(); if (id) editor({ step: "design", view: "3d", teeView: id }); }
+  },
+  {
+    title: "The tools",
+    say: () => "The tools along the bottom are named for what you put on the course: OB and rules, Paths and roads, Water, Trees, Grass and Build. Pick one and what it has shows just above it.",
+    go: () => { editor({ step: "design", view: "2d", selectedId: null }); fit(); },
+    find: t => (t ? "tool-strip" : "tool-bar")
+  },
+  {
+    title: "Checks",
+    say: () => "Checks looks over the course for problems as you go, like holes too close together or a tee with no path to it.",
+    go: () => { editor({ step: "design", view: "2d", selectedId: null }); },
+    find: () => "problems-button"
+  },
+  {
+    title: "The printed map",
+    say: () => "Map makes the course map, the tee signs, the hole pages and the scorecard, ready to print. Every piece on a page can be moved, sized and restyled.",
+    go: () => editor({ step: "map", designTab: "map", selectedId: null })
+  },
+  {
+    title: "Export",
+    say: () => "Export makes the files: PDFs and pictures of the map and signs, the flyover video, and GPS files for the holes.",
+    go: () => editor({ step: "export", selectedId: null })
+  },
+  {
+    title: "Make it yours",
+    say: () => "Change anything you like. It's all kept in this browser. To start your own course, go to Courses and pick New course, then find your park.",
+    go: () => { editor({ step: "design", view: "2d", selectedId: null }); fit(); }
+  }
+];
+
+export const useTour = create<{ at: number | null }>(() => ({ at: null }));
+// (for the tests: the walk's stop, set straight)
+if (typeof window !== "undefined") (window as unknown as { __dgTour: typeof useTour }).__dgTour = useTour;
+
+/** The walk round the example, from the start (the example opened first). */
+export const startTour = async () => {
+  await openExample();
+  useTour.setState({ at: 0 });
+};
+const goTo = (n: number) => useTour.setState({ at: Math.max(0, Math.min(STOPS.length - 1, n)) });
+const leave = () => { useTour.setState({ at: null }); editor({}); };
+
+export function Tour() {
+  const at = useTour(s => s.at);
+  const touch = useTouch();
+  // (at each stop: the app taken there, then what it's about lit up once it's drawn)
+  useEffect(() => {
+    if (at === null) return;
+    const s = STOPS[at];
+    s.go();
+    const id = s.find?.(touch);
+    if (!id) return;
+    const t = window.setTimeout(() => { const el = document.querySelector<HTMLElement>(`[data-testid="${id}"]`); if (el) spotlight(el); }, 450);
+    return () => window.clearTimeout(t);
+  }, [at, touch]);
+  useEffect(() => {
+    if (at === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.matches?.("input,textarea,select")) return;
+      if (e.key === "Escape") { e.stopImmediatePropagation(); leave(); }
+      else if (e.key === "ArrowRight") { e.stopImmediatePropagation(); goTo(at + 1); }
+      else if (e.key === "ArrowLeft") { e.stopImmediatePropagation(); goTo(at - 1); }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [at]);
+  if (at === null) return null;
+  const s = STOPS[at], last = at === STOPS.length - 1;
+  return (
+    <div className="fixed left-1/2 -translate-x-1/2 top-[70px] touch:top-[76px] z-[70] w-[min(440px,calc(100%-16px))] glass-solid ring-1 ring-white/15 rounded-[22px] shadow-2xl shadow-black/50 p-4" role="dialog" aria-label="A walk round the example course" data-testid="tour">
+      <div className="flex items-start gap-2">
+        <Compass size={18} className="text-orange-300 mt-0.5 shrink-0" />
+        <h2 className="flex-1 text-[15px] font-bold text-zinc-50" data-testid="tour-title">{s.title}</h2>
+        <button className="w-8 h-8 -m-1.5 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.08]" aria-label="Leave the walk" onClick={leave} data-testid="tour-close"><X size={16} /></button>
+      </div>
+      <p className="text-[13.5px] leading-snug text-zinc-300 mt-1.5" data-testid="tour-text">{s.say(touch)}</p>
+      <div className="flex items-center gap-2 mt-3">
+        <div className="flex-1 flex gap-1" aria-label={`Stop ${at + 1} of ${STOPS.length}`}>
+          {STOPS.map((_, i) => <span key={i} className={`h-1.5 rounded-full transition-all ${i === at ? "w-4 bg-orange-300" : "w-1.5 bg-white/20"}`} />)}
+        </div>
+        {at > 0 && <button className="h-9 touch:h-11 px-3 rounded-full text-[13px] font-semibold text-zinc-200 hover:bg-white/[0.08] flex items-center gap-1" onClick={() => goTo(at - 1)} data-testid="tour-back"><ArrowLeft size={15} /> Back</button>}
+        <button className="h-9 touch:h-11 px-4 rounded-full text-[13px] font-bold bg-orange-500 hover:bg-orange-400 text-zinc-950 flex items-center gap-1" onClick={() => (last ? leave() : goTo(at + 1))} data-testid="tour-next">{last ? "Done" : <>Next <ArrowRight size={15} /></>}</button>
+      </div>
+    </div>
+  );
+}

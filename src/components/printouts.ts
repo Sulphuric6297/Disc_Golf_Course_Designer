@@ -6,7 +6,7 @@
 import { generateId } from "../constants";
 import { holeLabel } from "../lib/course";
 import { holePageOf } from "../lib/holePage";
-import { sizedPlace } from "../lib/pieces";
+import { keepsItsSize, sizedPlace } from "../lib/pieces";
 import { signOf } from "../lib/teeSign";
 import { changeDoc, getDoc, useEditor } from "../state/course";
 import type { CourseDoc, PiecePlace, PrintExtra, SignPart } from "../types";
@@ -77,7 +77,7 @@ export const PIECES: { id: string; label: string; part?: SignPart }[] = [
   { id: "spot", label: "Under the notes" }, { id: "map", label: "Hole picture" }, { id: "north", label: "North arrow", part: "north" },
   { id: "scale", label: "Scale bar", part: "scale" }, { id: "nextTee", label: "Way to the next tee", part: "nextTee" },
   { id: "footRule", label: "Line over the notes" }, { id: "footer", label: "Footer panel" }, { id: "legend", label: "Legend", part: "legend" },
-  { id: "holeOf", label: "Hole N of M", part: "holeOf" }, { id: "designer", label: "Designer", part: "designer" },
+  { id: "holeOf", label: "Hole N of M", part: "holeOf" }, { id: "designer", label: "Designer", part: "designer" }, { id: "location", label: "Place name" },
   { id: "logo", label: "Logo or name" }, { id: "fields", label: "Date, par and course lines" }, { id: "location", label: "Where the course is" },
   { id: "table", label: "Score table" }, { id: "cutLine", label: "Cut line" }
 ];
@@ -194,17 +194,41 @@ export const pickedOf = (doc: CourseDoc, t: TargetKey, id: string): Picked | nul
     const o = doc.style.page?.[e.id] ?? {}, s = doc.style;
     const panel = e.id === "holes" || e.id === "legend";
     // (its words: the title and its subtitle, a line each; the footer note; a panel's heading)
-    const words = e.id === "title" ? [s.title || doc.name, s.subtitle].filter(Boolean).join("\n") : e.id === "credit" ? s.footer : e.id === "legend" ? o.heading ?? "Legend" : e.id === "holes" ? o.heading ?? "" : undefined;
+    const words = e.id === "title" ? [s.title || doc.name, subtitleOf(doc)].filter(Boolean).join("\n") : e.id === "credit" ? s.footer : e.id === "legend" ? o.heading ?? "Legend" : e.id === "holes" ? o.heading ?? "" : undefined;
     return {
-      label: e.label, kind: "piece", scale: o.scale ?? 1, color: o.ink, fill: o.bg, text: words, opacity: o.opacity, rot: o.rot,
-      // (the map itself stays square and solid on its page)
-      has: { ...none, color: e.id === "title" || panel || e.id === "credit", fill: panel || e.id === "title", text: words !== undefined, opacity: e.id !== "map", turn: e.id !== "map" },
+      label: e.label, kind: "piece", scale: o.scale ?? 1, color: o.ink, fill: o.bg, text: words, opacity: o.opacity, rot: o.rot, font: e.id === "title" ? s.titleFont : undefined,
+      // (the map itself stays square and solid on its page; the title in a font of its own)
+      has: { ...none, size: !keepsItsSize(e.id), font: e.id === "title", color: e.id === "title" || panel || e.id === "credit", fill: panel || e.id === "title", text: words !== undefined, opacity: e.id !== "map", turn: e.id !== "map" },
       removable: false, duplicable: false, changed: o.x !== undefined || o.y !== undefined || o.scale !== undefined || !!o.ink || !!o.bg || !!o.rot || o.opacity !== undefined
     };
   }
   if (!byId.has(id)) return null;
   const p = placeOf(doc, t, id);
-  return { label: byId.get(id)!.label, kind: "piece", scale: p?.scale ?? 1, font: p?.font, color: p?.color, fill: p?.fill, italic: p?.italic, opacity: p?.opacity, rot: p?.rot, has: { ...none, font: true, color: true, fill: true, italic: true }, removable: false, duplicable: false, changed: placeChanged(p) };
+  const words = wordsOf(doc, id);
+  return { label: byId.get(id)!.label, kind: "piece", scale: p?.scale ?? 1, font: p?.font, color: p?.color, fill: p?.fill, italic: p?.italic, opacity: p?.opacity, rot: p?.rot, text: words, has: { ...none, size: !keepsItsSize(id), font: true, color: true, fill: true, italic: true, text: words !== undefined }, removable: false, duplicable: false, changed: placeChanged(p) };
+};
+
+/** The map title's second line as it shows: what's typed, or the place's name (none: " "). */
+export const subtitleOf = (doc: CourseDoc) => (doc.style.subtitle?.trim() ? doc.style.subtitle.trim() : doc.style.subtitle ? "" : [doc.site.location?.label, doc.designer ? `Designed by ${doc.designer}` : ""].filter(Boolean).join(" · "));
+
+/** The words a sign's or page's piece shows, where they're kept (the course's name, the hole's
+ * name and notes, the designer, the place): typed on the page, they change there. */
+const wordsOf = (doc: CourseDoc, id: string): string | undefined => {
+  const hole = doc.holes.find(h => h.id === shownHole(doc));
+  if (id === "courseName") return doc.name;
+  if (id === "holeName") return hole?.name ?? "";
+  if (id === "notes") return hole ? hole.notes ?? "" : undefined;
+  if (id === "designer") return doc.designer ?? "";
+  if (id === "location") return doc.site.location ? doc.site.location.label : undefined;
+  return undefined;
+};
+const setWords = (id: string, v: string, history: boolean) => {
+  const hid = shownHole(getDoc());
+  const text = id === "notes" ? v : v.replace(/\s*\n\s*/g, " ").trim();
+  if (id === "courseName") return changeDoc(() => ({ name: text || "Untitled course" }), history);
+  if (id === "designer") return changeDoc(() => ({ designer: text }), history);
+  if (id === "location") return changeDoc(d => ({ site: { ...d.site, location: d.site.location ? { ...d.site.location, label: text } : null } }), history);
+  if (hid) return changeDoc(d => ({ holes: d.holes.map(h => (h.id === hid ? { ...h, ...(id === "holeName" ? { name: text || undefined } : { notes: text || undefined }) } : h)) }), history);
 };
 
 /** A picked thing's settings changed. */
@@ -217,13 +241,16 @@ export const patchPicked = (t: TargetKey, id: string, p: Patch, history = true) 
     if (e?.kind === "image") return patchImage(e.image.id, { ...("opacity" in p ? { opacity: p.opacity } : {}), ...("rot" in p ? { rot: p.rot || undefined } : {}) }, history);
     if (e?.kind === "built" && p.text !== undefined) {
       const v = p.text;
-      if (e.id === "title") { const [first, ...rest] = v.split("\n"); return changeDoc(d => ({ style: { ...d.style, title: first.trim() === d.name ? "" : first.trim(), subtitle: rest.join(" ").trim() } }), history); }
+      // (a second line taken out stays out: " " is none, where "" is the place's name)
+      if (e.id === "title") { const [first, ...rest] = v.split("\n"); return changeDoc(d => ({ style: { ...d.style, title: first.trim() === d.name ? "" : first.trim(), subtitle: rest.join(" ").trim() || " " } }), history); }
       if (e.id === "credit") return changeDoc(d => ({ style: { ...d.style, footer: v.trim() } }), history);
       return patchPage(e.id, { heading: v.trim() || undefined }, history);
     }
+    if (e?.kind === "built" && e.id === "title" && "font" in p) return changeDoc(d => ({ style: { ...d.style, titleFont: p.font || undefined } }), history);
     if (e?.kind === "built") return patchPage(e.id, { ...("color" in p ? { ink: p.color } : {}), ...("fill" in p ? { bg: p.fill } : {}), ...("rot" in p ? { rot: p.rot || undefined } : {}), ...("opacity" in p ? { opacity: p.opacity } : {}) }, history);
     return;
   }
+  if (p.text !== undefined && wordsOf(doc, id) !== undefined) return setWords(id, p.text, history);
   setPlace(t, id, { ...("font" in p ? { font: p.font } : {}), ...("color" in p ? { color: p.color } : {}), ...("fill" in p ? { fill: p.fill } : {}), ...("italic" in p ? { italic: p.italic || undefined } : {}), ...("rot" in p ? { rot: p.rot || undefined } : {}), ...("opacity" in p ? { opacity: p.opacity } : {}) }, history);
 };
 
@@ -248,6 +275,7 @@ export const movePicked = (t: TargetKey, id: string, dx: number, dy: number, box
 /** Sized `f` times about the page point `a` (which stays put); `box`: where it was. */
 export const sizePicked = (t: TargetKey, id: string, f: number, a: { x: number; y: number }, box: Box, W: number, H: number) => {
   const doc = getDoc(), ex = extraOf(doc, t, id);
+  if (pickedOf(doc, t, id)?.has.size === false) return;
   const to = { x: a.x + (box.x - a.x) * f, y: a.y + (box.y - a.y) * f };
   if (ex) {
     // (its own corner keeps its place in the drawn box, which grows from `to`)

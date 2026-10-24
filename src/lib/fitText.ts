@@ -6,11 +6,27 @@ import { fontsInSvg, loadFont } from "./fontLoad";
 
 /** ` data-fit="…"`, for a text no wider than `w`. */
 export const fitAttr = (w: number) => ` data-fit="${Math.round(w * 10) / 10}"`;
+/** And no taller than `h` above its baseline, as its letters really draw in the font it's set in
+ * (a tall, narrow font's digits stand far higher than most: a big number would reach up into
+ * what's over it). */
+export const capAttr = (h: number) => ` data-cap="${Math.round(h * 10) / 10}"`;
+
+let pen: CanvasRenderingContext2D | null = null;
+/** How far `el`'s letters rise above its baseline at font size `fs` (null: it can't be measured). */
+const inkAbove = (el: SVGTextElement, fs: number) => {
+  pen ??= document.createElement("canvas").getContext("2d");
+  if (!pen) return null;
+  const cs = getComputedStyle(el);
+  pen.font = `${cs.fontStyle} ${cs.fontWeight} ${fs}px ${cs.fontFamily}`;
+  const m = pen.measureText(el.textContent ?? "");
+  return m.actualBoundingBoxAscent || null;
+};
 
 /** Every marked text under `root` brought back inside its width (its own size first, smaller only
  * if it has to be). */
 export const fitTexts = (root: ParentNode) => {
   for (const el of Array.from(root.querySelectorAll<SVGTextElement>("text[data-fit]"))) {
+    const cap = Number(el.getAttribute("data-cap"));
     const max = Number(el.getAttribute("data-fit"));
     if (!(max > 0)) continue;
     const own = el.getAttribute("data-fs") ?? el.getAttribute("font-size");
@@ -19,7 +35,13 @@ export const fitTexts = (root: ParentNode) => {
     el.setAttribute("font-size", own);
     let len = 0;
     try { len = el.getComputedTextLength(); } catch { continue; }
-    if (len > max) el.setAttribute("font-size", String(Math.round(Number(own) * (max / len) * 0.98 * 100) / 100));
+    let fs = Number(own);
+    if (len > max) fs = Math.round(fs * (max / len) * 0.98 * 100) / 100;
+    if (cap > 0) {
+      const up = inkAbove(el, fs);
+      if (up && up > cap) fs = Math.round(fs * (cap / up) * 100) / 100;
+    }
+    if (fs !== Number(own)) el.setAttribute("font-size", String(fs));
   }
 };
 

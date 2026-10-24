@@ -10,7 +10,7 @@ import { RESTRICTED } from "../lib/symbols";
 import { MapLookPanel } from "./MapLookPanel";
 import { useEffect, useRef, useState } from "react";
 import type { MapStyle, PaperSize, ReliefLook, SignSettings } from "../types";
-import { Button, ColorInput, Field, Fold, Section, Segmented, Slider, Toggle, WholePanelOnly } from "./ui";
+import { Button, ColorInput, Field, Fold, Section, Segmented, Slider, TextInput, Toggle, WholePanelOnly } from "./ui";
 import { HolePageLook, PrintPanel, ScorecardSettings } from "./PrintPanel";
 import { FontPicker } from "./FontPicker";
 import { fontsIn } from "../lib/fontLoad";
@@ -184,6 +184,9 @@ export function DesignPanel() {
             <ColorInput key={key} label={label} value={s.card?.[key] ?? CARD_DEFAULTS[key]} onChange={v => setStyle({ card: { ...s.card, [key]: v } }, false)} onDone={done} />
           ))}
         </div>
+        <Field label="Line under the course name">
+          <TextInput label="Line under the course name" value={s.tagline ?? "Disc golf course"} placeholder="None" onChange={v => setStyle({ tagline: v })} />
+        </Field>
         <Field label="Course logo">
           <LogoPicker logo={s.logo} />
         </Field>
@@ -248,7 +251,10 @@ export function DesignPanel() {
         {!(s.hillshade && s.reliefLook === "contours") && <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />}
       </Section>
       <Fold title="Lettering" testid="fold-title">
-        <Field label="Font (the title and the map's labels)">
+        <Field label="Title font (on the map and the signs)">
+          <FontPicker label="Title font" value={s.titleFont} inherit="Same as the map's" onPick={f => setStyle({ titleFont: f ?? undefined })} used={fontsIn(doc)} testid="title-font" />
+        </Field>
+        <Field label="Font (the map's labels)">
           <FontPicker label="Map font" value={s.font} onPick={f => setStyle({ font: f ?? "Script" })} used={fontsIn(doc)} testid="map-font" />
         </Field>
         <Slider label="Label size" min={0.7} max={1.6} step={0.05} value={s.labelScale} onChange={v => setStyle({ labelScale: v })} format={v => `${Math.round(v * 100)}%`} />

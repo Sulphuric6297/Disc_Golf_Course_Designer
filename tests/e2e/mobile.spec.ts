@@ -312,7 +312,7 @@ test.describe("phone", () => {
   test("an area drawn with taps: Undo takes a point back, Done finishes it", async ({ page }) => {
     await oneHole(page);
     await nav(page).getByRole("button", { name: /Design/ }).tap();
-    await page.locator('[data-tool="draw-area"]').tap();
+    await page.locator('[data-tool="rules"]').tap();
     await page.getByTestId("area-kind-ob").tap();
     await expect(page.getByTestId("tool-hint")).toContainText("Tap the corners, then Done");
     for (const [x, y] of [[350, 300], [550, 300], [550, 420], [350, 420]]) await tapPlan(page, x, y);
@@ -329,7 +329,7 @@ test.describe("phone", () => {
     // (the drawn area picked, its strip up: back to the tools)
     await page.getByTestId("selection-back").tap();
     // Cancel drops what is being drawn
-    await page.locator('[data-tool="draw-line"]').tap();
+    await page.locator('[data-tool="paths"]').tap();
     await tapPlan(page, 300, 650);
     await tapPlan(page, 600, 650);
     await page.getByTestId("draw-cancel").tap();
@@ -655,9 +655,9 @@ test.describe("tablet held upright", () => {
     await expect(page.getByTestId("nav-rail")).toBeVisible();
     await expect(page.getByTestId("side-sheet")).toBeVisible();
     await expect(page.getByTestId("side-panel")).toHaveCount(0);
-    const tool = (await page.locator('[data-tool="add-hole"]').boundingBox())!;
+    const tool = (await page.locator('[data-tool="hole"]').boundingBox())!;
     expect(tool.height).toBeGreaterThanOrEqual(44);
-    await page.locator('[data-tool="add-hole"]').tap();
+    await page.locator('[data-tool="hole"]').tap();
     await tapPlan(page, 300, 800);
     await tapPlan(page, 600, 800);
     await expect.poll(async () => (await course(page)).holes.length).toBe(2);

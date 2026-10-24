@@ -3,13 +3,13 @@
 // tees, baskets, mandos, drop zones, distances), labels, and the frame (title, legend, hole table,
 // north arrow, scale bar). The same renderer draws a single hole for tee signs, turned so the tee
 // is at the bottom.
-import { extrasSvg, turned } from "./pieces";
+import { extrasSvg, keepsItsSize, turned } from "./pieces";
 import { fitAttr } from "./fitText";
 import { SCRIPT_FONTS } from "./fontKinds";
 import { latitudeOf, sunFromOf } from "./mapLook";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
-import { activeLayout, areaObEdges, beyondSides, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, sharedWalks, teeAim, walkRoutes } from "./course";
+import { activeLayout, areaObEdges, beyondSides, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, sharedWalks, teeAim, walkRoutes, taglineOf, titleFontOf } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
 import { courseTotals, holeStats, isOb, playsOf, type HoleStats } from "./holeStats";
 import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, type CanopyGrid } from "./forest";
@@ -141,8 +141,9 @@ export type MapLayers = {
 };
 
 const OWN_FONTS = new Set(["", "Oswald", "Inter", "Bitter", "Script"]);
-/** A font for labels: the app's own, or a Google font by name (a script's labels in Oswald). */
-export const fontStack = (f: string) => (f === "Oswald" || f === "Script" || SCRIPT_FONTS.has(f) ? "Oswald, 'Arial Narrow', Arial, sans-serif" : f === "Bitter" ? "Bitter, Georgia, serif" : OWN_FONTS.has(f) ? "Inter, Arial, sans-serif" : `'${f.replace(/'/g, "")}', Inter, Arial, sans-serif`);
+/** A font for labels: the app's own, or a Google font by name (a script's labels in Oswald, where
+ * the one font is the title's too; `asked`: picked for the labels alone, so it's used as it is). */
+export const fontStack = (f: string, asked = false) => (asked && !OWN_FONTS.has(f) && f !== "Oswald" ? `'${f.replace(/'/g, "")}', Inter, Arial, sans-serif` : f === "Oswald" || f === "Script" || SCRIPT_FONTS.has(f) ? "Oswald, 'Arial Narrow', Arial, sans-serif" : f === "Bitter" ? "Bitter, Georgia, serif" : OWN_FONTS.has(f) ? "Inter, Arial, sans-serif" : `'${f.replace(/'/g, "")}', Inter, Arial, sans-serif`);
 /** A font for titles: a script stays a script. */
 export const titleStack = (f: string) => (f === "Script" ? "'Kaushan Script', 'Brush Script MT', cursive" : SCRIPT_FONTS.has(f) ? `'${f.replace(/'/g, "")}', 'Kaushan Script', cursive` : fontStack(f));
 /** A script keeps its own capitals (a title in all capitals reads badly in one). */
@@ -164,7 +165,8 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     return { x: view.width / 2 + (dx * c - dy * sn) * k, y: view.height / 2 + (dx * sn + dy * c) * k };
   };
   const ts = layers.textScale;
-  const font = fontStack(layers.fontFamily);
+  // (the labels' own font once the title has one of its own)
+  const font = fontStack(layers.fontFamily, !!s.titleFont);
   const out: string[] = [];
   const defs: string[] = [];
   const focus = layers.focusHole;
@@ -1045,11 +1047,12 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
   const W = page.w * 72, H = page.h * 72;
   const ts = (Math.min(W, H) / (8.5 * 72)) * s.labelScale;
   const m = 0.35 * 72 * Math.max(1, ts * 0.8);
-  const font = fontStack(s.font);
+  const font = fontStack(s.font, !!s.titleFont);
   const landscape = W > H;
   const full = s.theme === "forest";
   const title = s.title || doc.name;
-  const sub = s.subtitle || [doc.site.location?.label, doc.designer ? `Designed by ${doc.designer}` : ""].filter(Boolean).join(" · ");
+  // (what's typed; or, never typed, the place and designer; " ": taken out)
+  const sub = s.subtitle?.trim() ? s.subtitle.trim() : s.subtitle ? "" : [doc.site.location?.label, doc.designer ? `Designed by ${doc.designer}` : ""].filter(Boolean).join(" · ");
   const parts: string[] = [];
   parts.push(`<rect width="${n(W)}" height="${n(H)}" fill="${pal.paper}"/>`);
   const credit = [s.footer, doc.site.imagerySource && s.theme === "satellite" ? "Imagery © Esri" : "", doc.items.some(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm") ? "Map data © OpenStreetMap contributors" : "", doc.items.some(i => i.type === "structure" && i.importSource === "traced") ? "Buildings © Overture Maps Foundation, Microsoft" : ""].filter(Boolean).join(" · ");
@@ -1062,7 +1065,7 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
     type Box = { x: number; y: number; w: number; h: number };
     const placed = (id: string, o: { x?: number; y?: number; scale?: number; hidden?: boolean; rot?: number; opacity?: number }, box: Box, content: string) => {
       if (o.hidden) return;
-      const k = o.scale ?? 1;
+      const k = keepsItsSize(id) ? 1 : o.scale ?? 1;
       // (kept at least partly on the page)
       const X = o.x !== undefined ? Math.max(10 - box.w * k, Math.min(W - 10, o.x * W)) : box.x;
       const Y = o.y !== undefined ? Math.max(10 - box.h * k, Math.min(H - 10, o.y * H)) : box.y;
@@ -1096,12 +1099,12 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
       if (the) name = name.replace(/^the\s+/i, "");
       const course = /\s+disc\s+golf(\s+course)?$/i.test(name);
       if (course) name = name.replace(/\s+disc\s+golf(\s+course)?$/i, "");
-      const big = Math.min(54 * ts, ((W * 0.4) / Math.max(4, name.length)) * (keepsCase(s.font) ? 2.1 : 1.9));
-      let tw = name.length * big * (keepsCase(s.font) ? 0.48 : 0.6);
+      const big = Math.min(54 * ts, ((W * 0.4) / Math.max(4, name.length)) * (keepsCase(titleFontOf(s)) ? 2.1 : 1.9));
+      let tw = name.length * big * (keepsCase(titleFontOf(s)) ? 0.48 : 0.6);
       if (the) { out.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="${font}" font-weight="700" font-style="italic" font-size="${n(13 * ts)}" fill="${ink}" ${shadow}>THE</text>`); ty += 10 * ts; }
-      out.push(`<text${fitAttr(W * 0.42)} x="${n(tx)}" y="${n(ty + big * 0.95)}" text-anchor="${anchor}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(big)}" fill="${ink}" ${shadow}>${esc(keepsCase(s.font) ? name : name.toUpperCase())}</text>`);
+      out.push(`<text${fitAttr(W * 0.42)} x="${n(tx)}" y="${n(ty + big * 0.95)}" text-anchor="${anchor}" font-family="${titleStack(titleFontOf(s))}" font-weight="700" font-size="${n(big)}" fill="${ink}" ${shadow}>${esc(keepsCase(titleFontOf(s)) ? name : name.toUpperCase())}</text>`);
       ty += big * 1.15;
-      const golf = course || !/golf/i.test(title) ? "DISC GOLF COURSE" : "";
+      const golf = course || !/golf/i.test(title) ? taglineOf(s) : "";
       out.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="${n(12 * ts)}" letter-spacing="${n(3.2 * ts)}" fill="${ink}" ${shadow}>${golf}</text>`);
       tw = Math.max(tw, golf.length * (12 * 0.66 + 3.2) * ts);
       ty += 20 * ts;
@@ -1218,7 +1221,7 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
   const scale = Math.min(map.w / bw, map.h / bh);
   const view: MapView = { cx: center.x, cy: center.y, rotation, scale, width: map.w, height: map.h };
   const { svg, toScreen } = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy }, "pm");
-  if (title) parts.push(`<text x="${n(m)}" y="${n(m + 30 * ts)}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(30 * ts)}" fill="${pal.ink}" letter-spacing="${n(keepsCase(s.font) ? 0 : 0.5 * ts)}">${esc(keepsCase(s.font) ? title : title.toUpperCase())}</text>`);
+  if (title) parts.push(`<text x="${n(m)}" y="${n(m + 30 * ts)}" font-family="${titleStack(titleFontOf(s))}" font-weight="700" font-size="${n(30 * ts)}" fill="${pal.ink}" letter-spacing="${n(keepsCase(titleFontOf(s)) ? 0 : 0.5 * ts)}">${esc(keepsCase(titleFontOf(s)) ? title : title.toUpperCase())}</text>`);
   const info = `${totals.complete} HOLES · PAR ${totals.par} · ${fmtDist(totals.length, doc.units).toUpperCase()}${layout && doc.layouts.length > 1 ? ` · ${layout.name.toUpperCase()} LAYOUT` : ""}`;
   parts.push(`<text x="${n(W - m)}" y="${n(m + 28 * ts)}" text-anchor="end" font-family="${font}" font-weight="600" font-size="${n(13 * ts)}" fill="${pal.inkSoft}">${esc(info)}</text>`);
   if (sub) parts.push(`<text x="${n(m)}" y="${n(m + 46 * ts)}" font-family="Inter, Arial, sans-serif" font-size="${n(9.5 * ts)}" fill="${pal.inkSoft}">${esc(sub)}</text>`);

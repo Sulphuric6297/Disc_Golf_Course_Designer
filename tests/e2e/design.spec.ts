@@ -1225,3 +1225,26 @@ test("tee sign settings: one hole's own given to the holes picked (Apply to hole
   await expect.poll(async () => (await course(page)).holes[own === 0 ? 1 : 0].sign).toBeUndefined();
   expect((await course(page)).holes[own].sign?.others).toBe("hidden");
 });
+
+test("a scale bar can't be sized by hand on any printout (it would measure wrong); it follows a sign's picture when that's sized", async ({ page }) => {
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 600 }, { x: 800, y: 600 });
+  await page.keyboard.press("Escape");
+  // (a tall sign: the wide one has no scale bar)
+  await page.evaluate(() => (window as any).__dgActions.style({ scale: true, signSize: "12x18" }));
+  for (const tab of ["map", "sign"]) {
+    await page.evaluate(tab => (window as any).__dgEditor().set({ step: "map", designTab: tab, designSel: null }), tab);
+    await expect(page.getByTestId("design-page").locator("[data-el=scale]")).toBeAttached();
+    await page.evaluate(() => (window as any).__dgEditor().set({ designSel: "scale" }));
+    await expect(page.getByTestId("piece-toolbar")).toBeVisible();
+    await expect(page.getByTestId("piece-size")).toHaveCount(0);
+    await expect(page.getByTestId("page-corner")).toHaveCount(0);
+    // (moving it still works)
+    await expect(page.getByTestId("page-turn")).toBeVisible();
+  }
+  // The sign's picture made twice as big: its scale bar's distance halves
+  const label = () => page.evaluate(() => [...document.querySelectorAll("[data-testid=design-page] [data-el=scale] text")].map(t => t.textContent).join(" "));
+  const before = await label();
+  await page.evaluate(() => { const d = (window as any).__dgCourse(); (window as any).__dgActions.style({ sign: { ...(d.style.sign ?? {}), layout: { ...(d.style.sign?.layout ?? {}), map: { scale: 2 } } } }); });
+  await expect.poll(label).not.toBe(before);
+});

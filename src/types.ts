@@ -532,6 +532,8 @@ export interface MapStyle {
   /** Title block. */
   title: string;
   subtitle: string;
+  /** The line under the course's name on the map and the signs (unset: "Disc golf course"; "": none). */
+  tagline?: string;
   footer: string;
   /** Colors. */
   fairway: string;
@@ -570,6 +572,8 @@ export interface MapStyle {
   /** Lettering: "Script" sets the title in a brush script (the rest in Oswald). */
   /** The course's lettering: the app's own (Script, Oswald, Inter, Bitter) or any Google font. */
   font: string;
+  /** The course's title in a font of its own (on the map and the signs; unset: `font`). */
+  titleFont?: string;
   /** Forest style: where to paint woods (everywhere off the fairways, where the photo shows trees,
    * or only drawn woods and single trees). */
   forest: "everywhere" | "photo" | "woods";

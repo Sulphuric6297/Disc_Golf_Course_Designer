@@ -393,7 +393,7 @@ function WoodsTrees({ item }: { item: AreaItem }) {
   const mode = item.trees ?? "measured";
   const patches = item.patches ?? [];
   const setPatches = (next: { points: P[]; fill: number }[], history = true) => updateItem(item.id, { patches: next.length ? next : undefined } as Partial<CourseItem>, history);
-  // A patch: drawn over the wood with the Area tool; it lands in this wood's patches
+  // A patch: drawn over the wood (it is drawn as an area); it lands in this wood's patches
   const draw = () => useEditor.getState().set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", patchFor: item.id });
   return (
     <>

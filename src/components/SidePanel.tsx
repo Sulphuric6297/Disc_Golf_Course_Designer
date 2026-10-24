@@ -117,7 +117,7 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
         </Section>
       ) : (
         <Section title="Site" testid="site-info">
-          <div className="text-sm text-zinc-100 mb-1">{doc.site.location?.label}</div>
+          {doc.site.location && <TextInput label="Place name" value={doc.site.location.label} placeholder="The park's name" onChange={v => changeDoc(d => ({ site: { ...d.site, location: d.site.location ? { ...d.site.location, label: v } : null } }))} />}
           <div className="text-xs text-zinc-400 space-y-0.5">
             <div>{Math.round(doc.canvas.width).toLocaleString()} × {Math.round(doc.canvas.height).toLocaleString()} ft · {((doc.canvas.width * doc.canvas.height) / 43560).toFixed(1)} acres</div>
             <div>Lowest point {Math.round(toUnits(doc.site.baseElevationFt, doc.units))} {doc.units} · {fmtDist(relief, doc.units)} of relief</div>

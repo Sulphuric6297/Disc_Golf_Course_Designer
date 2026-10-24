@@ -391,7 +391,7 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
     const from = a.line[a.line.length - 1], to = b.line[0];
     const d = dist(from, to);
     if (d > 400) issues.push({ id: `long-walk:${a.holeId}:${b.holeId}`, level: "info", text: `Long walk from ${n(a)}'s basket to ${n(b)}'s tee: ${Math.round(d)} ft.`, holes: [a.holeId, b.holeId], at: to });
-    if (d > NO_PATH_NEEDED_FT && !connected(walkways, from, to)) issues.push({ id: `no-path:${a.holeId}:${b.holeId}`, level: "info", text: `No path from ${n(a)}'s basket to ${n(b)}'s tee. Draw a Walking path or a Next-tee route with the Line tool so players can find the next hole.`, holes: [a.holeId, b.holeId], at: to });
+    if (d > NO_PATH_NEEDED_FT && !connected(walkways, from, to)) issues.push({ id: `no-path:${a.holeId}:${b.holeId}`, level: "info", text: `No path from ${n(a)}'s basket to ${n(b)}'s tee. Draw a Walking path or a Next-tee route with Paths and roads so players can find the next hole.`, holes: [a.holeId, b.holeId], at: to });
   }
   // Holes not finished
   stats.filter(s => !s.complete).forEach(s => issues.push({ id: `unfinished:${s.holeId}`, level: "info", text: `Hole ${s.label} needs ${s.teeId ? "a basket" : "a tee"}.`, holes: [s.holeId], at: s.line[0] ?? { x: 0, y: 0 } }));

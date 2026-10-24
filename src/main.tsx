@@ -1,6 +1,8 @@
 import React, { Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import { LockedNote } from "./components/DemoNote";
+import { DemoHome } from "./components/DemoHome";
+import { Tour } from "./components/Tour";
 import { SERVER } from "./auth/api";
 import { AuthGate } from "./auth/AuthGate";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -24,7 +26,7 @@ const app = <Suspense fallback={<LoadingScreen label="Opening HyzerLab…" />}><
 createRoot(rootElement).render(
   <React.StrictMode>
     <ErrorBoundary>
-      {SERVER && SITE_TOKEN ? <PublicSite>{app}</PublicSite> : SERVER ? <AuthGate>{app}</AuthGate> : <>{app}<LockedNote /></>}
+      {SERVER && SITE_TOKEN ? <PublicSite>{app}</PublicSite> : SERVER ? <AuthGate>{app}</AuthGate> : <>{app}<LockedNote /><DemoHome /><Tour /></>}
     </ErrorBoundary>
   </React.StrictMode>
 );
