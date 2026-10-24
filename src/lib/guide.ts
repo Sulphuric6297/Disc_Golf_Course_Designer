@@ -126,20 +126,20 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "import-options", section: "site", title: "What comes in with a site",
-    body: "These pick what gets pulled in with the site. The more that comes in, the less you have to draw yourself. The elevation always comes in.\n\nSatellite photo is the picture under the map (turn it off for a street map). Real trees and ground (aerial survey) is USGS LiDAR: every tree's spot and height, and the bare ground, measured from the air. It's US only, and only where a survey's been flown. HyzerLab uses the newest one.\n\nTrees spotted on the satellite photo traces woods, trees and water from the picture. It's only used for trees where there's no aerial survey, because the survey is a lot better at it. Paths, roads, water and buildings come from OpenStreetMap, so they're only as good as the local mapping.\n\nIn the US the elevation is fine detail (USGS). Outside the US there's no survey, and the elevation is coarse, about 10 m (33 ft) between readings, so small banks and bumps won't show.",
+    body: "These pick what gets pulled in with the site. The more that comes in, the less you have to draw yourself. The elevation always comes in.\n\nSatellite photo is the picture under the map (turn it off for a street map). Real trees and ground (aerial survey) is USGS LiDAR: every tree's spot and height, and the bare ground, measured from the air. It's US only, and only where a survey's been flown. HyzerLab uses the newest one.\n\nTrees spotted on the satellite photo traces woods, trees and water from the picture. It's only used for trees where there's no aerial survey, because the survey is a lot better at it. Paths, roads, water and buildings come from OpenStreetMap, so they're only as good as the local mapping. Buildings it's missing are traced from the air (outlines from Microsoft and others, by way of Overture Maps). They come in shaped like the roof on the photo, and only where the tracing is sure.\n\nIn the US the elevation is fine detail (USGS). Outside the US there's no survey, and the elevation is coarse, about 10 m (33 ft) between readings, so small banks and bumps won't show.",
     words: "lidar usgs aerial survey openstreetmap osm photo trees spotted satellite paths water roads buildings parking options elevation outside us",
     path: "Site › Find your park › Bring in"
   },
   {
     id: "refresh-osm", section: "site", title: "Update paths, roads and water",
-    body: "This asks OpenStreetMap again and swaps in what it has now. Handy if the first import missed something, or someone's fixed the map since.\n\nIt replaces everything that came from OpenStreetMap before, including shapes you've edited since. Things you drew yourself stay put. Undo brings the old ones back.",
+    body: "This asks OpenStreetMap again and swaps in what it has now, along with the buildings traced from the air. Handy if the first import missed something, or someone's fixed the map since.\n\nIt replaces everything that came from OpenStreetMap before, including shapes you've edited since. Things you drew yourself stay put. Undo brings the old ones back.",
     words: "openstreetmap osm refresh paths roads water again update",
     path: "Site › Update paths, roads and water",
     where: { step: "site", find: "refresh-osm" }
   },
   {
     id: "brought-in", section: "site", title: "Brought in automatically",
-    body: "This lists what the import added on its own: woods, trees and water traced from the photo, and the shapes from OpenStreetMap. If you'd rather draw your own, Remove all takes a whole group out at once.\n\nIt only shows up when there's something to list. Undo puts a removed group back.",
+    body: "This lists what the import added on its own: woods, trees and water traced from the photo, the shapes from OpenStreetMap, and the buildings traced from the air. If you'd rather draw your own, Remove all takes a whole group out at once.\n\nIt only shows up when there's something to list. Undo puts a removed group back.",
     words: "remove imported photo trees osm areas",
     path: "Site › Brought in automatically",
     where: { step: "site", find: "photo-found" }

@@ -221,8 +221,9 @@ export interface StructureItem extends BaseItem {
   /** Its own colors (unset: the map's): the roof, and a building's walls. */
   roofColor?: string;
   wallColor?: string;
-  /** Brought in from OpenStreetMap (re-importing replaces it). */
-  importSource?: "osm";
+  /** Brought in from OpenStreetMap, or (a building nobody's mapped) traced from the air: looking
+   * the maps up again replaces it. */
+  importSource?: "osm" | "traced";
   holeId?: string;
   label?: string;
 }

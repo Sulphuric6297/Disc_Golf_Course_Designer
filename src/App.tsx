@@ -30,7 +30,7 @@ import { restoreAutosave, startAutosave } from "./state/files";
 import { toast, useToasts } from "./state/toast";
 import { courseStats, holeStats } from "./lib/holeStats";
 import { grownTree } from "./lib/lidar";
-import { isImported, reframeDesign, type ImportedSite } from "./lib/importSite";
+import { fromMaps, isImported, reframeDesign, type ImportedSite } from "./lib/importSite";
 import { holeLabel } from "./lib/course";
 import { geoRefOf } from "./lib/geoRef";
 import { Woods } from "./components/Woods";
@@ -184,7 +184,7 @@ export default function App() {
     const d0 = getDoc();
     const from = geoRefOf(d0);
     // (OpenStreetMap out of reach this time: what it brought in before stays)
-    const keptOsm = (i: CourseItem) => !!site.osmFailed && (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm";
+    const keptOsm = (i: CourseItem) => !!site.osmFailed && fromMaps(i);
     const designed = d0.items.filter(i => !isImported(i) || keptOsm(i));
     const carried = from && site.site.bounds ? reframeDesign({ holes: d0.holes, items: designed }, from, { ...site.site.bounds, ...site.canvas }) : { holes: d0.holes, items: designed, outside: 0 };
     changeDoc(d => ({
