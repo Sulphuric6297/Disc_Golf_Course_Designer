@@ -676,14 +676,15 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
             {editing && designSel && selBox && (
               <div className="absolute pointer-events-none" data-testid="page-selection" style={{ left: selBox.x * k, top: selBox.y * k, width: selBox.w * k, height: selBox.h * k, outline: "2px solid #f97316", outlineOffset: 2 }}>
                 {!designSel.startsWith("label:") && !typing && pickedOf(live, t, designSel)?.has.turn && (
-                  <div className="absolute left-1/2 -top-9 touch:-top-12 -translate-x-1/2 flex flex-col items-center pointer-events-auto" style={{ touchAction: "none" }}>
+                  /* (under it, as in other design apps: clear of whatever's above the page) */
+                  <div className="absolute left-1/2 -bottom-9 touch:-bottom-12 -translate-x-1/2 flex flex-col items-center pointer-events-auto" style={{ touchAction: "none" }}>
+                    <div className="w-px h-2.5 touch:h-3 bg-orange-500" />
                     <div data-turn-handle data-testid="page-turn" title="Turn it (Shift: 15° at a time)" className="w-6 h-6 touch:w-9 touch:h-9 rounded-full bg-white border-2 border-orange-500 shadow flex items-center justify-center text-orange-500 cursor-grab" style={{ touchAction: "none" }}>
                       <RotateCw size={compact ? 16 : 12} strokeWidth={2.6} />
                     </div>
-                    <div className="w-px h-2.5 touch:h-3 bg-orange-500" />
                   </div>
                 )}
-                {turning !== null && <div className="absolute left-1/2 -translate-x-1/2 -top-[68px] touch:-top-[84px] glass rounded-full px-2.5 py-1 text-[12px] font-semibold text-zinc-50 tabular-nums" data-testid="page-turn-angle">{turning}°</div>}
+                {turning !== null && <div className="absolute left-1/2 -translate-x-1/2 -top-10 glass rounded-full px-2.5 py-1 text-[12px] font-semibold text-zinc-50 tabular-nums" data-testid="page-turn-angle">{turning}°</div>}
                 {!designSel.startsWith("label:") && !typing && ["0,0", "1,0", "0,1", "1,1"].map(c => {
                   const [cx, cy] = c.split(",").map(Number);
                   return <div key={c} data-corner={c} data-testid="page-corner" className="absolute w-3 h-3 touch:w-[18px] touch:h-[18px] bg-white border-2 border-orange-500 rounded-full pointer-events-auto" style={{ left: `calc(${cx * 100}% - ${compact ? 9 : 6}px)`, top: `calc(${cy * 100}% - ${compact ? 9 : 6}px)`, cursor: cx === cy ? "nwse-resize" : "nesw-resize", touchAction: "none" }} />;

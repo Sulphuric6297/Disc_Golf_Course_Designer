@@ -1,4 +1,4 @@
-import type { AreaKind, CourseDoc, LineKind, P, ToolMode, DrawShape, StructureKind } from "../types";
+import type { AreaKind, CourseDoc, LineKind, P, ToolMode, DrawShape, StructureKind, TreeKind } from "../types";
 import type { HoleStats, SafetyIssue } from "../lib/holeStats";
 
 export type { P };
@@ -49,6 +49,8 @@ export type ViewTool = {
   shape: DrawShape;
   /** Select: a drag on the map draws a box to pick things with (instead of moving the map). */
   dragSelect?: boolean;
+  /** What the Tree tool plants (its preview is one). */
+  treeKind?: TreeKind;
   /** The brush (the ground tool, and painting areas): its radius (ft), how strong, what it does to the ground. */
   brush?: { size: number; strength: number; ground: "raise" | "lower" | "flatten" | "smooth" | "restore" };
 };

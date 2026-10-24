@@ -477,6 +477,13 @@ export const variantOf = (id: string, shape: TreeShape) => {
 export const treeSpread = (asked: number) => Math.min(50, Math.max(0.02, asked));
 /** The same for the trees of woods (made, not placed): kept to what looks like a natural tree. */
 const woodsSpread = (asked: number) => Math.min(1.5, Math.max(0.72, asked));
+/** How wide a tree of the woods (or measured from the air) is drawn, ft across its crown, asked
+ * `width` at `height`: a tree taken from the woods to be the course's own keeps it, so it looks
+ * the same picked as it did standing there. */
+export const woodsCrownWidth = (shape: TreeShape, variant: number, height: number, width: number) => {
+  const nat = naturalOf(shape, treeProto(shape, variant, "near"));
+  return woodsSpread(width / Math.max(1, height) / nat) * height * nat;
+};
 
 /** One tree as meshes (shared shape and materials): `height` ft tall, `width` ft across the crown. */
 export const treeMeshes = (shape: TreeShape, variant: number, height: number, width: number, tint: THREE.Color, detail: Detail = "near", classic = false, spec?: TreeSpec) => {

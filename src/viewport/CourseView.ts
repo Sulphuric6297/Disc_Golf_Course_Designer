@@ -33,7 +33,7 @@ import type { WoodedGrid } from "../lib/forest";
 import { autoFlight, flightClock, flyoverOf, insertKey, keyFlight, keyTimes, keysFromFlight, type Air, type Canopy, type Crown } from "../lib/flight";
 import { VIDEO_HOLD, titleStrength } from "../lib/video";
 import { drawOverlay, holeTitle, overlayShow, type HoleTitle } from "./flyTitle";
-import { forestDetail, type Forest, type TreeSpot } from "../three/treeKit";
+import { forestDetail, type Forest, type TreeSpot, woodsCrownWidth } from "../three/treeKit";
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { Tufts } from "../three/tufts";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
@@ -3047,6 +3047,41 @@ export class CourseView {
    * ground behind it). Measured trees, the saplings grown since the survey and the trees planted in
    * woods; not the tree items (they're picked as items). A sapling under a big crown is in the list
    * too, after the big tree. */
+  /** The tree placed by hand that the pointer is on: the nearest whose drawn leaves or trunk the
+   * ray meets (so a tree seen past the edge of a nearer one's crown is the one picked, not the
+   * nearer). The trees whose rough shape the ray passes through are tried; a finger, or a tree
+   * drawn too thin to hit, falls back to that shape. */
+  private treeUnder(ray: THREE.Ray): { id: string; t: number } | null {
+    const doc = this.doc;
+    if (!doc) return null;
+    const near: { id: string; t: number }[] = [];
+    for (const item of doc.course.items) {
+      if (item.type !== "tree") continue;
+      const t = this.rayHitsTree(ray, item.x, item.y, this.h(item.x, item.y), item.height ?? 30, item.radius * (item.width ?? 1) * 1.25);
+      if (t < Infinity) near.push({ id: item.id, t });
+    }
+    if (!near.length) return null;
+    // (shown, all the way up)
+    const shown = (o: THREE.Object3D | null) => { for (let x = o; x; x = x.parent) if (!x.visible) return false; return true; };
+    const caster = new THREE.Raycaster(ray.origin.clone(), ray.direction.clone());
+    let best: { id: string; t: number } | null = null;
+    for (const n of near) {
+      const obj = this.objects.get(n.id)?.obj;
+      if (!obj) continue;
+      const hit = caster.intersectObject(obj, true).find(h => shown(h.object));
+      if (hit && hit.distance < (best?.t ?? Infinity)) best = { id: n.id, t: hit.distance };
+    }
+    if (best) return best;
+    // (none drawn under it: by the shape round each, a little tighter for a mouse than a finger)
+    const tight = this.fingers ? 1.25 : 0.85;
+    for (const item of doc.course.items) {
+      if (item.type !== "tree") continue;
+      const t = this.rayHitsTree(ray, item.x, item.y, this.h(item.x, item.y), item.height ?? 30, item.radius * (item.width ?? 1) * tight);
+      if (t < (best?.t ?? Infinity)) best = { id: item.id, t };
+    }
+    return best;
+  }
+
   /** Where along `ray` it first meets a tree standing at (x, y): its crown (an ellipsoid round
    * the upper part, at least 3 ft across) or its trunk; Infinity if it misses. */
   private rayHitsTree(ray: THREE.Ray, x: number, y: number, ground: number, height: number, radius: number) {
@@ -3064,34 +3099,40 @@ export class CourseView {
 
   treesAtScreen(clientX: number, clientY: number, max = 6): NonNullable<ReturnType<CourseView["treeAt"]>>[] {
     const ray = this.ray(clientX, clientY).clone();
-    const hits: { t: number; tree: NonNullable<ReturnType<CourseView["treeAt"]>> }[] = [];
+    const hits: { t: number; core: number; tree: NonNullable<ReturnType<CourseView["treeAt"]>> }[] = [];
     const a = new THREE.Vector3(), b = new THREE.Vector3(), onRay = new THREE.Vector3(), c = new THREE.Vector3(), o = new THREE.Vector3(), d = new THREE.Vector3();
     // (a crown: an ellipsoid round the upper part; at least 3 ft across, so a sprout can be hit)
+    // (and how near its middle the pointer passes: 0 dead center, 1 just grazing its edge, where
+    // a crown is thin and the tree behind shows through)
     const crownHit = (x: number, y: number, ground: number, height: number, radius: number) => {
       const rx = Math.max(1.5, radius), ry = Math.max(1.5, height * 0.34);
       c.set(x, ground + height * 0.64, y);
       o.copy(ray.origin).sub(c); d.copy(ray.direction);
       o.x /= rx; o.z /= rx; o.y /= ry; d.x /= rx; d.z /= rx; d.y /= ry;
       const A = d.dot(d), B = 2 * o.dot(d), C = o.dot(o) - 1, disc = B * B - 4 * A * C;
-      if (disc < 0) return Infinity;
+      if (disc < 0) return { t: Infinity, core: 1 };
       const t = (-B - Math.sqrt(disc)) / (2 * A);
-      return t > 0 ? t : Infinity;
+      const s = -B / (2 * A), core = Math.sqrt(Math.max(0, o.clone().addScaledVector(d, s).lengthSq()));
+      return { t: t > 0 ? t : Infinity, core };
     };
     const test = (x: number, y: number, ground: number, height: number, radius: number, tree: NonNullable<ReturnType<CourseView["treeAt"]>>) => {
-      let t = crownHit(x, y, ground, height, radius);
-      // (its trunk, below the crown)
+      const hit = crownHit(x, y, ground, height, radius);
+      let t = hit.t, core = hit.core;
+      // (its trunk, below the crown: right on it)
       a.set(x, ground, y); b.set(x, ground + height * 0.4, y);
       const r = Math.max(1, radius * 0.12);
-      if (ray.distanceSqToSegment(a, b, onRay) <= r * r) t = Math.min(t, onRay.distanceTo(ray.origin));
-      if (t < Infinity) hits.push({ t, tree });
+      if (ray.distanceSqToSegment(a, b, onRay) <= r * r) { t = Math.min(t, onRay.distanceTo(ray.origin)); core = 0; }
+      if (t < Infinity) hits.push({ t, core, tree });
     };
+    // (each crown as wide as the woods draw it)
+    const drawnR = (conifer: boolean | number, variant: number, height: number, width: number) => woodsCrownWidth(conifer ? "conifer" : "broadleaf", variant, height, width) / 2;
     const lidar = this.doc?.course.lidar, ls = this.lidarState;
     if (lidar && ls) {
       for (const k of ls.stand) {
         const tr = lidar.trees[k];
         if (!tr) continue;
-        const [x, y, h, r] = grownTree(tr, lidar.growYears ?? 0);
-        test(x, y, this.h(x, y), h, r, { kind: "measured", k });
+        const [x, y, h, r, conifer] = grownTree(tr, lidar.growYears ?? 0);
+        test(x, y, this.h(x, y), h, drawnR(conifer, 0, h, r * 2), { kind: "measured", k });
       }
     }
     for (const g of this.itemsGroup.children) {
@@ -3102,10 +3143,15 @@ export class CourseView {
       const indexOf = g.userData.indexes as number[] | undefined;
       spots.forEach((s, i) => {
         if (measuredCount && indexOf && indexOf[i] < measuredCount) return;
-        test(s.x, s.y, s.ground, s.height, s.width / 2, { kind: "spot", x: s.x, y: s.y, height: s.height, width: s.width, conifer: s.shape === "conifer" });
+        test(s.x, s.y, s.ground, s.height, s.shape === "bush" ? s.width / 2 : drawnR(s.shape === "conifer", s.variant, s.height, s.width), { kind: "spot", x: s.x, y: s.y, height: s.height, width: s.width, conifer: s.shape === "conifer" });
       });
     }
-    return hits.sort((p, q) => p.t - q.t).slice(0, max).map(h => h.tree);
+    // Nearest first; but a nearer crown only grazed at its thin edge gives way to one behind that
+    // the pointer is well into
+    hits.sort((p, q) => p.t - q.t);
+    const firm = hits.findIndex(h => h.core < 0.72);
+    if (firm > 0) hits.unshift(...hits.splice(firm, 1));
+    return hits.slice(0, max).map(h => h.tree);
   }
 
   /** How a tree looks where it stands (its shape variant, turn and leaf color), so a tree made the
@@ -4002,12 +4048,7 @@ export class CourseView {
     // 3D: in a tilted view a tree's crown stands well above its foot, so the foot alone would
     // pick the tree behind it)
     const ray = this.ray(clientX, clientY);
-    let tree: { id: string; t: number } | null = null;
-    for (const item of doc.course.items) {
-      if (item.type !== "tree") continue;
-      const t = this.rayHitsTree(ray, item.x, item.y, this.h(item.x, item.y), item.height ?? 30, item.radius * (item.width ?? 1) * (this.fingers ? 1.25 : 1));
-      if (t < (tree?.t ?? Infinity)) tree = { id: item.id, t };
-    }
+    const tree = this.treeUnder(ray);
     for (const item of doc.course.items) {
       if (item.type === "area" || item.type === "line" || item.type === "label" || item.type === "structure" || (item.type === "tree" && tree)) continue;
       const a = new THREE.Vector3(item.x, this.h(item.x, item.y) + 1, item.y);
@@ -5581,17 +5622,20 @@ export class CourseView {
       this.invalidate();
       return;
     }
-    if (this.ghostKey !== kind) {
+    // (the Tree tool's preview: the kind it plants, as big as it plants it)
+    const tk = this.tool.treeKind ?? "deciduous";
+    const key = kind === "tree" ? `tree:${tk}` : kind;
+    if (this.ghostKey !== key) {
       if (this.ghost) {
         this.fx.remove(this.ghost);
         disposeObjectDeep(this.ghost);
       }
-      this.ghostKey = kind;
+      this.ghostKey = key;
       const obj = kind === "basket" ? createBasket(this.doc.course.style.basketBand ?? BASKET_BAND)
         : kind === "mando" ? createMando("right")
         : kind === "dropzone" ? createDropZone()
         : kind === "amenity" ? createAmenity("bench")
-        : kind === "tree" ? create3dTree({ id: "ghost", type: "tree", x: 0, y: 0, rotation: 0, radius: 14, height: 40, color: "#4a7a3a" })
+        : kind === "tree" ? create3dTree(tk === "bush" ? { id: "ghost", type: "tree", x: 0, y: 0, rotation: 0, radius: 5, height: 6, treeType: "bush", color: "#4a7a3a" } : tk === "conifer" ? { id: "ghost", type: "tree", x: 0, y: 0, rotation: 0, radius: 10, height: 50, treeType: "conifer", color: "#2f5d34" } : { id: "ghost", type: "tree", x: 0, y: 0, rotation: 0, radius: 14, height: 40, color: "#4a7a3a" })
         : createTeePad({ id: "ghost", type: "tee", holeId: "", level: this.teeLevel, x: 0, y: 0, rotation: 0, padWidth: 5, padLength: 12, surface: "concrete" }, 0);
       obj.traverse(o => {
         const mesh = o as THREE.Mesh;

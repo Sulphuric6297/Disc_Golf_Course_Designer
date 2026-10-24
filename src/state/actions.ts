@@ -1,5 +1,6 @@
 // What the tools and menus do to the course.
 import { grownTree } from "../lib/lidar";
+import { woodsCrownWidth } from "../three/treeKit";
 import { CIRCLE_ONE_FT, PIN_POSITIONS, TEE_ORDER, generateId } from "../constants";
 import {
   createAmenity, createArea, createBasket, createDropZone, createLabel, createLine, createMando, createStructure, createTee, createTree,
@@ -642,6 +643,15 @@ export const addPatch = (areaId: string, points: P[]) => {
 
 type TreeLook = { variant: number; rotation: number; leaf: string } | null;
 
+/** A tree of the woods as the course's own, as big as the woods drew it (they keep a crown to a
+ * natural width; a tree of the course's own is drawn just as wide as it says). */
+const asDrawn = (made: TreeItem, look: TreeLook): TreeItem => {
+  const shape = made.treeType === "conifer" ? "conifer" : made.treeType === "bush" ? "bush" : "broadleaf";
+  const w = woodsCrownWidth(shape, look?.variant ?? 0, made.height ?? 30, made.radius * 2);
+  const out = { ...made, radius: Math.max(1, Math.round((w / 2) * 10) / 10) };
+  return look ? { ...out, variant: look.variant, rotation: look.rotation, leaf: look.leaf } : out;
+};
+
 /** Trees made the course's own at once (see adoptTree), one undo step: their new ids. */
 const adoptTrees = (list: { tree: AnyTree; look: TreeLook }[]) => {
   const doc = getDoc();
@@ -659,7 +669,7 @@ const adoptTrees = (list: { tree: AnyTree; look: TreeLook }[]) => {
       made = createTree({ x: tree.x, y: tree.y }, { height: Math.round(tree.height), radius: Math.round(tree.width / 2), treeType: tree.conifer ? "conifer" : "deciduous" });
       cut.push({ x: tree.x, y: tree.y });
     }
-    items.push(look ? { ...made, variant: look.variant, rotation: look.rotation, leaf: look.leaf } : made);
+    items.push(asDrawn(made, look));
   }
   if (!items.length) return [];
   const taken = new Set(list.flatMap(({ tree }) => (tree.kind === "measured" ? [tree.k] : [])));
@@ -714,7 +724,7 @@ export const adoptTree = (tree: AnyTree, look: TreeLook = null, quiet = true) =>
     made = createTree({ x: tree.x, y: tree.y }, { height: Math.round(tree.height), radius: Math.round(tree.width / 2), treeType: tree.conifer ? "conifer" : "deciduous" });
     patch = { cutTrees: [...(doc.cutTrees ?? []), { x: tree.x, y: tree.y }] };
   }
-  const item: TreeItem = look ? { ...made, variant: look.variant, rotation: look.rotation, leaf: look.leaf } : made;
+  const item: TreeItem = asDrawn(made, look);
   changeDoc(d => ({ ...patch, items: [...d.items, item] }));
   select(item.id);
   if (quiet) lookedAt = { id: item.id, doc: useCourse.getState().doc };
