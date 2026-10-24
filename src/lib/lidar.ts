@@ -2,7 +2,7 @@
 // web Mercator). Pure: which tiles cover a site, reading them, and turning their points into the
 // ground's height and single trees (where each stands, how tall, how wide; a narrow crown taken for a conifer).
 import type { CourseDoc, Hole, LidarTree, P } from "../types";
-import { fairwayOutline } from "./course";
+import { areaPath, fairwayOutline } from "./course";
 import { boundsOf, distanceToPolygon, pointInPolygon, smoothPath } from "./geom";
 import { FEET_PER_METER } from "./geo/core";
 import type { GeoRef } from "./geoRef";
@@ -197,7 +197,24 @@ export const findTrees = (m: { nx: number; ny: number; cell: number; canopy: Flo
     reach.sort((a, b) => a - b);
     const r = Math.min(Math.max(4, ((reach[3] + reach[4]) / 2) * cell + cell / 2), 0.45 * h + 4);
     const round1 = (v: number) => Math.round(v * 10) / 10;
-    trees.push([round1((i + 0.5) * cell), round1((j + 0.5) * cell), round1(h), round1(r), r / h < 0.16 ? 1 : 0]);
+    const x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+    // (a second top on a taller tree's crown, close in, with no dip in the canopy between them:
+    // the same tree with two leaders, not two trees. Its crown joins the taller one's)
+    const same = trees.find(t => {
+      const d = Math.hypot(t[0] - x, t[1] - y);
+      if (d >= 0.35 * (t[3] + r)) return false;
+      let low = Infinity;
+      for (let k = 1; k < 8; k++) {
+        const a = Math.floor((t[0] + ((x - t[0]) * k) / 8) / cell), b = Math.floor((t[1] + ((y - t[1]) * k) / 8) / cell);
+        low = Math.min(low, s[b * nx + a]);
+      }
+      return low >= 0.95 * Math.min(h, t[2]);
+    });
+    if (same) {
+      same[3] = round1(Math.min(Math.max(same[3], Math.hypot(same[0] - x, same[1] - y) + r * 0.6), 0.45 * same[2] + 4));
+      continue;
+    }
+    trees.push([round1(x), round1(y), round1(h), round1(r), r / h < 0.16 ? 1 : 0]);
   }
   return trees;
 };
@@ -337,16 +354,45 @@ export const yearsSince = (name: string) => { const y = surveyYear(name); return
 export const surveyYear = (name: string) =>
   Math.max(0, ...(name.match(/(19|20)\d\d/g) ?? []).map(Number), ...[...name.matchAll(/(?:^|_)[A-Z](\d\d)(?=_|$)/g)].map(m => 2000 + Number(m[1])));
 
+/** The measured trees a change took a woods away from: every tree that stood inside a woods area
+ * whose outline the change moved, or that it deleted (or made something else), added to the
+ * woods' own (`lidar.bound`). Null when nothing changed for them. */
+export const bindToWoods = (before: CourseDoc, after: CourseDoc): number[] | null => {
+  const lidar = after.lidar;
+  if (!lidar?.trees.length || before.items === after.items) return null;
+  const now = new Map(after.items.map(i => [i.id, i]));
+  const left: P[][] = [];
+  for (const it of before.items) {
+    if (it.type !== "area" || it.kind !== "woods" || it.points.length < 3) continue;
+    const n = now.get(it.id);
+    if (n === it || (n && n.type === "area" && n.kind === "woods" && n.points === it.points && n.straight === it.straight)) continue;
+    left.push(areaPath(it));
+  }
+  if (!left.length) return null;
+  const bound = new Set(lidar.bound ?? []), had = bound.size;
+  for (const pts of left) {
+    const b = boundsOf(pts);
+    lidar.trees.forEach(([x, y], k) => {
+      if (x < b.minX || x > b.maxX || y < b.minY || y > b.maxY || bound.has(k)) return;
+      if (pointInPolygon({ x, y }, pts)) bound.add(k);
+    });
+  }
+  return bound.size === had ? null : [...bound].sort((a, b) => a - b);
+};
+
 /** Which measured trees stand: those on a fairway, a tee or a basket's circle (as
- * `cleared` says) are cut down unless kept; any taken out are gone. */
-export const standingTrees = (lidar: NonNullable<CourseDoc["lidar"]>, cleared: (p: P, reach: number) => boolean, nowhere: (p: P) => boolean = () => false) => {
-  const kept = new Set(lidar.kept ?? []), removed = new Set(lidar.removed ?? []);
+ * `cleared` says) are cut down unless kept; any taken out are gone; a woods' own tree only
+ * while a woods covers it (`inWoods`). */
+export const standingTrees = (lidar: NonNullable<CourseDoc["lidar"]>, cleared: (p: P, reach: number) => boolean, nowhere: (p: P) => boolean = () => false, inWoods: (p: P) => boolean = () => true) => {
+  const kept = new Set(lidar.kept ?? []), removed = new Set(lidar.removed ?? []), bound = new Set(lidar.bound ?? []);
   // (a course can keep its measured trees on the fairways and cut by hand only)
   if (lidar.clearFairways === false) cleared = () => false;
   const stand: number[] = [], cut: number[] = [];
   lidar.trees.forEach((t, k) => {
     const p = { x: t[0], y: t[1] };
     if (removed.has(k)) cut.push(k);
+    // (a woods' own tree, with no woods over it now)
+    else if (bound.has(k) && !inWoods(p)) cut.push(k);
     // (cleared for play, or where no tree stands: in water, on a road or path, a building or
     // parking; a tree found there is a bridge, a car, a wire or noise in the survey)
     // (and those smaller than the course wants: bushes, noise)

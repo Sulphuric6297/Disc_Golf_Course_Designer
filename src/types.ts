@@ -654,7 +654,11 @@ export interface CourseDoc {
    * are cut down unless `kept` (by index); `removed` ones taken out wherever they stand. */
   /** `growYears`: the measured trees grown that many years (the survey is older than today). */
   /** `clearFairways: false`: the measured trees stay where the holes play (cut by hand only). */
-  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number; clearFairways?: false };
+  /** `bound`: measured trees that belong to woods. They stand only while a woods area covers them:
+   * a wood's edge pulled in past one, or the wood deleted, takes it out; the edge pushed back
+   * out over it brings it back. (A tree becomes bound the first time a woods it stood in changes
+   * shape or goes; trees out on their own never do.) */
+  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number; clearFairways?: false; bound?: number[] };
   /** Where trees were cut down by hand that have no list of their own: saplings grown since the
    * survey and the trees the app plants in woods and patches. None stands within 4 ft of one. */
   cutTrees?: P[];

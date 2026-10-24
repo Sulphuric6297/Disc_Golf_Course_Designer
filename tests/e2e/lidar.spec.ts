@@ -303,3 +303,49 @@ test("a drag box takes in the measured trees inside it: each made the course's o
   await expect.poll(async () => (await trees()).length).toBe(0);
   plainExpect((await course(page)).lidar.removed).toBeUndefined();
 });
+
+test("a wood's measured trees go with it: its edge pulled in past them takes them out, pushed back out brings them back, deleting the wood takes them all; a tree out on its own stays", async ({ page }) => {
+  test.setTimeout(180_000);
+  await withLidar(page);
+  await importSite(page);
+  const doc = await course(page);
+  const W2 = doc.canvas.width, H2 = doc.canvas.height;
+  const at = (e: number, n: number) => ({ x: W2 / 2 + e * FT, y: H2 / 2 - n * FT });
+  const standing = () => page.evaluate(() => (window as any).__dgView.lidarState?.stand.length ?? 0);
+  await expect.poll(standing).toBeGreaterThan(5);
+  const all = await standing();
+  // A wood round the row of five (x -60 to 20 m)
+  const box = (e0: number, e1: number) => [at(e0, -30), at(e1, -30), at(e1, -50), at(e0, -50)];
+  const id = await page.evaluate(pts => {
+    (window as any).__dgEditor().set({ areaKind: "woods", tool: "select" });
+    (window as any).__dgActions.addDrawn("area", pts, { straight: true });
+    const d = (window as any).__dgCourse();
+    return d.items[d.items.length - 1].id;
+  }, box(-70, 30));
+  await expect.poll(standing).toBe(all);
+  // Its edge pulled in to x -30 m: the two trees west of it are out
+  await page.evaluate(([id, pts]) => (window as any).__dgActions.updateItem(id, { points: pts }), [id, box(-30, 30)] as const);
+  await expect.poll(standing).toBe(all - 2);
+  expect((await course(page)).lidar.bound).toHaveLength(5);
+  // Pushed back out: they stand again
+  await page.evaluate(([id, pts]) => (window as any).__dgActions.updateItem(id, { points: pts }), [id, box(-70, 30)] as const);
+  await expect.poll(standing).toBe(all);
+  // The wood deleted: all five go; the other trees, out on their own, stay; Undo brings them back
+  await page.evaluate(id => { (window as any).__dgActions.select(id); }, id);
+  await page.keyboard.press("Delete");
+  await expect.poll(standing).toBe(all - 5);
+  await page.keyboard.press("Control+z");
+  await expect.poll(standing).toBe(all);
+});
+
+plain("two tops on one crown, close together with no dip between them, are one tree (pure logic)", () => {
+  const nx = 40, ny = 40, cell = 3;
+  const canopy = new Float32Array(nx * ny);
+  // A broad 60 ft crown with two leaders 9 ft apart, and a second tree well off with a gap between
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const d1 = Math.hypot(i - 12, j - 20), d2 = Math.hypot(i - 15, j - 20), d3 = Math.hypot(i - 32, j - 20);
+    canopy[j * nx + i] = Math.max(d1 < 7 ? 60 - d1 * 0.4 : 0, d2 < 7 ? 59.8 - d2 * 0.4 : 0, d3 < 5 ? 45 - d3 : 0);
+  }
+  const trees = findTrees({ nx, ny, cell, canopy });
+  plainExpect(trees).toHaveLength(2);
+});
