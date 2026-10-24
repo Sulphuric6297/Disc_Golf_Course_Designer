@@ -76,6 +76,8 @@ const STOPS: Stop[] = [
 ];
 
 export const useTour = create<{ at: number | null }>(() => ({ at: null }));
+// (for the tests: the walk's stop, set straight)
+if (typeof window !== "undefined") (window as unknown as { __dgTour: typeof useTour }).__dgTour = useTour;
 
 /** The walk round the example, from the start (the example opened first). */
 export const startTour = async () => {

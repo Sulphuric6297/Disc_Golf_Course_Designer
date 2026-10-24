@@ -10,7 +10,7 @@ import { RESTRICTED } from "../lib/symbols";
 import { MapLookPanel } from "./MapLookPanel";
 import { useEffect, useRef, useState } from "react";
 import type { MapStyle, PaperSize, ReliefLook, SignSettings } from "../types";
-import { Button, ColorInput, Field, Fold, Section, Segmented, Slider, Toggle, WholePanelOnly } from "./ui";
+import { Button, ColorInput, Field, Fold, Section, Segmented, Slider, TextInput, Toggle, WholePanelOnly } from "./ui";
 import { HolePageLook, PrintPanel, ScorecardSettings } from "./PrintPanel";
 import { FontPicker } from "./FontPicker";
 import { fontsIn } from "../lib/fontLoad";
@@ -184,6 +184,9 @@ export function DesignPanel() {
             <ColorInput key={key} label={label} value={s.card?.[key] ?? CARD_DEFAULTS[key]} onChange={v => setStyle({ card: { ...s.card, [key]: v } }, false)} onDone={done} />
           ))}
         </div>
+        <Field label="Line under the course name">
+          <TextInput label="Line under the course name" value={s.tagline ?? "Disc golf course"} placeholder="None" onChange={v => setStyle({ tagline: v })} />
+        </Field>
         <Field label="Course logo">
           <LogoPicker logo={s.logo} />
         </Field>

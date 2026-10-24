@@ -3,7 +3,7 @@
 // length from each tee color, the elevation change and how long it plays, the hole notes and a
 // small elevation profile. Pages for print (Letter, A4, a 4 × 6 in card) and a square picture for
 // sharing; pure SVG, like the course map.
-import { fitAttr } from "./fitText";
+import { fitAttr, capAttr } from "./fitText";
 import { FT_PER_M, TEE_LEVELS } from "../constants";
 import type { CourseDoc, PinPosition, TeeLevel, Units } from "../types";
 import { activeLayout, holeBaskets, holeTees, throwLine } from "./course";
@@ -113,7 +113,7 @@ export const renderHolePage = (doc: CourseDoc, holeId: string, size: HolePageSiz
   // Just the hole: its number, big, in the corner over the picture
   if (justHole) {
     const fs = 150 * u;
-    parts.push(P.wrap("number", `<text${fitAttr(W * 0.6)} x="${n(m * 1.4)}" y="${n(m * 1.2 + fs * 0.78)}" font-family="${HEAD}" font-weight="700" font-size="${n(fs)}" fill="#ffffff" stroke="#0b120a" stroke-opacity="0.35" stroke-width="${n(3 * u)}" paint-order="stroke">${st.label}</text>`));
+    parts.push(P.wrap("number", `<text${fitAttr(W * 0.6)}${capAttr(fs * 0.78 + m * 0.6)} x="${n(m * 1.4)}" y="${n(m * 1.2 + fs * 0.78)}" font-family="${HEAD}" font-weight="700" font-size="${n(fs)}" fill="#ffffff" stroke="#0b120a" stroke-opacity="0.35" stroke-width="${n(3 * u)}" paint-order="stroke">${st.label}</text>`));
   }
 
   // Header: the number on a disc in the tee's color, the course, "HOLE 7" and its name, the par

@@ -532,6 +532,8 @@ export interface MapStyle {
   /** Title block. */
   title: string;
   subtitle: string;
+  /** The line under the course's name on the map and the signs (unset: "Disc golf course"; "": none). */
+  tagline?: string;
   footer: string;
   /** Colors. */
   fairway: string;

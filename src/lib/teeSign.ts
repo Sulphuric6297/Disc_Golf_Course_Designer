@@ -1,11 +1,11 @@
 // Tee signs and hole sheets: one page per hole with its number, par, the distance from each tee,
 // the hole drawn with the tee at the bottom, its elevation profile, the hole's rules, and an arrow
 // to the next tee.
-import { fitAttr } from "./fitText";
+import { fitAttr, capAttr } from "./fitText";
 import { CIRCLE_ONE_FT, FT_PER_M, TEE_LEVELS } from "../constants";
 import type { AreaItem, BasketItem, CourseDoc, CourseItem, LineItem, P, SignLook, SignPart, SignSpot } from "../types";
 import { renderFieldGuide, renderOpenView, renderTrailhead } from "./signLooks";
-import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, obFor, obPieces, throwLine } from "./course";
+import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, obFor, obPieces, throwLine, taglineOf } from "./course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, rotatePoint, smoothPath } from "./geom";
 import { holeStats, playedHoles, type HoleStats } from "./holeStats";
 import { fontStack, keepsCase, markingsInView, northArrow, palette, renderMapLayers, scaleBar, titleStack, wrapSvg, type MapView } from "./mapSvg";
@@ -341,7 +341,7 @@ export const renderScorecard = (doc: CourseDoc, players = doc.style.scorecard?.p
       const name = (sty.title || doc.name || "").replace(/\s+disc\s+golf(\s+course)?$/i, "").trim() || "Disc Golf";
       const size = Math.min(30, (logoW / Math.max(4, name.length)) * (keepsCase(sty.font) ? 2.1 : 1.75));
       out.push(`<text${fitAttr(logoW)} x="${m}" y="${n(top + 44)}" font-family="${titleStack(sty.font)}" font-weight="700" font-size="${n(size)}" fill="${card.header}">${esc(keepsCase(sty.font) ? name : name.toUpperCase())}</text>`);
-      out.push(`<text x="${m}" y="${n(top + 60)}" font-family="${card.body}" font-weight="800" font-size="7" letter-spacing="2" fill="${card.header}">DISC GOLF COURSE</text>`);
+      if (taglineOf(sty)) out.push(`<text x="${m}" y="${n(top + 60)}" font-family="${card.body}" font-weight="800" font-size="7" letter-spacing="2" fill="${card.header}">${esc(taglineOf(sty))}</text>`);
     }
     P.group(out, at, "logo", copy);
     at = out.length;
@@ -562,7 +562,7 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
   at = parts.length;
   const nameSize = Math.min(40 * u, ((cw * 0.95) / Math.max(4, name.length)) * (keepsCase(sty.font) ? 2.1 : 1.75));
   if (show("courseName")) parts.push(`<text${fitAttr(cw)} x="${n(cx)}" y="${n(bandH * 0.52)}" text-anchor="middle" font-family="${titleStack(sty.font)}" font-weight="700" font-size="${n(nameSize)}" fill="${card.accent}">${esc(keepsCase(sty.font) ? name : name.toUpperCase())}</text>`);
-  if (show("courseName")) parts.push(`<text${fitAttr(cw)} x="${n(cx)}" y="${n(bandH * 0.52 + 22 * u)}" text-anchor="middle" font-family="${card.body}" font-weight="800" font-size="${n(7.5 * u)}" letter-spacing="${n(2.6 * u)}" fill="${card.accent}" fill-opacity="0.75">DISC GOLF COURSE</text>`);
+  if (show("courseName") && taglineOf(sty)) parts.push(`<text${fitAttr(cw)} x="${n(cx)}" y="${n(bandH * 0.52 + 22 * u)}" text-anchor="middle" font-family="${card.body}" font-weight="800" font-size="${n(7.5 * u)}" letter-spacing="${n(2.6 * u)}" fill="${card.accent}" fill-opacity="0.75">${esc(taglineOf(sty))}</text>`);
   P.group(parts, at, "courseName");
   // The number, big, and its par on a tag in the tee's color (each when shown)
   let y = bandH + 34 * u;
@@ -570,7 +570,8 @@ const renderWideSign = (doc: CourseDoc, holeId: string, size: SignSize, opts: Si
     at = parts.length;
     parts.push(`<text${fitAttr(cw)} x="${n(cx)}" y="${n(y)}" text-anchor="middle" font-family="${card.head}" font-weight="700" font-size="${n(13 * u)}" letter-spacing="${n(3 * u)}" fill="${soft}">HOLE</text>`);
     const numSize = 132 * u;
-    parts.push(`<text${fitAttr(cw)} x="${n(cx)}" y="${n(y + numSize * 0.86)}" text-anchor="middle" font-family="${card.head}" font-weight="700" font-size="${n(numSize)}" fill="${card.ink}">${st.label}</text>`);
+    // (kept under HOLE whatever the font: as tall as it can be with a little room under the word)
+    parts.push(`<text${fitAttr(cw)}${capAttr(numSize * 0.86 - 6 * u)} x="${n(cx)}" y="${n(y + numSize * 0.86)}" text-anchor="middle" font-family="${card.head}" font-weight="700" font-size="${n(numSize)}" fill="${card.ink}">${st.label}</text>`);
     y += numSize * 0.86 + 14 * u;
     P.group(parts, at, "number");
   }
