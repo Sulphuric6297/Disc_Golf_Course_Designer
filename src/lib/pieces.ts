@@ -20,6 +20,16 @@ export const pieceFont = (f: string) => (OWN.has(f) ? titleStack(f) : `'${f.repl
  * and `style` is the page's restyling (scoped to this page, `uid`, so pages shown side by side
  * keep their own).
  */
+/** A piece's drawing turned about its own middle (`rot` degrees clockwise) and as solid as
+ * `opacity`; as it is when neither is set. (Turned with CSS on a group of its own, so it turns
+ * about its middle wherever it's moved and however big it is; the page's pictures and PDFs are
+ * drawn from the page, which keeps it.) */
+export const turned = (content: string, rot?: number, opacity?: number) => {
+  const r = rot ? Math.round(rot * 10) / 10 : 0, o = opacity !== undefined && opacity < 1 ? Math.max(0, opacity) : null;
+  if (!r && o === null) return content;
+  return `<g data-turn="${r}"${r ? ` style="transform-box:fill-box;transform-origin:center;transform:rotate(${r}deg)"` : ""}${o !== null ? ` opacity="${n(o)}"` : ""}>${content}</g>`;
+};
+
 export const piecer = (place: (id: string) => PiecePlace | undefined, W: number, H: number, uid: string) => {
   const css: string[] = [];
   const scope = `pc${uid.replace(/[^a-z0-9]/gi, "")}`;
@@ -36,7 +46,8 @@ export const piecer = (place: (id: string) => PiecePlace | undefined, W: number,
     if (p?.font && !css.some(c => c.startsWith(`${a} text`) && c.includes("font-family"))) css.push(`${both("text")},${both("tspan")}{font-family:${pieceFont(p.font)} !important}`);
     if (p?.color && !css.some(c => c.startsWith(`${a} text`) && c.includes("fill:"))) css.push(`${both("text")},${both("tspan")}{fill:${p.color} !important}`);
     if (p?.fill && !css.some(c => c.startsWith(`${a} [data-fill]`))) css.push(`${both("[data-fill]")}{fill:${p.fill} !important}`);
-    return `<g ${copy ? "data-pc" : "data-el"}="${id}"${t}>${content}</g>`;
+    if (p?.italic && !css.some(c => c.startsWith(`${a} text`) && c.includes("font-style"))) css.push(`${both("text")},${both("tspan")}{font-style:italic !important}`);
+    return `<g ${copy ? "data-pc" : "data-el"}="${id}"${t}>${turned(content, p?.rot, p?.opacity)}</g>`;
   };
   const group = (parts: string[], from: number, id: string, copy = false) => {
     const c = parts.splice(from).join("");
@@ -84,7 +95,7 @@ export const extrasSvg = (extras: PrintExtra[] | undefined, sponsors: Sponsor[] 
     if (e.kind === "text") {
       const size = e.size ?? 24, lines = fillIn(e.text ?? "", facts).split("\n");
       const ax = e.align === "middle" ? X + w / 2 : e.align === "end" ? X + w : X;
-      body = lines.map((l, i) => `<text x="${n(ax)}" y="${n(Y + size * (0.9 + i * 1.2))}" text-anchor="${e.align ?? "start"}" font-family="${pieceFont(e.font || font)}" font-weight="${e.bold ? 700 : 500}" font-size="${n(size)}" fill="${e.color ?? "#111111"}">${esc(l)}</text>`).join("");
+      body = lines.map((l, i) => `<text x="${n(ax)}" y="${n(Y + size * (0.9 + i * 1.2))}" text-anchor="${e.align ?? "start"}" font-family="${pieceFont(e.font || font)}" font-weight="${e.bold ? 700 : 500}"${e.italic ? ` font-style="italic"` : ""} font-size="${n(size)}" fill="${e.color ?? "#111111"}">${esc(l)}</text>`).join("");
     } else if (e.kind === "image" && e.src) {
       body = `<image href="${e.src}" x="${n(X)}" y="${n(Y)}" width="${n(w)}" height="${n(w * (e.aspect ?? 1))}" preserveAspectRatio="xMidYMid meet"${e.opacity !== undefined && e.opacity < 1 ? ` opacity="${n(e.opacity)}"` : ""}/>`;
     } else if (e.kind === "sponsor") {
@@ -124,7 +135,8 @@ export const extrasSvg = (extras: PrintExtra[] | undefined, sponsors: Sponsor[] 
       });
       body = parts.join("");
     }
-    if (body) out.push(wrap(`x:${e.id}`, body));
+    // (a picture's own opacity is on the picture; anything else's on the whole of it)
+    if (body) out.push(wrap(`x:${e.id}`, turned(body, e.rot, e.kind === "image" ? undefined : e.opacity)));
   }
   return out.join("");
 };

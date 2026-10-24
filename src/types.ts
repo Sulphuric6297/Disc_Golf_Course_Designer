@@ -221,8 +221,9 @@ export interface StructureItem extends BaseItem {
   /** Its own colors (unset: the map's): the roof, and a building's walls. */
   roofColor?: string;
   wallColor?: string;
-  /** Brought in from OpenStreetMap (re-importing replaces it). */
-  importSource?: "osm";
+  /** Brought in from OpenStreetMap, or (a building nobody's mapped) traced from the air: looking
+   * the maps up again replaces it. */
+  importSource?: "osm" | "traced";
   holeId?: string;
   label?: string;
 }
@@ -367,6 +368,10 @@ export interface PiecePlace {
   font?: string;
   color?: string;
   fill?: string;
+  /** Turned about its middle, degrees clockwise; how solid it is (0 to 1); its lettering slanted. */
+  rot?: number;
+  opacity?: number;
+  italic?: boolean;
 }
 /** Something put on a tee sign or hole page: text (its {hole}, {par}, {length}, {course} and
  * {name} filled in for each hole), a picture, the hole's sponsors, or a QR code. Where it was put,
@@ -388,6 +393,9 @@ export interface PrintExtra {
   size?: number;
   color?: string;
   bold?: boolean;
+  italic?: boolean;
+  /** Turned about its middle, degrees clockwise. */
+  rot?: number;
   align?: "start" | "middle" | "end";
   font?: string;
   /** A picture (a data URL) and its height to width. */
@@ -445,6 +453,9 @@ export interface PageElementStyle {
   y?: number;
   /** Its size, times its own. */
   scale?: number;
+  /** Turned about its middle (degrees clockwise), and how solid it is (0 to 1). */
+  rot?: number;
+  opacity?: number;
   hidden?: boolean;
   /** Its panel's color and how solid it is (0 none, 1 solid), and its text color. */
   bg?: string;
@@ -470,6 +481,9 @@ export interface PageText {
   bold?: boolean;
   italic?: boolean;
   align?: "start" | "middle" | "end";
+  /** Turned about its middle (degrees clockwise), and how solid it is (0 to 1). */
+  rot?: number;
+  opacity?: number;
   /** A panel behind it. */
   bg?: string;
   bgOpacity?: number;
@@ -486,6 +500,8 @@ export interface PageImage {
   w: number;
   aspect: number;
   opacity?: number;
+  /** Turned about its middle, degrees clockwise. */
+  rot?: number;
   hidden?: boolean;
 }
 
@@ -654,7 +670,11 @@ export interface CourseDoc {
    * are cut down unless `kept` (by index); `removed` ones taken out wherever they stand. */
   /** `growYears`: the measured trees grown that many years (the survey is older than today). */
   /** `clearFairways: false`: the measured trees stay where the holes play (cut by hand only). */
-  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number; clearFairways?: false };
+  /** `bound`: measured trees that belong to woods. They stand only while a woods area covers them:
+   * a wood's edge pulled in past one, or the wood deleted, takes it out; the edge pushed back
+   * out over it brings it back. (A tree becomes bound the first time a woods it stood in changes
+   * shape or goes; trees out on their own never do.) */
+  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number; clearFairways?: false; bound?: number[] };
   /** Where trees were cut down by hand that have no list of their own: saplings grown since the
    * survey and the trees the app plants in woods and patches. None stands within 4 ft of one. */
   cutTrees?: P[];

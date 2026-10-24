@@ -72,9 +72,23 @@ export function PublicSite({ children }: { children: ReactNode }) {
   const [big, setBig] = useState<string | null>(null);
   const [openHole, setOpenHole] = useState<string | null>(null);
   const wide = useWide();
-  // (the hole picked on the map: its row brought into view in the list)
+  // (the hole picked: its row brought into view in the list. On a phone, into the middle of the
+  // room between the map pinned at the top and the bar at the bottom, once it has opened)
   const openRow = useRef<HTMLLIElement>(null);
-  useEffect(() => { openRow.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }); }, [openHole]);
+  useEffect(() => {
+    const row = openRow.current;
+    if (!row) return;
+    if (wide) { row.scrollIntoView?.({ block: "nearest", behavior: "smooth" }); return; }
+    const raf = requestAnimationFrame(() => {
+      const top = document.querySelector('[data-testid="map-pinned"]')?.getBoundingClientRect().bottom ?? 0;
+      const bar = document.querySelector('[data-testid="public-bar"]')?.getBoundingClientRect().top ?? innerHeight;
+      const r = row.getBoundingClientRect(), room = bar - top - 16;
+      // (centred when it fits; its top just under the map when it's taller than the room)
+      const want = r.height <= room ? top + 8 + (room - r.height) / 2 : top + 8;
+      window.scrollBy({ top: r.top - want, behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [openHole, wide]);
 
   const load = async (pw: string) => {
     const res = await get("", pw);
@@ -326,7 +340,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
             {footer}
           </div>
           {(exploreBtn || scorecard) && (
-            <div className="glass fixed z-30 left-3 right-3 bottom-[max(12px,env(safe-area-inset-bottom))] rounded-[26px] p-1.5 flex gap-1.5">{exploreBtn}{scorecard}</div>
+            <div className="glass fixed z-30 left-3 right-3 bottom-[max(12px,env(safe-area-inset-bottom))] rounded-[26px] p-1.5 flex gap-1.5" data-testid="public-bar">{exploreBtn}{scorecard}</div>
           )}
         </div>
       )}

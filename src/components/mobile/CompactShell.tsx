@@ -578,11 +578,14 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
   useLayoutEffect(() => {
     if (ed.designSel && (ed.step === "map" || ed.step === "export")) setDetent("peek");
   }, [ed.designSel]);
-  // (and the hole brought into the map above the sheet once the sheet has its height)
+  // (and the hole brought into the map above the sheet once the sheet has its height: once a
+  // pick, never again as the sheet is dragged up or down for more of its settings)
+  const revealed = useRef<string | null>(null);
   useEffect(() => {
-    if (!holePicked || !ed.selectedId) return;
+    if (!holePicked || !ed.selectedId) { revealed.current = null; return; }
     const id = ed.selectedId;
-    const t = window.setTimeout(() => getView()?.reveal(id), 320);
+    if (revealed.current === id) return;
+    const t = window.setTimeout(() => { revealed.current = id; getView()?.reveal(id); }, 320);
     return () => window.clearTimeout(t);
   }, [ed.selectedId, holePicked, sheetH]);
 

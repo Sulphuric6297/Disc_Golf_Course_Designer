@@ -72,9 +72,10 @@ function BroughtIn() {
   const photoTrees = doc.items.filter(i => i.type === "tree" && i.importSource === "photo").length;
   const photoAreas = doc.items.filter(i => i.type === "area" && i.importSource === "photo").length;
   const osm = doc.items.filter(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm").length;
+  const traced = doc.items.filter(i => i.type === "structure" && i.importSource === "traced").length;
   return (
     <>
-      {(photoTrees > 0 || photoAreas > 0 || osm > 0) && (
+      {(photoTrees > 0 || photoAreas > 0 || osm > 0 || traced > 0) && (
         <Section title="Brought in automatically" help="brought-in">
           {(photoTrees > 0 || photoAreas > 0) && (
             <div className="flex items-center justify-between text-xs text-zinc-300 mb-1.5" data-testid="photo-found">
@@ -86,6 +87,12 @@ function BroughtIn() {
             <div className="flex items-center justify-between text-xs text-zinc-300">
               {osm} shapes from OpenStreetMap
               <Button small tone="danger" onClick={() => changeDoc(d => ({ items: d.items.filter(i => !((i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm")) }))}>Remove all</Button>
+            </div>
+          )}
+          {traced > 0 && (
+            <div className={`flex items-center justify-between text-xs text-zinc-300${osm > 0 ? " mt-1.5" : ""}`} data-testid="traced-found">
+              {traced} building{traced > 1 ? "s" : ""} traced from the air
+              <Button small tone="danger" onClick={() => changeDoc(d => ({ items: d.items.filter(i => !(i.type === "structure" && i.importSource === "traced")) }))}>Remove all</Button>
             </div>
           )}
         </Section>

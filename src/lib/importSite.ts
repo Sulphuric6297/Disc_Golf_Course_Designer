@@ -10,6 +10,7 @@ import { fetchLidar } from "./geo/lidarFetch";
 import { groundOnGrid } from "./lidar";
 import { creditHeightPx, fetchMapImagery, type MapImagerySource } from "./geo/imagery";
 import { fetchOsmFeatures } from "./geo/osm";
+import { tracedBuildings, type TracedBuilding } from "./geo/buildings";
 import { fetchTileFeatures } from "./geo/vectorTiles";
 import { createArea, createLine, createStructure, createTree } from "./course";
 import { centroid, clipPathToRect, clipPolygonToRect, pointInPolygon, polygonArea, simplify } from "./geom";
@@ -123,6 +124,10 @@ export const natureFromPhoto = async (url: string, width: number, height: number
   return { trees, woods, water };
 };
 
+/** Whether a shape came from the maps (OpenStreetMap, or a building traced from the air): the
+ * ones a new lookup replaces. */
+export const fromMaps = (i: CourseItem) => (i.type === "area" || i.type === "line" || i.type === "structure") && (i.importSource === "osm" || i.importSource === "traced");
+
 /** Whether a thing was brought in by an import (found on the photo, or from OpenStreetMap). */
 export const isImported = (i: CourseItem) => (i.type === "tree" || i.type === "area" || i.type === "line" || i.type === "structure") && !!i.importSource;
 
@@ -138,7 +143,9 @@ const OSM_NAMES: Record<string, [string, string]> = {
  * ("2 paths, 1 road, 1 water area"). Throws when no server could be reached.
  */
 export const osmItems = async (bounds: GeoBounds, width: number, height: number, onServer?: (index: number) => void) => {
-  // (every Overpass server busy: the same OpenStreetMap data from OpenFreeMap's map tiles)
+  // (every Overpass server busy: the same OpenStreetMap data from OpenFreeMap's map tiles; and
+  // meanwhile the buildings traced from the air, for the ones nobody's mapped)
+  const traced = tracedBuildings(bounds).catch(err => { console.warn("Traced buildings lookup failed", err); return [] as TracedBuilding[]; });
   const features = await fetchOsmFeatures(bounds, undefined, onServer).catch(err => fetchTileFeatures(bounds).catch(() => Promise.reject(err)));
   const ref = { ...bounds, width, height };
   // (a little past the edges, so lines run cleanly off the map)
@@ -171,14 +178,45 @@ export const osmItems = async (bounds: GeoBounds, width: number, height: number,
       }
     }
   }
-  const summary = Object.entries(OSM_NAMES)
-    .map(([k, [one, many]]) => {
+  const more = tracedItems(await traced, items, ref);
+  const summary = [
+    ...Object.entries(OSM_NAMES).map(([k, [one, many]]) => {
       const n = items.filter(m => (m as AreaItem | LineItem).kind === k).length;
       return n ? `${n} ${n === 1 ? one : many}` : "";
-    })
+    }),
+    more.length ? `${more.length} more ${more.length === 1 ? "building" : "buildings"} traced from the air` : ""
+  ]
     .filter(Boolean)
     .join(", ");
-  return { items, summary };
+  return { items: [...items, ...more], summary };
+};
+
+/** The smallest building traced from the air that's kept, sq ft (a shed: about 3 m by 3 m). */
+const TRACED_MIN_SQFT = 100;
+/** How sure the tracing must be, where it says (0-1). */
+const TRACED_SURE = 0.7;
+
+/**
+ * The buildings traced from the air worth adding, as buildings to edit like one drawn: only ones
+ * the map doesn't have (none overlapping a building it has, nor sitting on parking or water), big
+ * enough to be a building, whole on the site, and at least `TRACED_SURE` sure where the tracing
+ * says how sure it is.
+ */
+export const tracedItems = (traced: TracedBuilding[], mapped: CourseItem[], ref: GeoBounds & { width: number; height: number }) => {
+  const taken = mapped.filter((m): m is CourseItem & { points: P[] } => (m.type === "structure" && m.kind === "building") || (m.type === "area" && (m.kind === "parking" || m.kind === "water")));
+  const overlaps = (a: P[], b: P[]) => a.some(p => pointInPolygon(p, b)) || b.some(p => pointInPolygon(p, a)) || pointInPolygon(centroid(a), b);
+  const out: (CourseItem & { points: P[] })[] = [];
+  for (const t of traced) {
+    if (t.confidence !== null && t.confidence < TRACED_SURE) continue;
+    const pts = simplify(t.points.map(p => toPlanXY(ref, p.lat, p.lon)), 0.5);
+    if (pts.length < 3 || Math.abs(polygonArea(pts)) < TRACED_MIN_SQFT) continue;
+    if (pts.some(p => p.x < 0 || p.y < 0 || p.x > ref.width || p.y > ref.height)) continue;
+    if (taken.some(m => overlaps(pts, m.points)) || out.some(m => overlaps(pts, m.points))) continue;
+    const b = createStructure("building", pts);
+    if (t.heightM) b.height = Math.round(Math.min(40, Math.max(8, t.heightM * FEET_PER_METER)) * 2) / 2;
+    out.push({ ...b, importSource: "traced" });
+  }
+  return out as CourseItem[];
 };
 
 /**
