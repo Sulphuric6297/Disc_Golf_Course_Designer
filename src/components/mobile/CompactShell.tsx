@@ -615,9 +615,13 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
       <Woods />
       <main ref={main} className="relative flex-1 min-h-0">
         <MapViewport onContextMenu={onContextMenu} compact="phone" controlsTop={top} controlsRoom={immersive ? 0 : controlsRoom} />
+        {/* (the page over the whole map, so the sheet dragged up shows the page behind it, never
+            the 3D view; the page fits the room over a low sheet and stays put as it's pulled up) */}
         {design && (
-          <div className="absolute inset-x-0 top-0 z-20" style={{ bottom: sheetH }}>
-            <MapDesigner compact topInset={top} preview={ed.step === "export"} />
+          <div className="absolute inset-0 z-20 bg-zinc-950" data-testid="design-layer">
+            <div className="absolute inset-x-0 top-0" style={{ bottom: Math.min(sheetH, Math.round(mainH * 0.55)) }}>
+              <MapDesigner compact topInset={top} preview={ed.step === "export"} />
+            </div>
           </div>
         )}
         {!immersive && <PhoneTopBar onMenu={openApp} />}

@@ -186,8 +186,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   // (and leaving the Tee tool drops a new hole on its way to a basket)
   useEffect(() => { if (ed.tool !== "add-tee" && ed.holeToBasket) useEditor.getState().set({ holeToBasket: null }); }, [ed.tool, ed.holeToBasket]);
   useEffect(() => { view?.setGrass(ed.grass, ed.wind); }, [view, ed.grass, ed.wind]);
-  // Covered by the Design step's page: the map view rests
-  useEffect(() => { view?.setPaused(ed.step === "map" && !ed.teeView); }, [view, ed.step, ed.teeView]);
+  // Covered by the page on the Map and Export steps: the map view rests (a video records on its own)
+  useEffect(() => { view?.setPaused((ed.step === "map" || ed.step === "export") && !ed.teeView); }, [view, ed.step, ed.teeView]);
   // (the picked keyframe stands out on the map; another hole picked, none is)
   useEffect(() => { view?.setFlyKey(ed.flyKey); }, [view, ed.flyKey]);
   useEffect(() => { if (!useEditor.getState().flyCam) useEditor.getState().set({ flyKey: null }); }, [ed.selectedId]);
