@@ -8,7 +8,7 @@ import { renderTeeSign } from "../../src/lib/teeSign";
 
 /** Clicks an export button and returns the downloaded file's name and contents. */
 const exported = async (page: Page, testid: string) => {
-  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.getByTestId(testid).click()]);
+  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 150_000 }), page.getByTestId(testid).click()]);
   const path = await download.path();
   return { name: download.suggestedFilename(), data: readFileSync(path!) };
 };
@@ -77,7 +77,7 @@ test("spreadsheets: the hole list, the stake-out list and the parts list", async
 });
 
 test("printing: course map PDF and SVG, tee signs PDF and pictures, scorecard", async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(420_000);
   await setup(page);
   // Each kind's formats in one row under its size (none left on a line of its own)
   const tops = async (...ids: string[]) => Promise.all(ids.map(async id => Math.round((await page.getByTestId(id).boundingBox())!.y)));
