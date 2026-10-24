@@ -51,7 +51,7 @@ export function PieceToolbar({ t, id, onGrow, onPreviewFont, onEditText, onDone,
   const linkBody = <input ref={linkRef} aria-label="Link" placeholder="https://" className="w-full rounded-[10px] bg-white/[0.1] px-2.5 py-2 text-sm text-zinc-50 placeholder:text-zinc-500 focus:outline-none" value={p.url ?? ""} onChange={e => patchPicked(t, id, { url: e.target.value }, false)} onBlur={commit} onKeyDown={e => { if (e.key === "Enter") { commit(); setPop(null); } }} />;
   const opacityBody = (
     <>
-      <div className="flex justify-between text-[12px] text-zinc-300 mb-1"><span>How solid it is</span><span className="tabular-nums">{Math.round((p.opacity ?? 1) * 100)}%</span></div>
+      <div className="flex justify-between text-[12px] text-zinc-300 mb-1"><span>{docked ? "" : "How solid it is"}</span><span className="tabular-nums">{Math.round((p.opacity ?? 1) * 100)}%</span></div>
       <input type="range" min={0.05} max={1} step={0.05} aria-label="How solid it is" className="slider w-full touch:h-7" value={p.opacity ?? 1} onChange={e => patchPicked(t, id, { opacity: Number(e.target.value) }, false)} onPointerUp={commit} />
     </>
   );
