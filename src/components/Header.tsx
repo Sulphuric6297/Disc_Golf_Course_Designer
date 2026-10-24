@@ -12,7 +12,7 @@ import { deleteRecent, newCourse, openCourseFile, openRecent, recentCourses, sav
 import type { PlanMeta } from "../lib/storage";
 import { AccountMenu, goHome } from "../auth/AccountMenu";
 import { useAllowed } from "../auth/perms";
-import { DemoNote } from "./DemoNote";
+import { DemoBar } from "./DemoNote";
 import { CoursePageButton, SITE_TOKEN } from "../auth/PublicSite";
 import { SERVER } from "../auth/api";
 import { FOCUS, MENU_HEAD, MenuRow, POPOVER } from "./ui";
@@ -121,7 +121,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
         <button onClick={onGoTo} className={BAR_BUTTON} aria-label="Go to" title="Go to (Ctrl+K)" data-testid="goto-button"><Search size={18} /></button>
         {!readOnly && <StartButton />}
         <button onClick={onHelp} className={BAR_BUTTON} aria-label="Help guide" title="Help guide (?)" data-testid="help-button"><HelpCircle size={18} /></button>
-        {SERVER ? <AccountMenu onHelp={onHelp} /> : <DemoNote />}
+        {SERVER ? <AccountMenu onHelp={onHelp} /> : <DemoBar />}
       </div>
     </header>
   );

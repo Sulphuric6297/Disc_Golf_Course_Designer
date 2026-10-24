@@ -173,6 +173,10 @@ type EditorStore = {
   /** The tee the tee view stands on (another skill level's), unset: the layout's. */
   teeViewTee?: string | null;
   flyover: boolean;
+  /** The selected hole's keyframe picked (its place in the list; null: none). */
+  flyKey: number | null;
+  /** Flying the camera yourself, first person, over the tee view's hole (making keyframes). */
+  flyCam: boolean;
   /** A flyover still waiting for its pictures (the loading screen shows): what it waits on. */
   flyLoading: "map" | "detail" | "textures" | null;
   /** Points placed so far while drawing (for the hint). */
@@ -236,6 +240,8 @@ export const useEditor = create<EditorStore>()(set => ({
   treeKind: "deciduous",
   teeView: null,
   flyover: false,
+  flyKey: null,
+  flyCam: false,
   flyLoading: null,
   drawPoints: 0,
   photo: true,

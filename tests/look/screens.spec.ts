@@ -613,7 +613,7 @@ test("fourth round: imported areas, several picked, a shared basket, painted fly
   await page.getByTestId("hud-flyover").click();
   await expect.poll(() => page.evaluate(() => (window as any).__dgView.flyProgress() ?? 0), { timeout: 90_000 }).toBeGreaterThan(0.45);
   await shot(page, "21-flyover-painted");
-  await page.getByTestId("hud-camera").click();
+  await page.getByTestId("hud-settings").click();
   await page.waitForTimeout(400);
   await shot(page, "21-flyover-camera");
   await page.getByTestId("hud-close").click();

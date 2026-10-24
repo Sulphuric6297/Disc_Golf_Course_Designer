@@ -109,4 +109,8 @@ export type ViewCallbacks = {
   onLidar: (patch: { kept?: number[]; removed?: number[] }) => void;
   /** A flyover waiting for everything to be drawn (what it waits on), then flying (null). */
   onFlyWait: (waiting: "map" | "detail" | "textures" | null) => void;
+  /** A keyframe of the selected hole's flyover picked on the map (its place in the list). */
+  onFlyKey?: (index: number) => void;
+  /** Asked to look through a keyframe's camera (double-clicked on the map). */
+  onFlyCam?: (index: number) => void;
 };

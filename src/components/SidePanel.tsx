@@ -1,7 +1,7 @@
 // The side panel follows the steps: what to do now, and the lists for it. The map stays the one
 // canvas; the steps never lock anything.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Link2, Info, X, ClipboardCheck, Download, Eye, EyeOff, MapPinned, Palette, Plus, Route, Trash2, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowRight, Link2, Info, X, ClipboardCheck, Download, Eye, EyeOff, MapPinned, Palette, Plus, Route, Trash2, Users, type LucideIcon } from "lucide-react";
 import { TEE_LEVELS, TEE_ORDER, generateId } from "../constants";
 import { activeLayout, holeBaskets, holeTees } from "../lib/course";
 import { courseIssues, courseStats, courseTotals, levelsOnCourse, openIssues, playsOf, swapped, type SafetyIssue } from "../lib/holeStats";
@@ -19,6 +19,8 @@ import { Button, Facts, Field, HelpLink, Section, Segmented, Slider, TextInput, 
 import { DesignPanel } from "./DesignPanel";
 import { ExportPanel } from "./ExportPanel";
 import { useTouch } from "./useLayout";
+import { LockedRow } from "./DemoNote";
+import { InspectorBody, PANEL_INSET, SelectionHeader, useSelection } from "./Inspector";
 import { SERVER } from "../auth/api";
 import { draftHoles } from "../auth/courses";
 import { NearbyCourses, NearbySafety } from "../auth/Nearby";
@@ -172,7 +174,11 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
         </Field>
       </Section>
       <BroughtIn />
-      {SERVER && <NearbyCourses />}
+      {SERVER ? <NearbyCourses /> : (
+        <Section title="Park" testid="nearby">
+          <div className="rounded-[16px] bg-white/[0.06] overflow-hidden"><LockedRow id="park" icon={<Users size={16} />} label="Other courses in this park" sub="Shown on this map, with a warning when holes get too close" /></div>
+        </Section>
+      )}
       <NextButton step="site" />
     </>
   );
@@ -196,8 +202,9 @@ function LayoutGaps({ compact = false }: { compact?: boolean }) {
   );
 }
 
-/** The layouts to pick from (the one worked on: its tees and pins stand out on the map). */
-export function LayoutPicker({ compact = false }: { compact?: boolean }) {
+/** The layouts to pick from (the one worked on: its tees and pins stand out on the map); `slim`:
+ * just each one's tee color, its name in the tip. */
+export function LayoutPicker({ compact = false, slim = false }: { compact?: boolean; slim?: boolean }) {
   const doc = useCourse(s => s.doc);
   if (doc.layouts.length < 2) return null;
   return (
@@ -207,15 +214,15 @@ export function LayoutPicker({ compact = false }: { compact?: boolean }) {
         const on = l.id === doc.activeLayout;
         return (
           <button key={l.id} role="radio" aria-checked={on} onClick={() => pickLayout(l.id)}
-            title={`${l.name}: ${TEE_LEVELS[l.tee].label.toLowerCase()} tees to pin ${l.pin}`}
-            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold min-w-0 touch:py-2 ${on ? "bg-white/[0.18] text-zinc-50 ring-1 ring-white/25" : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.07]"}`}>
+            title={`${l.name}: ${TEE_LEVELS[l.tee].label.toLowerCase()} tees to pin ${l.pin}`} aria-label={slim ? l.name : undefined}
+            className={`flex items-center gap-1.5 rounded-full py-1 text-[12px] font-semibold min-w-0 touch:py-2 ${slim ? "w-full justify-center px-1" : "px-2.5"} ${on ? "bg-white/[0.18] text-zinc-50 ring-1 ring-white/25" : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.07]"}`}>
             <span className="w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-black/40" style={{ background: TEE_LEVELS[l.tee].color }} />
-            <span className="truncate">{l.name}</span>
+            {!slim && <span className="truncate">{l.name}</span>}
           </button>
         );
       })}
     </div>
-    <LayoutGaps compact={compact} />
+    {!slim && <LayoutGaps compact={compact} />}
     </>
   );
 }
@@ -463,10 +470,12 @@ export function ProblemsPanel() {
 }
 
 /** The holes, floating down the map's left side (Design): each to fly to and pick, a new one, the
- * course's totals and layouts behind a button. */
+ * course's totals and layouts behind a button. While something is picked its panel sits next to
+ * the list, and the list is just the holes' numbers. */
 export function HolesColumn() {
   const doc = useCourse(s => s.doc);
   const ed = useEditor();
+  const slim = useSelection().open;
   const stats = courseStats(doc);
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
   const [more, setMore] = useState(false);
@@ -487,28 +496,34 @@ export function HolesColumn() {
     return () => { window.removeEventListener("pointerdown", down, true); window.removeEventListener("keydown", key, true); };
   }, [more]);
   const u = doc.units;
-  // (Fitting the map keeps clear of the column: its width and margins)
+  // (Fitting the map keeps clear of the column: its width and margins; and of the picked thing's
+  // panel next to it, without the map moving when something is clicked)
   useEffect(() => {
     let raf = 0;
     const set = () => { const v = getView(); if (v) v.setLeftInset(196); else raf = requestAnimationFrame(set); };
     set();
     return () => { cancelAnimationFrame(raf); getView()?.setLeftInset(0); };
   }, []);
+  useEffect(() => {
+    const v = getView();
+    if (v && v.leftInset) v.leftInset = slim ? PANEL_INSET : 196;
+  }, [slim]);
   return (
-    <div className="absolute left-3 top-3 bottom-3 z-20 flex flex-col gap-2 pointer-events-none" data-testid="holes-column">
-      <div className="glass pointer-events-auto rounded-[22px] p-1.5 flex flex-col gap-0.5 max-h-full min-h-0 w-[172px]" data-testid="hole-list">
-        {doc.layouts.length > 1 && <div className="pb-1 mb-0.5 border-b border-white/10"><LayoutPicker compact /></div>}
+    <div className={`absolute left-3 top-3 bottom-3 ${more ? "z-30" : "z-20"} flex flex-col gap-2 pointer-events-none`} data-testid="holes-column">
+      <div className={`glass pointer-events-auto rounded-[22px] p-1.5 flex flex-col gap-0.5 max-h-full min-h-0 ${slim ? "w-[52px]" : "w-[172px]"}`} data-testid="hole-list">
+        {doc.layouts.length > 1 && <div className="pb-1 mb-0.5 border-b border-white/10"><LayoutPicker compact slim={slim} /></div>}
         <div className="overflow-y-auto min-h-0 flex flex-col gap-0.5">
           {stats.map(s => {
             const hole = doc.holes.find(h => h.id === s.holeId)!;
             const sel = ed.selectedId === s.holeId || ed.activeHoleId === s.holeId;
             return (
-              <button key={s.holeId} data-testid="hole-row" title={hole.name || `Hole ${s.label}`}
+              <button key={s.holeId} data-testid="hole-row" title={`${hole.name || `Hole ${s.label}`}${slim && s.complete ? ` · ${fmtDist(s.length, u)} · Par ${s.par}` : ""}`}
                 onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
-                className={`flex items-center gap-2 rounded-[14px] pl-1 pr-2 py-1 text-left ${sel ? "bg-white/[0.16] text-zinc-50" : "text-zinc-300"}`}>
+                className={`flex items-center gap-2 rounded-[14px] py-1 text-left ${slim ? "justify-center px-1" : "pl-1 pr-2"} ${sel ? "bg-white/[0.16] text-zinc-50" : "text-zinc-300"}`}>
                 <span className="min-w-[24px] h-6 px-1 rounded-full flex items-center justify-center text-[11.5px] font-bold shrink-0" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink }} data-testid="hole-badge">{s.label}</span>
-                <span className="text-[12.5px] tabular-nums truncate flex-1 min-w-0">{s.complete ? `${fmtDist(s.length, u)} · P${s.par}` : "unfinished"}</span>
-                {(() => {
+                {/* (slim: just the number, its length and par for the tooltip and screen readers) */}
+                <span className={slim ? "sr-only" : "text-[12.5px] tabular-nums truncate flex-1 min-w-0"}>{s.complete ? `${fmtDist(s.length, u)} · P${s.par}` : "unfinished"}</span>
+                {!slim && (() => {
                   // (more than one tee: a dot for each color; a basket shared with another hole: a link)
                   const tees = holeTees(doc, s.holeId);
                   const shared = holeBaskets(doc, s.holeId).some(b => b.holeId !== s.holeId || !!b.alsoHoles?.length);
@@ -523,14 +538,15 @@ export function HolesColumn() {
             );
           })}
         </div>
-        <button data-testid="new-hole" onClick={() => ed.set({ tool: "add-hole" })} className={`flex items-center gap-2 rounded-[14px] pl-1 pr-2 py-1 text-[12.5px] font-semibold ${ed.tool === "add-hole" ? "bg-orange-500 text-zinc-950" : "text-orange-300"}`}>
-          <span className={`w-6 h-6 rounded-full flex items-center justify-center ${ed.tool === "add-hole" ? "bg-zinc-950/20" : "bg-orange-500 text-zinc-950"}`}><Plus size={14} /></span>New hole
+        <button data-testid="new-hole" title="New hole" aria-label="New hole" onClick={() => ed.set({ tool: "add-hole" })} className={`flex items-center gap-2 rounded-[14px] py-1 text-[12.5px] font-semibold ${slim ? "justify-center px-1" : "pl-1 pr-2"} ${ed.tool === "add-hole" ? "bg-orange-500 text-zinc-950" : "text-orange-300"}`}>
+          <span className={`w-6 h-6 rounded-full flex items-center justify-center ${ed.tool === "add-hole" ? "bg-zinc-950/20" : "bg-orange-500 text-zinc-950"}`}><Plus size={14} /></span>{!slim && "New hole"}
         </button>
       </div>
       <div className="glass pointer-events-auto rounded-[18px] mt-auto relative" ref={moreRef}>
-        <button className="w-full flex gap-3 items-end px-3.5 py-2 text-left" onClick={() => setMore(m => !m)} aria-expanded={more} data-testid="course-totals-button">
+        <button className={`w-full flex gap-3 items-end py-2 text-left ${slim ? "justify-center px-1" : "px-3.5"}`} onClick={() => setMore(m => !m)} aria-expanded={more} title={slim ? `${totals.complete} holes · par ${totals.par} · ${fmtDist(totals.length, u)}` : undefined} data-testid="course-totals-button">
+          {/* (slim: just the par; the rest for screen readers) */}
           {[[totals.complete, "holes"], [totals.par, "par"], [fmtDist(totals.length, u), "total"]].map(([v, k]) => (
-            <span key={k as string}><span className="block text-[15px] font-bold text-zinc-50 leading-tight tabular-nums">{v}</span><span className="text-[11px] text-zinc-400">{k}</span></span>
+            <span key={k as string} className={slim && k !== "par" ? "sr-only" : undefined}><span className="block text-[15px] font-bold text-zinc-50 leading-tight tabular-nums">{v}</span><span className="text-[11px] text-zinc-400">{k}</span></span>
           ))}
         </button>
         {more && (
@@ -547,6 +563,23 @@ export function SidePanel({ onFindSite }: { onFindSite: () => void }) {
   const step = useEditor(e => e.step);
   const i = STEPS.findIndex(s => s.id === step);
   const meta = STEPS[i];
+  const { open } = useSelection();
+  // (something picked on Site: its settings here, with a way back to the step's. Not what was
+  // still picked when the step was opened: the step's own panel first)
+  const selectedId = useEditor(e => e.selectedId), group = useEditor(e => e.group);
+  const keyNow = selectedId ?? group.join(",");
+  const seen = useRef({ step, carried: keyNow });
+  if (seen.current.step !== step) seen.current = { step, carried: keyNow };
+  else if (seen.current.carried && seen.current.carried !== keyNow) seen.current.carried = "";
+  if (open && step === "site" && keyNow !== seen.current.carried)
+    return (
+      <aside className="glass w-[340px] shrink-0 rounded-[24px] overflow-y-auto" aria-label="Step panel" data-testid="side-panel">
+        <div data-testid="inspector" aria-label="Selection">
+          <SelectionHeader back={meta.title} />
+          <InspectorBody />
+        </div>
+      </aside>
+    );
   return (
     <aside className="glass w-[340px] shrink-0 rounded-[24px] overflow-y-auto" aria-label="Step panel" data-testid="side-panel">
       <div className="px-4 pt-4 pb-1">

@@ -31,7 +31,8 @@ export const averageFixes = (fixes: Fix[]) => {
 export const canLocate = (doc: Parameters<typeof geoRefOf>[0]) =>
   typeof navigator !== "undefined" && "geolocation" in navigator && typeof window !== "undefined" && window.isSecureContext && !!geoRefOf(doc);
 
-export function PlaceByGps({ item }: { item: Extract<CourseItem, { x: number; y: number }> }) {
+/** `inline`: inside another panel's row (no margin of its own). */
+export function PlaceByGps({ item, inline = false }: { item: Extract<CourseItem, { x: number; y: number }>; inline?: boolean }) {
   const doc = useCourse(s => s.doc);
   const units = doc.units;
   const [fixes, setFixes] = useState<Fix[] | null>(null);
@@ -73,7 +74,7 @@ export function PlaceByGps({ item }: { item: Extract<CourseItem, { x: number; y:
     stop(); setFixes(null);
   };
   return (
-    <div className="mx-4 mb-3 rounded-[16px] bg-white/[0.06] p-3" data-testid="place-by-gps">
+    <div className={`${inline ? "mb-2" : "mx-4 mb-3"} rounded-[16px] bg-white/[0.06] p-3`} data-testid="place-by-gps">
       {fixes === null ? (
         <>
           <Button small full onClick={start} testid="gps-start"><LocateFixed size={15} /> Put it where I'm standing</Button>

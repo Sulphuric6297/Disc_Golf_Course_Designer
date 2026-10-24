@@ -16,6 +16,7 @@ import { stepHole } from "./components/HoleSteps";
 import { GoTo } from "./components/GoTo";
 import { SiteImportDialog } from "./components/SiteImportDialog";
 import { TeeViewHud } from "./components/TeeViewHud";
+import { CameraHud } from "./components/CameraHud";
 import { MapDesigner } from "./components/MapDesigner";
 import { ExportProgressPill } from "./components/ExportProgress";
 import { Button, HELP_EVENT } from "./components/ui";
@@ -346,8 +347,8 @@ export default function App() {
           {ed.step === "design" && !readOnly && !ed.teeView && <HolesColumn />}
           {ed.step === "design" && !readOnly && <ProblemsPanel />}
           {ed.step === "design" || ed.step === "site" ? !readOnly && <Toolbar /> : null}
-          {ed.step === "design" || ed.step === "site" ? !readOnly && <Inspector /> : null}
-          {ed.teeView && <TeeViewHud />}
+          {ed.step === "design" && !readOnly && <Inspector />}
+          {ed.teeView && (ed.flyCam && !readOnly ? <CameraHud /> : <TeeViewHud />)}
           <ExportProgressPill />
           <Toasts />
           {showWelcome && (

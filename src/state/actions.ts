@@ -629,7 +629,7 @@ export const cutStretch = (id: string, a: number, b: number) => {
 /** An outline drawn as a section of underbrush in a wood (its own level; the last one's, or
  * heavy for the first). One undo step; the wood stays selected. */
 export const addBrushSection = (areaId: string, points: P[]) => {
-  if (!getDoc().items.some(i => i.id === areaId && i.type === "area")) { toast("That wood is gone: draw the section again on another.", "info"); return; }
+  if (!getDoc().items.some(i => i.id === areaId && i.type === "area")) { toast("That area is gone: draw the section again on another.", "info"); return; }
   changeDoc(d => ({ items: d.items.map(i => (i.id === areaId && i.type === "area" ? { ...i, brush: [...(i.brush ?? []), { points, level: i.brush?.[i.brush.length - 1]?.level ?? "heavy" }] } : i)) }));
   select(areaId);
 };

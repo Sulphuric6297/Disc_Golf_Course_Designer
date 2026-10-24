@@ -186,8 +186,10 @@ export function ItemStrip({ item }: { item: CourseItem }) {
     if (a.kind !== "ob" && a.kind !== "walk") chips.push({ id: "ob", label: <>OB <span className="opacity-60">{a.ob === true ? "red edge" : "no"}</span></>, control: <Segmented label="Out of bounds" value={a.ob === true ? "edge" : "no"} onChange={v => set(v === "edge" ? { ob: true } : { ob: undefined, obStretches: undefined, obBeyond: undefined })} options={[{ value: "no", label: "Not OB" }, { value: "edge", label: "OB, red edge" }]} /> });
     if (item.type === "area" && item.kind === "woods") {
       if (doc.lidar?.trees.length) chips.push({ id: "trees", label: <>Trees</>, control: <Segmented label="Trees in these woods" value={item.trees ?? "measured"} onChange={v => set({ trees: v === "measured" ? undefined : v })} options={[{ value: "measured", label: "Real" }, { value: "custom", label: "Real + fill" }, { value: "drawn", label: "App's" }, { value: "none", label: "None" }]} /> });
-      chips.push({ id: "brush", label: <>Underbrush <span className="opacity-60">{item.underbrush ?? "none"}</span></>, control: <Segmented label="Underbrush" value={item.underbrush ?? "none"} onChange={v => set({ underbrush: v === "none" ? undefined : v })} options={[{ value: "none", label: "None" }, { value: "light", label: "Light" }, { value: "medium", label: "Medium" }, { value: "heavy", label: "Heavy" }]} /> });
     }
+    // (woods, and tall grass when you want some)
+    if (item.type === "area" && (item.kind === "woods" || item.kind === "rough"))
+      chips.push({ id: "brush", label: <>Underbrush <span className="opacity-60">{item.underbrush ?? "none"}</span></>, control: <Segmented label="Underbrush" value={item.underbrush ?? "none"} onChange={v => set({ underbrush: v === "none" ? undefined : v })} options={[{ value: "none", label: "None" }, { value: "light", label: "Light" }, { value: "medium", label: "Medium" }, { value: "heavy", label: "Heavy" }]} /> });
   } else if (item.type === "structure") {
     const s = item as StructureItem;
     const h = s.height ?? STRUCTURE_KINDS[s.kind].height;

@@ -1,6 +1,6 @@
 // What shows over the view from a tee or a flyover: the hole's numbers and the controls.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Camera, ChevronLeft, ChevronRight, Clapperboard, Plane, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clapperboard, Plane, Settings2, Video, X } from "lucide-react";
 import { useAllowed } from "../auth/perms";
 import { TEE_LEVELS } from "../constants";
 import { courseStats, holeStats } from "../lib/holeStats";
@@ -11,7 +11,7 @@ import { recordVideo, useVideoSettings } from "../state/video";
 import { VIDEO_SIZES } from "../lib/video";
 import { ElevationProfile } from "./ElevationProfile";
 import { SceneButton } from "./ScenePanel";
-import { FlyoverSettingsPanel } from "./FlyoverSettings";
+import { cameraFrom, FlyoverSettingsPanel } from "./FlyoverSettings";
 
 /** While a flyover waits for its pictures: the hole's name and numbers and a thin moving bar,
  * over the view (shown at once; it fades as the flight begins). */
@@ -85,6 +85,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
               <div className="text-[22px] font-bold leading-tight" style={{ fontFamily: "Oswald, Inter" }}>Par {s.par} · {fmtDist(s.length, doc.units)}</div>
               <div className="text-[13px] text-zinc-300">{fmtElev(s.elevationChange, doc.units)} · plays like {fmtDist(s.playsLike, doc.units)}</div>
             </div>
+            {!readOnly && <button className={`w-11 h-11 rounded-xl flex items-center justify-center ${camera ? "bg-white/15" : "bg-white/[0.07]"}`} onClick={() => setCamera(c => !c)} aria-pressed={camera} aria-label="Flyover settings" data-testid="hud-settings"><Settings2 size={19} /></button>}
             <SceneButton big />
           </div>
           <div className="mt-1.5"><ElevationProfile doc={doc} line={s.line} height={56} /></div>
@@ -96,7 +97,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
           <button className={`${bar} ${ed.flyover ? "bg-orange-500" : ""}`} onClick={() => ed.set({ flyover: !ed.flyover })} data-testid="hud-flyover"><Plane size={20} /><span>{ed.flyover ? "Flying…" : "Fly over"}</span></button>
           <button className={bar} onClick={() => go(1)}><ChevronRight size={22} /><span>Next</span></button>
           {mayRecord && <button className={bar} onClick={() => void recordVideo([hole.id])} disabled={!!job} data-testid="hud-record"><Clapperboard size={20} /><span>{job?.kind === "video" ? `${Math.round((job.progress ?? 0) * 100)}%` : "Record"}</span></button>}
-          {!readOnly && <button className={`${bar} ${camera ? "bg-white/15" : ""}`} onClick={() => setCamera(c => !c)} aria-pressed={camera} data-testid="hud-camera"><Camera size={20} /><span>Camera</span></button>}
+          {!readOnly && <button className={bar} onClick={() => cameraFrom(hole.id, null)} data-testid="hud-freecam"><Video size={20} /><span>Camera</span></button>}
           <button className={bar} onClick={() => ed.set({ teeView: null, flyover: false })} data-testid="hud-close"><X size={20} /><span>Back</span></button>
         </div>
         {camera && (
@@ -135,7 +136,8 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
         >
           <Clapperboard size={15} /> {job?.kind === "video" ? `Recording ${Math.round((job.progress ?? 0) * 100)}%` : "Record"}
         </button>}
-        {!readOnly && <button className={`px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 text-white ${camera ? "bg-white/15" : "hover:bg-white/10"}`} onClick={() => setCamera(c => !c)} aria-pressed={camera} data-testid="hud-camera"><Camera size={15} /> Camera</button>}
+        {!readOnly && <button className="px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 text-white hover:bg-white/10" onClick={() => cameraFrom(hole.id, null)} title="Fly the camera yourself and add keyframes" data-testid="hud-freecam"><Video size={15} /> Camera</button>}
+        {!readOnly && <button className={`px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 text-white ${camera ? "bg-white/15" : "hover:bg-white/10"}`} onClick={() => setCamera(c => !c)} aria-pressed={camera} data-testid="hud-settings"><Settings2 size={15} /> Settings</button>}
         <button className="px-3 py-1.5 rounded-full text-sm font-semibold text-white hover:bg-white/10 flex items-center gap-1.5" onClick={() => ed.set({ teeView: null, flyover: false })} data-testid="hud-close"><X size={15} /> Back to map</button>
       </div>
       {camera && (

@@ -27,6 +27,7 @@ import { getView } from "../../state/view";
 import { MapDesigner } from "../MapDesigner";
 import { STEPS, STEP_ICONS, StepContent, touchWords } from "../SidePanel";
 import { TeeViewHud } from "../TeeViewHud";
+import { CameraHud } from "../CameraHud";
 import { TOOLS, toolHint, toolOptions } from "../Toolbar";
 import { ExportProgressPill } from "../ExportProgress";
 import { ActionSheet, type SheetAction } from "./ActionSheet";
@@ -36,6 +37,13 @@ import { HoleStrip, ItemStrip } from "./HoleStrip";
 import { GettingStarted, openGettingStarted } from "../GettingStarted";
 import { useGps } from "../../state/gps";
 import { accountActions, CourseChip } from "../../auth/AccountMenu";
+import { LOCKED, showLocked, type LockedId } from "../DemoNote";
+
+/** The phone menu's rows for what a server adds, in the demo: there, with a lock. */
+const demoActions = () => (["comments", "history", "courses", "share", "account", "demo"] as LockedId[]).map(id => {
+  const Icon = LOCKED[id].icon;
+  return { label: id === "demo" ? "About the demo" : `${LOCKED[id].title} (locked)`, icon: <Icon size={19} />, run: () => showLocked(id), testid: `menu-locked-${id}` };
+});
 import { ViewerPanelBody } from "../../auth/ViewerPanel";
 import { SERVER } from "../../auth/api";
 import { CoursePageButton, SITE_TOKEN } from "../../auth/PublicSite";
@@ -395,7 +403,7 @@ function AppMenu({ onClose, onHelp, onGoTo, onOpenFile }: { onClose: () => void;
     { label: "Open a course file…", icon: <FolderOpen size={19} />, run: onOpenFile },
     { label: "Save as a file", icon: <Save size={19} />, run: () => saveCourseFile() },
     { label: "Help guide", icon: <HelpCircle size={19} />, run: onHelp, testid: "menu-help" },
-    ...accountActions()
+    ...(SERVER ? accountActions() : demoActions())
   ];
   return (
     <>
@@ -610,7 +618,7 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
         {!immersive && <PhoneTopBar onMenu={openApp} />}
         {!immersive && <GettingStarted phone />}
         {!immersive && <DrawBar bottom={sheetH + 12} />}
-        {ed.teeView && <TeeViewHud compact />}
+        {ed.teeView && (ed.flyCam && !useCourse.getState().readOnly ? <CameraHud compact /> : <TeeViewHud compact />)}
         <ExportProgressPill top={immersive ? undefined : top + 4} />
         {toasts(immersive ? 96 : sheetH + 12)}
         {welcome && !immersive && (
@@ -660,7 +668,7 @@ function RailShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts 
         <MapViewport onContextMenu={onContextMenu} compact="rail" controlsTop={8} controlsRoom={immersive || design ? 0 : 999} />
         {design && <div className="absolute inset-0 z-20"><MapDesigner compact topInset={0} preview={ed.step === "export"} /></div>}
         {!immersive && <DrawBar bottom={12} />}
-        {ed.teeView && <TeeViewHud compact />}
+        {ed.teeView && (ed.flyCam && !useCourse.getState().readOnly ? <CameraHud compact /> : <TeeViewHud compact />)}
         <ExportProgressPill />
         {toasts(16)}
         {welcome && !immersive && <div className="absolute inset-0 z-10 flex items-center justify-center px-3 pointer-events-none">{welcome}</div>}

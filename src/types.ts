@@ -289,9 +289,10 @@ export interface FlyKey {
   y: number;
   /** Its height above the ground there, ft. */
   alt: number;
-  /** What it looks at (plan, ft; on the ground). */
+  /** What it looks at (plan, ft), and how high over the ground there (unset: 3 ft). */
   lookX: number;
   lookY: number;
+  lookAlt?: number;
   /** Field of view here, degrees (unset: the course's). */
   fov?: number;
   /** Seconds from the keyframe before (unset: from the distance, at the course's speed). */

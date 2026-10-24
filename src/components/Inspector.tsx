@@ -1,8 +1,8 @@
 // The panel for what is selected: a hole (par, fairway, notes, numbers, profile) or one item.
 import { PlaceByGps } from "./PlaceByGps";
 import { BRUSH_SECTION } from "../lib/view";
-import { useEffect, useMemo, useState } from "react";
-import { Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X, Plus } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronLeft, Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X, Plus } from "lucide-react";
 import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
 import { areaPath, areaRing, byNumber, obFor, obSides, sideCompass, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, obPicked, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
@@ -97,7 +97,46 @@ export const setAllWalks = (w: number, history = true) =>
     items: d.items.some(i => i.type === "line" && i.kind === "walk") ? d.items.map(i => (i.type === "line" && i.kind === "walk" ? { ...i, width: w } : i)) : d.items
   }), history);
 
-function HoleInspector({ hole }: { hole: Hole }) {
+/** A hole's tees and baskets, a row each (its color or pin, how long the hole is from it): one
+ * picked opens up in place with its own settings; another click on it closes it. */
+function HoleParts({ hole, part }: { hole: Hole; part?: CourseItem }) {
+  const doc = useCourse(s => s.doc);
+  const u = doc.units;
+  const tees = holeTees(doc, hole.id);
+  const baskets = holeBaskets(doc, hole.id);
+  const open = useRef<HTMLDivElement>(null);
+  useEffect(() => { open.current?.scrollIntoView?.({ block: "nearest" }); }, [part?.id]);
+  const row = (id: string, mark: JSX.Element, label: string, sub: string | null, item: CourseItem) => {
+    const on = part?.id === id;
+    return (
+      <div key={id} ref={on ? open : undefined} className={`rounded-[12px] ${on ? "bg-white/[0.09] ring-1 ring-orange-400/50" : ""}`} data-testid="hole-part">
+        <button className={`w-full flex items-center gap-2 rounded-[12px] px-2.5 py-1.5 touch:py-3 text-left ${on ? "" : "hover:bg-white/[0.07]"}`} onClick={() => select(on ? hole.id : id)} aria-expanded={on} title={on ? "Close it" : "Open its settings (and pick it on the map)"} data-testid={`hole-part-${item.type}`}>
+          {mark}
+          <span className="flex-1 min-w-0 text-[13px] text-zinc-100 truncate">{label}</span>
+          {sub && <span className="text-[12px] text-zinc-400 tabular-nums">{sub}</span>}
+          <ChevronDown size={15} className={`text-zinc-500 transition-transform ${on ? "rotate-180" : ""}`} />
+        </button>
+        {on && (
+          <div className="px-2.5 pb-1" data-testid="hole-part-settings">
+            <ItemInspector item={item} bare />
+            {"x" in item && <PlaceByGps item={item as never} inline />}
+          </div>
+        )}
+      </div>
+    );
+  };
+  return (
+    <Section title="Tees and baskets" testid="hole-parts">
+      <div className="flex flex-col gap-0.5" data-testid="hole-tees">
+        {tees.map(t => row(t.id, <span className="w-3 h-3 rounded-full ring-1 ring-black/40 shrink-0" style={{ background: TEE_LEVELS[t.level].color }} />, `${TEE_LEVELS[t.level].label} tee`, fmtDist(holeStats(doc, hole, { id: "x", name: "", tee: t.level, pin: "A" }).length, u), t))}
+        {baskets.map(b => row(b.id, <span className="w-3 h-3 rounded-full border-2 shrink-0" style={{ borderColor: doc.style.basket }} />, baskets.length > 1 || b.position !== "A" ? `Basket, pin ${b.position}` : "Basket", b.holeId !== hole.id ? `hole ${holeLabel(doc, b.holeId ?? "")}'s` : null, b))}
+        {!tees.length && !baskets.length && <p className="text-[12px] text-zinc-400 px-1">None yet.</p>}
+      </div>
+    </Section>
+  );
+}
+
+function HoleInspector({ hole, part }: { hole: Hole; part?: CourseItem }) {
   const doc = useCourse(s => s.doc);
   const s = useMemo(() => holeStats(doc, hole), [doc, hole]);
   const label = holeLabel(doc, hole.id);
@@ -106,6 +145,9 @@ function HoleInspector({ hole }: { hole: Hole }) {
   const baskets = holeBaskets(doc, hole.id);
   // The hole whose basket this one plays to, when it shares one
   const sharing = baskets.find(b => b.holeId !== hole.id)?.holeId ?? null;
+  // (open already when it does share one)
+  const [shareOpen, setShareOpen] = useState(!!sharing);
+  useEffect(() => { if (sharing) setShareOpen(true); }, [sharing]);
   const set = (patch: Partial<Hole>) => updateHole(hole.id, patch);
   return (
     <>
@@ -139,6 +181,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
           </div>
         )}
       </Section>
+      <HoleParts hole={hole} part={part} />
       <Section title="How it's played" help="tees-pins" testid="how-played">
         {(() => {
           // (the layout worked on, on a hole with no tee of its color: played from the nearest)
@@ -152,19 +195,6 @@ function HoleInspector({ hole }: { hole: Hole }) {
             </div>
           );
         })()}
-        <div className="flex flex-wrap gap-1.5 mb-2" data-testid="hole-tees">
-          {tees.map(t => (
-            <button key={t.id} className="flex items-center gap-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.14] px-2.5 py-1 text-xs text-zinc-100" onClick={() => select(t.id)} title={`${TEE_LEVELS[t.level].label} tee: pick it`}>
-              <span className="w-2.5 h-2.5 rounded-full ring-1 ring-black/40" style={{ background: TEE_LEVELS[t.level].color }} />
-              {TEE_LEVELS[t.level].label} <span className="text-zinc-400 tabular-nums">{fmtDist(holeStats(doc, hole, { id: "x", name: "", tee: t.level, pin: "A" }).length, u)}</span>
-            </button>
-          ))}
-          {baskets.map(b => (
-            <button key={b.id} className="flex items-center gap-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.14] px-2.5 py-1 text-xs text-zinc-100" onClick={() => select(b.id)} title={`Pin ${b.position}: pick it`}>
-              <span className="w-2.5 h-2.5 rounded-full border-2" style={{ borderColor: doc.style.basket }} />Pin {b.position}
-            </button>
-          ))}
-        </div>
         {(() => {
           // (which holes finish at its basket)
           const others = doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => baskets.some(x => x.id === b.id)));
@@ -187,7 +217,7 @@ function HoleInspector({ hole }: { hole: Hole }) {
           </button>
         </div>
         {doc.holes.length > 1 && (
-          <details className="mt-2"><summary className="cursor-pointer text-[11.5px] text-zinc-400 hover:text-zinc-200">Play to another hole's basket instead</summary>
+          <details className="mt-2" open={shareOpen} onToggle={e => setShareOpen((e.target as HTMLDetailsElement).open)}><summary className="cursor-pointer text-[11.5px] text-zinc-400 hover:text-zinc-200">Play to another hole's basket instead</summary>
             <select aria-label="Basket" data-testid="share-basket" className="mt-1.5 w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
               <option value="">Its own basket</option>
               {doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => b.holeId === h.id)).map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}'s basket</option>)}
@@ -282,7 +312,8 @@ type BrushLevel = (typeof BRUSH_LEVELS)[number]["value"];
 const BRUSH_KINDS: { value: BrushKind; label: string }[] = [{ value: "mixed", label: "A mix" }, { value: "thicket", label: "Thicket" }, { value: "briars", label: "Briars & thorns" }, { value: "weeds", label: "Weeds" }];
 const kindSelect = "bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80";
 
-/** A wood's underbrush: its own level and kind, and sections drawn inside it with their own. */
+/** A wood's underbrush (or tall grass's: none unless asked for): its own level and kind, and
+ * sections drawn inside it with their own. */
 function WoodsBrush({ item }: { item: AreaItem }) {
   const drawing = useEditor(e => e.patchFor === item.id && e.patchBrush);
   const sections = item.brush ?? [];
@@ -291,7 +322,7 @@ function WoodsBrush({ item }: { item: AreaItem }) {
   const kind = item.brushKind ?? "mixed";
   return (
     <div className="mb-3" data-testid="woods-brush">
-      <Field label={sections.length ? "Underbrush (the rest of the wood)" : "Underbrush"} help="woods" hint="Bushes, thickets, briars and weeds under the trees. It stays off fairways and paths.">
+      <Field label={sections.length ? `Underbrush (the rest of the ${item.kind === "rough" ? "grass" : "wood"})` : "Underbrush"} help={item.kind === "rough" ? "areas" : "woods"} hint={item.kind === "rough" ? "Bushes, briars and weeds growing up through the long grass. None unless you pick some. It stays off fairways and paths." : "Bushes, thickets, briars and weeds under the trees. It stays off fairways and paths."}>
         <Segmented label="Underbrush" value={item.underbrush ?? "none"} onChange={v => updateItem(item.id, { underbrush: v === "none" ? undefined : v } as Partial<CourseItem>)} options={[...BRUSH_LEVELS]} />
       </Field>
       {(item.underbrush || sections.length > 0) && (
@@ -320,7 +351,7 @@ function WoodsBrush({ item }: { item: AreaItem }) {
       ))}
       {drawing
         ? <div className="text-xs text-orange-300">Draw around the part of the wood with the mouse held down (a finger on a phone); let go to finish. Esc cancels.</div>
-        : <Button small onClick={draw} testid="brush-draw-section" title="Draw around part of this wood to give it its own underbrush"><Plus size={13} /> Draw a section with its own underbrush</Button>}
+        : <Button small onClick={draw} testid="brush-draw-section" title={`Draw around part of this ${item.kind === "rough" ? "grass" : "wood"} to give it its own underbrush`}><Plus size={13} /> Draw a section with its own underbrush</Button>}
       {(item.underbrush || sections.some(b => b.level !== "none")) && (
         <div className="mt-2">
           <Slider label="Thicker at the edges" min={0} max={100} step={5} value={Math.round((item.brushEdge ?? 0.6) * 100)}
@@ -487,7 +518,8 @@ function TurnShape({ item }: { item: AreaItem | LineItem | StructureItem }) {
   );
 }
 
-function ItemInspector({ item }: { item: CourseItem }) {
+/** A thing's settings (`bare`: only them, with no title: a tee or basket in its hole's panel). */
+function ItemInspector({ item, bare = false }: { item: CourseItem; bare?: boolean }) {
   const doc = useCourse(s => s.doc);
   const u = doc.units;
   const set = (patch: Record<string, unknown>, history = true) => updateItem(item.id, patch as Partial<CourseItem>, history);
@@ -579,7 +611,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
           <Field label="Name on the map (optional)"><TextInput label="Area name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
           {item.kind !== "ob" && <ObChoice item={item} />}
           {item.kind === "woods" && <WoodsTrees item={item} />}
-          {item.kind === "woods" && <WoodsBrush item={item} />}
+          {(item.kind === "woods" || item.kind === "rough") && <WoodsBrush item={item} />}
           {(item.kind === "ob" || item.kind === "hazard") && holePicker}
           {item.kind !== "parking" && item.kind !== "building" && <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />}
           <TurnShape item={item} />
@@ -701,6 +733,7 @@ function ItemInspector({ item }: { item: CourseItem }) {
   }
   const holeId = "holeId" in item ? item.holeId : undefined;
   const title = itemTitle(item);
+  if (bare) return body;
   return (
     <>
       <Section testid="item-title">
@@ -721,8 +754,9 @@ export function itemTitle(item: CourseItem) {
   return item.type === "tee" ? `${TEE_LEVELS[item.level].label} tee` : item.type === "basket" ? `Basket (pin ${item.position})` : item.type === "area" ? AREA_KINDS[item.kind].label : item.type === "line" ? LINE_KINDS[item.kind].label : item.type === "amenity" ? AMENITY_KINDS[item.kind].label : item.type === "structure" ? STRUCTURE_KINDS[item.kind].label : ITEM_LABELS[item.type];
 }
 
-/** How much of the map's right side the inspector covers (fitting a hole keeps clear of it). */
-export const INSPECTOR_INSET = 470;
+/** How much of the map's left side is covered on Design while something is picked: the slim hole
+ * list and the panel next to it (fitting a hole keeps clear of them). */
+export const PANEL_INSET = 388;
 
 /** The selected hole or item, while it is shown (only with the Select tool: while placing things
  * the whole map stays clear to click on). */
@@ -774,10 +808,13 @@ function GroupInspector({ items }: { items: CourseItem[] }) {
 /** The selection's own content: the hole or the item, its numbers and settings. */
 export function InspectorBody() {
   const { hole, item, group } = useSelection();
+  const doc = useCourse(s => s.doc);
+  // (a tee or basket: its hole's panel, with it opened up there)
+  const owner = item && (item.type === "tee" || item.type === "basket") ? doc.holes.find(h => h.id === item.holeId) : undefined;
   return (
     <>
-      {hole ? <HoleInspector hole={hole} /> : item ? <ItemInspector item={item} /> : group.length ? <GroupInspector items={group} /> : null}
-      {item && "x" in item && "y" in item && item.type !== "area" && item.type !== "line" && item.type !== "structure" && <PlaceByGps item={item as never} />}
+      {hole ? <HoleInspector hole={hole} /> : owner ? <HoleInspector hole={owner} part={item} /> : item ? <ItemInspector item={item} /> : group.length ? <GroupInspector items={group} /> : null}
+      {item && !owner && "x" in item && "y" in item && item.type !== "area" && item.type !== "line" && item.type !== "structure" && <PlaceByGps item={item as never} />}
       {hole && <div className="px-4 pb-3"><Button small full onClick={() => getView()?.fitHole(hole.id)}>Zoom to this hole</Button></div>}
     </>
   );
@@ -808,21 +845,35 @@ export function InspectorActions({ big = false, close = true }: { big?: boolean;
   );
 }
 
+/** The top of the selection's panel: back to the step (`back`: its name), or the holes before and
+ * after; then lock, duplicate, delete and close. */
+export function SelectionHeader({ back }: { back?: string }) {
+  const { hole, item } = useSelection();
+  // (a tee or basket open in its hole's panel: named here, by what acts on it)
+  const part = item && (item.type === "tee" || item.type === "basket") ? itemTitle(item) : null;
+  return (
+    <div className="flex items-center gap-0.5 px-2 pt-2">
+      {part && !back && <span className="pl-1.5 text-[12.5px] font-semibold text-zinc-300 truncate" data-testid="selection-part">{part}</span>}
+      {back ? (
+        <button className="flex items-center gap-1 pl-1 pr-2.5 py-1 touch:py-2.5 rounded-lg text-[13px] font-semibold text-zinc-300 hover:text-zinc-50 hover:bg-white/[0.09]" onClick={() => select(null)} data-testid="selection-back"><ChevronLeft size={17} />{back}</button>
+      ) : hole && <HoleSteps holeId={hole.id} />}
+      <div className="flex-1" />
+      <InspectorActions close={!back} />
+    </div>
+  );
+}
+
+/** What's picked, on Design: down the map's left side next to the hole list (slim while this
+ * shows), so the map's middle and right stay clear to work on. (On Site it takes the step's panel.) */
 export function Inspector() {
-  const { open, hole } = useSelection();
-  useEffect(() => {
-    const v = getView();
-    if (v) v.rightInset = open ? INSPECTOR_INSET : 0;
-  }, [open]);
+  const { open } = useSelection();
   if (!open) return null;
   return (
-    <aside className="absolute top-3 right-[150px] w-[300px] max-h-[calc(100%-120px)] overflow-y-auto glass backdrop-blur rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 z-20" data-testid="inspector" aria-label="Selection">
-      <div className="flex items-center gap-0.5 px-2 pt-2">
-        {hole && <HoleSteps holeId={hole.id} />}
-        <div className="flex-1" />
-        <InspectorActions />
+    <aside className="absolute top-3 left-[76px] w-[300px] max-h-[calc(100%-24px)] flex flex-col glass rounded-[22px] shadow-xl shadow-black/40 z-20" data-testid="inspector" aria-label="Selection">
+      <SelectionHeader />
+      <div className="overflow-y-auto min-h-0">
+        <InspectorBody />
       </div>
-      <InspectorBody />
     </aside>
   );
 }

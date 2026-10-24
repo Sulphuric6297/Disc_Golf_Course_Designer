@@ -97,6 +97,12 @@ export const TOPICS: Topic[] = [
     words: "tooltip hover icon label dimmed disabled"
   },
   {
+    id: "the-demo", section: "start", title: "The public demo",
+    body: "This is the public demo of HyzerLab. You can design a full course here: bring in a park, lay out the holes, and make the maps and tee signs. It all saves in this browser.\n\nThe parts that need other people have a lock on them: accounts, sharing, comments, drafts and history, the public course page, and courses that share a park. There's no server behind the demo to keep any of that. Tap one and it tells you what it does. To use them, run HyzerLab on your own server. It's free and open source, and the README walks you through the setup.",
+    words: "demo public locked lock self host host your own server account sharing comments github pages",
+    path: "Top bar › Demo", server: false
+  },
+  {
     id: "save-local", section: "start", title: "Saving (in this browser)",
     body: "Without an account, your course saves by itself in this browser. It only lives on this computer, though. Clear the browser's site data and it's gone.\n\nTo keep a copy, or move it to another computer, open the course menu (the little arrow next to the course name) and pick Save as a file. Open a course file… brings it back in.",
     words: "save file open download backup",
@@ -163,7 +169,7 @@ export const TOPICS: Topic[] = [
   // ------------------------------------------------------------------ Design
   {
     id: "holes-column", section: "design", title: "The holes column",
-    body: "Down the left side of the map: every hole with its length and par. Click one to pick it and zoom to it. New hole at the bottom starts the hole tool.\n\nWith more than one layout, the layout picker is at the top. The totals at the bottom (holes, par, total length) open the course's own settings. On a phone, the same list is in the Design step's panel.",
+    body: "Down the left side of the map: every hole with its length and par. Click one to pick it and zoom to it. New hole at the bottom starts the hole tool.\n\nWhen you pick something, its panel opens right next to the list, and the list shrinks to just the hole numbers so the rest of the map stays clear. Esc or the X closes it.\n\nWith more than one layout, the layout picker is at the top. The totals at the bottom (holes, par, total length) open the course's own settings. On a phone, the same list is in the Design step's panel.",
     words: "holes list column totals",
     path: "Design › holes column",
     where: { step: "design", find: "holes-column" }
@@ -177,7 +183,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "hole-panel", section: "design", title: "A hole's panel",
-    body: "Pick a hole and its panel shows its length, how much it climbs or drops, and how long it plays. Buttons up top let you view it from the tee, fly over it, or add OB along it.\n\nFurther down: par and foliage, the fairway, its name, and its notes and hole rules (those print on its tee sign). In play counts the trees on the throw line and says whether OB is in play. Tees and pins lists its tees and pins.",
+    body: "Pick a hole and its panel shows its length, how much it climbs or drops, and how long it plays. Buttons up top let you view it from the tee, fly over it, or add OB along it.\n\nFurther down: par and foliage, the fairway, its name, and its notes and hole rules (those print on its tee sign). In play counts the trees on the throw line and says whether OB is in play.\n\nThe panel sits on the left, next to the holes. On the Site step it takes over the step's panel instead, with a back arrow to the step.",
     words: "hole inspector panel par notes name length elevation profile in play",
     path: "Design › pick a hole",
     where: { step: "design", pick: "hole", find: "inspector" }
@@ -205,10 +211,10 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "tees-pins", section: "design", title: "More tees and pins",
-    body: "A hole can have more than one tee and more than one pin. Tees are colored by skill level, and pins are lettered A, B, C and D. The Tee tool (T) and Pin tool (B) add another one to the hole you've picked.\n\nTees and pins in the hole's panel lists them; click one to open it. Basket lets a hole share another hole's basket. Layouts decide which tee and pin each hole is played from.",
-    words: "tee pin position another tee basket skill level color share basket",
-    path: "Design › a hole › Tees and pins",
-    where: { step: "design", pick: "hole", find: "inspector", text: "Tees and pins" }
+    body: "A hole can have more than one tee and more than one pin. Tees are colored by skill level, and pins are lettered A, B, C and D. The Tee tool (T) and Pin tool (B) add another one to the hole you've picked.\n\nTees and baskets, near the top of the hole's panel, has a row for each one with how long the hole plays from it. Click a row to open its settings right there (it's picked on the map too), and click it again to close it. Clicking a tee or basket on the map does the same thing: you get the hole's panel with that one open, so the hole's settings are never more than a scroll away.\n\nPlay to another hole's basket instead lets a hole share a basket. Layouts decide which tee and pin each hole is played from.",
+    words: "tee pin position another tee basket skill level color share basket tees and baskets",
+    path: "Design › a hole › Tees and baskets",
+    where: { step: "design", pick: "hole", find: "hole-parts" }
   },
   {
     id: "ob", section: "design", title: "Out of bounds (OB)",
@@ -259,8 +265,8 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "areas", section: "design", title: "Areas: OB, hazards, water, woods, rough",
-    body: "The Area tool (O) draws a shape. Click its corners and finish with a double-click or Enter, or pick Rectangle, Circle, Freehand or Paint above the tools. Paint works like a real brush: drag it over the map and let go, and the shape comes out with a smooth edge. Set the brush size next to it. Pick its kind (OB, hazard, water, woods, tall grass, parking and so on) before you draw, or change it after in its panel.\n\nThe panel also has its name on the map and a Curved switch. Water, parking lots and buildings never have trees in them, so drawing one over trees takes those trees out. That's part of the same change, so one Undo brings them back.",
-    words: "area draw polygon rectangle circle freehand paint brush water woods grass rough hazard parking building",
+    body: "The Area tool (O) draws a shape. Click its corners and finish with a double-click or Enter, or pick Rectangle, Circle, Freehand or Paint above the tools. Paint works like a real brush: drag it over the map and let go, and the shape comes out with a smooth edge. Set the brush size next to it. Pick its kind (OB, hazard, water, woods, tall grass, parking and so on) before you draw, or change it after in its panel.\n\nThe panel also has its name on the map and a Curved switch. Tall grass can have underbrush too: bushes, briars and weeds growing up through it, set the same way as in woods. It's off until you pick some. Water, parking lots and buildings never have trees in them, so drawing one over trees takes those trees out. That's part of the same change, so one Undo brings them back.",
+    words: "area draw polygon rectangle circle freehand paint brush water woods grass rough tall grass underbrush weeds briars hazard parking building",
     path: "Design › Area (O)"
   },
   {
@@ -303,7 +309,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "tee-basket", section: "design", title: "Tee pads and baskets",
-    body: "A tee's panel sets its color (the skill level it's for) and the pad's width, length and surface. If you've turned the pad by hand, Face down the hole again straightens it out.\n\nA basket's panel sets its pin letter and how high it's raised off the ground, for a basket up on a slope or a platform.",
+    body: "A tee or basket opens inside its hole's panel, under Tees and baskets. A tee sets its color (the skill level it's for) and the pad's width, length and surface. If you've turned the pad by hand, Face down the hole again straightens it out.\n\nA basket sets its pin letter and how high it's raised off the ground, for a basket up on a slope or a platform.",
     words: "tee pad surface concrete turf basket pin raised height",
     path: "Design › pick a tee or basket",
     where: { step: "design", pick: "tee", find: "inspector" }
@@ -364,16 +370,23 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "flyover", section: "view", title: "Flyovers",
-    body: "Fly over flies from behind the tee down the hole to the basket, like the TV broadcasts do. By default it works out the flight by itself.\n\nIf you want more control, switch the hole's Flyover to Keyframes. Each keyframe has its own height, view (field of view) and seconds, and + Keyframe adds one. Fly over plays it back.\n\nYou can place them right on the map too. Tilt the view into 3D and each keyframe's camera floats at its height, with the flight drawn where it flies. Drag a camera up or down to raise or lower it, drag the dot on the ground under it to move it, and drag the ring to change where it looks. From straight above, dragging a camera moves it.",
-    words: "flyover fly over drone camera keyframes broadcast height raise lower 3d drag place",
+    body: "Fly over flies from behind the tee down the hole to the basket, like the TV broadcasts do. By default the flyover is Automatic: it works out the flight on its own and steers around the trees.\n\nIf you want more control, switch the hole's Flyover to Keyframes. The keyframes sit on a timeline, numbered. Click one to pick it, or drag it left or right to change when it comes (the ones either side stay put). The picked one gets its own Height, Lens and Time from the keyframe before. + Keyframe adds one after the picked one, right where the flight already goes, and Fly over plays it back.\n\nThe flight goes exactly through each keyframe at the height you set, and moves smoothly from one to the next. It doesn't dodge trees on its own, so if a keyframe sits in a tree's leaves, that's where the camera goes.\n\nYou can do all of it on the map too. Tilt into 3D and each keyframe's camera floats at its height, with the flight drawn where it flies. Drag a camera up or down to raise or lower it, drag the dot on the ground under it to move it, and drag the ring to change where it looks. From straight above, dragging a camera moves it. Click a + between two cameras to add one there. Double-click a camera to look through it.",
+    words: "flyover fly over drone camera keyframes broadcast height raise lower 3d drag place timeline lens add keyframe",
     path: "Design › a hole › Fly over",
     where: { step: "design", pick: "hole", find: "hole-flight" }
   },
   {
-    id: "camera", section: "view", title: "Camera settings",
-    body: "From a tee, Camera sets how the flyover flies: Camera height, Speed, Field of view, Camera starts behind the tee, Camera off to the side and Camera looks ahead. It also picks the ground (painted map or photo) and what's on screen, like the hole title, the distance and the course's name.\n\nThe settings can be for All holes or just this hole. Apply to holes… copies them to others, and Reset puts the all-holes settings back.",
+    id: "fly-camera", section: "view", title: "Flying the camera yourself",
+    body: "Camera puts you behind the lens, first person, so you can fly to the shot you want and drop a keyframe right there. It's in a hole's Flyover section and on the bar at the bottom of the view from a tee.\n\nOn a computer, W A S D or the arrow keys move it, Space or E goes up and Q goes down. Hold Shift to go faster. Drag the view to look around, and scroll to zoom the lens. On a phone, the stick in the corner moves it, the arrows on the right take it up and down, and you drag the view to look.\n\nAdd keyframe (or Enter) saves where the camera is and where it's pointed, after the picked keyframe. The numbers along the top jump to a keyframe ([ and ] do too). Move away from one and Update (or U) moves it to where you are now. Play flies through them, and Done (or Esc) takes you back to the map.",
+    words: "camera first person fly drone keyframe wasd keyboard joystick stick add keyframe update look through point",
+    path: "Design › a hole › Flyover › Camera",
+    where: { step: "design", pick: "hole", find: "fly-camera" }
+  },
+  {
+    id: "camera", section: "view", title: "Flyover settings",
+    body: "From a tee, Settings sets how the flyover flies: Camera height, Speed, Field of view, Camera starts behind the tee, Camera off to the side and Camera looks ahead. It also picks the ground (painted map or photo) and what's on screen, like the hole title, the distance and the course's name.\n\nThe settings can be for All holes or just this hole. Apply to holes… copies them to others, and Reset puts the all-holes settings back.",
     words: "camera flyover height speed field of view behind the tee side looks ahead on screen ground painted photo",
-    path: "Design › a hole › View from tee › Camera"
+    path: "Design › a hole › View from tee › Settings"
   },
   {
     id: "record", section: "view", title: "Record a flyover",
@@ -555,8 +568,8 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "public-site", section: "share", title: "The public site and how visitors see it",
-    body: "The course page shows the version you last published, so click Update site after you change things. This is also where you set how the map and 3D look to visitors: painted or the satellite photo, contour lines and hill shading.",
-    words: "public site update publish visitors painted photo look viewers",
+    body: "The course page shows the version you last published, so click Update site after you change things. This is also where you set how the map and 3D look to visitors: painted or the satellite photo, contour lines and hill shading.\n\nVisitors get your whole course map first, as big as their screen allows, with everything else beside it on a computer, or under it on a phone, where the map stays pinned at the top. Picking a hole in the list or tapping it on the map puts a pool of warm light on it, and the rest of the map stays just as it is. Its row opens with its numbers, its tee sign and Fly over it. Go in close zooms to the hole and All of it zooms back out. Scrolling or pinching zooms anywhere, and the arrow keys go hole to hole.",
+    words: "public site update publish visitors painted photo look viewers course page map hole light go in close",
     path: "Share › Public link and site › Public site",
     where: { open: "share-public", find: "public-site-settings" }, server: true
   },

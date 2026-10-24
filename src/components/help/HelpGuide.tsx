@@ -2,7 +2,7 @@
 // each setting a "Show me" away (the guide closes and the setting is opened and pointed at).
 import { openGettingStarted } from "../GettingStarted";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Box, Download, Keyboard, MapPin, Palette, Route, Search, Share2, Smartphone, X, ArrowRight } from "lucide-react";
+import { BookOpen, Box, Download, Keyboard, Lock, MapPin, Palette, Route, Search, Share2, Smartphone, X, ArrowRight } from "lucide-react";
 import { SECTIONS, TOPICS, type GuideSection, type Topic } from "../../lib/guide";
 import { SERVER } from "../../auth/api";
 import { showSetting } from "../showSetting";
@@ -23,7 +23,8 @@ export const SHORTCUTS: [string, string][] = [
   ["Shift+drag", "Select with a box"], ["Shift+click", "Add to the selection, or take out"], ["Ctrl+A", "Select everything"],
   ["Del", "Delete the selection"], ["Ctrl+D", "Duplicate"], ["Ctrl+C / X / V", "Copy / cut / paste (where the pointer is)"], ["Arrows", "Nudge 1 ft (Shift: 10 ft) · other holes in the tee view"],
   ["Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"], ["Ctrl+S", "Save now"], ["2 / 3", "Top-down / 3D"], ["0 / F", "Whole course / zoom to selection"], ["[ / ]", "Previous / next hole"],
-  ["Ctrl+K or /", "Search: holes, tools, settings, help"], ["Q / E / N", "Turn left / right / north up"], ["+ / −", "Zoom"], ["?", "This guide"]
+  ["Ctrl+K or /", "Search: holes, tools, settings, help"], ["Q / E / N", "Turn left / right / north up"], ["+ / −", "Zoom"], ["?", "This guide"],
+  ["W A S D or arrows", "In the camera: move (Shift: faster)"], ["Space or E / Q", "In the camera: up / down"], ["Enter / U", "In the camera: add a keyframe / move the picked one here"], ["[ / ] in the camera", "Keyframe before / after"]
 ];
 
 export const GESTURES: [string, string][] = [
@@ -34,16 +35,23 @@ export const GESTURES: [string, string][] = [
   ["Tap", "Select a hole or a thing; with a tool, place it"],
   ["Hold", "A thing's menu: view from the tee, mark OB, duplicate, lock, delete"],
   ["Select, above the tools", "Drag a box around several things; tap one to add it or take it out"],
-  ["Drag the panel", "Up for more, down for more map; tap its handle to step through"]
+  ["Drag the panel", "Up for more, down for more map; tap its handle to step through"],
+  ["In the camera", "The stick moves it, the arrows take it up and down, drag the view to look"]
 ];
 
-/** The topics this app has (sharing only on a server; file saving only without one). */
-const shownTopics = TOPICS.filter(t => t.server === undefined || t.server === SERVER);
+/** The topics this app has (file saving only without a server). In the demo the server's topics
+ * stay, each saying it's locked here. */
+const shownTopics = TOPICS.filter(t => t.server !== false || !SERVER);
 
 function TopicCard({ t, onShow, lit }: { t: Topic; onShow: (t: Topic) => void; lit: boolean }) {
   return (
     <article id={`help-${t.id}`} className={`rounded-[18px] bg-white/[0.05] p-4 ${lit ? "dg-found" : ""}`} data-testid="help-topic">
       <h3 className="text-[15px] font-semibold text-zinc-50">{t.title}</h3>
+      {t.server && !SERVER && (
+        <p className="mt-1.5 flex items-start gap-1.5 rounded-[12px] bg-sky-500/10 px-2.5 py-1.5 text-[12.5px] leading-snug text-sky-100" data-testid="help-locked">
+          <Lock size={13} className="mt-0.5 shrink-0" />This one's locked in the public demo. Host HyzerLab yourself and it works.
+        </p>
+      )}
       {t.body.split("\n\n").map((p, i) => <p key={i} className="text-[13.5px] leading-relaxed text-zinc-300 mt-1.5">{p}</p>)}
       {t.steps && (
         <ol className="mt-2 space-y-1.5">

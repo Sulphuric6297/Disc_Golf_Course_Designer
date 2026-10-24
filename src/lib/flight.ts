@@ -445,20 +445,20 @@ export const keyFlight = (keys: FlyKey[], set: FlyoverSettings, ground: (x: numb
   const dur = at[at.length - 1];
   const n = Math.max(60, Math.ceil(dur * RATE));
   const camAt = timed(keys.map(k => ({ x: k.x, y: k.y })), at), lookAt = timed(keys.map(k => ({ x: k.lookX, y: k.lookY })), at);
-  // (the camera's height over the ground: between two keyframes it keeps to the ground's rise and
-  // fall, as high over it as they are, and clear of the trees on the way)
-  const altAt = monotone(at, keys.map(k => k.alt)), fovAt = monotone(at, keys.map(k => k.fov ?? set.fov));
-  const lookZ = monotone(at, keys.map(k => ground(k.lookX, k.lookY) + 3));
-  const way: P[] = [], alts: number[] = [], look: Air[] = [], fov: number[] = [];
+  // (the camera goes exactly where each keyframe puts it, as high as it says, and between two it
+  // goes smoothly from one height to the next, like a drone between waypoints: never lifted or
+  // turned aside by what it thinks is in the way, so what's set is what flies. Only the ground
+  // itself keeps it up: a rise between two keyframes, it stays a few feet over)
+  const zAt = monotone(at, keys.map(k => ground(k.x, k.y) + k.alt)), fovAt = monotone(at, keys.map(k => k.fov ?? set.fov));
+  const lookZ = monotone(at, keys.map(k => ground(k.lookX, k.lookY) + (k.lookAlt ?? 3)));
+  const cam: Air[] = [], look: Air[] = [], fov: number[] = [];
   for (let j = 0; j <= n; j++) {
-    const t = (j / n) * dur;
-    way.push(camAt(t));
-    alts.push(altAt(t));
+    const t = (j / n) * dur, p = camAt(t);
+    cam.push({ ...p, z: Math.max(zAt(t), ground(p.x, p.y) + 4) });
     look.push({ ...lookAt(t), z: lookZ(t) });
     fov.push(fovAt(t));
   }
-  const flown = flyAlong(way, alts, n / dur, ground, obstacles);
-  return finish(flown.way.map((w, j) => ({ x: w.x, y: w.y, z: flown.z[j] })), look, fov, dur, n / dur);
+  return finish(cam, look, fov, dur, n / dur);
 };
 
 /** Keyframes to start from: the flight it flies by itself, at a few moments (to change by hand),
@@ -474,6 +474,37 @@ export const keysFromFlight = (f: Flight, ground: (x: number, y: number) => numb
     if (o && g + up + LEAVES > o.base && g + up - LEAVES < o.top) up = o.base - LEAVES >= g + 6 ? o.base - LEAVES - g : o.top + LEAVES + 3 - g;
     return { x: round1(c.x), y: round1(c.y), alt: round1(up), lookX: round1(l.x), lookY: round1(l.y) };
   });
+
+/** When each keyframe comes, s from the start (the first at 0). */
+export const keyTimes = (keys: FlyKey[], set: FlyoverSettings, ground: (x: number, y: number) => number) => {
+  const at = [0];
+  for (const s of keySeconds(keys, set, ground)) at.push(at[at.length - 1] + s);
+  return at;
+};
+
+/** The keyframes with one more after keyframe `i`: where the flight already is halfway to the
+ * next, so the flight stays as it was (and the two halves take the time the whole did). After the
+ * last, carried on a bit the way the flight was going. Returns the keys and the new one's place. */
+export const insertKey = (keys: FlyKey[], i: number, set: FlyoverSettings, ground: (x: number, y: number) => number): { keys: FlyKey[]; at: number } => {
+  if (keys.length < 2) return { keys, at: -1 };
+  const r = (k: FlyKey): FlyKey => ({ ...k, x: round1(k.x), y: round1(k.y), alt: round1(k.alt), lookX: round1(k.lookX), lookY: round1(k.lookY), ...(k.lookAlt !== undefined ? { lookAlt: round1(k.lookAlt) } : {}) });
+  if (i >= keys.length - 1) {
+    const a = keys[keys.length - 2], b = keys[keys.length - 1];
+    const next = r({ ...b, x: 2 * b.x - a.x, y: 2 * b.y - a.y, lookX: 2 * b.lookX - a.lookX, lookY: 2 * b.lookY - a.lookY, secs: undefined });
+    return { keys: [...keys, next], at: keys.length };
+  }
+  const f = keyFlight(keys, set, ground);
+  const times = keyTimes(keys, set, ground);
+  if (!f) return { keys: [...keys.slice(0, i + 1), keyBetween(keys[i], keys[i + 1]), ...keys.slice(i + 1)], at: i + 1 };
+  const t = (times[i] + times[i + 1]) / 2;
+  const j = Math.round((t / f.dur) * (f.cam.length - 1));
+  const c = f.cam[j], l = f.look[j];
+  const fov = keys[i].fov === undefined && keys[i + 1].fov === undefined ? undefined : f.fov[j];
+  const half = (times[i + 1] - times[i]) / 2;
+  const mid = r({ x: c.x, y: c.y, alt: c.z - ground(c.x, c.y), lookX: l.x, lookY: l.y, lookAlt: l.z - ground(l.x, l.y), ...(fov !== undefined ? { fov: Math.round(fov) } : {}), secs: Math.round(half * 10) / 10 });
+  const after = { ...keys[i + 1], secs: Math.round(half * 10) / 10 };
+  return { keys: [...keys.slice(0, i + 1), mid, after, ...keys.slice(i + 2)], at: i + 1 };
+};
 
 /** A keyframe halfway between two (to add one). */
 export const keyBetween = (a: FlyKey, b: FlyKey): FlyKey => ({

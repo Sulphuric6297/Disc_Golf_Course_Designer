@@ -4,6 +4,8 @@
 // button). Mouse only: a finger has no hover.
 
 const PICK = "[title],[data-tip],button[aria-label],a[aria-label],[role=button][aria-label],[role=radio][aria-label],[role=tab][aria-label],[role=menuitem][aria-label]";
+/** What a tip stays inside: the panel, dialog, menu or bar its button is in, or the map. */
+const FRAME = ".glass,.glass-solid,[role=dialog],[role=menu],[role=toolbar],aside,main";
 /** Waits before the first tip; once one has shown, the next comes at once. */
 const FIRST_MS = 380, WARM_MS = 600;
 
@@ -41,12 +43,25 @@ export function installTooltips() {
     box.textContent = text;
     box.classList.add("show");
     const r = el.getBoundingClientRect(), b = box.getBoundingClientRect();
-    const gap = 8, vw = window.innerWidth, vh = window.innerHeight;
+    const gap = 8, pad = 4, vw = window.innerWidth, vh = window.innerHeight;
+    // Kept inside what the button sits in (its panel, dialog, bar or the map), the nearest one
+    // with room for the tip below or above the button; failing that, inside the window
+    const screen = { left: 0, top: 0, right: vw, bottom: vh };
+    let frame = screen;
+    for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+      if (!a.matches(FRAME) && getComputedStyle(a).overflow === "visible") continue;
+      const f = a.getBoundingClientRect();
+      const box2 = { left: Math.max(0, f.left), top: Math.max(0, f.top), right: Math.min(vw, f.right), bottom: Math.min(vh, f.bottom) };
+      const wide = box2.right - box2.left >= b.width + 2 * pad;
+      const tall = box2.bottom - (r.bottom + gap) >= b.height + pad || r.top - gap - box2.top >= b.height + pad;
+      if (wide && tall) { frame = box2; break; }
+    }
     // Below it, or above where there's no room below
     let top = r.bottom + gap;
-    if (top + b.height > vh - 4) top = r.top - gap - b.height;
-    const left = Math.min(Math.max(4, r.left + r.width / 2 - b.width / 2), vw - b.width - 4);
-    box.style.transform = `translate(${Math.round(left)}px, ${Math.round(Math.max(4, top))}px)`;
+    if (top + b.height > frame.bottom - pad) top = r.top - gap - b.height;
+    top = Math.min(Math.max(frame.top + pad, top), frame.bottom - b.height - pad);
+    const left = Math.min(Math.max(frame.left + pad, r.left + r.width / 2 - b.width / 2), frame.right - b.width - pad);
+    box.style.transform = `translate(${Math.round(Math.max(pad, left))}px, ${Math.round(Math.max(pad, top))}px)`;
   };
 
   document.addEventListener("pointerover", e => {

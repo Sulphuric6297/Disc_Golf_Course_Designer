@@ -2,6 +2,7 @@
 // GPS files, flyover videos, GPS and data files, and the parts list.
 import { useState, type ReactNode } from "react";
 import { Box, ChevronRight, Clapperboard, FileDown, FileJson, Image as ImageIcon, Link2, Map as MapIcon, Users } from "lucide-react";
+import { LockedRow } from "./DemoNote";
 import { SERVER, useAuth } from "../auth/api";
 import { useServerCourse } from "../auth/courses";
 import JSZip from "jszip";
@@ -218,6 +219,14 @@ export function ExportPanel() {
                 <ChevronRight size={15} className="text-zinc-500" />
               </button>
             ))}
+          </div>
+        </Section>
+      )}
+      {!SERVER && (
+        <Section title="Share" testid="export-share">
+          <div className="rounded-[16px] bg-white/[0.06] overflow-hidden divide-y divide-white/[0.07]">
+            <LockedRow id="site" icon={<Link2 size={16} />} label="Public link" sub="A page anyone with the link can see" />
+            <LockedRow id="share" icon={<Users size={16} />} label="People" sub="Who can see and edit the course" />
           </div>
         </Section>
       )}
