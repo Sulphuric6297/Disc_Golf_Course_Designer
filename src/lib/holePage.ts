@@ -159,7 +159,7 @@ export const renderHolePage = (doc: CourseDoc, holeId: string, size: HolePageSiz
   const mapTop = box.y;
   const mapBottom = box.y + box.h;
   parts.push(P.wrap("north", `<g transform="translate(${n(W - 26 * u)} ${n(mapTop + 30 * u)}) rotate(${n(-map.rotation)})">${northArrow(0, 0, 13 * u, pal)}</g>`));
-  parts.push(P.wrap("scale", scaleBar(12 * u, mapBottom - 12 * u, map.scale, 0.9 * u, pal, units)));
+  parts.push(P.wrap("scale", scaleBar(12 * u, mapBottom - 12 * u, map.scale * P.sizeOf("map"), 0.9 * u, pal, units)));
   const next = map.stats[map.stats.indexOf(st) + 1];
   if (next?.complete && done) {
     const from = st.line[st.line.length - 1], to = next.line[0];

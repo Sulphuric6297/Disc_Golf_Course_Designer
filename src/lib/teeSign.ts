@@ -243,7 +243,7 @@ export const renderTeeSign = (doc: CourseDoc, holeId: string, size: SignSize, op
   P.group(parts, at, "map");
   // North, scale
   if (show("north")) parts.push(P.wrap("north", `<g transform="translate(${n(box.x + box.w - 22 * ts)} ${n(box.y + 26 * ts)}) rotate(${n(-rotation)})">${northArrow(0, 0, 13 * ts, pal)}</g>`));
-  if (show("scale")) parts.push(P.wrap("scale", scaleBar(box.x + 10 * ts, box.y + box.h - 12 * ts, scale, ts * 0.85, pal, doc.units)));
+  if (show("scale")) parts.push(P.wrap("scale", scaleBar(box.x + 10 * ts, box.y + box.h - 12 * ts, scale * P.sizeOf("map"), ts * 0.85, pal, doc.units)));
   // Next tee arrow
   const next = stats[stats.indexOf(st) + 1];
   if (show("nextTee") && next?.complete && st.complete) {

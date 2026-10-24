@@ -6,7 +6,7 @@
 import { generateId } from "../constants";
 import { holeLabel } from "../lib/course";
 import { holePageOf } from "../lib/holePage";
-import { sizedPlace } from "../lib/pieces";
+import { keepsItsSize, sizedPlace } from "../lib/pieces";
 import { signOf } from "../lib/teeSign";
 import { changeDoc, getDoc, useEditor } from "../state/course";
 import type { CourseDoc, PiecePlace, PrintExtra, SignPart } from "../types";
@@ -198,14 +198,14 @@ export const pickedOf = (doc: CourseDoc, t: TargetKey, id: string): Picked | nul
     return {
       label: e.label, kind: "piece", scale: o.scale ?? 1, color: o.ink, fill: o.bg, text: words, opacity: o.opacity, rot: o.rot, font: e.id === "title" ? s.titleFont : undefined,
       // (the map itself stays square and solid on its page; the title in a font of its own)
-      has: { ...none, font: e.id === "title", color: e.id === "title" || panel || e.id === "credit", fill: panel || e.id === "title", text: words !== undefined, opacity: e.id !== "map", turn: e.id !== "map" },
+      has: { ...none, size: !keepsItsSize(e.id), font: e.id === "title", color: e.id === "title" || panel || e.id === "credit", fill: panel || e.id === "title", text: words !== undefined, opacity: e.id !== "map", turn: e.id !== "map" },
       removable: false, duplicable: false, changed: o.x !== undefined || o.y !== undefined || o.scale !== undefined || !!o.ink || !!o.bg || !!o.rot || o.opacity !== undefined
     };
   }
   if (!byId.has(id)) return null;
   const p = placeOf(doc, t, id);
   const words = wordsOf(doc, id);
-  return { label: byId.get(id)!.label, kind: "piece", scale: p?.scale ?? 1, font: p?.font, color: p?.color, fill: p?.fill, italic: p?.italic, opacity: p?.opacity, rot: p?.rot, text: words, has: { ...none, font: true, color: true, fill: true, italic: true, text: words !== undefined }, removable: false, duplicable: false, changed: placeChanged(p) };
+  return { label: byId.get(id)!.label, kind: "piece", scale: p?.scale ?? 1, font: p?.font, color: p?.color, fill: p?.fill, italic: p?.italic, opacity: p?.opacity, rot: p?.rot, text: words, has: { ...none, size: !keepsItsSize(id), font: true, color: true, fill: true, italic: true, text: words !== undefined }, removable: false, duplicable: false, changed: placeChanged(p) };
 };
 
 /** The map title's second line as it shows: what's typed, or the place's name (none: " "). */
@@ -275,6 +275,7 @@ export const movePicked = (t: TargetKey, id: string, dx: number, dy: number, box
 /** Sized `f` times about the page point `a` (which stays put); `box`: where it was. */
 export const sizePicked = (t: TargetKey, id: string, f: number, a: { x: number; y: number }, box: Box, W: number, H: number) => {
   const doc = getDoc(), ex = extraOf(doc, t, id);
+  if (pickedOf(doc, t, id)?.has.size === false) return;
   const to = { x: a.x + (box.x - a.x) * f, y: a.y + (box.y - a.y) * f };
   if (ex) {
     // (its own corner keeps its place in the drawn box, which grows from `to`)

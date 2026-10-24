@@ -12,6 +12,10 @@ const n = (v: number) => (Math.round(v * 100) / 100).toString();
 /** The fonts a piece can be set in: the app's own (the course's lettering by default), or any
  * Google font by its family name. */
 const OWN = new Set(["", "Oswald", "Inter", "Bitter", "Script"]);
+/** A piece drawn only at its own size, whatever it was asked: a scale bar sized by hand would
+ * measure wrong (moved and turned, it still measures true). */
+export const keepsItsSize = (id: string) => id === "scale";
+
 export const pieceFont = (f: string) => (OWN.has(f) ? titleStack(f) : `'${f.replace(/'/g, "")}', Inter, Arial, sans-serif`);
 
 /**
@@ -39,7 +43,7 @@ export const piecer = (place: (id: string) => PiecePlace | undefined, W: number,
     if (!content) return "";
     const p = place(id);
     if (p?.hidden) return "";
-    const k = p?.scale ?? 1, dx = (p?.dx ?? 0) * W, dy = (p?.dy ?? 0) * H;
+    const k = keepsItsSize(id) ? 1 : p?.scale ?? 1, dx = (p?.dx ?? 0) * W, dy = (p?.dy ?? 0) * H;
     const t = dx || dy || k !== 1 ? ` transform="translate(${n(dx)} ${n(dy)}) scale(${n(k)})"` : "";
     const a = `#${scope} [data-el="${id}"]`, b = `#${scope} [data-pc="${id}"]`;
     const both = (inner: string) => `${a} ${inner},${b} ${inner}`;
@@ -56,7 +60,9 @@ export const piecer = (place: (id: string) => PiecePlace | undefined, W: number,
   };
   /** The page's drawing with its restyling, for wrapSvg. */
   const page = (body: string) => `<g id="${scope}">${css.length ? `<style>${css.join("")}</style>` : ""}${body}</g>`;
-  return { wrap, group, page };
+  /** How much bigger a piece is drawn than its look has it (a scale bar follows its picture's). */
+  const sizeOf = (id: string) => place(id)?.scale ?? 1;
+  return { wrap, group, page, sizeOf };
 };
 
 /** A piece sized by `f` about the page point `a` (from its place before). */

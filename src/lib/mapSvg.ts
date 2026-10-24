@@ -3,7 +3,7 @@
 // tees, baskets, mandos, drop zones, distances), labels, and the frame (title, legend, hole table,
 // north arrow, scale bar). The same renderer draws a single hole for tee signs, turned so the tee
 // is at the bottom.
-import { extrasSvg, turned } from "./pieces";
+import { extrasSvg, keepsItsSize, turned } from "./pieces";
 import { fitAttr } from "./fitText";
 import { SCRIPT_FONTS } from "./fontKinds";
 import { latitudeOf, sunFromOf } from "./mapLook";
@@ -1063,7 +1063,7 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
     type Box = { x: number; y: number; w: number; h: number };
     const placed = (id: string, o: { x?: number; y?: number; scale?: number; hidden?: boolean; rot?: number; opacity?: number }, box: Box, content: string) => {
       if (o.hidden) return;
-      const k = o.scale ?? 1;
+      const k = keepsItsSize(id) ? 1 : o.scale ?? 1;
       // (kept at least partly on the page)
       const X = o.x !== undefined ? Math.max(10 - box.w * k, Math.min(W - 10, o.x * W)) : box.x;
       const Y = o.y !== undefined ? Math.max(10 - box.h * k, Math.min(H - 10, o.y * H)) : box.y;

@@ -6,7 +6,7 @@ import { Minus, Plus, RotateCw, Scan } from "lucide-react";
 import { onPaintProgress, onPainted, renderPoster, withLivePaint } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
 import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
-import { changeDoc, useCourse, useEditor } from "../state/course";
+import { changeDoc, useCourse, useEditor, getDoc } from "../state/course";
 import { holeLabel } from "../lib/course";
 import { useCanopy, useRelief } from "./useRelief";
 import { moveLabel } from "./PageEditor";
@@ -535,6 +535,8 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     const onStart = (ev: TouchEvent) => {
       const { designSel: id } = pieceRef.current;
       if (ev.touches.length !== 2 || !id || id.startsWith("label:")) return;
+      // (what keeps its own size: the pinch zooms the page instead)
+      if (pickedOf(getDoc(), pieceRef.current.t, id)?.has.size === false) return;
       const g = elOf(id), host = svgHost.current;
       if (!g || !host) return;
       const b = boxOf(g), hr = host.getBoundingClientRect(), k = kRef.current;
@@ -718,7 +720,8 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
                   </div>
                 )}
                 {turning !== null && <div className="absolute left-1/2 -translate-x-1/2 -top-10 glass rounded-full px-2.5 py-1 text-[12px] font-semibold text-zinc-50 tabular-nums" data-testid="page-turn-angle">{turning}°</div>}
-                {!designSel.startsWith("label:") && !typing && ["0,0", "1,0", "0,1", "1,1"].map(c => {
+                {/* (its corners, to size it: none on what keeps its own size) */}
+                {!designSel.startsWith("label:") && !typing && pickedOf(live, t, designSel)?.has.size !== false && ["0,0", "1,0", "0,1", "1,1"].map(c => {
                   const [cx, cy] = c.split(",").map(Number);
                   return <div key={c} data-corner={c} data-testid="page-corner" className="absolute w-3 h-3 touch:w-[18px] touch:h-[18px] bg-white border-2 border-orange-500 rounded-full pointer-events-auto" style={{ left: `calc(${cx * 100}% - ${compact ? 9 : 6}px)`, top: `calc(${cy * 100}% - ${compact ? 9 : 6}px)`, cursor: cx === cy ? "nwse-resize" : "nesw-resize", touchAction: "none" }} />;
                 })}
