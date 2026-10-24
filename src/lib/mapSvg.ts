@@ -141,8 +141,9 @@ export type MapLayers = {
 };
 
 const OWN_FONTS = new Set(["", "Oswald", "Inter", "Bitter", "Script"]);
-/** A font for labels: the app's own, or a Google font by name (a script's labels in Oswald). */
-export const fontStack = (f: string) => (f === "Oswald" || f === "Script" || SCRIPT_FONTS.has(f) ? "Oswald, 'Arial Narrow', Arial, sans-serif" : f === "Bitter" ? "Bitter, Georgia, serif" : OWN_FONTS.has(f) ? "Inter, Arial, sans-serif" : `'${f.replace(/'/g, "")}', Inter, Arial, sans-serif`);
+/** A font for labels: the app's own, or a Google font by name (a script's labels in Oswald, where
+ * the one font is the title's too; `asked`: picked for the labels alone, so it's used as it is). */
+export const fontStack = (f: string, asked = false) => (asked && !OWN_FONTS.has(f) && f !== "Oswald" ? `'${f.replace(/'/g, "")}', Inter, Arial, sans-serif` : f === "Oswald" || f === "Script" || SCRIPT_FONTS.has(f) ? "Oswald, 'Arial Narrow', Arial, sans-serif" : f === "Bitter" ? "Bitter, Georgia, serif" : OWN_FONTS.has(f) ? "Inter, Arial, sans-serif" : `'${f.replace(/'/g, "")}', Inter, Arial, sans-serif`);
 /** A font for titles: a script stays a script. */
 export const titleStack = (f: string) => (f === "Script" ? "'Kaushan Script', 'Brush Script MT', cursive" : SCRIPT_FONTS.has(f) ? `'${f.replace(/'/g, "")}', 'Kaushan Script', cursive` : fontStack(f));
 /** A script keeps its own capitals (a title in all capitals reads badly in one). */
@@ -164,7 +165,8 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     return { x: view.width / 2 + (dx * c - dy * sn) * k, y: view.height / 2 + (dx * sn + dy * c) * k };
   };
   const ts = layers.textScale;
-  const font = fontStack(layers.fontFamily);
+  // (the labels' own font once the title has one of its own)
+  const font = fontStack(layers.fontFamily, !!s.titleFont);
   const out: string[] = [];
   const defs: string[] = [];
   const focus = layers.focusHole;
@@ -1045,7 +1047,7 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
   const W = page.w * 72, H = page.h * 72;
   const ts = (Math.min(W, H) / (8.5 * 72)) * s.labelScale;
   const m = 0.35 * 72 * Math.max(1, ts * 0.8);
-  const font = fontStack(s.font);
+  const font = fontStack(s.font, !!s.titleFont);
   const landscape = W > H;
   const full = s.theme === "forest";
   const title = s.title || doc.name;

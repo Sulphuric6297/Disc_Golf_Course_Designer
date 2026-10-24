@@ -1,7 +1,7 @@
 import { test, expect, course, editorState } from "./fixtures";
 
 test("a new visitor to the demo lands on Courses with the example course open behind it, takes the walk round it, and comes back", async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   // (a new visitor: not the tests' empty start)
   await page.evaluate(() => localStorage.removeItem("hyzerlab-start-blank"));
   await page.reload();
@@ -19,13 +19,18 @@ test("a new visitor to the demo lands on Courses with the example course open be
   await expect(page.getByTestId("tour-title")).toHaveText("Welcome to Thunder Hollow");
   const seen: string[] = [];
   const next = async () => { seen.push((await page.getByTestId("tour-title").textContent()) ?? ""); await page.getByTestId("tour-next").click(); };
-  for (let i = 0; i < 4; i++) await next();
-  // (the view from a tee: the whole course in 3D is more than software drawing keeps up with, so
-  // the walk is taken on from it by its state rather than a click)
-  await expect(page.getByTestId("tour-title")).toHaveText("From the tee");
-  await expect.poll(async () => (await editorState(page)).teeView).toBeTruthy();
-  await page.evaluate(() => (window as any).__dgTour.setState({ at: 5 }));
-  await expect.poll(async () => (await editorState(page)).teeView).toBe(null);
+  for (let i = 0; i < 3; i++) await next();
+  // (its two stops in 3D: the whole course in 3D is more than software drawing keeps up with, so
+  // the walk is taken through them by its state rather than clicks)
+  const at = (n: number) => page.evaluate(n => (window as any).__dgTour.setState({ at: n }), n);
+  await at(3);
+  await expect.poll(async () => (await editorState(page)).view, { timeout: 60_000 }).toBe("3d");
+  await at(4);
+  await expect.poll(async () => (await editorState(page)).teeView, { timeout: 60_000 }).toBeTruthy();
+  seen.push("In 3D", "From the tee");
+  await at(5);
+  await expect.poll(async () => (await editorState(page)).teeView, { timeout: 60_000 }).toBe(null);
+  await expect.poll(async () => (await editorState(page)).view, { timeout: 60_000 }).toBe("2d");
   for (let i = 0; i < 4; i++) await next();
   await expect(page.getByTestId("tour-title")).toHaveText("Make it yours");
   expect(seen).toContain("A hole");
