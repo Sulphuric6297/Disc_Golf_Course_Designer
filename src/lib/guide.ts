@@ -568,8 +568,10 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "public-site", section: "share", title: "The public site and how visitors see it",
-    body: "The course page shows the version you last published, so click Update site after you change things. This is also where you set how the map and 3D look to visitors: painted or the satellite photo, contour lines and hill shading.",
-    words: "public site update publish visitors painted photo look viewers",
+    body: "The course page shows the version you last published, so click Update site after you change things. This is also where you set how the map and 3D look to visitors: painted or the satellite photo, contour lines and hill shading.
+
+Visitors get your whole course map first, as big as their screen allows, with everything else beside it on a computer, or under it on a phone, where the map stays pinned at the top. Picking a hole in the list or tapping it on the map puts a pool of warm light on it, and the rest of the map stays just as it is. Its row opens with its numbers, its tee sign and Fly over it. Go in close zooms to the hole and All of it zooms back out. Scrolling or pinching zooms anywhere, and the arrow keys go hole to hole.",
+    words: "public site update publish visitors painted photo look viewers course page map hole light go in close",
     path: "Share › Public link and site › Public site",
     where: { open: "share-public", find: "public-site-settings" }, server: true
   },

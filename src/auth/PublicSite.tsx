@@ -317,7 +317,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
         // A phone: the whole map across the top, staying there while the holes scroll under it
         <div className="relative pb-28">
           <header className="px-4 pt-[max(18px,env(safe-area-inset-top))] pb-2">{head}{totals}</header>
-          {mapPane && <div className="sticky top-0 z-20 px-2 pt-[max(8px,env(safe-area-inset-top))] pb-2">{mapPane}</div>}
+          {mapPane && <div className="sticky top-0 z-20 px-2 pt-[max(8px,env(safe-area-inset-top))] pb-2 rounded-b-[24px] bg-[rgba(11,16,11,0.55)] backdrop-blur-xl" data-testid="map-pinned">{mapPane}</div>}
           <div className="px-3">
             {openError && <p role="alert" className="mt-2 text-[12.5px] text-red-300">{openError}</p>}
             {holeList}
@@ -452,7 +452,7 @@ function CourseMap({ src, alt, holes, picked, onPick, wide, onFull }: { src: str
   const tapAt = (cx: number, cy: number) => {
     const c = centreOf();
     const p = { x: ((cx - c.x - v.x) / v.k + size.w / 2) / size.w, y: ((cy - c.y - v.y) / v.k + size.h / 2) / size.h };
-    let best: string | null = null, bestD = 0.025 / v.k;
+    let best: string | null = null, bestD = 0.035 / v.k;
     for (const h of holes) if (h.line && h.line.length >= 2) { const d = offLine(p, h.line, aspect); if (d < bestD) { bestD = d; best = h.id; } }
     onPick(best);
   };
