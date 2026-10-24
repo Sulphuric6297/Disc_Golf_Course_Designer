@@ -165,6 +165,7 @@ function NavRail({ onStep, onMenu, panelOpen, onPanel }: { onStep: (s: Step) => 
           );
         })}
       </ol>
+      <UndoRedo vertical />
       <button className={`${iconBtn} [@media(max-height:400px)]:h-10`} aria-label={panelOpen ? "Hide the panel" : "Show the panel"} aria-expanded={panelOpen} onClick={onPanel} data-testid="panel-toggle">
         {panelOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
       </button>
@@ -207,8 +208,6 @@ function ToolStrip() {
 function Tools() {
   const tool = useEditor(e => e.tool);
   const set = useEditor(e => e.set);
-  const canUndo = useCourse(s => s.past.length > 0);
-  const canRedo = useCourse(s => s.future.length > 0);
   const row = useRef<HTMLDivElement>(null);
   useEffect(() => {
     // Keep the active tool in sight
@@ -243,9 +242,6 @@ function Tools() {
           );
         })}
       </div>
-      <div className="w-px h-9 bg-white/[0.12] mx-0.5 shrink-0" />
-      <button className={`${iconBtn} h-[54px] w-10`} aria-label="Undo" disabled={!canUndo} onClick={() => useCourse.getState().undo()}><Undo2 size={20} /></button>
-      <button className={`${iconBtn} h-[54px] w-10`} aria-label="Redo" disabled={!canRedo} onClick={() => useCourse.getState().redo()}><Redo2 size={20} /></button>
     </div>
   );
 }
@@ -429,6 +425,22 @@ function AppMenu({ onClose, onHelp, onGoTo, onOpenFile }: { onClose: () => void;
   );
 }
 
+/** Undo and Redo, always in reach: on the top bar of a phone and the rail of a tablet, whatever
+ * step it's on and whatever is picked (none when the course is only for viewing). */
+function UndoRedo({ vertical = false }: { vertical?: boolean }) {
+  const readOnly = useCourse(s => s.readOnly);
+  const canUndo = useCourse(s => s.past.length > 0);
+  const canRedo = useCourse(s => s.future.length > 0);
+  if (readOnly) return null;
+  const btn = `${vertical ? "w-11 h-10" : "w-10 h-11"} shrink-0 flex items-center justify-center rounded-[12px] text-zinc-100 active:bg-white/[0.13] disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400`;
+  return (
+    <div className={`flex ${vertical ? "flex-col" : ""} shrink-0`} data-testid="undo-redo">
+      <button className={btn} aria-label="Undo" disabled={!canUndo} onClick={() => useCourse.getState().undo()} data-testid="undo"><Undo2 size={20} /></button>
+      <button className={btn} aria-label="Redo" disabled={!canRedo} onClick={() => useCourse.getState().redo()} data-testid="redo"><Redo2 size={20} /></button>
+    </div>
+  );
+}
+
 function ViewToggle({ vertical = false }: { vertical?: boolean }) {
   const view = useEditor(e => e.view);
   const set = useEditor(e => e.set);
@@ -464,6 +476,7 @@ function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
           </button>
         )}
         {SERVER && <CourseChip />}
+        <UndoRedo />
         <ViewToggle />
       </div>
     </div>
@@ -578,17 +591,6 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
   useLayoutEffect(() => {
     if (ed.designSel && (ed.step === "map" || ed.step === "export")) setDetent("peek");
   }, [ed.designSel]);
-  // (and the hole brought into the map above the sheet once the sheet has its height: once a
-  // pick, never again as the sheet is dragged up or down for more of its settings)
-  const revealed = useRef<string | null>(null);
-  useEffect(() => {
-    if (!holePicked || !ed.selectedId) { revealed.current = null; return; }
-    const id = ed.selectedId;
-    if (revealed.current === id) return;
-    const t = window.setTimeout(() => { revealed.current = id; getView()?.reveal(id); }, 320);
-    return () => window.clearTimeout(t);
-  }, [ed.selectedId, holePicked, sheetH]);
-
   // Fitting holes and items keeps them clear of the sheet (set before the fit that follows a
   // pick from the list)
   useLayoutEffect(() => {
