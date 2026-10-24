@@ -287,7 +287,7 @@ export default function App() {
       if (k === "E") { view?.rotateBy(30); return; }
       if (k === "N") { view?.resetNorth(); return; }
       const choice = CHOICE_KEYS[k] ? TOOLS.flatMap(t => t.choices ?? []).find(c => c.id === CHOICE_KEYS[k]) : undefined;
-      if (choice) { drawChoice(choice); return; }
+      if (choice) { drawChoice(choice, false); return; }
       const tool = TOOLS.find(t => t.key === k);
       if (tool) pickTool(tool);
     };
