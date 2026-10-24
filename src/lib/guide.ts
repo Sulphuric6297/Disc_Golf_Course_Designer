@@ -589,7 +589,7 @@ export const TOPICS: Topic[] = [
   // ------------------------------------------------------------------ Phone
   {
     id: "phone-layout", section: "phone", title: "The phone layout",
-    body: "The steps are along the bottom, and the panel is a sheet. Drag it up for more panel or down for more map, or tap the step again to flip between a short and a taller sheet.\n\nThe tools are a row of buttons at the top of the panel. Undo and Redo are on the bar at the top, so they're always there, whatever step you're on and whatever is picked. On a tablet they're on the bar down the side. Picking something leaves the map where it is. To go to it, use Zoom to it in its menu.\n\nWhile you draw, there are Undo, Cancel and Done buttons over the map, since a phone has no Enter or Esc key. That Undo takes back the last point.",
+    body: "The steps are along the bottom, and the panel is a sheet. Drag it up for more panel or down for more map, or tap the step again to flip between a short and a taller sheet.\n\nThe tools are a row of buttons at the top of the panel. Undo and Redo are on the bar at the top, so they're always there, whatever step you're on and whatever is picked. On a tablet they're on the bar down the side. Picking something leaves the map where it is. To go to it, use Zoom to it in its menu. On the Map step, the page you're laying out stays behind the sheet when you pull it up.\n\nWhile you draw, there are Undo, Cancel and Done buttons over the map, since a phone has no Enter or Esc key. That Undo takes back the last point.",
     words: "phone mobile sheet bottom bar touch"
   },
   {
