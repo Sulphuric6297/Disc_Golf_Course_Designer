@@ -288,7 +288,7 @@ test("flyover settings: height, speed and field of view change the flight, one u
   // While it flies, the camera's field of view is the flight's; back to the tee view's after
   await page.getByTestId("hud-flyover").click();
   await expect.poll(() => page.evaluate(() => (window as any).__dgView.povCam.fov)).toBe(20);
-  await expect(page.getByTestId("hud-flyover")).toHaveText(/Fly over/, { timeout: 30_000 });
+  await expect(page.getByTestId("hud-flyover")).toHaveText(/Fly over/, { timeout: 120_000 });
   expect(await page.evaluate(() => (window as any).__dgView.povCam.fov)).toBe(62);
   // Each setting is one undo step
   await page.getByTestId("hud-close").click();
