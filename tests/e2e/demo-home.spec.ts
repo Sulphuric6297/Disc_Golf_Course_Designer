@@ -1,14 +1,38 @@
+import { test as plain, expect as plainExpect } from "@playwright/test";
+import { readFileSync } from "fs";
 import { test, expect, course, editorState } from "./fixtures";
+import { createBasket, createEmptyCourse, createTee, newHole } from "../../src/lib/course";
+
+// The example as published: a whole course, with nothing in it that places it or names the real one
+plain("the example course is whole, and nothing in it says where it is or what it really is", () => {
+  const raw = readFileSync("public/example/course.json", "utf8");
+  const d = JSON.parse(raw);
+  plainExpect(d.name).toBe("Thunder Hollow");
+  plainExpect(d.holes.length).toBe(18);
+  plainExpect(d.site.location).toBe(null);
+  plainExpect(d.site.bounds).toBe(null);
+  const words = JSON.stringify({ ...d, background: "", terrainHeights: [] });
+  for (const w of ["Siler", "OSDGC", "Franklin", "USGS", "OneMap", "davidiz", "Dnet", "lat\"", "lon\""]) plainExpect(words, w).not.toContain(w);
+});
+
+/** A small course in the example's place: the whole example, its trees all drawn in software, is
+ * more than a test machine keeps up with. */
+const stand = () => {
+  const d = createEmptyCourse();
+  const holes = [newHole(), newHole()];
+  return { ...d, id: "example-thunder-hollow", name: "Thunder Hollow", holes, items: holes.flatMap((h, i) => [createTee(h.id, { x: 300 + i * 300, y: 700 }), createBasket(h.id, { x: 500 + i * 300, y: 400 })]) };
+};
 
 test("a new visitor to the demo lands on Courses with the example course open behind it, takes the walk round it, and comes back", async ({ page }) => {
   test.setTimeout(300_000);
+  await page.route(/\/example\/course\.json$/, r => r.fulfill({ contentType: "application/json", body: JSON.stringify(stand()) }));
   // (a new visitor: not the tests' empty start)
   await page.evaluate(() => localStorage.removeItem("hyzerlab-start-blank"));
   await page.reload();
   await expect(page.getByTestId("demo-home")).toBeVisible();
   await expect(page.getByTestId("example-card")).toContainText("Thunder Hollow");
   // The example, open behind the page: its holes, and nothing that places it on the earth
-  await expect.poll(async () => (await course(page)).holes.length, { timeout: 60_000 }).toBe(18);
+  await expect.poll(async () => (await course(page)).holes.length, { timeout: 60_000 }).toBe(2);
   const doc = await course(page);
   expect(doc.name).toBe("Thunder Hollow");
   expect(doc.site.location).toBe(null);

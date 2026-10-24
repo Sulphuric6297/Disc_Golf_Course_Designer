@@ -66,11 +66,12 @@ export const choiceOf = (ed: Editor) => toolOf(ed)?.choices?.find(c => matches(e
 
 // (each tool picks up again with what it last drew)
 const lastChoice = new Map<string, ToolChoice>();
-/** Draw this choice (its tool comes forward). */
-export const drawChoice = (c: ToolChoice) => {
+/** Draw this choice (its tool comes forward); `remember`: the tool picks up with it next time
+ * (not for a key that goes straight to it, like Z for a drop zone: O still gives what O last did). */
+export const drawChoice = (c: ToolChoice, remember = true) => {
   const ed = useEditor.getState();
   const t = TOOLS.find(x => x.choices?.includes(c));
-  if (t) lastChoice.set(t.id, c);
+  if (t && remember) lastChoice.set(t.id, c);
   const set: Partial<Editor> = { tool: c.mode, ...c.set };
   // (built things: outlines by a box, a bridge or wall along its line, as before)
   if (c.mode === "draw-structure" && c.set.structureKind) set.drawShape = STRUCTURE_KINDS[c.set.structureKind].shape === "outline" ? "box" : "points";
