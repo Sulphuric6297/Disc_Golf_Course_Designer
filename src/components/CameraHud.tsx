@@ -206,17 +206,28 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
   const done = () => ed.set({ teeView: null, flyCam: false, flyover: false });
   const play = () => ed.set({ flyover: true });
   const setLensTo = (v: number) => setLens(getView()?.freeLens(v) ?? v);
-  const chips = (
-    <div className="flex items-center gap-1 overflow-x-auto max-w-full" data-testid="cam-keys">
-      {keys.map((_, i) => (
-        <button key={i} className={`shrink-0 ${compact ? "w-9 h-9 text-[14px]" : "w-7 h-7 text-[12px]"} rounded-lg font-bold text-white border-2 border-white/90 ${i === at ? "bg-orange-500" : "bg-sky-600 hover:bg-sky-500"}`} aria-label={`Go to keyframe ${i + 1}`} aria-pressed={i === at} onClick={() => { getView()?.freeGo(keys[i]); ed.set({ flyKey: i }); }}>{i + 1}</button>
-      ))}
-      {!keys.length && <span className="text-[12.5px] text-zinc-300">No keyframes yet</span>}
+  const go = (i: number) => { getView()?.freeGo(keys[i]); ed.set({ flyKey: i }); };
+  // The keyframes in order, along the bottom with the camera's buttons: tap one to go to it (and
+  // change it), Add keyframe at the end to add one where the camera is
+  const strip = (
+    <div className="flex items-center gap-1.5 min-w-0">
+      <button className="shrink-0 w-8 h-8 rounded-lg text-zinc-300 hover:bg-white/10 flex items-center justify-center disabled:opacity-30" aria-label="Keyframe before ( [ )" title="Keyframe before ( [ )" disabled={!keys.length} onClick={() => jump(-1)}><ChevronLeft size={18} /></button>
+      <div className="flex items-center gap-1.5 overflow-x-auto min-w-0 py-0.5 dg-scroll" data-testid="cam-keys">
+        {keys.map((_, i) => (
+          <button key={i} className={`relative shrink-0 ${compact ? "w-11 h-11 text-[15px]" : "w-9 h-9 text-[13.5px]"} rounded-xl font-bold text-white ${i === at ? "bg-orange-500 ring-2 ring-white" : "bg-sky-600/90 hover:bg-sky-500"}`} aria-label={`Go to keyframe ${i + 1}`} aria-pressed={i === at} title={`Keyframe ${i + 1}: go to it`} onClick={() => go(i)}>
+            {i + 1}
+            {i === at && moved && <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-yellow-300 ring-2 ring-zinc-900" aria-hidden />}
+          </button>
+        ))}
+        {!keys.length && <span className="text-[12.5px] text-zinc-300 px-1 whitespace-nowrap">No keyframes yet</span>}
+      </div>
+      <button className="shrink-0 w-8 h-8 rounded-lg text-zinc-300 hover:bg-white/10 flex items-center justify-center disabled:opacity-30" aria-label="Keyframe after ( ] )" title="Keyframe after ( ] )" disabled={!keys.length} onClick={() => jump(1)}><ChevronRight size={18} /></button>
+      <button className={`shrink-0 ml-auto rounded-full ${compact ? "h-11 px-4 text-[14px]" : "h-9 px-4 text-[13.5px]"} font-bold flex items-center gap-1.5 bg-orange-500 text-zinc-950 hover:bg-orange-400`} onClick={addKeyHere} title={at !== null ? `Add a keyframe here, after keyframe ${at + 1} (Enter)` : "Add a keyframe right here, looking where the camera looks (Enter)"} data-testid="cam-add"><Plus size={16} /> Add keyframe</button>
     </div>
   );
   const pill = "rounded-full px-3.5 py-2 text-[13.5px] font-semibold flex items-center gap-1.5 text-white hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-transparent";
   const title = `Camera · Hole ${holeLabel(doc, hole.id)}`;
-  const status = at !== null ? `Keyframe ${at + 1} of ${keys.length}${moved ? " · moved" : ""}` : keys.length ? `${keys.length} keyframe${keys.length === 1 ? "" : "s"}` : "";
+  const status = at !== null ? `Keyframe ${at + 1} of ${keys.length}${moved ? " · moved: Update puts it here" : ""}` : keys.length ? "Pick a keyframe to go to it and change it" : "Fly somewhere you like, then add a keyframe";
   if (flying)
     return (
       <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui>
@@ -232,47 +243,42 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
           <div className="flex items-center gap-2">
             <div className="flex-1 min-w-0">
               <div className="text-[13px] font-semibold truncate">{title}</div>
-              <div className="text-[12px] text-zinc-300 tabular-nums">{fmtDist(alt, u)} up · lens {lens}°{status ? ` · ${status}` : ""}</div>
+              <div className="text-[12px] text-zinc-300 tabular-nums" data-testid="cam-readout">{fmtDist(alt, u)} up · lens {lens}°</div>
             </div>
             <button className="h-11 px-3.5 rounded-xl bg-white/10 text-[14px] font-semibold flex items-center gap-1" onClick={done} data-testid="cam-done"><Check size={17} /> Done</button>
           </div>
-          <div className="mt-1.5 flex items-center gap-2">
-            {chips}
-          </div>
           <input aria-label="Lens" type="range" min={15} max={110} value={lens} onChange={e => setLensTo(Number(e.target.value))} className="slider w-full h-7 mt-1" />
         </div>
-        <div className="absolute bottom-[calc(max(10px,env(safe-area-inset-bottom))+70px)] left-1/2 -translate-x-1/2 text-[12.5px] text-white/90 bg-black/45 rounded-full px-3 py-1 whitespace-nowrap">Drag the view to look around</div>
-        <div className="absolute left-3 bottom-[calc(max(10px,env(safe-area-inset-bottom))+80px)]"><Stick /></div>
-        <div className="absolute right-3 bottom-[calc(max(10px,env(safe-area-inset-bottom))+80px)] flex flex-col gap-2"><Lift dir={1} /><Lift dir={-1} /></div>
-        <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto flex items-center gap-1 glass rounded-[20px] p-1.5 border border-white/10 shadow-2xl">
-          <button className="flex-[2] h-12 rounded-2xl bg-orange-500 text-zinc-950 text-[14px] font-bold flex items-center justify-center gap-1.5" onClick={addKeyHere} data-testid="cam-add"><Plus size={18} /> Add keyframe</button>
-          {at !== null && moved && <button className="flex-1 h-12 rounded-2xl text-white text-[13px] font-semibold flex items-center justify-center gap-1 active:bg-white/15" onClick={updateKeyHere} data-testid="cam-update"><RefreshCw size={15} /> Update {at + 1}</button>}
-          <button className="flex-1 h-12 rounded-2xl text-white text-[13px] font-semibold flex items-center justify-center gap-1 active:bg-white/15 disabled:opacity-40" onClick={play} disabled={keys.length < 2} data-testid="cam-play"><Play size={15} /> Play</button>
+        <div className="absolute left-3 bottom-[calc(max(10px,env(safe-area-inset-bottom))+156px)]"><Stick /></div>
+        <div className="absolute right-3 bottom-[calc(max(10px,env(safe-area-inset-bottom))+156px)] flex flex-col gap-2"><Lift dir={1} /><Lift dir={-1} /></div>
+        <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto glass rounded-[22px] p-2 border border-white/10 shadow-2xl">
+          {strip}
+          <div className="mt-1.5 px-1 text-[12px] text-zinc-300 truncate" data-testid="cam-status">{status}</div>
+          <div className="mt-1.5 flex items-center gap-1">
+            {at !== null && <button className="flex-1 h-11 rounded-2xl bg-white/[0.1] text-white text-[13.5px] font-semibold flex items-center justify-center gap-1 active:bg-white/20 disabled:opacity-40" onClick={updateKeyHere} disabled={!moved} data-testid="cam-update"><RefreshCw size={15} /> Update {at + 1}</button>}
+            {at !== null && <button className="w-11 h-11 rounded-2xl text-white flex items-center justify-center active:bg-white/15" onClick={removeKey} aria-label={`Remove keyframe ${at + 1}`} data-testid="cam-remove"><Trash2 size={16} /></button>}
+            <button className="flex-1 h-11 rounded-2xl text-white text-[13.5px] font-semibold flex items-center justify-center gap-1 active:bg-white/15 disabled:opacity-40" onClick={play} disabled={keys.length < 2} data-testid="cam-play"><Play size={15} /> Play</button>
+          </div>
         </div>
       </div>
     );
   return (
     <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui data-testid="camera-hud">
-      <div className="absolute top-4 left-4 pointer-events-auto glass rounded-2xl px-4 py-3 text-white shadow-2xl border border-white/10 max-w-[min(520px,calc(100%-32px))]">
-        <div className="flex items-baseline gap-3">
-          <div className="text-[15px] font-semibold">{title}</div>
-          <div className="text-[12.5px] text-zinc-300 tabular-nums" data-testid="cam-readout">{fmtDist(alt, u)} up · lens {lens}°</div>
-        </div>
-        <div className="mt-2 flex items-center gap-1.5">
-          <button className="p-1 rounded-lg text-zinc-300 hover:bg-white/10 disabled:opacity-30" aria-label="Keyframe before ( [ )" title="Keyframe before ( [ )" disabled={!keys.length} onClick={() => jump(-1)}><ChevronLeft size={17} /></button>
-          {chips}
-          <button className="p-1 rounded-lg text-zinc-300 hover:bg-white/10 disabled:opacity-30" aria-label="Keyframe after ( ] )" title="Keyframe after ( ] )" disabled={!keys.length} onClick={() => jump(1)}><ChevronRight size={17} /></button>
-        </div>
-        {status && <div className="mt-1 text-[12px] text-zinc-400" data-testid="cam-status">{status}</div>}
-      </div>
-      <div className="absolute bottom-[78px] left-1/2 -translate-x-1/2 text-[12px] text-white/85 bg-black/45 rounded-lg px-2.5 py-1 whitespace-nowrap">W A S D or the arrows to move · Space or E up, Q down · Shift for faster · drag to look · scroll for the lens</div>
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-1 glass rounded-full px-1.5 py-1.5 border border-white/10 shadow-2xl">
-        <button className="rounded-full px-4 py-2 text-[13.5px] font-bold flex items-center gap-1.5 bg-orange-500 text-zinc-950 hover:bg-orange-400" onClick={addKeyHere} title="Add a keyframe right here, looking where the camera looks (Enter)" data-testid="cam-add"><Plus size={16} /> Add keyframe</button>
-        {at !== null && <button className={pill} onClick={updateKeyHere} disabled={!moved} title={`Move keyframe ${at + 1} to here (U)`} data-testid="cam-update"><RefreshCw size={14} /> Update {at + 1}</button>}
-        {at !== null && <button className={`${pill} hover:!text-red-300`} onClick={removeKey} aria-label={`Remove keyframe ${at + 1}`} title={`Remove keyframe ${at + 1}`} data-testid="cam-remove"><Trash2 size={14} /></button>}
-        <label className="flex items-center gap-2 px-2 text-[12.5px] text-zinc-300">Lens<input aria-label="Lens" type="range" min={15} max={110} value={lens} onChange={e => setLensTo(Number(e.target.value))} className="slider w-24" /></label>
-        <button className={pill} onClick={play} disabled={keys.length < 2} title={keys.length < 2 ? "Two keyframes and it can fly" : "Fly through the keyframes"} data-testid="cam-play"><Play size={14} /> Play</button>
+      <div className="absolute top-4 left-4 pointer-events-auto glass rounded-full pl-4 pr-1.5 py-1.5 text-white shadow-2xl border border-white/10 flex items-center gap-3">
+        <div className="text-[14px] font-semibold">{title}</div>
+        <div className="text-[12.5px] text-zinc-300 tabular-nums" data-testid="cam-readout">{fmtDist(alt, u)} up · lens {lens}°</div>
         <button className={pill} onClick={done} title="Back to the map (Esc)" data-testid="cam-done"><X size={15} /> Done</button>
+      </div>
+      <div className="absolute bottom-[136px] left-1/2 -translate-x-1/2 text-[12px] text-white/85 bg-black/45 rounded-lg px-2.5 py-1 whitespace-nowrap">W A S D or the arrows to move · Space or E up, Q down · Shift for faster · drag to look · scroll for the lens</div>
+      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 w-[min(760px,calc(100%-32px))] pointer-events-auto glass rounded-[24px] p-2 border border-white/10 shadow-2xl">
+        {strip}
+        <div className="mt-1.5 flex items-center gap-1">
+          <div className="flex-1 min-w-0 px-2 text-[12.5px] text-zinc-300 truncate" data-testid="cam-status">{status}</div>
+          {at !== null && <button className={`${pill} bg-white/[0.08]`} onClick={updateKeyHere} disabled={!moved} title={`Move keyframe ${at + 1} to here (U)`} data-testid="cam-update"><RefreshCw size={14} /> Update {at + 1}</button>}
+          {at !== null && <button className={`${pill} hover:!text-red-300`} onClick={removeKey} aria-label={`Remove keyframe ${at + 1}`} title={`Remove keyframe ${at + 1}`} data-testid="cam-remove"><Trash2 size={14} /></button>}
+          <label className="flex items-center gap-2 px-2 text-[12.5px] text-zinc-300">Lens<input aria-label="Lens" type="range" min={15} max={110} value={lens} onChange={e => setLensTo(Number(e.target.value))} className="slider w-24" /></label>
+          <button className={pill} onClick={play} disabled={keys.length < 2} title={keys.length < 2 ? "Two keyframes and it can fly" : "Fly through the keyframes"} data-testid="cam-play"><Play size={14} /> Play</button>
+        </div>
       </div>
     </div>
   );
