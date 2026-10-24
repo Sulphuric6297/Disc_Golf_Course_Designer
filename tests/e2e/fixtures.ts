@@ -149,9 +149,15 @@ export const editorState = (page: Page) => page.evaluate(() => {
   return { step: s.step, tool: s.tool, selectedId: s.selectedId, group: s.group, dragSelect: s.dragSelect, designSel: s.designSel, activeHoleId: s.activeHoleId, view: s.view, teeView: s.teeView, flyLook: s.flyLook };
 });
 
-/** Where a plan point (on the ground) is on screen. */
-export const screenOf = (page: Page, x: number, y: number, lift = 0) =>
-  page.evaluate(([x, y, lift]) => (window as any).__dgView.toClient(x, y, lift), [x, y, lift] as const) as Promise<{ x: number; y: number }>;
+/** The map at rest: a fit or zoom easing in on a slow machine moves what's under a click. */
+export const settled = (page: Page) =>
+  page.waitForFunction(() => { const v = (window as any).__dgView; return !v?.settled || v.settled(); }, null, { timeout: 15_000 }).catch(() => {});
+
+/** Where a plan point (on the ground) is on screen (once the map is at rest). */
+export const screenOf = async (page: Page, x: number, y: number, lift = 0) => {
+  await settled(page);
+  return page.evaluate(([x, y, lift]) => (window as any).__dgView.toClient(x, y, lift), [x, y, lift] as const) as Promise<{ x: number; y: number }>;
+};
 
 /** Plan point under a screen point. */
 export const planAt = (page: Page, x: number, y: number) =>

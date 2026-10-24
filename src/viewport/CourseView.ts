@@ -801,6 +801,14 @@ export class CourseView {
   }
 
   /** Plan point (on the ground) -> client (page) coordinates. */
+  /** The camera still on its way somewhere (a fit or a zoom easing in): what's on screen is about
+   * to move. */
+  private gliding = false;
+  /** Whether the map has come to rest (for tests: a click lands where it was aimed). */
+  settled() {
+    return this.paused || !this.gliding;
+  }
+
   toClient(x: number, y: number, lift = 0) {
     const s = this.project(new THREE.Vector3(x, this.h(x, y) + lift, y));
     const r = this.container.getBoundingClientRect();
@@ -1526,7 +1534,8 @@ export class CourseView {
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop);
     const dt = this.clock.getDelta();
-    if (this.controls.update(dt)) this.dirty = true;
+    this.gliding = this.controls.update(dt);
+    if (this.gliding) this.dirty = true;
     if (!this.fly && this.stepFree(dt)) this.dirty = true;
     if (this.fly) {
       // Held on its first picture until everything's in (a few frames drawn after), then at most
