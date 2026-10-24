@@ -199,7 +199,8 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
       : ed.tool === "draw-line" ? [shapes(["points", "freehand"])]
       : ed.tool === "draw-structure" ? [shapes(STRUCTURE_KINDS[ed.structureKind].shape === "outline" ? ["points", "box", "circle", "freehand"] : ["points", "freehand"])]
       : [];
-    return [...how, ...kit.choices.map(c => <Chip key={c.id} active={matches(ed, c)} color={c.color} onClick={() => drawChoice(c)} testid={c.id}>{c.icon}{c.label}</Chip>)];
+    // (what to put down first, then how to draw it)
+    return [...kit.choices.map(c => <Chip key={c.id} active={matches(ed, c)} color={c.color} onClick={() => drawChoice(c)} testid={c.id}>{c.icon}{c.label}</Chip>), ...how];
   }
   switch (ed.tool) {
       case "select":
