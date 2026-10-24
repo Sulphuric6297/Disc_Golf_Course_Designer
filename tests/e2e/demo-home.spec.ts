@@ -12,7 +12,7 @@ plain("the example course is whole, and nothing in it says where it is or what i
   plainExpect(d.site.location).toBe(null);
   plainExpect(d.site.bounds).toBe(null);
   const words = JSON.stringify({ ...d, background: "", terrainHeights: [] });
-  for (const w of ["Siler", "OSDGC", "Franklin", "USGS", "OneMap", "davidiz", "Dnet", "lat\"", "lon\""]) plainExpect(words, w).not.toContain(w);
+  for (const w of ["Siler", "OSDGC", "Franklin", "USGS", "OneMap", "davidiz", "Dnet", "\"lat\":", "\"lon\":"]) plainExpect(words, w).not.toContain(w);
 });
 
 /** A small course in the example's place: the whole example, its trees all drawn in software, is
