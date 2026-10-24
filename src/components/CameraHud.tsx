@@ -4,6 +4,7 @@
 import { useEffect, useState, type PointerEvent as RPointerEvent } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Check, Play, Plus, RefreshCw, Square, Trash2, X } from "lucide-react";
 import { holeLabel } from "../lib/course";
+import { flyoverOf } from "../lib/flight";
 import { fmtDist } from "../lib/units";
 import { getDoc, updateHole, useCourse, useEditor } from "../state/course";
 import { getView } from "../state/view";
@@ -62,9 +63,23 @@ const MOVES: Record<string, [number, number, number]> = {
   e: [0, 0, 1], " ": [0, 0, 1], q: [0, 0, -1], c: [0, 0, -1]
 };
 
-/** Whether a keyframe is just where the camera is (nothing to update). */
-const same = (a: FlyKey | null | undefined, b: FlyKey | null | undefined) =>
-  !!a && !!b && Math.hypot(a.x - b.x, a.y - b.y) < 0.6 && Math.abs(a.alt - b.alt) < 0.6 && Math.hypot(a.lookX - b.lookX, a.lookY - b.lookY) < 2 && Math.round(a.fov ?? 0) === Math.round(b.fov ?? 0);
+/** Which way a keyframe looks (a unit vector), over the ground as the map has it. */
+const facing = (k: FlyKey) => {
+  const g = (x: number, y: number) => getView()?.groundHeight(x, y) ?? 0;
+  const dx = k.lookX - k.x, dy = k.lookY - k.y, dz = g(k.lookX, k.lookY) + (k.lookAlt ?? 3) - (g(k.x, k.y) + k.alt);
+  const l = Math.hypot(dx, dy, dz) || 1;
+  return [dx / l, dy / l, dz / l];
+};
+
+/** Whether the camera (`cam`) is just where keyframe `k` puts it, looking the same way with the
+ * same lens (nothing to update). The way it looks is compared, not the spot it looks at: the same
+ * view can be aimed at a point nearer or farther along the same line. */
+const same = (cam: FlyKey | null | undefined, k: FlyKey | null | undefined, lens: number) => {
+  if (!cam || !k) return false;
+  const a = facing(cam), b = facing(k);
+  const turned = Math.acos(Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])) * (180 / Math.PI);
+  return Math.hypot(cam.x - k.x, cam.y - k.y) < 0.6 && Math.abs(cam.alt - k.alt) < 0.6 && turned < 0.6 && Math.round(cam.fov ?? lens) === Math.round(k.fov ?? lens);
+};
 
 /** A thumb stick: pushed, the camera moves that way (up is forward), faster the further. */
 function Stick() {
@@ -151,8 +166,8 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
       if (!k) return;
       setAlt(k.alt);
       setLens(k.fov ?? 60);
-      const { keys, at } = now();
-      setMoved(at !== null && !same(k, keys[at]));
+      const { keys, at, hole } = now();
+      setMoved(at !== null && !same(k, keys[at], flyoverOf(getDoc(), hole).fov));
     }, 150);
     return () => window.clearInterval(t);
   }, []);
