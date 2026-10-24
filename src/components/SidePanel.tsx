@@ -544,8 +544,9 @@ export function HolesColumn() {
       </div>
       <div className="glass pointer-events-auto rounded-[18px] mt-auto relative" ref={moreRef}>
         <button className={`w-full flex gap-3 items-end py-2 text-left ${slim ? "justify-center px-1" : "px-3.5"}`} onClick={() => setMore(m => !m)} aria-expanded={more} title={slim ? `${totals.complete} holes · par ${totals.par} · ${fmtDist(totals.length, u)}` : undefined} data-testid="course-totals-button">
-          {(slim ? [[totals.par, "par"]] : [[totals.complete, "holes"], [totals.par, "par"], [fmtDist(totals.length, u), "total"]]).map(([v, k]) => (
-            <span key={k as string}><span className="block text-[15px] font-bold text-zinc-50 leading-tight tabular-nums">{v}</span><span className="text-[11px] text-zinc-400">{k}</span></span>
+          {/* (slim: just the par; the rest for screen readers) */}
+          {[[totals.complete, "holes"], [totals.par, "par"], [fmtDist(totals.length, u), "total"]].map(([v, k]) => (
+            <span key={k as string} className={slim && k !== "par" ? "sr-only" : undefined}><span className="block text-[15px] font-bold text-zinc-50 leading-tight tabular-nums">{v}</span><span className="text-[11px] text-zinc-400">{k}</span></span>
           ))}
         </button>
         {more && (
@@ -563,8 +564,14 @@ export function SidePanel({ onFindSite }: { onFindSite: () => void }) {
   const i = STEPS.findIndex(s => s.id === step);
   const meta = STEPS[i];
   const { open } = useSelection();
-  // (something picked on Site: its settings here, with a way back to the step's)
-  if (open && step === "site")
+  // (something picked on Site: its settings here, with a way back to the step's. Not what was
+  // still picked when the step was opened: the step's own panel first)
+  const selectedId = useEditor(e => e.selectedId), group = useEditor(e => e.group);
+  const keyNow = selectedId ?? group.join(",");
+  const seen = useRef({ step, carried: keyNow });
+  if (seen.current.step !== step) seen.current = { step, carried: keyNow };
+  else if (seen.current.carried && seen.current.carried !== keyNow) seen.current.carried = "";
+  if (open && step === "site" && keyNow !== seen.current.carried)
     return (
       <aside className="glass w-[340px] shrink-0 rounded-[24px] overflow-y-auto" aria-label="Step panel" data-testid="side-panel">
         <div data-testid="inspector" aria-label="Selection">
