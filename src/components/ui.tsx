@@ -2,7 +2,7 @@
 // (zinc-950 behind, zinc-900 panels, zinc-800 controls) told apart by spacing rather than lines,
 // text-sm with zinc-400 for the quieter words, one orange button per view (dark words on it),
 // and a sky-blue ring where the keyboard focus is.
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { TOPICS } from "../lib/guide";
 
@@ -45,17 +45,48 @@ export const MenuRow = ({ icon, children, onClick, testid, danger, disabled, rol
   <button className={`${MENU_ROW} ${danger ? "text-red-300" : ""}`} role={role} aria-checked={checked} onClick={onClick} data-testid={testid} disabled={disabled}>{icon}{children}</button>
 );
 
-export const Section = ({ title, children, right, testid, help }: { title?: ReactNode; children: ReactNode; right?: ReactNode; testid?: string; help?: string }) => (
-  <section className="px-4 py-3" data-testid={testid}>
-    {title && (
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-semibold text-zinc-400 flex items-center gap-1.5">{title}{help && <HelpLink topic={help} label={typeof title === "string" ? title : help} />}</h3>
-        {right}
-      </div>
-    )}
-    {children}
-  </section>
-);
+/** One part of a panel shown by itself (a phone's tool row opens one setting at a time): the
+ * `testid` of the Section or Fold to show, and none of the others. Inside it, everything shows. */
+export const OnlyGroup = createContext<string | null>(null);
+/** Whether a panel's part shows, and the context its own parts get. */
+const useOnly = (testid?: string) => {
+  const only = useContext(OnlyGroup);
+  return { shown: !only || only === testid, alone: !!only && only === testid };
+};
+
+export const Section = ({ title, children, right, testid, help }: { title?: ReactNode; children: ReactNode; right?: ReactNode; testid?: string; help?: string }) => {
+  const { shown, alone } = useOnly(testid);
+  if (!shown) return null;
+  return (
+    <section className="px-4 py-3" data-testid={testid}>
+      {/* (shown alone, the panel's own heading names it: only what's beside the title stays) */}
+      {title && !alone && (
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-semibold text-zinc-400 flex items-center gap-1.5">{title}{help && <HelpLink topic={help} label={typeof title === "string" ? title : help} />}</h3>
+          {right}
+        </div>
+      )}
+      {alone && right && <div className="flex justify-end mb-2">{right}</div>}
+      <OnlyGroup.Provider value={null}>{children}</OnlyGroup.Provider>
+    </section>
+  );
+};
+
+/** A part of a panel that folds away under its title (open by itself when shown alone). */
+export const Fold = ({ title, children, testid }: { title: ReactNode; children: ReactNode; testid: string }) => {
+  const { shown, alone } = useOnly(testid);
+  if (!shown) return null;
+  if (alone) return <div className="px-4 py-3" data-testid={testid}><OnlyGroup.Provider value={null}>{children}</OnlyGroup.Provider></div>;
+  return (
+    <details className="mx-4 my-2 rounded-[16px] bg-white/[0.06] group" data-testid={testid}>
+      <summary className="cursor-pointer list-none flex items-center justify-between px-3 py-2.5 text-[13.5px] font-medium text-zinc-100">{title} <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
+      <div className="px-3 pb-3">{children}</div>
+    </details>
+  );
+};
+
+/** Shown only with the whole panel (not when one part of it is shown alone). */
+export const WholePanelOnly = ({ children }: { children: ReactNode }) => (useContext(OnlyGroup) ? null : <>{children}</>);
 
 /** The help guide opened at a topic (a panel's ? button): the app listens for this. */
 export const HELP_EVENT = "dg-help";

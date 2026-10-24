@@ -32,6 +32,7 @@ import { TOOLS, toolHint, toolOptions } from "../Toolbar";
 import { ExportProgressPill } from "../ExportProgress";
 import { ActionSheet, type SheetAction } from "./ActionSheet";
 import { BottomSheet, type Detent } from "./BottomSheet";
+import { PageTools } from "./PageTools";
 import { HereButton } from "../MyLocation";
 import { HoleStrip, ItemStrip } from "./HoleStrip";
 import { GettingStarted, openGettingStarted } from "../GettingStarted";
@@ -561,8 +562,10 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
   const { menus, openApp, openMore } = useMenus(onHelp, onGoTo);
   const panel = usePanel({ onFindSite, onMore: openMore, phone: true });
   const immersive = !!ed.teeView;
-  // (No sheet under the welcome card: it is the first step's panel, with the same two choices)
-  const sheet = !immersive && !welcome;
+  // (No sheet under the welcome card: it is the first step's panel, with the same two choices;
+  // and none on the Map step, where the page's settings are a row of tools under it)
+  const pageTools = ed.step === "map" && !immersive && !readOnly;
+  const sheet = !immersive && !welcome && !pageTools;
   const sheetH = sheet ? restH : 0;
 
   useEffect(() => {
@@ -615,9 +618,18 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
       <Woods />
       <main ref={main} className="relative flex-1 min-h-0">
         <MapViewport onContextMenu={onContextMenu} compact="phone" controlsTop={top} controlsRoom={immersive ? 0 : controlsRoom} />
-        {/* (the page over the whole map, so the sheet dragged up shows the page behind it, never
-            the 3D view; the page fits the room over a low sheet and stays put as it's pulled up) */}
-        {design && (
+        {/* (the page over the whole map, so nothing of the 3D view shows: on the Map step with its
+            tools under it, the page fitting the room above them and whatever they open; on Export
+            over a low sheet, staying put as the sheet's pulled up) */}
+        {design && pageTools && (
+          <div className="absolute inset-0 z-20 bg-zinc-950 flex flex-col" data-testid="design-layer">
+            <div className="relative flex-1 min-h-0">
+              <MapDesigner compact topInset={top} />
+            </div>
+            {!ed.designSel && <PageTools />}
+          </div>
+        )}
+        {design && !pageTools && (
           <div className="absolute inset-0 z-20 bg-zinc-950" data-testid="design-layer">
             <div className="absolute inset-x-0 top-0" style={{ bottom: Math.min(sheetH, Math.round(mainH * 0.55)) }}>
               <MapDesigner compact topInset={top} preview={ed.step === "export"} />
@@ -629,7 +641,7 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
         {!immersive && <DrawBar bottom={sheetH + 12} />}
         {ed.teeView && (ed.flyCam && !useCourse.getState().readOnly ? <CameraHud compact /> : <TeeViewHud compact />)}
         <ExportProgressPill top={immersive ? undefined : top + 4} />
-        {toasts(immersive ? 96 : sheetH + 12)}
+        {toasts(immersive ? 96 : pageTools ? 84 : sheetH + 12)}
         {welcome && !immersive && (
           <div className="absolute inset-0 z-10 flex items-end justify-center px-3 pb-3 pointer-events-none" style={{ paddingTop: top }}>{welcome}</div>
         )}

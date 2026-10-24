@@ -310,6 +310,18 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   // fingers pinching a small piece often lands just beside it)
   // (the angle shown while a piece is being turned)
   const [turning, setTurning] = useState<number | null>(null);
+  // (a phone: how tall the picked piece's toolbar is, with the setting it has open over it, so
+  // the page fits the room above them)
+  const dock = useRef<HTMLDivElement>(null);
+  const [dockH, setDockH] = useState(64);
+  const [panelOpen, setPanelOpen] = useState(false);
+  useLayoutEffect(() => {
+    const el = dock.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setDockH(Math.round(el.getBoundingClientRect().height) + 8));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [designSel, compact]);
   const tapOut = useRef<{ pid: number; x: number; y: number } | null>(null);
   // (a finger picks a piece with a tap, when it lifts without moving: a drag across a piece not
   // picked scrolls the page, as on any phone)
@@ -578,7 +590,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
 
   if (!page) return null;
   const margin = compact ? 20 : 48;
-  const fit = Math.min((size.w - margin) / page.width, (size.h - margin - (compact && designSel ? 64 : 0)) / page.height);
+  const fit = Math.min((size.w - margin) / page.width, (size.h - margin - (compact && designSel ? dockH : 0)) / page.height);
   const k = zoom ?? fit;
   kRef.current = k;
   const html = page.svg.replace(/^<svg([^>]*?) width="[^"]*" height="[^"]*"/, `<svg$1 width="${page.width * k}" height="${page.height * k}"`);
@@ -604,7 +616,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const barTop = selBox ? (selBox.y * k > 56 ? selBox.y * k - 50 : (selBox.y + selBox.h) * k + 14) : 0;
   const barLeft = selBox ? Math.max(0, Math.min(selBox.x * k, page.width * k - 420)) : 0;
   const toolbar = editing && designSel && selBox && !typing ? (
-    <PieceToolbar t={t} id={designSel} onGrow={grow} onPreviewFont={previewFont} onEditText={() => startTyping(designSel)} onDone={() => setEd({ designSel: null })} docked={compact} />
+    <PieceToolbar t={t} id={designSel} onGrow={grow} onPreviewFont={previewFont} onEditText={() => startTyping(designSel)} onDone={() => setEd({ designSel: null })} onPanel={setPanelOpen} docked={compact} />
   ) : null;
   return (
     <div className="absolute inset-0 z-20 bg-zinc-950 flex flex-col isolate overflow-hidden" style={compact ? { paddingTop: topInset } : undefined} data-testid="map-designer">
@@ -641,14 +653,14 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
           toolbar takes their place along the bottom) */}
       {compact && !designSel && <div className="glass absolute right-2 bottom-2 z-10 rounded-[22px] p-0.5">{zoomGroup}</div>}
       {compact && toolbar && (
-        <div className="absolute inset-x-2 bottom-2 z-30 flex flex-col items-center gap-1">
-          <div className="pointer-events-none rounded-full bg-black/55 px-2.5 py-0.5 text-[11.5px] text-zinc-200" data-testid="phone-hint">Drag it to move · pinch it to size</div>
+        <div ref={dock} className="absolute inset-x-2 bottom-2 z-30 flex flex-col items-center gap-1">
+          {!panelOpen && <div className="pointer-events-none rounded-full bg-black/55 px-2.5 py-0.5 text-[11.5px] text-zinc-200" data-testid="phone-hint">Drag it to move · pinch it to size</div>}
           {toolbar}
         </div>
       )}
       <div ref={box} className={`flex-1 overflow-auto ${compact ? "dg-scroll" : ""} cursor-grab`} data-testid="design-scroll" onPointerDown={onBoxDown} onPointerMove={onBoxMove} onPointerUp={onBoxUp} onPointerCancel={onBoxUp}>
         {/* (as wide as the page when zoomed in past the window, so all of it scrolls into view) */}
-        <div className={`w-max min-w-full min-h-full flex items-center justify-center ${compact ? "p-2.5" : "p-6"}`} style={compact && designSel ? { paddingBottom: 72 } : undefined}>
+        <div className={`w-max min-w-full min-h-full flex items-center justify-center ${compact ? "p-2.5" : "p-6"}`} style={compact && designSel ? { paddingBottom: dockH + 8 } : undefined}>
           <div
             ref={pageEl}
             className="relative shrink-0"
