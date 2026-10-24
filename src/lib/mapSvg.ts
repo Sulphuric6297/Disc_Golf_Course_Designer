@@ -1207,7 +1207,7 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
     }
     // Pictures, QR codes and sponsors added to the map (the course's own name filled in)
     parts.push(extrasSvg(s.mapExtras, s.sponsors, "", { hole: "", par: "", length: "", course: title, name: "" }, W, H, s.font, (id, c) => `<g data-el="${id}">${c}</g>`));
-    return { svg: wrapSvg(W, H, parts.join(""), opts.dpi), width: W, height: H, page };
+    return { svg: wrapSvg(W, H, parts.join(""), opts.dpi), width: W, height: H, page, holeLines: holeLinesOf(stats, map.toScreen) };
   }
 
   const titleH = (title ? 46 : 0) * ts + (sub ? 14 * ts : 0);
@@ -1217,7 +1217,7 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
   const map = { x: m, y: m + titleH, w: W - 2 * m - (sideW ? sideW + m * 0.6 : 0), h: H - 2 * m - titleH - (bottomH ? bottomH + m * 0.5 : 0) - 14 * ts };
   const scale = Math.min(map.w / bw, map.h / bh);
   const view: MapView = { cx: center.x, cy: center.y, rotation, scale, width: map.w, height: map.h };
-  const { svg } = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy }, "pm");
+  const { svg, toScreen } = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy }, "pm");
   if (title) parts.push(`<text x="${n(m)}" y="${n(m + 30 * ts)}" font-family="${titleStack(s.font)}" font-weight="700" font-size="${n(30 * ts)}" fill="${pal.ink}" letter-spacing="${n(keepsCase(s.font) ? 0 : 0.5 * ts)}">${esc(keepsCase(s.font) ? title : title.toUpperCase())}</text>`);
   const info = `${totals.complete} HOLES · PAR ${totals.par} · ${fmtDist(totals.length, doc.units).toUpperCase()}${layout && doc.layouts.length > 1 ? ` · ${layout.name.toUpperCase()} LAYOUT` : ""}`;
   parts.push(`<text x="${n(W - m)}" y="${n(m + 28 * ts)}" text-anchor="end" font-family="${font}" font-weight="600" font-size="${n(13 * ts)}" fill="${pal.inkSoft}">${esc(info)}</text>`);
@@ -1247,8 +1247,13 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
     }
   }
   parts.push(`<text x="${n(m)}" y="${n(H - m * 0.55)}" font-family="Inter, Arial, sans-serif" font-size="${n(7 * ts)}" fill="${pal.inkSoft}">${esc(credit)}</text>`);
-  return { svg: wrapSvg(W, H, parts.join(""), opts.dpi), width: W, height: H, page };
+  return { svg: wrapSvg(W, H, parts.join(""), opts.dpi), width: W, height: H, page, holeLines: holeLinesOf(stats, p => { const q = toScreen(p); return { x: q.x + map.x, y: q.y + map.y }; }) };
 };
+
+/** Where each finished hole's line of play is on the page (its points, in the page's units): for
+ * the public course page, to light up a hole on the map's picture. */
+const holeLinesOf = (stats: HoleStats[], at: (p: P) => P) =>
+  stats.filter(st => st.complete && st.line.length >= 2).map(st => ({ holeId: st.holeId, pts: st.line.map(at) }));
 
 export const wrapSvg = (W: number, H: number, body: string, dpi?: number, fontCss = "") =>
   `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${dpi ? n((W / 72) * dpi) : n(W)}" height="${dpi ? n((H / 72) * dpi) : n(H)}" viewBox="0 0 ${n(W)} ${n(H)}">${fontCss ? `<style>${fontCss}</style>` : ""}${body}</svg>`;

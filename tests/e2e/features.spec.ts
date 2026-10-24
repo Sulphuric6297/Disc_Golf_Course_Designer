@@ -751,7 +751,7 @@ test("OB and beyond: the app's side, or either side chosen (named by the compass
 test("tall grass has no underbrush until you pick some; then it grows there in 3D, and its kind and sections are set like a wood's", async ({ page }) => {
   await blankCourse(page);
   const id = await page.evaluate(() => {
-    (window as any).__dgEditor().set({ areaKind: "rough" });
+    (window as any).__dgEditor().set({ areaKind: "rough", tool: "select" });
     (window as any).__dgActions.addDrawn("area", [{ x: 300, y: 400 }, { x: 700, y: 400 }, { x: 700, y: 700 }, { x: 300, y: 700 }]);
     const d = (window as any).__dgCourse();
     const a = d.items[d.items.length - 1];

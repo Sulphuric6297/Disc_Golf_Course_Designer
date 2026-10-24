@@ -34,7 +34,7 @@ export async function publishSite(courseId: string, progress: (s: string) => voi
   const doc = normalizeCourse(safeDoc({ ...c.doc, background: photo }));
   const stats = courseStats(doc);
   const totals = courseTotals(doc, stats);
-  const info = {
+  const info: { holes: { id: string; line?: [number, number][] }[] } & Record<string, unknown> = {
     name: doc.name, designer: doc.designer, units: doc.units,
     totals: { holes: doc.holes.reduce((n, h) => n + playsOf(doc, h.id), 0), par: totals.par, length: Math.round(totals.length), climb: Math.round(totals.climb) },
     holes: stats.map(s => {
@@ -52,6 +52,12 @@ export async function publishSite(courseId: string, progress: (s: string) => voi
     progress("Drawing the course map");
     const p = await paintedForPrint(page => (72 * 2000) / page.width, () => renderPoster(doc, art));
     files.push({ name: "map.webp", data: await picture(p.svg, p.width, p.height, 2000) });
+    // (each hole's line on that picture, as fractions of it: the page lights a hole up there)
+    const r4 = (v: number) => Math.round(v * 10000) / 10000;
+    for (const l of p.holeLines ?? []) {
+      const h = info.holes.find(x => x.id === l.holeId);
+      if (h) h.line = l.pts.map(q => [r4(q.x / p.width), r4(q.y / p.height)]);
+    }
   }
   if (parts.teeSigns) {
     for (let i = 0; i < doc.holes.length; i++) {
