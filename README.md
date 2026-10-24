@@ -1,5 +1,9 @@
 # HyzerLab
 
+**[Open HyzerLab in your browser](https://sulphuric6297.github.io/Disc_Golf_Course_Designer/)** — free, no install and no account needed.
+
+Start with **Thunder Hollow**, the example course, or choose **Show me round** for a quick tour. To see the maps, open the example and click **3 Map**.
+
 HyzerLab is a disc golf course designer. It runs in your browser, and it was built 100% using AI. I'm not a coder. I'm an IT provider nerd. I wanted this to exist, and AI let me make it happen. I'm pretty happy about that.
 
 It's the old trope. I had a problem, couldn't find software that fit the need, so I built it myself. Apparently everyone has this origin story now. This one is also mine.
@@ -38,6 +42,14 @@ And yes, there's probably some slop in here too. I've tried my best to keep it t
 
 ## Trying it out
 
+[Open the browser demo](https://sulphuric6297.github.io/Disc_Golf_Course_Designer/). You don't need Node.js or Docker to use it.
+
+The demo keeps your courses in this browser, on this device. Save a course file from the course menu for a backup or to move it to another device. Clearing browser data can remove your saved courses. Accounts, shared editing and comments are available when you [host it yourself](#hosting-it-yourself).
+
+Found something broken? [Open an issue](https://github.com/Sulphuric6297/Disc_Golf_Course_Designer/issues/new) with what you were doing, what happened, and your browser and device. Please leave out private property details and precise locations.
+
+### Running locally
+
 You'll need Node.js (version 22 is what it's built with). Then:
 
 ```
@@ -47,6 +59,8 @@ npm run check      # typecheck, build and tests
 ```
 
 That's the demo version: no accounts, and your courses stay in your browser.
+
+<a id="your-own-server-hyzerlab"></a>
 
 ## Hosting it yourself
 
