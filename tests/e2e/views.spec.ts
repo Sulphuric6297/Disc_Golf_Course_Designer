@@ -266,10 +266,14 @@ test("flyover settings: height, speed and field of view change the flight, one u
     const v = (window as any).__dgView;
     const f = v.flightPath(id);
     const mid = f.pts[Math.floor(f.pts.length / 2)];
-    return { alt: mid.y - v.h(mid.x, mid.z), dur: f.dur, fov: f.fov[0] };
+    // (the hole as it was laid out: on a slow machine a click can land a little off the spot aimed at)
+    const line = v.doc.stats.find((x: any) => x.holeId === id).line as { x: number; y: number }[];
+    let len = 0;
+    for (let i = 1; i < line.length; i++) len += Math.hypot(line[i].x - line[i - 1].x, line[i].y - line[i - 1].y);
+    return { alt: mid.y - v.h(mid.x, mid.z), dur: f.dur, fov: f.fov[0], len };
   }, hole.id);
   const before = await flight();
-  expect(before.dur).toBeCloseTo(500 / 70, 1);
+  expect(before.dur).toBeCloseTo(before.len / 70, 1);
   const slider = (name: string) => page.getByTestId("flyover-settings").getByRole("slider", { name });
   // (for all holes; then this hole's own)
   await page.getByTestId("flyover-settings").getByRole("radio", { name: "All holes" }).click();
