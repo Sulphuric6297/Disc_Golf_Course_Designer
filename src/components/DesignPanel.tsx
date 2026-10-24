@@ -10,7 +10,7 @@ import { RESTRICTED } from "../lib/symbols";
 import { MapLookPanel } from "./MapLookPanel";
 import { useEffect, useRef, useState } from "react";
 import type { MapStyle, PaperSize, ReliefLook, SignSettings } from "../types";
-import { Button, ColorInput, Field, Section, Segmented, Slider, Toggle } from "./ui";
+import { Button, ColorInput, Field, Fold, Section, Segmented, Slider, Toggle, WholePanelOnly } from "./ui";
 import { HolePageLook, PrintPanel, ScorecardSettings } from "./PrintPanel";
 import { FontPicker } from "./FontPicker";
 import { fontsIn } from "../lib/fontLoad";
@@ -241,24 +241,19 @@ export function DesignPanel() {
           <Section title="Map style" testid="map-style" help="map-style">
             <MapLookPanel />
           </Section>
-      <Section title="Drawn on the map" help="drawn-on-map">
+      <Section title="Drawn on the map" help="drawn-on-map" testid="drawn-on-map">
         <Toggle label="Throw lines" checked={s.throwLines} onChange={v => setStyle({ throwLines: v })} />
         <Toggle label="Distances on the lines" checked={s.distances} onChange={v => setStyle({ distances: v })} />
         <Toggle label="Putting circle (10 m)" checked={s.circle} onChange={v => setStyle({ circle: v })} />
         {!(s.hillshade && s.reliefLook === "contours") && <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />}
       </Section>
-      <details className="mx-4 my-2 rounded-[16px] bg-white/[0.06] group" data-testid="fold-title">
-        <summary className="cursor-pointer list-none flex items-center justify-between px-3 py-2.5 text-[13.5px] font-medium text-zinc-100">Lettering <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
-        <div className="px-3 pb-3">
+      <Fold title="Lettering" testid="fold-title">
         <Field label="Font (the title and the map's labels)">
           <FontPicker label="Map font" value={s.font} onPick={f => setStyle({ font: f ?? "Script" })} used={fontsIn(doc)} testid="map-font" />
         </Field>
         <Slider label="Label size" min={0.7} max={1.6} step={0.05} value={s.labelScale} onChange={v => setStyle({ labelScale: v })} format={v => `${Math.round(v * 100)}%`} />
-        </div>
-      </details>
-      <details className="mx-4 my-2 rounded-[16px] bg-white/[0.06] group" data-testid="fold-paper">
-        <summary className="cursor-pointer list-none flex items-center justify-between px-3 py-2.5 text-[13.5px] font-medium text-zinc-100">Paper <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
-        <div className="px-3 pb-3">
+      </Fold>
+      <Fold title="Paper" testid="fold-paper">
         <Field label="Frame">
           <Segmented label="Frame" value={s.frame ?? "none"} onChange={v => setStyle({ frame: v === "none" ? undefined : v })} options={[{ value: "none", label: "None" }, { value: "mat", label: "Mat" }, { value: "line", label: "Fine line" }, { value: "band", label: "Band" }]} />
         </Field>
@@ -275,16 +270,17 @@ export function DesignPanel() {
             {s.rotation !== 0 && <Button small onClick={() => setStyle({ rotation: 0 })}>North up</Button>}
           </div>
         </div>
-        </div>
-      </details>
+      </Fold>
         </PrintPanel>
       )}
       {tab === "sign" && <PrintPanel t="sign" top={<TeeSignSettings />}>{toGeneral}</PrintPanel>}
       {tab === "page" && <PrintPanel t="page" top={<HolePageLook />}>{toGeneral}</PrintPanel>}
       {tab === "scorecard" && <PrintPanel t="card" top={<ScorecardSettings />}>{toGeneral}</PrintPanel>}
-      <div className="px-4 py-3">
-        <Button full onClick={() => useEditor.getState().set({ step: "export" })} testid="next-step">Next: Export <ArrowRight size={15} /></Button>
-      </div>
+      <WholePanelOnly>
+        <div className="px-4 py-3">
+          <Button full onClick={() => useEditor.getState().set({ step: "export" })} testid="next-step">Next: Export <ArrowRight size={15} /></Button>
+        </div>
+      </WholePanelOnly>
     </>
   );
 }

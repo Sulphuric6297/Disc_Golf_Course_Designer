@@ -146,6 +146,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   // moves the zoomed page about (a finger scrolls it by itself)
   const pan = useRef<{ x: number; y: number; sl: number; st: number; id: number } | null>(null);
   const onBoxDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "touch" && useEditor.getState().designSel && !pageEl.current?.contains(e.target as Node)) { tapOut.current = { pid: e.pointerId, x: e.clientX, y: e.clientY }; return; }
     if (e.button !== 0 || e.pointerType === "touch" || !box.current) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     pan.current = { x: e.clientX, y: e.clientY, sl: box.current.scrollLeft, st: box.current.scrollTop, id: e.pointerId };
@@ -158,6 +159,11 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     el.style.cursor = "grabbing";
   };
   const onBoxUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const out = tapOut.current;
+    if (out && out.pid === e.pointerId && !pageEl.current?.contains(e.target as Node)) {
+      tapOut.current = null;
+      if (Math.hypot(e.clientX - out.x, e.clientY - out.y) < 10) setEd({ designSel: null });
+    }
     if (pan.current?.id !== e.pointerId) return;
     pan.current = null;
     if (box.current) box.current.style.cursor = "";
@@ -202,7 +208,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const [hover, setHover] = useState<{ id: string; box: Box } | null>(null);
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
   const [typing, setTyping] = useState<{ id: string; text: string; box: Box } | null>(null);
-  const drag = useRef<{ mode: "move" | "size" | "turn"; rot0?: number; a0?: number; c?: { x: number; y: number }; rot?: number; id: string; el: SVGGElement; orig: string; cx: number; cy: number; pid: number; k: number; W: number; H: number; box: Box; anchor: { x: number; y: number }; corner: { x: number; y: number }; f: number; dx: number; dy: number; lines: { x: number[]; y: number[] } } | null>(null);
+  const drag = useRef<{ mode: "move" | "size" | "turn"; finger?: boolean; rot0?: number; a0?: number; c?: { x: number; y: number }; rot?: number; id: string; el: SVGGElement; orig: string; cx: number; cy: number; pid: number; k: number; W: number; H: number; box: Box; anchor: { x: number; y: number }; corner: { x: number; y: number }; f: number; dx: number; dy: number; lines: { x: number[]; y: number[] } } | null>(null);
   const elOf = (id: string) =>
     svgHost.current?.querySelector(id.startsWith("label:") ? `[data-label="${CSS.escape(id.slice(6))}"]` : `[data-el="${CSS.escape(id)}"]`) as SVGGElement | null;
   const boxOf = (el: Element): Box => {
@@ -285,8 +291,10 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     const b = boxOf(el);
     return b.w * b.h > W * H * 0.5;
   };
-  /** Where things line up: the page's edges and middle, and every other piece's. */
-  const linesFor = (id: string) => {
+  /** Where things line up: the page's edges and middle, and every other piece's (for a finger,
+   * only their middles: on a small page with pieces close together, every edge too would catch a
+   * finger every few pixels and the piece would drag as if it weighed a ton). */
+  const linesFor = (id: string, finger = false) => {
     const W = page!.width, H = page!.height, xs = [0, W / 2, W], ys = [0, H / 2, H];
     if (t === "card") ys.push(H / 4, (H * 3) / 4);
     for (const g of Array.from(svgHost.current?.querySelectorAll("[data-el]") ?? [])) {
@@ -294,6 +302,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       if (!gid || gid === id || (t === "map" && gid === "map")) continue;
       const b = boxOf(g);
       if (b.w > W * 0.95 && b.h > H * 0.95) continue;
+      if (finger) { xs.push(b.x + b.w / 2); ys.push(b.y + b.h / 2); continue; }
       xs.push(b.x, b.x + b.w / 2, b.x + b.w);
       ys.push(b.y, b.y + b.h / 2, b.y + b.h);
     }
@@ -310,6 +319,18 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   // fingers pinching a small piece often lands just beside it)
   // (the angle shown while a piece is being turned)
   const [turning, setTurning] = useState<number | null>(null);
+  // (a phone: how tall the picked piece's toolbar is, with the setting it has open over it, so
+  // the page fits the room above them)
+  const dock = useRef<HTMLDivElement>(null);
+  const [dockH, setDockH] = useState(64);
+  const [panelOpen, setPanelOpen] = useState(false);
+  useLayoutEffect(() => {
+    const el = dock.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setDockH(Math.round(el.getBoundingClientRect().height) + 8));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [designSel, compact]);
   const tapOut = useRef<{ pid: number; x: number; y: number } | null>(null);
   // (a finger picks a piece with a tap, when it lifts without moving: a drag across a piece not
   // picked scrolls the page, as on any phone)
@@ -322,9 +343,12 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     const corner = (e.target as HTMLElement).closest?.("[data-corner]") as HTMLElement | null;
     const turn = !!(e.target as HTMLElement).closest?.("[data-turn-handle]");
     if ((e.target as HTMLElement).closest?.("[data-page-bar]")) return;
-    let id = corner || turn ? designSel : pieceAt(e.target, e.clientX, e.clientY);
+    const finger = e.pointerType === "touch";
+    let id = corner || turn || (finger && designSel && onPicked.current(e.clientX, e.clientY)) ? designSel : pieceAt(e.target, e.clientX, e.clientY);
     if (id && designSel && id !== designSel && !corner && !turn && fillsPage(id)) id = null;
-    if (!id && e.pointerType === "touch" && designSel) { tapOut.current = { pid: e.pointerId, x: e.clientX, y: e.clientY }; return; }
+    // (a finger, with something picked: a tap anywhere off it lets go, the way a design app does on
+    // a phone; the next tap picks; a drag there moves the page)
+    if (finger && designSel && id !== designSel) { tapOut.current = { pid: e.pointerId, x: e.clientX, y: e.clientY }; return; }
     if (!id) { setEd({ designSel: null }); return; }
     const el = elOf(id);
     if (!el) return;
@@ -349,9 +373,9 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       return;
     }
     drag.current = {
-      mode: corner ? "size" : "move", id, el, orig: el.getAttribute("transform") ?? "", cx: e.clientX, cy: e.clientY, pid: e.pointerId, k: kRef.current, W, H, box: b,
+      mode: corner ? "size" : "move", finger, id, el, orig: el.getAttribute("transform") ?? "", cx: e.clientX, cy: e.clientY, pid: e.pointerId, k: kRef.current, W, H, box: b,
       corner: { x: b.x + sx * b.w, y: b.y + sy * b.h }, anchor: { x: b.x + (1 - sx) * b.w, y: b.y + (1 - sy) * b.h }, f: 1, dx: 0, dy: 0,
-      lines: corner ? { x: [], y: [] } : linesFor(id)
+      lines: corner ? { x: [], y: [] } : linesFor(id, finger)
     };
     setHover(null);
   };
@@ -385,7 +409,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     let dx = (e.clientX - d.cx) / d.k, dy = (e.clientY - d.cy) / d.k;
     if (d.mode === "move") {
       // (snapped onto the nearest line within a few pixels, shown pink)
-      const reach = 6 / d.k, gx: number[] = [], gy: number[] = [];
+      const reach = (d.finger ? 4 : 6) / d.k, gx: number[] = [], gy: number[] = [];
       if (!e.altKey && !d.id.startsWith("label:")) {
         const b = d.box;
         const sxp = snap([b.x + dx, b.x + dx + b.w / 2, b.x + dx + b.w], d.lines.x, reach);
@@ -475,7 +499,18 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     if (svgHost.current) fitTexts(svgHost.current);
   };
   // A finger on the picked piece (or its corners) moves it, never the page under it: the browser
-  // is told not to scroll before it starts to (a style saying so isn't heard on a drawing's shapes)
+  // is told not to scroll before it starts to (a style saying so isn't heard on a drawing's shapes).
+  // On it is anywhere in its box, as picking has it: not only on its ink, and not lost to a panel
+  // behind it (the number on a tee sign's band), or the page scrolls along under the finger and
+  // the piece barely seems to move
+  const onPicked = useRef<(x: number, y: number) => boolean>(() => false);
+  onPicked.current = (x, y) => {
+    const id = useEditor.getState().designSel, host = svgHost.current;
+    const g = id ? elOf(id) : null;
+    if (!g || !host) return false;
+    const b = boxOf(g), hr = host.getBoundingClientRect(), k = kRef.current, px = (x - hr.left) / k, py = (y - hr.top) / k, m = 6 / k;
+    return px >= b.x - m && px <= b.x + b.w + m && py >= b.y - m && py <= b.y + b.h + m;
+  };
   useEffect(() => {
     const el = pageEl.current;
     if (!el || !editing) return;
@@ -484,9 +519,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       if (!id || ev.touches.length > 1) return;
       const tg = ev.target as Element;
       if (tg.closest?.("[data-corner],[data-turn-handle]")) { ev.preventDefault(); return; }
-      const g = id.startsWith("label:") ? tg.closest?.("[data-label]") : tg.closest?.("[data-el]");
-      const under = g ? (id.startsWith("label:") ? `label:${g.getAttribute("data-label")}` : g.getAttribute("data-el")) : null;
-      if (under === id) ev.preventDefault();
+      if (onPicked.current(ev.touches[0].clientX, ev.touches[0].clientY)) ev.preventDefault();
     };
     el.addEventListener("touchstart", onStart, { passive: false });
     return () => el.removeEventListener("touchstart", onStart);
@@ -578,7 +611,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
 
   if (!page) return null;
   const margin = compact ? 20 : 48;
-  const fit = Math.min((size.w - margin) / page.width, (size.h - margin - (compact && designSel ? 64 : 0)) / page.height);
+  const fit = Math.min((size.w - margin) / page.width, (size.h - margin - (compact && designSel ? dockH : 0)) / page.height);
   const k = zoom ?? fit;
   kRef.current = k;
   const html = page.svg.replace(/^<svg([^>]*?) width="[^"]*" height="[^"]*"/, `<svg$1 width="${page.width * k}" height="${page.height * k}"`);
@@ -604,7 +637,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const barTop = selBox ? (selBox.y * k > 56 ? selBox.y * k - 50 : (selBox.y + selBox.h) * k + 14) : 0;
   const barLeft = selBox ? Math.max(0, Math.min(selBox.x * k, page.width * k - 420)) : 0;
   const toolbar = editing && designSel && selBox && !typing ? (
-    <PieceToolbar t={t} id={designSel} onGrow={grow} onPreviewFont={previewFont} onEditText={() => startTyping(designSel)} onDone={() => setEd({ designSel: null })} docked={compact} />
+    <PieceToolbar t={t} id={designSel} onGrow={grow} onPreviewFont={previewFont} onEditText={() => startTyping(designSel)} onDone={() => setEd({ designSel: null })} onPanel={setPanelOpen} docked={compact} />
   ) : null;
   return (
     <div className="absolute inset-0 z-20 bg-zinc-950 flex flex-col isolate overflow-hidden" style={compact ? { paddingTop: topInset } : undefined} data-testid="map-designer">
@@ -641,14 +674,14 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
           toolbar takes their place along the bottom) */}
       {compact && !designSel && <div className="glass absolute right-2 bottom-2 z-10 rounded-[22px] p-0.5">{zoomGroup}</div>}
       {compact && toolbar && (
-        <div className="absolute inset-x-2 bottom-2 z-30 flex flex-col items-center gap-1">
-          <div className="pointer-events-none rounded-full bg-black/55 px-2.5 py-0.5 text-[11.5px] text-zinc-200" data-testid="phone-hint">Drag it to move · pinch it to size</div>
+        <div ref={dock} className="absolute inset-x-2 bottom-2 z-30 flex flex-col items-center gap-1">
+          {!panelOpen && <div className="pointer-events-none rounded-full bg-black/55 px-2.5 py-0.5 text-[11.5px] text-zinc-200" data-testid="phone-hint">Drag it to move · pinch it to size</div>}
           {toolbar}
         </div>
       )}
       <div ref={box} className={`flex-1 overflow-auto ${compact ? "dg-scroll" : ""} cursor-grab`} data-testid="design-scroll" onPointerDown={onBoxDown} onPointerMove={onBoxMove} onPointerUp={onBoxUp} onPointerCancel={onBoxUp}>
         {/* (as wide as the page when zoomed in past the window, so all of it scrolls into view) */}
-        <div className={`w-max min-w-full min-h-full flex items-center justify-center ${compact ? "p-2.5" : "p-6"}`} style={compact && designSel ? { paddingBottom: 72 } : undefined}>
+        <div className={`w-max min-w-full min-h-full flex items-center justify-center ${compact ? "p-2.5" : "p-6"}`} style={compact && designSel ? { paddingBottom: dockH + 8 } : undefined}>
           <div
             ref={pageEl}
             className="relative shrink-0"
