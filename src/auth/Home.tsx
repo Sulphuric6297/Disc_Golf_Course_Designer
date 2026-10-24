@@ -17,10 +17,10 @@ import { Woods } from "../components/Woods";
 import { Loading } from "../components/ui";
 
 /** The help topics most worth a look, in the order you'd need them. */
-const LEARN = ["first-course", "find-site", "tees-pins", "ground", "tee-here", "map-style", "print"];
+export const LEARN = ["first-course", "find-site", "tees-pins", "ground", "tee-here", "map-style", "print"];
 
 /** Tips, one at a time (a different one each visit). */
-const TIPS = [
+export const TIPS = [
   "Press Ctrl+K and type what you're after, like \"tee sign\" or \"fairway width\". It finds any setting and takes you right to it.",
   "On a phone, hold your finger on open ground. You get a menu right there: a tee here, a pin here, bend the hole here, or measure from here.",
   "The Ground tool (G) paints the terrain. Raise a mound, flatten a tee pad, or smooth out a bumpy bit of survey data.",
@@ -30,7 +30,7 @@ const TIPS = [
   "The painted map styles repaint as you change the course, so you can design straight on the printed map's look."
 ];
 
-const ago = (t: number) => {
+export const ago = (t: number) => {
   const s = Math.max(0, (Date.now() - t) / 1000);
   if (s < 60) return "just now";
   const m = s / 60, h = m / 60, d = h / 24;

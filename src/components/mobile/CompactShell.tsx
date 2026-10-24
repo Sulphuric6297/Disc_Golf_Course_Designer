@@ -9,7 +9,7 @@
 // a thing opens its menu (the right-click).
 import { Woods } from "../Woods";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
-import { Menu, ChevronDown, ListChecks, Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Search, Trash2, Undo2, Unlock, X } from "lucide-react";
+import { Compass, LayoutGrid, Menu, ChevronDown, ListChecks, Check, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, Lock, Maximize2, PanelLeftClose, PanelLeftOpen, Plane, Redo2, Save, Search, Trash2, Undo2, Unlock, X } from "lucide-react";
 import { STRUCTURE_KINDS } from "../../constants";
 import { holeLabel, holeNumber } from "../../lib/course";
 import { courseIssues, courseStats, courseTotals, holeStats, openIssues, playsOf } from "../../lib/holeStats";
@@ -39,12 +39,19 @@ import { GettingStarted, openGettingStarted } from "../GettingStarted";
 import { useGps } from "../../state/gps";
 import { accountActions, CourseChip } from "../../auth/AccountMenu";
 import { LOCKED, showLocked, type LockedId } from "../DemoNote";
+import { goDemoHome } from "../DemoHome";
+import { startTour } from "../Tour";
 
 /** The phone menu's rows for what a server adds, in the demo: there, with a lock. */
-const demoActions = () => (["comments", "history", "courses", "share", "account", "demo"] as LockedId[]).map(id => {
-  const Icon = LOCKED[id].icon;
-  return { label: id === "demo" ? "About the demo" : `${LOCKED[id].title} (locked)`, icon: <Icon size={19} />, run: () => showLocked(id), testid: `menu-locked-${id}` };
-});
+const demoActions = () => [
+  // (the demo's own Courses page, and the walk round its example)
+  { label: "Courses", icon: <LayoutGrid size={19} />, run: goDemoHome, testid: "menu-courses" },
+  { label: "A walk round the example", icon: <Compass size={19} />, run: () => void startTour(), testid: "menu-tour" },
+  ...(["comments", "history", "share", "account", "demo"] as LockedId[]).map(id => {
+    const Icon = LOCKED[id].icon;
+    return { label: id === "demo" ? "About the demo" : `${LOCKED[id].title} (locked)`, icon: <Icon size={19} />, run: () => showLocked(id), testid: `menu-locked-${id}` };
+  })
+];
 import { ViewerPanelBody } from "../../auth/ViewerPanel";
 import { SERVER } from "../../auth/api";
 import { CoursePageButton, SITE_TOKEN } from "../../auth/PublicSite";

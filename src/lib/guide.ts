@@ -65,6 +65,12 @@ export const TOPICS: Topic[] = [
     words: "workflow order site design map export tabs"
   },
   {
+    id: "demo-courses", section: "start", title: "Courses and the example course",
+    body: "The demo opens on Courses: every course kept in this browser, with the example course, Thunder Hollow, first. Click one to open it. New course starts one of your own, and Open a file brings in a course file.\n\nThunder Hollow is a whole course to look round: 18 holes with their woods, water, paths, signs and maps. Change anything in it. It's your copy, kept here like your own courses, and the circle arrow on its card puts it back as it first was.\n\nA walk round the example takes you through it a stop at a time: the map, a hole, 3D, the view from a tee, the tools, Checks, the printed map and Export. Next and Back (or the arrow keys) go through it, and × or Esc leaves it. The logo at the top left brings you back to Courses (on a phone, Courses is in the menu).",
+    words: "courses dashboard home example thunder hollow demo tour walk round show me round start over new course open file",
+    path: "The logo › Courses"
+  },
+  {
     id: "first-course", section: "start", title: "Your first course",
     body: "This gets you from nothing to a printed map. None of it is final, so don't overthink it.\n\nIf you just want to try things without a real place, Start on open ground on the welcome screen skips the Site step.",
     steps: [

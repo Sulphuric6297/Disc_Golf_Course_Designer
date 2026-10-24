@@ -13,6 +13,7 @@ import type { PlanMeta } from "../lib/storage";
 import { AccountMenu, goHome } from "../auth/AccountMenu";
 import { useAllowed } from "../auth/perms";
 import { DemoBar } from "./DemoNote";
+import { goDemoHome } from "./DemoHome";
 import { CoursePageButton, SITE_TOKEN } from "../auth/PublicSite";
 import { SERVER } from "../auth/api";
 import { FOCUS, MENU_HEAD, MenuRow, POPOVER } from "./ui";
@@ -60,7 +61,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
   return (
     <header className="glass relative h-[50px] shrink-0 mx-2.5 mt-2.5 rounded-[22px] flex items-center gap-2 pl-2.5 pr-2 z-30">
       {/* (a course page's visitor: back to the page, not to a course list they don't have) */}
-      {SITE_TOKEN ? <><CoursePageButton /><Logo /></> : SERVER ? <button className={`shrink-0 rounded-full ${FOCUS}`} aria-label="Courses" title="Courses" onClick={goHome} data-testid="logo-home"><Logo /></button> : <Logo />}
+      {SITE_TOKEN ? <><CoursePageButton /><Logo /></> : SERVER ? <button className={`shrink-0 rounded-full ${FOCUS}`} aria-label="Courses" title="Courses" onClick={goHome} data-testid="logo-home"><Logo /></button> : <button className={`shrink-0 rounded-full ${FOCUS}`} aria-label="Courses" title="Courses" onClick={goDemoHome} data-testid="logo-home"><Logo /></button>}
       <div className="flex items-center min-w-0" ref={menuRef}>
         {readOnly ? <span className="text-zinc-50 font-semibold text-sm px-1.5 py-1 max-w-[230px] truncate" data-testid="course-title">{name}</span> : <input
           aria-label="Course name"

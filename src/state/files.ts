@@ -5,6 +5,7 @@ import { SERVER } from "../auth/api";
 import { SITE_TOKEN } from "../auth/PublicSite";
 import { listServerCourses, newServerCourse, openServerCourse, removeServerCourse, restoreServer, startServerAutosave, startUnsaved } from "../auth/courses";
 import { createEmptyCourse, normalizeCourse } from "../lib/course";
+import { EXAMPLE_ID, fetchExample, startsBlank } from "../lib/example";
 import { AUTOSAVE_KEY, idbGet, idbSet, listPlans, loadPlan, removePlan, storePlan, type PlanMeta } from "../lib/storage";
 import type { CourseDoc } from "../types";
 import { getDoc, useCourse, useEditor } from "./course";
@@ -55,6 +56,26 @@ export const openRecent = async (id: string) => {
   if (current.id !== id) await archiveCurrent();
   await removePlan(id);
   show(normalizeCourse({ ...data, id }));
+};
+
+/** The example course: the copy kept in this browser if there is one (changes and all), or a
+ * fresh one. */
+export const openExample = async () => {
+  if (getDoc().id === EXAMPLE_ID) return;
+  if ((await listPlans()).some(p => p.id === EXAMPLE_ID)) return openRecent(EXAMPLE_ID);
+  const doc = await fetchExample();
+  await archiveCurrent();
+  show(doc);
+};
+/** The example as it first was, in place of the copy kept here. */
+export const restartExample = async () => {
+  const doc = await fetchExample();
+  if (getDoc().id !== EXAMPLE_ID) {
+    await removePlan(EXAMPLE_ID);
+    await archiveCurrent();
+  }
+  show(doc);
+  toast("The example is back as it was.", "success");
 };
 
 export const recentCourses = (): Promise<PlanMeta[]> => (SERVER ? listServerCourses() : listPlans());
@@ -128,6 +149,15 @@ export const restoreAutosave = async () => {
     }
   } catch (err) {
     console.warn("Couldn't read the autosave", err);
+  }
+  // (nothing here yet: a new visitor to the demo gets the example course to look round)
+  if (!SERVER && !startsBlank()) {
+    try {
+      show(await fetchExample());
+      return true;
+    } catch (err) {
+      console.warn("Couldn't load the example course", err);
+    }
   }
   return false;
 };

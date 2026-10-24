@@ -351,7 +351,7 @@ export function Toolbar() {
     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-20 max-w-[calc(100%-24px)]">
       {options && <div className="flex flex-wrap justify-center gap-1.5 max-w-[760px]" data-testid="tool-options">{options}</div>}
       {hint && <div className="text-xs text-zinc-100 glass backdrop-blur rounded-lg px-3 py-1.5 ring-1 ring-white/10 text-center" data-testid="tool-hint">{hint}</div>}
-      <div className="flex items-center gap-0.5 max-w-full glass backdrop-blur rounded-2xl px-1.5 py-1.5 shadow-xl shadow-black/40 ring-1 ring-white/10" role="toolbar" aria-label="Tools">
+      <div className="flex items-center gap-0.5 max-w-full glass backdrop-blur rounded-2xl px-1.5 py-1.5 shadow-xl shadow-black/40 ring-1 ring-white/10" role="toolbar" aria-label="Tools" data-testid="tool-bar">
         {shown.map((t, i) => (
           <div key={t.id} className="flex items-center shrink-0">
             {i > 0 && shown[i - 1].group !== t.group && <div className="w-px h-5 bg-white/[0.12] mx-1" />}
