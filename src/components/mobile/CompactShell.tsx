@@ -28,7 +28,7 @@ import { MapDesigner } from "../MapDesigner";
 import { STEPS, STEP_ICONS, StepContent, touchWords } from "../SidePanel";
 import { TeeViewHud } from "../TeeViewHud";
 import { CameraHud } from "../CameraHud";
-import { TOOLS, toolHint, toolOptions } from "../Toolbar";
+import { TOOLS, pickTool, toolHint, toolOf, toolOptions } from "../Toolbar";
 import { ExportProgressPill } from "../ExportProgress";
 import { ActionSheet, type SheetAction } from "./ActionSheet";
 import { BottomSheet, type Detent } from "./BottomSheet";
@@ -67,7 +67,9 @@ type ShellProps = {
 const TOOL_TITLES: Record<string, string> = {
   "add-hole": "New hole", "add-tee": "Another tee", "add-basket": "Another pin", "add-mando": "Mando", "add-dropzone": "Drop zone",
   "draw-area": "Draw an area", "draw-line": "Draw a line", sculpt: "Shape the ground", "draw-structure": "Build", "add-tree": "Trees", "add-amenity": "Amenities",
-  "add-label": "Text label", measure: "Measure"
+  "add-label": "Text label", measure: "Measure",
+  // (the tools named for what they put down)
+  rules: "OB and rules", paths: "Paths and roads", water: "Water", trees: "Trees and woods", grass: "Grass and ground", build: "Build"
 };
 
 /** The shell never scrolls (it can't with `overflow: clip`; older Safari only has `hidden`, which
@@ -207,8 +209,8 @@ function ToolStrip() {
 }
 
 function Tools() {
-  const tool = useEditor(e => e.tool);
-  const set = useEditor(e => e.set);
+  const ed = useEditor();
+  const tool = toolOf(ed)?.id;
   const row = useRef<HTMLDivElement>(null);
   useEffect(() => {
     // Keep the active tool in sight
@@ -218,23 +220,23 @@ function Tools() {
     const l = el.offsetLeft - box.offsetLeft, r = l + el.offsetWidth;
     if (l < box.scrollLeft || r > box.scrollLeft + box.clientWidth) box.scrollTo({ left: l - 12, behavior: "smooth" });
   }, [tool]);
-  const pick = (mode: (typeof TOOLS)[number]["mode"]) => {
-    if (mode !== tool) stopDrawing();
-    set({ tool: mode });
+  const pick = (t: (typeof TOOLS)[number]) => {
+    if (t.id !== tool) stopDrawing();
+    pickTool(t);
   };
   return (
     <div className="flex items-center gap-1 pl-2 pr-1.5 pb-2" data-testid="tool-strip">
       <div ref={row} role="toolbar" aria-label="Tools" className="flex-1 min-w-0 flex gap-1 overflow-x-auto dg-noscrollbar dg-fade-r touch-pan-x pr-6">
         {TOOLS.map(t => {
-          const on = tool === t.mode;
+          const on = tool === t.id;
           return (
             <button
-              key={t.mode}
-              data-tool={t.mode}
-              data-testid={`tool-${t.mode}`}
+              key={t.id}
+              data-tool={t.id}
+              data-testid={`tool-${t.id}`}
               aria-label={touchWords(t.label)}
               aria-pressed={on}
-              onClick={() => pick(t.mode)}
+              onClick={() => pick(t)}
               className={`shrink-0 min-w-[56px] h-[54px] px-1.5 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${on ? "bg-orange-500 text-zinc-950 shadow-lg shadow-orange-900/40" : "text-zinc-300 active:bg-white/[0.13] bg-white/[0.07]"}`}
             >
               {t.icon}
@@ -249,14 +251,14 @@ function Tools() {
 
 function ToolHeader() {
   const ed = useEditor();
-  const t = TOOLS.find(x => x.mode === ed.tool);
+  const t = toolOf(ed);
   const options = toolOptions(ed);
   const hint = toolHint(ed, true);
   return (
     <div className="pb-3" data-testid="tool-header">
       <div className="touch-none flex items-start gap-2 pl-4 pr-2">
         <div className="flex-1 min-w-0 pt-1">
-          <div className="text-[16px] font-bold text-zinc-50 flex items-center gap-2" data-testid="sheet-title"><span className="text-orange-300">{t?.icon}</span>{TOOL_TITLES[ed.tool] ?? t?.short}</div>
+          <div className="text-[16px] font-bold text-zinc-50 flex items-center gap-2" data-testid="sheet-title"><span className="text-orange-300">{t?.icon}</span>{t?.choices ? TOOL_TITLES[t.id] ?? t.short : TOOL_TITLES[ed.tool] ?? t?.short}</div>
           {hint && <p className="text-[14px] leading-snug text-zinc-300 mt-0.5" data-testid="tool-hint">{hint}</p>}
         </div>
         <button className={iconBtn} aria-label="Back to Select" title="Back to Select" onClick={() => { stopDrawing(); ed.set({ tool: "select" }); }} data-testid="tool-close"><X size={20} /></button>

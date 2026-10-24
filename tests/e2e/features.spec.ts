@@ -33,7 +33,7 @@ test("drawing an OB area: click corners, double-click to finish; Backspace and E
 
 test("an area's corners can be dragged, a mid dot adds one, and the area moves once selected", async ({ page }) => {
   await blankCourse(page);
-  await page.keyboard.press("o");
+  await page.keyboard.press("w");
   await page.getByTestId("area-kind-water").click();
   for (const [x, y] of [[300, 300], [600, 300], [600, 500]]) await clickPlan(page, x, y);
   await page.keyboard.press("Enter");
@@ -61,7 +61,7 @@ test("lines: an OB line and a walking path with its width", async ({ page }) => 
   await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "line").length).toBe(1);
   await page.getByRole("slider", { name: "Width" }).fill("12");
   await expect.poll(async () => (await course(page)).items[0].width).toBe(12);
-  await page.keyboard.press("l");
+  await page.keyboard.press("o");
   await page.getByTestId("line-kind-ob").click();
   // (below the map's controls at the top right)
   await clickPlan(page, 1500, 600);
@@ -232,7 +232,7 @@ test("a building as a rectangle by two clicks (Rectangle comes first for buildin
   await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "area").length).toBe(1);
   const c = (await course(page)).items.find((i: any) => i.type === "area");
   for (const p of c.points) expect(Math.hypot(p.x - 700, p.y - 500)).toBeCloseTo(60, -1);
-  // Esc between the two clicks drops it (the Area tool again: a finished shape goes back to Select)
+  // Esc between the two clicks drops it (the area tool again: a finished shape goes back to Select)
   await page.keyboard.press("o");
   await page.getByTestId("draw-shape-box").click();
   await clickPlan(page, 300, 700);
@@ -244,7 +244,7 @@ test("a building as a rectangle by two clicks (Rectangle comes first for buildin
 
 test("a freehand line, drawn by dragging", async ({ page }) => {
   await blankCourse(page);
-  await page.keyboard.press("l");
+  await page.keyboard.press("w");
   await page.getByTestId("line-kind-stream").click();
   await page.getByTestId("draw-shape-freehand").click();
   await expect(page.getByTestId("tool-hint")).toContainText("Drag to draw");

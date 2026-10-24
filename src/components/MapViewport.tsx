@@ -175,7 +175,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     view?.setTool({ mode: ed.tool, areaKind: ed.areaKind, lineKind: ed.lineKind, structureKind: ed.structureKind, shape: ed.drawShape, dragSelect: ed.dragSelect, treeKind: ed.treeKind, brush: { size: ed.brushSize, strength: ed.brushStrength, ground: ed.groundBrush } }, ed.teeLevel);
   }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.structureKind, ed.drawShape, ed.teeLevel, ed.dragSelect, ed.treeKind, ed.brushSize, ed.brushStrength, ed.groundBrush]);
   useEffect(() => { view?.setPose(ed.view === "2d" ? "top" : "tilt"); }, [view, ed.view]);
-  // (a patch is drawn with the Area tool; leaving the tool drops the patch)
+  // (a patch is drawn as an area; leaving the tool drops the patch)
   useEffect(() => { if (ed.tool !== "draw-area" && ed.patchFor) useEditor.getState().set({ patchFor: null }); }, [ed.tool, ed.patchFor]);
   // (going to another step, Map say, leaves the tee view and any flyover: they're the map's)
   const stepWas = useRef(ed.step);

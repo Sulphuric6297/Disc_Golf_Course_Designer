@@ -10,7 +10,7 @@ import { ViewerPanel } from "./auth/ViewerPanel";
 import { HolesColumn, ProblemsPanel, SidePanel } from "./components/SidePanel";
 import { MapViewport } from "./components/MapViewport";
 import { getView } from "./state/view";
-import { Toolbar, TOOLS } from "./components/Toolbar";
+import { Toolbar, TOOLS, CHOICE_KEYS, drawChoice, pickTool } from "./components/Toolbar";
 import { Inspector } from "./components/Inspector";
 import { stepHole } from "./components/HoleSteps";
 import { GoTo } from "./components/GoTo";
@@ -286,8 +286,10 @@ export default function App() {
       if (k === "Q") { view?.rotateBy(-30); return; }
       if (k === "E") { view?.rotateBy(30); return; }
       if (k === "N") { view?.resetNorth(); return; }
+      const choice = CHOICE_KEYS[k] ? TOOLS.flatMap(t => t.choices ?? []).find(c => c.id === CHOICE_KEYS[k]) : undefined;
+      if (choice) { drawChoice(choice); return; }
       const tool = TOOLS.find(t => t.key === k);
-      if (tool) s.set({ tool: tool.mode });
+      if (tool) pickTool(tool);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

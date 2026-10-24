@@ -14,7 +14,7 @@ import { select } from "../state/actions";
 import { useCourse, useEditor } from "../state/course";
 import { getView } from "../state/view";
 import { STEPS } from "./SidePanel";
-import { TOOLS } from "./Toolbar";
+import { TOOLS, drawChoice, pickTool } from "./Toolbar";
 import type { CourseItem } from "../types";
 
 /** `find`: what typing matches (its name, not its figures); `nums`: a hole's numbers, first when
@@ -56,7 +56,11 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: (topic?
       });
     });
     STEPS.forEach((s, i) => out.push({ key: `step:${s.id}`, text: s.label, find: s.label, sub: `Step ${i + 1}`, icon: <MapPin size={15} />, run: () => useEditor.getState().set({ step: s.id, tool: "select", teeView: null, flyover: false }) }));
-    for (const t of TOOLS) out.push({ key: `tool:${t.mode}`, text: t.short, find: t.short, sub: t.key, icon: <Wrench size={15} />, run: () => { toMap(); useEditor.getState().set({ tool: t.mode }); } });
+    for (const t of TOOLS) {
+      out.push({ key: `tool:${t.id}`, text: t.short, find: `${t.short} ${t.label}`, sub: t.key, icon: <Wrench size={15} />, run: () => { toMap(); pickTool(t); } });
+      // (and each thing it has, by its own name: "fence" finds Build's Fence)
+      for (const c of t.choices ?? []) out.push({ key: `tool:${t.id}:${c.id}`, text: c.label, find: c.label, sub: t.short, icon: <Wrench size={15} />, run: () => { toMap(); drawChoice(c); } });
+    }
     for (const i of doc.items) {
       const n = named(i);
       if (n) out.push({ key: `item:${i.id}`, text: n.name, find: `${n.name} ${n.kind}`, sub: n.kind, icon: <MapPin size={15} />, run: () => { toMap(); select(i.id); requestAnimationFrame(() => getView()?.reveal(i.id)); } });
