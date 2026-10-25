@@ -246,6 +246,10 @@ export default function App() {
 
   // Keyboard shortcuts
   useEffect(() => {
+    // (what the pointer last pressed: a control focused by a click isn't one reached with the keyboard)
+    let pointed: Element | null = null;
+    const onPointer = (e: PointerEvent) => { pointed = e.target as Element; };
+    window.addEventListener("pointerdown", onPointer, true);
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       // Keys go to text fields; sliders, checkboxes and color pickers keep the shortcuts (except
@@ -298,7 +302,8 @@ export default function App() {
         // (a shape begun but too short to finish: the drawing says so itself)
         if (s.drawPoints > 0) return;
         // (on a button, a link or a menu row reached with the keyboard, Enter is that control's)
-        if (target.closest?.("button,a,summary,[role=button],[role=menuitem],[role=option],[role=radio],[role=tab]") && target.matches?.(":focus-visible")) return;
+        const control = target.closest?.("button,a,summary,[role=button],[role=menuitem],[role=option],[role=radio],[role=tab]");
+        if (control && !control.contains(pointed)) return;
         // The view from the tee: of the hole picked, or of the tee or basket picked (from that tee);
         // a button just clicked (a hole's row, say) isn't pressed again by it
         const d = getDoc();
@@ -342,7 +347,7 @@ export default function App() {
       if (tool) pickTool(tool);
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("pointerdown", onPointer, true); };
   }, []);
 
   const empty = useMemo(() => !doc.background && !doc.holes.length && !doc.items.length, [doc]);

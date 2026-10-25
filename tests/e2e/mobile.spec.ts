@@ -503,15 +503,16 @@ test.describe("phone", () => {
       await expect(page.getByTestId("piece-toolbar")).toBeVisible();
       const r = (await page.locator(`[data-testid=design-page] [data-el="${id}"]`).boundingBox())!;
       const at = { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-      // (a finger moving a pixel at a time: the piece stays with it nearly all the way)
+      // (a finger moving a pixel at a time: the piece stays with it, never more than the finger's
+      // few pixels of snapping behind)
       await touch("touchStart", [at]);
-      let held = 0;
+      let worst = 0;
       for (let k = 1; k <= 60; k++) {
         await touch("touchMove", [{ x: at.x + k, y: at.y + k / 2 }]);
-        if (Math.abs((await left(id)) - r.x - k) > 2) held++;
+        worst = Math.max(worst, Math.abs((await left(id)) - r.x - k));
       }
       await touch("touchEnd", []);
-      expect(held).toBeLessThan(15);
+      expect(worst).toBeLessThanOrEqual(5);
       await expect.poll(async () => (await left(id)) - r.x).toBeGreaterThan(50);
     }
     // A tap beside what's picked (on another piece, or off the page) lets go of it

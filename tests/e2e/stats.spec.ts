@@ -328,7 +328,7 @@ test.describe("safety and design checks", () => {
     tee.padWidth = 3;
     doc.items.push(createTree({ x: 118, y: 302 }, { radius: 6 }));
     const t = designChecks(doc, doc.holes.map(h => holeStats(doc, h))).map(i => i.text).join("\n");
-    expect(t).toContain("Hole 1's blue tee pad is 3 × 10 ft (at least 4 × 10 ft recommended).");
+    expect(t).toContain("Hole 1's blue tee pad is 3 × 12 ft (at least 4 × 10 ft recommended).");
     expect(t).toMatch(/tree stands within 20 ft in front/);
     expect(t).toMatch(/shorter than the 100 ft minimum/);
   });
