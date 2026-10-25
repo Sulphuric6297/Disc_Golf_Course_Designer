@@ -63,6 +63,8 @@ export const spotHere = (sure = 16, ms = 8000) =>
     };
     const off = useGps.subscribe(check);
     const timer = window.setInterval(check, 500);
+    // (a phone standing still may not send a new reading for a while: one asked for now)
+    if (watch !== null) navigator.geolocation.getCurrentPosition(onReading, () => {}, { enableHighAccuracy: true, maximumAge: 0, timeout: ms });
   });
 
 /** Whether this browser can say where it is (a secure page with location), on a site placed on the earth. */
