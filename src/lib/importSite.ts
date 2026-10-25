@@ -1,5 +1,6 @@
 // Bringing in a real site: the satellite photo, the ground's elevation, the trees on the photo and
-// what OpenStreetMap knows (paths, roads, water, parking, buildings). Everything comes from free
+// what OpenStreetMap knows (paths, roads, water, parking, buildings). What it says it brought in
+// is kept with the site (its notes), to read again on the Site step. Everything comes from free
 // services with no keys, as in the Security Camera Planner.
 import { clamp } from "../constants";
 import type { AreaItem, CourseDoc, CourseItem, Hole, LineItem, P, SiteInfo, TreeItem } from "../types";
@@ -238,7 +239,11 @@ export const reframeDesign = (design: { holes: Hole[]; items: CourseItem[] }, fr
 };
 
 /** Said when OpenStreetMap couldn't be reached. */
-export const OSM_UNREACHABLE = "Couldn't reach OpenStreetMap: paths, roads and water weren't brought in.";
+export const OSM_UNREACHABLE = "Couldn't reach OpenStreetMap, so paths, roads, water and buildings weren't brought in.";
+/** Said when OpenStreetMap has nothing on the site. */
+export const OSM_NOTHING = "OpenStreetMap has nothing mapped here.";
+/** What OpenStreetMap is asked for, while it's asked. */
+export const OSM_ASKING = "Looking up paths, roads, water and buildings on OpenStreetMap…";
 
 export const importSite = async (selection: SiteSelection, opts: ImportOptions): Promise<ImportedSite> => {
   const location = selection.center;
@@ -274,13 +279,23 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
 
   // Trees and ground measured from the air, where a survey covers it
   let lidar: CourseDoc["lidar"];
+  // (none covers the site: remembered, so the Site step says so instead of offering to look)
+  let noLidar = false;
   if (opts.lidar) {
     const what = "Measuring trees and ground from the air (LiDAR)…";
     status("lidar", what, 0);
+    let failed = false;
     const got = await fetchLidar({ ...bounds, width, height }, f => status("lidar", what, f)).catch(err => {
       console.warn("LiDAR failed", err);
+      failed = true;
       return null;
     });
+    const fromPhoto = opts.trees && opts.imagery === "satellite";
+    if (!got && failed) notes.push(`Couldn't read the aerial survey this time${fromPhoto ? ": the trees came from the photo" : ""}.`);
+    else if (!got) {
+      noLidar = true;
+      notes.push(`No aerial survey covers this spot${fromPhoto ? ": the trees came from the photo" : ""}.`);
+    }
     if (got) {
       const g = groundOnGrid(got.measured, width, height, grid);
       terrainHeights = g.heights;
@@ -305,12 +320,12 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   let mapped: CourseItem[] = [];
   let osmFailed = false;
   if (opts.osm) {
-    const ask = "Looking up paths, water and roads on OpenStreetMap…";
+    const ask = OSM_ASKING;
     status("osm", ask);
     try {
       const found = await osmItems(bounds, width, height, i => status("osm", i ? "OpenStreetMap is busy: asking another server…" : ask));
       mapped = found.items;
-      notes.push(found.summary ? `From OpenStreetMap: ${found.summary}.` : "OpenStreetMap has no paths, roads or water mapped here.");
+      notes.push(found.summary ? `From OpenStreetMap: ${found.summary}.` : OSM_NOTHING);
     } catch (err) {
       console.warn("OpenStreetMap lookup failed", err);
       osmFailed = true;
@@ -363,7 +378,10 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       bounds,
       baseElevationFt: Math.round(baseFt * 10) / 10,
       imagerySource,
-      elevationSource
+      elevationSource,
+      // (OpenStreetMap out of reach: said in a toast of its own now, and kept here with the rest)
+      notes: osmFailed ? [...notes, OSM_UNREACHABLE] : notes,
+      ...(noLidar ? { noLidar } : {})
     },
     trees,
     mapped,

@@ -49,7 +49,9 @@ test("the Design step shows the printed map; its styles are the painted map in e
   await expect(pageSvg).toContainText("PAR 3");
   await expect(pageSvg).toContainText("350");
   await page.getByRole("tab", { name: "Scorecard" }).click();
-  await expect(pageSvg).toContainText("Distance or Par");
+  // (its Par row, and the +/− column only a scorecard has)
+  await expect(pageSvg).toContainText("Par");
+  await expect(pageSvg).toContainText("+/−");
 });
 
 test("turning the map to fill the page", async ({ page }) => {
@@ -167,8 +169,10 @@ test("light and shadow: the sun, shadows and brightness repaint the Forest map, 
   await set(panel, "Brightness", "0.3");
   await expect.poll(async () => (await course(page)).style.light).toBe(0.3);
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
+  // (Reset shows once the tone is changed, and puts the style's own back)
   await panel.getByRole("button", { name: "Reset" }).click();
-  await expect.poll(async () => (await course(page)).style.light).toBe(0);
+  await expect.poll(async () => (await course(page)).style.light ?? 0).toBe(0);
+  await expect(panel.getByRole("button", { name: "Reset" })).toHaveCount(0);
 });
 
 test("picking a basket mark changes the map's baskets", async ({ page }) => {
@@ -177,20 +181,23 @@ test("picking a basket mark changes the map's baskets", async ({ page }) => {
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "3 Map" }).click();
   const pageSvg = page.getByTestId("design-page");
-  // (the marks are shared by every page: the General tab)
+  // (the marks are shared by every page: the General tab, which shows a tee sign, its hole's
+  // basket on its map and in its green up close)
   await page.getByRole("tab", { name: "General" }).click();
   await expect(page.getByTestId("basket-mark-basket")).toHaveAttribute("aria-checked", "true");
-  await expect(pageSvg.locator('[data-mark="basket"]')).toHaveCount(1);
+  await expect(pageSvg.locator('[data-mark="basket"]').first()).toBeAttached();
   await page.getByTestId("basket-mark-flag").click();
   await expect.poll(async () => (await course(page)).style.basketMark).toBe("flag");
   await expect(page.getByTestId("basket-mark-flag")).toHaveAttribute("aria-checked", "true");
-  await expect(pageSvg.locator('[data-mark="flag"]')).toHaveCount(1);
+  await expect(pageSvg.locator('[data-mark="flag"]').first()).toBeAttached();
   await expect(pageSvg.locator('[data-mark="basket"]')).toHaveCount(0);
   await page.getByTestId("basket-mark-number").click();
   await expect.poll(async () => (await course(page)).style.basketMark).toBe("number");
-  await expect(pageSvg.locator('[data-mark="number"]')).toContainText("1");
-  // Another color keeps the mark chosen
+  await expect(pageSvg.locator('[data-mark="number"]').first()).toContainText("1");
+  // The course map: its one basket with the mark chosen; another color keeps it
   await page.getByRole("tab", { name: "Course map" }).click();
+  await expect(pageSvg.locator('[data-mark="number"]')).toHaveCount(1);
+  await expect(pageSvg.locator('[data-mark="flag"]')).toHaveCount(0);
   await page.getByTestId("colors-trees-deep").click();
   await expect.poll(async () => (await course(page)).style.trees).toBe("#2a3d2e");
   expect((await course(page)).style.basketMark).toBe("number");
@@ -294,7 +301,9 @@ plain("tee signs: wide and tall layouts, notes, next hole", () => {
 plain("scorecard like the classic course card: Date, Par, Course; par and lengths; Name and the holes; two to a page; the logo", () => {
   const doc = sample();
   const s = renderScorecard(doc);
-  for (const t of ["Distance or Par", "Name ↴", "Main (ft)", "Gold (ft)", ">Total<", "+/−", ">Date<", ">Par<", ">Course<", "The Hollow Disc Golf Course"]) plainExpect(s.svg, t).toContain(t);
+  for (const t of [">Name<", "Main (ft)", "Gold (ft)", ">Total<", "+/−", ">Date<", ">Par<", ">Course<", "The Hollow Disc Golf Course"]) plainExpect(s.svg, t).toContain(t);
+  // (Par twice on each card: beside Date at the top, and the row over the lengths)
+  plainExpect(s.svg.match(/>Par</g)?.length ?? 0).toBeGreaterThanOrEqual(4);
   plainExpect(s.svg).not.toContain("PLAYER");
   // Two cards on the page, a cut line between
   plainExpect(s.svg.match(/data-part="scorecard"/g)).toHaveLength(2);
@@ -1000,7 +1009,7 @@ test("the map stays put on the Design page; its labels are dragged, hidden and p
   expect((await style()).page?.map).toBeUndefined();
 });
 
-test("the Design page zooms with the wheel and pans with a press and drag", async ({ page }) => {
+test("the Design page zooms with Ctrl and the wheel and pans with a press and drag", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
@@ -1011,7 +1020,10 @@ test("the Design page zooms with the wheel and pans with a press and drag", asyn
   const scroller = page.getByTestId("design-scroll");
   const area = (await scroller.boundingBox())!;
   await page.mouse.move(area.x + area.width * 0.6, area.y + area.height * 0.4);
+  // (the wheel on its own scrolls the page; with Ctrl it zooms)
+  await page.keyboard.down("Control");
   for (let i = 0; i < 6; i++) await page.mouse.wheel(0, -240);
+  await page.keyboard.up("Control");
   await expect.poll(zoom).toBeGreaterThan(z0 * 1.6);
   // Dragged on the map (away from its labels): the page moves under the pointer
   const s0 = await scroller.evaluate(el => ({ x: el.scrollLeft, y: el.scrollTop }));
@@ -1217,9 +1229,9 @@ test("tee sign settings: one hole's own given to the holes picked (Apply to hole
   await page.getByTestId("apply-holes").getByRole("checkbox", { name: "All holes" }).check();
   await page.getByTestId("apply-holes").getByRole("button", { name: "Apply", exact: true }).click();
   await expect.poll(signs).toEqual(["hidden", "hidden"]);
-  // From All holes: the picked hole follows them again
+  // From Every hole: the picked hole put back to the every-hole sign
   await scope.getByRole("radio", { name: "Every hole" }).click();
-  await panel.getByTestId("sign-apply").getByRole("button", { name: "Apply to holes…" }).click();
+  await panel.getByTestId("sign-apply").getByRole("button", { name: "Put holes back to the every-hole sign…" }).click();
   await page.getByTestId("apply-holes").getByRole("button", { name: own === 0 ? "Hole 2" : "Hole 1" }).click();
   await page.getByTestId("apply-holes").getByRole("button", { name: "Apply", exact: true }).click();
   await expect.poll(async () => (await course(page)).holes[own === 0 ? 1 : 0].sign).toBeUndefined();

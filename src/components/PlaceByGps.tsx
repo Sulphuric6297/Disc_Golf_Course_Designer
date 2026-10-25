@@ -1,6 +1,7 @@
-// On the course with a phone: a tee, basket or anything else put where you stand. The phone's
-// position is read for a few seconds, the weak readings dropped and the rest averaged (each by how
-// sure it is), then the item is moved there in one step.
+// On the course with a tablet: a tee, basket or anything else put where you stand. Its position
+// is read for a few seconds, the weak readings dropped and the rest averaged (each by how sure it
+// is), then the item is moved there in one step. (A phone has Move here on its strip instead, and
+// a computer isn't carried round the course.)
 import { useEffect, useRef, useState } from "react";
 import { LocateFixed, X } from "lucide-react";
 import { geoRefOf, toPlanXY } from "../lib/geoRef";
@@ -9,6 +10,7 @@ import { updateItem, useCourse } from "../state/course";
 import type { CourseItem, P } from "../types";
 import { getView } from "../state/view";
 import { Button } from "./ui";
+import { useLayout, useTouch } from "./useLayout";
 
 /** How long to listen, and the most readings kept. */
 const LISTEN_MS = 10_000, MOST = 20;
@@ -35,6 +37,8 @@ export const canLocate = (doc: Parameters<typeof geoRefOf>[0]) =>
 export function PlaceByGps({ item, inline = false }: { item: Extract<CourseItem, { x: number; y: number }>; inline?: boolean }) {
   const doc = useCourse(s => s.doc);
   const units = doc.units;
+  const touch = useTouch();
+  const phone = useLayout() === "phone";
   const [fixes, setFixes] = useState<Fix[] | null>(null);
   const [error, setError] = useState("");
   const [left, setLeft] = useState(0);
@@ -44,7 +48,7 @@ export function PlaceByGps({ item, inline = false }: { item: Extract<CourseItem,
   // (another item picked: start over)
   useEffect(() => { stop(); setFixes(null); setError(""); }, [item.id]);
   const ref = geoRefOf(doc);
-  if (!canLocate(doc) || !ref) return null;
+  if (!touch || phone || !canLocate(doc) || !ref) return null;
   const start = () => {
     setError(""); setFixes([]);
     const t0 = Date.now();
@@ -77,7 +81,7 @@ export function PlaceByGps({ item, inline = false }: { item: Extract<CourseItem,
     <div className={`${inline ? "mb-2" : "mx-4 mb-3"} rounded-[16px] bg-white/[0.06] p-3`} data-testid="place-by-gps">
       {fixes === null ? (
         <>
-          <Button small full onClick={start} testid="gps-start"><LocateFixed size={15} /> Put it where I'm standing</Button>
+          <Button small full onClick={start} testid="gps-start" title="Move it to where you're standing"><LocateFixed size={15} /> Move it here</Button>
           {error && <p role="alert" className="text-[12px] text-red-300 mt-1.5">{error}</p>}
         </>
       ) : (
@@ -92,7 +96,7 @@ export function PlaceByGps({ item, inline = false }: { item: Extract<CourseItem,
             {at ? ` · ${fmtDist(off, units)} from where it is` : ""}
           </div>
           {listening && <div className="mt-2 h-1.5 rounded-full bg-white/[0.1] overflow-hidden"><div className="h-full bg-orange-400 transition-[width] duration-300" style={{ width: `${100 - (left / LISTEN_MS) * 100}%` }} /></div>}
-          {at && <div className="mt-2"><Button small full tone="primary" onClick={place} testid="gps-place">Move it here</Button></div>}
+          {at && <div className="mt-2"><Button small full tone="primary" onClick={place} testid="gps-place">Move it</Button></div>}
         </>
       )}
     </div>

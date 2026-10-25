@@ -107,10 +107,11 @@ test("a building, a shelter and a deck dragged out as rectangles; kind and roof 
   // The inspector offers kinds of the same shape, and a building's roof
   await page.evaluate(id => (window as any).__dgActions.select(id), all[0].id);
   await expect(page.getByTestId("inspector-title")).toHaveText("Building");
-  await expect(page.getByLabel("Structure kind").locator("option")).toHaveText(["Building", "Shelter", "Deck"]);
+  const kind = page.getByRole("radiogroup", { name: "Structure kind" });
+  await expect(kind.getByRole("radio")).toHaveText(["Building", "Shelter", "Deck"]);
   await page.getByRole("radiogroup", { name: "Roof" }).getByRole("radio", { name: "Hip" }).click();
   await expect.poll(async () => (await structures(page))[0].roof).toBe("hip");
-  await page.getByLabel("Structure kind").selectOption("shelter");
+  await kind.getByRole("radio", { name: "Shelter" }).click();
   await expect.poll(async () => (await structures(page))[0].kind).toBe("shelter");
   await expect.poll(async () => (await model(page, all[0].id))?.parts).toEqual(MATERIALS.shelter);
 });
@@ -182,7 +183,7 @@ test("buildings like the Security Camera Planner's: looks, roofs, colors, turnin
   await expect.poll(async () => (await structures(page))[0].height ?? 12).toBeGreaterThan(14);
   await page.keyboard.press("2");
   // A shelter as a gazebo: eight sides and a pyramid roof
-  await page.getByLabel("Structure kind").selectOption("shelter");
+  await page.getByRole("radiogroup", { name: "Structure kind" }).getByRole("radio", { name: "Shelter" }).click();
   await page.getByRole("radiogroup", { name: "Shelter shape" }).getByRole("radio", { name: "Gazebo" }).click();
   await expect.poll(async () => (await structures(page))[0].points.length).toBe(8);
   expect((await structures(page))[0].roof).toBe("pyramid");

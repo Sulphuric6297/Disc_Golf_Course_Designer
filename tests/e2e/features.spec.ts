@@ -21,7 +21,7 @@ test("drawing an OB area: click corners, double-click to finish; Backspace and E
   expect(area.points).toHaveLength(4);
   expect((await editorState(page)).tool).toBe("select");
   expect((await editorState(page)).selectedId).toBe(area.id);
-  await expect(page.getByTestId("inspector-title")).toHaveText("Out of bounds (OB)");
+  await expect(page.getByTestId("inspector-title")).toHaveText("OB area");
   // Esc drops a shape being drawn
   await page.keyboard.press("o");
   await clickPlan(page, 900, 300);
@@ -119,7 +119,8 @@ test("trees, benches and labels; delete, duplicate and lock", async ({ page }) =
   await expect(page.getByTestId("amenity-chip").locator('[data-symbol="trash"]')).toBeAttached();
   await page.keyboard.press("k");
   await clickPlan(page, 800, 800);
-  await page.keyboard.press("Escape");
+  // (put down, it's picked with Select back, its text ready to type over)
+  await expect.poll(async () => (await editorState(page)).tool).toBe("select");
   await page.getByLabel("Label text").fill("Clubhouse");
   await expect.poll(async () => (await course(page)).items.find((i: any) => i.type === "label").text).toBe("Clubhouse");
   // Duplicate, then delete the copy
@@ -578,7 +579,7 @@ plain("a tree's crown is drawn as wide as set, whatever its height (all the way 
   }
 });
 
-test("an OB line set to belong to two holes with the hole buttons; back to the whole course", async ({ page }) => {
+test("an OB line set to be OB for two holes with the hole buttons; back to all holes", async ({ page }) => {
   await blankCourse(page);
   const a = await addHole(page, { x: 300, y: 400 }, { x: 700, y: 400 });
   const b = await addHole(page, { x: 300, y: 600 }, { x: 700, y: 600 });
@@ -595,7 +596,7 @@ test("an OB line set to belong to two holes with the hole buttons; back to the w
   await picker.getByRole("button", { name: "Hole 2" }).click();
   await expect.poll(async () => { const l = await line(); return [l.holeId, l.alsoHoles]; }).toEqual([a.id, [b.id]]);
   await expect(picker.getByRole("button", { name: "Hole 2" })).toHaveAttribute("aria-pressed", "true");
-  await picker.getByRole("button", { name: "Whole course" }).click();
+  await picker.getByRole("button", { name: "All holes" }).click();
   await expect.poll(async () => (await line()).holeId).toBeUndefined();
 });
 
@@ -651,11 +652,12 @@ test("a creek wider in one stretch: drag the square on its bank; the Width slide
   await page.mouse.dblclick(wb.x + wb.width / 2, wb.y + wb.height / 2);
   await expect.poll(async () => (await creek()).widths?.[2]).toBe(1);
   // Made a path: one width all along (the creek's widths kept for when it is a creek again)
-  await page.getByLabel("Line kind").selectOption("path");
+  const lineKind = page.getByRole("radiogroup", { name: "Line kind" });
+  await lineKind.getByRole("radio", { name: "Walking path" }).click();
   await expect(page.getByText("Width (all along)")).toHaveCount(0);
   await expect(page.getByTestId("line-widths")).toHaveCount(0);
   await expect(page.locator('[data-handle="linewidth"]')).toHaveCount(0);
-  await page.getByLabel("Line kind").selectOption("stream");
+  await lineKind.getByRole("radio", { name: "Stream" }).click();
   await expect(page.getByTestId("line-widths")).toBeVisible();
   // Even width: the same all along
   await page.getByRole("button", { name: "Even width" }).click();
@@ -759,7 +761,7 @@ test("tall grass has no underbrush until you pick some; then it grows there in 3
     return a.id;
   });
   const insp = page.getByTestId("inspector");
-  const brush = insp.getByRole("radiogroup", { name: "Underbrush" });
+  const brush = insp.getByRole("radiogroup", { name: "Underbrush", exact: true });
   await expect(brush.getByRole("radio", { name: "None" })).toHaveAttribute("aria-checked", "true");
   const grows = () => page.evaluate(id => (window as any).__dgView.shapes.has(`woods:${id}:under`), id);
   expect(await grows()).toBe(false);
@@ -767,7 +769,7 @@ test("tall grass has no underbrush until you pick some; then it grows there in 3
   await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === id).underbrush).toBe("light");
   await expect.poll(grows, { timeout: 30_000 }).toBe(true);
   // (what grows: weeds, say)
-  await insp.getByTestId("brush-kind").selectOption("weeds");
+  await insp.getByTestId("brush-kind").getByRole("radio", { name: "Weeds" }).click();
   await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === id).brushKind).toBe("weeds");
   // Back to none: gone again
   await brush.getByRole("radio", { name: "None" }).click();

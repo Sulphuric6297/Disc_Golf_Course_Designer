@@ -42,7 +42,7 @@ test("a slow frame doesn't skip the flyover", async ({ page }) => {
   await page.keyboard.press("Escape");
   await page.getByTestId("hole-row").click();
   await page.getByTestId("flyover").click();
-  await expect(page.getByTestId("hud-flyover")).toHaveText(/Flying/);
+  await expect(page.getByTestId("hud-flyover")).toHaveText(/Stop/);
   // The page is busy for longer than a short flight (like a first frame compiling shaders)
   const before = await page.evaluate(() => {
     const p = (window as any).__dgView.flyProgress();
@@ -54,7 +54,7 @@ test("a slow frame doesn't skip the flyover", async ({ page }) => {
   const after = await page.evaluate(() => (window as any).__dgView.flyProgress());
   expect(after).not.toBeNull();
   expect(after - before).toBeLessThan(0.2);
-  await expect(page.getByTestId("hud-flyover")).toHaveText(/Flying/);
+  await expect(page.getByTestId("hud-flyover")).toHaveText(/Stop/);
 });
 
 test("flyover runs from the tee to the basket and stops", async ({ page }) => {
@@ -64,7 +64,7 @@ test("flyover runs from the tee to the basket and stops", async ({ page }) => {
   await page.keyboard.press("Escape");
   await page.getByTestId("hole-row").click();
   await page.getByTestId("flyover").click();
-  await expect(page.getByTestId("hud-flyover")).toHaveText(/Flying/);
+  await expect(page.getByTestId("hud-flyover")).toHaveText(/Stop/);
   // (it waits for everything to be drawn first, up to 15 s, then holds its title a moment)
   await expect.poll(() => page.evaluate(() => (window as any).__dgView.flyProgress()), { timeout: 30_000 }).toBeGreaterThan(0.05);
   // It lands by itself (a short hole flies for 6 seconds and slows to a stop; a slow frame
@@ -253,7 +253,7 @@ plain("where a hole is painted sharper: round its line on the terrain's grid, at
   plainExpect(detailArea(doc, line, 3072, 4)).toBeNull();
 });
 
-test("flyover settings: height, speed and field of view change the flight, one undo step each; a hole's own", async ({ page }) => {
+test("flyover settings: height, speed and lens change the flight, one undo step each; a hole's own", async ({ page }) => {
   // (slow under software rendering: the view from the tee drawn frame by frame)
   test.setTimeout(240_000);
   await blankCourse(page);
@@ -282,16 +282,17 @@ test("flyover settings: height, speed and field of view change the flight, one u
   await expect.poll(async () => (await course(page)).flyover?.height).toBe(250);
   await slider("Speed").focus();
   await page.keyboard.press("End");
-  await slider("Field of view").focus();
+  // (the lens: 15° zoomed in to 110° wide)
+  await slider("Lens").focus();
   await page.keyboard.press("Home");
-  await expect.poll(async () => (await course(page)).flyover?.fov).toBe(20);
+  await expect.poll(async () => (await course(page)).flyover?.fov).toBe(15);
   const after = await flight();
   expect(after.alt).toBeGreaterThan(before.alt + 150);
   expect(after.dur).toBeCloseTo(before.dur / 3, 1);
-  expect(after.fov).toBe(20);
-  // While it flies, the camera's field of view is the flight's; back to the tee view's after
+  expect(after.fov).toBe(15);
+  // While it flies, the camera's lens is the flight's; back to the tee view's after
   await page.getByTestId("hud-flyover").click();
-  await expect.poll(() => page.evaluate(() => (window as any).__dgView.povCam.fov)).toBe(20);
+  await expect.poll(() => page.evaluate(() => (window as any).__dgView.povCam.fov)).toBe(15);
   await expect(page.getByTestId("hud-flyover")).toHaveText(/Fly over/, { timeout: 120_000 });
   expect(await page.evaluate(() => (window as any).__dgView.povCam.fov)).toBe(62);
   // Each setting is one undo step
@@ -331,18 +332,20 @@ test("flyover on-screen switches: off for all holes, back on for one; no disc fl
   await page.evaluate(() => (window as any).__dgView.setPaused(true));
   await page.getByTestId("flyover-settings").getByRole("radio", { name: "All holes" }).click();
   const sw = (name: string) => page.getByTestId("flyover-settings").getByRole("checkbox", { name, exact: true });
-  for (const name of ["Hole title", "Hole badge", "Distance to the pin", "Course name", "Line of play", "Putting circle", "OB", "Other holes", "Paths to the next tee"]) await expect(sw(name)).toBeChecked();
+  for (const name of ["Big title at the start", "Hole number in the corner", "Distance to the pin", "Course name", "Throw line", "Putting circle (10 m, 33 ft)", "OB", "Other holes' lines and circles", "Paths to the next tee"]) await expect(sw(name)).toBeChecked();
   await sw("Distance to the pin").uncheck();
   await expect(sw("Disc flight")).toHaveCount(0);
-  await sw("Other holes").uncheck();
+  await sw("Other holes' lines and circles").uncheck();
   await expect.poll(async () => { const f = (await course(page)).flyover; return [f?.pinDistance, f?.otherHoles]; }).toEqual([false, false]);
   // One undo step each
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).flyover?.otherHoles).toBeUndefined();
-  await sw("Other holes").uncheck();
+  await sw("Other holes' lines and circles").uncheck();
   // Hole 1's own: the distance back on for it
   await page.getByTestId("hud-close").click();
   await page.getByTestId("hole-row").first().click();
+  // (the hole's camera and switches, folded away in its Flyover section)
+  await page.getByTestId("hole-flight-settings").locator("summary").click();
   await expect(page.getByTestId("hole-flight").getByTestId("flyover-show")).toBeVisible();
   const own = (name: string) => page.getByTestId("hole-flight").getByRole("checkbox", { name, exact: true });
   await expect(own("Distance to the pin")).not.toBeChecked();
@@ -485,7 +488,7 @@ test("a hole's own flight through keyframes: a timeline to pick and retime them,
   await expect(page.getByTestId("fly-key-title")).toHaveText("Keyframe 3 of 5");
   // Flown from the panel
   await page.getByTestId("fly-preview").click();
-  await expect(page.getByTestId("hud-flyover")).toHaveText(/Flying/);
+  await expect(page.getByTestId("hud-flyover")).toHaveText(/Stop/);
   await page.getByTestId("hud-close").click();
   // Automatic again
   await page.getByTestId("hole-row").first().click();

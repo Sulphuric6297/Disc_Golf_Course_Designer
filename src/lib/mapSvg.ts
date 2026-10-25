@@ -20,13 +20,13 @@ import { fmtDist } from "./units";
 import { tallGrassOf } from "./landscapes";
 
 export const PAPER: Record<PaperSize, { label: string; w: number; h: number }> = {
-  letter: { label: "Letter 8.5 × 11 in", w: 8.5, h: 11 },
-  tabloid: { label: "Tabloid 11 × 17 in", w: 11, h: 17 },
-  "18x24": { label: "Poster 18 × 24 in", w: 18, h: 24 },
-  "24x36": { label: "Poster 24 × 36 in", w: 24, h: 36 },
-  "36x48": { label: "Poster 36 × 48 in", w: 36, h: 48 },
-  a4: { label: "A4", w: 8.27, h: 11.69 },
-  a3: { label: "A3", w: 11.69, h: 16.54 }
+  letter: { label: "Letter, 8.5 × 11 in", w: 8.5, h: 11 },
+  tabloid: { label: "Tabloid, 11 × 17 in", w: 11, h: 17 },
+  "18x24": { label: "Poster, 18 × 24 in", w: 18, h: 24 },
+  "24x36": { label: "Poster, 24 × 36 in", w: 24, h: 36 },
+  "36x48": { label: "Poster, 36 × 48 in", w: 36, h: 48 },
+  a4: { label: "A4, 210 × 297 mm", w: 8.27, h: 11.69 },
+  a3: { label: "A3, 297 × 420 mm", w: 11.69, h: 16.54 }
 };
 
 /** The hole guide's and legend's panel on the course map, unless colored by hand. */

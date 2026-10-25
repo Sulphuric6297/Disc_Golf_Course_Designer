@@ -13,10 +13,10 @@ export function ProgressBar({ value, testid, label }: { value: number | null; te
   );
 }
 
-/** At the top of the Export step. */
+/** At the top of the Export step (not for a video: its own section shows its progress). */
 export function ExportBanner() {
   const job = useExportJob(s => s.job);
-  if (!job) return null;
+  if (!job || job.kind === "video") return null;
   return (
     <div className="sticky top-0 z-10 mx-4 mt-2 text-sm text-orange-100 glass border border-orange-500/40 rounded-lg px-3 py-2 shadow-lg" data-testid="export-busy">
       <div className="flex items-center gap-2">
@@ -29,7 +29,7 @@ export function ExportBanner() {
   );
 }
 
-/** Over the map, when the Export step isn't showing (or the view from a tee is). */
+/** Over the map, when the Export step isn't showing (or the view from the tee is). */
 export function ExportProgressPill({ top }: { top?: number }) {
   const job = useExportJob(s => s.job);
   const elsewhere = useEditor(s => s.step !== "export" || !!s.teeView);

@@ -23,7 +23,8 @@ export const asExample = (doc: CourseDoc): CourseDoc => {
     ...doc,
     id: EXAMPLE_ID,
     seed: doc.seed ?? doc.id ?? EXAMPLE_ID,
-    site: { ...doc.site, location: null, bounds: null, ...(doc.site?.imagerySource ? { imagerySource: "Aerial photo" } : {}), ...(doc.site?.elevationSource ? { elevationSource: "Terrain survey" } : {}) },
+    // (and none of what its import said: the survey's and the map's names are in there)
+    site: { ...doc.site, location: null, bounds: null, notes: undefined, noLidar: undefined, ...(doc.site?.imagerySource ? { imagerySource: "Aerial photo" } : {}), ...(doc.site?.elevationSource ? { elevationSource: "Terrain survey" } : {}) },
     // (its measured trees kept; the aerial survey's own name says where it was flown)
     lidar: doc.lidar ? { ...doc.lidar, source: "Aerial survey" } : undefined,
     items: doc.items.map(i => ("importSource" in i && i.importSource === "osm" ? { ...i, importSource: undefined } : i)) as CourseDoc["items"]

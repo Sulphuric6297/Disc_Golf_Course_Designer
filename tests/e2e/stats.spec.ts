@@ -328,7 +328,7 @@ test.describe("safety and design checks", () => {
     tee.padWidth = 3;
     doc.items.push(createTree({ x: 118, y: 302 }, { radius: 6 }));
     const t = designChecks(doc, doc.holes.map(h => holeStats(doc, h))).map(i => i.text).join("\n");
-    expect(t).toMatch(/at least 4 x 10 ft/);
+    expect(t).toContain("Hole 1's blue tee pad is 3 × 12 ft (at least 4 × 10 ft recommended).");
     expect(t).toMatch(/tree stands within 20 ft in front/);
     expect(t).toMatch(/shorter than the 100 ft minimum/);
   });
@@ -337,7 +337,7 @@ test.describe("safety and design checks", () => {
     const doc = make([[{ x: 100, y: 300 }, { x: 500, y: 300 }], [{ x: 1000, y: 800 }, { x: 1300, y: 800 }]]);
     doc.items.push(createArea("water", [{ x: 250, y: 250 }, { x: 320, y: 250 }, { x: 320, y: 350 }, { x: 250, y: 350 }]));
     const t = safetyIssues(doc).map(i => i.text).join("\n");
-    expect(t).toMatch(/shortest tee throws over water/);
+    expect(t).toMatch(/Hole 1: even the shortest tee has to throw over water\./);
     expect(t).toMatch(/Long walk from Hole 1's basket to Hole 2's tee/);
   });
 
@@ -444,7 +444,7 @@ test("the course length check counts a two-number hole twice", () => {
   const doc = make(Array.from({ length: 9 }, (_, k): [P, P] => [{ x: 100, y: 100 + k * 150 }, { x: 200, y: 100 + k * 150 }]));
   doc.holes[0].alsoNumbers = [10];
   const checks = [...safetyIssues(doc), ...designChecks(doc, doc.holes.map(h => holeStats(doc, h)))];
-  expect(checks.find(i => i.id === "course-length")?.text).toMatch(/^10 holes total 1,000 ft/);
+  expect(checks.find(i => i.id === "course-length")?.text).toMatch(/^These 10 holes add up to 1,000 ft\. That's short for blue tees/);
 });
 
 test("an OB line belonging to two holes counts for both (and for neither of the others)", () => {

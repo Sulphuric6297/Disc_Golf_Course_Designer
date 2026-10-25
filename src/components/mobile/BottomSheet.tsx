@@ -237,7 +237,7 @@ export function BottomSheet({ detent, onDetent, header, children, peekExtra = 0,
         <button
           type="button"
           className="w-full flex justify-center pt-2 pb-1.5 touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 rounded-t-[28px]"
-          aria-label={`Panel: ${NAMES[detent]}. Show it ${NAMES[next]}`}
+          aria-label={`Panel: ${NAMES[detent]}. Show it ${next === "peek" ? NAMES[next] : `at ${NAMES[next]}`}`}
           aria-expanded={detent !== "peek"}
           data-testid="sheet-handle"
           onClick={() => onDetent(next)}

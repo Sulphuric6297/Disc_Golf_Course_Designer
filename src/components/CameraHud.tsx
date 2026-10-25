@@ -4,12 +4,13 @@
 import { useEffect, useState, type PointerEvent as RPointerEvent } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Check, Play, Plus, RefreshCw, Square, Trash2, X } from "lucide-react";
 import { holeLabel } from "../lib/course";
-import { flyoverOf } from "../lib/flight";
+import { LENS, flyoverOf, lensLabel } from "../lib/flight";
 import { fmtDist } from "../lib/units";
 import { getDoc, updateHole, useCourse, useEditor } from "../state/course";
 import { getView } from "../state/view";
 import { toast } from "../state/toast";
 import type { FlyKey } from "../types";
+import { HelpLink } from "./ui";
 
 /** The hole being flown and its keyframes, as they are now. */
 const now = () => {
@@ -48,9 +49,14 @@ const jump = (d: number) => {
   ed.set({ flyKey: i });
 };
 
+/** Whether the picked keyframe can go: not one of a flight's last two (the hole would quietly fly
+ * by itself again; the Flyover section has the same rule). */
+const removable = (count: number) => count !== 2;
+const REMOVE_NO = "A flight needs two keyframes";
+
 const removeKey = () => {
   const { ed, hole, keys, at } = now();
-  if (!hole || at === null) return;
+  if (!hole || at === null || !removable(keys.length)) return;
   const next = keys.filter((_, j) => j !== at);
   updateHole(hole.id, { flyKeys: next.length ? next : undefined });
   ed.set({ flyKey: next.length ? Math.max(0, at - 1) : null });
@@ -225,11 +231,13 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
   const addBtn = (
     <button className={`shrink-0 rounded-full ${compact ? "flex-[2] h-11 px-4 text-[14px] justify-center" : "h-9 px-4 text-[13.5px]"} font-bold flex items-center gap-1.5 bg-orange-500 text-zinc-950 hover:bg-orange-400`} onClick={addKeyHere} title={at !== null ? `Add a keyframe here, after keyframe ${at + 1} (Enter)` : "Add a keyframe right here, looking where the camera looks (Enter)"} data-testid="cam-add"><Plus size={16} /> Add keyframe</button>
   );
+  // (the arrows a thumb's size on a phone)
+  const arrow = `shrink-0 ${compact ? "w-11 h-11 rounded-xl" : "w-8 h-8 rounded-lg"} text-zinc-300 hover:bg-white/10 active:bg-white/15 flex items-center justify-center disabled:opacity-30`;
   // The keyframes in order, along the bottom with the camera's buttons: tap one to go to it (and
   // change it), Add keyframe at the end to add one where the camera is
   const strip = (
     <div className="flex items-center gap-1.5 min-w-0">
-      <button className="shrink-0 w-8 h-8 rounded-lg text-zinc-300 hover:bg-white/10 flex items-center justify-center disabled:opacity-30" aria-label="Keyframe before ( [ )" title="Keyframe before ( [ )" disabled={!keys.length} onClick={() => jump(-1)}><ChevronLeft size={18} /></button>
+      <button className={arrow} aria-label="Keyframe before ( [ )" title="Keyframe before ( [ )" disabled={!keys.length} onClick={() => jump(-1)}><ChevronLeft size={18} /></button>
       <div className="flex items-center gap-1.5 overflow-x-auto min-w-0 py-0.5 dg-scroll" data-testid="cam-keys">
         {keys.map((_, i) => (
           <button key={i} className={`relative shrink-0 ${compact ? "w-11 h-11 text-[15px]" : "w-9 h-9 text-[13.5px]"} rounded-xl font-bold text-white ${i === at ? "bg-orange-500 ring-2 ring-white" : "bg-sky-600/90 hover:bg-sky-500"}`} aria-label={`Go to keyframe ${i + 1}`} aria-pressed={i === at} title={`Keyframe ${i + 1}: go to it`} onClick={() => go(i)}>
@@ -239,14 +247,17 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
         ))}
         {!keys.length && <span className="text-[12.5px] text-zinc-300 px-1 whitespace-nowrap">No keyframes yet</span>}
       </div>
-      <button className="shrink-0 w-8 h-8 rounded-lg text-zinc-300 hover:bg-white/10 flex items-center justify-center disabled:opacity-30" aria-label="Keyframe after ( ] )" title="Keyframe after ( ] )" disabled={!keys.length} onClick={() => jump(1)}><ChevronRight size={18} /></button>
+      <button className={arrow} aria-label="Keyframe after ( ] )" title="Keyframe after ( ] )" disabled={!keys.length} onClick={() => jump(1)}><ChevronRight size={18} /></button>
       {!compact && <span className="ml-auto" />}
       {!compact && addBtn}
     </div>
   );
   const pill = "rounded-full px-3.5 py-2 text-[13.5px] font-semibold flex items-center gap-1.5 text-white hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-transparent";
-  const title = `Camera · Hole ${holeLabel(doc, hole.id)}`;
-  const status = at !== null ? `Keyframe ${at + 1} of ${keys.length}${moved ? " · moved: Update puts it here" : ""}` : keys.length ? "Pick a keyframe to go to it and change it" : "Fly somewhere you like, then add a keyframe";
+  const title = <><span className="truncate min-w-0">Camera · Hole {holeLabel(doc, hole.id)}</span><HelpLink topic="fly-camera" label="Flying the camera yourself" /></>;
+  const status = at !== null ? `Keyframe ${at + 1} of ${keys.length}${moved ? ". Moved. Update puts it here." : ""}` : keys.length ? "Pick a keyframe to go to it and change it" : "Fly somewhere you like, then add a keyframe";
+  const playTitle = keys.length < 2 ? "Add a second keyframe to play the flight." : "Fly through the keyframes";
+  const canRemove = removable(keys.length);
+  const readout = `${fmtDist(alt, u)} up · lens ${lensLabel(lens)}`;
   if (flying)
     return (
       <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui>
@@ -261,13 +272,15 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
         <div className="absolute left-2 right-2 top-[max(8px,env(safe-area-inset-top))] pointer-events-auto glass rounded-2xl px-3 py-2 text-white shadow-2xl border border-white/10">
           <div className="flex items-center gap-2">
             <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-semibold truncate">{title}</div>
-              <div className="text-[12px] text-zinc-300 tabular-nums" data-testid="cam-readout">{fmtDist(alt, u)} up · lens {lens}°</div>
+              <div className="text-[13px] font-semibold flex items-center gap-1.5 min-w-0">{title}</div>
+              <div className="text-[12px] text-zinc-300 tabular-nums" data-testid="cam-readout">{readout}</div>
             </div>
             <button className="h-11 px-3.5 rounded-xl bg-white/10 text-[14px] font-semibold flex items-center gap-1" onClick={done} data-testid="cam-done"><Check size={17} /> Done</button>
           </div>
-          <input aria-label="Lens" type="range" min={15} max={110} value={lens} onChange={e => setLensTo(Number(e.target.value))} className="slider w-full h-7 mt-1" />
+          <input aria-label="Lens" type="range" min={LENS.min} max={LENS.max} value={lens} onChange={e => setLensTo(Number(e.target.value))} className="slider w-full h-7 mt-1" />
         </div>
+        {/* (above the stick and the up and down arrows) */}
+        <div className="absolute left-1/2 -translate-x-1/2 bottom-[calc(max(10px,env(safe-area-inset-bottom))+292px)] w-max max-w-[calc(100%-24px)] text-center text-[13px] text-white/90 bg-black/45 rounded-2xl px-3 py-1" data-testid="cam-hint">Drag to look around. The stick moves you, the arrows go up and down.</div>
         <div className="absolute left-3 bottom-[calc(max(10px,env(safe-area-inset-bottom))+156px)]"><Stick /></div>
         <div className="absolute right-3 bottom-[calc(max(10px,env(safe-area-inset-bottom))+156px)] flex flex-col gap-2"><Lift dir={1} /><Lift dir={-1} /></div>
         <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto glass rounded-[22px] p-2 border border-white/10 shadow-2xl">
@@ -276,8 +289,8 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
           <div className="mt-1.5 flex items-center gap-1">
             {addBtn}
             {at !== null && <button className="flex-1 h-11 rounded-2xl bg-white/[0.1] text-white text-[13px] font-semibold flex items-center justify-center gap-1 active:bg-white/20 disabled:opacity-40" onClick={updateKeyHere} disabled={!moved} data-testid="cam-update"><RefreshCw size={14} /> Update {at + 1}</button>}
-            {at !== null && <button className="w-11 h-11 rounded-2xl text-white flex items-center justify-center active:bg-white/15" onClick={removeKey} aria-label={`Remove keyframe ${at + 1}`} data-testid="cam-remove"><Trash2 size={16} /></button>}
-            <button className="w-11 h-11 rounded-2xl text-white flex items-center justify-center active:bg-white/15 disabled:opacity-40" onClick={play} disabled={keys.length < 2} aria-label="Play" title="Play" data-testid="cam-play"><Play size={17} /></button>
+            {at !== null && <button className="w-11 h-11 rounded-2xl text-white flex items-center justify-center active:bg-white/15 disabled:opacity-40" onClick={removeKey} disabled={!canRemove} aria-label={`Remove keyframe ${at + 1}`} title={canRemove ? `Remove keyframe ${at + 1}` : REMOVE_NO} data-testid="cam-remove"><Trash2 size={16} /></button>}
+            <button className="w-11 h-11 rounded-2xl text-white flex items-center justify-center active:bg-white/15 disabled:opacity-40" onClick={play} disabled={keys.length < 2} aria-label="Play" title={playTitle} data-testid="cam-play"><Play size={17} /></button>
           </div>
         </div>
       </div>
@@ -285,8 +298,8 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
   return (
     <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui data-testid="camera-hud">
       <div className="absolute top-4 left-4 pointer-events-auto glass rounded-full pl-4 pr-1.5 py-1.5 text-white shadow-2xl border border-white/10 flex items-center gap-3">
-        <div className="text-[14px] font-semibold">{title}</div>
-        <div className="text-[12.5px] text-zinc-300 tabular-nums" data-testid="cam-readout">{fmtDist(alt, u)} up · lens {lens}°</div>
+        <div className="text-[14px] font-semibold flex items-center gap-1.5">{title}</div>
+        <div className="text-[12.5px] text-zinc-300 tabular-nums" data-testid="cam-readout">{readout}</div>
         <button className={pill} onClick={done} title="Back to the map (Esc)" data-testid="cam-done"><X size={15} /> Done</button>
       </div>
       <div className="absolute bottom-[136px] left-1/2 -translate-x-1/2 text-[12px] text-white/85 bg-black/45 rounded-lg px-2.5 py-1 whitespace-nowrap">W A S D or the arrows to move · Space or E up, Q down · Shift for faster · drag to look · scroll for the lens</div>
@@ -295,9 +308,9 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
         <div className="mt-1.5 flex items-center gap-1">
           <div className="flex-1 min-w-0 px-2 text-[12.5px] text-zinc-300 truncate" data-testid="cam-status">{status}</div>
           {at !== null && <button className={`${pill} bg-white/[0.08]`} onClick={updateKeyHere} disabled={!moved} title={`Move keyframe ${at + 1} to here (U)`} data-testid="cam-update"><RefreshCw size={14} /> Update {at + 1}</button>}
-          {at !== null && <button className={`${pill} hover:!text-red-300`} onClick={removeKey} aria-label={`Remove keyframe ${at + 1}`} title={`Remove keyframe ${at + 1}`} data-testid="cam-remove"><Trash2 size={14} /></button>}
-          <label className="flex items-center gap-2 px-2 text-[12.5px] text-zinc-300">Lens<input aria-label="Lens" type="range" min={15} max={110} value={lens} onChange={e => setLensTo(Number(e.target.value))} className="slider w-24" /></label>
-          <button className={pill} onClick={play} disabled={keys.length < 2} title={keys.length < 2 ? "Two keyframes and it can fly" : "Fly through the keyframes"} data-testid="cam-play"><Play size={14} /> Play</button>
+          {at !== null && <button className={`${pill} hover:!text-red-300`} onClick={removeKey} disabled={!canRemove} aria-label={`Remove keyframe ${at + 1}`} title={canRemove ? `Remove keyframe ${at + 1}` : REMOVE_NO} data-testid="cam-remove"><Trash2 size={14} /></button>}
+          <label className="flex items-center gap-2 px-2 text-[12.5px] text-zinc-300">Lens<input aria-label="Lens" type="range" min={LENS.min} max={LENS.max} value={lens} onChange={e => setLensTo(Number(e.target.value))} className="slider w-24" /></label>
+          <button className={pill} onClick={play} disabled={keys.length < 2} title={playTitle} data-testid="cam-play"><Play size={14} /> Play</button>
         </div>
       </div>
     </div>

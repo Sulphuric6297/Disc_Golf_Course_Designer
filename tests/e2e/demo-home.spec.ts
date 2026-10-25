@@ -56,7 +56,8 @@ test("a new visitor to the demo lands on Courses with the example course open be
   await expect.poll(async () => (await editorState(page)).teeView, { timeout: 60_000 }).toBe(null);
   await expect.poll(async () => (await editorState(page)).view, { timeout: 60_000 }).toBe("2d");
   for (let i = 0; i < 4; i++) await next();
-  await expect(page.getByTestId("tour-title")).toHaveText("Make it yours");
+  await expect(page.getByTestId("tour-title")).toHaveText("Your own course");
+  await expect(page.getByTestId("tour-own-course")).toHaveText("Start my own course");
   expect(seen).toContain("A hole");
   expect(seen).toContain("The printed map");
   await page.getByTestId("tour-next").click();

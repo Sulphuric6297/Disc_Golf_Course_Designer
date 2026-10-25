@@ -9,12 +9,16 @@ import type { ViewDoc, ViewInfo } from "../viewport/types";
 import { changeDoc, useCourse, useEditor, updateItem, updateHole, useCourse as courseStore } from "../state/course";
 import { addBrushSection, addDrawn, addPatch, adoptTree, addHole, boxSelect, cutStretch, moveGroup, placeAt, select } from "../state/actions";
 import { courseIssues, courseStats, openIssues } from "../lib/holeStats";
-import { activeLayout } from "../lib/course";
+import { activeLayout, holeLabel } from "../lib/course";
 import { contoursOf, hillshadeCanvas } from "../lib/relief";
 import { terrainStats, heightAt } from "../lib/terrainGrid";
 import { niceScaleBar } from "../lib/view";
 import { centroid } from "../lib/geom";
 import { fmtElev } from "../lib/units";
+import { FT_PER_M } from "../constants";
+import { spotlight } from "./showSetting";
+import { teeLevelFor, useMapInsets } from "./Toolbar";
+import { useTouch } from "./useLayout";
 import type { P } from "../types";
 import { SceneButton } from "./ScenePanel";
 import { LocateButton, useMyLocation } from "./MyLocation";
@@ -26,6 +30,14 @@ import { cameraFrom } from "./FlyoverSettings";
 
 
 type MenuInfo = { clientX: number; clientY: number; itemId: string | null; ground: P | null };
+
+/** The scale bar: a round length in the course's units (10, 20, 50 m, 1 km, as feet go 10, 20,
+ * 50 ft, 1 mi) about `targetPx` long. */
+const scaleBar = (pxPerFoot: number, targetPx: number, units: "ft" | "m") => {
+  if (units === "ft") return niceScaleBar(pxPerFoot, targetPx);
+  const s = niceScaleBar(pxPerFoot * FT_PER_M, targetPx);
+  return s && { px: s.px, label: s.feet >= 1000 && s.feet % 1000 === 0 ? `${s.feet / 1000} km` : `${s.feet.toLocaleString()} m` };
+};
 
 /**
  * The map and its controls. `compact` lays the controls out for a phone (a column of 44 px
@@ -39,6 +51,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const [hover, setHover] = useState<P | null>(null);
   const doc = useCourse(s => s.doc);
   const ed = useEditor();
+  const touch = useTouch();
+  const inset = useMapInsets();
   const menuRef = useRef(onContextMenu);
   menuRef.current = onContextMenu;
 
@@ -171,9 +185,24 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { view?.setGroup(ed.group); }, [view, ed.group]);
   useEffect(() => { view?.setPlotLine(ed.plotLine); }, [view, ed.plotLine]);
   useEffect(() => { view?.setObPick(ed.obPick, ed.pickCut); }, [view, ed.obPick, ed.pickCut]);
+  // (the Tee tool's preview in the color it will go down in: the hole's next one when it has the
+  // picked color already)
+  const ghostTee = ed.tool === "add-tee" && !ed.holeToBasket ? teeLevelFor(doc, ed.activeHoleId, ed.teeLevel) : ed.teeLevel;
   useEffect(() => {
-    view?.setTool({ mode: ed.tool, areaKind: ed.areaKind, lineKind: ed.lineKind, structureKind: ed.structureKind, shape: ed.drawShape, dragSelect: ed.dragSelect, treeKind: ed.treeKind, brush: { size: ed.brushSize, strength: ed.brushStrength, ground: ed.groundBrush } }, ed.teeLevel);
-  }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.structureKind, ed.drawShape, ed.teeLevel, ed.dragSelect, ed.treeKind, ed.brushSize, ed.brushStrength, ed.groundBrush]);
+    view?.setTool({ mode: ed.tool, areaKind: ed.areaKind, lineKind: ed.lineKind, structureKind: ed.structureKind, shape: ed.drawShape, dragSelect: ed.dragSelect, treeKind: ed.treeKind, brush: { size: ed.brushSize, strength: ed.brushStrength, ground: ed.groundBrush } }, ghostTee, ed.amenityKind);
+  }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.structureKind, ed.drawShape, ghostTee, ed.amenityKind, ed.dragSelect, ed.treeKind, ed.brushSize, ed.brushStrength, ed.groundBrush]);
+  // A check's mark on the map clicked: the checks open, with its row lit up
+  useEffect(() => {
+    if (!view) return;
+    view.onIssue = text => {
+      useEditor.getState().set({ problemsOpen: true });
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const row = [...document.querySelectorAll<HTMLElement>('[data-testid="issue-row"]')].find(r => r.textContent?.includes(text));
+        if (row) spotlight(row);
+      }));
+    };
+    return () => { view.onIssue = null; };
+  }, [view]);
   useEffect(() => { view?.setPose(ed.view === "2d" ? "top" : "tilt"); }, [view, ed.view]);
   // (a patch is drawn as an area; leaving the tool drops the patch)
   useEffect(() => { if (ed.tool !== "draw-area" && ed.patchFor) useEditor.getState().set({ patchFor: null }); }, [ed.tool, ed.patchFor]);
@@ -197,22 +226,25 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     else { view.setTeeView(ed.teeView, ed.teeViewTee ?? null); useEditor.getState().set({ flyLoading: null, ...(ed.teeView ? {} : { teeViewTee: null }) }); }
   }, [view, ed.teeView, ed.teeViewTee, ed.flyover]);
 
-  const scale = info ? niceScaleBar(info.pxPerUnit, 110) : null;
+  const scale = info ? scaleBar(info.pxPerUnit, 110, doc.units) : null;
   const elevation = hover ? heightAt(doc.terrainHeights, doc.gridSize, hover.x, hover.y) + doc.site.baseElevationFt : null;
-  const btn = `w-8 h-8 flex items-center justify-center text-zinc-300 hover:text-zinc-50 hover:bg-white/[0.13] transition-colors ${FOCUS} focus-visible:ring-inset`;
+  // (on a touch screen, a finger's 44 px)
+  const btn = `w-8 h-8 touch:w-11 touch:h-11 flex items-center justify-center text-zinc-300 hover:text-zinc-50 hover:bg-white/[0.13] transition-colors ${FOCUS} focus-visible:ring-inset`;
   // (the floating controls share one surface)
   const pad = "pointer-events-auto glass backdrop-blur rounded-lg shadow-lg shadow-black/30 ring-1 ring-white/10";
 
   // (on a computer, clear of the Selection panel at the top right: 150 to 450 px from the edge)
-  const obBar = ed.obPick && !ed.teeView && <ObPickBar view={view} cut={ed.pickCut} top={compact ? controlsTop + 8 : 12} right={8} />;
-  const plotBar = ed.plotLine && !ed.teeView && <PlotBar view={view} holeNumber={doc.holes.findIndex(h => h.id === ed.plotLine) + 1} top={compact ? controlsTop + 8 : 12} right={8} />;
+  const obBar = ed.obPick && !ed.teeView && <ObPickBar view={view} id={ed.obPick} edge={doc.items.find(i => i.id === ed.obPick)?.type === "area"} cut={ed.pickCut} top={compact ? controlsTop + 8 : 12} right={8} />;
+  const plotBar = ed.plotLine && !ed.teeView && doc.holes.some(h => h.id === ed.plotLine) && <PlotBar view={view} hole={holeLabel(doc, ed.plotLine)} top={compact ? controlsTop + 8 : 12} right={8} />;
+  // (the box select button: while the course can be changed, on Design and Site)
+  const boxable = !viewOnly && (ed.step === "design" || ed.step === "site");
   if (compact) {
     return (
       <div className="absolute inset-0">
         <div ref={ref} data-testid="plan" className="absolute inset-0 overflow-hidden touch-none" />
         {plotBar}
         {obBar}
-        {!ed.teeView && controlsRoom > 0 && <TouchControls view={view} info={info} scale={info ? niceScaleBar(info.pxPerUnit, 72) : null} units={doc.units} phone={compact === "phone"} top={controlsTop} room={controlsRoom} threeD={ed.view === "3d"} />}
+        {!ed.teeView && controlsRoom > 0 && <TouchControls view={view} info={info} scale={info ? scaleBar(info.pxPerUnit, 72, doc.units) : null} phone={compact === "phone"} top={controlsTop} room={controlsRoom} threeD={ed.view === "3d"} />}
       </div>
     );
   }
@@ -227,10 +259,19 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
           <div className="absolute top-3 right-3 flex flex-col gap-2 items-end pointer-events-none">
             <ViewToggle pad={pad} />
             <div className="flex gap-2 items-start">
-              <button className={`${pad} w-11 h-11 flex flex-col items-center justify-center ${FOCUS}`} title="North up (N)" onClick={() => view?.resetNorth()} data-testid="compass">
-                <Compass size={18} className="text-red-400" style={{ transform: `rotate(${-(info?.heading ?? 0)}deg)` }} />
-                <span className="text-[9px] font-bold text-zinc-300">N</span>
-              </button>
+              <div className="flex flex-col gap-2">
+                <button className={`${pad} w-11 h-11 flex flex-col items-center justify-center ${FOCUS}`} title="North up (N)" onClick={() => view?.resetNorth()} data-testid="compass">
+                  <Compass size={18} className="text-red-400" style={{ transform: `rotate(${-(info?.heading ?? 0)}deg)` }} />
+                  <span className="text-[9px] font-bold text-zinc-300">N</span>
+                </button>
+                {/* (what a plain drag does: move the map, or draw a box to pick things with) */}
+                {boxable && (
+                  <button className={`${pad} w-11 h-11 flex items-center justify-center ${FOCUS} ${ed.dragSelect ? "!bg-orange-500 text-zinc-950" : "text-zinc-300 hover:text-zinc-50"}`} title="Select with a box (or Shift+drag)" aria-label="Select with a box" aria-pressed={ed.dragSelect}
+                    onClick={() => useEditor.getState().set({ dragSelect: !ed.dragSelect, tool: "select" })} data-testid="drag-select">
+                    <BoxSelect size={18} />
+                  </button>
+                )}
+              </div>
               <div className={`${pad} flex flex-col overflow-hidden`}>
                 <button className={btn} title="Zoom in (+)" onClick={() => view?.zoomBy(1.4)}><Plus size={16} /></button>
                 <button className={btn} title="Zoom out (−)" onClick={() => view?.zoomBy(1 / 1.4)}><Minus size={16} /></button>
@@ -242,21 +283,25 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
                   <button className={btn} title="Turn left (Q)" onClick={() => view?.rotateBy(-30)}><RotateCcw size={15} /></button>
                   <button className={btn} title="Turn right (E)" onClick={() => view?.rotateBy(30)}><RotateCw size={15} /></button>
                 </div>
-                <SceneButton />
+                <SceneButton big={touch} />
               </div>
             </div>
           </div>
-          {scale && (
-            <div className="absolute right-3 bottom-3 glass rounded-md px-2 py-1 pointer-events-none" data-testid="scale-bar">
-              <div className="text-[11px] text-zinc-200 font-semibold mb-0.5">{doc.units === "m" ? `${Math.round(scale.feet / 3.28084)} m` : scale.label}</div>
-              <div className="h-1.5 border-x-2 border-b-2 border-white" style={{ width: scale.px }} />
-            </div>
-          )}
-          {hover && (
-            <div className={`absolute ${ed.step === "design" && !ed.teeView ? (ed.selectedId || ed.group.length ? "left-[400px]" : "left-[208px]") : "left-3"} bottom-3 text-[11px] text-zinc-200 glass rounded-md px-2 py-1 pointer-events-none`} data-testid="hover-readout">
-              {doc.site.bounds ? `Elevation ${Math.round(doc.units === "m" ? elevation! / 3.28084 : elevation!)} ${doc.units}` : `Ground ${fmtElev(elevation!, doc.units)}`}
-            </div>
-          )}
+          {/* (the scale and the elevation under the pointer, at the bottom right, clear of the
+              tools and of the checks when they're open) */}
+          <div className="absolute bottom-3 flex flex-col items-end gap-1.5 pointer-events-none" style={{ right: inset.right }}>
+            {hover && (
+              <div className="text-[11px] text-zinc-200 glass rounded-md px-2 py-1" data-testid="hover-readout">
+                {doc.site.bounds ? `Elevation ${Math.round(doc.units === "m" ? elevation! / FT_PER_M : elevation!)} ${doc.units}` : `Ground ${fmtElev(elevation!, doc.units)}`}
+              </div>
+            )}
+            {scale && (
+              <div className="glass rounded-md px-2 py-1" data-testid="scale-bar">
+                <div className="text-[11px] text-zinc-200 font-semibold mb-0.5">{scale.label}</div>
+                <div className="h-1.5 border-x-2 border-b-2 border-white" style={{ width: scale.px }} />
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>
@@ -273,7 +318,7 @@ function ViewToggle({ pad }: { pad: string }) {
     <div className={`${pad} flex p-0.5`} role="radiogroup" aria-label="View">
       {views.map(v => (
         <button key={v} role="radio" aria-checked={view === v} onClick={() => set({ view: v })} title={v === "2d" ? "Top-down map (2)" : "Tilted 3D view (3)"} data-testid={`view-${v}`}
-          className={`px-2.5 h-8 rounded-md text-xs font-bold transition-colors ${FOCUS} ${view === v ? "bg-zinc-100 text-zinc-900" : "text-zinc-300 hover:text-zinc-50 hover:bg-white/[0.13]"}`}>
+          className={`px-2.5 h-8 touch:h-11 touch:px-3.5 touch:text-[13px] rounded-md text-xs font-bold transition-colors ${FOCUS} ${view === v ? "bg-zinc-100 text-zinc-900" : "text-zinc-300 hover:text-zinc-50 hover:bg-white/[0.13]"}`}>
           {v.toUpperCase()}
         </button>
       ))}
@@ -281,29 +326,40 @@ function ViewToggle({ pad }: { pad: string }) {
   );
 }
 
-/** The map's controls for a finger: 44 px buttons (zoom and turn also work by pinching and
- * twisting; these are the one-finger way, and the way for anyone who can't pinch). */
-/** While a hole's line is plotted by hand: what to do, and Undo point, Done and Cancel (for a finger too). */
-function ObPickBar({ view, cut, top, right }: { view: CourseView | null; cut: boolean; top: number; right: number }) {
-  const b = "px-3 h-9 touch:h-11 rounded-lg text-sm font-semibold";
+/** While a stretch of OB is marked along a line or an area's edge (or one taken out of a line):
+ * what to do next, and Cancel (for a finger too). */
+function ObPickBar({ view, id, edge, cut, top, right }: { view: CourseView | null; id: string; edge: boolean; cut: boolean; top: number; right: number }) {
+  const b = "px-3 h-9 touch:h-11 rounded-lg text-sm font-semibold shrink-0";
+  const click = useTouch() ? "Tap" : "Click";
+  // (where it's got to: its start set, or a click off the line)
+  const [at, setAt] = useState<{ started: boolean; missed: boolean }>(() => ({ started: !!view?.obPickStarted(), missed: false }));
+  useEffect(() => {
+    if (!view) return;
+    setAt({ started: view.obPickStarted(), missed: false });
+    view.onObPick = setAt;
+    return () => { view.onObPick = null; };
+  }, [view, id]);
+  const what = at.missed ? `${click} on the ${edge ? "edge" : "line"} itself` : at.started ? `${click} where it ends` : `${click} where it starts, then where it ends`;
   return (
     <div className="absolute left-2 z-20 flex justify-center pointer-events-none" style={{ top, right }}>
     <div className="pointer-events-auto flex items-center gap-2 glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 px-3 py-2 max-w-full" data-testid="ob-pick-bar">
       <span className="text-sm text-zinc-100 font-semibold whitespace-nowrap">{cut ? "Remove a stretch" : "OB stretch"}</span>
-      <span className="text-xs text-zinc-300 hidden sm:inline">Click where it starts, then where it ends</span>
+      <span className={`text-xs min-w-0 ${at.missed ? "text-amber-200" : "text-zinc-300"}`} data-testid="ob-pick-hint">{what}</span>
       <button className={`${b} text-zinc-300 hover:bg-white/[0.09]`} onClick={() => view?.cancelDrawing()} data-testid="ob-pick-cancel">Cancel</button>
     </div>
     </div>
   );
 }
 
-function PlotBar({ view, holeNumber, top, right }: { view: CourseView | null; holeNumber: number; top: number; right: number }) {
-  const b = "px-3 h-9 touch:h-11 rounded-lg text-sm font-semibold";
+/** While a hole's line is plotted by hand: what to do, and Undo point, Done and Cancel (for a finger too). */
+function PlotBar({ view, hole, top, right }: { view: CourseView | null; hole: string; top: number; right: number }) {
+  const b = "px-3 h-9 touch:h-11 rounded-lg text-sm font-semibold shrink-0";
+  const click = useTouch() ? "Tap" : "Click";
   return (
     <div className="absolute left-2 z-20 flex justify-center pointer-events-none" style={{ top, right }}>
     <div className="pointer-events-auto flex items-center gap-2 glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 px-3 py-2 max-w-full" data-testid="plot-bar">
-      <span className="text-sm text-zinc-100 font-semibold whitespace-nowrap">Hole {holeNumber}</span>
-      <span className="text-xs text-zinc-300 hidden sm:inline">Click along the line to the basket, or drag it</span>
+      <span className="text-sm text-zinc-100 font-semibold whitespace-nowrap">Hole {hole}</span>
+      <span className="text-xs text-zinc-300 min-w-0">{click} along the line to the basket, or drag it</span>
       <button className={`${b} text-zinc-200 hover:bg-white/[0.09]`} onClick={() => view?.undoPoint()} data-testid="plot-undo">Undo point</button>
       <button className={`${b} bg-orange-500 text-zinc-950 hover:bg-orange-400`} onClick={() => view?.finishPlot()} data-testid="plot-done">Done</button>
       <button className={`${b} text-zinc-300 hover:bg-white/[0.09]`} onClick={() => view?.cancelDrawing()} data-testid="plot-cancel">Cancel</button>
@@ -312,7 +368,9 @@ function PlotBar({ view, holeNumber, top, right }: { view: CourseView | null; ho
   );
 }
 
-function TouchControls({ view, info, scale, units, phone, top, room, threeD }: { view: CourseView | null; info: ViewInfo | null; scale: { px: number; label: string; feet: number } | null; units: "ft" | "m"; phone: boolean; top: number; room: number; threeD: boolean }) {
+/** The map's controls for a finger: 44 px buttons (zoom and turn also work by pinching and
+ * twisting; these are the one-finger way, and the way for anyone who can't pinch). */
+function TouchControls({ view, info, scale, phone, top, room, threeD }: { view: CourseView | null; info: ViewInfo | null; scale: { px: number; label: string } | null; phone: boolean; top: number; room: number; threeD: boolean }) {
   const set = useEditor(e => e.set);
   const mode = useEditor(e => e.view);
   const boxing = useEditor(e => e.dragSelect);
@@ -320,7 +378,8 @@ function TouchControls({ view, info, scale, units, phone, top, room, threeD }: {
   const b = "w-11 h-11 flex items-center justify-center text-zinc-100 active:bg-white/[0.13] focus:outline-none focus-visible:bg-white/[0.13]";
   const group = "pointer-events-auto flex flex-col glass rounded-2xl border border-white/10 shadow-[0_6px_20px_rgba(0,0,0,0.35)] overflow-hidden divide-y divide-white/5";
   // On a phone the compass only once the map is turned (as in map apps), and only what fits above
-  // the panel: zoom (88), then the whole course, box select and turning, each with its 8 px gap
+  // the panel: zoom (88), the View button (always in 3D), then where you are, the whole course,
+  // box select and turning, each with its 8 px gap
   const heading = info?.heading ?? 0;
   const compass = !phone || Math.min(heading, 360 - heading) > 1;
   let used = 88 + (compass ? 52 : 0) + (threeD ? 52 : 0);
@@ -329,7 +388,9 @@ function TouchControls({ view, info, scale, units, phone, top, room, threeD }: {
     used += h;
     return true;
   };
-  // (where you are first: it's what you look for on the course)
+  // (the View button in 2D too: the photo and the lines are switched there; then where you are:
+  // it's what you look for on the course)
+  const scene = threeD || fits(52);
   const locate = canShowLocation() && fits(52);
   const fit = fits(52);
   const box = editing && fits(52);
@@ -338,7 +399,7 @@ function TouchControls({ view, info, scale, units, phone, top, room, threeD }: {
     <>
       {scale && (
         <div className="absolute left-2 z-10 pointer-events-none glass rounded-lg px-2 py-1 border border-white/10" style={{ top: top + 2 }} data-testid="scale-bar">
-          <div className="text-[11px] text-zinc-100 font-semibold leading-none mb-1">{units === "m" ? `${Math.round(scale.feet / 3.28084)} m` : scale.label}</div>
+          <div className="text-[11px] text-zinc-100 font-semibold leading-none mb-1">{scale.label}</div>
           <div className="h-1.5 border-x-2 border-b-2 border-white" style={{ width: scale.px }} />
         </div>
       )}
@@ -378,7 +439,7 @@ function TouchControls({ view, info, scale, units, phone, top, room, threeD }: {
             )}
           </div>
         </div>
-        {threeD && <SceneButton big />}
+        {scene && <SceneButton big />}
       </div>
     </>
   );

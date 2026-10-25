@@ -117,7 +117,7 @@ test("tool shortcuts pick tools; Esc goes back to Select; ? shows the shortcuts"
   await expect(page.getByRole("dialog", { name: "Help guide" })).toContainText("Undo");
 });
 
-test("Go to (Ctrl+K or /): a hole by its number, a step, a named thing; Esc closes", async ({ page }) => {
+test("Search (Ctrl+K or /): a hole by its number, a step, a named thing; Esc closes", async ({ page }) => {
   await blankCourse(page);
   const a = await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
   const b = await addHole(page, { x: 600, y: 600 }, { x: 900, y: 600 });
@@ -168,7 +168,7 @@ test("search finds any setting and takes you to it, lit up; the help guide's Sho
   await page.keyboard.press("Escape");
   // A setting by a few of its words: the course's layouts, opened and pointed at
   await page.keyboard.press("Control+k");
-  await expect(page.getByRole("textbox", { name: "Go to" })).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "Search", exact: true })).toBeFocused();
   await page.keyboard.type("edit layouts");
   await expect(page.getByTestId("goto-option").first()).toContainText("Layouts");
   await page.keyboard.press("Enter");
@@ -178,7 +178,7 @@ test("search finds any setting and takes you to it, lit up; the help guide's Sho
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("course-more")).toHaveCount(0);
   await page.keyboard.press("Control+k");
-  await expect(page.getByRole("textbox", { name: "Go to" })).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "Search", exact: true })).toBeFocused();
   await page.keyboard.type("tee sign look");
   await expect(page.getByTestId("goto-option").first()).toContainText("Tee signs");
   await page.keyboard.press("Enter");

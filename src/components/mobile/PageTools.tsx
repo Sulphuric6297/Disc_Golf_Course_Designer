@@ -2,7 +2,8 @@
 // settings are a row of tools along the bottom instead of a sheet pulled up over it. A tool opens
 // just that setting in a short panel over the row, and the page shrinks to stay whole above it.
 // With a piece picked, the piece's own tools take the row's place (PieceToolbar).
-import { Check, FileText, Flag, Handshake, Layers, Palette, PenLine, Plus, Signpost, Table2, Type, BookOpen, type LucideIcon } from "lucide-react";
+import { SHOW_EVENT } from "../showSetting";
+import { Check, FileText, Flag, Layers, Palette, PenLine, Plus, Signpost, Table2, Type, BookOpen, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useEditor } from "../../state/course";
 import { DesignPanel } from "../DesignPanel";
@@ -11,18 +12,21 @@ import { OnlyGroup } from "../ui";
 type Tool = { id: string; label: string; icon: LucideIcon };
 type Tab = "general" | "map" | "sign" | "page" | "scorecard";
 
+// (the sponsors are kept in Add, with what's put on the page: six tools at most, all in a row)
 const ADD: Tool = { id: "print-add", label: "Add", icon: Plus };
 const LAYERS: Tool = { id: "print-layers", label: "Layers", icon: Layers };
-const SPONSORS: Tool = { id: "print-sponsors", label: "Sponsors", icon: Handshake };
 
 /** Each printout's settings, a tool each (the panel's Section or Fold it opens). */
 const TOOLS: Record<Tab, Tool[]> = {
-  general: [{ id: "card-style", label: "Colors", icon: Palette }, { id: "markings", label: "Marks", icon: Flag }],
-  map: [{ id: "map-style", label: "Style", icon: Palette }, { id: "drawn-on-map", label: "Drawn", icon: PenLine }, { id: "fold-title", label: "Lettering", icon: Type }, { id: "fold-paper", label: "Paper", icon: FileText }, ADD, LAYERS, SPONSORS],
-  sign: [{ id: "sign-settings", label: "Sign", icon: Signpost }, ADD, LAYERS, SPONSORS],
-  page: [{ id: "page-settings", label: "Page", icon: BookOpen }, ADD, LAYERS, SPONSORS],
-  scorecard: [{ id: "card-settings", label: "Card", icon: Table2 }, ADD, LAYERS, SPONSORS]
+  general: [{ id: "card-style", label: "Logo and colors", icon: Palette }, { id: "markings", label: "Marks", icon: Flag }],
+  map: [{ id: "map-style", label: "Style", icon: Palette }, { id: "drawn-on-map", label: "Drawn", icon: PenLine }, { id: "fold-title", label: "Lettering", icon: Type }, { id: "fold-paper", label: "Paper", icon: FileText }, ADD, LAYERS],
+  sign: [{ id: "sign-settings", label: "Sign", icon: Signpost }, ADD, LAYERS],
+  page: [{ id: "page-settings", label: "Page", icon: BookOpen }, ADD, LAYERS],
+  scorecard: [{ id: "card-settings", label: "Card", icon: Table2 }, ADD, LAYERS]
 };
+
+/** Settings that live inside a tool's panel: the tool they're in. */
+const PART_OF: Record<string, string> = { "print-sponsors": "print-add", "light-shadow": "map-style", "map-look": "map-style" };
 
 export function PageTools() {
   const tab = useEditor(e => e.designTab);
@@ -30,6 +34,17 @@ export function PageTools() {
   const tools = TOOLS[tab];
   // (another printout: its own tools, none open)
   useEffect(() => setOpen(null), [tab]);
+  // (Show me, from the help or the View panel: the tool its setting is in, opened)
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (typeof d !== "string" || !d.startsWith("page-tool:")) return;
+      const id = PART_OF[d.slice(10)] ?? d.slice(10);
+      if (TOOLS[useEditor.getState().designTab].some(t => t.id === id)) setOpen(id);
+    };
+    window.addEventListener(SHOW_EVENT, on);
+    return () => window.removeEventListener(SHOW_EVENT, on);
+  }, []);
   const tool = tools.find(t => t.id === open);
   return (
     <div className="shrink-0 relative z-30 px-2 pb-1.5" data-testid="page-tools">
@@ -37,7 +52,7 @@ export function PageTools() {
         <div className="glass ring-1 ring-white/15 rounded-[22px] mb-1.5 max-h-[38vh] flex flex-col overflow-hidden" data-testid="page-tool-panel" role="region" aria-label={tool.label}>
           <div className="flex items-center gap-2 pl-4 pr-1.5 pt-1.5 shrink-0">
             <span className="flex-1 text-[15px] font-bold text-zinc-50 flex items-center gap-2"><tool.icon size={17} className="text-orange-300" />{tool.label}</span>
-            <button className="h-10 shrink-0 flex items-center gap-1 rounded-full px-3.5 bg-[#a7d46f] text-[#14230d] text-[13.5px] font-bold" onClick={() => setOpen(null)} aria-label="Done" data-testid="page-tool-done"><Check size={16} /> Done</button>
+            <button className="h-11 shrink-0 flex items-center gap-1 rounded-full px-3.5 bg-orange-500 text-zinc-950 text-[13.5px] font-bold" onClick={() => setOpen(null)} aria-label="Done" data-testid="page-tool-done"><Check size={16} /> Done</button>
           </div>
           <div className="overflow-y-auto dg-scroll min-h-0 -mt-1">
             <OnlyGroup.Provider value={tool.id}><DesignPanel /></OnlyGroup.Provider>

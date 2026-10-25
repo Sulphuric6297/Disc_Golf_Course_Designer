@@ -16,6 +16,9 @@ export type RecordOptions = {
   fps: number;
   /** 0..1 as the frames are made. */
   onProgress?: (fraction: number) => void;
+  /** Each hole as it comes (the `i`th of `count` flown): its ground being sharpened first, then
+   * its frames being recorded. */
+  onHole?: (holeId: string, i: number, count: number, stage: "sharpening" | "recording") => void;
   signal?: AbortSignal;
 };
 
@@ -237,7 +240,7 @@ export async function recordFlights(src: FlightFrames, doc: CourseDoc, holeIds: 
     }
     const image = g.createImageData(width, height);
     sink = (await webCodecsSink(width, height, fps)) ?? recorderSink(canvas, width, height, fps);
-    if (!sink) throw new Error("This browser can't make videos.");
+    if (!sink) throw new Error("This browser can't make videos. Try a recent Chrome or Edge on a computer.");
     let info: FrameInfo | null = null;
     let breath = performance.now();
     let ready = -1;
@@ -245,8 +248,11 @@ export async function recordFlights(src: FlightFrames, doc: CourseDoc, holeIds: 
       if (opts.signal?.aborted) throw abortError();
       const f = plan[i];
       if (f.hole !== ready) {
+        const id = holes[f.hole].id;
         await sink.pause?.();
-        await src.prepare?.(holes[f.hole].id);
+        opts.onHole?.(id, f.hole, holes.length, "sharpening");
+        await src.prepare?.(id);
+        opts.onHole?.(id, f.hole, holes.length, "recording");
         sink.resume?.();
         ready = f.hole;
         if (opts.signal?.aborted) throw abortError();

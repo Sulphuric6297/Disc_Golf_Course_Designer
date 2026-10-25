@@ -1,13 +1,16 @@
 // The tools along the bottom of the map, with the active tool's options and a hint above them.
-import { holeLabel } from "../lib/course";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Armchair, BoxSelect, Brush, Mountain, Circle, CircleDot, Ellipsis, Footprints, Hand, House, MousePointer2, PenLine, RectangleHorizontal, Redo2, Route, Ruler, ShieldAlert, Signpost, Spline, Sprout, Square, Target, TreeDeciduous, Type, Undo2, Waves } from "lucide-react";
+import { holeBaskets, holeLabel, holeTees } from "../lib/course";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { create } from "zustand";
+import { Armchair, Brush, Mountain, Circle, CircleDot, Ellipsis, Fence, Footprints, House, MousePointer2, PenLine, RectangleHorizontal, Redo2, Route, Ruler, ShieldAlert, Shrub, Signpost, Spline, Sprout, Square, Tally2, Target, TreeDeciduous, TreePine, Trees, Type, Undo2, Waves } from "lucide-react";
 import { amenitySymbol, structureLegend, symbolSvg } from "../lib/symbols";
-import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
+import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import { getDoc, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaKind, DrawShape, LineKind, StructureKind, ToolMode, TreeKind } from "../types";
+import type { AreaKind, CourseDoc, DrawShape, LineKind, StructureKind, TeeLevel, ToolMode, TreeKind } from "../types";
 import { useTouch } from "./useLayout";
 import { fmtDist } from "../lib/units";
+import { HelpLink } from "./ui";
+import { PANEL_INSET, useSelection } from "./Inspector";
 
 /** A built thing's map symbol, small (for the tool's chips and the Features list). */
 export const structureIcon = (kind: StructureKind, size: number, id: string) =>
@@ -15,16 +18,17 @@ export const structureIcon = (kind: StructureKind, size: number, id: string) =>
 
 type Editor = ReturnType<typeof useEditor.getState>;
 
-/** One thing a tool puts on the course: how it's drawn (an area, a line, a spot) and of what kind. */
-export type ToolChoice = { id: string; label: string; mode: ToolMode; set: Partial<Editor>; color?: string; icon?: ReactNode };
+/** One thing a tool puts on the course: how it's drawn (an area, a line, a spot) and of what kind;
+ * `title`: what it is, on its chip's tooltip. */
+export type ToolChoice = { id: string; label: string; mode: ToolMode; set: Partial<Editor>; color?: string; icon?: ReactNode; title?: string };
 /** A tool: named for what goes on the course (not for how it's drawn), so a fence is under Build and a
  * road under Paths and roads. `choices`: what it has, each drawn its own way; `mode` the first's. */
 export type Tool = { id: string; mode: ToolMode; key: string; label: string; short: string; icon: ReactNode; group: number; choices?: ToolChoice[] };
 
-const area = (k: AreaKind, label: string): ToolChoice => ({ id: `area-kind-${k}`, label, mode: "draw-area", set: { areaKind: k }, color: AREA_KINDS[k].color });
-const line = (k: LineKind, label: string): ToolChoice => ({ id: `line-kind-${k}`, label, mode: "draw-line", set: { lineKind: k }, color: LINE_KINDS[k].color });
-const built = (k: StructureKind): ToolChoice => ({ id: `structure-kind-${k}`, label: STRUCTURE_KINDS[k].label, mode: "draw-structure", set: { structureKind: k }, icon: <span className="inline-block" dangerouslySetInnerHTML={{ __html: structureIcon(k, 16, `chip-${k}`) }} /> });
-const tree = (k: TreeKind, label: string): ToolChoice => ({ id: `tree-kind-${k}`, label, mode: "add-tree", set: { treeKind: k } });
+const area = (k: AreaKind, label = AREA_KINDS[k].label): ToolChoice => ({ id: `area-kind-${k}`, label, mode: "draw-area", set: { areaKind: k }, color: AREA_KINDS[k].color, title: AREA_KINDS[k].help });
+const line = (k: LineKind, label: string, icon?: ReactNode): ToolChoice => ({ id: `line-kind-${k}`, label, mode: "draw-line", set: { lineKind: k }, color: icon ? undefined : LINE_KINDS[k].color, icon, title: LINE_KINDS[k].help });
+const built = (k: StructureKind): ToolChoice => ({ id: `structure-kind-${k}`, label: STRUCTURE_KINDS[k].label, mode: "draw-structure", set: { structureKind: k }, icon: <span className="inline-block" dangerouslySetInnerHTML={{ __html: structureIcon(k, 16, `chip-${k}`) }} />, title: STRUCTURE_KINDS[k].help });
+const tree = (k: TreeKind, label: string, icon: ReactNode, title: string): ToolChoice => ({ id: `tree-kind-${k}`, label, mode: "add-tree", set: { treeKind: k }, icon, title });
 
 export const TOOLS: Tool[] = [
   { id: "select", mode: "select", key: "V", label: "Select and move", short: "Select", icon: <MousePointer2 size={18} />, group: 0 },
@@ -34,28 +38,44 @@ export const TOOLS: Tool[] = [
   {
     id: "rules", mode: "draw-area", key: "O", label: "OB and rules: OB areas and lines, hazards, casual areas, out of play, mandos, drop zones", short: "OB & rules", icon: <ShieldAlert size={18} />, group: 2,
     choices: [
-      area("ob", "OB area"), line("ob", "OB line"), area("hazard", "Hazard"), area("casual", "Casual area"), area("nogo", "Out of play"),
-      { id: "mando-kind-single", label: "Mando", mode: "add-mando", set: { mandoKind: "single" }, icon: <Signpost size={14} /> },
-      { id: "mando-kind-gate", label: "Mando gate", mode: "add-mando", set: { mandoKind: "gate" }, icon: <Signpost size={14} /> },
-      { id: "dropzone-kind", label: "Drop zone", mode: "add-dropzone", set: {}, icon: <CircleDot size={14} /> }
+      area("ob"), line("ob", "OB line"), area("hazard"), area("casual"), area("nogo"),
+      { id: "mando-kind-single", label: "Mando", mode: "add-mando", set: { mandoKind: "single" }, icon: <Signpost size={14} />, title: "A post or tree players have to pass on one side" },
+      { id: "mando-kind-gate", label: "Mando gate", mode: "add-mando", set: { mandoKind: "gate" }, icon: <Tally2 size={14} />, title: "Two posts players have to throw between" },
+      { id: "dropzone-kind", label: "Drop zone", mode: "add-dropzone", set: {}, icon: <CircleDot size={14} />, title: "Where players throw from after missing a mando or going OB, when the hole has one" }
     ]
   },
-  { id: "paths", mode: "draw-line", key: "L", label: "Paths and roads: walking paths, next-tee routes, roads, parking", short: "Paths & roads", icon: <Footprints size={18} />, group: 3, choices: [line("path", "Walking path"), line("walk", "Next-tee route"), line("road", "Road"), area("parking", "Parking lot")] },
-  { id: "water", mode: "draw-area", key: "W", label: "Water: ponds, lakes and streams", short: "Water", icon: <Waves size={18} />, group: 3, choices: [area("water", "Pond or lake"), line("stream", "Stream")] },
-  { id: "trees", mode: "add-tree", key: "R", label: "Trees and woods: a tree at a time, or a stand of woods", short: "Trees", icon: <TreeDeciduous size={18} />, group: 3, choices: [tree("deciduous", "Leafy tree"), tree("conifer", "Pine"), tree("bush", "Bush"), area("woods", "Woods")] },
-  { id: "grass", mode: "draw-area", key: "U", label: "Grass and ground: fairways, landing zones, tall grass, sand and dirt", short: "Grass", icon: <Sprout size={18} />, group: 3, choices: [area("fairway", "Fairway"), area("green", "Landing zone"), area("rough", "Tall grass"), area("sand", "Sand or dirt")] },
+  { id: "paths", mode: "draw-line", key: "L", label: "Paths and roads: walking paths, next-tee routes, roads, parking", short: "Paths & roads", icon: <Footprints size={18} />, group: 3, choices: [line("path", "Walking path"), line("walk", "Next-tee route"), line("road", "Road"), area("parking")] },
+  { id: "water", mode: "draw-area", key: "W", label: "Water: ponds, lakes and streams", short: "Water", icon: <Waves size={18} />, group: 3, choices: [area("water"), line("stream", "Stream")] },
+  {
+    id: "trees", mode: "add-tree", key: "R", label: "Trees and woods: a tree at a time, or a stand of woods", short: "Trees", icon: <TreeDeciduous size={18} />, group: 3,
+    choices: [
+      tree("deciduous", "Leafy tree", <TreeDeciduous size={14} />, "A leafy tree where you click: an oak, a maple"),
+      tree("conifer", "Pine", <TreePine size={14} />, "A pine or another evergreen where you click"),
+      tree("bush", "Bush", <Shrub size={14} />, "A bush where you click"),
+      { ...area("woods"), color: undefined, icon: <Trees size={14} /> }
+    ]
+  },
+  { id: "grass", mode: "draw-area", key: "U", label: "Grass: fairways, landing zones, tall grass, sand and dirt", short: "Grass", icon: <Sprout size={18} />, group: 3, choices: [area("fairway"), area("green"), area("rough"), area("sand")] },
   {
     id: "build", mode: "draw-structure", key: "S", label: "Build: buildings, shelters, decks, bridges, boardwalks, stairs, walls, fences", short: "Build", icon: <House size={18} />, group: 3,
-    choices: [built("building"), built("shelter"), built("deck"), built("bridge"), built("boardwalk"), built("stairs"), built("wall"), line("fence", "Fence")]
+    choices: [built("building"), built("shelter"), built("deck"), built("bridge"), built("boardwalk"), built("stairs"), built("wall"), line("fence", "Fence", <Fence size={14} />)]
   },
   { id: "amenities", mode: "add-amenity", key: "A", label: "Amenities: bench, trash can, sign, parking…", short: "Amenities", icon: <Armchair size={18} />, group: 4 },
   { id: "label", mode: "add-label", key: "K", label: "Text label", short: "Label", icon: <Type size={18} />, group: 4 },
-  { id: "ground", mode: "sculpt", key: "G", label: "Shape the ground: paint to raise, lower, flatten or smooth it", short: "Ground", icon: <Mountain size={18} />, group: 5 },
+  { id: "ground", mode: "sculpt", key: "G", label: "Shape the ground: paint to raise, lower, flatten, smooth or restore it", short: "Ground", icon: <Mountain size={18} />, group: 5 },
   { id: "measure", mode: "measure", key: "D", label: "Measure distance and elevation", short: "Measure", icon: <Ruler size={18} />, group: 5 }
 ];
 
 /** Keys that go straight to one of a tool's choices. */
 export const CHOICE_KEYS: Record<string, string> = { M: "mando-kind-single", Z: "dropzone-kind" };
+
+/** Each tool's page in the help guide (its ? beside the hint). */
+const TOOL_HELP: Record<string, string> = {
+  select: "pointer", hole: "new-hole", tee: "tees-pins", pin: "tees-pins", rules: "ob", paths: "lines", water: "areas", trees: "trees",
+  grass: "areas", build: "build", amenities: "amenities", label: "amenities", ground: "ground", measure: "measure"
+};
+/** The help topic for the tool in use (for a ? by its hint). */
+export const toolHelp = (ed: Editor) => { const t = toolOf(ed); return t ? TOOL_HELP[t.id] : undefined; };
 
 const matches = (ed: Editor, c: ToolChoice) => ed.tool === c.mode && Object.entries(c.set).every(([k, v]) => (ed as Record<string, unknown>)[k] === v);
 /** The tool in use: the one whose choice is being drawn (or, a kind no tool lists, the first that draws that way). */
@@ -83,20 +103,28 @@ export const pickTool = (t: Tool) => {
   drawChoice(lastChoice.get(t.id) ?? t.choices[0]);
 };
 
+/** The color a new tee for the hole goes down in, as placing it does: the one picked, or the first
+ * the hole hasn't got when it has that one already. */
+export const teeLevelFor = (doc: Pick<CourseDoc, "items">, holeId: string | null | undefined, wanted: TeeLevel): TeeLevel => {
+  if (!holeId) return wanted;
+  const taken = new Set(holeTees(doc, holeId).map(t => t.level));
+  return taken.has(wanted) ? TEE_ORDER.find(l => !taken.has(l)) ?? wanted : wanted;
+};
+
 const HINTS: Partial<Record<ToolMode, string>> = {
   "add-hole": "Click where the tee goes, then where the basket goes. Keep going for the next hole · Esc when done",
   "add-tee": "Click to add another tee to the selected hole",
   "add-basket": "Click to add another pin position (B, C…) to the selected hole",
   "add-mando": "Click beside the hole's line where the post or tree is",
   "add-dropzone": "Click to place a drop zone",
-  "draw-area": "Click the corners · double-click or Enter to finish · Backspace removes the last point · Esc cancels",
-  "draw-line": "Click along the line · double-click or Enter to finish · Backspace removes the last point · Esc cancels",
-  "draw-structure": "Click along it, end to end · double-click or Enter to finish · Backspace removes the last point · Esc cancels",
+  "draw-area": "Click the corners, then the first one again (or double-click, or Enter) to finish · Backspace or Ctrl+Z removes the last point · Esc cancels",
+  "draw-line": "Click along the line · double-click or Enter to finish · Backspace or Ctrl+Z removes the last point · Esc cancels",
+  "draw-structure": "Click along it, end to end · double-click or Enter to finish · Backspace or Ctrl+Z removes the last point · Esc cancels",
   "add-tree": "Click to plant trees",
   "add-amenity": "Click to place it",
-  "add-label": "Click to place a label, then type its text in the panel",
+  "add-label": "Click where the label goes, then type it in the panel",
   measure: "Click a start point, then click anywhere to measure from it · Shift+click adds a turn · Esc to finish",
-  sculpt: "Drag over the ground to paint it · hold still to keep going · right-drag moves the map · Ctrl+Z undoes a stroke"
+  sculpt: "Drag over the ground to paint it · hold still to keep going · Space+drag moves the map · Ctrl+Z undoes a stroke"
 };
 
 /** The same, for a touch screen (no keys, no right button, no double-click). */
@@ -112,7 +140,7 @@ const TOUCH_HINTS: Partial<Record<ToolMode, string>> = {
   "draw-structure": "Tap along it, end to end, then Done",
   "add-tree": "Tap to plant trees",
   "add-amenity": "Tap to place it",
-  "add-label": "Tap to place a label, then type its text",
+  "add-label": "Tap where the label goes, then type it in the panel",
   measure: "Tap a start point, then tap anywhere to measure from it",
   sculpt: "Paint the ground with one finger · two fingers move the map"
 };
@@ -129,7 +157,7 @@ const SHAPES: Record<DrawShape, { label: string; title: string; icon: ReactNode 
 const BrushSliders = ({ ed, strength = true }: { ed: Editor; strength?: boolean }) => {
   const units = useCourse(s => s.doc.units);
   return (
-    <div key="brush" className="flex shrink-0 touch:flex-1 items-center gap-3 glass ring-1 ring-white/10 rounded-full px-3 py-1 touch:py-1.5 touch:justify-between" data-testid="brush-sliders">
+    <div key="brush" className="flex shrink-0 touch:flex-1 items-center gap-3 glass ring-1 ring-white/10 rounded-full px-3 py-1 touch:py-1.5 touch:min-h-[44px] touch:justify-between" data-testid="brush-sliders">
       <label className="flex items-center gap-1.5 text-xs touch:text-[13px] text-zinc-300 whitespace-nowrap">Brush
         <input type="range" aria-label="Brush size" min={4} max={150} step={1} value={ed.brushSize} onChange={e => ed.set({ brushSize: Number(e.target.value) })} className="slider w-20 touch:w-24" style={{ ["--fill" as string]: `${((ed.brushSize - 4) / 146) * 100}%` }} />
         <span className="tabular-nums w-12">{fmtDist(ed.brushSize * 2, units)}</span>
@@ -166,16 +194,21 @@ const TOUCH_SHAPE_HINTS: Record<DrawShape, string> = {
   paint: "Paint the area on with one finger; lift it to finish"
 };
 
-const Chip = ({ active, onClick, children, color, testid }: { active: boolean; onClick: () => void; children: ReactNode; color?: string; testid?: string }) => (
+// (a finger's size on a touch screen: 44 px chips, 40 px buttons inside a group)
+const Chip = ({ active, onClick, children, color, testid, title, dim }: { active: boolean; onClick: () => void; children: ReactNode; color?: string; testid?: string; title?: string; dim?: boolean }) => (
   <button
     onClick={onClick}
     data-testid={testid}
-    className={`flex items-center gap-1.5 px-2.5 py-1 touch:py-2 touch:px-3 touch:text-[13px] shrink-0 whitespace-nowrap rounded-full text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${active ? "bg-zinc-100 text-zinc-900" : "glass text-zinc-300 ring-1 ring-white/10 hover:bg-white/[0.09]"}`}
+    title={title}
+    className={`flex items-center gap-1.5 px-2.5 py-1 touch:py-2 touch:px-3 touch:min-h-[44px] touch:text-[13px] shrink-0 whitespace-nowrap rounded-full text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${active ? "bg-zinc-100 text-zinc-900" : "glass text-zinc-300 ring-1 ring-white/10 hover:bg-white/[0.09]"} ${dim && !active ? "opacity-50" : ""}`}
   >
     {color && <span className="w-2.5 h-2.5 rounded-full border border-black/30" style={{ background: color }} />}
     {children}
   </button>
 );
+
+/** A choice inside a group of them (how to draw, what the brush does). */
+const RADIO = "flex items-center gap-1 px-2 py-0.5 touch:py-1.5 touch:px-2.5 touch:min-h-[40px] touch:text-[13px] whitespace-nowrap rounded-full text-xs font-semibold";
 
 /** The active tool's options (tee colors, kinds of area or line, how to draw…), or null. */
 export function toolOptions(ed: Editor): ReactNode[] | null {
@@ -187,7 +220,7 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
         // (Lines can't be rectangles or circles: those draw freehand)
         const on = ed.drawShape === sh || (sh === "freehand" && !list.includes(ed.drawShape));
         return (
-          <button key={sh} role="radio" aria-checked={on} data-testid={`draw-shape-${sh}`} title={SHAPES[sh].title} onClick={() => set({ drawShape: sh })} className={`flex items-center gap-1 px-2 py-0.5 touch:py-1.5 touch:px-2.5 touch:text-[13px] whitespace-nowrap rounded-full text-xs font-semibold ${on ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09]"}`}>
+          <button key={sh} role="radio" aria-checked={on} data-testid={`draw-shape-${sh}`} title={SHAPES[sh].title} onClick={() => set({ drawShape: sh })} className={`${RADIO} ${on ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09]"}`}>
             {SHAPES[sh].icon}{SHAPES[sh].label}
           </button>
         );
@@ -204,26 +237,20 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
     return [...kit.choices.map(c => <Chip key={c.id} active={matches(ed, c)} color={c.color} onClick={() => drawChoice(c)} testid={c.id}>{c.icon}{c.label}</Chip>), ...how];
   }
   switch (ed.tool) {
-      case "select":
-        // What a drag on the map does: move the map, or draw a box to select things
-        return [
-          <div key="drag" className="flex shrink-0 gap-0.5 glass ring-1 ring-white/10 rounded-full p-0.5" role="radiogroup" aria-label="Drag on the map">
-            <span className="pl-2 pr-1 self-center text-[11px] text-zinc-400 whitespace-nowrap touch:hidden">Dragging the map:</span>
-            {([[false, "Moves it", <Hand key="i" size={13} />, "drag-pan"], [true, "Draws a box to select", <BoxSelect key="i" size={13} />, "drag-select"]] as const).map(([on, label, icon, id]) => (
-              <button key={id} role="radio" aria-checked={ed.dragSelect === on} data-testid={id} title={on ? "Drag a box around things to select them (Shift+drag)" : "Drag to move the map"} onClick={() => set({ dragSelect: on })} className={`flex items-center gap-1 px-2 py-0.5 touch:py-1.5 touch:px-2.5 touch:text-[13px] whitespace-nowrap rounded-full text-xs font-semibold ${ed.dragSelect === on ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09]"}`}>
-                {icon}{label}
-              </button>
-            ))}
-          </div>
-        ];
       case "add-hole":
-      case "add-tee":
-        return TEE_ORDER.map(l => <Chip key={l} active={ed.teeLevel === l} color={TEE_LEVELS[l].color} onClick={() => set({ teeLevel: l })} testid={`tee-level-${l}`}>{TEE_LEVELS[l].label}</Chip>);
+      case "add-tee": {
+        // (another tee: the colors the hole has already are dimmed, as a new one goes down in the
+        // first color it hasn't got)
+        const doc = getDoc();
+        const hole = ed.tool === "add-tee" && !ed.holeToBasket ? doc.holes.find(h => h.id === ed.activeHoleId) : undefined;
+        const has = new Set(hole ? holeTees(doc, hole.id).map(t => t.level) : []);
+        return TEE_ORDER.map(l => <Chip key={l} active={ed.teeLevel === l} dim={has.has(l)} title={hole && has.has(l) ? `Hole ${holeLabel(doc, hole.id)} has a ${TEE_LEVELS[l].label.toLowerCase()} tee already` : `${TEE_LEVELS[l].skill} (${TEE_LEVELS[l].rating})`} color={TEE_LEVELS[l].color} onClick={() => set({ teeLevel: l })} testid={`tee-level-${l}`}>{TEE_LEVELS[l].label}</Chip>);
+      }
       case "sculpt":
         return [
           <div key="ground" className="flex shrink-0 gap-0.5 glass ring-1 ring-white/10 rounded-full p-0.5 mr-1" role="radiogroup" aria-label="What the brush does">
             {GROUND_BRUSHES.map(g => (
-              <button key={g.value} role="radio" aria-checked={ed.groundBrush === g.value} title={g.title} data-testid={`ground-${g.value}`} onClick={() => set({ groundBrush: g.value })} className={`px-2.5 py-0.5 touch:py-1.5 touch:px-3 touch:text-[13px] whitespace-nowrap rounded-full text-xs font-semibold ${ed.groundBrush === g.value ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09]"}`}>{g.label}</button>
+              <button key={g.value} role="radio" aria-checked={ed.groundBrush === g.value} title={g.title} data-testid={`ground-${g.value}`} onClick={() => set({ groundBrush: g.value })} className={`${RADIO} px-2.5 touch:px-3 ${ed.groundBrush === g.value ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09]"}`}>{g.label}</button>
             ))}
           </div>,
           <BrushSliders key="brush" ed={ed} />
@@ -243,10 +270,12 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
           ))
         ];
       case "add-amenity":
-        return (Object.keys(AMENITY_KINDS) as AmenityKind[]).map(k => (
+        // (bridges and shelters are built with Build, so their old map signs aren't offered, unless
+        // one is what's picked; a parking lot is drawn with Paths and roads, so here it's the sign)
+        return [...AMENITY_ORDER, ...(AMENITY_ORDER.includes(ed.amenityKind) ? [] : [ed.amenityKind])].map(k => (
           <Chip key={k} active={ed.amenityKind === k} testid={`amenity-kind-${k}`} onClick={() => set({ amenityKind: k })}>
             <span className="inline-block" dangerouslySetInnerHTML={{ __html: symbolSvg(amenitySymbol(k, { x: 0, y: 0 }, 1), 16, k === "here" ? 22 : 16) }} />
-            {k === "here" ? "You are here" : AMENITY_KINDS[k].label}
+            {k === "here" ? "You are here" : AMENITY_KINDS[k].pick ?? AMENITY_KINDS[k].label}
           </Chip>
         ));
       case "add-mando":
@@ -273,9 +302,12 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
     }
     const hole = doc.holes.find(h => h.id === ed.activeHoleId);
     if (!hole) return `Pick a hole first, then ${click.toLowerCase()} where its ${ed.tool === "add-tee" ? "new tee" : "new pin"} goes`;
-    return ed.tool === "add-tee"
-      ? `${click} where hole ${holeLabel(doc, hole.id)}'s ${TEE_LEVELS[ed.teeLevel].label.toLowerCase()} tee goes (same hole, another skill level)`
-      : `${click} where hole ${holeLabel(doc, hole.id)}'s next pin position goes`;
+    const n = holeLabel(doc, hole.id);
+    // (named as it will go down: a color the hole has already moves on to the next it hasn't)
+    if (ed.tool === "add-tee") return `${click} where hole ${n}'s ${TEE_LEVELS[teeLevelFor(doc, hole.id, ed.teeLevel)].label.toLowerCase()} tee goes (same hole, another skill level)`;
+    const taken = new Set(holeBaskets(doc, hole.id).map(b => b.position));
+    const next = PIN_POSITIONS.find(x => !taken.has(x));
+    return next ? `${click} where hole ${n}'s pin ${next} goes` : `Hole ${n} has pins ${PIN_POSITIONS[0]} to ${PIN_POSITIONS[PIN_POSITIONS.length - 1]} already`;
   }
   const drawing = ed.tool === "draw-area" || ed.tool === "draw-line" || ed.tool === "draw-structure";
   const lineDrawn = ed.tool === "draw-line" || (ed.tool === "draw-structure" && STRUCTURE_KINDS[ed.structureKind].shape === "line");
@@ -284,7 +316,7 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
     return drawing && shape !== "points" ? TOUCH_SHAPE_HINTS[shape]
       : ed.tool === "add-mando" && ed.mandoKind === "gate" ? "Tap on the hole's line where the gate is"
       : ed.tool === "draw-structure" && ed.structureKind === "bridge" ? "Tap one bank, then the other, then Done"
-      : ed.tool === "draw-structure" && !lineDrawn ? "Tap the corners, then Done"
+      : ed.tool === "draw-structure" && !lineDrawn ? "Tap the corners, then Done (or tap the first corner again)"
       : ed.tool === "select" && ed.dragSelect ? "Drag a box around things · tap to add or take one out · two fingers move the map"
       : TOUCH_HINTS[ed.tool];
   }
@@ -292,8 +324,8 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
   return ed.tool === "select" ? (ed.dragSelect ? "Drag a box around things · Shift+click adds or takes one out · right-drag to turn and tilt" : undefined)
     : drawing && shape !== "points" ? SHAPE_HINTS[shape]
     : ed.tool === "add-mando" && ed.mandoKind === "gate" ? "Click on the hole's line where the gate is"
-    : ed.tool === "draw-structure" && ed.structureKind === "bridge" ? "Click one bank, then double-click the other (or Enter) · Backspace removes the last point · Esc cancels"
-    : ed.tool === "draw-structure" && !lineDrawn ? "Click the corners · double-click or Enter to finish · Esc cancels"
+    : ed.tool === "draw-structure" && ed.structureKind === "bridge" ? "Click one bank, then double-click the other (or Enter) · Backspace or Ctrl+Z removes the last point · Esc cancels"
+    : ed.tool === "draw-structure" && !lineDrawn ? HINTS["draw-area"]
     : HINTS[ed.tool];
 }
 
@@ -303,6 +335,24 @@ const STEP_TOOLS: Record<string, string[]> = {
   design: ["select", "hole", "tee", "pin", "rules", "paths", "water", "trees", "grass", "build", "ground", "measure"],
   export: ["select"]
 };
+
+/** How much of the map the tools take at its bottom (the toasts sit above them; 0 while they're
+ * not shown). */
+export const useToolbarRoom = create<{ height: number }>(() => ({ height: 0 }));
+
+/** The part of the map the panels over it leave clear, from its left and right edges (px, with a
+ * 12 px gap): on Design, the hole list (or the picked thing's panel next to it) and the checks. On
+ * the Site step its panel sits beside the map, not over it. */
+export function useMapInsets() {
+  const step = useEditor(e => e.step);
+  const checks = useEditor(e => e.problemsOpen);
+  const teeView = useEditor(e => !!e.teeView);
+  const readOnly = useCourse(s => s.readOnly);
+  const open = useSelection().open;
+  const design = step === "design" && !readOnly;
+  // (from a tee, the hole list is put away)
+  return { left: design && !teeView ? (open ? PANEL_INSET : 196) : 12, right: design && checks ? 364 : 12 };
+}
 
 // (on a wide screen, each tool's name under its icon)
 const BAR_BTN = "dg-toolbtn relative w-10 h-10 rounded-xl flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
@@ -314,19 +364,31 @@ export function Toolbar() {
   const undo = useCourse(s => s.undo);
   const redo = useCourse(s => s.redo);
   const touch = useTouch();
+  const inset = useMapInsets();
   const [more, setMore] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!more) return;
     const close = (e: MouseEvent) => { if (!moreRef.current?.contains(e.target as Node)) setMore(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setMore(false); };
+    // (Esc closes the menu, and only the menu: the tool and the selection stay)
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setMore(false); } };
     window.addEventListener("pointerdown", close);
-    window.addEventListener("keydown", esc);
-    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc); };
+    window.addEventListener("keydown", esc, true);
+    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc, true); };
   }, [more]);
+  // (its height, for the toasts to sit above it)
+  const watch = useRef<ResizeObserver | null>(null);
+  const measured = useCallback((el: HTMLDivElement | null) => {
+    watch.current?.disconnect();
+    watch.current = null;
+    if (!el) { useToolbarRoom.setState({ height: 0 }); return; }
+    watch.current = new ResizeObserver(() => useToolbarRoom.setState({ height: el.offsetHeight }));
+    watch.current.observe(el);
+  }, []);
   if (ed.teeView) return null;
   const options = toolOptions(ed);
   const hint = toolHint(ed, touch);
+  const help = toolHelp(ed);
   const main = STEP_TOOLS[ed.step] ?? STEP_TOOLS.design;
   const active = toolOf(ed)?.id;
   const shown = TOOLS.filter(t => main.includes(t.id) || t.id === active);
@@ -340,7 +402,7 @@ export function Toolbar() {
       data-tool={t.id}
       onClick={() => { pickTool(t); setMore(false); }}
       className={inMenu
-        ? `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${active === t.id ? "bg-orange-500 text-zinc-950" : "text-zinc-200 hover:bg-white/[0.09]"}`
+        ? `flex items-center gap-2.5 px-3 py-2 touch:min-h-[44px] rounded-lg text-sm text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${active === t.id ? "bg-orange-500 text-zinc-950" : "text-zinc-200 hover:bg-white/[0.09]"}`
         : `${BAR_BTN} ${active === t.id ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09] hover:text-zinc-50"}`}
     >
       {t.icon}
@@ -349,10 +411,16 @@ export function Toolbar() {
     </button>
   );
   return (
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-20 max-w-[calc(100%-24px)]">
-      {options && <div className="flex flex-wrap justify-center gap-1.5 max-w-[760px]" data-testid="tool-options">{options}</div>}
-      {hint && <div className="text-xs text-zinc-100 glass backdrop-blur rounded-lg px-3 py-1.5 ring-1 ring-white/10 text-center" data-testid="tool-hint">{hint}</div>}
-      <div className="flex items-center gap-0.5 max-w-full glass backdrop-blur rounded-2xl px-1.5 py-1.5 shadow-xl shadow-black/40 ring-1 ring-white/10" role="toolbar" aria-label="Tools" data-testid="tool-bar">
+    // (centred on the part of the map the panels leave clear)
+    <div ref={measured} className="absolute bottom-4 flex flex-col items-center gap-2 z-20 pointer-events-none" style={{ left: inset.left, right: inset.right }}>
+      {options && <div className="pointer-events-auto flex flex-wrap justify-center gap-1.5 max-w-[760px]" data-testid="tool-options">{options}</div>}
+      {hint && (
+        <div className="pointer-events-auto flex items-center gap-2 text-xs text-zinc-100 glass backdrop-blur rounded-lg px-3 py-1.5 ring-1 ring-white/10 text-center" data-testid="tool-hint">
+          <span>{hint}</span>
+          {help && <HelpLink topic={help} label={toolOf(ed)?.short ?? "This tool"} />}
+        </div>
+      )}
+      <div className="pointer-events-auto flex items-center gap-0.5 max-w-full glass backdrop-blur rounded-2xl px-1.5 py-1.5 shadow-xl shadow-black/40 ring-1 ring-white/10" role="toolbar" aria-label="Tools" data-testid="tool-bar">
         {shown.map((t, i) => (
           <div key={t.id} className="flex items-center shrink-0">
             {i > 0 && shown[i - 1].group !== t.group && <div className="w-px h-5 bg-white/[0.12] mx-1" />}

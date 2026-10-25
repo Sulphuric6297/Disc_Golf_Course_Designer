@@ -2,7 +2,7 @@
 // button over the flyover), and recording one.
 import { create } from "zustand";
 import { getView } from "./view";
-import { holeNumber } from "../lib/course";
+import { holeLabel } from "../lib/course";
 import { VIDEO_SIZES, videoSuffix, type VideoFps, type VideoResolution } from "../lib/video";
 import { runExport } from "./exportJob";
 import { getDoc, useCourse, useEditor } from "./course";
@@ -45,7 +45,7 @@ if (typeof window !== "undefined") (window as any).__dgVideo = () => useVideoSet
 /** Records flyovers of the holes (in this order) and downloads the video. */
 export const recordVideo = (holeIds: string[]) => {
   const doc = getDoc();
-  const label = holeIds.length === 1 ? `Flyover video of hole ${holeNumber(doc, holeIds[0])}` : "Course flyover video";
+  const label = holeIds.length === 1 ? `Flyover video of hole ${holeLabel(doc, holeIds[0])}` : "Course flyover video";
   return runExport(label, async job => {
     const view = getView();
     if (!view) throw new Error("The map isn't ready yet.");
@@ -56,11 +56,21 @@ export const recordVideo = (holeIds: string[]) => {
     const off = useCourse.subscribe(s => { if (s.doc.id !== doc.id) ctrl.abort(); });
     job.signal.addEventListener("abort", () => ctrl.abort());
     try {
-      job.progress(0);
+      // (no number while it can't be told: the map being painted, a hole being sharpened)
+      let at: number | null = null;
       // The ground in the Design look (unless the photo was asked for)
-      const ground = useEditor.getState().flyLook === "photo" ? null : await paintedGround(doc);
+      const photo = useEditor.getState().flyLook === "photo";
+      if (!photo) job.progress(null, "Painting the map");
+      const ground = photo ? null : await paintedGround(doc);
       if (ctrl.signal.aborted) throw new DOMException("Cancelled", "AbortError");
-      const video = await view.recordFlyover(holeIds, { width, height, fps, signal: ctrl.signal, onProgress: f => job.progress(f), ground });
+      const video = await view.recordFlyover(holeIds, {
+        width, height, fps, signal: ctrl.signal, ground,
+        onProgress: f => { at = f; job.progress(f); },
+        onHole: (id, i, count, stage) => {
+          if (stage === "sharpening" && photo) return;
+          job.progress(at, stage === "sharpening" ? `Sharpening hole ${holeLabel(doc, id)}` : `Recording hole ${holeLabel(doc, id)}${count > 1 ? ` (${i + 1} of ${count})` : ""}`);
+        }
+      });
       download(video.blob, fileName(doc, `${videoSuffix(doc, holeIds)}.${video.ext}`));
       toast(`Flyover video saved: ${Math.round(video.seconds)} s, ${width} × ${height}, ${video.ext.toUpperCase()}.`, "success");
     } catch (err) {

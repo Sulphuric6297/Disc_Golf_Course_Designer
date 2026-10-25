@@ -4,6 +4,7 @@
 // own in one click. Each part's colors are the course's own: kept when the style changes.
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight, RotateCcw } from "lucide-react";
+import { defaultStyle } from "../lib/course";
 import { COLOR_PICKS, conifersOf, paintedPinesOf, tallGrassOf, treeMixOf } from "../lib/landscapes";
 import { LIGHT_MODES, LOOK_THEMES, PART_CHOICES, compassName, latitudeOf, lightOf, lookParts, partChanged, sunArc, sunFromOf, themeOf, type LookPart, type LookParts } from "../lib/mapLook";
 import { useCourse } from "../state/course";
@@ -70,6 +71,12 @@ function PathOrder({ s }: { s: MapStyle }) {
 
 type Part = LookPart | "light" | "elevation";
 const PART_LABEL: Record<Part, string> = { trees: "Trees", grass: "Grass", fairway: "Fairways", paths: "Paths and roads", water: "Water", light: "Light and shadow", elevation: "Elevation" };
+const PARTS = Object.keys(PART_LABEL) as Part[];
+/** The light's own settings and its tone: changed when set to anything but the course's default. */
+const DEF = defaultStyle();
+const LIGHT_KEYS = ["sunHeight", "shadows", "light", "contrast", "colorStrength", "paint"] as const;
+const LIGHT_RESET: Partial<MapStyle> = { lightMode: undefined, goldenSun: undefined, sunFrom: undefined, sunHeight: undefined, shadows: undefined, light: undefined, contrast: undefined, colorStrength: undefined, paint: undefined };
+const ELEVATION_RESET: Partial<MapStyle> = { hillshade: true, reliefLook: undefined, reliefScale: undefined };
 /** Each part's color on the map (its field in the style), and its own color's label. */
 const COLOR_FIELD = { trees: "trees", grass: "rough", fairway: "fairway", paths: "path", water: "water" } as const;
 const COLOR_LABEL: Record<LookPart, string> = { trees: "Trees", grass: "Grass", fairway: "Fairway", paths: "Paths", water: "Water" };
@@ -126,21 +133,25 @@ export function MapLookPanel() {
   // (the part opened stays under the pointer while the one open before closes above it)
   const keep = useKeepInPlace();
   const theme = themeOf(s), parts = lookParts(s), lt = lightOf(s);
-  const mixed = (Object.keys(PART_LABEL) as Part[]).some(p => (p === "elevation" ? false : p === "light" ? !!s.lightMode || s.goldenSun !== undefined : partChanged(s, p)));
   // (how the ground's shape is drawn: Shaded unless picked)
   const relief = !s.hillshade ? "off" : s.reliefLook === "sketched" ? "cliffs" : s.reliefLook ?? "shaded";
   /** One part's setting changed (kept apart from its style's own). */
   const setPart = <K extends LookPart>(part: K, patch: Partial<LookParts[K]>) => setStyle({ lookParts: { ...s.lookParts, [part]: { ...s.lookParts?.[part], ...patch } } });
   const resetPart = (part: Part) => {
-    if (part === "light") { setStyle({ lightMode: undefined, goldenSun: undefined, sunFrom: undefined, sunHeight: undefined, shadows: undefined }); return; }
-    if (part === "elevation") { setStyle({ hillshade: true, reliefLook: undefined, reliefScale: undefined }); return; }
+    if (part === "light") { setStyle(LIGHT_RESET); return; }
+    if (part === "elevation") { setStyle(ELEVATION_RESET); return; }
     const own = { ...s.lookParts };
     delete own[part];
     setStyle({ lookParts: Object.keys(own).length ? own : undefined, ...(part === "paths" ? { pathOrder: undefined } : {}) });
   };
   const pickTheme = (id: string) => setStyle({ mapLook: id === "classic" ? undefined : (id as MapStyle["mapLook"]), lookParts: undefined, lightMode: undefined, goldenSun: undefined });
+  // (every part back to the style's own, in one undo step)
+  const resetAll = () => setStyle({ ...LIGHT_RESET, ...ELEVATION_RESET, lookParts: undefined, pathOrder: undefined });
   const current = (p: Part) => (p === "elevation" ? ELEVATION_LOOKS.find(l => l.id === relief)!.label : p === "light" ? LIGHT_MODES.find(m => m.id === lt.mode)!.label : (PART_CHOICES[p] as { id: string; label: string }[]).find(c => c.id === parts[p].style)?.label ?? "");
-  const changed = (p: Part) => (p === "elevation" ? relief !== "shaded" || (s.reliefScale ?? 1) !== 1 : p === "light" ? !!s.lightMode || s.goldenSun !== undefined || s.sunFrom !== undefined : partChanged(s, p) || (p === "paths" && !!s.pathOrder));
+  const lightChanged = !!s.lightMode || s.goldenSun !== undefined || s.sunFrom !== undefined || LIGHT_KEYS.some(k => s[k] !== undefined && s[k] !== DEF[k]);
+  const changed = (p: Part) => (p === "elevation" ? relief !== "shaded" || (s.reliefScale ?? 1) !== 1 : p === "light" ? lightChanged : partChanged(s, p) || (p === "paths" && !!s.pathOrder));
+  // (the style card says Mixed when any part shows its dot; Reset all takes every dot away)
+  const mixed = PARTS.some(changed);
   const base = import.meta.env.BASE_URL;
   const painted = parts.trees.style !== "classic";
   const pinesNow = painted ? paintedPinesOf(s, parts.trees.pines) : conifersOf(s);
@@ -163,10 +174,10 @@ export function MapLookPanel() {
 
       <div className="flex items-center justify-between mb-1.5">
         <div className="text-[12px] font-semibold text-zinc-400 px-1">Parts of the map</div>
-        {mixed && <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => pickTheme(theme.id)}><RotateCcw size={12} /> Reset all</button>}
+        {mixed && <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={resetAll} title="Every part back to the map style's own"><RotateCcw size={12} /> Reset all</button>}
       </div>
       <div className="rounded-[16px] bg-white/[0.06] overflow-hidden">
-      {(Object.keys(PART_LABEL) as Part[]).map(p => {
+      {PARTS.map(p => {
         const isOpen = open === p;
         const pic = p === "elevation" ? `${base}relief/${relief}.jpg` : p === "light" ? `${base}parts/light-${lt.mode}.jpg` : `${base}parts/${p}-${parts[p].style}.jpg`;
         return (

@@ -72,8 +72,9 @@ test("a hole up the hill: elevation change and par on the real terrain", async (
   const row = page.getByTestId("hole-row");
   await page.keyboard.press("Escape");
   await row.click();
-  await expect(page.getByTestId("hole-stats")).toContainText(/\+\d+(\.\d)? ft/);
-  await expect(page.getByTestId("hole-stats")).toContainText(/uphill/i);
+  // (the climb without its sign: the word says which way)
+  await expect(page.getByTestId("hole-stats")).toContainText(/Uphill\s*\d+(\.\d)? ft/);
+  await expect(page.getByTestId("hole-stats")).not.toContainText(/\+\d/);
   await expect(page.getByTestId("elevation-profile")).toBeVisible();
   // (its heights with their unit: bare four-figure heights read as years)
   await expect(page.getByTestId("elevation-profile").locator("text").first()).toHaveText(/^-?[\d,]+ ft$/);
@@ -256,7 +257,8 @@ test("making the site bigger keeps the design on the same ground", async ({ page
   await page.mouse.move(nw.x - 90, nw.y - 60, { steps: 10 });
   await page.mouse.up();
   await page.getByText("Trees spotted on the satellite photo").click();
-  await page.getByText("Paths, roads, water and buildings").click();
+  // (exact: the Site step's "Update paths, roads, water and buildings" is on the page too)
+  await page.getByText("Paths, roads, water and buildings", { exact: true }).click();
   await page.getByTestId("import-site").click();
   await expect.poll(async () => (await course(page)).canvas.width, { timeout: 90_000 }).toBeGreaterThan(W + 100);
   expect((await course(page)).canvas.height).toBeGreaterThan(H + 50);

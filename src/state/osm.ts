@@ -1,26 +1,35 @@
 // Looking up OpenStreetMap again for the site already brought in (its servers are often busy, so
-// the import may have come without paths, roads and water): what came from it before is replaced,
-// and Undo brings that back.
-import { OSM_UNREACHABLE, fromMaps, osmItems } from "../lib/importSite";
+// the import may have come without paths, roads, water and buildings): what came from it before
+// is replaced, and Undo brings that back. As on the import, OpenStreetMap's woods give way to the
+// stands of measured trees.
+import { create } from "zustand";
+import { OSM_ASKING, OSM_NOTHING, OSM_UNREACHABLE, fromMaps, osmItems } from "../lib/importSite";
 import { changeDoc, getDoc } from "./course";
 import { toast } from "./toast";
 
-let busy = false;
+/** A lookup under way (the Site step's button shows it). */
+export const useOsm = create<{ busy: boolean }>(() => ({ busy: false }));
 
 export const refreshOsm = async () => {
   const d = getDoc();
-  if (!d.site.bounds || busy) return;
-  busy = true;
-  toast("Looking up paths, roads and water on OpenStreetMap…", "info", false, undefined, 4000);
+  if (!d.site.bounds || useOsm.getState().busy) return;
+  useOsm.setState({ busy: true });
+  toast(OSM_ASKING, "info", false, undefined, 4000);
   try {
     const { items, summary } = await osmItems(d.site.bounds, d.canvas.width, d.canvas.height);
-    changeDoc(doc => ({ items: [...doc.items.filter(i => !fromMaps(i)), ...items] }));
-    toast(summary ? `From OpenStreetMap: ${summary}.` : "OpenStreetMap has no paths, roads or water mapped here.", "success", false, undefined, 8000);
+    changeDoc(doc => {
+      // (woods made from the measured trees: OpenStreetMap's, drawn by hand and often over a whole
+      // hillside, aren't brought back over them)
+      const stands = doc.items.some(i => i.type === "area" && i.kind === "woods" && i.importSource === "lidar");
+      const fresh = stands ? items.filter(i => !(i.type === "area" && i.kind === "woods")) : items;
+      return { items: [...doc.items.filter(i => !fromMaps(i)), ...fresh] };
+    });
+    toast(summary ? `From OpenStreetMap: ${summary}.` : OSM_NOTHING, "success", true, undefined, 8000);
   } catch (err) {
     console.warn("OpenStreetMap lookup failed", err);
     osmFailedToast();
   } finally {
-    busy = false;
+    useOsm.setState({ busy: false });
   }
 };
 

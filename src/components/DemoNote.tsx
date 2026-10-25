@@ -43,9 +43,9 @@ export function LockedNote() {
   const close = () => useLocked.setState({ open: null });
   useEffect(() => {
     if (!open) return;
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
   }, [open]);
   if (!open) return null;
   const f = LOCKED[open];
@@ -58,13 +58,13 @@ export function LockedNote() {
             <div className="text-[16px] font-bold text-zinc-50">{f.title}</div>
             <p className="mt-1.5 text-[14px] leading-snug text-zinc-200">{f.what}</p>
           </div>
-          <button className="p-1.5 -mr-1.5 -mt-1 rounded-full text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.08]" aria-label="Close" onClick={close}><X size={18} /></button>
+          <button className="p-1.5 -mr-1.5 -mt-1 touch:w-11 touch:h-11 touch:-mr-3 touch:-mt-2.5 touch:flex touch:items-center touch:justify-center rounded-full text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.08]" aria-label="Close" onClick={close}><X size={18} /></button>
         </div>
         <p className="mt-3 text-[13.5px] leading-snug text-zinc-300">This is the public demo. It all runs in your browser, which is fine for trying it out, but there's no server behind it to hold accounts or share anything with anyone.</p>
         <p className="mt-2 text-[13.5px] leading-snug text-zinc-300">Run HyzerLab on your own server and this works. It's free and open source, and the README walks you through the setup.</p>
         <div className="mt-4 flex gap-2 justify-end">
-          <button className="rounded-full px-4 py-2 text-[13.5px] font-semibold text-zinc-200 hover:bg-white/[0.08]" onClick={close}>Close</button>
-          <a className="rounded-full px-4 py-2 text-[13.5px] font-semibold bg-orange-400 text-zinc-950 hover:bg-orange-300 inline-flex items-center gap-1.5" href={REPO} target="_blank" rel="noreferrer" data-testid="locked-host">How to host it <ExternalLink size={14} /></a>
+          <button className="rounded-full px-4 py-2 touch:py-3 text-[13.5px] font-semibold text-zinc-200 hover:bg-white/[0.08]" onClick={close}>Close</button>
+          <a className="rounded-full px-4 py-2 touch:py-3 text-[13.5px] font-semibold bg-orange-400 text-zinc-950 hover:bg-orange-300 inline-flex items-center gap-1.5" href={REPO} target="_blank" rel="noreferrer" data-testid="locked-host">How to host it <ExternalLink size={14} /></a>
         </div>
       </div>
     </div>,
@@ -86,7 +86,7 @@ export function LockedRow({ id, icon, label, sub }: { id: LockedId; icon: ReactN
   );
 }
 
-const BAR = "relative p-2 rounded-lg text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.09]";
+const BAR = "relative p-2 touch:p-3 rounded-lg text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.09]";
 
 /** The top bar's right side in the demo: comments, Share, the bell and the account, as on a
  * server but locked, then the Demo chip. */
@@ -96,7 +96,7 @@ export function DemoBar() {
       <button className={BAR} aria-label="Comments (locked in the demo)" title="Comments" onClick={() => showLocked("comments")} data-testid="locked-bar-comments"><MessageCircle size={18} /><LockBadge /></button>
       <button className={BAR} aria-label="Share (locked in the demo)" title="Share" onClick={() => showLocked("share")} data-testid="locked-bar-share"><Share2 size={18} /><LockBadge /></button>
       <button className={BAR} aria-label="Notifications (locked in the demo)" title="Notifications" onClick={() => showLocked("notices")} data-testid="locked-bar-notices"><Bell size={18} /><LockBadge /></button>
-      <button className="relative ml-1 w-8 h-8 rounded-full bg-white/[0.07] hover:bg-white/[0.13] text-zinc-300 flex items-center justify-center" aria-label="Account (locked in the demo)" title="Account" onClick={() => showLocked("account")} data-testid="locked-bar-account"><UserRound size={16} /><LockBadge /></button>
+      <button className="relative ml-1 w-8 h-8 touch:w-11 touch:h-11 rounded-full bg-white/[0.07] hover:bg-white/[0.13] text-zinc-300 flex items-center justify-center" aria-label="Account (locked in the demo)" title="Account" onClick={() => showLocked("account")} data-testid="locked-bar-account"><UserRound size={16} /><LockBadge /></button>
       <DemoNote />
     </>
   );
@@ -113,7 +113,7 @@ export function DemoNote() {
   }, [open]);
   return (
     <div className="relative" ref={ref}>
-      <button className="px-2.5 py-1 rounded-full text-[12px] font-semibold bg-sky-500/15 text-sky-200 border border-sky-500/30 hover:bg-sky-500/25" onClick={() => setOpen(o => !o)} aria-expanded={open} data-testid="demo-note">Demo</button>
+      <button className="px-2.5 py-1 touch:py-2.5 touch:px-3.5 rounded-full text-[12px] font-semibold bg-sky-500/15 text-sky-200 border border-sky-500/30 hover:bg-sky-500/25" onClick={() => setOpen(o => !o)} aria-expanded={open} data-testid="demo-note">Demo</button>
       {open && (
         <div className="absolute right-0 top-full mt-1 w-[340px] glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 p-4 z-50 text-sm" role="dialog" aria-label="The demo">
           <p className="text-zinc-100 font-semibold">This is the public demo</p>

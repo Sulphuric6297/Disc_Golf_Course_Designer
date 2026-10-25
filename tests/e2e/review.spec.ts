@@ -12,10 +12,10 @@ test("checks: one ignored is out of the list and the count, kept with the course
   const row = list.getByTestId("issue-row").filter({ hasText: "apart" });
   await expect(row).toHaveCount(1);
   const before = await list.getByTestId("issue-row").count();
-  await expect(list).toContainText(`Checks (${before})`);
+  await expect(list).toContainText(`Found (${before})`);
   await list.locator("li").filter({ hasText: "apart" }).getByRole("button", { name: "Ignore" }).click();
   await expect(row).toHaveCount(0);
-  await expect(list).toContainText(`Checks (${before - 1})`);
+  await expect(list).toContainText(`Found (${before - 1})`);
   const ignored = (await course(page)).ignoredChecks;
   expect(ignored).toHaveLength(1);
   expect(ignored[0]).toMatch(/^close:/);

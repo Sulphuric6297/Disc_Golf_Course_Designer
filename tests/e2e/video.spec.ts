@@ -100,7 +100,8 @@ test("cancel stops a recording, and leaving the Export step doesn't", async ({ p
   // Off to another step: the recording goes on, shown over the map
   await page.getByRole("button", { name: "2 Design" }).click();
   const pill = page.getByTestId("export-progress-pill");
-  await expect(pill).toContainText("Course flyover video");
+  // (it says what it's on: over the photo, each hole as it's recorded)
+  await expect(pill).toContainText(/Recording hole [12] \([12] of 2\)/);
   const at = Number(await pill.getByRole("progressbar").getAttribute("aria-valuenow"));
   await expect.poll(async () => Number(await pill.getByRole("progressbar").getAttribute("aria-valuenow")), { timeout: 60_000 }).toBeGreaterThan(at);
   // Back, and cancel
@@ -126,11 +127,13 @@ test("the Record button over a flyover records that hole", async ({ page }) => {
   await page.evaluate(() => (window as any).__dgVideo().set({ size: { width: 320, height: 180 } }));
   await page.getByTestId("hole-row").nth(1).click();
   await page.getByTestId("flyover").click();
-  await expect(page.getByTestId("hud-flyover")).toHaveText(/Flying/);
+  await expect(page.getByTestId("hud-flyover")).toHaveText(/Stop/);
   const downloading = page.waitForEvent("download", { timeout: 150_000 });
   await page.getByTestId("hud-record").click();
-  await expect(page.getByTestId("hud-record")).toHaveText(/Recording \d+%/);
-  await expect(page.getByTestId("export-progress-pill")).toContainText("Flyover video of hole 2");
+  // (Recording… until the frames start coming, then how far along it is)
+  await expect(page.getByTestId("hud-record")).toHaveText(/Recording( \d+%|…)/);
+  await expect(page.getByTestId("hud-record")).toHaveText(/Recording \d+%/, { timeout: 60_000 });
+  await expect(page.getByTestId("export-progress-pill")).toContainText("Recording hole 2");
   // The flight on screen goes on by itself, separate from the recording, and lands
   await expect(page.getByTestId("hud-flyover")).toHaveText(/Fly over/, { timeout: 60_000 });
   const download = await downloading;

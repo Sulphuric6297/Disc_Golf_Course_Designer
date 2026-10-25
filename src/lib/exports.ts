@@ -1,12 +1,13 @@
 // Data exports: GPS files (GeoJSON, KML for Google Earth, GPX for a phone or GPS when staking out
 // positions), the hole list as CSV, the stake-out list, and the parts list with a cost estimate.
 import { AMENITY_KINDS, AREA_KINDS, FT_PER_M, LINE_KINDS, TEE_LEVELS, TEE_SURFACES } from "../constants";
-import type { AmenityItem, AreaItem, BasketItem, CourseDoc, CourseItem, DropZoneItem, Hole, LineItem, MandoItem, P, TeeItem, TreeItem } from "../types";
+import type { AmenityItem, AreaItem, BasketItem, CourseDoc, CourseItem, CourseRules, DropZoneItem, Hole, LineItem, MandoItem, P, TeeItem, TreeItem, Units } from "../types";
 import { areaPath, belongsTo, fairwayOutline, holeBaskets, holeNumber, holeTees, linePath, obRanges } from "./course";
 import { pathLength, pathTouchesPolygon, pointInPolygon, smoothPath } from "./geom";
 import { bearing, compassPoint, geoRefOf, toLatLon, type GeoRef } from "./geoRef";
 import { holeStats, isOb } from "./holeStats";
 import { heightAt } from "./terrainGrid";
+import { fmtDist } from "./units";
 
 const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
 const r1 = (v: number) => Math.round(v * 10) / 10;
@@ -225,10 +226,26 @@ export const stakeOutCsv = (doc: CourseDoc) => {
 
 export type PartLine = { item: string; qty: number; unit: string; unitPrice: number; total: number; note?: string };
 
+/** A part's price: one of the course's own, or the OB stakes' and mando signs' (courses made
+ * before those could be changed don't have them: these until they are). */
+export type PriceKey = keyof CourseRules["prices"] | "obStake" | "mandoSign";
+const LATER_PRICES = { obStake: 4, mandoSign: 35 } as const;
+/** Each price's name, in the order Change prices lists them. */
+export const PRICE_LABELS: [PriceKey, string][] = [
+  ["basket", "Baskets"], ["sleeve", "Basket sleeves"], ["teePad", "Tee pads"], ["sign", "Tee signs"], ["bench", "Benches"],
+  ["trash", "Trash cans"], ["kiosk", "Kiosks"], ["obStake", "OB stakes"], ["mandoSign", "Mando and drop zone signs"]
+];
+export const priceOf = (doc: Pick<CourseDoc, "rules">, k: PriceKey): number =>
+  (doc.rules.prices as Partial<Record<PriceKey, number>>)[k] ?? (k in LATER_PRICES ? LATER_PRICES[k as keyof typeof LATER_PRICES] : 0);
+
+/** Concrete as it's ordered: cubic yards, or cubic meters on a metric course. */
+export const fmtConcrete = (yd3: number, units: Units) => (units === "m" ? `${(yd3 * 0.764555).toFixed(1)} m³` : `${yd3.toFixed(1)} cu yd`);
+
 /** What to buy: baskets (and spare sleeves for other pin positions), tee pads with their
  * concrete, tee signs, benches, cans, a kiosk, and stakes for OB lines. */
 export const partsList = (doc: CourseDoc): { lines: PartLine[]; total: number; concreteYd3: number } => {
   const p = doc.rules.prices;
+  const u = doc.units;
   const baskets = doc.items.filter(i => i.type === "basket") as BasketItem[];
   const holesWithBaskets = new Set(baskets.map(b => b.holeId));
   const tees = doc.items.filter(i => i.type === "tee") as TeeItem[];
@@ -240,13 +257,13 @@ export const partsList = (doc: CourseDoc): { lines: PartLine[]; total: number; c
   const lines: PartLine[] = [
     { item: "Baskets", qty: holesWithBaskets.size, unit: "each", unitPrice: p.basket, total: 0 },
     { item: "Basket sleeves (ground mounts)", qty: baskets.length, unit: "each", unitPrice: p.sleeve, total: 0 },
-    { item: "Tee pads", qty: tees.length, unit: "each", unitPrice: p.teePad, total: 0, note: `${concreteTees.length} concrete (${concreteYd3.toFixed(1)} cu yd at 4 in), ${tees.length - concreteTees.length} other` },
+    { item: "Tee pads", qty: tees.length, unit: "each", unitPrice: p.teePad, total: 0, note: `${concreteTees.length} concrete (${fmtConcrete(concreteYd3, u)} at ${u === "m" ? "10 cm" : "4 in"}), ${tees.length - concreteTees.length} other` },
     { item: "Tee signs", qty: doc.holes.length, unit: "each", unitPrice: p.sign, total: 0 },
     { item: "Benches", qty: amen("bench"), unit: "each", unitPrice: p.bench, total: 0 },
     { item: "Trash cans", qty: amen("trash"), unit: "each", unitPrice: p.trash, total: 0 },
     { item: "Course kiosk / map board", qty: amen("kiosk"), unit: "each", unitPrice: p.kiosk, total: 0 },
-    { item: "OB stakes", qty: Math.ceil(obFt / 30), unit: "each", unitPrice: 4, total: 0, note: `${Math.round(obFt)} ft of OB lines` },
-    { item: "Mando and drop zone signs", qty: doc.items.filter(i => i.type === "mando" || i.type === "dropzone").length, unit: "each", unitPrice: 35, total: 0 }
+    { item: "OB stakes", qty: Math.ceil(obFt / 30), unit: "each", unitPrice: priceOf(doc, "obStake"), total: 0, note: `${fmtDist(obFt, u)} of OB lines` },
+    { item: "Mando and drop zone signs", qty: doc.items.filter(i => i.type === "mando" || i.type === "dropzone").length, unit: "each", unitPrice: priceOf(doc, "mandoSign"), total: 0 }
   ].filter(l => l.qty > 0).map(l => ({ ...l, total: l.qty * l.unitPrice }));
   return { lines, total: lines.reduce((t, l) => t + l.total, 0), concreteYd3 };
 };

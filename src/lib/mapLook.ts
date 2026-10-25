@@ -23,17 +23,17 @@ export type LookPart = keyof LookParts;
 type ThemeDef = { id: LookTheme; label: string; hint: string; parts: LookParts; light: LightMode; sun: number };
 export const LOOK_THEMES: ThemeDef[] = [
   {
-    id: "classic", label: "Classic", hint: "The painted park map as it has always been: a dense canopy of treetops.",
+    id: "classic", label: "Classic", hint: "The original painted map: thick treetops packed close together.",
     parts: { trees: { style: "classic", density: 1, size: 1, variety: 0.3, pines: 0 }, grass: { style: "painted", bright: 1, texture: 1 }, fairway: { style: "soft", bright: 1 }, paths: { style: "painted" }, water: { style: "deep" } },
     light: "midday", sun: 0.8
   },
   {
-    id: "brushwood", label: "Brushwood", hint: "Painted clusters of dry-brushed leaves with a lighter broken rim, a bright meadow, a painterly creek.",
+    id: "brushwood", label: "Brushwood", hint: "Brushy painted tree clumps with light edges, a bright meadow and a painted creek.",
     parts: { trees: { style: "cluster", density: 1, size: 1.05, variety: 0.7, pines: 0.15 }, grass: { style: "meadow", bright: 1.02, texture: 1 }, fairway: { style: "soft", bright: 1.04 }, paths: { style: "painted" }, water: { style: "painterly" } },
     light: "midday", sun: 0.8
   },
   {
-    id: "hollow", label: "Hollow", hint: "Deep woods: dry-brushed foliage lit at its edges, a bright meadow, a painterly creek.",
+    id: "hollow", label: "Hollow", hint: "Deep, dark woods with sunlit edges. Good for a heavily wooded course.",
     parts: { trees: { style: "drybrush", density: 1.05, size: 1.05, variety: 0.7, pines: 0.12 }, grass: { style: "meadow", bright: 1, texture: 1.2 }, fairway: { style: "soft", bright: 1.04 }, paths: { style: "painted" }, water: { style: "painterly" } },
     light: "midday", sun: 0.8
   },
@@ -43,12 +43,12 @@ export const LOOK_THEMES: ThemeDef[] = [
     light: "golden", sun: 1
   },
   {
-    id: "storybook", label: "Storybook", hint: "Scalloped cloud crowns with bright highlights, flat bright grass, an outlined striped fairway, trail lines.",
+    id: "storybook", label: "Storybook", hint: "Puffy cartoon treetops, flat bright grass, a striped fairway with an outline, and trails drawn as lines.",
     parts: { trees: { style: "cloud", density: 0.95, size: 1, variety: 0.8, pines: 0.12 }, grass: { style: "storybook", bright: 1.02, texture: 0.8 }, fairway: { style: "outlined", bright: 1 }, paths: { style: "trail" }, water: { style: "flat" } },
     light: "midday", sun: 0.8
   },
   {
-    id: "gouache", label: "Gouache", hint: "Flat painted layers, dark to light with soft edges, cut-out grass tones, a sunlit fairway. Calm and graphic.",
+    id: "gouache", label: "Gouache", hint: "Flat layers of paint from dark to light, with soft edges. Calm and simple.",
     parts: { trees: { style: "gouache", density: 1, size: 1.05, variety: 0.6, pines: 0.2 }, grass: { style: "painted", bright: 1.12, texture: 1 }, fairway: { style: "sunlit", bright: 1.02 }, paths: { style: "clean" }, water: { style: "deep" } },
     light: "midday", sun: 0.8
   }

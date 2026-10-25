@@ -1,30 +1,35 @@
-// The panel for what is selected: a hole (par, fairway, notes, numbers, profile) or one item.
+// The panel for what is selected: a hole (par, fairway, OB, tees and baskets, profile, notes,
+// flyover) or one item.
 import { PlaceByGps } from "./PlaceByGps";
 import { BRUSH_SECTION } from "../lib/view";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronLeft, Copy, Eye, Lock, Plane, RotateCcw, RotateCw, Trash2, Unlock, X, Plus } from "lucide-react";
-import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
-import { areaPath, areaRing, byNumber, obFor, obSides, sideCompass, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, obPicked, parseHoleNumbers, wholeHoles, widthFactors, widthVaries } from "../lib/course";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, ChevronLeft, Copy, Eye, Lock, Maximize2, Plane, RotateCcw, RotateCw, Trash2, Unlock, X, Plus } from "lucide-react";
+import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, CIRCLE_ONE_FT, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
+import { areaPath, areaRing, obFor, obSides, sideCompass, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, obPicked, parseHoleNumbers, teeAim, wholeHoles, widthFactors, widthVaries } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
-import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structureRoof, structureWidth, turnShape } from "../lib/structures";
-import { STRUCTURE_INK } from "../lib/symbols";
+import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structurePath, structureRoof, structureWidth, turnShape } from "../lib/structures";
+import { amenitySymbol, STRUCTURE_INK, structureLegend, symbolSvg } from "../lib/symbols";
 import { courseStats, holeStats } from "../lib/holeStats";
-import { fmtDist, fmtElev } from "../lib/units";
+import { fmtArea, fmtDist, fmtElev } from "../lib/units";
 import { fairwayTrees } from "../lib/lidar";
 import { conifersOf } from "../lib/landscapes";
-import { addHoleOb, deleteSelection, duplicateSelection, markObBeyond, startAnotherPin, startAnotherTee, startHoleToBasket, select, setTeeLevel, shareBasket } from "../state/actions";
+import { addHoleOb, deleteSelection, duplicateSelection, forgetNewLabel, isNewLabel, obChoiceOf, setObChoice, setPinPosition, startAnotherPin, startAnotherTee, startHoleToBasket, select, setTeeLevel, shareBasket, type ObChoice } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PathSurface, RoofKind, StructureItem, StructureKind, TeeSurface, BrushKind } from "../types";
+import type { AmenityKind, AreaItem, AreaKind, CourseDoc, CourseItem, Hole, LabelItem, LineItem, LineKind, P, PathSurface, RoofKind, StructureKind, TeeSurface, BrushKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { TreeSettings } from "./TreeSettings";
 import { HoleFlight } from "./FlyoverSettings";
+import { HoleChips } from "./ApplyToHoles";
 import { HoleSteps } from "./HoleSteps";
 import { getView } from "../state/view";
-import { Button, ChoiceList, ColorInput, Field, NumberInput, Section, Segmented, Slider, Facts, TextInput, Toggle } from "./ui";
+import { useLayout, useTouch } from "./useLayout";
+import { Button, ChipPick, ChoiceList, ColorInput, Field, NumberInput, Section, Segmented, Select, Slider, Facts, TextInput, Toggle } from "./ui";
 
 const shapeText = { straight: "Straight", left: "Turns left", right: "Turns right", "s-curve": "S-curve" };
 /** A small size to the half foot (or tenth of a meter): "2.5 ft". */
-const fmtSize = (ft: number, units: "ft" | "m") => (units === "m" ? `${(ft / 3.28084).toFixed(1)} m` : `${Math.round(ft * 2) / 2} ft`);
+export const fmtSize = (ft: number, units: "ft" | "m") => (units === "m" ? `${(ft / 3.28084).toFixed(1)} m` : `${Math.round(ft * 2) / 2} ft`);
+/** The end of an edit made live (typing, a slider): its one undo step. */
+const commit = () => useCourse.getState().commit();
 
 /** A gentle curve for a hole: one turn halfway along, off to the left (-1) or right (1) by a
  * sixth of its length (its handle drags it on from there). */
@@ -47,7 +52,7 @@ function HoleNumberInput({ holeId, value }: { holeId: string; value: string }) {
   };
   return (
     <label className="flex flex-col items-center gap-0.5 shrink-0">
-      <span className="text-[10px] uppercase tracking-wider text-zinc-400">No.</span>
+      <span className="text-[11px] text-zinc-400">No.</span>
       <input
         aria-label="Hole number"
         data-testid="hole-number"
@@ -88,18 +93,10 @@ function FairwayTrees({ hole, line }: { hole: Hole; line: P[] }) {
   );
 }
 
-/** Every walk to the next tee this wide (holes' own widths let go). */
-export const setAllWalks = (w: number, history = true) =>
-  changeDoc(d => ({
-    style: { ...d.style, walkWidth: w },
-    holes: d.holes.some(h => h.walkWidth !== undefined) ? d.holes.map(h => (h.walkWidth === undefined ? h : { ...h, walkWidth: undefined })) : d.holes,
-    // (walks drawn by hand too)
-    items: d.items.some(i => i.type === "line" && i.kind === "walk") ? d.items.map(i => (i.type === "line" && i.kind === "walk" ? { ...i, width: w } : i)) : d.items
-  }), history);
-
 /** A hole's tees and baskets, a row each (its color or pin, how long the hole is from it): one
- * picked opens up in place with its own settings; another click on it closes it. */
-function HoleParts({ hole, part }: { hole: Hole; part?: CourseItem }) {
+ * picked opens up in place with its own settings; another click on it closes it. Under them
+ * (`children`), the ways to add more. */
+function HoleParts({ hole, part, children }: { hole: Hole; part?: CourseItem; children?: ReactNode }) {
   const doc = useCourse(s => s.doc);
   const u = doc.units;
   const tees = holeTees(doc, hole.id);
@@ -126,15 +123,27 @@ function HoleParts({ hole, part }: { hole: Hole; part?: CourseItem }) {
     );
   };
   return (
-    <Section title="Tees and baskets" testid="hole-parts">
+    <Section title="Tees and baskets" help="tees-pins" testid="hole-parts">
       <div className="flex flex-col gap-0.5" data-testid="hole-tees">
         {tees.map(t => row(t.id, <span className="w-3 h-3 rounded-full ring-1 ring-black/40 shrink-0" style={{ background: TEE_LEVELS[t.level].color }} />, `${TEE_LEVELS[t.level].label} tee`, fmtDist(holeStats(doc, hole, { id: "x", name: "", tee: t.level, pin: "A" }).length, u), t))}
-        {baskets.map(b => row(b.id, <span className="w-3 h-3 rounded-full border-2 shrink-0" style={{ borderColor: doc.style.basket }} />, baskets.length > 1 || b.position !== "A" ? `Basket, pin ${b.position}` : "Basket", b.holeId !== hole.id ? `hole ${holeLabel(doc, b.holeId ?? "")}'s` : null, b))}
+        {baskets.map(b => row(b.id, <span className="w-3 h-3 rounded-full border-2 shrink-0" style={{ borderColor: doc.style.basket }} />, baskets.length > 1 || b.position !== "A" ? `Pin ${b.position}` : "Basket", b.holeId !== hole.id ? `hole ${holeLabel(doc, b.holeId ?? "")}'s` : null, b))}
         {!tees.length && !baskets.length && <p className="text-[12px] text-zinc-400 px-1">None yet.</p>}
       </div>
+      {children}
     </Section>
   );
 }
+
+/** A button that starts adding something to a hole: what it is, and a line on what you get. */
+const GrowButton = ({ mark, title, sub, onClick, testid }: { mark: ReactNode; title: string; sub: string; onClick: () => void; testid: string }) => (
+  <button className="flex items-start gap-2.5 text-left rounded-[12px] bg-white/[0.06] hover:bg-white/[0.11] px-2.5 py-2" onClick={onClick} data-testid={testid}>
+    {mark}
+    <span><span className="block text-[13px] font-semibold text-zinc-100">{title}</span><span className="block text-[11.5px] text-zinc-400">{sub}</span></span>
+  </button>
+);
+
+/** How many times, in words: "once", "twice", "3 times". */
+const times = (n: number) => (n === 1 ? "once" : n === 2 ? "twice" : `${n} times`);
 
 function HoleInspector({ hole, part }: { hole: Hole; part?: CourseItem }) {
   const doc = useCourse(s => s.doc);
@@ -148,7 +157,10 @@ function HoleInspector({ hole, part }: { hole: Hole; part?: CourseItem }) {
   // (open already when it does share one)
   const [shareOpen, setShareOpen] = useState(!!sharing);
   useEffect(() => { if (sharing) setShareOpen(true); }, [sharing]);
-  const set = (patch: Partial<Hole>) => updateHole(hole.id, patch);
+  const set = (patch: Partial<Hole>, history = true) => updateHole(hole.id, patch, history);
+  // (its climb or drop, without the sign the word already gives)
+  const climb = fmtElev(s.elevationChange, u);
+  const played = tees.find(t => t.id === s.teeId);
   return (
     <>
       <Section>
@@ -156,84 +168,21 @@ function HoleInspector({ hole, part }: { hole: Hole; part?: CourseItem }) {
           <div className={`min-w-10 h-10 px-1.5 rounded-full bg-orange-500 text-zinc-950 flex items-center justify-center ${label.length > 3 ? "text-sm" : "text-lg"} font-bold`} style={{ fontFamily: "Oswald, Inter" }}>{label}</div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold text-zinc-50 truncate" data-testid="inspector-title">Hole {label}{hole.name ? ` · ${hole.name}` : ""}</div>
-            <div className="text-xs text-zinc-400">{s.complete ? `${fmtDist(s.length, u)} · Par ${s.par} · ${shapeText[s.shape]}` : s.teeId ? "Needs a basket" : "Needs a tee"}</div>
+            <div className="text-xs text-zinc-400">{s.complete ? `Par ${s.par} · ${shapeText[s.shape]}` : s.teeId ? "Needs a basket" : "Needs a tee"}</div>
           </div>
           <HoleNumberInput holeId={hole.id} value={label} />
         </div>
-        {(() => { const mine = label.split("/"); const clash = doc.holes.filter(h => h.id !== hole.id).flatMap(h => holeLabel(doc, h.id).split("/")).find(v => mine.includes(v)); return clash ? <div className="text-xs text-amber-300 -mt-1 mb-2" data-testid="hole-number-taken">Another hole is also Hole {clash}</div> : null; })()}
+        {(() => { const mine = label.split("/"); const clash = doc.holes.filter(h => h.id !== hole.id).flatMap(h => holeLabel(doc, h.id).split("/")).find(v => mine.includes(v)); return clash ? <div className="text-xs text-amber-300 -mt-1 mb-2" data-testid="hole-number-taken">Another hole is already Hole {clash}. Type a different number in No.</div> : null; })()}
         {s.complete && (
-          <Facts testid="hole-stats" items={[["Length", fmtDist(s.length, u)], [s.elevationChange > 0 ? "Uphill" : s.elevationChange < 0 ? "Downhill" : "Elevation", fmtElev(s.elevationChange, u)], ["Plays like", `${fmtDist(s.playsLike, u)}${s.foliage === "heavy" ? " (heavy foliage)" : ""}`]]} />
+          <Facts testid="hole-stats" items={[["Length", fmtDist(s.length, u)], [climb === "level" ? "Elevation" : s.elevationChange > 0 ? "Uphill" : "Downhill", climb === "level" ? "Level" : climb.slice(1)], ["Plays like", `${fmtDist(s.playsLike, u)}${s.foliage === "heavy" ? " (heavy foliage)" : ""}`]]} />
         )}
-        {s.complete && (
-          <div className="flex gap-1.5 mt-2">
-            <Button small onClick={() => useEditor.getState().set({ teeView: hole.id, flyover: false })} testid="tee-view"><Eye size={14} /> View from tee</Button>
-            <Button small onClick={() => useEditor.getState().set({ teeView: hole.id, flyover: true })} testid="flyover"><Plane size={14} /> Fly over</Button>
-          </div>
-        )}
-        {s.complete && (
-          <div className="mt-3">
-            <div className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wide mb-1">Add OB</div>
-            <div className="flex gap-1.5" role="group" aria-label="Add OB">
-              <Button small onClick={() => addHoleOb(hole.id, "left")} testid="ob-left">Left side</Button>
-              <Button small onClick={() => addHoleOb(hole.id, "right")} testid="ob-right">Right side</Button>
-              <Button small onClick={() => addHoleOb(hole.id, "long")} testid="ob-long">Behind basket</Button>
-            </div>
-          </div>
-        )}
-      </Section>
-      <HoleParts hole={hole} part={part} />
-      <Section title="How it's played" help="tees-pins" testid="how-played">
-        {(() => {
-          // (the layout worked on, on a hole with no tee of its color: played from the nearest)
-          const layout = doc.layouts.length > 1 ? doc.layouts.find(l => l.id === doc.activeLayout) : undefined;
-          if (!layout || !tees.length || tees.some(t => t.level === layout.tee)) return null;
-          const lvl = TEE_LEVELS[layout.tee];
-          return (
-            <div className="flex items-center gap-2 mb-2 text-[11px] text-zinc-300 leading-snug" data-testid="layout-missing-tee">
-              <span className="flex-1">No {lvl.label.toLowerCase()} tee yet: the {layout.name} layout plays this hole from the {TEE_LEVELS[tees.find(t => t.id === s.teeId)?.level ?? tees[0].level].label.toLowerCase()} one.</span>
-              <Button small onClick={() => useEditor.getState().set({ tool: "add-tee", teeLevel: layout.tee, activeHoleId: hole.id })}>Add one</Button>
-            </div>
-          );
-        })()}
-        {(() => {
-          // (which holes finish at its basket)
-          const others = doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => baskets.some(x => x.id === b.id)));
-          return others.length > 0 && <div className="text-[11.5px] text-zinc-400 mb-2" data-testid="shared-with">Its basket is shared with hole{others.length === 1 ? "" : "s"} {others.map(h => holeLabel(doc, h.id)).join(", ")}.</div>;
-        })()}
-        <div className="flex flex-col gap-1.5" data-testid="hole-grow">
-          <button className="flex items-start gap-2.5 text-left rounded-[12px] bg-white/[0.06] hover:bg-white/[0.11] px-2.5 py-2" onClick={() => startAnotherTee(hole.id)} data-testid="another-tee">
-            <span className="mt-0.5 w-4 h-2.5 rounded-sm shrink-0" style={{ background: TEE_LEVELS[TEE_ORDER.find(l => !tees.some(t => t.level === l)) ?? "red"].color }} />
-            <span><span className="block text-[13px] font-semibold text-zinc-100">Another tee for this hole</span><span className="block text-[11.5px] text-zinc-400">Shorter or longer, for another skill level. Same hole number.</span></span>
-          </button>
-          {s.complete && (
-            <button className="flex items-start gap-2.5 text-left rounded-[12px] bg-white/[0.06] hover:bg-white/[0.11] px-2.5 py-2" onClick={() => startHoleToBasket(hole.id)} data-testid="hole-to-basket">
-              <Plus size={16} className="mt-0.5 shrink-0 text-orange-300" />
-              <span><span className="block text-[13px] font-semibold text-zinc-100">New hole to this basket</span><span className="block text-[11.5px] text-zinc-400">A separate hole, with its own number, that finishes at this basket.</span></span>
-            </button>
-          )}
-          <button className="flex items-start gap-2.5 text-left rounded-[12px] bg-white/[0.06] hover:bg-white/[0.11] px-2.5 py-2" onClick={() => startAnotherPin(hole.id)} data-testid="another-pin">
-            <span className="mt-0.5 w-3.5 h-3.5 rounded-full border-2 shrink-0" style={{ borderColor: doc.style.basket }} />
-            <span><span className="block text-[13px] font-semibold text-zinc-100">Another pin position</span><span className="block text-[11.5px] text-zinc-400">The same hole to a different basket spot (pin B, C…).</span></span>
-          </button>
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {s.complete && <Button small onClick={() => useEditor.getState().set({ teeView: hole.id, flyover: false })} testid="tee-view"><Eye size={14} /> View from the tee</Button>}
+          {s.complete && <Button small onClick={() => useEditor.getState().set({ teeView: hole.id, flyover: true })} testid="flyover"><Plane size={14} /> Fly over</Button>}
+          <Button small onClick={() => getView()?.fitHole(hole.id)} testid="zoom-hole"><Maximize2 size={14} /> Zoom to this hole</Button>
         </div>
-        {doc.holes.length > 1 && (
-          <details className="mt-2" open={shareOpen} onToggle={e => setShareOpen((e.target as HTMLDetailsElement).open)}><summary className="cursor-pointer text-[11.5px] text-zinc-400 hover:text-zinc-200">Play to another hole's basket instead</summary>
-            <select aria-label="Basket" data-testid="share-basket" className="mt-1.5 w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={sharing ?? ""} onChange={e => shareBasket(hole.id, e.target.value || null)}>
-              <option value="">Its own basket</option>
-              {doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => b.holeId === h.id)).map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}'s basket</option>)}
-            </select>
-          </details>
-        )}
       </Section>
-      {s.complete && (
-        <Section title="Elevation profile">
-          <ElevationProfile doc={doc} line={s.line} />
-          <div className="text-[11px] text-zinc-400 mt-1">
-            Tee {fmtDist(s.teeElevation, u)} · basket {fmtDist(s.basketElevation, u)} · steepest {Math.round(s.maxSlope)}%
-          </div>
-        </Section>
-      )}
-      <Section title="Par and play" help="par">
+      <Section title="Par and foliage" help="par">
         <Field label="Par">
           <Segmented
             label="Par"
@@ -245,41 +194,96 @@ function HoleInspector({ hole, part }: { hole: Hole; part?: CourseItem }) {
         <Field label="Foliage" hint="Heavy foliage makes it play longer: its plays-like length and par.">
           <Segmented label="Foliage" value={hole.foliage ?? "auto"} onChange={v => set({ foliage: v === "auto" ? undefined : (v as "light" | "heavy") })} options={[{ value: "auto", label: `Auto (${s.foliage})` }, { value: "light", label: "Light" }, { value: "heavy", label: "Heavy" }]} />
         </Field>
+      </Section>
+      <Section title="Fairway and line of play" help="fairway">
         <Toggle label="Draw the fairway" checked={hole.fairway} onChange={v => set({ fairway: v })} />
         {hole.fairway && (
           <>
-            <Slider label={hole.fairwayShape ? "Fairway width (all along)" : "Fairway width"} min={10} max={150} value={hole.fairwayWidth} onChange={v => set({ fairwayWidth: v })} format={v => fmtDist(v, u)} />
+            <Slider label={hole.fairwayShape ? "Fairway width (all along)" : "Fairway width"} min={10} max={150} value={hole.fairwayWidth} onChange={v => set({ fairwayWidth: v }, false)} onDone={commit} format={v => fmtDist(v, u)} />
             <div className="flex items-center justify-between gap-2 -mt-1 mb-2" data-testid="fairway-shape">
               <p className="text-[11px] text-zinc-400 leading-snug">
                 {hole.fairwayShape
                   ? `Shaped: ${hole.fairwayShape.map(f => fmtDist(f * hole.fairwayWidth, u)).join(" · ")}`
                   : hole.fairwayShift ? "Shaped" : "The same width all along. Drag the squares on its edges to shape it."}
               </p>
-              {(hole.fairwayShape || hole.fairwayShift) && <button className="shrink-0 text-xs text-orange-300 hover:text-orange-200" onClick={() => set({ fairwayShape: undefined, fairwayShift: undefined, fairwayStations: undefined })}>Make it even</button>}
+              {(hole.fairwayShape || hole.fairwayShift) && <button className="shrink-0 text-xs text-orange-300 hover:text-orange-200" onClick={() => set({ fairwayShape: undefined, fairwayShift: undefined, fairwayStations: undefined })}>Even width</button>}
             </div>
           </>
         )}
         {doc.lidar && s.complete && <FairwayTrees hole={hole} line={s.line} />}
-        <Field label="Name (optional)"><TextInput label="Hole name" value={hole.name ?? ""} placeholder="e.g. The Gauntlet" onChange={v => set({ name: v || undefined })} /></Field>
-        <Field label="Notes and hole rules"><TextInput area label="Hole notes" value={hole.notes ?? ""} placeholder="e.g. OB left of the path. Mando right of the big oak; drop zone by the bench." onChange={v => set({ notes: v || undefined })} /></Field>
         {s.complete && (
-          <div className="flex flex-wrap gap-1.5">
-            <Button small tone="primary" onClick={() => useEditor.getState().set({ plotLine: hole.id, tool: "select" })} testid="plot-line">Plot the line</Button>
-            <Button small onClick={() => set({ doglegs: bendHole(s.line, -1) })} testid="bend-left">Bend left</Button>
-            <Button small onClick={() => set({ doglegs: bendHole(s.line, 1) })} testid="bend-right">Bend right</Button>
-            {hole.doglegs.length > 0 && <Button small onClick={() => set({ doglegs: [] })}>Straighten</Button>}
-          </div>
+          <Field label="Line of play" help="line-of-play">
+            <div className="flex flex-wrap gap-1.5">
+              <Button small tone="primary" onClick={() => useEditor.getState().set({ plotLine: hole.id, tool: "select" })} testid="plot-line">Plot the line</Button>
+              <Button small onClick={() => set({ doglegs: bendHole(s.line, -1) })} testid="bend-left">Bend left</Button>
+              <Button small onClick={() => set({ doglegs: bendHole(s.line, 1) })} testid="bend-right">Bend right</Button>
+              {hole.doglegs.length > 0 && <Button small onClick={() => set({ doglegs: [] })}>Straighten</Button>}
+            </div>
+          </Field>
         )}
       </Section>
+      {s.complete && (
+        <Section>
+          <Field label="Add OB" help="ob">
+            <div className="flex flex-wrap gap-1.5">
+              <Button small onClick={() => addHoleOb(hole.id, "left")} testid="ob-left">Left side</Button>
+              <Button small onClick={() => addHoleOb(hole.id, "right")} testid="ob-right">Right side</Button>
+              <Button small onClick={() => addHoleOb(hole.id, "long")} testid="ob-long">Behind basket</Button>
+            </div>
+          </Field>
+        </Section>
+      )}
+      <HoleParts hole={hole} part={part}>
+        {(() => {
+          // (the layout worked on, on a hole with no tee of its color: played from the nearest)
+          const layout = doc.layouts.length > 1 ? doc.layouts.find(l => l.id === doc.activeLayout) : undefined;
+          if (!layout || !tees.length || tees.some(t => t.level === layout.tee)) return null;
+          const lvl = TEE_LEVELS[layout.tee];
+          return (
+            <div className="flex items-center gap-2 mt-2 text-[11px] text-zinc-300 leading-snug" data-testid="layout-missing-tee">
+              <span className="flex-1">No {lvl.label.toLowerCase()} tee yet: the {layout.name} layout plays this hole from the {TEE_LEVELS[tees.find(t => t.id === s.teeId)?.level ?? tees[0].level].label.toLowerCase()} one.</span>
+              <Button small onClick={() => useEditor.getState().set({ tool: "add-tee", teeLevel: layout.tee, activeHoleId: hole.id })}>Add one</Button>
+            </div>
+          );
+        })()}
+        {(() => {
+          // (which holes finish at its basket)
+          const others = doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => baskets.some(x => x.id === b.id)));
+          return others.length > 0 && <div className="text-[11.5px] text-zinc-400 mt-2" data-testid="shared-with">Its basket is shared with hole{others.length === 1 ? "" : "s"} {others.map(h => holeLabel(doc, h.id)).join(", ")}.</div>;
+        })()}
+        <div className="flex flex-col gap-1.5 mt-2" data-testid="hole-grow">
+          <GrowButton mark={<span className="mt-0.5 w-4 h-2.5 rounded-sm shrink-0" style={{ background: TEE_LEVELS[TEE_ORDER.find(l => !tees.some(t => t.level === l)) ?? "red"].color }} />} title="Another tee for this hole" sub="Shorter or longer, for another skill level. Same hole number." onClick={() => startAnotherTee(hole.id)} testid="another-tee" />
+          {s.complete && <GrowButton mark={<Plus size={16} className="mt-0.5 shrink-0 text-orange-300" />} title="New hole to this basket" sub="A separate hole, with its own number, that finishes at this basket." onClick={() => startHoleToBasket(hole.id)} testid="hole-to-basket" />}
+          <GrowButton mark={<span className="mt-0.5 w-3.5 h-3.5 rounded-full border-2 shrink-0" style={{ borderColor: doc.style.basket }} />} title="Another pin position" sub="The same hole to a different basket spot (pin B, C…)." onClick={() => startAnotherPin(hole.id)} testid="another-pin" />
+        </div>
+        {doc.holes.length > 1 && (
+          <details className="mt-2" open={shareOpen} onToggle={e => setShareOpen((e.target as HTMLDetailsElement).open)}><summary className="cursor-pointer text-[11.5px] text-zinc-400 hover:text-zinc-200">Play to another hole's basket instead</summary>
+            <Select label="Basket" testid="share-basket" className="mt-1.5" value={sharing ?? ""} onChange={v => shareBasket(hole.id, v || null)}>
+              <option value="">Its own basket</option>
+              {doc.holes.filter(h => h.id !== hole.id && holeBaskets(doc, h.id).some(b => b.holeId === h.id)).map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}'s basket</option>)}
+            </Select>
+          </details>
+        )}
+      </HoleParts>
       {s.complete && (
         <Section title="In play">
           <ul className="text-xs text-zinc-300 space-y-1" data-testid="hole-in-play">
             <li>{s.treesOnLine ? `${s.treesOnLine} tree${s.treesOnLine === 1 ? "" : "s"} on the throw line` : "Clear throw line"} · {s.treesInFairway} in the fairway</li>
-            <li>{s.obInPlay ? `OB in play${s.obCrossed ? ` (crosses ${s.obCrossed})` : ""}` : "No OB in play"}{s.obNearBasket ? " · OB within 10 m of the basket" : ""}</li>
-            <li>Difficulty {"●".repeat(s.difficulty)}{"○".repeat(5 - s.difficulty)}</li>
+            <li>{s.obInPlay ? `OB in play${s.obCrossed ? `: the throw line crosses it ${times(s.obCrossed)}` : ""}` : "No OB in play"}{s.obNearBasket ? ` · OB within ${fmtDist(CIRCLE_ONE_FT, u)} of the basket` : ""}</li>
+            <li title="Difficulty, 1 to 5">Difficulty <span role="img" aria-label={`${s.difficulty} out of 5`}>{"●".repeat(s.difficulty)}{"○".repeat(5 - s.difficulty)}</span></li>
           </ul>
+          <div className="mt-3">
+            <ElevationProfile doc={doc} line={s.line} teeColor={played ? TEE_LEVELS[played.level].color : undefined} />
+            <div className="text-[11px] text-zinc-400 mt-1">
+              Tee at {fmtDist(s.teeElevation, u)} · basket at {fmtDist(s.basketElevation, u)} · steepest slope {Math.round(s.maxSlope)}%
+            </div>
+          </div>
         </Section>
       )}
+      <Section title="Name and notes">
+        <Field label="Name (optional)"><TextInput label="Hole name" value={hole.name ?? ""} placeholder="e.g. The Gauntlet" onChange={v => set({ name: v || undefined }, false)} onDone={commit} /></Field>
+        <Field label="Notes and hole rules"><TextInput area label="Hole notes" value={hole.notes ?? ""} placeholder="e.g. OB left of the path. Mando right of the big oak; drop zone by the bench." onChange={v => set({ notes: v || undefined }, false)} onDone={commit} /></Field>
+      </Section>
       {s.complete && (
         <Section title="Flyover" help="flyover">
           <HoleFlight hole={hole} />
@@ -293,24 +297,22 @@ function HoleInspector({ hole, part }: { hole: Hole; part?: CourseItem }) {
 function SurfacePick({ value, onChange }: { value?: PathSurface; onChange: (v: PathSurface | undefined) => void }) {
   return (
     <Field label="Surface">
-      <select aria-label="Surface" data-testid="path-surface" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={value ?? "dirt"} onChange={e => onChange(e.target.value === "dirt" ? undefined : (e.target.value as PathSurface))}>
-        {(Object.keys(PATH_SURFACES) as PathSurface[]).map(k => <option key={k} value={k}>{PATH_SURFACES[k].label}</option>)}
-      </select>
+      <ChipPick label="Surface" testid="path-surface" value={value ?? "dirt"} onChange={v => onChange(v === "dirt" ? undefined : v)} options={(Object.keys(PATH_SURFACES) as PathSurface[]).map(k => ({ value: k, label: PATH_SURFACES[k].label, color: PATH_SURFACES[k].color }))} />
     </Field>
   );
 }
 
-/** A hole's chip in a pick of holes. */
-const holeChip = (on: boolean) => `px-2 py-1 touch:py-2 rounded-md text-xs font-semibold border ${on ? "bg-orange-500/20 border-orange-400 text-orange-100" : "border-white/[0.12] text-zinc-300 hover:border-zinc-500"}`;
-
-/** Whether water, a creek, a road, a fence or a path is out of bounds (and shown so on the map);
- * a line OB beyond it too, and along all of it or stretches of it. */
 /** A woods area's trees in 3D: measured from the air, drawn, or none (with measured trees only). */
 const BRUSH_LEVELS = [{ value: "none", label: "None" }, { value: "light", label: "Light" }, { value: "medium", label: "Medium" }, { value: "heavy", label: "Heavy" }] as const;
 type BrushLevel = (typeof BRUSH_LEVELS)[number]["value"];
 
 const BRUSH_KINDS: { value: BrushKind; label: string }[] = [{ value: "mixed", label: "A mix" }, { value: "thicket", label: "Thicket" }, { value: "briars", label: "Briars & thorns" }, { value: "weeds", label: "Weeds" }];
-const kindSelect = "bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80";
+
+/** What to do while drawing a shape by hand inside a wood: with the mouse, or a finger. */
+function DrawNote({ what }: { what: string }) {
+  const touch = useTouch();
+  return <div className="text-xs text-orange-300">{touch ? `Draw ${what} with your finger, and lift it to finish. Cancel, over the map, stops.` : `Draw ${what} with the mouse button held down, and let go to finish. Esc cancels.`}</div>;
+}
 
 /** A wood's underbrush (or tall grass's: none unless asked for): its own level and kind, and
  * sections drawn inside it with their own. */
@@ -320,20 +322,18 @@ function WoodsBrush({ item }: { item: AreaItem }) {
   const setSections = (next: { points: P[]; level: BrushLevel; kind?: BrushKind }[]) => updateItem(item.id, { brush: next.length ? next : undefined } as Partial<CourseItem>);
   const draw = () => useEditor.getState().set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", patchFor: item.id, patchBrush: true });
   const kind = item.brushKind ?? "mixed";
+  const where = item.kind === "rough" ? "grass" : "wood";
   return (
     <div className="mb-3" data-testid="woods-brush">
-      <Field label={sections.length ? `Underbrush (the rest of the ${item.kind === "rough" ? "grass" : "wood"})` : "Underbrush"} help={item.kind === "rough" ? "areas" : "woods"} hint={item.kind === "rough" ? "Bushes, briars and weeds growing up through the long grass. None unless you pick some. It stays off fairways and paths." : "Bushes, thickets, briars and weeds under the trees. It stays off fairways and paths."}>
+      <Field label={sections.length ? `Underbrush (the rest of the ${where})` : "Underbrush"} help={item.kind === "rough" ? "areas" : "woods"} hint={item.kind === "rough" ? "Bushes, briars and weeds growing up through the long grass. None unless you pick some. It stays off fairways and paths." : "Bushes, thickets, briars and weeds under the trees. It stays off fairways and paths."}>
         <Segmented label="Underbrush" value={item.underbrush ?? "none"} onChange={v => updateItem(item.id, { underbrush: v === "none" ? undefined : v } as Partial<CourseItem>)} options={[...BRUSH_LEVELS]} />
       </Field>
       {(item.underbrush || sections.length > 0) && (
-        <label className="flex items-center gap-2 mb-3 text-xs text-zinc-400">
-          <span className="w-16 shrink-0">What grows</span>
-          <select aria-label="What the underbrush is" data-testid="brush-kind" className={`${kindSelect} flex-1 min-w-0`} value={kind} onChange={e => updateItem(item.id, { brushKind: e.target.value === "mixed" ? undefined : e.target.value } as Partial<CourseItem>)}>
-            {BRUSH_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
-          </select>
-        </label>
+        <Field label="What grows">
+          <ChipPick label="What the underbrush is" testid="brush-kind" value={kind} onChange={v => updateItem(item.id, { brushKind: v === "mixed" ? undefined : v } as Partial<CourseItem>)} options={BRUSH_KINDS} />
+        </Field>
       )}
-      {sections.length > 0 && <div className="text-[11px] text-zinc-500 mb-1.5"><span className="inline-block w-3 border-t-2 border-dashed align-middle mr-1.5" style={{ borderColor: BRUSH_SECTION }} />Sections, outlined on the map: each its own underbrush (where they overlap, the later one's).</div>}
+      {sections.length > 0 && <div className="text-[11px] text-zinc-500 mb-1.5"><span className="inline-block w-3 border-t-2 border-dashed align-middle mr-1.5" style={{ borderColor: BRUSH_SECTION }} />Each section is outlined on the map and has its own underbrush. Where two overlap, the one drawn last wins.</div>}
       {sections.map((b, k) => (
         <div key={k} className="rounded-lg bg-white/[0.07] p-2 mb-1.5" data-testid="brush-section">
           <div className="flex items-center justify-between mb-1.5">
@@ -342,21 +342,21 @@ function WoodsBrush({ item }: { item: AreaItem }) {
           </div>
           <Segmented label={`Section ${k + 1} underbrush`} value={b.level} onChange={v => setSections(sections.map((q, m) => (m === k ? { ...q, level: v } : q)))} options={[...BRUSH_LEVELS]} />
           {b.level !== "none" && (
-            <select aria-label={`Section ${k + 1}: what grows`} className={`${kindSelect} w-full mt-1.5`} value={b.kind ?? ""} onChange={e => setSections(sections.map((q, m) => (m === k ? { ...q, kind: (e.target.value || undefined) as BrushKind | undefined } : q)))}>
-              <option value="">As the rest ({BRUSH_KINDS.find(x => x.value === kind)!.label.toLowerCase()})</option>
-              {BRUSH_KINDS.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}
-            </select>
+            <div className="mt-1.5">
+              <ChipPick label={`Section ${k + 1}: what grows`} value={b.kind ?? ""} onChange={v => setSections(sections.map((q, m) => (m === k ? { ...q, kind: (v || undefined) as BrushKind | undefined } : q)))}
+                options={[{ value: "", label: `As the rest (${BRUSH_KINDS.find(x => x.value === kind)!.label.toLowerCase()})` }, ...BRUSH_KINDS]} />
+            </div>
           )}
         </div>
       ))}
       {drawing
-        ? <div className="text-xs text-orange-300">Draw around the part of the wood with the mouse held down (a finger on a phone); let go to finish. Esc cancels.</div>
-        : <Button small onClick={draw} testid="brush-draw-section" title={`Draw around part of this ${item.kind === "rough" ? "grass" : "wood"} to give it its own underbrush`}><Plus size={13} /> Draw a section with its own underbrush</Button>}
+        ? <DrawNote what={`around the part of the ${where}`} />
+        : <Button small onClick={draw} testid="brush-draw-section" title={`Draw around part of this ${where} to give it its own underbrush`}><Plus size={13} /> Draw a section with its own underbrush</Button>}
       {(item.underbrush || sections.some(b => b.level !== "none")) && (
         <div className="mt-2">
           <Slider label="Thicker at the edges" min={0} max={100} step={5} value={Math.round((item.brushEdge ?? 0.6) * 100)}
-            onChange={v => updateItem(item.id, { brushEdge: v / 100 } as Partial<CourseItem>, false)} onDone={() => useCourse.getState().commit()}
-            format={v => (v === 0 ? "Even everywhere" : `${100 - v}% as much deep inside`)} />
+            onChange={v => updateItem(item.id, { brushEdge: v / 100 } as Partial<CourseItem>, false)} onDone={commit}
+            format={v => (v === 0 ? "Even all through" : `${v}% less deep inside`)} />
         </div>
       )}
     </div>
@@ -367,20 +367,20 @@ function WoodsBrush({ item }: { item: AreaItem }) {
 function WoodsMix({ item }: { item: AreaItem }) {
   const style = useCourse(s => s.doc.style);
   const u = useCourse(s => s.doc.units);
+  const touch = useTouch();
   const set = (patch: Partial<AreaItem>, history = false) => updateItem(item.id, patch as Partial<CourseItem>, history);
-  const done = () => useCourse.getState().commit();
   const [lo, hi] = item.heights ?? [38, 72];
   const own = item.pines !== undefined || item.bushes !== undefined || item.density !== undefined || item.heights !== undefined;
   return (
     <div className="mb-3" data-testid="woods-mix">
       <div className="text-xs text-zinc-400 mb-1">The trees it grows</div>
-      <Slider label="Pines" min={0} max={100} step={5} value={Math.round((item.pines ?? conifersOf(style)) * 100)} onChange={v => set({ pines: v / 100 })} onDone={done} format={v => `${v}%`} />
-      <Slider label="Bushes" min={0} max={80} step={5} value={Math.round((item.bushes ?? 0) * 100)} onChange={v => set({ bushes: v ? v / 100 : undefined })} onDone={done} format={v => (v ? `${v}%` : "None")} />
-      <Slider label="Density" min={20} max={250} step={10} value={Math.round((item.density ?? 1) * 100)} onChange={v => set({ density: v / 100 })} onDone={done} format={v => (v === 100 ? "Usual" : v < 100 ? `Sparser (${v}%)` : `Denser (${v}%)`)} />
-      <Slider label="Shortest trees" min={8} max={100} value={Math.round(lo)} onChange={v => set({ heights: [Math.min(v, hi - 2), hi] })} onDone={done} format={v => fmtDist(v, u)} />
-      <Slider label="Tallest trees" min={12} max={130} value={Math.round(hi)} onChange={v => set({ heights: [lo, Math.max(v, lo + 2)] })} onDone={done} format={v => fmtDist(v, u)} />
+      <Slider label="Pines" min={0} max={100} step={5} value={Math.round((item.pines ?? conifersOf(style)) * 100)} onChange={v => set({ pines: v / 100 })} onDone={commit} format={v => `${v}%`} />
+      <Slider label="Bushes" min={0} max={80} step={5} value={Math.round((item.bushes ?? 0) * 100)} onChange={v => set({ bushes: v ? v / 100 : undefined })} onDone={commit} format={v => (v ? `${v}%` : "None")} />
+      <Slider label="Density" min={20} max={250} step={10} value={Math.round((item.density ?? 1) * 100)} onChange={v => set({ density: v / 100 })} onDone={commit} format={v => (v === 100 ? "Usual" : v < 100 ? `Sparser (${v}%)` : `Denser (${v}%)`)} />
+      <Slider label="Shortest trees" min={8} max={100} value={Math.round(lo)} onChange={v => set({ heights: [Math.min(v, hi - 2), hi] })} onDone={commit} format={v => fmtDist(v, u)} />
+      <Slider label="Tallest trees" min={12} max={130} value={Math.round(hi)} onChange={v => set({ heights: [lo, Math.max(v, lo + 2)] })} onDone={commit} format={v => fmtDist(v, u)} />
       {own && <Button small tone="ghost" onClick={() => set({ pines: undefined, bushes: undefined, density: undefined, heights: undefined }, true)} testid="woods-usual" title="The landscape's own mix again"><RotateCcw size={13} /> Reset</Button>}
-      <div className="text-[11px] text-zinc-500 mt-1">Any of its trees: click it to change just that one.</div>
+      <div className="text-[11px] text-zinc-500 mt-1">{touch ? "Tap" : "Click"} any tree in it to change just that one.</div>
     </div>
   );
 }
@@ -410,18 +410,18 @@ function WoodsTrees({ item }: { item: AreaItem }) {
       {mode === "custom" && (
         <div className="mb-3" data-testid="woods-patches">
           {patches.map((p, k) => (
-            <div key={k} className="flex items-center gap-2 mb-1" data-testid="woods-patch">
-              <span className="text-xs text-zinc-300 w-14 shrink-0">Patch {k + 1}</span>
-              <input type="range" aria-label={`Patch ${k + 1} density`} min={0.1} max={1} step={0.1} value={p.fill} className="flex-1 accent-orange-500"
-                onChange={e => setPatches(patches.map((q, m) => (m === k ? { ...q, fill: parseFloat(e.target.value) } : q)), false)} onPointerUp={() => useCourse.getState().commit()} onKeyUp={() => useCourse.getState().commit()} />
-              <span className="text-xs text-zinc-400 tabular-nums w-9 text-right">{Math.round(p.fill * 100)}%</span>
-              <button className="p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-white/[0.09]" aria-label={`Remove patch ${k + 1}`} title="Remove" onClick={() => setPatches(patches.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
+            <div key={k} className="flex items-start gap-2" data-testid="woods-patch">
+              <div className="flex-1 min-w-0">
+                <Slider label={`Patch ${k + 1}`} min={0.1} max={1} step={0.1} value={p.fill} format={v => `${Math.round(v * 100)}%`}
+                  onChange={v => setPatches(patches.map((q, m) => (m === k ? { ...q, fill: v } : q)), false)} onDone={commit} />
+              </div>
+              <button className="mt-4 p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-white/[0.09]" aria-label={`Remove patch ${k + 1}`} title="Remove" onClick={() => setPatches(patches.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
             </div>
           ))}
           {!patches.length && <div className="text-[11px] text-zinc-500 mb-1">No patches yet.</div>}
           {drawing
-            ? <div className="text-xs text-orange-300">Draw the patch over the wood with the mouse held down; let go to finish (Esc cancels).</div>
-            : <Button small onClick={draw} testid="woods-draw-patch">Draw a patch</Button>}
+            ? <DrawNote what="the patch over the wood" />
+            : <Button small onClick={draw} testid="woods-draw-patch"><Plus size={13} /> Draw a patch</Button>}
           <div className="text-[11px] text-zinc-500 mt-1">Drawn trees fill each patch in between the measured ones; its slider sets how many. The rest of the wood stays as it is.</div>
         </div>
       )}
@@ -429,20 +429,31 @@ function WoodsTrees({ item }: { item: AreaItem }) {
   );
 }
 
-function ObChoice({ item }: { item: AreaItem | LineItem }) {
+/** Areas with play rules of their own (not OB): no choice of OB, but which holes they count for. */
+const RULE_AREAS = new Set<string>(["hazard", "casual", "nogo"]);
+
+/** Whether a shape gets a choice of OB in its panel: not one that's OB already (an OB area or
+ * line), a next-tee route, or a rule area (unless it's been made OB before). */
+export const hasObChoice = (i: AreaItem | LineItem) => i.kind !== "ob" && i.kind !== "walk" && (!RULE_AREAS.has(i.kind) || i.ob === true);
+
+/** A shape's choices of OB, each with what it does (the panel and the phone's strip). */
+export const obOptions = (item: AreaItem | LineItem): { value: ObChoice; label: string }[] => {
+  const wet = item.kind === "water" || item.kind === "stream";
+  const line = item.type === "line";
+  return [
+    { value: "no", label: "Not OB" },
+    ...(wet ? [{ value: "yes" as const, label: "OB, no red edge" }] : []),
+    { value: "edge", label: "OB, red edge" },
+    ...(line ? [{ value: "beyond" as const, label: "OB and beyond" }] : [])
+  ];
+};
+
+/** Whether water, a creek, a road, a fence or a path is out of bounds (and shown so on the map);
+ * a line OB beyond it too, and along all of it or stretches of it. */
+function ObPick({ item }: { item: AreaItem | LineItem }) {
   const doc = useCourse(s => s.doc);
   const units = doc.units;
-  const wet = item.kind === "water" || item.kind === "stream";
   const line = item.type === "line" ? item : null;
-  const value = item.ob === true ? (line?.obBeyond ? "beyond" : "edge") : item.ob === false || !wet ? "no" : "yes";
-  const options = [{ value: "no", label: "Not OB" }, ...(wet ? [{ value: "yes", label: "OB (no line)" }] : []), { value: "edge", label: "OB, red edge" }, ...(line ? [{ value: "beyond", label: "OB and beyond" }] : [])];
-  const pick = (v: string) => {
-    if (line && v === "beyond") return markObBeyond(item.id);
-    updateItem(item.id, {
-      ob: v === "edge" ? true : v === "no" ? (wet ? false : undefined) : undefined,
-      ...(line ? { obBeyond: undefined, obToward: undefined, ...(v === "edge" ? {} : { obStretches: undefined, obHoles: undefined }) } : v === "edge" ? {} : { obStretches: undefined })
-    } as Partial<CourseItem>);
-  };
   // (a line along its length, an area round its edge)
   const len = line ? pathLength(linePath(line)) : item.type === "area" ? pathLength(areaRing(item)) : 0;
   const stretches = item.obStretches;
@@ -453,7 +464,7 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
   return (
     <>
       <Field label="Out of bounds" help="ob">
-        <Segmented label="Out of bounds" value={value} onChange={pick} options={options} />
+        <ChoiceList label="Out of bounds" value={obChoiceOf(item)} onChange={v => setObChoice(item.id, v)} options={obOptions(item)} />
       </Field>
       {line?.obBeyond && item.ob === true && (() => {
         // Which side is out: the app's guess (away from the holes beside it), or either side
@@ -489,23 +500,30 @@ function ObChoice({ item }: { item: AreaItem | LineItem }) {
       )}
       {line && item.ob === true && (
         <Field label="OB for">
-          <div className="flex flex-wrap gap-1" role="group" aria-label="OB for holes" data-testid="ob-for">
-            <button className={holeChip(!picked.length)} aria-pressed={!picked.length} onClick={() => setObHoles([])}>All holes</button>
-            {byNumber(doc.holes).map(h => {
-              const on = picked.includes(h.id);
-              return <button key={h.id} className={holeChip(on)} aria-pressed={on} aria-label={`Hole ${holeLabel(doc, h.id)}`} onClick={() => setObHoles(on ? picked.filter(x => x !== h.id) : [...picked, h.id])}>{holeLabel(doc, h.id)}</button>;
-            })}
-          </div>
+          <HoleChips label="OB for holes" testid="ob-for" picked={picked} onChange={setObHoles} />
         </Field>
       )}
     </>
   );
 }
 
-/** Turn buttons for a drawn shape (about its middle). */
-function TurnShape({ item }: { item: AreaItem | LineItem | StructureItem }) {
-  if (item.locked || item.points.length < 2) return null;
-  const turn = (deg: number) => updateItem(item.id, turnShape(item.points, item, (deg * Math.PI) / 180) as Partial<CourseItem>);
+/** Long shapes drawn along the ground (a road, a creek, woods, a fairway): turning one a few
+ * degrees is no use, so they get no Turn buttons. */
+const NO_TURN = new Set<string>(["water", "woods", "rough", "fairway", "sand", "road", "path", "walk", "stream"]);
+/** Whether a thing has Turn buttons (locked or not). */
+const turnable = (item: CourseItem) =>
+  item.type === "area" || item.type === "line" ? item.points.length >= 2 && !NO_TURN.has(item.kind) : item.type === "structure" ? item.points.length >= 2 : item.type !== "tree" && item.type !== "basket";
+
+/** Turn buttons: a drawn shape about its middle; a tee, a mando, a label or a bench where it
+ * stands (a tee turned by hand stops facing down its hole). */
+function TurnButtons({ item }: { item: CourseItem }) {
+  const doc = useCourse(s => s.doc);
+  if (item.locked || !turnable(item)) return null;
+  const turn = (deg: number) => {
+    if (item.type === "area" || item.type === "line" || item.type === "structure") return updateItem(item.id, turnShape(item.points, item, (deg * Math.PI) / 180) as Partial<CourseItem>);
+    const from = item.type === "tee" ? teeAim(doc, item) : item.rotation;
+    updateItem(item.id, { rotation: from + deg, ...(item.type === "tee" ? { aimFixed: true } : {}) } as Partial<CourseItem>);
+  };
   const b = "flex-1 h-8 touch:h-11 rounded-lg border border-white/[0.12] hover:border-zinc-500 text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1";
   return (
     <Field label="Turn">
@@ -518,40 +536,49 @@ function TurnShape({ item }: { item: AreaItem | LineItem | StructureItem }) {
   );
 }
 
+/** A built thing's map symbol, small, on its kind's chip (as on the tool bar's). */
+const builtIcon = (k: StructureKind) => <span className="inline-block" dangerouslySetInnerHTML={{ __html: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" style="overflow:visible;display:block">${structureLegend(k, 16, 16, 0.9, undefined, `kind-${k}`)}</svg>` }} />;
+/** An amenity's map symbol, small, on its kind's chip. */
+const amenityIcon = (k: AmenityKind) => <span className="inline-block" dangerouslySetInnerHTML={{ __html: symbolSvg(amenitySymbol(k, { x: 0, y: 0 }, 1), 14, k === "here" ? 19 : 14) }} />;
+
+/** A label's settings; just put down, its text is ready to type over. */
+function LabelSettings({ item, set }: { item: LabelItem; set: (patch: Record<string, unknown>, history?: boolean) => void }) {
+  const fresh = isNewLabel(item.id);
+  useEffect(() => { if (fresh) forgetNewLabel(); }, [fresh]);
+  return (
+    <>
+      <Field label="Text" help="amenities"><TextInput label="Label text" testid="label-text" value={item.text} onChange={v => set({ text: v }, false)} onDone={commit} autoSelect={fresh} /></Field>
+      <Slider label="Size" min={9} max={40} value={item.fontSize} onChange={v => set({ fontSize: v }, false)} onDone={commit} />
+      <div className="mb-3"><ColorInput label="Color" value={item.color} onChange={v => set({ color: v }, false)} onDone={commit} /></div>
+      <TurnButtons item={item} />
+    </>
+  );
+}
+
 /** A thing's settings (`bare`: only them, with no title: a tee or basket in its hole's panel). */
 function ItemInspector({ item, bare = false }: { item: CourseItem; bare?: boolean }) {
   const doc = useCourse(s => s.doc);
+  // (on a phone or tablet, the sheet's own header names it already)
+  const compact = useLayout() !== "desktop";
   const u = doc.units;
   const set = (patch: Record<string, unknown>, history = true) => updateItem(item.id, patch as Partial<CourseItem>, history);
-  const holeOptions = [{ value: "", label: "Whole course" }, ...doc.holes.map(h => ({ value: h.id, label: `Hole ${holeLabel(doc, h.id)}` }))];
   // (shapes and built things can belong to several holes: an OB line along two fairways)
   const shared = item.type === "area" || item.type === "line" || item.type === "structure";
-  const mine = "holeId" in item && item.holeId ? [item.holeId, ...((shared && item.alsoHoles) || [])] : [];
-  const setHoles = (ids: string[]) => set({ holeId: ids[0], alsoHoles: ids.length > 1 ? ids.slice(1) : undefined });
-  const chip = holeChip;
-  const holePicker = shared ? (
-    <Field label="Belongs to">
-      <div className="flex flex-wrap gap-1" role="group" aria-label="Belongs to holes" data-testid="belongs-to">
-        <button className={chip(!mine.length)} aria-pressed={!mine.length} onClick={() => setHoles([])}>Whole course</button>
-        {byNumber(doc.holes).map(h => {
-          const on = mine.includes(h.id);
-          return <button key={h.id} className={chip(on)} aria-pressed={on} aria-label={`Hole ${holeLabel(doc, h.id)}`} onClick={() => setHoles(on ? mine.filter(x => x !== h.id) : [...mine, h.id])}>{holeLabel(doc, h.id)}</button>;
-        })}
-      </div>
-    </Field>
-  ) : (
-    <Field label="Belongs to">
-      <select aria-label="Belongs to hole" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={("holeId" in item && item.holeId) || ""} onChange={e => set({ holeId: e.target.value || undefined })}>
-        {holeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
+  const ownHole = "holeId" in item ? item.holeId : undefined;
+  const mine = ownHole ? [ownHole, ...((shared && item.alsoHoles) || [])] : [];
+  const setHoles = (ids: string[]) => set(shared ? { holeId: ids[0], alsoHoles: ids.length > 1 ? ids.slice(1) : undefined } : { holeId: ids[0] });
+  // The holes it's for: OB for them, counts for them (a hazard), or belongs to them
+  const holePicker = (label: string, all: string, help?: string) => (
+    <Field label={label} help={help}>
+      <HoleChips label={`${label} ${shared ? "holes" : "hole"}`} testid="belongs-to" picked={mine} onChange={setHoles} all={all} single={!shared} />
     </Field>
   );
   let body: JSX.Element | null = null;
-  // A length typed in the course's units (kept in feet)
+  // A length typed in the course's units (kept in feet), one undo step once it's typed
   const M = 3.28084;
   const lenIn = (label: string, ft: number, min: number, max: number, onFt: (v: number) => void) => u === "m"
-    ? <NumberInput label={label} value={Math.round((ft / M) * 10) / 10} min={Math.round((min / M) * 10) / 10} max={Math.round((max / M) * 10) / 10} step={0.1} unit="m" onChange={v => onFt(Math.round(v * M * 10) / 10)} />
-    : <NumberInput label={label} value={ft} min={min} max={max} step={0.5} unit="ft" onChange={onFt} />;
+    ? <NumberInput label={label} value={Math.round((ft / M) * 10) / 10} min={Math.round((min / M) * 10) / 10} max={Math.round((max / M) * 10) / 10} step={0.1} unit="m" onChange={v => onFt(Math.round(v * M * 10) / 10)} onDone={commit} />
+    : <NumberInput label={label} value={ft} min={min} max={max} step={0.5} unit="ft" onChange={onFt} onDone={commit} />;
   switch (item.type) {
     case "tee":
       body = (
@@ -559,30 +586,29 @@ function ItemInspector({ item, bare = false }: { item: CourseItem; bare?: boolea
           {holeStats(doc, doc.holes.find(h => h.id === item.holeId) ?? doc.holes[0]).complete && doc.holes.some(h => h.id === item.holeId) && (
             <div className="mb-3"><Button small onClick={() => useEditor.getState().set({ teeView: item.holeId, teeViewTee: item.id, flyover: false })} testid="tee-view-this"><Eye size={14} /> View from this tee</Button></div>
           )}
-          <Field label="Tee color (skill level)">
-            <Segmented label="Tee color" value={item.level} onChange={v => setTeeLevel(item.id, v)} options={TEE_ORDER.map(l => ({ value: l, label: TEE_LEVELS[l].label, title: `${TEE_LEVELS[l].skill} (${TEE_LEVELS[l].rating})` }))} />
+          <Field label="Tee color (skill level)" help="tee-basket">
+            <ChipPick label="Tee color" value={item.level} onChange={v => setTeeLevel(item.id, v)} options={TEE_ORDER.map(l => ({ value: l, label: TEE_LEVELS[l].label, color: TEE_LEVELS[l].color, title: `${TEE_LEVELS[l].skill} (${TEE_LEVELS[l].rating})` }))} />
           </Field>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Pad width">{lenIn("Pad width", item.padWidth, 2, 20, v => set({ padWidth: v }))}</Field>
-            <Field label="Pad length">{lenIn("Pad length", item.padLength, 4, 30, v => set({ padLength: v }))}</Field>
+            <Field label="Pad width">{lenIn("Pad width", item.padWidth, 2, 20, v => set({ padWidth: v }, false))}</Field>
+            <Field label="Pad length">{lenIn("Pad length", item.padLength, 4, 30, v => set({ padLength: v }, false))}</Field>
           </div>
           <Field label="Surface">
-            <select aria-label="Tee surface" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.surface} onChange={e => set({ surface: e.target.value as TeeSurface })}>
-              {(Object.keys(TEE_SURFACES) as TeeSurface[]).map(k => <option key={k} value={k}>{TEE_SURFACES[k].label}</option>)}
-            </select>
+            <ChipPick label="Tee surface" value={item.surface} onChange={v => set({ surface: v })} options={(Object.keys(TEE_SURFACES) as TeeSurface[]).map(k => ({ value: k, label: TEE_SURFACES[k].label, color: TEE_SURFACES[k].color }))} />
           </Field>
-          {item.aimFixed && <Button small onClick={() => set({ aimFixed: false })}>Face down the hole again</Button>}
+          <TurnButtons item={item} />
+          {item.aimFixed && <div className="mb-2"><Button small onClick={() => set({ aimFixed: false })}>Face down the hole again</Button></div>}
         </>
       );
       break;
     case "basket":
       body = (
         <>
-          <Field label="Pin position">
-            <Segmented label="Pin position" value={item.position} onChange={v => set({ position: v })} options={PIN_POSITIONS.map(p => ({ value: p, label: p }))} />
+          <Field label="Pin position" help="tee-basket">
+            <Segmented label="Pin position" value={item.position} onChange={v => setPinPosition(item.id, v)} options={PIN_POSITIONS.map(p => ({ value: p, label: `Pin ${p}` }))} />
           </Field>
           <Field label="Raised above the ground">
-            {lenIn("Raised", item.raised ?? 0, 0, 30, v => set({ raised: v || undefined }))}
+            {lenIn("Raised", item.raised ?? 0, 0, 30, v => set({ raised: v || undefined }, false))}
           </Field>
         </>
       );
@@ -590,83 +616,93 @@ function ItemInspector({ item, bare = false }: { item: CourseItem; bare?: boolea
     case "mando":
       body = (
         <>
-          <Field label="The disc must pass">
+          <Field label="The disc must pass" help="mando">
             <Segmented label="Mando side" value={item.side} onChange={v => set({ side: v })} options={[{ value: "left", label: "Left of it" }, { value: "right", label: "Right of it" }]} />
           </Field>
-          {holePicker}
+          <TurnButtons item={item} />
+          {holePicker("Belongs to", "Whole course")}
         </>
       );
       break;
     case "dropzone":
-      body = holePicker;
-      break;
-    case "area":
       body = (
         <>
-          <Field label="Kind">
-            <select aria-label="Area kind" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as AreaKind })}>
-              {(Object.keys(AREA_KINDS) as AreaKind[]).map(k => <option key={k} value={k}>{AREA_KINDS[k].label}</option>)}
-            </select>
-          </Field>
-          <Field label="Name on the map (optional)"><TextInput label="Area name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
-          {item.kind !== "ob" && <ObChoice item={item} />}
-          {item.kind === "woods" && <WoodsTrees item={item} />}
-          {(item.kind === "woods" || item.kind === "rough") && <WoodsBrush item={item} />}
-          {(item.kind === "ob" || item.kind === "hazard") && holePicker}
-          {item.kind !== "parking" && item.kind !== "building" && <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />}
-          <TurnShape item={item} />
-          <div className="text-xs text-zinc-400">{Math.round(polygonArea(areaPath(item))).toLocaleString()} sq ft ({(polygonArea(areaPath(item)) / 43560).toFixed(2)} acres) · {item.points.length} corners</div>
+          {holePicker("Belongs to", "Whole course", "mando")}
+          <TurnButtons item={item} />
         </>
       );
       break;
-    case "line":
+    case "area": {
+      // (a flat building is an old course's: offered only to one that is one)
+      const kinds = (Object.keys(AREA_KINDS) as AreaKind[]).filter(k => k !== "building" || item.kind === "building");
       body = (
         <>
-          <Field label="Kind">
-            <select aria-label="Line kind" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as LineKind })}>
-              {(Object.keys(LINE_KINDS) as LineKind[]).map(k => <option key={k} value={k}>{LINE_KINDS[k].label}</option>)}
-            </select>
+          <Field label="Kind" help={item.kind === "ob" ? "ob" : "areas"}>
+            <ChipPick label="Area kind" value={item.kind} onChange={v => set({ kind: v })} options={kinds.map(k => ({ value: k, label: AREA_KINDS[k].label, color: AREA_KINDS[k].color }))} />
           </Field>
-          {(LINE_KINDS[item.kind].width > 0 || item.kind === "walk") && <Slider label={widthVaries(item) ? "Width (all along)" : "Width"} min={1} max={item.kind === "stream" ? 200 : 60} value={item.width ?? (LINE_KINDS[item.kind].width || 6)} onChange={v => set({ width: v })} format={v => fmtDist(v, u)} />}
+          <Field label="Name on the map (optional)"><TextInput label="Area name" value={item.label ?? ""} onChange={v => set({ label: v || undefined }, false)} onDone={commit} /></Field>
+          {hasObChoice(item) && <ObPick item={item} />}
+          {item.kind === "woods" && <WoodsTrees item={item} />}
+          {(item.kind === "woods" || item.kind === "rough") && <WoodsBrush item={item} />}
+          {item.kind === "ob" && holePicker("OB for", "All holes")}
+          {RULE_AREAS.has(item.kind) && holePicker("Counts for", "All holes")}
+          {item.kind !== "parking" && item.kind !== "building" && <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />}
+          <TurnButtons item={item} />
+          <div className="text-xs text-zinc-400">{fmtArea(polygonArea(areaPath(item)), u)}</div>
+        </>
+      );
+      break;
+    }
+    case "line": {
+      const meta = LINE_KINDS[item.kind];
+      // (a next-tee route can have none: a dashed line)
+      const walk = item.kind === "walk";
+      body = (
+        <>
+          <Field label="Kind" help={item.kind === "ob" ? "ob" : "lines"}>
+            <ChipPick label="Line kind" value={item.kind} onChange={v => set({ kind: v as LineKind })} options={(Object.keys(LINE_KINDS) as LineKind[]).map(k => ({ value: k, label: LINE_KINDS[k].label, color: LINE_KINDS[k].color }))} />
+          </Field>
+          {(meta.width > 0 || walk) && <Slider label={widthVaries(item) ? "Width (all along)" : "Width"} min={walk ? 0 : 1} max={meta.maxWidth} value={item.width ?? meta.width} onChange={v => set({ width: v || undefined }, false)} onDone={commit} format={v => (v ? fmtDist(v, u) : "Just a dashed line")} />}
           {item.kind === "stream" && widthVaries(item) && (
             <div className="flex items-center justify-between gap-2 -mt-1 mb-2" data-testid="line-widths">
               <p className="text-[11px] text-zinc-400 leading-snug">{fmtDist(Math.min(...widthFactors(item)) * (item.width ?? LINE_KINDS.stream.width), u)} to {fmtDist(Math.max(...widthFactors(item)) * (item.width ?? LINE_KINDS.stream.width), u)}</p>
               <button className="shrink-0 text-xs text-orange-300 hover:text-orange-200" onClick={() => set({ widths: undefined })}>Even width</button>
             </div>
           )}
-          {(item.kind === "path" || item.kind === "walk") && <SurfacePick value={item.surface} onChange={v => set({ surface: v })} />}
+          {(item.kind === "path" || walk) && <SurfacePick value={item.surface} onChange={v => set({ surface: v })} />}
           {item.kind === "fence" && (
             <>
               <Field label="Fence">
                 <Segmented label="What the fence is" value={item.fenceStyle ?? "rail"} onChange={v => set({ fenceStyle: v === "rail" ? undefined : v })} options={[{ value: "rail", label: "Posts and rails" }, { value: "boards", label: "Boards" }, { value: "chain", label: "Chain link" }]} />
               </Field>
-              <Slider label="Height" min={2} max={12} step={0.5} value={item.fenceHeight ?? 4} onChange={v => set({ fenceHeight: v })} format={v => fmtDist(v, u)} />
+              <Slider label="Height" min={2} max={12} step={0.5} value={item.fenceHeight ?? 4} onChange={v => set({ fenceHeight: v }, false)} onDone={commit} format={v => fmtDist(v, u)} />
             </>
           )}
           <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />
-          <Field label="Name on the map (optional)"><TextInput label="Line name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
-          {item.kind !== "ob" && item.kind !== "walk" && <ObChoice item={item} />}
-          {item.kind === "ob" && holePicker}
-          <TurnShape item={item} />
+          <Field label="Name on the map (optional)"><TextInput label="Line name" value={item.label ?? ""} onChange={v => set({ label: v || undefined }, false)} onDone={commit} /></Field>
+          {hasObChoice(item) && <ObPick item={item} />}
+          {item.kind === "ob" && holePicker("OB for", "All holes")}
+          <TurnButtons item={item} />
           {!item.locked && <div className="mb-2"><Button small onClick={() => useEditor.getState().set({ obPick: item.id, pickCut: true, tool: "select" })} testid="line-cut">Remove a stretch</Button></div>}
-          <div className="text-xs text-zinc-400">{fmtDist(pathLength(item.points), u)} long</div>
+          <div className="text-xs text-zinc-400">{fmtDist(pathLength(linePath(item)), u)} long</div>
         </>
       );
       break;
+    }
     case "structure": {
       const meta = STRUCTURE_KINDS[item.kind];
       const line = meta.shape === "line";
       // (A line can only become another line, an outline another outline)
       const kinds = STRUCTURE_ORDER.filter(k => STRUCTURE_KINDS[k].shape === meta.shape);
+      const width = structureWidth(item), height = structureHeight(item);
+      const roofInk = item.kind === "shelter" ? STRUCTURE_INK.shelter : STRUCTURE_INK.roof;
       body = (
         <>
-          <Field label="Kind">
-            <select aria-label="Structure kind" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as StructureKind })}>
-              {kinds.map(k => <option key={k} value={k}>{STRUCTURE_KINDS[k].label}</option>)}
-            </select>
+          <Field label="Kind" help="build">
+            <ChipPick label="Structure kind" value={item.kind} onChange={v => set({ kind: v as StructureKind })} options={kinds.map(k => ({ value: k, label: STRUCTURE_KINDS[k].label, icon: builtIcon(k) }))} />
           </Field>
-          {line && <Slider label={item.kind === "wall" ? "Thickness" : "Width"} min={1} max={item.kind === "wall" ? 6 : 24} step={0.5} value={structureWidth(item)} onChange={v => set({ width: v })} format={v => fmtSize(v, u)} />}
-          {meta.heightLabel && <Slider label={meta.heightLabel} min={item.kind === "building" || item.kind === "shelter" ? 6 : 0} max={item.kind === "building" ? 40 : item.kind === "shelter" ? 20 : item.kind === "wall" ? 12 : 10} step={0.5} value={structureHeight(item)} onChange={v => set({ height: v })} format={v => fmtSize(v, u)} />}
+          {line && <Slider label={item.kind === "wall" ? "Thickness" : "Width"} min={meta.widths[0]} max={Math.max(meta.widths[1], width)} step={0.5} value={width} onChange={v => set({ width: v }, false)} onDone={commit} format={v => fmtSize(v, u)} />}
+          {meta.heightLabel && <Slider label={meta.heightLabel} min={meta.heights[0]} max={Math.max(meta.heights[1], height)} step={0.5} value={height} onChange={v => set({ height: v }, false)} onDone={commit} format={v => fmtSize(v, u)} />}
           {item.kind === "building" && (
             <Field label="Looks like">
               <div className="grid grid-cols-3 gap-1" role="radiogroup" aria-label="Looks like" data-testid="building-looks">
@@ -693,15 +729,18 @@ function ItemInspector({ item, bare = false }: { item: CourseItem; bare?: boolea
                 <Segmented label="Roof" value={structureRoof(item)} onChange={v => set({ roof: v as RoofKind })} options={[{ value: "gable", label: "Gable" }, { value: "hip", label: "Hip" }, { value: "pyramid", label: "Pyramid" }, { value: "shed", label: "Shed" }, { value: "flat", label: "Flat" }]} />
               </Field>
               <div className="grid grid-cols-2 gap-x-3">
-                <ColorInput label="Roof color" value={item.roofColor ?? (item.kind === "shelter" ? STRUCTURE_INK.shelter : STRUCTURE_INK.roof)} onChange={(v: string) => set({ roofColor: v }, false)} onDone={() => useCourse.getState().commit()} />
-                {item.kind === "building" && <ColorInput label="Wall color" value={item.wallColor ?? "#6e5036"} onChange={(v: string) => set({ wallColor: v }, false)} onDone={() => useCourse.getState().commit()} />}
+                <ColorInput label="Roof color" value={item.roofColor ?? roofInk} onChange={(v: string) => set({ roofColor: v }, false)} onDone={commit} />
+                {item.kind === "building" && <ColorInput label="Wall color" value={item.wallColor ?? "#6e5036"} onChange={(v: string) => set({ wallColor: v }, false)} onDone={commit} />}
               </div>
+              {(item.roofColor !== undefined || item.wallColor !== undefined) && (
+                <div className="mb-2"><Button small tone="ghost" onClick={() => set({ roofColor: undefined, wallColor: undefined })} testid="structure-colors-reset" title="The usual colors for its kind again"><RotateCcw size={13} /> Reset the colors</Button></div>
+              )}
             </>
           )}
-          <Field label="Name on the map (optional)"><TextInput label="Structure name" value={item.label ?? ""} placeholder={item.kind === "building" ? "e.g. Clubhouse" : item.kind === "bridge" ? "e.g. Mill Creek Bridge" : ""} onChange={v => set({ label: v || undefined })} /></Field>
-          {holePicker}
-          <TurnShape item={item} />
-          <div className="text-xs text-zinc-400" data-testid="structure-size">{line ? `${fmtDist(pathLength(item.points), u)} long` : `${Math.round(polygonArea(item.points)).toLocaleString()} sq ft · ${item.points.length} corners`}</div>
+          <Field label="Name on the map (optional)"><TextInput label="Structure name" value={item.label ?? ""} placeholder={item.kind === "building" ? "e.g. Clubhouse" : item.kind === "bridge" ? "e.g. Mill Creek Bridge" : ""} onChange={v => set({ label: v || undefined }, false)} onDone={commit} /></Field>
+          {holePicker("Belongs to", "Whole course")}
+          <TurnButtons item={item} />
+          <div className="text-xs text-zinc-400" data-testid="structure-size">{line ? `${fmtDist(pathLength(structurePath(item)), u)} long` : fmtArea(polygonArea(item.points), u)}</div>
         </>
       );
       break;
@@ -709,41 +748,43 @@ function ItemInspector({ item, bare = false }: { item: CourseItem; bare?: boolea
     case "tree":
       body = <TreeSettings item={item} set={(patch, history = true) => set(patch as Record<string, unknown>, history)} />;
       break;
-    case "amenity":
+    case "amenity": {
+      // (a bridge's or a shelter's sign is a course's from before: offered only to one that is one)
+      const kinds = AMENITY_KINDS[item.kind].retired ? [...AMENITY_ORDER, item.kind] : AMENITY_ORDER;
       body = (
         <>
-          <Field label="Kind">
-            <select aria-label="Amenity kind" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={item.kind} onChange={e => set({ kind: e.target.value as AmenityKind })}>
-              {(Object.keys(AMENITY_KINDS) as AmenityKind[]).map(k => <option key={k} value={k}>{AMENITY_KINDS[k].label}</option>)}
-            </select>
+          <Field label="Kind" help="amenities">
+            <ChipPick label="Amenity kind" value={item.kind} onChange={v => set({ kind: v as AmenityKind })} options={kinds.map(k => ({ value: k, label: AMENITY_KINDS[k].pick ?? AMENITY_KINDS[k].label, icon: amenityIcon(k) }))} />
           </Field>
-          <Field label="Name (optional)"><TextInput label="Amenity name" value={item.label ?? ""} onChange={v => set({ label: v || undefined })} /></Field>
+          <Field label="Name (optional)"><TextInput label="Amenity name" value={item.label ?? ""} onChange={v => set({ label: v || undefined }, false)} onDone={commit} /></Field>
+          <TurnButtons item={item} />
         </>
       );
       break;
+    }
     case "label":
-      body = (
-        <>
-          <Field label="Text"><TextInput label="Label text" value={item.text} onChange={v => set({ text: v })} /></Field>
-          <Slider label="Size" min={9} max={40} value={item.fontSize} onChange={v => set({ fontSize: v })} format={v => `${v}px`} />
-          <Field label="Color"><input aria-label="Label color" type="color" value={item.color} onChange={e => set({ color: e.target.value })} className="w-12 h-8 rounded border border-zinc-600 bg-transparent" /></Field>
-        </>
-      );
+      body = <LabelSettings item={item} set={set} />;
       break;
+  }
+  // (locked: why its Turn and Remove a stretch buttons aren't there)
+  if (item.locked) {
+    body = <><p className="text-[11.5px] text-zinc-400 mb-3" data-testid="locked-note">Locked in place.</p>{body}</>;
   }
   const holeId = "holeId" in item ? item.holeId : undefined;
   const title = itemTitle(item);
   if (bare) return body;
   return (
     <>
-      <Section testid="item-title">
-        <div className="text-sm font-bold text-zinc-50" data-testid="inspector-title">{title}</div>
-        {holeId && (
-          <button className="text-xs text-orange-300 hover:text-orange-200" onClick={() => select(holeId)}>
-            Hole {holeLabel(doc, holeId)} →
-          </button>
-        )}
-      </Section>
+      {!compact && (
+        <Section testid="item-title">
+          <div className="text-sm font-bold text-zinc-50" data-testid="inspector-title">{title}</div>
+          {holeId && (
+            <button className="text-xs text-orange-300 hover:text-orange-200" onClick={() => select(holeId)}>
+              Hole {holeLabel(doc, holeId)} →
+            </button>
+          )}
+        </Section>
+      )}
       <Section>{body}</Section>
     </>
   );
@@ -751,7 +792,7 @@ function ItemInspector({ item, bare = false }: { item: CourseItem; bare?: boolea
 
 /** What a selected item is called ("Blue tee", "OB area", "Bridge"…). */
 export function itemTitle(item: CourseItem) {
-  return item.type === "tee" ? `${TEE_LEVELS[item.level].label} tee` : item.type === "basket" ? `Basket (pin ${item.position})` : item.type === "area" ? AREA_KINDS[item.kind].label : item.type === "line" ? LINE_KINDS[item.kind].label : item.type === "amenity" ? AMENITY_KINDS[item.kind].label : item.type === "structure" ? STRUCTURE_KINDS[item.kind].label : ITEM_LABELS[item.type];
+  return item.type === "tee" ? `${TEE_LEVELS[item.level].label} tee` : item.type === "basket" ? `Pin ${item.position}` : item.type === "area" ? AREA_KINDS[item.kind].label : item.type === "line" ? LINE_KINDS[item.kind].label : item.type === "amenity" ? AMENITY_KINDS[item.kind].pick ?? AMENITY_KINDS[item.kind].label : item.type === "structure" ? STRUCTURE_KINDS[item.kind].label : ITEM_LABELS[item.type];
 }
 
 /** How much of the map's left side is covered on Design while something is picked: the slim hole
@@ -815,7 +856,6 @@ export function InspectorBody() {
     <>
       {hole ? <HoleInspector hole={hole} /> : owner ? <HoleInspector hole={owner} part={item} /> : item ? <ItemInspector item={item} /> : group.length ? <GroupInspector items={group} /> : null}
       {item && !owner && "x" in item && "y" in item && item.type !== "area" && item.type !== "line" && item.type !== "structure" && <PlaceByGps item={item as never} />}
-      {hole && <div className="px-4 pb-3"><Button small full onClick={() => getView()?.fitHole(hole.id)}>Zoom to this hole</Button></div>}
     </>
   );
 }

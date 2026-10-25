@@ -25,10 +25,11 @@ function useMenu() {
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    // (Esc closes just this, before the map hears it)
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
     window.addEventListener("pointerdown", close);
-    window.addEventListener("keydown", esc);
-    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc); };
+    window.addEventListener("keydown", esc, true);
+    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc, true); };
   }, [open]);
   return { open, setOpen, ref };
 }

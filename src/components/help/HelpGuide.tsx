@@ -18,11 +18,12 @@ const ART: Partial<Record<GuideSection, (() => JSX.Element)[]>> = {
 
 export const SHORTCUTS: [string, string][] = [
   ["V", "Select and move"], ["H", "New hole (tee, then basket)"], ["T / B", "Another tee / pin for the hole"], ["M / Z", "Mando / drop zone"],
-  ["O / L", "Draw an area / a line"], ["S", "Build: bridge, boardwalk, stairs, wall, building, shelter, deck"], ["R / A / K", "Tree / amenity / label"], ["D", "Measure"],
-  ["Enter", "Finish drawing · view from the selected hole's tee"], ["Esc", "Cancel · back to Select · close"], ["Backspace", "Remove the last point drawn"],
-  ["Shift+drag", "Select with a box"], ["Shift+click", "Add to the selection, or take out"], ["Ctrl+A", "Select everything"],
+  ["O", "OB and rules"], ["L", "Paths and roads"], ["W / U", "Water / grass"], ["R", "Trees and woods"],
+  ["S", "Build: buildings, shelters, decks, bridges, boardwalks, stairs, walls, fences"], ["G", "Shape the ground"], ["A / K", "Amenity / label"], ["D", "Measure"],
+  ["Enter", "Finish drawing · view from the tee of the hole, tee or basket picked"], ["Esc", "Cancel · back to Select · close"], ["Backspace", "Remove the last point drawn"],
+  ["Space+drag", "Move the map, whatever tool you're using"], ["Shift+drag", "Select with a box"], ["Shift+click", "Add to the selection, or take out"], ["Ctrl+A", "Select everything"],
   ["Del", "Delete the selection"], ["Ctrl+D", "Duplicate"], ["Ctrl+C / X / V", "Copy / cut / paste (where the pointer is)"], ["Arrows", "Nudge 1 ft (Shift: 10 ft) · other holes in the tee view"],
-  ["Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"], ["Ctrl+S", "Save now"], ["2 / 3", "Top-down / 3D"], ["0 / F", "Whole course / zoom to selection"], ["[ / ]", "Previous / next hole"],
+  ["Ctrl+Z / Ctrl+Shift+Z", "Undo / redo (while drawing, Ctrl+Z takes out the last point)"], ["Ctrl+S", "Save now"], ["2 / 3", "Top-down / 3D"], ["0 / F", "Whole course / zoom to selection"], ["[ / ]", "Previous / next hole"],
   ["Ctrl+K or /", "Search: holes, tools, settings, help"], ["Q / E / N", "Turn left / right / north up"], ["+ / −", "Zoom"], ["?", "This guide"],
   ["W A S D or arrows", "In the camera: move (Shift: faster)"], ["Space or E / Q", "In the camera: up / down"], ["Enter / U", "In the camera: add a keyframe / move the picked one here"], ["[ / ] in the camera", "Keyframe before / after"]
 ];
@@ -31,10 +32,12 @@ export const GESTURES: [string, string][] = [
   ["One finger", "Pan the map; drag a selected thing or its handles to move or reshape it"],
   ["Pinch", "Zoom in and out (or the + and − buttons)"],
   ["Two fingers up or down", "Tilt into 3D and back"],
-  ["Two fingers sideways", "Turn the map (or the turn buttons; the compass puts north up)"],
+  ["Twist two fingers", "Turn the map (the compass puts north up)"],
+  ["Pinch or twist a picked thing", "Size it or turn it: a tree, a tee, a shape"],
   ["Tap", "Select a hole or a thing; with a tool, place it"],
-  ["Hold", "A thing's menu: view from the tee, mark OB, duplicate, lock, delete"],
-  ["Select, above the tools", "Drag a box around several things; tap one to add it or take it out"],
+  ["Tap a corner or a turn", "Of the thing picked: Delete point comes up beside a corner, Remove this turn beside a turn in a hole's line"],
+  ["Hold", "A thing's menu: view from the tee, mark OB, duplicate, lock, delete; or, on open ground, what you can start there"],
+  ["The box button, by the zoom buttons", "Drag a box around several things; tap one to add it or take it out"],
   ["Drag the panel", "Up for more, down for more map; tap its handle to step through"],
   ["In the camera", "The stick moves it, the arrows take it up and down, drag the view to look"]
 ];
@@ -93,7 +96,7 @@ function KeysSection({ touch }: { touch: boolean }) {
         ))}
       </dl>
       <h3 className="text-[15px] font-semibold text-zinc-50 mt-5 mb-1">Moving around the map</h3>
-      <p className="text-[13.5px] text-zinc-300">Drag to pan, scroll or pinch to zoom at the pointer, right-drag (or Ctrl+drag) to turn and tilt, Shift+drag to select, double-click to zoom in.</p>
+      <p className="text-[13.5px] text-zinc-300">Drag to pan (or Space+drag, whatever tool you're using), scroll or pinch to zoom at the pointer, right-drag (or Ctrl+drag) to turn and tilt, Shift+drag to select, double-click to zoom in.</p>
       <h3 className="text-[15px] font-semibold text-zinc-50 mt-5 mb-1">Credits</h3>
       <p className="text-xs text-zinc-500">Imagery © Esri, Maxar, Earthstar Geographics. Map data © OpenStreetMap contributors (and OpenFreeMap, OpenMapTiles). Elevation: USGS 3DEP and AWS Terrain Tiles (Mapzen). Trees grown with ez-tree (MIT).</p>
     </>
@@ -164,7 +167,7 @@ export function HelpGuide({ onClose, topic, touch = false }: { onClose: () => vo
           {found ? (
             <>
               <h2 className="text-[20px] font-bold text-zinc-50 mb-1">{found.length ? `${found.length} found` : "Nothing found"}</h2>
-              <p className="text-[13px] text-zinc-400 mb-4">{found.length ? "Show me goes straight to the setting." : "Try another word, or Ctrl+K on the map to search holes and names too."}</p>
+              <p className="text-[13px] text-zinc-400 mb-4">{found.length ? "Show me goes straight to the setting." : touch ? "Try another word, or use Search in the menu to find holes and names too." : "Try another word, or press Ctrl+K on the map to search holes and names too."}</p>
               <div className="space-y-3">{found.map(t => <TopicCard key={t.id} t={t} onShow={show} lit={false} />)}</div>
             </>
           ) : (

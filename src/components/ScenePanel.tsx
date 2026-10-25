@@ -1,14 +1,13 @@
 // The view: what this device shows while working (the photo, lines, grass), and the course's own
 // landscape and basket band. The light is the course map's, set with its look on the Map step.
 import { useEffect, useRef, useState } from "react";
-import { ChevronRight, Eye, X } from "lucide-react";
-import { FOCUS, POPOVER } from "./ui";
+import { ChevronRight, Layers, X } from "lucide-react";
+import { FOCUS, HelpLink, POPOVER } from "./ui";
 import { useCourse, useEditor } from "../state/course";
 import { setStyle } from "./DesignPanel";
 import { Segmented, Toggle } from "./ui";
 import { LandscapePicker } from "./LandscapePicker";
-import { openLookPart } from "./MapLookPanel";
-import { SHOW_EVENT } from "./showSetting";
+import { SHOW_EVENT, showSetting } from "./showSetting";
 import { LIGHT_MODES, compassName, latitudeOf, lightOf, sunFromOf } from "../lib/mapLook";
 import { BAND_COLORS, BASKET_BAND } from "../three/courseModels";
 
@@ -24,10 +23,11 @@ export function SceneButton({ className = "", big = false }: { className?: strin
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    // (Esc closes just this, before the map hears it)
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
     window.addEventListener("pointerdown", close);
-    window.addEventListener("keydown", esc);
-    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc); };
+    window.addEventListener("keydown", esc, true);
+    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc, true); };
   }, [open]);
   return (
     <div className={`relative pointer-events-auto ${className}`} ref={ref}>
@@ -39,12 +39,14 @@ export function SceneButton({ className = "", big = false }: { className?: strin
         onClick={() => setOpen(o => !o)}
         data-testid="scene-button"
       >
-        <Eye size={big ? 20 : 16} />
+        <Layers size={big ? 20 : 16} />
       </button>
       {open && <ScenePanel onClose={() => setOpen(false)} big={big} />}
     </div>
   );
 }
+
+const HEAD = "text-[11px] font-semibold text-zinc-500 mb-1.5";
 
 function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
   const s = useCourse(c => c.doc.style);
@@ -71,14 +73,21 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
   return (
     <div ref={box} className={`absolute ${big ? "right-[52px] top-0" : "right-0 top-10"} overflow-y-auto dg-scroll overscroll-contain w-72 ${POPOVER} p-3 z-30 text-left`} style={room ? { maxHeight: room } : undefined} data-testid="scene-panel">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-sm font-semibold text-zinc-100">View</div>
+        <div className="text-sm font-semibold text-zinc-100 flex items-center gap-1.5">View <HelpLink topic="view-panel" label="View" /></div>
         <button className={`text-zinc-400 hover:text-zinc-50 ${big ? "w-9 h-9 -m-2 flex items-center justify-center" : ""}`} title="Close" aria-label="Close" onClick={onClose}><X size={15} /></button>
       </div>
       {/* This device's view while working: not saved with the course (viewers' own look: Share) */}
+      <div className={HEAD}>On this screen only</div>
       {editing && (
         <div className="mb-2" data-testid="map-display">
-          {/* (from a tee the ground is the flight's: its Camera settings) */}
-          {!fromTee && <Toggle label="Satellite photo" checked={ed.photo} onChange={v => set({ photo: v })} />}
+          {/* (from a tee the ground is the flight's: the same setting as the tee view's Settings) */}
+          {fromTee ? (
+            <div className="mb-2" data-testid="view-ground">
+              <div className="text-xs text-zinc-400 mb-1">Ground</div>
+              <Segmented label="Ground" value={ed.flyLook} onChange={v => set({ flyLook: v })} options={[{ value: "painted", label: "Painted map" }, { value: "photo", label: "Photo" }]} />
+              <div className="text-[11px] text-zinc-500 mt-1">Flyover videos use it too.</div>
+            </div>
+          ) : <Toggle label="Satellite photo" checked={ed.photo} onChange={v => set({ photo: v })} />}
           <Toggle label="Contour lines" checked={ed.contours} onChange={v => set({ contours: v })} />
           <Toggle label="Hill shading" checked={ed.shading} onChange={v => set({ shading: v })} />
           <Toggle label="Ground texture up close" checked={ed.groundDetail} onChange={v => set({ groundDetail: v })} />
@@ -98,10 +107,11 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
         ]}
       />
       <Toggle label="Grass sways in the wind" checked={wind} onChange={v => set({ wind: v })} />
-      {measured && <Toggle label="Stumps where trees were cut" hint="Shows a stump wherever a tree was cut down, so you can click it to bring the tree back. The hole you pick always shows its stumps." checked={stumps} onChange={v => set({ stumps: v })} />}
+      {measured && <Toggle label="Stumps where trees were cut" checked={stumps} onChange={v => set({ stumps: v })} />}
       {/* The course's own look (everyone sees it, on the printed map too) */}
       {editing && (
         <div className="mt-3 pt-3 border-t border-white/[0.07]" data-testid="course-look">
+          <div className={HEAD}>The course's look (everyone sees it)</div>
           <div className="text-xs text-zinc-400 mb-1">Landscape</div>
           <LandscapePicker />
           <div className="h-2" />
@@ -115,9 +125,10 @@ function ScenePanel({ onClose, big }: { onClose: () => void; big?: boolean }) {
               );
             })}
           </div>
-          {/* (the light is the course map's: set there, with the rest of its look) */}
+          {/* (the light is the course map's: set there, with the rest of its look; on a phone the
+              Map step's Style tool opens to it, as search's Show me does) */}
           <button className="mt-3 w-full flex items-center justify-between rounded-[12px] bg-white/[0.06] px-3 py-2 text-left text-[13px] text-zinc-200" data-testid="light-link"
-            onClick={() => { openLookPart("light"); set({ step: "map", designTab: "map", teeView: null, flyover: false }); onClose(); }}>
+            onClick={() => { onClose(); void showSetting({ step: "map", tab: "map", look: "light", find: "look-part-light" }); }}>
             <span>Light: {LIGHT_MODES.find(m => m.id === lt.mode)?.label}, sun from the {compassName(sunFromOf(s, lat))}</span>
             <ChevronRight size={15} className="text-zinc-500" />
           </button>
