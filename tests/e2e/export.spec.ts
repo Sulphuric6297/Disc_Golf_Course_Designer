@@ -52,6 +52,9 @@ test("GPS files: GeoJSON, KML and GPX hold the tees, baskets and holes with real
   expect(kml).toContain("<kml");
   expect(kml).toContain("<name>Hole 1</name>");
   expect(kml).toContain("1 basket A");
+  // (each tee in its own color)
+  expect(kml).toContain('<Style id="tee-blue">');
+  expect(kml).toContain("<name>1 Blue tee</name><styleUrl>#tee-blue</styleUrl>");
   const gpx = (await exported(page, "export-gpx")).data.toString();
   expect((gpx.match(/<wpt /g) ?? []).length).toBe(5);
   expect(gpx).toContain("H2 Blue tee");
@@ -153,7 +156,9 @@ test("hole by hole: a PDF page and a picture per hole, and one hole's PNG, SVG a
   expect(png.name).toBe("springfield-park-disc-golf-course-hole-2.png");
   expect(pngSize(png.data)).toEqual({ width: 1080, height: 1080 });
   const svg = (await exported(page, "export-hole-svg")).data.toString();
-  expect(svg).toContain(">HOLE 2<");
+  // (the number on its disc; "HOLE 2" beside it only when asked for)
+  expect(svg).toMatch(/data-el="number"><circle[^>]*\/><text[^>]*>2<\/text>/);
+  expect(svg).not.toContain(">HOLE 2<");
   expect(svg).toContain(">PAR 3<");
   const geo = await exported(page, "export-hole-geojson");
   expect(geo.name).toBe("springfield-park-disc-golf-course-hole-2.geojson");
@@ -185,7 +190,9 @@ plain("hole pages: number, par, the length from each tee, elevation, notes and t
   const p = renderHolePage(doc, h1.id, "letter", { contours: null, hillshade: null })!;
   plainExpect([p.width, p.height]).toEqual([8.5 * 72, 11 * 72]);
   plainExpect(p.svg.startsWith("<svg")).toBe(true);
-  plainExpect(p.svg).toContain(">HOLE 1<");
+  // (the number on its disc; "HOLE 1" beside it left out until it's asked for)
+  plainExpect(p.svg).not.toContain(">HOLE 1<");
+  plainExpect(p.svg).toMatch(/data-el="number"><circle[^>]*\/><text[^>]*>1<\/text>/);
   plainExpect(p.svg).toContain(">Long Way Round<");
   plainExpect(p.svg).toContain(">THE HOLLOW<");
   plainExpect(p.svg).toContain(">PAR 3<");
@@ -199,7 +206,10 @@ plain("hole pages: number, par, the length from each tee, elevation, notes and t
   plainExpect(p.svg).toContain('data-part="profile"');
   plainExpect(p.svg).toContain('data-part="map"');
   plainExpect(p.svg).toContain("HOLE 2 ·");
-  plainExpect(p.svg).toContain("Hole 1 of 2");
+  plainExpect(p.svg).toContain("HOLE 1 OF 2");
+  doc.style.holePage = { layout: { holeTitle: { hidden: false } } };
+  plainExpect(renderHolePage(doc, h1.id, "letter", { contours: null, hillshade: null })!.svg).toContain(">HOLE 1<");
+  doc.style.holePage = undefined;
   // Every size, in meters too
   doc.units = "m";
   for (const size of Object.keys(HOLE_PAGES) as (keyof typeof HOLE_PAGES)[]) {

@@ -72,8 +72,8 @@ test("a hole up the hill: elevation change and par on the real terrain", async (
   const row = page.getByTestId("hole-row");
   await page.keyboard.press("Escape");
   await row.click();
-  // (the climb without its sign: the word says which way)
-  await expect(page.getByTestId("hole-stats")).toContainText(/Uphill\s*\d+(\.\d)? ft/);
+  // (the climb without its sign, in whole feet: the word under it says which way)
+  await expect(page.getByTestId("hole-stats")).toContainText(/\d+ ft\s*Uphill/);
   await expect(page.getByTestId("hole-stats")).not.toContainText(/\+\d/);
   await expect(page.getByTestId("elevation-profile")).toBeVisible();
   // (its heights with their unit: bare four-figure heights read as years)
@@ -166,6 +166,9 @@ test("OpenStreetMap out of reach: said plainly, with Try again; the Site step lo
   await expect(page.getByRole("status").filter({ hasText: "From OpenStreetMap: 1 path, 1 water area." })).toBeVisible();
   // Again from the Site step: what came before is replaced, not doubled, and Undo brings it back
   await page.getByRole("button", { name: /^1\s*Site$/ }).click();
+  // (under What came in, folded)
+  await page.getByTestId("came-in").locator(":scope > summary").click();
+  await expect(page.getByTestId("refresh-osm")).toHaveText("Update");
   await page.getByTestId("refresh-osm").click();
   await expect(page.getByRole("status").filter({ hasText: "From OpenStreetMap: 1 path, 1 water area." })).toHaveCount(1);
   await page.waitForTimeout(500);
@@ -247,7 +250,8 @@ test("making the site bigger keeps the design on the same ground", async ({ page
   expect(was.length).toBe(3);
   // The site's frame opens as it is; its north-west corner dragged out
   await page.getByRole("button", { name: /^1\s*Site$/ }).click();
-  await page.getByRole("button", { name: "Resize or re-import the site" }).click();
+  await page.getByTestId("resize-site").click();
+  await expect(page.getByRole("dialog", { name: "Change the area" })).toBeVisible();
   // (the frame as it is, straight away: no search)
   await expect(page.getByTestId("site-size")).toContainText(/Area: 1,50\d × 99\d ft/);
   const corners = await page.locator(".site-handle-corner").evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }));
@@ -256,8 +260,7 @@ test("making the site bigger keeps the design on the same ground", async ({ page
   await page.mouse.down();
   await page.mouse.move(nw.x - 90, nw.y - 60, { steps: 10 });
   await page.mouse.up();
-  await page.getByText("Trees spotted on the satellite photo").click();
-  // (exact: the Site step's "Update paths, roads, water and buildings" is on the page too)
+  await page.getByText("Trees from the photo", { exact: true }).click();
   await page.getByText("Paths, roads, water and buildings", { exact: true }).click();
   await page.getByTestId("import-site").click();
   await expect.poll(async () => (await course(page)).canvas.width, { timeout: 90_000 }).toBeGreaterThan(W + 100);

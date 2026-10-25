@@ -65,7 +65,7 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true, own = 
           <Segmented label="These settings are for" value={scope} onChange={setScope} options={[{ value: "course", label: "All holes" }, { value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }]} />
         </div>
       )}
-      {!keyed && <Slider label="Camera height" min={4} max={250} step={5} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />}
+      {!keyed && <Slider label="Camera height" min={4} max={250} step={1} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />}
       <Slider label="Speed" min={0.25} max={3} step={0.05} value={f.speed} onChange={v => set({ speed: v })} onDone={done} format={v => `${Math.round(v * 100) / 100}×`} />
       <Slider label="Lens" min={LENS.min} max={LENS.max} value={f.fov} onChange={v => set({ fov: v })} onDone={done} format={lensLabel} />
       {!keyed && (

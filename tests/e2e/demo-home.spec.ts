@@ -40,24 +40,26 @@ test("a new visitor to the demo lands on Courses with the example course open be
   // The walk: every stop, Next to the end
   await page.getByTestId("home-tour-start").click();
   await expect(page.getByTestId("demo-home")).toHaveCount(0);
-  await expect(page.getByTestId("tour-title")).toHaveText("Welcome to Thunder Hollow");
+  await expect(page.getByTestId("tour-title")).toHaveText("This is Thunder Hollow");
+  // (the walk taken: Courses' main button is New course from now on)
+  expect(await page.evaluate(() => localStorage.getItem("hyzerlab-walked"))).toBe("1");
   const seen: string[] = [];
   const next = async () => { seen.push((await page.getByTestId("tour-title").textContent()) ?? ""); await page.getByTestId("tour-next").click(); };
-  for (let i = 0; i < 3; i++) await next();
+  for (let i = 0; i < 2; i++) await next();
   // (its two stops in 3D: the whole course in 3D is more than software drawing keeps up with, so
   // the walk is taken through them by its state rather than clicks)
   const at = (n: number) => page.evaluate(n => (window as any).__dgTour.setState({ at: n }), n);
-  await at(3);
+  await at(2);
   await expect.poll(async () => (await editorState(page)).view, { timeout: 60_000 }).toBe("3d");
-  await at(4);
+  await at(3);
   await expect.poll(async () => (await editorState(page)).teeView, { timeout: 60_000 }).toBeTruthy();
   seen.push("In 3D", "From the tee");
-  await at(5);
+  await at(4);
   await expect.poll(async () => (await editorState(page)).teeView, { timeout: 60_000 }).toBe(null);
   await expect.poll(async () => (await editorState(page)).view, { timeout: 60_000 }).toBe("2d");
   for (let i = 0; i < 4; i++) await next();
   await expect(page.getByTestId("tour-title")).toHaveText("Your own course");
-  await expect(page.getByTestId("tour-own-course")).toHaveText("Start my own course");
+  await expect(page.getByTestId("tour-own-course")).toHaveText("Start your own course");
   expect(seen).toContain("A hole");
   expect(seen).toContain("The printed map");
   await page.getByTestId("tour-next").click();
@@ -65,7 +67,7 @@ test("a new visitor to the demo lands on Courses with the example course open be
   expect((await editorState(page)).teeView).toBe(null);
   // The logo brings Courses back; the example is there, open now
   await page.getByTestId("logo-home").click();
-  await expect(page.getByTestId("example-card")).toContainText("open now");
+  await expect(page.getByTestId("example-card")).toContainText(/open now/i);
   await page.getByTestId("demo-home-back").click();
   await expect(page.getByTestId("demo-home")).toHaveCount(0);
 });

@@ -284,7 +284,7 @@ test.describe("safety and design checks", () => {
     // (the walk from the basket to the next tee is another matter: it still has to be there)
     const t = safetyIssues(doc).filter(i => i.holes.length === 2 && !i.holes.includes(doc.holes[2].id) && !/^No path/.test(i.text)).map(i => i.text);
     expect(t).toEqual([]);
-    expect(safetyIssues(doc).some(i => /Hole 1 and Hole 3: the throw lines cross/.test(i.text))).toBe(true);
+    expect(safetyIssues(doc).some(i => /Hole 1 and hole 3: the throw lines cross/.test(i.text))).toBe(true);
   });
 
   test("curved OB, water and roads count where they are drawn, not their corners", () => {
@@ -338,14 +338,14 @@ test.describe("safety and design checks", () => {
     doc.items.push(createArea("water", [{ x: 250, y: 250 }, { x: 320, y: 250 }, { x: 320, y: 350 }, { x: 250, y: 350 }]));
     const t = safetyIssues(doc).map(i => i.text).join("\n");
     expect(t).toMatch(/Hole 1: even the shortest tee has to throw over water\./);
-    expect(t).toMatch(/Long walk from Hole 1's basket to Hole 2's tee/);
+    expect(t).toMatch(/Long walk from Hole 1's basket to hole 2's tee/);
   });
 
   test("no path from one hole to the next: said, until paths that meet lead there; holes close together need none", () => {
     const doc = make([[{ x: 100, y: 300 }, { x: 500, y: 300 }], [{ x: 800, y: 600 }, { x: 1100, y: 600 }], [{ x: 1150, y: 650 }, { x: 1400, y: 650 }]]);
     const noPath = (d: CourseDoc) => safetyIssues(d).filter(i => i.id.startsWith("no-path:")).map(i => i.text);
     // (hole 2's basket and hole 3's tee 71 ft apart: no path needed)
-    expect(noPath(doc)).toEqual(["No path from Hole 1's basket to Hole 2's tee. Draw a Walking path or a Next-tee route with Paths and roads so players can find the next hole."]);
+    expect(noPath(doc)).toEqual(["No path from Hole 1's basket to hole 2's tee."]);
     // Two paths that meet: from near the basket, then on to near the tee
     doc.items.push(createLine("path", [{ x: 520, y: 320 }, { x: 650, y: 450 }]), createLine("walk", [{ x: 660, y: 455 }, { x: 790, y: 590 }]));
     expect(noPath(doc)).toEqual([]);

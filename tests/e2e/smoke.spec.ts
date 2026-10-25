@@ -195,5 +195,8 @@ test("search finds any setting and takes you to it, lit up; the help guide's Sho
   await card.getByTestId("help-show-me").click();
   await expect(guide).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => (window as any).__dgEditor().designTab)).toBe("map");
-  await expect(page.getByTestId("fold-paper")).toHaveAttribute("open", "");
+  // (the course map's Paper tool opened, its part shown)
+  await expect(page.getByTestId("page-tool-fold-paper")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("fold-paper")).toBeVisible();
+  await expect(page.getByTestId("best-rotation")).toBeVisible();
 });
