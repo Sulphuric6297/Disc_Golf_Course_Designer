@@ -37,7 +37,7 @@ import { forestDetail, type Forest, type TreeSpot, woodsCrownWidth } from "../th
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { Tufts } from "../three/tufts";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
-import { createFence, createStructure } from "../three/structures";
+import { createFence, createStructure, onPartLoaded } from "../three/structures";
 import { isLineKind, orientedBox, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
 import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier } from "../types";
 import { Ground } from "./ground";
@@ -339,6 +339,8 @@ export class CourseView {
   private frames = 0;
   private povMarker: HTMLDivElement | null = null;
   private disposed = false;
+
+  private offParts = onPartLoaded(() => this.invalidate(true));
 
   constructor(private container: HTMLDivElement, private cb: ViewCallbacks) {
     // (no preserveDrawingBuffer: snapshots render and read in one go, and keeping the buffer
@@ -1008,6 +1010,7 @@ export class CourseView {
 
   dispose() {
     this.disposed = true;
+    this.offParts();
     cancelAnimationFrame(this.raf);
     clearTimeout(this.grassTimer);
     this.grass.dispose();

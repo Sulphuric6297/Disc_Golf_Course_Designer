@@ -100,7 +100,7 @@ function KeysSection({ touch }: { touch: boolean }) {
       <h3 className="text-[15px] font-semibold text-zinc-50 mt-5 mb-1">Moving around the map</h3>
       <p className="text-[13.5px] text-zinc-300">Drag to pan (or Space+drag, whatever tool you're using), scroll or pinch to zoom at the pointer, right-drag (or Ctrl+drag or Alt+drag) to turn and tilt, Shift+drag with Select to draw a box, double-click to zoom in.</p>
       <h3 className="text-[15px] font-semibold text-zinc-50 mt-5 mb-1">Credits</h3>
-      <p className="text-xs text-zinc-500">Imagery © Esri, Maxar, Vexcel, Earthstar Geographics, and state programs like NC OneMap. Map data © OpenStreetMap contributors (and OpenFreeMap, OpenMapTiles). Building outlines: Overture Maps (Microsoft and others). Elevation and measured trees: USGS 3DEP and its LiDAR, and AWS Terrain Tiles (Mapzen). Fonts: Google Fonts. Trees grown with ez-tree (MIT).</p>
+      <p className="text-xs text-zinc-500">Imagery © Esri, Maxar, Vexcel, Earthstar Geographics, and state programs like NC OneMap. Map data © OpenStreetMap contributors (and OpenFreeMap, OpenMapTiles). Building outlines: Overture Maps (Microsoft and others). Elevation and measured trees: USGS 3DEP and its LiDAR, and AWS Terrain Tiles (Mapzen). Fonts: Google Fonts. Trees grown with ez-tree (MIT). Chain-link fence by loafbrr (CC0).</p>
     </>
   );
 }
