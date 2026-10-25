@@ -548,7 +548,8 @@ test.describe("phone", () => {
   test("the view from the tee on a phone: the hole's card, big buttons along the bottom, back to the map", async ({ page }) => {
     await oneHole(page);
     await tapPlan(page, 450, 500);
-    await page.getByRole("button", { name: "View from the tee" }).tap();
+    // (the header's eye: the hole's panel under it has a View from the tee button too)
+    await page.getByTestId("selection-header").getByRole("button", { name: "View from the tee" }).tap();
     await expect(page.getByTestId("tee-view-hud")).toBeVisible();
     await expect(page.getByTestId("tee-view-hud")).toContainText("Par 3");
     // Immersive: no step bar or sheet
@@ -564,7 +565,8 @@ test.describe("phone", () => {
   test("the camera on a phone: the stick moves it, the arrows lift it, a drag turns it, a big button adds the keyframe", async ({ page }) => {
     await oneHole(page);
     await tapPlan(page, 450, 500);
-    await page.getByRole("button", { name: "View from the tee" }).tap();
+    // (the header's eye: the hole's panel under it has a View from the tee button too)
+    await page.getByTestId("selection-header").getByRole("button", { name: "View from the tee" }).tap();
     await page.getByTestId("hud-freecam").tap();
     await expect(page.getByTestId("camera-hud")).toBeVisible();
     await expect(page.getByTestId("bottom-nav")).toHaveCount(0);

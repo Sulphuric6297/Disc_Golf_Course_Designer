@@ -277,7 +277,8 @@ export async function addHole(page: Page, tee: { x: number; y: number }, basket:
   return (await course(page)).holes.find((h: any) => !had.has(h.id));
 }
 
-/** Runs the whole site import against the stubs; returns the summary message. */
+/** Runs the whole site import against the stubs; returns "Site brought in." and what the import
+ * said it brought in (the site's notes, listed on the Site step under What came in). */
 export async function importSite(page: Page, opts: { trees?: boolean; osm?: boolean } = {}) {
   const welcome = page.getByTestId("welcome-find");
   if (await welcome.isVisible()) await welcome.click();
@@ -291,7 +292,8 @@ export async function importSite(page: Page, opts: { trees?: boolean; osm?: bool
   await page.getByRole("button", { name: /Springfield Park/ }).first().click();
   await expect(page.getByTestId("site-size")).toBeVisible();
   if (opts.trees === false) await page.getByText("Trees spotted on the satellite photo").click();
-  if (opts.osm === false) await page.getByText("Paths, roads, water and buildings").click();
+  // (exact: the Site step's "Update paths, roads, water and buildings" can be on the page too)
+  if (opts.osm === false) await page.getByText("Paths, roads, water and buildings", { exact: true }).click();
   // The summary is a toast that goes after 12 seconds: note it the moment it shows (a busy test
   // machine can take longer than that between two polls)
   await page.evaluate(() => {
@@ -304,9 +306,10 @@ export async function importSite(page: Page, opts: { trees?: boolean; osm?: bool
     seen.observe(document.body, { childList: true, subtree: true, characterData: true });
   });
   await page.getByTestId("import-site").click();
-  let text = "";
-  await expect.poll(async () => (text = await page.evaluate(() => (window as any).__importDone)), { timeout: 60_000 }).toMatch(/^Site brought in\./);
-  return text;
+  await expect.poll(() => page.evaluate(() => (window as any).__importDone), { timeout: 60_000 }).toMatch(/^Site brought in\./);
+  // (the toast says only that; what came in is kept with the site)
+  const notes: string[] = await page.evaluate(() => (window as any).__dgCourse().site.notes ?? []);
+  return "Site brought in. " + notes.join(" ");
 }
 
 type Fixtures = { errors: string[] };

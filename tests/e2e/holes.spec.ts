@@ -22,7 +22,7 @@ test("a new hole: click the tee, then the basket; length and par show live", asy
   expect(Math.round(basket.x - tee.x)).toBe(300);
   await expect(page.getByTestId("hole-row")).toHaveCount(1);
   await expect(page.getByTestId("hole-row")).toContainText("300 ft");
-  await expect(page.getByTestId("hole-row")).toContainText("P3");
+  await expect(page.getByTestId("hole-row")).toContainText("Par 3");
   // The tool stays on for the next hole
   expect((await editorState(page)).tool).toBe("add-hole");
 });
@@ -32,8 +32,8 @@ test("long holes get par 4 and 5 by the PDGA's effective length", async ({ page 
   await addHole(page, { x: 100, y: 200 }, { x: 650, y: 200 }); // 550 ft blue: par 4
   await addHole(page, { x: 100, y: 500 }, { x: 1000, y: 500 }); // 900 ft blue: par 5
   const rows = page.getByTestId("hole-row");
-  await expect(rows.nth(0)).toContainText("P4");
-  await expect(rows.nth(1)).toContainText("P5");
+  await expect(rows.nth(0)).toContainText("Par 4");
+  await expect(rows.nth(1)).toContainText("Par 5");
   await expect(page.getByTestId("course-totals-button")).toContainText(/9\s*par/);
 });
 
@@ -116,13 +116,13 @@ test("fairway width handle and par override in the inspector", async ({ page }) 
   await page.getByRole("slider", { name: /Fairway width/ }).fill("60");
   await expect.poll(async () => (await course(page)).holes[0].fairwayWidth).toBe(60);
   expect((await course(page)).holes[0].fairwayShape).toEqual(before);
-  await page.getByTestId("fairway-shape").getByRole("button", { name: "Make it even" }).click();
+  await page.getByTestId("fairway-shape").getByRole("button", { name: "Even width" }).click();
   await expect.poll(async () => (await course(page)).holes[0].fairwayShape).toBeUndefined();
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).holes[0].fairwayShape).toEqual(before);
   await page.getByRole("radiogroup", { name: "Par" }).getByRole("radio", { name: "4" }).click();
   await expect.poll(async () => (await course(page)).holes.find((h: any) => h.id === hole.id).par).toBe(4);
-  await expect(page.getByTestId("hole-row")).toContainText("P4");
+  await expect(page.getByTestId("hole-row")).toContainText("Par 4");
   await page.getByRole("radiogroup", { name: "Par" }).getByRole("radio", { name: /Auto/ }).click();
   await expect.poll(async () => (await course(page)).holes[0].par).toBeUndefined();
 });
@@ -152,7 +152,7 @@ test("another tee and pin for a hole, and layouts pick between them", async ({ p
   const editor = page.getByTestId("layout-editor");
   const last = editor.locator("> div").last();
   await last.getByRole("radiogroup", { name: "Layout tees" }).getByRole("radio", { name: "Red" }).click();
-  await last.getByRole("radiogroup", { name: "Layout pins" }).getByRole("radio", { name: "Pin B" }).click();
+  await last.getByRole("radiogroup", { name: "Layout pins" }).getByRole("radio", { name: "B", exact: true }).click();
   // Red tee at 500 to pin B at (850, 650): about 354 ft
   await expect(page.getByTestId("hole-row")).toContainText("354 ft");
   // Two layouts: the switcher at the top of the holes column, the one worked on picked

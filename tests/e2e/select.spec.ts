@@ -1,6 +1,6 @@
-// Picking several things at once: a box (Shift+drag, or the Select option above the tools),
-// Shift+click, Ctrl+A; moving, nudging, duplicating, locking and deleting them together, each one
-// undo step; whole holes among them; a finger with the Select option.
+// Picking several things at once: a box (Shift+drag, or the map's box button), Shift+click,
+// Ctrl+A; moving, nudging, duplicating, locking and deleting them together, each one undo step;
+// whole holes among them; a finger with the box button.
 import { test, expect, addHole, blankCourse, clickPlan, course, drag, editorState, screenOf, touchDrag } from "./fixtures";
 import { devices, type Page } from "@playwright/test";
 
@@ -118,7 +118,7 @@ test("delete, duplicate and lock the things picked together, each one step; Ctrl
   await expect.poll(async () => (await group(page)).length).toBe(4);
 });
 
-test("the Select option: a plain drag draws the box; a whole hole comes along with its bend, and copies as a new hole", async ({ page }) => {
+test("the map's box button: a plain drag draws the box; a whole hole comes along with its bend, and copies as a new hole", async ({ page }) => {
   await blankCourse(page);
   const hole = await addHole(page, { x: 300, y: 500 }, { x: 600, y: 500 });
   await page.keyboard.press("Escape");
@@ -126,8 +126,11 @@ test("the Select option: a plain drag draws the box; a whole hole comes along wi
   await page.getByTestId("bend-left").click();
   await expect.poll(async () => (await course(page)).holes[0].doglegs.length).toBe(1);
   await page.keyboard.press("Escape");
-  await page.getByTestId("drag-select").click();
+  const box = page.getByTestId("drag-select");
+  await expect(box).toHaveAccessibleName("Select with a box");
+  await box.click();
   expect((await editorState(page)).dragSelect).toBe(true);
+  await expect(box).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("tool-hint")).toContainText("Drag a box");
   // A plain drag: a box, not a move of the map
   const view0 = await page.evaluate(() => (window as any).__dgView.toClient(450, 500));
@@ -149,9 +152,10 @@ test("the Select option: a plain drag draws the box; a whole hole comes along wi
   const h2 = doc.holes[1];
   expect(doc.items.filter((i: any) => i.holeId === h2.id).map((i: any) => i.type).sort()).toEqual(["basket", "tee"]);
   expect(h2.doglegs).toHaveLength(1);
-  // Back to moving the map
-  await page.getByTestId("drag-pan").click();
+  // Back to moving the map: the same button again
+  await box.click();
   expect((await editorState(page)).dragSelect).toBe(false);
+  await expect(box).toHaveAttribute("aria-pressed", "false");
 });
 
 test.describe("touch", () => {
@@ -175,7 +179,13 @@ test.describe("touch", () => {
     await page.waitForTimeout(300);
     // The map's own button turns it on
     await page.getByTestId("touch-drag-select").tap();
-    await expect(page.getByTestId("touch-drag-select")).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(async () => (await editorState(page)).dragSelect).toBe(true);
+    // (a bar over the map's foot says how it works, with Done; the map's buttons make room for it,
+    // the box button among them while it fits)
+    await expect(page.getByTestId("box-bar")).toBeVisible();
+    if (await page.getByTestId("touch-drag-select").count()) await expect(page.getByTestId("touch-drag-select")).toHaveAttribute("aria-pressed", "true");
+    await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 300, minY: 300, maxX: 800, maxY: 1000 }, { animate: false }));
+    await page.waitForTimeout(300);
     const ids = (await course(page)).items.filter((i: any) => i.type === "amenity").map((i: any) => i.id as string);
     await touchDrag(page, await screenOf(page, 360, 360), await screenOf(page, 520, 470));
     await expect.poll(() => group(page)).toEqual([ids[0], ids[1]].sort());
@@ -191,13 +201,21 @@ test.describe("touch", () => {
   });
 });
 
-test("copy and paste: Ctrl+V next to the original (a group too), never on another copy; Ctrl+X cuts; Paste here", async ({ page }) => {
+test("copy and paste: Ctrl+V where the pointer is on the map; off the map, next to the original (a group too), never on another copy; Ctrl+X cuts; Paste here", async ({ page }) => {
   const ids = await benchesOnArea(page);
   await page.locator(`[data-item-id="${ids[0]}"]`).click();
   await page.keyboard.press("Control+c");
-  // (wherever the pointer is)
+  // With the pointer on the map: there
   const away = await screenOf(page, 650, 650);
   await page.mouse.move(away.x, away.y, { steps: 3 });
+  await page.keyboard.press("Control+v");
+  await expect.poll(async () => (await benches(page)).length).toBe(4);
+  const there = (await course(page)).items.find((i: any) => i.type === "amenity" && !ids.includes(i.id));
+  expect(Math.hypot(there.x - 650, there.y - 650)).toBeLessThan(4);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await benches(page)).length).toBe(3);
+  // With the pointer off the map (over the top bar): next to the original
+  await page.mouse.move(away.x, 8, { steps: 3 });
   await page.keyboard.press("Control+v");
   await expect.poll(async () => (await benches(page)).length).toBe(4);
   const pasted = (await course(page)).items.find((i: any) => i.type === "amenity" && !ids.includes(i.id));
