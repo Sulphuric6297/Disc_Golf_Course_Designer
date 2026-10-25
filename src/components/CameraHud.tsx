@@ -9,7 +9,8 @@ import { fmtDist } from "../lib/units";
 import { getDoc, updateHole, useCourse, useEditor } from "../state/course";
 import { getView } from "../state/view";
 import { toast } from "../state/toast";
-import type { FlyKey } from "../types";
+import type { FlyKey, Hole } from "../types";
+import { useExportJob } from "../state/exportJob";
 import { HelpLink } from "./ui";
 
 /** The hole being flown and its keyframes, as they are now. */
@@ -21,21 +22,31 @@ const now = () => {
   return { ed, hole, keys, at };
 };
 
+/** Where the camera is, as a keyframe: without a lens of its own when it has the flyover's (so the
+ * flyover's Lens still changes it). */
+const keyHere = (hole: Hole): FlyKey | null => {
+  const k = getView()?.freeKey();
+  if (!k) return null;
+  if (k.fov === undefined || Math.round(k.fov) !== Math.round(flyoverOf(getDoc(), hole).fov)) return k;
+  const { fov: _fov, ...rest } = k;
+  return rest;
+};
+
 /** A keyframe where the camera is, after the picked one (or at the end); it's picked then. */
 export const addKeyHere = () => {
   const { ed, hole, keys, at } = now();
-  const k = getView()?.freeKey();
+  const k = hole ? keyHere(hole) : null;
   if (!hole || !k) return;
   const i = at !== null ? at + 1 : keys.length;
   updateHole(hole.id, { flyKeys: [...keys.slice(0, i), k, ...keys.slice(i)] });
   ed.set({ flyKey: i });
-  if (keys.length === 0) toast("Keyframe 1 added. Move somewhere else and add another, and the flyover goes from one to the next.");
+  if (keys.length === 0) toast("Keyframe 1 added.");
 };
 
 /** The picked keyframe moved to where the camera is now (its time kept). */
 const updateKeyHere = () => {
   const { hole, keys, at } = now();
-  const k = getView()?.freeKey();
+  const k = hole ? keyHere(hole) : null;
   if (!hole || !k || at === null) return;
   updateHole(hole.id, { flyKeys: keys.map((o, j) => (j === at ? { ...k, ...(o.secs !== undefined ? { secs: o.secs } : {}) } : o)) });
 };
@@ -144,6 +155,7 @@ function Lift({ dir }: { dir: 1 | -1 }) {
 export function CameraHud({ compact = false }: { compact?: boolean }) {
   const doc = useCourse(s => s.doc);
   const ed = useEditor();
+  const job = useExportJob(s => s.job);
   const hole = doc.holes.find(h => h.id === ed.teeView);
   const keys = hole?.flyKeys ?? [];
   const at = ed.flyKey !== null && ed.flyKey < keys.length ? ed.flyKey : null;
@@ -254,7 +266,7 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
   );
   const pill = "rounded-full px-3.5 py-2 text-[13.5px] font-semibold flex items-center gap-1.5 text-white hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-transparent";
   const title = <><span className="truncate min-w-0">Camera · Hole {holeLabel(doc, hole.id)}</span><HelpLink topic="fly-camera" label="Flying the camera yourself" /></>;
-  const status = at !== null ? `Keyframe ${at + 1} of ${keys.length}${moved ? ". Moved. Update puts it here." : ""}` : keys.length ? "Pick a keyframe to go to it and change it" : "Fly somewhere you like, then add a keyframe";
+  const status = at !== null ? `Keyframe ${at + 1} of ${keys.length}${moved ? " · moved" : ""}` : keys.length ? "Pick a keyframe to go to it and change it" : "Fly somewhere you like, then add a keyframe";
   const playTitle = keys.length < 2 ? "Add a second keyframe to play the flight." : "Fly through the keyframes";
   const canRemove = removable(keys.length);
   const readout = `${fmtDist(alt, u)} up · lens ${lensLabel(lens)}`;
@@ -277,11 +289,11 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
             </div>
             <button className="h-11 px-3.5 rounded-xl bg-white/10 text-[14px] font-semibold flex items-center gap-1" onClick={done} data-testid="cam-done"><Check size={17} /> Done</button>
           </div>
-          <input aria-label="Lens" type="range" min={LENS.min} max={LENS.max} value={lens} onChange={e => setLensTo(Number(e.target.value))} className="slider w-full h-7 mt-1" />
+          <label className="mt-1 flex items-center gap-2.5 text-[12px] text-zinc-300">Lens<input aria-label="Lens" type="range" min={LENS.min} max={LENS.max} value={lens} onChange={e => setLensTo(Number(e.target.value))} className="slider flex-1 min-w-0 h-7" /></label>
         </div>
-        {/* (above the stick and the up and down arrows) */}
-        <div className="absolute left-1/2 -translate-x-1/2 bottom-[calc(max(10px,env(safe-area-inset-bottom))+292px)] w-max max-w-[calc(100%-24px)] text-center text-[13px] text-white/90 bg-black/45 rounded-2xl px-3 py-1" data-testid="cam-hint">Drag to look around. The stick moves you, the arrows go up and down.</div>
-        <div className="absolute left-3 bottom-[calc(max(10px,env(safe-area-inset-bottom))+156px)]"><Stick /></div>
+        {/* (above the stick and the up and down arrows; not while an export's progress shows) */}
+        {!job && <div className="absolute left-1/2 -translate-x-1/2 bottom-[calc(max(10px,env(safe-area-inset-bottom))+316px)] w-max max-w-[calc(100%-24px)] text-center text-[13px] text-white/90 bg-black/45 rounded-2xl px-3 py-1" data-testid="cam-hint">Drag to look around</div>}
+        <div className="absolute left-3 bottom-[calc(max(10px,env(safe-area-inset-bottom))+156px)] flex flex-col items-center gap-1"><Stick /><span className="text-[12px] font-semibold text-white/90 bg-black/45 rounded-full px-2 py-0.5 pointer-events-none">Move</span></div>
         <div className="absolute right-3 bottom-[calc(max(10px,env(safe-area-inset-bottom))+156px)] flex flex-col gap-2"><Lift dir={1} /><Lift dir={-1} /></div>
         <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto glass rounded-[22px] p-2 border border-white/10 shadow-2xl">
           {strip}

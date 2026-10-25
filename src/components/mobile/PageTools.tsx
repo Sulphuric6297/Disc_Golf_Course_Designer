@@ -3,30 +3,32 @@
 // just that setting in a short panel over the row, and the page shrinks to stay whole above it.
 // With a piece picked, the piece's own tools take the row's place (PieceToolbar).
 import { SHOW_EVENT } from "../showSetting";
-import { Check, FileText, Flag, Layers, Palette, PenLine, Plus, Signpost, Table2, Type, BookOpen, type LucideIcon } from "lucide-react";
+import { Check, FileText, Flag, Handshake, ListTree, Palette, PenLine, Plus, Signpost, Table2, Type, BookOpen, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useEditor } from "../../state/course";
 import { DesignPanel } from "../DesignPanel";
+import { setToolOpen } from "../pageToolState";
 import { OnlyGroup } from "../ui";
 
 type Tool = { id: string; label: string; icon: LucideIcon };
 type Tab = "general" | "map" | "sign" | "page" | "scorecard";
 
-// (the sponsors are kept in Add, with what's put on the page: six tools at most, all in a row)
+// (six tools at most, all in a row)
 const ADD: Tool = { id: "print-add", label: "Add", icon: Plus };
-const LAYERS: Tool = { id: "print-layers", label: "Layers", icon: Layers };
+const LAYERS: Tool = { id: "print-layers", label: "Layers", icon: ListTree };
 
-/** Each printout's settings, a tool each (the panel's Section or Fold it opens). */
+/** Each printout's settings, a tool each (the panel's Section or Fold it opens), named as the
+ * computer's panel names them. */
 const TOOLS: Record<Tab, Tool[]> = {
-  general: [{ id: "card-style", label: "Logo and colors", icon: Palette }, { id: "markings", label: "Marks", icon: Flag }],
-  map: [{ id: "map-style", label: "Style", icon: Palette }, { id: "drawn-on-map", label: "Drawn", icon: PenLine }, { id: "fold-title", label: "Lettering", icon: Type }, { id: "fold-paper", label: "Paper", icon: FileText }, ADD, LAYERS],
+  general: [{ id: "card-style", label: "Lettering and colors", icon: Palette }, { id: "markings", label: "Marks", icon: Flag }, { id: "print-sponsors", label: "Sponsors", icon: Handshake }],
+  map: [{ id: "map-style", label: "Style", icon: Palette }, { id: "drawn-on-map", label: "Lines", icon: PenLine }, { id: "fold-title", label: "Lettering", icon: Type }, { id: "fold-paper", label: "Paper", icon: FileText }, ADD, LAYERS],
   sign: [{ id: "sign-settings", label: "Sign", icon: Signpost }, ADD, LAYERS],
   page: [{ id: "page-settings", label: "Page", icon: BookOpen }, ADD, LAYERS],
   scorecard: [{ id: "card-settings", label: "Card", icon: Table2 }, ADD, LAYERS]
 };
 
 /** Settings that live inside a tool's panel: the tool they're in. */
-const PART_OF: Record<string, string> = { "print-sponsors": "print-add", "light-shadow": "map-style", "map-look": "map-style" };
+const PART_OF: Record<string, string> = { "light-shadow": "map-style", "map-look": "map-style" };
 
 export function PageTools() {
   const tab = useEditor(e => e.designTab);
@@ -34,6 +36,8 @@ export function PageTools() {
   const tools = TOOLS[tab];
   // (another printout: its own tools, none open)
   useEffect(() => setOpen(null), [tab]);
+  // (the page's zoom buttons stand aside while a tool is open)
+  useEffect(() => { setToolOpen(!!open); return () => setToolOpen(false); }, [open]);
   // (Show me, from the help or the View panel: the tool its setting is in, opened)
   useEffect(() => {
     const on = (e: Event) => {

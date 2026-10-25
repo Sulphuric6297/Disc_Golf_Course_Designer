@@ -153,9 +153,12 @@ test("an existing course measured from the air from the Site step (Undo takes it
   expect((await course(page)).lidar).toBeUndefined();
   await withLidar(page);
   await page.getByRole("button", { name: /^1\s*Site$/ }).click();
-  await page.getByTestId("measure-lidar").click();
+  // (no survey read on the import: its row under What came in, folded, says so and looks again)
+  await page.getByTestId("came-in").locator(":scope > summary").click();
+  await page.getByTestId("lidar-info").getByTestId("measure-lidar").click();
   await expect.poll(async () => (await course(page)).lidar?.trees.length ?? 0, { timeout: 60_000 }).toBe(TREES.length);
-  await expect(page.getByTestId("lidar-info")).toContainText(`${TREES.length} trees measured from the air · ${NEWEST}`);
+  await expect(page.getByTestId("lidar-info")).toContainText(`${TREES.length} measured trees`);
+  await expect(page.getByTestId("lidar-info")).toContainText(NEWEST);
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).lidar).toBeUndefined();
 });

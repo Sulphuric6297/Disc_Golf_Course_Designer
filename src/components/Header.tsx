@@ -78,9 +78,9 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
             <div className={`absolute left-0 top-full mt-1 w-72 ${POPOVER} py-1 z-50`} role="menu">
               {/* (all of them on the Courses page, as the logo goes; in the demo, the walk round its example too) */}
               <MenuRow icon={<LayoutGrid size={15} />} onClick={() => { setMenu(false); (SERVER ? goHome : goDemoHome)(); }} testid="menu-courses">Courses</MenuRow>
-              {!SERVER && <MenuRow icon={<Compass size={15} />} onClick={() => { setMenu(false); void startTour(); }} testid="menu-tour">A walk round the example</MenuRow>}
+              {!SERVER && <MenuRow icon={<Compass size={15} />} onClick={() => { setMenu(false); void startTour(); }} testid="menu-tour">A walk around the example</MenuRow>}
               <MenuRow icon={<FilePlus size={15} />} onClick={() => { setMenu(false); void newCourse(); }}>New course</MenuRow>
-              <MenuRow icon={<FolderOpen size={15} />} onClick={() => { setMenu(false); fileRef.current?.click(); }}>Open a course file…</MenuRow>
+              <MenuRow icon={<FolderOpen size={15} />} onClick={() => { setMenu(false); fileRef.current?.click(); }}>Open a course file</MenuRow>
               {mayFiles && <MenuRow icon={<Save size={15} />} onClick={() => { setMenu(false); saveCourseFile(); }}>Save as a file</MenuRow>}
               <div className={MENU_HEAD}>{SERVER ? "Courses" : "Recent courses"}</div>
               {recent.length === 0 && <div className="px-3 py-1.5 text-xs text-zinc-500">None yet.</div>}

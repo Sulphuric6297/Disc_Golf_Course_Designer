@@ -13,7 +13,6 @@ import { getView } from "../state/view";
 import { toast } from "../state/toast";
 import { ApplyToHoles } from "./ApplyToHoles";
 import { Button, Segmented, Slider, Toggle } from "./ui";
-import { useTouch } from "./useLayout";
 
 /** What a flyover can show, in the order the switches are listed. */
 const FLY_SHOW: [FlyShow, string][] = [
@@ -22,7 +21,7 @@ const FLY_SHOW: [FlyShow, string][] = [
   ["pinDistance", "Distance to the pin"],
   ["courseName", "Course name"],
   ["playLine", "Throw line"],
-  ["circle", "Putting circle (10 m, 33 ft)"],
+  ["circle", "Putting circle"],
   ["ob", "OB"],
   ["otherHoles", "Other holes' lines and circles"],
   ["walks", "Paths to the next tee"]
@@ -64,12 +63,9 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true, own = 
         <div className="mb-2.5">
           <div className="text-xs text-zinc-400 mb-1">These settings are for</div>
           <Segmented label="These settings are for" value={scope} onChange={setScope} options={[{ value: "course", label: "All holes" }, { value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }]} />
-          {forHole && hole.flyover && (
-            <button className="mt-1.5 text-xs text-orange-300 hover:text-orange-200" onClick={() => updateHole(hole.id, { flyover: undefined })} data-testid="flyover-hole-reset">Use the all-holes settings</button>
-          )}
         </div>
       )}
-      {!keyed && <Slider label="Camera height" min={10} max={250} step={5} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />}
+      {!keyed && <Slider label="Camera height" min={4} max={250} step={1} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />}
       <Slider label="Speed" min={0.25} max={3} step={0.05} value={f.speed} onChange={v => set({ speed: v })} onDone={done} format={v => `${Math.round(v * 100) / 100}×`} />
       <Slider label="Lens" min={LENS.min} max={LENS.max} value={f.fov} onChange={v => set({ fov: v })} onDone={done} format={lensLabel} />
       {!keyed && (
@@ -80,7 +76,7 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true, own = 
         </>
       )}
       <div className="text-xs text-zinc-300 mt-2.5 mb-0.5">On screen</div>
-      <div className="grid grid-cols-2 gap-x-2 mb-2" data-testid="flyover-show">
+      <div className="flex flex-col mb-2" data-testid="flyover-show">
         {FLY_SHOW.map(([k, label]) => (
           <Toggle key={k} label={label} checked={f[k]} onChange={v => showPart(k, v)} />
         ))}
@@ -92,7 +88,10 @@ export function FlyoverSettingsPanel({ holeId, only, keys, ground = true, own = 
           testid="flyover-apply"
           apply={ids => changeDoc(d => ({ holes: d.holes.map(h => (ids.includes(h.id) ? { ...h, flyover: forHole && hole!.flyover ? { ...hole!.flyover } : undefined } : h)) }))}
         />
-        {!forHole && <Button small onClick={() => changeDoc(() => ({ flyover: undefined }))} disabled={!doc.flyover} testid="flyover-defaults">Reset</Button>}
+        {/* (a hole's own back to the all-holes ones; those back to the app's own) */}
+        {forHole
+          ? <Button small onClick={() => updateHole(hole!.id, { flyover: undefined })} disabled={!hole!.flyover} testid="flyover-hole-reset">Reset</Button>
+          : <Button small onClick={() => changeDoc(() => ({ flyover: undefined }))} disabled={!doc.flyover} testid="flyover-defaults">Reset</Button>}
       </div>
     </div>
   );
@@ -165,7 +164,6 @@ export function HoleFlight({ hole }: { hole: Hole }) {
   const doc = useCourse(s => s.doc);
   const pickedRaw = useEditor(e => e.flyKey);
   const setEd = useEditor(e => e.set);
-  const touch = useTouch();
   const all = hole.flyKeys ?? [];
   const keys = all.length >= 2 ? all : null;
   const fs = flyoverOf(doc, hole);
@@ -203,7 +201,9 @@ export function HoleFlight({ hole }: { hole: Hole }) {
   const retime = (i: number, t: number, end: boolean) => {
     if (!keys) return;
     const r1 = (v: number) => Math.round(v * 10) / 10;
-    setKeys(keys.map((k, j) => (j === i ? { ...k, secs: r1(t - times[i - 1]) } : j === i + 1 ? { ...k, secs: r1(times[i + 1] - t) } : k)), false);
+    // (kept at speed 1: the flyover's speed divides them again, see keySeconds)
+    const sp = Math.max(0.1, fs.speed);
+    setKeys(keys.map((k, j) => (j === i ? { ...k, secs: r1((t - times[i - 1]) * sp) } : j === i + 1 ? { ...k, secs: r1((times[i + 1] - t) * sp) } : k)), false);
     if (end) done();
   };
   const ft = (v: number) => fmtDist(v, u);
@@ -224,22 +224,18 @@ export function HoleFlight({ hole }: { hole: Hole }) {
               </div>
               <Slider label="Height" min={2} max={Math.max(400, Math.round(k.alt))} value={Math.round(k.alt)} onChange={v => edit(p, { alt: v })} onDone={done} format={ft} />
               <Slider label="Lens" min={LENS.min} max={LENS.max} value={k.fov ?? fs.fov} onChange={v => edit(p, { fov: v })} onDone={done} format={lensLabel} />
-              {p > 0 && <Slider label={`Time from keyframe ${p}`} min={0.5} max={Math.max(30, Math.ceil(times[p] - times[p - 1]))} step={0.1} value={Math.round((times[p] - times[p - 1]) * 10) / 10} onChange={v => edit(p, { secs: v })} onDone={done} format={v => `${v.toFixed(1)} s`} />}
+              {p > 0 && <Slider label={`Time from keyframe ${p}`} min={0.5} max={Math.max(30, Math.ceil(times[p] - times[p - 1]))} step={0.1} value={Math.round((times[p] - times[p - 1]) * 10) / 10} onChange={v => edit(p, { secs: Math.round(v * Math.max(0.1, fs.speed) * 100) / 100 })} onDone={done} format={v => `${v.toFixed(1)} s`} />}
             </div>
           )}
           <div className="flex flex-wrap gap-1.5 pt-2">
-            <Button small tone="primary" onClick={() => cameraFrom(hole.id, p ?? 0)} testid="fly-camera" title="Fly the camera yourself and add keyframes where it is"><Video size={13} /> Camera</Button>
+            <Button small onClick={() => cameraFrom(hole.id, p ?? 0)} testid="fly-camera"><Video size={13} /> Fly the camera</Button>
             <Button small onClick={add} testid="fly-key-add" title={p !== null ? `A new one after keyframe ${p + 1}` : undefined}><Plus size={13} /> Keyframe</Button>
             <Button small onClick={() => setEd({ teeView: hole.id, flyover: true, flyCam: false })} testid="fly-preview"><Play size={13} /> Fly over</Button>
           </div>
-          <p className="text-[11.5px] text-zinc-500 px-0.5 mt-2">{touch
-            ? "On the map, drag a numbered camera to move it (in 3D, up or down for its height), tap a + between two to add one there, and double-tap one to look through it."
-            : "On the map, drag a numbered camera to move it (in 3D, up or down for its height), click a + between two to add one there, and double-click one to look through it."}</p>
         </div>
       ) : (
         <div className="mt-2">
-          <Button small onClick={() => cameraFrom(hole.id, all.length ? all.length - 1 : null)} testid="fly-camera"><Video size={13} /> Fly the camera yourself</Button>
-          <p className="text-[11.5px] text-zinc-500 px-0.5 mt-1.5">{all.length === 1 ? "One keyframe so far. Add another in the camera and it flies through them." : "Move it around and add a keyframe wherever you like the shot. Two or more and the flyover goes through them."}</p>
+          <Button small onClick={() => cameraFrom(hole.id, all.length ? all.length - 1 : null)} testid="fly-camera"><Video size={13} /> Fly the camera</Button>
         </div>
       )}
       {/* (the camera and the switches, folded away: most holes never need them) */}

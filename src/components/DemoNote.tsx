@@ -60,8 +60,18 @@ export function LockedNote() {
           </div>
           <button className="p-1.5 -mr-1.5 -mt-1 touch:w-11 touch:h-11 touch:-mr-3 touch:-mt-2.5 touch:flex touch:items-center touch:justify-center rounded-full text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.08]" aria-label="Close" onClick={close}><X size={18} /></button>
         </div>
-        <p className="mt-3 text-[13.5px] leading-snug text-zinc-300">This is the public demo. It all runs in your browser, which is fine for trying it out, but there's no server behind it to hold accounts or share anything with anyone.</p>
-        <p className="mt-2 text-[13.5px] leading-snug text-zinc-300">Run HyzerLab on your own server and this works. It's free and open source, and the README walks you through the setup.</p>
+        {open === "demo" ? (
+          // (the demo itself: what hosting it adds, as the top bar's Demo note says)
+          <>
+            <p className="mt-3 text-[13.5px] leading-snug text-zinc-300">There's no server behind the demo to keep accounts or share anything. Host HyzerLab yourself and you also get:</p>
+            <ul className="mt-1.5 space-y-1 text-[13.5px] leading-snug text-zinc-300 list-disc pl-5">{DEMO_ADDS.map(a => <li key={a}>{a}</li>)}</ul>
+          </>
+        ) : (
+          <>
+            <p className="mt-3 text-[13.5px] leading-snug text-zinc-300">This is the public demo. It all runs in your browser, which is fine for trying it out, but there's no server behind it to hold accounts or share anything with anyone.</p>
+            <p className="mt-2 text-[13.5px] leading-snug text-zinc-300">Run HyzerLab on your own server and this works. It's free and open source, and the README walks you through the setup.</p>
+          </>
+        )}
         <div className="mt-4 flex gap-2 justify-end">
           <button className="rounded-full px-4 py-2 touch:py-3 text-[13.5px] font-semibold text-zinc-200 hover:bg-white/[0.08]" onClick={close}>Close</button>
           <a className="rounded-full px-4 py-2 touch:py-3 text-[13.5px] font-semibold bg-orange-400 text-zinc-950 hover:bg-orange-300 inline-flex items-center gap-1.5" href={REPO} target="_blank" rel="noreferrer" data-testid="locked-host">How to host it <ExternalLink size={14} /></a>

@@ -110,7 +110,7 @@ test("fairway width handle and par override in the inspector", async ({ page }) 
   const sq = await handleCenter(page, "width", 4);
   await page.mouse.dblclick(sq.x, sq.y);
   await expect.poll(async () => (await course(page)).holes[0].fairwayStations?.length).toBe(4);
-  await expect(page.getByTestId("fairway-shape")).toContainText("Shaped");
+  await expect(page.getByTestId("fairway-shape")).toContainText(/\d+ to \d+ ft/);
   // The width slider widens it all along, keeping the shape; Even width takes the shape off
   const before = (await course(page)).holes[0].fairwayShape;
   await page.getByRole("slider", { name: /Fairway width/ }).fill("60");
@@ -181,6 +181,35 @@ test("another tee and pin for a hole, and layouts pick between them", async ({ p
   await expect(page.getByTestId("help-guide")).toBeVisible();
 });
 
+test("a hole with pins A to D: no Another pin position; the Pin tool and Ctrl+D on its basket say it has them", async ({ page }) => {
+  await blankCourse(page);
+  const hole = await addHole(page, { x: 400, y: 700 }, { x: 800, y: 700 });
+  await page.keyboard.press("Escape");
+  await page.evaluate(id => (window as any).__dgActions.select(id), hole.id);
+  await expect(page.getByTestId("another-pin")).toBeVisible();
+  const pins = async () => (await course(page)).items.filter((i: any) => i.type === "basket").map((b: any) => b.position).sort();
+  await page.evaluate(id => {
+    (window as any).__dgEditor().set({ activeHoleId: id });
+    for (const p of [{ x: 850, y: 650 }, { x: 850, y: 750 }, { x: 750, y: 750 }]) (window as any).__dgActions.placeAt("add-basket", p);
+  }, hole.id);
+  await expect.poll(pins).toEqual(["A", "B", "C", "D"]);
+  await page.evaluate(id => (window as any).__dgActions.select(id), hole.id);
+  await expect(page.getByTestId("another-pin")).toHaveCount(0);
+  await expect(page.getByTestId("another-tee")).toBeVisible();
+  // A fifth with the Pin tool: none, and the toast says why
+  await page.evaluate(() => (window as any).__dgActions.placeAt("add-basket", { x: 750, y: 650 }));
+  await expect(page.getByText("Hole 1 has pins A to D already.")).toBeVisible();
+  expect(await pins()).toEqual(["A", "B", "C", "D"]);
+  // Ctrl+D on a basket: the same
+  await page.keyboard.press("Escape");
+  await expect(page.getByText("Hole 1 has pins A to D already.")).toHaveCount(0, { timeout: 15_000 });
+  const a = (await course(page)).items.find((i: any) => i.type === "basket" && i.position === "A");
+  await page.evaluate(id => (window as any).__dgActions.select(id), a.id);
+  await page.keyboard.press("Control+d");
+  await expect(page.getByText("Hole 1 has pins A to D already.")).toBeVisible();
+  expect(await pins()).toEqual(["A", "B", "C", "D"]);
+});
+
 test("hole numbers typed in (any number, others keep theirs); deleted with undo", async ({ page }) => {
   await blankCourse(page);
   const a = await addHole(page, { x: 200, y: 300 }, { x: 500, y: 300 });
@@ -193,6 +222,11 @@ test("hole numbers typed in (any number, others keep theirs); deleted with undo"
   await page.getByTestId("hole-number").press("Enter");
   await expect.poll(async () => (await course(page)).holes.map((h: any) => [h.id, h.number])).toEqual([[a.id, 1], [b.id, 2], [c.id, 27]]);
   await expect(page.getByTestId("inspector-title")).toHaveText("Hole 27");
+  // Esc leaves the badge without keeping what was typed
+  await page.getByTestId("hole-number").fill("5");
+  await page.getByTestId("hole-number").press("Escape");
+  await expect(page.getByTestId("hole-number")).toHaveValue("27");
+  expect((await course(page)).holes.find((h: any) => h.id === c.id).number).toBe(27);
   // The second as 1: before the first now, which stays 1 too (shown, not renumbered)
   await page.getByTestId("hole-row").nth(1).click();
   await page.getByTestId("hole-number").fill("1");

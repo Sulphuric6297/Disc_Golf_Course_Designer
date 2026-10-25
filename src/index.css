@@ -166,11 +166,11 @@ body {
 :where(input, select, textarea):focus-visible {
   outline: none;
 }
-/* The tool bar: on a wide screen (with a mouse), each tool's name under its icon */
+/* The tool bar: on a wide screen (a computer, or a tablet on its side), each tool's name under its icon */
 .dg-toolname {
   display: none;
 }
-@media (min-width: 1280px) and (pointer: fine) {
+@media (min-width: 1280px) {
   .dg-toolbtn {
     width: auto;
     min-width: 48px;
@@ -212,11 +212,11 @@ select option:disabled {
   color: #71717a;
 }
 
-/* Site picker: selected area size label */
+/* Site picker: selected area size label, in the frame's fern green */
 .leaflet-tooltip.site-picker-tooltip {
-  background: rgba(16, 185, 129, 0.92);
+  background: rgba(162, 207, 106, 0.95);
   border: none;
-  color: #fff;
+  color: #18200f;
   font-weight: 700;
   font-size: 13px;
   padding: 4px 10px;
@@ -227,24 +227,97 @@ select option:disabled {
   display: none;
 }
 
-/* Site picker: selection handles */
+/* Site picker: selection handles (a corner: a 16 px square in a bigger, clear box to grab) */
 .site-handle-corner {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  cursor: nwse-resize;
+}
+.site-handle-corner > span {
+  width: 16px;
+  height: 16px;
   background: #ffffff;
-  border: 3px solid #10b981;
+  border: 3px solid #a2cf6a;
   border-radius: 4px;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
-  cursor: nwse-resize;
+}
+.site-handle-ne,
+.site-handle-sw {
+  cursor: nesw-resize;
 }
 .site-handle-move {
   display: flex !important;
   align-items: center;
   justify-content: center;
-  background: #10b981;
-  color: #ffffff;
+  background: #a2cf6a;
+  color: #18200f;
   border-radius: 999px;
   font-size: 16px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
   cursor: move;
+}
+/* Site picker: the map's buttons (zoom, where I am) in glass, 44 px for a finger */
+.leaflet-container .leaflet-bar {
+  border: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(22, 30, 22, 0.78);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.16), 0 8px 22px rgba(0, 0, 0, 0.35);
+}
+.leaflet-container .leaflet-bar a {
+  width: 36px;
+  height: 36px;
+  line-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #e4e4e7;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.leaflet-container .leaflet-bar a:last-child {
+  border-bottom: 0;
+}
+.leaflet-container .leaflet-bar a:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fafafa;
+}
+.leaflet-container .leaflet-bar a.leaflet-disabled {
+  background: transparent;
+  color: #52525b;
+}
+/* (the attribution on one line, in glass: cut short with … on a narrow screen) */
+.leaflet-container .leaflet-control-attribution {
+  max-width: calc(100vw - 24px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: rgba(22, 30, 22, 0.7);
+  color: #a1a1aa;
+  border-top-left-radius: 8px;
+}
+.leaflet-container .leaflet-control-attribution a {
+  color: #d4d4d8;
+}
+@media (pointer: coarse) {
+  .leaflet-container .leaflet-bar {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: rgba(22, 30, 22, 0.92);
+  }
+  .leaflet-container .leaflet-bar a {
+    width: 44px;
+    height: 44px;
+    line-height: 44px;
+  }
+}
+/* A switch that's always on (shown, not changed) */
+.switch:disabled {
+  cursor: default;
 }
 
 /* Touch screens: small print a little bigger (it is read at arm's length, often outdoors) */
@@ -303,6 +376,13 @@ select option:disabled {
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
   mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
 }
+/* (the same, only where the row scrolls sideways: a narrow screen) */
+@media (max-width: 767px) {
+  .dg-fade-r-narrow {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+}
 
 /* Touch screens: no frosted glass over the map. A backdrop blur is redrawn behind every panel on
    every frame the 3D map draws, which phone and tablet GPUs pay for in dropped frames */
@@ -315,6 +395,13 @@ select option:disabled {
     backdrop-filter: none !important;
     /* (Nearly opaque instead: map labels must not show through) */
     background-color: rgb(24 24 27 / 0.97) !important;
+  }
+  /* (the phone and landscape layouts' own glass too: the sheet, the bars, the map's buttons) */
+  .dg-compact .glass,
+  .dg-compact .glass-solid {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: rgba(22, 30, 22, 0.92);
   }
 }
 

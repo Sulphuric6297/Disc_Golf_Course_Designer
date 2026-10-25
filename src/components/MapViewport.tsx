@@ -2,8 +2,9 @@
 import { latitudeOf, paintLight, sunFromOf } from "../lib/mapLook";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BoxSelect, Compass, Maximize2, Minus, Plus, RotateCcw, RotateCw } from "lucide-react";
-import { useAllowed } from "../auth/perms";
 import { FOCUS } from "./ui";
+import { ViewToggle } from "./ViewToggle";
+import { PlotPill } from "./DrawBar";
 import { CourseView } from "../viewport/CourseView";
 import type { ViewDoc, ViewInfo } from "../viewport/types";
 import { changeDoc, useCourse, useEditor, updateItem, updateHole, useCourse as courseStore } from "../state/course";
@@ -191,6 +192,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => {
     view?.setTool({ mode: ed.tool, areaKind: ed.areaKind, lineKind: ed.lineKind, structureKind: ed.structureKind, shape: ed.drawShape, dragSelect: ed.dragSelect, treeKind: ed.treeKind, brush: { size: ed.brushSize, strength: ed.brushStrength, ground: ed.groundBrush } }, ghostTee, ed.amenityKind);
   }, [view, ed.tool, ed.areaKind, ed.lineKind, ed.structureKind, ed.drawShape, ghostTee, ed.amenityKind, ed.dragSelect, ed.treeKind, ed.brushSize, ed.brushStrength, ed.groundBrush]);
+  // (Measure: from one spot, or along a path)
+  useEffect(() => { view?.setMeasureMode(ed.measureMode ?? "spot"); }, [view, ed.measureMode]);
   // A check's mark on the map clicked: the checks open, with its row lit up
   useEffect(() => {
     if (!view) return;
@@ -235,16 +238,22 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
 
   // (on a computer, clear of the Selection panel at the top right: 150 to 450 px from the edge)
   const obBar = ed.obPick && !ed.teeView && <ObPickBar view={view} id={ed.obPick} edge={doc.items.find(i => i.id === ed.obPick)?.type === "area"} cut={ed.pickCut} top={compact ? controlsTop + 8 : 12} right={8} />;
-  const plotBar = ed.plotLine && !ed.teeView && doc.holes.some(h => h.id === ed.plotLine) && <PlotBar view={view} hole={holeLabel(doc, ed.plotLine)} top={compact ? controlsTop + 8 : 12} right={8} />;
-  // (the box select button: while the course can be changed, on Design and Site)
+  const plotBar = ed.plotLine && !ed.teeView && doc.holes.some(h => h.id === ed.plotLine) && (
+    <div className="absolute left-2 right-2 z-20 flex justify-center pointer-events-none" style={{ top: compact ? controlsTop + 8 : 12 }}><PlotPill hole={holeLabel(doc, ed.plotLine)} /></div>
+  );
+  // (the box select button: while the course can be changed, on Design and Site; lit while it's on
+  // and Select is the tool)
   const boxable = !viewOnly && (ed.step === "design" || ed.step === "site");
+  const boxing = ed.dragSelect && ed.tool === "select";
+  // (the scale only looking straight down: tilted, it's true only at the middle)
+  const flat = !info || info.tiltDeg < 1;
   if (compact) {
     return (
       <div className="absolute inset-0">
         <div ref={ref} data-testid="plan" className="absolute inset-0 overflow-hidden touch-none" />
         {plotBar}
         {obBar}
-        {!ed.teeView && controlsRoom > 0 && <TouchControls view={view} info={info} scale={info ? scaleBar(info.pxPerUnit, 72, doc.units) : null} phone={compact === "phone"} top={controlsTop} room={controlsRoom} threeD={ed.view === "3d"} />}
+        {!ed.teeView && controlsRoom > 0 && <TouchControls view={view} info={info} scale={info && flat ? scaleBar(info.pxPerUnit, 72, doc.units) : null} phone={compact === "phone"} top={controlsTop} room={controlsRoom} threeD={ed.view === "3d"} editing={boxable} />}
       </div>
     );
   }
@@ -256,8 +265,10 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       {obBar}
       {!ed.teeView && (
         <>
-          <div className="absolute top-3 right-3 flex flex-col gap-2 items-end pointer-events-none">
-            <ViewToggle pad={pad} />
+          {/* (clear of the checks when they're open; the scale and the elevation under the pointer
+              below them, clear of the tools) */}
+          <div className="absolute top-3 flex flex-col gap-2 items-end pointer-events-none" style={{ right: inset.right }}>
+            <ViewToggle look="map" />
             <div className="flex gap-2 items-start">
               <div className="flex flex-col gap-2">
                 <button className={`${pad} w-11 h-11 flex flex-col items-center justify-center ${FOCUS}`} title="North up (N)" onClick={() => view?.resetNorth()} data-testid="compass">
@@ -266,8 +277,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
                 </button>
                 {/* (what a plain drag does: move the map, or draw a box to pick things with) */}
                 {boxable && (
-                  <button className={`${pad} w-11 h-11 flex items-center justify-center ${FOCUS} ${ed.dragSelect ? "!bg-orange-500 text-zinc-950" : "text-zinc-300 hover:text-zinc-50"}`} title="Select with a box (or Shift+drag)" aria-label="Select with a box" aria-pressed={ed.dragSelect}
-                    onClick={() => useEditor.getState().set({ dragSelect: !ed.dragSelect, tool: "select" })} data-testid="drag-select">
+                  <button className={`${pad} w-11 h-11 flex items-center justify-center ${FOCUS} ${boxing ? "!bg-orange-500 text-zinc-950" : "text-zinc-300 hover:text-zinc-50"}`} title="Select with a box (Shift+drag)" aria-label="Select with a box" aria-pressed={boxing}
+                    onClick={() => useEditor.getState().set({ dragSelect: !boxing, tool: "select" })} data-testid="drag-select">
                     <BoxSelect size={18} />
                   </button>
                 )}
@@ -283,19 +294,15 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
                   <button className={btn} title="Turn left (Q)" onClick={() => view?.rotateBy(-30)}><RotateCcw size={15} /></button>
                   <button className={btn} title="Turn right (E)" onClick={() => view?.rotateBy(30)}><RotateCw size={15} /></button>
                 </div>
-                <SceneButton big={touch} />
+                <SceneButton big={touch} size="big" />
               </div>
             </div>
-          </div>
-          {/* (the scale and the elevation under the pointer, at the bottom right, clear of the
-              tools and of the checks when they're open) */}
-          <div className="absolute bottom-3 flex flex-col items-end gap-1.5 pointer-events-none" style={{ right: inset.right }}>
             {hover && (
               <div className="text-[11px] text-zinc-200 glass rounded-md px-2 py-1" data-testid="hover-readout">
                 {doc.site.bounds ? `Elevation ${Math.round(doc.units === "m" ? elevation! / FT_PER_M : elevation!)} ${doc.units}` : `Ground ${fmtElev(elevation!, doc.units)}`}
               </div>
             )}
-            {scale && (
+            {scale && flat && (
               <div className="glass rounded-md px-2 py-1" data-testid="scale-bar">
                 <div className="text-[11px] text-zinc-200 font-semibold mb-0.5">{scale.label}</div>
                 <div className="h-1.5 border-x-2 border-b-2 border-white" style={{ width: scale.px }} />
@@ -304,24 +311,6 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-/** Top-down or tilted: with the map's controls (a viewer sees only the views they may). */
-function ViewToggle({ pad }: { pad: string }) {
-  const view = useEditor(e => e.view), set = useEditor(e => e.set);
-  const may2d = useAllowed("map"), may3d = useAllowed("view3d");
-  const views = (["2d", "3d"] as const).filter(v => (v === "3d" ? may3d : may2d));
-  if (views.length < 2) return null;
-  return (
-    <div className={`${pad} flex p-0.5`} role="radiogroup" aria-label="View">
-      {views.map(v => (
-        <button key={v} role="radio" aria-checked={view === v} onClick={() => set({ view: v })} title={v === "2d" ? "Top-down map (2)" : "Tilted 3D view (3)"} data-testid={`view-${v}`}
-          className={`px-2.5 h-8 touch:h-11 touch:px-3.5 touch:text-[13px] rounded-md text-xs font-bold transition-colors ${FOCUS} ${view === v ? "bg-zinc-100 text-zinc-900" : "text-zinc-300 hover:text-zinc-50 hover:bg-white/[0.13]"}`}>
-          {v.toUpperCase()}
-        </button>
-      ))}
     </div>
   );
 }
@@ -351,30 +340,12 @@ function ObPickBar({ view, id, edge, cut, top, right }: { view: CourseView | nul
   );
 }
 
-/** While a hole's line is plotted by hand: what to do, and Undo point, Done and Cancel (for a finger too). */
-function PlotBar({ view, hole, top, right }: { view: CourseView | null; hole: string; top: number; right: number }) {
-  const b = "px-3 h-9 touch:h-11 rounded-lg text-sm font-semibold shrink-0";
-  const click = useTouch() ? "Tap" : "Click";
-  return (
-    <div className="absolute left-2 z-20 flex justify-center pointer-events-none" style={{ top, right }}>
-    <div className="pointer-events-auto flex items-center gap-2 glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 px-3 py-2 max-w-full" data-testid="plot-bar">
-      <span className="text-sm text-zinc-100 font-semibold whitespace-nowrap">Hole {hole}</span>
-      <span className="text-xs text-zinc-300 min-w-0">{click} along the line to the basket, or drag it</span>
-      <button className={`${b} text-zinc-200 hover:bg-white/[0.09]`} onClick={() => view?.undoPoint()} data-testid="plot-undo">Undo point</button>
-      <button className={`${b} bg-orange-500 text-zinc-950 hover:bg-orange-400`} onClick={() => view?.finishPlot()} data-testid="plot-done">Done</button>
-      <button className={`${b} text-zinc-300 hover:bg-white/[0.09]`} onClick={() => view?.cancelDrawing()} data-testid="plot-cancel">Cancel</button>
-    </div>
-    </div>
-  );
-}
-
 /** The map's controls for a finger: 44 px buttons (zoom and turn also work by pinching and
- * twisting; these are the one-finger way, and the way for anyone who can't pinch). */
-function TouchControls({ view, info, scale, phone, top, room, threeD }: { view: CourseView | null; info: ViewInfo | null; scale: { px: number; label: string } | null; phone: boolean; top: number; room: number; threeD: boolean }) {
+ * twisting; these are the one-finger way, and the way for anyone who can't pinch). `editing`: the
+ * course can be changed here (Design or Site, not view only): box select is offered. */
+function TouchControls({ view, info, scale, phone, top, room, threeD, editing }: { view: CourseView | null; info: ViewInfo | null; scale: { px: number; label: string } | null; phone: boolean; top: number; room: number; threeD: boolean; editing: boolean }) {
   const set = useEditor(e => e.set);
-  const mode = useEditor(e => e.view);
-  const boxing = useEditor(e => e.dragSelect);
-  const editing = useEditor(e => e.step !== "map");
+  const boxing = useEditor(e => e.dragSelect && e.tool === "select");
   const b = "w-11 h-11 flex items-center justify-center text-zinc-100 active:bg-white/[0.13] focus:outline-none focus-visible:bg-white/[0.13]";
   const group = "pointer-events-auto flex flex-col glass rounded-2xl border border-white/10 shadow-[0_6px_20px_rgba(0,0,0,0.35)] overflow-hidden divide-y divide-white/5";
   // On a phone the compass only once the map is turned (as in map apps), and only what fits above
@@ -404,13 +375,7 @@ function TouchControls({ view, info, scale, phone, top, room, threeD }: { view: 
         </div>
       )}
       <div className="absolute right-2 z-10 flex flex-col gap-2 items-end pointer-events-none" style={{ top }} data-testid="map-controls">
-        {!phone && (
-          <div className="pointer-events-auto flex flex-col glass rounded-2xl border border-white/10 p-0.5" role="radiogroup" aria-label="View">
-            {(["2d", "3d"] as const).map(v => (
-              <button key={v} role="radio" aria-checked={mode === v} onClick={() => set({ view: v })} className={`w-10 h-9 rounded-[12px] text-[13px] font-bold ${mode === v ? "bg-zinc-100 text-zinc-900" : "text-zinc-300"}`}>{v.toUpperCase()}</button>
-            ))}
-          </div>
-        )}
+        {!phone && <ViewToggle look="rail" />}
         <div className={phone ? "flex flex-col gap-2 items-end" : "grid grid-cols-2 gap-2"}>
           <div className="flex flex-col gap-2">
             {compass && (

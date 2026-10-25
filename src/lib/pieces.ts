@@ -15,6 +15,20 @@ const OWN = new Set(["", "Oswald", "Inter", "Bitter", "Script"]);
 /** A piece drawn only at its own size, whatever it was asked: a scale bar sized by hand would
  * measure wrong (moved and turned, it still measures true). */
 export const keepsItsSize = (id: string) => id === "scale";
+/** A piece never turned by hand: a north arrow turned would point the wrong way. */
+export const keepsItsTurn = (id: string) => id === "north";
+
+/** The pieces drawn under another until they're moved on their own (the tagline under the
+ * course's name, or under the scorecard's logo): their own place, else the other's, its font,
+ * words and eye aside (a piece's font is its own). */
+export const followName = (place: (id: string) => PiecePlace | undefined, parent = "courseName") => (id: string): PiecePlace | undefined => {
+  const p = place(id);
+  if (id !== "tagline" || p) return p;
+  const q = place(parent);
+  if (!q) return undefined;
+  const { font: _f, text: _t, words: _w, hidden: _h, ...rest } = q;
+  return Object.keys(rest).length ? rest : undefined;
+};
 
 export const pieceFont = (f: string) => (OWN.has(f) ? titleStack(f) : `'${f.replace(/'/g, "")}', Inter, Arial, sans-serif`);
 
@@ -58,7 +72,7 @@ export const piecer = (place: (id: string) => Place | undefined, W: number, H: n
     if (p?.fill && !css.some(c => c.startsWith(`${a} [data-fill]`))) css.push(`${both("[data-fill]")}{fill:${p.fill} !important}`);
     if (p?.italic && !css.some(c => c.startsWith(`${a} text`) && c.includes("font-style"))) css.push(`${both("text")},${both("tspan")}{font-style:italic !important}`);
     if (p?.bold !== undefined && !css.some(c => c.startsWith(`${a} text`) && c.includes("font-weight"))) css.push(`${both("text")},${both("tspan")}{font-weight:${p.bold ? 700 : 400} !important}`);
-    return `<g ${copy ? "data-pc" : "data-el"}="${id}"${t}>${turned(content, p?.rot, p?.opacity)}</g>`;
+    return `<g ${copy ? "data-pc" : "data-el"}="${id}"${t}>${turned(content, keepsItsTurn(id) ? undefined : p?.rot, p?.opacity)}</g>`;
   };
   const group = (parts: string[], from: number, id: string, copy = false) => {
     const c = parts.splice(from).join("");
@@ -71,7 +85,11 @@ export const piecer = (place: (id: string) => Place | undefined, W: number, H: n
   const sizeOf = (id: string) => place(id)?.scale ?? 1;
   /** A piece's heading as typed in its settings, else the look's own (`own`). */
   const head = (id: string, own: string) => place(id)?.text ?? own;
-  return { wrap, group, page, sizeOf, head };
+  /** Another of its printed words (`key`) as typed in its settings, else the look's own. */
+  const word = (id: string, key: string, own: string) => place(id)?.words?.[key] ?? own;
+  /** Whether a piece is hidden on this page. */
+  const hidden = (id: string) => !!place(id)?.hidden;
+  return { wrap, group, page, sizeOf, head, word, hidden };
 };
 
 /** A piece sized by `f` about the page point `a` (from its place before). */
@@ -101,7 +119,7 @@ export const qrSvg = (url: string, x: number, y: number, size: number) => {
 /** The extras on a page (text, pictures, sponsors, QR codes) for one hole, each its own piece
  * ("x:ID"). `font`: what their lettering is set in when they have no font of their own (the
  * headings font on signs, pages and the scorecard; the labels font on the course map). */
-export const extrasSvg = (extras: PrintExtra[] | undefined, sponsors: Sponsor[] | undefined, holeId: string, facts: HoleFacts, W: number, H: number, font: string, wrap: (id: string, content: string) => string) => {
+export const extrasSvg = (extras: PrintExtra[] | undefined, sponsors: Sponsor[] | undefined, holeId: string, facts: HoleFacts, W: number, H: number, font: string, wrap: (id: string, content: string) => string, ink = "#111111") => {
   const onHole = (holes?: string[]) => !holeId || !holes?.length || holes.includes(holeId);
   const out: string[] = [];
   for (const e of (extras ?? []) as Extra[]) {
@@ -117,7 +135,7 @@ export const extrasSvg = (extras: PrintExtra[] | undefined, sponsors: Sponsor[] 
         const left = e.align === "middle" ? X + w / 2 - tw / 2 : e.align === "end" ? X + w - tw : X;
         body += `<rect x="${n(left - pad)}" y="${n(Y - pad)}" width="${n(tw + pad * 2)}" height="${n(lines.length * size * 1.2 + pad * 2)}" rx="${n(pad)}" fill="${e.fill}" data-fill="1"/>`;
       }
-      body += lines.map((l, i) => `<text x="${n(ax)}" y="${n(Y + size * (0.9 + i * 1.2))}" text-anchor="${e.align ?? "start"}" font-family="${pieceFont(e.font || font)}" font-weight="${e.bold ? 700 : 500}"${e.italic ? ` font-style="italic"` : ""} font-size="${n(size)}" fill="${e.color ?? "#111111"}">${esc(l)}</text>`).join("");
+      body += lines.map((l, i) => `<text x="${n(ax)}" y="${n(Y + size * (0.9 + i * 1.2))}" text-anchor="${e.align ?? "start"}" font-family="${pieceFont(e.font || font)}" font-weight="${e.bold ? 700 : 500}"${e.italic ? ` font-style="italic"` : ""} font-size="${n(size)}" fill="${e.color ?? ink}">${esc(l)}</text>`).join("");
     } else if (e.kind === "image" && e.src) {
       body = `<image href="${e.src}" x="${n(X)}" y="${n(Y)}" width="${n(w)}" height="${n(w * (e.aspect ?? 1))}" preserveAspectRatio="xMidYMid meet"${e.opacity !== undefined && e.opacity < 1 ? ` opacity="${n(e.opacity)}"` : ""}/>`;
     } else if (e.kind === "sponsor") {
@@ -132,11 +150,11 @@ export const extrasSvg = (extras: PrintExtra[] | undefined, sponsors: Sponsor[] 
         y += lh + size * 0.35;
       }
       const line = sp.text?.trim() || (sp.logo ? "" : sp.name);
-      if (line) parts.push(`<text${fitAttr(w)} x="${n(X + w / 2)}" y="${n(y + size * 0.9)}" text-anchor="middle" font-family="${pieceFont(e.font || font)}" font-weight="700" font-size="${n(size)}" fill="${e.color ?? "#111111"}">${esc(line)}</text>`);
+      if (line) parts.push(`<text${fitAttr(w)} x="${n(X + w / 2)}" y="${n(y + size * 0.9)}" text-anchor="middle" font-family="${pieceFont(e.font || font)}" font-weight="700" font-size="${n(size)}" fill="${e.color ?? ink}">${esc(line)}</text>`);
       body = parts.join("");
     } else if (e.kind === "qr") {
       body = qrSvg(e.url ?? "", X, Y, w);
-      if (e.text) body += `<text${fitAttr(w * 1.6)} x="${n(X + w / 2)}" y="${n(Y + w + (e.size ?? 12) * 1.2)}" text-anchor="middle" font-family="${pieceFont(e.font || font)}" font-weight="600" font-size="${n(e.size ?? 12)}" fill="${e.color ?? "#111111"}">${esc(fillIn(e.text, facts))}</text>`;
+      if (e.text) body += `<text${fitAttr(w * 1.6)} x="${n(X + w / 2)}" y="${n(Y + w + (e.size ?? 12) * 1.2)}" text-anchor="middle" font-family="${pieceFont(e.font || font)}" font-weight="600" font-size="${n(e.size ?? 12)}" fill="${e.color ?? ink}">${esc(fillIn(e.text, facts))}</text>`;
     } else if (e.kind === "sponsors") {
       // (this hole's sponsors side by side under a small heading: each its logo, its line of text, or both)
       const here = (sponsors ?? []).filter(sp => onHole(sp.holes));
@@ -144,7 +162,7 @@ export const extrasSvg = (extras: PrintExtra[] | undefined, sponsors: Sponsor[] 
       const size = e.size ?? 14, gap = size * 0.8, cw = (w - gap * (here.length - 1)) / here.length;
       // (its heading as typed on the page; none once it's cleared)
       const head = e.text !== undefined ? fillIn(e.text, facts).trim() : here.length > 1 ? "HOLE SPONSORS" : "HOLE SPONSOR";
-      const parts = head ? [`<text${fitAttr(w)} x="${n(X)}" y="${n(Y + size * 0.8)}" font-family="${pieceFont(e.font || font)}" font-weight="700" font-size="${n(size * 0.7)}" letter-spacing="${n(size * 0.12)}" fill="${e.color ?? "#111111"}" fill-opacity="0.7">${esc(head)}</text>`] : [];
+      const parts = head ? [`<text${fitAttr(w)} x="${n(X)}" y="${n(Y + size * 0.8)}" font-family="${pieceFont(e.font || font)}" font-weight="700" font-size="${n(size * 0.7)}" letter-spacing="${n(size * 0.12)}" fill="${e.color ?? ink}" fill-opacity="0.7">${esc(head)}</text>`] : [];
       here.forEach((sp, i) => {
         const cx = X + i * (cw + gap), top = Y + (head ? size * 1.4 : 0);
         let y = top;
@@ -154,7 +172,7 @@ export const extrasSvg = (extras: PrintExtra[] | undefined, sponsors: Sponsor[] 
           y += lh + size * 0.4;
         }
         const line = sp.text?.trim() || (sp.logo ? "" : sp.name);
-        if (line) parts.push(`<text${fitAttr(cw)} x="${n(cx + cw / 2)}" y="${n(y + size * 0.9)}" text-anchor="middle" font-family="${pieceFont(e.font || font)}" font-weight="700" font-size="${n(size)}" fill="${e.color ?? "#111111"}">${esc(line)}</text>`);
+        if (line) parts.push(`<text${fitAttr(cw)} x="${n(cx + cw / 2)}" y="${n(y + size * 0.9)}" text-anchor="middle" font-family="${pieceFont(e.font || font)}" font-weight="700" font-size="${n(size)}" fill="${e.color ?? ink}">${esc(line)}</text>`);
       });
       body = parts.join("");
     }

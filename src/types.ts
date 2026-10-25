@@ -16,6 +16,9 @@ export interface BaseItem {
   rotation: number;
   /** Locked in place: it can be picked, but not moved, reshaped or deleted. */
   locked?: boolean;
+  /** Brought in by an import: what it was like when it came (`signOf` in lib/importSite). One
+   * changed since is yours: a new lookup, bringing the site in again or Remove leave it alone. */
+  importSig?: string;
 }
 
 /** A tee pad (one hole can have several, one per tee color). */
@@ -363,6 +366,8 @@ export type SignPart = "courseName" | "number" | "par" | "lengths" | "elevation"
 export interface PiecePlace {
   /** Its heading's words (unset: the look's own; "": none), and its lettering bold or not. */
   text?: string;
+  /** Its other printed words as typed, by name (unset: the look's own; "": none). */
+  words?: Record<string, string>;
   bold?: boolean;
   dx?: number;
   dy?: number;
@@ -470,6 +475,10 @@ export interface PageElementStyle {
   columns?: ("par" | "lengths" | "elevation" | "names")[];
   /** A heading over it (the hole guide, the legend; unset: none, or LEGEND). */
   heading?: string;
+  /** The title's own font (unset: the course name font). */
+  font?: string;
+  /** The title's par and length (unset: shown). */
+  parLength?: boolean;
 }
 /** Text put on the course map's page. */
 export interface PageText {
@@ -656,10 +665,17 @@ export interface SiteInfo {
   /** Trees planted by hand that came from another course sharing this ground (by id). One of
    * them no longer among the items was cut down here: sharing the ground again leaves it out. */
   sharedTrees?: string[];
-  /** What the import said it brought in (listed under the site's facts). */
+  /** What the import said it brought in, as it said it then (the Site step works out its own
+   * lines from the course). */
   notes?: string[];
   /** An aerial survey (LiDAR) was looked for and none covers the site. */
   noLidar?: boolean;
+  /** The aerial survey couldn't be read the last time it was asked for. */
+  lidarFailed?: boolean;
+  /** OpenStreetMap couldn't be reached the last time it was asked. */
+  osmFailed?: boolean;
+  /** Some of the photo's map tiles were missing. */
+  tilesMissing?: boolean;
 }
 
 /** A tree measured from the air: where it stands (plan ft), how tall and how far its crown

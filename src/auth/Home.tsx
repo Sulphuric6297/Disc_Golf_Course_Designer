@@ -2,41 +2,85 @@
 // map of its holes, to open with one click; a new course; search. Beside them: what's waiting on
 // you (drafts, changes to review), Getting started, the help topics that matter most, and a tip.
 import { create } from "zustand";
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, BookOpen, Eye, Lightbulb, Loader2, Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, BookOpen, Eye, FolderOpen, Lightbulb, Loader2, Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
 import { TOPICS } from "../lib/guide";
 import { HelpGuide } from "../components/help/HelpGuide";
 import { StartCard, openGettingStarted, useStart } from "../components/GettingStarted";
 import { useTouch } from "../components/useLayout";
 import { fmtDist } from "../lib/units";
-import { useCourse } from "../state/course";
+import { useCourse, useEditor } from "../state/course";
 import { useToasts } from "../state/toast";
 import { useAuth } from "./api";
-import { listServerCourses, newServerCourse, openServerCourse, removeServerCourse, useServerCourse, type ServerPlan, type Summary } from "./courses";
+import { listServerCourses, newServerCourse, openServerCourse, removeQuestion, removeServerCourse, useServerCourse, type ServerPlan, type Summary } from "./courses";
+import { openCourseFile } from "../state/files";
 import { AccountMenu } from "./AccountMenu";
 import { Logo } from "./parts";
 import { Woods } from "../components/Woods";
 import { Loading } from "../components/ui";
 
-/** The help topics most worth a look, in the order you'd need them. */
-export const LEARN = ["first-course", "find-site", "tees-pins", "ground", "tee-here", "map-style", "print"];
+/** The help topics most worth a look, in the order you'd need them; `on`: only with a mouse and
+ * keyboard, or only on a touch screen. */
+export const LEARN: { id: string; on?: "mouse" | "touch" }[] = [
+  { id: "first-course" }, { id: "find-site" }, { id: "tees-pins" }, { id: "ground" }, { id: "search", on: "mouse" }, { id: "tee-here", on: "touch" }, { id: "map-style" }, { id: "print" }
+];
+/** The Learn the app list for this screen. */
+export const learnFor = (touch: boolean) => LEARN.filter(l => !l.on || l.on === (touch ? "touch" : "mouse")).map(l => l.id);
 
-/** Tips, one at a time (a different one each visit); `on`: only with a mouse and keyboard, or only
- * on a touch screen. */
-export const TIPS: { text: string; on?: "mouse" | "touch" }[] = [
-  { text: "Press Ctrl+K and type what you're after, like \"tee sign\" or \"fairway width\". It finds any setting and takes you right to it.", on: "mouse" },
-  { text: "Right-click open ground for a menu right there: a tee or pin for the hole you're on, a bend in its line, a new hole, or measuring from that spot.", on: "mouse" },
-  { text: "Hold your finger on open ground. You get a menu right there: a tee here, a pin here, bend the hole here, or measure from here.", on: "touch" },
-  { text: "The Ground tool paints the terrain. Raise a mound, flatten a tee pad, or smooth out a bumpy bit of survey data." },
-  { text: "Turn your location on and walk the course. Tee here and Basket here put them right where you're standing, which beats guessing from a photo.", on: "touch" },
-  { text: "Pick a tree and pinch it with two fingers to make it bigger or smaller. Twist to turn tees and mandos the same way.", on: "touch" },
-  { text: "One hole can have several tees for different skill levels. Several holes can also finish at the same basket. The hole's panel has a button for each." },
-  { text: "The painted map styles repaint as you change the course, so you can design straight on the printed map's look." }
+/** Tips, one at a time (a different one each visit), each what to do in one sentence and its help
+ * topic; `on`: only with a mouse and keyboard, or only on a touch screen. */
+export const TIPS: { text: string; topic: string; on?: "mouse" | "touch" }[] = [
+  { text: "Press Ctrl+K and type a setting, like \"tee sign\", to go straight to it.", topic: "search", on: "mouse" },
+  { text: "Right-click open ground for a tee, a pin, a bend or a new hole right there.", topic: "pointer", on: "mouse" },
+  { text: "Hold a finger on open ground for a tee, a pin, a bend or a measure right there.", topic: "gestures", on: "touch" },
+  { text: "Pick the Ground tool to raise a mound, flatten a tee pad or smooth the survey's bumps.", topic: "ground" },
+  { text: "Walk the course with your location on, and tap Tee here or Basket here where you stand.", topic: "tee-here", on: "touch" },
+  { text: "Pinch a picked tree to size it, or twist a tee or mando to turn it.", topic: "gestures", on: "touch" },
+  { text: "Give a hole more tees for each skill level, or finish several holes at one basket.", topic: "tees-pins" },
+  { text: "Pick a painted map style and design straight on the printed map's look.", topic: "map-style" }
 ];
 /** A tip for this screen. */
 export const pickTip = (touch: boolean) => {
   const list = TIPS.filter(t => !t.on || t.on === (touch ? "touch" : "mouse"));
-  return list[Math.floor(Math.random() * list.length)].text;
+  return list[Math.floor(Math.random() * list.length)];
+};
+
+/** A Courses page's tip card: the tip, and More › to its help topic. */
+export function TipCard({ tip, onMore }: { tip: (typeof TIPS)[number]; onMore: (topic: string) => void }) {
+  return (
+    <div className="glass rounded-[22px] p-4" data-testid="home-tip">
+      <div className="flex items-center gap-2 text-[13px] font-bold text-zinc-50"><Lightbulb size={15} className="text-amber-300" />Tip</div>
+      <p className="text-[13px] text-zinc-300 mt-1.5 leading-snug">{tip.text}</p>
+      <button className="mt-1.5 text-[12.5px] font-semibold text-orange-300 hover:text-orange-200 touch:min-h-[44px]" onClick={() => onMore(tip.topic)} data-testid="home-tip-more">More ›</button>
+    </div>
+  );
+}
+
+/** Asked in glass before something goes for good (a Courses page's delete). */
+export function AskDialog({ text, yes, onYes, onNo }: { text: string; yes: string; onYes: () => void; onNo: () => void }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onNo(); } };
+    window.addEventListener("keydown", k, true);
+    return () => window.removeEventListener("keydown", k, true);
+  }, [onNo]);
+  return (
+    <div className="fixed inset-0 z-[75] bg-black/50 flex items-center justify-center p-4" onClick={onNo}>
+      <div className="glass-solid ring-1 ring-white/15 rounded-[18px] p-4 shadow-2xl w-full max-w-[360px]" role="alertdialog" aria-modal="true" aria-label={text} onClick={e => e.stopPropagation()} data-testid="ask-dialog">
+        <p className="text-[14px] font-semibold text-zinc-50">{text}</p>
+        <div className="flex justify-end gap-2 mt-3">
+          <button className="h-9 touch:h-11 px-3.5 rounded-full text-[13.5px] font-semibold text-zinc-200 hover:bg-white/[0.08]" onClick={onNo} data-testid="ask-no">Cancel</button>
+          <button className="h-9 touch:h-11 px-3.5 rounded-full text-[13.5px] font-semibold bg-red-500/90 hover:bg-red-500 text-white" onClick={onYes} autoFocus data-testid="ask-yes">{yes}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Whether the map behind a Courses page rests: while the page is up, and after it closes on the
+ * Map or Export step (their page covers the map) unless a tee view is up. */
+export const mapRests = (pageUp: boolean) => {
+  const e = useEditor.getState();
+  return pageUp || ((e.step === "map" || e.step === "export") && !e.teeView);
 };
 
 /** How long ago, in words: "just now", "5 minutes ago", "3 days ago". */
@@ -79,11 +123,29 @@ export function PageToasts() {
   );
 }
 
-/** The holes' throw lines, fitted into the card (the demo's cards too). */
-export function MiniMap({ c }: { c: { holes: number; summary: Partial<Summary> } }) {
+/** The holes' throw lines, fitted into the card (the demo's cards too). `frame`: the plan's size,
+ * the lines drawn in place over its photo (`photo`) as the card shows it. */
+export function MiniMap({ c, frame, photo }: { c: { holes: number; summary: Partial<Summary> }; frame?: { width: number; height: number }; photo?: string }) {
   const s = c.summary;
   const lines = s.lines ?? [];
   const pts = lines.flat();
+  if (frame && photo) {
+    const k = Math.max(frame.width, frame.height) / 400;
+    return (
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-emerald-950">
+        <img src={photo} alt="" className="absolute inset-0 w-full h-full object-cover" />
+        <svg viewBox={`0 0 ${frame.width} ${frame.height}`} preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full" aria-hidden>
+          {lines.map((l, i) => (
+            <g key={i}>
+              <polyline points={l.map(p => p.join(",")).join(" ")} fill="none" stroke="#fde68a" strokeOpacity={0.9} strokeWidth={2.4 * k} strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx={l[0][0]} cy={l[0][1]} r={3.6 * k} fill="#38bdf8" />
+              <circle cx={l[l.length - 1][0]} cy={l[l.length - 1][1]} r={4 * k} fill="#f97316" stroke="#111" strokeWidth={1 * k} />
+            </g>
+          ))}
+        </svg>
+      </div>
+    );
+  }
   if (!pts.length) {
     return <div className="aspect-[4/3] bg-gradient-to-br from-emerald-950 to-zinc-900 flex items-center justify-center text-zinc-600 text-sm">{c.holes ? "" : "No holes yet"}</div>;
   }
@@ -139,7 +201,8 @@ function Card({ c, onOpen, onRemove, big, opening }: { c: ServerPlan; onOpen: ()
         <div className="glass absolute left-2.5 right-2.5 bottom-2.5 rounded-[16px] px-3.5 py-2.5">
           <div className="flex items-start gap-2">
             <h3 className={`flex-1 min-w-0 font-semibold text-zinc-50 truncate ${big ? "text-lg" : ""}`}>{c.name || "Untitled course"}</h3>
-            <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${r.cls}`}><r.icon size={11} />{r.label}</span>
+            {/* (your own: under Your courses already) */}
+            {c.role !== "owner" && <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${r.cls}`}><r.icon size={11} />{r.label}</span>}
           </div>
           <p className="text-[13px] text-zinc-300 mt-0.5">{facts}{c.park ? <span className="text-zinc-500"> · {c.park}</span> : null}</p>
           {(c.hasDraft || c.toReview > 0) && (
@@ -155,7 +218,7 @@ function Card({ c, onOpen, onRemove, big, opening }: { c: ServerPlan; onOpen: ()
           </p>
         </div>
       </button>
-      <button className="glass absolute top-2.5 right-2.5 p-1.5 rounded-full text-zinc-200 hover:text-red-300 opacity-0 group-hover:opacity-100 focus:opacity-100 touch:opacity-100 transition-opacity"
+      <button className="glass absolute top-2.5 right-2.5 p-1.5 touch:p-[15px] rounded-full text-zinc-200 hover:text-red-300 opacity-0 group-hover:opacity-100 focus:opacity-100 touch:opacity-100 transition-opacity"
         aria-label={c.role === "owner" ? `Delete ${c.name}` : `Take ${c.name} off your list`} onClick={onRemove}>
         <Trash2 size={15} />
       </button>
@@ -205,9 +268,21 @@ export function Home() {
   const touch = useTouch();
   const start = useStart();
   const [tip] = useState(() => pickTip(touch));
-  const learn = LEARN.map(id => TOPICS.find(t => t.id === id)).filter(Boolean) as typeof TOPICS;
+  const learn = learnFor(touch).map(id => TOPICS.find(t => t.id === id)).filter(Boolean) as typeof TOPICS;
   /** Getting started: in the newest course (or a new one), its list open. */
   const openStart = () => { openGettingStarted(); const c = mine[0] ?? shown[0]; void (c ? open(c.id) : fresh()); };
+  // (a course file: opened as a new course, not saved until it's changed)
+  const fileRef = useRef<HTMLInputElement>(null);
+  const openFile = async (f: File) => {
+    if (opening) return;
+    setOpening("file");
+    try { if (await openCourseFile(f)) showHome(false); } finally { setOpening(null); }
+  };
+  // (a delete asked in glass first)
+  const [asking, setAsking] = useState<ServerPlan | null>(null);
+  const remove = (c: ServerPlan) => { setAsking(null); setNotice(""); void removeServerCourse(c.id, c, true).then(refresh, e => setNotice(`Couldn't remove "${c.name}": ${e instanceof Error ? e.message : "try again"}.`)); };
+  // (a search or a park picked: nothing matching it)
+  const narrowed = !!q.trim() || !!park;
   const side = (
     <aside className="flex flex-col gap-4" data-testid="home-side">
       <StartCard onOpen={openStart} disabled={!!opening} />
@@ -221,16 +296,13 @@ export function Home() {
         <button className="mt-1 text-[12.5px] font-semibold text-orange-300 hover:text-orange-200" onClick={() => setHelp({})} data-testid="home-help">The whole help guide ›</button>
         {!start.onHome && <button className="block mt-1.5 text-[12.5px] font-semibold text-zinc-400 hover:text-zinc-200" onClick={() => start.set({ onHome: true })} data-testid="home-start-show">Show Getting started</button>}
       </div>
-      <div className="glass rounded-[22px] p-4" data-testid="home-tip">
-        <div className="flex items-center gap-2 text-[13px] font-bold text-zinc-50"><Lightbulb size={15} className="text-amber-300" />Tip</div>
-        <p className="text-[13px] text-zinc-300 mt-1.5 leading-snug">{tip}</p>
-      </div>
+      <TipCard tip={tip} onMore={topic => setHelp({ topic })} />
     </aside>
   );
 
   const grid = (cs: ServerPlan[]) => (
     <ul className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-      {cs.map((c, i) => <Card key={c.id} c={c} big={i === 0 && cs.length > 2} opening={opening === c.id} onOpen={() => void open(c.id)} onRemove={() => { setNotice(""); void removeServerCourse(c.id, c).then(refresh, e => setNotice(`Couldn't remove "${c.name}": ${e instanceof Error ? e.message : "try again"}.`)); }} />)}
+      {cs.map((c, i) => <Card key={c.id} c={c} big={i === 0 && cs.length > 2} opening={opening === c.id} onOpen={() => void open(c.id)} onRemove={() => setAsking(c)} />)}
     </ul>
   );
 
@@ -244,8 +316,8 @@ export function Home() {
           <span className="font-bold text-zinc-50 text-[17px] hidden sm:inline">HyzerLab</span>
           <div className="flex-1" />
           {openId && (
-            <button className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm text-zinc-200 hover:bg-white/[0.08] max-w-[260px]" onClick={() => showHome(false)} data-testid="back-to-course">
-              <ArrowLeft size={15} /><span className="truncate">{openName}</span>
+            <button className="inline-flex items-center gap-1.5 px-3 py-1.5 touch:min-h-[44px] rounded-full text-sm text-zinc-200 hover:bg-white/[0.08] max-w-[260px] min-w-0" onClick={() => showHome(false)} aria-label={`Back to ${openName}`} data-testid="back-to-course">
+              <ArrowLeft size={15} className="shrink-0" /><span className="truncate">{openName}</span>
             </button>
           )}
           <AccountMenu home />
@@ -260,11 +332,18 @@ export function Home() {
           </div>
           <label className="relative sm:w-64">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-            <input className="glass w-full rounded-full pl-9 pr-3 py-2 text-sm touch:text-base text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-400/80" placeholder="Search" value={q} onChange={e => setQ(e.target.value)} aria-label="Search courses" />
+            <input className="glass w-full rounded-full pl-9 pr-3 py-2 touch:py-3 text-sm touch:text-base text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-400/80" placeholder="Search" value={q} onChange={e => setQ(e.target.value)} aria-label="Search courses" />
           </label>
-          <button className="inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 touch:py-3 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950 shadow" onClick={() => void fresh()} disabled={!!opening} aria-busy={opening === "new" || undefined} data-testid="new-course">
-            {opening === "new" ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} New course
-          </button>
+          <div className="flex gap-2">
+            <button className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 touch:py-3 text-sm font-semibold glass text-zinc-100 hover:bg-white/[0.1] disabled:opacity-60" onClick={() => fileRef.current?.click()} disabled={!!opening} data-testid="open-file">
+              {opening === "file" ? <Loader2 size={16} className="animate-spin" /> : <FolderOpen size={16} />} Open a course file
+            </button>
+            <button className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 touch:py-3 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950 shadow" onClick={() => void fresh()} disabled={!!opening} aria-busy={opening === "new" || undefined} data-testid="new-course">
+              {opening === "new" ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} New course
+            </button>
+          </div>
+          {/* (not a course file: said in a toast, and this page stays) */}
+          <input ref={fileRef} type="file" accept=".json,.dgcourse.json,application/json" className="hidden" aria-label="Open a course file" onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void openFile(f); }} />
         </div>
 
         {parks.length > 0 && (
@@ -310,11 +389,11 @@ export function Home() {
           <>
             <section className="mb-10" data-testid="my-courses">
               <h2 className="text-[15px] font-semibold text-zinc-200 mb-3">Your courses <span className="text-zinc-500 font-normal">{mine.length}</span></h2>
-              {mine.length ? grid(mine) : <p className="text-sm text-zinc-500">None{q ? " match" : " yet"}.</p>}
+              {mine.length ? grid(mine) : <p className="text-sm text-zinc-500">{narrowed ? "None match." : "None yet."}</p>}
             </section>
             <section data-testid="shared-courses">
               <h2 className="text-[15px] font-semibold text-zinc-200 mb-3">Shared with you <span className="text-zinc-500 font-normal">{shared.length}</span></h2>
-              {shared.length ? grid(shared) : <p className="text-sm text-zinc-500">{q ? "None match." : "Courses others share with you show up here."}</p>}
+              {shared.length ? grid(shared) : <p className="text-sm text-zinc-500">{narrowed ? "None match." : "Courses others share with you show up here."}</p>}
             </section>
           </>
         )}
@@ -322,7 +401,8 @@ export function Home() {
         {side}
         </div>
       </main>
-      {help && <HelpGuide onClose={() => setHelp(false)} topic={help.topic} touch={touch} />}
+      {help && <HelpGuide onClose={() => setHelp(false)} topic={help.topic} touch={touch} onShow={() => showHome(false)} />}
+      {asking && <AskDialog text={removeQuestion(asking)} yes={asking.role === "owner" ? "Delete" : "Take it off"} onYes={() => remove(asking)} onNo={() => setAsking(null)} />}
       <PageToasts />
     </div>
   );

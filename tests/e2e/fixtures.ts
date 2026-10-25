@@ -286,13 +286,12 @@ export async function importSite(page: Page, opts: { trees?: boolean; osm?: bool
     await page.getByRole("button", { name: /^1\s*Site$/ }).click();
     const find = page.getByTestId("find-site");
     if (await find.isVisible()) await find.click();
-    else await page.getByRole("button", { name: "Resize or re-import the site" }).click();
+    else await page.getByTestId("resize-site").click();
   }
   await page.getByLabel("Search address").fill("Springfield Park");
   await page.getByRole("button", { name: /Springfield Park/ }).first().click();
   await expect(page.getByTestId("site-size")).toBeVisible();
-  if (opts.trees === false) await page.getByText("Trees spotted on the satellite photo").click();
-  // (exact: the Site step's "Update paths, roads, water and buildings" can be on the page too)
+  if (opts.trees === false) await page.getByText("Trees from the photo", { exact: true }).click();
   if (opts.osm === false) await page.getByText("Paths, roads, water and buildings", { exact: true }).click();
   // The summary is a toast that goes after 12 seconds: note it the moment it shows (a busy test
   // machine can take longer than that between two polls)
@@ -300,14 +299,14 @@ export async function importSite(page: Page, opts: { trees?: boolean; osm?: bool
     const w = window as any;
     w.__importDone = "";
     const seen = new MutationObserver(() => {
-      const el = [...document.querySelectorAll("[role=status] > span")].find(e => /^Site brought in\./.test(e.textContent ?? ""));
+      const el = [...document.querySelectorAll("[role=status] > span")].find(e => /^Site brought in[.:]/.test(e.textContent ?? ""));
       if (el) { w.__importDone = el.textContent; seen.disconnect(); }
     });
     seen.observe(document.body, { childList: true, subtree: true, characterData: true });
   });
   await page.getByTestId("import-site").click();
-  await expect.poll(() => page.evaluate(() => (window as any).__importDone), { timeout: 60_000 }).toMatch(/^Site brought in\./);
-  // (the toast says only that; what came in is kept with the site)
+  await expect.poll(() => page.evaluate(() => (window as any).__importDone), { timeout: 60_000 }).toMatch(/^Site brought in[.:]/);
+  // (the toast lists what came in; the import's own sentences are kept with the site)
   const notes: string[] = await page.evaluate(() => (window as any).__dgCourse().site.notes ?? []);
   return "Site brought in. " + notes.join(" ");
 }

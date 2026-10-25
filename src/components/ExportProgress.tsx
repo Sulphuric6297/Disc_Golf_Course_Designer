@@ -13,29 +13,32 @@ export function ProgressBar({ value, testid, label }: { value: number | null; te
   );
 }
 
-/** At the top of the Export step (not for a video: its own section shows its progress). */
+/** At the top of the Export step, videos too (a video's bar and Cancel keep their own test ids). */
 export function ExportBanner() {
   const job = useExportJob(s => s.job);
-  if (!job || job.kind === "video") return null;
+  if (!job) return null;
+  const video = job.kind === "video";
   return (
     <div className="sticky top-0 z-10 mx-4 mt-2 text-sm text-orange-100 glass border border-orange-500/40 rounded-lg px-3 py-2 shadow-lg" data-testid="export-busy">
       <div className="flex items-center gap-2">
         <Loader2 size={15} className="animate-spin text-orange-300 shrink-0" />
         <span className="flex-1 min-w-0 truncate">{job.label}{job.progress !== null ? ` · ${Math.round(job.progress * 100)}%` : "…"}</span>
-        {job.cancel && <button className="text-xs font-semibold text-orange-300 hover:text-orange-200" onClick={job.cancel} data-testid="export-cancel">Cancel</button>}
+        {job.cancel && <button className="text-xs font-semibold text-orange-300 hover:text-orange-200 touch:py-2.5 touch:px-2 touch:-my-2" onClick={job.cancel} data-testid={video ? "video-cancel" : "export-cancel"}>Cancel</button>}
       </div>
-      {job.progress !== null && <div className="mt-1.5"><ProgressBar value={job.progress} label={job.label} /></div>}
+      {(job.progress !== null || video) && <div className="mt-1.5"><ProgressBar value={job.progress} label={video ? "Recording progress" : job.label} testid={video ? "video-progress" : undefined} /></div>}
     </div>
   );
 }
 
-/** Over the map, when the Export step isn't showing (or the view from the tee is). */
-export function ExportProgressPill({ top }: { top?: number }) {
+/** Over the map, when the Export step isn't showing (or the view from the tee is): at the top, or
+ * `bottom` px from the bottom (a phone's tee view, its card along the top). */
+export function ExportProgressPill({ top, bottom }: { top?: number; bottom?: number }) {
   const job = useExportJob(s => s.job);
   const elsewhere = useEditor(s => s.step !== "export" || !!s.teeView);
   if (!job || !elsewhere) return null;
+  const at = bottom !== undefined ? { top: "auto", bottom } : top !== undefined ? { top } : undefined;
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 w-[300px] max-w-[calc(100%-16px)] glass backdrop-blur border border-white/[0.12] rounded-xl px-3 py-2 shadow-2xl text-zinc-100" style={top !== undefined ? { top } : undefined} data-testid="export-progress-pill">
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 w-[300px] max-w-[calc(100%-16px)] glass backdrop-blur border border-white/[0.12] rounded-xl px-3 py-2 shadow-2xl text-zinc-100" style={at} data-testid="export-progress-pill">
       <div className="flex items-center gap-2 text-xs">
         <Loader2 size={14} className="animate-spin text-orange-300 shrink-0" />
         <span className="flex-1 min-w-0 truncate font-semibold">{job.label}</span>

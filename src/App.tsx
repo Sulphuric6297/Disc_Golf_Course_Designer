@@ -27,19 +27,22 @@ import { Button, HELP_EVENT } from "./components/ui";
 import { GettingStarted, openGettingStarted } from "./components/GettingStarted";
 import { useLayout, useTouch } from "./components/useLayout";
 import { CompactShell, GroundMenu, ItemMenu } from "./components/mobile/CompactShell";
-import { useCourse, useEditor, getDoc, changeDoc, updateItem } from "./state/course";
-import { bendHoleAt, placeAt, canPaste, copySelection, cutSelection, deleteSelection, duplicateSelection, markObBeyond, nudgeSelection, pasteClipboard, select, selectAll } from "./state/actions";
+import { useCourse, useEditor, getDoc, changeDoc } from "./state/course";
+import { copySelection, cutSelection, deleteSelection, duplicateSelection, nudgeSelection, pasteClipboard, select, selectAll } from "./state/actions";
+import { groundActions, itemActions, type ItemAction } from "./components/itemActions";
+import { allowed } from "./auth/perms";
 import { osmFailedToast } from "./state/osm";
 import { restoreAutosave, startAutosave } from "./state/files";
 import { toast, useToasts } from "./state/toast";
 import { courseStats, holeStats } from "./lib/holeStats";
-import { fromMaps, isImported, reframeDesign, type ImportedSite } from "./lib/importSite";
-import { holeLabel } from "./lib/course";
+import { freshOnly, fromMaps, isImported, reframeDesign, type ImportedSite } from "./lib/importSite";
 import { geoRefOf, reframe } from "./lib/geoRef";
 import { Woods } from "./components/Woods";
-import type { CourseItem, P } from "./types";
+import type { CourseDoc, CourseItem, P } from "./types";
 
 const NO_TOASTS: ReturnType<typeof useToasts.getState>["toasts"] = [];
+/** The keys that only look (all a view-only course has), by `key` upper-cased. */
+const VIEW_KEYS = ["2", "3", "0", "F", "Q", "E", "N", "+", "=", "-", "_", "[", "]", "ENTER", "?", "/", "ESCAPE"];
 function Toasts({ bottom }: { bottom?: number }) {
   // (a Courses page up over the editor: its own show them)
   const paged = usePageToasts(s => s.on);
@@ -56,9 +59,9 @@ function Toasts({ bottom }: { bottom?: number }) {
       {toasts.map(t => (
         <div key={t.id} role="status" className={`pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-2.5 touch:py-3 shadow-2xl text-sm max-w-[560px] border ${t.tone === "error" ? "bg-red-950 border-red-800 text-red-100" : t.tone === "success" ? "bg-emerald-950 border-emerald-800 text-emerald-50" : "glass border-white/[0.12] text-zinc-100"}`}>
           <span className={bottom !== undefined ? "text-[13px] leading-snug line-clamp-3" : undefined}>{t.text}</span>
-          {t.undo && <button className="font-bold text-orange-300 hover:text-orange-200 touch:min-h-[40px]" onClick={() => { undo(); dismiss(t.id); }}>Undo</button>}
-          {t.action && <button className="font-bold text-orange-300 hover:text-orange-200 whitespace-nowrap touch:min-h-[40px]" onClick={() => { t.action!.run(); dismiss(t.id); }}>{t.action.label}</button>}
-          <button aria-label="Dismiss" className="text-zinc-400 hover:text-zinc-50 touch:w-9 touch:h-9 touch:-mr-2 touch:flex touch:items-center touch:justify-center shrink-0" onClick={() => dismiss(t.id)}><X size={14} /></button>
+          {t.undo && <button className="font-bold text-orange-300 hover:text-orange-200 touch:min-h-[44px]" onClick={() => { undo(); dismiss(t.id); }}>Undo</button>}
+          {t.action && <button className="font-bold text-orange-300 hover:text-orange-200 whitespace-nowrap touch:min-h-[44px]" onClick={() => { t.action!.run(); dismiss(t.id); }}>{t.action.label}</button>}
+          <button aria-label="Dismiss" className="text-zinc-400 hover:text-zinc-50 touch:w-11 touch:h-11 touch:-mr-3 touch:-my-2 touch:flex touch:items-center touch:justify-center shrink-0" onClick={() => dismiss(t.id)}><X size={14} /></button>
         </div>
       ))}
     </div>
@@ -66,6 +69,7 @@ function Toasts({ bottom }: { bottom?: number }) {
 }
 
 
+/** A right-click on the map: the same rows as a finger held on a phone's (`itemActions`). */
 function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: number; itemId: string | null; ground: P | null; under?: string | null }; onClose: () => void }) {
   const doc = getDoc();
   const hole = doc.holes.find(h => h.id === info.itemId);
@@ -95,59 +99,24 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
   // and what the tree stands over, to pick instead)
   const readOnly = useCourse.getState().readOnly;
   const trees = readOnly ? [] : treesAt(info.clientX, info.clientY, info.ground);
-  const tree = trees[0] ?? null;
-  const under = tree ? underAction(doc, info.under) : null;
-  // On open ground: what can start there (a tee or pin for the hole being worked on, a turn in
-  // its line, a new hole, measuring), as a long press on a phone's map offers
-  const ed = useEditor.getState();
-  const working = !hole && !item && info.ground && !readOnly ? doc.holes.find(h => h.id === (ed.activeHoleId ?? ed.selectedId)) : undefined;
+  const under = trees.length ? underAction(doc, info.under) : null;
+  // The thing's own rows (the same list as a phone's), or on open ground what can start there
   // (not on a tree standing over something: that's the tree's menu)
-  const here = !hole && !item && !info.under && !!info.ground && !readOnly && ed.step === "design";
-  if (!hole && !item && !tree && !here && !(canPaste() && info.ground)) return null;
+  const rows = hole || item ? itemActions(info.itemId!, info.ground, trees.length > 0) : [];
+  const ground = !hole && !item && info.ground ? groundActions(info.ground, !info.under) : null;
+  const here = !!ground && !info.under && !readOnly && useEditor.getState().step === "design";
+  if (!rows.length && !trees.length && !ground?.rows.length) return null;
   const row = "w-full text-left px-3 py-1.5 touch:py-3 touch:text-[15px] text-sm text-zinc-200 hover:bg-white/[0.09]";
-  const toolThen = (tool: "add-hole" | "measure", then: (p: P) => void) => () => {
-    useEditor.getState().set({ tool });
-    const p = info.ground!;
-    requestAnimationFrame(() => requestAnimationFrame(() => then(p)));
-    onClose();
-  };
   const run = (fn: () => void) => () => { fn(); onClose(); };
-  const holeId = hole?.id ?? (item && "holeId" in item ? item.holeId : undefined);
-  // (on one of the things picked together: for all of them)
-  const group = useEditor.getState().group;
-  const inGroup = !!item && group.includes(item.id);
-  // (copied: said, with how to paste it)
-  const copy = () => { if (!inGroup) select(info.itemId); if (copySelection()) toast("Copied. Ctrl+V pastes it where the pointer is, or right-click and Paste here."); };
-  const done = !!holeId && holeStats(doc, doc.holes.find(h => h.id === holeId)!).complete;
+  const button = (a: ItemAction) => <button key={a.label} className={`${row} ${a.danger ? "text-red-300" : ""}`} role="menuitem" onClick={run(a.run)} data-testid={a.testid}>{a.label}</button>;
   return (
     <div ref={box} className="fixed z-50 w-52 touch:w-56 max-h-[calc(100dvh-16px)] overflow-y-auto glass-solid rounded-xl touch:rounded-2xl shadow-xl shadow-black/40 ring-1 ring-white/10 py-1" style={at ?? { left: info.clientX, top: info.clientY, visibility: "hidden" }} role="menu" onPointerDown={e => e.stopPropagation()} data-testid="map-menu">
-      {here && (
-        <div className={trees.length || canPaste() ? "border-b border-white/[0.08] mb-1 pb-1" : ""} data-testid="map-menu-here">
-          {working && <div className="px-3 pt-1 pb-0.5 text-[11px] text-zinc-500">Hole {holeLabel(doc, working.id)}</div>}
-          {working && <button className={row} role="menuitem" onClick={run(() => placeAt("add-tee", info.ground!))}>Add a tee here</button>}
-          {working && <button className={row} role="menuitem" onClick={run(() => placeAt("add-basket", info.ground!))}>Add a pin here</button>}
-          {working && holeStats(doc, working).complete && <button className={row} role="menuitem" onClick={run(() => bendHoleAt(working.id, info.ground!))}>Bend the hole here</button>}
-          <button className={row} role="menuitem" onClick={toolThen("add-hole", p => getView()?.toolPoint(p))}>New hole, tee here</button>
-          <button className={row} role="menuitem" onClick={toolThen("measure", p => getView()?.measureFrom(p))}>Measure from here</button>
+      {ground && ground.rows.length > 0 && (
+        <div className={trees.length ? "border-b border-white/[0.08] mb-1 pb-1" : ""} data-testid={here ? "map-menu-here" : undefined}>
+          {ground.hole && <div className="px-3 pt-1 pb-0.5 text-[11px] text-zinc-500">{ground.hole}</div>}
+          {ground.rows.map(button)}
         </div>
       )}
-      {holeId && done && (
-        <>
-          {/* (a tee: the view from that one, whatever color the layout plays) */}
-          <button className={row} role="menuitem" onClick={run(() => useEditor.getState().set({ teeView: holeId, teeViewTee: item?.type === "tee" ? item.id : null, flyover: false }))}>{item?.type === "tee" ? "View from this tee" : "View from the tee"}</button>
-          <button className={row} role="menuitem" onClick={run(() => useEditor.getState().set({ teeView: holeId, flyover: true }))}>Fly over the hole</button>
-        </>
-      )}
-      {/* (on the hole's own line: a turn in it there) */}
-      {hole && done && info.ground && !readOnly && <button className={row} role="menuitem" onClick={run(() => bendHoleAt(hole.id, info.ground!))}>Bend the hole here</button>}
-      {item && (item.type === "area" && item.kind !== "ob" || item.type === "line" && item.kind !== "ob" && item.kind !== "walk") && (
-        <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, (item.ob === true ? { ob: undefined, obBeyond: undefined, obHoles: undefined, obStretches: undefined } : { ob: true }) as Partial<CourseItem>))}>{item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)"}</button>
-      )}
-      {item?.type === "line" && item.kind !== "ob" && item.kind !== "walk" && !(item.ob === true && item.obBeyond) && <button className={row} role="menuitem" onClick={run(() => markObBeyond(item.id))}>Mark as OB and beyond</button>}
-      {item && (item.type === "line" && item.kind !== "ob" && item.kind !== "walk" || item.type === "area" && item.kind !== "ob") && info.ground && (
-        <button className={row} role="menuitem" onClick={run(() => { getView()?.startObPick(item.id, info.ground!); useEditor.getState().set({ obPick: item.id, pickCut: false, tool: "select" }); })}>{item.type === "area" ? "OB along the edge from here" : "OB stretch from here"}</button>
-      )}
-      {item?.type === "line" && !item.locked && info.ground && <button className={row} role="menuitem" onClick={run(() => { getView()?.startObPick(item.id, info.ground!, true); useEditor.getState().set({ obPick: item.id, pickCut: true, tool: "select" }); })}>Remove a stretch from here</button>}
       {trees.map((t, n) => {
         const label = treeTitle(doc, t);
         return (
@@ -158,18 +127,37 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
         );
       })}
       {under && <button className={`${row} border-t border-white/[0.08]`} role="menuitem" onClick={run(under.run)} data-testid={under.testid}>{under.label}</button>}
-      {(hole || item) && <button className={row} role="menuitem" onClick={run(copy)}>{inGroup ? `Copy ${group.length}` : "Copy"}</button>}
-      {canPaste() && info.ground && <button className={row} role="menuitem" onClick={run(() => pasteClipboard(info.ground))}>Paste here</button>}
-      {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); duplicateSelection(); })}>{inGroup ? `Duplicate ${group.length}` : "Duplicate"}</button>}
-      {item && !inGroup && <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, { locked: !item.locked } as Partial<CourseItem>))}>{item.locked ? "Unlock" : "Lock in place"}</button>}
-      {(hole || item) && <button className={`${row} text-red-300`} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); deleteSelection(); })}>{inGroup ? `Delete ${group.length}` : "Delete"}</button>}
+      {rows.length > 0 && <div className={trees.length ? "border-t border-white/[0.08] mt-1 pt-1" : ""}>{rows.map(button)}</div>}
     </div>
   );
 }
 
+/** What an import brought, for its toast (": photo, ground, 1,329 measured trees and 42 shapes
+ * from OpenStreetMap"; the parts that didn't come left out, nothing when none did). */
+function cameIn(site: ImportedSite) {
+  const many = (n: number, one: string) => `${n.toLocaleString()} ${n === 1 ? one : `${one}s`}`;
+  const from = (i: CourseItem) => (i as { importSource?: string }).importSource;
+  const parts: string[] = [];
+  if (site.background) parts.push(/^OpenStreetMap/.test(site.site.imagerySource ?? "") ? "street map" : "photo");
+  if (Object.keys(site.terrainHeights).length) parts.push("ground");
+  const measured = site.lidar?.trees.length ?? 0;
+  if (measured) parts.push(many(measured, "measured tree"));
+  const photoTrees = site.trees.length, photoAreas = site.mapped.filter(i => from(i) === "photo").length;
+  if (photoTrees || photoAreas) parts.push(`${[photoTrees ? many(photoTrees, "tree") : "", photoAreas ? many(photoAreas, "area") : ""].filter(Boolean).join(" and ")} from the photo`);
+  const osm = site.mapped.filter(i => from(i) === "osm").length;
+  if (osm) parts.push(`${many(osm, "shape")} from OpenStreetMap`);
+  const traced = site.mapped.filter(i => from(i) === "traced").length;
+  if (traced) parts.push(`${many(traced, "building")} traced from the air`);
+  if (!parts.length) return "";
+  if (parts.length === 1) return `: ${parts[0]}`;
+  // (a comma before the last "and" when a part has one of its own)
+  const and = parts.some(p => p.includes(" and ")) ? ", and " : " and ";
+  return `: ${parts.slice(0, -1).join(", ")}${and}${parts[parts.length - 1]}`;
+}
+
 /** Ctrl+S: saved now (a draft into its history too), and said so. */
 function saveByHand() {
-  if (!SERVER) { toast("Saved. Your work saves by itself in this browser.", "success"); return; }
+  if (!SERVER) { toast("Saved in this browser.", "success"); return; }
   if (useCourse.getState().readOnly) { toast("This course is view only.", "info"); return; }
   const draft = inDraft();
   void (draft ? saveDraftAs("") : saveNow()).then(
@@ -182,6 +170,8 @@ export default function App() {
   const ed = useEditor();
   // (view only: no tools to change the course with)
   const readOnly = useCourse(s => s.readOnly);
+  // (and none left chosen: the map acts as Select for a viewer)
+  useEffect(() => { if (readOnly && useEditor.getState().tool !== "select") useEditor.getState().set({ tool: "select", dragSelect: false }); }, [readOnly]);
   const layout = useLayout();
   const doc = useCourse(s => s.doc);
   const [findSite, setFindSite] = useState(false);
@@ -232,15 +222,14 @@ export default function App() {
       // (the trees cut down stay cut, on the same spot on the ground)
       cutTrees: from && site.site.bounds ? d.cutTrees?.map(reframe(from, { ...site.site.bounds, ...site.canvas })) : d.cutTrees,
       holes: carried.holes,
-      items: [...carried.items, ...site.mapped, ...site.trees],
+      items: [...carried.items, ...freshOnly(carried.items, [...site.mapped, ...site.trees])],
       lidar: site.lidar
     }));
     setFindSite(false);
     useEditor.getState().set({ step: "design", tool: "select" });
     setTimeout(() => getView()?.fitSite(), 50);
     const outside = carried.outside ? ` ${carried.outside} ${carried.outside === 1 ? "thing you drew is" : "things you drew are"} now past the site's edges.` : "";
-    // (what came in is listed on the Site step)
-    toast(`Site brought in.${outside}`, "success", false, { label: "View in 3D", run: () => useEditor.getState().set({ view: "3d" }) }, 12000);
+    toast(`Site brought in${cameIn(site)}.${outside}`, "success", false, { label: "View in 3D", run: () => useEditor.getState().set({ view: "3d" }) }, 12000);
     if (site.osmFailed) osmFailedToast();
   };
 
@@ -250,7 +239,11 @@ export default function App() {
     let pointed: Element | null = null;
     const onPointer = (e: PointerEvent) => { pointed = e.target as Element; };
     window.addEventListener("pointerdown", onPointer, true);
+    // (the last arrow nudge: the next one soon after joins its undo step)
+    let nudged: { doc: CourseDoc; at: number } | null = null;
     const onKey = (e: KeyboardEvent) => {
+      // (a dialog open over everything, the help guide say: its keys, except ? and Esc)
+      if (document.querySelector('[aria-modal="true"]') && e.key !== "?" && e.key !== "Escape") return;
       const target = e.target as HTMLElement;
       // Keys go to text fields; sliders, checkboxes and color pickers keep the shortcuts (except
       // the keys a slider uses itself)
@@ -263,13 +256,16 @@ export default function App() {
       // (AltGr, which types [ and ] on many keyboards, comes as Ctrl+Alt on Windows: not a shortcut)
       const mod = (e.ctrlKey || e.metaKey) && !(e.ctrlKey && e.altKey) && !e.getModifierState?.("AltGraph");
       if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); setGoTo(g => !g); return; }
+      // (view only: only the keys that look; Ctrl+S says it's view only)
+      const viewOnly = useCourse.getState().readOnly;
+      if (viewOnly && mod && e.key.toLowerCase() !== "s") return;
       // (while drawing, the last point first, as Backspace does)
       if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) useCourse.getState().redo(); else if (!view?.undoPoint()) useCourse.getState().undo(); return; }
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); useCourse.getState().redo(); return; }
       // (Ctrl+S: your draft saved now, into the history; out of a draft, saved now)
       if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); saveByHand(); return; }
       if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (s.step !== "map") duplicateSelection(); return; }
-      if (mod && e.key.toLowerCase() === "c" && !s.teeView && s.step !== "map") { if (copySelection()) { e.preventDefault(); toast("Copied. Ctrl+V pastes it where the pointer is."); } return; }
+      if (mod && e.key.toLowerCase() === "c" && !s.teeView && s.step !== "map") { if (copySelection()) { e.preventDefault(); toast("Copied."); } return; }
       if (mod && e.key.toLowerCase() === "x" && !s.teeView && s.step !== "map") { e.preventDefault(); cutSelection(); return; }
       // (where the pointer is over the map; off it, next to where it was copied from)
       if (mod && e.key.toLowerCase() === "v" && !s.teeView && s.step !== "map") { e.preventDefault(); s.set({ tool: "select" }); pasteClipboard(view?.pointerGround()); return; }
@@ -290,11 +286,14 @@ export default function App() {
         }
         return;
       }
+      if (viewOnly && !VIEW_KEYS.includes(e.key.toUpperCase())) return;
+      // (Esc, a step at a time: the drawing, the tool, the selection, box select, the checks)
       if (e.key === "Escape") {
         if (view?.cancelDrawing()) return;
-        if (s.problemsOpen) { s.set({ problemsOpen: false }); return; }
         if (s.tool !== "select") { s.set({ tool: "select" }); return; }
         if (s.selectedId || s.group.length) { select(null); return; }
+        if (s.dragSelect) { s.set({ dragSelect: false }); return; }
+        if (s.problemsOpen) { s.set({ problemsOpen: false }); return; }
         return;
       }
       if (e.key === "Enter") {
@@ -323,14 +322,23 @@ export default function App() {
       if (e.key.startsWith("Arrow") && (s.selectedId || s.group.length)) {
         e.preventDefault();
         const step = e.shiftKey ? 10 : 1;
+        const before = useCourse.getState().doc;
         nudgeSelection(e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0, e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0);
+        // (nudges in quick succession are one undo step, back to where the first began)
+        const c = useCourse.getState();
+        if (c.doc !== before) {
+          const now = performance.now();
+          if (nudged && nudged.doc === before && now - nudged.at < 800 && c.past[c.past.length - 1] === before) useCourse.setState({ past: c.past.slice(0, -1) });
+          nudged = { doc: c.doc, at: now };
+        }
         return;
       }
       if (e.key === "?") { setHelp(h => (h ? false : {})); return; }
       if (e.key === "/") { e.preventDefault(); setGoTo(true); return; }
       if ((e.key === "[" || e.key === "]") && s.step !== "map") { stepHole(e.key === "[" ? -1 : 1); return; }
-      if (e.key === "2") { s.set({ view: "2d" }); return; }
-      if (e.key === "3") { s.set({ view: "3d" }); return; }
+      // (a viewer only to the views they may)
+      if (e.key === "2") { if (allowed("map")) s.set({ view: "2d" }); return; }
+      if (e.key === "3") { if (allowed("view3d")) s.set({ view: "3d" }); return; }
       if (e.key === "0") { view?.fitCourse(); return; }
       if (e.key === "+" || e.key === "=") { view?.zoomBy(1.4); return; }
       if (e.key === "-" || e.key === "_") { view?.zoomBy(1 / 1.4); return; }

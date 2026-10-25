@@ -1,6 +1,6 @@
 // The Design step's map style: pick one of the styles, then change any part of the map on its own
 // (its trees, grass, fairways, paths and roads, water and light), each choice shown as a picture.
-// A part changed shows a dot, and the style card says "Mixed"; each part goes back to its style's
+// A part changed shows a dot, and the style card says "Changed"; each part goes back to its style's
 // own in one click. Each part's colors are the course's own: kept when the style changes.
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight, RotateCcw } from "lucide-react";
@@ -10,7 +10,7 @@ import { LIGHT_MODES, LOOK_THEMES, PART_CHOICES, compassName, latitudeOf, lightO
 import { useCourse } from "../state/course";
 import type { MapStyle, PathTier } from "../types";
 import { ELEVATION_LOOKS, FineTuning, setStyle, WoodsOptions } from "./DesignPanel";
-import { ColorInput, Slider, useKeepInPlace } from "./ui";
+import { ColorInput, Slider, Toggle, useKeepInPlace } from "./ui";
 import { SHOW_EVENT } from "./showSetting";
 
 /** A slider that changes the map when let go (painting takes a moment). */
@@ -61,8 +61,8 @@ function PathOrder({ s }: { s: MapStyle }) {
       {top.map((t, i) => (
         <div key={t} className="flex items-center gap-2 px-2 py-1.5 rounded-md glass mb-1">
           <span className="text-xs text-zinc-200 flex-1">{TIER_LABEL[t]}</span>
-          <button className="p-1 rounded text-zinc-400 hover:text-zinc-100 disabled:opacity-30" disabled={i === 0} aria-label={`Move ${TIER_LABEL[t]} up`} onClick={() => move(t, -1)}><ArrowUp size={13} /></button>
-          <button className="p-1 rounded text-zinc-400 hover:text-zinc-100 disabled:opacity-30" disabled={i === top.length - 1} aria-label={`Move ${TIER_LABEL[t]} down`} onClick={() => move(t, 1)}><ArrowDown size={13} /></button>
+          <button className="p-1 touch:w-11 touch:h-11 touch:-my-1.5 flex items-center justify-center rounded text-zinc-400 hover:text-zinc-100 disabled:opacity-30" disabled={i === 0} aria-label={`Move ${TIER_LABEL[t]} up`} onClick={() => move(t, -1)}><ArrowUp size={13} /></button>
+          <button className="p-1 touch:w-11 touch:h-11 touch:-my-1.5 flex items-center justify-center rounded text-zinc-400 hover:text-zinc-100 disabled:opacity-30" disabled={i === top.length - 1} aria-label={`Move ${TIER_LABEL[t]} down`} onClick={() => move(t, 1)}><ArrowDown size={13} /></button>
         </div>
       ))}
     </div>
@@ -77,6 +77,8 @@ const DEF = defaultStyle();
 const LIGHT_KEYS = ["sunHeight", "shadows", "light", "contrast", "colorStrength", "paint"] as const;
 const LIGHT_RESET: Partial<MapStyle> = { lightMode: undefined, goldenSun: undefined, sunFrom: undefined, sunHeight: undefined, shadows: undefined, light: undefined, contrast: undefined, colorStrength: undefined, paint: undefined };
 const ELEVATION_RESET: Partial<MapStyle> = { hillshade: true, reliefLook: undefined, reliefScale: undefined };
+/** The woods' own settings beside the tree style (pines, where to paint them, how thick). */
+const WOODS_RESET: Partial<MapStyle> = { conifers: undefined, treeCover: DEF.treeCover, forest: DEF.forest };
 /** Each part's color on the map (its field in the style), and its own color's label. */
 const COLOR_FIELD = { trees: "trees", grass: "rough", fairway: "fairway", paths: "path", water: "water" } as const;
 const COLOR_LABEL: Record<LookPart, string> = { trees: "Trees", grass: "Grass", fairway: "Fairway", paths: "Paths", water: "Water" };
@@ -142,15 +144,16 @@ export function MapLookPanel() {
     if (part === "elevation") { setStyle(ELEVATION_RESET); return; }
     const own = { ...s.lookParts };
     delete own[part];
-    setStyle({ lookParts: Object.keys(own).length ? own : undefined, ...(part === "paths" ? { pathOrder: undefined } : {}) });
+    setStyle({ lookParts: Object.keys(own).length ? own : undefined, ...(part === "paths" ? { pathOrder: undefined } : {}), ...(part === "trees" ? WOODS_RESET : {}) });
   };
   const pickTheme = (id: string) => setStyle({ mapLook: id === "classic" ? undefined : (id as MapStyle["mapLook"]), lookParts: undefined, lightMode: undefined, goldenSun: undefined });
   // (every part back to the style's own, in one undo step)
-  const resetAll = () => setStyle({ ...LIGHT_RESET, ...ELEVATION_RESET, lookParts: undefined, pathOrder: undefined });
+  const resetAll = () => setStyle({ ...LIGHT_RESET, ...ELEVATION_RESET, ...WOODS_RESET, lookParts: undefined, pathOrder: undefined });
   const current = (p: Part) => (p === "elevation" ? ELEVATION_LOOKS.find(l => l.id === relief)!.label : p === "light" ? LIGHT_MODES.find(m => m.id === lt.mode)!.label : (PART_CHOICES[p] as { id: string; label: string }[]).find(c => c.id === parts[p].style)?.label ?? "");
   const lightChanged = !!s.lightMode || s.goldenSun !== undefined || s.sunFrom !== undefined || LIGHT_KEYS.some(k => s[k] !== undefined && s[k] !== DEF[k]);
-  const changed = (p: Part) => (p === "elevation" ? relief !== "shaded" || (s.reliefScale ?? 1) !== 1 : p === "light" ? lightChanged : partChanged(s, p) || (p === "paths" && !!s.pathOrder));
-  // (the style card says Mixed when any part shows its dot; Reset all takes every dot away)
+  const woodsChanged = s.conifers !== undefined || (s.treeCover ?? DEF.treeCover) !== DEF.treeCover || (s.forest ?? DEF.forest) !== DEF.forest;
+  const changed = (p: Part) => (p === "elevation" ? relief !== "shaded" || (s.reliefScale ?? 1) !== 1 : p === "light" ? lightChanged : partChanged(s, p) || (p === "paths" && !!s.pathOrder) || (p === "trees" && woodsChanged));
+  // (the style card says Changed when any part shows its dot; Reset all takes every dot away)
   const mixed = PARTS.some(changed);
   const base = import.meta.env.BASE_URL;
   const painted = parts.trees.style !== "classic";
@@ -165,16 +168,15 @@ export function MapLookPanel() {
             <button key={t.id} role="radio" aria-checked={on} onClick={() => pickTheme(t.id)} title={t.hint} data-testid={`map-style-${t.id}`} className="group relative text-center rounded-[14px]">
               <img src={`${base}looks/${t.id}.jpg`} alt="" className={`block w-full aspect-[3/2] object-cover rounded-[14px] transition ${on ? "ring-[2.5px] ring-orange-400" : "ring-1 ring-white/15 group-hover:ring-white/35"}`} draggable={false} />
               <span className={`block pt-1.5 text-xs ${on ? "text-zinc-50 font-semibold" : "text-zinc-400"}`}>{t.label}</span>
-              {on && mixed && <span className="absolute top-1.5 right-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-black/55 backdrop-blur text-orange-200">Mixed</span>}
+              {on && mixed && <span className="absolute top-1.5 right-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-black/55 backdrop-blur text-orange-200">Changed</span>}
             </button>
           );
         })}
       </div>
-      <div className="text-[11px] text-zinc-500 mt-1.5 mb-3">{theme.hint}</div>
 
-      <div className="flex items-center justify-between mb-1.5">
+      <div className="flex items-center justify-between mb-1.5 mt-3">
         <div className="text-[12px] font-semibold text-zinc-400 px-1">Parts of the map</div>
-        {mixed && <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={resetAll} title="Every part back to the map style's own"><RotateCcw size={12} /> Reset all</button>}
+        {mixed && <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1 touch:py-2.5 touch:-my-2.5" onClick={resetAll} title="Every part back to the map style's own"><RotateCcw size={12} /> Reset all</button>}
       </div>
       <div className="rounded-[16px] bg-white/[0.06] overflow-hidden">
       {PARTS.map(p => {
@@ -195,8 +197,9 @@ export function MapLookPanel() {
                 {p === "elevation" ? (
                   <div>
                     <Thumbs label="Elevation" testid="elevation" items={ELEVATION_LOOKS.map(l => ({ id: l.id, label: l.label, img: `${base}relief/${l.id}.jpg`, on: relief === l.id, pick: () => setStyle(l.id === "off" ? { hillshade: false } : { hillshade: true, reliefLook: l.id === "shaded" ? undefined : l.id }) }))} />
-                    <div className="text-[11px] text-zinc-500 -mt-1 mb-2">{ELEVATION_LOOKS.find(l => l.id === relief)!.hint}</div>
                     {relief !== "off" && <LookSlider value={s.reliefScale ?? 1} label="Hills" min={0} max={3} step={0.05} format={x => (x === 0 ? "Flat" : `${x.toFixed(2).replace(/0$/, "")}×`)} onDone={v => setStyle({ reliefScale: v })} />}
+                    {/* (the Contours look draws its own lines) */}
+                    {relief !== "contours" && <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />}
                   </div>
                 ) : p === "light" ? (
                   <>
@@ -234,7 +237,7 @@ export function MapLookPanel() {
                     {p === "paths" && <PathOrder s={s} />}
                   </>
                 )}
-                {changed(p) && <button className="mt-2 text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => resetPart(p)} title="The map style's own again" data-testid="part-reset"><RotateCcw size={12} /> Reset</button>}
+                {changed(p) && <button className="mt-2 text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1 touch:py-2.5" onClick={() => resetPart(p)} title="The map style's own again" data-testid="part-reset"><RotateCcw size={12} /> Reset</button>}
               </div>
             )}
           </div>

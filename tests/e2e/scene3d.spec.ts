@@ -27,8 +27,10 @@ test("3D: a sky when tilted (none looking straight down), lit by the course's su
   expect(sun0.y).toBeGreaterThan(0.5);
   await page.keyboard.press("3");
   await expect.poll(async () => (await scene(page)).sky).toBe(true);
-  // The light is the course map's: the View panel names it and goes there (no second set of sliders)
+  // The light is the course map's: the View panel has the sun's direction and the shadows, and goes
+  // there for the rest (no second Sun height)
   await page.getByTestId("scene-button").click();
+  await expect(page.getByTestId("view-light").getByLabel("Shadows")).toBeVisible();
   await expect(page.getByTestId("scene-panel").getByLabel("Sun height")).toHaveCount(0);
   await page.getByTestId("light-link").click();
   await expect.poll(async () => (await editorState(page)).step).toBe("map");

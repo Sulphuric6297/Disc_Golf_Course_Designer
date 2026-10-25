@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
-import { test, expect, addHole, blankCourse, editorState } from "./fixtures";
+import { test, expect, addHole, blankCourse, course, editorState } from "./fixtures";
 import { VIDEO_HOLD, avcCodec, videoBitrate, videoSuffix, videoTimeline, vp9Codec } from "../../src/lib/video";
 import { flightClock } from "../../src/lib/flight";
 
@@ -60,11 +60,12 @@ test("record a hole's flyover from the Export step: progress, then a real video 
   await expect(section.getByTestId("video-record")).toHaveText(/Record hole 1/);
   const downloading = page.waitForEvent("download", { timeout: 380_000 });
   await section.getByTestId("video-record").click();
-  // The progress bar moves while the frames are made, and only one export runs at a time
-  await expect(section.getByTestId("video-progress")).toBeVisible();
+  // The progress bar (in the banner at the top of the step) moves while the frames are made, and
+  // only one export runs at a time
+  await expect(page.getByTestId("export-busy").getByTestId("video-progress")).toBeVisible();
   await expect(page.getByTestId("export-map-svg")).toBeDisabled();
   // (after the ground is painted: the whole site's, then the hole's sharper)
-  await expect.poll(async () => Number(await section.getByTestId("video-progress").getAttribute("aria-valuenow")), { timeout: 120_000 }).toBeGreaterThan(5);
+  await expect.poll(async () => Number(await page.getByTestId("video-progress").getAttribute("aria-valuenow")), { timeout: 120_000 }).toBeGreaterThan(5);
   const download = await downloading;
   // (a 6 s flight plays for longer: it gets going and slows to a stop gently)
   const plays = flightClock(6, true).play;
@@ -81,10 +82,27 @@ test("record a hole's flyover from the Export step: progress, then a real video 
   expect(video.duration).toBeGreaterThan(plays + VIDEO_HOLD.intro);
   expect(video.duration).toBeLessThan(plays + VIDEO_HOLD.intro + VIDEO_HOLD.outro + 0.5);
   // Done: the progress is gone, the Record button is back and the map view is as it was
-  await expect(section.getByTestId("video-progress")).toBeHidden();
+  await expect(page.getByTestId("video-progress")).toBeHidden();
   await expect(section.getByTestId("video-record")).toBeEnabled();
   expect(await page.evaluate(() => (window as any).__dgView.flyProgress())).toBeNull();
   expect((await editorState(page)).teeView).toBeNull();
+});
+
+test("from the Export step's video: Fly over flies the hole picked, the camera's settings open in its view from the tee", async ({ page }) => {
+  test.setTimeout(180_000);
+  await twoHoles(page, [160, 90]);
+  const second = (await course(page)).holes[1].id;
+  const tee = () => page.evaluate(() => { const e = (window as any).__dgEditor(); return [e.teeView, e.flyover, !!e.teeSettings]; });
+  await page.getByRole("button", { name: "4 Export" }).click();
+  const section = page.getByTestId("video-export");
+  await section.getByTestId("video-holes").selectOption({ label: "Hole 2" });
+  await section.getByTestId("video-camera-settings").click();
+  await expect.poll(tee).toEqual([second, false, true]);
+  await expect(page.getByTestId("flyover-settings")).toBeVisible();
+  await page.evaluate(() => (window as any).__dgEditor().set({ teeView: null }));
+  await expect.poll(tee).toEqual([null, false, false]);
+  await page.getByTestId("video-export").getByTestId("video-fly").click();
+  await expect.poll(tee).toEqual([second, true, false]);
 });
 
 test("cancel stops a recording, and leaving the Export step doesn't", async ({ page }) => {

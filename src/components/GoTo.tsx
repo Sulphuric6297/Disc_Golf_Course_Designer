@@ -1,7 +1,7 @@
 // Search (Ctrl+K): a hole, a step, a tool, a named thing on the map, or any setting or feature in
 // the guide, found by typing; picked, it takes you there (a setting: opened and pointed at).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BookOpen, Hash, MapPin, Search, SlidersHorizontal, Wrench, Zap } from "lucide-react";
+import { BookOpen, Hash, MapPin, Search, SlidersHorizontal, X, Zap } from "lucide-react";
 import { SECTIONS, TOPICS } from "../lib/guide";
 import { SERVER } from "../auth/api";
 import { showSetting } from "./showSetting";
@@ -13,13 +13,15 @@ import { fmtDist } from "../lib/units";
 import { select } from "../state/actions";
 import { useCourse, useEditor } from "../state/course";
 import { getView } from "../state/view";
-import { STEPS } from "./SidePanel";
+import { STEPS, STEP_ICONS } from "./SidePanel";
 import { TOOLS, drawChoice, pickTool } from "./Toolbar";
 import type { CourseItem } from "../types";
 
 /** `find`: what typing matches (its name, not its figures); `nums`: a hole's numbers, first when
  * typed; `rank`: ties go to holes and steps first, then tools, then settings. */
-type Entry = { key: string; text: string; find: string; sub?: string; icon: ReactNode; run: () => void; nums?: string[]; rank?: number };
+type Entry = { key: string; text: string; find: string; sub?: string; keyed?: boolean; icon: ReactNode; run: () => void; nums?: string[]; rank?: number };
+/** `keyed`: `sub` is its key (left out on a touch screen). A tool's own icon, at the list's size. */
+const SMALL = "flex [&>svg]:w-[15px] [&>svg]:h-[15px] [&>span]:scale-90";
 
 /** Going to something on the map: the Design step, where the map is to work on (the Map and
  * Export steps show the printed page over it). */
@@ -38,6 +40,7 @@ const named = (i: CourseItem): { name: string; kind: string } | null => {
 
 export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: (topic?: string) => void }) {
   const doc = useCourse(s => s.doc);
+  const readOnly = useCourse(s => s.readOnly);
   const [q, setQ] = useState("");
   const [at, setAt] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -55,20 +58,24 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: (topic?
         run: () => { toMap(); select(h.id); requestAnimationFrame(() => getView()?.fitHole(h.id)); }
       });
     });
-    STEPS.forEach((s, i) => out.push({ key: `step:${s.id}`, text: s.label, find: s.label, sub: `Step ${i + 1}`, icon: <MapPin size={15} />, run: () => useEditor.getState().set({ step: s.id, tool: "select", teeView: null, flyover: false }) }));
-    for (const t of TOOLS) {
-      out.push({ key: `tool:${t.id}`, text: t.short, find: `${t.short} ${t.label}`, sub: t.key, icon: <Wrench size={15} />, run: () => { toMap(); pickTool(t); } });
+    STEPS.forEach((s, i) => {
+      const Icon = STEP_ICONS[s.id];
+      out.push({ key: `step:${s.id}`, text: s.label, find: s.label, sub: `Step ${i + 1}`, icon: <Icon size={15} />, run: () => useEditor.getState().set({ step: s.id, tool: "select", teeView: null, flyover: false }) });
+    });
+    // (the tools, with their own icons; none for a course that's only for viewing)
+    for (const t of readOnly ? [] : TOOLS) {
+      out.push({ key: `tool:${t.id}`, text: t.short, find: `${t.short} ${t.label}`, sub: t.key, keyed: true, icon: <span className={SMALL}>{t.icon}</span>, run: () => { toMap(); pickTool(t); } });
       // (and each thing it has, by its own name: "fence" finds Build's Fence)
-      for (const c of t.choices ?? []) out.push({ key: `tool:${t.id}:${c.id}`, text: c.label, find: c.label, sub: t.short, icon: <Wrench size={15} />, run: () => { toMap(); drawChoice(c); } });
+      for (const c of t.choices ?? []) out.push({ key: `tool:${t.id}:${c.id}`, text: c.label, find: c.label, sub: t.short, icon: <span className={SMALL}>{c.icon ?? t.icon}</span>, run: () => { toMap(); drawChoice(c); } });
     }
     for (const i of doc.items) {
       const n = named(i);
       if (n) out.push({ key: `item:${i.id}`, text: n.name, find: `${n.name} ${n.kind}`, sub: n.kind, icon: <MapPin size={15} />, run: () => { toMap(); select(i.id); requestAnimationFrame(() => getView()?.reveal(i.id)); } });
     }
     out.push(
-      { key: "act:fit", text: "Whole course", find: "whole course fit", sub: "0", icon: <Zap size={15} />, run: () => { toMap(); requestAnimationFrame(() => getView()?.fitCourse()); } },
+      { key: "act:fit", text: "Whole course", find: "whole course fit", sub: "0", keyed: true, icon: <Zap size={15} />, run: () => { toMap(); requestAnimationFrame(() => getView()?.fitCourse()); } },
       { key: "act:start", text: "Getting started", find: "getting started tutorial tour learn basics checklist show me around new", icon: <BookOpen size={15} />, run: openGettingStarted },
-      { key: "act:help", text: "Help guide", find: "help guide manual how to keyboard shortcuts", sub: "?", icon: <BookOpen size={15} />, run: () => onHelp() }
+      { key: "act:help", text: "Help guide", find: "help guide manual how to keyboard shortcuts", sub: "?", keyed: true, icon: <BookOpen size={15} />, run: () => onHelp() }
     );
     // Every setting and feature (from the guide): there and pointed at, or its page in the guide
     const section = (id: string) => SECTIONS.find(s => s.id === id)?.title ?? "";
@@ -81,7 +88,7 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: (topic?
       });
     }
     return out;
-  }, [doc, onHelp]);
+  }, [doc, onHelp, readOnly]);
 
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -130,6 +137,7 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: (topic?
             className="flex-1 bg-transparent py-3 text-[15px] text-zinc-100 placeholder:text-zinc-500 focus:outline-none touch:text-base"
           />
           <kbd className="text-[10px] text-zinc-500 border border-white/[0.12] rounded px-1.5 py-0.5 touch:hidden">Esc</kbd>
+          <button className="hidden touch:flex w-11 h-11 -mr-2 shrink-0 items-center justify-center rounded-full text-zinc-400 active:bg-white/[0.09]" aria-label="Close" onClick={onClose} data-testid="goto-close"><X size={18} /></button>
         </div>
         <ul ref={list} className="max-h-[50vh] overflow-y-auto py-1" role="listbox" aria-label="Results">
           {shown.length === 0 && <li className="px-4 py-3 text-sm text-zinc-500" data-testid="goto-empty">Nothing matches that. Try a hole number, a tool or a setting.</li>}
@@ -139,7 +147,7 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: (topic?
               className={`flex items-center gap-2.5 px-3 py-2 touch:py-3 cursor-pointer ${i === at ? "bg-orange-500/15 text-zinc-50" : "text-zinc-300"}`}>
               <span className={i === at ? "text-orange-300" : "text-zinc-500"}>{e.icon}</span>
               <span className="flex-1 min-w-0 truncate text-sm">{e.text}</span>
-              {e.sub && <span className="text-xs text-zinc-500 tabular-nums">{e.sub}</span>}
+              {e.sub && <span className={`text-xs text-zinc-500 tabular-nums ${e.keyed ? "touch:hidden" : ""}`}>{e.sub}</span>}
             </li>
           ))}
         </ul>

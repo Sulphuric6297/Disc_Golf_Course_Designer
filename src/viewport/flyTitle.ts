@@ -3,7 +3,9 @@
 // course's name.
 import { TEE_LEVELS } from "../constants";
 import { flyoverOf } from "../lib/flight";
+import { loadFont } from "../lib/fontLoad";
 import { holeStats } from "../lib/holeStats";
+import { cardStyle } from "../lib/teeSign";
 import { fmtDist, fmtElev } from "../lib/units";
 import type { CourseDoc, FlyoverSettings } from "../types";
 
@@ -13,7 +15,9 @@ export type FrameInfo = { basket: { x: number; y: number } | null; toBasket: num
 /** What the overlay shows (as the flyover settings say). */
 export type OverlayShow = Pick<FlyoverSettings, "title" | "badge" | "pinDistance" | "courseName">;
 
-export type HoleTitle = { number: string; name: string; par: string; length: string; elevation: string; color: string; ink: string; show: OverlayShow };
+/** `head`: the course's headings font (the tee signs'), as a font stack, and `font` its name;
+ * `header` and `accent`: the signs' header colors (the badge's fill and its second line). */
+export type HoleTitle = { number: string; name: string; par: string; length: string; elevation: string; color: string; ink: string; show: OverlayShow; head: string; font: string; header: string; accent: string };
 
 /** What a hole's flyover overlay shows. */
 export const overlayShow = (doc: CourseDoc, holeId: string): OverlayShow => {
@@ -25,7 +29,27 @@ export const holeTitle = (doc: CourseDoc, holeId: string): HoleTitle => {
   const hole = doc.holes.find(h => h.id === holeId)!;
   const s = holeStats(doc, hole);
   const lvl = TEE_LEVELS[s.level];
-  return { number: s.label, name: hole.name ?? "", par: `PAR ${s.par}`, length: fmtDist(s.length, doc.units).toUpperCase(), elevation: Math.abs(s.elevationChange) >= 1 ? fmtElev(s.elevationChange, doc.units).toUpperCase() : "", color: lvl.color, ink: lvl.ink, show: overlayShow(doc, holeId) };
+  const card = cardStyle(doc);
+  // (a Google font fetched, if it is one: ready by the time the title shows, as a rule)
+  loadFont(card.font);
+  return {
+    number: s.label, name: hole.name ?? "", par: `PAR ${s.par}`, length: fmtDist(s.length, doc.units).toUpperCase(), elevation: Math.abs(s.elevationChange) >= 1 ? fmtElev(s.elevationChange, doc.units).toUpperCase() : "",
+    color: lvl.color, ink: lvl.ink, show: overlayShow(doc, holeId), head: card.head, font: card.font, header: card.header, accent: card.accent
+  };
+};
+
+/** `#rrggbb` as `rgba(…, a)`. */
+const alpha = (hex: string, a: number) => {
+  const h = /^#[0-9a-f]{6}$/i.test(hex) ? hex : "#13311d";
+  return `rgba(${[1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)).join(",")},${a})`;
+};
+
+/** Writes `text` centered at (x, y), its font made smaller (from `px`) until it fits `max` wide. */
+const fitText = (g: CanvasRenderingContext2D, text: string, x: number, y: number, weight: number, px: number, family: string, max: number) => {
+  g.font = `${weight} ${Math.round(px)}px ${family}`;
+  const w = g.measureText(text).width;
+  if (w > max) g.font = `${weight} ${Math.max(8, Math.floor((px * max) / w))}px ${family}`;
+  g.fillText(text, x, y);
 };
 
 const roundRect = (g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
@@ -38,6 +62,7 @@ const roundRect = (g: CanvasRenderingContext2D, x: number, y: number, w: number,
   g.closePath();
 };
 
+/** The headings font when a title doesn't name one. */
 const HEAD = "Oswald, 'Arial Narrow', Arial, sans-serif";
 const BODY = "Inter, Arial, sans-serif";
 
@@ -45,6 +70,8 @@ const BODY = "Inter, Arial, sans-serif";
  * basket marker with the distance left, and the course's name. */
 export const drawOverlay = (g: CanvasRenderingContext2D, w: number, h: number, hole: HoleTitle, title: number, info: FrameInfo | null, doc: CourseDoc) => {
   const u = h / 720;
+  // (the course's headings font, the tee signs')
+  const head = hole.head || HEAD;
   g.save();
   g.textBaseline = "middle";
   // The basket, with the distance still to fly (once the big title has gone)
@@ -74,11 +101,11 @@ export const drawOverlay = (g: CanvasRenderingContext2D, w: number, h: number, h
   // The hole's badge, top left
   if (hole.show.badge) {
     const r = 30 * u, x0 = 28 * u, y0 = 28 * u;
-    g.font = `700 ${Math.round(28 * u)}px ${HEAD}`;
+    g.font = `700 ${Math.round(28 * u)}px ${head}`;
     const line1 = `HOLE ${hole.number}`;
     const line2 = `${hole.par} · ${hole.length}`;
-    const bw = Math.max(g.measureText(line1).width, (g.font = `600 ${Math.round(18 * u)}px ${HEAD}`, g.measureText(line2).width)) + 2 * r + 46 * u;
-    g.fillStyle = "rgba(9,14,9,.72)";
+    const bw = Math.max(g.measureText(line1).width, (g.font = `600 ${Math.round(18 * u)}px ${head}`, g.measureText(line2).width)) + 2 * r + 46 * u;
+    g.fillStyle = alpha(hole.header, 0.82);
     roundRect(g, x0, y0, bw, 2 * r + 20 * u, r + 10 * u);
     g.fill();
     const cx = x0 + 10 * u + r, cy = y0 + 10 * u + r;
@@ -91,14 +118,14 @@ export const drawOverlay = (g: CanvasRenderingContext2D, w: number, h: number, h
     g.stroke();
     g.fillStyle = hole.ink;
     g.textAlign = "center";
-    g.font = `700 ${Math.round(30 * u)}px ${HEAD}`;
+    g.font = `700 ${Math.round(30 * u)}px ${head}`;
     g.fillText(String(hole.number), cx, cy + 1 * u);
     g.textAlign = "left";
     g.fillStyle = "#ffffff";
-    g.font = `700 ${Math.round(28 * u)}px ${HEAD}`;
+    g.font = `700 ${Math.round(28 * u)}px ${head}`;
     g.fillText(line1, cx + r + 14 * u, cy - 12 * u);
-    g.font = `600 ${Math.round(18 * u)}px ${HEAD}`;
-    g.fillStyle = "#d9f99d";
+    g.font = `600 ${Math.round(18 * u)}px ${head}`;
+    g.fillStyle = hole.accent;
     g.fillText(line2, cx + r + 14 * u, cy + 16 * u);
   }
   // The course, bottom right
@@ -128,11 +155,10 @@ export const drawOverlay = (g: CanvasRenderingContext2D, w: number, h: number, h
       g.font = `600 ${Math.round(20 * u)}px ${BODY}`;
       g.fillText(doc.name.toUpperCase(), w / 2, h * 0.37);
     }
-    g.font = `700 ${Math.round(96 * u)}px ${HEAD}`;
-    g.fillText(hole.name ? `${hole.number} · ${hole.name.toUpperCase()}` : `HOLE ${hole.number}`, w / 2, h * 0.49);
-    g.font = `600 ${Math.round(34 * u)}px ${HEAD}`;
-    g.fillStyle = "#ecfccb";
-    g.fillText([hole.par, hole.length, hole.elevation].filter(Boolean).join("  ·  "), w / 2, h * 0.61);
+    // (a long name made smaller until it fits nine tenths of the width)
+    fitText(g, hole.name ? `${hole.number} · ${hole.name.toUpperCase()}` : `HOLE ${hole.number}`, w / 2, h * 0.49, 700, 96 * u, head, w * 0.9);
+    g.fillStyle = hole.accent;
+    fitText(g, [hole.par, hole.length, hole.elevation].filter(Boolean).join("  ·  "), w / 2, h * 0.61, 600, 34 * u, head, w * 0.9);
   }
   g.restore();
 };

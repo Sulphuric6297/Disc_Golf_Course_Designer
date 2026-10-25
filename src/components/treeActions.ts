@@ -8,6 +8,7 @@ import { adoptLidarTree, adoptTreeAt, cutTreeAt, select } from "../state/actions
 import { getView } from "../state/view";
 import type { CourseDoc, P } from "../types";
 import type { CourseView } from "../viewport/CourseView";
+import { kindName } from "./itemActions";
 
 /** A tree that isn't an item of its own: measured from the air (its index), or a sapling or a
  * tree the app planted (where it stands and its size). */
@@ -35,16 +36,15 @@ export const treeTitle = (doc: CourseDoc, t: MenuTree) => {
 /** What can be done with the tree: make it the course's own to change it (its panel opens), or
  * cut it down (Undo brings it back). */
 export const treeActions = (t: MenuTree): TreeAction[] => [
-  { label: "Edit this tree (height, place…)", testid: "tree-adopt", run: () => { const look = getView()?.lookOf(t) ?? null; if (t.kind === "measured") adoptLidarTree(t.k, look); else adoptTreeAt(t, look); } },
+  { label: "Edit this tree", testid: "tree-adopt", run: () => { const look = getView()?.lookOf(t) ?? null; if (t.kind === "measured") adoptLidarTree(t.k, look); else adoptTreeAt(t, look); } },
   { label: "Cut down this tree", testid: "tree-cut", run: () => (t.kind === "measured" ? getView()?.toggleLidarTree(t.k) : cutTreeAt(t)) }
 ];
 
 /** The thing the tree stands over (`under`, from the map's menu), to pick instead: "Select the
- * woods", "Select hole 3". */
+ * woods", "Select the bridge", "Select hole 3". */
 export const underAction = (doc: CourseDoc, under: string | null | undefined): TreeAction | null => {
   const item = under ? doc.items.find(i => i.id === under) : undefined;
   const hole = under && !item ? doc.holes.find(h => h.id === under) : undefined;
   if (!item && !hole) return null;
-  const what = hole ? `hole ${holeLabel(doc, hole.id)}` : item!.type === "area" ? (item!.kind === "woods" ? "woods" : "area") : item!.type === "line" ? "line" : "structure";
-  return { label: hole ? `Select ${what}` : `Select the ${what}`, testid: "tree-select-under", run: () => select(under!) };
+  return { label: hole ? `Select hole ${holeLabel(doc, hole.id)}` : `Select the ${kindName(item!)}`, testid: "tree-select-under", run: () => select(under!) };
 };

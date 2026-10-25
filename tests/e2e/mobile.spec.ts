@@ -314,7 +314,7 @@ test.describe("phone", () => {
     await nav(page).getByRole("button", { name: /Design/ }).tap();
     await page.locator('[data-tool="rules"]').tap();
     await page.getByTestId("area-kind-ob").tap();
-    await expect(page.getByTestId("tool-hint")).toContainText("Tap the corners, then Done");
+    await expect(page.getByTestId("tool-hint")).toHaveText("Tap the corners");
     for (const [x, y] of [[350, 300], [550, 300], [550, 420], [350, 420]]) await tapPlan(page, x, y);
     const done = page.getByTestId("draw-done");
     await expect(done).toContainText("4");
@@ -330,8 +330,8 @@ test.describe("phone", () => {
     await page.getByTestId("selection-back").tap();
     // Cancel drops what is being drawn
     await page.locator('[data-tool="paths"]').tap();
-    await tapPlan(page, 300, 650);
-    await tapPlan(page, 600, 650);
+    await tapPlan(page, 300, 250);
+    await tapPlan(page, 600, 250);
     await page.getByTestId("draw-cancel").tap();
     await expect(page.getByTestId("draw-bar")).toHaveCount(0);
     expect((await course(page)).items.filter((i: any) => i.type === "line").length).toBe(0);
@@ -360,7 +360,7 @@ test.describe("phone", () => {
     await expect(nav(page)).toBeInViewport({ ratio: 1 });
   });
 
-  test("tapping a hole puts its inspector in the sheet; Back returns to the step", async ({ page }) => {
+  test("tapping a hole puts its inspector in the sheet; Close returns to the step", async ({ page }) => {
     await oneHole(page);
     await tapPlan(page, 450, 500);
     await expect(page.getByTestId("inspector")).toBeVisible();
@@ -374,7 +374,9 @@ test.describe("phone", () => {
     await expect(page.getByRole("radiogroup", { name: "Par" })).toBeVisible();
     await page.getByRole("radiogroup", { name: "Par" }).getByRole("radio", { name: "4" }).tap();
     await expect.poll(async () => (await course(page)).holes[0].par).toBe(4);
-    await page.getByTestId("selection-back").tap();
+    // (a hole has an X at the header's right end, no back arrow)
+    await expect(page.getByTestId("selection-back")).toHaveCount(0);
+    await page.getByTestId("selection-close").tap();
     await expect.poll(async () => (await editorState(page)).selectedId).toBeNull();
     await expect(page.getByTestId("sheet-title")).toHaveText("Design");
   });
@@ -387,7 +389,7 @@ test.describe("phone", () => {
     const menu = page.getByTestId("item-menu");
     await expect(menu).toBeVisible();
     await expect(menu).toContainText("Blue tee");
-    await expect(menu.getByRole("menuitem", { name: "View from the tee" })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "View from this tee" })).toBeVisible();
     // The finger's lift doesn't pick anything in it, and Cancel closes it
     await page.waitForTimeout(200);
     await expect(menu).toBeVisible();
@@ -563,6 +565,34 @@ test.describe("phone", () => {
     await expect(page.getByTestId("bottom-nav")).toBeVisible();
   });
 
+  test("the tee view's Flyover tile opens its settings on a phone, before and while it flies", async ({ page }) => {
+    await oneHole(page);
+    await tapPlan(page, 450, 500);
+    await page.getByTestId("selection-header").getByRole("button", { name: "View from the tee" }).tap();
+    const tile = page.getByTestId("hud-settings");
+    const open = () => page.evaluate(() => !!(window as any).__dgEditor().teeSettings);
+    const box = (await tile.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    // In the hole's card: a tap opens the settings, another closes them
+    await tile.tap();
+    await expect.poll(open).toBe(true);
+    await expect(tile).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("flyover-settings")).toBeVisible();
+    await tile.tap();
+    await expect.poll(open).toBe(false);
+    await expect(page.getByTestId("flyover-settings")).toHaveCount(0);
+    // Flying: the card hides, the tile stays in reach at the top right
+    await page.getByTestId("hud-flyover").tap();
+    await expect(page.getByTestId("hud-flyover")).toHaveText(/Stop/);
+    await expect(page.getByTestId("tee-view-hud")).toBeHidden();
+    await tile.tap();
+    await expect.poll(open).toBe(true);
+    await expect(page.getByTestId("flyover-settings")).toBeVisible();
+    await page.getByTestId("hud-close").tap();
+    await expect.poll(async () => (await editorState(page)).teeView).toBeNull();
+    expect(await open()).toBe(false);
+  });
+
   test("the camera on a phone: the stick moves it, the arrows lift it, a drag turns it, a big button adds the keyframe", async ({ page }) => {
     await oneHole(page);
     await tapPlan(page, 450, 500);
@@ -616,7 +646,7 @@ test.describe("phone", () => {
     for (const loc of [nav(page).getByRole("button"), page.getByTestId("tool-strip").getByRole("button"), page.getByTestId("map-controls").getByRole("button"), page.getByTestId("top-bar").getByRole("button"), page.getByTestId("top-bar").getByRole("radio")]) {
       for (const b of await loc.all()) {
         const box = (await b.boundingBox())!;
-        if (box.height < 40 || box.width < 40) small.push(`${await b.getAttribute("aria-label") ?? await b.textContent()}: ${Math.round(box.width)}×${Math.round(box.height)}`);
+        if (Math.round(box.height) < 44 || Math.round(box.width) < 44) small.push(`${await b.getAttribute("aria-label") ?? await b.textContent()}: ${Math.round(box.width)}×${Math.round(box.height)}`);
       }
     }
     expect(small).toEqual([]);
@@ -705,7 +735,7 @@ test("desktop at 1600 × 1000 keeps its layout: top bar steps, side panel, tool 
   // (no prompt over the map with Select; a tool's own prompt when one is picked)
   await expect(page.getByTestId("tool-hint")).toHaveCount(0);
   await page.keyboard.press("t");
-  await expect(page.getByTestId("tool-hint")).toContainText("another skill level");
+  await expect(page.getByTestId("tool-hint")).toContainText("Click where hole 1's gold tee goes");
   await page.keyboard.press("Escape");
   for (const id of ["bottom-nav", "sheet", "nav-rail", "side-sheet", "top-bar", "draw-bar"]) await expect(page.getByTestId(id)).toHaveCount(0);
   // What's picked opens down the map's left, next to the hole list (just the numbers while it

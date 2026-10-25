@@ -149,12 +149,17 @@ test("from a tee and flying over, the ground is the painted map with trees on it
   // (the 3D view rests while it paints: drawn in software here, its frames would starve the painting)
   await page.evaluate(() => (window as any).__dgView.setPaused(true));
   await expect.poll(ground, { timeout: 150_000 }).toEqual({ painted: true, shown: true, trees: true });
-  // The Camera settings: the photo instead (kept for next time)
+  // The View panel beside it: the photo instead (kept for next time); none in the flyover's settings
   await page.getByTestId("hud-settings").click();
-  await page.getByTestId("flyover-settings").getByRole("radio", { name: "Photo" }).click();
+  await expect(page.getByTestId("flyover-settings")).toBeVisible();
+  await expect(page.getByTestId("flyover-settings").getByRole("radio", { name: "Photo" })).toHaveCount(0);
+  await page.getByTestId("hud-settings").click();
+  await page.locator("[data-pov-ui]").getByTestId("scene-button").click();
+  const viewGround = page.getByTestId("scene-panel").getByTestId("view-ground");
+  await viewGround.getByRole("radio", { name: "Photo" }).click();
   await expect.poll(async () => (await ground()).painted).toBe(false);
   expect((await editorState(page)).flyLook).toBe("photo");
-  await page.getByTestId("flyover-settings").getByRole("radio", { name: "Painted map" }).click();
+  await viewGround.getByRole("radio", { name: "Painted map" }).click();
   await expect.poll(async () => (await ground()).painted, { timeout: 30_000 }).toBe(true);
   // Back on the map: the photo's ground again, no painted trees (closed while still resting:
   // the tee view's painted woods drawn in software would hold up the click)
@@ -309,7 +314,8 @@ test("flyover settings: height, speed and lens change the flight, one undo step 
   await page.getByTestId("flyover-settings").getByRole("radio", { name: /^Hole 1/ }).click();
   await slider("Camera height").focus();
   await page.keyboard.press("Home");
-  await expect.poll(async () => (await course(page)).holes[0].flyover?.height, { timeout: 30_000 }).toBe(10);
+  // (down to about eye level)
+  await expect.poll(async () => (await course(page)).holes[0].flyover?.height, { timeout: 30_000 }).toBe(4);
   expect((await course(page)).flyover?.height).toBe(250);
   expect((await flight()).alt).toBeLessThan(after.alt - 150);
   // (from All holes: Apply to holes, hole 1 picked)
@@ -332,7 +338,7 @@ test("flyover on-screen switches: off for all holes, back on for one; no disc fl
   await page.evaluate(() => (window as any).__dgView.setPaused(true));
   await page.getByTestId("flyover-settings").getByRole("radio", { name: "All holes" }).click();
   const sw = (name: string) => page.getByTestId("flyover-settings").getByRole("checkbox", { name, exact: true });
-  for (const name of ["Big title at the start", "Hole number in the corner", "Distance to the pin", "Course name", "Throw line", "Putting circle (10 m, 33 ft)", "OB", "Other holes' lines and circles", "Paths to the next tee"]) await expect(sw(name)).toBeChecked();
+  for (const name of ["Big title at the start", "Hole number in the corner", "Distance to the pin", "Course name", "Throw line", "Putting circle", "OB", "Other holes' lines and circles", "Paths to the next tee"]) await expect(sw(name)).toBeChecked();
   await sw("Distance to the pin").uncheck();
   await expect(sw("Disc flight")).toHaveCount(0);
   await sw("Other holes' lines and circles").uncheck();
@@ -355,8 +361,9 @@ test("flyover on-screen switches: off for all holes, back on for one; no disc fl
   // Hole 1's own settings given to hole 2 (Apply to holes: All picks every other hole)
   const apply = page.getByTestId("hole-flight").getByTestId("flyover-apply");
   await apply.getByRole("button", { name: "Apply to holes…" }).click();
-  await page.getByTestId("apply-holes").getByRole("checkbox", { name: "All holes" }).check();
-  await expect(page.getByTestId("apply-holes").getByRole("button", { name: "Hole 2" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("apply-holes").getByRole("button", { name: "All holes" }).click();
+  await expect(page.getByTestId("apply-holes").getByRole("button", { name: "All holes" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("apply-holes").getByRole("button", { name: "Hole 2" })).toHaveAttribute("aria-pressed", "false");
   await page.getByTestId("apply-holes").getByRole("button", { name: "Apply", exact: true }).click();
   await expect.poll(async () => (await course(page)).holes[1].flyover?.pinDistance).toBe(true);
   await expect(page.getByTestId("apply-holes")).toHaveCount(0);

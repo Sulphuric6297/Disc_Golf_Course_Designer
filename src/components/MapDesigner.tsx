@@ -10,7 +10,11 @@ import { changeDoc, useCourse, useEditor, getDoc } from "../state/course";
 import { byNumber, holeLabel } from "../lib/course";
 import { useCanopy, useRelief } from "./useRelief";
 import { moveLabel } from "./PageEditor";
-import { duplicatePicked, extrasOf, movePicked, noteOf, patchPicked, pickedOf, removePicked, setDrawn, sizePicked, type TargetKey } from "./printouts";
+import { duplicatePicked, extrasOf, movePicked, noteOf, onAskTyping, patchPicked, pickedOf, rememberBoard, removePicked, setDrawn, sizePicked, takeTyping, type TargetKey } from "./printouts";
+import { useToolOpen } from "./pageToolState";
+
+/** A size's short name, for a phone's row over the page. */
+const SHORT: Record<string, string> = { "18x12": "18 × 12", "12x18": "12 × 18", "18x24": "18 × 24", letter: "Letter", a4: "A4", card: "4 × 6", square: "Square" };
 import { PieceToolbar, type Drawn } from "./PieceToolbar";
 import { fontsIn, loadFont } from "../lib/fontLoad";
 import { fitTexts } from "../lib/fitText";
@@ -53,7 +57,8 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const signSize: SignSize = useCourse(c => c.doc.style.signSize) ?? "18x12";
   const pageSize: HolePageSize = useCourse(c => c.doc.style.holePageSize) ?? "letter";
   const paper: PaperSize = useCourse(c => c.doc.style.paper);
-  const setSignSize = (v: SignSize) => changeDoc(d => ({ style: { ...d.style, signSize: v } }));
+  const setSignSize = (v: SignSize) => { rememberBoard(v); changeDoc(d => ({ style: { ...d.style, signSize: v } })); };
+  useEffect(() => { rememberBoard(signSize); }, [signSize]);
   const setPageSize = (v: HolePageSize) => changeDoc(d => ({ style: { ...d.style, holePageSize: v } }));
   const setPaper = (v: PaperSize) => changeDoc(d => ({ style: { ...d.style, paper: v } }));
   const [zoom, setZoom] = useState<number | null>(null);
@@ -223,18 +228,23 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   // size it. One undo step each. (General's sign is there to look at, not to lay out.)
   const designSel = useEditor(e => e.designSel);
   const setEd = useEditor(e => e.set);
-  const scope = useEditor(e => e.signScope);
+  const toolOpen = useToolOpen();
   const t: TargetKey = preview === "map" ? "map" : preview === "sign" ? "sign" : preview === "page" ? "page" : "card";
   const editing = !only && !general;
   const svgHost = useRef<HTMLDivElement>(null);
   const [selBox, setSelBox] = useState<Box | null>(null);
   const [drawn, setDrawnOf] = useState<Drawn | undefined>(undefined);
-  const [hover, setHover] = useState<{ id: string; box: Box } | null>(null);
+  const [hover, setHover] = useState<{ id: string; box: Box; copies?: Box[] } | null>(null);
+  // (the picked piece's copies' boxes: outlined with it)
+  const [copyBoxes, setCopyBoxes] = useState<Box[]>([]);
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
   const [typing, setTyping] = useState<{ id: string; text: string; box: Box; font?: string; lines: boolean; placeholder?: string } | null>(null);
-  const drag = useRef<{ mode: "move" | "size" | "turn"; finger?: boolean; rot0?: number; a0?: number; c?: { x: number; y: number }; rot?: number; id: string; el: SVGGElement; orig: string; cx: number; cy: number; pid: number; k: number; W: number; H: number; box: Box; nat: Box; anchor: { x: number; y: number }; corner: { x: number; y: number }; f: number; dx: number; dy: number; lines: { x: number[]; y: number[] } } | null>(null);
+  const drag = useRef<{ mode: "move" | "size" | "turn"; cp?: [SVGGElement, string][]; finger?: boolean; rot0?: number; a0?: number; c?: { x: number; y: number }; rot?: number; id: string; el: SVGGElement; orig: string; cx: number; cy: number; pid: number; k: number; W: number; H: number; box: Box; nat: Box; anchor: { x: number; y: number }; corner: { x: number; y: number }; f: number; dx: number; dy: number; lines: { x: number[]; y: number[] } } | null>(null);
   const elOf = (id: string) =>
     svgHost.current?.querySelector(id.startsWith("label:") ? `[data-label="${CSS.escape(id.slice(6))}"]` : `[data-el="${CSS.escape(id)}"]`) as SVGGElement | null;
+  /** Its other drawings (the scorecard's second card), placed and picked with it. */
+  const copiesOf = (id: string) => (id.startsWith("label:") ? [] : Array.from(svgHost.current?.querySelectorAll<SVGGElement>(`[data-pc="${CSS.escape(id)}"]`) ?? []));
+  const idOf = (g: Element) => g.getAttribute("data-el") ?? g.getAttribute("data-pc");
   /** A piece's box on the page: as its lettering measures (the course map's title and text), as the
    * page says it placed it, or as drawn. */
   const boxOf = (el: Element): Box => {
@@ -260,7 +270,9 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const pickable = (id: string | null) => !!id && !(t === "map" && id === "map");
   // (leaving the Design step, or another printout, lets go of what was picked)
   useEffect(() => { if (!editing) setEd({ designSel: null }); }, [editing, setEd]);
-  useEffect(() => { setEd({ designSel: null }); setHover(null); setTyping(null); }, [preview, setEd]);
+  // (another tab lets go of what was picked, unless something on it is picked as it opens)
+  useEffect(() => useEditor.subscribe((s, was) => { if (s.designTab !== was.designTab && s.designSel === was.designSel && s.designSel) useEditor.getState().set({ designSel: null }); }), []);
+  useEffect(() => { setHover(null); setTyping(null); }, [preview]);
   useEffect(() => () => setEd({ designSel: null }), [setEd]);
   // Each piece is picked anywhere in its outline, not only on its ink (an unseen box the size of
   // what it draws), lettering is kept inside its panels in the fonts it's set in, and the course
@@ -316,6 +328,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   useLayoutEffect(() => {
     const el = editing && designSel ? elOf(designSel) : null;
     setSelBox(el ? boxOf(el) : null);
+    setCopyBoxes(el && designSel ? copiesOf(designSel).map(boxOf) : []);
     if (!el) return setDrawnOf(undefined);
     const tx = el.querySelector("text"), pn = el.querySelector("[data-fill]") ?? (t === "map" && (designSel === "holes" || designSel === "legend") ? el.querySelector("rect:not([data-hit]):not([fill=none])") : null);
     const cs = tx ? getComputedStyle(tx) : null;
@@ -332,8 +345,9 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     if (!host) return null;
     const hr = host.getBoundingClientRect(), k = kRef.current, px = (cx - hr.left) / k, py = (cy - hr.top) / k;
     let best: string | null = null, area = Infinity;
-    for (const g of Array.from(host.querySelectorAll("[data-el]"))) {
-      const id = g.getAttribute("data-el");
+    // (a piece's copy, as on the scorecard's second card, picks the piece)
+    for (const g of Array.from(host.querySelectorAll("[data-el],[data-pc]"))) {
+      const id = idOf(g);
       if (!pickable(id)) continue;
       const b = boxOf(g);
       if (px < b.x || px > b.x + b.w || py < b.y || py > b.y + b.h) continue;
@@ -361,6 +375,9 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const linesFor = (id: string, finger = false) => {
     const W = page!.width, H = page!.height, xs = [0, W / 2, W], ys = [0, H / 2, H];
     if (t === "card") ys.push(H / 4, (H * 3) / 4);
+    // (a frame round the course map: its inside edge too)
+    const inset = Number(svgHost.current?.querySelector("[data-part=frame]")?.getAttribute("data-inset")) || 0;
+    if (inset) { xs.push(inset, W - inset); ys.push(inset, H - inset); }
     for (const g of Array.from(svgHost.current?.querySelectorAll("[data-el]") ?? [])) {
       const gid = g.getAttribute("data-el");
       if (!gid || gid === id || (t === "map" && gid === "map")) continue;
@@ -398,8 +415,16 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const tapOut = useRef<{ pid: number; x: number; y: number } | null>(null);
   // (a finger picks a piece with a tap, when it lifts without moving: a drag across a piece not
   // picked scrolls the page, as on any phone)
-  const tapPick = useRef<{ id: string; pid: number; x: number; y: number } | null>(null);
+  const tapPick = useRef<{ id: string; pid: number; x: number; y: number; tab?: boolean } | null>(null);
   const onPageDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // (General's sign, to look at: a piece clicked there opens the Tee sign tab with it picked)
+    if (general && page && e.button === 0 && preview === "sign") {
+      const id = pieceAt(e.target, e.clientX, e.clientY);
+      // (a finger: on a tap, not a drag that scrolls the page)
+      if (id && e.pointerType === "touch") tapPick.current = { id, pid: e.pointerId, x: e.clientX, y: e.clientY, tab: true };
+      else if (id) { e.preventDefault(); setHover(null); setEd({ designTab: "sign", designSel: id }); }
+      return;
+    }
     if (!editing || !page || e.button !== 0 || typing) return;
     if ((e.target as HTMLElement).closest?.("[data-page-bar],[role=dialog]")) return;
     // (a field in the panel lets go, so keys like Delete go to what's picked on the page)
@@ -439,7 +464,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     drag.current = {
       mode: corner ? "size" : "move", finger, id, el, orig: el.getAttribute("transform") ?? "", cx: e.clientX, cy: e.clientY, pid: e.pointerId, k: kRef.current, W, H, box: b, nat,
       corner: { x: b.x + sx * b.w, y: b.y + sy * b.h }, anchor: { x: b.x + (1 - sx) * b.w, y: b.y + (1 - sy) * b.h }, f: 1, dx: 0, dy: 0,
-      lines: corner ? { x: [], y: [] } : linesFor(id, finger)
+      lines: corner ? { x: [], y: [] } : linesFor(id, finger), cp: copiesOf(id).map(c => [c, c.getAttribute("transform") ?? ""])
     };
     setHover(null);
   };
@@ -448,10 +473,10 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     if (!d) {
       // (the piece under the pointer, outlined: what a click picks; nothing over its toolbar or a
       // list open over the page)
-      if (e.pointerType !== "mouse" || !editing || typing) return;
+      if (e.pointerType !== "mouse" || (!editing && !general) || typing) return;
       const id = onDrawing(e.target) ? pieceAt(e.target, e.clientX, e.clientY) : null;
       if (!id || id === designSel) { if (hover) setHover(null); return; }
-      if (hover?.id !== id) { const el = elOf(id); if (el) setHover({ id, box: boxOf(el) }); }
+      if (hover?.id !== id) { const el = elOf(id); if (el) setHover({ id, box: boxOf(el), copies: copiesOf(id).map(boxOf) }); }
       return;
     }
     if (d.pid !== e.pointerId) return;
@@ -486,6 +511,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       d.dx = dx;
       d.dy = dy;
       d.el.setAttribute("transform", `translate(${dx} ${dy}) ${d.orig}`);
+      d.cp?.forEach(([c, o]) => c.setAttribute("transform", `translate(${dx} ${dy}) ${o}`));
       setSelBox({ ...d.box, x: d.box.x + dx, y: d.box.y + dy });
     } else {
       const A = d.anchor, C = d.corner;
@@ -493,6 +519,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       const f = Math.max(0.1, Math.min(10, (v.x * w.x + v.y * w.y) / Math.max(1e-6, v.x * v.x + v.y * v.y)));
       d.f = f;
       d.el.setAttribute("transform", `translate(${A.x} ${A.y}) scale(${f}) translate(${-A.x} ${-A.y}) ${d.orig}`);
+      d.cp?.forEach(([c, o]) => c.setAttribute("transform", `translate(${A.x} ${A.y}) scale(${f}) translate(${-A.x} ${-A.y}) ${o}`));
       setSelBox({ x: A.x + (d.box.x - A.x) * f, y: A.y + (d.box.y - A.y) * f, w: d.box.w * f, h: d.box.h * f });
     }
   };
@@ -500,7 +527,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     const tp = tapPick.current;
     if (tp && tp.pid === e.pointerId) {
       tapPick.current = null;
-      if (Math.hypot(e.clientX - tp.x, e.clientY - tp.y) < 10) setEd({ designSel: tp.id });
+      if (Math.hypot(e.clientX - tp.x, e.clientY - tp.y) < 10) setEd(tp.tab ? { designTab: "sign", designSel: tp.id } : { designSel: tp.id });
     }
     const out = tapOut.current;
     if (out && out.pid === e.pointerId) {
@@ -519,6 +546,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     }
     if (Math.abs(e.clientX - d.cx) + Math.abs(e.clientY - d.cy) < 3) {
       d.el.setAttribute("transform", d.orig);
+      d.cp?.forEach(([c, o]) => c.setAttribute("transform", o));
       setSelBox(d.box);
       // (a finger tapping what's already picked: its words to type, as in any design app)
       if (e.pointerType === "touch" && d.mode === "move" && !d.id.startsWith("label:") && pickedOf(live, t, d.id)?.has.text) startTyping(d.id);
@@ -538,12 +566,19 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   };
   /** Its words typed in a box over it, in the font it's drawn in. */
   const startTyping = (id: string) => {
-    const el = elOf(id), p = pickedOf(live, t, id);
-    if (!el || !p) return;
-    const tx = el.querySelector("text");
+    const el = elOf(id), p = pickedOf(getDoc(), t, id);
+    if (!p || !page) return;
+    const tx = el?.querySelector("text");
+    // (one with no words on the page yet: its box over the middle of the page)
+    const { W, H } = dims();
+    const box = el ? boxOf(el) : { x: W * 0.3, y: H * 0.42, w: W * 0.4, h: H * 0.06 };
     setEd({ designSel: id });
-    setTyping({ id, text: p.text ?? "", box: boxOf(el), font: tx ? getComputedStyle(tx).fontFamily : undefined, lines: p.lines, placeholder: p.placeholder });
+    setTyping({ id, text: p.text ?? "", box, font: tx ? getComputedStyle(tx).fontFamily : undefined, lines: p.lines, placeholder: p.placeholder });
   };
+  // (Layers asks for a piece's words to be typed: once the page shows it, or with nothing to show)
+  const typingRef = useRef(startTyping);
+  typingRef.current = startTyping;
+  useEffect(() => onAskTyping(() => { const id = takeTyping(); if (id) setTimeout(() => typingRef.current(id), 0); }), []);
   const doneTyping = (keep: boolean) => {
     if (typing && keep) patchPicked(t, typing.id, { text: typing.text });
     setTyping(null);
@@ -705,7 +740,9 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
 
   if (!page) return null;
   const margin = compact ? 20 : 48;
-  const fit = Math.min((size.w - margin) / page.width, (size.h - margin - (compact && designSel ? dockH : 0)) / page.height);
+  // (a phone: the page fitted clear of the picked piece's toolbar, or of the zoom buttons)
+  const pill = compact && !designSel && !toolOpen;
+  const fit = Math.min((size.w - margin) / page.width, (size.h - margin - (compact && designSel ? dockH : pill ? 52 : 0)) / page.height);
   const k = zoom ?? fit;
   kRef.current = k;
   kNow.current = k;
@@ -727,7 +764,6 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     </button>
   );
   const sel = (select: string) => `bg-white/[0.08] rounded-full px-3 ${compact ? "h-11 text-base min-w-0" : "py-1 text-sm"} ${select}`;
-  const perHole = editing && (preview === "sign" || preview === "page") && !!holeId;
   // (the holes in the order they're played, a step either way beside the list)
   const ordered = byNumber(doc.holes), at = ordered.findIndex(h => h.id === holeId);
   const step = compact ? "w-11 h-11 flex items-center justify-center rounded-full text-zinc-200 bg-white/[0.08] active:bg-white/[0.14] disabled:opacity-35" : "p-1 rounded-full text-zinc-300 hover:bg-white/[0.09] disabled:opacity-35";
@@ -743,6 +779,8 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       <Woods inset />
       <div ref={controls} className={compact ? "flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2 py-2" : "flex items-center gap-2 px-3 py-2.5 flex-wrap"}>
         <div role="tablist" className={compact ? "w-full flex gap-1" : "flex gap-1"}>{[...(only ? [] : [tab("general", "General")]), tab("map", "Course map", "Map"), tab("sign", "Tee sign", "Sign"), tab("page", "Hole page", "Page"), tab("scorecard", "Scorecard", "Card")]}</div>
+        {/* (a phone: the hole and the size on one row, the size by its short name) */}
+        <div className={compact ? "w-full flex items-center gap-2 min-w-0 empty:hidden" : "contents"}>
         {(preview === "sign" || preview === "page") && doc.holes.length > 0 && (
           <div className="flex items-center gap-0.5 min-w-0">
             <button className={step} aria-label="Hole before" title="Hole before" disabled={at <= 0} onClick={() => setHole(ordered[at - 1].id)}><ChevronLeft size={compact ? 18 : 15} /></button>
@@ -752,14 +790,15 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
             <button className={step} aria-label="Next hole" title="Next hole" disabled={at < 0 || at >= ordered.length - 1} onClick={() => setHole(ordered[at + 1].id)}><ChevronRight size={compact ? 18 : 15} /></button>
           </div>
         )}
-        {preview === "sign" && !general && (
+        {/* (Export shows the sizes in its own panel) */}
+        {preview === "sign" && !general && !only && (
           <select aria-label="Tee sign size" className={sel("")} value={signSize} onChange={e => { setSignSize(e.target.value as SignSize); setZoom(null); }}>
-            {(Object.keys(SIGN_SIZES) as SignSize[]).map(k => <option key={k} value={k}>{SIGN_SIZES[k].label}</option>)}
+            {(Object.keys(SIGN_SIZES) as SignSize[]).map(k => <option key={k} value={k}>{compact ? SHORT[k] : SIGN_SIZES[k].label}</option>)}
           </select>
         )}
-        {preview === "page" && (
+        {preview === "page" && !only && (
           <select aria-label="Hole page size" className={sel("")} value={pageSize} onChange={e => { setPageSize(e.target.value as HolePageSize); setZoom(null); }}>
-            {(Object.keys(HOLE_PAGES) as HolePageSize[]).map(k => <option key={k} value={k}>{HOLE_PAGES[k].label}</option>)}
+            {(Object.keys(HOLE_PAGES) as HolePageSize[]).map(k => <option key={k} value={k}>{compact ? SHORT[k] : HOLE_PAGES[k].label}</option>)}
           </select>
         )}
         {preview === "map" && editing && (
@@ -767,23 +806,13 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
             {(Object.keys(PAPER) as PaperSize[]).map(p => <option key={p} value={p}>{PAPER[p].label}</option>)}
           </select>
         )}
-        {perHole && (
-          <div className="flex items-center gap-1.5">
-            <span className={`${compact ? "text-[12.5px]" : "text-xs"} text-zinc-400 whitespace-nowrap`} aria-hidden>Changes go to</span>
-            <div className="flex items-center gap-0.5 rounded-full bg-white/[0.08] p-0.5" role="radiogroup" aria-label="Changes go to" data-testid="change-scope">
-              {(["all", "hole"] as const).map(v => (
-                <button key={v} role="radio" aria-checked={scope === v} onClick={() => setEd({ signScope: v })} className={`px-2.5 ${compact ? "h-11 text-[12.5px]" : "py-1 text-xs"} rounded-full font-semibold whitespace-nowrap ${scope === v ? "bg-orange-400 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09]"}`}>
-                  {v === "all" ? "Every hole" : `Hole ${holeLabel(doc, holeId!)} only`}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        </div>
+        {/* ("Changes go to" is at the top of the sign's and page's panel) */}
         {!compact && zoomGroup}
       </div>
-      {/* (A phone: the zoom buttons float over the page, in the thumb's reach; the picked piece's
-          toolbar takes their place along the bottom) */}
-      {compact && !designSel && <div className="glass absolute right-2 bottom-2 z-10 rounded-[22px] p-0.5">{zoomGroup}</div>}
+      {/* (A phone: the zoom buttons float over the page, in the thumb's reach, out of the way of a
+          tool that's open; the picked piece's toolbar takes their place along the bottom) */}
+      {pill && <div className="glass absolute right-2 bottom-2 z-10 rounded-[22px] p-0.5">{zoomGroup}</div>}
       {compact && toolbar && (
         <div ref={dock} className="absolute inset-x-2 bottom-2 z-30 flex flex-col items-center gap-1">
           {!panelOpen && (note || hint) && <div className="pointer-events-none rounded-full bg-black/55 px-2.5 py-0.5 text-[11.5px] text-zinc-200 text-center" data-testid="phone-hint">{note ?? hint}</div>}
@@ -807,7 +836,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
             <div
               ref={svgHost}
               data-testid="design-page"
-              className={`shadow-2xl bg-white ${editing ? (t === "map" ? "[&_[data-el]:not([data-el=map])]:cursor-pointer" : "[&_[data-el]]:cursor-pointer") : ""}`}
+              className={`shadow-2xl bg-white ${editing || general ? (t === "map" ? "[&_[data-el]:not([data-el=map])]:cursor-pointer" : "[&_[data-el]]:cursor-pointer [&_[data-pc]]:cursor-pointer") : ""}`}
               style={{ width: page.width * k, height: page.height * k }}
               dangerouslySetInnerHTML={{ __html: held ?? html }}
             />
@@ -817,9 +846,12 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
                 <span className="rounded-full bg-orange-500 text-zinc-950 text-[11px] font-bold px-2 py-0.5 shadow whitespace-nowrap">Add a link</span>
               </div>
             ))}
-            {editing && hover && hover.id !== designSel && (
-              <div className="absolute pointer-events-none rounded-[2px]" data-testid="page-hover" style={{ left: hover.box.x * k - 2, top: hover.box.y * k - 2, width: hover.box.w * k + 4, height: hover.box.h * k + 4, outline: "1.5px solid rgba(56,189,248,.9)" }} />
-            )}
+            {(editing || general) && hover && hover.id !== designSel && [hover.box, ...(hover.copies ?? [])].map((hb, i) => (
+              <div key={i} className="absolute pointer-events-none rounded-[2px]" data-testid={i ? "page-hover-copy" : "page-hover"} style={{ left: hb.x * k - 2, top: hb.y * k - 2, width: hb.w * k + 4, height: hb.h * k + 4, outline: "1.5px solid rgba(56,189,248,.9)" }} />
+            ))}
+            {editing && designSel && selBox && copyBoxes.map((cb, i) => (
+              <div key={i} className="absolute pointer-events-none" data-testid="page-selection-copy" style={{ left: cb.x * k, top: cb.y * k, width: cb.w * k, height: cb.h * k, outline: "2px solid #f97316", outlineOffset: 2, opacity: 0.6 }} />
+            ))}
             {guides.x.map(x => <div key={`gx${x}`} className="absolute top-0 bottom-0 w-px pointer-events-none bg-pink-500" style={{ left: x * k }} data-testid="snap-guide" />)}
             {guides.y.map(y => <div key={`gy${y}`} className="absolute left-0 right-0 h-px pointer-events-none bg-pink-500" style={{ top: y * k }} data-testid="snap-guide" />)}
             {editing && designSel && selBox && (
