@@ -56,8 +56,9 @@ export const spotHere = (sure = 16, ms = 8000) =>
     const check = () => {
       const { fix, mode } = useGps.getState();
       if (mode === "off") return done(null);
-      // (a reading since the wait began, sure enough; the first ones are often the least sure)
-      const fresh = fix && fix.time >= t0 - 3000 ? fix : null;
+      // (the latest reading, sure enough, after a moment's wait: the first ones are often the least
+      // sure, and a phone standing still may not send another for a while; one that moves does)
+      const fresh = fix;
       if (fresh && fresh.acc <= sure && Date.now() - t0 > 1500) return done(fresh);
       if (Date.now() - t0 > ms) done(fresh && fresh.raw <= WEAK_FT ? fresh : null);
     };
