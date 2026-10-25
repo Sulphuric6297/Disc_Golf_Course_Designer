@@ -1,16 +1,20 @@
 // The app: header with the steps, the step panel, the map (2D and 3D in one view), the tools, the
 // inspector for the selection, and the dialogs.
+import { usePageToasts } from "./auth/Home";
+import { SHOW_EVENT } from "./components/showSetting";
 import { inDraft, saveDraftAs, saveNow, useServerCourse } from "./auth/courses";
 import { SERVER } from "./auth/api";
 import { HelpGuide } from "./components/help/HelpGuide";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MapPinned, Route, X } from "lucide-react";
 import { Header } from "./components/Header";
 import { ViewerPanel } from "./auth/ViewerPanel";
 import { HolesColumn, ProblemsPanel, SidePanel } from "./components/SidePanel";
 import { MapViewport } from "./components/MapViewport";
 import { getView } from "./state/view";
-import { Toolbar, TOOLS, CHOICE_KEYS, drawChoice, pickTool } from "./components/Toolbar";
+import { Toolbar, TOOLS, CHOICE_KEYS, drawChoice, pickTool, useMapInsets, useToolbarRoom } from "./components/Toolbar";
+import { treeActions, treesAt, treeTitle, underAction } from "./components/treeActions";
+import { startTour } from "./components/Tour";
 import { Inspector } from "./components/Inspector";
 import { stepHole } from "./components/HoleSteps";
 import { GoTo } from "./components/GoTo";
@@ -22,26 +26,33 @@ import { ExportProgressPill } from "./components/ExportProgress";
 import { Button, HELP_EVENT } from "./components/ui";
 import { GettingStarted, openGettingStarted } from "./components/GettingStarted";
 import { useLayout, useTouch } from "./components/useLayout";
-import { CompactShell, ItemMenu } from "./components/mobile/CompactShell";
+import { CompactShell, GroundMenu, ItemMenu } from "./components/mobile/CompactShell";
 import { useCourse, useEditor, getDoc, changeDoc, updateItem } from "./state/course";
-import { adoptLidarTree, adoptTreeAt, bendHoleAt, placeAt, canPaste, copySelection, cutTreeAt, cutSelection, deleteSelection, duplicateSelection, markObBeyond, nudgeSelection, pasteClipboard, select, selectAll } from "./state/actions";
+import { bendHoleAt, placeAt, canPaste, copySelection, cutSelection, deleteSelection, duplicateSelection, markObBeyond, nudgeSelection, pasteClipboard, select, selectAll } from "./state/actions";
 import { osmFailedToast } from "./state/osm";
 import { restoreAutosave, startAutosave } from "./state/files";
 import { toast, useToasts } from "./state/toast";
 import { courseStats, holeStats } from "./lib/holeStats";
-import { grownTree } from "./lib/lidar";
 import { fromMaps, isImported, reframeDesign, type ImportedSite } from "./lib/importSite";
 import { holeLabel } from "./lib/course";
-import { geoRefOf } from "./lib/geoRef";
+import { geoRefOf, reframe } from "./lib/geoRef";
 import { Woods } from "./components/Woods";
 import type { CourseItem, P } from "./types";
 
+const NO_TOASTS: ReturnType<typeof useToasts.getState>["toasts"] = [];
 function Toasts({ bottom }: { bottom?: number }) {
-  const toasts = useToasts(s => s.toasts);
+  // (a Courses page up over the editor: its own show them)
+  const paged = usePageToasts(s => s.on);
+  const all = useToasts(s => s.toasts);
+  const toasts = paged ? NO_TOASTS : all;
   const dismiss = useToasts(s => s.dismiss);
   const undo = useCourse(s => s.undo);
+  // (on a computer: just above the tools, with their options and hint, and centred on the part of
+  // the map the panels leave clear)
+  const tools = useToolbarRoom(s => s.height);
+  const inset = useMapInsets();
   return (
-    <div className="absolute bottom-[120px] left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-40 pointer-events-none w-max max-w-[calc(100%-16px)]" style={bottom !== undefined ? { bottom } : undefined}>
+    <div className={`absolute flex flex-col items-center gap-2 z-40 pointer-events-none ${bottom !== undefined ? "left-1/2 -translate-x-1/2 w-max max-w-[calc(100%-16px)]" : ""}`} style={bottom !== undefined ? { bottom } : { bottom: tools ? 16 + tools + 10 : 120, left: inset.left, right: inset.right }}>
       {toasts.map(t => (
         <div key={t.id} role="status" className={`pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-2.5 touch:py-3 shadow-2xl text-sm max-w-[560px] border ${t.tone === "error" ? "bg-red-950 border-red-800 text-red-100" : t.tone === "success" ? "bg-emerald-950 border-emerald-800 text-emerald-50" : "glass border-white/[0.12] text-zinc-100"}`}>
           <span className={bottom !== undefined ? "text-[13px] leading-snug line-clamp-3" : undefined}>{t.text}</span>
@@ -61,25 +72,38 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
   const item = doc.items.find(i => i.id === info.itemId);
   useEffect(() => {
     const close = () => onClose();
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    // (Esc closes the menu, and only the menu: the tool and the selection stay)
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
     window.addEventListener("pointerdown", close);
-    window.addEventListener("keydown", esc);
-    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc); };
+    window.addEventListener("keydown", esc, true);
+    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc, true); };
   }, [onClose]);
-  // (a tree measured from the air standing there)
-  // (every tree the click passed through, nearest first: a sprout under a big crown is there too)
-  const trees = getView()?.treesAtScreen(info.clientX, info.clientY) ?? [];
-  if (!trees.length && info.ground) { const t = getView()?.treeAt(info.ground); if (t) trees.push(t); }
+  // Where it opens: down and right of the pointer, or up or left of it where there's no room
+  // (measured once drawn; a screen too short for it scrolls it)
+  const box = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const w = el.offsetWidth, h = el.offsetHeight;
+    setAt({
+      left: info.clientX + w + 8 > window.innerWidth ? Math.max(8, info.clientX - w) : info.clientX,
+      top: info.clientY + h + 8 > window.innerHeight ? Math.max(8, info.clientY - h) : info.clientY
+    });
+  }, [info.clientX, info.clientY]);
+  // (every tree the click passed through, nearest first: a sprout under a big crown is there too;
+  // and what the tree stands over, to pick instead)
+  const readOnly = useCourse.getState().readOnly;
+  const trees = readOnly ? [] : treesAt(info.clientX, info.clientY, info.ground);
   const tree = trees[0] ?? null;
-  const under = info.under ? doc.items.find(i => i.id === info.under) : undefined;
-  const underHole = info.under ? doc.holes.find(h => h.id === info.under) : undefined;
+  const under = tree ? underAction(doc, info.under) : null;
   // On open ground: what can start there (a tee or pin for the hole being worked on, a turn in
   // its line, a new hole, measuring), as a long press on a phone's map offers
   const ed = useEditor.getState();
-  const working = !hole && !item && info.ground && !useCourse.getState().readOnly ? doc.holes.find(h => h.id === (ed.activeHoleId ?? ed.selectedId)) : undefined;
-  const here = !hole && !item && !!info.ground && !useCourse.getState().readOnly && ed.step === "design";
+  const working = !hole && !item && info.ground && !readOnly ? doc.holes.find(h => h.id === (ed.activeHoleId ?? ed.selectedId)) : undefined;
+  // (not on a tree standing over something: that's the tree's menu)
+  const here = !hole && !item && !info.under && !!info.ground && !readOnly && ed.step === "design";
   if (!hole && !item && !tree && !here && !(canPaste() && info.ground)) return null;
-  const x = Math.min(info.clientX, window.innerWidth - 236), y = Math.min(info.clientY, window.innerHeight - (here ? 300 : 200));
   const row = "w-full text-left px-3 py-1.5 touch:py-3 touch:text-[15px] text-sm text-zinc-200 hover:bg-white/[0.09]";
   const toolThen = (tool: "add-hole" | "measure", then: (p: P) => void) => () => {
     useEditor.getState().set({ tool });
@@ -92,8 +116,11 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
   // (on one of the things picked together: for all of them)
   const group = useEditor.getState().group;
   const inGroup = !!item && group.includes(item.id);
+  // (copied: said, with how to paste it)
+  const copy = () => { if (!inGroup) select(info.itemId); if (copySelection()) toast("Copied. Ctrl+V pastes it where the pointer is, or right-click and Paste here."); };
+  const done = !!holeId && holeStats(doc, doc.holes.find(h => h.id === holeId)!).complete;
   return (
-    <div className="fixed z-50 w-52 touch:w-56 glass-solid rounded-xl touch:rounded-2xl shadow-xl shadow-black/40 ring-1 ring-white/10 py-1" style={{ left: x, top: y }} role="menu" onPointerDown={e => e.stopPropagation()} data-testid="map-menu">
+    <div ref={box} className="fixed z-50 w-52 touch:w-56 max-h-[calc(100dvh-16px)] overflow-y-auto glass-solid rounded-xl touch:rounded-2xl shadow-xl shadow-black/40 ring-1 ring-white/10 py-1" style={at ?? { left: info.clientX, top: info.clientY, visibility: "hidden" }} role="menu" onPointerDown={e => e.stopPropagation()} data-testid="map-menu">
       {here && (
         <div className={trees.length || canPaste() ? "border-b border-white/[0.08] mb-1 pb-1" : ""} data-testid="map-menu-here">
           {working && <div className="px-3 pt-1 pb-0.5 text-[11px] text-zinc-500">Hole {holeLabel(doc, working.id)}</div>}
@@ -104,12 +131,15 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
           <button className={row} role="menuitem" onClick={toolThen("measure", p => getView()?.measureFrom(p))}>Measure from here</button>
         </div>
       )}
-      {holeId && holeStats(doc, doc.holes.find(h => h.id === holeId)!).complete && (
+      {holeId && done && (
         <>
-          <button className={row} role="menuitem" onClick={run(() => useEditor.getState().set({ teeView: holeId, flyover: false }))}>View from the tee</button>
+          {/* (a tee: the view from that one, whatever color the layout plays) */}
+          <button className={row} role="menuitem" onClick={run(() => useEditor.getState().set({ teeView: holeId, teeViewTee: item?.type === "tee" ? item.id : null, flyover: false }))}>{item?.type === "tee" ? "View from this tee" : "View from the tee"}</button>
           <button className={row} role="menuitem" onClick={run(() => useEditor.getState().set({ teeView: holeId, flyover: true }))}>Fly over the hole</button>
         </>
       )}
+      {/* (on the hole's own line: a turn in it there) */}
+      {hole && done && info.ground && !readOnly && <button className={row} role="menuitem" onClick={run(() => bendHoleAt(hole.id, info.ground!))}>Bend the hole here</button>}
       {item && (item.type === "area" && item.kind !== "ob" || item.type === "line" && item.kind !== "ob" && item.kind !== "walk") && (
         <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, (item.ob === true ? { ob: undefined, obBeyond: undefined, obHoles: undefined, obStretches: undefined } : { ob: true }) as Partial<CourseItem>))}>{item.ob === true ? "Remove the red OB edge" : "Mark as OB (red edge)"}</button>
       )}
@@ -119,19 +149,16 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
       )}
       {item?.type === "line" && !item.locked && info.ground && <button className={row} role="menuitem" onClick={run(() => { getView()?.startObPick(item.id, info.ground!, true); useEditor.getState().set({ obPick: item.id, pickCut: true, tool: "select" }); })}>Remove a stretch from here</button>}
       {trees.map((t, n) => {
-        const label = t.kind === "measured" ? (() => { const g = doc.lidar?.trees[t.k]; const h = g ? grownTree(g, doc.lidar?.growYears ?? 0)[2] : 0; return `Measured tree · ${Math.round(h)} ft`; })()
-          : `${t.height < 25 ? "Sapling" : "Planted tree"} · ${Math.round(t.height)} ft`;
+        const label = treeTitle(doc, t);
         return (
           <div key={n} className={n ? "border-t border-white/[0.08] mt-1 pt-1" : ""} data-testid="tree-menu-tree">
             <div className="px-3 pt-1 pb-0.5 text-[11px] text-zinc-500">{n === 0 && trees.length > 1 ? `${label} · in front` : label}</div>
-            <button className={row} role="menuitem" onClick={run(() => { const look = getView()?.lookOf(t) ?? null; if (t.kind === "measured") adoptLidarTree(t.k, look); else adoptTreeAt(t, look); })} data-testid="tree-adopt">Edit this tree (height, place…)</button>
-            <button className={row} role="menuitem" onClick={run(() => (t.kind === "measured" ? getView()?.toggleLidarTree(t.k) : cutTreeAt(t)))} data-testid="tree-cut">Cut down this tree</button>
+            {treeActions(t).map(a => <button key={a.testid} className={row} role="menuitem" onClick={run(a.run)} data-testid={a.testid}>{a.label}</button>)}
           </div>
         );
       })}
-      {tree && under && <button className={`${row} border-t border-white/[0.08]`} role="menuitem" onClick={run(() => select(under.id))} data-testid="tree-select-under">Select the {under.type === "area" ? (under.kind === "woods" ? "woods" : "area") : under.type === "line" ? "line" : "structure"}</button>}
-      {tree && underHole && <button className={`${row} border-t border-white/[0.08]`} role="menuitem" onClick={run(() => select(underHole.id))} data-testid="tree-select-under">Select hole {holeLabel(doc, underHole.id)}</button>}
-      {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); copySelection(); })}>{inGroup ? `Copy ${group.length}` : "Copy"}</button>}
+      {under && <button className={`${row} border-t border-white/[0.08]`} role="menuitem" onClick={run(under.run)} data-testid={under.testid}>{under.label}</button>}
+      {(hole || item) && <button className={row} role="menuitem" onClick={run(copy)}>{inGroup ? `Copy ${group.length}` : "Copy"}</button>}
       {canPaste() && info.ground && <button className={row} role="menuitem" onClick={run(() => pasteClipboard(info.ground))}>Paste here</button>}
       {(hole || item) && <button className={row} role="menuitem" onClick={run(() => { if (!inGroup) select(info.itemId); duplicateSelection(); })}>{inGroup ? `Duplicate ${group.length}` : "Duplicate"}</button>}
       {item && !inGroup && <button className={row} role="menuitem" onClick={run(() => updateItem(item.id, { locked: !item.locked } as Partial<CourseItem>))}>{item.locked ? "Unlock" : "Lock in place"}</button>}
@@ -142,7 +169,7 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
 
 /** Ctrl+S: saved now (a draft into its history too), and said so. */
 function saveByHand() {
-  if (!SERVER) { toast("Saved: your work keeps by itself in this browser.", "success"); return; }
+  if (!SERVER) { toast("Saved. Your work saves by itself in this browser.", "success"); return; }
   if (useCourse.getState().readOnly) { toast("This course is view only.", "info"); return; }
   const draft = inDraft();
   void (draft ? saveDraftAs("") : saveNow()).then(
@@ -158,6 +185,11 @@ export default function App() {
   const layout = useLayout();
   const doc = useCourse(s => s.doc);
   const [findSite, setFindSite] = useState(false);
+  useEffect(() => {
+    const on = (e: Event) => { if ((e as CustomEvent).detail === "find-site") setFindSite(true); };
+    window.addEventListener(SHOW_EVENT, on);
+    return () => window.removeEventListener(SHOW_EVENT, on);
+  }, []);
   // (the help guide, open at a topic when one is asked for)
   const [help, setHelp] = useState<false | { topic?: string }>(false);
   useEffect(() => {
@@ -195,7 +227,10 @@ export default function App() {
       background: site.background,
       site: site.site,
       groundPaint: {},
-      name: d.name === "New Disc Golf Course" && site.site.location ? `${site.site.location.label.split(",")[0]} Disc Golf Course` : d.name,
+      // (named for the park only when one was found by name)
+      name: d.name === "New Disc Golf Course" && site.site.location?.label ? `${site.site.location.label.split(",")[0]} Disc Golf Course` : d.name,
+      // (the trees cut down stay cut, on the same spot on the ground)
+      cutTrees: from && site.site.bounds ? d.cutTrees?.map(reframe(from, { ...site.site.bounds, ...site.canvas })) : d.cutTrees,
       holes: carried.holes,
       items: [...carried.items, ...site.mapped, ...site.trees],
       lidar: site.lidar
@@ -204,7 +239,8 @@ export default function App() {
     useEditor.getState().set({ step: "design", tool: "select" });
     setTimeout(() => getView()?.fitSite(), 50);
     const outside = carried.outside ? ` ${carried.outside} ${carried.outside === 1 ? "thing you drew is" : "things you drew are"} now past the site's edges.` : "";
-    toast(`Site brought in. ${site.notes.join(" ")}${outside}`, "success", false, { label: "View in 3D", run: () => useEditor.getState().set({ view: "3d" }) }, 12000);
+    // (what came in is listed on the Site step)
+    toast(`Site brought in.${outside}`, "success", false, { label: "View in 3D", run: () => useEditor.getState().set({ view: "3d" }) }, 12000);
     if (site.osmFailed) osmFailedToast();
   };
 
@@ -223,20 +259,23 @@ export default function App() {
       // (AltGr, which types [ and ] on many keyboards, comes as Ctrl+Alt on Windows: not a shortcut)
       const mod = (e.ctrlKey || e.metaKey) && !(e.ctrlKey && e.altKey) && !e.getModifierState?.("AltGraph");
       if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); setGoTo(g => !g); return; }
-      if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) useCourse.getState().redo(); else useCourse.getState().undo(); return; }
+      // (while drawing, the last point first, as Backspace does)
+      if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) useCourse.getState().redo(); else if (!view?.undoPoint()) useCourse.getState().undo(); return; }
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); useCourse.getState().redo(); return; }
       // (Ctrl+S: your draft saved now, into the history; out of a draft, saved now)
       if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); saveByHand(); return; }
       if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (s.step !== "map") duplicateSelection(); return; }
-      if (mod && e.key.toLowerCase() === "c" && !s.teeView && s.step !== "map") { if (copySelection()) e.preventDefault(); return; }
+      if (mod && e.key.toLowerCase() === "c" && !s.teeView && s.step !== "map") { if (copySelection()) { e.preventDefault(); toast("Copied. Ctrl+V pastes it where the pointer is."); } return; }
       if (mod && e.key.toLowerCase() === "x" && !s.teeView && s.step !== "map") { e.preventDefault(); cutSelection(); return; }
-      if (mod && e.key.toLowerCase() === "v" && !s.teeView && s.step !== "map") { e.preventDefault(); s.set({ tool: "select" }); pasteClipboard(); return; }
+      // (where the pointer is over the map; off it, next to where it was copied from)
+      if (mod && e.key.toLowerCase() === "v" && !s.teeView && s.step !== "map") { e.preventDefault(); s.set({ tool: "select" }); pasteClipboard(view?.pointerGround()); return; }
       if (mod && e.key.toLowerCase() === "a" && !s.teeView && s.step !== "map") { e.preventDefault(); s.set({ tool: "select" }); selectAll(); return; }
       if (mod) return;
       // (AltGr types characters: only the [ and ] it types go on to the shortcuts)
       if (((e.ctrlKey && e.altKey) || e.getModifierState?.("AltGraph")) && e.key !== "[" && e.key !== "]") return;
       if (s.teeView) {
-        if (e.key === "Escape") s.set({ teeView: null, flyover: false });
+        // (Esc stops a flight first, back at the tee; then leaves the tee view)
+        if (e.key === "Escape") s.set(s.flyover ? { flyover: false } : { teeView: null, flyover: false });
         if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
           const d = getDoc();
           const stats = courseStats(d);
@@ -249,15 +288,24 @@ export default function App() {
       }
       if (e.key === "Escape") {
         if (view?.cancelDrawing()) return;
+        if (s.problemsOpen) { s.set({ problemsOpen: false }); return; }
         if (s.tool !== "select") { s.set({ tool: "select" }); return; }
         if (s.selectedId || s.group.length) { select(null); return; }
         return;
       }
       if (e.key === "Enter") {
-        if (view?.finishDrawing()) return;
+        if (view?.finishDrawing()) { e.preventDefault(); return; }
+        // (a shape begun but too short to finish: the drawing says so itself)
+        if (s.drawPoints > 0) return;
+        // (on a button, a link or a menu row reached with the keyboard, Enter is that control's)
+        if (target.closest?.("button,a,summary,[role=button],[role=menuitem],[role=option],[role=radio],[role=tab]") && target.matches?.(":focus-visible")) return;
+        // The view from the tee: of the hole picked, or of the tee or basket picked (from that tee);
+        // a button just clicked (a hole's row, say) isn't pressed again by it
         const d = getDoc();
-        const hole = d.holes.find(h => h.id === s.selectedId) ?? d.holes.find(h => h.id === s.activeHoleId);
-        if (hole && holeStats(d, hole).complete) s.set({ teeView: hole.id, flyover: false });
+        const it = d.items.find(i => i.id === s.selectedId);
+        const holeId = d.holes.some(h => h.id === s.selectedId) ? s.selectedId : it && (it.type === "tee" || it.type === "basket") ? it.holeId : null;
+        const hole = d.holes.find(h => h.id === holeId);
+        if (hole && holeStats(d, hole).complete) { e.preventDefault(); s.set({ teeView: hole.id, teeViewTee: it?.type === "tee" ? it.id : null, flyover: false }); }
         return;
       }
       // (on the Design page, these keys are the page's: the map's selection isn't seen there)
@@ -286,6 +334,8 @@ export default function App() {
       if (k === "Q") { view?.rotateBy(-30); return; }
       if (k === "E") { view?.rotateBy(30); return; }
       if (k === "N") { view?.resetNorth(); return; }
+      // (the tools' letters: only where the tools are, not on the Map and Export pages)
+      if (s.step === "map" || s.step === "export") return;
       const choice = CHOICE_KEYS[k] ? TOOLS.flatMap(t => t.choices ?? []).find(c => c.id === CHOICE_KEYS[k]) : undefined;
       if (choice) { drawChoice(choice, false); return; }
       const tool = TOOLS.find(t => t.key === k);
@@ -306,7 +356,7 @@ export default function App() {
         <Button tone="primary" full onClick={() => setFindSite(true)} testid="welcome-find"><MapPinned size={16} /> Find your park</Button>
         <Button full onClick={() => useEditor.getState().set({ step: "design", tool: "add-hole" })} testid="welcome-blank">Start on open ground</Button>
       </div>
-      <button className="mt-3 text-[13px] font-semibold text-orange-300 hover:text-orange-200" onClick={openGettingStarted} data-testid="welcome-tour">New here? Show me around</button>
+      <button className="mt-3 text-[13px] font-semibold text-orange-300 hover:text-orange-200 touch:min-h-[44px]" onClick={() => (SERVER ? openGettingStarted() : void startTour())} data-testid="welcome-tour">{SERVER ? "New here? Open Getting started" : "New here? Show me around"}</button>
     </div>
   );
   const dialogs = (
@@ -330,8 +380,8 @@ export default function App() {
           toasts={bottom => <Toasts bottom={bottom} />}
         />
         {dialogs}
-        {menu?.itemId && <ItemMenu itemId={menu.itemId} onClose={() => setMenu(null)} />}
-        {menu && !menu.itemId && menu.ground && <ContextMenu info={menu} onClose={() => setMenu(null)} />}
+        {menu?.itemId && <ItemMenu itemId={menu.itemId} at={menu} onClose={() => setMenu(null)} />}
+        {menu && !menu.itemId && menu.ground && <GroundMenu info={menu} onClose={() => setMenu(null)} />}
       </>
     );
   }

@@ -145,16 +145,50 @@ export const Field = ({ label, children, hint, help }: { label: string; children
 // (16 px text on touch screens: phones zoom into smaller text fields when they get the focus)
 export const inputCls = "w-full bg-white/[0.07] rounded-[10px] px-2.5 py-1.5 text-sm touch:py-2.5 touch:text-base text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-400/80";
 
-export const TextInput = ({ value, onChange, placeholder, label, area }: { value: string; onChange: (v: string) => void; placeholder?: string; label?: string; area?: boolean }) =>
-  area ? (
-    <textarea aria-label={label} className={`${inputCls} min-h-[64px] resize-y`} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} />
+/** A line (or `area`: a box) of text. `onDone` once the field is left: with the typing done live
+ * (no undo step a key), that's where its one undo step goes. `autoSelect`: focused when it
+ * shows, its text selected to type over (a label just put down). */
+export function TextInput({ value, onChange, placeholder, label, area, onDone, autoSelect, testid }: { value: string; onChange: (v: string) => void; placeholder?: string; label?: string; area?: boolean; onDone?: () => void; autoSelect?: boolean; testid?: string }) {
+  const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
+  useEffect(() => { if (autoSelect) { ref.current?.focus(); ref.current?.select(); } }, [autoSelect]);
+  return area ? (
+    <textarea ref={ref} aria-label={label} data-testid={testid} className={`${inputCls} min-h-[64px] resize-y`} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} onBlur={onDone} />
   ) : (
-    <input aria-label={label} className={inputCls} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} />
+    <input ref={ref} aria-label={label} data-testid={testid} className={inputCls} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} onBlur={onDone} onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
   );
+}
+
+/** A drop-down list in the panels' look (16 px text on touch screens, as the text fields). */
+export const Select = ({ value, onChange, label, testid, children, className = "" }: { value: string; onChange: (v: string) => void; label: string; testid?: string; children: ReactNode; className?: string }) => (
+  <select aria-label={label} data-testid={testid} className={`w-full bg-white/[0.07] rounded-[10px] px-2.5 py-1.5 text-sm touch:py-2.5 touch:text-base text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-400/80 ${className}`} value={value} onChange={e => onChange(e.target.value)}>
+    {children}
+  </select>
+);
+
+/** One of several kinds, as a wrap of small chips (the tool bar's look): a kind of area or line,
+ * a tee color, a surface. Each can have a color dot or an icon, and a tooltip. */
+export function ChipPick<T extends string>({ value, options, onChange, label, testid }: { value: T; options: { value: T; label: string; color?: string; icon?: ReactNode; title?: string }[]; onChange: (v: T) => void; label: string; testid?: string }) {
+  return (
+    <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={label} data-testid={testid}>
+      {options.map(o => {
+        const on = value === o.value;
+        return (
+          <button key={o.value} type="button" role="radio" aria-checked={on} title={o.title} onClick={() => onChange(o.value)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 touch:py-2 touch:px-3 touch:text-[13px] touch:min-h-[40px] rounded-full text-xs font-semibold transition-colors ${FOCUS} ${on ? "bg-zinc-100 text-zinc-900" : "bg-white/[0.07] text-zinc-300 hover:bg-white/[0.12] hover:text-zinc-50"}`}>
+            {o.color && <span className="w-2.5 h-2.5 rounded-full border border-black/30 shrink-0" style={{ background: o.color }} />}
+            {o.icon}
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /** A number typed freely (cleared, part-typed): kept as typed while it is in range, kept within
- * range when the field is left or Enter is pressed. */
-export function NumberInput({ value, onChange, min, max, step = 1, label, unit }: { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; label?: string; unit?: string }) {
+ * range when the field is left or Enter is pressed. `onDone` once it's left (its one undo step,
+ * when the typing is live without one). */
+export function NumberInput({ value, onChange, min, max, step = 1, label, unit, onDone }: { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; label?: string; unit?: string; onDone?: () => void }) {
   const shown = Number.isFinite(value) ? String(value) : "";
   const [text, setText] = useState(shown);
   const editing = useRef(false);
@@ -165,6 +199,7 @@ export function NumberInput({ value, onChange, min, max, step = 1, label, unit }
     const v = parseFloat(text);
     if (Number.isFinite(v) && within(v) !== value) onChange(within(v));
     setText(Number.isFinite(v) ? String(within(v)) : shown);
+    onDone?.();
   };
   return (
     <div className="flex items-center gap-1.5">
@@ -221,7 +256,7 @@ export function Segmented<T extends string | number>({ value, options, onChange,
 }
 
 /** A few choices whose names alone wouldn't say what they do: each with a line that does. */
-export function ChoiceList<T extends string>({ value, options, onChange, label, testid }: { value: T; options: { value: T; label: string; hint: string }[]; onChange: (v: T) => void; label: string; testid?: string }) {
+export function ChoiceList<T extends string>({ value, options, onChange, label, testid }: { value: T; options: { value: T; label: string; hint?: string }[]; onChange: (v: T) => void; label: string; testid?: string }) {
   return (
     <div className="flex flex-col gap-1" role="radiogroup" aria-label={label} data-testid={testid}>
       {options.map(o => {
@@ -232,7 +267,7 @@ export function ChoiceList<T extends string>({ value, options, onChange, label, 
             <span className={`mt-0.5 w-4 h-4 shrink-0 rounded-full border-2 flex items-center justify-center ${on ? "border-orange-300" : "border-zinc-500"}`}>{on && <span className="w-2 h-2 rounded-full bg-orange-300" />}</span>
             <span className="min-w-0">
               <span className={`block text-[13px] font-semibold ${on ? "text-zinc-50" : "text-zinc-200"}`}>{o.label}</span>
-              <span className="block text-[11.5px] leading-snug text-zinc-400">{o.hint}</span>
+              {o.hint && <span className="block text-[11.5px] leading-snug text-zinc-400">{o.hint}</span>}
             </span>
           </button>
         );
@@ -298,6 +333,8 @@ export const Button = ({ children, onClick, tone = "default", disabled, title, t
   );
 };
 
+/** A color, picked with the system's color picker. `onDone` once it's closed (its one undo step,
+ * when the colors on the way there were live without one). */
 export const ColorInput = ({ value, onChange, label, onDone }: { value: string; onChange: (v: string) => void; label: string; onDone?: () => void }) => (
   <label className="flex items-center justify-between gap-2 py-1">
     <span className="text-xs text-zinc-300">{label}</span>

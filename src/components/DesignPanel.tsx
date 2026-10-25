@@ -2,15 +2,15 @@
 import { ArrowRight, RotateCcw } from "lucide-react";
 import { ApplyToHoles } from "./ApplyToHoles";
 import { BASKET_MARKS, PAPER, basketMark, bestRotation } from "../lib/mapSvg";
-import { CARD_DEFAULTS, SIGN_LOOKS, SIGN_PARTS, SIGN_SPOTS, signOf } from "../lib/teeSign";
+import { CARD_DEFAULTS, SIGN_LOOKS, SIGN_PARTS, SIGN_SPOTS, isSheet, signOf } from "../lib/teeSign";
 import { holeLabel } from "../lib/course";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { AREA_KINDS } from "../constants";
 import { RESTRICTED } from "../lib/symbols";
 import { MapLookPanel } from "./MapLookPanel";
 import { useEffect, useRef, useState } from "react";
-import type { MapStyle, PaperSize, ReliefLook, SignSettings } from "../types";
-import { Button, ColorInput, Field, Fold, Section, Segmented, Slider, TextInput, Toggle, WholePanelOnly } from "./ui";
+import type { MapStyle, PaperSize, ReliefLook, SignLook, SignSettings } from "../types";
+import { Button, ColorInput, Field, Fold, HelpLink, Section, Segmented, Slider, TextInput, Toggle, WholePanelOnly } from "./ui";
 import { HolePageLook, PrintPanel, ScorecardSettings } from "./PrintPanel";
 import { FontPicker } from "./FontPicker";
 import { fontsIn } from "../lib/fontLoad";
@@ -67,7 +67,8 @@ export const signed = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.
 /** The picture's tone: brightness, contrast, color, how painted, the hills (in the Light part). */
 export function FineTuning({ s }: { s: MapStyle }) {
   return (
-    <Section title="Tone" testid="light-shadow" right={<button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ light: 0, contrast: 0, colorStrength: 1, paint: 0.8 })}><RotateCcw size={12} /> Reset</button>}>
+    // (its Reset once something's changed, as every other part's)
+    <Section title="Tone" testid="light-shadow" right={s.light !== undefined || s.contrast !== undefined || s.colorStrength !== undefined || s.paint !== undefined ? <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ light: undefined, contrast: undefined, colorStrength: undefined, paint: undefined })}><RotateCcw size={12} /> Reset</button> : undefined}>
       <StyleSlider k="light" value={s.light ?? 0} label="Brightness" min={-0.3} max={0.3} step={0.02} format={signed} />
       <StyleSlider k="contrast" value={s.contrast ?? 0} label="Contrast" min={-0.3} max={0.4} step={0.02} format={signed} />
       <StyleSlider k="colorStrength" value={s.colorStrength ?? 1} label="Color strength" min={0.3} max={1.4} step={0.05} format={x => `${Math.round(x * 100)}%`} />
@@ -126,35 +127,43 @@ function TeeSignSettings() {
     : <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1 disabled:opacity-40" disabled={!doc.style.sign} onClick={() => setStyle({ sign: undefined })}><RotateCcw size={12} /> Reset</button>;
   // (from a hole: its sign settings to the holes picked; for all holes: the picked holes follow them)
   const applyTo = (ids: string[]) => changeDoc(d => ({ holes: d.holes.map(h => (ids.includes(h.id) ? { ...h, sign: forHole && hole!.sign ? JSON.parse(JSON.stringify(hole!.sign)) : undefined } : h)) }));
+  // (a sign on letter or A4 paper is always Classic; the others look as picked on the signs' own sizes)
+  const size = doc.style.signSize ?? "18x12", sheet = isSheet(size), look = doc.style.sign?.look ?? "classic";
+  // (an extra panel only where the look has room for one: a wide sign, Classic, Trailhead or Field guide)
+  const spots = size !== "18x12" || sheet || look === "openview" ? [] : look === "fieldguide" ? SIGN_SPOTS.filter(o => o.id !== "stats") : SIGN_SPOTS;
+  // (another look starts every sign over, each hole's own layout too)
+  const pickLook = (id: SignLook) => changeDoc(d => ({ style: { ...d.style, sign: { ...d.style.sign, look: id === "classic" ? undefined : id, layout: undefined } }, holes: d.holes.map(h => (h.sign?.layout ? { ...h, sign: { ...h.sign, layout: undefined } } : h)) }));
   if (!doc.holes.length) return null;
   return (
     <Section title="Tee signs" testid="sign-settings" right={reset} help="tee-signs">
       <div className="text-[12px] text-zinc-400 mb-1.5 px-0.5">Start from</div>
       <div className="grid grid-cols-4 gap-1.5 mb-3" role="radiogroup" aria-label="Tee sign look" data-testid="sign-looks">
         {SIGN_LOOKS.map(l => {
-          const on = (doc.style.sign?.look ?? "classic") === l.id;
+          const on = look === l.id, off = sheet && l.id !== "classic";
           return (
-            <button key={l.id} role="radio" aria-checked={on} data-testid={`sign-look-${l.id}`} onClick={() => setStyle({ sign: { ...doc.style.sign, look: l.id === "classic" ? undefined : l.id, layout: undefined } })}
-              className={`text-left rounded-lg overflow-hidden bg-white/[0.07] ring-1 transition ${on ? "ring-2 ring-orange-400" : "ring-white/10 hover:ring-white/30"}`}>
+            <button key={l.id} role="radio" aria-checked={on} data-testid={`sign-look-${l.id}`} onClick={() => pickLook(l.id)}
+              className={`text-left rounded-lg overflow-hidden bg-white/[0.07] ring-1 transition ${on ? "ring-2 ring-orange-400" : "ring-white/10 hover:ring-white/30"} ${off ? "opacity-45" : ""}`}>
               <img src={`${import.meta.env.BASE_URL}signs/${l.id}.jpg`} alt="" loading="lazy" className="block w-full aspect-[2/3] object-cover object-top" draggable={false} />
               <span className="block px-1 py-1 text-[10.5px] leading-tight font-semibold text-zinc-100 text-center">{l.label}</span>
             </button>
           );
         })}
       </div>
-      {forHole && <p className="text-[11.5px] text-orange-200/90 mb-2 px-0.5">Changing hole {holeLabel(doc, hole!.id)}'s sign only (the switch over the page).</p>}
+      {forHole && <p className="text-[11.5px] text-orange-200/90 mb-2 px-0.5">Hole {holeLabel(doc, hole!.id)}'s sign only</p>}
       <Field label="Other holes">
         <Segmented label="Other holes on the sign" value={eff.others} onChange={v => patch({ others: v })} options={[{ value: "faded", label: "Faded" }, { value: "hidden", label: "Hidden" }, { value: "shown", label: "Shown" }]} />
       </Field>
-      {eff.others === "faded" && <Slider label="How faded" min={0.05} max={0.9} step={0.05} value={eff.fade} onChange={v => patch({ fade: v }, false)} onDone={() => useCourse.getState().commit()} format={v => `${Math.round(v * 100)}%`} />}
+      {eff.others === "faded" && <Slider label="How much they show" min={0.05} max={0.9} step={0.05} value={eff.fade} onChange={v => patch({ fade: v }, false)} onDone={() => useCourse.getState().commit()} format={v => `${Math.round(v * 100)}%`} />}
       <div className="grid grid-cols-2 gap-x-3" data-testid="sign-parts">
         {SIGN_PARTS.filter(p => ["throwLine", "circle", "distances"].includes(p.id)).map(p => <Toggle key={p.id} label={p.label} checked={eff.show(p.id)} onChange={v => patch({ show: { ...own.show, [p.id]: v } })} />)}
       </div>
-      <Field label="Under the notes">
-        <Segmented label="What goes under the notes" value={eff.spot} onChange={v => patch({ spot: v, show: { ...own.show, courseMap: undefined } })} options={SIGN_SPOTS.map(o => ({ value: o.id, label: o.label }))} />
-      </Field>
+      {spots.length > 0 && (
+        <Field label="Extra panel">
+          <Segmented label="What goes in the extra panel" value={spots.some(o => o.id === eff.spot) ? eff.spot : "green"} onChange={v => patch({ spot: v, show: { ...own.show, courseMap: undefined } })} options={spots.map(o => ({ value: o.id, label: o.label }))} />
+        </Field>
+      )}
       <div className="mt-2">
-        <ApplyToHoles fromId={forHole ? hole!.id : undefined} apply={applyTo} testid="sign-apply" />
+        <ApplyToHoles fromId={forHole ? hole!.id : undefined} apply={applyTo} testid="sign-apply" label={forHole ? undefined : "Put holes back to the every-hole sign…"} />
       </div>
     </Section>
   );
@@ -178,23 +187,48 @@ export function DesignPanel() {
     <>
       {tab === "general" && (
         <>
-      <Section title="Logo, colors and lettering" testid="card-style" right={s.card ? <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ card: undefined })}><RotateCcw size={12} /> Reset</button> : undefined}>
+      <Section title="Logo, colors and lettering" testid="card-style" help="card-style" right={s.card ? <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ card: undefined })}><RotateCcw size={12} /> Reset</button> : undefined}>
         <div className="grid grid-cols-2 gap-x-3">
           {([["header", "Header"], ["accent", "Header lettering"], ["paper", "Paper"], ["ink", "Text"]] as const).map(([key, label]) => (
             <ColorInput key={key} label={label} value={s.card?.[key] ?? CARD_DEFAULTS[key]} onChange={v => setStyle({ card: { ...s.card, [key]: v } }, false)} onDone={done} />
           ))}
         </div>
         <Field label="Line under the course name">
-          <TextInput label="Line under the course name" value={s.tagline ?? "Disc golf course"} placeholder="None" onChange={v => setStyle({ tagline: v })} />
+          <TextInput label="Line under the course name" value={s.tagline ?? "Disc golf course"} placeholder="None" onChange={v => setStyle({ tagline: v }, false)} onDone={done} />
         </Field>
         <Field label="Course logo">
           <LogoPicker logo={s.logo} />
+        </Field>
+        <Field label="Course name font">
+          <FontPicker label="Course name font" value={s.titleFont} inherit="Each look's own" onPick={f => setStyle({ titleFont: f ?? undefined })} used={fontsIn(doc)} testid="title-font" />
         </Field>
         <Field label="Headings (tee signs, hole pages, scorecard)">
           <FontPicker label="Headings font" value={s.card?.font ?? CARD_DEFAULTS.font} onPick={f => setStyle({ card: { ...s.card, font: f ?? CARD_DEFAULTS.font } })} used={fontsIn(doc)} testid="card-font" />
         </Field>
       </Section>
-      <Section title="Marks and colors" testid="markings">
+      <Section title="Marks and colors" testid="markings" help="marks">
+        {/* (which colors mark the areas first: PDGA colors set OB's own, so its swatch goes) */}
+        <div className="text-xs text-zinc-400">Marking colors</div>
+        <div className="mt-1 mb-3 grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Marking colors">
+          {([
+            { value: "map", label: "Map colors", ob: s.ob, nogo: "#7c3aed" },
+            { value: "pdga", label: "PDGA colors", ob: "#ffffff", nogo: RESTRICTED }
+          ] as const).map(m => (
+            <button
+              key={m.value}
+              role="radio"
+              aria-checked={(s.markings ?? "map") === m.value}
+              data-testid={`markings-${m.value}`}
+              onClick={() => setStyle({ markings: m.value })}
+              className={`rounded-lg border px-2 py-1.5 touch:py-3 flex items-center gap-2 text-xs font-semibold text-zinc-200 transition-colors ${(s.markings ?? "map") === m.value ? "border-orange-500 bg-orange-500/10" : "border-white/[0.12] hover:border-zinc-500"}`}
+            >
+              <span className="flex gap-0.5">
+                {[m.ob, s.hazard, AREA_KINDS.casual.color, m.nogo].map((c, i) => <span key={i} className="w-2.5 h-4 rounded-sm border border-zinc-900" style={{ background: c }} />)}
+              </span>
+              {m.label}
+            </button>
+          ))}
+        </div>
         <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="Basket marks">
           {BASKET_MARKS.map(m => (
             <button
@@ -212,64 +246,40 @@ export function DesignPanel() {
         </div>
         <div className="mt-2 grid grid-cols-2 gap-x-2">
           <ColorInput label="Basket color" value={s.basket} onChange={v => setStyle({ basket: v }, false)} onDone={done} />
-          <ColorInput label="OB" value={s.ob} onChange={v => setStyle({ ob: v }, false)} onDone={done} />
+          {s.markings !== "pdga" && <ColorInput label="OB" value={s.ob} onChange={v => setStyle({ ob: v }, false)} onDone={done} />}
           <ColorInput label="Hazard" value={s.hazard} onChange={v => setStyle({ hazard: v }, false)} onDone={done} />
-        </div>
-        <div className="mt-3 text-xs text-zinc-400">Marking colors</div>
-        <div className="mt-1 grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Marking colors">
-          {([
-            { value: "map", label: "Map colors", ob: s.ob, nogo: "#7c3aed" },
-            { value: "pdga", label: "PDGA colors", ob: "#ffffff", nogo: RESTRICTED }
-          ] as const).map(m => (
-            <button
-              key={m.value}
-              role="radio"
-              aria-checked={(s.markings ?? "map") === m.value}
-              data-testid={`markings-${m.value}`}
-              onClick={() => setStyle({ markings: m.value })}
-              className={`rounded-lg border px-2 py-1.5 flex items-center gap-2 text-xs font-semibold text-zinc-200 transition-colors ${(s.markings ?? "map") === m.value ? "border-orange-500 bg-orange-500/10" : "border-white/[0.12] hover:border-zinc-500"}`}
-            >
-              <span className="flex gap-0.5">
-                {[m.ob, s.hazard, AREA_KINDS.casual.color, m.nogo].map((c, i) => <span key={i} className="w-2.5 h-4 rounded-sm border border-zinc-900" style={{ background: c }} />)}
-              </span>
-              {m.label}
-            </button>
-          ))}
         </div>
       </Section>
         </>
       )}
       {tab === "map" && (
-        <PrintPanel t="map">
-          <Section title="Map style" testid="map-style" help="map-style">
-            <MapLookPanel />
-          </Section>
+        <PrintPanel t="map" top={<Section title="Map style" testid="map-style" help="map-style"><MapLookPanel /></Section>}>
       <Section title="Drawn on the map" help="drawn-on-map" testid="drawn-on-map">
         <Toggle label="Throw lines" checked={s.throwLines} onChange={v => setStyle({ throwLines: v })} />
         <Toggle label="Distances on the lines" checked={s.distances} onChange={v => setStyle({ distances: v })} />
-        <Toggle label="Putting circle (10 m)" checked={s.circle} onChange={v => setStyle({ circle: v })} />
+        <Toggle label="Putting circle (10 m, 33 ft)" checked={s.circle} onChange={v => setStyle({ circle: v })} />
         {!(s.hillshade && s.reliefLook === "contours") && <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />}
       </Section>
-      <Fold title="Lettering" testid="fold-title">
-        <Field label="Title font (on the map and the signs)">
-          <FontPicker label="Title font" value={s.titleFont} inherit="Same as the map's" onPick={f => setStyle({ titleFont: f ?? undefined })} used={fontsIn(doc)} testid="title-font" />
-        </Field>
+      {/* (the course name's font is on the General tab: it goes on every printout) */}
+      <Fold title={<span className="flex items-center gap-1.5">Lettering <HelpLink topic="lettering" label="Lettering" /></span>} testid="fold-title">
         <Field label="Font (the map's labels)">
           <FontPicker label="Map font" value={s.font} onPick={f => setStyle({ font: f ?? "Script" })} used={fontsIn(doc)} testid="map-font" />
         </Field>
-        <Slider label="Label size" min={0.7} max={1.6} step={0.05} value={s.labelScale} onChange={v => setStyle({ labelScale: v })} format={v => `${Math.round(v * 100)}%`} />
+        <StyleSlider k="labelScale" value={s.labelScale} label="Label size" min={0.7} max={1.6} step={0.05} format={v => `${Math.round(v * 100)}%`} />
       </Fold>
-      <Fold title="Paper" testid="fold-paper">
+      <Fold title={<span className="flex items-center gap-1.5">Paper <HelpLink topic="paper" label="Paper" /></span>} testid="fold-paper">
         <Field label="Frame">
           <Segmented label="Frame" value={s.frame ?? "none"} onChange={v => setStyle({ frame: v === "none" ? undefined : v })} options={[{ value: "none", label: "None" }, { value: "mat", label: "Mat" }, { value: "line", label: "Fine line" }, { value: "band", label: "Band" }]} />
         </Field>
-        <Field label="Size">
-          <select aria-label="Paper size" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 text-sm" value={s.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
+        <Field label="Paper size">
+          <select aria-label="Paper size" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 touch:py-2.5 text-sm touch:text-base" value={s.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
             {(Object.keys(PAPER) as PaperSize[]).map(p => <option key={p} value={p}>{PAPER[p].label}</option>)}
           </select>
         </Field>
-        <Segmented label="Orientation" value={s.orientation} onChange={v => setStyle({ orientation: v })} options={[{ value: "auto", label: "Auto" }, { value: "landscape", label: "Landscape" }, { value: "portrait", label: "Portrait" }]} />
-        <div className="mt-3">
+        <Field label="Orientation">
+          <Segmented label="Orientation" value={s.orientation} onChange={v => setStyle({ orientation: v })} options={[{ value: "auto", label: "Auto" }, { value: "landscape", label: "Landscape" }, { value: "portrait", label: "Portrait" }]} />
+        </Field>
+        <div className="mt-1">
           <Slider label="Turn the map" min={-180} max={180} value={s.rotation} onChange={v => setStyle({ rotation: v }, false)} onDone={done} format={v => (v === 0 ? "North up" : `${v}°`)} />
           <div className="flex gap-1.5 -mt-1">
             <Button small onClick={() => setStyle({ rotation: bestRotation(doc) })} testid="best-rotation">Turn to fill the page</Button>

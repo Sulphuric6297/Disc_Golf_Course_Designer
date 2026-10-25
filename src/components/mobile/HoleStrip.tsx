@@ -8,12 +8,14 @@ import { Navigation, Plus } from "lucide-react";
 import { AREA_KINDS, LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER } from "../../constants";
 import { holeBaskets, holeTees, teeAim } from "../../lib/course";
 import { holeStats } from "../../lib/holeStats";
+import { structureHeight, structureWidth } from "../../lib/structures";
 import { fmtDist } from "../../lib/units";
-import { addHoleOb, select, setTeeLevel, startAnotherPin, startAnotherTee, startHoleToBasket } from "../../state/actions";
+import { addHoleOb, obChoiceOf, select, setObChoice, setPinPosition, setTeeLevel, startAnotherPin, startAnotherTee, startHoleToBasket, type ObChoice } from "../../state/actions";
 import { updateHole, updateItem, useCourse, useEditor } from "../../state/course";
 import { canShowLocation, spotHere, useGps } from "../../state/gps";
 import { toast } from "../../state/toast";
 import type { AreaItem, AreaKind, BasketItem, CourseItem, Hole, LineItem, LineKind, MandoItem, StructureItem, TeeItem, TreeItem, TreeKind } from "../../types";
+import { fmtSize, hasObChoice, obOptions } from "../Inspector";
 import { Segmented } from "../ui";
 
 type Chip = "par" | "fairway" | "tees" | "pins" | "ob" | "foliage";
@@ -62,8 +64,8 @@ export function Dial({ value, min, max, step, label, format, onChange, onDone }:
   );
 }
 
-const chipCls = (on: boolean) => `shrink-0 h-9 px-3 rounded-full text-[13.5px] font-semibold whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${on ? "bg-zinc-100 text-zinc-900" : "bg-white/[0.08] text-zinc-200 active:bg-white/[0.14]"}`;
-const small = "h-10 px-3 rounded-xl text-[13.5px] font-semibold bg-white/[0.08] text-zinc-100 active:bg-white/[0.14] flex items-center gap-1.5 whitespace-nowrap";
+const chipCls = (on: boolean) => `shrink-0 h-10 px-3 rounded-full text-[13.5px] font-semibold whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${on ? "bg-zinc-100 text-zinc-900" : "bg-white/[0.08] text-zinc-200 active:bg-white/[0.14]"}`;
+const small = "h-11 px-3 rounded-xl text-[13.5px] font-semibold bg-white/[0.08] text-zinc-100 active:bg-white/[0.14] flex items-center gap-1.5 whitespace-nowrap";
 
 export function HoleStrip({ hole }: { hole: Hole }) {
   const doc = useCourse(s => s.doc);
@@ -83,7 +85,7 @@ export function HoleStrip({ hole }: { hole: Hole }) {
     ["foliage", <>Foliage <span className="opacity-60">{hole.foliage ?? "auto"}</span></>]
   ];
   let control: ReactNode = null;
-  if (chip === "par") control = <Segmented label="Par" value={hole.par ?? 0} onChange={v => set({ par: v === 0 ? undefined : v })} options={[{ value: 0, label: `Auto ${s.parAuto}` }, ...[2, 3, 4, 5, 6].map(p => ({ value: p, label: String(p) }))]} />;
+  if (chip === "par") control = <Segmented label="Par" value={hole.par ?? 0} onChange={v => set({ par: v === 0 ? undefined : v })} options={[{ value: 0, label: `Auto (${s.parAuto})` }, ...[2, 3, 4, 5, 6].map(p => ({ value: p, label: String(p) }))]} />;
   else if (chip === "fairway") control = hole.fairway
     ? <Dial label="Fairway width" value={hole.fairwayWidth} min={10} max={150} step={1} format={v => `${fmtDist(v, u)} wide`} onChange={v => set({ fairwayWidth: v }, false)} onDone={() => useCourse.getState().commit()} />
     : <button className={small} onClick={() => set({ fairway: true })}><Plus size={16} /> Draw the fairway</button>;
@@ -96,16 +98,16 @@ export function HoleStrip({ hole }: { hole: Hole }) {
         {items.map(i => <button key={i.id} className={small} onClick={() => select(i.id)}><span className="w-2.5 h-2.5 rounded-full ring-1 ring-black/40" style={{ background: i.dot }} />{i.label}</button>)}
         {chip === "tees" ? (
           <>
-            <button className={small} onClick={() => startAnotherTee(hole.id)} data-testid="strip-add-tee"><Plus size={16} /> Tee for this hole</button>
+            <button className={small} onClick={() => startAnotherTee(hole.id)} data-testid="strip-add-tee"><Plus size={16} /> Another tee for this hole</button>
             {s.complete && <button className={small} onClick={() => startHoleToBasket(hole.id)} data-testid="strip-hole-to-basket"><Plus size={16} /> New hole to this basket</button>}
           </>
-        ) : <button className={small} onClick={() => startAnotherPin(hole.id)} data-testid="strip-add-pin"><Plus size={16} /> Another pin</button>}
+        ) : <button className={small} onClick={() => startAnotherPin(hole.id)} data-testid="strip-add-pin"><Plus size={16} /> Another pin position</button>}
       </div>
     );
   } else if (chip === "ob") control = (
     <div className="flex gap-1.5">
       {s.complete
-        ? (["left", "right", "long"] as const).map(w => <button key={w} className={`${small} flex-1 justify-center`} onClick={() => addHoleOb(hole.id, w)}>{w === "left" ? "Left side" : w === "right" ? "Right side" : "Behind"}</button>)
+        ? (["left", "right", "long"] as const).map(w => <button key={w} className={`${small} flex-1 justify-center`} onClick={() => addHoleOb(hole.id, w)}>{w === "left" ? "Left side" : w === "right" ? "Right side" : "Behind basket"}</button>)
         : <span className="text-[13px] text-zinc-400 px-1 py-2">Needs a tee and a basket first.</span>}
     </div>
   );
@@ -120,7 +122,8 @@ export function HoleStrip({ hole }: { hole: Hole }) {
   );
 }
 
-type ItemChip = { id: string; label: ReactNode; control: ReactNode };
+/** A chip in the strip: one that opens its control below it, or (`run`) one that acts at once. */
+type ItemChip = { id: string; label: ReactNode; control?: ReactNode; run?: () => void };
 // (the chip open for each kind of thing stays open from one to the next)
 const lastItemChip: Record<string, string> = {};
 
@@ -139,8 +142,9 @@ export function ItemStrip({ item }: { item: CourseItem }) {
     const t = item as TreeItem;
     const height = t.height ?? t.radius * 2.6;
     chips.push(
-      { id: "height", label: <>Height <span className="opacity-60">{fmtDist(height, u)}</span></>, control: <Dial label="Tree height" value={Math.round(height)} min={2} max={120} step={1} format={v => `${fmtDist(v, u)} tall`} onChange={v => live({ height: v, radius: Math.max(1, Math.min(45, Math.round(t.radius * (v / height) * 10) / 10)) })} onDone={done} /> },
-      { id: "spread", label: <>Spread <span className="opacity-60">{fmtDist(t.radius * 2, u)}</span></>, control: <Dial label="Crown spread" value={Math.round(t.radius * 2)} min={2} max={90} step={1} format={v => `${fmtDist(v, u)} across`} onChange={v => live({ radius: v / 2 })} onDone={done} /> },
+      // (as far as the panel's sliders go: a survey's tree taller than that keeps its size)
+      { id: "height", label: <>Height <span className="opacity-60">{fmtDist(height, u)}</span></>, control: <Dial label="Tree height" value={Math.round(height)} min={2} max={Math.max(120, Math.round(height))} step={1} format={v => `${fmtDist(v, u)} tall`} onChange={v => live({ height: v, radius: Math.max(1, Math.min(45, Math.round(t.radius * (v / height) * 10) / 10)) })} onDone={done} /> },
+      { id: "spread", label: <>Spread <span className="opacity-60">{fmtDist(t.radius * 2, u)}</span></>, control: <Dial label="Crown spread" value={Math.round(t.radius * 2)} min={2} max={Math.max(90, Math.round(t.radius * 2))} step={1} format={v => `${fmtDist(v, u)} across`} onChange={v => live({ radius: v / 2 })} onDone={done} /> },
       { id: "kind", label: <>Kind</>, control: <Segmented label="Tree kind" value={t.treeType ?? "deciduous"} onChange={v => set({ treeType: v as TreeKind, species: undefined, variant: undefined, leaf: undefined })} options={[{ value: "deciduous", label: "Leafy" }, { value: "conifer", label: "Pine" }, { value: "bush", label: "Bush" }]} /> },
       { id: "lean", label: <>Lean <span className="opacity-60">{t.lean ? `${t.lean}°` : "none"}</span></>, control: <Dial label="Lean" value={Math.round(t.lean ?? 0)} min={0} max={30} step={1} format={v => (v ? `Leans ${v}°` : "Upright")} onChange={v => live({ lean: v || undefined })} onDone={done} /> }
     );
@@ -149,7 +153,7 @@ export function ItemStrip({ item }: { item: CourseItem }) {
     const t = item as TeeItem;
     const aim = Math.round(teeAim(doc, t));
     chips.push(
-      { id: "view", label: <>View from it</>, control: <button className={`${small} w-full justify-center`} onClick={() => useEditor.getState().set({ teeView: t.holeId, teeViewTee: t.id, flyover: false })} data-testid="strip-tee-view">Stand on this tee and look down the hole</button> },
+      { id: "view", label: <>View from this tee</>, run: () => useEditor.getState().set({ teeView: t.holeId, teeViewTee: t.id, flyover: false }) },
       { id: "color", label: <>Color <span className="inline-block w-2.5 h-2.5 rounded-full align-middle ring-1 ring-black/40 ml-0.5" style={{ background: TEE_LEVELS[t.level].color }} /></>, control: (
         <div className="flex gap-1.5 overflow-x-auto touch-pan-x dg-scroll -mx-1 px-1">
           {TEE_ORDER.map(l => <button key={l} className={`${small} ${t.level === l ? "!bg-zinc-100 !text-zinc-900" : ""}`} onClick={() => setTeeLevel(t.id, l)}><span className="w-2.5 h-2.5 rounded-full ring-1 ring-black/40" style={{ background: TEE_LEVELS[l].color }} />{TEE_LEVELS[l].label}</button>)}
@@ -162,50 +166,72 @@ export function ItemStrip({ item }: { item: CourseItem }) {
   } else if (item.type === "basket") {
     const b = item as BasketItem;
     chips.push(
-      { id: "pin", label: <>Pin <span className="opacity-60">{b.position}</span></>, control: <Segmented label="Pin position" value={b.position} onChange={v => set({ position: v })} options={PIN_POSITIONS.map(p => ({ value: p, label: `Pin ${p}` }))} /> },
-      { id: "raised", label: <>Raised <span className="opacity-60">{b.raised ? fmtDist(b.raised, u) : "no"}</span></>, control: <Dial label="Raised above the ground" value={b.raised ?? 0} min={0} max={20} step={0.5} format={v => (v ? `${fmtDist(v, u)} up` : "On the ground")} onChange={v => live({ raised: v || undefined })} onDone={done} /> }
+      { id: "pin", label: <>Pin <span className="opacity-60">{b.position}</span></>, control: <Segmented label="Pin position" value={b.position} onChange={v => setPinPosition(b.id, v)} options={PIN_POSITIONS.map(p => ({ value: p, label: `Pin ${p}` }))} /> },
+      { id: "raised", label: <>Raised <span className="opacity-60">{b.raised ? fmtDist(b.raised, u) : "no"}</span></>, control: <Dial label="Raised above the ground" value={b.raised ?? 0} min={0} max={30} step={0.5} format={v => (v ? `${fmtDist(v, u)} up` : "On the ground")} onChange={v => live({ raised: v || undefined })} onDone={done} /> }
     );
   } else if (item.type === "mando" || item.type === "amenity" || item.type === "dropzone" || item.type === "label") {
     const r = Math.round((item as { rotation?: number }).rotation ?? 0);
     chips.push({ id: "turn", label: <>Turn <span className="opacity-60">{deg(r)}</span></>, control: <Dial label="Turn" value={r} min={-720} max={720} step={1} format={v => `Turned ${deg(v)}`} onChange={v => live({ rotation: v })} onDone={done} /> });
-    if (item.type === "mando") chips.push({ id: "side", label: <>Pass <span className="opacity-60">{(item as MandoItem).side}</span></>, control: <Segmented label="Mando side" value={(item as MandoItem).side} onChange={v => set({ side: v })} options={[{ value: "left", label: "Pass on the left" }, { value: "right", label: "Pass on the right" }]} /> });
+    if (item.type === "mando") chips.push({ id: "side", label: <>Pass <span className="opacity-60">{(item as MandoItem).side}</span></>, control: <Segmented label="Mando side" value={(item as MandoItem).side} onChange={v => set({ side: v })} options={[{ value: "left", label: "Left of it" }, { value: "right", label: "Right of it" }]} /> });
   } else if (item.type === "area" || item.type === "line") {
-    // A shape: what kind, its OB, and a woods' trees and underbrush (tap a corner to delete it)
-    const kinds = item.type === "area" ? (Object.keys(AREA_KINDS) as AreaKind[]).map(k => [k, AREA_KINDS[k].label.replace(/ \(.*\)/, ""), AREA_KINDS[k].color]) : (Object.keys(LINE_KINDS) as LineKind[]).map(k => [k, LINE_KINDS[k].label, LINE_KINDS[k].color]);
-    const kindLabel = item.type === "area" ? AREA_KINDS[item.kind].label.replace(/ \(.*\)/, "") : LINE_KINDS[item.kind].label;
+    // A shape: what kind, its OB, and a woods' trees and underbrush (tap a corner to delete it).
+    // (a flat building is an old course's: offered only to one that is one)
+    const kinds = item.type === "area"
+      ? (Object.keys(AREA_KINDS) as AreaKind[]).filter(k => k !== "building" || item.kind === "building").map(k => [k, AREA_KINDS[k].label, AREA_KINDS[k].color])
+      : (Object.keys(LINE_KINDS) as LineKind[]).map(k => [k, LINE_KINDS[k].label, LINE_KINDS[k].color]);
+    const kindLabel = item.type === "area" ? AREA_KINDS[item.kind].label : LINE_KINDS[item.kind].label;
     chips.push({ id: "kind", label: <>{kindLabel}</>, control: (
       <div className="flex gap-1.5 overflow-x-auto touch-pan-x dg-scroll -mx-1 px-1">
         {kinds.map(([k, label, color]) => <button key={k} className={`${small} ${item.kind === k ? "!bg-zinc-100 !text-zinc-900" : ""}`} onClick={() => set({ kind: k })}><span className="w-2.5 h-2.5 rounded-full ring-1 ring-black/40" style={{ background: color }} />{label}</button>)}
       </div>
     ) });
-    if (item.type === "line" && LINE_KINDS[item.kind].width > 0) {
-      const w = item.width ?? LINE_KINDS[item.kind].width;
-      chips.push({ id: "width", label: <>Width <span className="opacity-60">{fmtDist(w, u)}</span></>, control: <Dial label="Width" value={w} min={1} max={60} step={0.5} format={v => `${fmtDist(v, u)} wide`} onChange={v => live({ width: v })} onDone={done} /> });
+    // (a next-tee route can have none: a dashed line)
+    if (item.type === "line" && (LINE_KINDS[item.kind].width > 0 || item.kind === "walk")) {
+      const meta = LINE_KINDS[item.kind];
+      const w = item.width ?? meta.width;
+      const min = item.kind === "walk" ? 0 : 1;
+      chips.push({ id: "width", label: <>Width <span className="opacity-60">{w ? fmtDist(w, u) : "none"}</span></>, control: <Dial label="Width" value={w} min={min} max={meta.maxWidth} step={0.5} format={v => (v ? `${fmtDist(v, u)} wide` : "Just a dashed line")} onChange={v => live({ width: v || undefined })} onDone={done} /> });
     }
     const a = item as AreaItem | LineItem;
-    if (a.kind !== "ob" && a.kind !== "walk") chips.push({ id: "ob", label: <>OB <span className="opacity-60">{a.ob === true ? "red edge" : "no"}</span></>, control: <Segmented label="Out of bounds" value={a.ob === true ? "edge" : "no"} onChange={v => set(v === "edge" ? { ob: true } : { ob: undefined, obStretches: undefined, obBeyond: undefined })} options={[{ value: "no", label: "Not OB" }, { value: "edge", label: "OB, red edge" }]} /> });
+    if (hasObChoice(a)) {
+      const ob = obChoiceOf(a);
+      const opts = obOptions(a);
+      chips.push({ id: "ob", label: <>OB <span className="opacity-60">{ob === "no" ? "no" : ob === "yes" ? "yes" : ob === "edge" ? "red edge" : "and beyond"}</span></>, control: <Segmented label="Out of bounds" value={ob} onChange={(v: ObChoice) => setObChoice(a.id, v)} options={opts.map(o => ({ value: o.value, label: o.label }))} /> });
+    }
     if (item.type === "area" && item.kind === "woods") {
-      if (doc.lidar?.trees.length) chips.push({ id: "trees", label: <>Trees</>, control: <Segmented label="Trees in these woods" value={item.trees ?? "measured"} onChange={v => set({ trees: v === "measured" ? undefined : v })} options={[{ value: "measured", label: "Real" }, { value: "custom", label: "Real + fill" }, { value: "drawn", label: "App's" }, { value: "none", label: "None" }]} /> });
+      if (doc.lidar?.trees.length) chips.push({ id: "trees", label: <>Trees</>, control: <Segmented label="Trees in these woods" value={item.trees ?? "measured"} onChange={v => set({ trees: v === "measured" ? undefined : v })} options={[{ value: "measured", label: "Real" }, { value: "custom", label: "Real + fill-in" }, { value: "drawn", label: "Planted" }, { value: "none", label: "None" }]} /> });
     }
     // (woods, and tall grass when you want some)
     if (item.type === "area" && (item.kind === "woods" || item.kind === "rough"))
       chips.push({ id: "brush", label: <>Underbrush <span className="opacity-60">{item.underbrush ?? "none"}</span></>, control: <Segmented label="Underbrush" value={item.underbrush ?? "none"} onChange={v => set({ underbrush: v === "none" ? undefined : v })} options={[{ value: "none", label: "None" }, { value: "light", label: "Light" }, { value: "medium", label: "Medium" }, { value: "heavy", label: "Heavy" }]} /> });
   } else if (item.type === "structure") {
+    // (the same ranges as the panel's sliders; stairs follow the ground, with no height of their own)
     const s = item as StructureItem;
-    const h = s.height ?? STRUCTURE_KINDS[s.kind].height;
-    chips.push({ id: "height", label: <>Height <span className="opacity-60">{fmtDist(h, u)}</span></>, control: <Dial label="Height" value={h} min={0} max={40} step={0.5} format={v => fmtDist(v, u)} onChange={v => live({ height: v })} onDone={done} /> });
-    if (STRUCTURE_KINDS[s.kind].shape !== "outline") chips.push({ id: "width", label: <>Width <span className="opacity-60">{fmtDist(s.width ?? 6, u)}</span></>, control: <Dial label="Width" value={s.width ?? 6} min={2} max={30} step={0.5} format={v => `${fmtDist(v, u)} wide`} onChange={v => live({ width: v })} onDone={done} /> });
+    const meta = STRUCTURE_KINDS[s.kind];
+    if (meta.heightLabel) {
+      const h = structureHeight(s);
+      chips.push({ id: "height", label: <>Height <span className="opacity-60">{fmtSize(h, u)}</span></>, control: <Dial label={meta.heightLabel} value={h} min={meta.heights[0]} max={Math.max(meta.heights[1], h)} step={0.5} format={v => fmtSize(v, u)} onChange={v => live({ height: v })} onDone={done} /> });
+    }
+    if (meta.shape === "line") {
+      const w = structureWidth(s);
+      const name = s.kind === "wall" ? "Thickness" : "Width";
+      chips.push({ id: "width", label: <>{name} <span className="opacity-60">{fmtSize(w, u)}</span></>, control: <Dial label={name} value={w} min={meta.widths[0]} max={Math.max(meta.widths[1], w)} step={0.5} format={v => `${fmtSize(v, u)} ${s.kind === "wall" ? "thick" : "wide"}`} onChange={v => live({ width: v })} onDone={done} /> });
+    }
   }
-  const [open, setOpen] = useState<string>(() => lastItemChip[item.type] ?? chips[0]?.id ?? "");
+  // (a chip that acts at once is never the one left open)
+  const panes = chips.filter(c => !c.run);
+  const [open, setOpen] = useState<string>(() => lastItemChip[item.type] ?? panes[0]?.id ?? "");
   const pick = (c: string) => { lastItemChip[item.type] = c; setOpen(c); };
-  const chip = chips.find(c => c.id === open) ?? chips[0];
+  const chip = panes.find(c => c.id === open) ?? panes[0];
   const placeable = item.type !== "area" && item.type !== "line" && item.type !== "structure";
   if (!chips.length && !placeable) return null;
   return (
     <div className="px-3 pb-3" data-testid="item-strip">
       <div className="flex gap-1.5 overflow-x-auto touch-pan-x dg-scroll -mx-3 px-3 pb-2" role="tablist" aria-label="Settings">
         {placeable && <MoveHere item={item} />}
-        {chips.map(c => <button key={c.id} role="tab" aria-selected={chip?.id === c.id} className={chipCls(chip?.id === c.id)} onClick={() => pick(c.id)} data-testid={`strip-${c.id}`}>{c.label}</button>)}
+        {chips.map(c => c.run
+          ? <button key={c.id} className={chipCls(false)} onClick={c.run} data-testid={`strip-${c.id}`}>{c.label}</button>
+          : <button key={c.id} role="tab" aria-selected={chip?.id === c.id} className={chipCls(chip?.id === c.id)} onClick={() => pick(c.id)} data-testid={`strip-${c.id}`}>{c.label}</button>)}
       </div>
       {chip?.control}
     </div>
@@ -229,7 +255,7 @@ function MoveHere({ item }: { item: CourseItem }) {
   };
   const quality = acc === null ? "bg-zinc-400" : acc <= 10 ? "bg-emerald-400" : acc <= 25 ? "bg-amber-300" : "bg-red-400";
   return (
-    <button className="shrink-0 h-9 px-3 rounded-full text-[13.5px] font-semibold whitespace-nowrap bg-sky-500/90 text-white active:bg-sky-600 flex items-center gap-1.5" onClick={() => void go()} disabled={settling} data-testid="move-here">
+    <button className="shrink-0 h-10 px-3 rounded-full text-[13.5px] font-semibold whitespace-nowrap bg-sky-500/90 text-white active:bg-sky-600 flex items-center gap-1.5" onClick={() => void go()} disabled={settling} data-testid="move-here">
       <Navigation size={14} fill="currentColor" className={settling ? "animate-pulse" : ""} />
       {settling ? `Hold still${acc !== null ? ` · ± ${fmtDist(acc, units)}` : "…"}` : "Move here"}
       <span className={`w-2 h-2 rounded-full ${quality}`} aria-hidden />

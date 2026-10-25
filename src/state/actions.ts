@@ -8,7 +8,7 @@ import {
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { courseStats, holeStats } from "../lib/holeStats";
-import type { BasketItem, CourseDoc, CourseItem, Hole, P, TeeLevel, ToolMode, TreeItem } from "../types";
+import type { AreaItem, BasketItem, CourseDoc, CourseItem, Hole, LineItem, P, PinPosition, TeeLevel, ToolMode, TreeItem } from "../types";
 import { changeDoc, editor, getDoc, removeHole, removeItems, updateItem, useEditor, useCourse } from "./course";
 import { toast } from "./toast";
 import { keepsTreesOut, treeFree } from "../lib/treeFree";
@@ -224,7 +224,18 @@ export const placeAt = (mode: ToolMode, p: P) => {
   changeDoc(d => ({ items: [...d.items, item!] }));
   // Trees and benches go down one after another; the rest are picked to edit
   if (mode !== "add-tree") select(item.id);
+  // (a label: back to Select, its panel open with its text ready to type over)
+  if (mode === "add-label") {
+    newLabel = item.id;
+    useEditor.getState().set({ tool: "select" });
+  }
 };
+
+// The label just put down, whose text field takes the focus when its panel opens
+let newLabel: string | null = null;
+/** Whether this label was just put down (its panel's text field takes the focus, then forgets it). */
+export const isNewLabel = (id: string) => newLabel === id;
+export const forgetNewLabel = () => { newLabel = null; };
 
 /** An area, line or built thing (bridge, building...) drawn with the drawing tools. */
 export const addDrawn = (kind: "area" | "line" | "structure", points: P[], opts: { straight?: boolean } = {}) => {
@@ -245,7 +256,7 @@ export const deleteSelection = () => {
   const doc = getDoc();
   const hole = doc.holes.find(h => h.id === selectedId);
   if (hole) {
-    const n = doc.holes.indexOf(hole) + 1;
+    const n = holeLabel(doc, hole.id);
     removeHole(hole.id);
     toast(`Deleted hole ${n}.`, "info", true);
   } else {
@@ -456,6 +467,35 @@ export const setTeeLevel = (teeId: string, level: TeeLevel) => {
   changeDoc(d => ({ items: d.items.map(i => (i.id === teeId ? { ...i, level } as CourseItem : other && i.id === other.id ? { ...i, level: tee.level } as CourseItem : i)) }));
 };
 
+/** Gives a basket another pin letter (the hole's pin with that letter takes this one's), so a
+ * hole never has two pin Bs. */
+export const setPinPosition = (basketId: string, position: PinPosition) => {
+  const doc = getDoc();
+  const b = doc.items.find(i => i.id === basketId);
+  if (!b || b.type !== "basket" || b.position === position) return;
+  const other = holeBaskets(doc, b.holeId).find(x => x.position === position && x.id !== basketId);
+  changeDoc(d => ({ items: d.items.map(i => (i.id === basketId ? { ...i, position } as CourseItem : other && i.id === other.id ? { ...i, position: b.position } as CourseItem : i)) }));
+};
+
+/** Whether a shape is out of bounds: not OB, OB with no red edge (water and streams, unless
+ * they're set otherwise), OB with a red edge, or (a line) OB and everything beyond it. */
+export type ObChoice = "no" | "yes" | "edge" | "beyond";
+const wetKind = (i: AreaItem | LineItem) => i.kind === "water" || i.kind === "stream";
+export const obChoiceOf = (i: AreaItem | LineItem): ObChoice =>
+  i.ob === true ? (i.type === "line" && i.obBeyond ? "beyond" : "edge") : i.ob === false || !wetKind(i) ? "no" : "yes";
+/** A shape's OB set to one of those (OB and beyond: for the hole beside it, as markObBeyond). One
+ * undo step. Not OB on water is kept as such (water is OB unless it says not). */
+export const setObChoice = (id: string, v: ObChoice) => {
+  const item = getDoc().items.find(i => i.id === id);
+  if (!item || (item.type !== "area" && item.type !== "line")) return;
+  const line = item.type === "line";
+  if (line && v === "beyond") return markObBeyond(id);
+  updateItem(id, {
+    ob: v === "edge" ? true : v === "no" ? (wetKind(item) ? false : undefined) : undefined,
+    ...(line ? { obBeyond: undefined, obToward: undefined, ...(v === "edge" ? {} : { obStretches: undefined, obHoles: undefined }) } : v === "edge" ? {} : { obStretches: undefined })
+  } as Partial<CourseItem>);
+};
+
 /** A turn put in a hole's line at a spot (between the turns either side of where it's nearest). */
 export const bendHoleAt = (holeId: string, p: P) => {
   const doc = getDoc();
@@ -552,8 +592,7 @@ export const addHoleOb = (holeId: string, where: "left" | "right" | "long") => {
   const item = { ...createLine("ob", pts), holeId };
   changeDoc(d => ({ items: [...d.items, item] }));
   select(item.id);
-  const number = doc.holes.indexOf(hole) + 1;
-  toast(`OB line added ${where === "long" ? "behind the basket" : `along the ${where}`} of hole ${number}.`, "success", true);
+  toast(`OB line added ${where === "long" ? "behind the basket" : `along the ${where}`} of hole ${holeLabel(doc, hole.id)}.`, "success", true);
 };
 
 /** The walk from a hole's basket to the next hole's tee as a line of its own (points along the way

@@ -3,10 +3,13 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { GeoBounds, SITE_MIN_WIDTH_FT, selectionFromBounds } from "../lib/geo/core";
 import { MAP_IMAGERY_SOURCES, MapImagerySource, PICKER_LAYERS, STATE_ORTHO_SOURCES } from "../lib/geo/imagery";
+import { fmtDist } from "../lib/units";
+import type { Units } from "../types";
 
 
 // Interactive satellite map used to pick the site (from the Security Camera Planner).
 // Drag pans the map; draw a rectangle with the Draw tool or Shift+drag; then move/resize it with its handles.
+// A frame drawn (or sized) smaller than a site can be is left as it was, and `onTooSmall` says so.
 export function SitePickerMap({
   imagery,
   view,
@@ -14,7 +17,9 @@ export function SitePickerMap({
   drawing,
   onDrawingChange,
   onSelect,
-  selectViewSignal
+  onTooSmall,
+  selectViewSignal,
+  units = "ft"
 }: {
   imagery: MapImagerySource;
   view: { lat: number; lon: number; zoom: number; key: number };
@@ -22,7 +27,10 @@ export function SitePickerMap({
   drawing: boolean;
   onDrawingChange: (drawing: boolean) => void;
   onSelect: (bounds: GeoBounds) => void;
+  onTooSmall?: () => void;
   selectViewSignal: number;
+  /** The frame's size is said in these. */
+  units?: Units;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -31,15 +39,17 @@ export function SitePickerMap({
   const handlesRef = useRef<L.Marker[]>([]);
   const onSelectRef = useRef(onSelect);
   const onDrawingChangeRef = useRef(onDrawingChange);
+  const onTooSmallRef = useRef(onTooSmall);
   const drawingRef = useRef(drawing);
   onSelectRef.current = onSelect;
   onDrawingChangeRef.current = onDrawingChange;
+  onTooSmallRef.current = onTooSmall;
   drawingRef.current = drawing;
 
   const boundsToObj = (b: L.LatLngBounds): GeoBounds => ({ north: b.getNorth(), south: b.getSouth(), west: b.getWest(), east: b.getEast() });
   const dimsLabel = (b: GeoBounds) => {
     const d = selectionFromBounds(b, "");
-    return `${Math.round(d.widthFt)} × ${Math.round(d.heightFt)} ft`;
+    return `${fmtDist(d.widthFt, units, false)} × ${fmtDist(d.heightFt, units)}`;
   };
   const isUsable = (b: GeoBounds) => {
     const d = selectionFromBounds(b, "");
@@ -56,6 +66,7 @@ export function SitePickerMap({
     // Rectangle drawing: Draw tool, or Shift+drag at any time. Pointer events so touch works too.
     const container = map.getContainer();
     let start: L.LatLng | null = null;
+    let startPx = { x: 0, y: 0 };
     let preview: L.Rectangle | null = null;
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0 || !(drawingRef.current || e.shiftKey)) return;
@@ -64,6 +75,7 @@ export function SitePickerMap({
       e.stopPropagation();
       container.setPointerCapture?.(e.pointerId);
       start = map.mouseEventToLatLng(e as unknown as MouseEvent);
+      startPx = { x: e.clientX, y: e.clientY };
       preview = L.rectangle(L.latLngBounds(start, start), { color: "#f59e0b", weight: 2, fillOpacity: 0.12, interactive: false }).addTo(map);
     };
     const onPointerMove = (e: PointerEvent) => {
@@ -86,7 +98,8 @@ export function SitePickerMap({
       if (isUsable(bounds)) {
         onSelectRef.current(bounds);
         onDrawingChangeRef.current(false);
-      }
+      } else if (Math.hypot(e.clientX - startPx.x, e.clientY - startPx.y) > 6) onTooSmallRef.current?.();
+      // (a tap, not a drag: still drawing)
     };
     container.addEventListener("pointerdown", onPointerDown, true);
     container.addEventListener("pointermove", onPointerMove, true);
@@ -122,6 +135,7 @@ export function SitePickerMap({
     const b = map.getBounds().pad(-0.12);
     const bounds = boundsToObj(b);
     if (isUsable(bounds)) onSelectRef.current(bounds);
+    else onTooSmallRef.current?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectViewSignal]);
 
@@ -219,7 +233,10 @@ export function SitePickerMap({
         live = { north: n, south: sth, east: e, west: w };
         refresh(marker);
       });
-      marker.on("dragend", () => { if (isUsable(live)) onSelectRef.current({ ...live }); else refresh(); });
+      marker.on("dragend", () => {
+        if (isUsable(live)) onSelectRef.current({ ...live });
+        else { live = { ...selection }; refresh(); onTooSmallRef.current?.(); }
+      });
       markers.push(marker);
     });
     const mover = L.marker(center(), { icon: moveIcon, draggable: true, keyboard: false, zIndexOffset: 1000, title: "Drag to move the area" }).addTo(map);

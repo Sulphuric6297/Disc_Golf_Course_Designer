@@ -18,6 +18,12 @@ export const keepsItsSize = (id: string) => id === "scale";
 
 export const pieceFont = (f: string) => (OWN.has(f) ? titleStack(f) : `'${f.replace(/'/g, "")}', Inter, Arial, sans-serif`);
 
+/** A piece's place, with what the page editor keeps beside it: its heading's words (unset: the
+ * look's own; "": none) and its lettering bold or not (unset: as the look draws it). */
+export type Place = PiecePlace & { text?: string; bold?: boolean };
+/** Something added to a page, with a panel behind its words (unset: none). */
+export type Extra = PrintExtra & { fill?: string };
+
 /**
  * Pieces for one page: `wrap` puts a piece's drawing in its own group (moved, sized, restyled as
  * placed; nothing when hidden), `group` does it for everything pushed onto `parts` since `from`,
@@ -34,7 +40,7 @@ export const turned = (content: string, rot?: number, opacity?: number) => {
   return `<g data-turn="${r}"${r ? ` style="transform-box:fill-box;transform-origin:center;transform:rotate(${r}deg)"` : ""}${o !== null ? ` opacity="${n(o)}"` : ""}>${content}</g>`;
 };
 
-export const piecer = (place: (id: string) => PiecePlace | undefined, W: number, H: number, uid: string) => {
+export const piecer = (place: (id: string) => Place | undefined, W: number, H: number, uid: string) => {
   const css: string[] = [];
   const scope = `pc${uid.replace(/[^a-z0-9]/gi, "")}`;
   /** `copy`: a second drawing of the same piece (the scorecard's second card), placed and
@@ -51,6 +57,7 @@ export const piecer = (place: (id: string) => PiecePlace | undefined, W: number,
     if (p?.color && !css.some(c => c.startsWith(`${a} text`) && c.includes("fill:"))) css.push(`${both("text")},${both("tspan")}{fill:${p.color} !important}`);
     if (p?.fill && !css.some(c => c.startsWith(`${a} [data-fill]`))) css.push(`${both("[data-fill]")}{fill:${p.fill} !important}`);
     if (p?.italic && !css.some(c => c.startsWith(`${a} text`) && c.includes("font-style"))) css.push(`${both("text")},${both("tspan")}{font-style:italic !important}`);
+    if (p?.bold !== undefined && !css.some(c => c.startsWith(`${a} text`) && c.includes("font-weight"))) css.push(`${both("text")},${both("tspan")}{font-weight:${p.bold ? 700 : 400} !important}`);
     return `<g ${copy ? "data-pc" : "data-el"}="${id}"${t}>${turned(content, p?.rot, p?.opacity)}</g>`;
   };
   const group = (parts: string[], from: number, id: string, copy = false) => {
@@ -62,7 +69,9 @@ export const piecer = (place: (id: string) => PiecePlace | undefined, W: number,
   const page = (body: string) => `<g id="${scope}">${css.length ? `<style>${css.join("")}</style>` : ""}${body}</g>`;
   /** How much bigger a piece is drawn than its look has it (a scale bar follows its picture's). */
   const sizeOf = (id: string) => place(id)?.scale ?? 1;
-  return { wrap, group, page, sizeOf };
+  /** A piece's heading as typed in its settings, else the look's own (`own`). */
+  const head = (id: string, own: string) => place(id)?.text ?? own;
+  return { wrap, group, page, sizeOf, head };
 };
 
 /** A piece sized by `f` about the page point `a` (from its place before). */
@@ -90,18 +99,25 @@ export const qrSvg = (url: string, x: number, y: number, size: number) => {
 };
 
 /** The extras on a page (text, pictures, sponsors, QR codes) for one hole, each its own piece
- * ("x:ID"). `font`: the course's lettering. */
+ * ("x:ID"). `font`: what their lettering is set in when they have no font of their own (the
+ * headings font on signs, pages and the scorecard; the labels font on the course map). */
 export const extrasSvg = (extras: PrintExtra[] | undefined, sponsors: Sponsor[] | undefined, holeId: string, facts: HoleFacts, W: number, H: number, font: string, wrap: (id: string, content: string) => string) => {
   const onHole = (holes?: string[]) => !holeId || !holes?.length || holes.includes(holeId);
   const out: string[] = [];
-  for (const e of extras ?? []) {
+  for (const e of (extras ?? []) as Extra[]) {
     if (!onHole(e.holes)) continue;
     const X = e.x * W, Y = e.y * H, w = e.w * W;
     let body = "";
     if (e.kind === "text") {
       const size = e.size ?? 24, lines = fillIn(e.text ?? "", facts).split("\n");
       const ax = e.align === "middle" ? X + w / 2 : e.align === "end" ? X + w : X;
-      body = lines.map((l, i) => `<text x="${n(ax)}" y="${n(Y + size * (0.9 + i * 1.2))}" text-anchor="${e.align ?? "start"}" font-family="${pieceFont(e.font || font)}" font-weight="${e.bold ? 700 : 500}"${e.italic ? ` font-style="italic"` : ""} font-size="${n(size)}" fill="${e.color ?? "#111111"}">${esc(l)}</text>`).join("");
+      // (a panel behind it: as wide as its box, or as its longest line when that's wider)
+      if (e.fill) {
+        const tw = Math.max(w, Math.max(...lines.map(l => l.length)) * size * (e.bold ? 0.6 : 0.55)), pad = size * 0.4;
+        const left = e.align === "middle" ? X + w / 2 - tw / 2 : e.align === "end" ? X + w - tw : X;
+        body += `<rect x="${n(left - pad)}" y="${n(Y - pad)}" width="${n(tw + pad * 2)}" height="${n(lines.length * size * 1.2 + pad * 2)}" rx="${n(pad)}" fill="${e.fill}" data-fill="1"/>`;
+      }
+      body += lines.map((l, i) => `<text x="${n(ax)}" y="${n(Y + size * (0.9 + i * 1.2))}" text-anchor="${e.align ?? "start"}" font-family="${pieceFont(e.font || font)}" font-weight="${e.bold ? 700 : 500}"${e.italic ? ` font-style="italic"` : ""} font-size="${n(size)}" fill="${e.color ?? "#111111"}">${esc(l)}</text>`).join("");
     } else if (e.kind === "image" && e.src) {
       body = `<image href="${e.src}" x="${n(X)}" y="${n(Y)}" width="${n(w)}" height="${n(w * (e.aspect ?? 1))}" preserveAspectRatio="xMidYMid meet"${e.opacity !== undefined && e.opacity < 1 ? ` opacity="${n(e.opacity)}"` : ""}/>`;
     } else if (e.kind === "sponsor") {
@@ -126,10 +142,11 @@ export const extrasSvg = (extras: PrintExtra[] | undefined, sponsors: Sponsor[] 
       const here = (sponsors ?? []).filter(sp => onHole(sp.holes));
       if (!here.length) continue;
       const size = e.size ?? 14, gap = size * 0.8, cw = (w - gap * (here.length - 1)) / here.length;
-      const head = here.length > 1 ? "HOLE SPONSORS" : "HOLE SPONSOR";
-      const parts = [`<text${fitAttr(w)} x="${n(X)}" y="${n(Y + size * 0.8)}" font-family="${pieceFont(e.font || font)}" font-weight="700" font-size="${n(size * 0.7)}" letter-spacing="${n(size * 0.12)}" fill="${e.color ?? "#111111"}" fill-opacity="0.7">${head}</text>`];
+      // (its heading as typed on the page; none once it's cleared)
+      const head = e.text !== undefined ? fillIn(e.text, facts).trim() : here.length > 1 ? "HOLE SPONSORS" : "HOLE SPONSOR";
+      const parts = head ? [`<text${fitAttr(w)} x="${n(X)}" y="${n(Y + size * 0.8)}" font-family="${pieceFont(e.font || font)}" font-weight="700" font-size="${n(size * 0.7)}" letter-spacing="${n(size * 0.12)}" fill="${e.color ?? "#111111"}" fill-opacity="0.7">${esc(head)}</text>`] : [];
       here.forEach((sp, i) => {
-        const cx = X + i * (cw + gap), top = Y + size * 1.4;
+        const cx = X + i * (cw + gap), top = Y + (head ? size * 1.4 : 0);
         let y = top;
         if (sp.logo) {
           const lh = Math.min(cw * (sp.aspect ?? 0.5), size * 6);

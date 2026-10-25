@@ -8,6 +8,11 @@ export const FLYOVER_DEFAULTS: FlyoverSettings = { height: 10, speed: 1, fov: 62
   title: true, badge: true, pinDistance: true, courseName: true, playLine: true, circle: true, ob: true, otherHoles: true, walks: true
 };
 
+/** The lens (field of view, degrees): its range everywhere it's set, from zoomed in to wide. */
+export const LENS = { min: 15, max: 110 } as const;
+/** A lens as it reads: "30° (zoomed in)", "62°", "95° (wide)". */
+export const lensLabel = (v: number) => `${Math.round(v)}°${v < 40 ? " (zoomed in)" : v > 80 ? " (wide)" : ""}`;
+
 /** A course's flyover settings, filled in (with a hole's own over them). */
 export const flyoverOf = (doc: Pick<CourseDoc, "flyover">, hole?: { flyover?: Partial<FlyoverSettings> } | null): FlyoverSettings => ({ ...FLYOVER_DEFAULTS, ...doc.flyover, ...hole?.flyover });
 

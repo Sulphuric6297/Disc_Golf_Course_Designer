@@ -48,19 +48,21 @@ export const DEFAULT_FAIRWAY_FT = 30;
 
 export const PIN_POSITIONS: PinPosition[] = ["A", "B", "C", "D"];
 
+/** Each kind of area: one short name (the same on the tool bar's chips, in its panel and in
+ * Search), and a line on what it is (under the kinds in its panel). */
 export const AREA_KINDS: Record<AreaKind, { label: string; color: string; fill: number; help: string }> = {
-  ob: { label: "Out of bounds (OB)", color: "#ef4444", fill: 0.22, help: "Landing inside is out of bounds: one penalty throw." },
-  hazard: { label: "Hazard", color: "#eab308", fill: 0.2, help: "A penalty area that is not OB: play it where it lies, plus one throw (PDGA marks hazards yellow)." },
-  casual: { label: "Casual area", color: "#3b82f6", fill: 0.2, help: "Casual relief: the player may move the lie out, no penalty (PDGA marks casual areas blue)." },
-  water: { label: "Water", color: "#2b8fd6", fill: 0.55, help: "Ponds and streams (usually OB too)." },
-  fairway: { label: "Fairway", color: "#8fd16a", fill: 0.35, help: "A fairway shape drawn by hand." },
-  green: { label: "Green / landing zone", color: "#b7ec8a", fill: 0.4, help: "The area around a basket." },
-  woods: { label: "Woods", color: "#2f5d34", fill: 0.45, help: "Dense trees (shown as canopy on the map)." },
-  rough: { label: "Rough / tall grass", color: "#a8a35a", fill: 0.3, help: "Long grass or brush." },
-  nogo: { label: "Out of play (no-go)", color: "#7c3aed", fill: 0.22, help: "Keep out: playgrounds, gardens, private land (PDGA \"required relief area\": played like OB, no penalty)." },
-  parking: { label: "Parking lot", color: "#6b7280", fill: 0.5, help: "Parking." },
-  building: { label: "Building", color: "#a8a29e", fill: 0.7, help: "A building or shelter." },
-  sand: { label: "Sand / dirt", color: "#d9c48f", fill: 0.5, help: "Sand, dirt or a bare area." }
+  ob: { label: "OB area", color: "#ef4444", fill: 0.22, help: "A disc that lands in here is out of bounds, and that's a penalty throw." },
+  hazard: { label: "Hazard", color: "#eab308", fill: 0.2, help: "A penalty area that isn't OB. The disc is played where it lies, plus a penalty throw. The PDGA marks hazards yellow." },
+  casual: { label: "Casual area", color: "#3b82f6", fill: 0.2, help: "Players can move their lie out of it with no penalty, like casual water. The PDGA marks these blue." },
+  water: { label: "Water", color: "#2b8fd6", fill: 0.55, help: "A pond or a lake. It counts as OB unless you set Not OB. For a creek, use Stream in the Water tool." },
+  fairway: { label: "Fairway", color: "#8fd16a", fill: 0.35, help: "A fairway shape you draw yourself, for when the hole's own fairway doesn't fit." },
+  green: { label: "Landing zone", color: "#b7ec8a", fill: 0.4, help: "The mown area around a basket, or where a drive should end up." },
+  woods: { label: "Woods", color: "#2f5d34", fill: 0.45, help: "A stand of trees, drawn as treetops on the map. What grows in it is set below." },
+  rough: { label: "Tall grass", color: "#a8a35a", fill: 0.3, help: "Long grass, drawn taller in 3D than the grass around it." },
+  nogo: { label: "Out of play", color: "#7c3aed", fill: 0.22, help: "Somewhere players have to stay out of: a playground, a garden, private land. The PDGA calls it a required relief area. It's played like OB, but with no penalty." },
+  parking: { label: "Parking lot", color: "#6b7280", fill: 0.5, help: "A parking lot. Checks warn about a hole that throws over one, and about a first tee or a last basket that's a long walk from it." },
+  building: { label: "Building", color: "#a8a29e", fill: 0.7, help: "A building as a flat shape on the map. For walls and a roof in 3D, use a Building from the Build tool." },
+  sand: { label: "Sand or dirt", color: "#d9c48f", fill: 0.5, help: "Sand, dirt or bare ground. No grass or trees grow on it." }
 };
 
 /** What paths and walks can be made of (dirt takes the map's path color). */
@@ -72,41 +74,49 @@ export const PATH_SURFACES: Record<PathSurface, { label: string; color: string }
   paved: { label: "Paved", color: "#cfccc4" }
 };
 
-export const LINE_KINDS: Record<LineKind, { label: string; color: string; width: number; help: string }> = {
-  ob: { label: "OB line", color: "#ef4444", width: 0, help: "The line itself is out of bounds (the side away from play)." },
-  path: { label: "Walking path", color: "#c8a06a", width: 5, help: "A trail between holes." },
-  walk: { label: "Next-tee route", color: "#ffffff", width: 0, help: "How to walk to the next tee." },
-  road: { label: "Road", color: "#6b7280", width: 22, help: "A road or drive." },
-  fence: { label: "Fence", color: "#78716c", width: 0, help: "A fence: posts and rails, boards or chain link, standing up in 3D." },
-  stream: { label: "Stream", color: "#2b8fd6", width: 6, help: "A creek or ditch." }
+/** Each kind of line: its name, its usual width (0: drawn as a thin line) and the widest it goes,
+ * ft, and a line on what it is. */
+export const LINE_KINDS: Record<LineKind, { label: string; color: string; width: number; maxWidth: number; help: string }> = {
+  ob: { label: "OB line", color: "#ef4444", width: 0, maxWidth: 60, help: "The line is OB, and so is everything past it on the side away from play." },
+  path: { label: "Walking path", color: "#c8a06a", width: 5, maxWidth: 60, help: "A trail people walk on, between holes or through the park." },
+  walk: { label: "Next-tee route", color: "#ffffff", width: 0, maxWidth: 60, help: "The way players walk from a basket to the next tee. With no width, it's a dashed line on the map." },
+  road: { label: "Road", color: "#6b7280", width: 22, maxWidth: 60, help: "A road or a drive. Checks warn about any hole that throws across one." },
+  fence: { label: "Fence", color: "#78716c", width: 0, maxWidth: 60, help: "A fence that stands up in 3D: posts and rails, boards or chain link." },
+  stream: { label: "Stream", color: "#2b8fd6", width: 6, maxWidth: 200, help: "A creek or a ditch. It counts as OB unless you set Not OB. Drag the squares on its banks to make it wider in places." }
 };
 
-export const AMENITY_KINDS: Record<AmenityKind, { label: string; letter: string; color: string }> = {
+/** Amenities: the name on the map's legend, and `pick`, the name to pick it by where that's
+ * clearer (the P sign, not the lot). A shelter and a bridge are built with the Build tool now:
+ * those two (`retired`) stay for the ones already on a course, and aren't offered for new ones. */
+export const AMENITY_KINDS: Record<AmenityKind, { label: string; pick?: string; letter: string; color: string; retired?: boolean }> = {
   bench: { label: "Bench", letter: "B", color: "#a16207" },
   trash: { label: "Trash can", letter: "T", color: "#475569" },
   sign: { label: "Tee sign", letter: "S", color: "#0f766e" },
   kiosk: { label: "Course kiosk / map board", letter: "i", color: "#0e7490" },
   restroom: { label: "Restroom", letter: "WC", color: "#2563eb" },
-  parking: { label: "Parking", letter: "P", color: "#1d4ed8" },
+  parking: { label: "Parking", pick: "Parking sign (P)", letter: "P", color: "#1d4ed8" },
   water: { label: "Drinking water", letter: "W", color: "#0284c7" },
   practice: { label: "Practice basket", letter: "PB", color: "#ea580c" },
-  shelter: { label: "Shelter", letter: "SH", color: "#7c2d12" },
-  bridge: { label: "Bridge", letter: "BR", color: "#78350f" },
+  shelter: { label: "Shelter", pick: "Shelter (map symbol)", letter: "SH", color: "#7c2d12", retired: true },
+  bridge: { label: "Bridge", pick: "Bridge (map symbol)", letter: "BR", color: "#78350f", retired: true },
   firstaid: { label: "First aid", letter: "+", color: "#dc2626" },
   picnic: { label: "Picnic table", letter: "PT", color: "#92400e" },
-  here: { label: "\"You are here\" (on the map board)", letter: "★", color: "#ca8a04" }
+  here: { label: "\"You are here\" (on the map board)", pick: "You are here", letter: "★", color: "#ca8a04" }
 };
+/** The amenities offered for new ones, in order (the retired two left out). */
+export const AMENITY_ORDER = (Object.keys(AMENITY_KINDS) as AmenityKind[]).filter(k => !AMENITY_KINDS[k].retired);
 
 /** Built things: drawn along a line from end to end, or as an outline. Widths and heights are the
- * usual ones, in feet (each can be changed). */
-export const STRUCTURE_KINDS: Record<StructureKind, { label: string; shape: "line" | "outline"; width: number; height: number; heightLabel: string; roof?: RoofKind; color: string; help: string }> = {
-  bridge: { label: "Bridge", shape: "line", width: 6, height: 1, heightLabel: "Deck above the banks", color: "#9a7b55", help: "A footbridge: click one bank, then double-click the other. The deck spans straight between its ends, with railings." },
-  boardwalk: { label: "Boardwalk", shape: "line", width: 5, height: 1.5, heightLabel: "Deck above the ground", color: "#b49a74", help: "A low deck on posts over wet or soft ground, following the ground." },
-  stairs: { label: "Stairs", shape: "line", width: 4, height: 0, heightLabel: "", color: "#a39b8e", help: "Stone steps up a slope: click from one end to the other. The steps follow the ground." },
-  wall: { label: "Wall", shape: "line", width: 2, height: 3, heightLabel: "Wall height", color: "#8d877c", help: "A stone or retaining wall." },
-  building: { label: "Building", shape: "outline", width: 0, height: 12, heightLabel: "Wall height", roof: "gable", color: "#a8653f", help: "A clubhouse, restroom, barn or shed: walls and a roof. Drag a rectangle, or click its corners." },
-  shelter: { label: "Shelter", shape: "outline", width: 0, height: 9, heightLabel: "Eaves height", roof: "hip", color: "#4f7356", help: "An open pavilion: posts, a roof and picnic tables under it." },
-  deck: { label: "Deck", shape: "outline", width: 0, height: 2.5, heightLabel: "Deck above the ground", color: "#b8916a", help: "A raised wooden platform (a tee deck, a viewing deck)." }
+ * usual ones, in feet (each can be changed, within `widths` and `heights`: the same on a phone's
+ * dials as in the panel's sliders). */
+export const STRUCTURE_KINDS: Record<StructureKind, { label: string; shape: "line" | "outline"; width: number; widths: [number, number]; height: number; heights: [number, number]; heightLabel: string; roof?: RoofKind; color: string; help: string }> = {
+  bridge: { label: "Bridge", shape: "line", width: 6, widths: [1, 24], height: 1, heights: [0, 10], heightLabel: "Deck above the banks", color: "#9a7b55", help: "A footbridge with railings. The deck runs straight from one bank to the other." },
+  boardwalk: { label: "Boardwalk", shape: "line", width: 5, widths: [1, 24], height: 1.5, heights: [0, 10], heightLabel: "Deck above the ground", color: "#b49a74", help: "A low deck on posts over wet or soft ground. It follows the ground." },
+  stairs: { label: "Stairs", shape: "line", width: 4, widths: [1, 24], height: 0, heights: [0, 0], heightLabel: "", color: "#a39b8e", help: "Stone steps up a slope. The steps follow the ground." },
+  wall: { label: "Wall", shape: "line", width: 2, widths: [1, 6], height: 3, heights: [0, 12], heightLabel: "Wall height", color: "#8d877c", help: "A stone or retaining wall." },
+  building: { label: "Building", shape: "outline", width: 0, widths: [0, 0], height: 12, heights: [6, 40], heightLabel: "Wall height", roof: "gable", color: "#a8653f", help: "A clubhouse, restroom, barn or shed, with walls and a roof." },
+  shelter: { label: "Shelter", shape: "outline", width: 0, widths: [0, 0], height: 9, heights: [6, 20], heightLabel: "Eaves height", roof: "hip", color: "#4f7356", help: "An open pavilion: posts and a roof, with picnic tables under it." },
+  deck: { label: "Deck", shape: "outline", width: 0, widths: [0, 0], height: 2.5, heights: [0, 10], heightLabel: "Deck above the ground", color: "#b8916a", help: "A raised wooden platform, like a tee deck or a viewing deck." }
 };
 export const STRUCTURE_ORDER: StructureKind[] = ["bridge", "boardwalk", "stairs", "wall", "building", "shelter", "deck"];
 

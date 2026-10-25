@@ -159,9 +159,11 @@ const textSize = (s: MapStyle) => {
   return Math.round(Math.min(p.w, p.h) * 72 * 0.04);
 };
 
+/** Text put on the course map's page, picked (in the map's labels font, and following it, until
+ * it's given a font of its own). */
 export const addText = () => {
   const id = generateId();
-  style(s => ({ texts: [...(s.texts ?? []), { id, text: "Text", x: 0.42, y: 0.45, size: textSize(s), color: "#ffffff", font: s.font, bold: true }] }));
+  style(s => ({ texts: [...(s.texts ?? []), { id, text: "Text", x: 0.42, y: 0.45, size: textSize(s), color: "#ffffff", bold: true }] }));
   useEditor.getState().set({ designSel: `text:${id}` });
 };
 

@@ -361,6 +361,9 @@ export type SignPart = "courseName" | "number" | "par" | "lengths" | "elevation"
  * page, sized times its own (about the page's corner), its lettering's font and color, its panel's
  * color, or hidden. */
 export interface PiecePlace {
+  /** Its heading's words (unset: the look's own; "": none), and its lettering bold or not. */
+  text?: string;
+  bold?: boolean;
   dx?: number;
   dy?: number;
   scale?: number;
@@ -378,6 +381,8 @@ export interface PiecePlace {
  * as shares of the page (top-left corner, width); on every hole, or the holes listed. */
 export interface PrintExtra {
   id: string;
+  /** A panel behind its words. */
+  fill?: string;
   kind: "text" | "image" | "sponsors" | "sponsor" | "qr";
   /** The sponsor a "sponsor" piece shows (only on that sponsor's holes). */
   sponsorId?: string;
@@ -651,6 +656,10 @@ export interface SiteInfo {
   /** Trees planted by hand that came from another course sharing this ground (by id). One of
    * them no longer among the items was cut down here: sharing the ground again leaves it out. */
   sharedTrees?: string[];
+  /** What the import said it brought in (listed under the site's facts). */
+  notes?: string[];
+  /** An aerial survey (LiDAR) was looked for and none covers the site. */
+  noLidar?: boolean;
 }
 
 /** A tree measured from the air: where it stands (plan ft), how tall and how far its crown

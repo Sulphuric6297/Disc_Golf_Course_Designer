@@ -66,10 +66,11 @@ export function HoleArt() {
   );
 }
 
-/** The Design screen: top bar, holes down the left, tools along the bottom, a panel on the right. */
+/** The Design screen: top bar, holes down the left with the picked thing's panel beside them,
+ * tools along the bottom, the View button at the map's top right. */
 export function ScreenArt() {
   return (
-    <Frame label="The Design screen: top bar, holes column, map, tool bar, panel and the View button" h={250}>
+    <Frame label="The Design screen: top bar, holes column with the panel beside it, map, tool bar and the View button" h={250}>
       <rect x={14} y={12} width={532} height={226} rx={16} fill="#334a2a" />
       <rect x={24} y={20} width={512} height={26} rx={13} fill={C.panel} stroke={C.line} />
       <T x={46} y={37} size={10} anchor="start">Course name</T>
@@ -80,16 +81,16 @@ export function ScreenArt() {
       <T x={69} y={168} size={9} color={C.fern}>+ New hole</T>
       <rect x={28} y={194} width={82} height={34} rx={10} fill={C.panel} stroke={C.line} />
       <T x={69} y={215} size={9}>Totals</T>
-      <path d="M170 160 Q260 150 300 110 T390 80" stroke={C.fair} strokeWidth={16} fill="none" strokeLinecap="round" />
-      <rect x={180} y={200} width={200} height={28} rx={12} fill={C.panel} stroke={C.line} />
-      {[0, 1, 2, 3, 4, 5, 6, 7].map(i => <rect key={i} x={192 + i * 23} y={207} width={14} height={14} rx={4} fill={i === 0 ? C.fern : C.soft} opacity={i === 0 ? 1 : 0.6} />)}
-      <rect x={400} y={56} width={124} height={140} rx={12} fill={C.panel} stroke={C.line} />
-      <T x={462} y={76} size={10}>Panel</T>
-      {[0, 1, 2, 3, 4].map(i => <rect key={i} x={412} y={88 + i * 18} width={100 - (i % 2) * 24} height={7} rx={3.5} fill={C.soft} opacity={0.7} />)}
-      <rect x={496} y={204} width={28} height={24} rx={8} fill={C.panel} stroke={C.fern} />
-      <T x={510} y={220} size={9} color={C.fern}>View</T>
-      <T x={150} y={100} size={10} color={C.text} anchor="start" weight={500}>The map: pick anything</T>
-      <T x={280} y={196} size={9.5} color={C.soft} weight={500}>Tools</T>
+      <rect x={118} y={56} width={124} height={140} rx={12} fill={C.panel} stroke={C.line} />
+      <T x={180} y={76} size={10}>Panel</T>
+      {[0, 1, 2, 3, 4].map(i => <rect key={i} x={130} y={88 + i * 18} width={100 - (i % 2) * 24} height={7} rx={3.5} fill={C.soft} opacity={0.7} />)}
+      <path d="M300 170 Q380 158 410 118 T500 92" stroke={C.fair} strokeWidth={16} fill="none" strokeLinecap="round" />
+      <rect x={270} y={200} width={200} height={28} rx={12} fill={C.panel} stroke={C.line} />
+      {[0, 1, 2, 3, 4, 5, 6, 7].map(i => <rect key={i} x={282 + i * 23} y={207} width={14} height={14} rx={4} fill={i === 0 ? C.fern : C.soft} opacity={i === 0 ? 1 : 0.6} />)}
+      <rect x={496} y={56} width={36} height={24} rx={8} fill={C.panel} stroke={C.fern} />
+      <T x={514} y={72} size={9} color={C.fern}>View</T>
+      <T x={262} y={100} size={10} color={C.text} anchor="start" weight={500}>The map: pick anything</T>
+      <T x={370} y={196} size={9.5} color={C.soft} weight={500}>Tools</T>
     </Frame>
   );
 }
@@ -101,7 +102,7 @@ export function MapStepArt() {
       <rect x={14} y={12} width={150} height={216} rx={14} fill={C.panel} stroke={C.line} />
       <T x={89} y={34} size={10.5}>Map style</T>
       {[0, 1, 2, 3, 4, 5].map(i => <g key={i}><rect x={26} y={46 + i * 22} width={16} height={16} rx={4} fill={[C.grass, C.fair, C.fair, C.sand, C.pond, C.gold][i]} /><rect x={48} y={51 + i * 22} width={70} height={6} rx={3} fill={C.soft} opacity={0.7} /></g>)}
-      <T x={89} y={196} size={10} color={C.soft} weight={500}>On the page</T>
+      <T x={89} y={196} size={10} color={C.soft} weight={500}>Add · Layers</T>
       <rect x={178} y={12} width={368} height={24} rx={12} fill={C.panel} stroke={C.line} />
       {["General", "Course map", "Tee sign", "Hole page", "Card"].map((s, i) => <g key={s}><rect x={186 + i * 71} y={16} width={66} height={16} rx={8} fill={i === 1 ? "rgba(255,255,255,0.2)" : "transparent"} /><T x={219 + i * 71} y={28} size={9}>{s}</T></g>)}
       <rect x={232} y={48} width={262} height={176} rx={6} fill={C.text} />

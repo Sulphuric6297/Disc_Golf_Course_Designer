@@ -13,7 +13,9 @@ export const measureLidar = async () => {
   try {
     const got = await fetchLidar({ ...d.site.bounds, width: d.canvas.width, height: d.canvas.height }, f => busy(f));
     if (!got) {
-      toast("No LiDAR survey covers this site.", "info", false, undefined, 8000);
+      // (remembered: the Site step says so, with Check again)
+      changeDoc(doc => ({ site: { ...doc.site, noLidar: true } }), false);
+      toast("No aerial survey covers this site.", "info", false, undefined, 8000);
       return;
     }
     const g = groundOnGrid(got.measured, d.canvas.width, d.canvas.height, d.gridSize);
@@ -21,12 +23,12 @@ export const measureLidar = async () => {
       lidar: { source: got.source, trees: got.trees },
       terrainHeights: g.heights,
       terrainOriginal: undefined,
-      site: { ...doc.site, baseElevationFt: Math.round(g.min * 10) / 10, elevationSource: got.source }
+      site: { ...doc.site, baseElevationFt: Math.round(g.min * 10) / 10, elevationSource: got.source, noLidar: undefined }
     }));
     toast(`${got.trees.length.toLocaleString()} trees measured from the air (${got.source}).`, "success", false, undefined, 8000);
   } catch (err) {
     console.warn("LiDAR failed", err);
-    toast("Couldn't read the LiDAR survey.", "error", false, { label: "Try again", run: () => void measureLidar() }, 20000);
+    toast("Couldn't read the aerial survey.", "error", false, { label: "Try again", run: () => void measureLidar() }, 20000);
   } finally {
     busy(null);
   }

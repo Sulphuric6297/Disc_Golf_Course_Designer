@@ -3,7 +3,8 @@
 // search or browse. The fonts this course uses and the ones used lately come first, then the
 // app's own, a few that read well on a sign from the tee, then every Google font with Latin
 // letters. Hovering a font (or moving through the list with the arrow keys) shows it on the page
-// before it's picked; Enter or a click picks it, Esc goes back.
+// before it's picked; Enter or a click picks it, Esc goes back. On a phone a tap picks it and the
+// list stays open, so one font after another can be tried on the page, until Done.
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Search, X } from "lucide-react";
@@ -97,7 +98,8 @@ export function FontPicker({ value, onPick, onPreview, used = [], inherit, label
   useEffect(() => { for (const r of shown) if ("id" in r && r.kind !== "own") loadFont(r.id, { text: r.label, bold: false }); });
   const picks = rows.map((r, i) => ("id" in r ? i : -1)).filter(i => i >= 0);
   const preview = (i: number) => { setActive(i); const r = rows[i]; if (r && "id" in r) { if (r.id) loadFont(r.id); onPreview?.(r.id || null); } };
-  const pick = (r: Row) => { if (!("id" in r)) return; if (r.id) { loadFont(r.id); remember(r.id); } onPick(r.id || undefined); close(); };
+  // (a finger tries one font after another on the page: the list stays open until Done)
+  const pick = (r: Row) => { if (!("id" in r)) return; if (r.id) { loadFont(r.id); remember(r.id); } onPick(r.id || undefined); if (!TOUCH) close(); };
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") { e.preventDefault(); close(); return; }
     if (e.key === "Enter" && active >= 0) { e.preventDefault(); pick(rows[active]); return; }
@@ -113,7 +115,7 @@ export function FontPicker({ value, onPick, onPreview, used = [], inherit, label
   const chip = (on: boolean) => `px-2.5 py-1 rounded-full text-[12px] font-semibold whitespace-nowrap ${on ? "bg-orange-400 text-zinc-950" : "bg-white/[0.08] text-zinc-300 hover:bg-white/[0.14]"}`;
   return (
     <div ref={box} className="relative" data-testid={testid}>
-      <button className={compact ? "h-8 max-w-[150px] flex items-center gap-1 rounded-full px-2.5 hover:bg-white/[0.12] text-zinc-50" : "w-full flex items-center justify-between gap-2 bg-white/[0.08] hover:bg-white/[0.12] rounded-[10px] px-2.5 py-2 text-left"} aria-expanded={open} aria-label={label} title={label} onClick={e => {
+      <button className={compact ? "h-8 touch:h-11 max-w-[150px] flex items-center gap-1 rounded-full px-2.5 hover:bg-white/[0.12] text-zinc-50" : "w-full flex items-center justify-between gap-2 bg-white/[0.08] hover:bg-white/[0.12] rounded-[10px] px-2.5 py-2 text-left"} aria-expanded={open} aria-label={label} title={label} onClick={e => {
         if (open) return close();
         const r = e.currentTarget.getBoundingClientRect(), w = compact ? 340 : Math.max(280, r.width);
         setAt({ left: Math.max(8, Math.min(window.innerWidth - w - 8, r.left)), top: Math.min(r.bottom + 8, window.innerHeight - 460), width: w });
@@ -124,11 +126,14 @@ export function FontPicker({ value, onPick, onPreview, used = [], inherit, label
       </button>
       {open && createPortal(
         <div ref={sheet} className={`${TOUCH ? "fixed left-2 right-2 bottom-2" : "fixed"} z-[80] bg-zinc-900/[0.97] backdrop-blur rounded-[18px] ring-1 ring-white/15 shadow-2xl p-2.5`} style={TOUCH || !at ? undefined : { left: at.left, top: at.top, width: at.width }} onKeyDown={onKey} role="dialog" aria-label="Fonts">
-          <label className="flex items-center gap-2 rounded-[12px] bg-white/[0.1] px-3 py-2">
-            <Search size={15} className="text-zinc-400" />
-            <input autoFocus={!TOUCH} className="flex-1 min-w-0 bg-transparent text-[14px] text-zinc-50 placeholder:text-zinc-400 focus:outline-none" placeholder="Search fonts" value={q} onChange={e => { setQ(e.target.value); setActive(-1); if (scroller.current) scroller.current.scrollTop = 0; }} aria-label="Search fonts" />
-            {q && <button aria-label="Clear the search" className="text-zinc-400 hover:text-zinc-100" onClick={() => setQ("")}><X size={14} /></button>}
-          </label>
+          <div className="flex items-center gap-2">
+            <label className="flex-1 min-w-0 flex items-center gap-2 rounded-[12px] bg-white/[0.1] px-3 py-2">
+              <Search size={15} className="text-zinc-400" />
+              <input autoFocus={!TOUCH} className="flex-1 min-w-0 bg-transparent text-[14px] touch:text-base text-zinc-50 placeholder:text-zinc-400 focus:outline-none" placeholder="Search fonts" value={q} onChange={e => { setQ(e.target.value); setActive(-1); if (scroller.current) scroller.current.scrollTop = 0; }} aria-label="Search fonts" />
+              {q && <button aria-label="Clear the search" className="text-zinc-400 hover:text-zinc-100" onClick={() => setQ("")}><X size={14} /></button>}
+            </label>
+            {TOUCH && <button className="h-11 shrink-0 flex items-center gap-1 rounded-full px-3.5 bg-orange-500 text-zinc-950 text-[13.5px] font-bold" onClick={close} aria-label="Done" data-testid="font-done"><Check size={16} /> Done</button>}
+          </div>
           <div className="flex gap-1 mt-2 overflow-x-auto pb-0.5 dg-scroll">
             {KINDS.map(k => <button key={k.id} className={chip(kind === k.id)} onClick={() => { setKind(k.id); setActive(-1); if (scroller.current) scroller.current.scrollTop = 0; }}>{k.label}</button>)}
           </div>
@@ -151,7 +156,7 @@ export function FontPicker({ value, onPick, onPreview, used = [], inherit, label
             {!all.length && <div className="absolute inset-x-0 top-20 text-center text-[12px] text-zinc-500">Loading the fonts…</div>}
             {all.length > 0 && !rows.length && <div className="absolute inset-x-0 top-6 text-center text-[13px] text-zinc-400">No font by that name.</div>}
           </div>
-          <div className="mt-1.5 px-1 text-[11px] text-zinc-500">{onPreview && !TOUCH ? "Point at a font to see it on the page. Click to use it." : "Tap a font to use it."}</div>
+          <div className="mt-1.5 px-1 text-[11px] text-zinc-500">{TOUCH ? "Tap a font to use it." : onPreview ? "Point at a font to see it on the page. Click to use it." : "Click a font to use it."}</div>
         </div>,
         document.body
       )}

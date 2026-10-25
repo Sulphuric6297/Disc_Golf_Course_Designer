@@ -1,9 +1,10 @@
-// A hole's elevation profile from tee to basket (heights stretched so small changes show).
+// A hole's elevation profile from tee to basket (heights stretched so small changes show), its
+// tee's dot in the color of the tee it's played from.
 import { profileAlong } from "../lib/terrainGrid";
 import { fmtDist, toUnits } from "../lib/units";
 import type { CourseDoc, P } from "../types";
 
-export function ElevationProfile({ doc, line, height = 90 }: { doc: CourseDoc; line: P[]; height?: number }) {
+export function ElevationProfile({ doc, line, height = 90, teeColor = "#2563eb" }: { doc: CourseDoc; line: P[]; height?: number; teeColor?: string }) {
   if (line.length < 2) return null;
   const prof = profileAlong(doc.terrainHeights, doc.gridSize, line, 80);
   const base = doc.site.baseElevationFt;
@@ -40,7 +41,7 @@ export function ElevationProfile({ doc, line, height = 90 }: { doc: CourseDoc; l
       })}
       <path d={fill} fill="url(#prof-fill)" />
       <path d={path} fill="none" stroke="#bef264" strokeWidth="2" />
-      <circle cx={X(0)} cy={Y(prof[0].h)} r="4" fill="#2563eb" stroke="#fff" strokeWidth="1.5" />
+      <circle cx={X(0)} cy={Y(prof[0].h)} r="4" fill={teeColor} stroke="#111" strokeWidth="1.5" />
       <circle cx={X(total)} cy={Y(prof[prof.length - 1].h)} r="4" fill="#f2c94c" stroke="#111" strokeWidth="1.5" />
       <text x={pad.l} y={H - 4} fontSize="9" fill="#a1a1aa">Tee</text>
       <text x={W - pad.r} y={H - 4} fontSize="9" fill="#a1a1aa" textAnchor="end">Basket · {fmtDist(total, u)}</text>

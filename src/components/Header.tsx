@@ -1,12 +1,13 @@
-// The top bar, kept to a few things: the logo, the course's name with its menu (new, open, save
-// as a file, the courses opened before), the steps in the middle, and on the right the search,
+// The top bar, kept to a few things: the logo, the course's name with its menu (the Courses page,
+// new, open, save as a file, the courses opened before), the steps in the middle, and on the right the search,
 // then the course's state and the account (on a server) or the demo note. 2D/3D and the
 // light live with the map's own controls.
-import { ProblemsCount } from "./SidePanel";
+import { ProblemsCount, STEPS, STEP_ICONS } from "./SidePanel";
 import { useEffect, useRef, useState } from "react";
 import { openGettingStarted, useStart } from "./GettingStarted";
-import { ChevronDown, FilePlus, FolderOpen, HelpCircle, ListChecks, Save, Search, Trash2, MapPin, Route, Palette, Download } from "lucide-react";
-import { STEPS } from "./SidePanel";
+import { ChevronDown, Compass, FilePlus, FolderOpen, HelpCircle, LayoutGrid, ListChecks, Save, Search, Trash2 } from "lucide-react";
+import { ago } from "../auth/Home";
+import { startTour } from "./Tour";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import { deleteRecent, newCourse, openCourseFile, openRecent, recentCourses, saveCourseFile } from "../state/files";
 import type { PlanMeta } from "../lib/storage";
@@ -23,10 +24,8 @@ const Logo = ({ size = 26 }: { size?: number }) => (
   <img src={`${import.meta.env.BASE_URL}logo-128.png`} width={size} height={size} alt="" aria-hidden className="block rounded-full shrink-0 drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]" draggable={false} />
 );
 
-/** The icon buttons along the bar. */
-export const BAR_BUTTON = `p-2 rounded-full text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.08] ${FOCUS}`;
-/** Each step's mark on the steps bar. */
-const STEP_ICONS = { site: MapPin, design: Route, map: Palette, export: Download } as const;
+/** The icon buttons along the bar (a finger's 44 px on a touch screen, a tablet on its side). */
+export const BAR_BUTTON = `p-2 rounded-full text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.08] touch:min-w-[44px] touch:min-h-[44px] touch:inline-flex touch:items-center touch:justify-center ${FOCUS}`;
 
 /** Getting started, at the top: opens the list (lit while it's open). */
 function StartButton() {
@@ -52,10 +51,11 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
     if (!menu) return;
     void recentCourses().then(setRecent);
     const close = (e: MouseEvent) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(false); };
+    // (Esc closes the menu, and only the menu: the tool and the selection stay)
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setMenu(false); } };
     window.addEventListener("pointerdown", close);
-    window.addEventListener("keydown", esc);
-    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc); };
+    window.addEventListener("keydown", esc, true);
+    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc, true); };
   }, [menu]);
 
   return (
@@ -71,11 +71,14 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
           onBlur={() => useCourse.getState().commit()}
         />}
         {!SITE_TOKEN && <div className="relative">
-          <button className={`p-1 rounded-lg text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.07] ${FOCUS}`} onClick={() => setMenu(m => !m)} aria-label="Course menu" title="New, open, save as a file…" aria-haspopup="menu" aria-expanded={menu} data-testid="file-menu">
+          <button className={`p-1 rounded-lg text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.07] touch:min-w-[44px] touch:min-h-[44px] touch:flex touch:items-center touch:justify-center ${FOCUS}`} onClick={() => setMenu(m => !m)} aria-label="Course menu" title="Courses, new, open, save as a file…" aria-haspopup="menu" aria-expanded={menu} data-testid="file-menu">
             <ChevronDown size={14} />
           </button>
           {menu && (
             <div className={`absolute left-0 top-full mt-1 w-72 ${POPOVER} py-1 z-50`} role="menu">
+              {/* (all of them on the Courses page, as the logo goes; in the demo, the walk round its example too) */}
+              <MenuRow icon={<LayoutGrid size={15} />} onClick={() => { setMenu(false); (SERVER ? goHome : goDemoHome)(); }} testid="menu-courses">Courses</MenuRow>
+              {!SERVER && <MenuRow icon={<Compass size={15} />} onClick={() => { setMenu(false); void startTour(); }} testid="menu-tour">A walk round the example</MenuRow>}
               <MenuRow icon={<FilePlus size={15} />} onClick={() => { setMenu(false); void newCourse(); }}>New course</MenuRow>
               <MenuRow icon={<FolderOpen size={15} />} onClick={() => { setMenu(false); fileRef.current?.click(); }}>Open a course file…</MenuRow>
               {mayFiles && <MenuRow icon={<Save size={15} />} onClick={() => { setMenu(false); saveCourseFile(); }}>Save as a file</MenuRow>}
@@ -85,9 +88,9 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
                 <div key={r.id} className="flex items-center hover:bg-white/[0.09]" data-testid="recent-course">
                   <button className={`flex-1 text-left px-3 py-1.5 text-sm text-zinc-200 ${FOCUS}`} onClick={() => { setMenu(false); void openRecent(r.id); }}>
                     {r.name}
-                    <span className="block text-[11px] text-zinc-500">{r.holes} hole{r.holes === 1 ? "" : "s"} · {new Date(r.updatedAt).toLocaleDateString()}</span>
+                    <span className="block text-[11px] text-zinc-500">{r.holes} hole{r.holes === 1 ? "" : "s"} · updated {ago(r.updatedAt)}</span>
                   </button>
-                  <button className={`p-2 text-zinc-500 hover:text-red-300 ${FOCUS} rounded-md`} aria-label={`Delete ${r.name}`} onClick={() => { void deleteRecent(r.id).then(() => recentCourses().then(setRecent)); }}><Trash2 size={14} /></button>
+                  <button className={`p-2 touch:p-3.5 text-zinc-500 hover:text-red-300 ${FOCUS} rounded-md`} aria-label={`Delete ${r.name}`} onClick={() => { const again = () => void recentCourses().then(setRecent); void deleteRecent(r.id, again).then(again); }}><Trash2 size={14} /></button>
                 </div>
               ))}
             </div>
@@ -119,7 +122,7 @@ export function Header({ onHelp, onGoTo }: { onHelp: () => void; onGoTo: () => v
 
       <div className="flex items-center gap-1">
         {ed.step === "design" && !readOnly && <ProblemsCount />}
-        <button onClick={onGoTo} className={BAR_BUTTON} aria-label="Go to" title="Go to (Ctrl+K)" data-testid="goto-button"><Search size={18} /></button>
+        <button onClick={onGoTo} className={BAR_BUTTON} aria-label="Search" title="Search (Ctrl+K)" data-testid="goto-button"><Search size={18} /></button>
         {!readOnly && <StartButton />}
         <button onClick={onHelp} className={BAR_BUTTON} aria-label="Help guide" title="Help guide (?)" data-testid="help-button"><HelpCircle size={18} /></button>
         {SERVER ? <AccountMenu onHelp={onHelp} /> : <DemoBar />}

@@ -30,7 +30,7 @@ import { create3dTree, getTreeSignature } from "../three/trees";
 import { createMeasuredWoods, createUnderbrush, createWoods, createWoodsWhere } from "../three/woods";
 import { standingTrees, grownTree, grownTrees } from "../lib/lidar";
 import type { WoodedGrid } from "../lib/forest";
-import { autoFlight, flightClock, flyoverOf, insertKey, keyFlight, keyTimes, keysFromFlight, type Air, type Canopy, type Crown } from "../lib/flight";
+import { autoFlight, flightClock, flyoverOf, insertKey, keyFlight, keyTimes, keysFromFlight, type Air, type Canopy, type Crown, LENS } from "../lib/flight";
 import { VIDEO_HOLD, titleStrength } from "../lib/video";
 import { drawOverlay, holeTitle, overlayShow, type HoleTitle } from "./flyTitle";
 import { forestDetail, type Forest, type TreeSpot, woodsCrownWidth } from "../three/treeKit";
@@ -39,7 +39,7 @@ import { Tufts } from "../three/tufts";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createFence, createStructure } from "../three/structures";
 import { isLineKind, orientedBox, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
-import type { AmenityItem, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier } from "../types";
+import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
 import type { FlightFrames, FlyoverVideo, FrameInfo, RecordOptions } from "./flyoverVideo";
@@ -97,10 +97,10 @@ const STYLE = `
 .dg-chip{pointer-events:auto;cursor:move;min-width:18px;height:18px;padding:0 4px;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#fff;font:800 10px/1 Inter,system-ui,sans-serif;border:1.5px solid rgba(255,255,255,.9);box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-text{pointer-events:auto;cursor:move;font-weight:700;font-family:Inter,system-ui,sans-serif;text-shadow:0 0 3px #000,0 0 2px #000}
 .dg-area{pointer-events:none;font:700 11px Inter,system-ui,sans-serif;color:#fff;text-shadow:0 0 3px #000,0 0 2px #000;opacity:.9}
-.dg-issue{pointer-events:auto;cursor:help;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:900 12px/1 Inter,system-ui,sans-serif;color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.55)}
+.dg-issue{pointer-events:auto;cursor:pointer;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:900 12px/1 Inter,system-ui,sans-serif;color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.55)}
 .dg-measure{pointer-events:none;padding:1px 6px;border-radius:6px;background:#facc15;color:#1c1917;font:700 11px Inter,system-ui,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.4)}
-.dg-ptmenu{position:absolute;z-index:40;transform:translate(-50%,-100%);padding:9px 14px;border-radius:999px;background:#fafaf9;color:#b91c1c;font:700 14px/1 Inter,system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.45);white-space:nowrap;border:0;pointer-events:auto}
-.dg-ptmenu:disabled{color:#71717a}
+.dg-ptmenu{position:absolute;z-index:40;transform:translate(-50%,-100%);min-height:44px;padding:0 16px;display:flex;align-items:center;border-radius:999px;background:rgba(24,24,27,.92);color:#fca5a5;font:700 14px/1 Inter,system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.45);white-space:nowrap;border:1px solid rgba(255,255,255,.12);pointer-events:auto}
+.dg-ptmenu:disabled{color:#a1a1aa}
 .dg-measure.total{background:#1c1917;color:#facc15}
 .dg-me{pointer-events:none;width:20px;height:20px;border-radius:50%;background:#0a84ff;border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.55);position:absolute}
 .dg-me::after{content:"";position:absolute;inset:-9px;border-radius:50%;background:rgba(10,132,255,.35);animation:dgme 2s ease-out infinite;z-index:-1}
@@ -220,6 +220,8 @@ export class CourseView {
   private hoverId: string | null = null;
   private tool: ViewTool = { mode: "select", areaKind: "ob", lineKind: "ob", shape: "points" };
   private teeLevel: TeeLevel = "blue";
+  /** What the Amenities tool places (its preview is one). */
+  private amenityKind: AmenityKind = "bench";
   private raycaster = new THREE.Raycaster();
   private dirty = true;
   private shadowsDirty = true;
@@ -248,6 +250,9 @@ export class CourseView {
   private shapeAnchor: { x: number; y: number; shape: "box" | "circle" } | null = null;
   private draft: THREE.Object3D | null = null;
   private draftLabel: HTMLDivElement | null = null;
+  /** Said by the drawing instead of its length, until the next point (a basket too close to the
+   * tee, a shape finished with too few points). */
+  private draftNote = "";
   // Tee view and flyover
   private povCam = new THREE.PerspectiveCamera(62, 16 / 9, 0.3, 30000);
   private povHole: string | null = null;
@@ -468,8 +473,18 @@ export class CourseView {
     on(window, "pointerup", e => this.touchUp(e));
     on(window, "pointercancel", e => this.touchUp(e));
     on(container, "contextmenu", e => e.preventDefault());
-    on(window, "keydown", e => { if (e.key === " " && !(e.target as HTMLElement)?.closest?.("input,textarea,select")) this.spaceDown = true; });
-    on(window, "keyup", e => { if (e.key === " ") this.spaceDown = false; });
+    // (Space held with the pointer over the map moves it with a drag: the button last clicked,
+    // which still has the focus, isn't pressed by it)
+    on(window, "keydown", e => {
+      if (e.key !== " " || (e.target as HTMLElement)?.closest?.("input,textarea,select,[contenteditable=true]")) return;
+      this.spaceDown = true;
+      if (this.lastPointer && !(e.target as HTMLElement)?.closest?.("[role=dialog]")) e.preventDefault();
+    });
+    on(window, "keyup", e => {
+      if (e.key !== " ") return;
+      if (this.spaceDown && this.lastPointer && !(e.target as HTMLElement)?.closest?.("[role=dialog]")) e.preventDefault();
+      this.spaceDown = false;
+    });
 
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(container);
@@ -583,9 +598,12 @@ export class CourseView {
     this.invalidate();
   }
 
-  setTool(tool: ViewTool, teeLevel = this.teeLevel) {
+  /** The tool in use; `teeLevel`: the color a tee goes down in, `amenityKind`: what an amenity is
+   * (both for the preview under the pointer). */
+  setTool(tool: ViewTool, teeLevel = this.teeLevel, amenityKind = this.amenityKind) {
     const leaving = tool.mode !== this.tool.mode || this.drawn(tool) !== this.drawn();
     this.teeLevel = teeLevel;
+    this.amenityKind = amenityKind;
     if (leaving && this.tool.mode === "measure") this.clearMeasure();
     if (leaving || tool.shape !== this.tool.shape) {
       if (this.plotHole) this.endPlot();
@@ -842,9 +860,30 @@ export class CourseView {
     return { heading: ((-az / DEG) % 360 + 360) % 360, tiltDeg: this.controls.polarAngle / DEG, pxPerUnit, width: this.size.width, height: this.size.height };
   }
 
-  capture() {
+  /** A picture of the view as it is (`width` × `height`: at that size, in full detail, the same
+   * framing widened or narrowed to fit; otherwise at the screen's size). */
+  capture(width?: number, height?: number) {
+    if (!width || !height) {
+      this.render();
+      return this.renderer.domElement.toDataURL("image/png");
+    }
+    const ratio = this.renderer.getPixelRatio(), detail = this.videoDetail;
+    this.setVideoDetail(true);
+    this.renderer.setPixelRatio(1);
+    this.renderer.setSize(width, height, false);
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+    lineMats.forEach(m => m.resolution.set(width, height));
     this.render();
-    return this.renderer.domElement.toDataURL("image/png");
+    const url = this.renderer.domElement.toDataURL("image/png");
+    this.renderer.setPixelRatio(ratio);
+    this.renderer.setSize(this.size.width, this.size.height, false);
+    this.camera.aspect = this.size.width / Math.max(1, this.size.height);
+    this.camera.updateProjectionMatrix();
+    lineMats.forEach(m => m.resolution.set(this.size.width, this.size.height));
+    if (!detail) this.setVideoDetail(false);
+    this.render();
+    return url;
   }
 
   /** A picture of the scene from a tee (for the hole sheets), at the given size. */
@@ -1110,7 +1149,7 @@ export class CourseView {
     const d = target.clone().sub(eye);
     const flat = Math.hypot(d.x, d.z);
     this.free = { x: eye.x, y: eye.z, z: eye.y, yaw: Math.atan2(d.z, d.x), pitch: Math.atan2(d.y, Math.max(1e-3, flat)) };
-    this.povCam.fov = clamp(fov, 15, 110);
+    this.povCam.fov = clamp(fov, LENS.min, LENS.max);
     this.invalidate();
   }
 
@@ -1122,7 +1161,7 @@ export class CourseView {
 
   /** The camera by hand's lens (field of view, degrees) set to `fov`; returns what it is. */
   freeLens(fov?: number) {
-    if (fov !== undefined) { this.povCam.fov = clamp(fov, 15, 110); this.invalidate(); }
+    if (fov !== undefined) { this.povCam.fov = clamp(fov, LENS.min, LENS.max); this.invalidate(); }
     return Math.round(this.povCam.fov);
   }
 
@@ -2984,6 +3023,7 @@ export class CourseView {
         el.setAttribute("data-testid", "issue-marker");
         el.style.background = issue.level === "danger" ? "#dc2626" : issue.level === "warning" ? "#d97706" : "#2563eb";
         el.title = `Checks: ${issue.text}`;
+        el.dataset.issue = String(i);
         el.textContent = issue.level === "info" ? "i" : "!";
         return el;
       }, at(issue.at, 2), -18);
@@ -3290,7 +3330,7 @@ export class CourseView {
         if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
         deg = ((deg % 360) + 360) % 360;
         return it.type === "tee" ? { rotation: deg, aimFixed: true } : { rotation: deg };
-      }), { title: sel.type === "mando" ? "Drag to turn the arrow (the direction of play)" : sel.type === "tee" ? "Drag to turn the pad (Shift snaps 15°)" : "Drag to turn it" });
+      }), { title: sel.type === "mando" ? "Drag to turn the arrow (the way play goes) · Shift snaps to 15°" : "Drag to turn it · Shift snaps to 15°" });
     }
   }
 
@@ -3782,6 +3822,7 @@ export class CourseView {
   setObPick(id: string | null, cut = false) {
     if ((this.obPick?.id ?? null) === id && (this.obPick?.cut ?? false) === cut) return;
     this.obPick = id ? { id, from: null, cut } : null;
+    this.onObPick?.({ started: false, missed: false });
     this.syncHandles();
     this.updateCursor();
     this.invalidate();
@@ -3794,9 +3835,15 @@ export class CourseView {
     if (l?.type !== "line" && l?.type !== "area") return;
     this.obPick = { id, from: nearestAlong(this.obPath(l), from).t, cut: cut && l.type === "line" };
     this.obTravel = { sum: 0, last: this.obPick.from ?? 0 };
+    this.onObPick?.({ started: true, missed: false });
     this.syncHandles();
     this.updateCursor();
     this.invalidate();
+  }
+
+  /** Whether the stretch of OB being marked has its start (and waits for its end). */
+  obPickStarted() {
+    return !!this.obPick && this.obPick.from !== null;
   }
 
   /** A click while marking a stretch of OB: on the line, its start, then its end (then done). */
@@ -3806,10 +3853,11 @@ export class CourseView {
     const pts = this.obPath(l), near = nearestAlong(pts, p);
     // (near the line or the edge: within its width, a few steps, or a few pixels of it)
     const reach = Math.max((l.type === "line" ? (l.width ?? LINE_KINDS[l.kind].width) / 2 : 0) + 12, 20 * this.upp(new THREE.Vector3(p.x, this.h(p.x, p.y), p.y)));
-    if (near.distance > reach) return;
+    if (near.distance > reach) { this.onObPick?.({ started: pick.from !== null, missed: true }); return; }
     if (pick.from === null) {
       this.obPick = { ...pick, from: near.t };
       this.obTravel = { sum: 0, last: near.t };
+      this.onObPick?.({ started: true, missed: false });
       this.syncHandles();
       this.invalidate();
       return;
@@ -3897,7 +3945,7 @@ export class CourseView {
         },
         end: () => this.cb.onCommit()
       };
-    }, { title: "Drag to turn · Shift: 15° steps" });
+    }, { title: "Drag to turn it · Shift snaps to 15°" });
   }
 
   /** A building's, shelter's or deck's height handle (as in the Security Camera Planner), in the tilted view. */
@@ -4361,15 +4409,37 @@ export class CourseView {
    * so a tap on a hole's line often lands on one); a tap selects what the handle belongs to. */
   /** A small Delete point button by a corner tapped with a finger (an area keeps 3, a line 2). */
   private pointMenu(h: Handle, id: string, index: number) {
-    document.querySelectorAll(".dg-ptmenu").forEach(n => n.remove());
     const it = this.item(id) as AreaItem | LineItem | StructureItem | null;
     if (!it || !("points" in it) || it.locked) return;
     const min = it.type === "line" || (it.type === "structure" && STRUCTURE_KINDS[it.kind].shape !== "outline") ? 2 : 3;
+    const can = it.points.length > min;
+    this.handleButton(h, "delete-point", can ? "Delete point" : `Needs at least ${min} points`, can, () => {
+      const cur = this.item(id) as AreaItem | LineItem | StructureItem | null;
+      if (cur && "points" in cur && cur.points.length > min) {
+        this.cb.onChange(id, { points: cur.points.filter((_, k) => k !== index), ...(cur.type === "line" ? { widths: widthsWithout(cur, index) } : {}) });
+        this.cb.onCommit();
+      }
+    });
+  }
+
+  /** The same for a turn in a hole's line tapped with a finger: Remove this turn. */
+  private turnMenu(h: Handle, holeId: string, index: number) {
+    if (!this.hole(holeId)) return;
+    this.handleButton(h, "remove-turn", "Remove this turn", true, () => {
+      const hole = this.hole(holeId);
+      if (!hole || !hole.doglegs[index]) return;
+      this.cb.onHoleChange(holeId, { doglegs: hole.doglegs.filter((_, k) => k !== index) });
+      this.cb.onCommit();
+    });
+  }
+
+  /** A button over a handle tapped with a finger, gone on the next touch elsewhere or after a while. */
+  private handleButton(h: Handle, testid: string, text: string, can: boolean, run: () => void) {
+    document.querySelectorAll(".dg-ptmenu").forEach(n => n.remove());
     const btn = document.createElement("button");
     btn.className = "dg-ptmenu";
-    btn.setAttribute("data-testid", "delete-point");
-    const can = it.points.length > min;
-    btn.textContent = can ? "Delete point" : `Needs at least ${min} points`;
+    btn.setAttribute("data-testid", testid);
+    btn.textContent = text;
     btn.disabled = !can;
     const r = h.el.getBoundingClientRect(), box = this.container.getBoundingClientRect();
     btn.style.left = `${r.left + r.width / 2 - box.left}px`;
@@ -4378,11 +4448,7 @@ export class CourseView {
     const away = (ev: PointerEvent) => { if (ev.target !== btn) gone(); };
     btn.addEventListener("click", ev => {
       ev.stopPropagation();
-      const cur = this.item(id) as AreaItem | LineItem | StructureItem | null;
-      if (cur && "points" in cur && cur.points.length > min) {
-        this.cb.onChange(id, { points: cur.points.filter((_, k) => k !== index), ...(cur.type === "line" ? { widths: widthsWithout(cur, index) } : {}) });
-        this.cb.onCommit();
-      }
+      run();
       gone();
     });
     this.container.appendChild(btn);
@@ -4415,8 +4481,10 @@ export class CourseView {
       } else if (!moved && !pinched && ev.type === "pointerup") {
         const owner = this.selectedId ?? this.doc?.activeHoleId ?? null;
         if (owner && owner !== this.selectedId) this.cb.onSelect(owner);
-        // (a corner of the thing picked, tapped: a Delete point button by it, as a finger can't double-tap it reliably)
+        // (a corner of the thing picked, tapped: a Delete point button by it, as a finger can't double-tap it reliably;
+        // a turn of the hole's line: Remove this turn)
         else if (h.kind === "corner" && h.index !== undefined && this.selectedId) this.pointMenu(h, this.selectedId, h.index);
+        else if (h.kind === "dogleg" && h.index !== undefined) { const hole = this.hole(this.selectedId)?.id ?? this.doc?.activeHoleId; if (hole) this.turnMenu(h, hole, h.index); }
       }
       this.invalidate();
     };
@@ -4434,6 +4502,16 @@ export class CourseView {
     this.endDragListeners = cleanup;
   }
 
+  /** What a menu at that point is for: the thing there; or, where a tree stands over an area, a
+   * line, a built thing or a hole's line (most trees stand in a wood), the tree's menu, with that
+   * thing `under` it to pick from there (its Copy and Delete would be the whole wood's). */
+  private menuFor(x: number, y: number, domItem: string | null): { itemId: string | null; under: string | null } {
+    const hit = domItem ?? this.pick(x, y);
+    const it = hit ? this.item(hit) : null;
+    const big = !!hit && !domItem && (it ? it.type === "area" || it.type === "line" || it.type === "structure" : !!this.hole(hit));
+    return big && !this.readOnly && this.treeAtScreen(x, y) ? { itemId: null, under: hit } : { itemId: hit, under: null };
+  }
+
   /** Holding a finger still on an item opens its menu, like a right-click (on open ground: what
    * can start there). */
   private startLongPress(e: PointerEvent, target: HTMLElement) {
@@ -4449,16 +4527,16 @@ export class CourseView {
     const fire = () => {
       this.cancelLongPress();
       const domItem = (target.closest?.("[data-item-id]") as HTMLElement | null)?.dataset.itemId ?? null;
-      const itemId = domItem ?? this.pick(x, y);
+      const { itemId, under } = this.menuFor(x, y, domItem);
       // (open ground too, to change: what can start there)
-      if (!itemId && !this.treeAtScreen(x, y) && (this.readOnly || !this.groundAt(x, y))) return;
+      if (!itemId && !under && !this.treeAtScreen(x, y) && (this.readOnly || !this.groundAt(x, y))) return;
       // The press is now the menu's: no tap, no drag, and the map stops following the finger
       this.endDragListeners?.();
       this.setDragging(false);
       this.controls.cancel();
       try { navigator.vibrate?.(12); } catch { /* not allowed */ }
       const g = this.groundAt(x, y);
-      this.cb.onContextMenu({ clientX: x, clientY: y, itemId, ground: g ? { x: g.x, y: g.z } : null });
+      this.cb.onContextMenu({ clientX: x, clientY: y, itemId, under, ground: g ? { x: g.x, y: g.z } : null });
     };
     window.addEventListener("pointermove", move);
     const timer = window.setTimeout(fire, LONG_PRESS_MS);
@@ -4500,7 +4578,7 @@ export class CourseView {
         if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5 && !this.readOnly) {
           const domItem = (target.closest?.("[data-item-id]") as HTMLElement | null)?.dataset.itemId ?? null;
           const g = this.groundAt(ev.clientX, ev.clientY);
-          this.cb.onContextMenu({ clientX: ev.clientX, clientY: ev.clientY, itemId: domItem ?? this.pick(ev.clientX, ev.clientY), ground: g ? { x: g.x, y: g.z } : null });
+          this.cb.onContextMenu({ clientX: ev.clientX, clientY: ev.clientY, ...this.menuFor(ev.clientX, ev.clientY, domItem), ground: g ? { x: g.x, y: g.z } : null });
         }
       };
       window.addEventListener("pointerup", up, true);
@@ -4513,6 +4591,14 @@ export class CourseView {
       e.stopPropagation();
       e.preventDefault();
       this.gesture(e, { click: () => this.toggleLidarTree(Number(stumpEl.dataset.stump)) });
+      return;
+    }
+    // A check's mark (with Select): the checks open, at it
+    const issueEl = target.closest?.("[data-issue]") as HTMLElement | null;
+    if (issueEl && e.button === 0 && this.tool.mode === "select") {
+      e.stopPropagation();
+      e.preventDefault();
+      this.gesture(e, { click: () => { const t = this.doc?.issues?.[Number(issueEl.dataset.issue)]?.text; if (t) this.onIssue?.(t); } });
       return;
     }
     const handleEl = target.closest?.("[data-handle]") as HTMLElement | null;
@@ -4613,12 +4699,17 @@ export class CourseView {
             this.cursor = p;
             this.drawDraft();
             this.cb.onDrawProgress(1);
+          } else if (dist(this.holeStart, p) <= 10) {
+            // (too close for a hole: the tee stays, waiting for a basket farther off)
+            this.draftNote = `Too close to the tee. ${this.fingers ? "Tap" : "Click"} farther away.`;
+            this.cursor = p;
+            this.drawDraft();
           } else {
             const start = this.holeStart;
             this.holeStart = null;
             this.clearDraft();
             this.cb.onDrawProgress(0);
-            if (dist(start, p) > 10) this.cb.onHole(start, p);
+            this.cb.onHole(start, p);
           }
         }),
         drag: panOrNothing
@@ -4670,6 +4761,7 @@ export class CourseView {
           const last = this.drawPts[this.drawPts.length - 1];
           if (last && dist(last, p) < 1) return;
           this.drawPts.push(p);
+          this.draftNote = "";
           this.cursor = p;
           this.drawDraft();
           this.cb.onDrawProgress(this.drawPts.length);
@@ -5039,6 +5131,11 @@ export class CourseView {
       this.syncHandles();
       return true;
     }
+    // (begun, but too short to be a shape yet: said where it's being drawn)
+    if (kind && pts.length) {
+      this.draftNote = `Needs at least ${kind === "area" ? 3 : 2} points`;
+      this.drawDraft();
+    }
     return false;
   }
 
@@ -5128,6 +5225,7 @@ export class CourseView {
     if (this.holeStart) { this.cancelDrawing(); return true; }
     if (!this.drawPts.length) return false;
     this.drawPts.pop();
+    this.draftNote = "";
     this.drawDraft();
     this.cb.onDrawProgress(this.drawPts.length);
     this.handleKey = "";
@@ -5172,6 +5270,7 @@ export class CourseView {
     this.draftLabel?.remove();
     this.draftLabel = null;
     this.draftAt = null;
+    this.draftNote = "";
     this.invalidate();
   }
 
@@ -5191,7 +5290,8 @@ export class CourseView {
       const len = dist(a, b);
       const dh = this.h(b.x, b.y) - this.h(a.x, a.y);
       const eff = len + (doc.course.rules?.elevationFactor ?? 3) * dh;
-      label = len > 1 ? `${fmtDist(len, doc.course.units)}${Math.abs(dh) >= 1 ? ` · ${fmtElev(dh, doc.course.units)}` : ""} · par ${parForDistance(eff, this.teeLevel)}` : this.fingers ? "Tap where the basket goes" : "Click where the basket goes";
+      label = this.draftNote && len <= 10 ? this.draftNote
+        : len > 1 ? `${fmtDist(len, doc.course.units)}${Math.abs(dh) >= 1 ? ` · ${fmtElev(dh, doc.course.units)}` : ""} · par ${parForDistance(eff, this.teeLevel)}` : this.fingers ? "Tap where the basket goes" : "Click where the basket goes";
       this.draftAt = new THREE.Vector3(b.x, this.h(b.x, b.y), b.y);
     } else if (this.plotHole) {
       const s = doc.stats.find(x => x.holeId === this.plotHole);
@@ -5229,10 +5329,16 @@ export class CourseView {
       const len = pathLength(pts);
       // (With a finger: the Done button finishes, so the label only counts)
       const finish = this.fingers ? "" : " · Enter or double-click to finish";
-      label = this.shaping
-        ? area ? `${fmtArea(Math.abs(polygonArea(pts)), doc.course.units)} · ${this.fingers ? "lift" : "let go"} to finish` : `${fmtDist(len, doc.course.units)} · ${this.fingers ? "lift" : "let go"} to finish`
+      const size = fmtArea(Math.abs(polygonArea(pts)), doc.course.units);
+      const n = pts.length - (this.cursor ? 1 : 0);
+      label = this.draftNote ? this.draftNote
+        : this.shaping
+        ? area ? `${size} · ${this.fingers ? "lift" : "let go"} to finish` : `${fmtDist(len, doc.course.units)} · ${this.fingers ? "lift" : "let go"} to finish`
+        // (a rectangle or circle by two clicks: its first one made, the other to come)
+        : this.shapeAnchor
+        ? `${size} · ${this.fingers ? "tap" : "click"} ${this.shapeAnchor.shape === "circle" ? "the edge" : "the opposite corner"}`
         : area
-        ? `${pts.length - (this.cursor ? 1 : 0)} points${finish}`
+        ? `${n >= 3 ? `${size} · ` : ""}${n} point${n === 1 ? "" : "s"}${finish}`
         : `${fmtDist(len, doc.course.units)}${finish}`;
       const last = pts[pts.length - 1];
       this.draftAt = new THREE.Vector3(last.x, this.h(last.x, last.y), last.y);
@@ -5258,7 +5364,7 @@ export class CourseView {
     e.stopPropagation();
     if (this.povHole) {
       const delta = (e.deltaMode !== 0 ? e.deltaY * 33 : e.deltaY) * 0.0015;
-      this.povCam.fov = clamp(this.povCam.fov * Math.exp(delta), 15, 100);
+      this.povCam.fov = clamp(this.povCam.fov * Math.exp(delta), LENS.min, LENS.max);
       this.invalidate();
       return;
     }
@@ -5277,6 +5383,17 @@ export class CourseView {
 
   /** Called when someone moves the map by hand (the map stops following you). */
   onUserMove: (() => void) | null = null;
+  /** Marking a stretch of OB: whether its start is set (it waits for its end), or a click missed the line. */
+  onObPick: ((at: { started: boolean; missed: boolean }) => void) | null = null;
+  /** A check's mark on the map clicked (its text). */
+  onIssue: ((text: string) => void) | null = null;
+
+  /** The ground under the pointer, while it is over the map (Ctrl+V pastes there). */
+  pointerGround(): P | null {
+    const p = this.lastPointer;
+    const g = p ? this.groundAt(p.x, p.y) : null;
+    return g ? { x: g.x, y: g.z } : null;
+  }
   private me: { mark: LocationMark; dot: HTMLDivElement; cone: HTMLElement; tag: HTMLDivElement; at: THREE.Vector3; ring: THREE.Object3D | null } | null = null;
 
   /** You on the map (null: not shown); `follow`: the map keeps you in the middle of what's visible. */
@@ -5624,7 +5741,7 @@ export class CourseView {
     }
     // (the Tree tool's preview: the kind it plants, as big as it plants it)
     const tk = this.tool.treeKind ?? "deciduous";
-    const key = kind === "tree" ? `tree:${tk}` : kind;
+    const key = kind === "tree" ? `tree:${tk}` : kind === "tee" ? `tee:${this.teeLevel}` : kind === "amenity" ? `amenity:${this.amenityKind}` : kind;
     if (this.ghostKey !== key) {
       if (this.ghost) {
         this.fx.remove(this.ghost);
@@ -5634,7 +5751,7 @@ export class CourseView {
       const obj = kind === "basket" ? createBasket(this.doc.course.style.basketBand ?? BASKET_BAND)
         : kind === "mando" ? createMando("right")
         : kind === "dropzone" ? createDropZone()
-        : kind === "amenity" ? createAmenity("bench")
+        : kind === "amenity" ? createAmenity(this.amenityKind)
         : kind === "tree" ? create3dTree(tk === "bush" ? { id: "ghost", type: "tree", x: 0, y: 0, rotation: 0, radius: 5, height: 6, treeType: "bush", color: "#4a7a3a" } : tk === "conifer" ? { id: "ghost", type: "tree", x: 0, y: 0, rotation: 0, radius: 10, height: 50, treeType: "conifer", color: "#2f5d34" } : { id: "ghost", type: "tree", x: 0, y: 0, rotation: 0, radius: 14, height: 40, color: "#4a7a3a" })
         : createTeePad({ id: "ghost", type: "tee", holeId: "", level: this.teeLevel, x: 0, y: 0, rotation: 0, padWidth: 5, padLength: 12, surface: "concrete" }, 0);
       obj.traverse(o => {
