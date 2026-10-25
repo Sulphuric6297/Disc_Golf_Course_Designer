@@ -5,9 +5,9 @@ import { holeNumber } from "./course";
 
 export type VideoResolution = "720p" | "1080p" | "1440p" | "4k";
 export const VIDEO_SIZES: Record<VideoResolution, { label: string; width: number; height: number }> = {
-  "720p": { label: "720p · 1280 × 720", width: 1280, height: 720 },
-  "1080p": { label: "1080p · 1920 × 1080", width: 1920, height: 1080 },
-  "1440p": { label: "1440p · 2560 × 1440", width: 2560, height: 1440 },
+  "720p": { label: "1280 × 720", width: 1280, height: 720 },
+  "1080p": { label: "1920 × 1080", width: 1920, height: 1080 },
+  "1440p": { label: "2560 × 1440", width: 2560, height: 1440 },
   "4k": { label: "4K · 3840 × 2160", width: 3840, height: 2160 }
 };
 export const VIDEO_FPS = [30, 60] as const;

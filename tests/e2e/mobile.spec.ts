@@ -330,8 +330,8 @@ test.describe("phone", () => {
     await page.getByTestId("selection-back").tap();
     // Cancel drops what is being drawn
     await page.locator('[data-tool="paths"]').tap();
-    await tapPlan(page, 300, 650);
-    await tapPlan(page, 600, 650);
+    await tapPlan(page, 300, 250);
+    await tapPlan(page, 600, 250);
     await page.getByTestId("draw-cancel").tap();
     await expect(page.getByTestId("draw-bar")).toHaveCount(0);
     expect((await course(page)).items.filter((i: any) => i.type === "line").length).toBe(0);
