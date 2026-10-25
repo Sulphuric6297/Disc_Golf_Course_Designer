@@ -1,0 +1,1 @@
+import{i as r}from"./App-BIaT-YSX.js";import{B as o}from"./geotiff-EXgW_SOg.js";import"./index-Dp0m3KwG.js";import"./exports-U5_Wosir.js";import"./raster-BXxsPoTG.js";import"./useRelief-BYPZpCQP.js";class d extends o{decodeBlock(e){return r(new Uint8Array(e)).buffer}}export{d as default};
