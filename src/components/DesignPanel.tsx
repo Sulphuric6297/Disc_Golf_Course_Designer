@@ -1,18 +1,21 @@
 // The Design step's controls: how the printed map looks (its style, colors, title block, what shows).
-import { ArrowRight, RotateCcw } from "lucide-react";
+import { ArrowRight, Ban, FileText, Hash, ListTree, Palette, PenLine, Plus, RotateCcw, Target, Type, type LucideIcon } from "lucide-react";
 import { ApplyToHoles } from "./ApplyToHoles";
-import { BASKET_MARKS, PAPER, basketMark, bestRotation } from "../lib/mapSvg";
+import { BASKET_MARKS, basketMark, bestRotation } from "../lib/mapSvg";
 import { CARD_DEFAULTS, SIGN_LOOKS, SIGN_PARTS, SIGN_SPOTS, isSheet, signOf } from "../lib/teeSign";
-import { holeLabel } from "../lib/course";
 import { changeDoc, useCourse, useEditor } from "../state/course";
+import { toast } from "../state/toast";
 import { AREA_KINDS } from "../constants";
 import { RESTRICTED } from "../lib/symbols";
 import { MapLookPanel } from "./MapLookPanel";
-import { useEffect, useRef, useState } from "react";
-import type { MapStyle, PaperSize, ReliefLook, SignLook, SignSettings } from "../types";
-import { Button, ColorInput, Field, Fold, HelpLink, Section, Segmented, Slider, TextInput, Toggle, WholePanelOnly } from "./ui";
-import { HolePageLook, PrintPanel, ScorecardSettings } from "./PrintPanel";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
+import type { MapStyle, ReliefLook, SignLook, SignSettings, SignSpot } from "../types";
+import { Button, ChipPick, Field, Fold, HelpLink, OnlyGroup, Section, Segmented, Slider, TextInput, Toggle, WholePanelOnly } from "./ui";
+import { ChangeScope, HolePageLook, OwnHoles, PrintPanel, ScorecardSettings, Sponsors } from "./PrintPanel";
+import { boardSize } from "./printouts";
 import { FontPicker } from "./FontPicker";
+import { ColorField } from "./ColorSwatches";
+import { SHOW_EVENT } from "./showSetting";
 import { fontsIn } from "../lib/fontLoad";
 
 export const setStyle = (patch: Partial<MapStyle>, history = true) => {
@@ -77,35 +80,8 @@ export function FineTuning({ s }: { s: MapStyle }) {
   );
 }
 
-/** The course's logo for the scorecard: a picture picked from the device, made small (at most
- * 320 px across) so the course file stays light. */
-function LogoPicker({ logo }: { logo?: string }) {
-  const input = useRef<HTMLInputElement>(null);
-  const pick = async (file: File) => {
-    const url = URL.createObjectURL(file);
-    try {
-      const img = new Image();
-      img.src = url;
-      await img.decode();
-      const k = Math.min(1, 320 / Math.max(img.naturalWidth, img.naturalHeight));
-      const c = document.createElement("canvas");
-      c.width = Math.max(1, Math.round(img.naturalWidth * k));
-      c.height = Math.max(1, Math.round(img.naturalHeight * k));
-      c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
-      setStyle({ logo: c.toDataURL("image/png") });
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  };
-  return (
-    <div className="flex items-center gap-2">
-      {logo && <img src={logo} alt="Course logo" className="h-9 max-w-[120px] object-contain rounded bg-white/90 p-0.5" data-testid="logo-preview" />}
-      <input ref={input} type="file" accept="image/*" className="hidden" aria-label="Course logo file" data-testid="logo-input" onChange={e => { const f = e.target.files?.[0]; if (f) void pick(f); e.target.value = ""; }} />
-      <Button small onClick={() => input.current?.click()}>{logo ? "Change" : "Upload"}</Button>
-      {logo && <Button small onClick={() => setStyle({ logo: undefined })}>Remove</Button>}
-    </div>
-  );
-}
+/** The extra panel's choices, each with its little picture. */
+const SPOT_ICON: Record<SignSpot, LucideIcon> = { green: Target, stats: Hash, none: Ban, courseMap: Target };
 
 /** How tee signs look: for all holes, or a hole's own (the one the tee sign preview shows): the
  * other holes on its map faded, left out or shown, and each part shown or left out. */
@@ -122,52 +98,107 @@ function TeeSignSettings() {
   const own = (forHole ? hole!.sign : doc.style.sign) ?? {};
   const patch = (p: SignSettings, history = true) =>
     changeDoc(d => (forHole ? { holes: d.holes.map(h => (h.id === hole!.id ? { ...h, sign: { ...h.sign, ...p } } : h)) } : { style: { ...d.style, sign: { ...d.style.sign, ...p } } }), history);
+  // (Reset: the look and these settings back as they start; what was added to the signs, and
+  // where their pieces were put, stay; a layout goes with a look, so a look put back starts it over)
+  const sg = doc.style.sign;
+  const resetting = !!sg && (sg.look !== undefined || sg.others !== undefined || sg.fade !== undefined || sg.show !== undefined || sg.spot !== undefined);
   const reset = forHole
     ? null
-    : <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1 disabled:opacity-40" disabled={!doc.style.sign} onClick={() => setStyle({ sign: undefined })}><RotateCcw size={12} /> Reset</button>;
-  // (from a hole: its sign settings to the holes picked; for all holes: the picked holes follow them)
-  const applyTo = (ids: string[]) => changeDoc(d => ({ holes: d.holes.map(h => (ids.includes(h.id) ? { ...h, sign: forHole && hole!.sign ? JSON.parse(JSON.stringify(hole!.sign)) : undefined } : h)) }));
+    : <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1 disabled:opacity-40" disabled={!resetting} onClick={() => setStyle({ sign: sg && (sg.extras || sg.layout) ? { extras: sg.extras, layout: sg.look ? undefined : sg.layout } : undefined })} data-testid="sign-reset"><RotateCcw size={12} /> Reset</button>;
+  // (from a hole: its sign settings to the holes picked)
+  const applyTo = (ids: string[]) => changeDoc(d => ({ holes: d.holes.map(h => (ids.includes(h.id) ? { ...h, sign: hole?.sign ? JSON.parse(JSON.stringify(hole.sign)) : undefined } : h)) }));
   // (a sign on letter or A4 paper is always Classic; the others look as picked on the signs' own sizes)
   const size = doc.style.signSize ?? "18x12", sheet = isSheet(size), look = doc.style.sign?.look ?? "classic";
   // (an extra panel only where the look has room for one: a wide sign, Classic, Trailhead or Field guide)
   const spots = size !== "18x12" || sheet || look === "openview" ? [] : look === "fieldguide" ? SIGN_SPOTS.filter(o => o.id !== "stats") : SIGN_SPOTS;
-  // (another look starts every sign over, each hole's own layout too)
-  const pickLook = (id: SignLook) => changeDoc(d => ({ style: { ...d.style, sign: { ...d.style.sign, look: id === "classic" ? undefined : id, layout: undefined } }, holes: d.holes.map(h => (h.sign?.layout ? { ...h, sign: { ...h.sign, layout: undefined } } : h)) }));
+  // (another look starts every sign over, each hole's own layout too; on paper, one other than
+  // Classic takes the signs back to their last size; Undo puts it all back)
+  const pickLook = (id: SignLook) => {
+    if (id === look && !(sheet && id !== "classic")) return;
+    changeDoc(d => ({ style: { ...d.style, ...(sheet && id !== "classic" ? { signSize: boardSize() } : {}), sign: { ...d.style.sign, look: id === "classic" ? undefined : id, layout: undefined } }, holes: d.holes.map(h => (h.sign?.layout ? { ...h, sign: { ...h.sign, layout: undefined } } : h)) }));
+    toast(`Every tee sign now has the ${SIGN_LOOKS.find(l => l.id === id)?.label ?? id} look.`, "info", true);
+  };
   if (!doc.holes.length) return null;
   return (
     <Section title="Tee signs" testid="sign-settings" right={reset} help="tee-signs">
+      <ChangeScope />
       <div className="text-[12px] text-zinc-400 mb-1.5 px-0.5">Start from</div>
       <div className="grid grid-cols-4 gap-1.5 mb-3" role="radiogroup" aria-label="Tee sign look" data-testid="sign-looks">
         {SIGN_LOOKS.map(l => {
           const on = look === l.id, off = sheet && l.id !== "classic";
           return (
             <button key={l.id} role="radio" aria-checked={on} data-testid={`sign-look-${l.id}`} onClick={() => pickLook(l.id)}
-              className={`text-left rounded-lg overflow-hidden bg-white/[0.07] ring-1 transition ${on ? "ring-2 ring-orange-400" : "ring-white/10 hover:ring-white/30"} ${off ? "opacity-45" : ""}`}>
+              className={`text-left rounded-lg overflow-hidden bg-white/[0.07] ring-1 transition ${on ? "ring-2 ring-orange-400" : "ring-white/10 hover:ring-white/30"} ${off ? "opacity-45 hover:opacity-80" : ""}`}>
               <img src={`${import.meta.env.BASE_URL}signs/${l.id}.jpg`} alt="" loading="lazy" className="block w-full aspect-[2/3] object-cover object-top" draggable={false} />
               <span className="block px-1 py-1 text-[10.5px] leading-tight font-semibold text-zinc-100 text-center">{l.label}</span>
             </button>
           );
         })}
       </div>
-      {forHole && <p className="text-[11.5px] text-orange-200/90 mb-2 px-0.5">Hole {holeLabel(doc, hole!.id)}'s sign only</p>}
       <Field label="Other holes">
         <Segmented label="Other holes on the sign" value={eff.others} onChange={v => patch({ others: v })} options={[{ value: "faded", label: "Faded" }, { value: "hidden", label: "Hidden" }, { value: "shown", label: "Shown" }]} />
       </Field>
       {eff.others === "faded" && <Slider label="How much they show" min={0.05} max={0.9} step={0.05} value={eff.fade} onChange={v => patch({ fade: v }, false)} onDone={() => useCourse.getState().commit()} format={v => `${Math.round(v * 100)}%`} />}
-      <div className="grid grid-cols-2 gap-x-3" data-testid="sign-parts">
-        {SIGN_PARTS.filter(p => ["throwLine", "circle", "distances"].includes(p.id)).map(p => <Toggle key={p.id} label={p.label} checked={eff.show(p.id)} onChange={v => patch({ show: { ...own.show, [p.id]: v } })} />)}
+      <div data-testid="sign-parts">
+        {(["throwLine", "distances", "circle"] as const).map(id => <Toggle key={id} label={SIGN_PARTS.find(p => p.id === id)!.label} checked={eff.show(id)} onChange={v => patch({ show: { ...own.show, [id]: v } })} />)}
       </div>
       {spots.length > 0 && (
         <Field label="Extra panel">
-          <Segmented label="What goes in the extra panel" value={spots.some(o => o.id === eff.spot) ? eff.spot : "green"} onChange={v => patch({ spot: v, show: { ...own.show, courseMap: undefined } })} options={spots.map(o => ({ value: o.id, label: o.label }))} />
+          <ChipPick label="What goes in the extra panel" testid="sign-spot" value={spots.some(o => o.id === eff.spot) ? eff.spot : "green"} onChange={v => patch({ spot: v, show: { ...own.show, courseMap: undefined } })}
+            options={spots.map(o => { const Icon = SPOT_ICON[o.id]; return { value: o.id, label: o.label, icon: <Icon size={13} /> }; })} />
         </Field>
       )}
-      <div className="mt-2">
-        <ApplyToHoles fromId={forHole ? hole!.id : undefined} apply={applyTo} testid="sign-apply" label={forHole ? undefined : "Put holes back to the every-hole sign…"} />
-      </div>
+      {forHole && <div className="mt-2"><ApplyToHoles fromId={hole!.id} apply={applyTo} testid="sign-apply" /></div>}
+      <OwnHoles t="sign" />
     </Section>
   );
 }
+
+/** The course map's tools: one row, one part of its panel open at a time (as a phone has them). */
+const MAP_TOOLS: { id: string; label: string; icon: LucideIcon }[] = [
+  { id: "map-style", label: "Style", icon: Palette }, { id: "drawn-on-map", label: "Lines", icon: PenLine }, { id: "fold-title", label: "Lettering", icon: Type },
+  { id: "fold-paper", label: "Paper", icon: FileText }, { id: "print-add", label: "Add", icon: Plus }, { id: "print-layers", label: "Layers", icon: ListTree }
+];
+/** Which of the course map's tools is open (the whole panel's: none while a phone opens one). */
+const MapTool = createContext<string | null>(null);
+function MapTools({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState("map-style");
+  // (Show me, from the help: the tool its setting is in, opened)
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (typeof d !== "string" || !d.startsWith("page-tool:")) return;
+      const id = d.slice(10) === "light-shadow" || d.slice(10) === "map-look" ? "map-style" : d.slice(10);
+      if (MAP_TOOLS.some(t => t.id === id)) setOpen(id);
+    };
+    window.addEventListener(SHOW_EVENT, on);
+    return () => window.removeEventListener(SHOW_EVENT, on);
+  }, []);
+  return (
+    <>
+      <div role="toolbar" aria-label="Course map settings" className="mx-3 mt-2 flex gap-1 rounded-[18px] bg-white/[0.05] p-1" data-testid="map-tools">
+        {MAP_TOOLS.map(t => {
+          const on = open === t.id;
+          return (
+            <button key={t.id} onClick={() => setOpen(t.id)} aria-pressed={on} data-testid={`page-tool-${t.id}`}
+              className={`flex-1 min-w-0 h-[48px] px-1 rounded-[14px] flex flex-col items-center justify-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${on ? "bg-orange-500 text-zinc-950" : "text-zinc-300 hover:bg-white/[0.09]"}`}>
+              <t.icon size={17} />
+              <span className="text-[10.5px] leading-none font-semibold whitespace-nowrap">{t.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      <MapTool.Provider value={open}><OnlyGroup.Provider value={open}>{children}</OnlyGroup.Provider></MapTool.Provider>
+    </>
+  );
+}
+/** The open tool's name over its part (a part shown alone drops its own title). */
+const ToolTitle = ({ help }: { help?: string }) => {
+  const open = useContext(MapTool), t = MAP_TOOLS.find(x => x.id === open);
+  if (!t) return null;
+  return <h3 className="px-4 pt-3 -mb-2 text-xs font-semibold text-zinc-400 flex items-center gap-1.5">{t.label}{help && <HelpLink topic={help} label={t.label} />}</h3>;
+};
+const TOOL_HELP: Record<string, string> = { "map-style": "map-style", "drawn-on-map": "drawn-on-map", "fold-title": "lettering", "fold-paper": "paper", "print-add": "printout-editing", "print-layers": "printout-editing" };
 
 export function DesignPanel() {
   const doc = useCourse(s => s.doc);
@@ -176,37 +207,68 @@ export function DesignPanel() {
   const done = () => useCourse.getState().commit();
   // (the tab above the page: what's shared by every download, or one of them alone)
   const tab = useEditor(e => e.designTab);
+  // (shown whole: the course map's parts as a row of tools; a phone's page tools show one already)
+  const whole = !useContext(OnlyGroup);
   const toGeneral = (
     <Section>
       <button className="w-full flex items-center justify-between rounded-[14px] bg-white/[0.06] px-3 py-2.5 text-sm text-zinc-100" onClick={() => useEditor.getState().set({ designTab: "general" })} data-testid="to-general">
-        Logo, colors and lettering <ArrowRight size={15} className="text-zinc-400" />
+        Lettering and colors <ArrowRight size={15} className="text-zinc-400" />
       </button>
     </Section>
+  );
+  const mapPanel = (
+    <PrintPanel t="map" top={<Section title="Map style" testid="map-style" help="map-style"><MapLookPanel /></Section>}>
+      <Section title="Lines" help="drawn-on-map" testid="drawn-on-map">
+        <Toggle label="Throw lines" checked={s.throwLines} onChange={v => setStyle({ throwLines: v })} />
+        <Toggle label="Distances" checked={s.distances} onChange={v => setStyle({ distances: v })} />
+        <Toggle label="Putting circle" checked={s.circle} onChange={v => setStyle({ circle: v })} />
+      </Section>
+      {/* (the course name's font is on the General tab: it goes on every printout) */}
+      <Fold title={<span className="flex items-center gap-1.5">Lettering <HelpLink topic="lettering" label="Lettering" /></span>} testid="fold-title">
+        <Field label="Labels font">
+          <FontPicker label="Labels font" value={s.font} onPick={f => setStyle({ font: f ?? "Script" })} used={fontsIn(doc)} testid="map-font" />
+        </Field>
+        <StyleSlider k="labelScale" value={s.labelScale} label="Label size" min={0.7} max={1.6} step={0.05} format={v => `${Math.round(v * 100)}%`} />
+      </Fold>
+      {/* (the paper's size is over the page, beside the tabs) */}
+      <Fold title={<span className="flex items-center gap-1.5">Paper <HelpLink topic="paper" label="Paper" /></span>} testid="fold-paper">
+        <Field label="Frame">
+          <Segmented label="Frame" value={s.frame ?? "none"} onChange={v => setStyle({ frame: v === "none" ? undefined : v })} options={[{ value: "none", label: "None" }, { value: "mat", label: "Mat" }, { value: "line", label: "Fine line" }, { value: "band", label: "Band" }]} />
+        </Field>
+        <Field label="Orientation">
+          <Segmented label="Orientation" value={s.orientation} onChange={v => setStyle({ orientation: v })} options={[{ value: "auto", label: "Auto" }, { value: "landscape", label: "Landscape" }, { value: "portrait", label: "Portrait" }]} />
+        </Field>
+        <div className="mt-1">
+          <Slider label="Turn the map" min={-180} max={180} value={s.rotation} onChange={v => setStyle({ rotation: v }, false)} onDone={done} format={v => (v === 0 ? "North up" : `${v}°`)} />
+          <div className="flex gap-1.5 -mt-1">
+            <Button small onClick={() => setStyle({ rotation: bestRotation(doc) })} testid="best-rotation">Turn to fill the page</Button>
+            {s.rotation !== 0 && <Button small onClick={() => setStyle({ rotation: 0 })}>North up</Button>}
+          </div>
+        </div>
+      </Fold>
+    </PrintPanel>
   );
   return (
     <>
       {tab === "general" && (
         <>
-      <Section title="Logo, colors and lettering" testid="card-style" help="card-style" right={s.card ? <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ card: undefined })}><RotateCcw size={12} /> Reset</button> : undefined}>
+      <Section title="Lettering and colors" testid="card-style" help="card-style" right={s.card ? <button className="text-xs text-orange-300 hover:text-orange-200 flex items-center gap-1" onClick={() => setStyle({ card: undefined })}><RotateCcw size={12} /> Reset</button> : undefined}>
         <div className="grid grid-cols-2 gap-x-3">
-          {([["header", "Header"], ["accent", "Header lettering"], ["paper", "Paper"], ["ink", "Text"]] as const).map(([key, label]) => (
-            <ColorInput key={key} label={label} value={s.card?.[key] ?? CARD_DEFAULTS[key]} onChange={v => setStyle({ card: { ...s.card, [key]: v } }, false)} onDone={done} />
+          {([["header", "Header"], ["accent", "Header lettering"], ["paper", "Page color"], ["ink", "Text color"]] as const).map(([key, label]) => (
+            <ColorField key={key} label={label} value={s.card?.[key] ?? CARD_DEFAULTS[key]} onChange={(v, live) => setStyle({ card: { ...s.card, [key]: v } }, !live)} onDone={done} />
           ))}
         </div>
-        <Field label="Line under the course name">
-          <TextInput label="Line under the course name" value={s.tagline ?? "Disc golf course"} placeholder="None" onChange={v => setStyle({ tagline: v }, false)} onDone={done} />
-        </Field>
-        <Field label="Course logo">
-          <LogoPicker logo={s.logo} />
+        <Field label="Tagline">
+          <TextInput label="Tagline" value={s.tagline ?? "Disc golf course"} placeholder="None" onChange={v => setStyle({ tagline: v }, false)} onDone={done} />
         </Field>
         <Field label="Course name font">
           <FontPicker label="Course name font" value={s.titleFont} inherit="Each look's own" onPick={f => setStyle({ titleFont: f ?? undefined })} used={fontsIn(doc)} testid="title-font" />
         </Field>
-        <Field label="Headings (tee signs, hole pages, scorecard)">
+        <Field label="Headings font">
           <FontPicker label="Headings font" value={s.card?.font ?? CARD_DEFAULTS.font} onPick={f => setStyle({ card: { ...s.card, font: f ?? CARD_DEFAULTS.font } })} used={fontsIn(doc)} testid="card-font" />
         </Field>
       </Section>
-      <Section title="Marks and colors" testid="markings" help="marks">
+      <Section title="Marks" testid="markings" help="marks">
         {/* (which colors mark the areas first: PDGA colors set OB's own, so its swatch goes) */}
         <div className="text-xs text-zinc-400">Marking colors</div>
         <div className="mt-1 mb-3 grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Marking colors">
@@ -245,50 +307,17 @@ export function DesignPanel() {
           ))}
         </div>
         <div className="mt-2 grid grid-cols-2 gap-x-2">
-          <ColorInput label="Basket color" value={s.basket} onChange={v => setStyle({ basket: v }, false)} onDone={done} />
-          {s.markings !== "pdga" && <ColorInput label="OB" value={s.ob} onChange={v => setStyle({ ob: v }, false)} onDone={done} />}
-          <ColorInput label="Hazard" value={s.hazard} onChange={v => setStyle({ hazard: v }, false)} onDone={done} />
+          <ColorField label="Basket color" value={s.basket} onChange={(v, live) => setStyle({ basket: v }, !live)} onDone={done} />
+          {s.markings !== "pdga" && <ColorField label="OB" value={s.ob} onChange={(v, live) => setStyle({ ob: v }, !live)} onDone={done} />}
+          <ColorField label="Hazard" value={s.hazard} onChange={(v, live) => setStyle({ hazard: v }, !live)} onDone={done} />
         </div>
+      </Section>
+      <Section title="Sponsors" testid="print-sponsors" help="sponsors">
+        <Sponsors />
       </Section>
         </>
       )}
-      {tab === "map" && (
-        <PrintPanel t="map" top={<Section title="Map style" testid="map-style" help="map-style"><MapLookPanel /></Section>}>
-      <Section title="Drawn on the map" help="drawn-on-map" testid="drawn-on-map">
-        <Toggle label="Throw lines" checked={s.throwLines} onChange={v => setStyle({ throwLines: v })} />
-        <Toggle label="Distances on the lines" checked={s.distances} onChange={v => setStyle({ distances: v })} />
-        <Toggle label="Putting circle (10 m, 33 ft)" checked={s.circle} onChange={v => setStyle({ circle: v })} />
-        {!(s.hillshade && s.reliefLook === "contours") && <Toggle label="Contour lines" checked={s.contours} onChange={v => setStyle({ contours: v })} />}
-      </Section>
-      {/* (the course name's font is on the General tab: it goes on every printout) */}
-      <Fold title={<span className="flex items-center gap-1.5">Lettering <HelpLink topic="lettering" label="Lettering" /></span>} testid="fold-title">
-        <Field label="Font (the map's labels)">
-          <FontPicker label="Map font" value={s.font} onPick={f => setStyle({ font: f ?? "Script" })} used={fontsIn(doc)} testid="map-font" />
-        </Field>
-        <StyleSlider k="labelScale" value={s.labelScale} label="Label size" min={0.7} max={1.6} step={0.05} format={v => `${Math.round(v * 100)}%`} />
-      </Fold>
-      <Fold title={<span className="flex items-center gap-1.5">Paper <HelpLink topic="paper" label="Paper" /></span>} testid="fold-paper">
-        <Field label="Frame">
-          <Segmented label="Frame" value={s.frame ?? "none"} onChange={v => setStyle({ frame: v === "none" ? undefined : v })} options={[{ value: "none", label: "None" }, { value: "mat", label: "Mat" }, { value: "line", label: "Fine line" }, { value: "band", label: "Band" }]} />
-        </Field>
-        <Field label="Paper size">
-          <select aria-label="Paper size" className="w-full bg-white/[0.07] rounded-lg px-2 py-1.5 touch:py-2.5 text-sm touch:text-base" value={s.paper} onChange={e => setStyle({ paper: e.target.value as PaperSize })}>
-            {(Object.keys(PAPER) as PaperSize[]).map(p => <option key={p} value={p}>{PAPER[p].label}</option>)}
-          </select>
-        </Field>
-        <Field label="Orientation">
-          <Segmented label="Orientation" value={s.orientation} onChange={v => setStyle({ orientation: v })} options={[{ value: "auto", label: "Auto" }, { value: "landscape", label: "Landscape" }, { value: "portrait", label: "Portrait" }]} />
-        </Field>
-        <div className="mt-1">
-          <Slider label="Turn the map" min={-180} max={180} value={s.rotation} onChange={v => setStyle({ rotation: v }, false)} onDone={done} format={v => (v === 0 ? "North up" : `${v}°`)} />
-          <div className="flex gap-1.5 -mt-1">
-            <Button small onClick={() => setStyle({ rotation: bestRotation(doc) })} testid="best-rotation">Turn to fill the page</Button>
-            {s.rotation !== 0 && <Button small onClick={() => setStyle({ rotation: 0 })}>North up</Button>}
-          </div>
-        </div>
-      </Fold>
-        </PrintPanel>
-      )}
+      {tab === "map" && (whole ? <MapTools><ToolTitleFor />{mapPanel}</MapTools> : mapPanel)}
       {tab === "sign" && <PrintPanel t="sign" top={<TeeSignSettings />}>{toGeneral}</PrintPanel>}
       {tab === "page" && <PrintPanel t="page" top={<HolePageLook />}>{toGeneral}</PrintPanel>}
       {tab === "scorecard" && <PrintPanel t="card" top={<ScorecardSettings />}>{toGeneral}</PrintPanel>}
@@ -299,4 +328,10 @@ export function DesignPanel() {
       </WholePanelOnly>
     </>
   );
+}
+
+/** The open map tool's title and help, over its part. */
+function ToolTitleFor() {
+  const open = useContext(MapTool);
+  return <OnlyGroup.Provider value={null}><ToolTitle help={open ? TOOL_HELP[open] : undefined} /></OnlyGroup.Provider>;
 }

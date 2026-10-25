@@ -12,8 +12,9 @@ import { newCourse, openExample } from "../state/files";
 import { askOpen, spotlight } from "./showSetting";
 import { useLayout, useTouch } from "./useLayout";
 
-/** `find`: what it lights up, by test id (`compact`: a phone's or a tablet's controls). */
-type Stop = { title: string; say: (touch: boolean) => string; go: () => void; find?: (compact: boolean) => string };
+/** `title`: its heading (a function: it reads the course); `find`: what it lights up, by test id
+ * (`compact`: a phone's or a tablet's controls). */
+type Stop = { title: string | (() => string); say: (touch: boolean) => string; go: () => void; find?: (compact: boolean) => string };
 
 const firstHole = () => getDoc().holes[0]?.id ?? null;
 const editor = (p: Parameters<ReturnType<typeof useEditor.getState>["set"]>[0]) => useEditor.getState().set({ tool: "select", teeView: null, flyover: false, problemsOpen: false, ...p });
@@ -22,13 +23,9 @@ const holeView = () => { const id = firstHole(); if (!id) return; select(id); re
 
 const STOPS: Stop[] = [
   {
-    title: "Welcome to Thunder Hollow",
-    say: () => { const n = getDoc().holes.length; return `This is an example course, made in HyzerLab. It has ${n} hole${n === 1 ? "" : "s"} laid out on real ground, with its woods, water, paths and buildings. This walk shows you around it in about a minute.`; },
-    go: () => { editor({ step: "design", view: "2d", selectedId: null }); fit(); }
-  },
-  {
-    title: "The whole course",
-    say: t => `Every hole is drawn on the map: the tee, the basket and the line of play between them, with OB in red. ${t ? "Drag to move around and pinch to zoom." : "Drag to move around and scroll to zoom."}`,
+    // (named as the example's own file names it)
+    title: () => `This is ${getDoc().name || "the example"}`,
+    say: t => { const n = getDoc().holes.length; return `An example course, made in HyzerLab: ${n} hole${n === 1 ? "" : "s"} laid out on real ground, with its woods, water, paths and buildings. Every hole is drawn on the map: the tee, the basket and the line of play between them, with OB in red. ${t ? "Drag to move around and pinch to zoom." : "Drag to move around and scroll to zoom."}`; },
     go: () => { editor({ step: "design", view: "2d", selectedId: null }); fit(); }
   },
   {
@@ -71,7 +68,7 @@ const STOPS: Stop[] = [
   },
   {
     title: "Your own course",
-    say: t => `Change anything you like here. It's all kept in this browser. Start my own course makes a new, empty one and takes you to finding your park. This example stays on the Courses page (${t ? "Courses, in the menu at the top left" : "the logo at the top left"}), along with everything else you make.`,
+    say: t => `Change anything you like here. It's all kept in this browser. Start your own course makes a new, empty one and takes you to finding your park. This example stays on the Courses page (${t ? "Courses, in the menu at the top left" : "the logo at the top left"}), along with everything else you make.`,
     go: () => { editor({ step: "design", view: "2d", selectedId: null }); fit(); }
   }
 ];
@@ -80,10 +77,17 @@ export const useTour = create<{ at: number | null }>(() => ({ at: null }));
 // (for the tests: the walk's stop, set straight)
 if (typeof window !== "undefined") (window as unknown as { __dgTour: typeof useTour }).__dgTour = useTour;
 
+/** Whether the walk has been taken in this browser (the Courses page's main button is New course then). */
+const WALKED_KEY = "hyzerlab-walked";
+export const walked = () => {
+  try { return localStorage.getItem(WALKED_KEY) === "1"; } catch { return false; }
+};
+
 /** The walk around the example, from the start (the example opened first). */
 export const startTour = async () => {
   await openExample();
   useTour.setState({ at: 0 });
+  try { localStorage.setItem(WALKED_KEY, "1"); } catch { /* (private window: kept for now only) */ }
 };
 const goTo = (n: number) => useTour.setState({ at: Math.max(0, Math.min(STOPS.length - 1, n)) });
 const leave = () => { useTour.setState({ at: null }); editor({}); };
@@ -125,7 +129,7 @@ export function Tour() {
     <div className="fixed left-1/2 -translate-x-1/2 top-[70px] touch:top-[76px] z-[70] w-[min(440px,calc(100%-16px))] glass-solid ring-1 ring-white/15 rounded-[22px] shadow-2xl shadow-black/50 p-4" role="dialog" aria-label="A walk around the example course" data-testid="tour">
       <div className="flex items-start gap-2">
         <Compass size={18} className="text-orange-300 mt-0.5 shrink-0" />
-        <h2 className="flex-1 text-[15px] font-bold text-zinc-50" data-testid="tour-title">{s.title}</h2>
+        <h2 className="flex-1 text-[15px] font-bold text-zinc-50" data-testid="tour-title">{typeof s.title === "function" ? s.title() : s.title}</h2>
         <button className="w-8 h-8 -m-1.5 touch:w-11 touch:h-11 touch:-m-3 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.08]" aria-label="Leave the walk" onClick={leave} data-testid="tour-close"><X size={16} /></button>
       </div>
       <p className="text-[13.5px] leading-snug text-zinc-300 mt-1.5" data-testid="tour-text">{s.say(touch)}</p>
@@ -137,7 +141,7 @@ export function Tour() {
         {last ? (
           <>
             <button className="h-9 touch:h-11 px-3 rounded-full text-[13px] font-semibold text-zinc-200 hover:bg-white/[0.08]" onClick={leave} data-testid="tour-next">Done</button>
-            <button className="h-9 touch:h-11 px-4 rounded-full text-[13px] font-bold bg-orange-500 hover:bg-orange-400 text-zinc-950" onClick={() => void ownCourse()} data-testid="tour-own-course">Start my own course</button>
+            <button className="h-9 touch:h-11 px-4 rounded-full text-[13px] font-bold bg-orange-500 hover:bg-orange-400 text-zinc-950" onClick={() => void ownCourse()} data-testid="tour-own-course">Start your own course</button>
           </>
         ) : (
           <button className="h-9 touch:h-11 px-4 rounded-full text-[13px] font-bold bg-orange-500 hover:bg-orange-400 text-zinc-950 flex items-center gap-1" onClick={() => goTo(at + 1)} data-testid="tour-next">Next <ArrowRight size={15} /></button>

@@ -287,13 +287,17 @@ export async function restoreServer() {
 export const listServerCourses = async (): Promise<ServerPlan[]> =>
   (await api<(Omit<ServerPlan, "updatedAt"> & { updatedAt: string })[]>("GET", "courses")).map(c => ({ ...c, updatedAt: new Date(c.updatedAt).getTime() }));
 
-/** Deletes a course you own; takes one shared with you off your list. */
-export async function removeServerCourse(id: string, known?: ServerPlan) {
+/** What's asked before a course goes: deleted for everyone (yours), or off your list (shared). */
+export const removeQuestion = (c: Pick<ServerPlan, "name" | "role">) => (c.role === "owner" ? `Delete "${c.name}" for everyone?` : `Take "${c.name}" off your list?`);
+
+/** Deletes a course you own; takes one shared with you off your list. `asked`: the Courses page
+ * has asked already, in its own dialog. */
+export async function removeServerCourse(id: string, known?: ServerPlan, asked = false) {
   // (the list's own entry when there is one: asked at once, not after fetching the list again)
   const c = known ?? (await listServerCourses()).find(x => x.id === id);
   if (!c) return;
   const owner = c.role === "owner";
-  if (!confirm(owner ? `Delete "${c.name}" for everyone?` : `Take "${c.name}" off your list?`)) return;
+  if (!asked && !confirm(removeQuestion(c))) return;
   if (owner) await api("DELETE", `courses/${id}`);
   else await api("DELETE", `courses/${id}/members/${useAuth.getState().session!.user!.id}`);
   if (state().id === id) await newServerCourse();

@@ -80,7 +80,7 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
             </Form>
           ) : (
             <Form compact submit="Set it up" testid="mfa-start" onSubmit={async () => setEnroll(await api<{ secret: string; qr: string }>("POST", "mfa/enroll"))}>
-              <p className="text-sm text-zinc-300">Off. Turn it on and signing in will also ask for a code from an app on your phone, so a stolen password alone won't get anyone in.</p>
+              <p className="text-sm text-zinc-300">Off. Signing in asks for a code from an app on your phone too.</p>
             </Form>
           )}
         </Section>

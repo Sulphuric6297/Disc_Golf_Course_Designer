@@ -1,9 +1,10 @@
 // Bringing in a real site: the satellite photo, the ground's elevation, the trees on the photo and
-// what OpenStreetMap knows (paths, roads, water, parking, buildings). What it says it brought in
-// is kept with the site (its notes), to read again on the Site step. Everything comes from free
-// services with no keys, as in the Security Camera Planner.
+// what OpenStreetMap knows (paths, roads, water, parking, buildings). Each thing brought in keeps
+// what it was like when it came (`importSig`), so one changed by hand is never replaced. What
+// went wrong is kept with the site, for the Site step to say. Everything comes from free services
+// with no keys, as in the Security Camera Planner.
 import { clamp } from "../constants";
-import type { AreaItem, CourseDoc, CourseItem, Hole, LineItem, P, SiteInfo, TreeItem } from "../types";
+import type { AreaItem, CourseDoc, CourseItem, Hole, LidarTree, LineItem, P, SiteInfo, TreeItem } from "../types";
 import { FEET_PER_METER, getGeoBounds, type GeoBounds, type SiteSelection } from "./geo/core";
 import { canopyMask, detectTrees, treeStands, waterRegions, woodsRegions } from "./geo/detect";
 import { fetchBestElevationGrid } from "./geo/elevation";
@@ -125,12 +126,35 @@ export const natureFromPhoto = async (url: string, width: number, height: number
   return { trees, woods, water };
 };
 
-/** Whether a shape came from the maps (OpenStreetMap, or a building traced from the air): the
- * ones a new lookup replaces. */
-export const fromMaps = (i: CourseItem) => (i.type === "area" || i.type === "line" || i.type === "structure") && (i.importSource === "osm" || i.importSource === "traced");
+/** What a thing brought in is like (all of it but its id and this), as a short code: kept with it
+ * when it comes in, so one changed since (a road made OB, a building renamed) can be told apart. */
+export const signOf = (i: CourseItem) => {
+  const { id: _id, importSig: _sig, ...rest } = i;
+  // (keys in order, unset ones left out: the same thing gives the same code however it was built)
+  const text = JSON.stringify(rest, (_k, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v));
+  let h = 0x811c9dc5;
+  for (let k = 0; k < text.length; k++) h = Math.imul(h ^ text.charCodeAt(k), 0x01000193);
+  return (h >>> 0).toString(36);
+};
+/** A thing as it comes in: what it's like kept with it. */
+export const signed = <T extends CourseItem>(i: T): T => ({ ...i, importSig: signOf(i) });
+/** Whether a thing brought in is as it came (one from before these codes counts as it came). */
+export const asItCame = (i: CourseItem) => !i.importSig || i.importSig === signOf(i);
 
-/** Whether a thing was brought in by an import (found on the photo, or from OpenStreetMap). */
-export const isImported = (i: CourseItem) => (i.type === "tree" || i.type === "area" || i.type === "line" || i.type === "structure") && !!i.importSource;
+/** Whether a shape came from the maps (OpenStreetMap, or a building traced from the air) and is
+ * as it came: the ones a new lookup replaces. */
+export const fromMaps = (i: CourseItem) => (i.type === "area" || i.type === "line" || i.type === "structure") && (i.importSource === "osm" || i.importSource === "traced") && asItCame(i);
+
+/** Whether a thing was brought in by an import (found on the photo, from OpenStreetMap, made from
+ * the measured trees) and is as it came: changed since, it's yours, and stays. */
+export const isImported = (i: CourseItem) => (i.type === "tree" || i.type === "area" || i.type === "line" || i.type === "structure") && !!i.importSource && asItCame(i);
+
+/** What came in, less what's here already as it was changed by hand (the same thing brought in
+ * again would stand beside it). */
+export const freshOnly = (kept: CourseItem[], incoming: CourseItem[]) => {
+  const had = new Set(kept.filter(i => i.importSig && !asItCame(i)).map(i => i.importSig));
+  return had.size ? incoming.filter(i => !i.importSig || !had.has(i.importSig)) : incoming;
+};
 
 const OSM_NAMES: Record<string, [string, string]> = {
   path: ["path", "paths"], road: ["road", "roads"], stream: ["stream", "streams"], water: ["water area", "water areas"],
@@ -189,7 +213,7 @@ export const osmItems = async (bounds: GeoBounds, width: number, height: number,
   ]
     .filter(Boolean)
     .join(", ");
-  return { items: [...items, ...more], summary };
+  return { items: [...items, ...more].map(signed), summary };
 };
 
 /** The smallest building traced from the air that's kept, sq ft (a shed: about 3 m by 3 m). */
@@ -221,6 +245,47 @@ export const tracedItems = (traced: TracedBuilding[], mapped: CourseItem[], ref:
 };
 
 /**
+ * The measured trees' last step, on the import and on the Site step's Measure trees and ground:
+ * their stands of woods (trees close together, each stand its own woods, the ones made before
+ * replaced), and what they stand in for taken out: the trees and woods found on the photo, and
+ * OpenStreetMap's woods (drawn by hand and often over a whole hillside) once there are stands.
+ * Woods the survey saw few trees in (missed, or grown since) get drawn trees between the measured
+ * ones (the "Filled in" choice, set as if by hand). Only what came in as it came is changed.
+ */
+export const withMeasuredTrees = (items: CourseItem[], trees: LidarTree[], width: number, height: number) => {
+  const made: AreaItem[] = [];
+  if (trees.length) {
+    const { w: gw, h: gh, cell, stands } = treeStands(trees.map(t => ({ x: t[0], y: t[1], r: t[3] })), width, height);
+    for (const s of stands) {
+      const a = { ...createArea("woods", outlineToPlan(s.outline, gw, gh, gw * cell, gh * cell, 5)), importSource: "lidar" as const } as AreaItem;
+      if (a.points.length >= 3) made.push(a);
+    }
+  }
+  const thin = (a: AreaItem): AreaItem => {
+    if (a.kind !== "woods" || a.trees) return a;
+    const area = Math.abs(polygonArea(a.points));
+    const n = trees.filter(t => pointInPolygon({ x: t[0], y: t[1] }, a.points)).length;
+    return area > 2000 && n < area / 3000 ? { ...a, trees: "custom", patches: [{ points: a.points.map(p => ({ ...p })), fill: 0.6 }] } : a;
+  };
+  const kept = items
+    .filter(i => {
+      if (!isImported(i)) return true;
+      if (i.type === "area" && i.importSource === "lidar") return false;
+      if (trees.length && ((i.type === "tree" && i.importSource === "photo") || (i.type === "area" && i.kind === "woods" && i.importSource === "photo"))) return false;
+      return !(made.length && i.type === "area" && i.kind === "woods" && i.importSource === "osm");
+    })
+    .map(i => {
+      if (i.type !== "area" || !isImported(i)) return i;
+      const t = thin(i);
+      return t === i ? i : signed(t);
+    });
+  const stands = made.map(a => signed(thin(a)));
+  // (where the photo's woods were: before its water)
+  const at = kept.findIndex(i => i.type === "area" && i.kind === "water" && i.importSource === "photo");
+  return { items: at < 0 ? [...kept, ...stands] : [...kept.slice(0, at), ...stands, ...kept.slice(at)], stands: stands.length };
+};
+
+/**
  * The design carried over to a new site frame (bigger, smaller or moved): every hole, tee, basket,
  * shape and label stays on the same spot on the ground. `outside` counts the things that are now
  * past the new frame's edges (kept, to move in or remove).
@@ -231,7 +296,8 @@ export const reframeDesign = (design: { holes: Hole[]; items: CourseItem[] }, fr
     const at = f({ x: i.x, y: i.y });
     const moved = { ...i, x: at.x, y: at.y } as CourseItem;
     if (moved.type === "area" || moved.type === "line" || moved.type === "structure") moved.points = moved.points.map(f);
-    return moved;
+    // (one as it came still is: only the frame moved under it)
+    return i.importSig && asItCame(i) ? signed(moved) : moved;
   });
   const holes = design.holes.map(h => ({ ...h, doglegs: h.doglegs.map(f) }));
   const outside = items.filter(i => i.x < 0 || i.y < 0 || i.x > to.width || i.y > to.height).length;
@@ -260,6 +326,7 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
 
   let background: string | null = null;
   let imagerySource: string | undefined;
+  let tilesMissing = false;
   if (opts.imagery !== "none") {
     const what = opts.imagery === "satellite" ? "Downloading the satellite photo…" : "Downloading the map…";
     status("photo", what, 0);
@@ -267,6 +334,7 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     background = map.url;
     imagerySource = map.sourceLabel;
     if (map.partial) notes.push("Some map tiles were missing.");
+    tilesMissing = map.partial;
   }
 
   status("elevation", "Downloading elevation…");
@@ -281,6 +349,7 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   let lidar: CourseDoc["lidar"];
   // (none covers the site: remembered, so the Site step says so instead of offering to look)
   let noLidar = false;
+  let lidarFailed = false;
   if (opts.lidar) {
     const what = "Measuring trees and ground from the air (LiDAR)…";
     status("lidar", what, 0);
@@ -291,6 +360,7 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       return null;
     });
     const fromPhoto = opts.trees && opts.imagery === "satellite";
+    lidarFailed = !got && failed;
     if (!got && failed) notes.push(`Couldn't read the aerial survey this time${fromPhoto ? ": the trees came from the photo" : ""}.`);
     else if (!got) {
       noLidar = true;
@@ -335,38 +405,29 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
   // What OpenStreetMap maps already (its woods and water) needn't come again from the photo
   const mappedAs = (kind: string) => mapped.filter((m): m is AreaItem => m.type === "area" && m.kind === kind);
   const inside = (p: P, kind: string) => mappedAs(kind).some(a => pointInPolygon(p, a.points));
-  // With trees measured from the air, none guessed from the photo: the woods are their stands,
-  // trees close together in one, each stand its own woods (OpenStreetMap's woods, drawn by hand
-  // and often over a whole hillside, give way to them)
-  let woods: AreaItem[];
-  if (lidar?.trees.length) {
-    const { w: gw, h: gh, cell, stands } = treeStands(lidar.trees.map(t => ({ x: t[0], y: t[1], r: t[3] })), width, height);
-    woods = stands.map(s => ({ ...createArea("woods", outlineToPlan(s.outline, gw, gh, gw * cell, gh * cell, 5)), importSource: "lidar" as const }) as AreaItem).filter(a => a.points.length >= 3);
-    if (woods.length) {
-      mapped = mapped.filter(m => !(m.type === "area" && m.kind === "woods"));
-      notes.push(`The measured trees in ${woods.length} ${woods.length === 1 ? "stand" : "stands"} of woods.`);
-    }
-  } else woods = found.woods.filter(a => !inside(centroid(a.points), "woods"));
   const water = found.water.filter(a => !inside(centroid(a.points), "water"));
   // (and never on a road, a building, parking or in water, as OpenStreetMap or the photo has them)
   const nowhere = treeFree([...mapped, ...found.water]);
-  const trees = lidar ? [] : found.trees.filter(t => !inside(t, "woods") && !inside(t, "water") && !nowhere(t));
-  // Woods the survey saw few trees in (missed, or grown since): drawn trees fill in between the
-  // measured ones, all through it (the "Filled in" choice, set as if by hand)
+  let all: CourseItem[] = [
+    ...mapped,
+    ...found.woods.filter(a => !inside(centroid(a.points), "woods")),
+    ...water,
+    ...found.trees.filter(t => !inside(t, "woods") && !inside(t, "water") && !nowhere(t))
+  ];
+  // With trees measured from the air: their stands, in place of the photo's (the same step as
+  // Measure trees and ground on the Site step)
   if (lidar) {
-    const fillThin = (a: AreaItem): AreaItem => {
-      if (a.kind !== "woods" || a.trees) return a;
-      const area = Math.abs(polygonArea(a.points));
-      const n = lidar.trees.filter(t => pointInPolygon({ x: t[0], y: t[1] }, a.points)).length;
-      return area > 2000 && n < area / 3000 ? { ...a, trees: "custom", patches: [{ points: a.points.map(p => ({ ...p })), fill: 0.6 }] } : a;
-    };
-    mapped = mapped.map(m => (m.type === "area" ? fillThin(m) : m));
-    woods = woods.map(fillThin);
+    const m = withMeasuredTrees(all, lidar.trees, width, height);
+    all = m.items;
+    if (m.stands) notes.push(`The measured trees in ${m.stands} ${m.stands === 1 ? "stand" : "stands"} of woods.`);
   }
-  const counted = [[lidar?.trees.length ? 0 : woods.length, "wooded area", "wooded areas"], [trees.length, "tree", "trees"], [water.length, "water area", "water areas"]] as const;
+  const photo = (type: string, kind?: string) => all.filter(i => (i as TreeItem | AreaItem).importSource === "photo" && i.type === type && (!kind || (i as AreaItem).kind === kind)).length;
+  const counted = [[photo("area", "woods"), "wooded area", "wooded areas"], [photo("tree"), "tree", "trees"], [photo("area", "water"), "water area", "water areas"]] as const;
   const said = counted.filter(([n]) => n > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
   if (said.length) notes.push(`On the photo: ${said.join(", ")}.`);
-  mapped = [...mapped, ...woods, ...water];
+  all = all.map(signed);
+  const trees = all.filter((i): i is TreeItem => i.type === "tree");
+  mapped = all.filter(i => i.type !== "tree");
 
   return {
     canvas: { width, height },
@@ -381,7 +442,11 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       elevationSource,
       // (OpenStreetMap out of reach: said in a toast of its own now, and kept here with the rest)
       notes: osmFailed ? [...notes, OSM_UNREACHABLE] : notes,
-      ...(noLidar ? { noLidar } : {})
+      // (what went wrong, for the Site step to say while it still holds)
+      ...(noLidar ? { noLidar } : {}),
+      ...(lidarFailed ? { lidarFailed } : {}),
+      ...(osmFailed ? { osmFailed } : {}),
+      ...(tilesMissing ? { tilesMissing } : {})
     },
     trees,
     mapped,

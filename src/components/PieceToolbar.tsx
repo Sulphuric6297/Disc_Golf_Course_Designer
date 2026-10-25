@@ -5,9 +5,10 @@
 // among what was added, then Reset, Duplicate and Hide or Delete. The same for the course map, tee
 // signs, hole pages and the scorecard.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AlignCenter, AlignLeft, AlignRight, Bold, BringToFront, Check, Copy, EyeOff, Flag, Italic, Layers, Link2, Minus, MoreHorizontal, Pencil, Plus, RotateCcw, SendToBack, Sun, Trash2, X } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, Blend, Bold, BringToFront, Check, Copy, EyeOff, Flag, Italic, Link2, Minus, MoreHorizontal, Pencil, Plus, SendToBack, Trash2, Undo2 } from "lucide-react";
 import { fontsIn } from "../lib/fontLoad";
 import { useCourse } from "../state/course";
+import { ColorSwatches } from "./ColorSwatches";
 import { FontPicker } from "./FontPicker";
 import { HolePicker } from "./PrintPanel";
 import { duplicatePicked, moreOf, orderOf, patchPicked, pickedOf, removePicked, reorderPicked, resetPicked, takeOpening, type TargetKey } from "./printouts";
@@ -18,15 +19,14 @@ const commit = () => useCourse.getState().commit();
  * lettering's color and weight, its panel's color, and whether it has lettering or a panel at all. */
 export type Drawn = { color?: string; fill?: string; bold?: boolean; text: boolean; panel: boolean };
 
-/** A color swatch: the color picker on a click, live while it's dragged, one undo step. */
-function Swatch({ value, fallback, label, onChange, icon }: { value?: string; fallback: string; label: string; onChange: (v: string) => void; icon: "letters" | "panel" }) {
+/** A color's button: the lettering's (an A over its color) or the panel's (a square of it). */
+function Swatch({ value, label, icon, on, onClick }: { value: string; label: string; icon: "letters" | "panel"; on: boolean; onClick: () => void }) {
   return (
-    <label className="relative h-8 w-8 touch:h-11 touch:w-11 shrink-0 flex items-center justify-center rounded-full hover:bg-white/[0.12] cursor-pointer" title={label}>
+    <button className={`relative h-8 w-8 touch:h-11 touch:w-11 shrink-0 flex items-center justify-center rounded-full hover:bg-white/[0.12] ${on ? "bg-white/[0.18]" : ""}`} title={label} aria-label={label} aria-expanded={on} onClick={onClick} data-testid={icon === "letters" ? "piece-color" : "piece-fill"}>
       {icon === "letters"
-        ? <span className="flex flex-col items-center leading-none"><span className="text-[14px] font-bold text-zinc-50">A</span><span className="mt-0.5 h-[4px] w-4 rounded-full ring-1 ring-white/30" style={{ background: value ?? fallback }} /></span>
-        : <span className="h-4 w-4 rounded-[5px] ring-1 ring-white/40" style={{ background: value ?? fallback }} />}
-      <input type="color" aria-label={label} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" value={value ?? fallback} onChange={e => onChange(e.target.value)} onBlur={commit} />
-    </label>
+        ? <span className="flex flex-col items-center leading-none"><span className="text-[14px] font-bold text-zinc-50">A</span><span className="mt-0.5 h-[4px] w-4 rounded-full ring-1 ring-white/30" style={{ background: value }} /></span>
+        : <span className="h-4 w-4 rounded-[5px] ring-1 ring-white/40" style={{ background: value }} />}
+    </button>
   );
 }
 
@@ -45,7 +45,7 @@ export function PieceToolbar({ t, id, onGrow, onPreviewFont, onEditText, onDone,
 }) {
   const doc = useCourse(c => c.doc);
   const p = pickedOf(doc, t, id);
-  const [pop, setPop] = useState<"link" | "opacity" | "more" | "order" | "holes" | null>(null);
+  const [pop, setPop] = useState<"link" | "opacity" | "more" | "order" | "holes" | "color" | "fill" | null>(null);
   const linkRef = useRef<HTMLInputElement>(null);
   useEffect(() => { onPanel?.(docked && !!pop); }, [docked, pop, onPanel]);
   // (another piece picked: nothing of the last one's left open, but what a new one asks for: a
@@ -105,9 +105,11 @@ export function PieceToolbar({ t, id, onGrow, onPreviewFont, onEditText, onDone,
       ))}
     </div>
   );
-  // (Reset: a piece of the look goes back to how the look has it; what was added, to how it was added)
-  const resetTitle = p.removable ? "Reset (put it back the way it was)" : "Reset (back to how the look has it)";
-  const noPanel = p.kind === "text" && t === "map" ? "No panel" : "Panel color back as it was";
+  // (the colors: the course's own and Custom, the panel's with a way to have none)
+  const noPanel = p.kind === "text" && t === "map" ? "No panel" : "As the look has it";
+  const colorBody = <ColorSwatches value={p.color ?? drawn?.color} onPick={(c, live) => patchPicked(t, id, { color: c }, !live)} onDone={commit} />;
+  const fillBody = <ColorSwatches value={p.fill ?? drawn?.fill} onPick={(c, live) => patchPicked(t, id, { fill: c }, !live)} onDone={commit} none={p.fill ? { label: noPanel, on: () => { patchPicked(t, id, { fill: undefined }); setPop(null); } } : undefined} />;
+  const hideable = p.removable || p.hideable !== false;
   const tools = (
     <>
       <span className="text-[12px] touch:text-[13px] font-semibold text-zinc-300 pl-1.5 pr-1 max-w-[130px] truncate shrink-0" data-testid="piece-name">{p.label}</span>
@@ -120,9 +122,18 @@ export function PieceToolbar({ t, id, onGrow, onPreviewFont, onEditText, onDone,
         </span>
       )}
       {(has.color || has.fill) && sep}
-      {has.color && <Swatch icon="letters" label="Lettering color" value={p.color} fallback={drawn?.color ?? "#ffffff"} onChange={v => patchPicked(t, id, { color: v }, false)} />}
-      {has.fill && <Swatch icon="panel" label="Panel color" value={p.fill} fallback={drawn?.fill ?? "#1b4332"} onChange={v => patchPicked(t, id, { fill: v }, false)} />}
-      {has.fill && p.fill && <button className={b} aria-label={noPanel} title={noPanel} onClick={() => patchPicked(t, id, { fill: undefined })} data-testid="piece-no-panel"><X size={14} /></button>}
+      {has.color && (
+        <span className="relative shrink-0">
+          <Swatch icon="letters" label="Lettering color" value={p.color ?? drawn?.color ?? "#ffffff"} on={pop === "color"} onClick={() => setPop(pop === "color" ? null : "color")} />
+          {pop === "color" && float(<div className={`${popAt("w-64")} p-2.5`}>{colorBody}</div>)}
+        </span>
+      )}
+      {has.fill && (
+        <span className="relative shrink-0">
+          <Swatch icon="panel" label="Panel color" value={p.fill ?? drawn?.fill ?? "#1b4332"} on={pop === "fill"} onClick={() => setPop(pop === "fill" ? null : "fill")} />
+          {pop === "fill" && float(<div className={`${popAt("w-64")} p-2.5`}>{fillBody}</div>)}
+        </span>
+      )}
       {has.bold && <button className={`${b} ${bold ? "bg-white/[0.18]" : ""}`} aria-pressed={bold} aria-label="Bold" title="Bold" onClick={() => patchPicked(t, id, { bold: !bold })}><Bold size={15} /></button>}
       {has.italic && <button className={`${b} ${p.italic ? "bg-white/[0.18]" : ""}`} aria-pressed={!!p.italic} aria-label="Italic" title="Italic" onClick={() => patchPicked(t, id, { italic: !p.italic })} data-testid="piece-italic"><Italic size={15} /></button>}
       {has.align && <button className={b} aria-label={`Lines: ${align === "start" ? "left" : align === "middle" ? "centered" : "right"}`} title="Left, centered or right" onClick={() => patchPicked(t, id, { align: nextAlign })}><AlignIcon size={15} /></button>}
@@ -141,14 +152,14 @@ export function PieceToolbar({ t, id, onGrow, onPreviewFont, onEditText, onDone,
       )}
       {has.opacity && (
         <span className="relative shrink-0">
-          <button className={`${b} ${pop === "opacity" ? "bg-white/[0.18]" : ""}`} aria-label="How solid it is" title="How solid it is" onClick={() => setPop(pop === "opacity" ? null : "opacity")} data-testid="piece-opacity"><Sun size={15} /></button>
+          <button className={`${b} ${pop === "opacity" ? "bg-white/[0.18]" : ""}`} aria-label="How solid it is" title="How solid it is" onClick={() => setPop(pop === "opacity" ? null : "opacity")} data-testid="piece-opacity"><Blend size={15} /></button>
           {pop === "opacity" && float(<div className={`${popAt("w-56")} px-3 py-2.5`}>{opacityBody}</div>)}
         </span>
       )}
       {has.turn && rot !== 0 && <button className={`${b} px-2 text-[12px] tabular-nums`} aria-label={`Turned ${rot}°: straighten it`} title="Straighten it" onClick={() => patchPicked(t, id, { rot: 0 })} data-testid="piece-straighten">{rot}°</button>}
       {order && order[1] > 1 && (
         <span className="relative shrink-0">
-          <button className={`${b} ${pop === "order" ? "bg-white/[0.18]" : ""}`} aria-label="In front or behind" title="In front of or behind the other things you added" onClick={() => setPop(pop === "order" ? null : "order")} data-testid="piece-order"><Layers size={15} /></button>
+          <button className={`${b} ${pop === "order" ? "bg-white/[0.18]" : ""}`} aria-label="In front or behind" title="In front of or behind the other things you added" onClick={() => setPop(pop === "order" ? null : "order")} data-testid="piece-order"><BringToFront size={15} /></button>
           {pop === "order" && float(<div className={`${popAt("w-56")} p-1.5`}>{orderBody(order)}</div>)}
         </span>
       )}
@@ -159,15 +170,15 @@ export function PieceToolbar({ t, id, onGrow, onPreviewFont, onEditText, onDone,
         </span>
       )}
       {sep}
-      {p.changed && <button className={b} aria-label="Reset" title={resetTitle} onClick={() => resetPicked(t, id)} data-testid="piece-reset"><RotateCcw size={14} /></button>}
+      {p.changed && <button className={b} aria-label="Reset" title="Reset" onClick={() => resetPicked(t, id)} data-testid="piece-reset"><Undo2 size={14} /></button>}
       {p.duplicable && <button className={b} aria-label="Duplicate" title="Duplicate (Ctrl+D)" onClick={() => duplicatePicked(t, id)} data-testid="piece-duplicate"><Copy size={14} /></button>}
-      <button className={b} aria-label={p.removable ? "Delete" : "Hide"} title={p.removable ? "Delete" : "Hide (Layers brings it back)"} onClick={() => removePicked(t, id)} data-testid="piece-remove">{p.removable ? <Trash2 size={14} /> : <EyeOff size={14} />}</button>
+      {hideable && <button className={b} aria-label={p.removable ? "Delete" : "Hide"} title={p.removable ? "Delete" : "Hide"} onClick={() => removePicked(t, id)} data-testid="piece-remove">{p.removable ? <Trash2 size={14} /> : <EyeOff size={14} />}</button>}
     </>
   );
   if (docked) {
     // A phone: Done first and always there; the rest scrolls beside it. A setting that needs more
     // room opens in a short panel just over the toolbar, with its own Done
-    const panels = { link: ["Where it takes you", linkBody], opacity: ["How solid it is", opacityBody], order: ["In front or behind", order ? orderBody(order) : null], more: ["More", moreBody], holes: ["Holes it's on", holesBody] } as const;
+    const panels = { link: ["Where it takes you", linkBody], opacity: ["How solid it is", opacityBody], order: ["In front or behind", order ? orderBody(order) : null], more: ["More", moreBody], holes: ["Holes it's on", holesBody], color: ["Lettering color", colorBody], fill: ["Panel color", fillBody] } as const;
     const open = pop ? panels[pop] : null;
     return (
       <div className="w-full flex flex-col items-stretch gap-1.5" onPointerDown={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
@@ -182,7 +193,8 @@ export function PieceToolbar({ t, id, onGrow, onPreviewFont, onEditText, onDone,
         )}
         <div className="self-center glass ring-1 ring-white/15 shadow-xl flex items-center rounded-full p-1 max-w-full" data-page-bar data-testid="piece-toolbar" role="toolbar" aria-label={`${p.label} settings`}>
           <button className="h-11 shrink-0 flex items-center gap-1 rounded-full pl-3 pr-3.5 bg-orange-500 text-zinc-950 text-[13.5px] font-bold" onClick={onDone} aria-label="Done" data-testid="piece-done"><Check size={16} /> Done</button>
-          <div className="flex items-center gap-0.5 overflow-x-auto dg-scroll min-w-0 pl-1">{tools}</div>
+          {/* (faded at its right edge: more tools scroll in from there) */}
+          <div className="flex items-center gap-0.5 overflow-x-auto dg-scroll min-w-0 pl-1 pr-4" style={{ maskImage: "linear-gradient(to right, #000 calc(100% - 28px), transparent)", WebkitMaskImage: "linear-gradient(to right, #000 calc(100% - 28px), transparent)" }}>{tools}</div>
         </div>
       </div>
     );

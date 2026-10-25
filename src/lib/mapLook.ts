@@ -23,32 +23,32 @@ export type LookPart = keyof LookParts;
 type ThemeDef = { id: LookTheme; label: string; hint: string; parts: LookParts; light: LightMode; sun: number };
 export const LOOK_THEMES: ThemeDef[] = [
   {
-    id: "classic", label: "Classic", hint: "The original painted map: thick treetops packed close together.",
+    id: "classic", label: "Classic", hint: "Thick treetops packed close",
     parts: { trees: { style: "classic", density: 1, size: 1, variety: 0.3, pines: 0 }, grass: { style: "painted", bright: 1, texture: 1 }, fairway: { style: "soft", bright: 1 }, paths: { style: "painted" }, water: { style: "deep" } },
     light: "midday", sun: 0.8
   },
   {
-    id: "brushwood", label: "Brushwood", hint: "Brushy painted tree clumps with light edges, a bright meadow and a painted creek.",
+    id: "brushwood", label: "Brushwood", hint: "Brushy tree clumps, bright meadow",
     parts: { trees: { style: "cluster", density: 1, size: 1.05, variety: 0.7, pines: 0.15 }, grass: { style: "meadow", bright: 1.02, texture: 1 }, fairway: { style: "soft", bright: 1.04 }, paths: { style: "painted" }, water: { style: "painterly" } },
     light: "midday", sun: 0.8
   },
   {
-    id: "hollow", label: "Hollow", hint: "Deep, dark woods with sunlit edges. Good for a heavily wooded course.",
+    id: "hollow", label: "Hollow", hint: "Dark woods, sunlit edges",
     parts: { trees: { style: "drybrush", density: 1.05, size: 1.05, variety: 0.7, pines: 0.12 }, grass: { style: "meadow", bright: 1, texture: 1.2 }, fairway: { style: "soft", bright: 1.04 }, paths: { style: "painted" }, water: { style: "painterly" } },
     light: "midday", sun: 0.8
   },
   {
-    id: "golden", label: "Golden hour", hint: "A low warm sun: long rich shadows, golden grass, glinting water.",
+    id: "golden", label: "Golden hour", hint: "Low warm sun, long shadows",
     parts: { trees: { style: "golden", density: 1, size: 1.1, variety: 0.5, pines: 0.4 }, grass: { style: "field", bright: 1, texture: 1 }, fairway: { style: "sunlit", bright: 1 }, paths: { style: "painted" }, water: { style: "glinting" } },
     light: "golden", sun: 1
   },
   {
-    id: "storybook", label: "Storybook", hint: "Puffy cartoon treetops, flat bright grass, a striped fairway with an outline, and trails drawn as lines.",
+    id: "storybook", label: "Storybook", hint: "Puffy treetops, striped fairways",
     parts: { trees: { style: "cloud", density: 0.95, size: 1, variety: 0.8, pines: 0.12 }, grass: { style: "storybook", bright: 1.02, texture: 0.8 }, fairway: { style: "outlined", bright: 1 }, paths: { style: "trail" }, water: { style: "flat" } },
     light: "midday", sun: 0.8
   },
   {
-    id: "gouache", label: "Gouache", hint: "Flat layers of paint from dark to light, with soft edges. Calm and simple.",
+    id: "gouache", label: "Gouache", hint: "Flat layers of paint, soft edges",
     parts: { trees: { style: "gouache", density: 1, size: 1.05, variety: 0.6, pines: 0.2 }, grass: { style: "painted", bright: 1.12, texture: 1 }, fairway: { style: "sunlit", bright: 1.02 }, paths: { style: "clean" }, water: { style: "deep" } },
     light: "midday", sun: 0.8
   }

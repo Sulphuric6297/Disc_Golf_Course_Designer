@@ -236,7 +236,8 @@ export async function recordFlights(src: FlightFrames, doc: CourseDoc, holeIds: 
     if (!g) throw new Error("No canvas to draw the video on.");
     // The lettering's fonts, if the page can get them (a moment at most)
     if (typeof document.fonts?.load === "function") {
-      await Promise.race([Promise.all(["700 30px Oswald", "600 30px Oswald", "600 15px Inter", "700 15px Inter"].map(f => document.fonts.load(f).catch(() => []))), sleep(1500)]);
+      const head = titles[0]?.head ?? "Oswald";
+      await Promise.race([Promise.all(["700 30px Oswald", "600 30px Oswald", `700 30px ${head}`, `600 30px ${head}`, "600 15px Inter", "700 15px Inter"].map(f => document.fonts.load(f).catch(() => []))), sleep(1500)]);
     }
     const image = g.createImageData(width, height);
     sink = (await webCodecsSink(width, height, fps)) ?? recorderSink(canvas, width, height, fps);

@@ -119,7 +119,7 @@ export function HelpLink({ topic, label }: { topic: string; label: string }) {
   return (
     <>
       <button ref={btn} type="button" aria-label={`Help: ${label}`} aria-expanded={!!at} data-testid={`help-${topic}`} onClick={open}
-        className={`w-[18px] h-[18px] touch:w-7 touch:h-7 shrink-0 rounded-full inline-flex items-center justify-center text-[11px] font-bold align-middle ${at ? "bg-orange-300 text-zinc-950" : "text-zinc-300 bg-white/[0.09] hover:bg-white/[0.16] hover:text-zinc-50"} ${FOCUS}`}>?</button>
+        className={`relative w-[18px] h-[18px] touch:w-7 touch:h-7 touch:before:content-[''] touch:before:absolute touch:before:-inset-2 shrink-0 rounded-full inline-flex items-center justify-center text-[11px] font-bold align-middle ${at ? "bg-orange-300 text-zinc-950" : "text-zinc-300 bg-white/[0.09] hover:bg-white/[0.16] hover:text-zinc-50"} ${FOCUS}`}>?</button>
       {at && t && (
         <div ref={tip} role="dialog" aria-label={t.title} data-testid="help-tip" className="fixed z-[60] w-[288px] glass-solid rounded-[16px] shadow-xl shadow-black/40 ring-1 ring-white/10 p-3 text-left normal-case tracking-normal" style={{ left: at.x, top: Math.min(at.y, window.innerHeight - 220) }}>
           <div className="text-[13px] font-bold text-zinc-50 mb-1">{t.title}</div>
@@ -165,17 +165,24 @@ export const Select = ({ value, onChange, label, testid, children, className = "
   </select>
 );
 
+/** A small chip, picked or not (ChipPick's, and the hole chips'): 44 px tall on touch. */
+export const chipCls = (on: boolean) => `flex items-center gap-1.5 shrink-0 whitespace-nowrap px-2.5 py-1 touch:py-2 touch:px-3 touch:text-[13px] touch:min-h-[44px] rounded-full text-xs font-semibold transition-colors ${FOCUS} ${on ? "bg-zinc-100 text-zinc-900" : "bg-white/[0.07] text-zinc-300 hover:bg-white/[0.12] hover:text-zinc-50"}`;
+
 /** One of several kinds, as a wrap of small chips (the tool bar's look): a kind of area or line,
- * a tee color, a surface. Each can have a color dot or an icon, and a tooltip. */
-export function ChipPick<T extends string>({ value, options, onChange, label, testid }: { value: T; options: { value: T; label: string; color?: string; icon?: ReactNode; title?: string }[]; onChange: (v: T) => void; label: string; testid?: string }) {
+ * a tee color, a surface. Each can have a color dot or an icon, and a tooltip. `row`: one row
+ * that scrolls sideways (a phone's strip). */
+export function ChipPick<T extends string>({ value, options, onChange, label, testid, row = false }: { value: T; options: { value: T; label: string; color?: string; icon?: ReactNode; title?: string }[]; onChange: (v: T) => void; label: string; testid?: string; row?: boolean }) {
+  const box = useRef<HTMLDivElement>(null);
+  // (a row: the one picked scrolled into view when it shows)
+  useEffect(() => { if (row) box.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.scrollIntoView?.({ inline: "center", block: "nearest" }); }, [row]);
   return (
-    <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={label} data-testid={testid}>
+    <div ref={box} className={row ? "flex gap-1.5 overflow-x-auto touch-pan-x dg-scroll -mx-1 px-1" : "flex flex-wrap gap-1"} role="radiogroup" aria-label={label} data-testid={testid}>
       {options.map(o => {
         const on = value === o.value;
         return (
-          <button key={o.value} type="button" role="radio" aria-checked={on} title={o.title} onClick={() => onChange(o.value)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 touch:py-2 touch:px-3 touch:text-[13px] touch:min-h-[40px] rounded-full text-xs font-semibold transition-colors ${FOCUS} ${on ? "bg-zinc-100 text-zinc-900" : "bg-white/[0.07] text-zinc-300 hover:bg-white/[0.12] hover:text-zinc-50"}`}>
-            {o.color && <span className="w-2.5 h-2.5 rounded-full border border-black/30 shrink-0" style={{ background: o.color }} />}
+          <button key={o.value} type="button" role="radio" aria-checked={on} title={o.title} onClick={() => onChange(o.value)} className={chipCls(on)}>
+            {/* (a light ring too, so a dark color's dot shows on the dark chip) */}
+            {o.color && <span className="w-2.5 h-2.5 rounded-full border border-black/30 ring-1 ring-white/40 shrink-0" style={{ background: o.color }} />}
             {o.icon}
             {o.label}
           </button>
@@ -246,7 +253,7 @@ export function Segmented<T extends string | number>({ value, options, onChange,
           aria-checked={value === o.value}
           title={o.title}
           onClick={() => onChange(o.value)}
-          className={`flex-1 min-w-[2.2rem] px-2 py-1 touch:py-2.5 touch:text-[13px] rounded-[8px] text-xs font-semibold transition-colors ${FOCUS} ${value === o.value ? "bg-white/[0.18] text-zinc-50 shadow-[inset_0_0.5px_0_rgba(255,255,255,0.25)]" : "text-zinc-300 hover:text-zinc-50 hover:bg-white/[0.06]"}`}
+          className={`flex-1 min-w-[2.2rem] px-2 py-1 touch:py-2.5 touch:min-h-[44px] touch:text-[13px] rounded-[8px] text-xs font-semibold transition-colors ${FOCUS} ${value === o.value ? "bg-white/[0.18] text-zinc-50 shadow-[inset_0_0.5px_0_rgba(255,255,255,0.25)]" : "text-zinc-300 hover:text-zinc-50 hover:bg-white/[0.06]"}`}
         >
           {o.label}
         </button>
@@ -276,8 +283,9 @@ export function ChoiceList<T extends string>({ value, options, onChange, label, 
   );
 }
 
+/** A switch. Room under it before what comes next (none before another switch, or at the end). */
 export const Toggle = ({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) => (
-  <label className="flex items-start gap-2.5 py-1 touch:py-2.5 cursor-pointer select-none">
+  <label className="dg-toggle flex items-start gap-2.5 py-1 touch:py-2.5 mb-2 last:mb-0 [&:has(+.dg-toggle)]:mb-0 cursor-pointer select-none">
     <input type="checkbox" className={`switch mt-0.5 ${FOCUS}`} checked={checked} onChange={e => onChange(e.target.checked)} />
     <span>
       <span className="block text-sm text-zinc-200">{label}</span>
@@ -325,7 +333,7 @@ export const Button = ({ children, onClick, tone = "default", disabled, title, t
       aria-busy={busy || undefined}
       title={title}
       data-testid={testid}
-      className={`${full ? "w-full" : ""} inline-flex items-center justify-center gap-1.5 rounded-full font-semibold transition-colors disabled:opacity-40 disabled:pointer-events-none ${FOCUS} ${small ? "px-2.5 py-1 text-xs touch:py-2.5 touch:text-[13px]" : "px-3 py-2 text-sm touch:py-3"} ${tones[tone]}`}
+      className={`${full ? "w-full" : ""} inline-flex items-center justify-center gap-1.5 rounded-full font-semibold transition-colors disabled:opacity-40 disabled:pointer-events-none ${FOCUS} ${small ? "px-2.5 py-1 text-xs touch:py-2.5 touch:min-h-[44px] touch:text-[13px]" : "px-3 py-2 text-sm touch:py-3"} ${tones[tone]}`}
     >
       {busy && <Loader2 size={small ? 12 : 14} className="animate-spin shrink-0" />}
       {children}
@@ -335,12 +343,25 @@ export const Button = ({ children, onClick, tone = "default", disabled, title, t
 
 /** A color, picked with the system's color picker. `onDone` once it's closed (its one undo step,
  * when the colors on the way there were live without one). */
-export const ColorInput = ({ value, onChange, label, onDone }: { value: string; onChange: (v: string) => void; label: string; onDone?: () => void }) => (
-  <label className="flex items-center justify-between gap-2 py-1">
-    <span className="text-xs text-zinc-300">{label}</span>
-    <input aria-label={label} type="color" className={`w-9 h-7 touch:w-11 touch:h-9 rounded bg-transparent cursor-pointer ${FOCUS}`} value={value} onChange={e => onChange(e.target.value)} onBlur={onDone} />
-  </label>
-);
+export function ColorInput({ value, onChange, label, onDone }: { value: string; onChange: (v: string) => void; label: string; onDone?: () => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const done = useRef(onDone);
+  done.current = onDone;
+  // (React's onChange is the browser's input event, live while the color moves; the browser's own
+  // change event comes once, when the picker closes)
+  useEffect(() => {
+    const el = ref.current;
+    const end = () => done.current?.();
+    el?.addEventListener("change", end);
+    return () => el?.removeEventListener("change", end);
+  }, []);
+  return (
+    <label className="flex items-center justify-between gap-2 py-1">
+      <span className="text-xs text-zinc-300">{label}</span>
+      <input ref={ref} aria-label={label} type="color" className={`w-9 h-7 touch:w-11 touch:h-9 rounded bg-transparent cursor-pointer ${FOCUS}`} value={value} onChange={e => onChange(e.target.value)} onBlur={onDone} />
+    </label>
+  );
+}
 
 /** One number with its name under it (for a row of a few). */
 export const Stat = ({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) => (

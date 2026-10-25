@@ -156,7 +156,6 @@ export function FontPicker({ value, onPick, onPreview, used = [], inherit, label
             {!all.length && <div className="absolute inset-x-0 top-20 text-center text-[12px] text-zinc-500">Loading the fonts…</div>}
             {all.length > 0 && !rows.length && <div className="absolute inset-x-0 top-6 text-center text-[13px] text-zinc-400">No font by that name.</div>}
           </div>
-          <div className="mt-1.5 px-1 text-[11px] text-zinc-500">{TOUCH ? "Tap a font to use it." : onPreview ? "Point at a font to see it on the page. Click to use it." : "Click a font to use it."}</div>
         </div>,
         document.body
       )}

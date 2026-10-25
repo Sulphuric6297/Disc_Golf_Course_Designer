@@ -20,8 +20,9 @@ export const askOpen = (what: string) => window.dispatchEvent(new CustomEvent(SH
 
 const PICK: Record<NonNullable<Where["pick"]>, { find: (i: CourseItem) => boolean; name: string; tool?: string }> = {
   hole: { find: () => false, name: "a hole", tool: "add-hole" },
-  tee: { find: i => i.type === "tee", name: "a tee", tool: "add-hole" },
-  basket: { find: i => i.type === "basket", name: "a basket", tool: "add-hole" },
+  // (a tee or basket comes with a hole: the Hole tool is the one turned on)
+  tee: { find: i => i.type === "tee", name: "a hole", tool: "add-hole" },
+  basket: { find: i => i.type === "basket", name: "a hole", tool: "add-hole" },
   woods: { find: i => i.type === "area" && i.kind === "woods", name: "a woods area", tool: "draw-area" },
   water: { find: i => i.type === "area" && i.kind === "water", name: "water", tool: "draw-area" },
   line: { find: i => i.type === "line", name: "a line", tool: "draw-line" },
@@ -37,9 +38,14 @@ const PAGE_TOOLS = ["card-style", "markings", "map-style", "drawn-on-map", "fold
 
 const frame = () => new Promise(r => requestAnimationFrame(() => r(null)));
 
-/** The control: by its test id, then (within it) the row with those words. */
+/** A Where's test ids: one, or several to try in turn ("a|b|c"). */
+const findsOf = (w: Where) => (w.find ?? "").split("|").filter(Boolean);
+
+/** The control: by its test id (the first of them on screen, else the first there at all), then
+ * (within it) the row with those words. */
 const locate = (w: Where): HTMLElement | null => {
-  const box = w.find ? document.querySelector<HTMLElement>(`[data-testid="${w.find}"]`) : null;
+  const there = findsOf(w).map(id => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)).filter((el): el is HTMLElement => !!el);
+  const box = there.find(el => el.getBoundingClientRect().height > 0) ?? there[0] ?? null;
   if (!box || !w.text) return box;
   const t = w.text.toLowerCase();
   const hit = [...box.querySelectorAll<HTMLElement>("label, button, summary, h3, div, span")].find(el => el.childElementCount < 4 && (el.textContent ?? "").trim().toLowerCase().startsWith(t));
@@ -94,8 +100,10 @@ export async function showSetting(where: Where) {
   const ed = useEditor.getState();
   const layout = currentLayout();
   // (a phone's or a tablet's own place for a computer's control)
-  const w: Where = layout !== "desktop" && where.find && COMPACT_FIND[where.find] ? { ...where, find: COMPACT_FIND[where.find] } : where;
+  const w: Where = layout !== "desktop" && where.find ? { ...where, find: findsOf(where).map(f => COMPACT_FIND[f] ?? f).join("|") } : where;
   if (w.step) ed.set({ step: w.step, teeView: null, flyover: false, tool: "select" });
+  // (a tool's own controls: only there while it's on)
+  if (w.tool) ed.set({ tool: w.tool });
   if (w.tab) ed.set({ designTab: w.tab });
   // (open now if the panel is up, or when it comes)
   if (w.look) { openLookPart(w.look); askOpen(`look:${w.look}`); }
@@ -104,7 +112,7 @@ export async function showSetting(where: Where) {
     const p = PICK[w.pick];
     const id = w.pick === "hole" ? (doc.holes.find(h => h.id === ed.selectedId) ?? doc.holes[0])?.id : doc.items.find(p.find)?.id;
     if (!id) {
-      toast(`Add ${p.name} first${p.tool ? ": the tool is on" : ""}. Its settings are in its panel once it's picked.`, "info");
+      toast(`Add ${p.name} first.${p.tool ? " Its tool is on." : ""}`, "info");
       if (p.tool) ed.set({ tool: p.tool as never });
       return;
     }
@@ -117,8 +125,9 @@ export async function showSetting(where: Where) {
     useAuth.getState().share(w.open === "share-public" ? "public" : "people");
   } else if (w.open) askOpen(w.open);
   if (!w.find) { if (w.say) toast(w.say, "info", false, undefined, 9000); return; }
-  // (a phone's Map step: the page's settings are a row of tools, each opening its part of them)
-  const pageTool = layout === "phone" && (w.step ?? ed.step) === "map" ? (PAGE_TOOLS.includes(w.find) ? w.find : w.look || w.find.startsWith("look-part-") ? "map-style" : null) : null;
+  // (the Map step on a phone, and the course map's tab on a computer: the page's settings are a row of tools, each opening its part of them)
+  const finds = findsOf(w);
+  const pageTool = (layout === "phone" || (w.tab ?? ed.designTab) === "map") && (w.step ?? ed.step) === "map" ? (finds.find(f => PAGE_TOOLS.includes(f)) ?? (w.look || finds.some(f => f.startsWith("look-part-")) ? "map-style" : null)) : null;
   // (the panel drawn, maybe after its code loads)
   for (let k = 0; k < 90; k++) {
     await frame();
@@ -133,6 +142,7 @@ export async function showSetting(where: Where) {
       return;
     }
   }
-  // (not on screen: what it would have said, all the same)
+  // (not on screen: what it would have said, all the same, or where it is)
   if (w.say) toast(w.say, "info", false, undefined, 9000);
+  else if (w.missing) toast(`Couldn't point at it from here. It's under ${w.missing}.`, "info");
 }

@@ -1,7 +1,7 @@
 // Finding the park: search for an address or place, frame the course area on the satellite map,
 // then bring in the photo, the elevation, the trees and the mapped paths, roads, water and buildings.
 import { useEffect, useRef, useState } from "react";
-import { Loader2, MapPinned, Search, X } from "lucide-react";
+import { Image as ImageIcon, Loader2, Map as MapIcon, MapPinned, Mountain, Route, Search, TreeDeciduous, Trees, X } from "lucide-react";
 import { SitePickerMap } from "./SitePickerMap";
 import { fetchPlaceSuggestions, resolveSiteLocation, type PlaceSuggestion } from "../lib/geo/geocode";
 import { SITE_MAX_WIDTH_FT, SITE_MIN_WIDTH_FT, getGeoBounds, selectionFromBounds, type GeoBounds } from "../lib/geo/core";
@@ -87,8 +87,9 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
       const text = s ? [s.text, s.detail].filter(Boolean).join(", ") : query;
       const loc = await resolveSiteLocation(text, { suggestion: s, near: { lat: view.lat, lon: view.lon } });
       setSuggestions([]);
-      picked.current = loc.label;
-      setQuery(loc.label);
+      // (coordinates or a map link: no name, the search box keeps what was typed)
+      picked.current = loc.label || text.trim();
+      setQuery(loc.label || text.trim());
       setLabel(loc.label);
       setView({ lat: loc.lat, lon: loc.lon, zoom: 17, key: Date.now() });
       // A sensible first frame for a course: about 1,500 x 1,000 ft around the spot
@@ -99,6 +100,23 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
       // (what to try next)
       setStatus({ state: "error", text: said.startsWith("Couldn't find") ? `${said} Try its name and town, its lat, lon or a map link.` : said });
     }
+  };
+
+  // Where you are (the map's locate button): framed as a search is, about 1,500 x 1,000 ft
+  const locate = () => {
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) { setStatus({ state: "error", text: "This browser can't tell where you are." }); return; }
+    setStatus({ state: "searching", text: "Finding where you are…" });
+    navigator.geolocation.getCurrentPosition(
+      p => {
+        const loc = { lat: p.coords.latitude, lon: p.coords.longitude, label: "" };
+        setLabel("");
+        setView({ lat: loc.lat, lon: loc.lon, zoom: 17, key: Date.now() });
+        setSelection(getGeoBounds(loc, 1500, 1000));
+        setStatus({ state: "idle", text: "" });
+      },
+      e => setStatus({ state: "error", text: e.code === e.PERMISSION_DENIED ? "Location is off for this site. Allow it in the browser's settings." : "Couldn't tell where you are. Try again, or search." }),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
   };
 
   // Closed (X or Esc): asked first while a site is coming in, as what came so far is left out;
@@ -156,8 +174,13 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     <div className={`text-sm rounded-lg px-3 py-2 ${tooBig ? "bg-red-900/40 text-red-200" : "bg-white/[0.07] text-zinc-200"}`} data-testid="site-size">
       Area: {fmtDist(dims.widthFt, units, false)} × {fmtDist(dims.heightFt, units)} ({fmtArea(dims.widthFt * dims.heightFt, units)})
       {tooBig && <div className="text-xs mt-1">Keep it under {fmtDist(SITE_MAX_WIDTH_FT, units)} each way.</div>}
+      {!drawing && <div className="text-[11.5px] text-zinc-400 mt-0.5" data-testid="frame-hint">{touch ? "Drag the corners · Draw the area for a new one" : "Drag the corners · Shift+drag draws a new one"}</div>}
     </div>
   );
+  // (no frame yet: how to get one)
+  const emptyEl = <div className="text-[13px] touch:text-[14px] text-zinc-400 px-1" data-testid="frame-empty">{touch ? "Search for your park, or move the map to it and tap Use this view." : "Search for your park, or move the map to it and click Use this view."}</div>;
+  const title = again ? "Change the area" : "Find your park";
+  const subtitle = "Search, then frame the area the holes will use";
   const photo = imagery === "satellite";
   const options = (
     <>
@@ -165,14 +188,26 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
         <div className="text-xs touch:text-[13px] text-zinc-400 mb-1">Under the map</div>
         <Segmented label="Under the map" value={imagery} onChange={setImagery} options={[{ value: "satellite", label: "Satellite photo" }, { value: "streets", label: "Street map" }]} />
       </div>
-      <Toggle label="Real trees and ground (aerial survey)" checked={lidar} onChange={setLidar} hint="USGS LiDAR, in the US where it's been flown" />
+      {/* (always brought in: a row like the others, with no switch to turn it off) */}
+      <fieldset disabled className="border-0 p-0 m-0 min-w-0" data-testid="import-elevation">
+        <Toggle label="Elevation" checked onChange={() => {}} />
+      </fieldset>
+      <Toggle label="Measured trees and ground" checked={lidar} onChange={setLidar} hint="USGS LiDAR · US only" />
       {/* (a street map has no trees to spot: off until the photo's back) */}
       <fieldset disabled={!photo} className={`border-0 p-0 m-0 min-w-0 ${photo ? "" : "opacity-50"}`}>
-        <Toggle label="Trees spotted on the satellite photo" checked={trees && photo} onChange={setTrees} hint={photo ? "Used where there's no aerial survey" : "Needs the satellite photo."} />
+        <Toggle label="Trees from the photo" checked={trees && photo} onChange={setTrees} hint={photo ? undefined : "Needs the satellite photo"} />
       </fieldset>
       <Toggle label="Paths, roads, water and buildings" checked={osm} onChange={setOsm} hint="OpenStreetMap" />
     </>
   );
+  // (what comes in, as small chips: a phone's folded list)
+  const chips = [
+    { on: true, icon: photo ? <ImageIcon size={13} /> : <MapIcon size={13} />, label: photo ? "Photo" : "Street map" },
+    { on: true, icon: <Mountain size={13} />, label: "Elevation" },
+    { on: lidar, icon: <Trees size={13} />, label: "Measured trees and ground" },
+    { on: trees && photo, icon: <TreeDeciduous size={13} />, label: "Trees from the photo" },
+    { on: osm, icon: <Route size={13} />, label: "Paths, roads, water and buildings" }
+  ].filter(c => c.on);
   const secs = status.state === "loading" && started ? Math.floor((Date.now() - started) / 1000) : 0;
   const p = status.state === "loading" ? status.progress : undefined;
   const statusEl = status.text && (
@@ -214,6 +249,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
       onDrawingChange={setDrawing}
       onSelect={onSelect}
       onTooSmall={tooSmall}
+      onLocate={locate}
       selectViewSignal={selectView}
       units={units}
     />
@@ -234,18 +270,18 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
       {status.state === "searching" ? <Loader2 size={big ? 19 : 16} className="animate-spin" /> : <Search size={big ? 19 : 16} />}
     </button>
   );
-  const placeholder = "Park name, address, lat, lon or a map link";
+  const placeholder = "Park, address, lat, lon or map link";
 
   if (layout === "phone") {
     // A phone: full screen, the search on top, the map in the middle, what comes in and the
     // button at the bottom (in the thumb's reach)
     return (
-      <div className="dg-compact fixed inset-0 z-50 bg-zinc-950 flex flex-col" role="dialog" aria-modal="true" aria-label="Find your park">
+      <div className="dg-compact fixed inset-0 z-50 bg-zinc-950 flex flex-col" role="dialog" aria-modal="true" aria-label={title}>
         <div className="flex items-center gap-1 pl-1 pr-3 pt-[max(6px,env(safe-area-inset-top))] pb-1">
           <button className="w-11 h-11 flex items-center justify-center rounded-xl text-zinc-300 active:bg-white/[0.09]" onClick={close} aria-label="Close"><X size={22} /></button>
           <div className="flex-1 min-w-0">
-            <div className="font-bold text-zinc-50 text-[17px] leading-tight">Find your park</div>
-            <div className="text-[13px] text-zinc-400 truncate">Search, then frame the area the holes will use</div>
+            <div className="font-bold text-zinc-50 text-[17px] leading-tight">{title}</div>
+            <div className="text-[13px] text-zinc-400 truncate">{subtitle}</div>
           </div>
         </div>
         <div className="relative px-3 pb-2 z-[1100]">
@@ -266,18 +302,21 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
         <div className="relative flex-1 min-h-0">
           {mapEl}
           <div className="absolute left-2 right-2 top-2 z-[1000] flex gap-2 justify-center pointer-events-none">
-            <button className={`pointer-events-auto h-10 px-3.5 rounded-full border text-[14px] font-semibold shadow-lg ${drawing ? "bg-orange-500 text-zinc-950 border-orange-400" : "glass border-white/10 active:bg-white/[0.09]"}`} aria-pressed={drawing} onClick={() => setDrawing(d => !d)}>Draw the area</button>
-            <button className="pointer-events-auto h-10 px-3.5 rounded-full glass border border-white/10 text-[14px] font-semibold shadow-lg active:bg-white/[0.09]" onClick={() => setSelectView(v => v + 1)}>Use this view</button>
+            <button className={`pointer-events-auto h-11 px-3.5 rounded-full border text-[14px] font-semibold shadow-lg ${drawing ? "bg-orange-500 text-zinc-950 border-orange-400" : "glass border-white/10 active:bg-white/[0.09]"}`} aria-pressed={drawing} onClick={() => setDrawing(d => !d)}>Draw the area</button>
+            <button className="pointer-events-auto h-11 px-3.5 rounded-full glass border border-white/10 text-[14px] font-semibold shadow-lg active:bg-white/[0.09]" onClick={() => setSelectView(v => v + 1)}>Use this view</button>
           </div>
         </div>
         <div className="relative border-t border-white/10 glass px-3 pt-2.5 pb-[max(12px,env(safe-area-inset-bottom))] flex flex-col gap-2">
           {stopEl && <div className="absolute left-3 right-3 bottom-full mb-2 z-[1100]">{stopEl}</div>}
           {drawHint}
-          {dims ? sizeEl : <div className="text-[14px] text-zinc-400 px-1">Search for your park, or move the map to it and tap Use this view.</div>}
-          <details className="group rounded-xl bg-white/[0.07] px-3">
-            <summary className="list-none min-h-[44px] flex items-center justify-between text-[14px] text-zinc-200 cursor-pointer">
-              <span>Bring in: {[photo ? "photo" : "street map", "elevation", lidar ? "measured trees" : null, trees && photo ? "trees from the photo" : null, osm ? "paths, roads, water and buildings" : null].filter(Boolean).join(", ")}</span>
+          {dims ? sizeEl : emptyEl}
+          <details className="group rounded-xl bg-white/[0.07] px-3" data-testid="import-what">
+            <summary className="list-none min-h-[44px] flex items-center justify-between gap-2 text-[14px] text-zinc-200 cursor-pointer">
+              <span className="flex-1 min-w-0 flex flex-wrap items-center gap-1 py-1.5" aria-label={`Bring in: ${chips.map(c => c.label).join(", ")}`}>
+                {chips.map(c => <span key={c.label} className="inline-flex items-center gap-1 rounded-full bg-white/[0.08] px-2 py-0.5 text-[12.5px] text-zinc-200">{c.icon}{c.label}</span>)}
+              </span>
               <span className="text-orange-300 font-semibold group-open:hidden">Change</span>
+              <span className="text-orange-300 font-semibold hidden group-open:inline">Done</span>
             </summary>
             <div className="pb-2">{options}</div>
           </details>
@@ -290,13 +329,13 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" role="dialog" aria-label="Find your park">
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" role="dialog" aria-label={title}>
       <div className="glass border border-white/[0.12] rounded-2xl shadow-2xl w-full max-w-6xl h-[88vh] flex flex-col overflow-hidden">
         <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.08]">
           <MapPinned className="text-orange-400" size={20} />
           <div className="flex-1">
-            <div className="font-bold text-zinc-50">Find your park</div>
-            <div className="text-xs text-zinc-400">{touch ? "Search for the park, then frame the area the holes will use (drag the corners, or Draw the area for a new one)." : "Search for the park, then frame the area the holes will use (drag the corners; Shift+drag draws a new one)."}</div>
+            <div className="font-bold text-zinc-50">{title}</div>
+            <div className="text-xs text-zinc-400">{subtitle}</div>
           </div>
           <button className="p-1.5 touch:w-11 touch:h-11 touch:flex touch:items-center touch:justify-center rounded hover:bg-white/[0.09] text-zinc-400" onClick={close} aria-label="Close"><X size={18} /></button>
         </div>
@@ -328,6 +367,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
               {statusEl}
               {againEl}
               {stopEl}
+              {!dims && emptyEl}
               <Button tone="primary" full onClick={() => void run()} disabled={!selection || tooBig || status.state === "loading"} testid="import-site">{goLabel}</Button>
             </div>
           </div>

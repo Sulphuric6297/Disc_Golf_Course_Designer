@@ -6,7 +6,7 @@ import { Loading, LoadingScreen } from "../components/ui";
 import { BackupCodes, CopyButton, Form, Input, Screen } from "./parts";
 import { AccountDialog } from "./AccountDialog";
 import { PeopleDialog } from "./PeopleDialog";
-import { Home } from "./Home";
+import { Home, mapRests } from "./Home";
 import { getView, onLiveView } from "../state/view";
 import { HistoryDialog, PreviewBar, PublishDialog, ReviewDialog, UpdateDialog } from "./ChangesDialogs";
 import { CommentLayer, CommentsPanel, loadComments, useCommentKeys, useComments } from "./Comments";
@@ -32,10 +32,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => { load().catch(() => setFailed(true)); }, [load]);
-  // (the map behind the course list rests: it would draw for nothing)
-  useEffect(() => { getView()?.setPaused(home); }, [home]);
+  // (the map behind the course list rests: it would draw for nothing; and stays resting after when
+  // the step covers it)
+  useEffect(() => { getView()?.setPaused(mapRests(home)); }, [home]);
   // (the map loads after the course list shows: it starts resting if the list is up)
-  useEffect(() => onLiveView(v => v?.setPaused(useAuth.getState().home)), []);
+  useEffect(() => onLiveView(v => v?.setPaused(mapRests(useAuth.getState().home))), []);
   const after = () => load();
   // (the editor, a few MB, loads once the course list is up: the list never waits on it)
   const listShown = useAuth(s => s.listShown);

@@ -200,11 +200,10 @@ export const fetchMapImagery = async (
   outCtx.drawImage(mosaic.canvas, nw.x, nw.y, cropW, cropH, 0, 0, out.width, out.height);
   // Attribution required by the tile providers.
   drawAttribution(outCtx, out.width, out.height, config.attribution);
-  const metersPerPixel = (156543.03392 * cosLat) / Math.pow(2, mosaic.z);
   return {
     url: out.toDataURL("image/jpeg", 0.92),
     partial: !mosaic.loadedAll,
-    sourceLabel: `${config.label === "Satellite" ? "Esri satellite" : "OpenStreetMap"} (~${Math.round(metersPerPixel * 100)} cm/pixel)`
+    sourceLabel: config.label === "Satellite" ? "Esri satellite" : "OpenStreetMap"
   };
 };
 

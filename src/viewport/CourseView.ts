@@ -44,6 +44,8 @@ import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
 import type { FlightFrames, FlyoverVideo, FrameInfo, RecordOptions } from "./flyoverVideo";
 import type { LocationMark, P, ViewCallbacks, ViewDoc, ViewInfo, ViewTool } from "./types";
+import { toast } from "../state/toast";
+import { turnable } from "../lib/turn";
 
 CameraControls.install({ THREE });
 const { ACTION } = CameraControls;
@@ -75,6 +77,8 @@ type Handle = {
   world: () => THREE.Vector3 | null;
   start: (e: PointerEvent) => Drag | null;
   visible?: () => boolean;
+  /** A finger's tap on it (no double-tap for a finger): a button by it, or what a click does. */
+  tap?: (h: Handle, e: PointerEvent) => void;
 };
 type Overlay = { el: HTMLDivElement; anchor: THREE.Vector3; dy: number; sig: string; rank: number; w?: number; h?: number; minPx?: number; key?: string };
 
@@ -567,6 +571,13 @@ export class CourseView {
   setReadOnly(on: boolean) {
     if (on === this.readOnly) return;
     this.readOnly = on;
+    if (on) {
+      // (nothing half drawn, plotted or marked goes on)
+      if (this.plotHole) this.endPlot();
+      if (this.obPick) this.endObPick();
+      this.clearDrawing();
+      this.setTool(this.tool);
+    }
     this.syncHandles();
     if (this.doc) { this.syncShapes(); this.syncOverlays(); this.invalidate(); }
   }
@@ -601,6 +612,8 @@ export class CourseView {
   /** The tool in use; `teeLevel`: the color a tee goes down in, `amenityKind`: what an amenity is
    * (both for the preview under the pointer). */
   setTool(tool: ViewTool, teeLevel = this.teeLevel, amenityKind = this.amenityKind) {
+    // (view only: Select, and Measure, which changes nothing)
+    if (this.readOnly && tool.mode !== "select" && tool.mode !== "measure") tool = { ...tool, mode: "select" };
     const leaving = tool.mode !== this.tool.mode || this.drawn(tool) !== this.drawn();
     this.teeLevel = teeLevel;
     this.amenityKind = amenityKind;
@@ -863,27 +876,111 @@ export class CourseView {
   /** A picture of the view as it is (`width` × `height`: at that size, in full detail, the same
    * framing widened or narrowed to fit; otherwise at the screen's size). */
   capture(width?: number, height?: number) {
+    const map = !this.povHole;
+    this.capturing = true;
+    // (looking straight down: taken from the tilted pose, then put back)
+    const top = map && this.controls.polarAngle <= TILT_TOP ? { polar: this.controls.polarAngle, distance: this.controls.distance, fov: this.camera.fov } : null;
+    if (top) {
+      void this.controls.rotatePolarTo(DEFAULT_TILT, false);
+      this.controls.update(0);
+    }
+    // (without the selection's outline, or the one under the pointer)
+    const outlines = [this.selectionFx, this.hoverFx].filter((o): o is THREE.Object3D => !!o && o.visible);
+    outlines.forEach(o => (o.visible = false));
+    let url: string;
     if (!width || !height) {
       this.render();
-      return this.renderer.domElement.toDataURL("image/png");
+      url = this.snapshot(map, this.renderer.getPixelRatio());
+    } else {
+      const ratio = this.renderer.getPixelRatio(), detail = this.videoDetail;
+      this.setVideoDetail(true);
+      this.renderer.setPixelRatio(1);
+      this.renderer.setSize(width, height, false);
+      this.camera.aspect = width / height;
+      this.camera.updateProjectionMatrix();
+      lineMats.forEach(m => m.resolution.set(width, height));
+      this.render();
+      url = this.snapshot(map, clamp(height / Math.max(1, this.size.height), 0.5, 3));
+      this.renderer.setPixelRatio(ratio);
+      this.renderer.setSize(this.size.width, this.size.height, false);
+      this.camera.aspect = this.size.width / Math.max(1, this.size.height);
+      this.camera.updateProjectionMatrix();
+      lineMats.forEach(m => m.resolution.set(this.size.width, this.size.height));
+      if (!detail) this.setVideoDetail(false);
     }
-    const ratio = this.renderer.getPixelRatio(), detail = this.videoDetail;
-    this.setVideoDetail(true);
-    this.renderer.setPixelRatio(1);
-    this.renderer.setSize(width, height, false);
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
-    lineMats.forEach(m => m.resolution.set(width, height));
-    this.render();
-    const url = this.renderer.domElement.toDataURL("image/png");
-    this.renderer.setPixelRatio(ratio);
-    this.renderer.setSize(this.size.width, this.size.height, false);
-    this.camera.aspect = this.size.width / Math.max(1, this.size.height);
-    this.camera.updateProjectionMatrix();
-    lineMats.forEach(m => m.resolution.set(this.size.width, this.size.height));
-    if (!detail) this.setVideoDetail(false);
+    outlines.forEach(o => (o.visible = true));
+    if (top) {
+      void this.controls.rotatePolarTo(top.polar, false);
+      this.camera.fov = top.fov;
+      this.camera.updateProjectionMatrix();
+      void this.controls.dollyTo(top.distance, false);
+      this.controls.update(0);
+    }
+    this.capturing = false;
     this.render();
     return url;
+  }
+
+  /** While `capture` takes its picture: the view as it was, to the rest of the app. */
+  private capturing = false;
+
+  /** The picture just drawn, with each hole's number on its tee and a mark on its basket (on the
+   * map they are labels over the picture, not in it), `k` times their size on screen. */
+  private snapshot(marks: boolean, k: number) {
+    const src = this.renderer.domElement, doc = this.doc;
+    const out = document.createElement("canvas");
+    out.width = src.width;
+    out.height = src.height;
+    const g = out.getContext("2d");
+    if (!g) return src.toDataURL("image/png");
+    g.drawImage(src, 0, 0);
+    if (marks && doc) {
+      const W = out.width, H = out.height, items = new Map(doc.course.items.map(i => [i.id, i]));
+      const spots: { z: number; draw: () => void }[] = [];
+      const spot = (p: P, lift: number, draw: (x: number, y: number) => void) => {
+        const q = new THREE.Vector3(p.x, this.h(p.x, p.y) + lift, p.y).project(this.camera);
+        if (q.z > 1 || Math.abs(q.x) > 1.05 || Math.abs(q.y) > 1.05) return;
+        const x = ((q.x + 1) / 2) * W, y = ((1 - q.y) / 2) * H;
+        spots.push({ z: q.z, draw: () => draw(x, y) });
+      };
+      const basket = doc.course.style.basket;
+      for (const s of doc.stats) {
+        const t = items.get(s.teeId ?? ""), b = items.get(s.basketId ?? "");
+        const n = this.num(s.holeId);
+        if (b?.type === "basket") spot(b, 2, (x, y) => {
+          g.beginPath();
+          g.arc(x, y, 9 * k, 0, Math.PI * 2);
+          g.fillStyle = "#0f172a";
+          g.fill();
+          g.lineWidth = 2.5 * k;
+          g.strokeStyle = basket;
+          g.stroke();
+          g.beginPath();
+          g.arc(x, y, 4 * k, 0, Math.PI * 2);
+          g.fillStyle = basket;
+          g.fill();
+        });
+        if (t?.type === "tee" && n) spot(t, 1, (x, y) => {
+          const lvl = TEE_LEVELS[t.level];
+          g.font = `800 ${12 * k}px Oswald, Inter, system-ui, sans-serif`;
+          const h = 22 * k, w = Math.max(h, g.measureText(n).width + 10 * k);
+          g.beginPath();
+          g.roundRect(x - w / 2, y - h / 2, w, h, h / 2);
+          g.fillStyle = lvl.color;
+          g.fill();
+          g.lineWidth = 2 * k;
+          g.strokeStyle = "rgba(15,23,42,.85)";
+          g.stroke();
+          g.fillStyle = lvl.ink;
+          g.textAlign = "center";
+          g.textBaseline = "middle";
+          g.fillText(n, x, y + k);
+        });
+      }
+      // (the farthest first, so a nearer one is on top)
+      spots.sort((a, b) => b.z - a.z).forEach(s => s.draw());
+    }
+    return out.toDataURL("image/png");
   }
 
   /** A picture of the scene from a tee (for the hole sheets), at the given size. */
@@ -1285,7 +1382,8 @@ export class CourseView {
     waterUniforms.uTime.value = this.clock.elapsedTime;
     waterUniforms.uWind.value = this.wind ? 1 : 0.25;
     this.fx.visible = false;
-    const hidden = this.fly ? this.hideForFlight() : [];
+    // (the hole's On screen switches: flying, and from the tee)
+    const hidden = this.povHole ? this.hideForFlight() : [];
     this.ground.detailActive(true);
     if (this.shadowsDirty) {
       this.placeSun();
@@ -1314,7 +1412,7 @@ export class CourseView {
     }
   }
 
-  /** Hides what the flown hole's flyover is set not to show (the disc's flight, lines of play,
+  /** Hides what the flown (or viewed) hole's flyover is set not to show (the disc's flight, lines of play,
    * putting circles, OB, other holes' lines, walks); returns what it hid, to show again. */
   private hideForFlight(): THREE.Object3D[] {
     const doc = this.doc, holeId = this.povHole;
@@ -1397,8 +1495,15 @@ export class CourseView {
     const p = new THREE.Vector3(b.x, this.h(b.x, b.y) + 5, b.y).project(cam);
     if (p.z > 1 || p.x < -1.1 || p.x > 1.1 || p.y < -1.1 || p.y > 1.1) { el.style.display = "none"; return; }
     el.style.display = "flex";
-    const d = this.fly ? dist({ x: cam.position.x, y: cam.position.z }, b) : s.length;
-    el.innerHTML = `<span style="background:${doc.course.style.basket};color:#111;border-radius:999px;padding:2px 8px;text-shadow:none;box-shadow:0 1px 4px rgba(0,0,0,.5)">${fmtDist(d, doc.course.units)}</span><span style="font-size:16px;line-height:14px;color:${doc.course.style.basket}">▼</span>`;
+    // (from a tee other than the layout's: how far that tee is from the basket)
+    const own = !this.fly && this.povTee ? doc.course.items.find(i => i.id === this.povTee) : null;
+    const d = this.fly ? dist({ x: cam.position.x, y: cam.position.z }, b) : own ? dist(own, b) : s.length;
+    const text = fmtDist(d, doc.course.units), color = doc.course.style.basket;
+    if (el.dataset.text !== text || el.dataset.color !== color) {
+      el.dataset.text = text;
+      el.dataset.color = color;
+      el.innerHTML = `<span style="background:${color};color:#111;border-radius:999px;padding:2px 8px;text-shadow:none;box-shadow:0 1px 4px rgba(0,0,0,.5)">${text}</span><span style="font-size:16px;line-height:14px;color:${color}">▼</span>`;
+    }
     const x = ((p.x + 1) / 2) * rect.width, y = ((1 - p.y) / 2) * rect.height;
     el.style.transform = `translate(${Math.round(x - el.offsetWidth / 2)}px, ${Math.round(y - el.offsetHeight)}px)`;
   }
@@ -1500,7 +1605,7 @@ export class CourseView {
   flightFrames(width: number, height: number): FlightFrames {
     const gl = this.renderer.getContext();
     if (Math.max(width, height) > Math.min(this.renderer.capabilities.maxTextureSize, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number)) {
-      throw new Error("This computer's graphics can't draw a video that big: pick a smaller size.");
+      throw new Error("This device's graphics can't draw a video that big: pick a smaller size.");
     }
     // Smooth edges (fewer samples on very big pictures, where they matter less and cost the most)
     const rt = new THREE.WebGLRenderTarget(width, height, { samples: width * height > 4e6 ? 2 : 4, type: THREE.UnsignedByteType, stencilBuffer: true });
@@ -1773,7 +1878,7 @@ export class CourseView {
     this.layout();
     const info = this.viewInfo();
     const key = `${info.heading.toFixed(2)}|${info.tiltDeg.toFixed(2)}|${info.pxPerUnit.toFixed(5)}|${info.width}|${info.height}|${this.camera.position.x.toFixed(2)}|${this.camera.position.z.toFixed(2)}`;
-    if (key !== this.lastViewKey) {
+    if (key !== this.lastViewKey && !this.capturing) {
       this.lastViewKey = key;
       this.viewListeners.forEach(fn => fn(info));
       const pose = this.controls.polarAngle > TILT_TOP ? "tilt" : "top";
@@ -2949,7 +3054,7 @@ export class CourseView {
           el.className = `dg-sym${sel ? " sel" : ""}`;
           el.dataset.itemId = item.id;
           el.setAttribute("data-testid", `${item.type}-chip`);
-          el.title = `${isM ? `Mando: pass on the ${item.side} (drag the round handle to turn it)` : isDz ? "Drop zone" : AMENITY_KINDS[kind!].label}: drag to move`;
+          el.title = `${isM ? `Mando, pass on the ${item.side}` : isDz ? "Drop zone" : AMENITY_KINDS[kind!].label}: drag to move`;
           el.innerHTML = isM
             ? symbolSvg(`<circle r="5.5" fill="#fff" stroke="${INK}" stroke-width="1.6"/><circle r="2.4" fill="${MANDO}"/>`, 18)
             : isDz ? symbolSvg(dropZoneSymbol({ x: 0, y: 0 }, 1.15), 24) : symbolSvg(amenitySymbol(kind!, { x: 0, y: 0 }, 1), kind === "here" ? 34 : 22, kind === "here" ? 22 : 16);
@@ -3067,7 +3172,7 @@ export class CourseView {
   /** A measured tree cut down (taken out, or cleared for play) or brought back, one undo step. */
   toggleLidarTree(k: number) {
     const lidar = this.doc?.course.lidar, ls = this.lidarState;
-    if (!lidar || !ls || !lidar.trees[k]) return;
+    if (!lidar || !ls || !lidar.trees[k] || this.readOnly) return;
     const kept = new Set(lidar.kept ?? []), removed = new Set(lidar.removed ?? []);
     const [x, y, , r] = lidar.trees[k];
     if (ls.stand.includes(k)) {
@@ -3254,13 +3359,13 @@ export class CourseView {
     const holeId = editing ? (this.hole(this.selectedId)?.id ?? doc.activeHoleId) : null;
     const hole = this.hole(holeId);
     const drawing = this.drawn() ? this.drawPts.length : -1;
-    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.type === "structure" || sel.type === "line" ? sel.kind : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
+    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.kind}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
     const obKey = `${sel?.type === "line" || sel?.type === "area" ? `${sel.ob}:${sel.obStretches?.length ?? 0}` : ""}|${this.obPick ? `${this.obPick.id}:${this.obPick.from}:${this.obPick.cut}` : ""}`;
     if (`${this.readOnly}${key}${obKey}` === this.handleKey) return;
     this.handleKey = `${this.readOnly}${key}${obKey}`;
     this.handles.forEach(h => h.el.remove());
     this.handles = [];
-    const add = (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts: { index?: number; title?: string; data?: Record<string, string>; visible?: () => boolean } = {}) => {
+    const add = (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts: { index?: number; title?: string; data?: Record<string, string>; visible?: () => boolean; tap?: Handle["tap"] } = {}) => {
       const el = document.createElement("div");
       el.className = "dg-h";
       el.dataset.handle = kind;
@@ -3270,7 +3375,7 @@ export class CourseView {
       Object.entries(opts.data ?? {}).forEach(([k, v]) => (el.dataset[k] = v));
       if ((kind === "flykey" || kind === "flylook") && opts.index === this.flyKeyOn) el.dataset.on = "";
       this.handlesLayer.appendChild(el);
-      this.handles.push({ el, kind, index: opts.index, world, start, visible: opts.visible });
+      this.handles.push({ el, kind, index: opts.index, world, start, visible: opts.visible, tap: opts.tap });
     };
     // Marking a stretch of OB: where it starts, once clicked
     const pick = this.obPick, picked = pick && pick.from !== null ? (this.item(pick.id) as LineItem | AreaItem | null) : null;
@@ -3300,7 +3405,7 @@ export class CourseView {
   private itemHandles(sel: CourseItem, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
     if (sel.type === "area" || sel.type === "line" || sel.type === "structure") {
       this.pointHandles(sel.id, add);
-      this.turnHandle(sel.id, add);
+      if (turnable(sel)) this.turnHandle(sel.id, add);
     }
     if (sel.type === "line" && sel.kind === "stream") this.lineWidthHandles(sel.id, add);
     if ((sel.type === "line" || sel.type === "area") && sel.ob === true && sel.obStretches?.length && !sel.locked) this.obStretchHandles(sel.id, add);
@@ -3330,7 +3435,7 @@ export class CourseView {
         if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
         deg = ((deg % 360) + 360) % 360;
         return it.type === "tee" ? { rotation: deg, aimFixed: true } : { rotation: deg };
-      }), { title: sel.type === "mando" ? "Drag to turn the arrow (the way play goes) · Shift snaps to 15°" : "Drag to turn it · Shift snaps to 15°" });
+      }), { title: sel.type === "mando" ? "Drag to turn the arrow · Shift snaps to 15°" : "Drag to turn it · Shift snaps to 15°" });
     }
   }
 
@@ -3381,6 +3486,11 @@ export class CourseView {
       };
       for (const which of ["out", "in"] as const) {
         if (!end(which)) continue;
+        const reset = () => {
+          this.cb.onHoleChange(holeId, which === "out" ? { walkOut: undefined } : { walkIn: undefined });
+          this.cb.onCommit();
+        };
+        const moved = () => { const h = hole(); return !!(which === "out" ? h?.walkOut : h?.walkIn); };
         add(which === "out" ? "walkout" : "walkin", () => { const e = end(which); return e ? at(e.at) : null; }, () => {
           const e0 = end(which);
           if (!e0) return null;
@@ -3388,8 +3498,7 @@ export class CourseView {
           const key = `${holeId}:${which}`;
           if (this.lastWalkTap && this.lastWalkTap.key === key && now - this.lastWalkTap.time < 400) {
             this.lastWalkTap = null;
-            this.cb.onHoleChange(holeId, which === "out" ? { walkOut: undefined } : { walkIn: undefined });
-            this.cb.onCommit();
+            reset();
             return null;
           }
           this.lastWalkTap = { key, time: now };
@@ -3404,7 +3513,10 @@ export class CourseView {
             },
             end: () => this.cb.onCommit()
           };
-        }, { title: which === "out" ? "Where the walk to the next tee starts: drag · double-click to reset" : "Where the walk from the hole before arrives: drag · double-click to reset" });
+        }, {
+          title: which === "out" ? "Drag to move where the walk to the next tee starts · double-click to reset it" : "Drag to move where the walk from the hole before ends · double-click to reset it",
+          tap: (h: Handle) => this.handleButton(h, "reset-walk", "Reset walk", moved(), () => { if (moved()) reset(); })
+        });
       }
     }
     // A hand-made flyover (while the hole is selected): each keyframe's camera spot (numbered) and
@@ -3461,10 +3573,12 @@ export class CourseView {
         this.cb.onFlyKey?.(i);
         return d;
       };
+      // (a finger's tap does what taking hold of it does: picks it, looks through it, adds one)
+      const tap = (h: Handle, e: PointerEvent) => { h.start(e); };
       keys.forEach((_, i) => {
-        add("flylook", () => { const k = hole()?.flyKeys?.[i]; return k ? at({ x: k.lookX, y: k.lookY }) : null; }, () => picked(i, dragKey(i, true)), { index: i, title: `Where keyframe ${i + 1} looks: drag` });
-        add("flyfoot", () => { const k = hole()?.flyKeys?.[i]; return k ? at(k) : null; }, () => picked(i, dragKey(i, false)), { index: i, title: `Keyframe ${i + 1} over the ground: drag to move it`, visible: tilted });
-        add("flykey", () => { const k = hole()?.flyKeys?.[i]; return k ? (tilted() ? new THREE.Vector3(k.x, this.h(k.x, k.y) + k.alt, k.y) : at(k)) : null; }, () => picked(i, tilted() ? dragHeight(i) : dragKey(i, false), true), { index: i, title: `Keyframe ${i + 1}: in 3D drag up or down for its height; from above, drag to move it. Double-click to look through it`, data: { n: String(i + 1) } });
+        add("flylook", () => { const k = hole()?.flyKeys?.[i]; return k ? at({ x: k.lookX, y: k.lookY }) : null; }, () => picked(i, dragKey(i, true)), { index: i, title: `Drag to move where keyframe ${i + 1} looks`, tap });
+        add("flyfoot", () => { const k = hole()?.flyKeys?.[i]; return k ? at(k) : null; }, () => picked(i, dragKey(i, false)), { index: i, title: `Drag to move keyframe ${i + 1}`, visible: tilted, tap });
+        add("flykey", () => { const k = hole()?.flyKeys?.[i]; return k ? (tilted() ? new THREE.Vector3(k.x, this.h(k.x, k.y) + k.alt, k.y) : at(k)) : null; }, () => picked(i, tilted() ? dragHeight(i) : dragKey(i, false), true), { index: i, title: `Drag to move keyframe ${i + 1} (in 3D: up or down for its height) · double-click to look through it`, data: { n: String(i + 1) }, tap });
       });
       // A + halfway (in time) between each two: a click adds a keyframe there, right where the
       // flight already goes
@@ -3480,7 +3594,7 @@ export class CourseView {
           this.cb.onCommit();
           this.cb.onFlyKey?.(r.at);
           return null;
-        }, { index: i, title: "Add a keyframe here" });
+        }, { index: i, title: "Click to add a keyframe here", tap });
       }
     }
     // Mid dots between each pair of line points: pulling one adds a turn there
@@ -3591,7 +3705,16 @@ export class CourseView {
             return null;
           }
           return widthDrag(i, t, flip, h0);
-        }, { index: i * 2 + (flip === 1 ? 0 : 1), title: "Drag: this side wider or narrower · Shift: both sides · double-click: remove", data: { station: String(i), side: String(flip) }, visible: () => clear(pos()) });
+        }, {
+          index: i * 2 + (flip === 1 ? 0 : 1),
+          title: "Drag to make this side wider or narrower · Shift-drag for both sides · double-click to remove the point",
+          data: { station: String(i), side: String(flip) },
+          visible: () => clear(pos()),
+          tap: (h: Handle) => this.handleButton(h, "remove-width-point", "Remove point", true, () => {
+            const h0 = hole();
+            if (h0 && tOf() !== undefined) { this.cb.onHoleChange(holeId, withoutStation(h0, i)); this.cb.onCommit(); }
+          })
+        });
       }
     });
     // (between the points, and between them and the tee and the basket)
@@ -3650,6 +3773,16 @@ export class CourseView {
       };
     };
     const n = first.points.length;
+    // (on a touch screen, a corner closer than 28 px on screen to the last one shown is left out,
+    // so a woods' many corners aren't a wall of dots; zoomed in, they all show)
+    let shownAt: { x: number; y: number } | null = null, firstAt: { x: number; y: number } | null = null;
+    const spaced = (i: number) => {
+      const p = it()?.points[i], s = p ? this.project(at(p)) : null;
+      if (i === 0) shownAt = firstAt = s;
+      else if (!s || (shownAt && Math.hypot(s.x - shownAt.x, s.y - shownAt.y) < 28) || (closed && i === n - 1 && firstAt && Math.hypot(s.x - firstAt.x, s.y - firstAt.y) < 28)) return false;
+      else shownAt = s;
+      return !!s;
+    };
     for (let i = 0; i < n; i++) {
       add("corner", () => { const p = it()?.points[i]; return p ? at(p) : null; }, e => {
         const cur = it();
@@ -3662,11 +3795,11 @@ export class CourseView {
           if (cur.points.length > min) {
             this.cb.onChange(id, { points: cur.points.filter((_, k) => k !== i), ...(cur.type === "line" ? { widths: widthsWithout(cur, i) } : {}) });
             this.cb.onCommit();
-          }
+          } else toast(`Needs at least ${min} points.`, "info");
           return null;
         }
         return drag(i, cur.points);
-      }, { index: i, title: "Drag to move this point · double-click to remove it" });
+      }, { index: i, title: "Drag to move this point · double-click to remove it", visible: COARSE ? () => spaced(i) : undefined });
       if (!closed && i + 1 >= n) continue;
       add("mid", () => {
         const pts = it()?.points;
@@ -3712,8 +3845,8 @@ export class CourseView {
     }
   }
 
-  /** A creek's width at each of its points: a square on either bank, dragged out or in (the rest of
-   * it keeps its width); double-click: back to the creek's width. */
+  /** A stream's width at each of its points: a square on either bank, dragged out or in (the rest of
+   * it keeps its width); double-click (a finger: Reset width): back to the stream's width. */
   private lineWidthHandles(id: string, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
     const it = () => this.item(id) as LineItem | null;
     const first = it();
@@ -3726,6 +3859,12 @@ export class CourseView {
       return { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
     };
     const base = (l: LineItem) => l.width ?? LINE_KINDS[l.kind].width;
+    // (point i back to the stream's own width)
+    const reset = (l: LineItem, i: number) => {
+      const f = widthFactors(l).map((v, k) => (k === i ? 1 : v));
+      this.cb.onChange(id, { widths: widthVaries({ kind: "stream", points: l.points, widths: f }) ? f : undefined });
+      this.cb.onCommit();
+    };
     for (let i = 0; i < n; i++) {
       for (const side of [1, -1] as const) {
         // (on the bank, or clear of the point's own handle on a narrow creek)
@@ -3744,9 +3883,7 @@ export class CourseView {
           this.lastCorner = { id: `${id}:lw`, index: i, time: now };
           if (e.altKey || (last && last.id === `${id}:lw` && last.index === i && now - last.time < 400)) {
             this.lastCorner = null;
-            const f = widthFactors(l0).map((v, k) => (k === i ? 1 : v));
-            this.cb.onChange(id, { widths: widthVaries({ kind: "stream", points: l0.points, widths: f }) ? f : undefined });
-            this.cb.onCommit();
+            reset(l0, i);
             return null;
           }
           const p = l0.points[i], nm = across(l0.points, i), w0 = base(l0);
@@ -3769,8 +3906,12 @@ export class CourseView {
           };
         }, {
           index: i * 2 + (side === 1 ? 0 : 1),
-          title: "Drag: wider or narrower here · double-click: back to the creek's width",
-          data: { point: String(i), side: String(side) }
+          title: "Drag to make the stream wider or narrower here · double-click to reset it",
+          data: { point: String(i), side: String(side) },
+          tap: (h: Handle) => {
+            const l = it(), can = !!l && l.points.length === n && widthFactors(l)[i] !== 1;
+            this.handleButton(h, "reset-width", "Reset width", can, () => { const l1 = it(); if (l1 && l1.points.length === n) reset(l1, i); });
+          }
         });
       }
     }
@@ -3812,7 +3953,7 @@ export class CourseView {
               this.cb.onCommit();
             }
           };
-        }, { index: k * 2 + end, title: "Drag along it", data: { stretch: String(k), end: String(end) } });
+        }, { index: k * 2 + end, title: "Drag to move this end of the OB stretch", data: { stretch: String(k), end: String(end) } });
       }
     });
   }
@@ -3820,6 +3961,7 @@ export class CourseView {
   /** Mark a stretch of OB along a line (a road, a path...), or (`cut`) a stretch to take out of it:
    * click where it starts, then where it ends. */
   setObPick(id: string | null, cut = false) {
+    if (id && this.readOnly) return;
     if ((this.obPick?.id ?? null) === id && (this.obPick?.cut ?? false) === cut) return;
     this.obPick = id ? { id, from: null, cut } : null;
     this.onObPick?.({ started: false, missed: false });
@@ -3832,7 +3974,7 @@ export class CourseView {
    * a click where it ends. */
   startObPick(id: string, from: P, cut = false) {
     const l = this.item(id) as LineItem | AreaItem | null;
-    if (l?.type !== "line" && l?.type !== "area") return;
+    if ((l?.type !== "line" && l?.type !== "area") || this.readOnly) return;
     this.obPick = { id, from: nearestAlong(this.obPath(l), from).t, cut: cut && l.type === "line" };
     this.obTravel = { sum: 0, last: this.obPick.from ?? 0 };
     this.onObPick?.({ started: true, missed: false });
@@ -3919,13 +4061,28 @@ export class CourseView {
    * (Shift: 15° steps). */
   private turnHandle(id: string, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
     const it = () => this.item(id) as AreaItem | LineItem | StructureItem | null;
+    // (on a touch screen, on whichever side of it stays on the map: clear of the map's buttons on
+    // the right, the bar above and the sheet below)
+    const fits = (v: THREE.Vector3) => {
+      const s = this.project(v), m = 24;
+      return !!s && s.x >= m && s.x <= this.size.width - 64 - m && s.y >= this.topInset + m && s.y <= this.size.height - this.bottomInset - m;
+    };
     add("rotate", () => {
       const st = it();
       if (!st || st.points.length < 2) return null;
       const box = orientedBox(st.points);
-      const reach = box.b + Math.max(6, 34 * this.upp(new THREE.Vector3(box.c.x, this.h(box.c.x, box.c.y), box.c.y)));
-      const p = { x: box.c.x - box.v.x * reach, y: box.c.y - box.v.y * reach };
-      return new THREE.Vector3(p.x, this.h(p.x, p.y) + 0.3, p.y);
+      const room = Math.max(6, 34 * this.upp(new THREE.Vector3(box.c.x, this.h(box.c.x, box.c.y), box.c.y)));
+      const off = (dx: number, dy: number, half: number) => {
+        const p = { x: box.c.x + dx * (half + room), y: box.c.y + dy * (half + room) };
+        return new THREE.Vector3(p.x, this.h(p.x, p.y) + 0.3, p.y);
+      };
+      const first = off(-box.v.x, -box.v.y, box.b);
+      if (!COARSE || fits(first)) return first;
+      for (const [dx, dy, half] of [[box.v.x, box.v.y, box.b], [-box.u.x, -box.u.y, box.a], [box.u.x, box.u.y, box.a]]) {
+        const p = off(dx, dy, half);
+        if (fits(p)) return p;
+      }
+      return first;
     }, e => {
       const st0 = it();
       if (!st0 || st0.locked) return null;
@@ -4329,11 +4486,15 @@ export class CourseView {
     const [p, q] = [...this.touchIds].map(id => this.fingerAt.get(id)!);
     if (!p || !q) return;
     this.pinch = { d: Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a: Math.atan2(q.y - p.y, q.x - p.x), cy: (p.y + q.y) / 2 };
-    // (both fingers on or right by the thing picked: it's the thing they size and turn)
+    // (both fingers on or right by the thing picked: it's the thing they size and turn; only a
+    // thing that turns, or a tree, and a shape well inside the view: on a wood, a pond or a road
+    // that fills it, two fingers move the map)
     this.pinchItem = null;
     const it = this.selectedId && !this.readOnly ? this.item(this.selectedId) : null;
-    if (it && !it.locked && it.type !== "basket") {
+    if (it && !it.locked && (turnable(it) || it.type === "tree")) {
       const box = this.screenBox(it.id);
+      const shape = it.type === "area" || it.type === "line" || it.type === "structure";
+      if (shape && (!box || box.width >= this.size.width * 0.6 || box.height >= this.size.height * 0.6)) return;
       const near = (f: { x: number; y: number }) => {
         const r = this.container.getBoundingClientRect();
         const x = f.x - r.left, y = f.y - r.top, m = 48;
@@ -4405,8 +4566,6 @@ export class CourseView {
     this.setDragging(false);
   }
 
-  /** A finger on a handle: it moves once the finger does (a handle's hit area is big for a finger,
-   * so a tap on a hole's line often lands on one); a tap selects what the handle belongs to. */
   /** A small Delete point button by a corner tapped with a finger (an area keeps 3, a line 2). */
   private pointMenu(h: Handle, id: string, index: number) {
     const it = this.item(id) as AreaItem | LineItem | StructureItem | null;
@@ -4456,6 +4615,9 @@ export class CourseView {
     window.setTimeout(gone, 6000);
   }
 
+  /** A finger on a handle: it moves once the finger does (a handle's hit area is big for a finger,
+   * so a tap on a hole's line often lands on one); a tap selects what the handle belongs to, or
+   * does the handle's own tap. */
   private fingerOnHandle(e: PointerEvent, h: Handle) {
     const x0 = e.clientX, y0 = e.clientY, id = e.pointerId, began = performance.now();
     let drag: Drag | null = null, moved = false;
@@ -4482,9 +4644,10 @@ export class CourseView {
         const owner = this.selectedId ?? this.doc?.activeHoleId ?? null;
         if (owner && owner !== this.selectedId) this.cb.onSelect(owner);
         // (a corner of the thing picked, tapped: a Delete point button by it, as a finger can't double-tap it reliably;
-        // a turn of the hole's line: Remove this turn)
+        // a turn of the hole's line: Remove this turn; others their own, see Handle.tap)
         else if (h.kind === "corner" && h.index !== undefined && this.selectedId) this.pointMenu(h, this.selectedId, h.index);
         else if (h.kind === "dogleg" && h.index !== undefined) { const hole = this.hole(this.selectedId)?.id ?? this.doc?.activeHoleId; if (hole) this.turnMenu(h, hole, h.index); }
+        else h.tap?.(h, e);
       }
       this.invalidate();
     };
@@ -5141,7 +5304,7 @@ export class CourseView {
 
   /** Plot a hole's line by hand: clicks along it from the tee (or a freehand drag), to the basket. */
   setPlotLine(holeId: string | null) {
-    if (holeId === this.plotHole) return;
+    if (holeId === this.plotHole || (holeId && this.readOnly)) return;
     this.plotHole = holeId;
     this.plotPts = [];
     this.lastPlotClick = null;
@@ -5327,8 +5490,7 @@ export class CourseView {
       }
       g.add(this.fatLine(this.drapeLine(area && pts.length >= 3 ? [...outline, outline[0]] : pts, LIFT + 0.2), color === "#ffffff" ? "#fde68a" : color, 3, { depthTest: false, order: 20 }));
       const len = pathLength(pts);
-      // (With a finger: the Done button finishes, so the label only counts)
-      const finish = this.fingers ? "" : " · Enter or double-click to finish";
+      // (the bar by the map finishes: the label only counts)
       const size = fmtArea(Math.abs(polygonArea(pts)), doc.course.units);
       const n = pts.length - (this.cursor ? 1 : 0);
       label = this.draftNote ? this.draftNote
@@ -5338,8 +5500,8 @@ export class CourseView {
         : this.shapeAnchor
         ? `${size} · ${this.fingers ? "tap" : "click"} ${this.shapeAnchor.shape === "circle" ? "the edge" : "the opposite corner"}`
         : area
-        ? `${n >= 3 ? `${size} · ` : ""}${n} point${n === 1 ? "" : "s"}${finish}`
-        : `${fmtDist(len, doc.course.units)}${finish}`;
+        ? `${n >= 3 ? `${size} · ` : ""}${n} point${n === 1 ? "" : "s"}`
+        : fmtDist(len, doc.course.units);
       const last = pts[pts.length - 1];
       this.draftAt = new THREE.Vector3(last.x, this.h(last.x, last.y), last.y);
     }
@@ -5511,16 +5673,25 @@ export class CourseView {
     return { points: pts, total: pathLength(pts) };
   }
 
-  private clearMeasure() {
+  /** What's measured taken off the map (the tool's Clear; Esc, another tool). */
+  clearMeasure() {
     this.measurePts = [];
     this.measureCursor = null;
     this.drawMeasure();
   }
 
+  /** From one spot (each click moves the other end) or along a path (each click adds a turn). */
+  private measureMode: "spot" | "path" = "spot";
+  setMeasureMode(mode: "spot" | "path") {
+    if (mode === this.measureMode) return;
+    this.measureMode = mode;
+    if (this.measurePts.length) this.drawMeasure();
+  }
+
   /** A click: the first point stays where it was put, each click after it moves the other end
-   * (Shift+click adds a turn instead: a path); Esc or another tool ends it. */
+   * (Shift+click, or along a path, adds a turn instead); Esc or another tool ends it. */
   private addMeasurePoint(p: THREE.Vector3, keepGoing: boolean) {
-    if (this.measurePts.length >= 2 && !keepGoing) this.measurePts = [this.measurePts[0]];
+    if (this.measurePts.length >= 2 && !keepGoing && this.measureMode === "spot") this.measurePts = [this.measurePts[0]];
     this.measurePts.push(p.clone());
     this.drawMeasure();
   }
@@ -5536,9 +5707,11 @@ export class CourseView {
     const pts = [...this.measurePts];
     if (this.measureCursor && pts.length === 1) pts.push(this.measureCursor);
     const units = this.doc?.course.units ?? "ft";
-    // (two points put down: where the next click would move the end to, faint, from the first)
-    const ahead = this.measureCursor && this.measurePts.length === 2 ? [this.measurePts[0], this.measureCursor] : null;
-    if (ahead && Math.hypot(ahead[1].x - this.measurePts[1].x, ahead[1].z - this.measurePts[1].z) < 0.5) ahead.length = 0;
+    // (two points put down: where the next click would move the end to, faint, from the first;
+    // along a path, the next turn from the last)
+    const m = this.measurePts.length, path = this.measureMode === "path", last = this.measurePts[m - 1];
+    const ahead = this.measureCursor && (path ? m >= 2 : m === 2) ? [path ? last : this.measurePts[0], this.measureCursor] : null;
+    if (ahead && Math.hypot(ahead[1].x - last.x, ahead[1].z - last.z) < 0.5) ahead.length = 0;
     // A dot at each point (the pointer's end fainter)
     pts.forEach((v, i) => {
       const el = document.createElement("div");
@@ -5676,7 +5849,8 @@ export class CourseView {
         // (only over the site: a tilted view's horizon would stretch the line across the screen)
         const w = this.doc.course.canvas;
         const over = !!g && g.x >= 0 && g.z >= 0 && g.x <= w.width && g.z <= w.height;
-        if ((this.measurePts.length === 1 || this.measurePts.length === 2) && (over || this.measureCursor)) {
+        const m = this.measurePts.length;
+        if (m >= 1 && (m <= 2 || this.measureMode === "path") && (over || this.measureCursor)) {
           this.measureCursor = over ? g : null;
           this.drawMeasure();
         }

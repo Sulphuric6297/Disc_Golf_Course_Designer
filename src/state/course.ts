@@ -49,9 +49,10 @@ export const useCourse = create<CourseStore>()((set, get) => ({
   undo: () => {
     const { past, future, doc, gestureStart, readOnly } = get();
     if (readOnly) return;
-    const base = gestureStart ?? doc;
+    // (a gesture not ended yet, a color picker still open: back to where it started, one step)
+    if (gestureStart && gestureStart !== doc) { set({ doc: gestureStart, future: [doc, ...future], gestureStart: null }); return; }
     if (!past.length) return;
-    set({ doc: past[past.length - 1], past: past.slice(0, -1), future: [base, ...future], gestureStart: null });
+    set({ doc: past[past.length - 1], past: past.slice(0, -1), future: [doc, ...future], gestureStart: null });
   },
   redo: () => {
     const { past, future, doc, readOnly } = get();
@@ -129,6 +130,8 @@ type EditorStore = {
   group: string[];
   /** A drag on the map draws a box to pick things with (instead of moving the map). */
   dragSelect: boolean;
+  /** Measure: from one spot (each click moves the far end; the default) or along a path (each click adds a turn). */
+  measureMode?: "spot" | "path";
   /** The hole whose line is being plotted by hand, point by point. */
   plotLine: string | null;
   /** The line (a road, a path...) a stretch of OB is being marked along: where it starts, then ends. */
@@ -176,6 +179,8 @@ type EditorStore = {
   teeView: string | null;
   /** The tee the tee view stands on (another skill level's), unset: the layout's. */
   teeViewTee?: string | null;
+  /** The tee view's flyover settings open over it. */
+  teeSettings?: boolean;
   flyover: boolean;
   /** The selected hole's keyframe picked (its place in the list; null: none). */
   flyKey: number | null;

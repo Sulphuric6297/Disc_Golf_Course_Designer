@@ -3,16 +3,22 @@
 // Any tree on the course gets these, the woods' and the survey's too (picked, they're made the
 // course's own).
 import { useMemo } from "react";
-import { RotateCcw, Shuffle } from "lucide-react";
+import { RotateCcw, Shrub, Shuffle, TreeDeciduous, TreePine } from "lucide-react";
+import { COMPASS } from "../constants";
 import { presetDefaults, presetFor, SPECIES, specOf, speciesOfPreset } from "../three/ezShapes";
 import { variantOf, type TreeShape } from "../three/treeKit";
 import { fmtDist } from "../lib/units";
 import { useCourse } from "../state/course";
 import type { TreeItem, TreeKind } from "../types";
-import { Button, Field, Segmented, Select, Slider } from "./ui";
+import { Button, ChipPick, Field, Slider } from "./ui";
 
 const shapeOf = (k: TreeKind | undefined): TreeShape => (k === "conifer" ? "conifer" : k === "bush" ? "bush" : "broadleaf");
-const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+/** The kinds of tree, as the tool bar names them (its icons too): a tree's panel and a phone's strip. */
+export const TREE_KINDS: { value: TreeKind; label: string; icon: JSX.Element }[] = [
+  { value: "deciduous", label: "Leafy tree", icon: <TreeDeciduous size={14} /> },
+  { value: "conifer", label: "Pine", icon: <TreePine size={14} /> },
+  { value: "bush", label: "Bush", icon: <Shrub size={14} /> }
+];
 /** The settings that make a tree its own shape (cleared by Reset, which keeps its species). */
 const OWN = { seed: undefined, crownBase: undefined, lean: undefined, leanDir: undefined, limbs: undefined, trunk: undefined, fullness: undefined };
 
@@ -32,21 +38,13 @@ export function TreeSettings({ item, set }: { item: TreeItem; set: (patch: Parti
   return (
     <div data-testid="tree-settings">
       <Field label="Kind" help="trees">
-        <Segmented label="Tree kind" value={kind} onChange={v => set({ treeType: v as TreeKind, species: undefined, variant: undefined, leaf: undefined })} options={[{ value: "deciduous", label: "Leafy" }, { value: "conifer", label: "Pine" }, { value: "bush", label: "Bush" }]} />
+        <ChipPick label="Tree kind" value={kind} onChange={v => set({ treeType: v, species: undefined, variant: undefined, leaf: undefined })} options={TREE_KINDS} />
       </Field>
-      <div className="flex items-end gap-2 mb-3">
-        <div className="flex-1 min-w-0">
-          <Field label="Species">
-            {SPECIES[shape].length > 3
-              ? <Select label="Species" testid="tree-species" value={species} onChange={v => set({ species: v, leaf: undefined })}>
-                  {SPECIES[shape].map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                </Select>
-              : <Segmented label="Species" value={species} onChange={v => set({ species: v, leaf: undefined })} options={SPECIES[shape].map(s => ({ value: s.id, label: s.label }))} />}
-          </Field>
-        </div>
-        <div className="mb-3">
-          <Button small onClick={() => set({ seed: Math.floor(Math.random() * 1e6), species, variant: undefined })} title="Grow a different tree of this species" testid="tree-new-shape"><Shuffle size={13} /> New shape</Button>
-        </div>
+      <Field label="Species">
+        <ChipPick label="Species" testid="tree-species" value={species} onChange={v => set({ species: v, leaf: undefined })} options={SPECIES[shape].map(s => ({ value: s.id, label: s.label }))} />
+      </Field>
+      <div className="mb-3">
+        <Button small onClick={() => set({ seed: Math.floor(Math.random() * 1e6), species, variant: undefined })} title="Grow a different tree of this species" testid="tree-new-shape"><Shuffle size={13} /> New shape</Button>
       </div>
       {/* (taller or shorter keeps its shape: the crown grows or shrinks with it; one bigger than the
           sliders go, from the survey, keeps its size until it's changed) */}

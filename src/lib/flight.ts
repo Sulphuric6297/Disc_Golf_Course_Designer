@@ -360,10 +360,11 @@ const smoothEnds = (v: number[], w: number, passes = 3) => {
   return z;
 };
 
-/** Seconds from each keyframe to the next. */
+/** Seconds from each keyframe to the next. A keyframe's own time (`secs`) is kept at speed 1, so the
+ * flyover's Speed scales the whole flight: retimed, a stretch saves its seconds × the speed. */
 export const keySeconds = (keys: FlyKey[], set: FlyoverSettings, ground: (x: number, y: number) => number) =>
   keys.slice(1).map((k, i) => {
-    if (k.secs && k.secs > 0) return k.secs;
+    if (k.secs && k.secs > 0) return k.secs / Math.max(0.1, set.speed);
     const a = keys[i];
     const d = Math.hypot(k.x - a.x, k.y - a.y, ground(k.x, k.y) + k.alt - (ground(a.x, a.y) + a.alt));
     // (at the pace a hole flies by itself)
@@ -505,7 +506,8 @@ export const insertKey = (keys: FlyKey[], i: number, set: FlyoverSettings, groun
   const j = Math.round((t / f.dur) * (f.cam.length - 1));
   const c = f.cam[j], l = f.look[j];
   const fov = keys[i].fov === undefined && keys[i + 1].fov === undefined ? undefined : f.fov[j];
-  const half = (times[i + 1] - times[i]) / 2;
+  // (saved at speed 1: see keySeconds)
+  const half = ((times[i + 1] - times[i]) / 2) * Math.max(0.1, set.speed);
   const mid = r({ x: c.x, y: c.y, alt: c.z - ground(c.x, c.y), lookX: l.x, lookY: l.y, lookAlt: l.z - ground(l.x, l.y), ...(fov !== undefined ? { fov: Math.round(fov) } : {}), secs: Math.round(half * 10) / 10 });
   const after = { ...keys[i + 1], secs: Math.round(half * 10) / 10 };
   return { keys: [...keys.slice(0, i + 1), mid, after, ...keys.slice(i + 2)], at: i + 1 };

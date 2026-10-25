@@ -6,13 +6,13 @@
 import { fitAttr, capAttr } from "./fitText";
 import { FT_PER_M, TEE_LEVELS } from "../constants";
 import type { CourseDoc, PinPosition, TeeLevel, Units } from "../types";
-import { activeLayout, holeBaskets, holeTees, throwLine } from "./course";
+import { activeLayout, holeBaskets, holeTees, taglineOf, throwLine } from "./course";
 import { dist, rotatePoint } from "./geom";
 import { holeStats } from "./holeStats";
 import { markingsInView, northArrow, palette, scaleBar, wrapSvg } from "./mapSvg";
-import { autoRules, cardStyle, courseNameAs, elevationProfile as profile, holeFacts, holeMap, obKey, type SignArt } from "./teeSign";
+import { autoRules, cardStyle, courseNameAs, elevationProfile as profile, holeFacts, holeMap, holeOfText, obKey, type SignArt } from "./teeSign";
 import { fmtDist, fmtElev } from "./units";
-import { extrasSvg, piecer } from "./pieces";
+import { extrasSvg, followName, piecer } from "./pieces";
 
 export type HolePageSize = "letter" | "a4" | "card" | "square";
 /** Page sizes (inches) and the resolution of their pictures (the square one is 1080 px). */
@@ -62,15 +62,20 @@ const JUST_THE_HOLE = new Set(["map", "number"]);
 
 /** A hole's page settings: its look, and each piece's place (the hole's own over the course's;
  * just the hole leaves out what it doesn't show until it's asked for). */
-export const holePageOf = (doc: Pick<CourseDoc, "style" | "holes">, holeId: string) => {
+export const holePageOf = (doc: Pick<CourseDoc, "style" | "holes"> & Partial<Pick<CourseDoc, "items">>, holeId: string) => {
   const g = doc.style.holePage ?? {}, h = doc.holes.find(x => x.id === holeId)?.page ?? {};
   const look = g.look ?? "standard";
+  // (left out until asked for: "HOLE 3" beside the number's disc, and the length in the header
+  // when the one tee's chip has it)
+  const oneTee = () => !!doc.items && holeTees(doc as CourseDoc, holeId).length === 1 && holeBaskets(doc as CourseDoc, holeId).length > 0;
   return {
     look,
-    place: (id: string) => {
+    place: followName((id: string) => {
       const p = h.layout?.[id] ?? g.layout?.[id];
-      return look === "justhole" && !JUST_THE_HOLE.has(id) && p?.hidden === undefined ? { ...p, hidden: true } : p;
-    }
+      if (p?.hidden !== undefined) return p;
+      if (look === "justhole" ? !JUST_THE_HOLE.has(id) : id === "holeTitle" || (id === "length" && oneTee())) return { ...p, hidden: true };
+      return p;
+    })
   };
 };
 
@@ -128,11 +133,16 @@ export const renderHolePage = (doc: CourseDoc, holeId: string, size: HolePageSiz
   const cn = courseNameAs(sty, BODY), course = cn.caps((sty.title || doc.name || "").trim());
   const room = right - tx - parSize * 3.2;
   const courseSize = Math.min(9.5 * u, (room / Math.max(1, course.length)) * 1.6);
-  if (course) parts.push(P.wrap("courseName", `<text${fitAttr(room)} x="${n(tx)}" y="${n(headH * 0.26)}" font-family="${cn.font}" font-weight="600" font-size="${n(courseSize)}" letter-spacing="${n(cn.spaced ? courseSize * 0.12 : 0)}" fill="${ACCENT}">${esc(course)}</text>`));
+  const nameSvg = course ? P.wrap("courseName", `<text${fitAttr(room)} x="${n(tx)}" y="${n(headH * 0.26)}" font-family="${cn.font}" font-weight="600" font-size="${n(courseSize)}" letter-spacing="${n(cn.spaced ? courseSize * 0.12 : 0)}" fill="${ACCENT}">${esc(course)}</text>`) : "";
+  parts.push(nameSvg);
+  // (the tagline under the course's name: a piece of its own, only with the name)
+  if (nameSvg && taglineOf(sty)) parts.push(P.wrap("tagline", `<text${fitAttr(room)} x="${n(tx)}" y="${n(headH * 0.26 + 10 * u)}" font-family="${BODY}" font-weight="800" font-size="${n(6 * u)}" letter-spacing="${n(1.6 * u)}" fill="${ACCENT}" fill-opacity="0.7">${esc(taglineOf(sty))}</text>`));
+  const titled = !P.hidden("holeTitle");
   parts.push(P.wrap("holeTitle", `<text${fitAttr(room)} x="${n(tx)}" y="${n(headH * (hole.name ? 0.6 : 0.68))}" font-family="${HEAD}" font-weight="700" font-size="${n(32 * u)}" fill="#ffffff">HOLE ${st.label}</text>`));
   if (hole.name) {
-    const nameSize = Math.min(13 * u, (room / Math.max(1, hole.name.length)) * 1.8);
-    parts.push(P.wrap("holeName", `<text${fitAttr(room)} x="${n(tx)}" y="${n(headH * 0.84)}" font-family="${HEAD}" font-weight="500" font-size="${n(nameSize)}" fill="${ACCENT}">${esc(hole.name)}</text>`));
+    // (under "HOLE 3"; or, without it, the hole's name big in its place)
+    const nameSize = Math.min(titled ? 13 * u : 24 * u, (room / Math.max(1, hole.name.length)) * 1.8);
+    parts.push(P.wrap("holeName", `<text${fitAttr(room)} x="${n(tx)}" y="${n(headH * (titled ? 0.84 : 0.72))}" font-family="${HEAD}" font-weight="${titled ? 500 : 700}" font-size="${n(nameSize)}" fill="${titled ? ACCENT : "#ffffff"}">${esc(hole.name)}</text>`));
   }
   parts.push(P.wrap("par", `<text${fitAttr(parSize * 3)} x="${n(right)}" y="${n(headH * 0.5)}" text-anchor="end" font-family="${HEAD}" font-weight="700" font-size="${n(parSize)}" fill="#ffffff">PAR ${done ? st.par : "–"}</text>`));
   parts.push(P.wrap("length", `<text${fitAttr(parSize * 4.5)} x="${n(right)}" y="${n(headH * 0.8)}" text-anchor="end" font-family="${HEAD}" font-weight="600" font-size="${n(15 * u)}" letter-spacing="${n(0.8 * u)}" fill="${ACCENT}">${done ? big(st.length, units) : esc(P.head("length", "UNFINISHED"))}</text>`));
@@ -192,12 +202,15 @@ export const renderHolePage = (doc: CourseDoc, holeId: string, size: HolePageSiz
   } else {
     const y = H - footH;
     parts.push(P.wrap("footer", `<rect y="${n(y)}" width="${n(W)}" height="${n(footH)}" fill="${PAPER}" data-fill="1"/><line x1="0" x2="${n(W)}" y1="${n(y)}" y2="${n(y)}" stroke="${INK}" stroke-opacity="0.2"/>`));
-    const pw = (W - 2 * m) * 0.5;
+    // (the profile across the footer when there are no notes beside it)
+    const pw = (W - 2 * m) * (notes && !P.hidden("notes") ? 0.5 : 1);
     at = parts.length;
     const elev = [elevHead, done ? fmtElev(st.elevationChange, units).toUpperCase() : ""].filter(Boolean).join(" ");
     if (elev) parts.push(`<text${fitAttr(pw)} x="${n(m)}" y="${n(y + 22 * u)}" font-family="${HEAD}" font-weight="700" font-size="${n(12 * u)}" letter-spacing="${n(0.8 * u)}" fill="${INK}">${esc(elev)}</text>`);
     parts.push(profile(doc, line, { x: m, y: y + 32 * u, w: pw, h: 60 * u }, { fill: sty.fairway, stroke: DARK, tee: lvl.color, basket: sty.basket, width: 1.8 * u }));
-    if (done) parts.push(`<text x="${n(m)}" y="${n(y + 106 * u)}" font-family="${BODY}" font-size="${n(8 * u)}" fill="${SOFT}">Tee</text><text x="${n(m + pw)}" y="${n(y + 106 * u)}" text-anchor="end" font-family="${BODY}" font-size="${n(8 * u)}" fill="${SOFT}">Basket · plays like ${esc(fmtDist(st.playsLike, units))}</text>`);
+    const teeWord = P.word("elevation", "tee", "Tee").trim(), basketWord = P.word("elevation", "basket", "Basket").trim();
+    if (done && teeWord) parts.push(`<text x="${n(m)}" y="${n(y + 106 * u)}" font-family="${BODY}" font-size="${n(8 * u)}" fill="${SOFT}">${esc(teeWord)}</text>`);
+    if (done && basketWord) parts.push(`<text x="${n(m + pw)}" y="${n(y + 106 * u)}" text-anchor="end" font-family="${BODY}" font-size="${n(8 * u)}" fill="${SOFT}">${esc(basketWord)}</text>`);
     P.group(parts, at, "elevation");
     const nx = m + pw + 22 * u, nw = W - m - nx;
     at = parts.length;
@@ -210,9 +223,8 @@ export const renderHolePage = (doc: CourseDoc, holeId: string, size: HolePageSiz
     const shown = markingsInView(doc, map.view);
     const key = [shown.ob && `${obKey(sty)} OB`, shown.hazard && `<tspan fill="${sty.hazard}">■</tspan> Hazard`, shown.mando && `<tspan fill="#f97316">●</tspan> Mando / DZ`].filter(Boolean).join("   ");
     parts.push(P.wrap("legend", `<text${fitAttr(W * 0.6)} x="${n(m)}" y="${n(by)}" font-family="${BODY}" font-size="${n(7.5 * u)}" fill="${SOFT}">${key}</text>`));
-    const layout = activeLayout(doc);
-    parts.push(P.wrap("holeOf", `<text${fitAttr(W * 0.35)} x="${n(W - m)}" y="${n(by)}" text-anchor="end" font-family="${BODY}" font-size="${n(7.5 * u)}" fill="${SOFT}">Hole ${st.label} of ${doc.holes.length}${layout && doc.layouts.length > 1 ? ` · ${esc(layout.name)} layout` : ""}</text>`));
+    parts.push(P.wrap("holeOf", `<text${fitAttr(W * 0.35)} x="${n(W - m)}" y="${n(by)}" text-anchor="end" font-family="${BODY}" font-size="${n(7.5 * u)}" fill="${SOFT}">${esc(holeOfText(doc, st.label, map.stats))}</text>`));
   }
-  parts.push(extrasSvg(sty.holePage?.extras, sty.sponsors, holeId, holeFacts(doc, holeId, st), W, H, cardStyle(doc).font, P.wrap));
+  parts.push(extrasSvg(sty.holePage?.extras, sty.sponsors, holeId, holeFacts(doc, holeId, st), W, H, cardStyle(doc).font, P.wrap, INK));
   return { svg: wrapSvg(W, H, P.page(parts.join(""))), width: W, height: H };
 };

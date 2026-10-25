@@ -15,8 +15,29 @@ import { toast } from "./toast";
 export const isEmpty = (doc: CourseDoc) => !doc.holes.length && !doc.items.length && !doc.background;
 
 /** A course kept here, as Courses lists it: with its totals and each hole's throw line, for its
- * card (kept before these, a course has just its name and holes until it's opened again). */
-export type KeptMeta = PlanMeta & { summary?: Partial<Summary> };
+ * card (kept before these, a course has just its name and holes until it's opened again), and its
+ * photo, small, with the plan's size (the lines drawn over it in place). */
+export type KeptMeta = PlanMeta & { summary?: Partial<Summary>; thumb?: string; canvas?: { width: number; height: number } };
+
+/** A course's photo, small, for its card (none without a photo, or when it can't be drawn). */
+export const cardThumb = async (doc: CourseDoc): Promise<string | undefined> => {
+  if (!doc.background) return undefined;
+  try {
+    const img = new Image();
+    img.src = doc.background;
+    await img.decode();
+    const k = Math.min(1, 360 / Math.max(img.width, img.height));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(img.width * k));
+    c.height = Math.max(1, Math.round(img.height * k));
+    const ctx = c.getContext("2d");
+    if (!ctx) return undefined;
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.72);
+  } catch {
+    return undefined;
+  }
+};
 
 /** What a course's card shows of it: its par and length, and its holes' lines for a small map. */
 export const summaryOf = (doc: CourseDoc): Partial<Summary> => {
@@ -43,7 +64,9 @@ const markExample = (changed: boolean) => {
 export const archiveCurrent = async () => {
   const doc = getDoc();
   if (isEmpty(doc)) return null;
-  const meta = metaOf(doc);
+  // (the example's card has a picture of its own)
+  const thumb = doc.id === EXAMPLE_ID ? undefined : await cardThumb(doc);
+  const meta: KeptMeta = { ...metaOf(doc), ...(thumb ? { thumb, canvas: { ...doc.canvas } } : {}) };
   await storePlan(meta, { ...doc, id: meta.id });
   return meta;
 };

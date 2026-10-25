@@ -171,7 +171,6 @@ export function NearbyCourses() {
               ))}
               <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={withTrees} onChange={e => setWithTrees(e.target.checked)} /> And the measured trees</label>
               <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={withPlanted} onChange={e => setWithPlanted(e.target.checked)} data-testid="share-planted" /> And the trees planted by hand</label>
-              <p className="text-[11px] text-zinc-500">Their holes, OB and everything drawn stay as they are. A tree cut down on one course stays on the others.</p>
               <div className="flex gap-2 justify-end">
                 <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/[0.09] rounded-lg" onClick={() => setSharing(null)}>Cancel</button>
                 <button className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" disabled={busy || !sharing.size}

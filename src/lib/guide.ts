@@ -1,6 +1,7 @@
 // Every feature and setting, once: what it is, what it's for, and where it is. The help guide reads
 // it as chapters, and search (Ctrl+K) finds any of it and takes you there.
 import type { Step } from "../state/course";
+import type { ToolMode } from "../types";
 
 export type GuideSection = "start" | "site" | "design" | "view" | "map" | "export" | "share" | "phone" | "keys";
 
@@ -14,11 +15,15 @@ export interface Where {
   open?: "view" | "course" | "problems" | "share-public" | "share-people";
   /** A thing to pick first (its panel holds the setting). */
   pick?: "hole" | "tee" | "basket" | "woods" | "water" | "line" | "tree" | "structure" | "walk";
-  /** The control: its test id, and within it a row by its words. */
+  /** A tool to turn on first (its controls show only while it's on). */
+  tool?: ToolMode;
+  /** The control: its test id (or several, "a|b|c": the first on screen), and within it a row by its words. */
   find?: string;
   /** A sentence to point at it with (Getting started's Show me). */
   say?: string;
   text?: string;
+  /** Where it is, said when it can't be pointed at from here ("Design › Ground"). */
+  missing?: string;
 }
 
 export interface Topic {
@@ -40,7 +45,7 @@ export interface Topic {
 
 /** `short`: its name in the list of chapters. */
 export const SECTIONS: { id: GuideSection; title: string; short?: string; intro: string }[] = [
-  { id: "start", title: "Getting started", intro: "HyzerLab lays out a disc golf course on the real ground, then makes what the course needs from it: a printed map, tee signs, hole pages, a scorecard, videos and GPS files. You work through four steps, left to right along the top bar." },
+  { id: "start", title: "Getting started", intro: "HyzerLab lays out a disc golf course on the real ground, then makes what the course needs from it: a printed map, tee signs, hole pages, a scorecard, videos and GPS files. You work through four steps, left to right along the top bar (along the bottom on a phone)." },
   { id: "site", title: "Site", intro: "The Site step brings in the real place: the satellite photo, the elevation, the trees, and the paths, roads and water around it. It pulls in what it can. Expect to clean some of it up." },
   { id: "design", title: "Design", intro: "The Design step is the course itself: holes, tees and baskets, OB, mandos, paths, trees and anything else out there. Pick something to change it in its panel." },
   { id: "view", title: "3D, tee views and flyovers", short: "3D and flyovers", intro: "The map works in 2D and 3D. You can look at a hole from its tee, fly over it, and record the flight as a video." },
@@ -94,12 +99,12 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "search", section: "start", title: "Search for anything",
-    body: "Press Ctrl+K (or /, or click the magnifier in the top bar) and type what you're after. A hole number, a step, a tool, a name on the map, or a setting like \"fairway width\" or \"tee sign look\". Pick a result and HyzerLab takes you there and points at it.\n\nIt's the magnifier, Search, in the top bar. On a phone it's Search holes, tools and help, in the app menu.",
+    body: "Press Ctrl+K (or /, or click the magnifier in the top bar) and type what you're after. A hole number, a step, a tool, a name on the map, or a setting like \"fairway width\" or \"tee sign look\". Pick a result and HyzerLab takes you there and points at it.\n\nOn a phone it's Search holes, tools and help, in the menu.",
     words: "find go to search spotlight command palette ctrl k"
   },
   {
     id: "hover", section: "start", title: "What a button does",
-    body: "Rest the mouse on a button to see what it does and its key. If a button is dimmed, there's usually a note nearby saying why. Most of Export's buttons, for example, need at least one hole with a tee and a basket.",
+    body: "Rest the mouse on a button to see what it does and its key. A dimmed button needs something first. Most of Export's buttons, for example, need at least one hole with a tee and a basket.",
     words: "tooltip hover icon label dimmed disabled"
   },
   {
@@ -110,7 +115,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "save-local", section: "start", title: "Saving (in this browser)",
-    body: "Without an account, your course saves by itself in this browser. It only lives on this computer, though. Clear the browser's site data and it's gone.\n\nTo keep a copy, or move it to another computer, open the course menu (the little arrow next to the course name) and pick Save as a file. Open a course file… brings it back in.",
+    body: "Without an account, your course saves by itself in this browser. It only lives on this computer, though. Clear the browser's site data and it's gone.\n\nTo keep a copy, or move it to another computer, open the course menu (the little arrow next to the course name, or the menu at the top left on a phone) and pick Save as a file. Open a course file… brings it back in.",
     words: "save file open download backup",
     path: "Top bar › course name › menu", server: false
   },
@@ -128,7 +133,7 @@ export const TOPICS: Topic[] = [
     steps: ["On the Site step, click Find your park.", "Search for the park or an address, and pick it.", "Frame the area the holes will use.", "Tick what to bring in, then click Bring in this site."],
     words: "import address park location satellite resize area frame find your park re-import",
     path: "Site › Find your park (or Resize or re-import the site)",
-    where: { step: "site", find: "find-site" }
+    where: { step: "site", find: "find-site|welcome-find|resize-site" }
   },
   {
     id: "example-course", section: "site", title: "The example course",
@@ -158,7 +163,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "refresh-osm", section: "site", title: "Update paths, roads, water and buildings",
-    body: "This asks OpenStreetMap again and swaps in what it has now, along with the buildings traced from the air. Handy if the first import missed something, or someone's fixed the map since.\n\nIt replaces everything that came from OpenStreetMap before, including shapes you've edited since. Things you drew yourself stay put. Undo brings the old ones back. As on the import, OpenStreetMap's woods don't come back where the measured trees made woods of their own. Undo, in the message, brings the old ones back.",
+    body: "This asks OpenStreetMap again and swaps in what it has now, along with the buildings traced from the air. Handy if the first import missed something, or someone's fixed the map since.\n\nIt replaces everything that came from OpenStreetMap before, including shapes you've edited since. Things you drew yourself stay put. As on the import, OpenStreetMap's woods don't come back where the measured trees made woods of their own. Undo, in the message, brings the old ones back.",
     words: "openstreetmap osm refresh paths roads water again update buildings",
     path: "Site › Update paths, roads, water and buildings",
     where: { step: "site", find: "refresh-osm" }
@@ -172,14 +177,14 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "lidar", section: "site", title: "Measured trees (LiDAR)",
-    body: "Measure trees and ground reads an aerial LiDAR survey of the site. That's a laser scan flown over the land, so you get the real trees (spot, height, crown) and the real shape of the ground under them. It's only in the US, where USGS has flown one.\n\nIt uses the newest survey over the site. If that one barely sees any trees (an old thin scan, or one flown with the leaves off), it tries the next one and keeps whichever saw more. If there's no survey at all, the Site step says No aerial survey here, and Check again looks again. Surveys are only flown in the US, and not everywhere there.\n\nMeasure again reads it all over, say after resizing the site. It replaces the measured trees and their settings, including the trees you kept or cut. Remove the measured trees takes them all out. Undo brings either back.",
+    body: "Measure trees and ground reads an aerial LiDAR survey of the site. That's a laser scan flown over the land, so you get the real trees (spot, height, crown) and the real shape of the ground under them. It's only in the US, where USGS has flown one.\n\nIt uses the newest survey over the site. If that one barely sees any trees (an old thin scan, or one flown with the leaves off), it tries the next one and keeps whichever saw more. If there's no survey at all, the Site step says No aerial survey here, and Check again looks again.\n\nMeasure again reads it all over, say after resizing the site. It replaces the measured trees and their settings, including the trees you kept or cut. Remove the measured trees takes them all out. Undo brings either back.",
     words: "lidar measure survey trees heights ground usgs remove real trees aerial measure again",
     path: "Site › Real trees and ground",
     where: { step: "site", find: "lidar-info" }
   },
   {
     id: "lidar-settings", section: "site", title: "Measured trees: settings",
-    body: "These change how the measured trees are used. You can drop the little ones, grow them up to today, and decide whether the trees where your holes play get cleared.\n\nLeave out trees shorter than hides the measured trees under that height (the count says how many are left). Growth since the survey ages every tree by that many years and fills in some young ones in the gaps and edges. Grow to today sets it to the years since the survey was flown. It's an estimate, not a new survey.\n\nClear trees from the fairways cuts down the measured trees where the holes play. Turn it off to keep them all and cut by hand instead. Bring them back restores saplings and planted trees you cut by hand, and Remove those placed by hand takes out trees you planted right on top of a measured one.",
+    body: "These change how the measured trees are used. You can drop the little ones, grow them up to today, and decide whether the trees where your holes play get cleared.\n\nLeave out trees shorter than hides the measured trees under that height (the count says how many are left). Growth since the survey ages every tree by that many years and fills in some young ones in the gaps and edges. Grow to today sets it to the years since the survey was flown. It's a guess at how much they've grown, so don't expect it to match a fresh survey.\n\nClear trees from the fairways cuts down the measured trees where the holes play. Turn it off to keep them all and cut by hand instead. Bring them back restores saplings and planted trees you cut by hand, and Remove those placed by hand takes out trees you planted right on top of a measured one.",
     words: "measured tree settings leave out shorter smallest growth since survey grow to today years saplings clear trees from the fairways cut",
     path: "Site › Real trees and ground › Measured tree settings",
     where: { step: "site", find: "lidar-settings" }
@@ -237,7 +242,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "tees-pins", section: "design", title: "More tees and pins",
-    body: "A hole can have more than one tee and more than one pin. Tees are colored by skill level, and pins are lettered A, B, C and D.\n\nTees and baskets, in the hole's panel, has a row for each one with how long the hole plays from it. Click a row to open its settings right there (it's picked on the map too), and click it again to close it. Clicking a tee or basket on the map does the same thing: you get the hole's panel with that one open, so the hole's settings are never more than a scroll away.\n\nUnder the rows are three buttons. Another tee for this hole starts the Tee tool (T) in a color the hole doesn't have yet. Another pin position starts the Pin tool (B) for its next letter. New hole to this basket makes a separate hole, with its own number, that finishes at the same basket: you just place its tee. Play to another hole's basket instead lets a hole share a basket. Layouts decide which tee and pin each hole is played from.\n\nThe colors the hole already has are dimmed in the chips above the tools. Pick one of those anyway and the new tee goes down in the next color the hole doesn't have, and the hint says which. The Pin tool's hint says which letter comes next.",
+    body: "A hole can have more than one tee and more than one pin. Tees are colored by skill level, and pins are lettered A, B, C and D.\n\nTees and baskets, in the hole's panel, has a row for each one with how long the hole plays from it. Click a row to open its settings right there (it's picked on the map too), and click it again to close it. Clicking a tee or basket on the map does the same thing: you get the hole's panel with that one open, so the hole's settings are never more than a scroll away.\n\nUnder the rows are three buttons. Another tee for this hole starts the Tee tool (T) in a color the hole doesn't have yet. New hole to this basket makes a separate hole, with its own number, that finishes at the same basket: you just place its tee. Another pin position starts the Pin tool (B) for its next letter. Play to another hole's basket instead, folded under them, lets a hole share a basket. Layouts decide which tee and pin each hole is played from.\n\nThe colors the hole already has are dimmed in the chips above the tools. Pick one of those anyway and the new tee goes down in the next color the hole doesn't have, and the hint says which. The Pin tool's hint says which letter comes next.",
     words: "tee pin position another tee basket skill level color share basket tees and baskets",
     path: "Design › a hole › Tees and baskets",
     where: { step: "design", pick: "hole", find: "hole-parts" }
@@ -251,7 +256,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "mando", section: "design", title: "Mandos and drop zones",
-    body: "A mando makes players pass a post or tree on one side. Mando in OB and rules (or M) puts one on the hole you've picked: a post or tree players have to pass on one side. Mando gate puts a gate of two posts players have to throw between. For a single post, its panel sets which side the disc has to pass.\n\nDrop zone, also in OB and rules (or Z), places a drop zone: where players throw from after missing a mando or going OB, when the hole has one. Both belong to a hole, and Belongs to in their panel changes which.",
+    body: "A mando makes players pass a post or tree on one side. Mando, in OB and rules (or M), puts one on the hole you've picked, and Mando gate puts in two posts players have to throw between. For a single post, its panel sets which side the disc has to pass.\n\nDrop zone, also in OB and rules (or Z), places a drop zone: where players throw from after missing a mando or going OB, when the hole has one. Both belong to a hole, and Belongs to in their panel changes which.",
     words: "mando mandatory gate drop zone dz",
     path: "Design › OB and rules › Mando, Drop zone"
   },
@@ -278,7 +283,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "tools", section: "design", title: "The tool bar",
-    body: "The tools are along the bottom of the map, named for what you put on the course: Select (V), Hole (H), Tee (T) and Pin (B), then OB and rules (O), Paths and roads (L), Water (W), Trees (R), Grass (U), Build (S), Ground (G) and Measure (D). Amenities (A) and Label (K) are under the three dots.\n\nPick a tool and what it has shows just above it, so you pick what to put down by its own name. OB and rules has OB areas and lines, hazards, casual areas, out of play, mandos and drop zones. Paths and roads has walking paths, next-tee routes, roads and parking lots. Water has ponds and streams. Trees has leafy trees, pines, bushes and woods. Grass has fairways, landing zones, tall grass, and sand or dirt. Build has buildings, shelters, decks, bridges, boardwalks, stairs, walls and fences.\n\nEach is drawn the way it should be: an area by its outline, a path or a fence along its line, a tree or a mando with a click. Each tool picks up where you left off with it. Type a thing's name in Search (Ctrl+K or /) to go straight to it. The ? at the end of a tool's hint opens its page here.",
+    body: "The tools are along the bottom of the map, named for what you put on the course: Select (V), Hole (H), Tee (T) and Pin (B), then OB and rules (O), Paths and roads (L), Water (W), Trees (R), Grass (U), Build (S), Ground (G) and Measure (D). Amenities (A) and Label (K) are under the three dots.\n\nPick a tool and what it has shows just above it, so you pick what to put down by its own name. OB and rules has OB areas and lines, hazards, casual areas, out of play, mandos and drop zones. Paths and roads has walking paths, next-tee routes, roads and parking lots. Water has ponds and streams. Trees has leafy trees, pines, bushes and woods. Grass has fairways, landing zones, tall grass, and sand or dirt. Build has buildings, shelters, decks, bridges, boardwalks, stairs, walls and fences.\n\nEach is drawn the way it should be: an area by its outline, a path or a fence along its line, a tree or a mando with a click. Each tool picks up where you left off with it. Type a thing's name in Search (Ctrl+K or /) to go straight to it. The ? at the end of a tool's hint opens its page here.\n\nOn the Site step, Hole, Tee, Pin and OB and rules wait under the three dots too. On a phone the tools are a row of buttons at the top of the panel. Swipe it sideways for the rest.",
     words: "tools toolbar draw place more tools three dots ob rules paths roads water grass build fence where is",
     path: "Design › tool bar"
   },
@@ -287,7 +292,7 @@ export const TOPICS: Topic[] = [
     body: "The Ground tool (G) lets you paint the terrain yourself, for the things the elevation data doesn't have: a mound you're building, a tee pad you're leveling, a hole that's been moved. Pick what the brush does, then drag it over the map. To move the map while you're painting, hold Space and drag (on a phone, use two fingers).\n\nRaise builds the ground up and Lower digs it down. Flatten levels everything you paint to the height where the stroke started, which is handy for tee pads and greens. Smooth evens out bumps and steps but keeps the overall slope. Restore puts the ground back to its height as measured, wherever you've changed it, so you can undo one part of your work without undoing the rest. Holding the brush still keeps it working. The brush is soft at its edge, so what you paint blends into the ground around it instead of leaving a step.\n\nBrush sets how wide it is, and Strength how much each pass does. Each stroke is one Undo. The 3D view, the contour lines and the printed map all follow the new ground. Keep in mind it changes the ground the course is drawn on, not the real survey, so bringing the site in again replaces it.",
     words: "terrain ground elevation sculpt raise lower flatten smooth restore original height reset put back hill mound berm dig level paint brush topography",
     path: "Design › Ground (G)",
-    where: { step: "design", find: "ground-raise" }
+    where: { step: "design", tool: "sculpt", find: "ground-raise" }
   },
   {
     id: "areas", section: "design", title: "Areas: OB, hazards, water, woods, rough",
@@ -329,7 +334,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "measure", section: "design", title: "Measure",
-    body: "The Measure tool (D) checks distances so you don't have to guess. Click a start point, then click anywhere to see the distance and the climb from there.\n\nThe start stays put, so every click after it measures from the same spot. That's handy for checking one tee against a few basket spots. Shift+click adds a turn instead, to measure along a path. Esc, or picking another tool, ends it.",
+    body: "The Measure tool (D) checks distances so you don't have to guess. Click a start point, then click anywhere to see the distance and the climb from there.\n\nWith From one spot, the start stays put, so every click after it measures from the same spot. That's handy for checking one tee against a few basket spots. Along a path adds a turn with each click instead, to measure the way a player walks or a disc flies (Shift+click does the same from one spot). Clear starts over. Esc, or picking another tool, ends it.",
     words: "measure distance ruler length elevation climb",
     path: "Design › Measure (D)"
   },
@@ -410,7 +415,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "camera", section: "view", title: "Flyover settings",
-    body: "From a tee, Settings sets how the flyover flies: Camera height, Speed, Lens, Camera starts behind the tee, Camera off to the side and Camera looks ahead. It also picks the ground (painted map or photo) and what shows while it flies, like the big title at the start, the hole number in the corner, the distance and the course's name. The same settings are in a hole's Flyover section, under Camera and what's on screen. A hole with keyframes takes its height and where it starts from them, so those settings don't show for it.\n\nThese settings are for picks All holes or just this hole. From a tee they start on All holes, unless the hole has settings of its own. Use the all-holes settings drops a hole's own, so it flies like the rest again. Apply to holes… copies them to others, and Reset puts the all-holes settings back.",
+    body: "From a tee, Settings sets how the flyover flies: Camera height, Speed, Lens, Camera starts behind the tee, Camera off to the side and Camera looks ahead. It also picks the ground (painted map or photo) and what shows while it flies, like the big title at the start, the hole number in the corner, the distance and the course's name. What's on screen applies from the tee as well, so turning off the throw line or OB hides it there too. The same settings are in a hole's Flyover section, under Camera and what's on screen. A hole with keyframes takes its height and where it starts from them, so those settings don't show for it.\n\nThese settings are for picks All holes or just this hole. From a tee they start on All holes, unless the hole has settings of its own. Use the all-holes settings drops a hole's own, so it flies like the rest again. Apply to holes… copies them to others, and Reset puts the all-holes settings back.",
     words: "camera flyover height speed field of view behind the tee side looks ahead on screen ground painted photo lens zoom wide",
     path: "Design › a hole › View from the tee › Settings"
   },
@@ -532,7 +537,7 @@ export const TOPICS: Topic[] = [
     body: "Hole page is one page per hole: Letter, A4, a 4 × 6 in yardage book card, or a square picture for social media. Pick the size above the page. Start from picks the look: Everything, or Just the hole (its picture across the page and its number, the rest a click away in Layers). Picking another look starts every page over.\n\nChanges go to every hole or, with Hole N only over the page, to that hole's page alone. Apply to holes… gives one hole's own page to others, and Put holes back to the every-hole page… undoes that for the holes you pick. Scorecard is the course's card for the layout you're on.\n\nBoth use the General tab's colors and lettering.",
     words: "hole page yardage book card scorecard size square social",
     path: "Map › Hole page, Scorecard",
-    where: { step: "map", tab: "page", find: "map-designer" }
+    where: { step: "map", tab: "page", find: "page-settings" }
   },
 
   // ------------------------------------------------------------------ Export
@@ -587,14 +592,14 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "public-links", section: "share", title: "Public links",
-    body: "A public link is a course page anyone with the link can see. You pick what it shows (the map, 3D, flyovers, signs, the scorecard, the numbers, downloads), and you can give it its own name, a password and an end date.\n\nYou can turn it off, or give it a new address, any time. The old address stops working.",
+    body: "A public link is a course page anyone with the link can see. You pick what it shows (the map, 3D, flyovers, signs, the scorecard, the numbers, downloads), and you can give it its own name, a password and an end date. A named link is easy to guess, so add a password if only some people should see it.\n\nYou can turn it off, or give it a new address, any time. The old address stops working.",
     words: "public link share url password expire course page",
     path: "Share › Public link and site",
     where: { open: "share-public" }, server: true
   },
   {
     id: "public-site", section: "share", title: "The public site and how visitors see it",
-    body: "The course page shows the version you last published, so click Update site after you change things. This is also where you set how the map and 3D look to visitors: painted or the satellite photo, contour lines and hill shading.\n\nVisitors get your whole course map first, as big as their screen allows, with everything else beside it on a computer, or under it on a phone, where the map stays pinned at the top. Picking a hole in the list or tapping it on the map puts a pool of warm light on it, and the rest of the map stays just as it is. Its row opens with its numbers, its tee sign and Fly over it. Go in close zooms to the hole and All of it zooms back out. Scrolling or pinching zooms anywhere, and the arrow keys go hole to hole.",
+    body: "The course page shows the version you last published, so click Update site after you change things. What viewers see, in the share box, sets how the map and 3D look to visitors and to people who can only view: painted or the satellite photo, contour lines and hill shading. Click Update site after you change it.\n\nVisitors get your whole course map first, as big as their screen allows, with everything else beside it on a computer, or under it on a phone, where the map stays pinned at the top. Picking a hole in the list or tapping it on the map puts a pool of warm light on it, and the rest of the map stays just as it is. Its row opens with its numbers, its tee sign and Fly over it. Go in close zooms to the hole and All of it zooms back out. Scrolling or pinching zooms anywhere, and the arrow keys go hole to hole.",
     words: "public site update publish visitors painted photo look viewers course page map hole light go in close",
     path: "Share › Public link and site › Public site",
     where: { open: "share-public", find: "public-site-settings" }, server: true
@@ -607,7 +612,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "parks", section: "share", title: "Parks and nearby courses",
-    body: "Name the park a course is in, and other courses there show up on the map, with any close calls between their holes. The ground (and the measured trees) can be shared between them, so you only measure it once.",
+    body: "Name the park a course is in, and other courses there show up on the map, with any close calls between their holes. The ground (and the measured trees) can be shared between them, so you only measure it once. Sharing the ground leaves each course's holes, OB and drawings as they are, and a tree cut down on one course stays on the others.",
     words: "park nearby courses other courses share ground",
     path: "Site › Park", server: true
   },
@@ -620,12 +625,12 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "gestures", section: "phone", title: "Touch gestures",
-    body: "One finger pans the map (or drags whatever you've picked). Pinch to zoom, twist two fingers to turn the map, and slide two fingers up or down to tilt into 3D. Tap picks things, and holding a finger on something opens its menu. With a path, woods or any shape picked, tap one of its corner points and a Delete point button comes up beside it. With a hole picked, tap a turn in its line for Remove this turn. The box button by the zoom buttons makes a drag draw a box around things; a bar says so, and Done turns it off.\n\nHold a finger on open ground for what you can start there: Add a tee here or Add a pin here (for the hole you're on), Bend the hole here, New hole, tee here, or Measure from here.",
+    body: "One finger pans the map (or drags whatever you've picked). Pinch to zoom, twist two fingers to turn the map, and slide two fingers up or down to tilt into 3D. Tap picks things, and holding a finger on something opens its menu. With a path, woods or any shape picked, tap one of its corner points and a Delete point button comes up beside it. With a hole picked, tap a turn in its line for Remove this turn, a fairway width square for Remove point, or the end of a walk for Reset walk. A stream's width square gives Reset width. Tap a flyover keyframe to pick it, tap it twice to look through it, and tap a + between two to add one. On a big shape, like woods, a pond or a road, the corner points thin out when you're zoomed out. Zoom in to see them all. The box button by the zoom buttons makes a drag draw a box around things; a bar says so, and Done turns it off.\n\nHold a finger on open ground for what you can start there: Add a tee here or Add a pin here (for the hole you're on), Bend the hole here, New hole, tee here, or Measure from here.",
     words: "gestures pinch tap hold long press tilt turn twist swipe menu here add a tee here add a pin here bend the hole here measure from here"
   },
   {
-    id: "hole-strip", section: "phone", title: "Changing a hole on a phone",
-    body: "Tap a hole, a tree, a tee or any other thing, and the panel drops down to a short strip, so the map stays in view above it. Pinch a picked tree, tee or shape with two fingers to size it, and twist to turn it. The strip has Par, Fairway, Tees, Pins, OB and Foliage, each showing what it's set to. Tap one to change it right there.\n\nFor the fairway's width, drag the dial sideways and the map follows as you go. Everything else about the hole is further up, so drag the panel up. The arrows by the hole's name go to the next and previous holes.",
+    id: "hole-strip", section: "phone", title: "Changing things on a phone",
+    body: "Tap a hole, a tree, a tee or any other thing, and the panel drops down to a short strip, so the map stays in view above it. Pinch a picked tree or tee with two fingers to size it, and twist to turn it. A shape that turns (an OB area, a landing zone, anything built) does the same while it's small on screen. On woods, water, grass, roads, paths and streams two fingers move the map. The strip has Par, Fairway, Tees, Pins, OB and Foliage, each showing what it's set to. Tap one to change it right there.\n\nFor the fairway's width, drag the dial sideways and the map follows as you go. Everything else about the hole is further up, so drag the panel up. The arrows by the hole's name go to the next and previous holes.\n\nA tree gets Height, Spread, Kind and Lean, a tee gets Color, Facing and its pad's size, and a shape gets its kind, width and OB.",
     words: "phone hole strip dial fairway width par tees pins ob foliage edit mobile tree size height pinch twist move here"
   }
 ];

@@ -1,5 +1,5 @@
 // A hole's elevation profile from tee to basket (heights stretched so small changes show), its
-// tee's dot in the color of the tee it's played from.
+// tee's dot in the color of the tee it's played from, its basket's in the course's basket color.
 import { profileAlong } from "../lib/terrainGrid";
 import { fmtDist, toUnits } from "../lib/units";
 import type { CourseDoc, P } from "../types";
@@ -42,7 +42,7 @@ export function ElevationProfile({ doc, line, height = 90, teeColor = "#2563eb" 
       <path d={fill} fill="url(#prof-fill)" />
       <path d={path} fill="none" stroke="#bef264" strokeWidth="2" />
       <circle cx={X(0)} cy={Y(prof[0].h)} r="4" fill={teeColor} stroke="#111" strokeWidth="1.5" />
-      <circle cx={X(total)} cy={Y(prof[prof.length - 1].h)} r="4" fill="#f2c94c" stroke="#111" strokeWidth="1.5" />
+      <circle cx={X(total)} cy={Y(prof[prof.length - 1].h)} r="4" fill={doc.style.basket || "#f2c94c"} stroke="#111" strokeWidth="1.5" />
       <text x={pad.l} y={H - 4} fontSize="9" fill="#a1a1aa">Tee</text>
       <text x={W - pad.r} y={H - 4} fontSize="9" fill="#a1a1aa" textAnchor="end">Basket · {fmtDist(total, u)}</text>
     </svg>

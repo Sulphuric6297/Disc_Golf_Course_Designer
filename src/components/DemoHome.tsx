@@ -1,27 +1,28 @@
 // The public demo's first page, as a HyzerLab server's Courses page is: the courses kept in this
-// browser to open with one click (the example course first, for anyone new), New course and Open a
-// file, and beside them a walk around the example, Getting started, the help topics that matter
-// most and a tip. The editor loads behind it. The logo (or Courses in a phone's menu) comes back
-// here. (On a phone the walk comes first, above the courses.)
+// browser to open with one click (the example course first, for anyone new), Open a course file
+// and New course, and beside them a walk around the example, Getting started, the help topics that
+// matter most and a tip. The editor loads behind it. The logo (or Courses in a phone's menu) comes
+// back here, and Esc or ← goes back to the course. (On a phone the walk comes first.)
 //
 // The back door (#example-admin on the address): the open course made the example everyone gets,
 // cleaned of where it is, published to the demo's code with a GitHub key typed in then and there
 // (never kept), or saved as files.
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { create } from "zustand";
-import { ArrowLeft, BookOpen, Compass, Download, FolderOpen, Lightbulb, Loader2, Plus, RotateCcw, Search, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, BookOpen, Compass, Download, FolderOpen, Loader2, Plus, RotateCcw, Search, Trash2, Upload } from "lucide-react";
 import { TOPICS } from "../lib/guide";
 import { EXAMPLE_ID, EXAMPLE_PATHS, EXAMPLE_THUMB, asExample, startsBlank } from "../lib/example";
 import { fmtDist } from "../lib/units";
 import { SERVER } from "../auth/api";
-import { LEARN, MiniMap, PageToasts, ago, pickTip } from "../auth/Home";
+import { MiniMap, PageToasts, TipCard, ago, learnFor, mapRests, pickTip } from "../auth/Home";
 import { Logo } from "../auth/parts";
 import { getDoc, useCourse } from "../state/course";
-import { deleteRecent, download, exampleChanged, isEmpty, newCourse, openCourseFile, openExample, openRecent, recentCourses, restartExample, summaryOf, type KeptMeta } from "../state/files";
+import { cardThumb, deleteRecent, download, exampleChanged, isEmpty, newCourse, openCourseFile, openExample, openRecent, recentCourses, restartExample, summaryOf, type KeptMeta } from "../state/files";
 import { getView, onLiveView } from "../state/view";
 import { HelpGuide } from "./help/HelpGuide";
+import { HelpLink } from "./ui";
 import { StartCard, openGettingStarted, useStart } from "./GettingStarted";
-import { startTour } from "./Tour";
+import { startTour, walked } from "./Tour";
 import { useTouch } from "./useLayout";
 import { Woods } from "./Woods";
 import { DEMO_ADDS, REPO } from "./DemoNote";
@@ -32,7 +33,8 @@ export const goDemoHome = () => useDemoHome.setState({ open: true });
 const close = () => useDemoHome.setState({ open: false });
 
 /** A course kept here: its name and numbers on glass over its picture (the example: its photo;
- * the others: their holes' lines, as on a server's Courses page). */
+ * the others: their holes' lines over their photo, or the lines alone, as on a server's Courses
+ * page). */
 function Card({ name, sub, note, picture, badge, onOpen, onRemove, onRestart, busy, testid }: { name: string; sub: string; note?: string; picture?: ReactNode; badge?: string; onOpen: () => void; onRemove?: () => void; onRestart?: () => void; busy?: boolean; testid: string }) {
   return (
     <li className="group relative rounded-[22px] overflow-hidden ring-1 ring-white/10 hover:ring-white/25 shadow-[0_12px_30px_rgba(0,0,0,0.35)] transition" data-testid={testid}>
@@ -155,16 +157,30 @@ export function DemoHome() {
   const admin = typeof location !== "undefined" && location.hash === "#example-admin";
   const refresh = () => void recentCourses().then(setPlans);
   useEffect(() => { if (open) { setNotice(""); refresh(); } }, [open]);
-  // (the map behind rests while this is up)
-  useEffect(() => { getView()?.setPaused(open); }, [open]);
-  useEffect(() => onLiveView(v => v?.setPaused(useDemoHome.getState().open)), []);
-  // (the editor's own Esc and keys wait)
+  // (the map behind rests while this is up, and stays resting after when the step covers it)
+  useEffect(() => { getView()?.setPaused(mapRests(open)); }, [open]);
+  useEffect(() => onLiveView(v => v?.setPaused(mapRests(useDemoHome.getState().open))), []);
+  // (the editor's own keys wait; Esc goes back to the course, as the back button does)
   useEffect(() => {
     if (!open || help) return;
-    const onKey = (e: KeyboardEvent) => { if (!(e.target as HTMLElement)?.matches?.("input,textarea")) e.stopImmediatePropagation(); };
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.matches?.("input,textarea")) return;
+      e.stopImmediatePropagation();
+      if (e.key === "Escape") close();
+    };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [open, help]);
+  // (the open course's photo, small, for its card; the others keep theirs from when they were put away)
+  const [nowThumb, setNowThumb] = useState<string | undefined>();
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    void cardThumb(doc).then(t => { if (live) setNowThumb(t); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, doc.background]);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   /** Opens something, then this page closes (not when it didn't open: `run` gives false, or
    * fails and `failed` says so here). */
@@ -185,18 +201,24 @@ export function DemoHome() {
   // (the open course, then the rest kept here, newest first; the example on its own card)
   const others = useMemo(() => {
     const list: (KeptMeta & { now?: boolean })[] = [];
-    if (!here(EXAMPLE_ID) && !isEmpty(doc)) list.push({ id: doc.id ?? "open", name: doc.name || "Untitled course", holes: doc.holes.length, updatedAt: Date.now(), summary: summaryOf(doc), now: true });
+    if (!here(EXAMPLE_ID) && !isEmpty(doc)) list.push({ id: doc.id ?? "open", name: doc.name || "Untitled course", holes: doc.holes.length, updatedAt: Date.now(), summary: summaryOf(doc), thumb: nowThumb, canvas: doc.canvas, now: true });
     for (const p of kept) if (p.id !== EXAMPLE_ID && p.id !== doc.id) list.push(p);
-    return t ? list.filter(c => c.name.toLowerCase().includes(t)) : list;
+    return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc, plans, q]);
+  }, [doc, plans, nowThumb]);
   if (!open) return null;
-  const learn = LEARN.map(id => TOPICS.find(t => t.id === id)).filter(Boolean) as typeof TOPICS;
+  const shown = t ? others.filter(c => c.name.toLowerCase().includes(t)) : others;
+  // (Search once there are enough to look through: the example and three more)
+  const searchable = others.length + 1 >= 4 || !!t;
+  // (one main button: the walk until it's been taken, then New course)
+  const walk = walked();
+  const learn = learnFor(touch).map(id => TOPICS.find(x => x.id === id)).filter(Boolean) as typeof TOPICS;
+  /** Getting started in a course of your own: the example open, a new one first. */
+  const openStart = () => void busy("start", async () => { if (getDoc().id === EXAMPLE_ID) await newCourse(); openGettingStarted(); });
   const tour = (
     <div className="glass rounded-[22px] p-4" data-testid="home-tour">
       <div className="flex items-center gap-2 text-[14px] font-bold text-zinc-50"><Compass size={17} className="text-orange-300" />A walk around the example</div>
-      <p className="text-[13px] text-zinc-400 mt-1.5 leading-snug">Ten quick stops around Thunder Hollow: the map, a hole, 3D, the view from a tee, the tools, Checks, the printed map and Export.</p>
-      <button className="mt-3 w-full rounded-full px-3 py-2 touch:py-3 text-[13px] font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950" onClick={() => void busy("tour", startTour, EXAMPLE_FAILED)} disabled={!!opening} data-testid="home-tour-start">{opening === "tour" ? "Opening…" : "Show me around"}</button>
+      <button className={`mt-3 w-full rounded-full px-3 py-2 touch:py-3 text-[13px] font-semibold ${walk ? "bg-white/[0.1] hover:bg-white/[0.16] text-zinc-50" : "bg-orange-500 hover:bg-orange-400 text-zinc-950"}`} onClick={() => void busy("tour", startTour, EXAMPLE_FAILED)} disabled={!!opening} data-testid="home-tour-start">{opening === "tour" ? "Opening…" : "Show me around"}</button>
     </div>
   );
 
@@ -219,20 +241,24 @@ export function DemoHome() {
         <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-6 lg:pr-[324px]">
           <div className="flex-1">
             <h1 className="text-3xl sm:text-[34px] font-bold tracking-[-0.025em] text-zinc-50">Courses</h1>
-            <p className="text-zinc-400 text-sm mt-1">Design a disc golf course, from the park to the printed tee signs. Everything you make is kept in this browser.</p>
+            <p className="text-zinc-400 text-sm mt-1 flex items-center gap-1.5">Kept in this browser <HelpLink topic="save-local" label="Kept in this browser" /></p>
           </div>
-          <label className="relative sm:w-56">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-            <input className="glass w-full rounded-full pl-9 pr-3 py-2 touch:py-3 text-sm touch:text-base text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-400/80" placeholder="Search" value={q} onChange={e => setQ(e.target.value)} aria-label="Search courses" />
-          </label>
-          <label className="inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 touch:py-3 text-sm font-semibold glass text-zinc-100 hover:bg-white/[0.1] cursor-pointer">
-            <FolderOpen size={16} /> Open a file
-            {/* (not a course file: said in a toast, and this page stays) */}
-            <input type="file" accept=".json,.dgcourse.json,application/json" className="hidden" aria-label="Open a course file" onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void busy("file", () => openCourseFile(f)); }} />
-          </label>
-          <button className="inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 touch:py-3 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950 shadow" onClick={() => void busy("new", newCourse)} disabled={!!opening} data-testid="demo-new-course">
-            {opening === "new" ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} New course
-          </button>
+          {searchable && (
+            <label className="relative sm:w-56">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input className="glass w-full rounded-full pl-9 pr-3 py-2 touch:py-3 text-sm touch:text-base text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-400/80" placeholder="Search" value={q} onChange={e => setQ(e.target.value)} aria-label="Search courses" />
+            </label>
+          )}
+          <div className="flex gap-2">
+            <button className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 touch:py-3 text-sm font-semibold glass text-zinc-100 hover:bg-white/[0.1] disabled:opacity-60" onClick={() => fileRef.current?.click()} disabled={!!opening} data-testid="demo-open-file">
+              {opening === "file" ? <Loader2 size={16} className="animate-spin" /> : <FolderOpen size={16} />} Open a course file
+            </button>
+            <button className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 touch:py-3 text-sm font-semibold ${walk ? "bg-orange-500 hover:bg-orange-400 text-zinc-950 shadow" : "glass text-zinc-100 hover:bg-white/[0.1]"}`} onClick={() => void busy("new", newCourse)} disabled={!!opening} data-testid="demo-new-course">
+              {opening === "new" ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} New course
+            </button>
+          </div>
+          {/* (not a course file: said in a toast, and this page stays) */}
+          <input ref={fileRef} type="file" accept=".json,.dgcourse.json,application/json" className="hidden" aria-label="Open a course file" onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void busy("file", () => openCourseFile(f)); }} />
         </div>
 
         {/* (a wide screen: the courses, and beside them the walk, then the rest; a narrow one: the
@@ -247,34 +273,34 @@ export function DemoHome() {
                   testid="example-card"
                   name={exampleName}
                   badge="Example"
-                  sub={exampleKept ? factsOf(exampleKept.holes, { par: exampleKept.summary?.par }) : "An 18-hole course to look around"}
-                  note={here(EXAMPLE_ID) ? (changed ? "your copy, open now" : "open now") : changed ? `your copy, changed ${ago(exampleKept!.updatedAt)}` : undefined}
+                  sub={exampleKept ? factsOf(exampleKept.holes, exampleKept.summary) : "An 18-hole course to look around"}
+                  note={here(EXAMPLE_ID) ? (changed ? "Your copy, open now" : "Open now") : changed ? `Your copy, changed ${ago(exampleKept!.updatedAt)}` : undefined}
                   picture={<img src={EXAMPLE_THUMB} alt="" className="w-full h-full object-cover" />}
                   busy={opening === EXAMPLE_ID}
                   onOpen={() => void busy(EXAMPLE_ID, openExample, EXAMPLE_FAILED)}
                   onRestart={changed ? () => void busy(EXAMPLE_ID, restartExample, EXAMPLE_FAILED) : undefined}
                 />
               )}
-              {others.map(c => (
+              {shown.map(c => (
                 <Card
                   key={c.id}
                   testid="course-card"
                   name={c.name}
                   sub={factsOf(c.holes, c.summary)}
-                  note={c.now ? "open now" : `updated ${ago(c.updatedAt)}`}
-                  picture={c.summary?.lines?.length ? <MiniMap c={{ holes: c.holes, summary: c.summary }} /> : undefined}
+                  note={c.now ? "Open now" : `Updated ${ago(c.updatedAt)}`}
+                  picture={c.thumb && c.canvas ? <MiniMap c={{ holes: c.holes, summary: c.summary ?? {} }} frame={c.canvas} photo={c.thumb} /> : c.summary?.lines?.length ? <MiniMap c={{ holes: c.holes, summary: c.summary }} /> : undefined}
                   busy={opening === c.id}
                   onOpen={() => void busy(c.id, async () => { if (!c.now) await openRecent(c.id); })}
                   onRemove={c.now ? undefined : () => void deleteRecent(c.id, refresh).then(refresh)}
                 />
               ))}
             </ul>
-            {!exampleShown && !others.length && <p className="text-sm text-zinc-500 mt-1" data-testid="no-match">No courses match.</p>}
+            {!exampleShown && !shown.length && <p className="text-sm text-zinc-500 mt-1" data-testid="no-match">No courses match.</p>}
           </div>
 
           <aside className="flex flex-col gap-4 lg:col-start-2 lg:row-start-2" data-testid="home-side">
             {admin && <ExampleAdmin />}
-            <StartCard onOpen={() => { openGettingStarted(); close(); }} disabled={!!opening} />
+            <StartCard onOpen={openStart} disabled={!!opening} />
             <div className="glass rounded-[22px] p-4" data-testid="home-learn">
               <div className="flex items-center gap-2 text-[14px] font-bold text-zinc-50"><BookOpen size={16} className="text-orange-300" />Learn the app</div>
               <ul className="mt-2 -mx-1.5">
@@ -283,10 +309,7 @@ export function DemoHome() {
               <button className="mt-1 text-[12.5px] font-semibold text-orange-300 hover:text-orange-200" onClick={() => setHelp({})}>The whole help guide ›</button>
               {!start.onHome && <button className="block mt-1.5 text-[12.5px] font-semibold text-zinc-400 hover:text-zinc-200" onClick={() => start.set({ onHome: true })}>Show Getting started</button>}
             </div>
-            <div className="glass rounded-[22px] p-4" data-testid="home-tip">
-              <div className="flex items-center gap-2 text-[13px] font-bold text-zinc-50"><Lightbulb size={15} className="text-amber-300" />Tip</div>
-              <p className="text-[13px] text-zinc-300 mt-1.5 leading-snug">{tip}</p>
-            </div>
+            <TipCard tip={tip} onMore={topic => setHelp({ topic })} />
             <div className="glass rounded-[22px] p-4" data-testid="home-about">
               <div className="text-[13px] font-bold text-zinc-50">This is the public demo</div>
               <p className="text-[12.5px] text-zinc-400 mt-1.5 leading-snug">Hosting HyzerLab yourself adds:</p>
@@ -296,7 +319,7 @@ export function DemoHome() {
           </aside>
         </div>
       </main>
-      {help && <HelpGuide onClose={() => setHelp(false)} topic={help.topic} touch={touch} />}
+      {help && <HelpGuide onClose={() => setHelp(false)} topic={help.topic} touch={touch} onShow={close} />}
       <PageToasts />
     </div>
   );

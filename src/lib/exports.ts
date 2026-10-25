@@ -7,7 +7,7 @@ import { pathLength, pathTouchesPolygon, pointInPolygon, smoothPath } from "./ge
 import { bearing, compassPoint, geoRefOf, toLatLon, type GeoRef } from "./geoRef";
 import { holeStats, isOb } from "./holeStats";
 import { heightAt } from "./terrainGrid";
-import { fmtDist } from "./units";
+import { fmtDist, fmtElev } from "./units";
 
 const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
 const r1 = (v: number) => Math.round(v * 10) / 10;
@@ -112,8 +112,10 @@ export const toKML = (doc: CourseDoc) => {
   const ref = needRef(doc);
   const c = (p: P) => { const g = toLatLon(ref, p); return `${r6(g.lon)},${r6(g.lat)},0`; };
   const out: string[] = [];
+  // (a tee in its level's color; a throw line per layout, named for it when there are several)
+  const multi = doc.layouts.length > 1;
   const styles = [
-    `<Style id="tee"><IconStyle><color>ff2563eb</color><scale>0.9</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_square.png</href></Icon></IconStyle></Style>`,
+    ...(Object.keys(TEE_LEVELS) as (keyof typeof TEE_LEVELS)[]).map(l => `<Style id="tee-${l}"><IconStyle><color>${kmlColor(TEE_LEVELS[l].color)}</color><scale>0.9</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_square.png</href></Icon></IconStyle></Style>`),
     `<Style id="basket"><IconStyle><color>${kmlColor(doc.style.basket)}</color><Icon><href>http://maps.google.com/mapfiles/kml/shapes/target.png</href></Icon></IconStyle></Style>`,
     `<Style id="mando"><IconStyle><color>ff1673f9</color><Icon><href>http://maps.google.com/mapfiles/kml/shapes/arrow.png</href></Icon></IconStyle></Style>`,
     `<Style id="line"><LineStyle><color>ffffffff</color><width>3</width></LineStyle></Style>`,
@@ -124,10 +126,13 @@ export const toKML = (doc: CourseDoc) => {
   for (const hole of doc.holes) {
     const num = holeNumber(doc, hole.id);
     const s = holeStats(doc, hole);
-    out.push(`<Folder><name>Hole ${num}${hole.name ? ` · ${xml(hole.name)}` : ""}</name><description>${s.complete ? `Par ${s.par} · ${Math.round(s.length)} ft · ${s.elevationChange >= 0 ? "+" : ""}${r1(s.elevationChange)} ft` : "unfinished"}${hole.notes ? ` · ${xml(hole.notes)}` : ""}</description>`);
-    for (const t of holeTees(doc, hole.id)) out.push(`<Placemark><name>${num} ${TEE_LEVELS[t.level].label} tee</name><styleUrl>#tee</styleUrl><Point><coordinates>${c(t)}</coordinates></Point></Placemark>`);
+    out.push(`<Folder><name>Hole ${num}${hole.name ? ` · ${xml(hole.name)}` : ""}</name><description>${s.complete ? `Par ${s.par} · ${fmtDist(s.length, doc.units)} · ${fmtElev(s.elevationChange, doc.units)}` : "unfinished"}${hole.notes ? ` · ${xml(hole.notes)}` : ""}</description>`);
+    for (const t of holeTees(doc, hole.id)) out.push(`<Placemark><name>${num} ${TEE_LEVELS[t.level].label} tee</name><styleUrl>#tee-${t.level}</styleUrl><Point><coordinates>${c(t)}</coordinates></Point></Placemark>`);
     for (const b of holeBaskets(doc, hole.id)) out.push(`<Placemark><name>${num} basket ${b.position}</name><styleUrl>#basket</styleUrl><Point><coordinates>${c(b)}</coordinates></Point></Placemark>`);
-    if (s.complete) out.push(`<Placemark><name>Hole ${num} throw line</name><styleUrl>#line</styleUrl><LineString><tessellate>1</tessellate><coordinates>${smoothPath(s.line, 6).map(c).join(" ")}</coordinates></LineString></Placemark>`);
+    for (const layout of doc.layouts) {
+      const ls = holeStats(doc, hole, layout);
+      if (ls.complete) out.push(`<Placemark><name>Hole ${num}${multi ? ` · ${xml(layout.name)}` : ""} throw line</name><styleUrl>#line</styleUrl><LineString><tessellate>1</tessellate><coordinates>${smoothPath(ls.line, 6).map(c).join(" ")}</coordinates></LineString></Placemark>`);
+    }
     for (const i of doc.items) {
       if (i.type === "mando" && i.holeId === hole.id) out.push(`<Placemark><name>${num} mando (pass ${i.side})</name><styleUrl>#mando</styleUrl><Point><coordinates>${c(i)}</coordinates></Point></Placemark>`);
       if (i.type === "dropzone" && i.holeId === hole.id) out.push(`<Placemark><name>${num} drop zone</name><styleUrl>#mando</styleUrl><Point><coordinates>${c(i)}</coordinates></Point></Placemark>`);
@@ -136,8 +141,8 @@ export const toKML = (doc: CourseDoc) => {
   }
   out.push(`<Folder><name>OB, hazards and land</name>`);
   for (const i of doc.items) {
-    if (i.type === "area") out.push(`<Placemark><name>${xml(i.label ?? AREA_KINDS[i.kind].label)}</name><styleUrl>#${i.kind === "ob" ? "ob" : "area"}</styleUrl><Polygon><tessellate>1</tessellate><outerBoundaryIs><LinearRing><coordinates>${[...areaPath(i), areaPath(i)[0]].map(c).join(" ")}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`);
-    if (i.type === "line") out.push(`<Placemark><name>${xml(i.label ?? LINE_KINDS[i.kind].label)}</name><styleUrl>#${i.kind === "ob" ? "ob" : "line"}</styleUrl><LineString><tessellate>1</tessellate><coordinates>${linePath(i).map(c).join(" ")}</coordinates></LineString></Placemark>`);
+    if (i.type === "area") out.push(`<Placemark><name>${xml(i.label ?? AREA_KINDS[i.kind].label)}</name><styleUrl>#${isOb(i) ? "ob" : "area"}</styleUrl><Polygon><tessellate>1</tessellate><outerBoundaryIs><LinearRing><coordinates>${[...areaPath(i), areaPath(i)[0]].map(c).join(" ")}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`);
+    if (i.type === "line") out.push(`<Placemark><name>${xml(i.label ?? LINE_KINDS[i.kind].label)}</name><styleUrl>#${isOb(i) ? "ob" : "line"}</styleUrl><LineString><tessellate>1</tessellate><coordinates>${linePath(i).map(c).join(" ")}</coordinates></LineString></Placemark>`);
     if (i.type === "amenity") out.push(`<Placemark><name>${xml(i.label ?? AMENITY_KINDS[i.kind].label)}</name><Point><coordinates>${c(i)}</coordinates></Point></Placemark>`);
   }
   out.push(`</Folder></Document></kml>`);
@@ -163,10 +168,13 @@ export const toGPX = (doc: CourseDoc) => {
     if (i.type === "dropzone") out.push(wpt(i, `${i.holeId ? `H${holeNumber(doc, i.holeId)} ` : ""}drop zone`, "Navaid, Orange"));
     if (i.type === "amenity") out.push(wpt(i, i.label ?? AMENITY_KINDS[i.kind].label, "Waypoint"));
   }
+  // (a route per layout, named for it when there are several)
   for (const hole of doc.holes) {
-    const s = holeStats(doc, hole);
-    if (!s.complete) continue;
-    out.push(`<rte><name>Hole ${holeNumber(doc, hole.id)}</name>${s.line.map(p => { const g = toLatLon(ref, p); return `<rtept lat="${r6(g.lat)}" lon="${r6(g.lon)}"/>`; }).join("")}</rte>`);
+    for (const layout of doc.layouts) {
+      const s = holeStats(doc, hole, layout);
+      if (!s.complete) continue;
+      out.push(`<rte><name>Hole ${holeNumber(doc, hole.id)}${doc.layouts.length > 1 ? ` · ${xml(layout.name)}` : ""}</name>${s.line.map(p => { const g = toLatLon(ref, p); return `<rtept lat="${r6(g.lat)}" lon="${r6(g.lon)}"/>`; }).join("")}</rte>`);
+    }
   }
   out.push(`</gpx>`);
   return out.join("\n");

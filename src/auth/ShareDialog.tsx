@@ -131,7 +131,7 @@ function ViewerLook() {
   const set = (p: Partial<typeof pv>) => changeDoc(d => ({ style: { ...d.style, publicView: { ...d.style.publicView, ...p } } }));
   return (
     <div className="rounded-lg bg-white/[0.05] p-2.5 space-y-2" data-testid="public-view">
-      <div className="text-xs text-zinc-400">How the map and 3D look to visitors and to people who can only view (Update site after a change)</div>
+      <div className="text-xs text-zinc-400">What viewers see</div>
       <Segmented label="Viewers' ground" value={pv.ground ?? "painted"} onChange={v => set({ ground: v as "painted" | "photo" })} options={[{ value: "painted", label: "Painted" }, { value: "photo", label: "Satellite photo" }]} />
       <div className="flex flex-wrap gap-x-4 gap-y-1">
         <label className="flex items-center gap-2 text-sm text-zinc-200"><input type="checkbox" checked={!!pv.contours} onChange={e => set({ contours: e.target.checked })} /> Contour lines</label>
@@ -212,7 +212,7 @@ function PublicSection({ id }: { id: string }) {
             <label className="block">
               <span className="flex items-center gap-2"><span className="text-xs text-zinc-400 shrink-0">{location.host}/</span>
                 <input className={inputCls} placeholder="Its own name (optional), e.g. springfield-park" value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })} aria-label="Link name" data-testid="link-slug" /></span>
-              {form.slug && <span className="block text-[11px] text-zinc-500 mt-1">Easy to guess: add a password if only some should see it.</span>}
+              {form.slug && <span className="block text-[11px] text-zinc-500 mt-1">Easy to guess</span>}
             </label>
             <Ticks parts={LINK_PARTS} value={form.perms} onChange={perms => setForm({ ...form, perms })} />
             <div className="flex gap-2">

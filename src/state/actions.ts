@@ -4,11 +4,11 @@ import { woodsCrownWidth } from "../three/treeKit";
 import { CIRCLE_ONE_FT, PIN_POSITIONS, TEE_ORDER, generateId } from "../constants";
 import {
   createAmenity, createArea, createBasket, createDropZone, createLabel, createLine, createMando, createStructure, createTee, createTree,
-  insertHole, autoWalks, basketHoles, belongsTo, closestHole, holeBaskets, holeTees, itemHoleId, movedGroup, newHole, obPicked, obPieces, teeFor, wholeHoles, withoutStretch, holeLabel
+  insertHole, autoWalks, basketHoles, belongsTo, closestHole, holeBaskets, holeTees, itemHoleId, movedGroup, newHole, obPicked, obPieces, teeFor, wholeHoles, withoutStretch, holeLabel, fairwayShiftAt, fairwayWidthAt
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { courseStats, holeStats } from "../lib/holeStats";
-import type { AreaItem, BasketItem, CourseDoc, CourseItem, Hole, LineItem, P, PinPosition, TeeLevel, ToolMode, TreeItem } from "../types";
+import type { AreaItem, BasketItem, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PinPosition, TeeLevel, ToolMode, TreeItem } from "../types";
 import { changeDoc, editor, getDoc, removeHole, removeItems, updateItem, useEditor, useCourse } from "./course";
 import { toast } from "./toast";
 import { keepsTreesOut, treeFree } from "../lib/treeFree";
@@ -120,7 +120,7 @@ const lineAngleNear = (hole: Hole, p: P) => {
   return best;
 };
 
-/** A new hole from its tee and basket spots (added after the hole being worked on, or at the end). */
+/** A new hole from its tee and basket spots (added at the end; no other hole's number changes). */
 export const addHole = (tee: P, basket: P, level: TeeLevel = editor().teeLevel) => {
   const hole = newHole();
   const t = createTee(hole.id, tee, level);
@@ -131,8 +131,7 @@ export const addHole = (tee: P, basket: P, level: TeeLevel = editor().teeLevel) 
     .sort((x, y) => x.d - y.d)[0]?.b;
   const b = shared ? null : createBasket(hole.id, basket, "A");
   changeDoc(d => {
-    const at = d.holes.findIndex(h => h.id === editor().activeHoleId);
-    const holes = insertHole(d.holes, hole, at >= 0 && at < d.holes.length - 1 ? at + 1 : d.holes.length);
+    const holes = insertHole(d.holes, hole, d.holes.length);
     const items = shared ? d.items.map(i => (i.id === shared.id && i.type === "basket" ? { ...i, alsoHoles: [...(i.alsoHoles ?? []), hole.id] } : i)) : [...d.items];
     return { holes, items: [...items, t, ...(b ? [b] : [])] };
   });
@@ -144,8 +143,22 @@ export const addHole = (tee: P, basket: P, level: TeeLevel = editor().teeLevel) 
  * color it doesn't have yet. */
 export const startAnotherTee = (holeId: string) => {
   const taken = new Set(holeTees(getDoc(), holeId).map(t => t.level));
-  const level = TEE_ORDER.find(l => !taken.has(l)) ?? editor().teeLevel;
+  const level = TEE_ORDER.find(l => !taken.has(l));
+  if (!level) return void teesFull(holeId);
   useEditor.getState().set({ tool: "add-tee", teeLevel: level, activeHoleId: holeId, holeToBasket: null });
+};
+/** Whether a hole has a tee of every color, or pins A to D (no more to add). */
+export const teesFull = (holeId: string, quiet = false) => {
+  const taken = new Set(holeTees(getDoc(), holeId).map(t => t.level));
+  const full = TEE_ORDER.every(l => taken.has(l));
+  if (full && !quiet) toast(`Hole ${holeLabel(getDoc(), holeId)} has a tee of every color already.`, "info");
+  return full;
+};
+export const pinsFull = (holeId: string, quiet = false) => {
+  const taken = new Set(holeBaskets(getDoc(), holeId).map(b => b.position));
+  const full = PIN_POSITIONS.every(p => taken.has(p));
+  if (full && !quiet) toast(`Hole ${holeLabel(getDoc(), holeId)} has pins A to D already.`, "info");
+  return full;
 };
 /** A new hole that finishes at a hole's basket: the Tee tool places its tee, and it's made. */
 export const startHoleToBasket = (holeId: string) => {
@@ -154,7 +167,9 @@ export const startHoleToBasket = (holeId: string) => {
   useEditor.getState().set({ tool: "add-tee", holeToBasket: basket.id });
 };
 /** Another pin position for a hole: the Pin tool. */
-export const startAnotherPin = (holeId: string) => useEditor.getState().set({ tool: "add-basket", activeHoleId: holeId, holeToBasket: null });
+export const startAnotherPin = (holeId: string) => {
+  if (!pinsFull(holeId)) useEditor.getState().set({ tool: "add-basket", activeHoleId: holeId, holeToBasket: null });
+};
 
 /** A click with a placing tool. */
 export const placeAt = (mode: ToolMode, p: P) => {
@@ -179,6 +194,7 @@ export const placeAt = (mode: ToolMode, p: P) => {
       toast("Pick a hole first.", "info");
       return;
     }
+    if (teesFull(hole.id)) return;
     const taken = new Set(holeTees(getDoc(), hole.id).map(t => t.level));
     const level = taken.has(ed.teeLevel) ? TEE_ORDER.find(l => !taken.has(l)) ?? ed.teeLevel : ed.teeLevel;
     item = createTee(hole.id, p, level);
@@ -190,7 +206,7 @@ export const placeAt = (mode: ToolMode, p: P) => {
     const taken = new Set(holeBaskets(getDoc(), hole.id).map(b => b.position));
     const position = PIN_POSITIONS.find(x => !taken.has(x));
     if (!position) {
-      toast("This hole already has pins A to D.", "info");
+      pinsFull(hole.id);
       return;
     }
     item = createBasket(hole.id, p, position);
@@ -434,11 +450,13 @@ export const duplicateSelection = () => {
     // Another tee or pin for the same hole (a free color or letter)
     if (copy.type === "tee") {
       const taken = new Set(holeTees(doc, copy.holeId).map(t => t.level));
-      copy.level = TEE_ORDER.find(l => !taken.has(l)) ?? copy.level;
+      const free = TEE_ORDER.find(l => !taken.has(l));
+      if (!free) return void teesFull(copy.holeId);
+      copy.level = free;
     } else {
       const taken = new Set(holeBaskets(doc, copy.holeId).map(b => b.position));
       const free = PIN_POSITIONS.find(x => !taken.has(x));
-      if (!free) return;
+      if (!free) return void pinsFull(copy.holeId);
       copy.position = free;
     }
   }
@@ -446,16 +464,23 @@ export const duplicateSelection = () => {
   select(copy.id);
 };
 
-/** Arrow keys: move the selection by `step` feet. */
+/** Arrow presses this close together (ms) make one undo step. */
+const NUDGE_MS = 600;
+let nudgeEnd = 0;
+/** Arrow keys: move the selection by `step` feet (a run of presses, one undo step). */
 export const nudgeSelection = (dx: number, dy: number) => {
   const { selectedId, group } = editor();
   const doc = getDoc();
-  if (group.length) return moveGroup(doc, group, dx, dy);
-  const item = doc.items.find(i => i.id === selectedId);
-  if (!item || item.locked) return;
-  const patch: Partial<CourseItem> = { x: item.x + dx, y: item.y + dy };
-  if (item.type === "area" || item.type === "line" || item.type === "structure") (patch as { points: P[] }).points = item.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
-  changeDoc(d => ({ items: d.items.map(i => (i.id === item.id ? ({ ...i, ...patch } as CourseItem) : i)) }));
+  if (group.length) moveGroup(doc, group, dx, dy, false);
+  else {
+    const item = doc.items.find(i => i.id === selectedId);
+    if (!item || item.locked) return;
+    const patch: Partial<CourseItem> = { x: item.x + dx, y: item.y + dy };
+    if (item.type === "area" || item.type === "line" || item.type === "structure") (patch as { points: P[] }).points = item.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
+    changeDoc(d => ({ items: d.items.map(i => (i.id === item.id ? ({ ...i, ...patch } as CourseItem) : i)) }), false);
+  }
+  window.clearTimeout(nudgeEnd);
+  nudgeEnd = window.setTimeout(() => useCourse.getState().commit(), NUDGE_MS);
 };
 
 /** Swaps a hole's tee to another color (or another tee to its place). */
@@ -493,6 +518,19 @@ export const setObChoice = (id: string, v: ObChoice) => {
   updateItem(id, {
     ob: v === "edge" ? true : v === "no" ? (wetKind(item) ? false : undefined) : undefined,
     ...(line ? { obBeyond: undefined, obToward: undefined, ...(v === "edge" ? {} : { obStretches: undefined, obHoles: undefined }) } : v === "edge" ? {} : { obStretches: undefined })
+  } as Partial<CourseItem>);
+};
+
+/** A line made another kind: what only the old kind had goes with it (a 22 ft road made a path is
+ * a path's width; a creek's widths, a path's surface, a fence's look and height). One undo step. */
+export const setLineKind = (id: string, kind: LineKind) => {
+  const l = getDoc().items.find(i => i.id === id);
+  if (!l || l.type !== "line" || l.kind === kind) return;
+  updateItem(id, {
+    kind, width: undefined,
+    ...(kind === "stream" ? {} : { widths: undefined }),
+    ...(kind === "path" || kind === "walk" ? {} : { surface: undefined }),
+    ...(kind === "fence" ? {} : { fenceStyle: undefined, fenceHeight: undefined })
   } as Partial<CourseItem>);
 };
 
@@ -581,11 +619,14 @@ export const addHoleOb = (holeId: string, where: "left" | "right" | "long") => {
   } else {
     // (With y pointing down, the right of the direction of play is the direction turned +90°)
     const sign = where === "right" ? 1 : -1;
-    const off = hole.fairwayWidth / 2 + 12;
+    // (12 ft outside the fairway's edge on that side, as wide and as far off the line as it is there)
+    const width = fairwayWidthAt(hole), shift = fairwayShiftAt(hole);
     const along: P[] = [];
     for (let d = Math.min(25, len * 0.15); d <= len + 30; d += 12) {
       const at = d <= len ? pointAlong(path, d) : { point: { x: end.point.x + Math.cos(end.angle) * (d - len), y: end.point.y + Math.sin(end.angle) * (d - len) }, angle: end.angle };
-      along.push({ x: at.point.x - Math.sin(at.angle) * off * sign, y: at.point.y + Math.cos(at.angle) * off * sign });
+      const t = Math.min(1, d / len);
+      const off = shift(t) + sign * (width(t) / 2 + 12);
+      along.push({ x: at.point.x - Math.sin(at.angle) * off, y: at.point.y + Math.cos(at.angle) * off });
     }
     pts = simplify(along, 2.5);
   }

@@ -35,7 +35,7 @@ export const TEE_SURFACES: Record<TeeSurface, { label: string; color: string }> 
   rubber: { label: "Rubber mat", color: "#2b2b2e" },
   pavers: { label: "Pavers", color: "#b7a08a" },
   gravel: { label: "Gravel", color: "#a7a195" },
-  natural: { label: "Natural (grass/dirt)", color: "#8b7b5c" }
+  natural: { label: "Grass or dirt", color: "#8b7b5c" }
 };
 
 /** Typical tee pad: 5 ft wide, 12 ft long (PDGA: at least 4 x 10 ft; 6 x 13 ft at long tees). */
@@ -48,8 +48,13 @@ export const DEFAULT_FAIRWAY_FT = 30;
 
 export const PIN_POSITIONS: PinPosition[] = ["A", "B", "C", "D"];
 
+/** The compass's eight points, from north round to the east (a tree's lean, a tee's facing). */
+export const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+/** A bearing (degrees from north, clockwise) as its nearest compass point: "NE". */
+export const compassPoint = (deg: number) => COMPASS[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+
 /** Each kind of area: one short name (the same on the tool bar's chips, in its panel and in
- * Search), and a line on what it is (under the kinds in its panel). */
+ * Search), and a line on what it is (the tooltip on its tool bar chip). */
 export const AREA_KINDS: Record<AreaKind, { label: string; color: string; fill: number; help: string }> = {
   ob: { label: "OB area", color: "#ef4444", fill: 0.22, help: "A disc that lands in here is out of bounds, and that's a penalty throw." },
   hazard: { label: "Hazard", color: "#eab308", fill: 0.2, help: "A penalty area that isn't OB. The disc is played where it lies, plus a penalty throw. The PDGA marks hazards yellow." },
@@ -65,6 +70,10 @@ export const AREA_KINDS: Record<AreaKind, { label: string; color: string; fill: 
   sand: { label: "Sand or dirt", color: "#d9c48f", fill: 0.5, help: "Sand, dirt or bare ground. No grass or trees grow on it." }
 };
 
+/** The kinds of area offered in a shape's panel and a phone's strip, in this order (rules first,
+ * then water, trees and grass; a flat building is an old course's, offered only to one that is one). */
+export const AREA_ORDER: AreaKind[] = ["ob", "hazard", "casual", "nogo", "water", "woods", "rough", "fairway", "green", "sand", "parking"];
+
 /** What paths and walks can be made of (dirt takes the map's path color). */
 export const PATH_SURFACES: Record<PathSurface, { label: string; color: string }> = {
   dirt: { label: "Dirt", color: "#b08a5a" },
@@ -75,13 +84,14 @@ export const PATH_SURFACES: Record<PathSurface, { label: string; color: string }
 };
 
 /** Each kind of line: its name, its usual width (0: drawn as a thin line) and the widest it goes,
- * ft, and a line on what it is. */
-export const LINE_KINDS: Record<LineKind, { label: string; color: string; width: number; maxWidth: number; help: string }> = {
+ * ft, and a line on what it is; a fence its usual height and `heights` (the panel's slider and a
+ * phone's dial). */
+export const LINE_KINDS: Record<LineKind, { label: string; color: string; width: number; maxWidth: number; height?: number; heights?: [number, number]; help: string }> = {
   ob: { label: "OB line", color: "#ef4444", width: 0, maxWidth: 60, help: "The line is OB, and so is everything past it on the side away from play." },
   path: { label: "Walking path", color: "#c8a06a", width: 5, maxWidth: 60, help: "A trail people walk on, between holes or through the park." },
   walk: { label: "Next-tee route", color: "#ffffff", width: 0, maxWidth: 60, help: "The way players walk from a basket to the next tee. With no width, it's a dashed line on the map." },
   road: { label: "Road", color: "#6b7280", width: 22, maxWidth: 60, help: "A road or a drive. Checks warn about any hole that throws across one." },
-  fence: { label: "Fence", color: "#78716c", width: 0, maxWidth: 60, help: "A fence that stands up in 3D: posts and rails, boards or chain link." },
+  fence: { label: "Fence", color: "#78716c", width: 0, maxWidth: 60, height: 4, heights: [2, 12], help: "A fence that stands up in 3D: posts and rails, boards or chain link." },
   stream: { label: "Stream", color: "#2b8fd6", width: 6, maxWidth: 200, help: "A creek or a ditch. It counts as OB unless you set Not OB. Drag the squares on its banks to make it wider in places." }
 };
 
@@ -113,7 +123,7 @@ export const STRUCTURE_KINDS: Record<StructureKind, { label: string; shape: "lin
   bridge: { label: "Bridge", shape: "line", width: 6, widths: [1, 24], height: 1, heights: [0, 10], heightLabel: "Deck above the banks", color: "#9a7b55", help: "A footbridge with railings. The deck runs straight from one bank to the other." },
   boardwalk: { label: "Boardwalk", shape: "line", width: 5, widths: [1, 24], height: 1.5, heights: [0, 10], heightLabel: "Deck above the ground", color: "#b49a74", help: "A low deck on posts over wet or soft ground. It follows the ground." },
   stairs: { label: "Stairs", shape: "line", width: 4, widths: [1, 24], height: 0, heights: [0, 0], heightLabel: "", color: "#a39b8e", help: "Stone steps up a slope. The steps follow the ground." },
-  wall: { label: "Wall", shape: "line", width: 2, widths: [1, 6], height: 3, heights: [0, 12], heightLabel: "Wall height", color: "#8d877c", help: "A stone or retaining wall." },
+  wall: { label: "Wall", shape: "line", width: 2, widths: [1, 6], height: 3, heights: [1, 12], heightLabel: "Wall height", color: "#8d877c", help: "A stone or retaining wall." },
   building: { label: "Building", shape: "outline", width: 0, widths: [0, 0], height: 12, heights: [6, 40], heightLabel: "Wall height", roof: "gable", color: "#a8653f", help: "A clubhouse, restroom, barn or shed, with walls and a roof." },
   shelter: { label: "Shelter", shape: "outline", width: 0, widths: [0, 0], height: 9, heights: [6, 20], heightLabel: "Eaves height", roof: "hip", color: "#4f7356", help: "An open pavilion: posts and a roof, with picnic tables under it." },
   deck: { label: "Deck", shape: "outline", width: 0, widths: [0, 0], height: 2.5, heights: [0, 10], heightLabel: "Deck above the ground", color: "#b8916a", help: "A raised wooden platform, like a tee deck or a viewing deck." }

@@ -7,9 +7,15 @@ import { fmtDist } from "../lib/units";
 import type { Units } from "../types";
 
 
+/** The frame's color (the theme's fern green), drawing or not. */
+const FRAME = "#a2cf6a";
+/** The locate button's picture (a crosshair, as the app's own icons draw one). */
+const LOCATE_SVG = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="2" x2="5" y1="12" y2="12"/><line x1="19" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="5"/><line x1="12" x2="12" y1="19" y2="22"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/></svg>';
+
 // Interactive satellite map used to pick the site (from the Security Camera Planner).
 // Drag pans the map; draw a rectangle with the Draw tool or Shift+drag; then move/resize it with its handles.
 // A frame drawn (or sized) smaller than a site can be is left as it was, and `onTooSmall` says so.
+// Under the zoom buttons, one that goes to where you are (`onLocate`).
 export function SitePickerMap({
   imagery,
   view,
@@ -18,6 +24,7 @@ export function SitePickerMap({
   onDrawingChange,
   onSelect,
   onTooSmall,
+  onLocate,
   selectViewSignal,
   units = "ft"
 }: {
@@ -28,6 +35,7 @@ export function SitePickerMap({
   onDrawingChange: (drawing: boolean) => void;
   onSelect: (bounds: GeoBounds) => void;
   onTooSmall?: () => void;
+  onLocate?: () => void;
   selectViewSignal: number;
   /** The frame's size is said in these. */
   units?: Units;
@@ -40,10 +48,12 @@ export function SitePickerMap({
   const onSelectRef = useRef(onSelect);
   const onDrawingChangeRef = useRef(onDrawingChange);
   const onTooSmallRef = useRef(onTooSmall);
+  const onLocateRef = useRef(onLocate);
   const drawingRef = useRef(drawing);
   onSelectRef.current = onSelect;
   onDrawingChangeRef.current = onDrawingChange;
   onTooSmallRef.current = onTooSmall;
+  onLocateRef.current = onLocate;
   drawingRef.current = drawing;
 
   const boundsToObj = (b: L.LatLngBounds): GeoBounds => ({ north: b.getNorth(), south: b.getSouth(), west: b.getWest(), east: b.getEast() });
@@ -62,6 +72,23 @@ export function SitePickerMap({
       .setView([view.lat, view.lon], view.zoom);
     mapRef.current = map;
     const resize = window.setTimeout(() => map.invalidateSize(), 60);
+    // (where you are: a button under the zoom buttons, in their look)
+    const Locate = L.Control.extend({
+      onAdd() {
+        const box = L.DomUtil.create("div", "leaflet-bar leaflet-control");
+        const a = L.DomUtil.create("a", "site-locate", box) as HTMLAnchorElement;
+        a.href = "#";
+        a.setAttribute("role", "button");
+        a.setAttribute("aria-label", "Go to where I am");
+        a.title = "Go to where I am";
+        a.setAttribute("data-testid", "site-locate");
+        a.innerHTML = LOCATE_SVG;
+        L.DomEvent.disableClickPropagation(box);
+        L.DomEvent.on(a, "click", e => { L.DomEvent.preventDefault(e); onLocateRef.current?.(); });
+        return box;
+      }
+    });
+    if (onLocateRef.current) new Locate({ position: "topleft" }).addTo(map);
 
     // Rectangle drawing: Draw tool, or Shift+drag at any time. Pointer events so touch works too.
     const container = map.getContainer();
@@ -76,7 +103,7 @@ export function SitePickerMap({
       container.setPointerCapture?.(e.pointerId);
       start = map.mouseEventToLatLng(e as unknown as MouseEvent);
       startPx = { x: e.clientX, y: e.clientY };
-      preview = L.rectangle(L.latLngBounds(start, start), { color: "#f59e0b", weight: 2, fillOpacity: 0.12, interactive: false }).addTo(map);
+      preview = L.rectangle(L.latLngBounds(start, start), { color: FRAME, weight: 3, fillColor: FRAME, fillOpacity: 0.1, dashArray: "8 6", interactive: false }).addTo(map);
     };
     const onPointerMove = (e: PointerEvent) => {
       if (!start || !preview) return;
@@ -185,9 +212,9 @@ export function SitePickerMap({
     const latLngBounds = L.latLngBounds([selection.south, selection.west], [selection.north, selection.east]);
     if (!rectRef.current) {
       rectRef.current = L.rectangle(latLngBounds, {
-        color: "#10b981",
+        color: FRAME,
         weight: 3,
-        fillColor: "#10b981",
+        fillColor: FRAME,
         fillOpacity: 0.08,
         dashArray: "8 6",
         interactive: false
@@ -203,8 +230,10 @@ export function SitePickerMap({
     setLabel(selection);
 
     let live: GeoBounds = { ...selection };
-    const cornerIcon = L.divIcon({ className: "site-handle site-handle-corner", iconSize: [16, 16] });
-    const moveIcon = L.divIcon({ className: "site-handle site-handle-move", iconSize: [30, 30], html: "<span>✥</span>" });
+    // (a finger gets 44 px round each corner's square; the NE and SW corners resize the other way)
+    const touch = typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
+    const cornerIcon = (key: string) => L.divIcon({ className: `site-handle site-handle-corner site-handle-${key}`, iconSize: touch ? [44, 44] : [24, 24], html: "<span></span>" });
+    const moveIcon = L.divIcon({ className: "site-handle site-handle-move", iconSize: touch ? [40, 40] : [30, 30], html: "<span>✥</span>" });
     const corners: { key: "nw" | "ne" | "se" | "sw"; pos: () => L.LatLngExpression }[] = [
       { key: "nw", pos: () => [live.north, live.west] },
       { key: "ne", pos: () => [live.north, live.east] },
@@ -221,7 +250,7 @@ export function SitePickerMap({
       if (markers[4] !== except) markers[4].setLatLng(center());
     };
     corners.forEach(c => {
-      const marker = L.marker(c.pos(), { icon: cornerIcon, draggable: true, keyboard: false, zIndexOffset: 1000 }).addTo(map);
+      const marker = L.marker(c.pos(), { icon: cornerIcon(c.key), draggable: true, keyboard: false, zIndexOffset: 1000 }).addTo(map);
       marker.on("drag", () => {
         const p = marker.getLatLng();
         if (c.key.includes("n")) live.north = p.lat; else live.south = p.lat;

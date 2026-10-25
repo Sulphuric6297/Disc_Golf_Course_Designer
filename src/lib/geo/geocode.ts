@@ -9,7 +9,8 @@ export type PlaceSuggestion = { text: string; detail?: string; lat?: number; lon
 export const isValidLatLon = (lat: number, lon: number) =>
   Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
 
-// Coordinates or a map link (Google/Apple/OSM) typed or pasted into the search box.
+// Coordinates or a map link (Google/Apple/OSM) typed or pasted into the search box. No name
+// comes with them (label ""): the course isn't named after numbers.
 export const parseCoordinateInput = (text: string): SiteLocation | null => {
   const patterns = [
     /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/, // Google Maps pin
@@ -23,7 +24,7 @@ export const parseCoordinateInput = (text: string): SiteLocation | null => {
     if (match) {
       const lat = parseFloat(match[1]);
       const lon = parseFloat(match[2]);
-      if (isValidLatLon(lat, lon)) return { lat, lon, label: `${lat.toFixed(5)}, ${lon.toFixed(5)}` };
+      if (isValidLatLon(lat, lon)) return { lat, lon, label: "" };
     }
   }
   return null;
