@@ -397,6 +397,11 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   // (the painted treetops over the buildings, and their shade on the roofs: crowns overhang roofs
   // as they do from the air)
   if (treesOver) out.push(`</g><image href="${treesOver}" x="${n(at.x)}" y="${n(at.y)}" width="${n(at.w)}" height="${n(at.h)}" preserveAspectRatio="none"/><g transform="${g}">`);
+  // (and the buildings' outlines, faint and dashed, through the leaves: still there under them)
+  if (treesOver) {
+    const under = structures.filter(st => (st.kind === "building" || st.kind === "shelter") && st.points.length >= 3);
+    if (under.length) out.push(`<g fill="none" stroke="${structureInk(theme).casing}" stroke-opacity="0.55" stroke-width="${n(px(0.8))}" stroke-dasharray="${n(px(2.5))} ${n(px(2))}" stroke-linejoin="round">${under.map(st => `<polygon points="${pts(st.points)}"/>`).join("")}</g>`);
+  }
 
   // OB, hazards and no-go areas over the land: a soft band of color inside the edge, the edge
   // itself crisp on a white casing, and a tag saying what it is (when there is room)

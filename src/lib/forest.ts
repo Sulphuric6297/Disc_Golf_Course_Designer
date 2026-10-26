@@ -685,9 +685,36 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       }
     }
   };
+  /** A big crown as a big tree looks from above: many leaf clumps, each about a small tree's size
+   * and lit on its own, packed over a lower, shaded body (the valleys between them), the middle
+   * highest, the outline uneven; never one great dome. */
+  const bigCrown = (cx: number, cy: number, R: number, top: number, t: number) => {
+    const tr = seeded(Math.round(cx * 9.1 + cy * 3.7) ^ 0x68e31da4);
+    stamp(cx, cy, R * 0.86, top - R * 0.55, t);
+    const rc = crownR * 1.35, n = Math.min(90, Math.round(((R / rc) ** 2) * 1.7));
+    const placed: [number, number, number][] = [];
+    const bend = tr() * Math.PI * 2;
+    for (let tries = 0; tries < n * 12 && placed.length < n; tries++) {
+      const a = tr() * Math.PI * 2;
+      // (the outline uneven: further out on some sides)
+      const reach = R * (0.82 + 0.14 * Math.cos(a * 3 + bend) + 0.06 * Math.cos(a * 5 - bend));
+      const r = rc * (0.75 + tr() * 0.55);
+      const d = Math.sqrt(tr()) * Math.max(0, reach - r * 0.7);
+      const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
+      if (placed.some(([px, py, pr]) => (px - x) ** 2 + (py - y) ** 2 < ((pr + r) * 0.62) ** 2)) continue;
+      placed.push([x, y, r]);
+    }
+    // (lower ones first: those out at the edge; the higher ones in the middle over them)
+    placed.sort((p, q) => Math.hypot(q[0] - cx, q[1] - cy) - Math.hypot(p[0] - cx, p[1] - cy));
+    for (const [x, y, r] of placed) {
+      const d = Math.hypot(x - cx, y - cy);
+      stamp(x, y, r, top - (d / R) * R * 0.38 - tr() * r * 0.35, t);
+    }
+  };
   /** A bigger single tree: a few leafy clumps (each lit on its own), higher in the middle; `top`
    * its height (shadows), in pixels. */
   const clumpTree = (cx: number, cy: number, R: number, t: number, top = R * 1.3) => {
+    if (R > crownR * 2.2) { bigCrown(cx, cy, R, top, t); return; }
     const tr = seeded(Math.round(cx * 7 + cy * 13));
     const n = 3 + Math.round((R / crownR) * 2.5);
     const tall = top / (R * 1.3);
@@ -708,6 +735,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const vtrees: PaintTree[] = [];
   const natural = !vector && s.treeLook === "natural" && !s.mapLook;
   const leafy = (cx: number, cy: number, R: number, top: number, t: number, clusters = 0) => {
+    if (!clusters && R > crownR * 2.2) { bigCrown(cx, cy, R, top, t); return; }
     const tr = seeded(Math.round(cx * 7.3 + cy * 13.1) ^ 0x2c1b3c6d);
     const n = clusters || 5 + Math.round(tr() * 3 + Math.min(4, R / crownR));
     const turn = tr() * Math.PI * 2;
