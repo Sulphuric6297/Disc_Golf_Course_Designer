@@ -37,7 +37,9 @@ export const findNature = (photo: { pixels: DetectImage; nir?: Uint8Array; mpp: 
   const { pixels, nir, mpp } = photo;
   const w = pixels.width, h = pixels.height;
   const o = { metersPerPx: mpp, nir };
-  const water = waterRegions(pixels, o);
+  // (water sends back almost no near-infrared, less than red: shadows and blue roofs do)
+  const data = pixels.data;
+  const water = waterRegions(pixels, nir ? { ...o, exclude: (x, y) => { const i = y * w + x; return nir[i] > 70 || nir[i] > data[i * 4]; } } : o);
   if (opts.waterOnly) return { w, h, mask: null, woods: [], water, trees: [], shadow: null };
   const canopy = canopyMask(pixels, o);
   if (!canopy) return { w, h, mask: null, woods: [], water, trees: [], shadow: null };

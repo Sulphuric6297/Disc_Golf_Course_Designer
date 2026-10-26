@@ -659,8 +659,9 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     // The photo (the street map in its place when it can't be had)
     const photoJob = opts.imagery === "none" ? Promise.resolve(null) : soft("photo", async () => {
       progress.set("photo", { state: "coming", fraction: 0 });
-      // (its near-infrared band too, only when the photo's trees will be looked for: a second download)
-      const get = (source: MapImagerySource) => { const nir = wantsPhotoTrees && source === "satellite"; return cached("photo", `${source}|${nir ? "nir" : ""}|${here}`, report => fetchMapImagery(location, width, height, source, report, { signal, nir }), { signal, onProgress: f => progress.set("photo", { fraction: f * 0.95 }) }); };
+      // (its near-infrared band too, a second download: leaves and water are told apart by it, and a
+      // shadow or a blue roof isn't taken for a pond)
+      const get = (source: MapImagerySource) => { const nir = source === "satellite"; return cached("photo", `${source}|${nir ? "nir" : ""}|${here}`, report => fetchMapImagery(location, width, height, source, report, { signal, nir }), { signal, onProgress: f => progress.set("photo", { fraction: f * 0.95 }) }); };
       let got = get(opts.imagery as MapImagerySource);
       const map = await untilAborted(got.value, signal).catch(async err => {
         if (isAbort(err) || !satellite) throw err;
