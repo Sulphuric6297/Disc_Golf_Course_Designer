@@ -10,19 +10,20 @@ import { paintField, type FieldInk, type FieldPlan } from "../lib/fieldPlan";
 import { offsetPolygon, samplePath } from "../lib/structures";
 import { drapedPolygon } from "./drape";
 import { createFence } from "./structures";
+import { Forest, VARIANTS, type TreeSpot } from "./treeKit";
+import { foliageTint } from "./trees";
 
 type Ground = (x: number, y: number) => number;
 const V3 = THREE.Vector3;
 const UP = new V3(0, 1, 0);
 
 const shared = <T extends THREE.Material | THREE.BufferGeometry>(m: T) => { m.userData.shared = true; return m; };
-let solidMat: THREE.Material | null = null, netMat: THREE.Material | null = null, wireMat: THREE.Material | null = null, hedgeMat: THREE.Material | null = null;
+let solidMat: THREE.Material | null = null, netMat: THREE.Material | null = null, wireMat: THREE.Material | null = null;
 /** Painted metal, plastic and wood, colored per vertex. */
 const solid = () => (solidMat ??= shared(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.08 })));
 /** Nets: see-through mesh. */
 const netting = () => (netMat ??= shared(new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, roughness: 0.9 })));
 const wires = () => (wireMat ??= shared(new THREE.LineBasicMaterial({ color: "#1e1e1c" })));
-const leaves = () => (hedgeMat ??= shared(new THREE.MeshLambertMaterial({ vertexColors: true })));
 
 /** Parts in one color each, gathered for one merged mesh. */
 class Kit {
@@ -397,42 +398,35 @@ export const createPowerLine = (points: P[], groundAt: Ground, height = 30) => {
 let dotMaterial: THREE.Material | null = null;
 const dotMat = () => (dotMaterial ??= shared(new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })));
 
-/** A hedge: a continuous row of bushes along its line, `width` ft through and `height` ft tall,
- * their leaves in a few greens, darker low down. */
-export const createHedge = (points: P[], groundAt: Ground, width = 4, height = 5, seed = 1) => {
+/** A hedge: the woods' own bushes (the same tree engine), packed close along its line so they grow
+ * into one, `width` ft through and `height` ft tall, in a few greens like the woods'. The forest
+ * group comes back (its close and far versions follow the camera like the woods'). */
+export const createHedge = (points: P[], groundAt: Ground, width = 4, height = 5, seed = 1, color = "#3f6b35") => {
   const W = Math.max(1, width), H = Math.max(1, height);
-  const step = Math.max(1, W * 0.5);
-  const samples = samplePath(points, step);
+  // (a bush every half its width, a little either side of the line, so the row has no gaps)
+  const samples = samplePath(points, Math.max(0.8, W * 0.45));
   let s = seed >>> 0 || 1;
   const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-  const parts: THREE.BufferGeometry[] = [];
-  const greens = ["#3c6a2f", "#46783a", "#355f2b", "#4f7f3c"].map(c => new THREE.Color(c).convertSRGBToLinear());
-  for (const p of samples) {
-    const g = new THREE.IcosahedronGeometry(1, 1);
-    const pos = g.getAttribute("position") as THREE.BufferAttribute;
-    const base = greens[Math.floor(rnd() * greens.length)];
-    const col = new Float32Array(pos.count * 3);
-    const sx = (W / 2) * (0.85 + rnd() * 0.3), sy = (H / 2) * (0.92 + rnd() * 0.16), sz = (W / 2) * (0.85 + rnd() * 0.3);
-    for (let i = 0; i < pos.count; i++) {
-      let x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-      // (lumpy: each corner pushed in or out a little; flat underneath)
-      const j = 1 + (rnd() - 0.5) * 0.18;
-      x *= j; y *= j; z *= j;
-      if (y < -0.75) y = -0.75;
-      pos.setXYZ(i, p.x + x * sx, groundAt(p.x, p.y) + (y + 0.75) * sy * 1.12, p.y + z * sz);
-      const shade = 0.62 + 0.38 * Math.min(1, (y + 0.75) / 1.6);
-      col[i * 3] = base.r * shade; col[i * 3 + 1] = base.g * shade; col[i * 3 + 2] = base.b * shade;
-    }
-    g.deleteAttribute("uv");
-    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-    g.computeVertexNormals();
-    parts.push(g);
-  }
-  const geo = parts.length ? mergeGeometries(parts) : null;
-  parts.forEach(p => p.dispose());
-  const mesh = new THREE.Mesh(geo ?? new THREE.BufferGeometry(), leaves());
-  mesh.name = "hedge";
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
+  const spots: TreeSpot[] = samples.map((p, i) => {
+    const q = samples[Math.min(samples.length - 1, i + 1)], o = samples[Math.max(0, i - 1)];
+    const dx = q.x - o.x, dy = q.y - o.y, len = Math.hypot(dx, dy) || 1;
+    const side = (rnd() - 0.5) * W * 0.18;
+    const x = p.x - (dy / len) * side, y = p.y + (dx / len) * side;
+    return {
+      x, y,
+      ground: groundAt(x, y),
+      height: H * (0.92 + rnd() * 0.14),
+      width: W * (1.05 + rnd() * 0.2),
+      shape: "bush",
+      variant: Math.floor(rnd() * VARIANTS.bush),
+      tint: foliageTint(color, rnd),
+      turn: rnd() * Math.PI * 2,
+      lean: 0
+    };
+  });
+  const forest = new Forest(spots);
+  forest.group.name = "hedge";
+  forest.group.userData.forest = forest;
+  forest.group.userData.spots = spots;
+  return forest.group;
 };

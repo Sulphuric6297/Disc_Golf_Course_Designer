@@ -2033,7 +2033,11 @@ export class CourseView {
 
   /** Woods: the trees near the camera in full detail. */
   private updateForests(eye: THREE.Vector3) {
-    for (const o of this.itemsGroup.children) (o.userData.forest as Forest | undefined)?.update(eye);
+    for (const o of this.itemsGroup.children) {
+      (o.userData.forest as Forest | undefined)?.update(eye);
+      // (a hedge's bushes, inside its line's group)
+      for (const c of o.children) (c.userData.forest as Forest | undefined)?.update(eye);
+    }
   }
 
   /** How much grass to draw: as set, or (automatically) none without a graphics card. */
