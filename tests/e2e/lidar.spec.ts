@@ -4,7 +4,8 @@ import { createLazPerf } from "laz-perf";
 import { test, expect, addHole, blankCourse, importSite, course, editorState, screenOf, withLidar, SITE } from "./fixtures";
 import { createEmptyCourse, newHole } from "../../src/lib/course";
 import { getGeoBounds } from "../../src/lib/geo/core";
-import { emptyPoints, grownTree, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesOver, depthFor, type LazReader } from "../../src/lib/lidar";
+import { claim, flownOn, gather, gatherer, grownTree, leafOnAt, roofHeights, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesFor, tilesOver, depthFor, type LazReader, type TilePoints } from "../../src/lib/lidar";
+import { canopyStands } from "../../src/lib/canopy";
 import type { LidarTree } from "../../src/types";
 import { treeStands } from "../../src/lib/geo/detect";
 import { pointInPolygon } from "../../src/lib/geom";
@@ -14,36 +15,41 @@ const FT = 3.28084;
 // middle, height and crown radius (m), a conifer
 const TREES = [[30, 20, 18, 4.5, 0], [-40, -10, 25, 2.6, 1], [60, -70, 22, 5, 0], ...[-60, -40, -20, 0, 20].map(x => [x, -40, 16, 3.5, 0])];
 const W = 1200, H = 1000;
-/** The survey the app picks over the test site: the newest in the index. */
-const NEWEST = (() => {
-  const index = JSON.parse(readFileSync(new URL("../../public/lidar-index.json", import.meta.url), "utf8")) as { surveys: [string, number, number, number, number][] };
-  const over = index.surveys.filter(([, w, s, e, n]) => w <= SITE.lon && e >= SITE.lon && s <= SITE.lat && n >= SITE.lat).map(x => surveyYear(x[0])).sort((a, b) => b - a);
+/** The survey the app picks over a site: the newest in the index whose box reaches it (by the year
+ * the index has, or the one in its name). */
+const newestOver = (b: { north: number; south: number; west: number; east: number }) => {
+  const index = JSON.parse(readFileSync(new URL("../../public/lidar-index.json", import.meta.url), "utf8")) as { surveys: [string, number, number, number, number, number?][] };
+  const over = index.surveys.filter(([, w, s, e, n]) => w < b.east && e > b.west && s < b.north && n > b.south).map(x => x[5] ?? surveyYear(x[0])).sort((a, c) => c - a);
   return `USGS LiDAR ${over[0]}`;
-})();
+};
 const ref = { ...getGeoBounds({ lat: SITE.lat, lon: SITE.lon, label: "" }, W, H), width: W, height: H };
 const plan = (e: number, n: number) => ({ x: W / 2 + e * FT, y: H / 2 - n * FT });
 
-plain("trees and ground from a LiDAR tile: each tree where it stands, as tall and wide as it is, conifers told apart; the ground's slope (pure logic)", async () => {
+plain("trees and ground from a LiDAR tile: each tree where it stands, as tall and wide as it is (leafy: the survey keeps no date); the ground's slope (pure logic)", async () => {
   const lp = (await createLazPerf()) as unknown as LazReader;
-  const pts = emptyPoints();
-  readTile(lp, new Uint8Array(readFileSync(new URL("../fixtures/lidar/ept-data/0-0-0-0.laz", import.meta.url))), ref, siteBox(ref), pts);
-  plainExpect(pts.x.length).toBeGreaterThan(50_000);
-  plainExpect(new Set(pts.cls)).toEqual(new Set([2, 5]));
-  const m = measureSite(pts, W, H);
+  const pts = readTile(lp, new Uint8Array(readFileSync(new URL("../fixtures/lidar/ept-data/0-0-0-0.laz", import.meta.url))), ref, siteBox(ref));
+  plainExpect(pts.n).toBeGreaterThan(50_000);
+  const g = gatherer(W, H);
+  gather(g, pts);
+  plainExpect(g.classes.flatMap((n, c) => (n ? [c] : []))).toEqual([2, 5]);
+  const m = measureSite(g);
+  // (no telling when it flew: a conifer only from a very narrow, pointed crown, and the made-up
+  // one is a round-topped column)
+  plainExpect(m.leafOn).toBeNull();
   const trees = findTrees(m);
   plainExpect(trees).toHaveLength(TREES.length);
-  for (const [e, n, h, r, conifer] of TREES) {
+  for (const [e, n, h, r] of TREES) {
     const p = plan(e, n);
     const t = trees.reduce((a, b) => (Math.hypot(b[0] - p.x, b[1] - p.y) < Math.hypot(a[0] - p.x, a[1] - p.y) ? b : a));
     plainExpect(Math.hypot(t[0] - p.x, t[1] - p.y)).toBeLessThan(5);
     plainExpect(Math.abs(t[2] - h * FT)).toBeLessThan(2.5);
     plainExpect(Math.abs(t[3] - r * FT)).toBeLessThan(5);
-    plainExpect(t[4]).toBe(conifer);
+    plainExpect(t[4]).toBe(0);
   }
   // The ground: rising 2 ft in every 100 east, on the plan's grid (ft over its lowest point)
-  const g = groundOnGrid(m, W, H, 10);
-  plainExpect((g.heights["1000,500"] ?? 0) - (g.heights["200,500"] ?? 0)).toBeCloseTo(16, 0);
-  plainExpect(g.min).toBeGreaterThan(180 * FT - 30);
+  const gg = groundOnGrid(m, W, H, 10);
+  plainExpect((gg.heights["1000,500"] ?? 0) - (gg.heights["200,500"] ?? 0)).toBeCloseTo(16, 0);
+  plainExpect(gg.min).toBeGreaterThan(180 * FT - 30);
   // Which tiles to read, how deep, and a survey's year from its name
   plainExpect(depthFor({ bounds: [0, 0, 0, 69934, 69934, 69934], span: 128, dataType: "laszip" })).toBe(9);
   const asked: string[] = [];
@@ -53,6 +59,11 @@ plain("trees and ground from a LiDAR tile: each tree where it stands, as tall an
   });
   plainExpect(tiles).toEqual([{ key: "0-0-0-0", points: 10 }, { key: "1-0-0-0", points: 7 }]);
   plainExpect(asked).toEqual(["0-0-0-0", "1-0-0-0"]);
+  // (down only as deep as it takes for about half a meter between points: 3 a square meter by
+  // the tiles' own count, here at the second depth)
+  const deep = { bounds: [0, 0, 0, 400, 400, 400], span: 128, dataType: "laszip" };
+  const box: [number, number, number, number] = [0, 0, 100, 100];
+  plainExpect(tilesFor(deep, box, [{ key: "0-0-0-0", points: 1e5 }, { key: "1-0-0-0", points: 2e5 }, { key: "2-0-0-0", points: 9e4 }, { key: "3-0-0-0", points: 3e4 }]).map(t => t.key)).toEqual(["0-0-0-0", "1-0-0-0"]);
   plainExpect(surveyYear("USGS_LPC_IL_WestCentral_2017_LAS_2019")).toBe(2019);
   // (USGS's newer names carry a work code: A22 is 2022; none at all is the oldest)
   plainExpect(surveyYear("KY_Western_1_A22")).toBe(2022);
@@ -81,9 +92,9 @@ test("trees measured from the air on import: cut down on a fairway, a stump to b
   await importSite(page);
   const doc = await course(page);
   // (the newest survey over the site, read by its year or its work code: the made-up one is served for it)
-  expect(doc.lidar.source).toBe(NEWEST);
+  expect(doc.lidar.source).toBe(newestOver(doc.site.bounds));
   expect(doc.lidar.trees).toHaveLength(TREES.length);
-  expect(doc.site.elevationSource).toBe(NEWEST);
+  expect(doc.site.elevationSource).toBe(newestOver(doc.site.bounds));
   // (none guessed from the photo as well)
   expect(doc.items.filter((i: any) => i.type === "tree" || (i.type === "area" && i.kind === "woods"))).toHaveLength(0);
   const W2 = doc.canvas.width, H2 = doc.canvas.height;
@@ -158,7 +169,7 @@ test("an existing course measured from the air from the Site step (Undo takes it
   await page.getByTestId("lidar-info").getByTestId("measure-lidar").click();
   await expect.poll(async () => (await course(page)).lidar?.trees.length ?? 0, { timeout: 60_000 }).toBe(TREES.length);
   await expect(page.getByTestId("lidar-info")).toContainText(`${TREES.length} measured trees`);
-  await expect(page.getByTestId("lidar-info")).toContainText(NEWEST);
+  await expect(page.getByTestId("lidar-info")).toContainText(newestOver((await course(page)).site.bounds));
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).lidar).toBeUndefined();
 });
@@ -351,4 +362,136 @@ plain("two tops on one crown, close together with no dip between them, are one t
   }
   const trees = findTrees({ nx, ny, cell, canopy });
   plainExpect(trees).toHaveLength(2);
+});
+
+/** Made-up survey points (plan ft): x, y, z, class, how many returns the pulse had. */
+const pointsOf = (list: [number, number, number, number, number?][], times: number[] = []): TilePoints => {
+  const n = list.length, p: TilePoints = { n, x: new Float32Array(n), y: new Float32Array(n), z: new Float32Array(n), cls: new Uint8Array(n), returns: new Uint8Array(n), times };
+  list.forEach(([x, y, z, c, r = 1], k) => { p.x[k] = x; p.y[k] = y; p.z[k] = z; p.cls[k] = c; p.returns[k] = r; });
+  return p;
+};
+/** GPS time as the surveys keep it (adjusted standard: seconds since 1980-01-06, less a billion). */
+const gpsAt = (iso: string) => (Date.parse(iso) - Date.UTC(1980, 0, 6)) / 1000 - 1e9;
+
+plain("a survey that sorted only the ground: a roof is no tree (flat, each pulse back once), a tree is (its pulses go on through), nor one inside a building's outline; the ground's spike on a roof left out; the building's height (pure logic)", () => {
+  const W2 = 320, H2 = 200, list: [number, number, number, number, number?][] = [];
+  const onRoof = (x: number, y: number) => x >= 40 && x <= 100 && y >= 40 && y <= 90;
+  const onGable = (x: number, y: number) => x >= 130 && x <= 170 && y >= 120 && y <= 170;
+  for (let x = 0; x < W2; x += 1.5) for (let y = 0; y < H2; y += 1.5) {
+    if (onRoof(x, y)) list.push([x, y, 120, 1]);
+    // (a gable: walls 15 ft, its ridge 10 ft over them along the middle)
+    else if (onGable(x, y)) list.push([x, y, 115 + 10 * (1 - Math.abs(y - 145) / 25), 1]);
+    else list.push([x, y, 100, 2]);
+  }
+  // (a few roof points the survey took for ground: a spike 20 ft up)
+  for (let x = 60; x < 70; x += 1.5) for (let y = 60; y < 70; y += 1.5) list.push([x, y, 120.2, 2]);
+  // Trees: a crown 15 ft round, 50 ft up, each pulse back from its leaves and again from deeper in
+  const tree = (cx: number, cy: number) => {
+    for (let x = cx - 15; x <= cx + 15; x += 1) for (let y = cy - 15; y <= cy + 15; y += 1) {
+      const d = Math.hypot(x - cx, y - cy) / 15;
+      if (d > 1) continue;
+      list.push([x, y, 150 - 6 * d * d, 1, 2], [x + 0.3, y + 0.3, 130 - ((x * 7 + y * 3) % 12), 1, 2]);
+    }
+  };
+  tree(240, 100);
+  tree(280, 40);
+  const g = gatherer(W2, H2);
+  gather(g, pointsOf(list));
+  const dem = { values: new Float32Array(16).fill(100 / FT), samplesX: 4, samplesY: 4 };
+  const house = [{ x: 262, y: 22 }, { x: 298, y: 22 }, { x: 298, y: 58 }, { x: 262, y: 58 }];
+  for (const withDem of [true, false]) {
+    const m = measureSite(g, { dem: withDem ? dem : null, outlines: [house] });
+    plainExpect(m.sorted).toBe(false);
+    const trees = findTrees(m);
+    plainExpect(trees).toHaveLength(1);
+    plainExpect(Math.hypot(trees[0][0] - 240, trees[0][1] - 100)).toBeLessThan(4);
+    plainExpect(Math.abs(trees[0][2] - 50)).toBeLessThan(2);
+    plainExpect(Math.abs(trees[0][3] - 15)).toBeLessThan(4);
+    // The ground level under the roof, its spike left out
+    const gg = groundOnGrid(m, W2, H2, 10);
+    plainExpect(gg.max - gg.min).toBeLessThan(1);
+    // Heights: the flat roof 20 ft up, the gable's walls 15 ft and its ridge near 25
+    const flat = roofHeights(m, [{ x: 40, y: 40 }, { x: 100, y: 40 }, { x: 100, y: 90 }, { x: 40, y: 90 }])!;
+    plainExpect(flat.flat).toBe(true);
+    plainExpect(Math.abs(flat.eaves - 20)).toBeLessThan(1);
+    const gable = roofHeights(m, [{ x: 130, y: 120 }, { x: 170, y: 120 }, { x: 170, y: 170 }, { x: 130, y: 170 }])!;
+    plainExpect(gable.flat).toBe(false);
+    plainExpect(gable.eaves).toBeGreaterThan(14);
+    plainExpect(gable.eaves).toBeLessThan(19);
+    plainExpect(gable.ridge).toBeGreaterThan(22);
+    // (none where the survey shows only ground: built since it flew)
+    plainExpect(roofHeights(m, [{ x: 180, y: 20 }, { x: 220, y: 20 }, { x: 220, y: 60 }, { x: 180, y: 60 }])).toBeNull();
+  }
+});
+
+plain("two surveys each over part of the site make one: the newest where it flew, the older only for the rest (pure logic)", () => {
+  const g = gatherer(200, 100), first: [number, number, number, number][] = [], second: [number, number, number, number][] = [];
+  for (let x = 0; x < 200; x += 1.5) for (let y = 0; y < 100; y += 1.5) {
+    if (x < 120) first.push([x, y, 100, 2]);
+    second.push([x, y, 103, 2]);
+  }
+  gather(g, pointsOf(first), 1);
+  const c = claim(g, 1);
+  plainExpect(c.open).toBeGreaterThan(0.2);
+  plainExpect(c.box!.x0).toBeGreaterThanOrEqual(96);
+  gather(g, pointsOf(second), 2);
+  plainExpect(claim(g, 2).open).toBe(0);
+  const m = measureSite(g);
+  const at = (x: number, y: number) => m.ground[Math.floor(y / m.cell) * m.nx + Math.floor(x / m.cell)];
+  plainExpect(at(50, 50)).toBeCloseTo(100, 1);
+  plainExpect(at(180, 50)).toBeCloseTo(103, 1);
+});
+
+plain("when a survey flew, from its points' GPS times, and whether the trees were in leaf (pure logic)", () => {
+  plainExpect(flownOn(Array.from({ length: 20 }, (_, k) => gpsAt("2022-02-19T15:00:00Z") + k * 60))?.toISOString().slice(0, 10)).toBe("2022-02-19");
+  // (seconds of the GPS week, as older surveys keep it: no date)
+  plainExpect(flownOn(Array.from({ length: 20 }, (_, k) => 3600 * k))).toBeNull();
+  plainExpect(leafOnAt(new Date("2022-02-19"))).toBe(false);
+  plainExpect(leafOnAt(new Date("2022-07-01"))).toBe(true);
+  plainExpect(leafOnAt(new Date("2022-04-28"))).toBeNull();
+  plainExpect(leafOnAt(null)).toBeNull();
+});
+
+plain("conifers only where they show: pointed in a survey flown in leaf, solid in one flown bare, very narrow and pointed with no telling (pure logic)", () => {
+  const nx = 60, ny = 30, cell = 2, n = nx * ny;
+  const canopy = new Float32Array(n), nUp = new Uint8Array(n), nGround = new Uint8Array(n);
+  // A cone 50 ft up, 12 ft across at its foot; a round crown as tall, 30 ft round
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const c = j * nx + i, x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+    const dc = Math.hypot(x - 29, y - 29), dd = Math.hypot(x - 85, y - 29);
+    if (dc <= 6) canopy[c] = 50 - 7 * dc;
+    else if (dd <= 15) canopy[c] = 50 - 6 * (dd / 15) ** 2;
+  }
+  const kinds = (leafOn: boolean | null, solidCone: boolean) => {
+    for (let c = 0; c < n; c++) {
+      const cone = Math.hypot(((c % nx) + 0.5) * cell - 29, (Math.floor(c / nx) + 0.5) * cell - 29) <= 8;
+      nUp[c] = cone && solidCone ? 4 : 1;
+      nGround[c] = cone && solidCone ? 0 : 3;
+    }
+    return findTrees({ nx, ny, cell, canopy, nUp, nGround, leafOn }).sort((a, b) => a[0] - b[0]).map(t => t[4]);
+  };
+  plainExpect(kinds(true, false)).toEqual([1, 0]);
+  plainExpect(kinds(null, false)).toEqual([1, 0]);
+  // (bare of leaves: the laser goes on through the round crown's twigs, and through the cone's
+  // too unless it keeps its needles)
+  plainExpect(kinds(false, true)).toEqual([1, 0]);
+  plainExpect(kinds(false, false)).toEqual([0, 0]);
+});
+
+plain("woods from the canopy: crowns close together one wood, a clearing 40 ft across kept open, a gap of 8 ft filled, a road through it parts it, a tree alone stays a tree (pure logic)", () => {
+  const nx = 200, ny = 100, cell = 2, canopy = new Float32Array(nx * ny);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+    const wood = x > 20 && x < 300 && y > 20 && y < 180 && Math.hypot(x - 100, y - 100) > 20 && !(Math.abs(x - 200) < 4 && Math.abs(y - 60) < 4);
+    if (wood || Math.hypot(x - 360, y - 100) < 12) canopy[j * nx + i] = 40;
+  }
+  const trees: [number, number, number, number, 0][] = [[50, 50, 40, 10, 0], [150, 150, 40, 10, 0], [60, 150, 40, 10, 0], [270, 60, 40, 10, 0], [280, 150, 40, 10, 0], [260, 100, 40, 10, 0], [360, 100, 40, 12, 0]];
+  const { stands, inStand } = canopyStands({ nx, ny, cell, canopy }, trees, { lines: [{ points: [{ x: 230, y: 0 }, { x: 230, y: 200 }], width: 22 }] });
+  plainExpect(stands).toHaveLength(2);
+  const west = stands.find(s => pointInPolygon({ x: 50, y: 50 }, s.outline))!;
+  plainExpect(west.trees).toBe(3);
+  plainExpect(pointInPolygon({ x: 100, y: 100 }, west.outline)).toBe(false);
+  plainExpect(pointInPolygon({ x: 200, y: 60 }, west.outline)).toBe(true);
+  plainExpect(pointInPolygon({ x: 230, y: 100 }, west.outline)).toBe(false);
+  plainExpect(inStand).toEqual([1, 1, 1, 1, 1, 1, 0]);
 });

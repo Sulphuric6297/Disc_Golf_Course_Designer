@@ -1,7 +1,8 @@
 // Numbers for each hole and the whole course: length, elevation change, how long it plays, par,
 // shape, what is in the way, and safety checks between holes.
 import { CIRCLE_ONE_FT, CLEAR_IN_FRONT_FT, FT_PER_M, MIN_PAD, TEE_LEVELS, TEE_ORDER } from "../constants";
-import type { AreaItem, CourseDoc, Hole, Layout, LineItem, P, StructureItem, TeeItem, TeeLevel, TreeItem } from "../types";
+import type { AreaItem, CourseDoc, CourseItem, Hole, Layout, LineItem, P, StructureItem, TeeItem, TeeLevel, TreeItem } from "../types";
+import { fieldKindOf, fieldWord } from "./fields";
 import { activeLayout, areaPath, basketFor, belongsTo, fairwayOutline, holeLabel, holeNumber, holeTees, linePath, obFor, obPieces, teeAim, teeFor, throwLine } from "./course";
 import { boundsGap, boundsOf, centroid, densify, dist, distanceToPath, lengthInside, pathLength, pathTouchesPolygon, pointBoundsGap, segmentsIntersect, smoothPath, turnAngles } from "./geom";
 import { heightAt, profileAlong } from "./terrainGrid";
@@ -93,6 +94,10 @@ const areasOf = (doc: Pick<CourseDoc, "items">, kinds: string[]) => (doc.items.f
 /** Whether landing in or beyond it is out of bounds: OB shapes; water and streams unless marked
  * otherwise; anything else marked OB (a road, a fence line). */
 export const isOb = (i: AreaItem | LineItem) => i.kind === "ob" || i.ob === true || ((i.kind === "water" || i.kind === "stream") && i.ob !== false);
+
+/** Whether players have to stay out of it: an Out of play area, or a field, court or play area set
+ * Out of play (a playground, a pool...). */
+export const isOutOfPlay = (i: CourseItem): i is AreaItem => i.type === "area" && (i.kind === "nogo" || (i.kind === "field" && !!i.outOfPlay));
 
 export const holeStats = (doc: CourseDoc, hole: Hole, layout: Layout | undefined = activeLayout(doc)): HoleStats => {
   const tee = teeFor(doc, hole.id, layout?.tee);
@@ -336,12 +341,19 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
     const pts = linePath(l);
     return { l, pts, box: boundsOf(pts) };
   });
-  // (out of play, a parking lot, a building: drawn as an area, or built with Build; not a deck,
-  // which a tee can stand on)
+  // (out of play (a field set so: by its own name), a parking lot, a building: drawn as an area, or
+  // built with Build; not a deck, which a tee can stand on)
   const keepOut: { id: string; points: P[]; what: string }[] = [
-    ...areasOf(doc, ["nogo", "parking", "building"]).map(a => ({ id: a.id, points: a.points, what: a.kind === "nogo" ? "an out-of-play area" : a.kind === "parking" ? "a parking lot" : "a building" })),
+    ...(doc.items.filter(isOutOfPlay) as AreaItem[]).map(asDrawn).map(a => ({ id: a.id, points: a.points, what: a.kind === "field" ? `a ${fieldWord(fieldKindOf(a))}` : "an out-of-play area" })),
+    ...areasOf(doc, ["parking", "building"]).map(a => ({ id: a.id, points: a.points, what: a.kind === "parking" ? "a parking lot" : "a building" })),
     ...(doc.items.filter(i => i.type === "structure" && (i.kind === "building" || i.kind === "shelter")) as StructureItem[]).filter(s => s.points.length >= 3).map(s => ({ id: s.id, points: s.points, what: s.kind === "shelter" ? "a shelter" : "a building" }))
   ];
+  // (fields, courts and play areas in play: played over, with people on them; power lines overhead)
+  const fieldsInPlay = areasOf(doc, ["field"]).filter(f => !f.outOfPlay);
+  const powerLines = (doc.items.filter(it => it.type === "line" && (it as LineItem).kind === "power") as LineItem[]).map(l => {
+    const pts = linePath(l);
+    return { l, pts, box: boundsOf(pts) };
+  });
   for (let i = 0; i < done.length; i++) {
     const a = done[i];
     const la = smooth.get(a.holeId)!;
@@ -389,6 +401,13 @@ export const safetyIssues = (doc: CourseDoc, stats: HoleStats[] = doc.holes.map(
     }
     for (const ar of keepOut) {
       if (pathTouchesPolygon(la, ar.points)) issues.push({ id: `over:${a.holeId}:${ar.id}`, level: "danger", text: `${n(a)} throws over ${ar.what}.`, holes: [a.holeId], at: centroid(ar.points) });
+    }
+    for (const f of fieldsInPlay) {
+      if (pathTouchesPolygon(la, f.points)) issues.push({ id: `across:${a.holeId}:${f.id}`, level: "warning", text: `${n(a)} throws across a ${fieldWord(fieldKindOf(f))}.`, holes: [a.holeId], at: centroid(f.points) });
+    }
+    for (const { l, pts, box } of powerLines) {
+      const x3 = boundsGap(boxA, box) > 0 ? null : crossing(la, pts);
+      if (x3) issues.push({ id: `under:${a.holeId}:${l.id}`, level: "warning", text: `${n(a)} throws under a power line.`, holes: [a.holeId], at: x3 });
     }
     // Off the site
     const outside = la.find(p => p.x < 0 || p.y < 0 || p.x > doc.canvas.width || p.y > doc.canvas.height);

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Image as ImageIcon, Loader2, Map as MapIcon, MapPinned, Mountain, Route, Search, TreeDeciduous, Trees, X } from "lucide-react";
 import { SitePickerMap } from "./SitePickerMap";
 import { fetchPlaceSuggestions, resolveSiteLocation, type PlaceSuggestion } from "../lib/geo/geocode";
-import { SITE_MAX_WIDTH_FT, SITE_MIN_WIDTH_FT, getGeoBounds, selectionFromBounds, type GeoBounds } from "../lib/geo/core";
+import { SITE_MAX_WIDTH_FT, SITE_MIN_WIDTH_FT, getGeoBounds, isAbort, selectionFromBounds, type GeoBounds } from "../lib/geo/core";
 import type { MapImagerySource } from "../lib/geo/imagery";
 import { importSite, type ImportedSite } from "../lib/importSite";
 import { fmtArea, fmtDist } from "../lib/units";
@@ -28,13 +28,15 @@ const startFrom = () => {
 /** An import under way (whichever dialog started it). */
 let importing = false;
 
-export function SiteImportDialog({ onClose, onImported }: { onClose: () => void; onImported: (site: ImportedSite, opts: { trees: boolean; osm: boolean }) => void }) {
+export function SiteImportDialog({ onClose, onImported }: { onClose: () => void; onImported: (site: ImportedSite, opts: { trees: boolean; osm: boolean; course?: boolean }) => void }) {
   // (open again each time it mounts: React mounts it twice in development, and a flag only ever
   // set to closed left every import there unapplied, stuck short of the end)
   const open = useRef(true);
+  /** Stops the import under way (closed, or Stop). */
+  const stopper = useRef<AbortController | null>(null);
   useEffect(() => {
     open.current = true;
-    return () => { open.current = false; };
+    return () => { open.current = false; stopper.current?.abort(); };
   }, []);
   const [start] = useState(startFrom);
   // (a site in already: bringing it in again replaces what came last time)
@@ -51,7 +53,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   const [trees, setTrees] = useState(true);
   const [lidar, setLidar] = useState(true);
   const [osm, setOsm] = useState(true);
-  const [status, setStatus] = useState<{ state: "idle" | "searching" | "loading" | "error"; text: string; progress?: { step: number; of: number; fraction?: number } }>({ state: "idle", text: "" });
+  const [status, setStatus] = useState<{ state: "idle" | "searching" | "loading" | "error"; text: string; progress?: { fraction: number } }>({ state: "idle", text: "" });
   // (closing while a site comes in: asked first, in the dialog)
   const [stopping, setStopping] = useState(false);
   // How long the import has been going (a big site takes a while: it shows it is still working)
@@ -74,10 +76,14 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     window.clearTimeout(timer.current);
     const text = query.trim();
     if (text.length < 3 || text === picked.current) { setSuggestions([]); return; }
+    // (one ask a pause in the typing, near the frame when there is one; an older one still
+    // coming is let go of)
+    const stop = new AbortController();
+    const near = selection ? { lat: (selection.north + selection.south) / 2, lon: (selection.east + selection.west) / 2 } : { lat: view.lat, lon: view.lon };
     timer.current = window.setTimeout(() => {
-      fetchPlaceSuggestions(text, { lat: view.lat, lon: view.lon }).then(setSuggestions).catch(() => setSuggestions([]));
-    }, 250);
-    return () => window.clearTimeout(timer.current);
+      fetchPlaceSuggestions(text, near, { signal: stop.signal }).then(s => { if (!stop.signal.aborted) setSuggestions(s); }).catch(() => { if (!stop.signal.aborted) setSuggestions([]); });
+    }, 300);
+    return () => { window.clearTimeout(timer.current); stop.abort(); };
   }, [query]);
 
   const go = async (s?: PlaceSuggestion) => {
@@ -154,20 +160,34 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     if (importing) { setStatus({ state: "error", text: "The site from before is still coming in. Try again in a moment." }); return; }
     importing = true;
     running.current = true;
+    const stop = new AbortController();
+    stopper.current = stop;
     setStarted(Date.now());
     setStatus({ state: "loading", text: "Starting…" });
     try {
       // (the place's name only when one was picked: a frame drawn by hand has none)
-      const site = await importSite(selectionFromBounds(selection, label), { imagery, trees, osm, lidar, onStatus: (text, progress) => setStatus({ state: "loading", text, progress }) });
+      const site = await importSite(selectionFromBounds(selection, label), { imagery, trees, osm, lidar, signal: stop.signal, onProgress: p => {
+        // (for tests: how each source went)
+        (window as { __dgImportProgress?: unknown }).__dgImportProgress = p;
+        if (!stop.signal.aborted) setStatus({ state: "loading", text: p.text, progress: { fraction: p.fraction } });
+      } });
       // (closed meanwhile: left as it was)
-      if (open.current) onImported(site, { trees, osm });
+      if (open.current && !stop.signal.aborted) onImported(site, { trees, osm });
     } catch (err) {
+      // (stopped: nothing to say)
+      if (isAbort(err) || stop.signal.aborted) return;
       console.error(err);
       setStatus({ state: "error", text: err instanceof Error ? err.message : "Couldn't bring in the site." });
     } finally {
       importing = false;
       running.current = false;
+      if (stopper.current === stop) stopper.current = null;
     }
+  };
+  /** Stop: every download let go of, and the dialog closed. */
+  const stopImport = () => {
+    stopper.current?.abort();
+    onClose();
   };
 
   const sizeEl = dims && (
@@ -215,11 +235,11 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
       <div className={`text-sm flex items-start gap-2 ${status.state === "error" ? "text-red-300" : "text-zinc-300"}`}>
         {status.state === "loading" || status.state === "searching" ? <Loader2 size={15} className="animate-spin mt-0.5 shrink-0" /> : null}
         <span className="flex-1">{status.text}</span>
-        {status.state === "loading" && <span className="text-xs text-zinc-400 tabular-nums whitespace-nowrap" data-testid="import-elapsed">{p ? `Step ${p.step} of ${p.of} · ` : ""}{Math.floor(secs / 60)}:{String(secs % 60).padStart(2, "0")}</span>}
+        {status.state === "loading" && <span className="text-xs text-zinc-400 tabular-nums whitespace-nowrap" data-testid="import-elapsed">{Math.floor(secs / 60)}:{String(secs % 60).padStart(2, "0")}</span>}
       </div>
       {p && (
-        <div className="mt-1.5 h-1.5 rounded-full bg-white/[0.07] overflow-hidden" role="progressbar" aria-label="Import progress" aria-valuenow={Math.round((((p.step - 1) + (p.fraction ?? 0.5)) / p.of) * 100)}>
-          <div className="h-full bg-orange-500 transition-[width] duration-500" style={{ width: `${(((p.step - 1) + (p.fraction ?? 0.5)) / p.of) * 100}%` }} />
+        <div className="mt-1.5 h-1.5 rounded-full bg-white/[0.07] overflow-hidden" role="progressbar" aria-label="Import progress" aria-valuenow={Math.round(p.fraction * 100)}>
+          <div className="h-full bg-orange-500 transition-[width] duration-500" style={{ width: `${p.fraction * 100}%` }} />
         </div>
       )}
     </div>
@@ -236,7 +256,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
       <p className="text-[13px] text-zinc-300 mt-0.5">None of it is kept.</p>
       <div className="flex justify-end gap-2 mt-2.5">
         <button className="h-9 touch:h-11 px-3.5 rounded-full text-[13.5px] font-semibold text-zinc-200 hover:bg-white/[0.08]" onClick={() => setStopping(false)} data-testid="import-keep-going">Keep going</button>
-        <button className="h-9 touch:h-11 px-3.5 rounded-full text-[13.5px] font-semibold bg-red-500/90 hover:bg-red-500 text-white" onClick={onClose} data-testid="import-stop-yes">Stop</button>
+        <button className="h-9 touch:h-11 px-3.5 rounded-full text-[13.5px] font-semibold bg-red-500/90 hover:bg-red-500 text-white" onClick={stopImport} data-testid="import-stop-yes">Stop</button>
       </div>
     </div>
   );

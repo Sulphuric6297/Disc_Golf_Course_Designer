@@ -415,6 +415,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       else if (a.kind === "sand") { poly(SAND, a.points); poly(CLEAR, a.points); }
       else if (a.kind === "rough") { poly(TALL, a.points); poly(CLEAR, a.points); }
       else if (a.kind === "nogo") poly(CLEAR, a.points);
+      // (a field, court or play area: mown, no treetops over it; the map draws it on top)
+      else if (a.kind === "field") { poly(FAIR, a.points); poly(CLEAR, offsetPolygon(a.points, (crownR * 0.8) / k)); }
       else if (a.kind === "woods") poly(WOODS, a.points);
     } else if (i.type === "line") {
       const l = i as LineItem;
@@ -425,6 +427,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       } else if (l.kind === "path") {
         line(surfaceCh(l.surface), pts, lw);
         line(CLEAR, pts, lw + (crownR * 2.4) / k);
+      } else if (l.kind === "hedge") {
+        // (drawn on top by the map; no treetops in its row)
+        line(CLEAR, pts, (l.width ?? 4) + (crownR * 0.8) / k);
       } else if (l.kind === "stream") {
         const cw = widthAt ?? lw;
         wobblyLine(WATER, pts, cw, idSeed(l.id) + 1);

@@ -1,4 +1,4 @@
-import type { AreaKind, CourseDoc, LineKind, P, ToolMode, DrawShape, StructureKind, TreeKind } from "../types";
+import type { FieldKind, AreaKind, CourseDoc, LineKind, P, ToolMode, DrawShape, StructureKind, TreeKind } from "../types";
 import type { HoleStats, SafetyIssue } from "../lib/holeStats";
 
 export type { P };
@@ -45,6 +45,8 @@ export type ViewTool = {
   lineKind: LineKind;
   /** What the Build tool draws (along a line, or an outline). */
   structureKind?: StructureKind;
+  /** What the Park tool puts down with a click. */
+  fieldKind?: FieldKind;
   /** How areas and lines are drawn. */
   shape: DrawShape;
   /** Select: a drag on the map draws a box to pick things with (instead of moving the map). */

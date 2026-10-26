@@ -4,7 +4,9 @@
 // the tile file's directory and the tiles themselves are small formats, read here.
 //
 // Data © OpenStreetMap contributors, Overture Maps Foundation, Microsoft, Esri, Google (ODbL).
+import type { CourseItem, StructureItem } from "../../types";
 import type { GeoBounds } from "./core";
+import { roofHeights, type Measured } from "../lidar";
 
 export type TracedBuilding = {
   /** Its outline (the outer ring), lat/lon. */
@@ -208,7 +210,25 @@ const latOf = (y: number, z: number) => { const n = Math.PI - (2 * Math.PI * y) 
 
 /** The buildings over a site that weren't mapped by OpenStreetMap, traced from imagery, each its
  * outline (outer ring), height when known, who traced it and how sure. */
-export const tracedBuildings = async (bounds: GeoBounds): Promise<TracedBuilding[]> => {
+export const tracedBuildings = async (bounds: GeoBounds): Promise<TracedBuilding[]> => (await allBuildings(bounds)).filter(b => b.source !== "OpenStreetMap");
+
+// (the last few sites' lookups, shared: the import and the trees measured from the air ask at once)
+const lookups = new Map<string, Promise<TracedBuilding[]>>();
+/** Every building Overture has over a site: those traced from the air and OpenStreetMap's. Looked
+ * up once a site, however many ask. */
+export const allBuildings = (bounds: GeoBounds): Promise<TracedBuilding[]> => {
+  const key = [bounds.north, bounds.south, bounds.west, bounds.east].map(v => v.toFixed(6)).join(",");
+  let got = lookups.get(key);
+  if (!got) {
+    got = overtureBuildings(bounds);
+    got.catch(() => lookups.delete(key));
+    lookups.set(key, got);
+    if (lookups.size > 3) lookups.delete(lookups.keys().next().value!);
+  }
+  return got;
+};
+
+const overtureBuildings = async (bounds: GeoBounds): Promise<TracedBuilding[]> => {
   const release = ((await (await fetch(CATALOG)).json()) as { latest?: string }).latest;
   if (!release) throw new Error("no Overture release");
   const url = FILE(release);
@@ -241,7 +261,6 @@ export const tracedBuildings = async (bounds: GeoBounds): Promise<TracedBuilding
       const data = await inflate(await range(url, h.tileOffset + e.offset, h.tileOffset + e.offset + e.length - 1), h.tiles);
       for (const b of buildingsInTile(data)) {
         const source = String(b.props["@geometry_source"] ?? "");
-        if (source === "OpenStreetMap") continue;
         const id = String(b.props.id ?? "");
         if (id && seen.has(id)) continue;
         if (id) seen.add(id);
@@ -258,3 +277,19 @@ export const tracedBuildings = async (bounds: GeoBounds): Promise<TracedBuilding
   }
   return out;
 };
+
+/**
+ * The buildings that came in without a height (OpenStreetMap's and those traced from the air),
+ * given the one the survey measured over their roofs: the walls up to the eaves, and a flat roof
+ * where the roof is level. A height the map has is kept. A building the survey doesn't show (built
+ * since it flew) stays as it came. `sign` is called on each one changed (the import's `signed`).
+ */
+export const withMeasuredHeights = (items: CourseItem[], m: Measured, sign: (i: StructureItem) => StructureItem = i => i): CourseItem[] =>
+  items.map(i => {
+    if (i.type !== "structure" || i.kind !== "building" || i.height !== undefined || (i.importSource !== "osm" && i.importSource !== "traced")) return i;
+    const r = roofHeights(m, i.points);
+    if (!r) return i;
+    const out: StructureItem = { ...i, height: Math.round(r.eaves * 2) / 2 };
+    if (r.flat && !i.roof) out.roof = "flat";
+    return sign(out);
+  });

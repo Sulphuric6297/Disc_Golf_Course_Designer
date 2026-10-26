@@ -2,12 +2,14 @@
 import { holeBaskets, holeLabel, holeTees } from "../lib/course";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { create } from "zustand";
-import { Armchair, Brush, Mountain, Circle, CircleDot, Ellipsis, Fence, Footprints, House, MousePointer2, PenLine, RectangleHorizontal, Redo2, Route, Ruler, ShieldAlert, Signpost, Spline, Sprout, Square, Tally2, Target, TreeDeciduous, Trees, Type, Undo2, Waves, X } from "lucide-react";
+import { Armchair, Brush, Mountain, Circle, CircleDot, Ellipsis, Fence, Footprints, House, LandPlot, MousePointer2, MousePointerClick, PenLine, RectangleHorizontal, Redo2, Route, Ruler, ShieldAlert, Shrub, Signpost, Spline, Sprout, Square, Tally2, Target, TreeDeciduous, Trees, Type, Undo2, UtilityPole, Waves, X } from "lucide-react";
 import { amenitySymbol, structureLegend, symbolSvg } from "../lib/symbols";
-import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER } from "../constants";
+import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, FIELD_KINDS, LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, TEE_LEVELS, TEE_ORDER } from "../constants";
+import { FIELD_ORDER, fieldWord } from "../lib/fields";
+import { fieldIcon } from "./fieldIcons";
 import { getDoc, useCourse, useEditor } from "../state/course";
 import { getView } from "../state/view";
-import type { AmenityKind, AreaKind, CourseDoc, DrawShape, LineKind, StructureKind, TeeLevel, ToolMode, TreeKind } from "../types";
+import type { AmenityKind, AreaKind, CourseDoc, DrawShape, FieldKind, LineKind, StructureKind, TeeLevel, ToolMode, TreeKind } from "../types";
 import { useTouch } from "./useLayout";
 import { fmtDist } from "../lib/units";
 import { HelpLink } from "./ui";
@@ -24,8 +26,9 @@ type Editor = ReturnType<typeof useEditor.getState>;
 /** How a choice's color shows on its chip: a filled square for an area, a stroke for a line
  * (dashed for the next-tee route), a dot otherwise. */
 type Swatch = "area" | "line" | "dashed";
-/** One thing a tool puts on the course: how it's drawn (an area, a line, a spot) and of what kind. */
-export type ToolChoice = { id: string; label: string; mode: ToolMode; set: Partial<Editor>; color?: string; swatch?: Swatch; icon?: ReactNode };
+/** One thing a tool puts on the course: how it's drawn (an area, a line, a spot) and of what kind;
+ * `also`, another way it can be drawn (a field: at its usual size with a click, or by its corners). */
+export type ToolChoice = { id: string; label: string; mode: ToolMode; also?: ToolMode; set: Partial<Editor>; color?: string; swatch?: Swatch; icon?: ReactNode };
 /** A tool: named for what goes on the course (not for how it's drawn), so a fence is under Build and a
  * road under Paths and roads. `choices`: what it has, each drawn its own way; `mode` the first's. */
 export type Tool = { id: string; mode: ToolMode; key: string; label: string; short: string; icon: ReactNode; group: number; choices?: ToolChoice[] };
@@ -34,6 +37,7 @@ const area = (k: AreaKind, label = AREA_KINDS[k].label): ToolChoice => ({ id: `a
 const line = (k: LineKind, label: string, icon?: ReactNode): ToolChoice => ({ id: `line-kind-${k}`, label, mode: "draw-line", set: { lineKind: k }, color: icon ? undefined : LINE_KINDS[k].color, swatch: k === "walk" ? "dashed" : "line", icon });
 const built = (k: StructureKind): ToolChoice => ({ id: `structure-kind-${k}`, label: STRUCTURE_KINDS[k].label, mode: "draw-structure", set: { structureKind: k }, icon: <span className="inline-block" dangerouslySetInnerHTML={{ __html: structureIcon(k, 16, `chip-${k}`) }} /> });
 const tree = (k: TreeKind, label: string, icon: ReactNode): ToolChoice => ({ id: `tree-kind-${k}`, label, mode: "add-tree", set: { treeKind: k }, icon });
+const field = (k: FieldKind): ToolChoice => ({ id: `field-kind-${k}`, label: FIELD_KINDS[k].label, mode: "add-field", also: "draw-area", set: { areaKind: "field", fieldKind: k }, icon: fieldIcon(k) });
 
 export const TOOLS: Tool[] = [
   { id: "select", mode: "select", key: "V", label: "Select and move", short: "Select", icon: <MousePointer2 size={18} />, group: 0 },
@@ -52,17 +56,19 @@ export const TOOLS: Tool[] = [
   { id: "paths", mode: "draw-line", key: "L", label: "Paths and roads: walking paths, next-tee routes, roads, parking", short: "Paths & roads", icon: <Footprints size={18} />, group: 3, choices: [line("path", "Walking path"), line("walk", "Next-tee route"), line("road", "Road"), area("parking")] },
   { id: "water", mode: "draw-area", key: "W", label: "Water: ponds, lakes and streams", short: "Water", icon: <Waves size={18} />, group: 3, choices: [area("water"), line("stream", "Stream")] },
   {
-    id: "trees", mode: "add-tree", key: "R", label: "Trees and woods: a tree at a time, or a stand of woods", short: "Trees", icon: <TreeDeciduous size={18} />, group: 3,
+    id: "trees", mode: "add-tree", key: "R", label: "Trees and woods: a tree at a time, a stand of woods, or a hedge", short: "Trees", icon: <TreeDeciduous size={18} />, group: 3,
     choices: [
       ...TREE_KINDS.map(k => tree(k.value, k.label, k.icon)),
-      { ...area("woods"), color: undefined, swatch: undefined, icon: <Trees size={14} /> }
+      { ...area("woods"), color: undefined, swatch: undefined, icon: <Trees size={14} /> },
+      line("hedge", "Hedge", <Shrub size={14} />)
     ]
   },
   { id: "grass", mode: "draw-area", key: "U", label: "Grass: fairways, landing zones, tall grass, sand and dirt", short: "Grass", icon: <Sprout size={18} />, group: 3, choices: [area("fairway"), area("green"), area("rough"), area("sand")] },
   {
-    id: "build", mode: "draw-structure", key: "S", label: "Build: buildings, shelters, decks, bridges, boardwalks, stairs, walls, fences", short: "Build", icon: <House size={18} />, group: 3,
-    choices: [built("building"), built("shelter"), built("deck"), built("bridge"), built("boardwalk"), built("stairs"), built("wall"), line("fence", "Fence", <Fence size={14} />)]
+    id: "build", mode: "draw-structure", key: "S", label: "Build: buildings, shelters, decks, bridges, boardwalks, stairs, walls, fences, power lines", short: "Build", icon: <House size={18} />, group: 3,
+    choices: [built("building"), built("shelter"), built("deck"), built("bridge"), built("boardwalk"), built("stairs"), built("wall"), line("fence", "Fence", <Fence size={14} />), line("power", "Power line", <UtilityPole size={14} />)]
   },
+  { id: "park", mode: "add-field", key: "P", label: "Park: ball fields, courts, playgrounds, pools and more", short: "Park", icon: <LandPlot size={18} />, group: 3, choices: FIELD_ORDER.map(field) },
   { id: "amenities", mode: "add-amenity", key: "A", label: "Amenities: bench, trash can, sign, parking…", short: "Amenities", icon: <Armchair size={18} />, group: 4 },
   { id: "label", mode: "add-label", key: "K", label: "Text label", short: "Label", icon: <Type size={18} />, group: 4 },
   { id: "ground", mode: "sculpt", key: "G", label: "Shape the ground: paint to raise, lower, flatten, smooth or restore it", short: "Ground", icon: <Mountain size={18} />, group: 5 },
@@ -75,10 +81,11 @@ export const CHOICE_KEYS: Record<string, string> = { M: "mando-kind-single", Z: 
 /** Each tool's page in the help guide (its ? beside the hint), and the choices with a page of their own. */
 const TOOL_HELP: Record<string, string> = {
   select: "pointer", hole: "new-hole", tee: "tees-pins", pin: "tees-pins", rules: "ob", paths: "lines", water: "areas", trees: "trees",
-  grass: "areas", build: "build", amenities: "amenities", label: "amenities", ground: "ground", measure: "measure"
+  grass: "areas", build: "build", park: "park", amenities: "amenities", label: "amenities", ground: "ground", measure: "measure"
 };
 const CHOICE_HELP: Record<string, string> = {
-  "mando-kind-single": "mando", "mando-kind-gate": "mando", "dropzone-kind": "mando", "area-kind-woods": "woods", "line-kind-stream": "lines", "line-kind-fence": "lines"
+  "mando-kind-single": "mando", "mando-kind-gate": "mando", "dropzone-kind": "mando", "area-kind-woods": "woods", "line-kind-stream": "lines", "line-kind-fence": "lines",
+  "line-kind-hedge": "lines", "line-kind-power": "lines"
 };
 /** The help topic for the tool in use (for a ? by its hint): the choice's own page first. */
 export const toolHelp = (ed: Editor) => {
@@ -87,15 +94,16 @@ export const toolHelp = (ed: Editor) => {
   return (c && CHOICE_HELP[c.id]) ?? (t ? TOOL_HELP[t.id] : undefined);
 };
 
-const matches = (ed: Editor, c: ToolChoice) => ed.tool === c.mode && Object.entries(c.set).every(([k, v]) => (ed as Record<string, unknown>)[k] === v);
+const matches = (ed: Editor, c: ToolChoice) => (ed.tool === c.mode || ed.tool === c.also) && Object.entries(c.set).every(([k, v]) => (ed as Record<string, unknown>)[k] === v);
 /** The tool in use: the one whose choice is being drawn (or, a kind no tool lists, the first that draws that way). */
 export const toolOf = (ed: Editor): Tool | undefined =>
   TOOLS.find(t => (t.choices ? t.choices.some(c => matches(ed, c)) : t.mode === ed.tool)) ?? TOOLS.find(t => t.choices?.some(c => c.mode === ed.tool));
 /** The choice of the tool in use being drawn. */
 export const choiceOf = (ed: Editor) => toolOf(ed)?.choices?.find(c => matches(ed, c));
 
-// (each tool picks up again with what it last drew)
+// (each tool picks up again with what it last drew, and a field the way it was last put down)
 const lastChoice = new Map<string, ToolChoice>();
+let fieldWay: { tool: ToolMode; shape?: DrawShape } = { tool: "add-field" };
 /** Draw this choice (its tool comes forward); `remember`: the tool picks up with it next time
  * (not for a key that goes straight to it, like Z for a drop zone: O still gives what O last did). */
 export const drawChoice = (c: ToolChoice, remember = true) => {
@@ -103,6 +111,7 @@ export const drawChoice = (c: ToolChoice, remember = true) => {
   const t = TOOLS.find(x => x.choices?.includes(c));
   if (t && remember) lastChoice.set(t.id, c);
   const set: Partial<Editor> = { tool: c.mode, ...c.set };
+  if (c.also && fieldWay.tool === c.also) Object.assign(set, { tool: c.also, drawShape: fieldWay.shape ?? "points" });
   // (built things: outlines by a box, a bridge or wall along its line, as before)
   if (c.mode === "draw-structure" && c.set.structureKind) set.drawShape = STRUCTURE_KINDS[c.set.structureKind].shape === "outline" ? "box" : "points";
   ed.set(set);
@@ -261,6 +270,26 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
 /** How the active tool draws (point by point, or a rectangle, a circle, freehand, painted), with
  * the brush's size while painting: a row of its own under the kinds. Null when it draws one way. */
 export function toolShapes(ed: Editor): ReactNode[] | null {
+  // (a field: at its usual size with one click, or by its corners, or as a rectangle)
+  if (ed.tool === "add-field" || (ed.tool === "draw-area" && ed.areaKind === "field")) {
+    const ways: { id: string; tool: ToolMode; shape?: DrawShape; label: string; title: string; icon: ReactNode }[] = [
+      { id: "usual", tool: "add-field", label: "Usual size", title: "Click where it goes", icon: <MousePointerClick size={13} /> },
+      { id: "points", tool: "draw-area", shape: "points", ...SHAPES.points },
+      { id: "box", tool: "draw-area", shape: "box", ...SHAPES.box }
+    ];
+    return [
+      <div key="shapes" className={GROUP} role="radiogroup" aria-label="How to draw">
+        {ways.map(w => {
+          const on = ed.tool === w.tool && (!w.shape || ed.drawShape === w.shape);
+          return (
+            <button key={w.id} role="radio" aria-checked={on} data-testid={`draw-shape-${w.id}`} title={w.title} onClick={() => { fieldWay = { tool: w.tool, shape: w.shape }; ed.set({ tool: w.tool, ...(w.shape ? { drawShape: w.shape } : {}) }); }} className={radio(on)}>
+              {w.icon}{w.label}
+            </button>
+          );
+        })}
+      </div>
+    ];
+  }
   const list: DrawShape[] | null = ed.tool === "draw-area" ? ["points", "box", "circle", "freehand", "paint"]
     : ed.tool === "draw-line" ? ["points", "freehand"]
     : ed.tool === "draw-structure" ? (STRUCTURE_KINDS[ed.structureKind].shape === "outline" ? ["points", "box", "circle", "freehand"] : ["points", "freehand"])
@@ -320,6 +349,7 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
   if (ed.tool === "draw-structure" && !lineDrawn) return `${click} ${HINTS["draw-area"]}`;
   if (ed.tool === "add-tree") return `${click} to plant ${TREE_PLURAL[ed.treeKind] ?? "trees"}`;
   if (ed.tool === "add-amenity") return `${click} where the ${amenityName(ed.amenityKind)} goes`;
+  if (ed.tool === "add-field") return `${click} where the ${fieldWord(ed.fieldKind)} goes`;
   if (ed.tool === "measure") return (ed.measureMode ?? "spot") === "path" ? `${click} along the path` : `${click} a start point`;
   if (ed.tool === "sculpt") return touch ? "Paint the ground with one finger · two fingers move the map" : "Drag over the ground to paint it · Space+drag moves the map";
   const h = HINTS[ed.tool];
@@ -328,8 +358,8 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
 
 /** The tools a step is about; the rest wait under More (and come forward while in use). */
 export const STEP_TOOLS: Record<string, string[]> = {
-  site: ["select", "paths", "water", "trees", "grass", "build", "ground", "measure"],
-  design: ["select", "hole", "tee", "pin", "rules", "paths", "water", "trees", "grass", "build", "ground", "measure"],
+  site: ["select", "paths", "water", "trees", "grass", "build", "park", "ground", "measure"],
+  design: ["select", "hole", "tee", "pin", "rules", "paths", "water", "trees", "grass", "build", "park", "ground", "measure"],
   export: ["select"]
 };
 /** Under 1280 px wide, these wait under More too. */

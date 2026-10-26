@@ -1,9 +1,12 @@
 // Trees and ground measured from the air (USGS 3DEP LiDAR, kept on AWS as Entwine Point Tiles in
-// web Mercator). Pure: which tiles cover a site, reading them, and turning their points into the
-// ground's height and single trees (where each stands, how tall, how wide; a narrow crown taken for a conifer).
+// web Mercator). Pure: which tiles cover a site, reading them, gathering their points on a fine
+// grid (one survey, or several each covering part of the site), and turning that into the ground
+// (checked against USGS 3DEP's), the canopy (roofs left out) and single trees (where each stands,
+// how tall, how wide its crown spreads; a conifer only where the survey shows one), and how high
+// a building stands.
 import type { CourseDoc, Hole, LidarTree, P } from "../types";
 import { areaPath, fairwayOutline } from "./course";
-import { boundsOf, distanceToPolygon, pointInPolygon, smoothPath } from "./geom";
+import { boundsOf, distanceToPolygon, nearestOnSegment, pointInPolygon, smoothPath } from "./geom";
 import { FEET_PER_METER } from "./geo/core";
 import type { GeoRef } from "./geoRef";
 
@@ -21,7 +24,7 @@ export type Box = [number, number, number, number];
 
 export const siteBox = (ref: GeoRef, margin = 15): Box => [mercX(ref.west) - margin, mercY(ref.south) - margin, mercX(ref.east) + margin, mercY(ref.north) + margin];
 
-/** How deep to read a survey: its tiles about a meter between points (finer adds much for little). */
+/** How deep a survey's tiles go for points `spacing` m apart (its deepest; it may stop sooner). */
 export const depthFor = (ept: Ept, spacing = 1) => Math.max(0, Math.floor(Math.log2((ept.bounds[3] - ept.bounds[0]) / (ept.span * spacing))));
 
 /** The tiles over a box, down to `maxDepth`, with how many points each holds (its hierarchy read
@@ -34,7 +37,7 @@ export const tilesOver = async (ept: Ept, box: Box, maxDepth: number, hierarchy:
     return d <= maxDepth && ax < box[2] && ax + s > box[0] && ay < box[3] && ay + s > box[1];
   };
   const tiles: { key: string; points: number }[] = [];
-  const walk = async (key: string) => {
+  const walk = async (key: string): Promise<void> => {
     const h = await hierarchy(key);
     const more: string[] = [];
     for (const [k, n] of Object.entries(h)) {
@@ -42,15 +45,44 @@ export const tilesOver = async (ept: Ept, box: Box, maxDepth: number, hierarchy:
       if (n === -1) more.push(k);
       else if (n > 0) tiles.push({ key: k, points: n });
     }
-    for (const k of more) await walk(k);
+    await Promise.all(more.map(walk));
   };
   await walk("0-0-0-0");
-  return tiles;
+  // (the same order however the hierarchy came in: shallow first)
+  const order = (k: string) => k.split("-").map(Number);
+  return tiles.sort((a, b) => { const p = order(a.key), q = order(b.key); return p[0] - q[0] || p[1] - q[1] || p[2] - q[2] || p[3] - q[3]; });
 };
 
-/** Points over a site: plan feet (x east, y south), height in feet, LAS class. */
-export type LidarPoints = { x: number[]; y: number[]; z: number[]; cls: number[] };
-export const emptyPoints = (): LidarPoints => ({ x: [], y: [], z: [], cls: [] });
+/** The tiles worth reading for points about half a meter apart: the shallowest depth whose tiles,
+ * with those above them, hold 3 points to a square meter of ground by their own count (their
+ * boxes reach past what the survey flew, so on the site that's 4 or 5), or all there are. A survey
+ * keeps its points spread down its depths, each about four times as many as the one above; finer
+ * than this adds a lot to read for no better crowns. */
+export const tilesFor = (ept: Ept, box: Box, tiles: { key: string; points: number }[], perM2 = 3) => {
+  const size = ept.bounds[3] - ept.bounds[0];
+  // (web Mercator meters are longer than the ground's by 1/cos(latitude))
+  const k = Math.cos(latOf((box[1] + box[3]) / 2) * DEG) ** 2;
+  const depths = new Map<number, { points: number; area: number }>();
+  for (const t of tiles) {
+    const d = Number(t.key.split("-")[0]), s = size / 2 ** d, e = depths.get(d) ?? { points: 0, area: 0 };
+    e.points += t.points;
+    e.area += s * s * k;
+    depths.set(d, e);
+  }
+  let dense = 0, upTo = Infinity;
+  for (const d of [...depths.keys()].sort((a, b) => a - b)) {
+    const e = depths.get(d)!;
+    dense += e.points / e.area;
+    if (dense >= perM2) { upTo = d; break; }
+  }
+  return tiles.filter(t => Number(t.key.split("-")[0]) <= upTo);
+};
+
+/** A tile's points that fall on the site: plan feet (x east, y south), height (ft, the survey's
+ * datum), LAS class, how many returns the laser pulse had (a leaf or a branch lets some of it on
+ * through to what's below; a roof or the ground gives back only one), and now and then when (GPS
+ * seconds, as the surveys keep it). */
+export type TilePoints = { n: number; x: Float32Array; y: Float32Array; z: Float32Array; cls: Uint8Array; returns: Uint8Array; times: number[] };
 
 /** What reads compressed LAS tiles (laz-perf). */
 export type LazReader = {
@@ -60,73 +92,251 @@ export type LazReader = {
   LASZip: new () => { open: (p: number, n: number) => void; getPoint: (p: number) => void; getCount: () => number; getPointLength: () => number; delete: () => void };
 };
 
-/** One compressed tile's points that fall on the site, added to `out` in plan feet. */
-export const readTile = (lp: LazReader, buf: Uint8Array, ref: GeoRef, box: Box, out: LidarPoints) => {
+/** One compressed tile's points that fall on the site, in plan feet. */
+export const readTile = (lp: LazReader, buf: Uint8Array, ref: GeoRef, box: Box): TilePoints => {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const fmt = buf[104] & 0x3f;
   const sx = dv.getFloat64(131, true), sy = dv.getFloat64(139, true), sz = dv.getFloat64(147, true);
   const ox = dv.getFloat64(155, true), oy = dv.getFloat64(163, true), oz = dv.getFloat64(171, true);
+  // (where the class, the returns and the time are: from format 6 on the class has its own byte;
+  // formats 0 and 2 keep no time)
+  const clsAt = fmt >= 6 ? 16 : 15, timeAt = fmt >= 6 ? 22 : fmt === 0 || fmt === 2 ? -1 : 20;
   const file = lp._malloc(buf.length);
   lp.HEAPU8.set(buf, file);
   const las = new lp.LASZip();
   try {
     las.open(file, buf.length);
     const len = las.getPointLength(), n = las.getCount(), pt = lp._malloc(len);
+    const x = new Float32Array(n), y = new Float32Array(n), z = new Float32Array(n), cls = new Uint8Array(n), returns = new Uint8Array(n), times: number[] = [];
     const kx = ref.width / (ref.east - ref.west), ky = ref.height / (ref.north - ref.south);
+    let heap = new DataView(lp.HEAPU8.buffer), m = 0;
     for (let k = 0; k < n; k++) {
       las.getPoint(pt);
-      const p = new DataView(lp.HEAPU8.buffer, pt, len);
-      const X = p.getInt32(0, true) * sx + ox, Y = p.getInt32(4, true) * sy + oy;
+      if (heap.buffer !== lp.HEAPU8.buffer) heap = new DataView(lp.HEAPU8.buffer);
+      const X = heap.getInt32(pt, true) * sx + ox, Y = heap.getInt32(pt + 4, true) * sy + oy;
       if (X < box[0] || X > box[2] || Y < box[1] || Y > box[3]) continue;
-      out.x.push((lonOf(X) - ref.west) * kx);
-      out.y.push((ref.north - latOf(Y)) * ky);
-      out.z.push((p.getInt32(8, true) * sz + oz) * FEET_PER_METER);
-      // (the class: its own byte from format 6 on, the low 5 bits before)
-      out.cls.push(fmt >= 6 ? p.getUint8(16) : p.getUint8(15) & 31);
+      x[m] = (lonOf(X) - ref.west) * kx;
+      y[m] = (ref.north - latOf(Y)) * ky;
+      z[m] = (heap.getInt32(pt + 8, true) * sz + oz) * FEET_PER_METER;
+      const c = heap.getUint8(pt + clsAt), r = heap.getUint8(pt + 14);
+      cls[m] = fmt >= 6 ? c : c & 31;
+      returns[m] = fmt >= 6 ? r >> 4 : (r >> 3) & 7;
+      if (timeAt >= 0 && !(m & 63)) times.push(heap.getFloat64(pt + timeAt, true));
+      m++;
     }
     lp._free(pt);
+    return { n: m, x: x.slice(0, m), y: y.slice(0, m), z: z.slice(0, m), cls: cls.slice(0, m), returns: returns.slice(0, m), times };
   } finally {
     las.delete();
     lp._free(file);
   }
 };
 
-/** The ground and the canopy over a site, `cell` ft a square: ground height (ft, the survey's
- * datum; filled in under buildings and water from around them) and how high what grows stands
- * over it (ft; power lines and other thin streaks left out). */
-export const measureSite = (pts: LidarPoints, width: number, height: number, cell = 3) => {
+/** The cells a side of a block: what each survey covers is told by blocks (32 ft a side at 2 ft). */
+const BLOCK = 16;
+/** The points a block needs for a survey to cover it (about one every 2 m²). */
+const BLOCK_FULL = 40;
+
+/** A site's points gathered on a grid, `cell` ft a square: in each cell the highest of what stands
+ * on the ground (unsorted points, class 1, and what grows, 3 to 5, apart), the lowest of it, the
+ * lowest ground point, how many points stood there and how many of those came from a pulse with
+ * more than one return, how many ground points, and whether a building point (class 6) did. Over
+ * it, at twice the cell, the highest thing standing at all (for buildings' heights). Which survey
+ * covers each block; every class seen, and when each survey flew (GPS times, sampled). */
+export type Gathered = {
+  width: number; height: number; cell: number; nx: number; ny: number;
+  top1: Float32Array; topV: Float32Array; low: Float32Array; ground: Float32Array;
+  nUp: Uint8Array; nMulti: Uint8Array; nGround: Uint8Array; building: Uint8Array;
+  surface: Float32Array; snx: number; sny: number;
+  bx: number; by: number; owner: Uint8Array; count: Uint32Array;
+  classes: number[]; times: number[][];
+};
+
+/** An empty grid over a site `width` by `height` ft (cells grow past `cell` on a very big site, so
+ * it stays within about 4 million cells). */
+export const gatherer = (width: number, height: number, cell = 2): Gathered => {
+  cell = Math.max(cell, Math.ceil(Math.sqrt((width * height) / 4e6) * 2) / 2);
   const nx = Math.max(1, Math.ceil(width / cell)), ny = Math.max(1, Math.ceil(height / cell)), n = nx * ny;
-  const ground = new Float32Array(n).fill(Infinity), top = new Float32Array(n).fill(-Infinity);
-  // (what grows: low, medium and high vegetation, or, in a survey that only told the ground apart,
-  // everything else)
-  const veg = pts.cls.some(c => c === 3 || c === 4 || c === 5) ? new Set([3, 4, 5]) : new Set([1]);
-  for (let k = 0; k < pts.x.length; k++) {
-    const i = Math.floor(pts.x[k] / cell), j = Math.floor(pts.y[k] / cell);
+  const snx = Math.ceil(nx / 2), sny = Math.ceil(ny / 2), bx = Math.ceil(nx / BLOCK), by = Math.ceil(ny / BLOCK);
+  return {
+    width, height, cell, nx, ny,
+    top1: new Float32Array(n).fill(-Infinity), topV: new Float32Array(n).fill(-Infinity), low: new Float32Array(n).fill(Infinity), ground: new Float32Array(n).fill(Infinity),
+    nUp: new Uint8Array(n), nMulti: new Uint8Array(n), nGround: new Uint8Array(n), building: new Uint8Array(n),
+    surface: new Float32Array(snx * sny).fill(-Infinity), snx, sny,
+    bx, by, owner: new Uint8Array(bx * by), count: new Uint32Array(bx * by),
+    classes: new Array(32).fill(0), times: []
+  };
+};
+
+/** A tile's points onto the grid, for survey `survey` (1 the first): only where no survey before
+ * it covers. */
+export const gather = (g: Gathered, p: TilePoints, survey = 1) => {
+  const { cell, nx, ny, owner, count } = g;
+  const times = (g.times[survey - 1] ??= []);
+  for (const t of p.times) if (times.length < 4000) times.push(t);
+  for (let k = 0; k < p.n; k++) {
+    const i = Math.floor(p.x[k] / cell), j = Math.floor(p.y[k] / cell);
     if (i < 0 || j < 0 || i >= nx || j >= ny) continue;
-    const c = j * nx + i, cls = pts.cls[k], z = pts.z[k];
-    if (cls === 2) ground[c] = Math.min(ground[c], z);
-    else if (veg.has(cls)) top[c] = Math.max(top[c], z);
-  }
-  fillGaps(ground, nx, ny);
-  const canopy = new Float32Array(n);
-  for (let c = 0; c < n; c++) canopy[c] = Number.isFinite(top[c]) && Number.isFinite(ground[c]) ? Math.min(200, Math.max(0, top[c] - ground[c])) : 0;
-  // (only where a 3 x 3 block of it stands: a wire or a fence line is one or two cells wide)
-  const on = (c: number) => canopy[c] > 8;
-  const core = new Uint8Array(n);
-  for (let j = 1; j < ny - 1; j++) for (let i = 1; i < nx - 1; i++) {
-    let all = 1;
-    for (let dj = -1; dj <= 1 && all; dj++) for (let di = -1; di <= 1 && all; di++) if (!on((j + dj) * nx + i + di)) all = 0;
-    core[j * nx + i] = all;
-  }
-  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-    let near = 0;
-    for (let dj = -1; dj <= 1 && !near; dj++) for (let di = -1; di <= 1 && !near; di++) {
-      const a = i + di, b = j + dj;
-      if (a >= 0 && b >= 0 && a < nx && b < ny && core[b * nx + a]) near = 1;
+    const b = Math.floor(j / BLOCK) * g.bx + Math.floor(i / BLOCK);
+    if (owner[b] && owner[b] !== survey) continue;
+    count[b]++;
+    const c = j * nx + i, cls = p.cls[k], z = p.z[k];
+    g.classes[cls & 31]++;
+    if (cls === 2) {
+      if (z < g.ground[c]) g.ground[c] = z;
+      if (g.nGround[c] < 255) g.nGround[c]++;
+      continue;
     }
-    if (!near) canopy[j * nx + i] = 0;
+    // (noise, water, wires and the like stand for nothing here)
+    if (cls !== 1 && cls !== 3 && cls !== 4 && cls !== 5 && cls !== 6) continue;
+    const s = (j >> 1) * g.snx + (i >> 1);
+    if (z > g.surface[s]) g.surface[s] = z;
+    if (cls === 6) { g.building[c] = 1; continue; }
+    if (cls === 1) { if (z > g.top1[c]) g.top1[c] = z; }
+    else if (z > g.topV[c]) g.topV[c] = z;
+    if (z < g.low[c]) g.low[c] = z;
+    if (g.nUp[c] < 255) {
+      g.nUp[c]++;
+      if (p.returns[k] > 1) g.nMulti[c]++;
+    }
   }
-  return { nx, ny, cell, ground, canopy };
+};
+
+/** After a survey's points: the blocks it covers are its own (no later survey's points go there).
+ * Returns how much of the site no survey covers yet (0..1) and the box round it, plan ft: only
+ * what reaches the site's edges, where a survey stops short of them (a pond in the middle of one,
+ * with hardly a point off its water, is no reason to read another). */
+export const claim = (g: Gathered, survey: number) => {
+  const span = BLOCK * g.cell, { bx, by } = g;
+  for (let b = 0; b < g.owner.length; b++) {
+    const i = b % bx, j = (b - i) / bx;
+    // (a block on the site's far edges only partly on it: as many as its part)
+    const part = (Math.min(span, g.width - i * span) * Math.min(span, g.height - j * span)) / (span * span);
+    if (!g.owner[b] && g.count[b] >= BLOCK_FULL * part) g.owner[b] = survey;
+    g.count[b] = 0;
+  }
+  const seen = new Uint8Array(g.owner.length), queue: number[] = [];
+  for (let b = 0; b < g.owner.length; b++) {
+    const i = b % bx, j = (b - i) / bx;
+    if (!g.owner[b] && (i === 0 || j === 0 || i === bx - 1 || j === by - 1)) { seen[b] = 1; queue.push(b); }
+  }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let q = 0; q < queue.length; q++) {
+    const b = queue[q], i = b % bx, j = (b - i) / bx;
+    x0 = Math.min(x0, i * span); y0 = Math.min(y0, j * span);
+    x1 = Math.max(x1, (i + 1) * span); y1 = Math.max(y1, (j + 1) * span);
+    for (const d of [i > 0 ? b - 1 : -1, i < bx - 1 ? b + 1 : -1, b - bx, b + bx]) {
+      if (d < 0 || d >= g.owner.length || seen[d] || g.owner[d]) continue;
+      seen[d] = 1;
+      queue.push(d);
+    }
+  }
+  return { open: queue.length / g.owner.length, box: queue.length ? { x0, y0, x1: Math.min(g.width, x1), y1: Math.min(g.height, y1) } : null };
+};
+
+/** When a survey flew over the site, from its points' GPS times (adjusted standard GPS time, as
+ * the 3DEP surveys keep it): the middle one, or null (an older survey keeping seconds of the week). */
+export const flownOn = (times: number[]) => {
+  const t = times.filter(Number.isFinite).sort((a, b) => a - b);
+  if (t.length < 10) return null;
+  const mid = t[t.length >> 1];
+  // (seconds of the GPS week: a week's worth, no date)
+  if (t[0] >= 0 && t[t.length - 1] <= 604800) return null;
+  const date = new Date(Date.UTC(1980, 0, 6) + (mid + 1e9) * 1000);
+  const year = date.getUTCFullYear();
+  return year >= 1995 && year <= new Date().getUTCFullYear() + 1 ? date : null;
+};
+
+/** Whether trees were in leaf when a survey flew (mid-May to mid-October), bare (November to
+ * mid-April), or no telling (on the turn of the seasons, or no date). */
+export const leafOnAt = (date: Date | null): boolean | null => {
+  if (!date) return null;
+  const day = date.getUTCMonth() * 31 + date.getUTCDate();
+  if (day >= 4 * 31 + 15 && day <= 9 * 31 + 15) return true;
+  if (day >= 10 * 31 || day <= 3 * 31 + 15) return false;
+  return null;
+};
+
+/** The ground's elevation over a site from elsewhere (USGS 3DEP, as the import downloads it): meters,
+ * `samplesX` by `samplesY` from the north-west corner to the south-east one. */
+export type Dem = { values: Float32Array; samplesX: number; samplesY: number };
+
+/** A DEM's height (ft) at a plan point, and how far it rises and falls round it (ft, its four
+ * samples there). */
+const demReader = (dem: Dem, width: number, height: number) => {
+  const { values, samplesX: sx, samplesY: sy } = dem;
+  const at = (i: number, j: number) => values[Math.min(sy - 1, Math.max(0, j)) * sx + Math.min(sx - 1, Math.max(0, i))];
+  return (x: number, y: number) => {
+    const fx = (x / width) * (sx - 1), fy = (y / height) * (sy - 1), i = Math.floor(fx), j = Math.floor(fy), tx = fx - i, ty = fy - j;
+    const a = at(i, j), b = at(i + 1, j), c = at(i, j + 1), d = at(i + 1, j + 1);
+    return { z: ((a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty) * FEET_PER_METER, range: (Math.max(a, b, c, d) - Math.min(a, b, c, d)) * FEET_PER_METER };
+  };
+};
+
+/** The ground from the survey's ground points, cleaned: a cell more than 3 ft off the DEM (more on a
+ * steep bank) is taken out, or, with no DEM, one off the plane the ground round it lies in; cells
+ * with none (under buildings, water, thick cover) filled from the DEM, or from round about. */
+const cleanGround = (g: Gathered, dem: Dem | null | undefined) => {
+  const { nx, ny, cell } = g, ground = g.ground.slice();
+  if (dem) {
+    const read = demReader(dem, g.width, g.height), ref = new Float32Array(nx * ny), offs: number[] = [];
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const c = j * nx + i, d = read((i + 0.5) * cell, (j + 0.5) * cell);
+      ref[c] = d.z;
+      if (!Number.isFinite(ground[c])) continue;
+      if (Math.abs(ground[c] - d.z) > 3 + d.range) ground[c] = Infinity;
+      else if (!(c % 7)) offs.push(ground[c] - d.z);
+    }
+    // (the survey and the DEM a little apart overall: the DEM brought to the survey's)
+    offs.sort((a, b) => a - b);
+    const off = offs.length ? offs[offs.length >> 1] : 0;
+    for (let c = 0; c < ground.length; c++) if (!Number.isFinite(ground[c])) ground[c] = ref[c] + off;
+    return ground;
+  }
+  // No DEM: each 16 ft block's middle height, each block tried against the plane through the
+  // blocks round it (80 ft), its cells off that by more than 3 ft (and the ground's own roughness
+  // there) taken out
+  const B = Math.max(1, Math.round(16 / cell)), bx = Math.ceil(nx / B), by = Math.ceil(ny / B), mid = new Float32Array(bx * by).fill(NaN);
+  const vals: number[] = [];
+  for (let q = 0; q < by; q++) for (let p = 0; p < bx; p++) {
+    vals.length = 0;
+    for (let j = q * B; j < Math.min(ny, (q + 1) * B); j++) for (let i = p * B; i < Math.min(nx, (p + 1) * B); i++) if (Number.isFinite(ground[j * nx + i])) vals.push(ground[j * nx + i]);
+    if (vals.length >= 3) { vals.sort((a, b) => a - b); mid[q * bx + p] = vals[vals.length >> 1]; }
+  }
+  for (let q = 0; q < by; q++) for (let p = 0; p < bx; p++) {
+    const pts: [number, number, number][] = [];
+    for (let b = q - 2; b <= q + 2; b++) for (let a = p - 2; a <= p + 2; a++) {
+      if (a < 0 || b < 0 || a >= bx || b >= by || (a === p && b === q)) continue;
+      const v = mid[b * bx + a];
+      if (Number.isFinite(v)) pts.push([a - p, b - q, v]);
+    }
+    if (pts.length < 6) continue;
+    let fit = planeFit(pts);
+    // (once more without the blocks far off it: a roof taken for ground among them)
+    const near = pts.filter(([a, b, v]) => Math.abs(v - (fit.c + fit.a * a + fit.b * b)) < 3 + 2 * fit.rms);
+    if (near.length >= 6 && near.length < pts.length) fit = planeFit(near);
+    const tol = 3 + 2 * fit.rms;
+    for (let j = q * B; j < Math.min(ny, (q + 1) * B); j++) for (let i = p * B; i < Math.min(nx, (p + 1) * B); i++) {
+      const c = j * nx + i;
+      const u = ((i + 0.5) / B - 0.5) - p, v = ((j + 0.5) / B - 0.5) - q;
+      if (Number.isFinite(ground[c]) && Math.abs(ground[c] - (fit.c + fit.a * u + fit.b * v)) > tol) ground[c] = Infinity;
+    }
+  }
+  return fillGaps(ground, nx, ny);
+};
+
+/** The plane z = c + a x + b y nearest some points (least squares), and how far off it they lie (rms). */
+const planeFit = (pts: [number, number, number][]) => {
+  let n = 0, sx = 0, sy = 0, sz = 0, sxx = 0, syy = 0, sxy = 0, sxz = 0, syz = 0;
+  for (const [x, y, z] of pts) { n++; sx += x; sy += y; sz += z; sxx += x * x; syy += y * y; sxy += x * y; sxz += x * z; syz += y * z; }
+  const mx = sx / n, my = sy / n, mz = sz / n;
+  const cxx = sxx / n - mx * mx, cyy = syy / n - my * my, cxy = sxy / n - mx * my, cxz = sxz / n - mx * mz, cyz = syz / n - my * mz;
+  const det = cxx * cyy - cxy * cxy;
+  const a = Math.abs(det) > 1e-9 ? (cxz * cyy - cyz * cxy) / det : 0, b = Math.abs(det) > 1e-9 ? (cyz * cxx - cxz * cxy) / det : 0;
+  const c = mz - a * mx - b * my;
+  let e = 0;
+  for (const [x, y, z] of pts) e += (z - (c + a * x + b * y)) ** 2;
+  return { a, b, c, rms: Math.sqrt(e / n) };
 };
 
 /** Cells with no value (Infinity) filled from their neighbors, nearest first. */
@@ -154,94 +364,370 @@ const fillGaps = (v: Float32Array, nx: number, ny: number) => {
   return v;
 };
 
-/** Single trees in the canopy: each top (the highest point within a reach that grows with its
- * height, at least 15 ft up), how far its crown spreads, and a guess at its kind (narrow: a conifer). */
-export const findTrees = (m: { nx: number; ny: number; cell: number; canopy: Float32Array }): LidarTree[] => {
-  const { nx, ny, cell, canopy } = m;
-  // (smoothed a little: one leafy bump isn't a tree)
-  const s = blur3(canopy, nx, ny);
-  const tops: [number, number, number][] = [];
+/** Polygons (plan ft) as a mask on the grid, grown `grow` cells all round. */
+const outlineMask = (polys: P[][], nx: number, ny: number, cell: number, grow: number) => {
+  const mask = new Uint8Array(nx * ny);
+  for (const poly of polys) {
+    if (poly.length < 3) continue;
+    const b = boundsOf(poly);
+    const j0 = Math.max(0, Math.floor(b.minY / cell)), j1 = Math.min(ny - 1, Math.floor(b.maxY / cell));
+    for (let j = j0; j <= j1; j++) {
+      const y = (j + 0.5) * cell, xs: number[] = [];
+      for (let k = 0, l = poly.length - 1; k < poly.length; l = k++) {
+        const p = poly[k], q = poly[l];
+        if ((p.y > y) !== (q.y > y)) xs.push(p.x + ((y - p.y) * (q.x - p.x)) / (q.y - p.y));
+      }
+      xs.sort((a, b) => a - b);
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        for (let i = Math.max(0, Math.ceil(xs[k] / cell - 0.5)); i <= Math.min(nx - 1, Math.floor(xs[k + 1] / cell - 0.5)); i++) mask[j * nx + i] = 1;
+      }
+    }
+  }
+  return grow ? dilate(mask, nx, ny, grow) : mask;
+};
+
+/** A mask grown `r` cells all round (a square reach). */
+const dilate = (mask: Uint8Array, nx: number, ny: number, r: number) => {
+  const a = new Uint8Array(mask.length), out = new Uint8Array(mask.length);
+  for (let j = 0; j < ny; j++) {
+    let run = -1e9;
+    for (let i = 0; i < nx; i++) { if (mask[j * nx + i]) run = i; if (i - run <= r) a[j * nx + i] = 1; }
+    run = 1e9;
+    for (let i = nx - 1; i >= 0; i--) { if (mask[j * nx + i]) run = i; if (run - i <= r) a[j * nx + i] = 1; }
+  }
+  for (let i = 0; i < nx; i++) {
+    let run = -1e9;
+    for (let j = 0; j < ny; j++) { if (a[j * nx + i]) run = j; if (j - run <= r) out[j * nx + i] = 1; }
+    run = 1e9;
+    for (let j = ny - 1; j >= 0; j--) { if (a[j * nx + i]) run = j; if (run - j <= r) out[j * nx + i] = 1; }
+  }
+  return out;
+};
+
+/** The site measured: the ground (ft, the survey's datum, cleaned and filled), how high the trees
+ * stand over it in each cell (ft; buildings, roofs, wires and other thin streaks left out), how
+ * many points stood and how many reached the ground in each, and whether the trees were in leaf.
+ * Buildings: the outlines given (the maps', traced from the air), the survey's own building
+ * points, and, in a survey that didn't sort what stands from what grows, every patch flat and
+ * solid as a roof (the laser goes on through leaves, so a pulse that came back once off a level
+ * surface is a roof). */
+export type Measured = {
+  nx: number; ny: number; cell: number; width: number; height: number;
+  ground: Float32Array; canopy: Float32Array; nUp: Uint8Array; nMulti: Uint8Array; nGround: Uint8Array;
+  surface: Float32Array; snx: number; sny: number; leafOn: boolean | null; roofs: Uint8Array;
+  /** The survey told what grows apart (its vegetation classes). */
+  sorted: boolean;
+};
+
+export const measureSite = (g: Gathered, opts: { dem?: Dem | null; outlines?: P[][]; leafOn?: boolean | null } = {}): Measured => {
+  const { nx, ny, cell } = g, n = nx * ny;
+  const ground = cleanGround(g, opts.dem);
+  // What grows: the vegetation classes, or, in a survey that only told the ground apart, all else
+  const total = g.classes.reduce((a, b) => a + b, 0);
+  const sorted = g.classes[3] + g.classes[4] + g.classes[5] > total * 0.002;
+  const top = sorted ? g.topV : g.top1;
+  const raw = new Float32Array(n).fill(NaN);
+  for (let c = 0; c < n; c++) if (Number.isFinite(top[c])) raw[c] = Math.min(250, Math.max(0, top[c] - ground[c]));
+  // (the highest within a cell of each: the crown's outer twigs, where the laser went in between
+  // them, as in a wood bare of leaves, and cells no point fell in)
+  const h = new Float32Array(n);
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-    const h = s[j * nx + i];
-    if (h <= 15) continue;
-    const rr = Math.max(2, Math.round((0.06 * h + 4) / cell));
+    let v = 0;
+    for (let b = Math.max(0, j - 1); b <= Math.min(ny - 1, j + 1); b++) for (let a = Math.max(0, i - 1); a <= Math.min(nx - 1, i + 1); a++) {
+      const w = raw[b * nx + a];
+      if (w > v) v = w;
+    }
+    h[j * nx + i] = v;
+  }
+  // Not trees: buildings, as the maps have them (and their eaves), the survey's building points
+  const roofs = outlineMask(opts.outlines ?? [], nx, ny, cell, Math.round(3 / cell));
+  const bld = dilate(g.building, nx, ny, 1);
+  for (let c = 0; c < n; c++) if (bld[c]) roofs[c] = 1;
+  if (!sorted) {
+    const flat = roofLike(g, raw, h);
+    for (let c = 0; c < n; c++) if (flat[c]) roofs[c] = 1;
+  }
+  const canopy = new Float32Array(n);
+  for (let c = 0; c < n; c++) canopy[c] = roofs[c] ? 0 : h[c];
+  // (only where a 3 x 3 block of it stands: a wire or a fence line is one or two cells wide)
+  const on = (c: number) => canopy[c] > 8;
+  const core = new Uint8Array(n);
+  for (let j = 1; j < ny - 1; j++) for (let i = 1; i < nx - 1; i++) {
+    let all = 1;
+    for (let dj = -1; dj <= 1 && all; dj++) for (let di = -1; di <= 1 && all; di++) if (!on((j + dj) * nx + i + di)) all = 0;
+    core[j * nx + i] = all;
+  }
+  const near = dilate(core, nx, ny, 1);
+  for (let c = 0; c < n; c++) if (!near[c]) canopy[c] = 0;
+  // (the survey's own season first, then the one it was said to fly in)
+  const leafOn = leafOnAt(flownOn(g.times[0] ?? [])) ?? opts.leafOn ?? null;
+  return { nx, ny, cell, width: g.width, height: g.height, ground, canopy, nUp: g.nUp, nMulti: g.nMulti, nGround: g.nGround, surface: g.surface, snx: g.snx, sny: g.sny, leafOn, roofs, sorted };
+};
+
+/** Roofs in a survey that didn't sort them out: cells 6 ft and more up where, over 10 ft round,
+ * the tops stand on a plane (within a foot), three pulses in four or more came back once and the
+ * points in each cell keep within 3 ft of each other (in a crown, leaves or bare, the laser goes on
+ * through and comes back again from deeper in); in patches of 80 sq ft or more, out to their edges. */
+const roofLike = (g: Gathered, raw: Float32Array, h: Float32Array) => {
+  const { nx, ny, cell } = g, n = nx * ny;
+  const R = Math.max(1, Math.round(4 / cell));
+  const flat = new Uint8Array(n);
+  const pts: [number, number, number][] = [];
+  for (let j = R; j < ny - R; j++) for (let i = R; i < nx - R; i++) {
+    const c = j * nx + i;
+    if (h[c] < 6 || Number.isNaN(raw[c])) continue;
+    let up = 0, multi = 0, deep = 0, cells = 0;
+    pts.length = 0;
+    for (let b = j - R; b <= j + R; b++) for (let a = i - R; a <= i + R; a++) {
+      const d = b * nx + a;
+      up += g.nUp[d];
+      multi += g.nMulti[d];
+      if (Number.isNaN(raw[d]) || raw[d] <= 3) continue;
+      pts.push([a - i, b - j, raw[d]]);
+      if (g.nUp[d] >= 2) { deep += g.top1[d] - g.low[d]; cells++; }
+    }
+    // (and the points in each cell stay within a few feet of each other: in a crown some go deep)
+    if (up < 8 || multi > up * 0.25 || pts.length < (2 * R + 1) ** 2 * 0.5 || (cells && deep / cells > 3)) continue;
+    if (planeFit(pts).rms < 1) flat[c] = 1;
+  }
+  // (patches big enough to be a roof, and a little round them: walls and eaves send pulses on)
+  const keep = new Uint8Array(n), seen = new Uint8Array(n), level = new Float32Array(n), min = Math.round(80 / (cell * cell));
+  for (let s = 0; s < n; s++) {
+    if (!flat[s] || seen[s]) continue;
+    const patch = [s];
+    seen[s] = 1;
+    for (let k = 0; k < patch.length; k++) {
+      const c = patch[k], i = c % nx;
+      for (const d of [c - 1, c + 1, c - nx, c + nx]) {
+        if (d < 0 || d >= n || seen[d] || !flat[d] || Math.abs((d % nx) - i) > 1) continue;
+        seen[d] = 1;
+        patch.push(d);
+      }
+    }
+    if (patch.length < min) continue;
+    const hs = patch.map(c => h[c]).sort((a, b) => a - b), mid = hs[hs.length >> 1];
+    for (const c of patch) { keep[c] = 1; level[c] = mid; }
+  }
+  // (out to its edges, where the plane test can't see for the walls, the eaves and the ground
+  // beside them: on for up to 10 ft while it stands within 6 ft of the roof's own height)
+  let front: number[] = [];
+  for (let c = 0; c < n; c++) if (keep[c]) front.push(c);
+  for (let step = 0; step < Math.round(10 / cell) && front.length; step++) {
+    const next: number[] = [];
+    for (const c of front) {
+      const i = c % nx;
+      for (const d of [c - 1, c + 1, c - nx, c + nx]) {
+        if (d < 0 || d >= n || keep[d] || Math.abs((d % nx) - i) > 1 || h[d] < 6 || Math.abs(h[d] - level[c]) > 6) continue;
+        keep[d] = 1;
+        level[d] = level[c];
+        next.push(d);
+      }
+    }
+    front = next;
+  }
+  return dilate(keep, nx, ny, 1);
+};
+
+/** A max-first queue of cells by height. */
+class Heap {
+  cells: Int32Array; keys: Float32Array; size = 0;
+  constructor(cap: number) { this.cells = new Int32Array(cap); this.keys = new Float32Array(cap); }
+  push(c: number, k: number) {
+    if (this.size === this.cells.length) {
+      const cells = new Int32Array(this.size * 2), keys = new Float32Array(this.size * 2);
+      cells.set(this.cells); keys.set(this.keys);
+      this.cells = cells; this.keys = keys;
+    }
+    let i = this.size++;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.keys[p] >= k) break;
+      this.cells[i] = this.cells[p]; this.keys[i] = this.keys[p];
+      i = p;
+    }
+    this.cells[i] = c; this.keys[i] = k;
+  }
+  pop() {
+    const top = this.cells[0], c = this.cells[--this.size], k = this.keys[this.size];
+    let i = 0;
+    for (;;) {
+      let m = 2 * i + 1;
+      if (m >= this.size) break;
+      if (m + 1 < this.size && this.keys[m + 1] > this.keys[m]) m++;
+      if (this.keys[m] <= k) break;
+      this.cells[i] = this.cells[m]; this.keys[i] = this.keys[m];
+      i = m;
+    }
+    this.cells[i] = c; this.keys[i] = k;
+    return top;
+  }
+}
+
+/** The lowest a tree's top stands (ft): lower is a bush. */
+const MIN_TREE = 15;
+
+/** How wide a crown spreads at most, for its height. */
+const CROWN_MAX = 0.6;
+
+/** Single trees in the canopy. Each top: the highest point within a reach that grows with its
+ * height (at least 15 ft up). Each crown: the canopy round a top, grown out from all the tops at
+ * once, highest first (each cell to the crown that reaches it first, so neighbors share the
+ * canopy between them where it dips), down to the crown's lower edge (40% of its height) and out
+ * at most 0.6 of its height. Two tops with no real dip between them are one tree. How wide it is:
+ * the circle as big as its crown. A conifer only where it shows: narrow and pointed in a survey
+ * flown in leaf, and in one flown bare, a crown that keeps the laser off the ground as a leafy
+ * one couldn't then; with no telling, only a very narrow, pointed crown. */
+export const findTrees = (m: { nx: number; ny: number; cell: number; canopy: Float32Array; nUp?: Uint8Array; nMulti?: Uint8Array; nGround?: Uint8Array; leafOn?: boolean | null; sorted?: boolean }): LidarTree[] => {
+  const { nx, ny, cell, canopy } = m, n = nx * ny;
+  // (smoothed a little: one leafy bump isn't a tree)
+  const s = blur(canopy, nx, ny, Math.max(1, Math.round(2 / cell)));
+  const tops: number[] = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const c = j * nx + i, h = s[c];
+    if (h <= MIN_TREE) continue;
+    const rr = Math.max(1, Math.round((0.1 * h + 2) / cell)), r2 = rr * rr;
     let top = true;
     for (let b = Math.max(0, j - rr); b <= Math.min(ny - 1, j + rr) && top; b++) for (let a = Math.max(0, i - rr); a <= Math.min(nx - 1, i + rr); a++) {
-      if (s[b * nx + a] > h + 1e-6) { top = false; break; }
+      if ((a - i) ** 2 + (b - j) ** 2 > r2) continue;
+      const v = s[b * nx + a];
+      // (on a level top, the first of it)
+      if (v > h || (v === h && b * nx + a < c)) { top = false; break; }
     }
-    if (top) tops.push([i, j, canopy[j * nx + i]]);
+    if (top) tops.push(c);
   }
-  tops.sort((a, b) => b[2] - a[2]);
-  const taken = new Set<number>(), trees: LidarTree[] = [];
-  for (const [i, j, h] of tops) {
-    // (one top to a flat crown)
-    let dup = false;
-    for (let b = j - 1; b <= j + 1 && !dup; b++) for (let a = i - 1; a <= i + 1; a++) if (taken.has(b * nx + a)) { dup = true; break; }
-    if (dup) continue;
-    taken.add(j * nx + i);
-    // Its crown: how far out (eight ways) the canopy stays over 60% of its top, still falling away
-    const reach: number[] = [];
-    for (let k = 0; k < 8; k++) {
-      const ang = (k * Math.PI) / 4;
-      let d = 0, last = h;
-      for (let step = 1; step < 25; step++) {
-        const a = Math.round(i + Math.cos(ang) * step), b = Math.round(j + Math.sin(ang) * step);
-        if (a < 0 || b < 0 || a >= nx || b >= ny) break;
-        const v = s[b * nx + a];
-        if (v < 0.6 * h || v > last + 2) break;
-        d = step;
-        last = v;
+  tops.sort((a, b) => s[b] - s[a]);
+  // Every crown grown at once, the highest canopy first
+  const label = new Int32Array(n), heap = new Heap(Math.max(16, tops.length * 4));
+  const topH = tops.map(c => s[c]), cap2 = topH.map(h => ((CROWN_MAX * h) / cell) ** 2), edge = topH.map(h => Math.max(6, 0.4 * h));
+  const ti = tops.map(c => c % nx), tj = tops.map(c => Math.floor(c / nx));
+  tops.forEach((c, k) => { label[c] = k + 1; heap.push(c, s[c]); });
+  // (the highest the canopy stays between two crowns where they meet)
+  const pass = new Map<number, number>();
+  while (heap.size) {
+    const c = heap.pop(), L = label[c] - 1, i = c % nx, j = (c - i) / nx;
+    for (let b = Math.max(0, j - 1); b <= Math.min(ny - 1, j + 1); b++) for (let a = Math.max(0, i - 1); a <= Math.min(nx - 1, i + 1); a++) {
+      const d = b * nx + a;
+      if (d === c) continue;
+      const M = label[d] - 1;
+      if (M < 0) {
+        if (canopy[d] < edge[L] || (a - ti[L]) ** 2 + (b - tj[L]) ** 2 > cap2[L]) continue;
+        label[d] = L + 1;
+        heap.push(d, s[d]);
+      } else if (M !== L) {
+        const key = Math.min(L, M) * 1e6 + Math.max(L, M), v = Math.min(s[c], s[d]);
+        if (v > (pass.get(key) ?? -1)) pass.set(key, v);
       }
-      reach.push(d);
     }
-    reach.sort((a, b) => a - b);
-    const r = Math.min(Math.max(4, ((reach[3] + reach[4]) / 2) * cell + cell / 2), 0.45 * h + 4);
-    const round1 = (v: number) => Math.round(v * 10) / 10;
-    const x = (i + 0.5) * cell, y = (j + 0.5) * cell;
-    // (a second top on a taller tree's crown, close in, with no dip in the canopy between them:
-    // the same tree with two leaders, not two trees. Its crown joins the taller one's)
-    const same = trees.find(t => {
-      const d = Math.hypot(t[0] - x, t[1] - y);
-      if (d >= 0.35 * (t[3] + r)) return false;
-      let low = Infinity;
-      for (let k = 1; k < 8; k++) {
-        const a = Math.floor((t[0] + ((x - t[0]) * k) / 8) / cell), b = Math.floor((t[1] + ((y - t[1]) * k) / 8) / cell);
-        low = Math.min(low, s[b * nx + a]);
-      }
-      return low >= 0.95 * Math.min(h, t[2]);
-    });
-    if (same) {
-      same[3] = round1(Math.min(Math.max(same[3], Math.hypot(same[0] - x, same[1] - y) + r * 0.6), 0.45 * same[2] + 4));
-      continue;
-    }
-    trees.push([round1(x), round1(y), round1(h), round1(r), r / h < 0.16 ? 1 : 0]);
   }
+  // Tops with no real dip between them, close in: one tree (the taller's)
+  const root = tops.map((_, k) => k);
+  const find = (k: number): number => (root[k] === k ? k : (root[k] = find(root[k])));
+  const pairs = [...pass].sort((a, b) => b[1] - a[1]);
+  for (const [key, v] of pairs) {
+    const A = find(Math.floor(key / 1e6)), B = find(key % 1e6);
+    if (A === B) continue;
+    const [hi, lo] = topH[A] >= topH[B] ? [A, B] : [B, A];
+    const d2 = (ti[hi] - ti[lo]) ** 2 + (tj[hi] - tj[lo]) ** 2;
+    if (v >= 0.9 * topH[lo] && d2 <= cap2[hi]) root[lo] = hi;
+  }
+  // Each tree: its crown's cells, how many points stood there and reached the ground, its top
+  const cells = new Float64Array(tops.length), up = new Float64Array(tops.length), multi = new Float64Array(tops.length), down = new Float64Array(tops.length), high = new Float32Array(tops.length);
+  for (let c = 0; c < n; c++) {
+    if (!label[c]) continue;
+    const k = find(label[c] - 1);
+    cells[k]++;
+    if (m.nUp) up[k] += m.nUp[c];
+    if (m.nMulti) multi[k] += m.nMulti[c];
+    if (m.nGround) down[k] += m.nGround[c];
+    if (canopy[c] > high[k]) high[k] = canopy[c];
+  }
+  const round1 = (v: number) => Math.round(v * 10) / 10;
+  const trees: LidarTree[] = [];
+  tops.forEach((c, k) => {
+    if (find(k) !== k) return;
+    // (in a survey that didn't sort what grows: one whose pulses nearly all came back once is
+    // something built, a roof's corner or a tank)
+    if (m.sorted === false && multi[k] < up[k] * 0.1) return;
+    const h = Math.max(high[k], topH[k]);
+    const r = Math.min(Math.max(3, Math.sqrt((cells[k] * cell * cell) / Math.PI) - cell / 2), CROWN_MAX * h);
+    // (how much it falls halfway out, as measured, not smoothed: a cone a good deal, a round
+    // crown a little)
+    let fall = 0, ways = 0;
+    const out = Math.max(cell, r * 0.5);
+    for (let w = 0; w < 8; w++) {
+      const a = Math.round(ti[k] + (Math.cos((w * Math.PI) / 4) * out) / cell), b = Math.round(tj[k] + (Math.sin((w * Math.PI) / 4) * out) / cell);
+      if (a < 0 || b < 0 || a >= nx || b >= ny) continue;
+      fall += h - canopy[b * nx + a];
+      ways++;
+    }
+    fall = ways ? fall / ways / h : 0;
+    const solid = up[k] + down[k] > 0 ? up[k] / (up[k] + down[k]) : 0;
+    const conifer = m.leafOn === true ? r / h < 0.2 && fall > 0.15 : m.leafOn === false ? solid > 0.8 && r / h < 0.3 : r / h < 0.13 && fall > 0.22;
+    trees.push([round1((ti[k] + 0.5) * cell), round1((tj[k] + 0.5) * cell), round1(h), round1(r), conifer ? 1 : 0]);
+  });
   return trees;
 };
 
-const blur3 = (v: Float32Array, nx: number, ny: number) => {
-  const a = new Float32Array(v.length), b = new Float32Array(v.length);
-  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-    let s = 0, k = 0;
-    for (let d = -1; d <= 1; d++) { const x = Math.min(nx - 1, Math.max(0, i + d)); s += v[j * nx + x]; k++; }
-    a[j * nx + i] = s / k;
+/** A box blur `r` cells round, run twice (near enough a Gaussian). */
+const blur = (v: Float32Array, nx: number, ny: number, r: number) => {
+  let src = v;
+  for (let pass = 0; pass < 2; pass++) {
+    const a = new Float32Array(v.length), b = new Float32Array(v.length);
+    for (let j = 0; j < ny; j++) {
+      let s = 0;
+      const row = j * nx;
+      for (let i = -r; i <= r; i++) s += src[row + Math.min(nx - 1, Math.max(0, i))];
+      for (let i = 0; i < nx; i++) {
+        a[row + i] = s / (2 * r + 1);
+        s += src[row + Math.min(nx - 1, i + r + 1)] - src[row + Math.max(0, i - r)];
+      }
+    }
+    for (let i = 0; i < nx; i++) {
+      let s = 0;
+      for (let j = -r; j <= r; j++) s += a[Math.min(ny - 1, Math.max(0, j)) * nx + i];
+      for (let j = 0; j < ny; j++) {
+        b[j * nx + i] = s / (2 * r + 1);
+        s += a[Math.min(ny - 1, j + r + 1) * nx + i] - a[Math.max(0, j - r) * nx + i];
+      }
+    }
+    src = b;
   }
-  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-    let s = 0, k = 0;
-    for (let d = -1; d <= 1; d++) { const y = Math.min(ny - 1, Math.max(0, j + d)); s += a[y * nx + i]; k++; }
-    b[j * nx + i] = s / k;
-  }
-  return b;
+  return src;
+};
+
+/** How high a building stands by the survey, ft over the ground: its eaves (where its roof is
+ * lowest, all but the lowest few cells of it) and its ridge (all but the highest few, which may be
+ * a tree over it or a chimney); flat where the two are within 2½ ft. Read over the outline less a
+ * cell all round (the walls). Null where the survey shows no roof there (built since, or too
+ * small to tell). */
+export const roofHeights = (m: Pick<Measured, "nx" | "ny" | "cell" | "ground" | "surface" | "snx" | "sny">, outline: P[]) => {
+  if (outline.length < 3) return null;
+  const sc = m.cell * 2, b = boundsOf(outline), hs: number[] = [];
+  for (let j = Math.max(0, Math.floor(b.minY / sc)); j <= Math.min(m.sny - 1, Math.floor(b.maxY / sc)); j++)
+    for (let i = Math.max(0, Math.floor(b.minX / sc)); i <= Math.min(m.snx - 1, Math.floor(b.maxX / sc)); i++) {
+      const p = { x: (i + 0.5) * sc, y: (j + 0.5) * sc };
+      if (!pointInPolygon(p, outline) || outline.some((q, k) => nearestOnSegment(p, q, outline[(k + 1) % outline.length]).distance < sc)) continue;
+      const top = m.surface[j * m.snx + i], gi = Math.min(m.nx - 1, i * 2), gj = Math.min(m.ny - 1, j * 2);
+      if (Number.isFinite(top)) hs.push(top - m.ground[gj * m.nx + gi]);
+    }
+  if (hs.length < 4) return null;
+  hs.sort((a, c) => a - c);
+  const at = (q: number) => hs[Math.min(hs.length - 1, Math.floor(hs.length * q))];
+  // (mostly lower than a shed's walls: the ground, or a lawn where the building is now)
+  if (at(0.5) < 6) return null;
+  const eaves = Math.max(6, at(0.1)), ridge = Math.max(eaves, at(0.9));
+  return { eaves: Math.min(80, eaves), ridge: Math.min(100, ridge), flat: ridge - eaves < 2.5 };
 };
 
 /** The ground measured, on the plan's terrain grid: heights (ft over its lowest point), its lowest
  * and highest (ft, the survey's datum). */
 export const groundOnGrid = (m: { nx: number; ny: number; cell: number; ground: Float32Array }, width: number, height: number, grid: number) => {
+  // (the mean of the cells within about 3 ft of the grid point)
+  const reach = Math.max(1, Math.round(3 / m.cell));
   const at = (x: number, y: number) => {
-    // (the mean of the cells round the grid point)
     const i = Math.floor(x / m.cell), j = Math.floor(y / m.cell);
     let s = 0, k = 0;
-    for (let b = j - 1; b <= j + 1; b++) for (let a = i - 1; a <= i + 1; a++) {
+    for (let b = j - reach; b <= j + reach; b++) for (let a = i - reach; a <= i + reach; a++) {
       if (a < 0 || b < 0 || a >= m.nx || b >= m.ny) continue;
       s += m.ground[b * m.nx + a];
       k++;
@@ -261,7 +747,6 @@ export const groundOnGrid = (m: { nx: number; ny: number; cell: number; ground: 
   return { heights, min: lo, max: hi };
 };
 
-/** A survey's year, from its name (the latest four-figure year in it). */
 /** A measured tree grown `years` years: each year it grows less the nearer it is to a tree's full
  * height (small trees fastest, about 2 to 2½ ft a year; tall ones hardly), its crown widening
  * with it. Conifers grow a little slower, and taller. */

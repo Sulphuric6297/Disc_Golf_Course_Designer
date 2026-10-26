@@ -1,14 +1,15 @@
 // What the tools and menus do to the course.
 import { grownTree } from "../lib/lidar";
 import { woodsCrownWidth } from "../three/treeKit";
-import { CIRCLE_ONE_FT, PIN_POSITIONS, TEE_ORDER, generateId } from "../constants";
+import { CIRCLE_ONE_FT, FIELD_KINDS, PIN_POSITIONS, TEE_ORDER, generateId } from "../constants";
+import { MARKED_FIELDS, createField, fieldHome, fieldKindOf, fieldOutline, isBallField } from "../lib/fields";
 import {
   createAmenity, createArea, createBasket, createDropZone, createLabel, createLine, createMando, createStructure, createTee, createTree,
   insertHole, autoWalks, basketHoles, belongsTo, closestHole, holeBaskets, holeTees, itemHoleId, movedGroup, newHole, obPicked, obPieces, teeFor, wholeHoles, withoutStretch, holeLabel, fairwayShiftAt, fairwayWidthAt
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { courseStats, holeStats } from "../lib/holeStats";
-import type { AreaItem, BasketItem, CourseDoc, CourseItem, Hole, LineItem, LineKind, P, PinPosition, TeeLevel, ToolMode, TreeItem } from "../types";
+import type { AreaItem, BasketItem, CourseDoc, CourseItem, FieldKind, Hole, LineItem, LineKind, P, PinPosition, TeeLevel, ToolMode, TreeItem } from "../types";
 import { changeDoc, editor, getDoc, removeHole, removeItems, updateItem, useEditor, useCourse } from "./course";
 import { toast } from "./toast";
 import { keepsTreesOut, treeFree } from "../lib/treeFree";
@@ -236,6 +237,11 @@ export const placeAt = (mode: ToolMode, p: P) => {
     item = createTree(p, kind === "conifer" ? { treeType: kind, radius: 10, height: 50, color: "#2f5d34" } : kind === "bush" ? { treeType: kind, radius: 5, height: 6 } : { treeType: kind });
   } else if (mode === "add-amenity") item = createAmenity(p, ed.amenityKind);
   else if (mode === "add-label") item = createLabel(p, "Label");
+  else if (mode === "add-field") {
+    // (at its usual size, north up; then picked, its panel open, as one drawn is)
+    addField(createField(ed.fieldKind, fieldOutline(ed.fieldKind, p)));
+    return;
+  }
   if (!item) return;
   changeDoc(d => ({ items: [...d.items, item!] }));
   // Trees and benches go down one after another; the rest are picked to edit
@@ -253,9 +259,20 @@ let newLabel: string | null = null;
 export const isNewLabel = (id: string) => newLabel === id;
 export const forgetNewLabel = () => { newLabel = null; };
 
+/** A field put down, the trees standing in it (on a ball field or a court) gone in the same step; then picked. */
+const addField = (item: AreaItem) => {
+  const under = keepsTreesOut(item) ? new Set(getDoc().items.filter(i => i.type === "tree" && !i.locked && treeFree([item])(i)).map(i => i.id)) : new Set<string>();
+  changeDoc(d => ({ items: [...d.items.filter(i => !under.has(i.id)), item] }));
+  useEditor.getState().set({ tool: "select" });
+  select(item.id);
+  if (under.size) toast(`Took out ${under.size} tree${under.size === 1 ? "" : "s"} standing in it.`, "info", true);
+};
+
 /** An area, line or built thing (bridge, building...) drawn with the drawing tools. */
 export const addDrawn = (kind: "area" | "line" | "structure", points: P[], opts: { straight?: boolean } = {}) => {
   const ed = editor();
+  // (a field by its corners: the Park tool's kind; fields are straight between their corners anyway)
+  if (kind === "area" && ed.areaKind === "field") return addField(createField(ed.fieldKind, points));
   const made = kind === "area" ? createArea(ed.areaKind, points) : kind === "structure" ? createStructure(ed.structureKind, points) : createLine(ed.lineKind, points);
   const item = opts.straight && made.type !== "structure" ? { ...made, straight: true } : made;
   // (a building, road, parking or water drawn over trees: those standing in it go, the same step)
@@ -530,8 +547,38 @@ export const setLineKind = (id: string, kind: LineKind) => {
     kind, width: undefined,
     ...(kind === "stream" ? {} : { widths: undefined }),
     ...(kind === "path" || kind === "walk" ? {} : { surface: undefined }),
-    ...(kind === "fence" ? {} : { fenceStyle: undefined, fenceHeight: undefined })
+    // (a fence's, a hedge's or a power line's height starts at the new kind's usual)
+    fenceHeight: undefined,
+    ...(kind === "fence" ? {} : { fenceStyle: undefined })
   } as Partial<CourseItem>);
+};
+
+/** A field in play or out of play. One undo step. */
+export const setFieldPlay = (id: string, out: boolean) => {
+  const a = getDoc().items.find(i => i.id === id);
+  if (a?.type === "area" && a.kind === "field") updateItem(id, { outOfPlay: out ? true : undefined } as Partial<CourseItem>);
+};
+
+/** A field made another kind: what only the old kind had goes (a ball field's home plate, the
+ * markings' turn), and in or out of play goes with the new kind's usual, unless it had been set
+ * the other way by hand (a playground made a ball field is in play). One undo step. */
+export const setFieldKind = (id: string, kind: FieldKind) => {
+  const a = getDoc().items.find(i => i.id === id);
+  if (!a || a.type !== "area" || a.kind !== "field" || fieldKindOf(a) === kind) return;
+  const usual = !!a.outOfPlay === !!FIELD_KINDS[fieldKindOf(a)].outOfPlay;
+  updateItem(id, {
+    field: kind,
+    outOfPlay: usual ? (FIELD_KINDS[kind].outOfPlay ? true : undefined) : a.outOfPlay,
+    ...(isBallField(kind) ? {} : { home: undefined }),
+    ...(MARKED_FIELDS.includes(kind) ? {} : { fieldTurn: undefined })
+  } as Partial<CourseItem>);
+};
+
+/** A ball field's home plate moved on to its outline's next corner. */
+export const nextHomeCorner = (id: string) => {
+  const a = getDoc().items.find(i => i.id === id);
+  if (!a || a.type !== "area" || a.points.length < 3) return;
+  updateItem(id, { home: (fieldHome(a) + 1) % a.points.length } as Partial<CourseItem>);
 };
 
 /** A turn put in a hole's line at a spot (between the turns either side of where it's nearest). */

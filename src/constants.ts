@@ -1,4 +1,4 @@
-import type { AmenityKind, AreaKind, LineKind, PathSurface, PinPosition, RoofKind, StructureKind, TeeLevel, TeeSurface } from "./types";
+import type { AmenityKind, AreaKind, FieldKind, LineKind, PathSurface, PinPosition, RoofKind, StructureKind, TeeLevel, TeeSurface } from "./types";
 
 export const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -67,6 +67,7 @@ export const AREA_KINDS: Record<AreaKind, { label: string; color: string; fill: 
   nogo: { label: "Out of play", color: "#7c3aed", fill: 0.22, help: "Somewhere players have to stay out of: a playground, a garden, private land. The PDGA calls it a required relief area. It's played like OB, but with no penalty." },
   parking: { label: "Parking lot", color: "#6b7280", fill: 0.5, help: "A parking lot. Checks warn about a hole that throws over one, and about a first tee or a last basket that's a long walk from it." },
   building: { label: "Building", color: "#a8a29e", fill: 0.7, help: "A building as a flat shape on the map. For walls and a roof in 3D, use a Building from the Build tool." },
+  field: { label: "Field or court", color: "#6aa84f", fill: 0.5, help: "A ball field, a court, a playground or a pool: drawn as itself on the map and in 3D." },
   sand: { label: "Sand or dirt", color: "#d9c48f", fill: 0.5, help: "Sand, dirt or bare ground. No grass or trees grow on it." }
 };
 
@@ -92,7 +93,30 @@ export const LINE_KINDS: Record<LineKind, { label: string; color: string; width:
   walk: { label: "Next-tee route", color: "#ffffff", width: 0, maxWidth: 60, help: "The way players walk from a basket to the next tee. With no width, it's a dashed line on the map." },
   road: { label: "Road", color: "#6b7280", width: 22, maxWidth: 60, help: "A road or a drive. Checks warn about any hole that throws across one." },
   fence: { label: "Fence", color: "#78716c", width: 0, maxWidth: 60, height: 4, heights: [2, 12], help: "A fence that stands up in 3D: posts and rails, boards or chain link." },
-  stream: { label: "Stream", color: "#2b8fd6", width: 6, maxWidth: 200, help: "A creek or a ditch. It counts as OB unless you set Not OB. Drag the squares on its banks to make it wider in places." }
+  stream: { label: "Stream", color: "#2b8fd6", width: 6, maxWidth: 200, help: "A creek or a ditch. It counts as OB unless you set Not OB. Drag the squares on its banks to make it wider in places." },
+  power: { label: "Power line", color: "#a8a29e", width: 0, maxWidth: 60, height: 30, heights: [15, 80], help: "Wires on poles overhead." },
+  hedge: { label: "Hedge", color: "#3f6b35", width: 4, maxWidth: 20, height: 5, heights: [2, 12], help: "A row of bushes grown close together." }
+};
+
+/** A park's fields, courts and play areas: the name, the usual size (ft, for one placed by hand),
+ * whether players start out of it, and the ground it's drawn with. */
+export const FIELD_KINDS: Record<FieldKind, { label: string; size: [number, number]; outOfPlay?: boolean; ground: "grass" | "dirt" | "court" | "sand" | "water" | "rubber" | "concrete" | "mulch" }> = {
+  baseball: { label: "Baseball field", size: [330, 330], ground: "grass" },
+  softball: { label: "Softball field", size: [250, 250], ground: "grass" },
+  soccer: { label: "Soccer field", size: [345, 225], ground: "grass" },
+  football: { label: "Football field", size: [360, 160], ground: "grass" },
+  multi: { label: "Sports field", size: [300, 200], ground: "grass" },
+  tennis: { label: "Tennis court", size: [120, 60], ground: "court" },
+  pickleball: { label: "Pickleball court", size: [64, 34], ground: "court" },
+  basketball: { label: "Basketball court", size: [94, 50], ground: "court" },
+  volleyball: { label: "Volleyball court", size: [78, 46], ground: "sand" },
+  playground: { label: "Playground", size: [90, 70], outOfPlay: true, ground: "mulch" },
+  pool: { label: "Pool", size: [82, 50], outOfPlay: true, ground: "water" },
+  splash: { label: "Splash pad", size: [50, 50], outOfPlay: true, ground: "concrete" },
+  dog: { label: "Dog park", size: [200, 150], outOfPlay: true, ground: "grass" },
+  skate: { label: "Skate park", size: [120, 90], outOfPlay: true, ground: "concrete" },
+  track: { label: "Running track", size: [580, 300], ground: "rubber" },
+  garden: { label: "Garden", size: [100, 60], outOfPlay: true, ground: "mulch" }
 };
 
 /** Amenities: the name on the map's legend, and `pick`, the name to pick it by where that's
@@ -111,7 +135,15 @@ export const AMENITY_KINDS: Record<AmenityKind, { label: string; pick?: string; 
   bridge: { label: "Bridge", pick: "Bridge (map symbol)", letter: "BR", color: "#78350f", retired: true },
   firstaid: { label: "First aid", letter: "+", color: "#dc2626" },
   picnic: { label: "Picnic table", letter: "PT", color: "#92400e" },
-  here: { label: "\"You are here\" (on the map board)", pick: "You are here", letter: "★", color: "#ca8a04" }
+  here: { label: "\"You are here\" (on the map board)", pick: "You are here", letter: "★", color: "#ca8a04" },
+  grill: { label: "Grill", letter: "G", color: "#b45309" },
+  fitness: { label: "Fitness station", letter: "F", color: "#15803d" },
+  flagpole: { label: "Flagpole", letter: "FL", color: "#64748b" },
+  light: { label: "Light pole", letter: "L", color: "#ca8a04" },
+  pole: { label: "Utility pole", letter: "UP", color: "#78716c" },
+  bikerack: { label: "Bike rack", letter: "BK", color: "#0f766e" },
+  fountain: { label: "Fountain", letter: "FT", color: "#0284c7" },
+  gate: { label: "Gate", letter: "GT", color: "#78716c" }
 };
 /** The amenities offered for new ones, in order (the retired two left out). */
 export const AMENITY_ORDER = (Object.keys(AMENITY_KINDS) as AmenityKind[]).filter(k => !AMENITY_KINDS[k].retired);

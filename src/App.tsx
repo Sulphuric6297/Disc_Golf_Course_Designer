@@ -140,12 +140,12 @@ function cameIn(site: ImportedSite) {
   const parts: string[] = [];
   if (site.background) parts.push(/^OpenStreetMap/.test(site.site.imagerySource ?? "") ? "street map" : "photo");
   if (Object.keys(site.terrainHeights).length) parts.push("ground");
-  const measured = site.lidar?.trees.length ?? 0;
+  const measured = site.standing ?? site.lidar?.trees.length ?? 0;
   if (measured) parts.push(many(measured, "measured tree"));
-  const photoTrees = site.trees.length, photoAreas = site.mapped.filter(i => from(i) === "photo").length;
+  const photoTrees = site.trees.filter(i => from(i) === "photo").length, photoAreas = site.mapped.filter(i => from(i) === "photo").length;
   if (photoTrees || photoAreas) parts.push(`${[photoTrees ? many(photoTrees, "tree") : "", photoAreas ? many(photoAreas, "area") : ""].filter(Boolean).join(" and ")} from the photo`);
-  const osm = site.mapped.filter(i => from(i) === "osm").length;
-  if (osm) parts.push(`${many(osm, "shape")} from OpenStreetMap`);
+  const osm = site.mapped.filter(i => from(i) === "osm").length, osmTrees = site.trees.filter(i => from(i) === "osm").length;
+  if (osm || osmTrees) parts.push(`${[osm ? many(osm, "shape") : "", osmTrees ? many(osmTrees, "tree") : ""].filter(Boolean).join(" and ")} from OpenStreetMap`);
   const traced = site.mapped.filter(i => from(i) === "traced").length;
   if (traced) parts.push(`${many(traced, "building")} traced from the air`);
   if (!parts.length) return "";
@@ -201,7 +201,9 @@ export default function App() {
     return stop;
   }, []);
 
-  const onImported = (site: ImportedSite) => {
+  const onImported = (site: ImportedSite, opts?: { course?: boolean }) => {
+    // (the disc golf course mapped there, when asked for: its holes after the ones here)
+    const mappedCourse = opts?.course && site.course?.holes.length ? site.course : null;
     // What was designed stays on the same ground when the frame grows, shrinks or moves
     const d0 = getDoc();
     const from = geoRefOf(d0);
@@ -221,8 +223,8 @@ export default function App() {
       name: d.name === "New Disc Golf Course" && site.site.location?.label ? `${site.site.location.label.split(",")[0]} Disc Golf Course` : d.name,
       // (the trees cut down stay cut, on the same spot on the ground)
       cutTrees: from && site.site.bounds ? d.cutTrees?.map(reframe(from, { ...site.site.bounds, ...site.canvas })) : d.cutTrees,
-      holes: carried.holes,
-      items: [...carried.items, ...freshOnly(carried.items, [...site.mapped, ...site.trees])],
+      holes: mappedCourse ? [...carried.holes, ...mappedCourse.holes] : carried.holes,
+      items: [...carried.items, ...freshOnly(carried.items, [...site.mapped, ...site.trees]), ...(mappedCourse?.items ?? [])],
       lidar: site.lidar
     }));
     setFindSite(false);

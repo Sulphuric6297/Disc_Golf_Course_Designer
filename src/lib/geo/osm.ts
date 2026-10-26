@@ -1,6 +1,12 @@
-// Paths, roads, streams, water, woods, grass, parking, playgrounds and buildings from OpenStreetMap (free, no
-// key), so the map shows what is around the holes and the safety checks know about it.
-import type { GeoBounds } from "./core";
+// Paths, roads, streams, water, woods, grass, wetlands, parking, playgrounds, buildings and
+// shelters from OpenStreetMap (free, no key), so the map shows what is around the holes and the
+// safety checks know about it; and what stands about the park (benches, picnic tables, toilets,
+// drinking water, trash cans, grills, gates, lights and poles, parking signs, single trees, tree
+// rows, hedges, power lines, and its ball fields, courts and play areas as fields), and a disc golf
+// course mapped there (its tees, baskets and holes).
+import type { AmenityKind, ParkDetail, ParkKind, PathSurface } from "../../types";
+import { abortError, anySignal, type GeoBounds } from "./core";
+import { amenityOf, fieldKindOfTags, lineOf } from "./parkKinds";
 
 export const OVERPASS_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
@@ -13,23 +19,128 @@ export const OVERPASS_ENDPOINTS = [
 export const OVERPASS_TIMEOUT_MS = 35000;
 
 export type LatLon = { lat: number; lon: number };
-export type OsmFeature =
-  | { geom: "line"; kind: "path" | "road" | "stream" | "fence"; points: LatLon[]; name?: string }
-  | { geom: "area"; kind: "water" | "parking" | "building" | "nogo" | "woods" | "sand" | "rough"; points: LatLon[]; name?: string; building?: OsmBuilding };
+/** A tree mapped on its own: its height and crown (m) and leaves, where mapped. */
+export type OsmTree = { heightM?: number; crownM?: number; conifer?: boolean };
+/** Each feature keeps its raw OpenStreetMap `tags` (the tiles': what they carry), for what's
+ * worked out from them later (a field's kind, a power line's height). */
+export type OsmFeature = (
+  /** (`line`: a power line's or a hedge's height and a hedge's width, ft, where tagged) */
+  | { geom: "line"; kind: "path" | "road" | "stream" | "fence" | "power" | "hedge"; points: LatLon[]; name?: string; surface?: PathSurface; widthM?: number; park?: ParkDetail; line?: { height?: number; width?: number } }
+  /** A row of trees. */
+  | { geom: "line"; kind: "treeRow"; points: LatLon[]; name?: string; tree?: OsmTree }
+  /** A disc golf hole drawn from its tee to its basket (or a golf-style hole inside a disc golf course). */
+  | { geom: "line"; kind: "dgHole"; points: LatLon[]; name?: string; ref?: string; par?: number; golf?: boolean }
+  /** (`park`: what a park's thing is there, a ball field or a playground, whatever kind it's drawn
+   * as; a field is one of the app's fields, its kind worked out from its tags and outline) */
+  | { geom: "area"; kind: "water" | "parking" | "building" | "nogo" | "woods" | "sand" | "rough" | "shelter" | "field"; points: LatLon[]; name?: string; building?: OsmBuilding; park?: ParkDetail }
+  /** A park's thing mapped on one spot that the app has nothing to draw as (a ball field or a
+   * flagpole mapped as a point): kept, and counted. */
+  | { geom: "point"; kind: "park"; points: [LatLon]; name?: string; park: ParkDetail }
+  /** A disc golf course's outline. */
+  | { geom: "area"; kind: "dgCourse"; points: LatLon[]; name?: string }
+  /** Something standing on one spot (`points` holds that one spot). */
+  | { geom: "point"; kind: "amenity"; amenity: AmenityKind; points: [LatLon]; name?: string }
+  | { geom: "point"; kind: "tree"; points: [LatLon]; tree: OsmTree; name?: string }
+  | { geom: "point"; kind: "shelter"; points: [LatLon]; name?: string; small?: boolean }
+  /** A disc golf tee or basket (`golf`: mapped as a golf tee or pin, so only inside a disc golf course). */
+  | { geom: "point"; kind: "dgTee" | "dgBasket"; points: [LatLon]; ref?: string; name?: string; golf?: boolean }
+) & { tags?: Record<string, string> };
 
-/** What OpenStreetMap says about a building's shape: its height (m) and roof. */
-export type OsmBuilding = { heightM?: number; roof?: "gable" | "hip" | "flat" | "shed" | "pyramid" };
+/** What OpenStreetMap says about a building's shape: its height to the top of the roof and the
+ * roof's own height (m, where mapped), its walls' height from its floors (m), and its roof. */
+export type OsmBuilding = { topM?: number; roofM?: number; heightM?: number; roof?: "gable" | "hip" | "flat" | "shed" | "pyramid" };
 
 const ROOF_SHAPES: Record<string, OsmBuilding["roof"]> = { gabled: "gable", hipped: "hip", half_hipped: "hip", flat: "flat", skillion: "shed", lean_to: "shed", pyramidal: "pyramid", dome: "pyramid", onion: "pyramid" };
 
-/** A building's height (to the eaves, m) and roof from its tags, where mapped. */
+/** A length tag in meters ("12", "12 m", "40 ft", "40'"), or undefined. */
+export const osmMeters = (v?: string) => {
+  if (!v) return undefined;
+  const n = parseFloat(v.replace(",", "."));
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return /ft|'|feet/i.test(v) ? n * 0.3048 : n;
+};
+
+/** A building's heights and roof from its tags, where mapped: `height` is to the top of the roof
+ * (the walls are that less the roof); floors (3 m each) give the walls only where it has none. */
 export const osmBuilding = (tags: Record<string, string>): OsmBuilding => {
-  const m = parseFloat(tags["building:height"] ?? tags.height ?? "");
   const levels = parseFloat(tags["building:levels"] ?? "");
   return {
-    heightM: Number.isFinite(levels) && levels > 0 ? levels * 3 : Number.isFinite(m) && m > 0 ? m : undefined,
+    topM: osmMeters(tags["building:height"] ?? tags.height),
+    roofM: osmMeters(tags["roof:height"]),
+    heightM: Number.isFinite(levels) && levels > 0 ? levels * 3 : undefined,
     roof: ROOF_SHAPES[tags["roof:shape"] ?? ""] ?? undefined
   };
+};
+
+/** What a path is made of, from its `surface` tag (unset where it isn't mapped or doesn't fit one). */
+export const osmSurface = (surface?: string): PathSurface | undefined => {
+  if (!surface) return undefined;
+  if (/^(asphalt|concrete|paved|paving_stones|sett|concrete:plates|concrete:lanes|bricks|metal|wood)$/.test(surface)) return "paved";
+  if (/^(gravel|fine_gravel|compacted|pebblestone|unhewn_cobblestone|rock)$/.test(surface)) return "gravel";
+  if (/^(woodchips|bark)$/.test(surface)) return "woodchips";
+  if (/^(grass|grass_paver)$/.test(surface)) return "grass";
+  if (/^(dirt|ground|earth|mud|sand|unpaved)$/.test(surface)) return "dirt";
+  return undefined;
+};
+
+/** A tree's height, crown and leaves from its tags. */
+const osmTree = (tags: Record<string, string>): OsmTree => ({
+  heightM: osmMeters(tags.height),
+  crownM: osmMeters(tags.diameter_crown),
+  conifer: tags.leaf_type === "needleleaved" ? true : tags.leaf_type === "broadleaved" ? false : undefined
+});
+
+/** Things on one spot the app has an amenity for (benches, picnic tables, toilets, drinking water,
+ * trash cans, parking signs, a practice basket). BBQs, gates and fitness stations have none. */
+export const osmAmenity = (tags: Record<string, string>): AmenityKind | null => {
+  if (tags.amenity === "bench" || tags.leisure === "bench") return "bench";
+  if (tags.leisure === "picnic_table" || tags.amenity === "picnic_table") return "picnic";
+  if (tags.amenity === "toilets") return "restroom";
+  if (tags.amenity === "drinking_water" || tags.man_made === "drinking_fountain") return "water";
+  if (tags.amenity === "waste_basket") return "trash";
+  if (tags.amenity === "parking") return "parking";
+  if (tags.disc_golf === "practice_basket") return "practice";
+  return null;
+};
+
+/** Sports played on courts (a pitch for them is a court). */
+const COURTS = /^(tennis|basketball|pickleball|volleyball|beachvolleyball|padel|handball|netball|racquet|squash|badminton|shuffleboard|bocce|boules)$/;
+
+/** What a park's thing is, from its tags (a ball field, a playground, a pool, a dog park, a
+ * splash pad, a flagpole…), with its sport and surface where mapped; or undefined. A ball field's
+ * infield (or outfield) mapped as its own area is told apart. */
+export const parkDetail = (tags: Record<string, string>): ParkDetail | undefined => {
+  const sport = tags.sport?.split(";")[0] || undefined;
+  const surface = tags.surface || undefined;
+  const of = (what: ParkKind): ParkDetail => ({ what, ...(sport ? { sport } : {}), ...(surface ? { surface } : {}) });
+  const l = tags.leisure;
+  if (l === "pitch") {
+    const part = tags.pitch ?? tags.baseball ?? tags.softball;
+    if (part === "infield" || part === "outfield") return of(part);
+    // (a ball field's dirt infield mapped by itself, inside the field)
+    if (/^(baseball|softball)$/.test(sport ?? "") && /^(dirt|clay|sand|earth|ground|fine_gravel)$/.test(surface ?? "")) return of("infield");
+    return of(COURTS.test(sport ?? "") ? "court" : "pitch");
+  }
+  if (l === "playground" || l === "garden" || l === "dog_park" || l === "sports_centre" || l === "track" || l === "splash_pad") return of(l);
+  if (l === "swimming_pool" || tags.amenity === "swimming_pool") return of("pool");
+  if (l === "skatepark") return of("skatepark");
+  if (tags.amenity === "fountain") return of(tags.fountain === "splash_pad" ? "splash_pad" : "fountain");
+  if (tags.man_made === "water_tower") return of("water_tower");
+  if (tags.man_made === "flagpole") return of("flagpole");
+  if (tags.man_made === "goal" || tags.leisure === "goal") return of("goal");
+  if (tags.barrier === "backstop" || tags.man_made === "backstop") return of("backstop");
+  if (tags.building === "shed") return of("shed");
+  return undefined;
+};
+
+/** A park's thing in words, one and many ("ball field", "tennis courts"). */
+export const parkWords = (p: ParkDetail): [string, string] => {
+  const sport = p.sport ?? "";
+  const one =
+    p.what === "pitch" ? (/^(baseball|softball)$/.test(sport) ? "ball field" : sport === "soccer" ? "soccer field" : sport === "american_football" ? "football field" : sport === "rugby" || sport === "rugby_union" ? "rugby field" : sport === "cricket" ? "cricket field" : sport === "golf" ? "golf green" : "sports field") :
+    p.what === "court" ? `${sport === "beachvolleyball" ? "beach volleyball" : sport || "sports"} court` :
+    ({ playground: "playground", pool: "pool", dog_park: "dog park", garden: "garden", sports_centre: "sports center", track: "track", skatepark: "skate park", fountain: "fountain", splash_pad: "splash pad", water_tower: "water tower", shed: "shed", flagpole: "flagpole", goal: "goal", backstop: "backstop", infield: "infield", outfield: "outfield" } as Record<string, string>)[p.what] ?? p.what;
+  return [one, `${one}s`];
 };
 
 const PATHS = new Set(["footway", "path", "track", "cycleway", "bridleway", "steps", "pedestrian"]);
@@ -49,21 +160,53 @@ const notOnTheGround = (tags: Record<string, string>) =>
 
 /** What an OSM way is, for the course map (or null to skip it). */
 export const classifyOsm = (tags: Record<string, string>, closed: boolean): { geom: "line" | "area"; kind: OsmFeature["kind"] } | null => {
-  if (tags.leisure === "disc_golf_course") return null;
+  if (tags.leisure === "disc_golf_course") return closed ? { geom: "area", kind: "dgCourse" } : null;
+  if (tags.disc_golf === "hole") return { geom: "line", kind: "dgHole" };
+  if (tags.golf === "hole") return { geom: "line", kind: "dgHole" };
   if (tags.highway && notOnTheGround(tags)) return null;
   if (closed && (tags.natural === "water" || tags.landuse === "reservoir" || tags.landuse === "basin" || tags.water || tags.waterway === "riverbank")) return { geom: "area", kind: "water" };
   if (closed && tags.amenity === "parking") return { geom: "area", kind: "parking" };
-  if (closed && tags.building) return { geom: "area", kind: "building" };
-  if (closed && (tags.leisure === "playground" || tags.leisure === "pitch" || tags.leisure === "swimming_pool" || tags.leisure === "garden" || tags.landuse === "residential")) return { geom: "area", kind: "nogo" };
+  // (a picnic shelter is often mapped as a roof: a shelter, open at the sides)
+  if (closed && tags.amenity === "shelter") return { geom: "area", kind: "shelter" };
+  if (closed && (tags.building || tags.man_made === "water_tower")) return { geom: "area", kind: "building" };
+  // A ball field's dirt infield, mapped by itself: dirt (inside the field, out of play as a whole)
+  if (closed && parkDetail(tags)?.what === "infield" && /^(dirt|clay|sand|earth|ground|fine_gravel)$/.test(tags.surface ?? "")) return { geom: "area", kind: "sand" };
+  // (a decorative fountain's basin is water)
+  if (closed && tags.amenity === "fountain" && tags.fountain !== "splash_pad") return { geom: "area", kind: "water" };
+  // Ball fields, courts, playgrounds, pools, dog parks, tracks, skate parks, gardens and splash
+  // pads: the app's fields (what each is from its tags and outline, in osmFeatureItems)
+  if (closed && fieldKindOfTags(tags)) return { geom: "area", kind: "field" };
+  // (the rest of them, a back yard's pool or a sports centre's grounds, and homes: out of play)
+  if (closed && (/^(playground|pitch|swimming_pool|garden|dog_park|sports_centre|track|skatepark|splash_pad|water_park)$/.test(tags.leisure ?? "") || tags.amenity === "fountain" || tags.landuse === "residential")) return { geom: "area", kind: "nogo" };
   if (closed && (tags.natural === "wood" || tags.landuse === "forest")) return { geom: "area", kind: "woods" };
   if (closed && (tags.natural === "sand" || tags.natural === "beach" || tags.golf === "bunker")) return { geom: "area", kind: "sand" };
+  // Wetlands: a swamp is woods standing in water; a marsh, a wet meadow or reeds is tall grass
+  if (closed && tags.natural === "wetland") return { geom: "area", kind: tags.wetland === "swamp" || tags.wetland === "mangrove" ? "woods" : "rough" };
   // Meadows, grassland, scrub and lawns: grass areas (rough)
   if (closed && (GRASS_NATURAL.has(tags.natural ?? "") || GRASS_LANDUSE.has(tags.landuse ?? ""))) return { geom: "area", kind: "rough" };
   if (tags.waterway && STREAMS.has(tags.waterway)) return { geom: "line", kind: "stream" };
   if (tags.highway && PATHS.has(tags.highway)) return { geom: "line", kind: "path" };
   if (tags.highway && ROADS.has(tags.highway)) return { geom: "line", kind: "road" };
-  if (tags.barrier === "fence" || tags.barrier === "wall") return { geom: "line", kind: "fence" };
+  if (tags.barrier === "fence" || tags.barrier === "wall" || tags.barrier === "backstop" || tags.man_made === "backstop") return { geom: "line", kind: "fence" };
+  // Power lines and hedges: lines of their own (overhead wires; a band of bushes)
+  const lo = lineOf(tags);
+  if (lo) return { geom: "line", kind: lo.kind as "power" | "hedge" };
+  if (tags.natural === "tree_row") return { geom: "line", kind: "treeRow" };
   return null;
+};
+
+/** What an OSM node is, for the course map (or null to skip it). */
+export const classifyOsmNode = (tags: Record<string, string>, at: LatLon): OsmFeature | null => {
+  const name = tags.name;
+  if (tags.disc_golf === "tee" || tags.golf === "tee") return { geom: "point", kind: "dgTee", points: [at], ref: tags.ref, name, ...(tags.disc_golf !== "tee" ? { golf: true } : {}) };
+  if (tags.disc_golf === "basket" || tags.golf === "pin") return { geom: "point", kind: "dgBasket", points: [at], ref: tags.ref, name, ...(tags.disc_golf !== "basket" ? { golf: true } : {}) };
+  if (tags.natural === "tree") return { geom: "point", kind: "tree", points: [at], tree: osmTree(tags) };
+  if (tags.amenity === "shelter") return { geom: "point", kind: "shelter", points: [at], name, small: tags.shelter_type === "public_transport" || tags.shelter_type === "lean_to" };
+  // (the older amenities, then the newer: grills, fitness stations, flagpoles, lights, poles, bike racks, fountains, gates)
+  const amenity = osmAmenity(tags) ?? amenityOf(tags);
+  if (amenity) return { geom: "point", kind: "amenity", amenity, points: [at], name };
+  const park = parkDetail(tags);
+  return park ? { geom: "point", kind: "park", points: [at], name, park } : null;
 };
 
 type OsmMember = { type: string; role?: string; geometry?: (LatLon | null)[] };
@@ -96,48 +239,65 @@ export const outerRings = (members: OsmMember[]): LatLon[][] => {
   return rings;
 };
 
-/** What an Overpass answer holds for the course map: its ways, and its multipolygons' outlines. */
+/** What an Overpass answer holds for the course map: its nodes, its ways, and its multipolygons' outlines. */
 export const osmFeaturesFrom = (json: { elements?: any[] }): OsmFeature[] => {
   const out: OsmFeature[] = [];
   for (const el of json.elements ?? []) {
     const tags: Record<string, string> = el.tags ?? {};
-    if (el.type === "way") {
+    // (what a park's thing is, kept whatever it's drawn as)
+    const park = el.type === "node" ? undefined : parkDetail(tags);
+    if (el.type === "node") {
+      if (!Number.isFinite(el.lat) || !Number.isFinite(el.lon)) continue;
+      const f = classifyOsmNode(tags, { lat: el.lat, lon: el.lon });
+      if (f) out.push({ ...f, tags });
+    } else if (el.type === "way") {
       if (!Array.isArray(el.geometry)) continue;
       const pts: LatLon[] = el.geometry.filter(Boolean).map((g: LatLon) => ({ lat: g.lat, lon: g.lon }));
       if (pts.length < 2) continue;
       const closed = pts.length >= 4 && pts[0].lat === pts[pts.length - 1].lat && pts[0].lon === pts[pts.length - 1].lon;
       const what = classifyOsm(tags, closed);
       if (!what) continue;
-      if (what.geom === "area") out.push({ geom: "area", kind: what.kind as any, points: pts.slice(0, -1), name: tags.name, ...(what.kind === "building" ? { building: osmBuilding(tags) } : {}) });
-      else out.push({ geom: "line", kind: what.kind as any, points: pts, name: tags.name });
-    } else if (el.type === "relation" && tags.type === "multipolygon") {
+      const name = tags.name;
+      if (what.geom === "area") out.push({ geom: "area", kind: what.kind as any, points: pts.slice(0, -1), name, tags, ...(what.kind === "building" || what.kind === "shelter" ? { building: osmBuilding(tags) } : {}), ...(park ? { park } : {}) });
+      else if (what.kind === "dgHole") {
+        const par = parseInt(tags.par ?? "", 10);
+        out.push({ geom: "line", kind: "dgHole", points: pts, name, tags, ref: tags.ref, ...(par > 0 ? { par } : {}), ...(tags.golf === "hole" && tags.disc_golf !== "hole" ? { golf: true } : {}) });
+      } else if (what.kind === "treeRow") out.push({ geom: "line", kind: "treeRow", points: pts, name, tags, tree: osmTree(tags) });
+      else if (what.kind === "power" || what.kind === "hedge") {
+        const lo = lineOf(tags);
+        out.push({ geom: "line", kind: what.kind, points: pts, name, tags, line: { ...(lo?.height ? { height: lo.height } : {}), ...(lo?.width ? { width: lo.width } : {}) } });
+      } else if (what.kind === "path" || what.kind === "road") {
+        const surface = what.kind === "path" ? osmSurface(tags.surface) : undefined;
+        const widthM = osmMeters(tags.width) ?? (what.kind === "road" && parseInt(tags.lanes ?? "", 10) > 0 ? parseInt(tags.lanes, 10) * 3.3 : undefined);
+        out.push({ geom: "line", kind: what.kind, points: pts, name, tags, ...(surface ? { surface } : {}), ...(widthM ? { widthM } : {}) });
+      } else out.push({ geom: "line", kind: what.kind as any, points: pts, name, tags, ...(park ? { park } : {}) });
+    } else if (el.type === "relation" && (tags.type === "multipolygon" || tags.leisure === "disc_golf_course")) {
       const what = classifyOsm(tags, true);
       if (what?.geom !== "area") continue;
-      for (const ring of outerRings(el.members ?? [])) out.push({ geom: "area", kind: what.kind as any, points: ring, name: tags.name });
+      for (const ring of outerRings(el.members ?? [])) out.push({ geom: "area", kind: what.kind as any, points: ring, name: tags.name, tags, ...(park ? { park } : {}) });
     }
   }
   return out;
 };
 
-/** The Overpass query for a box: ways, and the multipolygons that lakes, rivers and woods are often mapped as. */
+/** The Overpass query for a box: nodes, ways, and the multipolygons that lakes, rivers and woods
+ * are often mapped as. */
 export const overpassQuery = (bounds: GeoBounds) => {
   const box = `(${bounds.south},${bounds.west},${bounds.north},${bounds.east});`;
-  const ways = ['way["highway"]', 'way["waterway"]', 'way["natural"~"^(water|wood|sand|beach|grassland|scrub|heath)$"]', 'way["landuse"~"^(reservoir|basin|forest|meadow|grass|village_green)$"]', 'way["amenity"="parking"]', 'way["building"]', 'way["leisure"~"^(playground|pitch|swimming_pool|garden)$"]', 'way["barrier"~"^(fence|wall)$"]'];
+  const parks = "playground|pitch|swimming_pool|garden|dog_park|sports_centre|track|skatepark|splash_pad|water_park";
+  const nodes = ['node["amenity"~"^(bench|picnic_table|toilets|drinking_water|waste_basket|parking|shelter|fountain|bbq|bicycle_parking)$"]', `node["leisure"~"^(picnic_table|bench|goal|fitness_station|firepit|${parks})$"]`, 'node["man_made"~"^(drinking_fountain|flagpole|water_tower|goal|backstop|utility_pole|street_lamp)$"]', 'node["highway"="street_lamp"]', 'node["power"="pole"]', 'node["barrier"~"^(gate|lift_gate|swing_gate|kissing_gate)$"]', 'node["natural"="tree"]', 'node["disc_golf"]', 'node["golf"~"^(tee|pin)$"]'];
+  const ways = ['way["highway"]', 'way["waterway"]', 'way["natural"~"^(water|wood|sand|beach|grassland|scrub|heath|wetland|tree_row)$"]', 'way["landuse"~"^(reservoir|basin|forest|meadow|grass|village_green)$"]', 'way["amenity"~"^(parking|shelter|fountain|swimming_pool)$"]', 'way["building"]', 'way["man_made"~"^(water_tower|backstop)$"]', `way["leisure"~"^(${parks}|disc_golf_course)$"]`, 'way["barrier"~"^(fence|wall|hedge|backstop)$"]', 'way["power"~"^(line|minor_line)$"]', 'way["disc_golf"]', 'way["golf"="hole"]'];
   const mp = 'relation["type"="multipolygon"]';
-  const relations = [`${mp}["natural"~"^(water|wood|sand|beach|grassland|scrub|heath)$"]`, `${mp}["landuse"~"^(reservoir|basin|forest|meadow|grass)$"]`, `${mp}["waterway"="riverbank"]`, `${mp}["amenity"="parking"]`];
-  return `[out:json][timeout:30];(${[...ways, ...relations].map(q => q + box).join("")});out geom;`;
+  const relations = [`${mp}["natural"~"^(water|wood|sand|beach|grassland|scrub|heath|wetland)$"]`, `${mp}["landuse"~"^(reservoir|basin|forest|meadow|grass)$"]`, `${mp}["waterway"="riverbank"]`, `${mp}["amenity"="parking"]`, `${mp}["leisure"~"^(${parks})$"]`, 'relation["leisure"="disc_golf_course"]'];
+  return `[out:json][timeout:30];(${[...nodes, ...ways, ...relations].map(q => q + box).join("")});out geom;`;
 };
 
-/**
- * Paths, roads, water and the rest from OpenStreetMap, asking the next server when one is busy or
- * slow (the main one often is). `onServer` hears which server is being asked (0 first).
- */
-export const fetchOsmFeatures = async (bounds: GeoBounds, timeoutMs = OVERPASS_TIMEOUT_MS, onServer?: (index: number) => void): Promise<OsmFeature[]> => {
-  const query = overpassQuery(bounds);
-  // All the servers at once: the first good answer wins and the others are dropped (one at a
-  // time, a busy main server made imports wait a minute or more, or fail)
+/** One Overpass question, asked of every server at once: the first good answer wins and the others
+ * are dropped (one at a time, a busy main server made imports wait a minute or more, or fail).
+ * `onBusy` hears when a server has failed and others are still being asked. */
+export const askOverpass = async (query: string, opts: { timeoutMs?: number; onBusy?: () => void; signal?: AbortSignal } = {}): Promise<any> => {
+  const timeoutMs = opts.timeoutMs ?? OVERPASS_TIMEOUT_MS;
   const stops = OVERPASS_ENDPOINTS.map(() => new AbortController());
-  onServer?.(0);
   const one = async (index: number) => {
     const timer = setTimeout(() => stops[index].abort(), timeoutMs);
     try {
@@ -145,24 +305,98 @@ export const fetchOsmFeatures = async (bounds: GeoBounds, timeoutMs = OVERPASS_T
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: `data=${encodeURIComponent(query)}`,
-        signal: stops[index].signal
+        signal: anySignal(stops[index].signal, opts.signal)
       });
       if (!res.ok) throw new Error(`Overpass ${res.status}`);
       const json = await res.json();
       if (typeof json.remark === "string" && /runtime error|timed out|out of memory/i.test(json.remark)) throw new Error(json.remark);
-      return osmFeaturesFrom(json);
+      return json;
     } finally {
       clearTimeout(timer);
     }
   };
-  return new Promise<OsmFeature[]>((resolve, reject) => {
+  return new Promise<any>((resolve, reject) => {
     let left = OVERPASS_ENDPOINTS.length, firstError: unknown = null;
+    opts.signal?.addEventListener("abort", () => reject(abortError()), { once: true });
     OVERPASS_ENDPOINTS.forEach((_, i) => {
       one(i).then(out => { stops.forEach(s => s.abort()); resolve(out); }, err => {
         firstError ??= err;
         if (--left === 0) reject(firstError instanceof Error ? firstError : new Error("OpenStreetMap lookup failed."));
+        else opts.onBusy?.();
       });
     });
   });
 };
 
+/**
+ * Paths, roads, water and the rest from OpenStreetMap, asking every server at once (the main one
+ * is often busy). `onBusy` hears when one has failed and the others are still being asked.
+ */
+export const fetchOsmFeatures = async (bounds: GeoBounds, timeoutMs = OVERPASS_TIMEOUT_MS, onBusy?: () => void, signal?: AbortSignal): Promise<OsmFeature[]> =>
+  osmFeaturesFrom(await askOverpass(overpassQuery(bounds), { timeoutMs, onBusy, signal }));
+
+// ---------------------------------------------------------------- a disc golf course mapped there
+
+/** A hole of a disc golf course as mapped: its number (from its `ref`), par, tee, basket and the
+ * bends between them. */
+export type MappedHole = { ref?: string; number?: number; par?: number; tee: LatLon; basket: LatLon; doglegs: LatLon[] };
+export type MappedCourse = { name?: string; outline?: LatLon[]; holes: MappedHole[] };
+type DgPoint = Extract<OsmFeature, { geom: "point"; kind: "dgTee" | "dgBasket" }>;
+
+const metersApart = (a: LatLon, b: LatLon) => {
+  const cos = Math.cos((a.lat * Math.PI) / 180);
+  return Math.hypot((a.lat - b.lat) * 111320, (a.lon - b.lon) * 111320 * cos);
+};
+const inRing = (p: LatLon, ring: LatLon[]) => {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i], b = ring[j];
+    if (a.lat > p.lat !== b.lat > p.lat && p.lon < ((b.lon - a.lon) * (p.lat - a.lat)) / (b.lat - a.lat) + a.lon) inside = !inside;
+  }
+  return inside;
+};
+
+/**
+ * The disc golf course mapped among these features, or null: its holes from the hole ways (tee at
+ * the start, basket at the end; golf-style holes only inside a disc golf course's outline), and
+ * from tees and baskets with the same number where a hole has no way. Numbered by each one's
+ * `ref`, in order.
+ */
+export const mappedCourse = (features: OsmFeature[]): MappedCourse | null => {
+  const outlines = features.filter(f => f.kind === "dgCourse");
+  const inCourse = (p: LatLon) => outlines.some(o => inRing(p, o.points));
+  const ways = features.filter((f): f is Extract<OsmFeature, { kind: "dgHole" }> => f.kind === "dgHole" && (!f.golf || inCourse(f.points[0])));
+  const tees = features.filter((f): f is DgPoint => f.kind === "dgTee" && (!f.golf || inCourse(f.points[0])));
+  const baskets = features.filter((f): f is DgPoint => f.kind === "dgBasket" && (!f.golf || inCourse(f.points[0])));
+  const num = (ref?: string) => { const n = parseInt(ref ?? "", 10); return n > 0 && n < 100 ? n : undefined; };
+  const holes: MappedHole[] = [];
+  const used = new Set<OsmFeature>();
+  // The nearest mapped tee or basket to a hole way's end (within 15 m): the way may stop short
+  const near = (list: DgPoint[], at: LatLon) => {
+    let best: DgPoint | null = null, d = 15;
+    for (const f of list) { const m = metersApart(f.points[0], at); if (m < d && !used.has(f)) { d = m; best = f; } }
+    return best;
+  };
+  for (const w of ways) {
+    if (w.points.length < 2) continue;
+    const t = near(tees, w.points[0]), b = near(baskets, w.points[w.points.length - 1]);
+    if (t) used.add(t);
+    if (b) used.add(b);
+    const ref = w.ref ?? t?.ref ?? b?.ref;
+    holes.push({ ref, number: num(ref), par: w.par, tee: t?.points[0] ?? w.points[0], basket: b?.points[0] ?? w.points[w.points.length - 1], doglegs: w.points.slice(1, -1) });
+  }
+  // Tees and baskets with no hole way: paired by number
+  for (const t of tees) {
+    if (used.has(t) || !t.ref) continue;
+    const b = baskets.find(x => !used.has(x) && x.ref === t.ref);
+    if (!b) continue;
+    used.add(t);
+    used.add(b);
+    holes.push({ ref: t.ref, number: num(t.ref), tee: t.points[0], basket: b.points[0], doglegs: [] });
+  }
+  // (a golf course's holes only make a disc golf course when one is mapped there)
+  if (!holes.length && !outlines.length) return null;
+  holes.sort((a, b) => (a.number ?? 999) - (b.number ?? 999));
+  const main = outlines.slice().sort((a, b) => b.points.length - a.points.length)[0];
+  return { name: main?.name, outline: main?.points, holes };
+};

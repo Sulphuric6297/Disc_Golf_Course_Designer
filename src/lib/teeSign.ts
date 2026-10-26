@@ -2,12 +2,13 @@
 // the hole drawn with the tee at the bottom, its elevation profile, the hole's rules, and an arrow
 // to the next tee.
 import { fitAttr, capAttr } from "./fitText";
-import { CIRCLE_ONE_FT, FT_PER_M, TEE_LEVELS } from "../constants";
+import { CIRCLE_ONE_FT, FIELD_KINDS, FT_PER_M, TEE_LEVELS } from "../constants";
+import { fieldKindOf } from "./fields";
 import type { AreaItem, BasketItem, CourseDoc, CourseItem, LineItem, MapStyle, P, SignLook, SignPart, SignSpot, Units } from "../types";
 import { renderFieldGuide, renderOpenView, renderTrailhead } from "./signLooks";
 import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, obFor, obPieces, throwLine, taglineOf, titleFontOf } from "./course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, rotatePoint, smoothPath } from "./geom";
-import { holeStats, playedHoles, type HoleStats } from "./holeStats";
+import { holeStats, isOutOfPlay, playedHoles, type HoleStats } from "./holeStats";
 import { keepsCase, markingsInView, northArrow, palette, renderMapLayers, scaleBar, titleStack, wrapSvg, type MapView } from "./mapSvg";
 import type { CanopyGrid } from "./forest";
 import type { Contours } from "./relief";
@@ -69,13 +70,18 @@ export const autoRules = (doc: CourseDoc, holeId: string) => {
   if (areas.some(a => a.kind === "ob" && near(a)) || obLine) out.push("OB in play.");
   if (areas.some(a => a.kind === "water" && near(a))) out.push("Water is OB.");
   if (areas.some(a => a.kind === "hazard" && near(a))) out.push("Hazard in play.");
+  // Fields, courts and play areas by the hole that players stay out of, or that are OB
+  for (const a of areas.filter(a => a.kind === "field" && near(a) && (a.ob === true || isOutOfPlay(a)))) {
+    const text = `${a.label?.trim() || FIELD_KINDS[fieldKindOf(a)].label} is ${a.ob === true ? "OB" : "out of play"}.`;
+    if (!out.includes(text)) out.push(text);
+  }
   // Roads, paths, fences and creeks marked OB near the hole (all along them or a stretch)
   const reach = hole.fairwayWidth / 2 + 40, line = smoothPath(s.line, 8);
   const close = (piece: P[]) => Array.from({ length: Math.ceil(pathLength(piece) / 10) + 1 }, (_, k) => pointAlong(piece, k * 10).point).some(p => distanceToPath(p, line) < reach);
   const said = new Set<string>();
   for (const l of doc.items.filter(i => i.type === "line" && i.kind !== "ob" && i.kind !== "walk" && i.ob === true && obFor(doc, i, holeId)) as LineItem[]) {
     if (!obPieces(l).some(close)) continue;
-    const name = l.label?.trim() || { road: "Road", path: "Path", fence: "Fence", stream: "Creek", ob: "", walk: "" }[l.kind];
+    const name = l.label?.trim() || { road: "Road", path: "Path", fence: "Fence", stream: "Creek", ob: "", walk: "", power: "Power line", hedge: "Hedge" }[l.kind];
     const text = `${name}${l.obBeyond ? " and beyond" : ""} is OB.`;
     if (!said.has(text)) out.push(text);
     said.add(text);
@@ -513,14 +519,14 @@ export const miniCourseMap = (doc: CourseDoc, holeId: string, st: HoleStats, don
   mini.push(`<rect x="${n(mbox.x)}" y="${n(mbox.y)}" width="${n(mbox.w)}" height="${n(mbox.h)}" fill="${woodsEverywhere ? sty.trees : sty.rough}"/>`);
   for (const a of doc.items) {
     if (a.type === "area" && (a.kind === "woods" && !woodsEverywhere)) mini.push(`<path d="${poly(a.points)}" fill="${sty.trees}"/>`);
-    if (a.type === "area" && (a.kind === "fairway" || a.kind === "nogo" || a.kind === "parking") && woodsEverywhere) mini.push(`<path d="${poly(a.points)}" fill="${sty.rough}"/>`);
+    if (a.type === "area" && (a.kind === "fairway" || a.kind === "nogo" || a.kind === "parking" || a.kind === "field") && woodsEverywhere) mini.push(`<path d="${poly(a.points)}" fill="${sty.rough}"/>`);
   }
   for (const x of done) {
     const h = doc.holes.find(q => q.id === x.holeId);
     if (h?.fairway) mini.push(`<path d="${poly(fairwayOutline(h, smoothPath(x.line, 6), 0, 6))}" fill="${sty.fairway}"/>`);
   }
   for (const a of doc.items) {
-    if (a.type === "area" && a.kind === "water") mini.push(`<path d="${poly(a.points)}" fill="${sty.water}"/>`);
+    if (a.type === "area" && (a.kind === "water" || (a.kind === "field" && fieldKindOf(a) === "pool"))) mini.push(`<path d="${poly(a.points)}" fill="${sty.water}"/>`);
     if (a.type === "line" && a.kind === "stream") mini.push(`<path d="${pth(a.points)}" fill="none" stroke="${sty.water}" stroke-width="${n(2 * u)}" stroke-linecap="round"/>`);
     if (a.type === "line" && (a.kind === "path" || a.kind === "walk")) mini.push(`<path d="${pth(a.points)}" fill="none" stroke="${sty.path}" stroke-width="${n(1.4 * u)}" stroke-linecap="round"/>`);
   }

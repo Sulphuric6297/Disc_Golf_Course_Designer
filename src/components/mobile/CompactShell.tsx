@@ -89,7 +89,8 @@ type ShellProps = {
 const TOOL_TITLES: Record<string, string> = {
   hole: "New hole", tee: "Another tee", pin: "Another pin", label: "Text label", ground: "Shape the ground",
   // (the tools named for what they put down)
-  rules: "OB and rules", paths: "Paths and roads", water: "Water", trees: "Trees and woods", grass: "Grass and ground", build: "Build"
+  rules: "OB and rules", paths: "Paths and roads", water: "Water", trees: "Trees and woods", grass: "Grass and ground", build: "Build",
+  park: "Park"
 };
 const toolTitle = (t: (typeof TOOLS)[number] | undefined) => (t ? TOOL_TITLES[t.id] ?? t.short : "");
 

@@ -9,6 +9,37 @@ type Opts = {
   metersPerPx: number;
   /** Pixels to ignore (e.g. inside building footprints). */
   exclude?: (x: number, y: number) => boolean;
+  /** The photo's near-infrared brightness, one byte per pixel, where the photo has that band
+   * (NAIP's fourth): leaves are bright in it, shadows, water and pavement dark. */
+  nir?: Uint8Array | Uint8ClampedArray;
+};
+
+/** Otsu's threshold of the values in [lo, hi]: where two groups split best (every `step`th value). */
+const otsu = (v: Float32Array, keep: (i: number) => boolean, lo: number, hi: number, step = 3) => {
+  const bins = 128;
+  const hist = new Float64Array(bins);
+  let total = 0;
+  for (let i = 0; i < v.length; i += step) {
+    if (!keep(i)) continue;
+    const b = Math.floor(((v[i] - lo) / (hi - lo)) * bins);
+    if (b < 0 || b >= bins) continue;
+    hist[b]++;
+    total++;
+  }
+  if (total < 50) return null;
+  let sum = 0;
+  for (let b = 0; b < bins; b++) sum += b * hist[b];
+  let w0 = 0, s0 = 0, best = -1, at = 0, m0 = 0, m1 = 0;
+  for (let b = 0; b < bins; b++) {
+    w0 += hist[b];
+    s0 += b * hist[b];
+    if (w0 === 0 || w0 === total) continue;
+    const a = s0 / w0, c = (sum - s0) / (total - w0);
+    const between = w0 * (total - w0) * (a - c) ** 2;
+    if (between > best) { best = between; at = b; m0 = a; m1 = c; }
+  }
+  const val = (b: number) => lo + ((b + 0.5) / bins) * (hi - lo);
+  return { at: val(at), low: val(m0), high: val(m1), share: 1 - hist.slice(0, at + 1).reduce((s, x) => s + x, 0) / total };
 };
 
 /** Box mean and standard deviation of a channel over a (2r+1)^2 window, via integral images. */
@@ -42,6 +73,34 @@ const localStats = (v: Float32Array, w: number, h: number, r: number) => {
     }
   }
   return { mean, std };
+};
+
+/** Box mean of a float image over a (2r+1)^2 window (edges: the part of the window inside), by
+ * running sums along rows, then columns: two float planes, where localStats takes six. */
+const boxMean = (v: Float32Array, w: number, h: number, r: number) => {
+  const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    let s = 0;
+    for (let x = 0; x <= Math.min(r, w - 1); x++) s += v[row + x];
+    for (let x = 0; x < w; x++) {
+      const x0 = Math.max(0, x - r), x1 = Math.min(w - 1, x + r);
+      tmp[row + x] = s / (x1 - x0 + 1);
+      if (x + r + 1 < w) s += v[row + x + r + 1];
+      if (x - r >= 0) s -= v[row + x - r];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let s = 0;
+    for (let y = 0; y <= Math.min(r, h - 1); y++) s += tmp[y * w + x];
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.max(0, y - r), y1 = Math.min(h - 1, y + r);
+      out[y * w + x] = s / (y1 - y0 + 1);
+      if (y + r + 1 < h) s += tmp[(y + r + 1) * w + x];
+      if (y - r >= 0) s -= tmp[(y - r) * w + x];
+    }
+  }
+  return out;
 };
 
 /** Connected components (4-neighbour) of a mask; returns pixel index lists. */
@@ -139,7 +198,7 @@ const TEX_SCALE = 6;
 const DARK_TEX = 0.22;
 const EDGE_MAX = 0.8;
 /** Box blur of a float image over a (2r+1)^2 window. */
-const blur = (v: Float32Array, w: number, h: number, r: number) => localStats(v, w, h, r).mean;
+const blur = (v: Float32Array, w: number, h: number, r: number) => boxMean(v, w, h, r);
 
 /**
  * Tree canopies, one detection per crown. Vegetation that is darker or more textured than the
@@ -151,6 +210,7 @@ const blur = (v: Float32Array, w: number, h: number, r: number) => localStats(v,
  * that is darker or more textured than the lawn. Null when there is too little vegetation to tell.
  */
 export const canopyMask = (img: DetectImage, opts: Opts) => {
+  if (opts.nir) return canopyMaskNir(img, opts);
   const { width: w, height: h, data } = img;
   const mpp = opts.metersPerPx;
   const n = w * h;
@@ -173,14 +233,14 @@ export const canopyMask = (img: DetectImage, opts: Opts) => {
   // immediate neighbours, averaged over that area (leaves flicker everywhere; a shadow's edge is
   // one line, so it hardly counts).
   const win = Math.max(1, Math.round(0.5 / mpp));
-  const { mean } = localStats(luma, w, h, win);
+  const mean = boxMean(luma, w, h, win);
   // Clumps of leaves (a few pixels across), not single-pixel noise: smooth a little first, then
   // take how much each pixel differs from its surroundings, averaged over the window.
-  const soft = localStats(luma, w, h, 1).mean;
-  const around = localStats(soft, w, h, Math.max(2, Math.round(0.6 / mpp))).mean;
+  const soft = boxMean(luma, w, h, 1);
+  const around = boxMean(soft, w, h, Math.max(2, Math.round(0.6 / mpp)));
   const hp = new Float32Array(n);
   for (let i = 0; i < n; i++) hp[i] = Math.abs(soft[i] - around[i]);
-  const fine = localStats(hp, w, h, win).mean;
+  const fine = boxMean(hp, w, h, win);
   const std = fine.map(v => v * TEX_SCALE);
   // Edge or texture? Along a shadow's edge every brightness change points the same way; among
   // leaves they point every which way (gradient coherence, from the structure tensor).
@@ -190,7 +250,7 @@ export const canopyMask = (img: DetectImage, opts: Opts) => {
     const gx = soft[i + 1] - soft[i - 1], gy = soft[i + w] - soft[i - w];
     gxx[i] = gx * gx; gyy[i] = gy * gy; gxy[i] = gx * gy;
   }
-  const jxx = localStats(gxx, w, h, win).mean, jyy = localStats(gyy, w, h, win).mean, jxy = localStats(gxy, w, h, win).mean;
+  const jxx = boxMean(gxx, w, h, win), jyy = boxMean(gyy, w, h, win), jxy = boxMean(gxy, w, h, win);
   const coherence = (i: number) => {
     const t = jxx[i] + jyy[i];
     return t > 1e-6 ? Math.sqrt((jxx[i] - jyy[i]) ** 2 + 4 * jxy[i] * jxy[i]) / t : 0;
@@ -217,23 +277,128 @@ export const canopyMask = (img: DetectImage, opts: Opts) => {
     const rough = cov > 0.16 && mean[i] < lawn * 0.92 && !nearShade[i] && coherence(i) < EDGE_MAX;
     if (dark || rough) mask[i] = 1;
   }
-  // Clean up: drop specks and thin strips, fill the gaps between leaf clumps.
-  const r1 = Math.max(1, Math.round(0.45 / mpp));
-  mask = close(mask, w, h, r1);
-  mask = open(mask, w, h, r1);
-  // Fill small holes inside crowns (gaps in the leaves), so each crown is one solid shape.
-  {
-    const inv = new Uint8Array(n);
-    for (let i = 0; i < n; i++) inv[i] = mask[i] ? 0 : 1;
-    const maxHole = Math.PI * (1.5 / mpp) ** 2;
-    for (const hole of components(inv, w, h, 1)) {
-      if (hole.length > maxHole) continue;
-      if (hole.some(k => { const x = k % w, y = (k / w) | 0; return x === 0 || y === 0 || x === w - 1 || y === h - 1; })) continue;
-      for (const k of hole) mask[k] = 1;
-    }
-  }
-  return { mask, luma, lawn, win, mpp, w, h, n };
+  // (rimM: the edge of the crowns the texture windows leave out)
+  return { mask: tidyCanopy(mask, w, h, mpp, 0.45), luma, lawn, win, mpp, w, h, n, rimM: 0.6, leaf: null as Uint8Array | null };
 };
+
+/** A canopy mask cleaned up: specks and thin strips dropped, the gaps between leaf clumps and
+ * small holes inside crowns (gaps in the leaves) filled, so each crown is one solid shape. */
+const tidyCanopy = (m: Uint8Array, w: number, h: number, mpp: number, gapM: number) => {
+  const n = w * h;
+  const r1 = Math.max(1, Math.round(gapM / mpp));
+  let mask = close(m, w, h, r1);
+  mask = open(mask, w, h, r1);
+  const inv = new Uint8Array(n);
+  for (let i = 0; i < n; i++) inv[i] = mask[i] ? 0 : 1;
+  const maxHole = Math.PI * (1.5 / mpp) ** 2;
+  for (const hole of components(inv, w, h, 1)) {
+    if (hole.length > maxHole) continue;
+    if (hole.some(k => { const x = k % w, y = (k / w) | 0; return x === 0 || y === 0 || x === w - 1 || y === h - 1; })) continue;
+    for (const k of hole) mask[k] = 1;
+  }
+  return mask;
+};
+
+/**
+ * Tree canopy on a photo with a near-infrared band. Leaves reflect near-infrared light strongly
+ * and absorb red, so their NDVI ((nir - red) / (nir + red)) is high; grass is lower (thinner,
+ * drier, soil between the blades), and shadows, pavement, roofs and water are low. Crowns are
+ * the vegetation clearly above the lawn's NDVI and no brighter than the lawn: a tree's own shadow
+ * on the grass stays out, where in color alone crown and shadow are one dark blob.
+ */
+const canopyMaskNir = (img: DetectImage, opts: Opts) => {
+  const { width: w, height: h, data } = img;
+  const nir = opts.nir!;
+  const mpp = opts.metersPerPx;
+  const n = w * h;
+  const luma = new Float32Array(n);
+  const ndvi = new Float32Array(n);
+  const skip = new Uint8Array(n);
+  for (let i = 0, p = 0; i < n; i++, p += 4) {
+    const r = data[p], g = data[p + 1], b = data[p + 2], q = nir[i];
+    luma[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+    ndvi[i] = (q - r) / (q + r + 1);
+    if (opts.exclude && opts.exclude(i % w, (i / w) | 0)) skip[i] = 1;
+  }
+  // (over about half a meter: the photo's own pixels are often 60 cm)
+  const win = Math.max(1, Math.round(0.5 / mpp));
+  const nd = boxMean(ndvi, w, h, win);
+  const lum = boxMean(luma, w, h, win);
+  // Sunlit crowns in a forest can be as light as the lawn, and their NDVI lower (the infrared
+  // saturates while the red goes on rising), but a canopy is lumpy where a lawn is smooth: how
+  // much each spot differs from its surroundings over about a meter, for its brightness.
+  const tr = Math.max(1, Math.round(1 / mpp));
+  const soft = boxMean(luma, w, h, 1);
+  const around = boxMean(soft, w, h, tr);
+  const hp = new Float32Array(n);
+  for (let i = 0; i < n; i++) hp[i] = Math.abs(soft[i] - around[i]);
+  const busy = boxMean(hp, w, h, tr);
+  const lumT = boxMean(luma, w, h, tr);
+  const tex = new Float32Array(n);
+  for (let i = 0; i < n; i++) tex[i] = busy[i] / Math.max(lumT[i], 1);
+  // Plants at all (dry grass included: its NDVI is low but over bare ground's)
+  const vegAt = NIR_PLANT;
+  const median = (a: number[]) => (a.sort((x, y) => x - y), a[a.length >> 1]);
+  // The lawn: the smooth vegetation (the smoother half of it), its NDVI, brightness and texture.
+  // (Not the commonest: in a forest that's the trees.)
+  const vegTex: number[] = [];
+  for (let i = 0; i < n; i += 5) if (!skip[i] && nd[i] > vegAt) vegTex.push(tex[i]);
+  if (vegTex.length < 60) return null;
+  const smoothAt = median(vegTex.slice());
+  const lawnNds: number[] = [], lawnLs: number[] = [], lawnNs: number[] = [];
+  for (let i = 0; i < n; i += 5) if (!skip[i] && nd[i] > vegAt && tex[i] <= smoothAt) { lawnNds.push(nd[i]); lawnLs.push(lum[i]); lawnNs.push(nir[i]); }
+  const lawnNd = median(lawnNds), lawn = median(lawnLs);
+  const grassTex: number[] = [];
+  for (let i = 0; i < n; i += 5) if (!skip[i] && nd[i] > vegAt && Math.abs(nd[i] - lawnNd) < 0.08) grassTex.push(tex[i]);
+  const texAt = Math.max(NIR_TEX_MIN, (grassTex.length ? median(grassTex) : 0) * NIR_TEX_OVER);
+  // Leaves against grass: the split within the vegetation, kept clearly above the lawn's NDVI
+  // (a site of lawn alone splits too, close together)
+  const split = otsu(nd, i => !skip[i] && nd[i] > vegAt, vegAt, 0.95);
+  const at = Math.max(split && split.high - split.low > 0.12 ? split.at : -1, lawnNd + NIR_LEAF_OVER);
+  // (and shade on the ground stays out: dark in the infrared too, where leaves never are)
+  const shadeN = median(lawnNs) * NIR_SHADE;
+  const nirS = boxMean(Float32Array.from(nir), w, h, win);
+  // Trees stand up: among them are deep shadows (the gaps between crowns, the shade under
+  // them), where a lush meadow, as green and as lumpy, has hardly any.
+  const deep = new Float32Array(n);
+  for (let i = 0; i < n; i++) deep[i] = luma[i] < lawn * NIR_DEEP ? 1 : 0;
+  const deepShare = boxMean(deep, w, h, Math.max(1, Math.round(NIR_DEEP_R / mpp)));
+  let mask: Uint8Array = new Uint8Array(n);
+  const leaf = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (skip[i] || nd[i] <= vegAt) continue;
+    // (grass in a building's or a tree's shade has a high NDVI too, the red falling faster than
+    // the infrared: deep in the infrared it's leaves only when far over the lawn's)
+    const leafy = nd[i] > at && lum[i] < lawn * NIR_LEAF_LIGHT && (nirS[i] > shadeN * NIR_SHADE_LEAF || nd[i] > at + NIR_SHADE_OVER);
+    const lumpy = nd[i] > lawnNd + NIR_LUMPY_OVER && tex[i] > texAt && lum[i] < lawn * 1.05 && nirS[i] > shadeN && deepShare[i] > NIR_DEEP_SHARE;
+    if (leafy || lumpy) mask[i] = 1;
+    if (leafy) leaf[i] = 1;
+  }
+  mask = tidyCanopy(mask, w, h, mpp, 0.6);
+  // (leaf: where it is surely leaves, by the infrared, not by texture alone)
+  return { mask, luma, lawn, win, mpp, w, h, n, rimM: 0, leaf: leaf as Uint8Array | null };
+};
+// Leaves on a near-infrared photo: NDVI at least this much over the lawn's, and no brighter than
+// this share of the lawn (tall grass and crops are as green, but lighter).
+const NIR_LEAF_OVER = 0.12;
+// Plants at all: NDVI over this (bare ground, pavement, roofs and water are under it).
+const NIR_PLANT = 0.06;
+const NIR_LEAF_LIGHT = 0.95;
+// Or lumpy: this much more texture than the lawn's (and at least NIR_TEX_MIN), NDVI a little over
+// the lawn's, and not as dark in the infrared as shade on the ground.
+const NIR_TEX_OVER = 2.2;
+const NIR_TEX_MIN = 0.045;
+const NIR_LUMPY_OVER = 0.04;
+const NIR_SHADE = 0.8;
+// A leafy spot this dark in the infrared (a share of NIR_SHADE's level) counts only with its
+// NDVI this far over the leaves' threshold.
+const NIR_SHADE_LEAF = 0.8;
+const NIR_SHADE_OVER = 0.15;
+// Deep shadow: darker than this share of the lawn; lumpy canopy has at least NIR_DEEP_SHARE of
+// it within NIR_DEEP_R m.
+const NIR_DEEP = 0.5;
+const NIR_DEEP_R = 3;
+const NIR_DEEP_SHARE = 0.06;
 
 export type Canopy = NonNullable<ReturnType<typeof canopyMask>>;
 
@@ -282,14 +447,87 @@ export const traceOutline = (w: number, h: number, comp: number[]): { x: number;
   return out;
 };
 
-/** Stands of trees: canopy patches (crowns a few meters apart joined) of at least `minAreaM2`. */
-export const woodsRegions = (canopy: Canopy, minAreaM2 = 400): Region[] => {
-  const { mask, mpp, w, h } = canopy;
-  let m = close(mask, w, h, Math.max(1, Math.round(2.5 / mpp)));
-  // (the rim of the crowns that the canopy mask leaves out)
-  m = morph(m, w, h, Math.max(1, Math.round(0.6 / mpp)), "grow");
-  return components(m, w, h, Math.ceil(minAreaM2 / (mpp * mpp))).map(c => ({ outline: traceOutline(w, h, c), areaPx: c.length }));
+/**
+ * A stand mask's holes sorted out, in place: a clearing at least `clearingM` across (its widest
+ * round spot) stays open, cut through to the outside along the shortest way between the trees (a
+ * slit one cell wide), so the stand's one outline goes round it; a smaller gap among the crowns is
+ * filled. (Areas have no holes of their own: the slit is how one keeps a clearing.)
+ */
+export const openClearings = (m: Uint8Array, w: number, h: number, cellM: number, clearingM = CLEARING_M) => {
+  const n = w * h;
+  const inv = new Uint8Array(n);
+  for (let i = 0; i < n; i++) inv[i] = m[i] ? 0 : 1;
+  const dt = distanceTransform(inv, w, h);
+  const onBorder = (k: number) => { const x = k % w, y = (k / w) | 0; return x === 0 || y === 0 || x === w - 1 || y === h - 1; };
+  const label = new Int32Array(n).fill(-1);
+  const holes = components(inv, w, h, 1).filter(c => !c.some(onBorder));
+  holes.forEach((c, k) => { for (const i of c) label[i] = k; });
+  const prev = new Int32Array(n).fill(-2);
+  holes.forEach((hole, k) => {
+    let widest = 0;
+    for (const i of hole) widest = Math.max(widest, dt[i]);
+    if (2 * widest * cellM < clearingM) {
+      for (const i of hole) m[i] = 1;
+      return;
+    }
+    // From the clearing out through the trees (breadth first, four ways: a slit that's one cell
+    // wide still parts the trees on its two sides), to open ground or the edge of the photo
+    // (only what this search touched is set back after: a fresh fill per clearing is slow)
+    const queue: number[] = [];
+    for (const i of hole) { prev[i] = -1; queue.push(i); }
+    const touched: number[] = [];
+    for (let q = 0; q < queue.length; q++) {
+      const i = queue[q];
+      const x = i % w;
+      let exit = -1;
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+        if (j < 0 || j >= n || prev[j] !== -2) continue;
+        prev[j] = i;
+        touched.push(j);
+        if (!m[j] && label[j] !== k) { exit = i; break; }
+        if (m[j]) {
+          if (onBorder(j)) { exit = j; break; }
+          queue.push(j);
+        }
+      }
+      if (exit >= 0) {
+        for (let c = exit; c >= 0 && m[c]; c = prev[c]) m[c] = 0;
+        break;
+      }
+    }
+    for (const i of hole) { label[i] = -1; prev[i] = -2; }
+    for (const j of touched) prev[j] = -2;
+  });
+  return m;
 };
+// A clearing or lane this wide (m, about 26 ft) stays open in a stand of trees; less is filled.
+const CLEARING_M = 8;
+
+/**
+ * Stands of trees from a canopy mask (`cellM` m a cell): crowns a few meters apart joined (gaps
+ * up to `gapM`), thin strings of crowns and specks dropped, clearings and lanes of `clearingM` or
+ * more kept open, stands of at least `minAreaM2`. Outlines in cells, clockwise; `into`, when given,
+ * gets 1 in every cell of a stand.
+ */
+export const standRegions = (mask: Uint8Array, w: number, h: number, cellM: number, opts: { gapM?: number; thinM?: number; rimM?: number; minAreaM2?: number; clearingM?: number; into?: Uint8Array } = {}): Region[] => {
+  let m = close(mask, w, h, Math.max(1, Math.round((opts.gapM ?? 5) / 2 / cellM)));
+  // (a string of single crowns is trees in a row, not woods: those stay trees)
+  m = open(m, w, h, Math.max(1, Math.round((opts.thinM ?? 4) / 2 / cellM)));
+  // (the rim of the crowns that a canopy mask leaves out)
+  if (opts.rimM) m = morph(m, w, h, Math.max(1, Math.round(opts.rimM / cellM)), "grow");
+  const minPx = Math.ceil((opts.minAreaM2 ?? 400) / (cellM * cellM));
+  const keep = new Uint8Array(w * h);
+  for (const c of components(m, w, h, minPx)) for (const i of c) keep[i] = 1;
+  openClearings(keep, w, h, cellM, opts.clearingM);
+  const stands = components(keep, w, h, minPx);
+  if (opts.into) for (const c of stands) for (const i of c) opts.into[i] = 1;
+  return stands.map(c => ({ outline: traceOutline(w, h, c), areaPx: c.length }));
+};
+
+/** Stands of trees on a photo: its canopy patches (crowns a few meters apart joined) of at least
+ * `minAreaM2`, clearings and lanes about 26 ft across or more kept open. */
+export const woodsRegions = (canopy: Canopy, minAreaM2 = 400, into?: Uint8Array): Region[] =>
+  standRegions(canopy.mask, canopy.w, canopy.h, canopy.mpp, { minAreaM2, rimM: canopy.rimM, into });
 
 /** Stands of trees measured from the air: their crowns (plan ft) joined wherever they come within
  * `gapFt` of each other, each stand of at least `minTrees` trees traced around its crowns (in
@@ -306,7 +544,8 @@ export const treeStands = (trees: { x: number; y: number; r: number }[], width: 
       for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(w - 1, Math.ceil(cx + r)); x++)
         if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) mask[y * w + x] = 1;
   }
-  const m = close(mask, w, h, Math.max(1, Math.round(gapFt / 2 / cell)));
+  // (clearings among them about 26 ft across or more kept open, smaller gaps filled)
+  const m = openClearings(close(mask, w, h, Math.max(1, Math.round(gapFt / 2 / cell))), w, h, cell * 0.3048);
   const comps = components(m, w, h, 4);
   const label = new Int32Array(w * h).fill(-1);
   comps.forEach((c, k) => { for (const i of c) label[i] = k; });
@@ -396,11 +635,25 @@ export const detectTrees = (img: DetectImage, opts: Opts & { maxTrees?: number; 
   const rim = win + 1;
   peaks.sort((a, b) => b.d - a.d);
   const trees: (DetectedTree & { d: number })[] = [];
+  // (the crowns found so far in cells as wide as the farthest a crown reaches, to look in only
+  // the cells around a peak)
+  const reach = Math.max((9 / mpp + rim) * 0.95, 2.2 / mpp);
+  const gw = Math.ceil(w / reach) + 1;
+  const grid = new Map<number, (DetectedTree & { d: number })[]>();
   for (const p of peaks) {
     const radius = Math.min(Math.max(p.d * 1.25 + rim * 0.5, minR), 9 / mpp);
     // Same crown as one already found (peaks inside its crown).
-    if (trees.some(t => Math.hypot(t.x - p.x, t.y - p.y) < Math.max((t.radiusPx + rim) * 0.95, 2.2 / mpp))) continue;
-    trees.push({ x: p.x, y: p.y, radiusPx: radius, d: p.d });
+    const cx = Math.floor(p.x / reach), cy = Math.floor(p.y / reach);
+    let same = false;
+    for (let gy = cy - 1; gy <= cy + 1 && !same; gy++) for (let gx = cx - 1; gx <= cx + 1 && !same; gx++)
+      same = !!grid.get(gy * gw + gx)?.some(t => Math.hypot(t.x - p.x, t.y - p.y) < Math.max((t.radiusPx + rim) * 0.95, 2.2 / mpp));
+    if (same) continue;
+    const t = { x: p.x, y: p.y, radiusPx: radius, d: p.d };
+    trees.push(t);
+    const key = cy * gw + cx;
+    const list = grid.get(key);
+    if (list) list.push(t);
+    else grid.set(key, [t]);
   }
   // Center each crown on its canopy (the peak can sit on the sunny side).
   for (let pass = 0; pass < 3; pass++) for (const t of trees) {
@@ -420,7 +673,7 @@ export const detectTrees = (img: DetectImage, opts: Opts & { maxTrees?: number; 
   const perPatch = new Map<number, number[]>();
   trees.forEach((t, j) => {
     const k = label[Math.round(t.y) * w + Math.round(t.x)];
-    if (k >= 0) perPatch.set(k, [...(perPatch.get(k) ?? []), j]);
+    if (k >= 0) { const l = perPatch.get(k); if (l) l.push(j); else perPatch.set(k, [j]); }
   });
   for (const [k, list] of perPatch) {
     if (list.length !== 1) continue;
@@ -612,7 +865,7 @@ export const detectVehicles = (img: DetectImage, opts: Opts & { maxVehicles?: nu
     strip: Math.max(1, Math.round(0.55 / mpp))
   };
   // Only where there's enough contrast nearby to be a car (most of a site is lawn, roofs or bare pavement).
-  const near = localStats(C, w, h, half.wid).mean;
+  const near = boxMean(C, w, h, half.wid);
   const cand = new Uint8Array(n);
   for (let i = 0; i < n; i++) if (near[i] > VEH_INNER * 0.5) cand[i] = 1;
   const best = new Float32Array(n), bestIn = new Float32Array(n), bestK = new Uint8Array(n);

@@ -18,7 +18,7 @@ import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
 import { FAIRWAY_STATIONS, beyondSides, areaObEdges, areaRing, isRing, ringStretch, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, fairwayOutline, mergeStretches, obFor, obPicked, obRanges, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, centroid, dist, distanceToPath, inBounds, nearestAlong, offsetPath, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath, subPath } from "../lib/geom";
-import { parForDistance } from "../lib/holeStats";
+import { isOutOfPlay, parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
 import { conifersOf, treeMixOf } from "../lib/landscapes";
 import { fmtArea, fmtDist, fmtElev } from "../lib/units";
@@ -38,6 +38,9 @@ import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { Tufts } from "../three/tufts";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createFence, createStructure, onPartLoaded } from "../three/structures";
+import { createFieldGround, createFieldProps, createHedge, createPowerLine } from "../three/parkProps";
+import { fieldInks, fieldPlan } from "../lib/fieldPlan";
+import { fieldKeepsTreesOut, fieldOutline } from "../lib/fields";
 import { isLineKind, orientedBox, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
 import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier } from "../types";
 import { Ground } from "./ground";
@@ -2435,7 +2438,7 @@ export class CourseView {
         if (s.complete && hole) teeLines(course, hole, s.line, s.teeId).forEach((l, k) => polys.push(this.outline(hole, l, `tee${k}`, 8, hole.fairway ? 0 : -hole.fairwayWidth * 0.4, 6)));
       }
       for (const it of course.items) {
-        if (it.type === "area" && (play ? ["fairway", "green"] : ["fairway", "green", "water", "parking", "building", "sand", "rough", "nogo"]).includes(it.kind)) polys.push(this.shapeOf(it).pts);
+        if (it.type === "area" && (play ? ["fairway", "green"] : ["fairway", "green", "water", "parking", "building", "sand", "rough", "nogo", "field"]).includes(it.kind)) polys.push(this.shapeOf(it).pts);
         else if (it.type === "line" && !play && it.kind !== "ob" && it.kind !== "fence") lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 + 3 });
         else if (it.type === "tee") discs.push({ p: it, r: Math.max(12, it.padLength) });
         else if (it.type === "basket") discs.push({ p: it, r: CIRCLE_ONE_FT * 0.6 });
@@ -2485,8 +2488,8 @@ export class CourseView {
       const polys: P[][] = [], lines: { pts: P[]; half: number }[] = [];
       for (const it of course.items) {
         // (and woods given drawn trees or none: no measured ones there)
-        if (it.type === "area" && (["water", "parking", "building"].includes(it.kind) || (it.kind === "woods" && (it.trees === "drawn" || it.trees === "none")))) polys.push(this.shapeOf(it).pts);
-        else if (it.type === "line" && ["road", "path", "walk", "stream"].includes(it.kind)) lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 });
+        if (it.type === "area" && (["water", "parking", "building"].includes(it.kind) || fieldKeepsTreesOut(it) || (it.kind === "woods" && (it.trees === "drawn" || it.trees === "none")))) polys.push(this.shapeOf(it).pts);
+        else if (it.type === "line" && ["road", "path", "walk", "stream", "hedge"].includes(it.kind)) lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 });
         else if (it.type === "structure") {
           // (a building's outline: none inside it, nor with its trunk against the walls)
           if (STRUCTURE_KINDS[it.kind].shape === "outline") { polys.push(it.points); lines.push({ pts: [...it.points, it.points[0]], half: 3 }); }
@@ -2553,7 +2556,38 @@ export class CourseView {
       for (const piece of areaObEdges({ ...a, straight: true })) g.add(this.fatLine(this.drapeLine(piece, LIFT + 0.05), color("ob")!, 3, { order: 5 }));
     };
     const areas = (course.items.filter(i => i.type === "area") as AreaItem[]).map(a => ({ ...a, points: this.shapeOf(a).pts })).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
+    // (fields in their real colors, their grass leaning toward the map's)
+    const inks = fieldInks("natural", st.fairway);
+    const nogoColor = pdga ? RESTRICTED : AREA_KINDS.nogo.color;
     areas.forEach((a, order) => {
+      if (a.kind === "field") {
+        // A field, court or play area: its ground painted as it is (on the painted map and when
+        // only looked at, too), the dashed edge of an out-of-play area or a red OB edge; and what
+        // stands on it (goals, nets, hoops, fences, play structures)
+        const out = isOutOfPlay(a);
+        const shape = [a.points, a.field, a.fieldTurn, a.home];
+        put(`area:${a.id}`, JSON.stringify([...shape, hv, order, inks.grass, out, nogoColor, a.ob, a.obStretches]), () => {
+          const g = new THREE.Group();
+          const plan = fieldPlan(a);
+          if (plan) {
+            const mesh = createFieldGround(plan, inks, (x, y) => this.h(x, y), doc.gridSize, 0.15 + order * 0.01);
+            mesh.renderOrder = 2 + order * 0.001;
+            g.add(mesh);
+          }
+          if (out) g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), nogoColor, 3, { order: 4, dashed: 6 }));
+          if (a.ob === true) obEdge(a, g);
+          return g;
+        });
+        put(`field:${a.id}`, JSON.stringify([...shape, hv]), () => {
+          const plan = fieldPlan(a);
+          if (!plan?.props.length) return new THREE.Group();
+          const props = createFieldProps(plan, (x, y) => this.h(x, y));
+          props.traverse(o => { o.userData.itemId = a.id; });
+          this.shadowsDirty = true;
+          return props;
+        }, this.itemsGroup);
+        return;
+      }
       const meta = AREA_KINDS[a.kind];
       const c = color(a.kind) ?? meta.color;
       put(`area:${a.id}`, JSON.stringify([a.points, a.kind, hv, c, photo, order, a.ob, a.obStretches, a.kind === "water" ? this.waterShore(a.points) : 0, painted, clean]), () => {
@@ -2709,7 +2743,7 @@ export class CourseView {
       const meta = LINE_KINDS[l.kind];
       // (paths and walks in their surface's color; dirt in the map's path color)
       const surfaced = (l.kind === "path" || l.kind === "walk") && l.surface && l.surface !== "dirt" ? PATH_SURFACES[l.surface].color : null;
-      const c = l.kind === "ob" ? color("ob")! : surfaced ?? (l.kind === "path" || (l.kind === "walk" && l.width) ? st.path : l.kind === "stream" ? st.water : meta.color);
+      const c = l.kind === "ob" ? color("ob")! : surfaced ?? (l.kind === "path" || (l.kind === "walk" && l.width) ? st.path : l.kind === "stream" ? st.water : l.kind === "power" ? "#3b3733" : l.kind === "hedge" ? "#2f4f28" : meta.color);
       const width = l.width ?? meta.width;
       // Marked OB: along all of it or its stretches; OB "and beyond" from its edge on the holes' side
       const obParts = l.ob === true && l.kind !== "ob" && l.points.length >= 2 ? obRanges(l).map(([a, b]) => {
@@ -2748,8 +2782,11 @@ export class CourseView {
           ribbon.receiveShadow = true;
           g.add(ribbon);
         } else {
-          g.add(this.fatLine(this.drapeLine(pts, l.kind === "walk" ? LIFT + 0.15 : LIFT), c, l.kind === "ob" ? 3.5 : 2.5, { order: l.kind === "walk" ? 6 : 5, dashed: l.kind === "walk" ? 5 : l.kind === "fence" ? 2 : undefined }));
+          g.add(this.fatLine(this.drapeLine(pts, l.kind === "walk" ? LIFT + 0.15 : LIFT), c, l.kind === "ob" ? 3.5 : l.kind === "power" ? 1.4 : 2.5, { order: l.kind === "walk" ? 6 : 5, dashed: l.kind === "walk" ? 5 : l.kind === "fence" ? 2 : undefined, opacity: l.kind === "power" ? 0.8 : undefined }));
         }
+        // (a power line's poles and wires overhead; a hedge's row of bushes)
+        if (l.kind === "power") { g.add(createPowerLine(pts, (x, y) => this.h(x, y), l.fenceHeight ?? meta.height ?? 30)); this.shadowsDirty = true; }
+        if (l.kind === "hedge") { g.add(createHedge(pts, (x, y) => this.h(x, y), width || 4, l.fenceHeight ?? meta.height ?? 5, l.id.split("").reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 2147483646, 7) + 1)); this.shadowsDirty = true; }
         // (a fence stands up along its line: posts and rails, boards, or chain link)
         if (l.kind === "fence") { const fence = createFence(pts, (x, y) => this.h(x, y), l.fenceHeight ?? 4, l.fenceStyle ?? "rail"); this.shadowsDirty = true; g.add(fence); }
         // (a walk with a width: its dashes along the middle too)
@@ -5905,7 +5942,7 @@ export class CourseView {
 
   private updateGhost(at: THREE.Vector3 | null) {
     const mode = this.tool.mode;
-    const kind = mode === "add-tee" ? "tee" : mode === "add-basket" ? "basket" : mode === "add-mando" ? "mando" : mode === "add-dropzone" ? "dropzone" : mode === "add-tree" ? "tree" : mode === "add-amenity" ? "amenity" : "";
+    const kind = mode === "add-tee" ? "tee" : mode === "add-basket" ? "basket" : mode === "add-mando" ? "mando" : mode === "add-dropzone" ? "dropzone" : mode === "add-tree" ? "tree" : mode === "add-amenity" ? "amenity" : mode === "add-field" ? "field" : "";
     if (!at || !kind || !this.doc) {
       if (this.ghost) {
         this.fx.remove(this.ghost);
@@ -5918,14 +5955,16 @@ export class CourseView {
     }
     // (the Tree tool's preview: the kind it plants, as big as it plants it)
     const tk = this.tool.treeKind ?? "deciduous";
-    const key = kind === "tree" ? `tree:${tk}` : kind === "tee" ? `tee:${this.teeLevel}` : kind === "amenity" ? `amenity:${this.amenityKind}` : kind;
+    const fk = this.tool.fieldKind ?? "baseball";
+    const key = kind === "tree" ? `tree:${tk}` : kind === "tee" ? `tee:${this.teeLevel}` : kind === "amenity" ? `amenity:${this.amenityKind}` : kind === "field" ? `field:${fk}` : kind;
     if (this.ghostKey !== key) {
       if (this.ghost) {
         this.fx.remove(this.ghost);
         disposeObjectDeep(this.ghost);
       }
       this.ghostKey = key;
-      const obj = kind === "basket" ? createBasket(this.doc.course.style.basketBand ?? BASKET_BAND)
+      const obj = kind === "field" ? this.fieldGhost(fk)
+        : kind === "basket" ? createBasket(this.doc.course.style.basketBand ?? BASKET_BAND)
         : kind === "mando" ? createMando("right")
         : kind === "dropzone" ? createDropZone()
         : kind === "amenity" ? createAmenity(this.amenityKind)
@@ -5940,7 +5979,19 @@ export class CourseView {
       this.ghost = obj;
       this.fx.add(obj);
     }
-    this.ghost!.position.set(at.x, at.y + OBJECT_ELEVATION_OFFSET, at.z);
+    this.ghost!.position.set(at.x, at.y + (kind === "field" ? 0.6 : OBJECT_ELEVATION_OFFSET), at.z);
     this.invalidate();
+  }
+
+  /** The Park tool's preview: the field at its usual size, flat, round the pointer. */
+  private fieldGhost(k: NonNullable<ViewTool["fieldKind"]>) {
+    const g = new THREE.Group();
+    const plan = fieldPlan({ id: "ghost", points: fieldOutline(k, { x: 0, y: 0 }), field: k });
+    if (!plan) return g;
+    const mesh = createFieldGround(plan, fieldInks("natural", this.doc?.course.style.fairway), () => 0, 1000, 0);
+    (mesh.material as THREE.Material).depthTest = false;
+    mesh.renderOrder = 9;
+    g.add(mesh);
+    return g;
   }
 }

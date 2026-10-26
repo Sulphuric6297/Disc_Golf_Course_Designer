@@ -1,10 +1,13 @@
 import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
-import { test, expect, addHole, course, editorState, geoAt, importSite, STAND } from "./fixtures";
-import { osmFeaturesFrom, overpassQuery } from "../../src/lib/geo/osm";
+import { test, expect, addHole, course, editorState, geoAt, importSite, SITE, STAND } from "./fixtures";
+import { mappedCourse, osmFeaturesFrom, overpassQuery } from "../../src/lib/geo/osm";
+import { getGeoBounds } from "../../src/lib/geo/core";
+import { outlineFrom } from "../../src/lib/geo/parks";
+import { kindFromName, rankSuggestions } from "../../src/lib/geo/geocode";
 import { clipPathToRect, clipPolygonToRect, pointInPolygon as inPoly, polygonArea as polyArea } from "../../src/lib/geom";
 import { boxFill, traceOutline, waterRegions, woodsRegions, type Canopy } from "../../src/lib/geo/detect";
-import { decodeMvt, joinLines, tileFeatures } from "../../src/lib/geo/vectorTiles";
-import { reframeDesign } from "../../src/lib/importSite";
+import { decodeMvt, joinLines, tileFeatures, withoutTwins } from "../../src/lib/geo/vectorTiles";
+import { courseFromMap, osmFeatureItems, parkSummary, reframeDesign, wallsFt } from "../../src/lib/importSite";
 
 /** A point given in meters east and north of the site's center, on the plan (ft from its north-west corner). */
 const planOf = (doc: any, e: number, n: number) => ({ x: doc.canvas.width / 2 + e * 3.28084, y: doc.canvas.height / 2 - n * 3.28084 });
@@ -463,4 +466,234 @@ plain("OpenStreetMap from map tiles when Overpass is busy: a vector tile's paths
   plainExpect(path[0].lon).toBeCloseTo((4823 / n) * 360 - 180, 6);
   plainExpect(path[1].lon).toBeCloseTo((4824 / n) * 360 - 180, 6);
   plainExpect(feats[3].points).toHaveLength(4);
+});
+
+/** The test site as a plan 1,000 ft each way (for OpenStreetMap's things on it). */
+const planRef = { ...getGeoBounds({ lat: SITE.lat, lon: SITE.lon, label: "" }, 1000, 1000), width: 1000, height: 1000 };
+const node = (tags: Record<string, string>, e = 0, n = 0) => ({ type: "node", tags, ...geoAt(e, n) });
+const wayAt = (tags: Record<string, string>, pts: [number, number][]) => ({ type: "way", tags, geometry: pts.map(([e, n]) => geoAt(e, n)) });
+const square = (e: number, n: number, r: number): [number, number][] => [[e - r, n - r], [e + r, n - r], [e + r, n + r], [e - r, n + r], [e - r, n - r]];
+
+plain("OpenStreetMap's benches, picnic tables, toilets, drinking water, trash cans, parking, shelters, single trees, tree rows, hedges, wetlands, path surfaces and widths, and buildings' heights (pure logic)", () => {
+  const features = osmFeaturesFrom({
+    elements: [
+      node({ amenity: "bench" }, -90), node({ leisure: "picnic_table" }, -80), node({ amenity: "toilets" }, -70), node({ amenity: "drinking_water" }, -60), node({ amenity: "waste_basket" }, -50), node({ amenity: "parking" }, -40),
+      node({ amenity: "bbq" }, -30), node({ barrier: "gate" }, -20), node({ leisure: "fitness_station" }, -10),
+      // (nothing of the app's for a bike repair stand: left out)
+      node({ amenity: "bicycle_repair_station" }, -5),
+      node({ amenity: "shelter", name: "Pavilion" }, 0, 60),
+      node({ natural: "tree", height: "20", diameter_crown: "10", leaf_type: "needleleaved" }, 40, 60),
+      wayAt({ natural: "tree_row" }, [[-100, -60], [0, -60]]),
+      wayAt({ barrier: "hedge", height: "1.5" }, [[20, -60], [40, -60]]),
+      wayAt({ power: "line", voltage: "138000" }, [[-100, 80], [100, 80]]),
+      wayAt({ natural: "wetland", wetland: "marsh" }, square(-60, 30, 15)),
+      wayAt({ natural: "wetland", wetland: "swamp" }, square(-20, 30, 15)),
+      wayAt({ highway: "footway", surface: "gravel", width: "2" }, [[-100, -100], [100, -100]]),
+      // A picnic shelter mapped as a roof: 5 m to its flat top
+      wayAt({ amenity: "shelter", building: "roof", height: "5", "roof:shape": "flat" }, square(60, 0, 6)),
+      // A house 10 m to its ridge (gabled), and a flat-topped hall 12 m tall with two floors (its height wins)
+      wayAt({ building: "house", height: "10", "roof:shape": "gabled" }, square(80, 40, 6)),
+      wayAt({ building: "yes", height: "12", "building:levels": "2", "roof:shape": "flat" }, square(80, -30, 8))
+    ]
+  });
+  const { items, counts } = osmFeatureItems(features, planRef);
+  const amenities = items.filter((i: any) => i.type === "amenity");
+  plainExpect(amenities.map((a: any) => a.kind)).toEqual(["bench", "picnic", "restroom", "water", "trash", "parking", "grill", "gate", "fitness"]);
+  plainExpect(amenities.every((a: any) => a.importSource === "osm")).toBe(true);
+  const shelters = items.filter((i: any) => i.type === "structure" && i.kind === "shelter");
+  plainExpect(shelters).toHaveLength(2);
+  plainExpect(shelters[0].label).toBe("Pavilion");
+  plainExpect(Math.abs(polyArea(shelters[0].points))).toBeCloseTo(400, 0);
+  // (5 m to a flat top: 16.5 ft of posts)
+  plainExpect(shelters[1].height).toBe(16.5);
+  const trees = items.filter((i: any) => i.type === "tree");
+  const lone = trees.find((t: any) => t.treeType === "conifer");
+  plainExpect(lone).toMatchObject({ radius: 16.5, height: 66, importSource: "osm" });
+  // A row of trees 100 m long, about every 22 ft; a hedge and a power line as lines of their own
+  plainExpect(trees.filter((t: any) => t.treeType === "deciduous").length).toBeGreaterThanOrEqual(14);
+  plainExpect(trees.filter((t: any) => t.treeType === "bush")).toHaveLength(0);
+  plainExpect(items.find((i: any) => i.type === "line" && i.kind === "hedge")).toMatchObject({ fenceHeight: 5 });
+  plainExpect(items.find((i: any) => i.type === "line" && i.kind === "power")).toMatchObject({ fenceHeight: 80, importSource: "osm" });
+  const areas = items.filter((i: any) => i.type === "area").map((a: any) => a.kind);
+  plainExpect(areas).toEqual(["rough", "woods"]);
+  const path = items.find((i: any) => i.type === "line" && i.kind === "path");
+  plainExpect(path).toMatchObject({ surface: "gravel", width: 6.5 });
+  const [house, hall] = items.filter((i: any) => i.type === "structure" && i.kind === "building");
+  // The house's walls are its height less its roof; the hall's height is all walls (flat), its floors not used
+  plainExpect(house.height).toBeLessThan(32);
+  plainExpect(house.height).toBeGreaterThan(17);
+  plainExpect(hall.height).toBe(39.5);
+  plainExpect(counts).toMatchObject({ bench: 1, picnic: 1, restroom: 1, drinking: 1, trash: 1, sign: 1, grill: 1, gate: 1, fitness: 1, shelter: 2, hedge: 1, power: 1, building: 2 });
+  // Asked for, in the same query
+  const q = overpassQuery({ south: 1, west: 2, north: 3, east: 4 } as any);
+  for (const s of ['node["amenity"', 'node["natural"="tree"]', "tree_row", "wetland", "hedge", 'node["disc_golf"]', 'way["power"', 'node["power"="pole"]', "street_lamp", "bbq", "fitness_station"]) plainExpect(q).toContain(s);
+  // Building heights: from the floors only where no height is mapped
+  plainExpect(wallsFt({ heightM: 6 }, "building", [])).toBe(19.5);
+  plainExpect(wallsFt({ topM: 6, heightM: 3 }, "building", [{ x: 0, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 20 }, { x: 0, y: 20 }], "flat")).toBe(19.5);
+});
+
+plain("a park's ball fields, courts, playgrounds and the rest keep what they are (sport, surface, name), drawn as today's kinds, and are counted; the map tiles keep pitches too (pure logic)", () => {
+  const features = osmFeaturesFrom({
+    elements: [
+      wayAt({ leisure: "pitch", sport: "baseball", surface: "grass", name: "Field 1" }, square(-60, 0, 30)),
+      // (its dirt infield mapped by itself)
+      wayAt({ leisure: "pitch", sport: "baseball", surface: "dirt" }, square(-60, 0, 10)),
+      wayAt({ leisure: "pitch", sport: "tennis", surface: "asphalt" }, square(40, 40, 15)),
+      wayAt({ leisure: "dog_park" }, square(40, -40, 15)),
+      wayAt({ amenity: "fountain" }, square(0, 60, 4)),
+      wayAt({ barrier: "backstop" }, [[-80, 20], [-70, 25]]),
+      node({ leisure: "playground", name: "Tot Lot" }, 10, -10),
+      node({ man_made: "flagpole" }, 20, -10)
+    ]
+  });
+  const field = features.find(f => f.name === "Field 1") as any;
+  plainExpect(field).toMatchObject({ geom: "area", kind: "field", park: { what: "pitch", sport: "baseball", surface: "grass" }, tags: { leisure: "pitch", sport: "baseball" } });
+  const { items, parks } = osmFeatureItems(features, planRef);
+  const areas = items.filter((i: any) => i.type === "area");
+  // The app's own fields (a ball field with its home plate on a corner, a court, a dog park out of play), the dirt infield as dirt, the fountain as water
+  plainExpect(areas.map((a: any) => `${a.kind}:${a.field ?? ""}:${a.park?.what}`)).toEqual(["field:baseball:pitch", "sand::infield", "field:tennis:court", "field:dog:dog_park", "water::fountain"]);
+  plainExpect(areas[0].label).toBe("Field 1");
+  plainExpect(areas[0].home).toBeGreaterThanOrEqual(0);
+  plainExpect(areas[3].outOfPlay).toBe(true);
+  plainExpect(items.find((i: any) => i.type === "line")).toMatchObject({ kind: "fence", park: { what: "backstop" } });
+  // (the flagpole is one of the app's amenities now; the playground mapped on a spot is counted)
+  plainExpect(items.find((i: any) => i.type === "amenity")).toMatchObject({ kind: "flagpole" });
+  plainExpect(parkSummary(parks)).toMatch(/^(?=.*1 ball field\b)(?=.*1 infield)(?=.*\d+ tennis courts?)(?=.*1 dog park)(?=.*1 fountain)(?=.*1 backstop)(?=.*1 playground)/);
+  plainExpect(overpassQuery({ south: 1, west: 2, north: 3, east: 4 } as any)).toContain("dog_park");
+  // The map tiles: a pitch and a playground in the landuse layer, the playground's point repeated as a point of interest
+  const sq = [{ x: 100, y: 100 }, { x: 300, y: 100 }, { x: 300, y: 300 }, { x: 100, y: 300 }, { x: 100, y: 100 }];
+  const tiles = withoutTwins(tileFeatures([
+    { name: "landuse", extent: 4096, features: [{ type: 3, tags: { class: "pitch" }, rings: [sq] }, { type: 3, tags: { class: "playground" }, rings: [sq.map(p => ({ x: p.x + 1000, y: p.y }))] }] },
+    { name: "poi", extent: 4096, features: [{ type: 1, tags: { class: "playground", subclass: "playground" }, rings: [[{ x: 1200, y: 200 }]] }, { type: 1, tags: { class: "pitch", subclass: "pitch" }, rings: [[{ x: 3000, y: 3000 }]] }] }
+  ], 4823, 6160));
+  plainExpect(tiles.map(f => `${f.geom}:${f.kind}:${(f as any).park?.what}`)).toEqual(["area:field:pitch", "area:field:playground", "point:park:pitch"]);
+});
+
+plain("a disc golf course mapped on OpenStreetMap: its holes from hole ways, or tees and baskets with the same number; golf holes only inside a disc golf course (pure logic)", () => {
+  const features = osmFeaturesFrom({
+    elements: [
+      wayAt({ leisure: "disc_golf_course", name: "Springfield DGC" }, square(0, 0, 120)),
+      wayAt({ disc_golf: "hole", ref: "1", par: "3" }, [[-80, -80], [-60, -40], [-40, 0]]),
+      node({ disc_golf: "tee", ref: "1" }, -80.5, -80.3),
+      node({ disc_golf: "basket", ref: "1" }, -40, 0.6),
+      node({ disc_golf: "tee", ref: "2" }, 0, 0),
+      node({ disc_golf: "basket", ref: "2" }, 60, 30),
+      // A ball golf course's hole next door: not one of these
+      wayAt({ golf: "hole", ref: "3" }, [[200, 200], [260, 260]])
+    ]
+  });
+  const mc = mappedCourse(features)!;
+  plainExpect(mc.name).toBe("Springfield DGC");
+  plainExpect(mc.holes.map(h => h.number)).toEqual([1, 2]);
+  plainExpect(mc.holes[0].par).toBe(3);
+  plainExpect(mc.holes[0].doglegs).toHaveLength(1);
+  // (the tee where it's mapped, a little off the way's end)
+  plainExpect(mc.holes[0].tee.lon).toBeCloseTo(geoAt(-80.5, -80.3).lon, 9);
+  const ref = { ...getGeoBounds({ lat: SITE.lat, lon: SITE.lon, label: "" }, 1000, 1000), width: 1000, height: 1000 };
+  const c = courseFromMap(mc, ref);
+  plainExpect(c.holes.map((h: any) => [h.number, h.par ?? null])).toEqual([[1, 3], [2, null]]);
+  plainExpect(c.items.map((i: any) => i.type)).toEqual(["tee", "basket", "tee", "basket"]);
+  plainExpect(c.items.every((i: any) => c.holes.some((h: any) => h.id === i.holeId))).toBe(true);
+  // Nothing mapped for disc golf: none
+  plainExpect(mappedCourse(osmFeaturesFrom({ elements: [wayAt({ golf: "hole", ref: "1" }, [[0, 0], [50, 50]])] }))).toBeNull();
+});
+
+plain("the park or course at a spot: its outline, and the course mapped in it with how many holes (pure logic)", () => {
+  const ring = (e: number, n: number, r: number) => square(e, n, r).map(([x, y]) => geoAt(x, y));
+  const json = {
+    elements: [
+      { type: "way", tags: { leisure: "park", name: "Springfield Park" }, geometry: ring(0, 0, 300) },
+      { type: "way", tags: { leisure: "disc_golf_course", name: "Springfield DGC" }, geometry: ring(50, 0, 120) },
+      ...[0, 1, 2].map(k => ({ type: "way", tags: { disc_golf: "hole", ref: String(k + 1) }, center: geoAt(20 + k * 20, 10) }))
+    ]
+  };
+  const o = outlineFrom(json, geoAt(0, 0))!;
+  plainExpect(o.kind).toBe("park");
+  plainExpect(o.name).toBe("Springfield Park");
+  plainExpect(o.course).toEqual({ name: "Springfield DGC", holes: 3 });
+  plainExpect(o.bounds.north).toBeCloseTo(geoAt(0, 300).lat, 9);
+  // Just outside a course that isn't in a park: the course
+  const alone = outlineFrom({ elements: [json.elements[1], ...json.elements.slice(2)] }, geoAt(200, 0))!;
+  plainExpect(alone.kind).toBe("course");
+  plainExpect(outlineFrom({ elements: [] }, geoAt(0, 0))).toBeNull();
+});
+
+plain("suggestions: disc golf courses, then parks, then the rest; the same place from both services once; addresses as they came (pure logic)", () => {
+  const esri = [{ text: "Springfield", detail: "IL, USA", magicKey: "a" }, { text: "Springfield Park", detail: "Springfield, IL", magicKey: "b" }, { text: "Springfield Disc Golf Course", detail: "Springfield, IL", magicKey: "c" }].map(s => ({ ...s, kind: kindFromName(`${s.text}, ${s.detail}`) }));
+  const photon = [{ text: "Springfield Park", detail: "Springfield", lat: SITE.lat, lon: SITE.lon, kind: "park" as const, osmId: "W1" }];
+  const out = rankSuggestions(esri, photon, "springfield", { lat: SITE.lat, lon: SITE.lon });
+  plainExpect(out.map(s => s.text)).toEqual(["Springfield Disc Golf Course", "Springfield Park", "Springfield"]);
+  plainExpect(out[1]).toMatchObject({ osmId: "W1", magicKey: "b" });
+  const addr = rankSuggestions(esri, [], "12 Springfield", undefined);
+  plainExpect(addr.map(s => s.text)).toEqual(["Springfield", "Springfield Park", "Springfield Disc Golf Course"]);
+});
+
+test("every source at once, each saying how it went; Stop lets go of all of it and the next import isn't held up", async ({ page }) => {
+  test.setTimeout(120_000);
+  let hold = true;
+  // OpenStreetMap holds the first import up (it never answers); the second gets its answer
+  await page.route(/overpass|maps\.mail\.ru/, route => { if (!hold) void route.fulfill({ contentType: "application/json", body: JSON.stringify({ elements: [footway] }) }); });
+  await page.getByTestId("welcome-find").click();
+  await page.getByLabel("Search address").fill("Springfield Park");
+  await page.getByRole("button", { name: /Springfield Park/ }).first().click();
+  await expect(page.getByTestId("site-size")).toBeVisible();
+  await page.getByTestId("import-site").click();
+  // The photo and the ground are in while OpenStreetMap is still coming (all asked at once)
+  const sources = () => page.evaluate(() => (window as any).__dgImportProgress?.sources ?? {});
+  await expect.poll(async () => { const s = await sources(); return [s.photo?.state, s.elevation?.state, s.osm?.state]; }, { timeout: 30_000 }).toEqual(["done", "done", "coming"]);
+  const s = await sources();
+  plainExpect(s.photo.source).toMatch(/Esri/);
+  plainExpect(s.elevation.source).toMatch(/terrain tiles/);
+  plainExpect(s.photoTrees.state).toBe("done");
+  plainExpect(s.photoTrees.count).toBeGreaterThan(0);
+  await expect(page.getByTestId("import-status")).toContainText("OpenStreetMap");
+  // Stop (asked first): the dialog goes, nothing is kept
+  await page.keyboard.press("Escape");
+  await page.getByTestId("import-stop-yes").click();
+  await expect(page.getByRole("dialog", { name: "Find your park" })).toHaveCount(0);
+  expect((await course(page)).site.bounds).toBeNull();
+  // At once again: not held up by the one before, and what came then is used again
+  hold = false;
+  const summary = await importSite(page);
+  expect(summary).toMatch(/From OpenStreetMap: 1 path\./);
+  const end = await sources();
+  plainExpect(end.osm).toMatchObject({ state: "done", source: "Overpass", count: 1 });
+  plainExpect(end.photo.cached).toBe(true);
+  plainExpect(await page.evaluate(() => (window as any).__dgImportProgress.fraction)).toBe(1);
+});
+
+test("no photo or no elevation: the rest still comes in (the street map under it, or flat ground), and each says so", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.route(/arcgisonline\.com\/.*\/tile\//, route => route.abort());
+  await page.route(/elevation-tiles-prod/, route => route.abort());
+  const summary = await importSite(page, { trees: false });
+  expect(summary).toMatch(/Couldn't download the satellite photo, so the street map is under the course\./);
+  expect(summary).toMatch(/Couldn't download the elevation, so the ground is flat\./);
+  expect(summary).toMatch(/From OpenStreetMap: 1 path, 1 road, 1 water area, 1 parking lot\./);
+  const doc = await course(page);
+  expect(doc.background).toMatch(/^data:image\/jpeg/);
+  expect(doc.site.imagerySource).toBe("OpenStreetMap");
+  expect(doc.terrainHeights).toBe(0);
+  const s = await page.evaluate(() => (window as any).__dgImportProgress.sources);
+  plainExpect(s.elevation.state).toBe("failed");
+  plainExpect(s.photo).toMatchObject({ state: "done", source: "OpenStreetMap" });
+});
+
+test("the same spot brought in again asks for nothing it has already (photo, elevation, OpenStreetMap)", async ({ page }) => {
+  test.setTimeout(180_000);
+  // (the photo's tiles are the picker map's too: counted by the import's own word instead)
+  const asked = { osm: 0, ground: 0 };
+  page.on("request", r => {
+    const u = r.url();
+    if (/overpass|maps\.mail\.ru/.test(u)) asked.osm++;
+    if (/elevation-tiles-prod/.test(u)) asked.ground++;
+  });
+  await importSite(page, { trees: false });
+  const first = { ...asked };
+  expect(first.osm).toBe(3);
+  expect(first.ground).toBeGreaterThan(0);
+  await importSite(page, { trees: false });
+  expect(asked).toEqual(first);
+  const s = await page.evaluate(() => (window as any).__dgImportProgress.sources);
+  plainExpect([s.photo.cached, s.elevation.cached, s.osm.cached]).toEqual([true, true, true]);
 });

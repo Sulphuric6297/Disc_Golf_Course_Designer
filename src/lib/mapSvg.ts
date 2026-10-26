@@ -7,17 +7,19 @@ import { extrasSvg, keepsItsSize, keepsItsTurn, turned } from "./pieces";
 import { fitAttr } from "./fitText";
 import { SCRIPT_FONTS } from "./fontKinds";
 import { latitudeOf, sunFromOf } from "./mapLook";
-import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
+import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FIELD_KINDS, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
 import { activeLayout, areaObEdges, beyondSides, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, sharedWalks, teeAim, walkRoutes, taglineOf, titleFontOf } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
-import { courseTotals, holeStats, isOb, playsOf, type HoleStats } from "./holeStats";
+import { courseTotals, holeStats, isOb, isOutOfPlay, playsOf, type HoleStats } from "./holeStats";
 import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, type CanopyGrid } from "./forest";
 import { BASKET_MARKS, RESTRICTED, STRUCTURE_INK, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol, structureLegend, structureSymbol, type StructureDraw, type StructureInk } from "./symbols";
 import { isLineKind, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
 import { chainContours, type Contours } from "./relief";
 import { fmtDist } from "./units";
 import { tallGrassOf } from "./landscapes";
+import { fieldInks, fieldLegend, fieldPlan, fieldSvg } from "./fieldPlan";
+import { FIELD_ORDER, fieldKindOf } from "./fields";
 
 export const PAPER: Record<PaperSize, { label: string; w: number; h: number }> = {
   letter: { label: "Letter, 8.5 × 11 in", w: 8.5, h: 11 },
@@ -282,7 +284,13 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       default: return null;
     }
   };
+  const inks = fieldInks(theme, s.fairway);
   for (const a of areas) {
+    if (a.kind === "field") {
+      const plan = a.points.length >= 3 ? fieldPlan(a) : null;
+      if (plan) out.push(`<g opacity="${dim(a.holeId, a.alsoHoles)}">${fieldSvg(plan, inks, px(0.5), `${uid}-f${a.id}`)}</g>`);
+      continue;
+    }
     const fill = landFill(a);
     if (!fill || a.points.length < 3 || forest) continue;
     const o = dim(a.holeId, a.alsoHoles);
@@ -313,7 +321,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
 
   // Paths, roads, streams, fences, walks
   for (const l of lines) {
-    if (l.points.length < 2 || (forest && l.kind !== "fence")) continue;
+    if (l.points.length < 2 || (forest && l.kind !== "fence" && l.kind !== "hedge" && l.kind !== "power")) continue;
     const meta = LINE_KINDS[l.kind];
     const w = l.width ?? meta.width;
     const o = dim(l.holeId, l.alsoHoles);
@@ -333,6 +341,10 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     } else if (l.kind === "fence") {
       out.push(`<path d="${d}" fill="none" stroke="${pal.inkSoft}" stroke-width="${n(px(1.2))}" stroke-dasharray="${n(px(1))} ${n(px(3))}" stroke-linecap="round" opacity="${o}"/>`);
       out.push(`<path d="${d}" fill="none" stroke="${pal.inkSoft}" stroke-width="${n(px(0.6))}" opacity="${o}"/>`);
+    } else if (l.kind === "hedge") {
+      out.push(hedgeSvg(d, Math.max(w, px(2.4)), s.trees, o, pal.treeShadow > 0 && !photo ? px(1.6) : 0));
+    } else if (l.kind === "power") {
+      out.push(powerSvg(linePath(l), powerInk(theme), px, o));
     }
   }
 
@@ -384,6 +396,11 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   // itself crisp on a white casing, and a tag saying what it is (when there is room)
   const tags: { id: string; at: P; text: string; bg: string; fg: string; o: number }[] = [];
   for (const a of areas) {
+    if (a.kind === "field" && isOutOfPlay(a) && a.points.length >= 3) {
+      const poly = pts(a.points);
+      out.push(`<g opacity="${dim(a.holeId, a.alsoHoles)}"><polygon points="${poly}" fill="none" stroke="#ffffff" stroke-opacity="0.9" stroke-width="${n(px(4))}" stroke-linejoin="round"/><polygon points="${poly}" fill="none" stroke="${nogoCol}" stroke-width="${n(px(2.2))}" stroke-linejoin="round" stroke-dasharray="${n(px(6))} ${n(px(3.5))}"/></g>`);
+      continue;
+    }
     if (a.kind !== "ob" && a.kind !== "hazard" && a.kind !== "nogo" && a.kind !== "casual") continue;
     if (a.points.length < 3) continue;
     const pat = a.kind === "ob" ? `${uid}-ob` : a.kind === "hazard" ? `${uid}-hz` : a.kind === "casual" ? `${uid}-cs` : `${uid}-ng`;
@@ -1387,6 +1404,32 @@ const holeTable = (doc: CourseDoc, stats: HoleStats[], x: number, y: number, w: 
   return { svg: rows.join(""), bottom: yy + 8 * ts };
 };
 
+/** A hedge on a map: a dark band of bushes, rounded where each one bulges, lit on top (and a soft
+ * shadow beside it, `shadow` units off). `d` is its path, `w` its width. */
+const hedgeSvg = (d: string, w: number, trees: string, o: number, shadow: number) =>
+  (shadow ? `<path d="${d}" transform="translate(${n(shadow)} ${n(shadow)})" fill="none" stroke="#000" stroke-opacity="0.25" stroke-width="${n(w)}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(o)}"/>` : "") +
+  `<path d="${d}" fill="none" stroke="${shade(trees, -0.35)}" stroke-width="${n(w * 1.18)}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(o)}"/>` +
+  `<path d="${d}" fill="none" stroke="${shade(trees, 0.04)}" stroke-width="${n(w)}" stroke-linecap="round" stroke-linejoin="round" opacity="${n(o)}"/>` +
+  `<path d="${d}" fill="none" stroke="${shade(trees, 0.22)}" stroke-width="${n(w * 0.5)}" stroke-dasharray="0 ${n(w * 0.85)}" stroke-linecap="round" opacity="${n(o * 0.8)}"/>`;
+
+/** The ink a power line is drawn in: dark on a light map, light on a dark one or the photo. */
+const powerInk = (theme: MapTheme) => (theme === "satellite" || theme === "forest" || theme === "night" ? { ink: "#ecebe6", halo: "rgba(0,0,0,.55)" } : { ink: "#2b2925", halo: "rgba(255,255,255,.75)" });
+
+/** A power line on a map: a thin line, a dot at each pole (every corner, and no more than 160 ft
+ * apart; `every`: so far apart instead). `px` turns points into the drawing's units. */
+const powerSvg = (line: P[], c: { ink: string; halo: string }, px: (v: number) => number, o: number, every = 160) => {
+  const poles: P[] = [];
+  for (let i = 0; i < line.length; i++) {
+    poles.push(line[i]);
+    const b = line[i + 1];
+    if (!b) break;
+    const k = Math.ceil(dist(line[i], b) / every);
+    for (let j = 1; j < k; j++) poles.push({ x: line[i].x + ((b.x - line[i].x) * j) / k, y: line[i].y + ((b.y - line[i].y) * j) / k });
+  }
+  const d = pathD(line);
+  return `<g opacity="${n(o)}"><path d="${d}" fill="none" stroke="${c.halo}" stroke-width="${n(px(2.2))}" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${c.ink}" stroke-width="${n(px(0.9))}" stroke-linejoin="round"/>${poles.map(p => `<circle cx="${n(p.x)}" cy="${n(p.y)}" r="${n(px(1.7))}" fill="${c.ink}" stroke="${c.halo}" stroke-width="${n(px(0.8))}"/>`).join("")}</g>`;
+};
+
 /** The legend: only what the map shows. */
 const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal: Palette, font: string, heading = "LEGEND") => {
   const s = doc.style;
@@ -1414,7 +1457,7 @@ const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal
     if (obItems.some(i => i.type === "line" && (i as LineItem).kind !== "stream")) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${obCase}" stroke-width="${n(4.2 * ts)}" stroke-linecap="round"/><line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${obCol}" stroke-width="${n(2.2 * ts)}" stroke-linecap="round"/>`, text: "OB line (road, fence)" });
     if (areaKinds.has("hazard")) entries.push({ sym: box(s.hazard, s.hazard, "#ffffff", dashed), text: "Hazard" });
     if (areaKinds.has("casual")) entries.push({ sym: box(casualCol, casualCol, "#ffffff", dashed), text: "Casual area" });
-    if (areaKinds.has("nogo")) entries.push({ sym: box(nogoCol, nogoCol, "#ffffff", dashed), text: "Out of play" });
+    if (doc.items.some(isOutOfPlay)) entries.push({ sym: box(nogoCol, nogoCol, "#ffffff", dashed), text: "Out of play" });
   }
   if (has(i => i.type === "mando" && !i.pairId)) entries.push({ sym: mandoSymbol({ x: sw / 2, y: sh * 0.62 }, 0, "left", sh / 15), text: "Mando" });
   if (has(i => i.type === "mando" && !!i.pairId)) entries.push({ sym: gateSymbol({ x: sw / 2, y: sh * 0.12 }, { x: sw / 2, y: sh * 0.88 }, 0, sh / 17), text: "Mando gate" });
@@ -1427,6 +1470,12 @@ const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal
   if (areaKinds.has("woods") || has(i => i.type === "tree")) entries.push({ sym: `<circle cx="${n(sw * 0.35)}" cy="${n(sh / 2)}" r="${n(sh * 0.48)}" fill="${s.trees}"/><circle cx="${n(sw * 0.7)}" cy="${n(sh / 2)}" r="${n(sh * 0.4)}" fill="${shade(s.trees, 0.1)}"/>`, text: "Trees" });
   if (lineKinds.has("path")) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${s.path}" stroke-width="${n(3 * ts)}" stroke-linecap="round"/>`, text: "Path" });
   if (lineKinds.has("road")) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${pal.road}" stroke-width="${n(5 * ts)}"/>`, text: "Road" });
+  if (lineKinds.has("hedge")) entries.push({ sym: hedgeSvg(`M${n(sh * 0.3)} ${n(sh / 2)}L${n(sw - sh * 0.3)} ${n(sh / 2)}`, sh * 0.62, s.trees, 1, 0), text: "Hedge" });
+  if (lineKinds.has("power")) entries.push({ sym: powerSvg([{ x: 0, y: sh / 2 }, { x: sw, y: sh / 2 }], powerInk(s.theme), v => v * ts * 0.9, 1, sw * 0.6), text: "Power line" });
+  // Fields, courts and play areas, each kind a little one of its own
+  const fieldKinds = new Set(doc.items.filter(i => i.type === "area" && i.kind === "field").map(i => fieldKindOf(i as AreaItem)));
+  const inks = fieldInks(s.theme, s.fairway);
+  for (const kd of FIELD_ORDER) if (fieldKinds.has(kd)) entries.push({ sym: fieldLegend(kd, sw, sh, inks, `lgf-${kd}`), text: FIELD_KINDS[kd].label });
   // Built things, each drawn as on the map
   const built = new Set(doc.items.filter(i => i.type === "structure").map(i => (i as StructureItem).kind));
   for (const kd of STRUCTURE_ORDER) {

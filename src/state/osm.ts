@@ -16,13 +16,15 @@ export const refreshOsm = async () => {
   useOsm.setState({ busy: true });
   toast(OSM_ASKING, "info", false, undefined, 4000);
   try {
-    const { items, summary } = await osmItems(d.site.bounds, d.canvas.width, d.canvas.height);
+    // (a fresh answer: one kept from the map tiles is asked of Overpass again, for its fuller one)
+    const { items, summary } = await osmItems(d.site.bounds, d.canvas.width, d.canvas.height, { fresh: true });
     changeDoc(doc => {
       // (woods made from the measured trees: OpenStreetMap's, drawn by hand and often over a whole
-      // hillside, aren't brought back over them)
+      // hillside, aren't brought back over them; nor its trees over the measured ones)
       const stands = doc.items.some(i => i.type === "area" && i.kind === "woods" && i.importSource === "lidar");
+      const measured = !!doc.lidar?.trees.length;
       const kept = doc.items.filter(i => !fromMaps(i));
-      const fresh = freshOnly(kept, stands ? items.filter(i => !(i.type === "area" && i.kind === "woods")) : items);
+      const fresh = freshOnly(kept, items.filter(i => !(stands && i.type === "area" && i.kind === "woods") && !(measured && i.type === "tree" && i.treeType !== "bush")));
       return { items: [...kept, ...fresh], site: { ...doc.site, osmFailed: undefined } };
     });
     toast(summary ? `From OpenStreetMap: ${summary}.` : OSM_NOTHING, "success", true, undefined, 8000);

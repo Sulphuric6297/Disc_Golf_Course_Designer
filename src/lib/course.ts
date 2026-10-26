@@ -197,8 +197,8 @@ export const fairwayOutline = (hole: Pick<Hole, "fairwayWidth" | "fairwayShape" 
 export const CURVED_LINES = Object.keys(LINE_KINDS) as LineKind[];
 export const curves = (l: Pick<LineItem, "kind" | "straight">) => !l.straight && CURVED_LINES.includes(l.kind);
 
-/** Areas that curve through their corners as drawn (all but parking lots and buildings, unless set straight). */
-export const areaCurves = (a: Pick<AreaItem, "kind" | "straight">) => !a.straight && a.kind !== "parking" && a.kind !== "building";
+/** Areas that curve through their corners as drawn (all but parking lots, buildings and fields, unless set straight). */
+export const areaCurves = (a: Pick<AreaItem, "kind" | "straight">) => !a.straight && a.kind !== "parking" && a.kind !== "building" && a.kind !== "field";
 /** An area's outline as it is drawn: a smooth closed curve through its corners, or the corners. */
 export const areaPath = (a: Pick<AreaItem, "kind" | "straight" | "points">) => (areaCurves(a) ? smoothClosed(a.points, a.points.length > 40 ? 2 : 6) : a.points);
 /** Areas with their outlines as drawn (for drawing them). */
