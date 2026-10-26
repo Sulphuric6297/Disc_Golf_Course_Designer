@@ -204,7 +204,15 @@ export default function App() {
     return stop;
   }, []);
 
-  const onImported = (site: ImportedSite, opts?: { course?: boolean }) => {
+  // (the whole site in view, its top up: the way its frame was turned)
+  const faceTheSite = () => {
+    const v = getView();
+    v?.resetNorth();
+    const turn = getDoc().style.rotation ?? 0;
+    if (turn) v?.rotateBy(turn);
+    v?.fitSite();
+  };
+  const onImported = (site: ImportedSite, opts?: { course?: boolean; turn?: number }) => {
     // (the disc golf course mapped there, when asked for: its holes after the ones here)
     const mappedCourse = opts?.course && site.course?.holes.length ? site.course : null;
     // What was designed stays on the same ground when the frame grows, shrinks or moves
@@ -228,7 +236,9 @@ export default function App() {
       cutTrees: from && site.site.bounds ? d.cutTrees?.map(reframe(from, { ...site.site.bounds, ...site.canvas })) : d.cutTrees,
       holes: mappedCourse ? [...carried.holes, ...mappedCourse.holes] : carried.holes,
       items: [...carried.items, ...freshOnly(carried.items, [...site.mapped, ...site.trees]), ...(mappedCourse?.items ?? [])],
-      lidar: site.lidar
+      lidar: site.lidar,
+      // (the frame turned on the way in: the course map turned to match; the site stays north up)
+      ...(opts?.turn !== undefined ? { style: { ...d.style, rotation: opts.turn } } : {})
     }));
     setFindSite(false);
     useEditor.getState().set({ step: "design", tool: "select" });
@@ -382,7 +392,7 @@ export default function App() {
   const dialogs = (
     <>
       {findSite && <SiteImportDialog onClose={() => setFindSite(false)} onImported={onImported} />}
-      {siteReady && <SiteReady {...siteReady} onLook={() => { setSiteReady(null); useEditor.getState().set({ view: "3d" }); setTimeout(() => getView()?.fitSite(), 50); }} onStart={() => { setSiteReady(null); setTimeout(() => getView()?.fitSite(), 50); }} />}
+      {siteReady && <SiteReady {...siteReady} onLook={() => { setSiteReady(null); useEditor.getState().set({ view: "3d" }); setTimeout(() => faceTheSite(), 50); }} onStart={() => { setSiteReady(null); setTimeout(() => faceTheSite(), 50); }} />}
       {help && <HelpGuide onClose={() => setHelp(false)} topic={help.topic} touch={touchUi} />}
       {goTo && <GoTo onClose={() => setGoTo(false)} onHelp={topic => setHelp({ topic })} />}
     </>
