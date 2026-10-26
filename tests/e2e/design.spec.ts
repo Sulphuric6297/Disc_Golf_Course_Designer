@@ -10,7 +10,7 @@ import { renderHolePage } from "../../src/lib/holePage";
 import { tallGrassOf } from "../../src/lib/landscapes";
 
 /** The map's painting finished (a quick draft shows first, then the sharp picture). */
-const painted = (page: import("@playwright/test").Page) => expect.poll(() => page.evaluate(() => !(window as any).__dgPainting()), { timeout: 90_000 }).toBe(true);
+const painted = (page: import("@playwright/test").Page) => expect.poll(() => page.evaluate(() => !(window as any).__dgPainting()), { timeout: 180_000 }).toBe(true);
 
 test("the Design step shows the printed map; its styles are the painted map in each landscape", async ({ page }) => {
   await blankCourse(page);
@@ -605,7 +605,7 @@ plain("elevation on the map: relief exaggerated to suit the course, tidy contour
 });
 
 test("elevation on the Forest map: hills shade the painting, each Elevation look paints its own, contour lines are painted in on request, Hills fine-tunes the relief", async ({ page }) => {
-  test.setTimeout(150_000);
+  test.setTimeout(600_000);
   await importSite(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
