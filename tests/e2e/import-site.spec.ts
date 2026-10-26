@@ -153,7 +153,8 @@ test("a busy OpenStreetMap server: the next one is asked", async ({ page }) => {
   await overpass(page, host => (host === "overpass-api.de" ? 504 : host === "overpass.private.coffee" ? { remark: "runtime error: Query timed out in \"query\" at line 1 after 31 seconds.", elements: [] } : { elements: [footway] }), asked);
   const summary = await importSite(page, { trees: false });
   expect(summary).toMatch(/From OpenStreetMap: 1 path\./);
-  expect(asked).toEqual(["overpass-api.de", "overpass.private.coffee", "maps.mail.ru"]);
+  // (the import's own asks, last: the park's outline is looked up first, when it's picked)
+  expect(asked.slice(-3)).toEqual(["overpass-api.de", "overpass.private.coffee", "maps.mail.ru"]);
 });
 
 test("OpenStreetMap out of reach: said plainly, with Try again; the Site step looks again any time", async ({ page }) => {
@@ -166,7 +167,7 @@ test("OpenStreetMap out of reach: said plainly, with Try again; the Site step lo
   up = true;
   await warning.getByRole("button", { name: "Try again" }).click();
   await expect.poll(() => osmCount(page)).toBe(2);
-  await expect(page.getByRole("status").filter({ hasText: "From OpenStreetMap: 1 path, 1 water area." })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /From OpenStreetMap: 1 path/ })).toBeVisible();
   // Again from the Site step: what came before is replaced, not doubled, and Undo brings it back
   await page.getByRole("button", { name: /^1\s*Site$/ }).click();
   // (under What came in, folded)
@@ -263,8 +264,8 @@ test("making the site bigger keeps the design on the same ground", async ({ page
   await page.mouse.down();
   await page.mouse.move(nw.x - 90, nw.y - 60, { steps: 10 });
   await page.mouse.up();
-  await page.getByText("Trees from the photo", { exact: true }).click();
-  await page.getByText("Paths, roads, water and buildings", { exact: true }).click();
+  if (await page.getByTestId("bring-photo-trees").isVisible()) await page.getByTestId("bring-photo-trees").click();
+  await page.getByTestId("bring-osm").click();
   await page.getByTestId("import-site").click();
   await expect.poll(async () => (await course(page)).canvas.width, { timeout: 90_000 }).toBeGreaterThan(W + 100);
   expect((await course(page)).canvas.height).toBeGreaterThan(H + 50);

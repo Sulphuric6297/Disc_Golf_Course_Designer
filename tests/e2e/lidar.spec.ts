@@ -108,7 +108,7 @@ test("trees measured from the air on import: cut down on a fairway, a stump to b
   await page.keyboard.press("Escape");
   await page.evaluate(id => (window as any).__dgActions.select(id), hole.id);
   for (const k of row) await expect(page.locator(`[data-stump="${k}"]`)).toHaveAttribute("data-testid", "stump");
-  await expect(page.getByTestId("fairway-trees")).toContainText("5 cut down");
+  await expect(page.getByTestId("fairway-trees")).toContainText("5 trees cut down");
   const before = await forest() + 5;
   // One brought back with a click on its stump (one undo step); one not under the hole's label or handles
   const free = await page.evaluate(row => row.find(k => {
@@ -122,7 +122,8 @@ test("trees measured from the air on import: cut down on a fairway, a stump to b
   await expect.poll(async () => (await course(page)).lidar.kept).toEqual([free]);
   await expect.poll(forest).toBe(before - 4);
   await expect(page.getByTestId("kept-tree")).toHaveCount(1);
-  await expect(page.getByTestId("fairway-trees")).toContainText("4 cut down · 1 kept");
+  await expect(page.getByTestId("fairway-trees")).toContainText("4 trees cut down");
+  await expect(page.getByTestId("fairway-trees")).toContainText("1 kept");
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).lidar.kept).toBeUndefined();
   // All at once from the hole, and down again
