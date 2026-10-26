@@ -19,6 +19,7 @@ import { Inspector } from "./components/Inspector";
 import { stepHole } from "./components/HoleSteps";
 import { GoTo } from "./components/GoTo";
 import { SiteImportDialog } from "./components/SiteImportDialog";
+import { SiteReady, readyFacts, type ReadyFact } from "./components/SiteReady";
 import { TeeViewHud } from "./components/TeeViewHud";
 import { CameraHud } from "./components/CameraHud";
 import { MapDesigner } from "./components/MapDesigner";
@@ -175,6 +176,8 @@ export default function App() {
   const layout = useLayout();
   const doc = useCourse(s => s.doc);
   const [findSite, setFindSite] = useState(false);
+  // The site just brought in: what came, over the 3D view of it
+  const [siteReady, setSiteReady] = useState<{ name: string; facts: ReadyFact[]; said: string } | null>(null);
   useEffect(() => {
     const on = (e: Event) => { if ((e as CustomEvent).detail === "find-site") setFindSite(true); };
     window.addEventListener(SHOW_EVENT, on);
@@ -228,10 +231,13 @@ export default function App() {
       lidar: site.lidar
     }));
     setFindSite(false);
-    useEditor.getState().set({ step: "design", tool: "select" });
+    // (the reveal: the site in 3D, and what came in it)
+    useEditor.getState().set({ step: "design", tool: "select", view: "3d" });
     setTimeout(() => getView()?.fitSite(), 50);
     const outside = carried.outside ? ` ${carried.outside} ${carried.outside === 1 ? "thing you drew is" : "things you drew are"} now past the site's edges.` : "";
-    toast(`Site brought in${cameIn(site)}.${outside}`, "success", false, { label: "View in 3D", run: () => useEditor.getState().set({ view: "3d" }) }, 12000);
+    const name = getDoc().name.replace(/ Disc Golf Course$/, "");
+    setSiteReady({ name, facts: readyFacts(site, getDoc().units, mappedCourse?.holes.length ?? 0), said: `Site brought in${cameIn(site)}.${outside}` });
+    if (outside) toast(outside.trim(), "info");
     if (site.osmFailed) osmFailedToast();
   };
 
@@ -377,6 +383,7 @@ export default function App() {
   const dialogs = (
     <>
       {findSite && <SiteImportDialog onClose={() => setFindSite(false)} onImported={onImported} />}
+      {siteReady && <SiteReady {...siteReady} onLook={() => setSiteReady(null)} onStart={() => { setSiteReady(null); useEditor.getState().set({ view: "2d" }); setTimeout(() => getView()?.fitSite(), 50); }} />}
       {help && <HelpGuide onClose={() => setHelp(false)} topic={help.topic} touch={touchUi} />}
       {goTo && <GoTo onClose={() => setGoTo(false)} onHelp={topic => setHelp({ topic })} />}
     </>
