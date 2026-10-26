@@ -152,7 +152,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
       setSelection(first);
       setFit({ bounds: first, key: Date.now() });
       setStatus({ state: "idle", text: "" });
-      const o = await findSiteOutline({ lat: loc.lat, lon: loc.lon, osmId: s?.osmId }).catch(() => null);
+      const o = await findSiteOutline({ lat: loc.lat, lon: loc.lon, osmId: s?.osmId, name: (s?.text ?? loc.label).split(",")[0] || undefined }).catch(() => null);
       if (o && o.outline.length >= 3) {
         const f = frameAround(o.bounds);
         setOutline(o);
@@ -294,7 +294,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     <fieldset key="ground" disabled className="contents" data-testid="import-elevation">{pill({ id: "ground", icon: <Mountain size={15} />, label: "Ground", value: survey ? `${survey.year} survey` : undefined, on: true, fixed: true })}</fieldset>,
     survey ? pill({ id: "lidar", icon: <Trees size={15} />, label: "Measured trees", value: `${survey.year}${survey.covered === "partial" ? " · part" : ""}`, on: lidar, set: setLidar }) : null,
     (!survey || !lidar) && photo ? pill({ id: "photo-trees", icon: <TreeDeciduous size={15} />, label: "Trees from the photo", on: trees, set: setTrees }) : null,
-    pill({ id: "osm", icon: <Route size={15} />, label: "Paths, roads, water, buildings and fields", value: "OpenStreetMap", on: osm, set: setOsm }),
+    pill({ id: "osm", icon: <Route size={15} />, label: "Paths, roads and more", value: "OpenStreetMap", on: osm, set: setOsm }),
     outline?.course?.holes ? pill({ id: "course", icon: <Flag size={15} />, label: "Holes", value: `${outline.course.holes} mapped`, on: course, set: setCourse }) : null
   ];
   const frameChoice = outline && (

@@ -179,7 +179,7 @@ export function SitePickerMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    layersRef.current.forEach(layer => map.removeLayer(layer));
+    layersRef.current.forEach(layer => { if (map.hasLayer(layer)) map.removeLayer(layer); });
     const config = PICKER_LAYERS[imagery];
     const attribution = MAP_IMAGERY_SOURCES[imagery].attribution;
     const base = L.tileLayer(config.url, { maxZoom: 21, maxNativeZoom: config.maxNativeZoom, attribution });
@@ -205,7 +205,20 @@ export function SitePickerMap({
       : [];
     const overlays = config.overlays.map(url => L.tileLayer(url, { maxZoom: 21, maxNativeZoom: config.maxNativeZoom }));
     layersRef.current = [base, ...stateLayers, ...overlays];
-    layersRef.current.forEach(layer => layer.addTo(map));
+    [base, ...overlays].forEach(layer => layer.addTo(map));
+    // (a state's own photos only on the map, and in its credit, while the map is over that state)
+    const regions = STATE_ORTHO_SOURCES.map(src => L.latLngBounds([src.region.south, src.region.west], [src.region.north, src.region.east]));
+    const sync = () => {
+      const seen = map.getBounds();
+      stateLayers.forEach((layer, k) => {
+        const over = seen.intersects(regions[k]);
+        if (over && !map.hasLayer(layer)) layer.addTo(map);
+        else if (!over && map.hasLayer(layer)) map.removeLayer(layer);
+      });
+    };
+    sync();
+    map.on("moveend", sync);
+    return () => { map.off("moveend", sync); };
   }, [imagery]);
 
   // Selection rectangle with corner handles (resize) and a center handle (move).
@@ -307,7 +320,9 @@ export function SitePickerMap({
     const map = mapRef.current;
     if (!map || !fit) return;
     const b = L.latLngBounds([fit.bounds.south, fit.bounds.west], [fit.bounds.north, fit.bounds.east]);
-    map.flyToBounds(b, { padding: [70, 70], duration: 1.4, maxZoom: 18 });
+    // (clear of the panel on the right on a computer, of the sheet at the foot on a phone)
+    const wide = map.getSize().x > 700;
+    map.flyToBounds(b, { paddingTopLeft: [60, 80], paddingBottomRight: wide ? [400, 40] : [30, Math.round(map.getSize().y * 0.5)], duration: 1.4, maxZoom: 18 });
   }, [fit?.key]);
 
   // What has come in: the photo over the frame, then shapes and trees (one canvas for them all)

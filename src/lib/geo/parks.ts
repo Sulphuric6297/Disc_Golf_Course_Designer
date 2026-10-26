@@ -93,13 +93,22 @@ export const outlineFrom = (json: { elements?: any[] }, at: LatLon): SiteOutline
 
 /** The outline Nominatim has: of the place found (its OpenStreetMap id, "W123"), or of what the
  * spot is on; only a park's or a course's. */
-const fromNominatim = async (at: LatLon, osmId?: string, signal?: AbortSignal): Promise<SiteOutline | null> => {
+const PARK_TYPE = /^(park|disc_golf_course|recreation_ground|nature_reserve)$/;
+const fromNominatim = async (at: LatLon, osmId?: string, signal?: AbortSignal, name?: string): Promise<SiteOutline | null> => {
+  // (by its id; else by its name near the spot: a park's outline, where the spot alone gives the
+  // street it's on; else what's at the spot)
+  const near = { viewbox: `${at.lon - 0.03},${at.lat + 0.03},${at.lon + 0.03},${at.lat - 0.03}`, bounded: "1" };
   const url = osmId
     ? `https://nominatim.openstreetmap.org/lookup?${new URLSearchParams({ osm_ids: osmId, format: "jsonv2", polygon_geojson: "1" })}`
-    : `https://nominatim.openstreetmap.org/reverse?${new URLSearchParams({ lat: String(at.lat), lon: String(at.lon), format: "jsonv2", zoom: "17", polygon_geojson: "1" })}`;
+    : name
+      ? `https://nominatim.openstreetmap.org/search?${new URLSearchParams({ q: name, format: "jsonv2", polygon_geojson: "1", limit: "8", ...near })}`
+      : `https://nominatim.openstreetmap.org/reverse?${new URLSearchParams({ lat: String(at.lat), lon: String(at.lon), format: "jsonv2", zoom: "17", polygon_geojson: "1" })}`;
   const json = await fetchJson(url, 6000, signal);
-  const r = Array.isArray(json) ? json[0] : json;
-  if (!r || r.category !== "leisure" || !/^(park|disc_golf_course|recreation_ground|nature_reserve)$/.test(r.type)) return null;
+  const list = (Array.isArray(json) ? json : [json]).filter(Boolean);
+  // (a disc golf course before a park; the nearest of each)
+  const rank = (r: any) => (r.type === "disc_golf_course" ? 0 : 1) * 1e6 + Math.hypot(+r.lat - at.lat, +r.lon - at.lon);
+  const r = list.filter((x: any) => x.category === "leisure" && PARK_TYPE.test(x.type) && /Polygon/.test(x.geojson?.type ?? "")).sort((a: any, b: any) => rank(a) - rank(b))[0];
+  if (!r) return name && !osmId ? fromNominatim(at, undefined, signal) : null;
   const g = r.geojson;
   const coords: number[][] | undefined = g?.type === "Polygon" ? g.coordinates[0] : g?.type === "MultiPolygon" ? [...g.coordinates].sort((a: number[][][], b: number[][][]) => b[0].length - a[0].length)[0][0] : undefined;
   if (!coords || coords.length < 4) return null;
@@ -114,10 +123,10 @@ const fromNominatim = async (at: LatLon, osmId?: string, signal?: AbortSignal): 
  * where OpenStreetMap has neither. Overpass is waited for a few seconds (it knows the holes);
  * meanwhile Nominatim's outline is ready to use in its place.
  */
-export const findSiteOutline = async (place: { lat: number; lon: number; osmId?: string }, signal?: AbortSignal): Promise<SiteOutline | null> => {
+export const findSiteOutline = async (place: { lat: number; lon: number; osmId?: string; name?: string }, signal?: AbortSignal): Promise<SiteOutline | null> => {
   const at = { lat: place.lat, lon: place.lon };
   const overpass = askOverpass(outlineQuery(at.lat, at.lon), { timeoutMs: 12000, signal }).then(json => outlineFrom(json, at));
-  const nominatim = fromNominatim(at, place.osmId, signal).catch(err => { console.info("Nominatim outline unavailable", err); return null; });
+  const nominatim = fromNominatim(at, place.osmId, signal, place.name).catch(err => { console.info("Nominatim outline unavailable", err); return null; });
   const timely = await Promise.race([overpass.catch(() => undefined), new Promise<undefined>(r => setTimeout(() => r(undefined), OVERPASS_WAIT_MS))]);
   if (timely) return timely;
   const n = await nominatim;
