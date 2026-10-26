@@ -623,10 +623,10 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       wooded[m] = (opts.mode === "everywhere" || !canopy ? site(p) : photoTrees(p)) ? 1 : 0;
     }
   }
-  // Measured trees: the woods are the 3D trees' own crowns, each as wide as it stands, with a leafy
-  // edge, so a lone tree is a small clump and trees together are one wood;
-  // a tree cut down or brought back in 3D opens or fills its place here. Woods drawn by hand are
-  // painted as drawn.
+  // Measured trees: the woods' floor is under the 3D trees' own crowns, each as wide as it stands,
+  // with a leafy edge; the trees themselves are drawn one by one below, as trees placed by hand are,
+  // so a big tree is one big tree; a tree cut down or brought back in 3D opens or fills its place
+  // here. Woods drawn by hand are painted as drawn.
   const planted = new Uint8Array(mw * mh);
   if (!measured) planted.fill(1);
   if (measured) {
@@ -649,7 +649,6 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         if (dx * dx + dy * dy > r * r) continue;
         const m = my * mw + mx;
         if (!wooded[m]) wooded[m] = 1;
-        planted[m] = 1;
       }
     }
   }
@@ -819,6 +818,20 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       }
     }
   }
+  // The measured trees, each drawn whole where it stands, at its own size and height and of its
+  // own kind, as a tree placed by hand is (crowns that touch are the woods' canopy)
+  if (measured && !opts.under) measured.trees.forEach(([x0, y0, h0, radius, conifer], idx) => {
+    const sp = toScreen({ x: x0, y: y0 });
+    const r = Math.max(2.2 * pt, radius * k);
+    if (sp.x < -r || sp.y < -r || sp.x > W + r || sp.y > H + r) return;
+    const top = Math.max(r * 1.2, h0 * k);
+    const tone = 1 + (idx % 6);
+    if (vector) { const tr = seeded(idx * 7919 + 13); vtrees.push({ x: sp.x, y: sp.y, r, h: top, pine: !!conifer, col: treeColor(tr()), seed: tr() }); return; }
+    if (conifer) (natural ? whorls : pine)(sp.x, sp.y, r, top, tone);
+    else if (natural) leafy(sp.x, sp.y, r, top, tone);
+    else if (r > crownR * 1.4) clumpTree(sp.x, sp.y, r, tone, top);
+    else stamp(sp.x, sp.y, r, top, tone);
+  });
   // Trees placed on the map (or found on the photo): each where it stands, at its own size and
   // height and of its own kind, wherever it is (on a fairway too), apart from the woods
   for (const t of opts.under ? [] : (doc.items.filter(i => i.type === "tree") as TreeItem[])) {
@@ -1033,10 +1046,11 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   };
   const thick = smooth(0.55, 1, cover);
   const bump = crownR * 0.75;
-  // Leaf dabs grow with the page's resolution (tile pixels per pixel); the crowns' own slope is
-  // softened so the dabs carry the texture
-  const dabK = 1 / Math.max(0.5, pt * 0.85);
-  const bumpK = 2.2;
+  // Leaf dabs grow with the page's resolution (tile pixels per pixel), a little bigger than a pixel
+  // each; the crowns' own slope is softened so the dabs carry the texture (soft: sharp dabs and
+  // dark gaps between clumps read as broccoli)
+  const dabK = 0.8 / Math.max(0.5, pt * 0.85);
+  const bumpK = 5;
   const img = ctx.createImageData(W, H);
   const o = img.data;
   let cr = 0, cg = 0, cb = 0;
@@ -1142,22 +1156,22 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         const gx = (hr - hl) * 0.5, gy = (hd - hu) * 0.5;
         const lam = Math.max(0, (-gx * L.x - gy * L.y + L.z) / Math.sqrt(gx * gx + gy * gy + 1));
         const sun = sunlit(x, y, h);
-        // Leaf dabs on the treetop, lit by the sun: pale froth on the sunny side of each clump,
-        // near-black gaps between them
+        // Leaf dabs on the treetop, lit by the sun: a little paler on the sunny side of each clump,
+        // a little darker between them, the tree's own roundness lit over them
         const fx = x * dabK, fy = y * dabK;
         const ix = fx | 0, iy = fy | 0, ax = fx - ix, ay = fy - iy;
         const r0 = (iy & 511) << 9, r1 = ((iy + 1) & 511) << 9, c0x = ix & 511, c1x = (ix + 1) & 511;
         const w00 = (1 - ax) * (1 - ay), w10 = ax * (1 - ay), w01 = (1 - ax) * ay, w11 = ax * ay;
         const j00 = r0 | c0x, j10 = r0 | c1x, j01 = r1 | c0x, j11 = r1 | c1x;
         const dh = DH[j00] * w00 + DH[j10] * w10 + DH[j01] * w01 + DH[j11] * w11;
-        const nx = gx / bumpK + (DGX[j00] * w00 + DGX[j10] * w10 + DGX[j01] * w01 + DGX[j11] * w11) * 3.5;
-        const ny = gy / bumpK + (DGY[j00] * w00 + DGY[j10] * w10 + DGY[j01] * w01 + DGY[j11] * w11) * 3.5;
+        const nx = gx / bumpK + (DGX[j00] * w00 + DGX[j10] * w10 + DGX[j01] * w01 + DGX[j11] * w11) * 1.6;
+        const ny = gy / bumpK + (DGY[j00] * w00 + DGY[j10] * w10 + DGY[j01] * w01 + DGY[j11] * w11) * 1.6;
         const lit = Math.max(0, (-nx * L.x - ny * L.y + L.z) / Math.sqrt(nx * nx + ny * ny + 1));
         const occ = smooth(0.04, 0.5, dh);
         const shade = 1 - shadowK * 0.9 * (1 - sun);
-        let v = (0.17 + 0.6 * lit) * (0.52 + 0.48 * occ) * shade;
-        v += smooth(0.8, 0.97, lit) * occ * sun * 0.1;
-        v += at(stands, x, y) * 0.2 + ((kind[i] % 3) - 1) * 0.025 + (lam - 0.6) * 0.12;
+        let v = (0.17 + 0.6 * lit) * (0.8 + 0.2 * occ) * shade;
+        v += smooth(0.8, 0.97, lit) * occ * sun * 0.03;
+        v += at(stands, x, y) * 0.2 + ((kind[i] % 3) - 1) * 0.025 + (lam - 0.6) * 0.28;
         // (hills read through the trees: their shaded sides darker, as from the air)
         v *= 0.58 + 0.42 * rf;
         tone(mixPals.length ? mixPals[kind[i] % mixPals.length] : woods, v);
