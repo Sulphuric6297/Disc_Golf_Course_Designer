@@ -4,8 +4,9 @@ import { createLazPerf } from "laz-perf";
 import { test, expect, addHole, blankCourse, importSite, course, editorState, screenOf, withLidar, SITE } from "./fixtures";
 import { createEmptyCourse, newHole } from "../../src/lib/course";
 import { getGeoBounds } from "../../src/lib/geo/core";
-import { claim, flownOn, gather, gatherer, grownTree, leafOnAt, roofHeights, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesFor, tilesOver, depthFor, type LazReader, type TilePoints } from "../../src/lib/lidar";
+import { claim, flownOn, gather, gatherer, grownTree, grownTrees, leafOnAt, roofHeights, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesFor, tilesOver, depthFor, type LazReader, type TilePoints } from "../../src/lib/lidar";
 import { canopyStands } from "../../src/lib/canopy";
+import { summerFills, treesFromSummer } from "../../src/lib/summerTrees";
 import type { LidarTree } from "../../src/types";
 import { treeStands } from "../../src/lib/geo/detect";
 import { pointInPolygon } from "../../src/lib/geom";
@@ -199,6 +200,49 @@ plain("measured trees grown since the survey: small ones the most, tall ones har
   plainExpect(tall[2]).toBeLessThan(100);
   plainExpect(mid[3]).toBeGreaterThan(15);
   plainExpect(grownTree([0, 0, 40, 12, 1], 0)).toEqual([0, 0, 40, 12, 1]);
+});
+
+plain("crown size: every measured crown as much wider or narrower, the list kept as it is otherwise (pure logic)", () => {
+  const trees: LidarTree[] = [[10, 10, 40, 12, 0], [60, 10, 30, 8, 1]];
+  plainExpect(grownTrees({ source: "x", trees })).toBe(trees);
+  const wider = grownTrees({ source: "x", trees, crownSize: 1.5 });
+  plainExpect(wider.map(t => t[3])).toEqual([18, 12]);
+  plainExpect(wider.map(t => [t[0], t[1], t[2], t[4]])).toEqual(trees.map(t => [t[0], t[1], t[2], t[4]]));
+});
+
+plain("trees from the summer photo where a bare survey missed them: in the leafy gaps with height measured near, none under a measured crown, on the lawn or where they may not stand (pure logic)", () => {
+  // (a 400 x 200 ft site, 1 ft a cell: woods 20 to 60 ft high over its left half, bare limbs
+  // standing 8 ft over the rest of the left half too; the photo leafy over the left half)
+  const W2 = 400, H2 = 200, nx = W2, ny = H2;
+  const canopy = new Float32Array(nx * ny);
+  for (let y = 0; y < ny; y++) for (let x = 0; x < 200; x++) canopy[y * nx + x] = x < 100 ? 40 : 8;
+  const mask = new Uint8Array(W2 * H2);
+  for (let y = 0; y < H2; y++) for (let x = 0; x < 200; x++) mask[y * W2 + x] = 1;
+  // (the survey picked out three trees, all in the first 100 ft)
+  const measured: LidarTree[] = [[30, 50, 45, 18, 0], [70, 100, 50, 20, 0], [30, 150, 40, 16, 0]];
+  const added = treesFromSummer(measured, { nx, ny, cell: 1, canopy }, { mask, w: W2, h: H2 }, W2, H2, p => p.x > 160 && p.y < 60);
+  plainExpect(added.length).toBeGreaterThan(10);
+  for (const t of added) {
+    // (on the leafy half, clear of the measured crowns' middles, not where none may stand)
+    plainExpect(t[0]).toBeLessThan(200);
+    for (const m of measured) plainExpect(Math.hypot(t[0] - m[0], t[1] - m[1])).toBeGreaterThan(m[3] * 0.85);
+    plainExpect(t[0] > 160 && t[1] < 60).toBe(false);
+    // (a crown sized from the height near it: never tiny, never past 30 ft)
+    plainExpect(t[3]).toBeGreaterThanOrEqual(7);
+    plainExpect(t[3]).toBeLessThanOrEqual(30);
+    plainExpect(t[4]).toBe(0);
+  }
+  // (where the woods stand tall, trees as tall as them; out on the limbs, at least a grown tree's)
+  plainExpect(added.filter(t => t[0] < 90).every(t => t[2] >= 39)).toBe(true);
+  plainExpect(added.every(t => t[2] >= 12)).toBe(true);
+  // (the added trees don't pile up on each other)
+  for (let i = 0; i < added.length; i++) for (let j = i + 1; j < added.length; j++)
+    plainExpect(Math.hypot(added[i][0] - added[j][0], added[i][1] - added[j][1])).toBeGreaterThan(Math.min(added[i][3], added[j][3]) * 0.8);
+  // Only a bare survey under a photo taken in leaf (or one whose season isn't known)
+  plainExpect(summerFills(false, "leaf-on")).toBe(true);
+  plainExpect(summerFills(null, undefined)).toBe(true);
+  plainExpect(summerFills(true, "leaf-on")).toBe(false);
+  plainExpect(summerFills(false, "leaf-off")).toBe(false);
 });
 
 plain("saplings since the survey: none at once, more with the years, in the gaps (never under or against a crown), fast and narrow (pure logic)", () => {

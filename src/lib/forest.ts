@@ -623,28 +623,34 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       wooded[m] = (opts.mode === "everywhere" || !canopy ? site(p) : photoTrees(p)) ? 1 : 0;
     }
   }
-  // Measured trees: the woods painted only where the survey found treetops (its gaps and clearings
-  // open, nothing filled in from the photo), but woods drawn by hand filled in as drawn
-  // (where the painting plants trees of its own: everywhere wooded, or with measured trees only in
-  // woods drawn by hand; the measured ones are painted one by one where they stand)
+  // Measured trees: the woods are the 3D trees' own crowns, each as wide as it stands, with a leafy
+  // edge, so a lone tree is a small clump and trees together are one wood;
+  // a tree cut down or brought back in 3D opens or fills its place here. Woods drawn by hand are
+  // painted as drawn.
   const planted = new Uint8Array(mw * mh);
   if (!measured) planted.fill(1);
   if (measured) {
-    const near = new Uint8Array(mw * mh);
-    for (const [x0, y0, , radius] of measured.trees) {
-      const sp = toScreen({ x: x0, y: y0 }), r = (radius * 1.15 * k) / cell;
-      const cx = sp.x / cell, cy = sp.y / cell;
-      for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(mh - 1, Math.ceil(cy + r)); y++)
-        for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(mw - 1, Math.ceil(cx + r)); x++)
-          if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) near[y * mw + x] = 1;
-    }
-    const drawn = (doc.items.filter(i => i.type === "area" && i.kind === "woods" && !showsMeasured(i as AreaItem)) as AreaItem[]).map(a => ({ pts: drawnAreas([a])[0].points, box: boundsOf(drawnAreas([a])[0].points) }));
+    const drawn = (doc.items.filter(i => i.type === "area" && i.kind === "woods" && !showsMeasured(i as AreaItem)) as AreaItem[]).map(a => { const pts = drawnAreas([a])[0].points; return { pts, box: boundsOf(pts) }; });
     for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
       const m = y * mw + x;
       if (!wooded[m]) continue;
       const p = toPlan(x * cell + cell / 2, y * cell + cell / 2);
       if (drawn.some(d => p.x >= d.box.minX && p.x <= d.box.maxX && p.y >= d.box.minY && p.y <= d.box.maxY && pointInPolygon(p, d.pts))) planted[m] = 1;
-      else if (!near[m]) wooded[m] = 0;
+      else wooded[m] = 0;
+    }
+    for (const [x0, y0, , radius] of measured.trees) {
+      const sp = toScreen({ x: x0, y: y0 }), R = Math.max(crownR * 0.8, radius * k);
+      const cx0 = Math.max(0, Math.floor((sp.x - R * 1.2) / cell)), cx1 = Math.min(mw - 1, Math.ceil((sp.x + R * 1.2) / cell));
+      const cy0 = Math.max(0, Math.floor((sp.y - R * 1.2) / cell)), cy1 = Math.min(mh - 1, Math.ceil((sp.y + R * 1.2) / cell));
+      for (let my = cy0; my <= cy1; my++) for (let mx = cx0; mx <= cx1; mx++) {
+        const dx = mx * cell + cell / 2 - sp.x, dy = my * cell + cell / 2 - sp.y;
+        // (the crown's edge pushed in and out a little, as the woods' edge is)
+        const r = R * (0.88 + at(treeEdge, mx * cell + 1, my * cell + 1) * 0.3);
+        if (dx * dx + dy * dy > r * r) continue;
+        const m = my * mw + mx;
+        if (!wooded[m]) wooded[m] = 1;
+        planted[m] = 1;
+      }
     }
   }
 
@@ -812,24 +818,6 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         else stamp(x, y, r, r * (1.9 + rnd() * 0.9), t);
       }
     }
-  }
-  // The measured trees, every one where it stands, at the style's sizes scaled to its own crown (and
-  // the Size setting), of its own kind: the woods are these trees, one for one
-  if (measured && !opts.under) {
-    measured.trees.forEach(([x0, y0, , radius, conifer], idx) => {
-      const sp = toScreen({ x: x0, y: y0 });
-      const mx = Math.min(mw - 1, Math.max(0, Math.floor(sp.x / cell))), my = Math.min(mh - 1, Math.max(0, Math.floor(sp.y / cell)));
-      if (sp.x < -stepPx || sp.y < -stepPx || sp.x > W + stepPx || sp.y > H + stepPx) return;
-      void mx; void my;
-      // (its own size against the style's usual tree, and the Size setting)
-      const size = Math.max(0.55, Math.min(1.6, radius / 12)) * (vector ? 1 : look.trees.size);
-      const u = 0.35 + 0.3 * ((idx * 0.618) % 1), t = 1 + (idx % 6);
-      if (vector) { const r = vR(u) * size; vtrees.push({ x: sp.x, y: sp.y, r, h: r * (1.6 + rnd() * 0.8), pine: !!conifer, col: treeColor(rnd()), seed: rnd() }); return; }
-      if (natural) { const r = realR(u) * size; if (conifer) whorls(sp.x, sp.y, r * 0.62, realTop(r) * 1.15, t); else leafy(sp.x, sp.y, r, realTop(r), t); return; }
-      const r = crownR * (0.45 + u * u * 1.35) * size;
-      if (conifer) pine(sp.x, sp.y, r * 0.95, r * (2.2 + rnd() * 0.9), t);
-      else stamp(sp.x, sp.y, r, r * (1.9 + rnd() * 0.9), t);
-    });
   }
   // Trees placed on the map (or found on the photo): each where it stands, at its own size and
   // height and of its own kind, wherever it is (on a fairway too), apart from the woods

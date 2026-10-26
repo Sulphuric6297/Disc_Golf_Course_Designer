@@ -17,6 +17,7 @@ import { fetchBestElevationGrid, usgsGroundLabel } from "./geo/elevation";
 import { fetchLidar } from "./geo/lidarFetch";
 import { groundOnGrid, standingTrees, surveyYear } from "./lidar";
 import { canopyStands, type CanopyStand } from "./canopy";
+import { summerFills, treesFromSummer } from "./summerTrees";
 import { fetchMapImagery, type MapImagerySource } from "./geo/imagery";
 import { natureFromPhoto } from "./geo/photoNature";
 import { mappedCourse, parkWords, type LatLon, type MappedCourse, type OsmBuilding, type OsmFeature } from "./geo/osm";
@@ -722,13 +723,23 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       const [map, measured] = await Promise.all([photoJob, lidarJob]);
       if (!map || !satellite || /OpenStreetMap/.test(map.sourceLabel)) { progress.set("photoTrees", { state: "not-here" }); return null; }
       const waterOnly = !!measured?.lidar.trees.length;
+      // (a survey flown bare, a photo taken in leaf: its canopy too, for the trees the survey missed;
+      // under a bare photo, the best one of the site's taken in leaf, only to find them on)
+      const bare = waterOnly && measured.lidar.measured.leafOn !== true;
+      const leafToo = bare && summerFills(measured.lidar.measured.leafOn, map.photo?.season);
+      const inLeaf = bare && !leafToo ? map.choices?.find(c => c.season === "leaf-on" && c.nir) ?? map.choices?.find(c => c.season === "leaf-on") : undefined;
       return soft("photoTrees", async () => {
         progress.set("photoTrees", { state: "coming", fraction: 0 });
-        const got = cached("nature", `${map.sourceLabel}|${here}|${waterOnly ? "water" : "all"}`, report => natureFromPhoto(map.url, width, height, (text, f) => { progress.step = text; report(f); }, { signal, waterOnly, nir: map.nir, date: map.photo?.date, lat: location.lat }), { signal, onProgress: f => progress.set("photoTrees", { fraction: f }) });
+        const got = cached("nature", `${map.sourceLabel}|${here}|${waterOnly ? (leafToo ? "water+leaf" : "water") : "all"}`, report => natureFromPhoto(map.url, width, height, (text, f) => { progress.step = text; report(f); }, { signal, waterOnly, canopy: leafToo, nir: map.nir, date: map.photo?.date, lat: location.lat }), { signal, onProgress: f => progress.set("photoTrees", { fraction: f }) });
         const n = await untilAborted(got.value, signal);
         // (a new id each time it's used: kept from before, it would share them with the last import's)
         const fresh = <T extends CourseItem>(i: T): T => ({ ...i, id: generateId() });
-        const found = { trees: n.trees.map(fresh), woods: n.woods.map(fresh), water: n.water.map(fresh) };
+        let leaf = n.leaf;
+        if (inLeaf) {
+          const summer = await untilAborted(cached("photo", `summer|${inLeaf.id}|${here}`, () => fetchMapImagery(location, width, height, "satellite", undefined, { signal, nir: true, photo: inLeaf.id, choices: [inLeaf] }), { signal }).value, signal).catch(err => { if (isAbort(err)) throw err; console.info("No photo in leaf to find trees on", err); return null; });
+          if (summer) leaf = (await untilAborted(natureFromPhoto(summer.url, width, height, undefined, { signal, waterOnly: true, canopy: true, nir: summer.nir }), signal)).leaf;
+        }
+        const found = { trees: n.trees.map(fresh), woods: n.woods.map(fresh), water: n.water.map(fresh), leaf };
         progress.set("photoTrees", waterOnly ? { state: "not-here", skipped: "measured", count: found.water.length, cached: got.hit } : { state: "done", count: found.trees.length + found.woods.length + found.water.length, cached: got.hit });
         layer({ source: "photoTrees", trees: found.trees, areas: [...found.woods, ...found.water] });
         return found;
@@ -820,10 +831,16 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       // The buildings' heights the survey measured (where the maps have none), then the woods from
       // the measured canopy, kept off buildings, water, parking, fields and roads
       all = withMeasuredHeights(all, measured.lidar.measured, signed);
+      // (the trees a bare survey couldn't pick out, from the summer photo's canopy: after the
+      // measured ones, so the list of those stays as it was)
+      const summer = "leaf" in found && found.leaf ? treesFromSummer(lidar.trees, measured.lidar.measured, found.leaf, width, height, treeFree(all)) : [];
+      if (summer.length) lidar = { ...lidar, trees: [...lidar.trees, ...summer], fromPhoto: summer.length };
       const m = withMeasuredTrees(all, lidar.trees, width, height, canopyStands(measured.lidar.measured, lidar.trees, canopyKeepOut(all)).stands);
       all = m.items;
-      standing = standingTrees(lidar, () => false, treeFree(mapped)).stand.length;
-      notes.splice(treesNoteAt, 0, `${standing.toLocaleString()} trees measured from the air (${measured.lidar.source}).`);
+      const stand = standingTrees(lidar, () => false, treeFree(mapped)).stand, first = lidar.trees.length - summer.length;
+      standing = stand.length;
+      const fromSummer = stand.filter(k => k >= first).length;
+      notes.splice(treesNoteAt, 0, `${(standing - fromSummer).toLocaleString()} trees measured from the air (${measured.lidar.source}).${!fromSummer ? "" : measured.lidar.measured.leafOn === false ? ` The survey was flown in winter, when bare trees standing close together don't show apart, so ${fromSummer.toLocaleString()} more came from the summer photo.` : ` ${fromSummer.toLocaleString()} more came from the summer photo, where the survey didn't pick them out.`}`);
       if (m.stands) notes.push(`The measured trees in ${m.stands} ${m.stands === 1 ? "stand" : "stands"} of woods.`);
     }
     const photo = (type: string, kind?: string) => all.filter(i => (i as TreeItem | AreaItem).importSource === "photo" && i.type === type && (!kind || (i as AreaItem).kind === kind)).length;

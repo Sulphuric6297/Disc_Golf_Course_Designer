@@ -736,7 +736,10 @@ export interface CourseDoc {
    * a wood's edge pulled in past one, or the wood deleted, takes it out; the edge pushed back
    * out over it brings it back. (A tree becomes bound the first time a woods it stood in changes
    * shape or goes; trees out on their own never do.) */
-  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number; clearFairways?: false; bound?: number[] };
+  /** `fromPhoto`: how many of the trees, the last ones, came from the summer photo where a survey
+   * flown bare couldn't pick them out (lib/summerTrees). `crownSize`: every crown this much as wide,
+   * in 3D and on the map (unset: as measured). */
+  lidar?: { source: string; trees: LidarTree[]; fromPhoto?: number; crownSize?: number; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number; clearFairways?: false; bound?: number[] };
   /** Where trees were cut down by hand that have no list of their own: saplings grown since the
    * survey and the trees the app plants in woods and patches. None stands within 4 ft of one. */
   cutTrees?: P[];

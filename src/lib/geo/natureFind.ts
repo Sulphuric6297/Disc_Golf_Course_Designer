@@ -31,16 +31,17 @@ export type PhotoFound = {
  * let a tree's shadow measure its height (the sun's height from the day and the shadows' own
  * direction). Without an infrared band, lone trees aren't looked for on a photo taken bare
  * (`season` "leaf-off"): there a tree and its long winter shadow are one dark blob, like many
- * that aren't trees.
+ * that aren't trees. `canopy` with `waterOnly`: the tree canopy's mask with the water.
  */
-export const findNature = (photo: { pixels: DetectImage; nir?: Uint8Array; mpp: number }, opts: { date?: string; lat?: number; waterOnly?: boolean; season?: string } = {}): PhotoFound => {
+export const findNature = (photo: { pixels: DetectImage; nir?: Uint8Array; mpp: number }, opts: { date?: string; lat?: number; waterOnly?: boolean; season?: string; canopy?: boolean } = {}): PhotoFound => {
   const { pixels, nir, mpp } = photo;
   const w = pixels.width, h = pixels.height;
   const o = { metersPerPx: mpp, nir };
   // (water sends back almost no near-infrared, less than red: shadows and blue roofs do)
   const data = pixels.data;
   const water = waterRegions(pixels, nir ? { ...o, exclude: (x, y) => { const i = y * w + x; return nir[i] > 70 || nir[i] > data[i * 4]; } } : o);
-  if (opts.waterOnly) return { w, h, mask: null, woods: [], water, trees: [], shadow: null };
+  // (with only the water: the tree canopy too, when asked, for the trees a bare survey missed)
+  if (opts.waterOnly) return { w, h, mask: opts.canopy ? canopyMask(pixels, o)?.mask ?? null : null, woods: [], water, trees: [], shadow: null };
   const canopy = canopyMask(pixels, o);
   if (!canopy) return { w, h, mask: null, woods: [], water, trees: [], shadow: null };
   const stand = new Uint8Array(w * h);

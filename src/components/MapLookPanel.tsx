@@ -218,13 +218,12 @@ export function MapLookPanel() {
                     {p === "trees" && (
                       <>
                         <LookSlider value={pinesNow} label="Pines" min={0} max={0.9} step={0.05} format={pct} onDone={v => setStyle({ conifers: v })} />
-                        {/* (measured trees: the woods are those trees, so only their size is the map's to change) */}
+                        {/* (measured trees: the woods are those trees, as wide as Crown size makes them in 3D) */}
                         {!measured && <WoodsOptions s={s} />}
-                        {measured && !painted && <LookSlider value={parts.trees.size} label="Tree size" min={0.6} max={1.5} step={0.05} format={pct} onDone={v => setPart("trees", { size: v })} />}
                         {painted && (
                           <>
                             {!measured && <LookSlider value={parts.trees.density} label="Tree spacing" min={0.4} max={1.6} step={0.05} format={x => `${x < 0.95 ? "Wider" : x > 1.05 ? "Closer" : "Usual"} · ${pct(x)}`} onDone={v => setPart("trees", { density: v })} />}
-                            <LookSlider value={parts.trees.size} label={measured ? "Tree size" : "Size"} min={0.6} max={1.5} step={0.05} format={pct} onDone={v => setPart("trees", { size: v })} />
+                            <LookSlider value={parts.trees.size} label="Size" min={0.6} max={1.5} step={0.05} format={pct} onDone={v => setPart("trees", { size: v })} />
                             <LookSlider value={parts.trees.variety} label="Color variety" min={0} max={1} step={0.05} format={pct} onDone={v => setPart("trees", { variety: v })} />
                           </>
                         )}
