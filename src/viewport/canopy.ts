@@ -99,14 +99,14 @@ let crownMat: THREE.MeshLambertMaterial | null = null;
  */
 export const createCrowns = (trees: { x: number; y: number; ground: number; height: number; radius: number; conifer: boolean }[], color: string) => {
   const geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-  crownMat ??= Object.assign(new THREE.MeshLambertMaterial({ map: crownTile(), transparent: true, alphaTest: 0.2, depthWrite: false }), { userData: { shared: true } });
+  crownMat ??= Object.assign(new THREE.MeshLambertMaterial({ map: crownTile(), transparent: true, opacity: 0.85, alphaTest: 0.2, depthWrite: false }), { userData: { shared: true } });
   const mesh = new THREE.InstancedMesh(geo, crownMat, Math.max(1, trees.length));
   mesh.count = trees.length;
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
   const base = new THREE.Color(color), tint = new THREE.Color();
   trees.forEach((t, i) => {
     q.setFromAxisAngle(up, (i * 2.399) % (Math.PI * 2));
-    s.set(t.radius * 2.2, 1, t.radius * 2.2);
+    s.set(t.radius * 2, 1, t.radius * 2);
     p.set(t.x, t.ground + t.height * 0.92, t.y);
     mesh.setMatrixAt(i, m.compose(p, q, s));
     tint.copy(base).multiplyScalar(t.conifer ? 2.1 : 2.6 + ((i * 37) % 10) / 25);
