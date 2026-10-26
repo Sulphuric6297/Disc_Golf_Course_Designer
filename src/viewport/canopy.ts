@@ -109,7 +109,7 @@ export const createCrowns = (trees: { x: number; y: number; ground: number; heig
     s.set(t.radius * 2.2, 1, t.radius * 2.2);
     p.set(t.x, t.ground + t.height * 0.92, t.y);
     mesh.setMatrixAt(i, m.compose(p, q, s));
-    tint.copy(base).multiplyScalar(t.conifer ? 1.5 : 1.85 + ((i * 37) % 10) / 40);
+    tint.copy(base).multiplyScalar(t.conifer ? 2.1 : 2.6 + ((i * 37) % 10) / 25);
     if (t.conifer) tint.offsetHSL(0.03, -0.05, -0.04);
     mesh.setColorAt(i, tint);
   });

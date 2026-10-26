@@ -89,6 +89,15 @@ export const segmentsIntersect = (a: P, b: P, c: P, d: P) => {
   return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
 };
 
+/** Whether two segments meet, a corner of one on the other counted (two lying along the same
+ * line only where they overlap). */
+const segmentsTouch = (a: P, b: P, c: P, d: P) => {
+  const cross = (o: P, p: P, q: P) => (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x);
+  const d1 = cross(c, d, a), d2 = cross(c, d, b), d3 = cross(a, b, c), d4 = cross(a, b, d);
+  if (d1 === 0 && d2 === 0) return Math.max(Math.min(a.x, b.x), Math.min(c.x, d.x)) <= Math.min(Math.max(a.x, b.x), Math.max(c.x, d.x)) && Math.max(Math.min(a.y, b.y), Math.min(c.y, d.y)) <= Math.min(Math.max(a.y, b.y), Math.max(c.y, d.y));
+  return d1 * d2 <= 0 && d3 * d4 <= 0;
+};
+
 /** Whether a polyline crosses or enters a polygon. */
 export const pathTouchesPolygon = (pts: P[], poly: P[]) => {
   const box = boundsOf(poly);
@@ -98,7 +107,7 @@ export const pathTouchesPolygon = (pts: P[], poly: P[]) => {
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1], b = pts[i];
     if (Math.max(a.x, b.x) < box.minX || Math.min(a.x, b.x) > box.maxX || Math.max(a.y, b.y) < box.minY || Math.min(a.y, b.y) > box.maxY) continue;
-    for (let j = 0; j < poly.length; j++) if (segmentsIntersect(pts[i - 1], pts[i], poly[j], poly[(j + 1) % poly.length])) return true;
+    for (let j = 0; j < poly.length; j++) if (segmentsTouch(pts[i - 1], pts[i], poly[j], poly[(j + 1) % poly.length])) return true;
   }
   return false;
 };
