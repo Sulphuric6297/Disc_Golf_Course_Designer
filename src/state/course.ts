@@ -1,6 +1,6 @@
 // The open course (the saved document) with undo and redo, and the editor's own state.
 import { create } from "zustand";
-import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, DrawShape, StructureKind } from "../types";
+import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, DrawShape, StructureKind, FieldKind } from "../types";
 import { byNumber, createEmptyCourse, holeNumber, holeNumbers } from "../lib/course";
 import { bindToWoods } from "../lib/lidar";
 
@@ -174,6 +174,8 @@ type EditorStore = {
   /** The mando tool places one post, or a gate of two (pass between them). */
   mandoKind: "single" | "gate";
   amenityKind: AmenityKind;
+  /** What the Park tool puts down: a ball field, a court, a playground… */
+  fieldKind: FieldKind;
   treeKind: TreeKind;
   /** Looking from a tee down its hole (the hole's id), or flying over it. */
   teeView: string | null;
@@ -246,6 +248,7 @@ export const useEditor = create<EditorStore>()(set => ({
   drawShape: "points",
   mandoKind: "single",
   amenityKind: "bench",
+  fieldKind: "baseball",
   treeKind: "deciduous",
   teeView: null,
   flyover: false,

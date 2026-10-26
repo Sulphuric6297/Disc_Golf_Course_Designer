@@ -4,7 +4,7 @@ import { ClipboardPaste, Copy, Eye, Lock, Maximize2, Plane, Ruler, Trash2, Unloc
 import { AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS } from "../constants";
 import { holeLabel } from "../lib/course";
 import { holeStats } from "../lib/holeStats";
-import { bendHoleAt, canPaste, copySelection, deleteSelection, duplicateSelection, markObBeyond, pasteClipboard, placeAt, select } from "../state/actions";
+import { bendHoleAt, canPaste, copySelection, deleteSelection, duplicateSelection, markObBeyond, pasteClipboard, placeAt, select, setFieldPlay } from "../state/actions";
 import { changeDoc, getDoc, updateItem, useCourse, useEditor } from "../state/course";
 import { toast } from "../state/toast";
 import { getView } from "../state/view";
@@ -16,7 +16,7 @@ export type ItemAction = { label: string; run: () => void; testid?: string; icon
 
 /** A thing named by its kind, for a menu row: "the bridge", "the woods", "the OB line". */
 export const kindName = (item: CourseItem) => {
-  const s = item.type === "area" ? AREA_KINDS[item.kind].label : item.type === "line" ? LINE_KINDS[item.kind].label : item.type === "structure" ? STRUCTURE_KINDS[item.kind].label : itemTitle(item);
+  const s = item.type === "area" ? (item.kind === "field" ? itemTitle(item) : AREA_KINDS[item.kind].label) : item.type === "line" ? LINE_KINDS[item.kind].label : item.type === "structure" ? STRUCTURE_KINDS[item.kind].label : itemTitle(item);
   return /^[A-Z]{2}/.test(s) ? s : s[0].toLowerCase() + s.slice(1);
 };
 
@@ -69,6 +69,11 @@ export const itemActions = (itemId: string, ground: P | null, named = false): It
     a.push({ label: "OB along a stretch", run: stretch(false), testid: shape.type === "area" ? "menu-ob-edge" : "menu-ob-stretch" });
   }
   if (item?.type === "line" && !item.locked) a.push({ label: "Remove a stretch", run: stretch(true), testid: "menu-cut-stretch" });
+  // (a field, court or play area: in play or out of it)
+  if (item?.type === "area" && item.kind === "field") {
+    const out = !!item.outOfPlay;
+    a.push({ label: out ? "Mark as in play" : "Mark as out of play", run: () => setFieldPlay(item.id, !out), testid: "menu-out-of-play" });
+  }
   // (on one of the things picked together: for all of them)
   const group = useEditor.getState().group;
   if (item && group.includes(item.id)) return [...a, ...groupActions()];

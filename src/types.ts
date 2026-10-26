@@ -88,15 +88,24 @@ export interface TreeItem extends BaseItem {
   /** Trunk thickness and leaves, 1 = the species' own. */
   trunk?: number;
   fullness?: number;
-  /** Found on the imported aerial photo (replaced on re-import). */
-  importSource?: "photo";
+  /** Found on the imported aerial photo, or mapped on OpenStreetMap (one by one, in a row, or a
+   * hedge's bushes): replaced on re-import. */
+  importSource?: "photo" | "osm";
 }
 
-export type AmenityKind = "bench" | "trash" | "sign" | "kiosk" | "restroom" | "parking" | "water" | "practice" | "shelter" | "bridge" | "firstaid" | "picnic" | "here";
+/** What a park's thing is on OpenStreetMap (a ball field, a playground, a pool…), kept with it
+ * as it came, whatever kind it's drawn as. */
+export type ParkKind = "pitch" | "playground" | "pool" | "dog_park" | "court" | "garden" | "sports_centre" | "track" | "skatepark" | "fountain" | "splash_pad" | "water_tower" | "shed" | "flagpole" | "goal" | "backstop" | "infield" | "outfield";
+export type ParkDetail = { what: ParkKind; sport?: string; surface?: string };
+
+export type AmenityKind = "bench" | "trash" | "sign" | "kiosk" | "restroom" | "parking" | "water" | "practice" | "shelter" | "bridge" | "firstaid" | "picnic" | "here"
+  | "grill" | "fitness" | "flagpole" | "light" | "pole" | "bikerack" | "fountain" | "gate";
 export interface AmenityItem extends BaseItem {
   type: "amenity";
   kind: AmenityKind;
   label?: string;
+  /** Brought in from OpenStreetMap (replaced on re-import). */
+  importSource?: "osm";
 }
 
 export interface LabelItem extends BaseItem {
@@ -107,7 +116,10 @@ export interface LabelItem extends BaseItem {
 }
 
 /** Areas drawn on the map. OB and hazards are what play cares about; the rest make the map read. */
-export type AreaKind = "ob" | "hazard" | "casual" | "water" | "fairway" | "green" | "woods" | "rough" | "nogo" | "parking" | "building" | "sand";
+export type AreaKind = "ob" | "hazard" | "casual" | "water" | "fairway" | "green" | "woods" | "rough" | "nogo" | "parking" | "building" | "sand" | "field";
+/** What a park's field, court or play area is (an area of kind "field"). */
+export type FieldKind = "baseball" | "softball" | "soccer" | "football" | "multi" | "tennis" | "pickleball" | "basketball" | "volleyball"
+  | "playground" | "pool" | "splash" | "dog" | "skate" | "track" | "garden";
 /** What a wood's underbrush is: a mix, or mostly thicket shrubs, briars and thorns, or weeds. */
 export type BrushKind = "mixed" | "thicket" | "briars" | "weeds";
 
@@ -118,6 +130,15 @@ export interface AreaItem extends BaseItem {
   alsoHoles?: string[];
   type: "area";
   kind: AreaKind;
+  /** A field, court or play area: what it is (unset: a plain sports field). */
+  field?: FieldKind;
+  /** Out of play (a field's own rule; playgrounds, pools and the like start out of play): players
+   * stay out of it, as with an Out of play area. */
+  outOfPlay?: boolean;
+  /** Its markings turned this many degrees from the outline's own long side (unset: lined up with it);
+   * a ball field's home plate at corner `home` of its outline (unset: the corner nearest a right angle). */
+  fieldTurn?: number;
+  home?: number;
   /** Outline in plan coordinates (x, y of the item is its middle). */
   points: P[];
   /** For one hole only (unset: the whole course). */
@@ -154,12 +175,14 @@ export interface AreaItem extends BaseItem {
   brushEdge?: number;
   /** Brought in from OpenStreetMap, or found on the satellite photo (replaced on re-import). */
   importSource?: "osm" | "photo" | "lidar";
+  /** From OpenStreetMap: what it is there (a ball field, a playground), whatever kind it's drawn as. */
+  park?: ParkDetail;
 }
 
 /** Lines drawn on the map: OB lines (the line itself is OB), paths, roads, fences, streams. */
 /** The tiers paths and roads stack in where they cross. */
 export type PathTier = "dirt" | "gravel" | "walkway" | "road";
-export type LineKind = "ob" | "path" | "road" | "fence" | "stream" | "walk";
+export type LineKind = "ob" | "path" | "road" | "fence" | "stream" | "walk" | "power" | "hedge";
 /** A fence in 3D: wooden posts with two rails, solid boards, or chain link on metal posts. */
 export type FenceStyle = "rail" | "boards" | "chain";
 /** What a path or a walk between holes is made of. */
@@ -179,7 +202,8 @@ export interface LineItem extends BaseItem {
   surface?: PathSurface;
   /** Straight between its points (paths, walks, streams and roads curve through them unless set). */
   straight?: boolean;
-  /** A fence: how it's built in 3D (unset: posts and rails), and how tall, ft (unset: 4). */
+  /** A fence: how it's built in 3D (unset: posts and rails). How tall a fence, a hedge or a power
+   * line's wires are, ft (unset: the kind's usual, LINE_KINDS). */
   fenceStyle?: FenceStyle;
   fenceHeight?: number;
   holeId?: string;
@@ -200,6 +224,8 @@ export interface LineItem extends BaseItem {
   obStretches?: [number, number][];
   /** Brought in from OpenStreetMap (replaced on re-import). */
   importSource?: "osm";
+  /** From OpenStreetMap: what it is there (a ball field's backstop), whatever kind it's drawn as. */
+  park?: ParkDetail;
 }
 
 /** Built things: drawn along a line (bridges, boardwalks, stairs, walls) or as an outline
@@ -227,6 +253,8 @@ export interface StructureItem extends BaseItem {
   /** Brought in from OpenStreetMap, or (a building nobody's mapped) traced from the air: looking
    * the maps up again replaces it. */
   importSource?: "osm" | "traced";
+  /** From OpenStreetMap: what it is there (a shed, a water tower), whatever kind it's drawn as. */
+  park?: ParkDetail;
   holeId?: string;
   label?: string;
 }
@@ -661,6 +689,11 @@ export interface SiteInfo {
   /** Real elevation (ft above sea level) of terrain height 0. */
   baseElevationFt: number;
   imagerySource?: string;
+  /** The photo under the map: its source ("naip", "esri", a state's), when it was taken
+   * (YYYY-MM-DD, or YYYY when only the year is known; `dateTo` the last day when the site takes
+   * in more than one), whether the trees were in leaf, its pixel size on the ground (m) and its
+   * provider's credit (for the printed map's credits; never drawn on the photo). */
+  photo?: { id: string; date?: string; dateTo?: string; season?: "leaf-on" | "leaf-off" | "mixed"; metersPerPx?: number; credit?: string };
   elevationSource?: string;
   /** Trees planted by hand that came from another course sharing this ground (by id). One of
    * them no longer among the items was cut down here: sharing the ground again leaves it out. */
@@ -748,6 +781,8 @@ export type ToolMode =
   | "add-dropzone"
   | "add-tree"
   | "add-amenity"
+  /** A field, court or play area at its usual size, with one click. */
+  | "add-field"
   | "add-label"
   | "draw-area"
   | "draw-line"

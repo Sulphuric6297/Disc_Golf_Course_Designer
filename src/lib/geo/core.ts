@@ -22,11 +22,41 @@ export const latToPixel = (lat: number, z: number) => {
   return ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * ELEVATION_TILE_SIZE * Math.pow(2, z);
 };
 
-export const fetchJson = async (url: string, timeoutMs = 8000) => {
+// --- Stopping a download (Stop on the import: every fetch hears it) ---
+
+/** The error a stopped download ends with (as fetch's own). */
+export const abortError = () => new DOMException("Stopped.", "AbortError");
+/** Whether an error is a download being stopped (not one going wrong). */
+export const isAbort = (err: unknown) => err instanceof DOMException && err.name === "AbortError";
+export const throwIfAborted = (signal?: AbortSignal) => {
+  if (signal?.aborted) throw abortError();
+};
+/** A signal that stops when any of these does (one of them a timeout, say). */
+export const anySignal = (...signals: (AbortSignal | undefined)[]) => {
+  const ctrl = new AbortController();
+  for (const s of signals) {
+    if (!s) continue;
+    if (s.aborted) { ctrl.abort(); break; }
+    s.addEventListener("abort", () => ctrl.abort(), { once: true });
+  }
+  return ctrl.signal;
+};
+/** A promise that gives up as soon as the signal stops (the work under it may still finish, unheard). */
+export const untilAborted = <T>(p: Promise<T>, signal?: AbortSignal): Promise<T> => {
+  if (!signal) return p;
+  if (signal.aborted) return Promise.reject(abortError());
+  return new Promise<T>((resolve, reject) => {
+    const stop = () => reject(abortError());
+    signal.addEventListener("abort", stop, { once: true });
+    p.then(v => { signal.removeEventListener("abort", stop); resolve(v); }, e => { signal.removeEventListener("abort", stop); reject(e); });
+  });
+};
+
+export const fetchJson = async (url: string, timeoutMs = 8000, signal?: AbortSignal) => {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, { signal: anySignal(controller.signal, signal) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     if (json?.error) throw new Error(json.error.message || "Service error");
@@ -36,12 +66,16 @@ export const fetchJson = async (url: string, timeoutMs = 8000) => {
   }
 };
 
-export const loadTileImage = (url: string) =>
+export const loadTileImage = (url: string, signal?: AbortSignal) =>
   new Promise<HTMLImageElement | null>((resolve) => {
+    if (signal?.aborted) { resolve(null); return; }
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
+    // (stopped: the download let go of, as a tile that didn't come)
+    const stop = () => { img.src = ""; resolve(null); };
+    signal?.addEventListener("abort", stop, { once: true });
+    img.onload = () => { signal?.removeEventListener("abort", stop); resolve(img); };
+    img.onerror = () => { signal?.removeEventListener("abort", stop); resolve(null); };
     img.src = url;
   });
 
@@ -68,7 +102,8 @@ export const loadTileMosaic = async (
   maxZoom: number,
   maxTiles: number,
   tileUrl: (z: number, x: number, y: number) => string,
-  onProgress?: (fraction: number) => void
+  onProgress?: (fraction: number) => void,
+  signal?: AbortSignal
 ) => {
   let z = maxZoom;
   let range = getTileRange(bounds, z);
@@ -86,7 +121,7 @@ export const loadTileMosaic = async (
   let done = 0;
   for (let ty = range.y0; ty <= range.y1; ty++) {
     for (let tx = range.x0; tx <= range.x1; tx++) {
-      jobs.push(loadTileImage(tileUrl(z, tx, ty)).then(img => {
+      jobs.push(loadTileImage(tileUrl(z, tx, ty), signal).then(img => {
         onProgress?.(++done / total);
         if (!img) return false;
         ctx.drawImage(img, (tx - range.x0) * ELEVATION_TILE_SIZE, (ty - range.y0) * ELEVATION_TILE_SIZE, ELEVATION_TILE_SIZE, ELEVATION_TILE_SIZE);
@@ -95,6 +130,7 @@ export const loadTileMosaic = async (
     }
   }
   const loaded = await Promise.all(jobs);
+  throwIfAborted(signal);
   // Converts a lat/lon to a pixel position inside the mosaic.
   const toMosaic = (lat: number, lon: number) => ({
     x: lonToPixel(lon, z) - range.x0 * ELEVATION_TILE_SIZE,

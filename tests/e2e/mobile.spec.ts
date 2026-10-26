@@ -211,7 +211,7 @@ test.describe("phone", () => {
     await expect.poll(() => detent(page)).toBe("peek");
   });
 
-  test("finding the park on a phone: search on top, the map, then the button at the bottom", async ({ page }) => {
+  test("finding the park on a phone: the search in the sheet, then the place on top, the map, and the button at the bottom", async ({ page }) => {
     await page.getByTestId("welcome-find").tap();
     const dialog = page.getByRole("dialog", { name: "Find your park" });
     await page.getByLabel("Search address").fill("Springfield Park");
@@ -220,10 +220,10 @@ test.describe("phone", () => {
     // A picked place closes the suggestions (they used to open again for the place's own name)
     await page.waitForTimeout(600);
     await expect(dialog.getByRole("button", { name: /Springfield Park/ })).toHaveCount(0);
-    const search = (await page.getByLabel("Search address").boundingBox())!;
+    const place = (await page.getByRole("button", { name: "Search again" }).boundingBox())!;
     const go = (await page.getByTestId("import-site").boundingBox())!;
     const vh = page.viewportSize()!.height;
-    expect(search.y).toBeLessThan(vh * 0.25);
+    expect(place.y).toBeLessThan(vh * 0.15);
     expect(go.y + go.height).toBeGreaterThan(vh * 0.85);
     await page.getByTestId("import-site").tap();
     await expect.poll(async () => (await course(page)).background, { timeout: 60_000 }).not.toBeNull();

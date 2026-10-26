@@ -5,20 +5,21 @@
 // settings are further up the sheet, as before.
 import { useRef, useState, type ReactNode } from "react";
 import { Plus } from "lucide-react";
-import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, AREA_ORDER, LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, compassPoint } from "../../constants";
+import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, AREA_ORDER, FIELD_KINDS, LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, compassPoint } from "../../constants";
 import { holeBaskets, holeTees, teeAim } from "../../lib/course";
 import { holeStats } from "../../lib/holeStats";
+import { MARKED_FIELDS, fieldKindOf, isBallField } from "../../lib/fields";
 import { structureHeight, structureWidth } from "../../lib/structures";
 import { fmtDist } from "../../lib/units";
-import { addHoleOb, obChoiceOf, pinsFull, select, setLineKind, setObChoice, setPinPosition, setTeeLevel, startAnotherPin, startAnotherTee, startHoleToBasket, teesFull, type ObChoice } from "../../state/actions";
+import { addHoleOb, nextHomeCorner, obChoiceOf, pinsFull, select, setFieldKind, setFieldPlay, setLineKind, setObChoice, setPinPosition, setTeeLevel, startAnotherPin, startAnotherTee, startHoleToBasket, teesFull, type ObChoice } from "../../state/actions";
 import { updateHole, updateItem, useCourse, useEditor } from "../../state/course";
-import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, Hole, LabelItem, LineItem, LineKind, MandoItem, StructureItem, StructureKind, TeeItem, TreeItem } from "../../types";
-import { FENCE_STYLES, WOODS_TREES, amenityIcon, builtIcon, fmtSize, hasObChoice, obOptions } from "../Inspector";
+import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FieldKind, Hole, LabelItem, LineItem, LineKind, MandoItem, StructureItem, StructureKind, TeeItem, TreeItem } from "../../types";
+import { FENCE_STYLES, HoleTrees, PLAY_OPTIONS, useHoleTrees, WOODS_TREES, amenityIcon, builtIcon, fieldKindOptions, fmtSize, fmtTurn, hasObChoice, heightLabel, homeText, obOptions } from "../Inspector";
 import { MoveHere } from "../PlaceByGps";
 import { TREE_KINDS } from "../TreeSettings";
 import { ChipPick, Segmented } from "../ui";
 
-type Chip = "par" | "fairway" | "tees" | "pins" | "ob" | "foliage";
+type Chip = "par" | "fairway" | "tees" | "pins" | "ob" | "foliage" | "trees";
 // (the chip open stays open from hole to hole)
 let lastChip: Chip = "fairway";
 
@@ -75,6 +76,7 @@ export function HoleStrip({ hole }: { hole: Hole }) {
   const pick = (c: Chip) => { lastChip = c; setChip(c); };
   const tees = holeTees(doc, hole.id);
   const pins = holeBaskets(doc, hole.id);
+  const holeTrees = useHoleTrees(hole, s.complete ? s.line : null);
   const set = (patch: Partial<Hole>, history = true) => updateHole(hole.id, patch, history);
   const chips: [Chip, ReactNode][] = [
     ["par", <>Par <span className="opacity-60">{hole.par ?? `${s.parAuto} · auto`}</span></>],
@@ -82,7 +84,9 @@ export function HoleStrip({ hole }: { hole: Hole }) {
     ["tees", <>Tees <span className="opacity-60">{tees.length}</span></>],
     ["pins", <>Pins <span className="opacity-60">{pins.length}</span></>],
     ["ob", <>Add OB</>],
-    ["foliage", <>Foliage <span className="opacity-60">{hole.foliage === "light" ? "Light" : hole.foliage === "heavy" ? "Heavy" : "Auto"}</span></>]
+    ["foliage", <>Foliage <span className="opacity-60">{hole.foliage === "light" ? "Light" : hole.foliage === "heavy" ? "Heavy" : "Auto"}</span></>],
+    // (the measured trees it cut down: the way to bring them back)
+    ...(holeTrees.cut.length || holeTrees.kept.length ? [["trees", <>Trees <span className="opacity-60">{holeTrees.cut.length ? `${holeTrees.cut.length} cut` : `${holeTrees.kept.length} kept`}</span></>] as [Chip, ReactNode]] : [])
   ];
   let control: ReactNode = null;
   if (chip === "par") control = <Segmented label="Par" value={hole.par ?? 0} onChange={v => set({ par: v === 0 ? undefined : v })} options={[{ value: 0, label: <span className="whitespace-nowrap">Auto {s.parAuto}</span> }, ...[2, 3, 4, 5, 6].map(p => ({ value: p, label: String(p) }))]} />;
@@ -114,6 +118,7 @@ export function HoleStrip({ hole }: { hole: Hole }) {
         : <span className="text-[13px] text-zinc-400 px-1 py-2">Needs a tee and a basket first.</span>}
     </div>
   );
+  else if (chip === "trees") control = s.complete ? <HoleTrees hole={hole} line={s.line} /> : null;
   else if (chip === "foliage") control = <Segmented label="Foliage" value={hole.foliage ?? "auto"} onChange={v => set({ foliage: v === "auto" ? undefined : (v as "light" | "heavy") })} options={[{ value: "auto", label: <span className="whitespace-nowrap">Auto · {s.foliage}</span> }, { value: "light", label: "Light" }, { value: "heavy", label: "Heavy" }]} />;
   return (
     <div className="px-3 pb-3" data-testid="hole-strip">
@@ -194,7 +199,21 @@ export function ItemStrip({ item }: { item: CourseItem }) {
       ? (item.kind === "building" ? [...AREA_ORDER, item.kind] : AREA_ORDER).map(k => ({ value: k as string, label: AREA_KINDS[k].label, color: AREA_KINDS[k].color }))
       : (Object.keys(LINE_KINDS) as LineKind[]).map(k => ({ value: k as string, label: LINE_KINDS[k].label, color: LINE_KINDS[k].color }));
     const kindLabel = item.type === "area" ? AREA_KINDS[item.kind].label : LINE_KINDS[item.kind].label;
-    chips.push({ id: "kind", label: <>Kind <span className="opacity-60">{kindLabel}</span></>, control: (
+    // (a field, court or play area: its own kinds, then in or out of play, its markings or its home plate)
+    const fk = item.type === "area" && item.kind === "field" ? fieldKindOf(item) : null;
+    if (fk && item.type === "area") {
+      chips.push(
+        { id: "kind", label: <>Kind <span className="opacity-60">{FIELD_KINDS[fk].label}</span></>, control: <ChipPick row label="Field kind" value={fk} onChange={(v: FieldKind) => setFieldKind(item.id, v)} options={fieldKindOptions()} /> },
+        { id: "play", label: <>{item.outOfPlay ? "Out of play" : "In play"}</>, control: <Segmented label="Play" value={item.outOfPlay ? "out" : "in"} onChange={v => setFieldPlay(item.id, v === "out")} options={[...PLAY_OPTIONS]} /> }
+      );
+      if (MARKED_FIELDS.includes(fk)) chips.push({ id: "markings", label: <>Markings <span className="opacity-60">{fmtTurn(item.fieldTurn ?? 0)}</span></>, control: <Dial label="Markings turn" value={item.fieldTurn ?? 0} min={-90} max={90} step={1} format={fmtTurn} onChange={v => live({ fieldTurn: v || undefined })} onDone={done} /> });
+      if (isBallField(fk)) chips.push({ id: "home", label: <>Home plate</>, control: (
+        <div className="flex items-center gap-2">
+          <span className="flex-1 text-[13.5px] text-zinc-200 tabular-nums px-1">{homeText(item)}</span>
+          {!item.locked && <button className={small} onClick={() => nextHomeCorner(item.id)} data-testid="strip-home-next">Next corner</button>}
+        </div>
+      ) });
+    } else chips.push({ id: "kind", label: <>Kind <span className="opacity-60">{kindLabel}</span></>, control: (
       <ChipPick row label={item.type === "area" ? "Area kind" : "Line kind"} value={item.kind as string} onChange={k => (item.type === "line" ? setLineKind(item.id, k as LineKind) : set({ kind: k }))} options={kinds} />
     ) });
     // (a next-tee route can have none: a dashed line)
@@ -204,14 +223,15 @@ export function ItemStrip({ item }: { item: CourseItem }) {
       const min = item.kind === "walk" ? 0 : 1;
       chips.push({ id: "width", label: <>Width <span className="opacity-60">{w ? fmtSize(w, u) : "none"}</span></>, control: <Dial label="Width" value={w} min={min} max={meta.maxWidth} step={0.5} format={v => (v ? `${fmtSize(v, u)} wide` : "Just a dashed line")} onChange={v => live({ width: v || undefined })} onDone={done} /> });
     }
-    // (a fence: what it is and how tall, as in its panel)
+    // (a fence: what it is, and a fence, hedge or power line how tall, as in its panel)
     if (item.type === "line" && item.kind === "fence") {
-      const meta = LINE_KINDS.fence, h = item.fenceHeight ?? meta.height!;
       const style = item.fenceStyle ?? "rail";
-      chips.push(
-        { id: "fence", label: <>Fence <span className="opacity-60">{FENCE_STYLES.find(f => f.value === style)?.label}</span></>, control: <ChipPick row label="What the fence is" value={style} onChange={v => set({ fenceStyle: v === "rail" ? undefined : v })} options={FENCE_STYLES} /> },
-        { id: "height", label: <>Height <span className="opacity-60">{fmtSize(h, u)}</span></>, control: <Dial label="Fence height" value={h} min={meta.heights![0]} max={meta.heights![1]} step={0.5} format={v => `${fmtSize(v, u)} tall`} onChange={v => live({ fenceHeight: v })} onDone={done} /> }
-      );
+      chips.push({ id: "fence", label: <>Fence <span className="opacity-60">{FENCE_STYLES.find(f => f.value === style)?.label}</span></>, control: <ChipPick row label="What the fence is" value={style} onChange={v => set({ fenceStyle: v === "rail" ? undefined : v })} options={FENCE_STYLES} /> });
+    }
+    if (item.type === "line" && LINE_KINDS[item.kind].heights) {
+      const meta = LINE_KINDS[item.kind], h = item.fenceHeight ?? meta.height!;
+      const name = heightLabel(item.kind);
+      chips.push({ id: "height", label: <>{name} <span className="opacity-60">{fmtSize(h, u)}</span></>, control: <Dial label={name} value={h} min={meta.heights![0]} max={meta.heights![1]} step={0.5} format={v => `${fmtSize(v, u)} ${item.kind === "power" ? "up" : "tall"}`} onChange={v => live({ fenceHeight: v })} onDone={done} /> });
     }
     const a = item as AreaItem | LineItem;
     if (hasObChoice(a)) {

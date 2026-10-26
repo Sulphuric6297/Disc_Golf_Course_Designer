@@ -1,13 +1,14 @@
 // Where a tree can never stand: in water, on a building, parking or anything built (its outline,
-// or along a bridge or boardwalk), on a road, path, creek or walk.
+// or along a bridge or boardwalk), on a road, path, creek or walk, on a ball field or a court.
 import { LINE_KINDS, STRUCTURE_KINDS } from "../constants";
 import type { CourseItem, P } from "../types";
 import { distanceToPath, pointInPolygon } from "./geom";
 import { widthFactors } from "./course";
+import { fieldKindOf, treelessField } from "./fields";
 
 /** Whether this thing is somewhere no tree stands. */
 export const keepsTreesOut = (it: CourseItem) =>
-  (it.type === "area" && ["water", "parking", "building"].includes(it.kind)) ||
+  (it.type === "area" && (["water", "parking", "building"].includes(it.kind) || (it.kind === "field" && treelessField(fieldKindOf(it))))) ||
   (it.type === "line" && ["road", "path", "walk", "stream"].includes(it.kind)) ||
   it.type === "structure";
 

@@ -3,20 +3,23 @@
 import { PlaceByGps } from "./PlaceByGps";
 import { BRUSH_SECTION } from "../lib/view";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronLeft, Copy, Eye, Lock, Maximize2, Plane, RotateCcw, RotateCw, Trash2, Unlock, X, Plus } from "lucide-react";
-import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, AREA_ORDER, CIRCLE_ONE_FT, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
+import { ChevronDown, ChevronLeft, Copy, Eye, Lock, Maximize2, Plane, RotateCcw, RotateCw, Trash2, TreeDeciduous, Unlock, X, Plus } from "lucide-react";
+import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, AREA_ORDER, CIRCLE_ONE_FT, FIELD_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
 import { areaPath, areaRing, obFor, obSides, sideCompass, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, obPicked, parseHoleNumbers, teeAim, wholeHoles, widthFactors, widthVaries } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
 import { BUILDING_LOOKS, boxOutline, gazeboOutline, structureHeight, structurePath, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import { amenitySymbol, STRUCTURE_INK, structureLegend, symbolSvg } from "../lib/symbols";
 import { courseStats, holeStats } from "../lib/holeStats";
+import { COURT_FIELDS, FIELD_ORDER, MARKED_FIELDS, courtCount, fieldHome, fieldKindOf, isBallField } from "../lib/fields";
+import { fieldIcon } from "./fieldIcons";
 import { fmtArea, fmtDist } from "../lib/units";
 import { fairwayTrees } from "../lib/lidar";
+import { toast } from "../state/toast";
 import { turnable } from "../lib/turn";
 import { conifersOf } from "../lib/landscapes";
-import { addHoleOb, deleteSelection, duplicateSelection, forgetNewLabel, isNewLabel, obChoiceOf, pinsFull, setLineKind, setObChoice, setPinPosition, startAnotherPin, startAnotherTee, startHoleToBasket, select, setTeeLevel, shareBasket, teesFull, type ObChoice } from "../state/actions";
+import { addHoleOb, deleteSelection, duplicateSelection, forgetNewLabel, isNewLabel, nextHomeCorner, obChoiceOf, pinsFull, setFieldKind, setFieldPlay, setLineKind, setObChoice, setPinPosition, startAnotherPin, startAnotherTee, startHoleToBasket, select, setTeeLevel, shareBasket, teesFull, type ObChoice } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaItem, CourseDoc, CourseItem, FenceStyle, Hole, LabelItem, LineItem, LineKind, P, PathSurface, PinPosition, RoofKind, StructureKind, TeeLevel, TeeSurface, BrushKind } from "../types";
+import type { AmenityKind, AreaItem, CourseDoc, CourseItem, FenceStyle, FieldKind, Hole, LabelItem, LineItem, LineKind, P, PathSurface, PinPosition, RoofKind, StructureKind, TeeLevel, TeeSurface, BrushKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { TreeSettings } from "./TreeSettings";
 import { HoleFlight } from "./FlyoverSettings";
@@ -24,7 +27,7 @@ import { HoleChips } from "./ApplyToHoles";
 import { HoleSteps } from "./HoleSteps";
 import { getView } from "../state/view";
 import { useLayout, useTouch } from "./useLayout";
-import { Button, ChipPick, ColorInput, Field, NumberInput, Section, Segmented, Select, Slider, Stat, TextInput, Toggle } from "./ui";
+import { Button, ChipPick, ColorInput, Field, HelpLink, NumberInput, Section, Segmented, Select, Slider, Stat, TextInput, Toggle } from "./ui";
 
 const shapeText = { straight: "Straight", left: "Turns left", right: "Turns right", "s-curve": "S-curve" };
 /** A small size to the half foot (or tenth of a meter): "2.5 ft". */
@@ -77,22 +80,33 @@ function HoleNumberInput({ holeId, value }: { holeId: string; value: string }) {
 
 /** The measured trees on a hole's fairway: how many are cut down and kept, and all of them back
  * or down at once. */
-function FairwayTrees({ hole, line }: { hole: Hole; line: P[] }) {
+/** The measured trees this hole cut down (where it plays), and kept: how many, and the button to
+ * bring them back (or cut them again). Near the top of the hole's panel, and a chip on a phone. */
+export const useHoleTrees = (hole: Hole, line: P[] | null) => {
   const lidar = useCourse(s => s.doc.lidar);
-  const { cut, kept } = useMemo(() => fairwayTrees({ lidar }, hole, line), [lidar, hole, line]);
+  return useMemo(() => (lidar && line ? fairwayTrees({ lidar }, hole, line) : { cut: [], kept: [] }), [lidar, hole, line]);
+};
+export function HoleTrees({ hole, line }: { hole: Hole; line: P[] }) {
+  const lidar = useCourse(s => s.doc.lidar);
+  const { cut, kept } = useHoleTrees(hole, line);
   if (!cut.length && !kept.length) return null;
   const setLidar = (patch: { kept?: number[]; removed?: number[] }) => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, ...patch } } : {}));
   const list = (v: number[]) => (v.length ? [...new Set(v)].sort((a, b) => a - b) : undefined);
+  const back = () => {
+    setLidar({ kept: list([...(lidar?.kept ?? []), ...cut]), removed: list((lidar?.removed ?? []).filter(k => !cut.includes(k))) });
+    toast(`${cut.length === 1 ? "1 tree" : `${cut.length} trees`} back on hole ${hole.number ?? ""}.`.replace(" .", "."), "success", true);
+  };
   return (
-    <Field label="Trees on the fairway">
-      <div className="flex items-center justify-between gap-2" data-testid="fairway-trees">
-        <span className="text-sm text-zinc-200">{[cut.length ? `${cut.length} cut down` : "", kept.length ? `${kept.length} kept` : ""].filter(Boolean).join(" · ")}</span>
-        <div className="flex gap-1.5">
-          {cut.length > 0 && <Button small onClick={() => setLidar({ kept: list([...(lidar?.kept ?? []), ...cut]), removed: list((lidar?.removed ?? []).filter(k => !cut.includes(k))) })} testid="trees-back">Bring all back</Button>}
-          {kept.length > 0 && <Button small onClick={() => setLidar({ kept: list((lidar?.kept ?? []).filter(k => !kept.includes(k))) })} testid="trees-down">Cut all down</Button>}
-        </div>
+    <div className="flex items-center gap-2.5 rounded-[14px] bg-white/[0.06] ring-1 ring-white/[0.08] px-3 py-2.5 mt-2" data-testid="fairway-trees">
+      <TreeDeciduous size={20} className="text-[#a2cf6a] shrink-0" />
+      <div className="flex-1 min-w-0 leading-tight">
+        <div className="text-[13.5px] font-semibold text-zinc-50 flex items-center gap-1.5">{cut.length ? `${cut.length.toLocaleString()} ${cut.length === 1 ? "tree" : "trees"} cut down` : `${kept.length.toLocaleString()} ${kept.length === 1 ? "tree" : "trees"} kept`}<HelpLink topic="lidar-settings" label="Trees cut for holes" /></div>
+        {cut.length > 0 && kept.length > 0 && <div className="text-[11.5px] text-zinc-400">{kept.length.toLocaleString()} kept</div>}
       </div>
-    </Field>
+      {cut.length > 0
+        ? <Button small onClick={back} testid="trees-back"><RotateCcw size={14} /> Bring them back</Button>
+        : <Button small onClick={() => setLidar({ kept: list((lidar?.kept ?? []).filter(k => !kept.includes(k))) })} testid="trees-down">Cut them down</Button>}
+    </div>
   );
 }
 
@@ -197,6 +211,7 @@ function HoleInspector({ hole, part }: { hole: Hole; part?: CourseItem }) {
           {s.complete && <Button small full onClick={() => useEditor.getState().set({ teeView: hole.id, flyover: true })} testid="flyover"><Plane size={14} /> Fly over</Button>}
           <Button small full onClick={() => getView()?.fitHole(hole.id)} testid="zoom-hole"><Maximize2 size={14} /> Zoom to it</Button>
         </div>
+        {doc.lidar && s.complete && <HoleTrees hole={hole} line={s.line} />}
       </Section>
       <HoleParts hole={hole} part={part}>
         {(() => {
@@ -257,7 +272,6 @@ function HoleInspector({ hole, part }: { hole: Hole; part?: CourseItem }) {
             )}
           </>
         )}
-        {doc.lidar && s.complete && <FairwayTrees hole={hole} line={s.line} />}
         {s.complete && (
           <Field label="Line of play" help="line-of-play">
             <div className="flex flex-wrap gap-1.5">
@@ -432,6 +446,39 @@ function WoodsTrees({ item }: { item: AreaItem }) {
             ? <DrawNote what="the patch over the wood" />
             : <Button small onClick={draw} testid="woods-draw-patch"><Plus size={13} /> Draw a patch</Button>}
         </div>
+      )}
+    </>
+  );
+}
+
+/** A field's kinds, each with its picture (its panel and a phone's strip). */
+export const fieldKindOptions = () => FIELD_ORDER.map(k => ({ value: k, label: FIELD_KINDS[k].label, icon: fieldIcon(k) }));
+/** In play or out of play (a field's panel and a phone's strip). */
+export const PLAY_OPTIONS = [{ value: "in", label: "In play" }, { value: "out", label: "Out of play" }] as const;
+/** A field's markings turned, in words: "Lined up", "15°". */
+export const fmtTurn = (v: number) => (v ? `${v > 0 ? "" : "−"}${Math.abs(v)}°` : "Lined up");
+/** A ball field's home plate corner, in words: "Corner 1 of 8". */
+export const homeText = (a: AreaItem) => `Corner ${fieldHome(a) + 1} of ${a.points.length}`;
+/** A line's height, named for what it is (its panel and a phone's strip). */
+export const heightLabel = (k: LineKind) => (k === "power" ? "Wire height" : "Height");
+
+/** A field, court or play area's own settings: in or out of play, its markings turned, a ball
+ * field's home plate. */
+function FieldSettings({ item, kind }: { item: AreaItem; kind: FieldKind }) {
+  const set = (patch: Partial<AreaItem>, history = true) => updateItem(item.id, patch as Partial<CourseItem>, history);
+  return (
+    <>
+      <Field label="Play" help="park">
+        <Segmented label="Play" value={item.outOfPlay ? "out" : "in"} onChange={v => setFieldPlay(item.id, v === "out")} options={[...PLAY_OPTIONS]} />
+      </Field>
+      {MARKED_FIELDS.includes(kind) && <Slider label="Markings turn" min={-90} max={90} step={1} value={item.fieldTurn ?? 0} onChange={v => set({ fieldTurn: v || undefined }, false)} onDone={commit} format={fmtTurn} />}
+      {isBallField(kind) && (
+        <Field label="Home plate">
+          <div className="flex items-center justify-between gap-2" data-testid="field-home">
+            <span className="text-sm text-zinc-200 tabular-nums">{homeText(item)}</span>
+            {!item.locked && <Button small onClick={() => nextHomeCorner(item.id)} testid="field-home-next">Next corner</Button>}
+          </div>
+        </Field>
       )}
     </>
   );
@@ -677,20 +724,30 @@ function ItemInspector({ item, bare = false }: { item: CourseItem; bare?: boolea
     case "area": {
       // (a flat building is an old course's: offered only to one that is one)
       const kinds = item.kind === "building" ? [...AREA_ORDER, item.kind] : AREA_ORDER;
+      // (a field, court or play area: its own kinds)
+      const fk = item.kind === "field" ? fieldKindOf(item) : null;
+      const courts = fk && COURT_FIELDS.includes(fk) ? courtCount(fk, item.points) : 1;
       body = (
         <>
-          <Field label="Kind" help={item.kind === "ob" ? "ob" : "areas"}>
-            <ChipPick label="Area kind" value={item.kind} onChange={v => set({ kind: v })} options={kinds.map(k => ({ value: k, label: AREA_KINDS[k].label, color: AREA_KINDS[k].color }))} />
-          </Field>
+          {fk ? (
+            <Field label="Kind" help="park">
+              <ChipPick label="Field kind" testid="field-kind" value={fk} onChange={v => setFieldKind(item.id, v)} options={fieldKindOptions()} />
+            </Field>
+          ) : (
+            <Field label="Kind" help={item.kind === "ob" ? "ob" : "areas"}>
+              <ChipPick label="Area kind" value={item.kind} onChange={v => set({ kind: v })} options={kinds.map(k => ({ value: k, label: AREA_KINDS[k].label, color: AREA_KINDS[k].color }))} />
+            </Field>
+          )}
+          {fk && <FieldSettings item={item} kind={fk} />}
           {item.kind === "woods" && <WoodsTrees item={item} />}
           {(item.kind === "woods" || item.kind === "rough") && <WoodsBrush item={item} />}
           {hasObChoice(item) && <ObPick item={item} />}
           {item.kind === "ob" && holePicker("OB for", "All holes")}
-          {RULE_AREAS.has(item.kind) && holePicker("Counts for", "All holes")}
-          {item.kind !== "parking" && item.kind !== "building" && <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />}
+          {(RULE_AREAS.has(item.kind) || (fk && item.outOfPlay)) && holePicker("Counts for", "All holes")}
+          {item.kind !== "parking" && item.kind !== "building" && !fk && <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />}
           <TurnButtons item={item} />
           <Field label="Name on the map (optional)"><TextInput label="Area name" value={item.label ?? ""} onChange={v => set({ label: v || undefined }, false)} onDone={commit} /></Field>
-          <div className="text-xs text-zinc-400">{fmtArea(polygonArea(areaPath(item)), u)}</div>
+          <div className="text-xs text-zinc-400" data-testid="area-size">{fmtArea(polygonArea(areaPath(item)), u)}{courts > 1 ? ` · ${courts} courts` : ""}</div>
         </>
       );
       break;
@@ -714,13 +771,11 @@ function ItemInspector({ item, bare = false }: { item: CourseItem; bare?: boolea
           )}
           {(item.kind === "path" || walk) && <SurfacePick value={item.surface} onChange={v => set({ surface: v })} />}
           {item.kind === "fence" && (
-            <>
-              <Field label="Fence">
-                <ChipPick label="What the fence is" testid="fence-style" value={item.fenceStyle ?? "rail"} onChange={v => set({ fenceStyle: v === "rail" ? undefined : v })} options={FENCE_STYLES} />
-              </Field>
-              <Slider label="Height" min={meta.heights![0]} max={meta.heights![1]} step={0.5} value={item.fenceHeight ?? meta.height!} onChange={v => set({ fenceHeight: v }, false)} onDone={commit} format={v => fmtSize(v, u)} />
-            </>
+            <Field label="Fence">
+              <ChipPick label="What the fence is" testid="fence-style" value={item.fenceStyle ?? "rail"} onChange={v => set({ fenceStyle: v === "rail" ? undefined : v })} options={FENCE_STYLES} />
+            </Field>
           )}
+          {meta.heights && <Slider label={heightLabel(item.kind)} min={meta.heights[0]} max={meta.heights[1]} step={0.5} value={item.fenceHeight ?? meta.height!} onChange={v => set({ fenceHeight: v }, false)} onDone={commit} format={v => fmtSize(v, u)} />}
           {hasObChoice(item) && <ObPick item={item} />}
           {item.kind === "ob" && holePicker("OB for", "All holes")}
           <Toggle label="Curved" checked={!item.straight} onChange={v => set({ straight: v ? undefined : true })} />
@@ -836,7 +891,7 @@ function ItemInspector({ item, bare = false }: { item: CourseItem; bare?: boolea
 
 /** What a selected item is called ("Blue tee", "OB area", "Bridge"…). */
 export function itemTitle(item: CourseItem) {
-  return item.type === "tee" ? `${TEE_LEVELS[item.level].label} tee` : item.type === "basket" ? `Pin ${item.position}` : item.type === "area" ? AREA_KINDS[item.kind].label : item.type === "line" ? LINE_KINDS[item.kind].label : item.type === "amenity" ? AMENITY_KINDS[item.kind].pick ?? AMENITY_KINDS[item.kind].label : item.type === "structure" ? STRUCTURE_KINDS[item.kind].label : ITEM_LABELS[item.type];
+  return item.type === "tee" ? `${TEE_LEVELS[item.level].label} tee` : item.type === "basket" ? `Pin ${item.position}` : item.type === "area" ? (item.kind === "field" ? FIELD_KINDS[fieldKindOf(item)].label : AREA_KINDS[item.kind].label) : item.type === "line" ? LINE_KINDS[item.kind].label : item.type === "amenity" ? AMENITY_KINDS[item.kind].pick ?? AMENITY_KINDS[item.kind].label : item.type === "structure" ? STRUCTURE_KINDS[item.kind].label : ITEM_LABELS[item.type];
 }
 
 /** How much of the map's left side is covered on Design while something is picked: the slim hole

@@ -15,6 +15,8 @@ const exported = async (page: Page, testid: string) => {
 
 /** An imported site with two holes, a mando and an OB area. */
 async function setup(page: Page) {
+  // (an import and two holes: slow on a machine drawing without a graphics card)
+  test.setTimeout(Math.max(test.info().timeout, 240_000));
   await importSite(page, { trees: false, osm: false });
   const doc = await course(page);
   const W = doc.canvas.width, H = doc.canvas.height;

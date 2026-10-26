@@ -4,7 +4,7 @@ import { adminSignedIn, Client, codeFor, memberSignedIn, ORIGIN, SETUP_CODE, wor
 
 const PW = "correct horse battery";
 
-test("first run: the setup code, a password, then 2FA before anything else", async () => {
+test("first run: the setup code and a password; 2FA is each person's choice", async () => {
   const w = await world();
   try {
     const c = new Client(w.app);
@@ -14,9 +14,9 @@ test("first run: the setup code, a password, then 2FA before anything else", asy
     assert.equal((await c.post("/api/setup", { code: SETUP_CODE, username: "admin", displayName: "Admin", password: "admin-is-my-password" })).status, 400);
     const r = await c.post("/api/setup", { code: SETUP_CODE.toLowerCase(), username: "admin", displayName: "Admin", password: PW });
     assert.equal(r.status, 200);
-    assert.equal(r.body.stage, "mfa-setup");
-    // Nothing else until 2FA is on
-    assert.equal((await c.get("/api/admin/users")).status, 401);
+    assert.equal(r.body.stage, "full");
+    // (signed in already; two-factor sign-in turned on when they want it)
+    assert.equal((await c.get("/api/admin/users")).status, 200);
     const { body: e } = await c.post("/api/mfa/enroll");
     assert.match(e.uri, /^otpauth:\/\/totp\/HyzerLab:admin\?secret=/);
     assert.match(e.qr, /^<svg/);
@@ -121,7 +121,7 @@ test("invites: admins only, used once, a taken name leaves the link working", as
     assert.equal((await sam.get(`/api/invites/${inv.token}`)).body.kind, "invite");
     assert.equal((await sam.post(`/api/invites/${inv.token}/accept`, { username: "PAT", displayName: "Sam", password: "a long passphrase here" })).status, 409);
     const ok = await sam.post(`/api/invites/${inv.token}/accept`, { username: "sam", displayName: "Sam", password: "a long passphrase here" });
-    assert.equal(ok.body.stage, "mfa-setup");
+    assert.equal(ok.body.stage, "full");
     assert.equal((await new Client(w.app).get(`/api/invites/${inv.token}`)).status, 404);
     assert.equal((await new Client(w.app).post(`/api/invites/${inv.token}/accept`, { username: "sam2", displayName: "S", password: "a long passphrase here" })).status, 404);
     const users = (await admin.get("/api/admin/users")).body;
@@ -130,7 +130,7 @@ test("invites: admins only, used once, a taken name leaves the link working", as
   } finally { await w.close(); }
 });
 
-test("admin: disable signs out, reset makes a new password and 2FA, not on your own account", async () => {
+test("admin: disable signs out, reset makes a new password (2FA set up again if they want), not on your own account", async () => {
   const w = await world();
   try {
     const { c: admin, secret: adminSecret } = await adminSignedIn(w);
@@ -148,7 +148,7 @@ test("admin: disable signs out, reset makes a new password and 2FA, not on your 
     const { body: reset } = await admin.post(`/api/admin/users/${patId}/reset`);
     const p = new Client(w.app);
     assert.equal((await p.get(`/api/invites/${reset.token}`)).body.username, "pat");
-    assert.equal((await p.post(`/api/invites/${reset.token}/accept`, { password: "a brand new passphrase" })).body.stage, "mfa-setup");
+    assert.equal((await p.post(`/api/invites/${reset.token}/accept`, { password: "a brand new passphrase" })).body.stage, "full");
     const { body: e } = await p.post("/api/mfa/enroll");
     assert.equal((await p.post("/api/mfa/enroll/confirm", { code: codeFor(e.secret) })).status, 200);
     assert.equal((await new Client(w.app).post("/api/login", { username: "pat", password: "another long passphrase" })).status, 401);
@@ -176,5 +176,22 @@ test("your account: sessions listed and ended, a new password signs out elsewher
     assert.equal((await c.post("/api/me/password", { current: PW, next: "a new long passphrase", code: codeFor(secret) })).status, 200);
     assert.equal((await other.get("/api/session")).body.user, null);
     assert.equal((await c.get("/api/session")).body.stage, "full");
+  } finally { await w.close(); }
+});
+
+test("an admin can require 2FA for someone: their next sign-in sets it up before anything else", async () => {
+  const w = await world();
+  try {
+    const { c: admin } = await adminSignedIn(w);
+    const { body: inv } = await admin.post("/api/admin/invites", {});
+    const sam = new Client(w.app);
+    assert.equal((await sam.post(`/api/invites/${inv.token}/accept`, { username: "sam", displayName: "Sam", password: "a long passphrase here" })).body.stage, "full");
+    const samId = (await admin.get("/api/admin/users")).body.find((u: { username: string }) => u.username === "sam").id;
+    assert.equal((await admin.post(`/api/admin/users/${samId}`, { mfaRequired: true })).status, 200);
+    const again = new Client(w.app);
+    assert.equal((await again.post("/api/login", { username: "sam", password: "a long passphrase here" })).body.stage, "mfa-setup");
+    const { body: e } = await again.post("/api/mfa/enroll");
+    assert.equal((await again.post("/api/mfa/enroll/confirm", { code: codeFor(e.secret) })).status, 200);
+    assert.equal((await again.get("/api/session")).body.stage, "full");
   } finally { await w.close(); }
 });

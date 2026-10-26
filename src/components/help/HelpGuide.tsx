@@ -19,7 +19,7 @@ const ART: Partial<Record<GuideSection, (() => JSX.Element)[]>> = {
 export const SHORTCUTS: [string, string][] = [
   ["V", "Select and move"], ["H", "New hole (tee, then basket)"], ["T / B", "Another tee / pin for the hole"], ["M / Z", "Mando / drop zone"],
   ["O", "OB and rules"], ["L", "Paths and roads"], ["W / U", "Water / grass"], ["R", "Trees and woods"],
-  ["S", "Build: buildings, shelters, decks, bridges, boardwalks, stairs, walls, fences"], ["G", "Shape the ground"], ["A / K", "Amenity / label"], ["D", "Measure"],
+  ["S", "Build: buildings, shelters, decks, bridges, boardwalks, stairs, walls, fences, power lines"], ["P", "Park: ball fields, courts, playgrounds, pools"], ["G", "Shape the ground"], ["A / K", "Amenity / label"], ["D", "Measure"],
   ["Enter", "Finish drawing · view from the tee of the hole, tee or basket picked"], ["Esc", "Cancel drawing · back to Select · clear the selection · close"], ["Backspace", "Remove the last point drawn · delete the selection"],
   ["Space+drag", "Move the map, whatever tool you're using"], ["Shift+drag", "With Select: draw a box to select (other tools: turn and tilt)"], ["Shift+click", "Add to the selection, or take out"], ["Ctrl+A", "Select everything"],
   ["Right-click", "The map's menu for what's under the pointer, or for open ground"], ["Alt+click", "Remove a point, a turn in a hole's line, or a width square"],
@@ -100,7 +100,7 @@ function KeysSection({ touch }: { touch: boolean }) {
       <h3 className="text-[15px] font-semibold text-zinc-50 mt-5 mb-1">Moving around the map</h3>
       <p className="text-[13.5px] text-zinc-300">Drag to pan (or Space+drag, whatever tool you're using), scroll or pinch to zoom at the pointer, right-drag (or Ctrl+drag or Alt+drag) to turn and tilt, Shift+drag with Select to draw a box, double-click to zoom in.</p>
       <h3 className="text-[15px] font-semibold text-zinc-50 mt-5 mb-1">Credits</h3>
-      <p className="text-xs text-zinc-500">Imagery © Esri, Maxar, Vexcel, Earthstar Geographics, and state programs like NC OneMap. Map data © OpenStreetMap contributors (and OpenFreeMap, OpenMapTiles). Building outlines: Overture Maps (Microsoft and others). Elevation and measured trees: USGS 3DEP and its LiDAR, and AWS Terrain Tiles (Mapzen). Fonts: Google Fonts. Trees grown with ez-tree (MIT).</p>
+      <p className="text-xs text-zinc-500">Imagery © Esri, Maxar, Vexcel, Earthstar Geographics, and state programs like NC OneMap. Map data © OpenStreetMap contributors (and OpenFreeMap, OpenMapTiles). Building outlines: Overture Maps (Microsoft and others). Elevation and measured trees: USGS 3DEP and its LiDAR, and AWS Terrain Tiles (Mapzen). Fonts: Google Fonts. Trees grown with ez-tree (MIT). Chain-link fence by loafbrr (CC0).</p>
     </>
   );
 }

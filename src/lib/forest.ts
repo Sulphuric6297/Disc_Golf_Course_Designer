@@ -4,6 +4,7 @@
 // and worn dirt at the tees; creeks and ponds in clear blue with dark banks; soft gray roads and
 // mown grass. It is one picture for the whole map, laid into the SVG under the symbols (built
 // things are drawn there too; the painting clears the trees from them and casts their shadows).
+import { measuredStanding, showsMeasured } from "./standing";
 import { CIRCLE_ONE_FT, LINE_KINDS, PATH_SURFACES } from "../constants";
 import type { AreaItem, CourseDoc, LineItem, MapStyle, P, PathSurface, ReliefLook, StructureItem, TreeItem } from "../types";
 import { toUnits } from "./units";
@@ -269,6 +270,7 @@ export type ForestOpts = {
  */
 /** The painting, a slice at a time; some slices say how far along it is (0..1). */
 function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts): Generator<number | void, HTMLCanvasElement, void> {
+  const measured = doc.lidar?.trees.length ? measuredStanding() : null;
   const density = opts.density ?? 2;
   const s = opts.style;
   const W = Math.max(1, Math.round(view.width * density)), H = Math.max(1, Math.round(view.height * density));
@@ -415,6 +417,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       else if (a.kind === "sand") { poly(SAND, a.points); poly(CLEAR, a.points); }
       else if (a.kind === "rough") { poly(TALL, a.points); poly(CLEAR, a.points); }
       else if (a.kind === "nogo") poly(CLEAR, a.points);
+      // (a field, court or play area: mown, no treetops over it; the map draws it on top)
+      else if (a.kind === "field") { poly(FAIR, a.points); poly(CLEAR, offsetPolygon(a.points, (crownR * 0.8) / k)); }
       else if (a.kind === "woods") poly(WOODS, a.points);
     } else if (i.type === "line") {
       const l = i as LineItem;
@@ -425,6 +429,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       } else if (l.kind === "path") {
         line(surfaceCh(l.surface), pts, lw);
         line(CLEAR, pts, lw + (crownR * 2.4) / k);
+      } else if (l.kind === "hedge") {
+        // (drawn on top by the map; no treetops in its row)
+        line(CLEAR, pts, (l.width ?? 4) + (crownR * 0.8) / k);
       } else if (l.kind === "stream") {
         const cw = widthAt ?? lw;
         wobblyLine(WATER, pts, cw, idSeed(l.id) + 1);
@@ -616,6 +623,25 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       wooded[m] = (opts.mode === "everywhere" || !canopy ? site(p) : photoTrees(p)) ? 1 : 0;
     }
   }
+  // Measured trees: the woods painted only where the survey found treetops (its gaps and clearings
+  // open, nothing filled in from the photo), but woods drawn by hand filled in as drawn
+  if (measured) {
+    const near = new Uint8Array(mw * mh);
+    for (const [x0, y0, , radius] of measured.trees) {
+      const sp = toScreen({ x: x0, y: y0 }), r = (radius * 1.15 * k) / cell;
+      const cx = sp.x / cell, cy = sp.y / cell;
+      for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(mh - 1, Math.ceil(cy + r)); y++)
+        for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(mw - 1, Math.ceil(cx + r)); x++)
+          if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) near[y * mw + x] = 1;
+    }
+    const drawn = (doc.items.filter(i => i.type === "area" && i.kind === "woods" && !showsMeasured(i as AreaItem)) as AreaItem[]).map(a => ({ pts: drawnAreas([a])[0].points, box: boundsOf(drawnAreas([a])[0].points) }));
+    for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
+      const m = y * mw + x;
+      if (!wooded[m] || near[m]) continue;
+      const p = toPlan(x * cell + cell / 2, y * cell + cell / 2);
+      if (!drawn.some(d => p.x >= d.box.minX && p.x <= d.box.maxX && p.y >= d.box.minY && p.y <= d.box.maxY && pointInPolygon(p, d.pts))) wooded[m] = 0;
+    }
+  }
 
   // ---------------------------------------------------------------- the canopy (a height field)
   const cover = Math.max(0.1, Math.min(1, s.treeCover ?? 1));
@@ -781,6 +807,22 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         else stamp(x, y, r, r * (1.9 + rnd() * 0.9), t);
       }
     }
+  }
+  // The measured trees standing out on their own, past the woods: each where it is, painted at the
+  // style's own sizes (a little bigger or smaller as the tree is), of its own kind
+  if (measured && !opts.under) {
+    measured.trees.forEach(([x0, y0, , radius, conifer], idx) => {
+      const sp = toScreen({ x: x0, y: y0 });
+      const mx = Math.min(mw - 1, Math.max(0, Math.floor(sp.x / cell))), my = Math.min(mh - 1, Math.max(0, Math.floor(sp.y / cell)));
+      if (sp.x < -stepPx || sp.y < -stepPx || sp.x > W + stepPx || sp.y > H + stepPx || wooded[my * mw + mx]) return;
+      const size = Math.max(0.8, Math.min(1.3, radius / 12));
+      const u = 0.35 + 0.3 * ((idx * 0.618) % 1), t = 1 + (idx % 6);
+      if (vector) { const r = vR(u) * size; vtrees.push({ x: sp.x, y: sp.y, r, h: r * (1.6 + rnd() * 0.8), pine: !!conifer, col: treeColor(rnd()), seed: rnd() }); return; }
+      if (natural) { const r = realR(u) * size; if (conifer) whorls(sp.x, sp.y, r * 0.62, realTop(r) * 1.15, t); else leafy(sp.x, sp.y, r, realTop(r), t); return; }
+      const r = crownR * (0.45 + u * u * 1.35) * size;
+      if (conifer) pine(sp.x, sp.y, r * 0.95, r * (2.2 + rnd() * 0.9), t);
+      else stamp(sp.x, sp.y, r, r * (1.9 + rnd() * 0.9), t);
+    });
   }
   // Trees placed on the map (or found on the photo): each where it stands, at its own size and
   // height and of its own kind, wherever it is (on a fairway too), apart from the woods
@@ -1541,6 +1583,7 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
  * every thing on the map in full but its name and lock (labels and mandos aren't painted), and
  * the holes, in order, but their names, par, notes, flyovers and tee sign settings. */
 export const paintedFrom = (doc: CourseDoc) => [
+  doc.lidar?.trees.length ? measuredStanding()?.key ?? "" : "",
   doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => ({ ...i, label: undefined, locked: undefined })),
   doc.holes.map(h => ({ ...h, name: undefined, par: undefined, notes: undefined, flyKeys: undefined, flyover: undefined, sign: undefined }))
 ];

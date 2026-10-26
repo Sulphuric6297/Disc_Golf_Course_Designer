@@ -6,7 +6,7 @@ import { SECTIONS, TOPICS } from "../lib/guide";
 import { SERVER } from "../auth/api";
 import { showSetting } from "./showSetting";
 import { openGettingStarted } from "./GettingStarted";
-import { AMENITY_KINDS, AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS } from "../constants";
+import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS } from "../constants";
 import { holeLabel } from "../lib/course";
 import { courseStats } from "../lib/holeStats";
 import { fmtDist } from "../lib/units";
@@ -15,6 +15,7 @@ import { useCourse, useEditor } from "../state/course";
 import { getView } from "../state/view";
 import { STEPS, STEP_ICONS } from "./SidePanel";
 import { TOOLS, drawChoice, pickTool } from "./Toolbar";
+import { amenityIcon, itemTitle } from "./Inspector";
 import type { CourseItem } from "../types";
 
 /** `find`: what typing matches (its name, not its figures); `nums`: a hole's numbers, first when
@@ -34,7 +35,7 @@ const toMap = () => {
 const named = (i: CourseItem): { name: string; kind: string } | null => {
   if (i.type === "label") return i.text ? { name: i.text, kind: "Label" } : null;
   if (!("label" in i) || !i.label) return null;
-  const kind = i.type === "area" ? AREA_KINDS[i.kind].label : i.type === "line" ? LINE_KINDS[i.kind].label : i.type === "structure" ? STRUCTURE_KINDS[i.kind].label : i.type === "amenity" ? AMENITY_KINDS[i.kind].label : "";
+  const kind = i.type === "area" ? (i.kind === "field" ? itemTitle(i) : AREA_KINDS[i.kind].label) : i.type === "line" ? LINE_KINDS[i.kind].label : i.type === "structure" ? STRUCTURE_KINDS[i.kind].label : i.type === "amenity" ? AMENITY_KINDS[i.kind].label : "";
   return { name: i.label, kind };
 };
 
@@ -67,6 +68,11 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: (topic?
       out.push({ key: `tool:${t.id}`, text: t.short, find: `${t.short} ${t.label}`, sub: t.key, keyed: true, icon: <span className={SMALL}>{t.icon}</span>, run: () => { toMap(); pickTool(t); } });
       // (and each thing it has, by its own name: "fence" finds Build's Fence)
       for (const c of t.choices ?? []) out.push({ key: `tool:${t.id}:${c.id}`, text: c.label, find: c.label, sub: t.short, icon: <span className={SMALL}>{c.icon ?? t.icon}</span>, run: () => { toMap(); drawChoice(c); } });
+      // (each amenity too: "grill" finds Amenities' Grill)
+      if (t.mode === "add-amenity") for (const k of AMENITY_ORDER) {
+        const name = AMENITY_KINDS[k].pick ?? AMENITY_KINDS[k].label;
+        out.push({ key: `tool:${t.id}:${k}`, text: name, find: `${name} ${AMENITY_KINDS[k].label}`, sub: t.short, icon: <span className={SMALL}>{amenityIcon(k)}</span>, run: () => { toMap(); useEditor.getState().set({ tool: "add-amenity", amenityKind: k }); } });
+      }
     }
     for (const i of doc.items) {
       const n = named(i);

@@ -136,7 +136,8 @@ export const dropZoneSymbol = (p: P, u: number) =>
 
 export const AMENITY_COLORS: Record<AmenityKind, string> = {
   bench: "#8a5a22", trash: "#475569", sign: "#0f766e", kiosk: "#0e7490", restroom: "#2563eb", parking: "#1d4ed8",
-  water: "#0284c7", practice: "#ea580c", shelter: "#7c2d12", bridge: "#78350f", firstaid: "#dc2626", picnic: "#92400e", here: "#facc15"
+  water: "#0284c7", practice: "#ea580c", shelter: "#7c2d12", bridge: "#78350f", firstaid: "#dc2626", picnic: "#92400e", here: "#facc15",
+  grill: "#b45309", fitness: "#15803d", flagpole: "#475569", light: "#a16207", pole: "#78716c", bikerack: "#0f766e", fountain: "#0284c7", gate: "#57534e"
 };
 
 /** A white pictogram in unit coordinates (about ±6), for the badge. */
@@ -173,6 +174,31 @@ const pictogram = (kind: AmenityKind, f: (x: number, y: number) => string, u: nu
       return fill(rect(-1.6, -5.2, 3.2, 10.4, 0.3)) + fill(rect(-5.2, -1.6, 10.4, 3.2, 0.3));
     case "picnic":
       return fill(rect(-5.8, -4.4, 11.6, 1.7, 0.4)) + line(`M${f(-2.8, -2.8)}L${f(-4.8, 5.2)}M${f(2.8, -2.8)}L${f(4.8, 5.2)}`, 1.2) + fill(rect(-6.6, 0.6, 13.2, 1.4, 0.4));
+    case "grill":
+      // A kettle grill: the lid's dome and handle, the bowl, three legs
+      return fill(`M${f(-4.8, -0.9)}A${n(4.8 * u)} ${n(4.4 * u)} 0 0 1 ${f(4.8, -0.9)}Z`) + fill(rect(-1.1, -6.3, 2.2, 1, 0.3)) + fill(`M${f(-4.8, 0.1)}L${f(4.8, 0.1)}A${n(4.8 * u)} ${n(3.4 * u)} 0 0 1 ${f(-4.8, 0.1)}Z`) + line(`M${f(-2.6, 2.8)}L${f(-4, 6)}M${f(2.6, 2.8)}L${f(4, 6)}M${f(0, 3.4)}L${f(0, 6)}`, 0.9);
+    case "fitness":
+      // A dumbbell
+      return line(`M${f(-3.6, 0)}L${f(3.6, 0)}`, 1.2) + fill(rect(-5.8, -3.4, 1.8, 6.8, 0.5)) + fill(rect(4, -3.4, 1.8, 6.8, 0.5)) + fill(rect(-3.9, -2.2, 1.2, 4.4, 0.3)) + fill(rect(2.7, -2.2, 1.2, 4.4, 0.3));
+    case "flagpole":
+      return line(`M${f(-3.4, -5.4)}L${f(-3.4, 5.8)}M${f(-5.4, 5.8)}L${f(-1.4, 5.8)}`, 0.95) + circle(-3.4, -5.9, 0.75) + fill(`M${f(-2.9, -5.4)}C${f(-0.6, -6.6)} ${f(1.9, -4.4)} ${f(5, -5.2)}L${f(5, -0.6)}C${f(1.9, 0.2)} ${f(-0.6, -2)} ${f(-2.9, -0.8)}Z`);
+    case "light":
+      // A lamp post: the pole, its arm and the lamp, light falling from it
+      return line(`M${f(-2, 5.4)}L${f(-2, -3.6)}Q${f(-2, -5.6)} ${f(0.6, -5.6)}L${f(1.2, -5.6)}`, 1) + fill(`M${f(0.4, -6.1)}L${f(4.8, -6.1)}L${f(4, -4.4)}L${f(1.2, -4.4)}Z`) + fill(rect(-3.8, 5, 3.6, 1, 0.3)) + line(`M${f(2.6, -3.4)}L${f(2.6, -1.4)}M${f(1, -3.4)}L${f(0.2, -1.8)}M${f(4.2, -3.4)}L${f(5, -1.8)}`, 0.6);
+    case "pole":
+      // A utility pole: the crossarm, its insulators and braces
+      return line(`M${f(0, -6)}L${f(0, 6)}`, 1.2) + line(`M${f(-5.4, -3.6)}L${f(5.4, -3.6)}`, 1) + line(`M${f(-2.8, -3.6)}L${f(0, -1.4)}L${f(2.8, -3.6)}`, 0.6) + circle(-4.4, -4.9, 0.75) + circle(4.4, -4.9, 0.75) + circle(0, -6.2, 0.75);
+    case "bikerack": {
+      // A bicycle
+      const ring = (x: number, y: number, r: number) => `M${f(x - r, y)}A${n(r * u)} ${n(r * u)} 0 1 0 ${f(x + r, y)}A${n(r * u)} ${n(r * u)} 0 1 0 ${f(x - r, y)}Z`;
+      return line(ring(-3.5, 2.3, 2.6) + ring(3.5, 2.3, 2.6), 0.8) + line(`M${f(-3.5, 2.3)}L${f(-0.8, -1.6)}L${f(2.4, -1.6)}L${f(3.5, 2.3)}M${f(-0.8, -1.6)}L${f(0.4, 2.3)}L${f(-3.5, 2.3)}M${f(0.4, 2.3)}L${f(2.4, -1.6)}M${f(-2, -2.8)}L${f(0.1, -2.8)}M${f(-0.8, -1.6)}L${f(-1, -2.8)}M${f(2.4, -1.6)}L${f(2.8, -3.6)}L${f(4, -3.6)}`, 0.75);
+    }
+    case "fountain":
+      // A basin with water springing up and falling either side
+      return fill(`M${f(-5.8, 2.4)}L${f(5.8, 2.4)}L${f(4.4, 5.8)}L${f(-4.4, 5.8)}Z`) + fill(rect(-0.65, -1, 1.3, 3.6, 0.2)) + line(`M${f(0, -1)}L${f(0, -5.8)}M${f(0, -1.4)}Q${f(-1.2, -5.6)} ${f(-4.6, 1.2)}M${f(0, -1.4)}Q${f(1.2, -5.6)} ${f(4.6, 1.2)}`, 0.85);
+    case "gate":
+      // Two posts and a gate between them
+      return fill(rect(-6, -5.2, 1.5, 10.8, 0.3)) + fill(rect(4.5, -5.2, 1.5, 10.8, 0.3)) + line(`M${f(-4, -3.2)}L${f(4, -3.2)}M${f(-4, 3.6)}L${f(4, 3.6)}M${f(-4, 3.6)}L${f(4, -3.2)}`, 0.95) + line(`M${f(-1.4, -3.2)}L${f(-1.4, 3.6)}M${f(1.4, -3.2)}L${f(1.4, 3.6)}`, 0.6);
     default:
       return "";
   }

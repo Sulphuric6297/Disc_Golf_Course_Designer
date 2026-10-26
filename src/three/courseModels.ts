@@ -456,6 +456,84 @@ export const createAmenity = (kind: AmenityKind) => {
       [-2.4, 2.4].forEach(z => g.add(box(16, 0.2, 0.2, wood, 0, 3.4, z)));
       [-7.5, 0, 7.5].forEach(x => [-2.4, 2.4].forEach(z => g.add(box(0.3, 2.6, 0.3, wood, x, 2.1, z))));
       break;
+    case "grill": {
+      // A park grill: a firebox on a post, its grate and a handle
+      const black = std("#26272a", 0.55, 0.45);
+      g.add(box(0.3, 3, 0.3, black, 0, 1.5, 0));
+      g.add(box(2.4, 0.7, 1.7, black, 0, 3.25, 0));
+      g.add(box(2.5, 0.08, 1.8, std("#4b4d50", 0.5, 0.6), 0, 3.64, 0));
+      g.add(box(0.1, 0.1, 1, std("#9ca3af", 0.4, 0.6), 1.35, 3.5, 0));
+      break;
+    }
+    case "fitness": {
+      // A pull-up bar on two posts and a sit-up bench
+      const post = std("#3f6e46", 0.6, 0.3), steel = std("#9ca3af", 0.4, 0.6);
+      [-2.2, 2.2].forEach(z => g.add(cyl(0.18, 0.18, 7.5, post, 0, 0, z, 10)));
+      g.add(box(0.14, 0.14, 4.4, steel, 0, 7.2, 0));
+      g.add(box(4, 0.35, 1.2, wood, 3.5, 1.4, 0));
+      [2, 5].forEach(x => g.add(box(0.3, 1.4, 1, post, x, 0.7, 0)));
+      break;
+    }
+    case "flagpole": {
+      g.add(cyl(0.25, 0.12, 30, std("#d4d4d8", 0.35, 0.7), 0, 0, 0, 12));
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 8), std("#c9a227", 0.3, 0.8));
+      ball.position.set(0, 30.3, 0);
+      g.add(ball);
+      const flag = signTexture("flag", (c, w, h) => {
+        // Stripes and a field of blue
+        for (let i = 0; i < 13; i++) { c.fillStyle = i % 2 ? "#ffffff" : "#b91c1c"; c.fillRect(0, (i * h) / 13, w, h / 13 + 1); }
+        c.fillStyle = "#1e3a8a";
+        c.fillRect(0, 0, w * 0.4, (h * 7) / 13);
+      }, 190, 100);
+      g.add(box(5.7, 3, 0.03, flag ?? std("#b91c1c"), 2.95, 28.2, 0));
+      break;
+    }
+    case "light": {
+      // A light pole: its arm and the lamp at the end
+      const paint = std("#2f3b35", 0.5, 0.4);
+      g.add(cyl(0.28, 0.18, 18, paint, 0, 0, 0, 12));
+      g.add(box(3, 0.2, 0.2, paint, 1.4, 17.9, 0));
+      g.add(box(1.5, 0.45, 0.9, paint, 2.9, 17.7, 0));
+      g.add(box(1.3, 0.05, 0.75, mat("lamp", () => new THREE.MeshStandardMaterial({ color: "#fff6dc", emissive: "#fff1c4", emissiveIntensity: 0.6, roughness: 0.4 })), 2.9, 17.45, 0));
+      break;
+    }
+    case "pole": {
+      // A wooden utility pole, its crossarm and insulators
+      const timber = std("#4f3b29", 0.95);
+      g.add(cyl(0.45, 0.35, 32, timber, 0, 0, 0, 10));
+      g.add(box(0.35, 0.35, 8, std("#5a4330", 0.95), 0, 29.5, 0));
+      [-3.6, 0, 3.6].forEach(z => g.add(cyl(0.12, 0.12, 0.7, std("#7e8b82", 0.4, 0.2), 0, z ? 29.7 : 32, z, 8)));
+      break;
+    }
+    case "bikerack": {
+      // Three hoops to lock bikes to
+      const steel = std("#a1a1aa", 0.35, 0.7);
+      [-2.5, 0, 2.5].forEach(z => {
+        [-1, 1].forEach(x => g.add(cyl(0.09, 0.09, 2.2, steel, x, 0, z, 8)));
+        const hoop = new THREE.Mesh(new THREE.TorusGeometry(1, 0.09, 6, 14, Math.PI), steel);
+        hoop.position.set(0, 2.2, z);
+        hoop.castShadow = true;
+        g.add(hoop);
+      });
+      break;
+    }
+    case "fountain": {
+      // A stone basin of water, a column and a smaller bowl on it
+      const stone = std("#b8b2a6", 0.85);
+      g.add(cyl(4, 4.1, 1.6, stone, 0, 0, 0, 28));
+      g.add(cyl(3.6, 3.6, 0.1, mat("fountain-water", () => new THREE.MeshStandardMaterial({ color: "#3d8fc4", roughness: 0.08, metalness: 0.1 })), 0, 1.35, 0, 28));
+      g.add(cyl(0.45, 0.45, 3.2, stone, 0, 0, 0, 12));
+      g.add(cyl(1.2, 1.6, 0.5, stone, 0, 3.2, 0, 18));
+      break;
+    }
+    case "gate": {
+      // Two posts and a barred gate between them
+      const steel = std("#3f4549", 0.5, 0.5);
+      [-3, 3].forEach(z => g.add(box(0.4, 5, 0.4, steel, 0, 2.5, z)));
+      [0.6, 4.2].forEach(y => g.add(box(0.12, 0.12, 5.6, steel, 0, y, 0)));
+      for (let k = 0; k <= 7; k++) g.add(box(0.08, 3.6, 0.08, steel, 0, 2.4, -2.8 + (k * 5.6) / 7));
+      break;
+    }
   }
   g.userData.kind = AMENITY_KINDS[kind].label;
   return g;

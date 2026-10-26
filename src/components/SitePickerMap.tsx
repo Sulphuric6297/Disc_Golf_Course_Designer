@@ -8,7 +8,8 @@ import type { Units } from "../types";
 
 
 /** The frame's color (the theme's fern green), drawing or not. */
-const FRAME = "#a2cf6a";
+const OUTLINE = "#a2cf6a";
+const FRAME = "#ffffff";
 /** The locate button's picture (a crosshair, as the app's own icons draw one). */
 const LOCATE_SVG = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="2" x2="5" y1="12" y2="12"/><line x1="19" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="5"/><line x1="12" x2="12" y1="19" y2="22"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/></svg>';
 
@@ -26,7 +27,10 @@ export function SitePickerMap({
   onTooSmall,
   onLocate,
   selectViewSignal,
-  units = "ft"
+  units = "ft",
+  outline,
+  fit,
+  arrived
 }: {
   imagery: MapImagerySource;
   view: { lat: number; lon: number; zoom: number; key: number };
@@ -39,6 +43,12 @@ export function SitePickerMap({
   selectViewSignal: number;
   /** The frame's size is said in these. */
   units?: Units;
+  /** The park's (or course's) own outline, dashed round it. */
+  outline?: { lat: number; lon: number }[] | null;
+  /** Flown to, framed (each new `key`). */
+  fit?: { bounds: GeoBounds; key: number } | null;
+  /** What has come in so far, drawn on the map as it lands: the photo, then the shapes and trees. */
+  arrived?: Arrived | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -169,7 +179,7 @@ export function SitePickerMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    layersRef.current.forEach(layer => map.removeLayer(layer));
+    layersRef.current.forEach(layer => { if (map.hasLayer(layer)) map.removeLayer(layer); });
     const config = PICKER_LAYERS[imagery];
     const attribution = MAP_IMAGERY_SOURCES[imagery].attribution;
     const base = L.tileLayer(config.url, { maxZoom: 21, maxNativeZoom: config.maxNativeZoom, attribution });
@@ -195,7 +205,20 @@ export function SitePickerMap({
       : [];
     const overlays = config.overlays.map(url => L.tileLayer(url, { maxZoom: 21, maxNativeZoom: config.maxNativeZoom }));
     layersRef.current = [base, ...stateLayers, ...overlays];
-    layersRef.current.forEach(layer => layer.addTo(map));
+    [base, ...overlays].forEach(layer => layer.addTo(map));
+    // (a state's own photos only on the map, and in its credit, while the map is over that state)
+    const regions = STATE_ORTHO_SOURCES.map(src => L.latLngBounds([src.region.south, src.region.west], [src.region.north, src.region.east]));
+    const sync = () => {
+      const seen = map.getBounds();
+      stateLayers.forEach((layer, k) => {
+        const over = seen.intersects(regions[k]);
+        if (over && !map.hasLayer(layer)) layer.addTo(map);
+        else if (!over && map.hasLayer(layer)) map.removeLayer(layer);
+      });
+    };
+    sync();
+    map.on("moveend", sync);
+    return () => { map.off("moveend", sync); };
   }, [imagery]);
 
   // Selection rectangle with corner handles (resize) and a center handle (move).
@@ -213,10 +236,9 @@ export function SitePickerMap({
     if (!rectRef.current) {
       rectRef.current = L.rectangle(latLngBounds, {
         color: FRAME,
-        weight: 3,
+        weight: 2.5,
         fillColor: FRAME,
-        fillOpacity: 0.08,
-        dashArray: "8 6",
+        fillOpacity: 0.04,
         interactive: false
       }).addTo(map);
     } else {
@@ -285,5 +307,49 @@ export function SitePickerMap({
     handlesRef.current = markers;
   }, [selection]);
 
+  // The park's outline, dashed
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !outline || outline.length < 3) return;
+    const ring = L.polygon(outline.map(p => [p.lat, p.lon] as L.LatLngTuple), { color: OUTLINE, weight: 2.5, dashArray: "9 7", fillColor: OUTLINE, fillOpacity: 0.1, interactive: false }).addTo(map);
+    return () => { ring.remove(); };
+  }, [outline]);
+
+  // Flown to a place, framed
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !fit) return;
+    const b = L.latLngBounds([fit.bounds.south, fit.bounds.west], [fit.bounds.north, fit.bounds.east]);
+    // (clear of the panel on the right on a computer, of the sheet at the foot on a phone)
+    const wide = map.getSize().x > 700;
+    map.flyToBounds(b, { paddingTopLeft: [60, 80], paddingBottomRight: wide ? [400, 40] : [30, Math.round(map.getSize().y * 0.5)], duration: 1.4, maxZoom: 18 });
+  }, [fit?.key]);
+
+  // What has come in: the photo over the frame, then shapes and trees (one canvas for them all)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !arrived) return;
+    const b = arrived.bounds;
+    const at = (x: number, y: number): L.LatLngTuple => [b.north - (y / arrived.height) * (b.north - b.south), b.west + (x / arrived.width) * (b.east - b.west)];
+    const canvas = L.canvas({ padding: 0.2 });
+    const drawn: L.Layer[] = [];
+    if (arrived.photo) drawn.push(L.imageOverlay(arrived.photo, [[b.south, b.west], [b.north, b.east]], { opacity: 1, interactive: false }).addTo(map));
+    for (const a of arrived.areas) drawn.push(L.polygon(a.points.map(p => at(p.x, p.y)), { renderer: canvas, stroke: false, fillColor: a.color, fillOpacity: a.opacity ?? 0.55, interactive: false }).addTo(map));
+    for (const l of arrived.lines) drawn.push(L.polyline(l.points.map(p => at(p.x, p.y)), { renderer: canvas, color: l.color, weight: l.weight ?? 3, opacity: 0.95, interactive: false }).addTo(map));
+    for (const t of arrived.trees) drawn.push(L.circle(at(t.x, t.y), { renderer: canvas, radius: Math.max(1.5, t.r * 0.3048), stroke: true, weight: 0.6, color: "#d9f2b8", fillColor: "#2f5d34", fillOpacity: 0.7, interactive: false }).addTo(map));
+    return () => { drawn.forEach(d => d.remove()); };
+  }, [arrived]);
+
   return <div ref={containerRef} className="absolute inset-0 bg-white/[0.07]" />;
 }
+
+/** What has come in so far, in plan feet over the frame (`bounds`, `width` x `height` ft). */
+export type Arrived = {
+  bounds: GeoBounds;
+  width: number;
+  height: number;
+  photo?: string;
+  areas: { points: { x: number; y: number }[]; color: string; opacity?: number }[];
+  lines: { points: { x: number; y: number }[]; color: string; weight?: number }[];
+  trees: { x: number; y: number; r: number }[];
+};

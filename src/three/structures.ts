@@ -281,6 +281,17 @@ class Mesher {
     }
   }
 
+  /** A triangle with a normal at each corner (round things, shaded smooth), turned to face them. */
+  smooth(p: [V, V, V], n: [V, V, V], uv: [number, number][]) {
+    const f = new V3().subVectors(p[1], p[0]).cross(new V3().subVectors(p[2], p[0]));
+    if (f.lengthSq() < 1e-12) return;
+    for (const i of f.dot(n[0].clone().add(n[1]).add(n[2])) < 0 ? [0, 2, 1] : [0, 1, 2]) {
+      this.pos.push(p[i].x, p[i].y, p[i].z);
+      this.nor.push(n[i].x, n[i].y, n[i].z);
+      this.uv.push(uv[i][0], uv[i][1]);
+    }
+  }
+
   /** A four-cornered face a-b-c-d (in order round its edge). */
   quad(a: V, b: V, c: V, d: V, uv: [number, number][], out?: V) {
     this.tri(a, b, c, [uv[0], uv[1], uv[2]], out);
@@ -699,9 +710,81 @@ export const createStructure = (st: StructureItem, groundAt: Ground) => {
   return group;
 };
 
+// ------------------------------------------------------------------ fences
+
+/** Chain link's wire: 2 in mesh (wire to wire), so its diamonds are 2.83 in from one to the next. */
+const DIAMOND = (2 * Math.SQRT2) / 12;
+/** Galvanized pipe, how far round (ft): line posts (2⅜ in), end and corner posts (2⅞ in), the top
+ * rail (1⅝ in). */
+const LINE_POST = 2.375 / 24, END_POST = 2.875 / 24, TOP_RAIL = 1.625 / 24;
+
+/** A round pipe standing at `p` from `y0` up to `y1`, `r` ft round, with a low dome on top. */
+const pipe = (m: Mesher, p: P, y0: number, y1: number, r: number, dome = r * 0.6) => {
+  const N = 10;
+  const dir = (k: number) => new V3(Math.cos((k / N) * Math.PI * 2), 0, Math.sin((k / N) * Math.PI * 2));
+  const at = (d: V, y: number, rr = r) => new V3(p.x + d.x * rr, y, p.y + d.z * rr);
+  const top = y1 + dome, mid = y1 + dome * 0.7, top0 = new V3(p.x, top, p.y);
+  for (let k = 0; k < N; k++) {
+    const d0 = dir(k), d1 = dir(k + 1), u0 = (k / N) * Math.PI * 2 * r, u1 = ((k + 1) / N) * Math.PI * 2 * r;
+    m.smooth([at(d0, y0), at(d1, y0), at(d1, y1)], [d0, d1, d1], [[u0, y0], [u1, y0], [u1, y1]]);
+    m.smooth([at(d0, y0), at(d1, y1), at(d0, y1)], [d0, d1, d0], [[u0, y0], [u1, y1], [u0, y1]]);
+    if (dome <= 0) continue;
+    // (the dome: round from the side up to a flat-ish top)
+    const e0 = d0.clone().addScaledVector(UP, 0.4).normalize(), e1 = d1.clone().addScaledVector(UP, 0.4).normalize();
+    const f0 = d0.clone().multiplyScalar(0.55).add(UP).normalize(), f1 = d1.clone().multiplyScalar(0.55).add(UP).normalize();
+    m.smooth([at(d0, y1), at(d1, y1), at(d1, mid, r * 0.7)], [e0, e1, f1], [[u0, y1], [u1, y1], [u1, mid]]);
+    m.smooth([at(d0, y1), at(d1, mid, r * 0.7), at(d0, mid, r * 0.7)], [e0, f1, f0], [[u0, y1], [u1, mid], [u0, mid]]);
+    m.smooth([at(d0, mid, r * 0.7), at(d1, mid, r * 0.7), top0], [f0, f1, UP], [[u0, mid], [u1, mid], [(u0 + u1) / 2, top]]);
+  }
+};
+
+/** A round rail through `pts` (rings square to the way it runs), `r` ft round. */
+const tube = (m: Mesher, pts: V[], r: number) => {
+  const N = 6, n = pts.length;
+  const rings: V[][] = [], s: number[] = [];
+  pts.forEach((c, i) => {
+    const t = pts[Math.min(n - 1, i + 1)].clone().sub(pts[Math.max(0, i - 1)]).normalize();
+    const side = new V3().crossVectors(t, UP).normalize(), up = new V3().crossVectors(side, t);
+    rings.push(Array.from({ length: N + 1 }, (_, k) => side.clone().multiplyScalar(Math.cos((k / N) * Math.PI * 2)).addScaledVector(up, Math.sin((k / N) * Math.PI * 2))));
+    s.push(i ? s[i - 1] + c.distanceTo(pts[i - 1]) : 0);
+  });
+  for (let i = 0; i + 1 < n; i++) {
+    const A = rings[i], B = rings[i + 1], a = pts[i], b = pts[i + 1];
+    const at = (c: V, d: V) => c.clone().addScaledVector(d, r);
+    for (let k = 0; k < N; k++) {
+      const v0 = (k / N) * Math.PI * 2 * r, v1 = ((k + 1) / N) * Math.PI * 2 * r;
+      m.smooth([at(a, A[k]), at(b, B[k]), at(b, B[k + 1])], [A[k], B[k], B[k + 1]], [[s[i], v0], [s[i + 1], v0], [s[i + 1], v1]]);
+      m.smooth([at(a, A[k]), at(b, B[k + 1]), at(a, A[k + 1])], [A[k], B[k + 1], A[k + 1]], [[s[i], v0], [s[i + 1], v1], [s[i], v1]]);
+    }
+  }
+};
+
+/** How far along a line its corners are (where it turns more than `deg` degrees). */
+const cornersOf = (pts: P[], deg: number) => {
+  const q = pts.filter((p, i) => !i || Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y) > 1e-6);
+  const out: number[] = [];
+  let s = 0;
+  for (let i = 1; i + 1 < q.length; i++) {
+    s += Math.hypot(q[i].x - q[i - 1].x, q[i].y - q[i - 1].y);
+    let d = Math.abs(Math.atan2(q[i + 1].y - q[i].y, q[i + 1].x - q[i].x) - Math.atan2(q[i].y - q[i - 1].y, q[i].x - q[i - 1].x));
+    if (d > Math.PI) d = Math.PI * 2 - d;
+    if (d > (deg * Math.PI) / 180) out.push(s);
+  }
+  return out;
+};
+
+/** The point `at` ft along a sampled path, and which way the path runs there. */
+const alongAt = (samples: ReturnType<typeof samplePath>, at: number) => {
+  let j = 0;
+  while (j < samples.length - 2 && samples[j + 1].s < at) j++;
+  const a = samples[j], b = samples[j + 1], t = Math.max(0, Math.min(1, (at - a.s) / Math.max(1e-6, b.s - a.s)));
+  return { p: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, angle: a.angle };
+};
+
 /**
  * A fence along a drawn line, standing on the ground: wooden posts every 8 ft with a top and a
- * middle rail; solid boards with a cap; or chain link (see-through mesh) on metal posts with a top
+ * middle rail; solid boards with a cap; or chain link (see-through wire mesh at its real size) on
+ * round galvanized posts, end and corner posts and line posts no more than 10 ft apart, with a top
  * rail. Its meshes cast and catch shadows.
  */
 export const createFence = (points: P[], groundAt: Ground, height = 4, style: FenceStyle = "rail") => {
@@ -711,49 +794,90 @@ export const createFence = (points: P[], groundAt: Ground, height = 4, style: Fe
   if (samples.length < 2) return group;
   const H = Math.max(1.5, Math.min(16, height));
   const ground = samples.map(p => groundAt(p.x, p.y));
+  const total = samples[samples.length - 1].s;
+  if (style === "chain") {
+    const metal = new Mesher(), wire = new Mesher();
+    const rail = H - TOP_RAIL;
+    // Posts: one at each end and corner (the bigger end posts), line posts evenly between
+    const stops = [0, ...cornersOf(points, 20).filter(s => s > 1 && s < total - 1), total];
+    const postAt = (s: number, end: boolean) => {
+      const { p } = alongAt(samples, s), gy = groundAt(p.x, p.y);
+      if (end) pipe(metal, p, gy - 0.6, gy + H + 0.12, END_POST);
+      else {
+        // (a line post's loop cap, the top rail through it)
+        pipe(metal, p, gy - 0.6, gy + rail, LINE_POST, 0);
+        pipe(metal, p, gy + rail - 0.1, gy + rail + 0.07, LINE_POST + 0.03, 0.05);
+      }
+    };
+    stops.forEach((s0, i) => {
+      postAt(s0, true);
+      const len = (stops[i + 1] ?? s0) - s0, n = Math.ceil(len / 10);
+      for (let k = 1; k < n; k++) postAt(s0 + (k * len) / n, false);
+    });
+    tube(metal, samples.map((p, i) => w3(p, ground[i] + rail)), TOP_RAIL);
+    // The wire on the face of the posts, from just off the ground to the top rail; texture in feet
+    // from its bottom edge, so the diamonds keep their size on a slope
+    const off = LINE_POST + 0.012, lo = 0.15;
+    for (let i = 0; i + 1 < samples.length; i++) {
+      const a = aside(samples[i], off), b = aside(samples[i + 1], off), s0 = samples[i].s, s1 = samples[i + 1].s;
+      wire.quad(w3(a, ground[i] + lo), w3(b, ground[i + 1] + lo), w3(b, ground[i + 1] + H), w3(a, ground[i] + H), [[s0, 0], [s1, 0], [s1, H - lo], [s0, H - lo]]);
+    }
+    // A tension bar down each end of the wire, where it's fastened to the end post
+    for (const [d, sgn] of [[samples[0], 1], [samples[samples.length - 1], -1]] as const) {
+      const ex = new V3(Math.cos(d.angle), 0, Math.sin(d.angle)), ez = new V3(-ex.z, 0, ex.x);
+      const c = aside(d, off + 0.015), gy = groundAt(d.x, d.y);
+      metal.box(w3(c, gy + (lo + H) / 2).addScaledVector(ex, sgn * (END_POST + 0.05)), ex, UP, ez, 0.03, (H - lo) / 2, 0.012);
+    }
+    const posts = new THREE.Mesh(metal.geometry(), chainPost());
+    posts.name = "metal";
+    posts.castShadow = posts.receiveShadow = true;
+    const sheet = new THREE.Mesh(wire.geometry(), chainLink());
+    sheet.name = "chain";
+    sheet.castShadow = true;
+    sheet.customDepthMaterial = chainShadow!;
+    // (drawn after the paint on the ground: seen through it, never hiding it)
+    sheet.renderOrder = 7;
+    group.add(posts, sheet);
+    return group;
+  }
   const parts: Parts = {};
   const wood = (parts.timber ??= new Mesher());
   // (a post every 8 ft or so, one at each end, square to the line)
-  const total = samples[samples.length - 1].s, count = Math.max(1, Math.round(total / 8));
-  let j = 0;
+  const count = Math.max(1, Math.round(total / 8));
   for (let k = 0; k <= count; k++) {
-    const at = (total * k) / count;
-    while (j < samples.length - 2 && samples[j + 1].s < at) j++;
-    const a = samples[j], b = samples[j + 1], t = Math.max(0, Math.min(1, (at - a.s) / Math.max(1e-6, b.s - a.s)));
-    const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, gy = groundAt(p.x, p.y);
-    if (style === "chain") post((parts.metal ??= new Mesher()), p, gy - 0.6, gy + H + 0.1, 0.18, a.angle);
-    else post(wood, p, gy - 0.8, gy + H + (style === "boards" ? 0.15 : 0.2), style === "boards" ? 0.4 : 0.36, a.angle);
+    const { p, angle } = alongAt(samples, (total * k) / count), gy = groundAt(p.x, p.y);
+    post(wood, p, gy - 0.8, gy + H + (style === "boards" ? 0.15 : 0.2), style === "boards" ? 0.4 : 0.36, angle);
   }
   if (style === "rail") {
     sweep(wood, samples, ground.map(y => y + H - 0.45), ground.map(y => y + H - 0.12), 0, 0.09);
     sweep(wood, samples, ground.map(y => y + H * 0.45), ground.map(y => y + H * 0.45 + 0.33), 0, 0.09);
-  } else if (style === "boards") {
+  } else {
     sweep(wood, samples, ground.map(y => y + 0.15), ground.map(y => y + H), 0, 0.06);
     sweep(wood, samples, ground.map(y => y + H), ground.map(y => y + H + 0.18), 0, 0.12);
-  } else {
-    sweep((parts.metal ??= new Mesher()), samples, ground.map(y => y + H - 0.12), ground.map(y => y + H + 0.02), 0, 0.07);
   }
   for (const [key, m] of Object.entries(parts) as [MatKey, Mesher][]) {
     if (m.empty) continue;
-    const mesh = new THREE.Mesh(m.geometry(), style === "chain" && key === "metal" ? chainPost() : material(key));
+    const mesh = new THREE.Mesh(m.geometry(), material(key));
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
   }
-  // Chain link: a grey see-through sheet between the posts
-  if (style === "chain") {
-    const mesh = new Mesher();
-    sweep(mesh, samples, ground.map(y => y + 0.1), ground.map(y => y + H - 0.1), 0, 0.01, false, false);
-    const sheet = new THREE.Mesh(mesh.geometry(), chainLink());
-    sheet.castShadow = true;
-    group.add(sheet);
-  }
   return group;
 };
-let chainMat: THREE.Material | null = null, chainPostMat: THREE.Material | null = null;
+// (the 3D view only draws when something changes: told when a part's picture arrives)
+const partLoaded = new Set<() => void>();
+/** Calls back when a part's real texture has loaded; returns the call to stop. */
+export const onPartLoaded = (f: () => void) => { partLoaded.add(f); return () => { partLoaded.delete(f); }; };
+let chainMat: THREE.MeshStandardMaterial | null = null, chainShadow: THREE.MeshDepthMaterial | null = null, chainPostMat: THREE.Material | null = null;
 /** Galvanized posts and rails. */
-const chainPost = () => (chainPostMat ??= Object.assign(new THREE.MeshStandardMaterial({ color: "#9aa3a6", roughness: 0.45, metalness: 0.55 }), { userData: { shared: true } }));
-/** Chain link: a diamond mesh you see through. */
+const chainPost = () => (chainPostMat ??= Object.assign(new THREE.MeshStandardMaterial({ color: "#8a9296", roughness: 0.5, metalness: 0.55 }), { userData: { shared: true } }));
+/**
+ * Chain link: a diamond mesh you see through, blended (far off, the wire's mipmaps fade it to a
+ * faint grey veil rather than flickering). Drawn on a canvas at first, one diamond, and then the
+ * real wire from loafbrr's Chainlink Fence Modular Kit (CC0; public/parts/fence/chainlink.png, 4 ×
+ * 4 diamonds) once it's in, in the same material, so fences already standing change with it. Its
+ * shadow is the wire only where the shadow map is fine enough to show it.
+ */
 const chainLink = () => {
   if (chainMat) return chainMat;
   const c = document.createElement("canvas");
@@ -762,11 +886,29 @@ const chainLink = () => {
   g.strokeStyle = "rgba(200,206,208,0.95)";
   g.lineWidth = 3;
   g.beginPath(); g.moveTo(0, 32); g.lineTo(32, 0); g.lineTo(64, 32); g.lineTo(32, 64); g.closePath(); g.stroke();
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(2, 2);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  chainMat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.25, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.4 });
-  chainMat.userData.shared = true;
-  return chainMat;
+  const drawn = new THREE.CanvasTexture(c);
+  const tile = (tex: THREE.Texture, ft: number) => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(1 / ft, 1 / ft);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    tex.userData.shared = true;
+    return tex;
+  };
+  const mat = (chainMat = new THREE.MeshStandardMaterial({ map: tile(drawn, DIAMOND), color: "#c4c8ca", transparent: true, opacity: 1.5, alphaTest: 0.02, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.45 }));
+  const shadow = (chainShadow = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: drawn, alphaTest: 0.5, side: THREE.DoubleSide }));
+  mat.userData.shared = shadow.userData.shared = true;
+  // (opacity over 1: the wire a little stronger, so a far fence still reads as one. And read a
+  // little softer than the mipmaps alone would, so the knots of wire, in rows, don't sparkle a
+  // way off; close up it's as sharp)
+  mat.onBeforeCompile = sh => {
+    sh.fragmentShader = sh.fragmentShader.replace("#include <map_fragment>", THREE.ShaderChunk.map_fragment.replace("texture2D( map, vMapUv )", "texture2D( map, vMapUv, 0.75 )"));
+  };
+  new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}parts/fence/chainlink.png`, real => {
+    mat.map = shadow.map = tile(real, 4 * DIAMOND);
+    mat.needsUpdate = shadow.needsUpdate = true;
+    drawn.dispose();
+    for (const f of partLoaded) f();
+  }, undefined, () => { /* (the drawn one stays) */ });
+  return mat;
 };

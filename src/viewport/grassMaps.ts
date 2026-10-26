@@ -1,13 +1,14 @@
 // What grows where, for the 3D grass (see three/grass): the blades' height and density, and their
 // color, painted from the course. Mown fairways and greens, longer grass between the holes, tall
-// grass in the rough, a thin forest floor in the woods, and none on water, sand, paving, paths,
-// roads, creeks, tee pads or painted dirt.
+// grass in the rough, a thin forest floor in the woods, mown grass on sports fields, and none on
+// water, sand, paving, paths, roads, creeks, tee pads, painted dirt, courts, pools or infields.
 import { heightAt } from "../lib/terrainGrid";
 import { corridor, rectCorners, smoothPath } from "../lib/geom";
 import { GROUND_MATERIALS, PAINT_CELL_FT } from "../lib/groundPaint";
 import { LINE_KINDS } from "../constants";
 import { drawnAreas, fairwayOutline, linePath, teeAim, teeLines, widthAlong, widthVaries } from "../lib/course";
 import { landscapeOf } from "../lib/landscapes";
+import { GRASS_INKS, fieldPlan } from "../lib/fieldPlan";
 import { GRASS, type GrassMaps, type GrassTerrain } from "../three/grass";
 import type { AreaItem, LineItem, P, TeeItem } from "../types";
 import type { ViewDoc } from "./types";
@@ -82,6 +83,18 @@ export const grassMaps = (doc: ViewDoc): GrassMaps | null => {
   for (const a of areas) if (a.kind === "fairway" || a.kind === "green") poly(a.points, field(GRASS.fairway, 1), fairTint);
   // Nothing grows on water, sand, paving or in buildings
   for (const a of areas) if (a.kind === "water" || a.kind === "sand" || a.kind === "parking" || a.kind === "building") poly(a.points, field(0, 0), null);
+  // Fields: mown where they're grass (an outfield, a soccer pitch), none on dirt, courts, water or mulch
+  for (const a of areas) {
+    if (a.kind !== "field") continue;
+    const plan = fieldPlan(a);
+    if (!plan) continue;
+    for (const m of plan.marks) {
+      if (m.k === "line") continue;
+      const grows = GRASS_INKS.has(m.ink) ? field(GRASS.fairway, 1) : field(0, 0);
+      if (m.k === "fill") poly(m.pts, grows, GRASS_INKS.has(m.ink) ? fairTint : null);
+      else { f.g.beginPath(); f.g.arc(m.c.x, m.c.y, m.r, 0, Math.PI * 2); f.g.fillStyle = grows; f.g.fill(); }
+    }
+  }
   for (const l of lines) {
     const w = l.width ?? LINE_KINDS[l.kind].width;
     if (l.kind !== "path" && l.kind !== "road" && l.kind !== "stream") continue;

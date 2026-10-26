@@ -1,6 +1,7 @@
 // The ground in the Design look for flyovers, the tee view and videos: the painted map of the
 // whole site (the Forest painting, in the course's own colors), draped on the terrain in place of
 // the satellite photo. Painted a slice at a time, once per version of the course.
+import { measuredStanding, onStanding } from "../lib/standing";
 import { useEffect, useState } from "react";
 import { canopyFor, detailArea, forestCanvasAsync, paintedFrom, woodedOf, type WoodedGrid } from "../lib/forest";
 import { courseStats, holeStats } from "../lib/holeStats";
@@ -58,7 +59,8 @@ const keys = new WeakMap<CourseDoc, string>();
 const paintKey = (doc: CourseDoc) => {
   let key = keys.get(doc);
   if (key === undefined) keys.set(doc, (key = keyOf(doc)));
-  return key;
+  // (and the measured trees standing, worked out by the 3D view after the course changes)
+  return doc.lidar?.trees.length ? `${key}|${measuredStanding()?.key ?? ""}` : key;
 };
 const keyOf = (doc: CourseDoc) =>
   JSON.stringify([
@@ -195,13 +197,15 @@ export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Pro
 export const usePaintedGround = (active: boolean): [PaintedGround | null, boolean] => {
   const doc = useCourse(s => s.doc);
   const [got, setGot] = useState<{ key: string; p: PaintedGround } | null>(null);
+  const [trees, bump] = useState(0);
+  useEffect(() => onStanding(() => bump(n => n + 1)), []);
   useEffect(() => {
     if (!active) return;
     let live = true;
     const key = paintKey(doc);
     void paintedGround(doc).then(p => { if (live && p) setGot({ key, p }); });
     return () => { live = false; };
-  }, [active, doc]);
+  }, [active, doc, trees]);
   const fresh = !!got && got.key === paintKey(doc);
   return [active ? got?.p ?? null : null, fresh];
 };

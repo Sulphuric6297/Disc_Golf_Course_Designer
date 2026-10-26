@@ -1,9 +1,11 @@
 // OpenStreetMap's paths, roads, water, woods, grass and buildings from OpenFreeMap's vector tiles
 // (free, no key, served from a CDN), for when every Overpass server is busy. The tiles follow the
 // OpenMapTiles schema; this reads them (Mapbox Vector Tile protobufs) without a library.
-import type { GeoBounds } from "./core";
+import type { ParkDetail, ParkKind } from "../../types";
+import { anySignal, pointInLatLonPolygon, type GeoBounds } from "./core";
 import { clipPathToRect, clipPolygonToRect } from "../geom";
-import { osmBuilding, type LatLon, type OsmFeature } from "./osm";
+import { osmAmenity, osmBuilding, type LatLon, type OsmFeature } from "./osm";
+import { amenityOf, fieldKindOfTags } from "./parkKinds";
 
 export const OPENFREEMAP_TILEJSON = "https://tiles.openfreemap.org/planet";
 /** The tiles' most detailed zoom (each about 2.4 km across at the equator). */
@@ -149,6 +151,21 @@ const ringArea = (r: { x: number; y: number }[]) => {
 const ROAD_CLASSES = new Set(["motorway", "trunk", "primary", "secondary", "tertiary", "minor", "service", "busway"]);
 const STREAM_CLASSES = new Set(["stream", "river", "canal", "drain", "ditch"]);
 const GRASS_CLASSES = new Set(["grass"]);
+/** A park's things in the tiles (the landuse layer's classes, the poi layer's subclasses). */
+const TILE_PARKS = new Set(["pitch", "playground", "track", "dog_park", "sports_centre", "swimming_pool", "skatepark", "water_park"]);
+/** What a park's thing in the tiles is (its sport, where the tile says). */
+const tilePark = (cls: string, tags: TileFeature["tags"]): ParkDetail => {
+  const sport = typeof tags.sport === "string" && tags.sport ? tags.sport : undefined;
+  const what = (cls === "swimming_pool" ? "pool" : cls === "water_park" ? "splash_pad" : TILE_PARKS.has(cls) ? cls : "pitch") as ParkKind;
+  return { what, ...(sport ? { sport } : {}) };
+};
+/** A park's thing in the tiles as OpenStreetMap tags (what the tiles carry of them: its class, its
+ * sport), for the fields worked out from tags. */
+const tileTags = (cls: string, tags: TileFeature["tags"]): Record<string, string> => ({
+  leisure: cls,
+  ...(typeof tags.sport === "string" && tags.sport ? { sport: tags.sport } : {}),
+  ...(typeof tags.name === "string" ? { name: tags.name } : {})
+});
 
 /** What a tile feature is for the course map (the OpenMapTiles schema), or null to leave it out. */
 export const classifyTileFeature = (layer: string, f: TileFeature): { geom: "line" | "area"; kind: OsmFeature["kind"] } | null => {
@@ -169,6 +186,8 @@ export const classifyTileFeature = (layer: string, f: TileFeature): { geom: "lin
     return null;
   }
   if (layer === "building" && f.type === 3) return { geom: "area", kind: "building" };
+  // Ball fields, playgrounds and running tracks: out of play, as from Overpass (what each is kept)
+  if (layer === "landuse" && f.type === 3 && TILE_PARKS.has(cls)) return { geom: "area", kind: fieldKindOfTags(tileTags(cls, f.tags)) ? "field" : "nogo" };
   return null;
 };
 
@@ -184,6 +203,18 @@ export const tileFeatures = (layers: TileLayer[], tx: number, ty: number, z = ZO
       return { lon: (px / n) * 360 - 180, lat: (Math.atan(Math.sinh(Math.PI * (1 - (2 * py) / n))) * 180) / Math.PI };
     };
     for (const f of layer.features) {
+      // Benches, toilets, drinking water and the rest on one spot (the tiles keep OpenStreetMap's own tag as the subclass)
+      if (layer.name === "poi" && f.type === 1) {
+        const sub = String(f.tags.subclass ?? ""), cls = String(f.tags.class ?? "");
+        const amenity = osmAmenity({ amenity: sub, leisure: sub, man_made: sub }) ?? amenityOf({ amenity: sub, leisure: sub, man_made: sub, highway: sub, barrier: sub });
+        const p = f.rings[0]?.[0];
+        if (!p || p.x < 0 || p.y < 0 || p.x > layer.extent || p.y > layer.extent) continue;
+        const name = typeof f.tags.name === "string" ? f.tags.name : undefined;
+        if (amenity && (cls !== "parking" || sub === "parking")) out.push({ geom: "point", kind: "amenity", amenity, points: [ll(p)], name });
+        else if (sub === "shelter") out.push({ geom: "point", kind: "shelter", points: [ll(p)], name });
+        else if (TILE_PARKS.has(sub)) out.push({ geom: "point", kind: "park", points: [ll(p)], name, park: tilePark(sub, f.tags) });
+        continue;
+      }
       const what = classifyTileFeature(layer.name, f);
       if (!what) continue;
       const name = typeof f.tags.name === "string" ? f.tags.name : undefined;
@@ -197,9 +228,10 @@ export const tileFeatures = (layers: TileLayer[], tx: number, ty: number, z = ZO
           if (inside.length < 3) continue;
           const pts = inside.map(ll);
           if (what.kind === "building") {
+            // (its height to the top of the roof, as OpenStreetMap's own)
             const h = Number(f.tags.render_height);
-            out.push({ geom: "area", kind: "building", points: pts, name, building: { ...osmBuilding({}), heightM: Number.isFinite(h) && h > 0 ? h : undefined } });
-          } else out.push({ geom: "area", kind: what.kind as "water", points: pts, name });
+            out.push({ geom: "area", kind: "building", points: pts, name, building: { ...osmBuilding({}), topM: Number.isFinite(h) && h > 0 ? h : undefined } });
+          } else out.push({ geom: "area", kind: what.kind as "water", points: pts, name, ...(what.kind === "nogo" || what.kind === "field" ? { park: tilePark(String(f.tags.class ?? ""), f.tags), tags: tileTags(String(f.tags.class ?? ""), f.tags) } : {}) });
         }
       }
     }
@@ -249,6 +281,13 @@ export const joinLines = (features: OsmFeature[]): OsmFeature[] => {
   return [...features.filter(f => f.geom !== "line"), ...lines.filter((_, i) => !gone.has(i))];
 };
 
+/** A park's thing given both as an area and as a point (the tiles' points of interest repeat an
+ * area's middle): the area only. */
+export const withoutTwins = (features: OsmFeature[]): OsmFeature[] => {
+  const areas = features.flatMap(f => (f.geom === "area" && f.kind !== "dgCourse" && f.park ? [{ what: f.park.what, points: f.points }] : []));
+  return features.filter(f => f.kind !== "park" || !areas.some(a => a.what === f.park.what && pointInLatLonPolygon(f.points[0], a.points)));
+};
+
 /** The tiles (x, y at ZOOM) covering a box. */
 export const tilesFor = (b: GeoBounds, z = ZOOM) => {
   const n = 2 ** z;
@@ -260,23 +299,24 @@ export const tilesFor = (b: GeoBounds, z = ZOOM) => {
 };
 
 /** What OpenFreeMap's tiles hold for a box. Throws when they can't be reached. */
-export const fetchTileFeatures = async (bounds: GeoBounds, timeoutMs = 20000): Promise<OsmFeature[]> => {
+export const fetchTileFeatures = async (bounds: GeoBounds, timeoutMs = 20000, signal?: AbortSignal): Promise<OsmFeature[]> => {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const stop = anySignal(ctrl.signal, signal);
   try {
-    const tj = await (await fetch(OPENFREEMAP_TILEJSON, { signal: ctrl.signal })).json();
+    const tj = await (await fetch(OPENFREEMAP_TILEJSON, { signal: stop })).json();
     const template = String(tj.tiles?.[0] ?? "");
     if (!template) throw new Error("OpenFreeMap has no tiles.");
     const tiles = tilesFor(bounds);
     if (tiles.length > 16) throw new Error("Too big an area for the map tiles.");
-    const out: OsmFeature[] = [];
-    for (const t of tiles) {
-      const res = await fetch(template.replace("{z}", String(ZOOM)).replace("{x}", String(t.x)).replace("{y}", String(t.y)), { signal: ctrl.signal });
-      if (res.status === 204 || res.status === 404) continue;
+    // (all the tiles at once: they come from a CDN)
+    const each = await Promise.all(tiles.map(async t => {
+      const res = await fetch(template.replace("{z}", String(ZOOM)).replace("{x}", String(t.x)).replace("{y}", String(t.y)), { signal: stop });
+      if (res.status === 204 || res.status === 404) return [];
       if (!res.ok) throw new Error(`OpenFreeMap ${res.status}`);
-      out.push(...tileFeatures(decodeMvt(new Uint8Array(await res.arrayBuffer())), t.x, t.y));
-    }
-    return joinLines(out);
+      return tileFeatures(decodeMvt(new Uint8Array(await res.arrayBuffer())), t.x, t.y);
+    }));
+    return withoutTwins(joinLines(each.flat()));
   } finally {
     clearTimeout(timer);
   }

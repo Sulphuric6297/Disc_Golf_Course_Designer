@@ -1,10 +1,15 @@
 // Measuring the trees and the ground from the air (LiDAR) for the site already brought in: the
-// trees measured before (and any kept or taken out) are replaced, the ground too, and the import's
+// trees measured before (and any kept or taken out) are replaced, the ground too (the survey's,
+// checked against USGS 3DEP's), the buildings without a height get the survey's, and the import's
 // last step follows (the stands of woods, the photo's trees and woods taken out where the survey
 // has them); Undo brings it all back.
+import { usgsDem } from "../lib/geo/elevation";
+import { withMeasuredHeights } from "../lib/geo/buildings";
 import { fetchLidar } from "../lib/geo/lidarFetch";
 import { groundOnGrid } from "../lib/lidar";
-import { withMeasuredTrees } from "../lib/importSite";
+import { canopyKeepOut, signed, withMeasuredTrees } from "../lib/importSite";
+import { canopyStands } from "../lib/canopy";
+import type { P } from "../types";
 import { changeDoc, getDoc, useEditor } from "./course";
 import { toast } from "./toast";
 
@@ -14,7 +19,10 @@ export const measureLidar = async () => {
   const busy = (f: number | null) => useEditor.getState().set({ lidarBusy: f });
   busy(0);
   try {
-    const got = await fetchLidar({ ...d.site.bounds, width: d.canvas.width, height: d.canvas.height }, f => busy(f));
+    const ref = { ...d.site.bounds, width: d.canvas.width, height: d.canvas.height };
+    // (no tree stands on a building the course has)
+    const outlines = d.items.filter(i => i.type === "structure" && (i.kind === "building" || i.kind === "shelter")).map(i => (i as { points: P[] }).points);
+    const got = await fetchLidar(ref, f => busy(f), { dem: usgsDem(d.site.bounds, d.canvas.width, d.canvas.height), outlines });
     if (!got) {
       // (remembered: the Site step says so, with Check again)
       changeDoc(doc => ({ site: { ...doc.site, noLidar: true, lidarFailed: undefined } }), false);
@@ -22,13 +30,17 @@ export const measureLidar = async () => {
       return;
     }
     const g = groundOnGrid(got.measured, d.canvas.width, d.canvas.height, d.gridSize);
-    changeDoc(doc => ({
-      lidar: { source: got.source, trees: got.trees },
-      terrainHeights: g.heights,
-      terrainOriginal: undefined,
-      items: withMeasuredTrees(doc.items, got.trees, doc.canvas.width, doc.canvas.height).items,
-      site: { ...doc.site, baseElevationFt: Math.round(g.min * 10) / 10, elevationSource: got.source, noLidar: undefined, lidarFailed: undefined }
-    }));
+    changeDoc(doc => {
+      const items = withMeasuredHeights(doc.items, got.measured, signed);
+      // (the woods from the measured canopy, kept off what's built, water, fields and roads, as on the import)
+      return {
+        lidar: { source: got.source, trees: got.trees },
+        terrainHeights: g.heights,
+        terrainOriginal: undefined,
+        items: withMeasuredTrees(items, got.trees, doc.canvas.width, doc.canvas.height, canopyStands(got.measured, got.trees, canopyKeepOut(items)).stands).items,
+        site: { ...doc.site, baseElevationFt: Math.round(g.min * 10) / 10, elevationSource: got.source, noLidar: undefined, lidarFailed: undefined }
+      };
+    });
     toast(`${got.trees.length.toLocaleString()} trees measured from the air (${got.source}).`, "success", true, undefined, 8000);
   } catch (err) {
     console.warn("LiDAR failed", err);

@@ -52,6 +52,25 @@ const terrariumTile = (z: number, x: number, y: number) => {
   return encode({ width: size, height: size, data, channels: 3, depth: 8 });
 };
 
+/** The photo's color at a spot (m east and north of the middle; gx, gy: its pixel, for the grain),
+ * and its near-infrared brightness: leaves brightest, grass a little less, the path and the pond dark. */
+const photoColor = (e: number, n: number, gx: number, gy: number) => {
+  const h = Math.sin(gx * 12.9898 + gy * 78.233) * 43758.5453;
+  const noise = (h - Math.floor(h) - 0.5) * 26;
+  let col = [92 + noise, 132 + noise, 64 + noise * 0.5, 150 + noise * 0.5];
+  if (Math.abs(n - e * 0.3 + 20) < 1.2) col = [196 + noise * 0.3, 176 + noise * 0.3, 140, 110];
+  if (Math.hypot(e - POND.e, n - POND.n) < POND.r) col = [40, 80 + noise * 0.2, 120, 25];
+  for (const t of PHOTO_TREES) {
+    const d = Math.hypot(e - t.e, n - t.n);
+    if (d < t.r) {
+      const c = Math.sin(Math.floor(e / 0.5) * 91.7 + Math.floor(n / 0.5) * 47.3) * 9631.7;
+      const leaf = (c - Math.floor(c) - 0.5) * 60;
+      col = [38 + leaf * 0.6, 72 + leaf, 30 + leaf * 0.4, 205 + leaf * 0.5];
+    }
+  }
+  return col;
+};
+
 /** Imagery tile: textured grass with a pond, a footpath, tree crowns and a stand of trees. */
 const imageryTile = (z: number, tx: number, ty: number) => {
   const size = 256;
@@ -63,20 +82,8 @@ const imageryTile = (z: number, tx: number, ty: number) => {
     for (let px = 0; px < size; px++) {
       const gx = tx * size + px;
       const lon = ((gx + 0.5) / world) * 360 - 180;
-      const h = Math.sin(gx * 12.9898 + gy * 78.233) * 43758.5453;
-      const noise = (h - Math.floor(h) - 0.5) * 26;
       const { e, n } = local(lat, lon);
-      let col = [92 + noise, 132 + noise, 64 + noise * 0.5];
-      if (Math.abs(n - e * 0.3 + 20) < 1.2) col = [196 + noise * 0.3, 176 + noise * 0.3, 140];
-      if (Math.hypot(e - POND.e, n - POND.n) < POND.r) col = [40, 80 + noise * 0.2, 120];
-      for (const t of PHOTO_TREES) {
-        const d = Math.hypot(e - t.e, n - t.n);
-        if (d < t.r) {
-          const c = Math.sin(Math.floor(e / 0.5) * 91.7 + Math.floor(n / 0.5) * 47.3) * 9631.7;
-          const leaf = (c - Math.floor(c) - 0.5) * 60;
-          col = [38 + leaf * 0.6, 72 + leaf, 30 + leaf * 0.4];
-        }
-      }
+      const col = photoColor(e, n, gx, gy);
       const i = (py * size + px) * 4;
       data[i] = col[0];
       data[i + 1] = col[1];
@@ -85,6 +92,28 @@ const imageryTile = (z: number, tx: number, ty: number) => {
     }
   }
   return encode({ width: size, height: size, data, channels: 4, depth: 8 });
+};
+
+/** An aerial photo service's exported image of a web-mercator box: the same ground as the map
+ * tiles, in color or (`nir`) its near-infrared band as a grey image. */
+const imageryBox = (x0: number, y0: number, x1: number, y1: number, w: number, h: number, nir: boolean) => {
+  const data = new Uint8Array(w * h * 4);
+  const R = 6378137;
+  for (let py = 0; py < h; py++) {
+    const my = y1 - ((py + 0.5) / h) * (y1 - y0);
+    const lat = (Math.atan(Math.sinh(my / R)) * 180) / Math.PI;
+    for (let px = 0; px < w; px++) {
+      const lon = ((x0 + ((px + 0.5) / w) * (x1 - x0)) / R) * (180 / Math.PI);
+      const { e, n } = local(lat, lon);
+      const col = photoColor(e, n, Math.round(e * 2), Math.round(n * 2));
+      const i = (py * w + px) * 4;
+      data[i] = nir ? col[3] : col[0];
+      data[i + 1] = nir ? col[3] : col[1];
+      data[i + 2] = nir ? col[3] : col[2];
+      data[i + 3] = 255;
+    }
+  }
+  return encode({ width: w, height: h, data, channels: 4, depth: 8 });
 };
 
 const tileCache = new Map<string, Uint8Array>();
@@ -233,6 +262,21 @@ export async function withLidar(page: Page) {
   });
 }
 
+/** USGS NAIP Plus over the test site: its catalog says a summer photo, 60 cm, four bands, and the
+ * photo itself is the same made-up ground as the map tiles (its near-infrared band too). */
+export async function withNaip(page: Page) {
+  const attributes = { Name: "m_0000000_ne_00_060_20230816", Year: 2023, acquisition_date: Date.UTC(2023, 7, 16), resolution_value: 0.6, resolution_units: "METER", band_count: 4, State: "IL" };
+  await page.route(/imagery\.nationalmap\.gov\/.*USGSNAIPPlus\/ImageServer\/getSamples/, route =>
+    route.fulfill(json({ samples: [0, 1, 2, 3, 4].map(locationId => ({ locationId, rasterId: 7, value: "92 132 64 150", resolution: 0.6, attributes })) }))
+  );
+  await page.route(/imagery\.nationalmap\.gov\/.*USGSNAIPPlus\/ImageServer\/exportImage/, route => {
+    const u = new URL(route.request().url());
+    const [x0, y0, x1, y1] = u.searchParams.get("bbox")!.split(",").map(Number);
+    const [w, h] = u.searchParams.get("size")!.split(",").map(Number);
+    route.fulfill(png(imageryBox(x0, y0, x1, y1, w, h, u.searchParams.get("bandIds") === "3")));
+  });
+}
+
 /** Holds a finger still at a point (a long-press). */
 export async function longPress(page: Page, p: XY, ms = 750) {
   await touches(page, async send => {
@@ -288,24 +332,25 @@ export async function importSite(page: Page, opts: { trees?: boolean; osm?: bool
     if (await find.isVisible()) await find.click();
     else await page.getByTestId("resize-site").click();
   }
+  // (a site in already: the dialog opens on its frame; back to the search first)
+  const again = page.getByRole("button", { name: "Search again" });
+  if (await again.isVisible().catch(() => false)) await again.click();
   await page.getByLabel("Search address").fill("Springfield Park");
   await page.getByRole("button", { name: /Springfield Park/ }).first().click();
   await expect(page.getByTestId("site-size")).toBeVisible();
-  if (opts.trees === false) await page.getByText("Trees from the photo", { exact: true }).click();
-  if (opts.osm === false) await page.getByText("Paths, roads, water and buildings", { exact: true }).click();
-  // The summary is a toast that goes after 12 seconds: note it the moment it shows (a busy test
-  // machine can take longer than that between two polls)
-  await page.evaluate(() => {
-    const w = window as any;
-    w.__importDone = "";
-    const seen = new MutationObserver(() => {
-      const el = [...document.querySelectorAll("[role=status] > span")].find(e => /^Site brought in[.:]/.test(e.textContent ?? ""));
-      if (el) { w.__importDone = el.textContent; seen.disconnect(); }
-    });
-    seen.observe(document.body, { childList: true, subtree: true, characterData: true });
-  });
+  // (what comes in: a switch each; the photo's trees only offered where no survey covers the site)
+  // (once what this spot has is known: the switches settle)
+  await expect(page.locator('[data-testid=import-what][data-here=ready]')).toBeVisible({ timeout: 90_000 });
+  const photoTrees = page.getByTestId("bring-photo-trees");
+  if (opts.trees === false && await photoTrees.isVisible()) await photoTrees.click();
+  if (opts.osm === false) await page.getByTestId("bring-osm").click();
   await page.getByTestId("import-site").click();
-  await expect.poll(() => page.evaluate(() => (window as any).__importDone), { timeout: 60_000 }).toMatch(/^Site brought in[.:]/);
+  // The card that says what came in (the same in a sentence, its label), then on to designing
+  const ready = page.getByTestId("site-ready");
+  await expect(ready).toBeVisible({ timeout: 60_000 });
+  await expect(ready).toHaveAttribute("aria-label", /^Site brought in[.:]/);
+  await page.evaluate(() => { (window as any).__importDone = document.querySelector("[data-testid=site-ready]")?.getAttribute("aria-label"); });
+  await page.getByTestId("site-ready-start").click();
   // (the toast lists what came in; the import's own sentences are kept with the site)
   const notes: string[] = await page.evaluate(() => (window as any).__dgCourse().site.notes ?? []);
   return "Site brought in. " + notes.join(" ");

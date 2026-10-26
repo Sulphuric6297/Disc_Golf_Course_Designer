@@ -180,6 +180,43 @@ export const fetchUsgsElevationGrid = async (bounds: GeoBounds, samplesX: number
   }
 };
 
+/** USGS 3DEP's elevation over a site as a DEM for the trees measured from the air to check their
+ * ground against (lidar's Dem: meters, about every 5 ft, up to 800 a side), or null where 3DEP
+ * has none. */
+export const usgsDem = async (bounds: GeoBounds, widthFt: number, heightFt: number) => {
+  const spacing = Math.max(5, Math.max(widthFt, heightFt) / 800);
+  const samplesX = clamp(Math.round(widthFt / spacing) + 1, 2, 800), samplesY = clamp(Math.round(heightFt / spacing) + 1, 2, 800);
+  try {
+    const { values } = await fetchUsgsElevationGrid(bounds, samplesX, samplesY);
+    return { values, samplesX, samplesY };
+  } catch (err) {
+    console.warn("USGS 3DEP elevation unavailable", err);
+    return null;
+  }
+};
+
+/** The 3DEP Elevation Index: where its DEMs of each detail are (1 m, 1/9 and 1/3 arc-second). */
+const DEM_INDEX = "https://index.nationalmap.gov/arcgis/rest/services/3DEPElevationIndex/MapServer";
+
+/** How fine 3DEP's ground is over a site, as a progress list or the Site step names it: "USGS
+ * 3DEP 1 m ground" where its 1 m DEM covers the middle of the site, 3 m or 10 m where only those
+ * do, "USGS 3DEP ground" when the index can't be asked. */
+export const usgsGroundLabel = async (bounds: GeoBounds) => {
+  const lat = (bounds.north + bounds.south) / 2, lon = (bounds.west + bounds.east) / 2;
+  const has = async (layer: number) => {
+    const q = new URLSearchParams({ where: "1=1", geometry: `${lon},${lat}`, geometryType: "esriGeometryPoint", inSR: "4326", spatialRel: "esriSpatialRelIntersects", returnCountOnly: "true", f: "json" });
+    const res = await fetch(`${DEM_INDEX}/${layer}/query?${q}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return ((await res.json()) as { count?: number }).count! > 0;
+  };
+  try {
+    for (const [layer, detail] of [[1, "1 m"], [2, "3 m"], [4, "10 m"]] as const) if (await has(layer)) return `USGS 3DEP ${detail} ground`;
+  } catch {
+    // (the index out of reach: said plainly)
+  }
+  return "USGS 3DEP ground";
+};
+
 // Best available elevation: USGS 3DEP (US, high detail), else global terrain tiles.
 export const fetchBestElevationGrid = async (
   location: SiteLocation,
