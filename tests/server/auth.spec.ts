@@ -44,6 +44,21 @@ async function setUp2fa(page: Page) {
   return { secret, backup };
 }
 
+/** Two-factor sign-in turned on from Account (each person's choice): the key, a code, the backup codes. */
+async function turnOn2fa(page: Page) {
+  await page.getByTestId("account-menu").click();
+  await page.getByRole("menuitem", { name: "Account" }).click();
+  await page.getByTestId("mfa-start").getByRole("button", { name: "Set it up" }).click();
+  await expect(page.getByRole("img", { name: "QR code for the authenticator app" })).toBeVisible();
+  const secret = (await page.getByTestId("mfa-secret").textContent())!.trim();
+  await page.getByLabel("Code from the app").fill(code(secret));
+  await page.getByRole("button", { name: "Turn it on" }).click();
+  await expect(page.getByTestId("backup-codes").locator("li")).toHaveCount(10);
+  const backup = (await page.getByTestId("backup-codes").locator("li").allTextContents()).map(s => s.trim());
+  await page.keyboard.press("Escape");
+  return { secret, backup };
+}
+
 test("the admin, an invite, signing in again with a backup code", async ({ page, browser }) => {
   await page.goto("/");
   // First run: the admin, with the setup code from the server's log
@@ -58,11 +73,9 @@ test("the admin, an invite, signing in again with a backup code", async ({ page,
   await expect(page.getByRole("alert")).toHaveText("Wrong setup code");
   await setup.getByLabel(/Setup code/).fill(SETUP_CODE);
   await setup.getByRole("button", { name: "Create" }).click();
-  // 2FA before anything else
-  await expect(page.getByRole("heading", { name: "Set up two-factor sign-in" })).toBeVisible();
-  await expect(page.getByRole("img", { name: "QR code for the authenticator app" })).toBeVisible();
-  const admin = await setUp2fa(page);
+  // Signed straight in; two-factor sign-in turned on from Account
   await expect(page.getByTestId("home").getByRole("heading", { name: "No courses yet" })).toBeVisible();
+  const admin = await turnOn2fa(page);
 
   // An invite link
   await page.getByTestId("account-menu").click();
@@ -85,7 +98,7 @@ test("the admin, an invite, signing in again with a backup code", async ({ page,
   await form.getByLabel(/^Password \(/).fill("another long passphrase");
   await form.getByLabel("Password again").fill("another long passphrase");
   await form.getByRole("button", { name: "Create account" }).click();
-  await setUp2fa(pat);
+  await expect(pat.getByTestId("home")).toBeVisible();
   expect(pat.url()).not.toContain("#invite");
   // Not an admin: no People
   await pat.getByTestId("account-menu").click();

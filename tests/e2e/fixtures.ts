@@ -324,6 +324,8 @@ export async function addHole(page: Page, tee: { x: number; y: number }, basket:
 /** Runs the whole site import against the stubs; returns "Site brought in." and what the import
  * said it brought in (the site's notes, listed on the Site step under What came in). */
 export async function importSite(page: Page, opts: { trees?: boolean; osm?: boolean } = {}) {
+  // (an import is slow on a machine drawing without a graphics card: time for it and what follows)
+  test.setTimeout(Math.max(test.info().timeout, 240_000));
   const welcome = page.getByTestId("welcome-find");
   if (await welcome.isVisible()) await welcome.click();
   else {
