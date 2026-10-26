@@ -39,6 +39,7 @@ import { Tufts } from "../three/tufts";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createFence, createStructure, onPartLoaded } from "../three/structures";
 import { createCrowns } from "./canopy";
+import { measuredStanding, setMeasuredStanding, showsMeasured } from "../lib/standing";
 import { createFieldGround, createFieldProps, createHedge, createPowerLine } from "../three/parkProps";
 import { fieldInks, fieldPlan } from "../lib/fieldPlan";
 import { fieldKeepsTreesOut, fieldOutline } from "../lib/fields";
@@ -2549,6 +2550,8 @@ export class CourseView {
         return { stand, cut, kept: clearing ? stand.filter(k => keptSet.has(k) && forPlay.test({ x: lidar.trees[k][0], y: lidar.trees[k][1] }, lidar.trees[k][3] * 0.3)) : [] };
       });
       this.lidarState = state;
+      // (the painted map paints the same standing trees)
+      if (measuredStanding()?.key !== this.lidarKey) setMeasuredStanding({ key: this.lidarKey, trees: state.stand.map(k => lidar.trees[k]) });
       put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, state.cut, hv, st.trees, st.landscape, st.treeMix, st.conifers]), () => {
         const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, treeMixOf(st));
         // (and their treetops for looking straight down, where the 3D trees barely show)
@@ -2657,7 +2660,7 @@ export class CourseView {
       // Woods: trees standing in it (shadows and all)
       // (its own drawn trees: without measured ones, or when it asks for them, or filling in
       // between the measured ones as thickly as it asks; none when it says so)
-      if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn")) {
+      if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn" || !showsMeasured(a))) {
         const here = clearings.near(boundsOf(a.points));
         put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, cutKey, a.pines, a.bushes, a.density, a.heights]), () => {
           this.plantings++;

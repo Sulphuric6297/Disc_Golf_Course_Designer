@@ -14,12 +14,12 @@ import { fmtDist } from "../../lib/units";
 import { addHoleOb, nextHomeCorner, obChoiceOf, pinsFull, select, setFieldKind, setFieldPlay, setLineKind, setObChoice, setPinPosition, setTeeLevel, startAnotherPin, startAnotherTee, startHoleToBasket, teesFull, type ObChoice } from "../../state/actions";
 import { updateHole, updateItem, useCourse, useEditor } from "../../state/course";
 import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FieldKind, Hole, LabelItem, LineItem, LineKind, MandoItem, StructureItem, StructureKind, TeeItem, TreeItem } from "../../types";
-import { FENCE_STYLES, PLAY_OPTIONS, WOODS_TREES, amenityIcon, builtIcon, fieldKindOptions, fmtSize, fmtTurn, hasObChoice, heightLabel, homeText, obOptions } from "../Inspector";
+import { FENCE_STYLES, HoleTrees, PLAY_OPTIONS, useHoleTrees, WOODS_TREES, amenityIcon, builtIcon, fieldKindOptions, fmtSize, fmtTurn, hasObChoice, heightLabel, homeText, obOptions } from "../Inspector";
 import { MoveHere } from "../PlaceByGps";
 import { TREE_KINDS } from "../TreeSettings";
 import { ChipPick, Segmented } from "../ui";
 
-type Chip = "par" | "fairway" | "tees" | "pins" | "ob" | "foliage";
+type Chip = "par" | "fairway" | "tees" | "pins" | "ob" | "foliage" | "trees";
 // (the chip open stays open from hole to hole)
 let lastChip: Chip = "fairway";
 
@@ -76,6 +76,7 @@ export function HoleStrip({ hole }: { hole: Hole }) {
   const pick = (c: Chip) => { lastChip = c; setChip(c); };
   const tees = holeTees(doc, hole.id);
   const pins = holeBaskets(doc, hole.id);
+  const holeTrees = useHoleTrees(hole, s.complete ? s.line : null);
   const set = (patch: Partial<Hole>, history = true) => updateHole(hole.id, patch, history);
   const chips: [Chip, ReactNode][] = [
     ["par", <>Par <span className="opacity-60">{hole.par ?? `${s.parAuto} · auto`}</span></>],
@@ -83,7 +84,9 @@ export function HoleStrip({ hole }: { hole: Hole }) {
     ["tees", <>Tees <span className="opacity-60">{tees.length}</span></>],
     ["pins", <>Pins <span className="opacity-60">{pins.length}</span></>],
     ["ob", <>Add OB</>],
-    ["foliage", <>Foliage <span className="opacity-60">{hole.foliage === "light" ? "Light" : hole.foliage === "heavy" ? "Heavy" : "Auto"}</span></>]
+    ["foliage", <>Foliage <span className="opacity-60">{hole.foliage === "light" ? "Light" : hole.foliage === "heavy" ? "Heavy" : "Auto"}</span></>],
+    // (the measured trees it cut down: the way to bring them back)
+    ...(holeTrees.cut.length || holeTrees.kept.length ? [["trees", <>Trees <span className="opacity-60">{holeTrees.cut.length ? `${holeTrees.cut.length} cut` : `${holeTrees.kept.length} kept`}</span></>] as [Chip, ReactNode]] : [])
   ];
   let control: ReactNode = null;
   if (chip === "par") control = <Segmented label="Par" value={hole.par ?? 0} onChange={v => set({ par: v === 0 ? undefined : v })} options={[{ value: 0, label: <span className="whitespace-nowrap">Auto {s.parAuto}</span> }, ...[2, 3, 4, 5, 6].map(p => ({ value: p, label: String(p) }))]} />;
@@ -115,6 +118,7 @@ export function HoleStrip({ hole }: { hole: Hole }) {
         : <span className="text-[13px] text-zinc-400 px-1 py-2">Needs a tee and a basket first.</span>}
     </div>
   );
+  else if (chip === "trees") control = s.complete ? <HoleTrees hole={hole} line={s.line} /> : null;
   else if (chip === "foliage") control = <Segmented label="Foliage" value={hole.foliage ?? "auto"} onChange={v => set({ foliage: v === "auto" ? undefined : (v as "light" | "heavy") })} options={[{ value: "auto", label: <span className="whitespace-nowrap">Auto · {s.foliage}</span> }, { value: "light", label: "Light" }, { value: "heavy", label: "Heavy" }]} />;
   return (
     <div className="px-3 pb-3" data-testid="hole-strip">

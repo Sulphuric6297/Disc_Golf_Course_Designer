@@ -3,7 +3,7 @@
 import { PlaceByGps } from "./PlaceByGps";
 import { BRUSH_SECTION } from "../lib/view";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronLeft, Copy, Eye, Lock, Maximize2, Plane, RotateCcw, RotateCw, Trash2, Unlock, X, Plus } from "lucide-react";
+import { ChevronDown, ChevronLeft, Copy, Eye, Lock, Maximize2, Plane, RotateCcw, RotateCw, Trash2, TreeDeciduous, Unlock, X, Plus } from "lucide-react";
 import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, AREA_ORDER, CIRCLE_ONE_FT, FIELD_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
 import { areaPath, areaRing, obFor, obSides, sideCompass, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, obPicked, parseHoleNumbers, teeAim, wholeHoles, widthFactors, widthVaries } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
@@ -14,6 +14,7 @@ import { COURT_FIELDS, FIELD_ORDER, MARKED_FIELDS, courtCount, fieldHome, fieldK
 import { fieldIcon } from "./fieldIcons";
 import { fmtArea, fmtDist } from "../lib/units";
 import { fairwayTrees } from "../lib/lidar";
+import { toast } from "../state/toast";
 import { turnable } from "../lib/turn";
 import { conifersOf } from "../lib/landscapes";
 import { addHoleOb, deleteSelection, duplicateSelection, forgetNewLabel, isNewLabel, nextHomeCorner, obChoiceOf, pinsFull, setFieldKind, setFieldPlay, setLineKind, setObChoice, setPinPosition, startAnotherPin, startAnotherTee, startHoleToBasket, select, setTeeLevel, shareBasket, teesFull, type ObChoice } from "../state/actions";
@@ -26,7 +27,7 @@ import { HoleChips } from "./ApplyToHoles";
 import { HoleSteps } from "./HoleSteps";
 import { getView } from "../state/view";
 import { useLayout, useTouch } from "./useLayout";
-import { Button, ChipPick, ColorInput, Field, NumberInput, Section, Segmented, Select, Slider, Stat, TextInput, Toggle } from "./ui";
+import { Button, ChipPick, ColorInput, Field, HelpLink, NumberInput, Section, Segmented, Select, Slider, Stat, TextInput, Toggle } from "./ui";
 
 const shapeText = { straight: "Straight", left: "Turns left", right: "Turns right", "s-curve": "S-curve" };
 /** A small size to the half foot (or tenth of a meter): "2.5 ft". */
@@ -79,22 +80,33 @@ function HoleNumberInput({ holeId, value }: { holeId: string; value: string }) {
 
 /** The measured trees on a hole's fairway: how many are cut down and kept, and all of them back
  * or down at once. */
-function FairwayTrees({ hole, line }: { hole: Hole; line: P[] }) {
+/** The measured trees this hole cut down (where it plays), and kept: how many, and the button to
+ * bring them back (or cut them again). Near the top of the hole's panel, and a chip on a phone. */
+export const useHoleTrees = (hole: Hole, line: P[] | null) => {
   const lidar = useCourse(s => s.doc.lidar);
-  const { cut, kept } = useMemo(() => fairwayTrees({ lidar }, hole, line), [lidar, hole, line]);
+  return useMemo(() => (lidar && line ? fairwayTrees({ lidar }, hole, line) : { cut: [], kept: [] }), [lidar, hole, line]);
+};
+export function HoleTrees({ hole, line }: { hole: Hole; line: P[] }) {
+  const lidar = useCourse(s => s.doc.lidar);
+  const { cut, kept } = useHoleTrees(hole, line);
   if (!cut.length && !kept.length) return null;
   const setLidar = (patch: { kept?: number[]; removed?: number[] }) => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, ...patch } } : {}));
   const list = (v: number[]) => (v.length ? [...new Set(v)].sort((a, b) => a - b) : undefined);
+  const back = () => {
+    setLidar({ kept: list([...(lidar?.kept ?? []), ...cut]), removed: list((lidar?.removed ?? []).filter(k => !cut.includes(k))) });
+    toast(`${cut.length === 1 ? "1 tree" : `${cut.length} trees`} back on hole ${hole.number ?? ""}.`.replace(" .", "."), "success", true);
+  };
   return (
-    <Field label="Trees on the fairway">
-      <div className="flex items-center justify-between gap-2" data-testid="fairway-trees">
-        <span className="text-sm text-zinc-200">{[cut.length ? `${cut.length} cut down` : "", kept.length ? `${kept.length} kept` : ""].filter(Boolean).join(" · ")}</span>
-        <div className="flex gap-1.5">
-          {cut.length > 0 && <Button small onClick={() => setLidar({ kept: list([...(lidar?.kept ?? []), ...cut]), removed: list((lidar?.removed ?? []).filter(k => !cut.includes(k))) })} testid="trees-back">Bring all back</Button>}
-          {kept.length > 0 && <Button small onClick={() => setLidar({ kept: list((lidar?.kept ?? []).filter(k => !kept.includes(k))) })} testid="trees-down">Cut all down</Button>}
-        </div>
+    <div className="flex items-center gap-2.5 rounded-[14px] bg-white/[0.06] ring-1 ring-white/[0.08] px-3 py-2.5 mt-2" data-testid="fairway-trees">
+      <TreeDeciduous size={20} className="text-[#a2cf6a] shrink-0" />
+      <div className="flex-1 min-w-0 leading-tight">
+        <div className="text-[13.5px] font-semibold text-zinc-50 flex items-center gap-1.5">{cut.length ? `${cut.length.toLocaleString()} ${cut.length === 1 ? "tree" : "trees"} cut down` : `${kept.length.toLocaleString()} ${kept.length === 1 ? "tree" : "trees"} kept`}<HelpLink topic="lidar-settings" label="Trees cut for holes" /></div>
+        {cut.length > 0 && kept.length > 0 && <div className="text-[11.5px] text-zinc-400">{kept.length.toLocaleString()} kept</div>}
       </div>
-    </Field>
+      {cut.length > 0
+        ? <Button small onClick={back} testid="trees-back"><RotateCcw size={14} /> Bring them back</Button>
+        : <Button small onClick={() => setLidar({ kept: list((lidar?.kept ?? []).filter(k => !kept.includes(k))) })} testid="trees-down">Cut them down</Button>}
+    </div>
   );
 }
 
@@ -199,6 +211,7 @@ function HoleInspector({ hole, part }: { hole: Hole; part?: CourseItem }) {
           {s.complete && <Button small full onClick={() => useEditor.getState().set({ teeView: hole.id, flyover: true })} testid="flyover"><Plane size={14} /> Fly over</Button>}
           <Button small full onClick={() => getView()?.fitHole(hole.id)} testid="zoom-hole"><Maximize2 size={14} /> Zoom to it</Button>
         </div>
+        {doc.lidar && s.complete && <HoleTrees hole={hole} line={s.line} />}
       </Section>
       <HoleParts hole={hole} part={part}>
         {(() => {
@@ -259,7 +272,6 @@ function HoleInspector({ hole, part }: { hole: Hole; part?: CourseItem }) {
             )}
           </>
         )}
-        {doc.lidar && s.complete && <FairwayTrees hole={hole} line={s.line} />}
         {s.complete && (
           <Field label="Line of play" help="line-of-play">
             <div className="flex flex-wrap gap-1.5">
