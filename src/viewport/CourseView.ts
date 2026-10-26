@@ -38,7 +38,6 @@ import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { Tufts } from "../three/tufts";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createFence, createStructure, onPartLoaded } from "../three/structures";
-import { createCrowns } from "./canopy";
 import { measuredStanding, setMeasuredStanding, showsMeasured } from "../lib/standing";
 import { createFieldGround, createFieldProps, createHedge, createPowerLine } from "../three/parkProps";
 import { fieldInks, fieldPlan } from "../lib/fieldPlan";
@@ -1874,9 +1873,6 @@ export class CourseView {
     }
     this.camera.updateMatrixWorld();
     const tilted = this.controls.polarAngle > TILT_TOP;
-    // (the measured trees' flat treetops: only looking straight down from far off, where the 3D trees
-    // are drawn at their lightest and hardly show; closer in, the 3D trees themselves)
-    for (const o of this.itemsGroup.children) if (o.userData.crowns) (o.userData.crowns as THREE.Object3D).visible = !tilted && dist > 700 * (this.doc?.unitsPerFoot || 1);
     this.ground.detailActive(dist < 250);
     // Tilted, the course is a place: sky, haze, land to the horizon and grass up close
     this.lastSky = false;
@@ -2554,10 +2550,6 @@ export class CourseView {
       if (measuredStanding()?.key !== this.lidarKey) setMeasuredStanding({ key: this.lidarKey, trees: state.stand.map(k => lidar.trees[k]) });
       put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, state.cut, hv, st.trees, st.landscape, st.treeMix, st.conifers]), () => {
         const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, treeMixOf(st));
-        // (and their treetops for looking straight down, where the 3D trees barely show)
-        const crowns = createCrowns(state.stand.map(k => { const [x, y, height, radius, conifer] = lidar.trees[k]; return { x, y, ground: this.h(x, y), height, radius, conifer: !!conifer }; }), st.trees);
-        woods.add(crowns);
-        woods.userData.crowns = crowns;
         this.shadowsDirty = true;
         return woods;
       }, this.itemsGroup, true);
