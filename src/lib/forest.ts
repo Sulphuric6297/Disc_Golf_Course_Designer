@@ -4,7 +4,7 @@
 // and worn dirt at the tees; creeks and ponds in clear blue with dark banks; soft gray roads and
 // mown grass. It is one picture for the whole map, laid into the SVG under the symbols (built
 // things are drawn there too; the painting clears the trees from them and casts their shadows).
-import { measuredStanding, showsMeasured } from "./standing";
+import { measuredStanding } from "./standing";
 import { CIRCLE_ONE_FT, LINE_KINDS, PATH_SURFACES } from "../constants";
 import type { AreaItem, CourseDoc, LineItem, MapStyle, P, PathSurface, ReliefLook, StructureItem, TreeItem } from "../types";
 import { toUnits } from "./units";
@@ -419,8 +419,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       else if (a.kind === "nogo") poly(CLEAR, a.points);
       // (a field, court or play area: mown, no treetops over it; the map draws it on top)
       else if (a.kind === "field") { poly(FAIR, a.points); poly(CLEAR, offsetPolygon(a.points, (crownR * 0.8) / k)); }
-      // (woods of measured trees: painted tree by tree below, where each stands)
-      else if (a.kind === "woods" && !(measured && showsMeasured(a))) poly(WOODS, a.points);
+      else if (a.kind === "woods") poly(WOODS, a.points);
     } else if (i.type === "line") {
       const l = i as LineItem;
       const { points: pts, width: lw, widthAt } = paintedLine(l, view.scale);
@@ -619,8 +618,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       if (a[m * 4 + 1] / 255 + at(treeEdge, x * cell + 1, y * cell + 1) * 0.5 > 0.5) continue;
       // (2: drawn woods, which plant their own trees in 3D)
       if (b[m * 4 + 2] > 127) { wooded[m] = 2; continue; }
-      // (measured trees: only where they stand, never filled in from the photo or everywhere)
-      if (opts.mode === "woods" || measured) continue;
+      if (opts.mode === "woods") continue;
       const p = toPlan(x * cell + cell / 2, y * cell + cell / 2);
       wooded[m] = (opts.mode === "everywhere" || !canopy ? site(p) : photoTrees(p)) ? 1 : 0;
     }
@@ -791,16 +789,18 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       }
     }
   }
-  // The measured trees standing: each where it is, as wide as measured, of its own kind (the same
-  // ones the 3D view stands)
+  // The measured trees standing out on their own, past the woods: each where it is, painted at the
+  // style's own sizes (a little bigger or smaller as the tree is), of its own kind
   if (measured && !opts.under) {
     measured.trees.forEach(([x0, y0, , radius, conifer], idx) => {
       const sp = toScreen({ x: x0, y: y0 });
-      const r = Math.max(crownR * 0.55, radius * k);
-      if (sp.x < -r || sp.y < -r || sp.x > W + r || sp.y > H + r) return;
-      const t = 1 + (idx % 6);
-      if (vector) { vtrees.push({ x: sp.x, y: sp.y, r, h: r * (1.6 + rnd() * 0.8), pine: !!conifer, col: treeColor(rnd()), seed: rnd() }); return; }
-      if (natural) { if (conifer) whorls(sp.x, sp.y, r * 0.62, realTop(r) * 1.15, t); else leafy(sp.x, sp.y, r, realTop(r), t); return; }
+      const mx = Math.min(mw - 1, Math.max(0, Math.floor(sp.x / cell))), my = Math.min(mh - 1, Math.max(0, Math.floor(sp.y / cell)));
+      if (sp.x < -stepPx || sp.y < -stepPx || sp.x > W + stepPx || sp.y > H + stepPx || wooded[my * mw + mx]) return;
+      const size = Math.max(0.8, Math.min(1.3, radius / 12));
+      const u = 0.35 + 0.3 * ((idx * 0.618) % 1), t = 1 + (idx % 6);
+      if (vector) { const r = vR(u) * size; vtrees.push({ x: sp.x, y: sp.y, r, h: r * (1.6 + rnd() * 0.8), pine: !!conifer, col: treeColor(rnd()), seed: rnd() }); return; }
+      if (natural) { const r = realR(u) * size; if (conifer) whorls(sp.x, sp.y, r * 0.62, realTop(r) * 1.15, t); else leafy(sp.x, sp.y, r, realTop(r), t); return; }
+      const r = crownR * (0.45 + u * u * 1.35) * size;
       if (conifer) pine(sp.x, sp.y, r * 0.95, r * (2.2 + rnd() * 0.9), t);
       else stamp(sp.x, sp.y, r, r * (1.9 + rnd() * 0.9), t);
     });
