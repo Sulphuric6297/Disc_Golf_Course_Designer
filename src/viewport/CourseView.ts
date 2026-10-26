@@ -297,6 +297,8 @@ export class CourseView {
   private lidarState: { stand: number[]; cut: number[]; kept: number[] } | null = null;
   /** Slow things (woods planted round the clearings) put off while dragging: done at its end. */
   private afterDrag = false;
+  /** Shadows to draw again once a drag ends (held while dragging). */
+  private shadowsAfterDrag = false;
   /** Woods planted so far (for tests: none while dragging, only those near what moved). */
   private plantings = 0;
   private lidarKey = "";
@@ -519,7 +521,10 @@ export class CourseView {
     this.syncHandles();
     this.updateLimits();
     this.placeSun();
-    if (groundChanged || !prev || prev.course.items !== doc.course.items || prev.sun !== doc.sun) this.shadowsDirty = true;
+    // (while a point or a shape is dragged, the shadows stay as they were until it's let go: every
+    // tree and bush drawn again into them at each step makes a big wood crawl)
+    if (groundChanged || !prev || prev.sun !== doc.sun) this.shadowsDirty = true;
+    else if (prev.course.items !== doc.course.items) { if (this.dragging) this.shadowsAfterDrag = true; else this.shadowsDirty = true; }
     if (!this.fitted && this.size.width > 1) {
       this.fitted = true;
       this.fitCourse(false);
@@ -4432,10 +4437,14 @@ export class CourseView {
   private setDragging(on: boolean) {
     if (this.dragging === on) return;
     this.dragging = on;
+    // (underbrush out of sight while dragging: a big wood's thousands of bushes drawn at every step
+    // make the drag crawl, and they're mostly under the crowns anyway)
+    for (const [key, entry] of this.shapes) if (/:under(:|$)/.test(key)) entry.obj.visible = !on;
     if (!on) {
       this.handleKey = "";
       this.syncHandles();
       if (this.afterDrag && this.doc) { this.afterDrag = false; this.syncShapes(); this.invalidate(); }
+      if (this.shadowsAfterDrag) { this.shadowsAfterDrag = false; this.shadowsDirty = true; this.invalidate(); }
     }
     this.updateCursor();
   }

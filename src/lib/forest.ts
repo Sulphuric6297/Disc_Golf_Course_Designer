@@ -623,10 +623,10 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       wooded[m] = (opts.mode === "everywhere" || !canopy ? site(p) : photoTrees(p)) ? 1 : 0;
     }
   }
-  // Measured trees: the woods' floor is under the 3D trees' own crowns, each as wide as it stands,
-  // with a leafy edge; the trees themselves are drawn one by one below, as trees placed by hand are,
-  // so a big tree is one big tree; a tree cut down or brought back in 3D opens or fills its place
-  // here. Woods drawn by hand are painted as drawn.
+  // Measured trees: no woods floor painted (the trees are the woods, each drawn whole where it
+  // stands, below, as trees placed by hand are; between their crowns is the ground, as from the
+  // air); a tree cut down or brought back in 3D opens or fills its place. Woods drawn by hand are
+  // painted as drawn.
   const planted = new Uint8Array(mw * mh);
   if (!measured) planted.fill(1);
   if (measured) {
@@ -637,19 +637,6 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       const p = toPlan(x * cell + cell / 2, y * cell + cell / 2);
       if (drawn.some(d => p.x >= d.box.minX && p.x <= d.box.maxX && p.y >= d.box.minY && p.y <= d.box.maxY && pointInPolygon(p, d.pts))) planted[m] = 1;
       else wooded[m] = 0;
-    }
-    for (const [x0, y0, , radius] of measured.trees) {
-      const sp = toScreen({ x: x0, y: y0 }), R = Math.max(crownR * 0.8, radius * k);
-      const cx0 = Math.max(0, Math.floor((sp.x - R * 1.2) / cell)), cx1 = Math.min(mw - 1, Math.ceil((sp.x + R * 1.2) / cell));
-      const cy0 = Math.max(0, Math.floor((sp.y - R * 1.2) / cell)), cy1 = Math.min(mh - 1, Math.ceil((sp.y + R * 1.2) / cell));
-      for (let my = cy0; my <= cy1; my++) for (let mx = cx0; mx <= cx1; mx++) {
-        const dx = mx * cell + cell / 2 - sp.x, dy = my * cell + cell / 2 - sp.y;
-        // (the crown's edge pushed in and out a little, as the woods' edge is)
-        const r = R * (0.88 + at(treeEdge, mx * cell + 1, my * cell + 1) * 0.3);
-        if (dx * dx + dy * dy > r * r) continue;
-        const m = my * mw + mx;
-        if (!wooded[m]) wooded[m] = 1;
-      }
     }
   }
 
@@ -1003,7 +990,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // Treetops in several colors where the landscape has them (autumn), one color per tree
   const mixPals = treeMixOf(s).map(c => palette(c, woodsFactors, 6, 0.9));
   // (pines keep their needles: deep blue-green whatever the season)
-  const pinePal = palette("#3f5f4d", woodsFactors, 0, 0.9);
+  const pinePal = palette("#2c4636", woodsFactors, 0, 0.9);
   const fair = palette(s.fairway, [0.56, 0.7, 0.84, 1, 1.14, 1.28], 4);
   const lawn = palette(s.rough, [0.6, 0.76, 0.9, 1.04, 1.18], 3);
   // Tall grass: lighter and straw yellow
