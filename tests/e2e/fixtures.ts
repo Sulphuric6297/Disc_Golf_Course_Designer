@@ -332,6 +332,9 @@ export async function importSite(page: Page, opts: { trees?: boolean; osm?: bool
     if (await find.isVisible()) await find.click();
     else await page.getByTestId("resize-site").click();
   }
+  // (a site in already: the dialog opens on its frame; back to the search first)
+  const again = page.getByRole("button", { name: "Search again" });
+  if (await again.isVisible().catch(() => false)) await again.click();
   await page.getByLabel("Search address").fill("Springfield Park");
   await page.getByRole("button", { name: /Springfield Park/ }).first().click();
   await expect(page.getByTestId("site-size")).toBeVisible();

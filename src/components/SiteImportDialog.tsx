@@ -123,10 +123,12 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   useEffect(() => {
     if (!selection) { setHere(null); return; }
     const stop = new AbortController();
+    // (each lookup given a few seconds at most: the switches settle either way)
+    const within = <T,>(p: Promise<T>, fallback: T) => Promise.race([p.catch(() => fallback), new Promise<T>(r => window.setTimeout(() => r(fallback), 6500))]);
     const t = window.setTimeout(() => {
       void Promise.all([
-        lidarCoverage(selection).catch(() => null),
-        photoChoices(selection, { signal: stop.signal, timeoutMs: 6000 }).catch(() => [] as PhotoChoice[])
+        within(lidarCoverage(selection), null),
+        within(photoChoices(selection, { signal: stop.signal, timeoutMs: 6000 }), [] as PhotoChoice[])
       ]).then(([cov, photos]) => {
         if (stop.signal.aborted) return;
         setHere({ photo: photos[0], survey: cov ? { year: cov.surveys[0]?.year ?? 0, covered: cov.covered } : undefined });

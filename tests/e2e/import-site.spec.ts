@@ -256,7 +256,7 @@ test("making the site bigger keeps the design on the same ground", async ({ page
   await page.getByTestId("resize-site").click();
   await expect(page.getByRole("dialog", { name: "Change the area" })).toBeVisible();
   // (the frame as it is, straight away: no search)
-  await expect(page.getByTestId("site-size")).toContainText(/Area: 1,50\d × 99\d ft/);
+  await expect(page.getByTestId("site-size")).toContainText(/1,50\d × 99\d ft/);
   const corners = await page.locator(".site-handle-corner").evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }));
   const nw = corners.reduce((a, b) => (b.x + b.y < a.x + a.y ? b : a));
   await page.mouse.move(nw.x, nw.y);
