@@ -4,7 +4,7 @@
 // and worn dirt at the tees; creeks and ponds in clear blue with dark banks; soft gray roads and
 // mown grass. It is one picture for the whole map, laid into the SVG under the symbols (built
 // things are drawn there too; the painting clears the trees from them and casts their shadows).
-import { measuredStanding } from "./standing";
+import { measuredStanding, showsMeasured } from "./standing";
 import { CIRCLE_ONE_FT, LINE_KINDS, PATH_SURFACES } from "../constants";
 import type { AreaItem, CourseDoc, LineItem, MapStyle, P, PathSurface, ReliefLook, StructureItem, TreeItem } from "../types";
 import { toUnits } from "./units";
@@ -621,6 +621,25 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       if (opts.mode === "woods") continue;
       const p = toPlan(x * cell + cell / 2, y * cell + cell / 2);
       wooded[m] = (opts.mode === "everywhere" || !canopy ? site(p) : photoTrees(p)) ? 1 : 0;
+    }
+  }
+  // Measured trees: the woods painted only where the survey found treetops (its gaps and clearings
+  // open, nothing filled in from the photo), but woods drawn by hand filled in as drawn
+  if (measured) {
+    const near = new Uint8Array(mw * mh);
+    for (const [x0, y0, , radius] of measured.trees) {
+      const sp = toScreen({ x: x0, y: y0 }), r = (radius * 1.15 * k) / cell;
+      const cx = sp.x / cell, cy = sp.y / cell;
+      for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(mh - 1, Math.ceil(cy + r)); y++)
+        for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(mw - 1, Math.ceil(cx + r)); x++)
+          if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) near[y * mw + x] = 1;
+    }
+    const drawn = (doc.items.filter(i => i.type === "area" && i.kind === "woods" && !showsMeasured(i as AreaItem)) as AreaItem[]).map(a => ({ pts: drawnAreas([a])[0].points, box: boundsOf(drawnAreas([a])[0].points) }));
+    for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
+      const m = y * mw + x;
+      if (!wooded[m] || near[m]) continue;
+      const p = toPlan(x * cell + cell / 2, y * cell + cell / 2);
+      if (!drawn.some(d => p.x >= d.box.minX && p.x <= d.box.maxX && p.y >= d.box.minY && p.y <= d.box.maxY && pointInPolygon(p, d.pts))) wooded[m] = 0;
     }
   }
 
