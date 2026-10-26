@@ -127,23 +127,29 @@ const gouacheCrown = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => num
   blobPath(g, t.x + Lx * r * 0.3, t.y + Ly * r * 0.3, r * 0.42, R, 0.3); g.fillStyle = css(mix(mul(c, 1.35), [215, 230, 150], 0.25)); g.fill();
   for (let i = 0; i < 6; i++) { const a = R() * 6.28, d = R() * r * 0.8; circle(g, t.x + Math.cos(a) * d, t.y + Math.sin(a) * d, r * (0.05 + R() * 0.05), css(mul(c, R() > 0.5 ? 1.5 : 0.6), 0.7)); }
 };
-/** Tufted pine (Brushwood, Storybook, Gouache): rings of rounded needle tufts round a dark core,
- * deeper and bluer than the broadleaf trees, the tufts' tips lit on the sun's side. */
+/** Tufted pine (every style): rings of small needle tufts over a dark core, the outer rings lower
+ * and darker, each tuft a burst of short needles lit on the sun's side; deep blue-green whatever
+ * the season (pines keep their needles). */
 const tuftedPine = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => number) => {
-  const r = t.r, c = mix(t.col, [38, 78, 72], 0.38), dark = mix(mul(c, 0.42), [8, 24, 26], 0.3);
-  circle(g, t.x, t.y, r * 0.82, css(dark));
-  for (const [ring, n, len, wid] of [[0, 9, 1, 0.3], [1, 7, 0.68, 0.27], [2, 5, 0.4, 0.22]] as const) {
+  const r = t.r, c: RGB = [56, 94, 78], dark = mul(c, 0.42);
+  circle(g, t.x, t.y, r * 0.86, css(dark));
+  const rings = r > 9 ? [[0.8, 14, 0.24], [0.58, 11, 0.23], [0.36, 8, 0.22], [0.13, 3, 0.2]] : [[0.66, 9, 0.32], [0.28, 5, 0.3]];
+  rings.forEach(([rr, n, ts], ring) => {
     const ph = R() * 6.28;
     for (let i = 0; i < n; i++) {
-      const a = (i / n) * 6.283 + ph + (R() - 0.5) * 0.3, lit = clamp(Math.cos(a) * Lx + Math.sin(a) * Ly, -1, 1);
-      const L = r * len * (0.9 + R() * 0.15), cx = t.x + Math.cos(a) * L * 0.55, cy = t.y + Math.sin(a) * L * 0.55;
-      const gr = g.createLinearGradient(t.x, t.y, t.x + Math.cos(a) * L, t.y + Math.sin(a) * L);
-      gr.addColorStop(0, css(mul(c, 0.55 + ring * 0.12)));
-      gr.addColorStop(1, css(mix(mul(c, 0.85 + ring * 0.12 + 0.45 * Math.max(0, lit)), [205, 228, 180], Math.max(0, lit) * 0.18)));
-      g.beginPath(); g.ellipse(cx, cy, L * 0.5, r * wid, a, 0, 6.283); g.fillStyle = gr; g.fill();
+      const a = (i / n) * 6.283 + ph + (R() - 0.5) * 0.3;
+      const cx = t.x + Math.cos(a) * r * rr, cy = t.y + Math.sin(a) * r * rr, tr = r * ts * (0.85 + R() * 0.3);
+      circle(g, cx, cy, tr * 0.72, css(mul(c, 0.55 + ring * 0.08)));
+      // (the needles: short strokes out from the tuft's middle, the sunny side lit)
+      g.lineWidth = Math.max(0.6, tr * 0.16); g.lineCap = "round";
+      for (let j = 0; j < 11; j++) {
+        const b = (j / 11) * 6.283 + R() * 0.5, lit = clamp(Math.cos(b) * Lx + Math.sin(b) * Ly, -1, 1);
+        const len = tr * (0.75 + R() * 0.35);
+        g.strokeStyle = css(mix(mul(c, 0.75 + ring * 0.1 + 0.5 * Math.max(0, lit)), [200, 228, 170], Math.max(0, lit) * 0.2));
+        g.beginPath(); g.moveTo(cx + Math.cos(b) * tr * 0.15, cy + Math.sin(b) * tr * 0.15); g.lineTo(cx + Math.cos(b) * len, cy + Math.sin(b) * len); g.stroke();
+      }
     }
-  }
-  circle(g, t.x, t.y, r * 0.12, css(mul(c, 0.5)));
+  });
 };
 /** Deep woods: a dark mass, its edge ragged, then many leaf dabs over it, darkest in the shade,
  * bright yellow-green where the sun catches the edge. */
@@ -164,27 +170,6 @@ const dryBrushCrown = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => nu
     g.beginPath(); g.ellipse(t.x + x, t.y + y, rad, rad * 0.75, rot, 0, 6.2832); g.fillStyle = css(col); g.fill();
   }
 };
-/** A pine (Golden, Deep woods): tiers of star-shaped boughs, each spike split down its middle, the
- * sun's half bright, the far half deep. */
-const pine = (g: Ctx, t: PaintTree, Lx: number, Ly: number, mountain: boolean, warm: number) => {
-  const c = mix(t.col, mountain ? [45, 80, 62] : [40, 75, 70], mountain ? 0.2 : 0.4), n = mountain ? 10 : 9, tiers = mountain ? 4 : 3;
-  for (let k = 0; k < tiers; k++) {
-    const R0 = t.r * (mountain ? 1.05 - k * 0.24 : 1 - k * 0.28), inner = R0 * (mountain ? 0.42 : 0.45), turn = k * (mountain ? 0.33 : 0.35) + (t.seed % 1) * 6.28;
-    for (let i = 0; i < n; i++) {
-      const am = (i / n) * 6.283 + turn, half = Math.PI / n;
-      const tip = [t.x + Math.cos(am) * R0, t.y + Math.sin(am) * R0];
-      for (const side of [-1, 1]) {
-        const ab = am + side * half, base = [t.x + Math.cos(ab) * inner, t.y + Math.sin(ab) * inner];
-        const lit = clamp(Math.cos(am + side * (mountain ? 1.2 : 0.8)) * Lx + Math.sin(am + side * (mountain ? 1.2 : 0.8)) * Ly, -1, 1);
-        let col = mountain ? mul(c, 0.6 + 0.7 * lit + k * 0.09) : mul(c, 0.7 + 0.45 * lit);
-        if (mountain && lit > 0.3) col = mix(col, [215, 235, 230], (lit - 0.3) * 0.35);
-        if (!mountain && warm > 0.5 && lit > 0) col = mix(col, [230, 170, 80], 0.35 * lit * warm);
-        g.beginPath(); g.moveTo(t.x, t.y); g.lineTo(base[0], base[1]); g.lineTo(tip[0], tip[1]); g.closePath(); g.fillStyle = css(col); g.fill();
-      }
-    }
-  }
-};
-
 /** The trees, smallest first (the tall ones lean over them), in a style. */
 export const drawTrees = (g: Ctx, trees: PaintTree[], style: Exclude<TreeStyle, "classic">, Lx: number, Ly: number, lt: Light) => {
   const sorted = [...trees].sort((p, q) => p.h - q.h);
@@ -192,8 +177,7 @@ export const drawTrees = (g: Ctx, trees: PaintTree[], style: Exclude<TreeStyle, 
     const R = seeded(Math.floor(t.seed * 1e6) + 1);
     if (t.pine) {
       if (t.r < 3) circle(g, t.x, t.y, t.r, css(mul(t.col, 0.8)));
-      else if (style === "cluster" || style === "cloud" || style === "gouache") tuftedPine(g, t, Lx, Ly, R);
-      else pine(g, t, Lx, Ly, false, lt.warm);
+      else tuftedPine(g, t, Lx, Ly, R);
       continue;
     }
     if (t.r < 4) { tinyCrown(g, t, Lx, Ly, style === "golden" ? [255, 205, 110] : [230, 240, 180]); continue; }

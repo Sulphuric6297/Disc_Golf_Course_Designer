@@ -677,21 +677,23 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       }
     }
   };
-  /** A pine seen from above: a pointed crown with a star of boughs, lit on one side. */
-  const pine = (cx: number, cy: number, r: number, top: number, t: number) => {
+  /** A tuft of needles seen from above: a soft round dome, its edge fringed with fine needle tips
+   * (no star points). */
+  const tuft = (cx: number, cy: number, r: number, top: number, t: number) => {
     const x0 = Math.max(0, Math.floor(cx - r * 1.1)), x1 = Math.min(W - 1, Math.ceil(cx + r * 1.1));
     const y0 = Math.max(0, Math.floor(cy - r * 1.1)), y1 = Math.min(H - 1, Math.ceil(cy + r * 1.1));
-    const boughs = 7 + (t % 3), turn = t * 1.7;
+    const ph = t * 1.9 + cx * 0.37;
     for (let y = y0; y <= y1; y++) {
       const dy = y + 0.5 - cy, tr = (y & 511) << 9;
       for (let x = x0, i = y * W + x0; x <= x1; x++, i++) {
         const dx = x + 0.5 - cx;
         const a = Math.atan2(dy, dx);
-        // The edge reaches out along each bough and in between them
-        const reach = r * (0.68 + 0.32 * Math.pow(Math.abs(Math.cos(((a + turn) * boughs) / 2)), 0.6)) * (0.9 + LEAF[tr | (x & 511)] * 0.2);
-        const d = Math.sqrt(dx * dx + dy * dy);
-        if (d >= reach) continue;
-        const h = top - r * 1.6 * (d / reach);
+        // (many fine needle tips round the edge, uneven: a fringe, not points)
+        const fringe = 0.8 + 0.16 * Math.abs(Math.cos(a * 9 + ph)) + 0.08 * Math.abs(Math.cos(a * 19 - ph)) + (LEAF[tr | (x & 511)] - 0.5) * 0.14;
+        const q = 1 - (dx * dx + dy * dy) / (r * r * fringe * fringe);
+        if (q <= 0) continue;
+        // (needles radiate from the tuft's middle: fine ridges across it)
+        const h = top - r * 0.8 + r * 0.8 * Math.sqrt(q) + r * 0.06 * Math.cos(a * 17 + ph);
         if (h > height[i]) { height[i] = h; kind[i] = t; }
       }
     }
@@ -730,29 +732,21 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       stamp(cx + Math.cos(a) * d, cy + Math.sin(a) * d, r, top - d * 0.45 - tr() * r * 0.3, t);
     }
   };
-  const whorls = (cx: number, cy: number, R: number, top: number, t: number) => {
-    const x0 = Math.max(0, Math.floor(cx - R * 1.05)), x1 = Math.min(W - 1, Math.ceil(cx + R * 1.05));
-    const y0 = Math.max(0, Math.floor(cy - R * 1.05)), y1 = Math.min(H - 1, Math.ceil(cy + R * 1.05));
-    const boughs = 7 + (t % 3), turn = t * 1.7;
-    const tiers = R > crownR * 0.9 ? 3 : 2;
-    for (let y = y0; y <= y1; y++) {
-      const dy = y + 0.5 - cy, tr = (y & 511) << 9;
-      for (let x = x0, i = y * W + x0; x <= x1; x++, i++) {
-        const dx = x + 0.5 - cx;
-        const a = Math.atan2(dy, dx), d = Math.sqrt(dx * dx + dy * dy);
-        const grain = 0.88 + LEAF[tr | (x & 511)] * 0.24;
-        let best = 0;
-        for (let k = 0; k < tiers; k++) {
-          // (each tier turned a little from the one below, its boughs sharper at the tips)
-          const rk = R * (1 - k * (0.62 / tiers));
-          const reach = rk * (0.5 + 0.5 * Math.pow(Math.abs(Math.cos(((a + turn + k * 0.55) * boughs) / 2)), 1.6)) * grain;
-          if (d >= reach) continue;
-          const h = top - R * 1.1 * (1 - k / tiers) - R * 0.5 * (d / reach) + R * 0.25;
-          if (h > best) best = h;
-        }
-        if (best > height[i]) { height[i] = best; kind[i] = t; }
+  /** A pine seen from above: rings of soft needle tufts over the whole crown, each a little star
+   * of boughs, the outer rings lower and the middle highest. */
+  const tufted = (cx: number, cy: number, R: number, top: number, t: number) => {
+    const tr = seeded(Math.round(cx * 5.7 + cy * 11.3) ^ 0x1b873593);
+    const turn = tr() * Math.PI * 2;
+    t = PINE;
+    const rings: [number, number, number][] = R > crownR * 1.6 ? [[0.8, 14, 0.22], [0.58, 11, 0.22], [0.36, 8, 0.21], [0.14, 3, 0.2]] : [[0.66, 9, 0.3], [0.3, 5, 0.28]];
+    rings.forEach(([rr, n, ts], ring) => {
+      for (let k2 = 0; k2 < n; k2++) {
+        const a = turn + ring * 0.5 + (k2 / n) * Math.PI * 2 + (tr() - 0.5) * 0.3;
+        const r = Math.max(pt * 1.2, R * ts * (0.85 + tr() * 0.3));
+        tuft(cx + Math.cos(a) * R * rr, cy + Math.sin(a) * R * rr, r, top - R * rr * 0.9 + tr() * r * 0.2, t);
       }
-    }
+    });
+    tuft(cx, cy, Math.max(pt * 1.2, R * 0.26), top + R * 0.1, t);
   };
   const rnd = seeded(idSeed(doc.seed ?? doc.id ?? doc.name) ^ 0x5bd1e995);
   const vGreens: RGB[] = (() => {
@@ -807,12 +801,12 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         }
         if (natural) {
           const r = realR(u) * grow;
-          if (rnd() < pineShare) whorls(x, y, r * 0.62, realTop(r) * 1.15, t);
+          if (rnd() < pineShare) tufted(x, y, r * 0.8, realTop(r) * 1.15, t);
           else leafy(x, y, r, realTop(r), t);
           continue;
         }
         const r = crownR * (0.45 + u * u * 1.35) * grow;
-        if (rnd() < pines) pine(x, y, r * 0.95, r * (2.2 + rnd() * 0.9), t);
+        if (rnd() < pines) tufted(x, y, r * 0.95, r * (2.2 + rnd() * 0.9), t);
         else if (cover < 0.75 && rnd() < (0.75 - cover) * 0.8) clumpTree(x, y, r * 1.5, t);
         else stamp(x, y, r, r * (1.9 + rnd() * 0.9), t);
       }
@@ -827,7 +821,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     const top = Math.max(r * 1.2, h0 * k);
     const tone = 1 + (idx % 6);
     if (vector) { const tr = seeded(idx * 7919 + 13); vtrees.push({ x: sp.x, y: sp.y, r, h: top, pine: !!conifer, col: treeColor(tr()), seed: tr() }); return; }
-    if (conifer) (natural ? whorls : pine)(sp.x, sp.y, r, top, tone);
+    if (conifer) tufted(sp.x, sp.y, r, top, tone);
     else if (natural) leafy(sp.x, sp.y, r, top, tone);
     else if (r > crownR * 1.4) clumpTree(sp.x, sp.y, r, tone, top);
     else stamp(sp.x, sp.y, r, top, tone);
@@ -845,7 +839,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       vtrees.push({ x: sp.x, y: sp.y, r: t.treeType === "bush" ? r * 0.9 : r, h: t.treeType === "bush" ? r * 1.1 : top, pine: t.treeType === "conifer", col: treeColor(tr()), seed: tr() });
       continue;
     }
-    if (t.treeType === "conifer") (natural ? whorls : pine)(sp.x, sp.y, r, top, tone);
+    if (t.treeType === "conifer") tufted(sp.x, sp.y, r, top, tone);
     else if (t.treeType === "bush") natural ? leafy(sp.x, sp.y, r, Math.min(top, r * 1.1), tone, 4) : stamp(sp.x, sp.y, r, Math.min(top, r * 1.1), tone);
     else if (natural) leafy(sp.x, sp.y, r, top, tone);
     else if (r > crownR * 1.4) clumpTree(sp.x, sp.y, r, tone, top);
@@ -1008,6 +1002,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const woods = palette(s.trees, woodsFactors, 6, 0.82);
   // Treetops in several colors where the landscape has them (autumn), one color per tree
   const mixPals = treeMixOf(s).map(c => palette(c, woodsFactors, 6, 0.9));
+  // (pines keep their needles: deep blue-green whatever the season)
+  const pinePal = palette("#3f5f4d", woodsFactors, 0, 0.9);
   const fair = palette(s.fairway, [0.56, 0.7, 0.84, 1, 1.14, 1.28], 4);
   const lawn = palette(s.rough, [0.6, 0.76, 0.9, 1.04, 1.18], 3);
   // Tall grass: lighter and straw yellow
@@ -1174,7 +1170,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         v += at(stands, x, y) * 0.2 + ((kind[i] % 3) - 1) * 0.025 + (lam - 0.6) * 0.28;
         // (hills read through the trees: their shaded sides darker, as from the air)
         v *= 0.58 + 0.42 * rf;
-        tone(mixPals.length ? mixPals[kind[i] % mixPals.length] : woods, v);
+        tone(kind[i] === PINE ? pinePal : mixPals.length ? mixPals[kind[i] % mixPals.length] : woods, v);
         cr = tr0; cg = tg0; cb = tb0;
       } else {
         // The ground: grass, or the dark floor under the trees, then what is drawn on it
@@ -1479,6 +1475,41 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     ctx.restore();
   }
   if (lineIv) contourLabels(ctx, relief!, W, H, pt, lineIv, seaFt, doc.units, height, s.labelScale ?? 1);
+  // The treetops over the buildings, and the trees' shade on the roofs: a picture of its own (clear
+  // elsewhere), laid over the buildings, which are drawn over the painting
+  {
+    const near = new Uint8Array(W * H);
+    let any = false;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (built[y * W + x] <= 0) continue;
+      any = true;
+      // (a little past the roof's edge, so its outline is under the leaves too)
+      const rr = Math.max(2, Math.round(pt * 1.5));
+      for (let dy = -rr; dy <= rr; dy++) for (let dx = -rr; dx <= rr; dx++) {
+        const xx = x + dx, yy = y + dy;
+        if (xx >= 0 && yy >= 0 && xx < W && yy < H) near[yy * W + xx] = 1;
+      }
+    }
+    if (any && !opts.under) {
+      const fin = ctx.getImageData(0, 0, W, H).data;
+      const ov = new ImageData(W, H), od = ov.data;
+      for (let i = 0; i < W * H; i++) {
+        if (!near[i]) continue;
+        const o4 = i * 4;
+        if (height[i] > built[i]) {
+          od[o4] = fin[o4]; od[o4 + 1] = fin[o4 + 1]; od[o4 + 2] = fin[o4 + 2]; od[o4 + 3] = 255;
+        } else if (built[i] > 0) {
+          const x = i % W, y = (i / W) | 0;
+          const shade = shadowK * 0.75 * (1 - sunlit(x, y, built[i]));
+          if (shade > 0.01) { od[o4 + 3] = Math.round(shade * 255); }
+        }
+      }
+      const oc = document.createElement("canvas");
+      oc.width = W; oc.height = H;
+      oc.getContext("2d")!.putImageData(ov, 0, 0);
+      overGrids.set(canvas, oc);
+    }
+  }
   // Where it painted woods, for 3D trees standing on the painting (an unturned view only)
   if (!view.rotation) woodedGrids.set(canvas, { cols: mw, rows: mh, data: wooded, x0: view.cx - W / 2 / k, y0: view.cy - H / 2 / k, ftPerCell: cell / k, cover });
   return canvas;
@@ -1572,6 +1603,12 @@ const maskStores = new Map<string, MaskStore>();
 /** Where a painting shows woods, cell by cell (1: woods it painted itself; 2: drawn woods), and how thick. */
 export type WoodedGrid = { cols: number; rows: number; data: Uint8Array; x0: number; y0: number; ftPerCell: number; cover: number };
 const woodedGrids = new WeakMap<HTMLCanvasElement, WoodedGrid>();
+/** The tone a pine's needles are painted in (the trees' own tones are 1 to 6). */
+const PINE = 7;
+const overGrids = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+/** The treetops over the buildings on a painting (and their shade on the roofs), a picture as big
+ * as the painting, clear elsewhere; none when no building stands on it. */
+export const treesOverOf = (canvas: HTMLCanvasElement) => overGrids.get(canvas) ?? null;
 /** The woods on a painting made by `forestCanvas` or `forestCanvasAsync`. */
 export const woodedOf = (canvas: HTMLCanvasElement) => woodedGrids.get(canvas) ?? null;
 

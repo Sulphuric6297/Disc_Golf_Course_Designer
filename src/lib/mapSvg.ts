@@ -12,7 +12,7 @@ import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelI
 import { activeLayout, areaObEdges, beyondSides, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, sharedWalks, teeAim, walkRoutes, taglineOf, titleFontOf } from "./course";
 import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
 import { courseTotals, holeStats, isOb, isOutOfPlay, playsOf, type HoleStats } from "./holeStats";
-import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, type CanopyGrid } from "./forest";
+import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, treesOverOf, type CanopyGrid } from "./forest";
 import { BASKET_MARKS, RESTRICTED, STRUCTURE_INK, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol, structureLegend, structureSymbol, type StructureDraw, type StructureInk } from "./symbols";
 import { isLineKind, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
 import { chainContours, type Contours } from "./relief";
@@ -205,11 +205,13 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   out.push(`<rect width="${n(view.width)}" height="${n(view.height)}" fill="${pal.bg}"/>`);
   out.push(`<g transform="${g}">`);
   // Ground: the photo, the painted land (Forest), or the drawn grass
+  let treesOver: string | null = null;
+  let at = { x: 0, y: 0, w: view.width, h: view.height };
   if (forest && typeof document !== "undefined") {
     // (while the first painting of a live preview is under way: the grass color alone)
     const painted = forestPicture(doc, view, layers);
+    treesOver = painted ? overOf.get(painted.url) ?? null : null;
     // (a painting made for another view of the same turn stands in where it falls in this one)
-    let at = { x: 0, y: 0, w: view.width, h: view.height };
     if (painted && painted.view !== view) {
       const v0 = painted.view, r = view.scale / v0.scale;
       const c = Math.cos(-rot), sn = Math.sin(-rot), dx = v0.cx - view.cx, dy = v0.cy - view.cy;
@@ -360,11 +362,12 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       const r = t.radius * (t.width ?? 1);
       const c = t.treeType === "conifer" ? shade(s.trees, -0.12) : t.treeType === "bush" ? shade(s.trees, 0.12) : s.trees;
       if (t.treeType === "conifer") {
-        const star = Array.from({ length: 16 }, (_, i) => {
-          const a = (i / 16) * Math.PI * 2, rr = i % 2 ? r * 0.72 : r;
-          return { x: t.x + Math.cos(a) * rr, y: t.y + Math.sin(a) * rr };
-        });
-        out.push(`<polygon points="${pts(star)}" fill="${c}" stroke="${shade(c, -0.3)}" stroke-width="${n(px(0.6))}"/><polygon points="${pts(star)}" fill="url(#${uid}-crown)"/>`);
+        // (tufted: a ring of soft needle tufts round the middle, as every map style draws a pine)
+        const tufts = Array.from({ length: 8 }, (_, i) => {
+          const a = (i / 8) * Math.PI * 2;
+          return `<circle cx="${n(t.x + Math.cos(a) * r * 0.6)}" cy="${n(t.y + Math.sin(a) * r * 0.6)}" r="${n(r * 0.4)}"/>`;
+        }).join("");
+        out.push(`<g fill="${c}" stroke="${shade(c, -0.3)}" stroke-width="${n(px(0.6))}">${tufts}<circle cx="${n(t.x)}" cy="${n(t.y)}" r="${n(r * 0.42)}"/></g><circle cx="${n(t.x)}" cy="${n(t.y)}" r="${n(r)}" fill="url(#${uid}-crown)"/>`);
       } else {
         out.push(`<circle cx="${n(t.x)}" cy="${n(t.y)}" r="${n(r)}" fill="${c}" stroke="${shade(c, -0.3)}" stroke-width="${n(px(0.6))}"/><circle cx="${n(t.x)}" cy="${n(t.y)}" r="${n(r)}" fill="url(#${uid}-crown)"/>`);
       }
@@ -391,6 +394,9 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       out.push(`<g opacity="${dim(st.holeId, st.alsoHoles)}">${structureSymbol(st.kind, shape, structureWidth(st), structureHeight(st), structureRoof(st), { ...draw, id: `${uid}-s${st.id}`, ink: st.roofColor ? { ...draw.ink, roof: st.roofColor, shelter: st.roofColor } : draw.ink })}</g>`);
     }
   }
+  // (the painted treetops over the buildings, and their shade on the roofs: crowns overhang roofs
+  // as they do from the air)
+  if (treesOver) out.push(`</g><image href="${treesOver}" x="${n(at.x)}" y="${n(at.y)}" width="${n(at.w)}" height="${n(at.h)}" preserveAspectRatio="none"/><g transform="${g}">`);
 
   // OB, hazards and no-go areas over the land: a soft band of color inside the edge, the edge
   // itself crisp on a white casing, and a tag saying what it is (when there is room)
@@ -776,6 +782,17 @@ export const onPaintProgress = (fn: (fraction: number | null) => void) => {
 const tellProgress = () => progressListeners.forEach(fn => fn(livePaint ? liveProgress : null));
 if (typeof window !== "undefined") (window as any).__dgPainting = paintingNow;
 
+/** Each painting's treetops over the buildings, by the painting's url (a PNG: clear elsewhere). */
+const overOf = new Map<string, string>();
+const keepOver = (url: string, over: string | null) => {
+  if (!over) return;
+  overOf.set(url, over);
+  if (overOf.size > 16) {
+    const [k0, v0] = overOf.entries().next().value!;
+    overOf.delete(k0);
+    if (v0.startsWith("blob:")) URL.revokeObjectURL(v0);
+  }
+};
 /** The quick drafts shown while the sharp pictures paint (freed when no longer shown). */
 const draftUrls: string[] = [];
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
@@ -802,6 +819,8 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   // A photo-like picture: JPEG keeps it a tenth the size of a PNG
   const keep = (canvas: HTMLCanvasElement) => {
     const url = canvas.toDataURL("image/jpeg", 0.9);
+    const over = treesOverOf(canvas);
+    keepOver(url, over ? over.toDataURL("image/png") : null);
     forestCache.set(key, url);
     if (forestCache.size > 6) forestCache.delete(forestCache.keys().next().value!);
     return { url, view };
@@ -811,6 +830,8 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
     printJobs.push(async () => {
       if (forestCache.has(key)) return;
       const canvas = await forestCanvasAsync(doc, view, layers.stats, opts);
+      const over = treesOverOf(canvas);
+      const overUrl = over ? over.toDataURL("image/png") : null;
       const url = await new Promise<string>((res, rej) => canvas.toBlob(b => {
         if (!b) return rej(new Error("The map couldn't be painted."));
         const r = new FileReader();
@@ -819,6 +840,7 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
         r.readAsDataURL(b);
       }, "image/jpeg", 0.95));
       canvas.width = canvas.height = 1;
+      keepOver(url, overUrl);
       forestCache.set(key, url);
       if (forestCache.size > 6) forestCache.delete(forestCache.keys().next().value!);
     });
@@ -834,13 +856,23 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
     queueMicrotask(tellProgress);
     // First a quick draft (a fifth of the pixels: shown in a moment), then the sharp picture
     const toBlob = (canvas: HTMLCanvasElement) => new Promise<Blob>((res, rej) => canvas.toBlob(b => (b ? res(b) : rej(new Error("no picture"))), "image/jpeg", 0.9));
+    // (and its treetops over the buildings, as a PNG, the same moment)
+    let overBlob: Promise<Blob | null> = Promise.resolve(null);
+    const withOver = (canvas: HTMLCanvasElement) => {
+      const over = treesOverOf(canvas);
+      overBlob = over ? new Promise<Blob | null>(res => over.toBlob(b => res(b), "image/png")) : Promise.resolve(null);
+      return canvas;
+    };
+    const tieOver = async (url: string) => { const b = await overBlob; if (b) keepOver(url, URL.createObjectURL(b)); };
     const draftDensity = density * 0.32;
     const draft = draftDensity * Math.max(view.width, view.height) >= 500
       ? forestCanvasAsync(doc, view, layers.stats, { ...opts, density: draftDensity }, job.stop.signal, f => { if (livePaint === job) { liveProgress = f * 0.3; tellProgress(); } })
+        .then(withOver)
         .then(toBlob)
-        .then(blob => {
+        .then(async blob => {
           if (livePaint !== job) return;
           const url = URL.createObjectURL(blob);
+          await tieOver(url);
           draftUrls.push(url);
           while (draftUrls.length > 3) URL.revokeObjectURL(draftUrls.shift()!);
           lastForView.set(viewKey, url);
@@ -855,9 +887,11 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
         tellProgress();
       }))
       // (encoded off the page's thread, unlike toDataURL)
+      .then(withOver)
       .then(toBlob)
-      .then(blob => {
+      .then(async blob => {
         const url = URL.createObjectURL(blob);
+        await tieOver(url);
         liveCache.set(key, url);
         if (liveCache.size > 6) {
           const [oldKey, oldUrl] = liveCache.entries().next().value!;
