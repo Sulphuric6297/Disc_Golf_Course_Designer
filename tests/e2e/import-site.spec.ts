@@ -685,7 +685,8 @@ test("the same spot brought in again asks for nothing it has already (photo, ele
   const asked = { osm: 0, ground: 0 };
   page.on("request", r => {
     const u = r.url();
-    if (/overpass|maps\.mail\.ru/.test(u)) asked.osm++;
+    // (the park's outline, looked up when it's picked, isn't the import's: left out)
+    if (/overpass|maps\.mail\.ru/.test(u) && !/is_in/.test(decodeURIComponent(u + (r.postData() ?? "")))) asked.osm++;
     if (/elevation-tiles-prod/.test(u)) asked.ground++;
   });
   await importSite(page, { trees: false });

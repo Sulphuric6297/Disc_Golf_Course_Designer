@@ -231,8 +231,7 @@ export default function App() {
       lidar: site.lidar
     }));
     setFindSite(false);
-    // (the reveal: the site in 3D, and what came in it)
-    useEditor.getState().set({ step: "design", tool: "select", view: "3d" });
+    useEditor.getState().set({ step: "design", tool: "select" });
     setTimeout(() => getView()?.fitSite(), 50);
     const outside = carried.outside ? ` ${carried.outside} ${carried.outside === 1 ? "thing you drew is" : "things you drew are"} now past the site's edges.` : "";
     const name = getDoc().name.replace(/ Disc Golf Course$/, "");
@@ -383,7 +382,7 @@ export default function App() {
   const dialogs = (
     <>
       {findSite && <SiteImportDialog onClose={() => setFindSite(false)} onImported={onImported} />}
-      {siteReady && <SiteReady {...siteReady} onLook={() => setSiteReady(null)} onStart={() => { setSiteReady(null); useEditor.getState().set({ view: "2d" }); setTimeout(() => getView()?.fitSite(), 50); }} />}
+      {siteReady && <SiteReady {...siteReady} onLook={() => { setSiteReady(null); useEditor.getState().set({ view: "3d" }); }} onStart={() => setSiteReady(null)} />}
       {help && <HelpGuide onClose={() => setHelp(false)} topic={help.topic} touch={touchUi} />}
       {goTo && <GoTo onClose={() => setGoTo(false)} onHelp={topic => setHelp({ topic })} />}
     </>

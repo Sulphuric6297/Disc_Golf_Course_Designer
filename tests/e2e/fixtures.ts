@@ -336,6 +336,8 @@ export async function importSite(page: Page, opts: { trees?: boolean; osm?: bool
   await page.getByRole("button", { name: /Springfield Park/ }).first().click();
   await expect(page.getByTestId("site-size")).toBeVisible();
   // (what comes in: a switch each; the photo's trees only offered where no survey covers the site)
+  // (once what this spot has is known: the switches settle)
+  await expect(page.locator('[data-testid=import-what][data-here=ready]')).toBeVisible({ timeout: 30_000 });
   const photoTrees = page.getByTestId("bring-photo-trees");
   if (opts.trees === false && await photoTrees.isVisible()) await photoTrees.click();
   if (opts.osm === false) await page.getByTestId("bring-osm").click();

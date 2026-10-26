@@ -428,7 +428,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
       {drawHint}
       {sizeEl}
       <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 mt-1">What comes in</div>
-      <div className="flex flex-wrap gap-2" data-testid="import-what">{pills}</div>
+      <div className="flex flex-wrap gap-2" data-testid="import-what" data-here={here ? "ready" : "looking"}>{pills}</div>
       {errorEl}
       {againEl}
       {goBtn}

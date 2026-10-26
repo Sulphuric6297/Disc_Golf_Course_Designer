@@ -31,7 +31,8 @@ test("buildings traced from the air come in only where the map has none, big eno
   ) as StructureItem[];
   expect(made.length).toBe(2);
   expect(made.every(m => m.kind === "building" && m.importSource === "traced")).toBe(true);
-  expect(made[0].height).toBe(16.5);
+  // (5 m to the top of its roof: its walls the rest, under a roof of its own)
+  expect(made[0].height).toBe(9);
   // (shaped as traced: its corners where they are on the ground)
   const xs = made[0].points.map(p => p.x), ys = made[0].points.map(p => p.y);
   expect(Math.min(...xs)).toBeCloseTo(400, 0);
