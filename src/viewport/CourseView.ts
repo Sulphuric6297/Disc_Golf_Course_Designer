@@ -2551,7 +2551,11 @@ export class CourseView {
       });
       this.lidarState = state;
       // (the painted map paints the same standing trees)
-      if (measuredStanding()?.key !== this.lidarKey) setMeasuredStanding({ key: this.lidarKey, trees: state.stand.map(k => lidar.trees[k]) });
+      // (told by which trees stand, so two views over the same course agree and never take turns)
+      let sig = state.stand.length;
+      for (const k of state.stand) sig = (sig * 31 + k) % 2147483647;
+      const standKey = `${state.stand.length}:${sig}:${lidar.growYears ?? 0}`;
+      if (measuredStanding()?.key !== standKey) setMeasuredStanding({ key: standKey, trees: state.stand.map(k => lidar.trees[k]) });
       put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, state.cut, hv, st.trees, st.landscape, st.treeMix, st.conifers]), () => {
         const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, treeMixOf(st));
         this.shadowsDirty = true;
