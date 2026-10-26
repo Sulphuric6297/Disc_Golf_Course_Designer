@@ -403,14 +403,15 @@ const dotMat = () => (dotMaterial ??= shared(new THREE.MeshBasicMaterial({ verte
  * group comes back (its close and far versions follow the camera like the woods'). */
 export const createHedge = (points: P[], groundAt: Ground, width = 4, height = 5, seed = 1, color = "#3f6b35") => {
   const W = Math.max(1, width), H = Math.max(1, height);
-  // (a bush every half its width, a little either side of the line, so the row has no gaps)
-  const samples = samplePath(points, Math.max(0.8, W * 0.45));
+  // (a bush every third of its width, either side of the line by turns)
+  const samples = samplePath(points, Math.max(0.6, W * 0.3));
   let s = seed >>> 0 || 1;
   const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
   const spots: TreeSpot[] = samples.map((p, i) => {
     const q = samples[Math.min(samples.length - 1, i + 1)], o = samples[Math.max(0, i - 1)];
     const dx = q.x - o.x, dy = q.y - o.y, len = Math.hypot(dx, dy) || 1;
-    const side = (rnd() - 0.5) * W * 0.18;
+    // (two staggered rows, so it reads as one hedge, no daylight through it)
+    const side = (i % 2 ? 1 : -1) * W * 0.2 + (rnd() - 0.5) * W * 0.08;
     const x = p.x - (dy / len) * side, y = p.y + (dx / len) * side;
     return {
       x, y,
