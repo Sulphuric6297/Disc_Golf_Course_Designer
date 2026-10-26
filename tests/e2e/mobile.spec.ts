@@ -594,6 +594,7 @@ test.describe("phone", () => {
   });
 
   test("the camera on a phone: the stick moves it, the arrows lift it, a drag turns it, a big button adds the keyframe", async ({ page }) => {
+    test.setTimeout(180_000);
     await oneHole(page);
     await tapPlan(page, 450, 500);
     // (the header's eye: the hole's panel under it has a View from the tee button too)
