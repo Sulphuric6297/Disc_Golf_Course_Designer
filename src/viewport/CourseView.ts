@@ -38,6 +38,7 @@ import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { Tufts } from "../three/tufts";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createFence, createStructure, onPartLoaded } from "../three/structures";
+import { canopyMaterial, createCrowns, planUv } from "./canopy";
 import { createFieldGround, createFieldProps, createHedge, createPowerLine } from "../three/parkProps";
 import { fieldInks, fieldPlan } from "../lib/fieldPlan";
 import { fieldKeepsTreesOut, fieldOutline } from "../lib/fields";
@@ -1872,6 +1873,7 @@ export class CourseView {
     }
     this.camera.updateMatrixWorld();
     const tilted = this.controls.polarAngle > TILT_TOP;
+    for (const o of this.itemsGroup.children) if (o.userData.crowns) (o.userData.crowns as THREE.Object3D).visible = !tilted;
     this.ground.detailActive(dist < 250);
     // Tilted, the course is a place: sky, haze, land to the horizon and grass up close
     this.lastSky = false;
@@ -2547,6 +2549,10 @@ export class CourseView {
       this.lidarState = state;
       put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, state.cut, hv, st.trees, st.landscape, st.treeMix, st.conifers]), () => {
         const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, treeMixOf(st));
+        // (and their treetops for looking straight down, where the 3D trees barely show)
+        const crowns = createCrowns(state.stand.map(k => { const [x, y, height, radius, conifer] = lidar.trees[k]; return { x, y, ground: this.h(x, y), height, radius, conifer: !!conifer }; }), st.trees);
+        woods.add(crowns);
+        woods.userData.crowns = crowns;
         this.shadowsDirty = true;
         return woods;
       }, this.itemsGroup, true);
@@ -2632,10 +2638,13 @@ export class CourseView {
         }
         // (A woods' floor goes under the fairways and paths through it, and under its ponds)
         const floor = a.kind === "woods";
+        const geo = drapedPolygon(a.points, (x, y) => this.h(x, y), doc.gridSize, floor ? 0.08 : 0.15 + order * 0.01);
         const mesh = new THREE.Mesh(
-          drapedPolygon(a.points, (x, y) => this.h(x, y), doc.gridSize, floor ? 0.08 : 0.15 + order * 0.01),
-          new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: floor ? Math.min(fill, 0.45) : fill, depthWrite: false, polygonOffset: true, polygonOffsetFactor: floor ? -1 : -4, polygonOffsetUnits: floor ? -2 : -8 })
+          geo,
+          // (on the photo, a wood is drawn as treetops: it reads as woods at once)
+          floor ? canopyMaterial(c) : new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: floor ? Math.min(fill, 0.45) : fill, depthWrite: false, polygonOffset: true, polygonOffsetFactor: floor ? -1 : -4, polygonOffsetUnits: -8 })
         );
+        if (floor) planUv(geo, doc.unitsPerFoot);
         mesh.renderOrder = floor ? 0.5 : a.kind === "parking" ? tierOrder("road") : 2 + order * 0.001;
         mesh.receiveShadow = true;
         g.add(mesh);

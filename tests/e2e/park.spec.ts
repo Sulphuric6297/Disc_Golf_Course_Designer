@@ -252,8 +252,9 @@ plain("fields out of play count as Out of play; checks over and across fields, a
   plainExpect(t).toContain("Hole 1 throws across a soccer field.");
   plainExpect(t).toContain("Hole 1 throws under a power line.");
   // (an Out of play area is still said as one)
-  doc.items.push(createArea("nogo", rect(620, 280, 30, 40)));
-  plainExpect(safetyIssues(doc).map(i => i.text)).toContain("Hole 1 throws over an out-of-play area.");
+  // (a new course object: the checks are worked out once per course)
+  const more = { ...doc, items: [...doc.items, createArea("nogo", rect(620, 280, 30, 40))] };
+  plainExpect(safetyIssues(more).map(i => i.text)).toContain("Hole 1 throws over an out-of-play area.");
 });
 
 plain("a ball field's home plate: the fan's point, wherever it starts and however it's turned; courts side by side", () => {

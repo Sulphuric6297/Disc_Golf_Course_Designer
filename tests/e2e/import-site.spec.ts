@@ -640,7 +640,7 @@ test("every source at once, each saying how it went; Stop lets go of all of it a
   await page.getByTestId("import-site").click();
   // The photo and the ground are in while OpenStreetMap is still coming (all asked at once)
   const sources = () => page.evaluate(() => (window as any).__dgImportProgress?.sources ?? {});
-  await expect.poll(async () => { const s = await sources(); return [s.photo?.state, s.elevation?.state, s.osm?.state]; }, { timeout: 30_000 }).toEqual(["done", "done", "coming"]);
+  await expect.poll(async () => { const s = await sources(); return [s.photo?.state, s.elevation?.state, s.photoTrees?.state, s.osm?.state]; }, { timeout: 60_000 }).toEqual(["done", "done", "done", "coming"]);
   const s = await sources();
   plainExpect(s.photo.source).toMatch(/Esri/);
   plainExpect(s.elevation.source).toMatch(/terrain tiles/);
