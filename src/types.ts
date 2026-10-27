@@ -728,10 +728,10 @@ export interface CourseDoc {
   canvas: { width: number; height: number };
   /** Terrain grid spacing, ft; heights are keyed "x,y" at grid points. */
   gridSize: number;
-  /** The site's trees measured from the air (LiDAR): those on fairways, tees and baskets' circles
-   * are cut down unless `kept` (by index); `removed` ones taken out wherever they stand. */
+  /** The site's trees measured from the air (LiDAR): `removed` ones (by index) are taken out
+   * wherever they stand. With `clearFairways: true`, those on fairways, tees and baskets' circles
+   * are cut down too unless `kept`; unset, they stand (cut by hand, or a hole's Clear them). */
   /** `growYears`: the measured trees grown that many years (the survey is older than today). */
-  /** `clearFairways: false`: the measured trees stay where the holes play (cut by hand only). */
   /** `bound`: measured trees that belong to woods. They stand only while a woods area covers them:
    * a wood's edge pulled in past one, or the wood deleted, takes it out; the edge pushed back
    * out over it brings it back. (A tree becomes bound the first time a woods it stood in changes
@@ -739,7 +739,7 @@ export interface CourseDoc {
   /** `fromPhoto`: how many of the trees, the last ones, came from the summer photo where a survey
    * flown bare couldn't pick them out (lib/summerTrees). `crownSize`: every crown this much as wide,
    * in 3D and on the map (unset: as measured). */
-  lidar?: { source: string; trees: LidarTree[]; fromPhoto?: number; crownSize?: number; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number; clearFairways?: false; bound?: number[] };
+  lidar?: { source: string; trees: LidarTree[]; fromPhoto?: number; crownSize?: number; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number; clearFairways?: true; bound?: number[] };
   /** Where trees were cut down by hand that have no list of their own: saplings grown since the
    * survey and the trees the app plants in woods and patches. None stands within 4 ft of one. */
   cutTrees?: P[];

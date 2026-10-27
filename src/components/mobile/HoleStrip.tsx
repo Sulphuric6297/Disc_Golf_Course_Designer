@@ -86,7 +86,7 @@ export function HoleStrip({ hole }: { hole: Hole }) {
     ["ob", <>Add OB</>],
     ["foliage", <>Foliage <span className="opacity-60">{hole.foliage === "light" ? "Light" : hole.foliage === "heavy" ? "Heavy" : "Auto"}</span></>],
     // (the measured trees it cut down: the way to bring them back)
-    ...(holeTrees.cut.length || holeTrees.kept.length ? [["trees", <>Trees <span className="opacity-60">{holeTrees.cut.length ? `${holeTrees.cut.length} cut` : `${holeTrees.kept.length} kept`}</span></>] as [Chip, ReactNode]] : [])
+    ...(holeTrees.cut.length || holeTrees.kept.length || holeTrees.standing.length ? [["trees", <>Trees <span className="opacity-60">{holeTrees.cut.length ? `${holeTrees.cut.length} cut` : holeTrees.standing.length ? `${holeTrees.standing.length} in the way` : `${holeTrees.kept.length} kept`}</span></>] as [Chip, ReactNode]] : [])
   ];
   let control: ReactNode = null;
   if (chip === "par") control = <Segmented label="Par" value={hole.par ?? 0} onChange={v => set({ par: v === 0 ? undefined : v })} options={[{ value: 0, label: <span className="whitespace-nowrap">Auto {s.parAuto}</span> }, ...[2, 3, 4, 5, 6].map(p => ({ value: p, label: String(p) }))]} />;

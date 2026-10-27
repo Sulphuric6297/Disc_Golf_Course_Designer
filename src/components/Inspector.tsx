@@ -78,34 +78,41 @@ function HoleNumberInput({ holeId, value }: { holeId: string; value: string }) {
   );
 }
 
-/** The measured trees on a hole's fairway: how many are cut down and kept, and all of them back
- * or down at once. */
-/** The measured trees this hole cut down (where it plays), and kept: how many, and the button to
- * bring them back (or cut them again). Near the top of the hole's panel, and a chip on a phone. */
+/** The measured trees on this hole's fairway (where it plays): how many are cut down, kept or in
+ * the way, and the button to bring them back, clear them, or cut them again. Near the top of the
+ * hole's panel, and a chip on a phone. */
 export const useHoleTrees = (hole: Hole, line: P[] | null) => {
   const lidar = useCourse(s => s.doc.lidar);
-  return useMemo(() => (lidar && line ? fairwayTrees({ lidar }, hole, line) : { cut: [], kept: [] }), [lidar, hole, line]);
+  return useMemo(() => (lidar && line ? fairwayTrees({ lidar }, hole, line) : { cut: [], kept: [], standing: [] }), [lidar, hole, line]);
 };
 export function HoleTrees({ hole, line }: { hole: Hole; line: P[] }) {
   const lidar = useCourse(s => s.doc.lidar);
-  const { cut, kept } = useHoleTrees(hole, line);
-  if (!cut.length && !kept.length) return null;
+  const { cut, kept, standing } = useHoleTrees(hole, line);
+  if (!cut.length && !kept.length && !standing.length) return null;
   const setLidar = (patch: { kept?: number[]; removed?: number[] }) => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, ...patch } } : {}));
   const list = (v: number[]) => (v.length ? [...new Set(v)].sort((a, b) => a - b) : undefined);
   const back = () => {
     setLidar({ kept: list([...(lidar?.kept ?? []), ...cut]), removed: list((lidar?.removed ?? []).filter(k => !cut.includes(k))) });
     toast(`${cut.length === 1 ? "1 tree" : `${cut.length} trees`} back on hole ${hole.number ?? ""}.`.replace(" .", "."), "success", true);
   };
+  // (trees left standing in the way: cut down only when asked, and said)
+  const clear = () => {
+    setLidar({ removed: list([...(lidar?.removed ?? []), ...standing]) });
+    toast(`Cut down ${standing.length === 1 ? "1 tree" : `${standing.length} trees`} on hole ${hole.number ?? ""}. Bring them back here, or click a stump.`.replace(" .", "."), "info", true);
+  };
   return (
     <div className="flex items-center gap-2.5 rounded-[14px] bg-white/[0.06] ring-1 ring-white/[0.08] px-3 py-2.5 mt-2" data-testid="fairway-trees">
       <TreeDeciduous size={20} className="text-[#a2cf6a] shrink-0" />
       <div className="flex-1 min-w-0 leading-tight">
-        <div className="text-[13.5px] font-semibold text-zinc-50 flex items-center gap-1.5">{cut.length ? `${cut.length.toLocaleString()} ${cut.length === 1 ? "tree" : "trees"} cut down` : `${kept.length.toLocaleString()} ${kept.length === 1 ? "tree" : "trees"} kept`}<HelpLink topic="lidar-settings" label="Trees cut for holes" /></div>
+        <div className="text-[13.5px] font-semibold text-zinc-50 flex items-center gap-1.5">{cut.length ? `${cut.length.toLocaleString()} ${cut.length === 1 ? "tree" : "trees"} cut down` : standing.length ? `${standing.length.toLocaleString()} ${standing.length === 1 ? "tree" : "trees"} in the way` : `${kept.length.toLocaleString()} ${kept.length === 1 ? "tree" : "trees"} kept`}<HelpLink topic="lidar-settings" label="Trees cut for holes" /></div>
         {cut.length > 0 && kept.length > 0 && <div className="text-[11.5px] text-zinc-400">{kept.length.toLocaleString()} kept</div>}
+        {cut.length > 0 && standing.length > 0 && <div className="text-[11.5px] text-zinc-400">{standing.length.toLocaleString()} still in the way</div>}
       </div>
       {cut.length > 0
         ? <Button small onClick={back} testid="trees-back"><RotateCcw size={14} /> Bring them back</Button>
-        : <Button small onClick={() => setLidar({ kept: list((lidar?.kept ?? []).filter(k => !kept.includes(k))) })} testid="trees-down">Cut them down</Button>}
+        : standing.length > 0
+          ? <Button small onClick={clear} testid="trees-clear">Clear them</Button>
+          : <Button small onClick={() => setLidar({ kept: list((lidar?.kept ?? []).filter(k => !kept.includes(k))) })} testid="trees-down">Cut them down</Button>}
     </div>
   );
 }

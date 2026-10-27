@@ -73,21 +73,26 @@ plain("trees and ground from a LiDAR tile: each tree where it stands, as tall an
   plainExpect(surveyYear("CA_FEMA_Z4_B1_2018")).toBe(2018);
 });
 
-plain("trees on a fairway are cut down unless kept; taken out anywhere; a hole's fairway trees counted (pure logic)", () => {
+plain("trees on a fairway stand unless taken out; with the fairways cleared, cut down unless kept; a hole's fairway trees counted (pure logic)", () => {
   const trees: LidarTree[] = [[100, 300, 50, 12, 0], [200, 302, 50, 12, 0], [300, 298, 50, 12, 0], [200, 400, 50, 12, 0]];
-  const doc = { ...createEmptyCourse(), lidar: { source: "USGS LiDAR 2019", trees } };
+  const doc: any = { ...createEmptyCourse(), lidar: { source: "USGS LiDAR 2019", trees } };
   // (the fairway: a strip along y = 300)
   const cleared = (p: { x: number; y: number }, reach: number) => Math.abs(p.y - 300) < 15 + reach;
-  plainExpect(standingTrees(doc.lidar, cleared)).toEqual({ stand: [3], cut: [0, 1, 2] });
-  doc.lidar = { ...doc.lidar, kept: [1], removed: [3] };
-  plainExpect(standingTrees(doc.lidar, cleared)).toEqual({ stand: [1], cut: [0, 2, 3] });
-  // (fairways left alone: only what was taken out by hand is down)
-  plainExpect(standingTrees({ ...doc.lidar, clearFairways: false }, cleared)).toEqual({ stand: [0, 1, 2], cut: [3] });
   const hole = newHole({ fairwayWidth: 30 });
-  plainExpect(fairwayTrees(doc, hole, [{ x: 50, y: 300 }, { x: 350, y: 300 }])).toEqual({ cut: [0, 2], kept: [1] });
+  const line = [{ x: 50, y: 300 }, { x: 350, y: 300 }];
+  // (left alone by default: every one stands, those on the fairway in the way)
+  plainExpect(standingTrees(doc.lidar, cleared)).toEqual({ stand: [0, 1, 2, 3], cut: [] });
+  plainExpect(fairwayTrees(doc, hole, line)).toEqual({ cut: [], kept: [], standing: [0, 1, 2] });
+  doc.lidar = { ...doc.lidar, removed: [0, 3] };
+  plainExpect(standingTrees(doc.lidar, cleared)).toEqual({ stand: [1, 2], cut: [0, 3] });
+  plainExpect(fairwayTrees(doc, hole, line)).toEqual({ cut: [0], kept: [], standing: [1, 2] });
+  // (the fairways cleared: cut down unless kept)
+  doc.lidar = { ...doc.lidar, clearFairways: true, kept: [1], removed: [3] };
+  plainExpect(standingTrees(doc.lidar, cleared)).toEqual({ stand: [1], cut: [0, 2, 3] });
+  plainExpect(fairwayTrees(doc, hole, line)).toEqual({ cut: [0, 2], kept: [1], standing: [] });
 });
 
-test("trees measured from the air on import: cut down on a fairway, a stump to bring each back, all at once from the hole; cut down by hand; flyovers keep clear", async ({ page }) => {
+test("trees measured from the air on import: left standing on a fairway, cleared by the hole when asked; with the fairways cleared, cut down, a stump to bring each back, all at once from the hole; cut down by hand; flyovers keep clear", async ({ page }) => {
   test.setTimeout(240_000);
   await withLidar(page);
   await importSite(page);
@@ -108,6 +113,18 @@ test("trees measured from the air on import: cut down on a fairway, a stump to b
   const hole = await addHole(page, at(-75, -40), at(35, -40));
   await page.keyboard.press("Escape");
   await page.evaluate(id => (window as any).__dgActions.select(id), hole.id);
+  // (left standing: the hole says they're in the way, and clears them when asked; back again)
+  await expect(page.getByTestId("fairway-trees")).toContainText("5 trees in the way");
+  await expect(page.locator("[data-stump]")).toHaveCount(0);
+  await page.getByTestId("trees-clear").click();
+  await expect.poll(async () => (await course(page)).lidar.removed).toEqual([...row].sort((a, b) => a - b));
+  await expect(page.getByTestId("fairway-trees")).toContainText("5 trees cut down");
+  await expect(page.getByText(/^Cut down 5 trees on hole 1/)).toBeVisible();
+  await page.getByTestId("trees-back").click();
+  await expect.poll(async () => (await course(page)).lidar.removed).toBeUndefined();
+  await expect(page.getByTestId("fairway-trees")).toContainText("5 trees in the way");
+  // The fairways cleared for the whole course
+  await page.evaluate(() => (window as any).__dgActions.lidar({ clearFairways: true }));
   for (const k of row) await expect(page.locator(`[data-stump="${k}"]`)).toHaveAttribute("data-testid", "stump");
   await expect(page.getByTestId("fairway-trees")).toContainText("5 trees cut down");
   const before = await forest() + 5;

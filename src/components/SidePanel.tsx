@@ -205,8 +205,11 @@ function MeasuredSettings() {
         <div className="mt-2 text-[11px] text-zinc-400" data-testid="doubled-trees">{doubled.length} tree{doubled.length === 1 ? "" : "s"} placed by hand stand{doubled.length === 1 ? "s" : ""} on a measured one · <button className="text-orange-300 hover:text-orange-200 touch:min-h-[44px]" onClick={() => { const ids = new Set(doubled.map(i => i.id)); changeDoc(d => ({ items: d.items.filter(i => !ids.has(i.id)) })); toast(`Took out ${doubled.length === 1 ? "the tree" : `${doubled.length} trees`} placed by hand.`, "info", true); }}>Remove those placed by hand</button></div>
       )}
       <div className="mt-2" data-testid="lidar-clear">
-        <Toggle label="Clear trees from the fairways" checked={lidar.clearFairways !== false}
-          onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, clearFairways: v ? undefined : false } } : {}))} />
+        <Toggle label="Clear trees from the fairways" checked={lidar.clearFairways === true}
+          onChange={v => {
+            changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, clearFairways: v ? true : undefined } } : {}));
+            toast(v ? "Trees on the fairways, tees and baskets are cut down. Each hole's panel brings them back." : "Trees on the fairways are standing again.", "info", true);
+          }} />
       </div>
     </Fold>
   );

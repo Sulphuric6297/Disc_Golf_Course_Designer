@@ -2540,13 +2540,13 @@ export class CourseView {
       const forPlay = clearingsFor(true);
       const nowhere = nowhereFor();
       const cleared = forPlay.test;
-      const clearing = lidar.clearFairways !== false;
+      const clearing = lidar.clearFairways === true;
       this.clearedAt = (p, reach) => (clearing && cleared(p, reach)) || nowhere.test(p);
       // (the woods over the trees that belong to woods)
       const woodsShapes = lidar.bound?.length ? course.items.filter((i): i is AreaItem => i.type === "area" && i.kind === "woods" && i.points.length >= 3).map(i => { const pts = this.shapeOf(i).pts; return { pts, box: boundsOf(pts) }; }) : [];
       const inWoods = (p: P) => woodsShapes.some(w => p.x >= w.box.minX && p.x <= w.box.maxX && p.y >= w.box.minY && p.y <= w.box.maxY && pointInPolygon(p, w.pts));
       const woodsKey = woodsShapes.length ? JSON.stringify(woodsShapes.map(w => w.pts.map(q => [Math.round(q.x), Math.round(q.y)]))) : "";
-      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.bound, lidar.minHeight ?? 0, lidar.growYears ?? 0, lidar.crownSize ?? 1, lidar.clearFairways !== false, forPlay.key, nowhere.key, cutKey, woodsKey]);
+      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.bound, lidar.minHeight ?? 0, lidar.growYears ?? 0, lidar.crownSize ?? 1, lidar.clearFairways === true, forPlay.key, nowhere.key, cutKey, woodsKey]);
       if (this.dragging && this.lidarKey && fresh !== this.lidarKey) this.afterDrag = true;
       else this.lidarKey = fresh;
       const state = this.keep("lidar", lidar.trees, this.lidarKey, () => {
