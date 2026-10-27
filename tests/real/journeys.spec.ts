@@ -43,7 +43,10 @@ const pickAt = async (p: { x: number; y: number }) => {
   await page.evaluate(() => (window as any).__dgActions.select(null));
   await page.mouse.click(p.x, p.y);
   await expect.poll(async () => (await editor(page)).selectedId, { timeout: 10_000 }).not.toBeNull();
-  return (await editor(page)).selectedId;
+  const id = (await editor(page)).selectedId;
+  // (what it is, when it's not one of the check's own: said, to see what got in the way)
+  if (!String(id).startsWith("t-")) console.log("picked", id, await page.evaluate(id => { const c = (window as any).__dgCourse(); const i = c.items.find((x: any) => x.id === id); return i ? `${i.type} ${i.kind ?? ""} ${JSON.stringify(i.points?.slice(0, 3) ?? [i.x, i.y])}` : c.holes.some((h: any) => h.id === id) ? "a hole" : "not an item"; }, id));
+  return id;
 };
 
 test("autosave: edits made quickly, and two saves asked for at once, all reach the server with no clash", async () => {
