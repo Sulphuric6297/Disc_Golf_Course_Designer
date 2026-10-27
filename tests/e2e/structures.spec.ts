@@ -241,6 +241,36 @@ test("in 3D a click on a path just in front of a tree picks the path, not the tr
   await expect.poll(async () => (await editorState(page)).selectedId).toBe(path.id);
 });
 
+test("in 3D the ground cover round a tree is picked where the tree's leaves aren't drawn, even close by", async ({ page }) => {
+  await blankCourse(page);
+  await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 300, minY: 300, maxX: 700, maxY: 600 }, { animate: false }));
+  await page.getByRole("button", { name: "2 Design" }).click();
+  await page.keyboard.press("r");
+  await clickPlan(page, 440, 420);
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "tree").length).toBe(1);
+  await page.evaluate(() => (window as any).__dgActions.addDrawn("area", [{ x: 380, y: 380 }, { x: 500, y: 380 }, { x: 500, y: 470 }, { x: 380, y: 470 }]));
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "area").length).toBe(1);
+  const area = (await course(page)).items.find((i: any) => i.type === "area");
+  await page.keyboard.press("v");
+  await page.evaluate(() => (window as any).__dgActions.select(null));
+  await page.keyboard.press("3");
+  await page.waitForTimeout(1500);
+  // A spot on the area inside the tree's rough crown shape, with no leaves drawn under it
+  const at = await screenOf(page, 440, 420, 25);
+  const spot = await page.evaluate(([x, y]) => {
+    const v = (window as any).__dgView;
+    for (let r = 4; r <= 120; r += 3) for (let a = 0; a < 6.28; a += 0.3) {
+      const p = { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r }, hit = v.treeUnder(v.ray(p.x, p.y)), g = v.groundAt(p.x, p.y);
+      if (hit && !hit.drawn && g && g.x > 385 && g.x < 495 && g.z > 385 && g.z < 465) return p;
+    }
+    return null;
+  }, [at.x, at.y] as const);
+  expect(spot).not.toBeNull();
+  await page.mouse.click(spot!.x, spot!.y);
+  await expect.poll(async () => (await editorState(page)).selectedId).toBe(area.id);
+});
+
 // --- Pure logic
 
 plain("roofs that aren't a house's: flat, a single slope (shed), a pyramid over a gazebo's eight sides", () => {

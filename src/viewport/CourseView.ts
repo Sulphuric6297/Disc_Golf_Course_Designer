@@ -4328,8 +4328,8 @@ export class CourseView {
    * What is under a client point: what the pointer sees first. Small marks by screen distance
    * (badges are DOM and pick themselves) unless leaves or a roof stand in front of them; then the
    * leaves or roof nearest the eye; then, on the ground, built lines, drawn lines and throw lines
-   * (within a few pixels), a tree whose leaves are only near the pointer, then areas (smallest
-   * first).
+   * (within a few pixels), areas (smallest first) and fairways; last, a tree whose leaves are only
+   * near the pointer.
    */
   private pick(clientX: number, clientY: number): string | null {
     const doc = this.doc;
@@ -4346,7 +4346,7 @@ export class CourseView {
     const ray = this.ray(clientX, clientY);
     const roof = this.builtUnder(ray), leaves = this.treeUnder(ray);
     const seen = leaves?.drawn && !(roof && roof.t < leaves.t) ? leaves : roof;
-    // (leaves only near the pointer, none drawn right there: after what is on the ground there)
+    // (leaves only near the pointer, none drawn right there: only when nothing is on the ground there)
     const guessed = leaves && !leaves.drawn && !roof ? leaves : null;
     for (const item of doc.course.items) {
       if (item.type === "area" || item.type === "line" || item.type === "label" || item.type === "structure" || item.type === "tree") continue;
@@ -4402,7 +4402,6 @@ export class CourseView {
       if (d < tol && (!near || d < near.d)) near = { id: s.holeId, d };
     }
     if (near) return near.id;
-    if (guessed) return guessed.id;
     const areas = (doc.course.items.filter(i => i.type === "area") as AreaItem[]).map(a => ({ id: a.id, ...this.shapeOf(a) })).filter(a => inBounds(p, a.box) && pointInPolygon(p, a.pts));
     if (areas.length) return areas.sort((a, b) => polygonArea(a.pts) - polygonArea(b.pts))[0].id;
     // Inside a fairway: its hole
@@ -4411,7 +4410,8 @@ export class CourseView {
       if (!hole?.fairway || !s.complete) continue;
       if (pointInPolygon(p, this.outline(hole, s.line, "line", 8, 0, 8))) return hole.id;
     }
-    return null;
+    // (nothing on the ground there: a tree whose leaves are near the pointer, through a gap in them)
+    return guessed?.id ?? null;
   }
 
   // ------------------------------------------------------------------ pointer input
