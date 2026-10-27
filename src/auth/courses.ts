@@ -72,8 +72,9 @@ let sentBackground: string | null = null;
 // An editor's draft: what it started from (to merge with what changed meanwhile), and the
 // course's own photo then (a draft's photo goes with it only if it's a new one)
 let base: { doc: CourseDoc; version: number; photo: string | null } | null = null;
-let saving: Promise<void> | null = null;
-let again = false;
+/** The saves, one after another: never two at once (two sent together carry the same version, and
+ * the server turns the second away as a clash, which stops saving). */
+let saves: Promise<void> = Promise.resolve();
 let timer = 0;
 
 const lastKey = () => `hyzerlab:last:${useAuth.getState().session?.user?.id ?? ""}`;
@@ -92,9 +93,12 @@ const usable = (doc: CourseDoc) => {
   return u;
 };
 
+/** The course as last saved (a save queued behind it, nothing changed since, sends nothing). */
+let lastSaved: CourseDoc | null = null;
+
 async function save() {
   const doc = getDoc();
-  if (doc === opened || !canSave()) return;
+  if (doc === opened || doc === lastSaved || !canSave()) return;
   if (!state().id && isEmpty(doc)) return;
   set({ status: "saving" });
   try {
@@ -116,6 +120,7 @@ async function save() {
       await api("PUT", inDraft() ? `courses/${state().id}/draft/photo` : `courses/${state().id}/background`, { data: doc.background });
       sentBackground = doc.background;
     }
+    lastSaved = doc;
     set({ status: getDoc() === doc ? "saved" : "unsaved" });
     if (!inDraft()) thumbnailSoon();
   } catch (e) {
@@ -173,10 +178,9 @@ export async function saveDraftAs(note: string) {
 /** Saves now (waiting for one already going). */
 export async function saveNow() {
   window.clearTimeout(timer);
-  if (saving) { again = true; await saving; }
-  saving = save().finally(() => { saving = null; });
-  await saving;
-  if (again) { again = false; await saveNow(); }
+  const run = saves.then(() => save());
+  saves = run.catch(() => {});
+  await run;
 }
 
 // (the tab closed or reloaded after a save failed: the browser asks first, the changes not on
