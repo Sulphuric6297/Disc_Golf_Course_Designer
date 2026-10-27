@@ -875,6 +875,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // Built things stand up out of the ground too (in pixels, like the treetops), and cast shadows:
   // a building's roof its own shape (a gable's end, a hip's slopes)
   const built = new Float32Array(W * H);
+  // (whose roof each pixel is, for how much of each building the leaves hide)
+  const roofOwner = new Int32Array(W * H), roofIds: string[] = [];
   const raise = (x: number, y: number, ft: number) => {
     const i = y * W + x, v = ft * k * 0.85;
     if (v > built[i]) built[i] = v;
@@ -903,10 +905,14 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     const shape = roof ? roof.eaves : st.points;
     const top = st.kind === "deck" ? tall + (tall > 2 ? 3 : 0) : tall;
     const b = boundsOf(shape.map(toScreen));
+    const owner = roof ? roofIds.push(st.id) : 0;
     for (let y = Math.max(0, Math.floor(b.minY)); y <= Math.min(H - 1, Math.ceil(b.maxY)); y++) {
       for (let x = Math.max(0, Math.floor(b.minX)); x <= Math.min(W - 1, Math.ceil(b.maxX)); x++) {
         const p = toPlan(x + 0.5, y + 0.5);
-        if (pointInPolygon(p, shape)) raise(x, y, roof ? tall + roof.pitch * roof.run(p) : top);
+        if (pointInPolygon(p, shape)) {
+          raise(x, y, roof ? tall + roof.pitch * roof.run(p) : top);
+          if (owner) roofOwner[y * W + x] = owner;
+        }
       }
     }
   }
@@ -1522,7 +1528,16 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       const oc = document.createElement("canvas");
       oc.width = W; oc.height = H;
       oc.getContext("2d")!.putImageData(ov, 0, 0);
-      overGrids.set(canvas, oc);
+      // The buildings mostly hidden by leaves (over half the roof): their outline shows through
+      const roofPx = new Uint32Array(roofIds.length + 1), leafPx = new Uint32Array(roofIds.length + 1);
+      for (let i = 0; i < W * H; i++) {
+        const o = roofOwner[i];
+        if (!o) continue;
+        roofPx[o]++;
+        if (height[i] > built[i]) leafPx[o]++;
+      }
+      const hidden = new Set(roofIds.filter((_, j) => roofPx[j + 1] > 0 && leafPx[j + 1] > roofPx[j + 1] * 0.5));
+      overGrids.set(canvas, { picture: oc, hidden });
     }
   }
   // Where it painted woods, for 3D trees standing on the painting (an unturned view only)
@@ -1620,9 +1635,10 @@ export type WoodedGrid = { cols: number; rows: number; data: Uint8Array; x0: num
 const woodedGrids = new WeakMap<HTMLCanvasElement, WoodedGrid>();
 /** The tone a pine's needles are painted in (the trees' own tones are 1 to 6). */
 const PINE = 7;
-const overGrids = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+const overGrids = new WeakMap<HTMLCanvasElement, { picture: HTMLCanvasElement; hidden: Set<string> }>();
 /** The treetops over the buildings on a painting (and their shade on the roofs), a picture as big
- * as the painting, clear elsewhere; none when no building stands on it. */
+ * as the painting, clear elsewhere, and the buildings mostly under leaves; none when no building
+ * stands on it. */
 export const treesOverOf = (canvas: HTMLCanvasElement) => overGrids.get(canvas) ?? null;
 /** The woods on a painting made by `forestCanvas` or `forestCanvasAsync`. */
 export const woodedOf = (canvas: HTMLCanvasElement) => woodedGrids.get(canvas) ?? null;
