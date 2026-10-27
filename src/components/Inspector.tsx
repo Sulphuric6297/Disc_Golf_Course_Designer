@@ -93,12 +93,12 @@ export function HoleTrees({ hole, line }: { hole: Hole; line: P[] }) {
   const list = (v: number[]) => (v.length ? [...new Set(v)].sort((a, b) => a - b) : undefined);
   const back = () => {
     setLidar({ kept: list([...(lidar?.kept ?? []), ...cut]), removed: list((lidar?.removed ?? []).filter(k => !cut.includes(k))) });
-    toast(`${cut.length === 1 ? "1 tree" : `${cut.length} trees`} back on hole ${hole.number ?? ""}.`.replace(" .", "."), "success", true);
+    toast(`${cut.length === 1 ? "1 tree" : `${cut.length} trees`} back on hole ${holeLabel(useCourse.getState().doc, hole.id)}.`, "success", true);
   };
   // (trees left standing in the way: cut down only when asked, and said)
   const clear = () => {
     setLidar({ removed: list([...(lidar?.removed ?? []), ...standing]) });
-    toast(`Cut down ${standing.length === 1 ? "1 tree" : `${standing.length} trees`} on hole ${hole.number ?? ""}. Bring them back here, or click a stump.`.replace(" .", "."), "info", true);
+    toast(`Cut down ${standing.length === 1 ? "1 tree" : `${standing.length} trees`} on hole ${holeLabel(useCourse.getState().doc, hole.id)}. Bring them back here, or click a stump.`, "info", true);
   };
   return (
     <div className="flex items-center gap-2.5 rounded-[14px] bg-white/[0.06] ring-1 ring-white/[0.08] px-3 py-2.5 mt-2" data-testid="fairway-trees">
