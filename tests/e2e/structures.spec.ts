@@ -2,7 +2,7 @@
 // Build tool, edited in the inspector, reshaped with handles, real 3D models in the map view, and
 // drawn on the printed map (every style) with their legend lines.
 import { test as plain, expect as plainExpect } from "@playwright/test";
-import { test, expect, blankCourse, clickPlan, course, drag, editorState, handleCenter, screenOf } from "./fixtures";
+import { test, expect, addHole, blankCourse, clickPlan, course, drag, editorState, handleCenter, screenOf } from "./fixtures";
 import { STRUCTURE_ORDER } from "../../src/constants";
 import { createArea, createBasket, createEmptyCourse, createStructure, createTee, newHole, normalizeCourse, createAmenity } from "../../src/lib/course";
 import { THEMES, renderPoster } from "../../src/lib/mapSvg";
@@ -223,14 +223,14 @@ test("in 3D a click on a roof picks the building, not the tree standing over its
 test("in 3D a basket behind a tree's leaves isn't picked through them: where the leaves hide it, the tree is", async ({ page }) => {
   await blankCourse(page);
   await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 300, minY: 300, maxX: 700, maxY: 600 }, { animate: false }));
+  // A hole played away from the view, its basket just behind a tree
+  await addHole(page, { x: 440, y: 560 }, { x: 440, y: 404 });
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "2 Design" }).click();
   await page.keyboard.press("r");
   await clickPlan(page, 440, 420);
   await page.keyboard.press("Escape");
-  await page.keyboard.press("b");
-  await clickPlan(page, 440, 404);
-  await page.keyboard.press("Escape");
-  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "basket").length).toBe(1);
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "tree").length).toBe(1);
   const items = (await course(page)).items;
   const tree = items.find((i: any) => i.type === "tree"), basket = items.find((i: any) => i.type === "basket");
   await page.keyboard.press("v");
