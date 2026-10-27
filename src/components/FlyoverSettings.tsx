@@ -228,14 +228,14 @@ export function HoleFlight({ hole }: { hole: Hole }) {
             </div>
           )}
           <div className="flex flex-wrap gap-1.5 pt-2">
-            <Button small onClick={() => cameraFrom(hole.id, p ?? 0)} testid="fly-camera"><Video size={13} /> Fly the camera</Button>
+            <Button small onClick={() => cameraFrom(hole.id, p ?? 0)} testid="fly-camera"><Video size={13} /> Set keyframe locations</Button>
             <Button small onClick={add} testid="fly-key-add" title={p !== null ? `A new one after keyframe ${p + 1}` : undefined}><Plus size={13} /> Keyframe</Button>
             <Button small onClick={() => setEd({ teeView: hole.id, flyover: true, flyCam: false })} testid="fly-preview"><Play size={13} /> Fly over</Button>
           </div>
         </div>
       ) : (
         <div className="mt-2">
-          <Button small onClick={() => cameraFrom(hole.id, all.length ? all.length - 1 : null)} testid="fly-camera"><Video size={13} /> Fly the camera</Button>
+          <Button small onClick={() => cameraFrom(hole.id, all.length ? all.length - 1 : null)} testid="fly-camera"><Video size={13} /> Set keyframe locations</Button>
         </div>
       )}
       {/* (the camera and the switches, folded away: most holes never need them) */}

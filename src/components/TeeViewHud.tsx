@@ -173,7 +173,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
         >
           <Clapperboard size={15} /> {job?.kind === "video" ? (recPct ? `Recording ${recPct}` : "Recording…") : "Record"}
         </button>}
-        {!readOnly && <button className="px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 text-white hover:bg-white/10" onClick={() => cameraFrom(hole.id, null)} title="Fly the camera yourself and add keyframes" data-testid="hud-freecam"><Video size={15} /> Camera</button>}
+        {!readOnly && <button className="px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 text-white hover:bg-white/10" onClick={() => cameraFrom(hole.id, null)} title="Set keyframe locations: fly the camera yourself and add keyframes" data-testid="hud-freecam"><Video size={15} /> Camera</button>}
         {!readOnly && <button className={`px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 text-white ${camera ? "bg-white/15" : "hover:bg-white/10"}`} onClick={() => setCamera(c => !c)} aria-pressed={camera} title="Flyover settings" data-testid="hud-settings"><Settings2 size={15} /> Settings</button>}
         <button className="px-3 py-1.5 rounded-full text-sm font-semibold text-white hover:bg-white/10 flex items-center gap-1.5" onClick={() => ed.set({ teeView: null, flyover: false })} data-testid="hud-close"><X size={15} /> Back to map</button>
       </div>
