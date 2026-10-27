@@ -249,7 +249,7 @@ test("in 3D the ground cover round a tree is picked where the tree's leaves aren
   await clickPlan(page, 440, 420);
   await page.keyboard.press("Escape");
   await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "tree").length).toBe(1);
-  await page.evaluate(() => (window as any).__dgActions.addDrawn("area", [{ x: 380, y: 380 }, { x: 500, y: 380 }, { x: 500, y: 470 }, { x: 380, y: 470 }]));
+  await page.evaluate(() => (window as any).__dgActions.addDrawn("area", [{ x: 320, y: 320 }, { x: 560, y: 320 }, { x: 560, y: 520 }, { x: 320, y: 520 }]));
   await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "area").length).toBe(1);
   const area = (await course(page)).items.find((i: any) => i.type === "area");
   await page.keyboard.press("v");
@@ -260,9 +260,9 @@ test("in 3D the ground cover round a tree is picked where the tree's leaves aren
   const at = await screenOf(page, 440, 420, 25);
   const spot = await page.evaluate(([x, y]) => {
     const v = (window as any).__dgView;
-    for (let r = 4; r <= 120; r += 3) for (let a = 0; a < 6.28; a += 0.3) {
+    for (let r = 2; r <= 160; r += 1.5) for (let a = 0; a < 6.28; a += 0.1) {
       const p = { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r }, hit = v.treeUnder(v.ray(p.x, p.y)), g = v.groundAt(p.x, p.y);
-      if (hit && !hit.drawn && g && g.x > 385 && g.x < 495 && g.z > 385 && g.z < 465) return p;
+      if (hit && !hit.drawn && g && g.x > 325 && g.x < 555 && g.z > 325 && g.z < 515) return p;
     }
     return null;
   }, [at.x, at.y] as const);
