@@ -355,7 +355,7 @@ function WoodsBrush({ item }: { item: AreaItem }) {
   const drawing = useEditor(e => e.patchFor === item.id && e.patchBrush);
   const sections = item.brush ?? [];
   const setSections = (next: { points: P[]; level: BrushLevel; kind?: BrushKind }[]) => updateItem(item.id, { brush: next.length ? next : undefined } as Partial<CourseItem>);
-  const draw = () => useEditor.getState().set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", patchFor: item.id, patchBrush: true });
+  const draw = () => useEditor.getState().set({ tool: "draw-area", areaKind: "woods", standOf: null, drawShape: "freehand", patchFor: item.id, patchBrush: true });
   const kind = item.brushKind ?? "mixed";
   const where = item.kind === "rough" ? "grass" : "wood";
   return (
@@ -408,7 +408,7 @@ function WoodsMix({ item }: { item: AreaItem }) {
     <div className="mb-3" data-testid="woods-mix">
       <div className="text-xs text-zinc-400 mb-1">The trees it grows</div>
       <Slider label="Pines" min={0} max={100} step={5} value={Math.round((item.pines ?? conifersOf(style)) * 100)} onChange={v => set({ pines: v / 100 })} onDone={commit} format={v => `${v}%`} />
-      <Slider label="Bushes" min={0} max={80} step={5} value={Math.round((item.bushes ?? 0) * 100)} onChange={v => set({ bushes: v ? v / 100 : undefined })} onDone={commit} format={v => (v ? `${v}%` : "None")} />
+      <Slider label="Bushes" min={0} max={100} step={5} value={Math.round((item.bushes ?? 0) * 100)} onChange={v => set({ bushes: v ? v / 100 : undefined })} onDone={commit} format={v => (v ? `${v}%` : "None")} />
       <Slider label="Density" min={20} max={250} step={10} value={Math.round((item.density ?? 1) * 100)} onChange={v => set({ density: v / 100 })} onDone={commit} format={v => (v === 100 ? "Usual" : v < 100 ? `Sparser (${v}%)` : `Denser (${v}%)`)} />
       <Slider label="Shortest trees" min={8} max={100} value={Math.round(lo)} onChange={v => set({ heights: [Math.min(v, hi - 2), hi] })} onDone={commit} format={v => fmtDist(v, u)} />
       <Slider label="Tallest trees" min={12} max={130} value={Math.round(hi)} onChange={v => set({ heights: [lo, Math.max(v, lo + 2)] })} onDone={commit} format={v => fmtDist(v, u)} />
@@ -431,7 +431,7 @@ function WoodsTrees({ item }: { item: AreaItem }) {
   const patches = item.patches ?? [];
   const setPatches = (next: { points: P[]; fill: number }[], history = true) => updateItem(item.id, { patches: next.length ? next : undefined } as Partial<CourseItem>, history);
   // A patch: drawn over the wood (it is drawn as an area); it lands in this wood's patches
-  const draw = () => useEditor.getState().set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", patchFor: item.id });
+  const draw = () => useEditor.getState().set({ tool: "draw-area", areaKind: "woods", standOf: null, drawShape: "freehand", patchFor: item.id });
   return (
     <>
       <Field label="Trees in these woods" help="woods">

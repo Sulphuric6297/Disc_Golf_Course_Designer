@@ -156,6 +156,31 @@ test("the Trees tool has leafy trees, pines, bushes, woods and hedges; a wood dr
   await page.keyboard.press("Escape");
 });
 
+test("a stand of pines: Pine, then Rectangle, dragged out; a wood that grows only pines, the measured trees kept", async () => {
+  await page.evaluate(() => (window as any).__dgEditor().set({ step: "design", tool: "select" }));
+  await page.keyboard.press("r");
+  await page.getByTestId("tree-kind-conifer").click();
+  for (const w of ["one", "points", "box", "circle", "freehand", "paint"]) await expect(page.getByTestId(`draw-shape-${w}`)).toBeVisible();
+  await page.getByTestId("draw-shape-box").click();
+  await expect(page.getByTestId("tree-kind-conifer")).toHaveClass(/bg-zinc-100/);
+  const had = new Set((await course(page)).items.map((i: any) => i.id));
+  await frame(page, BOX);
+  await page.waitForTimeout(800);
+  const a = await at(page, 1480, 420), b = await at(page, 1560, 480);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 4 });
+  await page.mouse.move(b.x, b.y, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => !had.has(i.id) && i.kind === "woods").length).toBe(1);
+  const stand = (await course(page)).items.find((i: any) => !had.has(i.id) && i.kind === "woods");
+  expect([stand.pines, stand.bushes, stand.trees, stand.patches?.length]).toEqual([1, undefined, "custom", 1]);
+  // (One tree: back to a tree at a time)
+  await page.getByTestId("draw-shape-one").click();
+  expect((await editor(page)).tool).toBe("add-tree");
+  await page.keyboard.press("Escape");
+});
+
 test("a hole's trees in the way: said, cleared when asked (and said), brought back", async () => {
   const doc = await course(page);
   let found = false;
@@ -208,7 +233,7 @@ test("a flyover's keyframes: two set, the timeline scrubbed (the camera follows 
   await page.getByTestId("cam-done").click();
 });
 
-test("on a phone, the Trees tool has the same kinds, woods included", async ({ browser }) => {
+test("on a phone, the Trees tool has the same kinds, woods included, and the ways to plant a stand", async ({ browser }) => {
   const phone = await browser.newPage({ viewport: { width: 393, height: 851 }, isMobile: true, hasTouch: true, storageState: await page.context().storageState() });
   await phone.goto("/");
   const id = (await saved(page)).id;
@@ -219,6 +244,7 @@ test("on a phone, the Trees tool has the same kinds, woods included", async ({ b
   await phone.evaluate(() => (window as any).__dgEditor().set({ step: "design", tool: "add-tree" }));
   for (const t of ["tree-kind-deciduous", "tree-kind-conifer", "tree-kind-bush", "area-kind-woods", "line-kind-hedge"]) await expect(phone.getByTestId(t)).toBeAttached();
   await expect(phone.getByTestId("area-kind-woods")).toBeVisible();
+  await expect(phone.getByTestId("draw-shape-points")).toBeAttached();
   await phone.close();
 });
 

@@ -177,6 +177,9 @@ type EditorStore = {
   /** What the Park tool puts down: a ball field, a court, a playground… */
   fieldKind: FieldKind;
   treeKind: TreeKind;
+  /** The Trees tool drawing a stand of one kind (woods that grow only it, around the trees
+   * measured there); null: a tree at a time, or the Woods choice's own mix. */
+  standOf: TreeKind | null;
   /** Looking from a tee down its hole (the hole's id), or flying over it. */
   teeView: string | null;
   /** The tee the tee view stands on (another skill level's), unset: the layout's. */
@@ -252,6 +255,7 @@ export const useEditor = create<EditorStore>()(set => ({
   amenityKind: "bench",
   fieldKind: "baseball",
   treeKind: "deciduous",
+  standOf: null,
   teeView: null,
   flyover: false,
   flyKey: null,
