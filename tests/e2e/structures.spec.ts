@@ -220,6 +220,39 @@ test("in 3D a click on a roof picks the building, not the tree standing over its
   await expect.poll(async () => (await editorState(page)).selectedId).toBe(tree.id);
 });
 
+test("in 3D a basket behind a tree's leaves isn't picked through them: where the leaves hide it, the tree is", async ({ page }) => {
+  await blankCourse(page);
+  await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 300, minY: 300, maxX: 700, maxY: 600 }, { animate: false }));
+  await page.getByRole("button", { name: "2 Design" }).click();
+  await page.keyboard.press("r");
+  await clickPlan(page, 440, 420);
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("b");
+  await clickPlan(page, 440, 404);
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "basket").length).toBe(1);
+  const items = (await course(page)).items;
+  const tree = items.find((i: any) => i.type === "tree"), basket = items.find((i: any) => i.type === "basket");
+  await page.keyboard.press("v");
+  await page.evaluate(() => (window as any).__dgActions.select(null));
+  await page.keyboard.press("3");
+  await page.waitForTimeout(1500);
+  // A spot within a finger's reach of the basket where leaves are drawn in front of it
+  const at = await screenOf(page, basket.x, basket.y, 1);
+  const spot = await page.evaluate(([x, y, bx, by]) => {
+    const v = (window as any).__dgView, eye = v.camera.position;
+    const far = Math.hypot(eye.x - bx, eye.z - by);
+    for (let r = 0; r <= 10; r += 2) for (let a = 0; a < 6.28; a += 0.5) {
+      const p = { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r }, hit = v.treeUnder(v.ray(p.x, p.y));
+      if (hit?.drawn && hit.t < far - 5) return p;
+    }
+    return null;
+  }, [at.x, at.y, basket.x, basket.y] as const);
+  expect(spot).not.toBeNull();
+  await page.mouse.click(spot!.x, spot!.y);
+  await expect.poll(async () => (await editorState(page)).selectedId).toBe(tree.id);
+});
+
 // --- Pure logic
 
 plain("roofs that aren't a house's: flat, a single slope (shed), a pyramid over a gazebo's eight sides", () => {

@@ -4325,8 +4325,11 @@ export class CourseView {
   // ------------------------------------------------------------------ picking
 
   /**
-   * What is under a client point: small things by screen distance first (badges are DOM and pick
-   * themselves), then drawn lines and throw lines (within a few pixels), then areas (smallest first).
+   * What is under a client point: what the pointer sees first. Small marks by screen distance
+   * (badges are DOM and pick themselves) unless leaves or a roof stand in front of them; then the
+   * leaves or roof nearest the eye; then, on the ground, built lines, drawn lines and throw lines
+   * (within a few pixels), a tree whose leaves are only near the pointer, then areas (smallest
+   * first).
    */
   private pick(clientX: number, clientY: number): string | null {
     const doc = this.doc;
@@ -4337,35 +4340,33 @@ export class CourseView {
     let best: { id: string; score: number } | null = null;
     // A fingertip is less exact than a mouse pointer: reach a little further
     const reach = this.fingers ? 1.6 : 1;
-    // Trees: the one actually under the pointer, its crown or trunk, nearest the eye (tested in
-    // 3D: in a tilted view a tree's crown stands well above its foot, so the foot alone would
-    // pick the tree behind it)
+    // What stands up in front: a tree's drawn leaves or trunk, or a roof or wall, whichever is
+    // nearest the eye (tested in 3D: in a tilted view a crown stands well above its foot, and a
+    // line of sight that meets a roof goes no further, to the tree behind it)
     const ray = this.ray(clientX, clientY);
-    // (a roof or wall nearer the eye than the leaves: the building, not the tree beside it)
     const roof = this.builtUnder(ray), leaves = this.treeUnder(ray);
-    // (leaves only guessed round a tree, none drawn there, never over a roof that is)
-    const tree = leaves && !(roof && (!leaves.drawn || roof.t < leaves.t)) ? leaves : null;
+    const seen = leaves?.drawn && !(roof && roof.t < leaves.t) ? leaves : roof;
+    // (leaves only near the pointer, none drawn right there: after what is on the ground there)
+    const guessed = leaves && !leaves.drawn && !roof ? leaves : null;
     for (const item of doc.course.items) {
-      if (item.type === "area" || item.type === "line" || item.type === "label" || item.type === "structure" || (item.type === "tree" && (tree || roof))) continue;
+      if (item.type === "area" || item.type === "line" || item.type === "label" || item.type === "structure" || item.type === "tree") continue;
       const a = new THREE.Vector3(item.x, this.h(item.x, item.y) + 1, item.y);
       const s = this.project(a);
       if (!s) continue;
       const upp = this.upp(a);
-      const real = item.type === "tree" ? item.radius * (item.width ?? 1) : item.type === "tee" ? item.padLength / 2 : item.type === "amenity" ? 4 : 2;
-      const radius = Math.max((item.type === "tree" ? 8 : 13) * reach, real / upp);
+      const real = item.type === "tee" ? item.padLength / 2 : item.type === "amenity" ? 4 : 2;
+      const radius = Math.max(13 * reach, real / upp);
       const d = Math.hypot(s.x - sx, s.y - sy);
-      if (d <= radius) {
-        const score = d / radius + (item.type === "tree" ? 0.5 : 0);
+      // (a mark hidden behind leaves or a roof isn't what the pointer is on)
+      if (d <= radius && !(seen && seen.t < a.distanceTo(ray.origin) - 3)) {
+        const score = d / radius;
         if (!best || score < best.score) best = { id: item.id, score };
       }
     }
-    // (a tee, basket or other mark right there before a tree it stands in front of)
-    if (best && (!tree || !doc.course.items.some(i => i.id === best!.id && i.type === "tree"))) return best.id;
-    if (tree) return tree.id;
-    if (roof) return roof.id;
     if (best) return best.id;
+    if (seen) return seen.id;
     const g = this.groundAt(clientX, clientY);
-    if (!g) return null;
+    if (!g) return guessed?.id ?? null;
     const p = { x: g.x, y: g.z };
     const upp = this.upp(g);
     const tol = 7 * reach * upp;
@@ -4401,6 +4402,7 @@ export class CourseView {
       if (d < tol && (!near || d < near.d)) near = { id: s.holeId, d };
     }
     if (near) return near.id;
+    if (guessed) return guessed.id;
     const areas = (doc.course.items.filter(i => i.type === "area") as AreaItem[]).map(a => ({ id: a.id, ...this.shapeOf(a) })).filter(a => inBounds(p, a.box) && pointInPolygon(p, a.pts));
     if (areas.length) return areas.sort((a, b) => polygonArea(a.pts) - polygonArea(b.pts))[0].id;
     // Inside a fairway: its hole
