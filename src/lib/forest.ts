@@ -997,7 +997,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   })();
   yield;
   // The ground's relief (hill shading), from the terrain, lit from the same side
-  const relief = reliefGrid(doc, s.hillshade || s.contours, W, H, toPlan, L, shadowK);
+  const relief = yield* reliefGridSteps(doc, s.hillshade || s.contours, W, H, toPlan, L, shadowK);
   // Contour lines painted in (when shown): a tidy interval for the course's rise and fall
   const contourIv = s.contours && relief ? contourInterval(relief.hi - relief.lo) : 0;
   const lxyL = Math.hypot(L.x, L.y) || 1;
@@ -1464,7 +1464,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // (the open ground everywhere: its tone bands' steps; treetops and roofs only at their outline,
   // so the leaf grain stays crisp)
   const solid = (i: number) => height[i] > 0 || built[i] > 0;
-  smoothEdges(o, W, H, i => !solid(i) || !solid(i + 1) || !solid(i - 1) || !solid(i + W) || !solid(i - W));
+  yield* smoothEdgeSteps(o, W, H, i => !solid(i) || !solid(i + 1) || !solid(i - 1) || !solid(i + W) || !solid(i - W));
   ctx.putImageData(img, 0, 0);
   yield;
   const lxy = Math.hypot(sunX, sunY) || 1, Lx = sunX / lxy, Ly = sunY / lxy;
@@ -1545,7 +1545,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   return canvas;
 }
 
-type Relief = NonNullable<ReturnType<typeof reliefGrid>>;
+type Relief = NonNullable<ReturnType<typeof reliefGridSteps> extends Generator<unknown, infer R, unknown> ? R : never>;
 
 /** Contours: the bolder lines' heights, written along them (their tops uphill, never upside
  * down), a few to each line, on open ground. */
@@ -1589,6 +1589,9 @@ const contourLabels = (ctx: CanvasRenderingContext2D, relief: Relief, W: number,
  * fine textures stay crisp.
  */
 export const smoothEdges = (o: Uint8ClampedArray, W: number, H: number, eligible: (i: number) => boolean) => {
+  for (const _ of smoothEdgeSteps(o, W, H, eligible)) { /* all at once */ }
+};
+function* smoothEdgeSteps(o: Uint8ClampedArray, W: number, H: number, eligible: (i: number) => boolean) {
   const src = new Uint8ClampedArray(o);
   const luma = (i: number) => src[i * 4] * 0.299 + src[i * 4 + 1] * 0.587 + src[i * 4 + 2] * 0.114;
   // (a bilinear read of the source, as r, g, b)
@@ -1603,6 +1606,7 @@ export const smoothEdges = (o: Uint8ClampedArray, W: number, H: number, eligible
   };
   const A = [0, 0, 0], B = [0, 0, 0];
   for (let y = 1; y < H - 1; y++) {
+    if ((y & 31) === 0) yield;
     for (let x = 1, i = y * W + 1; x < W - 1; x++, i++) {
       if (!eligible(i)) continue;
       const lM = luma(i), lNW = luma(i - W - 1), lNE = luma(i - W + 1), lSW = luma(i + W - 1), lSE = luma(i + W + 1);
@@ -1665,16 +1669,19 @@ export const paintedFrom = (doc: CourseDoc) => [
   doc.holes.map(h => ({ ...h, name: undefined, par: undefined, notes: undefined, flyKeys: undefined, flyover: undefined, sign: undefined }))
 ];
 
-export const forestCanvasAsync = async (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts, signal?: AbortSignal, onProgress?: (fraction: number) => void) => {
+export const forestCanvasAsync = async (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts, signal?: AbortSignal, onProgress?: (fraction: number) => void, pace?: () => Promise<number>) => {
   const steps = forestSteps(doc, view, stats, opts);
-  let start = performance.now(), told = -1;
+  // (a slice at a time, 8 ms of painting between frames; or as `pace` says: it waits for its moment
+  // and says how long the next slice may run)
+  let start = performance.now(), told = -1, budget = 8;
   for (;;) {
     if (signal?.aborted) throw new DOMException("Painting stopped", "AbortError");
     const r = steps.next();
     if (r.done) return r.value;
     if (onProgress && typeof r.value === "number" && r.value - told >= 0.01) onProgress((told = r.value));
-    if (performance.now() - start > 8) {
-      await new Promise<void>(res => setTimeout(res, 0));
+    if (performance.now() - start > budget) {
+      if (pace) budget = await pace();
+      else await new Promise<void>(res => setTimeout(res, 0));
       start = performance.now();
     }
   }
@@ -1819,7 +1826,7 @@ const terrainLight = (doc: CourseDoc, dir: P, tanEl: number, hills: number) => {
  * enough that a gentle course's rises still show and a steep one's don't go black, and it is lit
  * from the sun and two softer lights to either side (so slopes in line with the sun still show).
  */
-const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (x: number, y: number) => P, L: { x: number; y: number; z: number }, shadowK = 0.65) => {
+function* reliefGridSteps(doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (x: number, y: number) => P, L: { x: number; y: number; z: number }, shadowK = 0.65) {
   const heights = doc.terrainHeights;
   if (!on || !heights || Object.keys(heights).length < 4) return null;
   const tg = terrainGrid(doc);
@@ -1838,6 +1845,7 @@ const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (
   let lo = Infinity, hi = -Infinity, ftPerPx = 1;
   const slopes: number[] = [];
   for (let gy = 0; gy < gh; gy++) {
+    if ((gy & 15) === 0) yield;
     for (let gx = 0; gx < gw; gx++) {
       const p = toPlan(gx * step, gy * step);
       // Screen right and down, in plan feet
@@ -1864,16 +1872,21 @@ const reliefGrid = (doc: CourseDoc, on: boolean, W: number, H: number, toPlan: (
   // turned from the page into plan feet)
   const c0 = toPlan(W / 2, H / 2), cr0 = toPlan(W / 2 + 1, H / 2), cd0 = toPlan(W / 2, H / 2 + 1);
   const ldx = L.x * (cr0.x - c0.x) + L.y * (cd0.x - c0.x), ldy = L.x * (cr0.y - c0.y) + L.y * (cd0.y - c0.y), ldl = Math.hypot(ldx, ldy) || 1;
+  yield;
   const tl = terrainLight(doc, { x: ldx / ldl, y: ldy / ldl }, L.z / Math.max(0.05, Math.hypot(L.x, L.y)), hills);
+  yield;
   const fromTl = (f: Float32Array, p: P) => {
     const fx = Math.max(0, Math.min(tl.cols - 1.001, p.x / tl.grid)), fy = Math.max(0, Math.min(tl.rows - 1.001, p.y / tl.grid));
     const ix = fx | 0, iy = fy | 0, tx = fx - ix, ty = fy - iy, j = iy * tl.cols + ix;
     return (f[j] * (1 - tx) + f[j + 1] * tx) * (1 - ty) + (f[j + tl.cols] * (1 - tx) + f[j + tl.cols + 1] * tx) * ty;
   };
-  for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+  for (let gy = 0; gy < gh; gy++) {
+    if ((gy & 31) === 0) yield;
+    for (let gx = 0; gx < gw; gx++) {
     const p = toPlan(gx * step, gy * step), j = gy * gw + gx;
     castS[j] = fromTl(tl.cast, p); skyS[j] = fromTl(tl.sky, p); rockS[j] = fromTl(tl.rock, p);
     wallS[j] = fromTl(tl.wall, p); cvS[j] = fromTl(tl.cv, p);
+    }
   }
   // (how fast the walls start, per screen pixel: to draw their rim a set width)
   for (let gy = 1; gy < gh - 1; gy++) for (let gx = 1; gx < gw - 1; gx++) {

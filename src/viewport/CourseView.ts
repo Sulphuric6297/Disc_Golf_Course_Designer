@@ -870,6 +870,14 @@ export class CourseView {
   settled() {
     return this.paused || !this.gliding;
   }
+  /** When the camera last moved (dragged, zoomed, gliding), ms on performance.now(). */
+  private movedAt = 0;
+  private lastEye = new THREE.Vector3();
+  private lastLook = new THREE.Quaternion();
+  /** How long the view has been still, ms (work that can wait waits for it). */
+  stillFor() {
+    return this.paused ? Infinity : performance.now() - this.movedAt;
+  }
 
   toClient(x: number, y: number, lift = 0) {
     const s = this.project(new THREE.Vector3(x, this.h(x, y) + lift, y));
@@ -1897,6 +1905,11 @@ export class CourseView {
       this.shadowsDirty = false;
     }
     this.camera.updateMatrixWorld();
+    if (!this.lastEye.equals(this.camera.position) || !this.lastLook.equals(this.camera.quaternion)) {
+      this.movedAt = performance.now();
+      this.lastEye.copy(this.camera.position);
+      this.lastLook.copy(this.camera.quaternion);
+    }
     const tilted = this.controls.polarAngle > TILT_TOP;
     this.ground.detailActive(dist < 250);
     // Tilted, the course is a place: sky, haze, land to the horizon and grass up close
