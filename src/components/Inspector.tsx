@@ -22,6 +22,7 @@ import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor 
 import type { AmenityKind, AreaItem, CourseDoc, CourseItem, FenceStyle, FieldKind, Hole, LabelItem, LineItem, LineKind, P, PathSurface, PinPosition, RoofKind, StructureKind, TeeLevel, TeeSurface, BrushKind } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { TreeSettings } from "./TreeSettings";
+import { showsMeasured } from "../lib/standing";
 import { HoleFlight } from "./FlyoverSettings";
 import { HoleChips } from "./ApplyToHoles";
 import { HoleSteps } from "./HoleSteps";
@@ -412,6 +413,7 @@ function WoodsMix({ item }: { item: AreaItem }) {
       <Slider label="Density" min={20} max={250} step={10} value={Math.round((item.density ?? 1) * 100)} onChange={v => set({ density: v / 100 })} onDone={commit} format={v => (v === 100 ? "Usual" : v < 100 ? `Sparser (${v}%)` : `Denser (${v}%)`)} />
       <Slider label="Shortest trees" min={8} max={100} value={Math.round(lo)} onChange={v => set({ heights: [Math.min(v, hi - 2), hi] })} onDone={commit} format={v => fmtDist(v, u)} />
       <Slider label="Tallest trees" min={12} max={130} value={Math.round(hi)} onChange={v => set({ heights: [lo, Math.max(v, lo + 2)] })} onDone={commit} format={v => fmtDist(v, u)} />
+      <div className="text-[11px] text-zinc-500 mb-1.5" data-testid="woods-leafy">Leafy trees: {Math.round((1 - (item.bushes ?? 0)) * (1 - (item.pines ?? conifersOf(style))) * 100)}%</div>
       {own && <Button small tone="ghost" onClick={() => set({ pines: undefined, bushes: undefined, density: undefined, heights: undefined }, true)} testid="woods-usual" title="The landscape's own mix again"><RotateCcw size={13} /> Reset</Button>}
     </div>
   );
@@ -427,7 +429,8 @@ function WoodsTrees({ item }: { item: AreaItem }) {
   const drawing = useEditor(e => e.patchFor === item.id);
   // (a course without measured trees: the wood grows its own, set here)
   if (!measured) return <WoodsMix item={item} />;
-  const mode = item.trees ?? "measured";
+  // (one drawn by hand fills in round the measured trees; one the survey made shows them)
+  const mode = item.trees ?? (showsMeasured(item) ? "measured" : "custom");
   const patches = item.patches ?? [];
   const setPatches = (next: { points: P[]; fill: number }[], history = true) => updateItem(item.id, { patches: next.length ? next : undefined } as Partial<CourseItem>, history);
   // A patch: drawn over the wood (it is drawn as an area); it lands in this wood's patches
@@ -449,7 +452,7 @@ function WoodsTrees({ item }: { item: AreaItem }) {
               <button className="mt-4 p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-white/[0.09]" aria-label={`Remove patch ${k + 1}`} title="Remove" onClick={() => setPatches(patches.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
             </div>
           ))}
-          {!patches.length && <div className="text-[11px] text-zinc-500 mb-1">No patches yet.</div>}
+          {!patches.length && <div className="text-[11px] text-zinc-500 mb-1">Fills in the whole wood. Draw a patch to fill in only there.</div>}
           {drawing
             ? <DrawNote what="the patch over the wood" />
             : <Button small onClick={draw} testid="woods-draw-patch"><Plus size={13} /> Draw a patch</Button>}

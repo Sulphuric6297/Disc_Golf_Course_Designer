@@ -35,6 +35,11 @@ test.beforeAll(async ({ browser }) => {
       { id: "t-grass", type: "area", kind: "rough", points: GRASS, x: 1745, y: 310 },
       { id: "t-ingrass", type: "tree", x: IN_GRASS.x, y: IN_GRASS.y, radius: 14, height: 40, treeType: "deciduous" }
     );
+    // (woods an older import made from the measured trees, round the first of them, which was tied to it)
+    const [tx, ty] = doc.lidar.trees[0];
+    doc.items.push({ id: "t-stand", type: "area", kind: "woods", importSource: "lidar", x: tx, y: ty, points: [{ x: tx - 30, y: ty - 30 }, { x: tx + 30, y: ty - 30 }, { x: tx + 30, y: ty + 30 }, { x: tx - 30, y: ty + 30 }] });
+    doc.lidar.bound = [0];
+    doc.lidar.removed = (doc.lidar.removed ?? []).filter((k: number) => k !== 0);
   });
 });
 test.afterAll(async () => { await page?.close(); });
@@ -48,6 +53,20 @@ const pickAt = async (p: { x: number; y: number }) => {
   if (!String(id).startsWith("t-")) console.log("picked", id, await page.evaluate(id => { const c = (window as any).__dgCourse(); const i = c.items.find((x: any) => x.id === id); return i ? `${i.type} ${i.kind ?? ""} ${JSON.stringify(i.points?.slice(0, 3) ?? [i.x, i.y])}` : c.holes.some((h: any) => h.id === id) ? "a hole" : "not an item"; }, id));
   return id;
 };
+
+test("measured trees stand on their own: the woods an older import made from them are gone, the trees kept", async () => {
+  // (as saved: opened again from the server)
+  const id = (await saved(page)).id;
+  await page.evaluate(id => (window as any).__dgServer.open(id), id);
+  await page.waitForFunction(() => (window as any).__dgCourse?.()?.holes?.length > 0 && !(window as any).__dgCourse().items.some((i: any) => i.id === "t-stand"), null, { timeout: 60_000 }).catch(() => {});
+  const back = page.getByTestId("back-to-course");
+  if (await back.isVisible().catch(() => false)) await back.click();
+  const doc = await course(page);
+  expect(doc.items.some((i: any) => i.id === "t-stand")).toBe(false);
+  expect(doc.items.some((i: any) => i.type === "area" && i.importSource === "lidar")).toBe(false);
+  expect(doc.lidar.bound).toBeUndefined();
+  expect(doc.lidar.removed ?? []).not.toContain(0);
+});
 
 test("autosave: edits made quickly, and two saves asked for at once, all reach the server with no clash", async () => {
   const before = (await saved(page)).version;
@@ -156,7 +175,7 @@ test("the Trees tool has leafy trees, pines, bushes, woods and hedges; a wood dr
   await page.keyboard.press("Escape");
 });
 
-test("a stand of pines: Pine, then Rectangle, dragged out; a wood that grows only pines, the measured trees kept", async () => {
+test("a stand of pines: Pine, then Rectangle, dragged out; a wood that grows only pines round the measured trees, its mix in its panel", async () => {
   await page.evaluate(() => (window as any).__dgEditor().set({ step: "design", tool: "select" }));
   await page.keyboard.press("r");
   await page.getByTestId("tree-kind-conifer").click();
@@ -174,8 +193,14 @@ test("a stand of pines: Pine, then Rectangle, dragged out; a wood that grows onl
   await page.mouse.up();
   await expect.poll(async () => (await course(page)).items.filter((i: any) => !had.has(i.id) && i.kind === "woods").length).toBe(1);
   const stand = (await course(page)).items.find((i: any) => !had.has(i.id) && i.kind === "woods");
-  expect([stand.pines, stand.bushes, stand.trees, stand.patches?.length]).toEqual([1, undefined, "custom", 1]);
+  expect([stand.pines, stand.bushes, stand.trees, stand.patches]).toEqual([1, undefined, undefined, undefined]);
+  // (a wood drawn by hand fills in round the measured trees, its mix in its panel)
+  await page.evaluate(id => (window as any).__dgActions.select(id), stand.id);
+  await expect(page.getByTestId("woods-trees").getByRole("radio", { name: "Real + fill-in" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("woods-mix")).toBeVisible();
+  await expect(page.getByTestId("woods-leafy")).toContainText("0%");
   // (One tree: back to a tree at a time)
+  await page.keyboard.press("r");
   await page.getByTestId("draw-shape-one").click();
   expect((await editor(page)).tool).toBe("add-tree");
   await page.keyboard.press("Escape");

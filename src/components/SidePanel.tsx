@@ -127,8 +127,8 @@ function CameIn() {
         {measuring && lidarRow && <div data-testid="lidar-busy" className="pb-1.5"><ProgressBar fraction={lidarBusy} label="Measuring trees and ground" /></div>}
         {stands > 0 && (
           <CameRow testid="stands-found" text={`${many(stands, "stand", "stands")} of woods from the measured trees`}>
-            {/* (a stand's measured trees go with it: they belong to its woods) */}
-            <Button small tone="danger" onClick={() => remove(stand, "Took out the woods made from the measured trees, and the trees standing in them.")}>Remove</Button>
+            {/* (the measured trees stay, each on its own) */}
+            <Button small tone="danger" onClick={() => remove(stand, "Took out the woods made from the measured trees. The trees stay.")}>Remove</Button>
           </CameRow>
         )}
         {(photoTrees > 0 || photoAreas > 0) && (

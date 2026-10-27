@@ -4,7 +4,7 @@ import type {
   AmenityItem, AmenityKind, AreaItem, AreaKind, BasketItem, CourseDoc, CourseItem, CourseRules, DropZoneItem, Hole, LabelItem,
   Layout, LineItem, LineKind, MandoItem, MapStyle, P, PinPosition, StructureItem, StructureKind, TeeItem, TeeLevel, TreeItem
 } from "../types";
-import { centroid, corridor, dist, nearestAlong, nearestOnSegment, pathLength, pointAlong, smoothClosed, smoothPath, subPath } from "./geom";
+import { centroid, corridor, dist, nearestAlong, nearestOnSegment, pathLength, pointAlong, pointInPolygon, smoothClosed, smoothPath, subPath } from "./geom";
 import { landscapeOf } from "./landscapes";
 
 export const defaultStyle = (): MapStyle => ({
@@ -94,6 +94,22 @@ const forestStyle = (style: CourseDoc["style"]): CourseDoc["style"] => {
   return { ...style, theme: "forest", ...l.colors, ob: "#e0483d", hazard: "#e8c547", basket: "#ffffff" };
 };
 
+/** The woods an older import made from the measured trees, with nothing set on them by hand: only
+ * a painting under the trees, so they go (the trees each stand on their own). */
+const bareStand = (i: CourseItem) =>
+  i.type === "area" && i.kind === "woods" && i.importSource === "lidar" && !i.label && i.ob === undefined && !i.hazard && !i.underbrush && !i.brush?.length &&
+  i.trees === undefined && i.pines === undefined && i.bushes === undefined && i.density === undefined && i.heights === undefined;
+
+/** Measured trees no longer go with a wood: the ones a wood took with it (its edge pulled in past
+ * them, or the wood deleted) are cut down for good, and the rest stand on their own. */
+const unbound = (lidar: NonNullable<CourseDoc["lidar"]>, items: CourseItem[]): NonNullable<CourseDoc["lidar"]> => {
+  if (!lidar.bound?.length) return lidar;
+  const woods = items.filter((i): i is AreaItem => i.type === "area" && i.kind === "woods" && i.points.length >= 3).map(areaPath);
+  const gone = lidar.bound.filter(k => { const t = lidar.trees[k]; return t && !woods.some(w => pointInPolygon({ x: t[0], y: t[1] }, w)); });
+  const removed = [...new Set([...(lidar.removed ?? []), ...gone])].sort((a, b) => a - b);
+  return { ...lidar, bound: undefined, removed: removed.length ? removed : undefined };
+};
+
 /** Fills in anything an older or hand-edited file is missing. */
 export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
   const base = createEmptyCourse();
@@ -128,11 +144,12 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
     terrainHeights: raw.terrainHeights ?? {},
     terrainOriginal: raw.terrainOriginal && typeof raw.terrainOriginal === "object" ? raw.terrainOriginal : undefined,
     groundPaint: raw.groundPaint ?? {},
-    lidar: raw.lidar && typeof raw.lidar.source === "string" && Array.isArray(raw.lidar.trees) ? raw.lidar : undefined,
+    lidar: raw.lidar && typeof raw.lidar.source === "string" && Array.isArray(raw.lidar.trees) ? unbound(raw.lidar, Array.isArray(raw.items) ? raw.items : []) : undefined,
     ignoredChecks: Array.isArray(raw.ignoredChecks) ? raw.ignoredChecks.filter(x => typeof x === "string") : undefined,
     version: 1
   };
   if (!doc.layouts.some(l => l.id === doc.activeLayout)) doc.activeLayout = doc.layouts[0].id;
+  if (doc.lidar) doc.items = doc.items.filter(i => !bareStand(i));
   return doc;
 };
 

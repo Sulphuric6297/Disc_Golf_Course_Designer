@@ -7,8 +7,7 @@ import { usgsDem } from "../lib/geo/elevation";
 import { withMeasuredHeights } from "../lib/geo/buildings";
 import { fetchLidar } from "../lib/geo/lidarFetch";
 import { groundOnGrid } from "../lib/lidar";
-import { canopyKeepOut, signed, withMeasuredTrees } from "../lib/importSite";
-import { canopyStands } from "../lib/canopy";
+import { signed, withMeasuredTrees } from "../lib/importSite";
 import { natureFromPhoto } from "../lib/geo/photoNature";
 import { summerFills, treesFromSummer } from "../lib/summerTrees";
 import { treeFree } from "../lib/treeFree";
@@ -40,12 +39,11 @@ export const measureLidar = async () => {
       const items = withMeasuredHeights(doc.items, got.measured, signed);
       const summer = photo?.leaf ? treesFromSummer(got.trees, got.measured, photo.leaf, doc.canvas.width, doc.canvas.height, treeFree(items)) : [];
       const trees = summer.length ? [...got.trees, ...summer] : got.trees;
-      // (the woods from the measured canopy, kept off what's built, water, fields and roads, as on the import)
       return {
         lidar: { source: got.source, trees, ...(summer.length ? { fromPhoto: summer.length } : {}) },
         terrainHeights: g.heights,
         terrainOriginal: undefined,
-        items: withMeasuredTrees(items, trees, doc.canvas.width, doc.canvas.height, canopyStands(got.measured, trees, canopyKeepOut(items)).stands).items,
+        items: withMeasuredTrees(items, trees).items,
         site: { ...doc.site, baseElevationFt: Math.round(g.min * 10) / 10, elevationSource: got.source, noLidar: undefined, lidarFailed: undefined }
       };
     });

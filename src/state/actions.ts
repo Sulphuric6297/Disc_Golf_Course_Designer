@@ -269,12 +269,8 @@ const addField = (item: AreaItem) => {
 };
 
 /** A stand of one kind of tree drawn with the Trees tool: woods that grow only pines, only bushes
- * or only leafy trees. Where trees were measured, those stay, and planted ones fill the gaps. */
-const standOf = (k: TreeKind, points: P[], measured: boolean): Partial<AreaItem> => ({
-  pines: k === "conifer" ? 1 : 0,
-  bushes: k === "bush" ? 1 : undefined,
-  ...(measured ? { trees: "custom" as const, patches: [{ points, fill: 1 }] } : {})
-});
+ * or only leafy trees (in the gaps between any measured there, as any wood drawn by hand). */
+const standOf = (k: TreeKind): Partial<AreaItem> => ({ pines: k === "conifer" ? 1 : 0, bushes: k === "bush" ? 1 : undefined });
 
 /** An area, line or built thing (bridge, building...) drawn with the drawing tools. */
 export const addDrawn = (kind: "area" | "line" | "structure", points: P[], opts: { straight?: boolean } = {}) => {
@@ -283,7 +279,7 @@ export const addDrawn = (kind: "area" | "line" | "structure", points: P[], opts:
   if (kind === "area" && ed.areaKind === "field") return addField(createField(ed.fieldKind, points));
   const made = kind === "area" ? createArea(ed.areaKind, points) : kind === "structure" ? createStructure(ed.structureKind, points) : createLine(ed.lineKind, points);
   const drawn = opts.straight && made.type !== "structure" ? { ...made, straight: true } : made;
-  const item = drawn.type === "area" && drawn.kind === "woods" && ed.standOf ? { ...drawn, ...standOf(ed.standOf, drawn.points, !!getDoc().lidar?.trees.length) } : drawn;
+  const item = drawn.type === "area" && drawn.kind === "woods" && ed.standOf ? { ...drawn, ...standOf(ed.standOf) } : drawn;
   // (a building, road, parking or water drawn over trees: those standing in it go, the same step)
   const under = keepsTreesOut(item) ? new Set(getDoc().items.filter(i => i.type === "tree" && !i.locked && treeFree([item])(i)).map(i => i.id)) : new Set<string>();
   changeDoc(d => ({ items: [...d.items.filter(i => !under.has(i.id)), item] }));

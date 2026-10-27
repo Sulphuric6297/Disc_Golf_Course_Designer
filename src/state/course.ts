@@ -2,7 +2,6 @@
 import { create } from "zustand";
 import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, DrawShape, StructureKind, FieldKind } from "../types";
 import { byNumber, createEmptyCourse, holeNumber, holeNumbers } from "../lib/course";
-import { bindToWoods } from "../lib/lidar";
 
 const HISTORY = 120;
 
@@ -33,10 +32,7 @@ export const useCourse = create<CourseStore>()((set, get) => ({
   change: (fn, history = true) => {
     const { doc, past, gestureStart, readOnly } = get();
     if (readOnly) return;
-    let next = { ...doc, ...fn(doc) };
-    // (a woods' edge moved or the woods gone: the measured trees it covered go with it)
-    const bound = next.lidar ? bindToWoods(doc, next) : null;
-    if (bound) next = { ...next, lidar: { ...next.lidar!, bound } };
+    const next = { ...doc, ...fn(doc) };
     if (history) set({ doc: next, past: [...past.slice(-HISTORY + 1), gestureStart ?? doc], future: [], gestureStart: null });
     else set({ doc: next, gestureStart: gestureStart ?? doc });
   },

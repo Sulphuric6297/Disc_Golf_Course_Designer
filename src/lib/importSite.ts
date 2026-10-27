@@ -12,11 +12,9 @@ import { STRUCTURE_KINDS, LINE_KINDS, clamp, generateId } from "../constants";
 import type { AmenityItem, AreaItem, CourseDoc, CourseItem, Hole, LidarTree, LineItem, P, ParkDetail, RoofKind, SiteInfo, StructureItem, TreeItem } from "../types";
 import { FEET_PER_METER, getGeoBounds, isAbort, throwIfAborted, untilAborted, type GeoBounds, type SiteSelection } from "./geo/core";
 import { boundsKey, cached } from "./geo/cache";
-import { treeStands } from "./geo/detect";
 import { fetchBestElevationGrid, usgsGroundLabel } from "./geo/elevation";
 import { fetchLidar } from "./geo/lidarFetch";
 import { groundOnGrid, standingTrees, surveyYear } from "./lidar";
-import { canopyStands, type CanopyStand } from "./canopy";
 import { summerFills, treesFromSummer } from "./summerTrees";
 import { fetchMapImagery, type MapImagerySource } from "./geo/imagery";
 import { natureFromPhoto } from "./geo/photoNature";
@@ -139,17 +137,6 @@ export const heightsFromSamples = (values: Float32Array, samplesX: number, sampl
     }
   }
   return heights;
-};
-
-/** A traced outline (photo pixels) as a shape on the plan: simplified, its corners rounded once. */
-const outlineToPlan = (outline: { x: number; y: number }[], w: number, h: number, width: number, height: number, tolerance: number): P[] => {
-  const pts = simplify(outline.map(p => ({ x: (p.x / w) * width, y: (p.y / h) * height })), tolerance);
-  const out: P[] = [];
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[i], b = pts[(i + 1) % pts.length];
-    out.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 }, { x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
-  }
-  return out.map(p => ({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 }));
 };
 
 /** What the photo shows: stands of trees (as woods areas), the trees standing on their own (as
@@ -452,12 +439,10 @@ export const tracedItems = (traced: TracedBuilding[], mapped: CourseItem[], ref:
 
 /**
  * The measured trees' last step, on the import and on the Site step's Measure trees and ground:
- * their stands of woods (trees close together, each stand its own woods, the ones made before
- * replaced), and what they stand in for taken out: the trees and woods found on the photo, the
- * trees mapped one by one or in rows on OpenStreetMap, and OpenStreetMap's woods (drawn by
- * hand and often over a whole hillside) once there are stands. Woods the survey saw few trees in
- * (missed, or grown since) get drawn trees between the measured ones (the "Filled in" choice, set
- * as if by hand). Only what came in as it came is changed.
+ * each tree stands on its own (no woods are made from them; any an older import made go), and
+ * what they stand in for is taken out: the trees and woods found on the photo, the trees mapped one
+ * by one or in rows on OpenStreetMap, and OpenStreetMap's woods (drawn by hand and often over a
+ * whole hillside). Only what came in as it came is changed.
  */
 /** What the woods from the measured canopy keep off: built things, water, parking, out-of-play
  * areas and fields, and roads (as wide as they're drawn). */
@@ -466,40 +451,15 @@ export const canopyKeepOut = (items: CourseItem[]) => ({
   lines: items.filter((i): i is LineItem => i.type === "line" && i.kind === "road").map(i => ({ points: i.points, width: i.width ?? LINE_KINDS.road.width }))
 });
 
-export const withMeasuredTrees = (items: CourseItem[], trees: LidarTree[], width: number, height: number, canopy?: CanopyStand[]) => {
-  const made: AreaItem[] = [];
-  // (the woods from the measured canopy where it's given: outlines on the plan already)
-  if (canopy) {
-    for (const s of canopy) if (s.outline.length >= 3) made.push({ ...createArea("woods", s.outline), importSource: "lidar" as const } as AreaItem);
-  } else if (trees.length) {
-    const { w: gw, h: gh, cell, stands } = treeStands(trees.map(t => ({ x: t[0], y: t[1], r: t[3] })), width, height);
-    for (const s of stands) {
-      const a = { ...createArea("woods", outlineToPlan(s.outline, gw, gh, gw * cell, gh * cell, 5)), importSource: "lidar" as const } as AreaItem;
-      if (a.points.length >= 3) made.push(a);
-    }
-  }
-  const thin = (a: AreaItem): AreaItem => {
-    if (a.kind !== "woods" || a.trees) return a;
-    const area = Math.abs(polygonArea(a.points));
-    const n = trees.filter(t => pointInPolygon({ x: t[0], y: t[1] }, a.points)).length;
-    return area > 2000 && n < area / 3000 ? { ...a, trees: "custom", patches: [{ points: a.points.map(p => ({ ...p })), fill: 0.6 }] } : a;
-  };
-  const kept = items
-    .filter(i => {
-      if (!isImported(i)) return true;
-      if (i.type === "area" && i.importSource === "lidar") return false;
-      if (trees.length && ((i.type === "tree" && (i.importSource === "photo" || (i.importSource === "osm" && i.treeType !== "bush"))) || (i.type === "area" && i.kind === "woods" && i.importSource === "photo"))) return false;
-      return !(made.length && i.type === "area" && i.kind === "woods" && i.importSource === "osm");
-    })
-    .map(i => {
-      if (i.type !== "area" || !isImported(i)) return i;
-      const t = thin(i);
-      return t === i ? i : signed(t);
-    });
-  const stands = made.map(a => signed(thin(a)));
-  // (where the photo's woods were: before its water)
-  const at = kept.findIndex(i => i.type === "area" && i.kind === "water" && i.importSource === "photo");
-  return { items: at < 0 ? [...kept, ...stands] : [...kept.slice(0, at), ...stands, ...kept.slice(at)], stands: stands.length };
+export const withMeasuredTrees = (items: CourseItem[], trees: LidarTree[]) => {
+  const items2 = items.filter(i => {
+    if (!isImported(i)) return true;
+    if (i.type === "area" && i.importSource === "lidar") return false;
+    if (!trees.length) return true;
+    if (i.type === "tree" && (i.importSource === "photo" || (i.importSource === "osm" && i.treeType !== "bush"))) return false;
+    return !(i.type === "area" && i.kind === "woods" && (i.importSource === "photo" || i.importSource === "osm"));
+  });
+  return { items: items2 };
 };
 
 /**
@@ -827,24 +787,21 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       ...water,
       ...found.trees.filter(t => !inside(t, "woods") && !inside(t, "water") && !nowhere(t))
     ];
-    // With trees measured from the air: their stands, in place of the photo's (the same step as
+    // With trees measured from the air: each on its own, in place of the photo's (the same step as
     // Measure trees and ground on the Site step)
     let standing: number | undefined;
     if (lidar && measured) {
-      // The buildings' heights the survey measured (where the maps have none), then the woods from
-      // the measured canopy, kept off buildings, water, parking, fields and roads
+      // The buildings' heights the survey measured (where the maps have none)
       all = withMeasuredHeights(all, measured.lidar.measured, signed);
       // (the trees a bare survey couldn't pick out, from the summer photo's canopy: after the
       // measured ones, so the list of those stays as it was)
       const summer = "leaf" in found && found.leaf ? treesFromSummer(lidar.trees, measured.lidar.measured, found.leaf, width, height, treeFree(all)) : [];
       if (summer.length) lidar = { ...lidar, trees: [...lidar.trees, ...summer], fromPhoto: summer.length };
-      const m = withMeasuredTrees(all, lidar.trees, width, height, canopyStands(measured.lidar.measured, lidar.trees, canopyKeepOut(all)).stands);
-      all = m.items;
+      all = withMeasuredTrees(all, lidar.trees).items;
       const stand = standingTrees(lidar, () => false, treeFree(mapped)).stand, first = lidar.trees.length - summer.length;
       standing = stand.length;
       const fromSummer = stand.filter(k => k >= first).length;
       notes.splice(treesNoteAt, 0, `${(standing - fromSummer).toLocaleString()} trees measured from the air (${measured.lidar.source}).${!fromSummer ? "" : measured.lidar.measured.leafOn === false ? ` The survey was flown in winter, when bare trees standing close together don't show apart, so ${fromSummer.toLocaleString()} more came from the summer photo.` : ` ${fromSummer.toLocaleString()} more came from the summer photo, where the survey didn't pick them out.`}`);
-      if (m.stands) notes.push(`The measured trees in ${m.stands} ${m.stands === 1 ? "stand" : "stands"} of woods.`);
     }
     const photo = (type: string, kind?: string) => all.filter(i => (i as TreeItem | AreaItem).importSource === "photo" && i.type === type && (!kind || (i as AreaItem).kind === kind)).length;
     const counted = [[photo("area", "woods"), "wooded area", "wooded areas"], [photo("tree"), "tree", "trees"], [photo("area", "water"), "water area", "water areas"]] as const;
