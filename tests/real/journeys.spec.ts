@@ -25,7 +25,7 @@ test.beforeAll(async ({ browser }) => {
   page = await browser.newPage();
   await openDemo(page, doc => {
     // (the corner cleared of what was there, then the check's own things put in)
-    doc.items = doc.items.filter((i: any) => !(i.points ?? [i]).some(inBox) || i.type === "tee" || i.type === "basket");
+    doc.items = doc.items.filter((i: any) => !(i.points ?? [i]).some(inBox) || i.type === "tee" || i.type === "basket" || i.kind === "water");
     doc.lidar.removed = [...new Set([...(doc.lidar.removed ?? []), ...doc.lidar.trees.map((t: number[], k: number) => (inBox({ x: t[0], y: t[1] }) ? k : -1)).filter((k: number) => k >= 0)])];
     doc.items.push(
       { id: "t-house", type: "structure", kind: "building", points: HOUSE, x: 1640, y: 225, height: 12 },
