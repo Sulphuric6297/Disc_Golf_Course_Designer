@@ -183,8 +183,8 @@ test("a pond made a hazard: never OB as well", async () => {
 
 test("the painted map: Where to paint the woods is there with measured trees, and the map paints in time", async () => {
   await page.evaluate(() => (window as any).__dgEditor().set({ step: "map", tool: "select" }));
-  const trees = page.getByRole("button", { name: /^Trees/ }).first();
-  if (await trees.isVisible().catch(() => false)) await trees.click();
+  const trees = page.getByTestId("part-trees");
+  if ((await trees.getAttribute("aria-expanded")) !== "true") await trees.click();
   await expect(page.getByTestId("forest-options")).toBeVisible();
   const s = Date.now();
   await page.waitForFunction(() => !(window as any).__dgPainting(), null, { timeout: 150_000 });
