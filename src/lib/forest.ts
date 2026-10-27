@@ -17,7 +17,7 @@ import { reliefExaggeration } from "./relief";
 import { isLineKind, offsetPolygon, roofOf, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
 import { latitudeOf, lookParts, paintLight, sunFromOf } from "./mapLook";
 import { STYLE_GREENS, drawMist, drawShadows, drawTrees, gradeLight, type PaintTree } from "./paintTrees";
-import { drawBrushedSteps } from "./brushCrown";
+import { drawBrushedSteps, type Wait } from "./brushCrown";
 
 /** Where the photo shows trees, on a grid over the site (1 = canopy). */
 export type CanopyGrid = { cols: number; rows: number; ftPerCell: number; data: Uint8Array };
@@ -270,7 +270,7 @@ export type ForestOpts = {
  * in page points; `view.scale` is points per foot).
  */
 /** The painting, a slice at a time; some slices say how far along it is (0..1). */
-function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts): Generator<number | void, HTMLCanvasElement, void> {
+function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts): Generator<number | void | Wait, HTMLCanvasElement, unknown> {
   const measured = doc.lidar?.trees.length ? measuredStanding() : null;
   const density = opts.density ?? 2;
   const s = opts.style;
@@ -1695,12 +1695,15 @@ export const paintedFrom = (doc: CourseDoc) => [
 export const forestCanvasAsync = async (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts, signal?: AbortSignal, onProgress?: (fraction: number) => void, pace?: () => Promise<number>) => {
   const steps = forestSteps(doc, view, stats, opts);
   // (a slice at a time, 8 ms of painting between frames; or as `pace` says: it waits for its moment
-  // and says how long the next slice may run)
-  let start = performance.now(), told = -1, budget = 8;
+  // and says how long the next slice may run; and what the steps wait for, waited for, the page
+  // free meanwhile: Hand painted's trees, painted by workers)
+  let start = performance.now(), told = -1, budget = 8, back: unknown;
   for (;;) {
     if (signal?.aborted) throw new DOMException("Painting stopped", "AbortError");
-    const r = steps.next();
+    const r = steps.next(back);
+    back = undefined;
     if (r.done) return r.value;
+    if (r.value && typeof r.value === "object" && "wait" in r.value) { back = await r.value.wait; start = performance.now(); continue; }
     if (onProgress && typeof r.value === "number" && r.value - told >= 0.01) onProgress((told = r.value));
     if (performance.now() - start > budget) {
       if (pace) budget = await pace();

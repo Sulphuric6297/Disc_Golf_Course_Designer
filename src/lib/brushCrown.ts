@@ -4,16 +4,20 @@
 // the map's sun: the clumps toward it in yellow-green, those away from it in deep shade; the sunny
 // groups lie over the shaded ones and each casts a soft shadow on the leaves under it. Nothing is
 // pasted: every tree is painted from its own seed. Each tree is painted on a small canvas of its
-// own (so the soft shadows only blur that much), then laid on the map.
+// own (so the soft shadows only blur that much), then laid on the map; where the browser can, by
+// background workers several at once (brushCrown.worker.ts), the page free meanwhile.
 type RGB = [number, number, number];
 type Ctx = CanvasRenderingContext2D;
+type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
 export type BrushTree = { x: number; y: number; r: number; col: RGB; seed: number };
 
 const hash = (a: number, b: number) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
 const css = (c: number[], a = 1) => `rgba(${c.map(v => Math.round(Math.max(0, Math.min(255, v)))).join(",")},${a})`;
 const mix = (a: number[], b: number[], k: number): RGB => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
 const rng = (s: number) => { s = (Math.abs(Math.floor(s)) % 2147483646) + 1; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
-const canvas = (w: number, h: number) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+// (in a worker there's no page: an offscreen canvas)
+const canvas = (w: number, h: number): AnyCanvas => { if (typeof document === "undefined") return new OffscreenCanvas(w, h); const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const ctx2d = (c: AnyCanvas) => c.getContext("2d") as Ctx;
 
 /** The look, as tuned against the reference: leaf groups' size and spacing, the crown's clumps,
  * how the light falls across them, its bands from shade to sun, the shade's and sun's paint. */
@@ -26,13 +30,13 @@ const P = {
 
 // ---------------------------------------------------------------- one brush stroke
 
-let bristleTex: HTMLCanvasElement | null = null;
+let bristleTex: AnyCanvas | null = null;
 /** The brush's own marks: fine bristle lines side by side, each lighter or darker than the next and
  * fading in and out along its length, over a faint grain (half grey: laid over the paint, it only
  * lightens and darkens it). */
 const bristles = () => {
   if (bristleTex) return bristleTex;
-  const S = 256, c = canvas(S, S), t = c.getContext("2d")!, im = t.createImageData(S, S);
+  const S = 256, c = canvas(S, S), t = ctx2d(c), im = t.createImageData(S, S);
   const smooth = (v: number, k: number) => { const i = Math.floor(v), f = v - i, u = f * f * (3 - 2 * f); return hash(i, k) * (1 - u) + hash(i + 1, k) * u; };
   for (let x = 0; x < S; x++) {
     const line = (hash(x, 1) - 0.5) * 0.9 + (smooth(x / 6, 2) - 0.5) * 0.8 + (smooth(x / 23, 3) - 0.5) * 0.5;
@@ -93,7 +97,7 @@ const stroke = (g: Ctx, x0: number, y0: number, ang: number, len: number, wid: n
     g.translate(cx, cy); g.rotate(ang + Math.PI / 2 + (hash(sd, 4) - 0.5) * 0.15); g.scale(px, px);
     g.translate(-hash(sd, 6) * 256, -hash(sd, 7) * 256);
     g.globalCompositeOperation = "overlay"; g.globalAlpha = P.tex * Math.min(1, Math.max(o.texMin ?? 0.35, (lum - 0.2) * 2.2)) * (0.45 + 0.55 * fine);
-    g.fillStyle = g.createPattern(bristles(), "repeat")!;
+    g.fillStyle = g.createPattern(bristles() as CanvasImageSource, "repeat")!;
     const span = (R * 1.5) / px; g.fillRect(hash(sd, 6) * 256 - span / 2, hash(sd, 7) * 256 - span / 2, span, span);
     g.restore();
   }
@@ -199,20 +203,81 @@ const paintCrown = (g: Ctx, x: number, y: number, R: number, base: RGB, seed: nu
   }
 };
 
-let own: HTMLCanvasElement | null = null;
+/** A tree's own canvas: its size, and where it lands on the map (to the pixel, so it's painted the
+ * same wherever it's painted). */
+const sizeOf = (t: BrushTree) => Math.ceil(t.r * 3.4) + 24;
+let own: AnyCanvas | null = null;
+/** One tree painted on its own canvas (`c`, at least its size; cleared first). */
+export const paintTree = (c: AnyCanvas, t: BrushTree, sun: number[]) => {
+  const S = sizeOf(t), half = S / 2, o = ctx2d(c);
+  o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, S, S);
+  paintCrown(o, half + (t.x - Math.floor(t.x)), half + (t.y - Math.floor(t.y)), t.r, t.col, t.seed, sun);
+  return S;
+};
+const layTree = (g: Ctx, img: CanvasImageSource, t: BrushTree, S: number) => g.drawImage(img, 0, 0, S, S, Math.floor(t.x) - S / 2, Math.floor(t.y) - S / 2, S, S);
+
+// ---------------------------------------------------------------- the workers
+type Painted = { S: number; bm: ImageBitmap }[];
+let pool: Worker[] | null = null;
+const canWork = () => typeof Worker !== "undefined" && typeof OffscreenCanvas !== "undefined" && typeof createImageBitmap !== "undefined";
+const workers = () => {
+  if (pool) return pool;
+  const n = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 1));
+  try { pool = Array.from({ length: n }, () => new Worker(new URL("./brushCrown.worker.ts", import.meta.url), { type: "module" })); }
+  catch { pool = []; }
+  return pool;
+};
+let jobId = 0;
+const waiting = new Map<number, (p: Painted | null) => void>();
+const ask = (w: Worker, trees: BrushTree[], sun: number[]) => new Promise<Painted | null>(res => {
+  const id = ++jobId;
+  waiting.set(id, res);
+  if (!(w as unknown as { told?: boolean }).told) {
+    (w as unknown as { told?: boolean }).told = true;
+    w.onmessage = (e: MessageEvent<{ id: number; out: Painted | null }>) => { const f = waiting.get(e.data.id); waiting.delete(e.data.id); f?.(e.data.out); };
+    w.onerror = () => { for (const [k, f] of waiting) { waiting.delete(k); f(null); } };
+  }
+  w.postMessage({ id, trees, sun });
+});
+
+/** A thing for the painter's driver to wait for (lib/forest: forestCanvasAsync); what it gives is
+ * handed back into the steps. A driver that can't wait hands back nothing. */
+export type Wait = { wait: Promise<unknown> };
+
 /** The trees, painted one by one (each on its own canvas, then laid on the map), those away from
  * the sun first so the sunny side of the woods lies over the rest; a step at a time, so the page
- * stays free while they paint. `sun`: toward the sun, on the page. */
-export function* drawBrushedSteps(g: Ctx, trees: BrushTree[], sun: number[]) {
+ * stays free while they paint. Where the browser can and the driver waits, the workers paint them,
+ * a batch each at a time, and here they're laid on the map in order. `sun`: toward the sun. */
+export function* drawBrushedSteps(g: Ctx, trees: BrushTree[], sun: number[]): Generator<void | Wait, void, unknown> {
   const sorted = [...trees].sort((p, q) => p.x * sun[0] + p.y * sun[1] - (q.x * sun[0] + q.y * sun[1]));
+  const ws = canWork() ? workers() : [];
+  if (ws.length && sorted.length > 24) {
+    const BATCH = 24, batches: BrushTree[][] = [];
+    for (let i = 0; i < sorted.length; i += BATCH) batches.push(sorted.slice(i, i + BATCH));
+    // (a few batches ahead for each worker, laid on the map in order as they come; their pictures
+    // let go once laid, so only those few are held)
+    const asked: Promise<Painted | null>[] = [];
+    const ahead = ws.length * 2;
+    const more = () => { while (asked.length < batches.length && asked.length < done + ahead) { const k = asked.length; asked.push(ask(ws[k % ws.length], batches[k], sun)); } };
+    let done = 0;
+    more();
+    for (; done < batches.length; ) {
+      const got = (yield { wait: asked[done] }) as Painted | null | undefined;
+      if (!got) break;
+      batches[done].forEach((t, i) => { layTree(g, got[i].bm, t, got[i].S); got[i].bm.close(); });
+      done++;
+      more();
+    }
+    if (done === batches.length) return;
+    // (the driver can't wait, or a worker failed: the rest painted here)
+    sorted.splice(0, done * BATCH);
+  }
   let since = performance.now();
   for (const t of sorted) {
-    const S = Math.ceil(t.r * 3.4) + 24, half = S / 2;
+    const S = sizeOf(t);
     if (!own || own.width < S) own = canvas(Math.max(S, 128), Math.max(S, 128));
-    const o = own.getContext("2d")!;
-    o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, S, S);
-    paintCrown(o, half + (t.x - Math.floor(t.x)), half + (t.y - Math.floor(t.y)), t.r, t.col, t.seed, sun);
-    g.drawImage(own, 0, 0, S, S, Math.floor(t.x) - half, Math.floor(t.y) - half, S, S);
+    paintTree(own, t, sun);
+    layTree(g, own as CanvasImageSource, t, S);
     if (performance.now() - since > 12) { yield; since = performance.now(); }
   }
 }
