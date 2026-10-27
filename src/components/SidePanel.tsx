@@ -181,12 +181,18 @@ function MeasuredSettings() {
       </div>
       <div className="mt-2" data-testid="lidar-grow">
         <Slider label="Growth since the survey" min={0} max={25} step={1} value={lidar.growYears ?? 0}
-          format={v => (v ? `${v} year${v === 1 ? "" : "s"} · ${saplings(lidar.trees, v).length.toLocaleString()} new` : "As measured")}
+          format={v => (v ? `${v} year${v === 1 ? "" : "s"}${lidar.saplings ? ` · ${saplings(lidar.trees, v).length.toLocaleString()} new` : ""}` : "As measured")}
           onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, growYears: v || undefined } } : {}), false)} onDone={() => useCourse.getState().commit()} />
         {yearsSince(lidar.source) > 0 && (lidar.growYears ?? 0) !== yearsSince(lidar.source) && (
           <button className="text-[12px] text-orange-300 hover:text-orange-200 touch:min-h-[44px]" onClick={() => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, growYears: yearsSince(d.lidar.source) } } : {}))} data-testid="grow-today">Grow to today ({yearsSince(lidar.source)} years)</button>
         )}
       </div>
+      {(lidar.growYears ?? 0) > 0 && (
+        <div className="mt-2" data-testid="lidar-saplings">
+          <Toggle label="Saplings in the gaps" checked={lidar.saplings === true}
+            onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, saplings: v ? true : undefined } } : {}))} />
+        </div>
+      )}
       {(lidar.fromPhoto ?? 0) > 0 && (
         <div className="mt-2 text-[11px] text-zinc-400" data-testid="from-photo">{lidar.fromPhoto!.toLocaleString()} of them from the summer photo, where the survey couldn't tell bare trees apart · <button className="text-orange-300 hover:text-orange-200 touch:min-h-[44px]" onClick={() => {
           changeDoc(d => {

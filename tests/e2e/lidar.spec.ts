@@ -285,6 +285,16 @@ plain("saplings since the survey: none at once, more with the years, in the gaps
   plainExpect(saplings(dense, 10).filter(s => s[0] > 215 && s[0] < 293 && s[1] > 215 && s[1] < 293)).toEqual([]);
 });
 
+plain("growth since the survey: the trees aged, and saplings in the gaps only when asked for (pure logic)", () => {
+  const woods: [number, number, number, number, 0 | 1][] = Array.from({ length: 200 }, (_, k) => [(k % 20) * 50, Math.floor(k / 20) * 50, 50, 15, 0]);
+  const aged = grownTrees({ source: "x", trees: woods, growYears: 10 });
+  plainExpect(aged).toHaveLength(woods.length);
+  plainExpect(aged[0][2]).toBeGreaterThan(woods[0][2]);
+  const young = grownTrees({ source: "x", trees: woods, growYears: 10, saplings: true });
+  plainExpect(young.length).toBe(woods.length + saplings(woods, 10).length);
+  plainExpect(young.length).toBeGreaterThan(woods.length);
+});
+
 test("any tree the app planted in a wood acts like a tree placed by hand: picked by a click, the same panel, deleted; a look only is no change", async ({ page }) => {
   test.setTimeout(180_000);
   await blankCourse(page);

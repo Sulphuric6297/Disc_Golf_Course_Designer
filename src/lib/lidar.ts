@@ -818,18 +818,19 @@ export const saplings = (trees: LidarTree[], years: number): LidarTree[] => {
   return out;
 };
 
-const grown = new WeakMap<LidarTree[], { years: number; size: number; out: LidarTree[] }>();
+const grown = new WeakMap<LidarTree[], { years: number; young: boolean; size: number; out: LidarTree[] }>();
 /** The course's measured trees, grown as many years as it asks (the same list when none), with
  * the saplings that came up since after them (so the measured trees keep their places in the
  * list: what was cut down or kept by index stays so), their crowns as wide as Crown size says. */
 export const grownTrees = (lidar: NonNullable<CourseDoc["lidar"]>) => {
-  const years = lidar.growYears ?? 0, size = lidar.crownSize ?? 1;
+  const years = lidar.growYears ?? 0, size = lidar.crownSize ?? 1, young = lidar.saplings === true;
   if (!years && size === 1) return lidar.trees;
   const hit = grown.get(lidar.trees);
-  if (hit?.years === years && hit.size === size) return hit.out;
-  const aged = years ? [...lidar.trees.map(t => grownTree(t, years)), ...saplings(lidar.trees, years)] : lidar.trees;
+  if (hit?.years === years && hit.size === size && hit.young === young) return hit.out;
+  // (the saplings grown in the gaps since only when asked for)
+  const aged = years ? [...lidar.trees.map(t => grownTree(t, years)), ...(young ? saplings(lidar.trees, years) : [])] : lidar.trees;
   const out = size === 1 ? aged : aged.map(([x, y, h, r, c]): LidarTree => [x, y, h, Math.round(r * size * 10) / 10, c]);
-  grown.set(lidar.trees, { years, size, out });
+  grown.set(lidar.trees, { years, size, young, out });
   return out;
 };
 

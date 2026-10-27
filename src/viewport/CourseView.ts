@@ -2577,7 +2577,7 @@ export class CourseView {
     // (the same list while the measured trees, the growth and the cut spots are the same: the
     // forest is only rebuilt when one of them changes, not on every change to the course)
     const grownList = course.lidar?.trees.length
-      ? this.keep("lidar:list", course.lidar.trees, JSON.stringify([course.lidar.growYears ?? 0, course.lidar.crownSize ?? 1, cutKey]), () => grownTrees(course.lidar!).filter((t, k) => k < measuredCount || !cutAt({ x: t[0], y: t[1] })))
+      ? this.keep("lidar:list", course.lidar.trees, JSON.stringify([course.lidar.growYears ?? 0, course.lidar.saplings === true, course.lidar.crownSize ?? 1, cutKey]), () => grownTrees(course.lidar!).filter((t, k) => k < measuredCount || !cutAt({ x: t[0], y: t[1] })))
       : null;
     const lidar = grownList ? { ...course.lidar!, trees: grownList } : null;
     const measured = !!lidar;
@@ -2595,7 +2595,7 @@ export class CourseView {
       const inWoods = (p: P) => woodsShapes.some(w => p.x >= w.box.minX && p.x <= w.box.maxX && p.y >= w.box.minY && p.y <= w.box.maxY && pointInPolygon(p, w.pts));
       const woodsKey = woodsShapes.length ? JSON.stringify(woodsShapes.map(w => w.pts.map(q => [Math.round(q.x), Math.round(q.y)]))) : "";
       if (held) this.afterDrag = true;
-      else this.lidarKey = JSON.stringify([lidar.kept, lidar.removed, lidar.bound, lidar.minHeight ?? 0, lidar.growYears ?? 0, lidar.crownSize ?? 1, lidar.clearFairways === true, forPlay().key, nowhere().key, cutKey, woodsKey]);
+      else this.lidarKey = JSON.stringify([lidar.kept, lidar.removed, lidar.bound, lidar.minHeight ?? 0, lidar.growYears ?? 0, lidar.saplings === true, lidar.crownSize ?? 1, lidar.clearFairways === true, forPlay().key, nowhere().key, cutKey, woodsKey]);
       const state = this.keep("lidar", lidar.trees, this.lidarKey!, () => {
         const { stand, cut } = standingTrees(lidar, cleared, p => nowhere().test(p), inWoods);
         const keptSet = new Set(lidar.kept ?? []);
@@ -2606,9 +2606,9 @@ export class CourseView {
       // (told by which trees stand, so two views over the same course agree and never take turns)
       let sig = state.stand.length;
       for (const k of state.stand) sig = (sig * 31 + k) % 2147483647;
-      const standKey = `${state.stand.length}:${sig}:${lidar.growYears ?? 0}:${lidar.crownSize ?? 1}`;
+      const standKey = `${state.stand.length}:${sig}:${lidar.growYears ?? 0}:${lidar.saplings === true}:${lidar.crownSize ?? 1}`;
       if (measuredStanding()?.key !== standKey) setMeasuredStanding({ key: standKey, trees: state.stand.map(k => lidar.trees[k]) });
-      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, lidar.crownSize ?? 1, state.cut, hv, st.trees, st.landscape, st.treeMix, st.conifers]), () => {
+      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, lidar.saplings === true, lidar.crownSize ?? 1, state.cut, hv, st.trees, st.landscape, st.treeMix, st.conifers]), () => {
         const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, treeMixOf(st));
         this.shadowsDirty = true;
         return woods;
