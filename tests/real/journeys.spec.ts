@@ -92,7 +92,8 @@ test("dragging a house: each step quick, letting go quick, back with one undo", 
   await draw(page, false);
   const was = (await course(page)).items.find((i: any) => i.id === "t-house").points[0];
   await page.evaluate(() => (window as any).__dgActions.select("t-house"));
-  const c = await at(page, 1640, 225, 13);
+  // (off the middle of the roof: its height handle is there in 3D)
+  const c = await at(page, 1612, 242, 12);
   await page.mouse.move(c.x, c.y);
   await page.mouse.down();
   const steps: number[] = [];
