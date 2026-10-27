@@ -11,7 +11,7 @@ test.describe.configure({ mode: "serial" });
 
 // A corner of the site kept for the picking checks: a house with a tree just behind it, a path just
 // in front of another tree, and tall grass round a third (the measured trees there taken out)
-const BOX = { minX: 1500, minY: 120, maxX: 1800, maxY: 360 };
+const BOX = { minX: 1460, minY: 100, maxX: 1840, maxY: 520 };
 const HOUSE = [{ x: 1600, y: 200 }, { x: 1680, y: 200 }, { x: 1680, y: 250 }, { x: 1600, y: 250 }];
 const BEHIND = { x: 1640, y: 188 };
 const PATH = [{ x: 1520, y: 331 }, { x: 1600, y: 331 }];
