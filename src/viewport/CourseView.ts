@@ -6,7 +6,6 @@
 // It can also look from a tee down its hole, and fly over a hole.
 //
 // Plan (x, y) is world (x, z) with Y up; plan units are feet.
-import { BRUSH_SECTION, TREE_PATCH } from "../lib/view";
 import * as THREE from "three";
 import CameraControls from "camera-controls";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
@@ -38,7 +37,7 @@ import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { Tufts } from "../three/tufts";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createFence, createStructure, onPartLoaded } from "../three/structures";
-import { measuredStanding, setMeasuredStanding, showsMeasured } from "../lib/standing";
+import { measuredStanding, setMeasuredStanding } from "../lib/standing";
 import { createFieldGround, createFieldProps, createHedge, createPowerLine } from "../three/parkProps";
 import { fieldInks, fieldPlan } from "../lib/fieldPlan";
 import { fieldKeepsTreesOut, fieldOutline } from "../lib/fields";
@@ -2722,11 +2721,11 @@ export class CourseView {
         return g;
       });
       // Woods: trees standing in it (shadows and all)
-      // (its own drawn trees: without measured ones, or when it asks for them only; or, drawn by
-      // hand, all through it in the gaps between the measured ones, unless it has patches of its
-      // own to fill; none when it says so)
-      const fillsIn = measured && a.trees !== "drawn" && !showsMeasured(a);
-      if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn" || (fillsIn && !a.patches?.length)) && !held(`woods:${a.id}`)) {
+      // (what it grows, all through it: in the gaps between the measured trees, unless it clears
+      // them; none when it says so; a wood of bushes only grows as brush, below)
+      const fillsIn = measured && a.trees !== "drawn";
+      const brushOnly = a.kind === "woods" && (a.bushes ?? 0) >= 1;
+      if (a.kind === "woods" && a.trees !== "none" && !brushOnly && !held(`woods:${a.id}`)) {
         const here = clearings().near(boundsOf(a.points));
         put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, cutKey, a.pines, a.bushes, a.density, a.heights, fillsIn && this.lidarKey]), () => {
           this.plantings++;
@@ -2742,12 +2741,13 @@ export class CourseView {
       // Underbrush beneath a wood (measured or drawn), or up through tall grass when it asks for
       // some: its own bushes and young trees, kept off the fairways, paths and water, and off the
       // spots cut by hand
-      if (((a.kind === "woods" && a.trees !== "none") || a.kind === "rough") && (a.underbrush || a.brush?.some(b => b.level !== "none"))) {
+      const brushLevel = brushOnly ? (["light", "medium", "heavy"] as const)[["sparse", "usual", "thick"].indexOf((a.density ?? 1) < 0.75 ? "sparse" : (a.density ?? 1) > 1.4 ? "thick" : "usual")] : a.underbrush;
+      if (((a.kind === "woods" && a.trees !== "none") || a.kind === "rough") && (brushLevel || a.brush?.some(b => b.level !== "none"))) {
         let hereMade: ReturnType<ReturnType<typeof clearingsFor>["near"]> | null = null;
         const here = () => (hereMade ??= clearings().near(boundsOf(a.points)));
         const sections = (a.brush ?? []).filter(b => b.points.length >= 3);
         const inSection = (p: P) => sections.some(b => pointInPolygon(p, b.points));
-        const edge = Math.min(1, Math.max(0, a.brushEdge ?? 0.6));
+        const edge = brushOnly ? 0 : Math.min(1, Math.max(0, a.brushEdge ?? 0.6));
         // (`over`: the sections drawn after this one, which have their say where they overlap it)
         const plant = (key: string, outline: P[], level: "light" | "medium" | "heavy", kind: BrushKind, outside: boolean, over: P[][] = []) =>
           held(key) || put(key, JSON.stringify([outline, level, kind, hv, st.trees, st.landscape, st.treeMix, st.conifers, here().key, cutKey, outside ? sections.map(b => b.points) : over, edge, a.points]), () => {
@@ -2760,29 +2760,8 @@ export class CourseView {
             return brush;
           }, this.itemsGroup, true);
         const kind = a.brushKind ?? "mixed";
-        if (a.underbrush) plant(`woods:${a.id}:under`, a.points, a.underbrush, kind, true);
+        if (brushLevel) plant(`woods:${a.id}:under`, a.points, brushLevel, kind, true);
         sections.forEach((b, i) => { if (b.level !== "none") plant(`woods:${a.id}:under:${i}`, b.points, b.level, b.kind ?? kind, false, sections.slice(i + 1).map(s => s.points)); });
-      }
-      // Custom: the measured trees stand as usual, and each patch drawn inside is filled in with
-      // drawn trees as thickly as it says, never under a measured crown; outlined while picked
-      if (a.kind === "woods" && fillsIn && a.patches?.length) {
-        const standing = this.lidarState?.stand ?? [], trees = lidar?.trees ?? [];
-        a.patches.forEach((patch, i) => {
-          if (held(`woods:${a.id}:patch:${i}`)) return;
-          const here = clearings().near(boundsOf(patch.points));
-          const fill = Math.min(1, Math.max(0.1, patch.fill));
-          put(`woods:${a.id}:patch:${i}`, JSON.stringify([patch.points, fill, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, this.lidarKey, cutKey, a.pines, a.bushes, a.heights]), () => {
-            this.plantings++;
-            const box = boundsOf(patch.points);
-            const near = standing.map(k => trees[k]).filter(t => t && t[0] >= box.minX - 40 && t[0] <= box.maxX + 40 && t[1] >= box.minY - 40 && t[1] <= box.maxY + 40);
-            const keepOut = (p: P, reach: number) => here.test(p, reach) || cutAt(p) || near.some(t => Math.hypot(t[0] - p.x, t[1] - p.y) < t[3] * 0.8 + 4);
-            const woods = createWoods(patch.points, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), keepOut, 22 / Math.sqrt(fill), { pines: a.pines, bushes: a.bushes, heights: a.heights });
-            woods.traverse(o => { o.userData.itemId = a.id; });
-            this.shadowsDirty = true;
-            return woods;
-          }, this.itemsGroup, true);
-          if (a.id === this.selectedId) put(`woods:${a.id}:patchline:${i}`, JSON.stringify([patch.points, hv]), () => this.fatLine(this.drapeLine(patch.points, LIFT + 0.05, true), "#86efac", 1.5, { order: 5, dashed: 5 }));
-        });
       }
     });
     // A hand-made flyover of the selected hole: its path over the ground, and where each keyframe looks
@@ -3063,11 +3042,6 @@ export class CourseView {
       for (const r of rings) g.add(this.fatLine(this.drapeLine(r, LIFT + 0.3, true), color, 3, { opacity, order: 9, depthTest: false }));
     } else if (item.type === "area") {
       g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2, true), color, 3.5, { opacity, order: 9 }));
-      // (a wood's underbrush sections and tree patches, while it's the one picked)
-      if (id === this.selectedId && item.kind === "woods") {
-        for (const b of item.brush ?? []) if (b.points.length >= 3) g.add(this.fatLine(this.drapeLine(b.points, LIFT + 0.25, true), BRUSH_SECTION, 3, { opacity, order: 9, dashed: 6, depthTest: false }));
-        for (const p of item.patches ?? []) if (p.points.length >= 3) g.add(this.fatLine(this.drapeLine(p.points, LIFT + 0.25, true), TREE_PATCH, 3, { opacity, order: 9, dashed: 6, depthTest: false }));
-      }
     }
     else if (item.type === "line") g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2), color, 5, { opacity: opacity * 0.6, order: 9 }));
     else {

@@ -39,6 +39,9 @@ test.beforeAll(async ({ browser }) => {
     const [tx, ty] = doc.lidar.trees[0];
     doc.items.push({ id: "t-stand", type: "area", kind: "woods", importSource: "lidar", x: tx, y: ty, points: [{ x: tx - 30, y: ty - 30 }, { x: tx + 30, y: ty - 30 }, { x: tx + 30, y: ty + 30 }, { x: tx - 30, y: ty + 30 }] });
     doc.lidar.bound = [0];
+    // (and a wood with the older settings: trees in patches, a section of heavy underbrush)
+    const sq = (x: number, y: number, r: number) => [{ x: x - r, y: y - r }, { x: x + r, y: y - r }, { x: x + r, y: y + r }, { x: x - r, y: y + r }];
+    doc.items.push({ id: "t-oldwood", type: "area", kind: "woods", x: tx + 200, y: ty, points: sq(tx + 200, ty, 60), trees: "custom", patches: [{ points: sq(tx + 200, ty, 20), fill: 0.5 }], brush: [{ points: sq(tx + 220, ty, 25), level: "heavy" }], brushEdge: 0.3 });
     doc.lidar.removed = (doc.lidar.removed ?? []).filter((k: number) => k !== 0);
   });
 });
@@ -66,6 +69,10 @@ test("measured trees stand on their own: the woods an older import made from the
   expect(doc.items.some((i: any) => i.type === "area" && i.importSource === "lidar")).toBe(false);
   expect(doc.lidar.bound).toBeUndefined();
   expect(doc.lidar.removed ?? []).not.toContain(0);
+  // (the older wood: the measured trees kept and the gaps filled; its section, woods of bushes)
+  const old = doc.items.find((i: any) => i.id === "t-oldwood");
+  expect([old.trees, old.patches, old.brush, old.brushEdge]).toEqual([undefined, undefined, undefined, undefined]);
+  expect(doc.items.filter((i: any) => i.kind === "woods" && i.bushes === 1 && i.density === 2)).toHaveLength(1);
 });
 
 test("autosave: edits made quickly, and two saves asked for at once, all reach the server with no clash", async () => {
@@ -196,9 +203,19 @@ test("a stand of pines: Pine, then Rectangle, dragged out; a wood that grows onl
   expect([stand.pines, stand.bushes, stand.trees, stand.patches]).toEqual([1, undefined, undefined, undefined]);
   // (a wood drawn by hand fills in round the measured trees, its mix in its panel)
   await page.evaluate(id => (window as any).__dgActions.select(id), stand.id);
-  await expect(page.getByTestId("woods-trees").getByRole("radio", { name: "Real + fill-in" })).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByTestId("woods-mix")).toBeVisible();
-  await expect(page.getByTestId("woods-leafy")).toContainText("0%");
+  const panel = page.getByTestId("woods-settings");
+  await expect(panel.getByTestId("grows-pine")).toHaveAttribute("aria-pressed", "true");
+  await expect(panel.getByTestId("grows-leafy")).toHaveAttribute("aria-pressed", "false");
+  await expect(panel.getByRole("checkbox", { name: "Keep the measured trees in it" })).toBeChecked();
+  // (bushes too: half and half; thick)
+  await panel.getByTestId("grows-bush").click();
+  await panel.getByRole("radio", { name: "Thick" }).click();
+  await expect.poll(async () => { const w = (await course(page)).items.find((i: any) => i.id === stand.id); return [w.pines, w.bushes, w.density]; }).toEqual([1, 0.5, 2]);
+  // (the last one on stays on)
+  await panel.getByTestId("grows-pine").click();
+  await panel.getByTestId("grows-bush").click();
+  await expect(panel.getByTestId("grows-bush")).toHaveAttribute("aria-pressed", "true");
+  await expect(panel.getByRole("radiogroup", { name: "Underbrush" })).toHaveCount(0);
   // (One tree: back to a tree at a time)
   await page.keyboard.press("r");
   await page.getByTestId("draw-shape-one").click();

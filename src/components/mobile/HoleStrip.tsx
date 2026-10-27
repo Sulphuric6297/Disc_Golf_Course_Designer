@@ -14,7 +14,7 @@ import { fmtDist } from "../../lib/units";
 import { addHoleOb, nextHomeCorner, obChoiceOf, pinsFull, select, setFieldKind, setFieldPlay, setLineKind, setObChoice, setPinPosition, setTeeLevel, startAnotherPin, startAnotherTee, startHoleToBasket, teesFull, type ObChoice } from "../../state/actions";
 import { updateHole, updateItem, useCourse, useEditor } from "../../state/course";
 import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FieldKind, Hole, LabelItem, LineItem, LineKind, MandoItem, StructureItem, StructureKind, TeeItem, TreeItem } from "../../types";
-import { FENCE_STYLES, HoleTrees, PLAY_OPTIONS, useHoleTrees, WOODS_TREES, amenityIcon, builtIcon, fieldKindOptions, fmtSize, fmtTurn, hasObChoice, heightLabel, homeText, obOptions } from "../Inspector";
+import { BRUSH_LEVELS, FENCE_STYLES, GrowsPick, HoleTrees, PLAY_OPTIONS, THICK, densityFor, growsOf, growsText, thickOf, useHoleTrees, amenityIcon, builtIcon, fieldKindOptions, fmtSize, fmtTurn, hasObChoice, heightLabel, homeText, obOptions } from "../Inspector";
 import { MoveHere } from "../PlaceByGps";
 import { TREE_KINDS } from "../TreeSettings";
 import { ChipPick, Segmented } from "../ui";
@@ -241,13 +241,19 @@ export function ItemStrip({ item }: { item: CourseItem }) {
       const said = opts.find(o => o.value === ob)?.label ?? "";
       chips.push({ id: "ob", label: ob === "no" ? <>Penalty <span className="opacity-60">none</span></> : <>{said}</>, control: <ChipPick row label="Penalty" value={ob} onChange={(v: ObChoice) => setObChoice(a.id, v)} options={opts} /> });
     }
+    // (a wood: what grows, how thick, and whether the measured trees in it stay)
     if (item.type === "area" && item.kind === "woods") {
-      const trees = item.trees ?? "measured";
-      if (doc.lidar?.trees.length) chips.push({ id: "trees", label: <>Trees <span className="opacity-60">{WOODS_TREES.find(w => w.value === trees)?.label}</span></>, control: <ChipPick row label="Trees in these woods" value={trees} onChange={v => set({ trees: v === "measured" ? undefined : v })} options={WOODS_TREES} /> });
+      chips.push({ id: "grows", label: <>{growsText(growsOf(item, doc.style))}</>, control: <GrowsPick row item={item} /> });
+      const t = thickOf(item);
+      chips.push({ id: "thick", label: <>Thick <span className="opacity-60">{THICK.find(x => x.value === t)!.label}</span></>, control: <Segmented label="How thick" value={t} onChange={v => set({ density: densityFor(v) })} options={[...THICK]} /> });
+      if (doc.lidar?.trees.length) {
+        const keep = item.trees !== "drawn" && item.trees !== "none";
+        chips.push({ id: "trees", label: <>Measured trees <span className="opacity-60">{keep ? "kept" : "cleared"}</span></>, control: <Segmented label="Measured trees in it" value={keep ? "keep" : "clear"} onChange={v => set({ trees: v === "keep" ? undefined : "drawn" })} options={[{ value: "keep", label: "Keep them" }, { value: "clear", label: "Clear them" }]} /> });
+      }
     }
-    // (woods, and tall grass when you want some)
-    if (item.type === "area" && (item.kind === "woods" || item.kind === "rough"))
-      chips.push({ id: "brush", label: <>Underbrush <span className="opacity-60">{item.underbrush ? `${item.underbrush[0].toUpperCase()}${item.underbrush.slice(1)}` : "None"}</span></>, control: <Segmented label="Underbrush" value={item.underbrush ?? "none"} onChange={v => set({ underbrush: v === "none" ? undefined : v })} options={[{ value: "none", label: "None" }, { value: "light", label: "Light" }, { value: "medium", label: "Medium" }, { value: "heavy", label: "Heavy" }]} /> });
+    // (woods, and tall grass when you want some; a wood of bushes only is brush already)
+    if (item.type === "area" && (item.kind === "rough" || (item.kind === "woods" && (item.bushes ?? 0) < 1)))
+      chips.push({ id: "brush", label: <>Underbrush <span className="opacity-60">{item.underbrush ? `${item.underbrush[0].toUpperCase()}${item.underbrush.slice(1)}` : "None"}</span></>, control: <Segmented label="Underbrush" value={item.underbrush ?? "none"} onChange={v => set({ underbrush: v === "none" ? undefined : v })} options={[...BRUSH_LEVELS]} /> });
   } else if (item.type === "structure") {
     // (the same ranges as the panel's sliders; stairs follow the ground, with no height of their own)
     const s = item as StructureItem;

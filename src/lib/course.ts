@@ -110,6 +110,23 @@ const unbound = (lidar: NonNullable<CourseDoc["lidar"]>, items: CourseItem[]): N
   return { ...lidar, bound: undefined, removed: removed.length ? removed : undefined };
 };
 
+/** A wood's or tall grass's older settings, made simple: trees from the survey only, or filled
+ * in, or in patches, all keep the measured trees and fill in the whole wood; each underbrush
+ * section becomes woods of bushes of its own (as thick as its level). */
+const simpleWoods = (items: CourseItem[]): CourseItem[] => {
+  if (!items.some(i => i.type === "area" && (i.trees === "measured" || i.trees === "custom" || i.patches || i.brush || i.brushEdge !== undefined))) return items;
+  return items.flatMap((i): CourseItem[] => {
+    if (i.type !== "area" || (i.kind !== "woods" && i.kind !== "rough")) return [i];
+    const { patches: _p, brush, brushEdge: _e, ...rest } = i;
+    const own: AreaItem = { ...rest, trees: i.trees === "measured" || i.trees === "custom" ? undefined : i.trees };
+    const bushes = (brush ?? []).filter(b => b.level !== "none" && b.points.length >= 3).map(b => {
+      const at = centroid(b.points);
+      return { id: generateId(), type: "area", kind: "woods", x: at.x, y: at.y, points: b.points, bushes: 1, density: b.level === "light" ? 0.5 : b.level === "heavy" ? 2 : undefined, brushKind: b.kind ?? i.brushKind } as AreaItem;
+    });
+    return [own, ...bushes];
+  });
+};
+
 /** Fills in anything an older or hand-edited file is missing. */
 export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
   const base = createEmptyCourse();
@@ -150,6 +167,7 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
   };
   if (!doc.layouts.some(l => l.id === doc.activeLayout)) doc.activeLayout = doc.layouts[0].id;
   if (doc.lidar) doc.items = doc.items.filter(i => !bareStand(i));
+  doc.items = simpleWoods(doc.items);
   return doc;
 };
 

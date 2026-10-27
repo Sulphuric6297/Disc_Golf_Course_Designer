@@ -4,7 +4,7 @@
 // and worn dirt at the tees; creeks and ponds in clear blue with dark banks; soft gray roads and
 // mown grass. It is one picture for the whole map, laid into the SVG under the symbols (built
 // things are drawn there too; the painting clears the trees from them and casts their shadows).
-import { measuredStanding, showsMeasured } from "./standing";
+import { measuredStanding } from "./standing";
 import { CIRCLE_ONE_FT, LINE_KINDS, PATH_SURFACES } from "../constants";
 import type { AreaItem, CourseDoc, LineItem, MapStyle, P, PathSurface, ReliefLook, StructureItem, TreeItem } from "../types";
 import { toUnits } from "./units";
@@ -632,7 +632,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const planted = new Uint8Array(mw * mh);
   if (!measured) planted.fill(1);
   if (measured) {
-    const drawn = (doc.items.filter(i => i.type === "area" && i.kind === "woods" && !showsMeasured(i as AreaItem)) as AreaItem[]).map(a => { const pts = drawnAreas([a])[0].points; return { pts, box: boundsOf(pts) }; });
+    const drawn = (doc.items.filter(i => i.type === "area" && i.kind === "woods" && (i as AreaItem).trees !== "none") as AreaItem[]).map(a => { const pts = drawnAreas([a])[0].points; return { pts, box: boundsOf(pts) }; });
     // (more woods asked for, from the photo or everywhere: never under a measured crown, no woods
     // floor round the measured trees)
     const crowns = new Uint8Array(mode === "woods" ? 0 : mw * mh);
