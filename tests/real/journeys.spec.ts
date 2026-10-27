@@ -320,6 +320,10 @@ test("Hand painted: the demo (made before) stays Classic, a new course starts in
     const back = p2.getByTestId("back-to-course");
     if (await back.isVisible().catch(() => false)) await back.click();
     await draw(p2, false);
+    // (every painting of the trees, as it ends)
+    await p2.evaluate(() => { (window as any).__times = []; window.addEventListener("dg-tree-timing", (e: any) => (window as any).__times.push({ ...e.detail, at: Math.round(performance.now()) })); });
+    p2.on("console", m => { if (/Hand painted|webgl|WebGL/i.test(m.text())) console.log("[page]", m.text().slice(0, 300)); });
+    const ticker = setInterval(() => void p2.evaluate(() => [(window as any).__dgPainting(), JSON.stringify((window as any).__times)]).then(v => console.log("painting", v[0], v[1])).catch(() => {}), 15_000);
     await p2.evaluate(() => (window as any).__dgEditor().set({ step: "map", tool: "select" }));
     await p2.getByTestId("map-style-handpainted").click();
     await expect.poll(async () => (await course(p2)).style.mapLook).toBe("handpainted");
@@ -329,6 +333,7 @@ test("Hand painted: the demo (made before) stays Classic, a new course starts in
     expect(t.how).toContain("graphics chip");
     await p2.waitForFunction(() => !(window as any).__dgPainting(), null, { timeout: 120_000 });
     await p2.waitForTimeout(1500);
+    clearInterval(ticker);
     await p2.getByTestId("design-page").first().screenshot({ path: "test-results/handpainted-map.png" });
     // (on the emulated chip, a whole 18-hole course in under 20 s; a real one is far quicker)
     expect(t.total).toBeLessThan(20_000);
