@@ -28,11 +28,11 @@ test.beforeAll(async ({ browser }) => {
     doc.items = doc.items.filter((i: any) => !(i.points ?? [i]).some(inBox) || i.type === "tee" || i.type === "basket");
     doc.lidar.removed = [...new Set([...(doc.lidar.removed ?? []), ...doc.lidar.trees.map((t: number[], k: number) => (inBox({ x: t[0], y: t[1] }) ? k : -1)).filter((k: number) => k >= 0)])];
     doc.items.push(
-      { id: "t-house", type: "structure", kind: "building", points: HOUSE, height: 12 },
+      { id: "t-house", type: "structure", kind: "building", points: HOUSE, x: 1640, y: 225, height: 12 },
       { id: "t-behind", type: "tree", x: BEHIND.x, y: BEHIND.y, radius: 14, height: 40, treeType: "deciduous" },
-      { id: "t-path", type: "line", kind: "path", points: PATH },
+      { id: "t-path", type: "line", kind: "path", points: PATH, x: 1560, y: 331 },
       { id: "t-bypath", type: "tree", x: BY_PATH.x, y: BY_PATH.y, radius: 14, height: 40, treeType: "deciduous" },
-      { id: "t-grass", type: "area", kind: "rough", points: GRASS },
+      { id: "t-grass", type: "area", kind: "rough", points: GRASS, x: 1745, y: 310 },
       { id: "t-ingrass", type: "tree", x: IN_GRASS.x, y: IN_GRASS.y, radius: 14, height: 40, treeType: "deciduous" }
     );
   });
