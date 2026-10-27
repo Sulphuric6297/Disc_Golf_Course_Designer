@@ -79,12 +79,17 @@ export async function profiled<T>(page: Page, run: () => Promise<T>) {
   const { profile } = await cdp.send("Profiler.stop");
   await cdp.detach();
   const self = new Map<string, number>(), byId = new Map(profile.nodes.map(n => [n.id, n]));
+  // (the app's own time: its code and its garbage; not the browser putting the page on screen,
+  // which this machine does without a graphics card, nor the test's own scripts)
+  let app = 0;
   profile.samples?.forEach((id, k) => {
     const n = byId.get(id)!, f = n.callFrame;
     if (["(idle)", "(root)"].includes(f.functionName)) return;
+    const ms = (profile.timeDeltas?.[k] ?? 0) / 1000;
+    if (f.url.includes("/assets/") || f.functionName === "(garbage collector)") app += ms;
     const key = `${f.functionName || "(anonymous)"} ${f.url.split("/").pop()}:${f.lineNumber + 1}`;
     self.set(key, (self.get(key) ?? 0) + (profile.timeDeltas?.[k] ?? 0) / 1000);
   });
   const top = [...self].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, ms]) => `${Math.round(ms).toString().padStart(5)} ms  ${k}`);
-  return { result, top };
+  return { result, top, app };
 }

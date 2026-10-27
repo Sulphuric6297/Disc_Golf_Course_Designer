@@ -96,7 +96,7 @@ test("dragging a house: each step quick, letting go quick, back with one undo", 
   await page.mouse.move(c.x, c.y);
   await page.mouse.down();
   const steps: number[] = [];
-  const { top } = await profiled(page, async () => {
+  const { top, app } = await profiled(page, async () => {
     for (let i = 1; i <= 10; i++) {
       const s = Date.now();
       await page.mouse.move(c.x + i * 4, c.y + i * 2);
@@ -108,10 +108,10 @@ test("dragging a house: each step quick, letting go quick, back with one undo", 
   await page.mouse.up();
   await frames(page);
   const letGo = Date.now() - s;
-  console.log("drag steps ms", steps.join(" "), "let go", letGo);
-  if (Math.max(...steps.slice(1)) >= 160) console.log("where the drag's time went:\n" + top.join("\n"));
-  // (two frames are waited for each step: about 35 ms of it is that wait)
-  expect(Math.max(...steps.slice(1))).toBeLessThan(160);
+  const perStep = app / steps.length;
+  console.log("drag steps ms", steps.join(" "), "· the app's own work", Math.round(perStep), "ms a step · let go", letGo);
+  if (perStep >= 60) console.log("where the drag's time went:\n" + top.join("\n"));
+  expect(perStep).toBeLessThan(60);
   expect(letGo).toBeLessThan(1500);
   const now = (await course(page)).items.find((i: any) => i.id === "t-house").points[0];
   expect(Math.hypot(now.x - was.x, now.y - was.y)).toBeGreaterThan(3);
