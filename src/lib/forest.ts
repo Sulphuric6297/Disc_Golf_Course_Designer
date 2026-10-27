@@ -17,6 +17,7 @@ import { reliefExaggeration } from "./relief";
 import { isLineKind, offsetPolygon, roofOf, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
 import { latitudeOf, lookParts, paintLight, sunFromOf } from "./mapLook";
 import { STYLE_GREENS, drawMist, drawShadows, drawTrees, gradeLight, type PaintTree } from "./paintTrees";
+import { drawBrushedSteps } from "./brushCrown";
 
 /** Where the photo shows trees, on a grid over the site (1 = canopy). */
 export type CanopyGrid = { cols: number; rows: number; ftPerCell: number; data: Uint8Array };
@@ -798,7 +799,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const realStep = 15 * k, realR = (f: number) => Math.max(crownR * 0.9, (7 + f * 8) * k);
   const realTop = (r: number) => crownR * (1.9 + rnd() * 0.9) + r * 0.35;
   // (the newer looks: each style's spacing and crown sizes, in feet, never smaller than reads)
-  const VSPACE = { cluster: 13.6, drybrush: 10.5, golden: 13, cloud: 14.3, gouache: 13.6 } as const, VSIZE = { cluster: [8.2, 13.6], drybrush: [7, 12], golden: [7.5, 13], cloud: [7.5, 12.3], gouache: [7.5, 13] } as const;
+  const VSPACE = { brushed: 12.5, cluster: 13.6, drybrush: 10.5, golden: 13, cloud: 14.3, gouache: 13.6 } as const, VSIZE = { brushed: [8, 14], cluster: [8.2, 13.6], drybrush: [7, 12], golden: [7.5, 13], cloud: [7.5, 12.3], gouache: [7.5, 13] } as const;
   const vStep = vector ? Math.max(crownR * 1.05, (VSPACE[vstyle] / Math.sqrt(Math.max(0.3, look.trees.density))) * k) : 0;
   const vR = (u: number) => Math.max(crownR * 0.75, (VSIZE[vstyle][0] + u * (VSIZE[vstyle][1] - VSIZE[vstyle][0])) * look.trees.size * k);
   const stepPx = vector ? vStep : natural ? Math.max(crownR * 1.15, realStep) : crownR * 1.15;
@@ -1485,7 +1486,13 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     const strength = 0.6 + shadowK * 0.8;
     drawShadows(ctx, vtrees, Lx, Ly, pl, strength, vstyle === "drybrush" ? 1 : vstyle === "cloud" ? 0.3 : 0.6);
     yield 0.92;
-    drawTrees(ctx, vtrees, vstyle, Lx, Ly, pl);
+    if (vstyle === "brushed") {
+      // (each leafy crown brushed on, a step at a time; the pines, and crowns too small to show
+      // leaves, as the other looks draw them, over them)
+      const leafy = vtrees.filter(t => !t.pine && t.r >= 4);
+      yield* drawBrushedSteps(ctx, leafy.map(t => ({ x: t.x, y: t.y, r: t.r, col: t.col, seed: t.seed })), [Lx, Ly]);
+      drawTrees(ctx, vtrees.filter(t => t.pine || t.r < 4), "cluster", Lx, Ly, pl);
+    } else drawTrees(ctx, vtrees, vstyle, Lx, Ly, pl);
   }
   if (pl.mist) {
     const mr = seeded(31), spots: { x: number; y: number; r: number }[] = [];

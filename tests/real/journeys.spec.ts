@@ -6,6 +6,7 @@
 // of them (see kit.ts: draw), so they measure the app's own work, which is what has stalled.
 import { test, expect, type Page } from "@playwright/test";
 import { at, course, draw, editor, frame, frames, openDemo, profiled, saved, stalls, watch } from "./kit";
+import { createEmptyCourse, normalizeCourse } from "../../src/lib/course";
 
 test.describe.configure({ mode: "serial" });
 
@@ -301,3 +302,20 @@ test("the painted map: Where to paint the woods is there with measured trees, an
   await page.waitForTimeout(1500);
   await expect(page.getByTestId("design-page").first()).toHaveScreenshot("painted-map.png");
 });
+
+test("Hand painted: the demo (made before) stays Classic, a new course starts in Hand painted, and its map paints in time", async () => {
+  expect((await course(page)).style.mapLook).toBeUndefined();
+  expect(createEmptyCourse().style.mapLook).toBe("handpainted");
+  expect(normalizeCourse({ ...createEmptyCourse(), style: { ...createEmptyCourse().style, mapLook: undefined } }).style.mapLook).toBeUndefined();
+  await page.evaluate(() => (window as any).__dgEditor().set({ step: "map", tool: "select" }));
+  await page.getByTestId("map-style-handpainted").click();
+  await expect.poll(async () => (await course(page)).style.mapLook).toBe("handpainted");
+  const s = Date.now();
+  await page.waitForFunction(() => !(window as any).__dgPainting(), null, { timeout: 280_000 });
+  const took = Math.round((Date.now() - s) / 1000);
+  console.log("Hand painted map painted in", took, "s");
+  await page.waitForTimeout(1500);
+  await page.getByTestId("design-page").first().screenshot({ path: "test-results/handpainted-map.png" });
+  await page.keyboard.press("Control+z");
+});
+

@@ -21,6 +21,9 @@ type Ctx = CanvasRenderingContext2D;
 /** Each style's trees' greens, for a woods color of the default landscape (the course's own trees'
  * color moves them all by as much). */
 export const STYLE_GREENS: Record<Exclude<TreeStyle, "classic">, string[]> = {
+  // (Hand painted: the warm olive greens of a painted map, its leaf colour the middle of each
+  // tree's light, from its shade to its sun)
+  brushed: ["#555f39", "#4b5834", "#5f6437", "#46543c", "#586232", "#3e4e3e", "#66663a"],
   cluster: ["#3d6b2c", "#4a7a31", "#33602e", "#567f36", "#2f5a2a", "#44713a"],
   drybrush: ["#2e5524", "#3a6428", "#47702c", "#264b2c", "#507834", "#33592d"],
   golden: ["#3a5a26", "#4b6a2a", "#2e4f2a", "#5a6f2c"],

@@ -80,7 +80,8 @@ export const createEmptyCourse = (): CourseDoc => ({
   items: [],
   layouts: defaultLayouts(),
   activeLayout: "layout-main",
-  style: defaultStyle(),
+  // (a new course starts in Hand painted; one saved without a look is Classic, as it was)
+  style: { ...defaultStyle(), mapLook: "handpainted" },
   units: "ft",
   rules: defaultRules()
 });
@@ -130,6 +131,8 @@ const simpleWoods = (items: CourseItem[]): CourseItem[] => {
 /** Fills in anything an older or hand-edited file is missing. */
 export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
   const base = createEmptyCourse();
+  // (a course's look is its own: an older one, saved without one, stays Classic)
+  delete base.style.mapLook;
   const doc: CourseDoc = {
     ...base,
     ...raw,
