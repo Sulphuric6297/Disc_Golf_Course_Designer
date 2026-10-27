@@ -105,6 +105,9 @@ export type ImportLayer =
 export type ImportOptions = {
   imagery: MapImagerySource | "none";
   trees: boolean;
+  /** An aerial survey covers the site: the photo is looked over for water only, never for trees
+   * (the survey's trees are the ones to use, even when they're left out this time). */
+  surveyed?: boolean;
   osm: boolean;
   /** Trees and ground measured from the air (LiDAR), where a survey covers the site. */
   lidar?: boolean;
@@ -722,10 +725,10 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     const natureJob = !wantsPhotoTrees ? Promise.resolve(null) : (async () => {
       const [map, measured] = await Promise.all([photoJob, lidarJob]);
       if (!map || !satellite || /OpenStreetMap/.test(map.sourceLabel)) { progress.set("photoTrees", { state: "not-here" }); return null; }
-      const waterOnly = !!measured?.lidar.trees.length;
+      const waterOnly = !!measured?.lidar.trees.length || !!opts.surveyed;
       // (a survey flown bare, a photo taken in leaf: its canopy too, for the trees the survey missed;
       // under a bare photo, the best one of the site's taken in leaf, only to find them on)
-      const bare = waterOnly && measured.lidar.measured.leafOn !== true;
+      const bare = !!measured?.lidar.trees.length && measured.lidar.measured.leafOn !== true;
       const leafToo = bare && summerFills(measured.lidar.measured.leafOn, map.photo?.season);
       const inLeaf = bare && !leafToo ? map.choices?.find(c => c.season === "leaf-on" && c.nir) ?? map.choices?.find(c => c.season === "leaf-on") : undefined;
       return soft("photoTrees", async () => {
