@@ -1,6 +1,6 @@
 import { test as plain, expect as plainExpect } from "@playwright/test";
 import { test, expect, addHole, blankCourse, course, drag, editorState, handleCenter, screenOf } from "./fixtures";
-import { autoFlight, flightClock, FLYOVER_DEFAULTS, insertKey, keyBetween, keyFlight, keysFromFlight, keyTimes } from "../../src/lib/flight";
+import { autoFlight, flightAt, flightClock, FLYOVER_DEFAULTS, insertKey, insertKeyAt, keyBetween, keyFlight, keysFromFlight, keyTimes } from "../../src/lib/flight";
 import { createArea, createBasket, createEmptyCourse, createTee, newHole } from "../../src/lib/course";
 import { drawOverlay } from "../../src/viewport/flyTitle";
 import { detailArea } from "../../src/lib/forest";
@@ -197,6 +197,33 @@ test("from a tee, the hole's ground is painted sharper (over the whole site's pa
   await page.getByTestId("hud-close").click();
   await page.evaluate(() => (window as any).__dgView.setPaused(false));
   await expect.poll(sharp).toBeNull();
+});
+
+plain("the timeline scrubbed: the camera where the flight is at that moment; a keyframe added there splits the time, so the rest keeps its timing", () => {
+  const flat = () => 0, set = { ...FLYOVER_DEFAULTS, speed: 1 };
+  const keys = [
+    { x: 0, y: 0, alt: 20, lookX: 100, lookY: 0, secs: undefined },
+    { x: 100, y: 0, alt: 40, lookX: 200, lookY: 0, secs: 4 },
+    { x: 200, y: 0, alt: 20, lookX: 300, lookY: 0, secs: 6 }
+  ];
+  const f = keyFlight(keys, set, flat)!;
+  plainExpect(f.dur).toBeCloseTo(10, 5);
+  // (at a keyframe's moment, just where it is; between, along the way)
+  const atStart = flightAt(f, 0, flat), at4 = flightAt(f, 4, flat), at7 = flightAt(f, 7, flat);
+  plainExpect(Math.abs(atStart.x)).toBeLessThan(1);
+  plainExpect(Math.abs(at4.x - 100)).toBeLessThan(2);
+  plainExpect(Math.abs(at4.alt - 40)).toBeLessThan(1);
+  plainExpect(at7.x).toBeGreaterThan(110);
+  plainExpect(at7.x).toBeLessThan(190);
+  // A keyframe added 7 s in: third of four, 3 s after the one before and 3 s before the next
+  const r = insertKeyAt(keys, 7, { ...at7, alt: 60 }, set, flat);
+  plainExpect(r.at).toBe(2);
+  plainExpect(r.keys).toHaveLength(4);
+  plainExpect(r.keys[2].secs).toBeCloseTo(3, 1);
+  plainExpect(r.keys[3].secs).toBeCloseTo(3, 1);
+  plainExpect(keyTimes(r.keys, set, flat).map(t => Math.round(t * 10) / 10)).toEqual([0, 4, 7, 10]);
+  // (past the end: after the last)
+  plainExpect(insertKeyAt(keys, 12, at7, set, flat).at).toBe(3);
 });
 
 plain("a flight's motion slows smoothly to a stop at its end (and by itself gets going gently): no jolt anywhere", () => {

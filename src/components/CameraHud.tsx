@@ -1,10 +1,10 @@
 // Flying the camera yourself, first person, to make a hole's flyover: moved with the keyboard (on a
 // phone, a thumb stick and up and down buttons), turned by dragging the view, and a keyframe added
 // right where it is, looking where it looks.
-import { useEffect, useState, type PointerEvent as RPointerEvent } from "react";
+import { useEffect, useMemo, useState, type PointerEvent as RPointerEvent } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Check, Play, Plus, RefreshCw, Square, Trash2, X } from "lucide-react";
 import { holeLabel } from "../lib/course";
-import { LENS, flyoverOf, lensLabel } from "../lib/flight";
+import { LENS, flightAt, flyoverOf, insertKeyAt, keyFlight, keyTimes, lensLabel } from "../lib/flight";
 import { fmtDist } from "../lib/units";
 import { getDoc, updateHole, useCourse, useEditor } from "../state/course";
 import { getView } from "../state/view";
@@ -32,11 +32,24 @@ const keyHere = (hole: Hole): FlyKey | null => {
   return rest;
 };
 
-/** A keyframe where the camera is, after the picked one (or at the end); it's picked then. */
+/** Where the timeline was scrubbed to, seconds into the flight (null: not scrubbed, or since moved
+ * to a keyframe): a keyframe added then goes in at that moment. */
+let scrubbed: number | null = null;
+const ground = (x: number, y: number) => getView()?.groundHeight(x, y) ?? 0;
+
+/** A keyframe where the camera is: at the moment the timeline was scrubbed to, or after the picked
+ * one (or at the end); it's picked then. */
 export const addKeyHere = () => {
   const { ed, hole, keys, at } = now();
   const k = hole ? keyHere(hole) : null;
   if (!hole || !k) return;
+  if (scrubbed !== null && keys.length >= 2) {
+    const r = insertKeyAt(keys, scrubbed, k, flyoverOf(getDoc(), hole), ground);
+    updateHole(hole.id, { flyKeys: r.keys });
+    ed.set({ flyKey: r.at });
+    scrubbed = null;
+    return;
+  }
   const i = at !== null ? at + 1 : keys.length;
   updateHole(hole.id, { flyKeys: [...keys.slice(0, i), k, ...keys.slice(i)] });
   ed.set({ flyKey: i });
@@ -55,6 +68,7 @@ const updateKeyHere = () => {
 const jump = (d: number) => {
   const { ed, keys, at } = now();
   if (!keys.length) return;
+  scrubbed = null;
   const i = Math.max(0, Math.min(keys.length - 1, at === null ? (d > 0 ? 0 : keys.length - 1) : at + d));
   getView()?.freeGo(keys[i]);
   ed.set({ flyKey: i });
@@ -163,6 +177,13 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
   const [alt, setAlt] = useState(0);
   const [moved, setMoved] = useState(false);
   const flying = ed.flyover;
+  // The flight as the keyframes make it, and each keyframe's moment in it (for the timeline)
+  const set = hole ? flyoverOf(doc, hole) : null;
+  const flight = useMemo(() => (set && keys.length >= 2 ? keyFlight(keys, set, ground) : null), [keys, set?.speed, set?.fov]); // eslint-disable-line react-hooks/exhaustive-deps
+  const times = useMemo(() => (set && keys.length >= 2 ? keyTimes(keys, set, ground) : []), [keys, set?.speed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [scrub, setScrub] = useState<number | null>(null);
+  // (picking a keyframe puts the timeline at its moment)
+  useEffect(() => { if (at !== null && times[at] !== undefined) { setScrub(times[at]); scrubbed = null; } }, [at, times]);
   // (from the picked keyframe, or from the tee; back to the plain view when done)
   useEffect(() => {
     let raf = requestAnimationFrame(() => {
@@ -239,7 +260,29 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
   const done = () => ed.set({ teeView: null, flyCam: false, flyover: false });
   const play = () => ed.set({ flyover: true });
   const setLensTo = (v: number) => setLens(getView()?.freeLens(v) ?? v);
-  const go = (i: number) => { getView()?.freeGo(keys[i]); ed.set({ flyKey: i }); };
+  const go = (i: number) => { getView()?.freeGo(keys[i]); ed.set({ flyKey: i }); scrubbed = null; };
+  // Scrubbing: the camera where the flight is at that moment, looking where it looks; on a
+  // keyframe's moment, that keyframe picked
+  const scrubTo = (t: number) => {
+    if (!flight) return;
+    setScrub(t);
+    const near = times.findIndex(x => Math.abs(x - t) < Math.max(0.08, flight.dur / 200));
+    if (near >= 0) { getView()?.freeGo(keys[near]); ed.set({ flyKey: near }); scrubbed = null; return; }
+    getView()?.freeGo(flightAt(flight, t, ground));
+    ed.set({ flyKey: null });
+    scrubbed = t;
+  };
+  const clock = (t: number) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
+  const timeline = flight && (
+    <div className="mt-1.5 px-1 flex items-center gap-2.5" data-testid="cam-timeline">
+      <div className="relative flex-1 min-w-0 h-7 flex items-center">
+        {/* (each keyframe's moment, a tick on the bar) */}
+        {times.map((t, i) => <span key={i} className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-1.5 h-4 rounded-full pointer-events-none ${i === at ? "bg-orange-400" : "bg-sky-400/90"}`} style={{ left: `${(t / flight.dur) * 100}%` }} aria-hidden />)}
+        <input aria-label="Timeline" type="range" min={0} max={flight.dur} step={0.05} value={scrub ?? 0} onChange={e => scrubTo(Number(e.target.value))} className="slider relative w-full h-7 bg-transparent" data-testid="cam-scrub" />
+      </div>
+      <span className="shrink-0 text-[12px] text-zinc-300 tabular-nums">{clock(scrub ?? 0)} / {clock(flight.dur)}</span>
+    </div>
+  );
   const addBtn = (
     <button className={`shrink-0 rounded-full ${compact ? "flex-[2] h-11 px-4 text-[14px] justify-center" : "h-9 px-4 text-[13.5px]"} font-bold flex items-center gap-1.5 bg-orange-500 text-zinc-950 hover:bg-orange-400`} onClick={addKeyHere} title={at !== null ? `Add a keyframe here, after keyframe ${at + 1} (Enter)` : "Add a keyframe right here, looking where the camera looks (Enter)"} data-testid="cam-add"><Plus size={16} /> Add keyframe</button>
   );
@@ -266,7 +309,7 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
   );
   const pill = "rounded-full px-3.5 py-2 text-[13.5px] font-semibold flex items-center gap-1.5 text-white hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-transparent";
   const title = <><span className="truncate min-w-0">Camera · Hole {holeLabel(doc, hole.id)}</span><HelpLink topic="fly-camera" label="Flying the camera yourself" /></>;
-  const status = at !== null ? `Keyframe ${at + 1} of ${keys.length}${moved ? " · moved" : ""}` : keys.length ? "Pick a keyframe to go to it and change it" : "Fly somewhere you like, then add a keyframe";
+  const status = at !== null ? `Keyframe ${at + 1} of ${keys.length}${moved ? " · moved" : ""}` : scrubbed !== null && scrub !== null ? `At ${clock(scrub)} · Add keyframe puts one here` : keys.length ? "Pick a keyframe or drag the timeline" : "Fly somewhere you like, then add a keyframe";
   const playTitle = keys.length < 2 ? "Add a second keyframe to play the flight." : "Fly through the keyframes";
   const canRemove = removable(keys.length);
   const readout = `${fmtDist(alt, u)} up · lens ${lensLabel(lens)}`;
@@ -297,6 +340,7 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
         <div className="absolute right-3 bottom-[calc(max(10px,env(safe-area-inset-bottom))+156px)] flex flex-col gap-2"><Lift dir={1} /><Lift dir={-1} /></div>
         <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto glass rounded-[22px] p-2 border border-white/10 shadow-2xl">
           {strip}
+          {timeline}
           <div className="mt-1.5 px-1 text-[12px] text-zinc-300 truncate" data-testid="cam-status">{status}</div>
           <div className="mt-1.5 flex items-center gap-1">
             {addBtn}
@@ -317,6 +361,7 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
       <div className="absolute bottom-[136px] left-1/2 -translate-x-1/2 text-[12px] text-white/85 bg-black/45 rounded-lg px-2.5 py-1 whitespace-nowrap">W A S D or the arrows to move · Space or E up, Q down · Shift for faster · drag to look · scroll for the lens</div>
       <div className="absolute bottom-5 left-1/2 -translate-x-1/2 w-[min(760px,calc(100%-32px))] pointer-events-auto glass rounded-[24px] p-2 border border-white/10 shadow-2xl">
         {strip}
+        {timeline}
         <div className="mt-1.5 flex items-center gap-1">
           <div className="flex-1 min-w-0 px-2 text-[12.5px] text-zinc-300 truncate" data-testid="cam-status">{status}</div>
           {at !== null && <button className={`${pill} bg-white/[0.08]`} onClick={updateKeyHere} disabled={!moved} title={`Move keyframe ${at + 1} to here (U)`} data-testid="cam-update"><RefreshCw size={14} /> Update {at + 1}</button>}

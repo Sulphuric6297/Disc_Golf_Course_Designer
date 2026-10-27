@@ -513,6 +513,28 @@ export const insertKey = (keys: FlyKey[], i: number, set: FlyoverSettings, groun
   return { keys: [...keys.slice(0, i + 1), mid, after, ...keys.slice(i + 2)], at: i + 1 };
 };
 
+/** Where a keyframed flight's camera is `t` seconds in, looking where it looks, as a keyframe (to
+ * put the camera there, scrubbing the timeline). */
+export const flightAt = (f: Flight, t: number, ground: (x: number, y: number) => number): FlyKey => {
+  const j = Math.max(0, Math.min(f.cam.length - 1, Math.round((t / Math.max(0.001, f.dur)) * (f.cam.length - 1))));
+  const c = f.cam[j], l = f.look[j];
+  return { x: round1(c.x), y: round1(c.y), alt: round1(c.z - ground(c.x, c.y)), lookX: round1(l.x), lookY: round1(l.y), lookAlt: round1(l.z - ground(l.x, l.y)), fov: Math.round(f.fov[j]) };
+};
+
+/** The keyframes with `key` added `t` seconds into the flight: between the two either side, the
+ * time between them split at `t`, so the rest of the flight keeps its timing; past the end, after
+ * the last. Returns the keys and the new one's place. */
+export const insertKeyAt = (keys: FlyKey[], t: number, key: FlyKey, set: FlyoverSettings, ground: (x: number, y: number) => number): { keys: FlyKey[]; at: number } => {
+  const times = keyTimes(keys, set, ground);
+  const i = times.findIndex((x, j) => j + 1 < times.length && t >= x && t < times[j + 1]);
+  if (i < 0) return { keys: [...keys, key], at: keys.length };
+  // (saved at speed 1: see keySeconds)
+  const speed = Math.max(0.1, set.speed), r = (x: number) => Math.round(Math.max(0.2, x) * speed * 10) / 10;
+  const mid = { ...key, secs: r(t - times[i]) };
+  const after = { ...keys[i + 1], secs: r(times[i + 1] - t) };
+  return { keys: [...keys.slice(0, i + 1), mid, after, ...keys.slice(i + 2)], at: i + 1 };
+};
+
 /** A keyframe halfway between two (to add one). */
 export const keyBetween = (a: FlyKey, b: FlyKey): FlyKey => ({
   x: round1((a.x + b.x) / 2), y: round1((a.y + b.y) / 2), alt: round1((a.alt + b.alt) / 2),
