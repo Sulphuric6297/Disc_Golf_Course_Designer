@@ -624,6 +624,9 @@ export interface MapStyle {
   /** Forest style: where to paint woods (everywhere off the fairways, where the photo shows trees,
    * or only drawn woods and single trees). */
   forest: "everywhere" | "photo" | "woods";
+  /** With measured trees: woods painted besides them (unset: only the woods drawn), where the photo
+   * shows trees the survey missed or over all the open ground; never under a measured crown. */
+  forestMeasured?: "everywhere" | "photo";
   /** Forest style: how thick the woods are, from a few scattered clumps (0.1) to solid canopy (1). */
   treeCover: number;
   /** The painted map's look (lib/mapLook): its style (unset: classic), and any part of it changed

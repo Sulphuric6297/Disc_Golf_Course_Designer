@@ -53,14 +53,17 @@ const TreeCover = ({ value }: { value: number }) => (
   <StyleSlider k="treeCover" value={value} label="Tree cover" min={0.1} max={1} step={0.05} format={x => `${x < 0.35 ? "Sparse" : x < 0.7 ? "Open woods" : x < 0.95 ? "Thick" : "Dense"} · ${Math.round(x * 100)}%`} />
 );
 
-/** Where the painted map has woods, and how thick (the map style's Landscape part). */
-export function WoodsOptions({ s }: { s: MapStyle }) {
+/** Where the painted map has woods, and how thick (the map style's Landscape part); with measured
+ * trees, the woods painted besides them (Drawn only to start). */
+export function WoodsOptions({ s, measured = false }: { s: MapStyle; measured?: boolean }) {
+  const value = measured ? s.forestMeasured ?? "woods" : s.forest;
+  const pick = (v: MapStyle["forest"]) => setStyle(measured ? { forestMeasured: v === "woods" ? undefined : v } : { forest: v });
   return (
     <div className="mt-3" data-testid="forest-options">
       <Field label="Where to paint the woods">
-        <Segmented label="Woods" value={s.forest} onChange={v => setStyle({ forest: v })} options={[{ value: "photo", label: "From the photo" }, { value: "everywhere", label: "Everywhere" }, { value: "woods", label: "Drawn only" }]} />
+        <Segmented label="Woods" value={value} onChange={pick} options={[{ value: "photo", label: "From the photo" }, { value: "everywhere", label: "Everywhere" }, { value: "woods", label: "Drawn only" }]} />
       </Field>
-      <TreeCover value={s.treeCover ?? 1} />
+      {(!measured || value !== "woods") && <TreeCover value={s.treeCover ?? 1} />}
     </div>
   );
 }

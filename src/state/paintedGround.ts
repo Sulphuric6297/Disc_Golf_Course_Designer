@@ -3,7 +3,7 @@
 // the satellite photo. Painted a slice at a time, once per version of the course.
 import { measuredStanding, onStanding } from "../lib/standing";
 import { useEffect, useState } from "react";
-import { canopyFor, detailArea, forestCanvasAsync, paintedFrom, woodedOf, type WoodedGrid } from "../lib/forest";
+import { canopyFor, detailArea, forestCanvasAsync, paintedFrom, paintsFromPhoto, woodedOf, type WoodedGrid } from "../lib/forest";
 import { courseStats, holeStats } from "../lib/holeStats";
 import type { CourseDoc } from "../types";
 import { useCourse } from "./course";
@@ -120,7 +120,7 @@ export const paintedGround = (doc: CourseDoc, ahead = false): Promise<PaintedGro
     if (saved) ({ blob, wooded } = saved);
     else {
       if (job.stop.signal.aborted) throw new Error("stopped");
-      const canopy = doc.style.forest === "photo" ? await canopyFor(doc) : null;
+      const canopy = paintsFromPhoto(doc) ? await canopyFor(doc) : null;
       const canvas = await forestCanvasAsync(doc, view, courseStats(doc), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1, under: true }, job.stop.signal, undefined, gently(key, job.stop));
       blob = await toBlob(canvas, "image/jpeg", 0.9);
       wooded = woodedOf(canvas);
@@ -181,7 +181,7 @@ export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Pro
     const saved = await savedPaint<{ blob: Blob }>(diskKey);
     if (saved) return { canvas: await canvasOf(saved.blob), rect };
     if (job.stop.signal.aborted) throw new Error("stopped");
-    const canopy = doc.style.forest === "photo" ? await canopyFor(doc) : null;
+    const canopy = paintsFromPhoto(doc) ? await canopyFor(doc) : null;
     const canvas = await forestCanvasAsync(doc, view, courseStats(doc), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1, under: true }, job.stop.signal);
     // Its edges fade into the painting of the whole site (none where it meets the site's edge)
     const c = canvas.getContext("2d")!;

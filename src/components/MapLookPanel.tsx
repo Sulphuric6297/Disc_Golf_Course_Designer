@@ -218,8 +218,9 @@ export function MapLookPanel() {
                     {p === "trees" && (
                       <>
                         <LookSlider value={pinesNow} label="Pines" min={0} max={0.9} step={0.05} format={pct} onDone={v => setStyle({ conifers: v })} />
-                        {/* (measured trees: the woods are those trees, as wide as Crown size makes them in 3D) */}
-                        {!measured && <WoodsOptions s={s} />}
+                        {/* (measured trees: the woods are those trees, as wide as Crown size makes them in 3D,
+                        and the woods drawn; more painted only when asked) */}
+                        <WoodsOptions s={s} measured={measured} />
                         {painted && (
                           <>
                             {!measured && <LookSlider value={parts.trees.density} label="Tree spacing" min={0.4} max={1.6} step={0.05} format={x => `${x < 0.95 ? "Wider" : x > 1.05 ? "Closer" : "Usual"} · ${pct(x)}`} onDone={v => setPart("trees", { density: v })} />}

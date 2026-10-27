@@ -610,6 +610,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     return hits >= Math.max(2, all * 0.3);
   };
   const wooded = new Uint8Array(mw * mh);
+  // (with measured trees: only the woods drawn, unless the course asks for more)
+  const mode = measured ? s.forestMeasured ?? "woods" : opts.mode;
   for (let y = 0; y < mh; y++) {
     if ((y & 31) === 0) yield 0.05 + 0.1 * (y / mh);
     for (let x = 0; x < mw; x++) {
@@ -618,9 +620,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       if (a[m * 4 + 1] / 255 + at(treeEdge, x * cell + 1, y * cell + 1) * 0.5 > 0.5) continue;
       // (2: drawn woods, which plant their own trees in 3D)
       if (b[m * 4 + 2] > 127) { wooded[m] = 2; continue; }
-      if (opts.mode === "woods") continue;
+      if (mode === "woods") continue;
       const p = toPlan(x * cell + cell / 2, y * cell + cell / 2);
-      wooded[m] = (opts.mode === "everywhere" || !canopy ? site(p) : photoTrees(p)) ? 1 : 0;
+      wooded[m] = (mode === "everywhere" || !canopy ? site(p) : photoTrees(p)) ? 1 : 0;
     }
   }
   // Measured trees: no woods floor painted (the trees are the woods, each drawn whole where it
@@ -631,11 +633,22 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   if (!measured) planted.fill(1);
   if (measured) {
     const drawn = (doc.items.filter(i => i.type === "area" && i.kind === "woods" && !showsMeasured(i as AreaItem)) as AreaItem[]).map(a => { const pts = drawnAreas([a])[0].points; return { pts, box: boundsOf(pts) }; });
+    // (more woods asked for, from the photo or everywhere: never under a measured crown, no woods
+    // floor round the measured trees)
+    const crowns = new Uint8Array(mode === "woods" ? 0 : mw * mh);
+    if (mode !== "woods") for (const t of measured.trees) {
+      const c = toScreen({ x: t[0], y: t[1] }), r = (t[3] * k + 2 * cell) / cell;
+      const cx = c.x / cell, cy = c.y / cell;
+      for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(mh - 1, Math.ceil(cy + r)); y++)
+        for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(mw - 1, Math.ceil(cx + r)); x++)
+          if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) crowns[y * mw + x] = 1;
+    }
     for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
       const m = y * mw + x;
       if (!wooded[m]) continue;
       const p = toPlan(x * cell + cell / 2, y * cell + cell / 2);
       if (drawn.some(d => p.x >= d.box.minX && p.x <= d.box.maxX && p.y >= d.box.minY && p.y <= d.box.maxY && pointInPolygon(p, d.pts))) planted[m] = 1;
+      else if (mode !== "woods" && !crowns[m]) planted[m] = 1;
       else wooded[m] = 0;
     }
   }
@@ -1644,6 +1657,9 @@ const overGrids = new WeakMap<HTMLCanvasElement, { picture: HTMLCanvasElement; h
  * as the painting, clear elsewhere, and the buildings mostly under leaves; none when no building
  * stands on it. */
 export const treesOverOf = (canvas: HTMLCanvasElement) => overGrids.get(canvas) ?? null;
+/** Whether a painting of the course paints woods from the photo (it needs the photo's tree cover):
+ * with measured trees, only when asked for besides them. */
+export const paintsFromPhoto = (doc: Pick<CourseDoc, "style" | "lidar">) => (doc.lidar?.trees.length ? doc.style.forestMeasured === "photo" : doc.style.forest === "photo");
 /** The woods on a painting made by `forestCanvas` or `forestCanvasAsync`. */
 export const woodedOf = (canvas: HTMLCanvasElement) => woodedGrids.get(canvas) ?? null;
 

@@ -12,7 +12,7 @@ import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelI
 import { activeLayout, areaObEdges, beyondSides, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, sharedWalks, teeAim, walkRoutes, taglineOf, titleFontOf } from "./course";
 import { boundsOf, dist, offsetPath, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
 import { courseTotals, holeStats, isOb, isOutOfPlay, playsOf, type HoleStats } from "./holeStats";
-import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, treesOverOf, type CanopyGrid } from "./forest";
+import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, paintsFromPhoto, treesOverOf, type CanopyGrid } from "./forest";
 import { BASKET_MARKS, RESTRICTED, STRUCTURE_INK, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol, structureLegend, structureSymbol, type StructureDraw, type StructureInk } from "./symbols";
 import { isLineKind, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
 import { chainContours, type Contours } from "./relief";
@@ -826,7 +826,7 @@ const keepOver = (url: string, over: { url: string; hidden: Set<string> } | null
 const draftUrls: string[] = [];
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
-  const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
+  const canopy = paintsFromPhoto(doc) ? layers.canopy ?? null : null;
   const look = [s.forest, s.treeCover, s.treeLook, s.landscape, s.treeMix, s.conifers, s.contours, s.trees, s.fairway, s.rough, s.tallGrass, s.water, s.path, s.nextTee, s.walkWidth, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale, s.reliefLook, s.mapLook, s.lookParts, s.lightMode, s.goldenSun, s.sunFrom, s.pathOrder, doc.site.location, doc.site.bounds];
   const key = JSON.stringify([paintLimit, printDensity, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), paintedFrom(doc), doc.canvas, doc.id]);
   // (A live preview may show a picture made for print; a print never uses a live one, which is a
