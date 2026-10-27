@@ -203,6 +203,8 @@ type EditorStore = {
   wind: boolean;
   /** The stumps of the measured trees cut down, everywhere (not only on the hole picked). */
   stumps: boolean;
+  /** Every tree hidden, to see the photo under them (this screen only, not kept). */
+  hideTrees: boolean;
   /** The ground from a tee, in flyovers and videos: the painted map (the Design look) or the photo. */
   flyLook: "painted" | "photo";
   set: (patch: Partial<Omit<EditorStore, "set">>) => void;
@@ -263,6 +265,7 @@ export const useEditor = create<EditorStore>()(set => ({
   grass: "auto",
   wind: true,
   stumps: false,
+  hideTrees: false,
   flyLook: "painted",
   ...(typeof localStorage !== "undefined" ? savedDisplay() : {}),
   set: patch => {

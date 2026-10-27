@@ -593,6 +593,26 @@ export class CourseView {
     if (this.doc) { this.syncShapes(); this.syncOverlays(); this.invalidate(); }
   }
 
+  /** Every tree out of sight (placed, measured, the woods' and their underbrush), to see the photo
+   * under them while mapping; none picked while they're hidden. */
+  private treesHidden = false;
+  private treesShownAt = false;
+  setTreesHidden(on: boolean) {
+    if (on === this.treesHidden) return;
+    this.treesHidden = on;
+    this.shadowsDirty = true;
+    this.invalidate();
+  }
+  private showTrees() {
+    const hide = this.treesHidden;
+    for (const [key, entry] of this.shapes) {
+      const under = /:under(:|$)/.test(key);
+      if (under || key.startsWith("woods:") || key === "painted-woods") entry.obj.visible = !hide && !(under && this.dragging);
+    }
+    const doc = this.doc;
+    if (doc) for (const item of doc.course.items) if (item.type === "tree") { const e = this.objects.get(item.id); if (e) e.obj.visible = !hide; }
+  }
+
   /** The stumps of cut-down trees everywhere (close enough to see), not only on the hole picked. */
   private showStumps = false;
   setShowStumps(on: boolean) {
@@ -1884,6 +1904,7 @@ export class CourseView {
     const restore = tilted ? this.atmosphere(this.camera, false) : null;
     this.updateGrass(this.camera, tilted);
     this.updateForests(this.camera.position);
+    if (this.treesHidden || this.treesShownAt !== this.treesHidden) { this.showTrees(); this.treesShownAt = this.treesHidden; }
     waterUniforms.uTime.value = this.clock.elapsedTime;
     this.renderer.render(this.scene, this.camera);
     restore?.();
@@ -3290,7 +3311,7 @@ export class CourseView {
 
   private treeUnder(ray: THREE.Ray): { id: string; t: number; drawn?: boolean } | null {
     const doc = this.doc;
-    if (!doc) return null;
+    if (!doc || this.treesHidden) return null;
     const near: { id: string; t: number }[] = [];
     for (const item of doc.course.items) {
       if (item.type !== "tree") continue;

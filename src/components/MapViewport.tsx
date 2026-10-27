@@ -183,6 +183,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { if (layoutTee) useEditor.getState().set({ teeLevel: layoutTee }); }, [layoutTee]);
   useEffect(() => { view?.setReadOnly(viewOnly); }, [view, viewOnly]);
   useEffect(() => { view?.setShowStumps(ed.stumps); }, [view, ed.stumps]);
+  useEffect(() => { view?.setTreesHidden(ed.hideTrees); }, [view, ed.hideTrees]);
   useEffect(() => { view?.setGroup(ed.group); }, [view, ed.group]);
   useEffect(() => { view?.setPlotLine(ed.plotLine); }, [view, ed.plotLine]);
   useEffect(() => { view?.setObPick(ed.obPick, ed.pickCut); }, [view, ed.obPick, ed.pickCut]);
