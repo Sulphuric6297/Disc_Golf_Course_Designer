@@ -3253,7 +3253,24 @@ export class CourseView {
    * ray meets (so a tree seen past the edge of a nearer one's crown is the one picked, not the
    * nearer). The trees whose rough shape the ray passes through are tried; a finger, or a tree
    * drawn too thin to hit, falls back to that shape. */
-  private treeUnder(ray: THREE.Ray): { id: string; t: number } | null {
+  /** The built thing drawn first along `ray` (a roof, a wall, a deck), and how far along. */
+  private builtUnder(ray: THREE.Ray): { id: string; t: number } | null {
+    const doc = this.doc;
+    if (!doc) return null;
+    const shown = (o: THREE.Object3D | null) => { for (let x = o; x; x = x.parent) if (!x.visible) return false; return true; };
+    const caster = new THREE.Raycaster(ray.origin.clone(), ray.direction.clone());
+    let best: { id: string; t: number } | null = null;
+    for (const item of doc.course.items) {
+      if (item.type !== "structure") continue;
+      const obj = this.objects.get(item.id)?.obj;
+      if (!obj || !shown(obj)) continue;
+      const hit = caster.intersectObject(obj, true).find(h => shown(h.object));
+      if (hit && hit.distance < (best?.t ?? Infinity)) best = { id: item.id, t: hit.distance };
+    }
+    return best;
+  }
+
+  private treeUnder(ray: THREE.Ray): { id: string; t: number; drawn?: boolean } | null {
     const doc = this.doc;
     if (!doc) return null;
     const near: { id: string; t: number }[] = [];
@@ -3266,12 +3283,12 @@ export class CourseView {
     // (shown, all the way up)
     const shown = (o: THREE.Object3D | null) => { for (let x = o; x; x = x.parent) if (!x.visible) return false; return true; };
     const caster = new THREE.Raycaster(ray.origin.clone(), ray.direction.clone());
-    let best: { id: string; t: number } | null = null;
+    let best: { id: string; t: number; drawn?: boolean } | null = null;
     for (const n of near) {
       const obj = this.objects.get(n.id)?.obj;
       if (!obj) continue;
       const hit = caster.intersectObject(obj, true).find(h => shown(h.object));
-      if (hit && hit.distance < (best?.t ?? Infinity)) best = { id: n.id, t: hit.distance };
+      if (hit && hit.distance < (best?.t ?? Infinity)) best = { id: n.id, t: hit.distance, drawn: true };
     }
     if (best) return best;
     // (none drawn under it: by the shape round each, a little tighter for a mouse than a finger)
@@ -4310,9 +4327,12 @@ export class CourseView {
     // 3D: in a tilted view a tree's crown stands well above its foot, so the foot alone would
     // pick the tree behind it)
     const ray = this.ray(clientX, clientY);
-    const tree = this.treeUnder(ray);
+    // (a roof or wall nearer the eye than the leaves: the building, not the tree beside it)
+    const roof = this.builtUnder(ray), leaves = this.treeUnder(ray);
+    // (leaves only guessed round a tree, none drawn there, never over a roof that is)
+    const tree = leaves && !(roof && (!leaves.drawn || roof.t < leaves.t)) ? leaves : null;
     for (const item of doc.course.items) {
-      if (item.type === "area" || item.type === "line" || item.type === "label" || item.type === "structure" || (item.type === "tree" && tree)) continue;
+      if (item.type === "area" || item.type === "line" || item.type === "label" || item.type === "structure" || (item.type === "tree" && (tree || roof))) continue;
       const a = new THREE.Vector3(item.x, this.h(item.x, item.y) + 1, item.y);
       const s = this.project(a);
       if (!s) continue;
@@ -4328,6 +4348,7 @@ export class CourseView {
     // (a tee, basket or other mark right there before a tree it stands in front of)
     if (best && (!tree || !doc.course.items.some(i => i.id === best!.id && i.type === "tree"))) return best.id;
     if (tree) return tree.id;
+    if (roof) return roof.id;
     if (best) return best.id;
     const g = this.groundAt(clientX, clientY);
     if (!g) return null;
