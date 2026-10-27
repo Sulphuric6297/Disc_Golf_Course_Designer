@@ -12,7 +12,7 @@ type Ctx = CanvasRenderingContext2D;
 type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
 export type BrushTree = { x: number; y: number; r: number; col: RGB; seed: number };
 
-import { OP, gpuPainter, paintBatch } from "./brushGpu";
+import { OP, beginMap, endMap, gpuPainter, paintBatch } from "./brushGpu";
 
 const hash = (a: number, b: number) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
 /** A stroke's own random numbers (0..1), from its seed: whole-number maths, so the graphics chip's
@@ -290,11 +290,12 @@ export function* drawBrushedSteps(g: Ctx, trees: BrushTree[], sun: number[]): Ge
   // batch at a time (a batch ends between trees: a tree's shadows fall on its own leaves)
   const p = gpuPainter();
   if (p && sorted.length) {
-    const W = g.canvas.width, H = g.canvas.height, BATCH = 40000;
+    const W = g.canvas.width, H = g.canvas.height, BATCH = 120000;
     const look = { sun, light: mix(P.sun, [255, 255, 255], 0.3), dark: P.shadow, shadeRim: P.shadeRimCol, tex: P.tex, lift: P.lift, sink: P.sink, scallop: P.scallop };
     // (listing only while a tree is listed: other painting in between paints as usual)
     const mine: Rec = { data: new Float32Array(BATCH * OP * 1.25), n: 0, soft: 0, crown: [0, 0, 1, 0, 0, 0, 0, 0] };
-    let ok = true, i = 0, start = 0, since = performance.now();
+    const map = beginMap(p, W, H, look, bristles() as TexImageSource);
+    let ok = !!map, i = 0, since = performance.now();
     for (; i < sorted.length && ok; i++) {
       const t = sorted[i], l0 = performance.now();
       rec = mine;
@@ -302,15 +303,14 @@ export function* drawBrushedSteps(g: Ctx, trees: BrushTree[], sun: number[]): Ge
       listing += performance.now() - l0;
       if (mine.n >= BATCH || i === sorted.length - 1) {
         const q0 = performance.now();
-        ok = paintBatch(p, g, mine.data, mine.n, W, H, look, bristles() as TexImageSource);
+        ok = paintBatch(p, map!, mine.data, mine.n);
         painting += performance.now() - q0; strokes += mine.n; mine.n = 0;
-        if (ok) start = i + 1;
       }
       if (performance.now() - since > 12) { yield; since = performance.now(); }
     }
-    if (ok) { told(sorted.length, strokes, listing, painting, performance.now() - t0, "graphics chip"); return; }
-    // (the chip was lost: the trees from the last batch on, painted the other way)
-    sorted.splice(0, start);
+    if (map) { const q0 = performance.now(); ok = endMap(p, map, g) && ok; painting += performance.now() - q0; }
+    if (ok) { told(sorted.length, strokes, listing, painting, performance.now() - t0, `graphics chip, ${W} x ${H}`); return; }
+    // (the chip was lost: nothing of it reached the map; all the trees painted the other way)
   }
   const ws = canWork() ? workers() : [];
   if (ws.length && sorted.length > 24) {

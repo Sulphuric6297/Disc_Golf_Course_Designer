@@ -154,16 +154,14 @@ export const gpuPainter = (): Gpu | null => {
 
 export type GpuLook = { sun: number[]; light: number[]; dark: number[]; shadeRim: number[]; tex: number; lift: number; sink: number; scallop: number };
 
-/**
- * A batch of listed ops (`data`, `count` of them) painted onto `g` (W x H), tile by tile: each tile
- * the mask first, then everything, then laid on the map. `bristles`: the brush's marks (256 px).
- * False when the chip failed (the caller paints them another way).
- */
-export const paintBatch = (p: Gpu, g: CanvasRenderingContext2D, data: Float32Array, count: number, W: number, H: number, look: GpuLook, bristles: TexImageSource) => {
+/** A map's painting on the chip: one texture a tile, kept until every batch is painted on it. */
+export type GpuMap = { W: number; H: number; tw: number; th: number; tiles: { x: number; y: number; tex: WebGLTexture; fb: WebGLFramebuffer }[] };
+
+/** Starts a map's painting (W x H), its tiles cleared; null when the chip can't. */
+export const beginMap = (p: Gpu, W: number, H: number, look: GpuLook, bristles: TexImageSource): GpuMap | null => {
   const { gl, u } = p;
-  if (gl.isContextLost()) return false;
+  if (gl.isContextLost()) return null;
   gl.useProgram(p.pr); gl.bindVertexArray(p.vao);
-  gl.bindBuffer(gl.ARRAY_BUFFER, p.ib); gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, count * OP), gl.STREAM_DRAW);
   if (!p.texOk) {
     const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bristles);
@@ -176,31 +174,67 @@ export const paintBatch = (p: Gpu, g: CanvasRenderingContext2D, data: Float32Arr
   gl.uniform3f(u.uDark, look.dark[0] / 255, look.dark[1] / 255, look.dark[2] / 255);
   gl.uniform3f(u.uShadeRim, look.shadeRim[0], look.shadeRim[1], look.shadeRim[2]);
   gl.uniform1f(u.uTex, look.tex); gl.uniform1f(u.uLift, look.lift); gl.uniform1f(u.uSink, look.sink); gl.uniform1f(u.uSc, look.scallop);
-  const T = p.tile, tw = Math.min(T, W), th = Math.min(T, H);
+  const tw = Math.min(p.tile, W), th = Math.min(p.tile, H);
   if (p.cv.width !== tw || p.cv.height !== th) { p.cv.width = tw; p.cv.height = th; }
-  if (p.maskW !== tw || p.maskH !== th) {
-    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, p.mask);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, tw, th, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  const target = (w: number, h: number) => {
+    const tex = gl.createTexture()!; gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, p.fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, p.mask, 0);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    p.maskW = tw; p.maskH = th;
+    const fb = gl.createFramebuffer()!; gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    return { tex, fb };
+  };
+  gl.activeTexture(gl.TEXTURE1);
+  if (p.maskW !== tw || p.maskH !== th) {
+    gl.deleteTexture(p.mask); gl.deleteFramebuffer(p.fb);
+    const m = target(tw, th); p.mask = m.tex; p.fb = m.fb; p.maskW = tw; p.maskH = th;
   }
+  const tiles: GpuMap["tiles"] = [];
+  for (let y = 0; y < H; y += th) for (let x = 0; x < W; x += tw) tiles.push({ x, y, ...target(tw, th) });
+  gl.bindTexture(gl.TEXTURE_2D, null); gl.activeTexture(gl.TEXTURE0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.uniform2f(u.uSize, tw, th); gl.uniform2f(u.uMaskSize, tw, th);
-  gl.viewport(0, 0, tw, th); gl.clearColor(0, 0, 0, 0);
-  for (let ty = 0; ty < H; ty += th) for (let tx = 0; tx < W; tx += tw) {
-    gl.uniform2f(u.uOff, tx, ty);
-    // (the mask: not read while drawn into)
+  gl.viewport(0, 0, tw, th);
+  return { W, H, tw, th, tiles };
+};
+
+/** A batch of listed ops (`data`, `count` of them) painted onto every tile: the mask first, then
+ * everything. False when the chip failed. */
+export const paintBatch = (p: Gpu, m: GpuMap, data: Float32Array, count: number) => {
+  const { gl, u } = p;
+  if (gl.isContextLost()) return false;
+  gl.useProgram(p.pr); gl.bindVertexArray(p.vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, p.ib); gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, count * OP), gl.STREAM_DRAW);
+  gl.clearColor(0, 0, 0, 0);
+  for (const t of m.tiles) {
+    gl.uniform2f(u.uOff, t.x, t.y);
+    // (the mask: not read while it's drawn into)
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, p.fb); gl.clear(gl.COLOR_BUFFER_BIT);
     gl.uniform1i(u.uPass, 0); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, p.mask); gl.activeTexture(gl.TEXTURE0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindTexture(gl.TEXTURE_2D, p.mask); gl.activeTexture(gl.TEXTURE0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
     gl.uniform1i(u.uPass, 1); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
-    if (gl.isContextLost()) return false;
-    g.drawImage(p.cv, 0, 0, Math.min(tw, W - tx), Math.min(th, H - ty), tx, ty, Math.min(tw, W - tx), Math.min(th, H - ty));
   }
-  return true;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return !gl.isContextLost();
+};
+
+/** The painting laid on the map (`g`), tile by tile, once; its tiles let go. */
+export const endMap = (p: Gpu, m: GpuMap, g: CanvasRenderingContext2D) => {
+  const { gl } = p;
+  let ok = !gl.isContextLost();
+  for (const t of m.tiles) {
+    if (ok) {
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, t.fb); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+      gl.blitFramebuffer(0, 0, m.tw, m.th, 0, 0, m.tw, m.th, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+      ok = !gl.isContextLost();
+      const w = Math.min(m.tw, m.W - t.x), h = Math.min(m.th, m.H - t.y);
+      if (ok) g.drawImage(p.cv, 0, 0, w, h, t.x, t.y, w, h);
+    }
+    gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb);
+  }
+  return ok;
 };
