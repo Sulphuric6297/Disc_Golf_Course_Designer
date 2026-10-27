@@ -335,9 +335,9 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
           <label className="mt-1 flex items-center gap-2.5 text-[12px] text-zinc-300">Lens<input aria-label="Lens" type="range" min={LENS.min} max={LENS.max} value={lens} onChange={e => setLensTo(Number(e.target.value))} className="slider flex-1 min-w-0 h-7" /></label>
         </div>
         {/* (above the stick and the up and down arrows; not while an export's progress shows) */}
-        {!job && <div className="absolute left-1/2 -translate-x-1/2 bottom-[calc(max(10px,env(safe-area-inset-bottom))+316px)] w-max max-w-[calc(100%-24px)] text-center text-[13px] text-white/90 bg-black/45 rounded-2xl px-3 py-1" data-testid="cam-hint">Drag to look around</div>}
-        <div className="absolute left-3 bottom-[calc(max(10px,env(safe-area-inset-bottom))+156px)] flex flex-col items-center gap-1"><Stick /><span className="text-[12px] font-semibold text-white/90 bg-black/45 rounded-full px-2 py-0.5 pointer-events-none">Move</span></div>
-        <div className="absolute right-3 bottom-[calc(max(10px,env(safe-area-inset-bottom))+156px)] flex flex-col gap-2"><Lift dir={1} /><Lift dir={-1} /></div>
+        {!job && <div className={`absolute left-1/2 -translate-x-1/2 ${flight ? "bottom-[calc(max(10px,env(safe-area-inset-bottom))+352px)]" : "bottom-[calc(max(10px,env(safe-area-inset-bottom))+316px)]"} w-max max-w-[calc(100%-24px)] text-center text-[13px] text-white/90 bg-black/45 rounded-2xl px-3 py-1`} data-testid="cam-hint">Drag to look around</div>}
+        <div className={`absolute left-3 ${flight ? "bottom-[calc(max(10px,env(safe-area-inset-bottom))+192px)]" : "bottom-[calc(max(10px,env(safe-area-inset-bottom))+156px)]"} flex flex-col items-center gap-1`}><Stick /><span className="text-[12px] font-semibold text-white/90 bg-black/45 rounded-full px-2 py-0.5 pointer-events-none">Move</span></div>
+        <div className={`absolute right-3 ${flight ? "bottom-[calc(max(10px,env(safe-area-inset-bottom))+192px)]" : "bottom-[calc(max(10px,env(safe-area-inset-bottom))+156px)]"} flex flex-col gap-2`}><Lift dir={1} /><Lift dir={-1} /></div>
         <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto glass rounded-[22px] p-2 border border-white/10 shadow-2xl">
           {strip}
           {timeline}
@@ -358,7 +358,7 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
         <div className="text-[12.5px] text-zinc-300 tabular-nums" data-testid="cam-readout">{readout}</div>
         <button className={pill} onClick={done} title="Back to the map (Esc)" data-testid="cam-done"><X size={15} /> Done</button>
       </div>
-      <div className="absolute bottom-[136px] left-1/2 -translate-x-1/2 text-[12px] text-white/85 bg-black/45 rounded-lg px-2.5 py-1 whitespace-nowrap">W A S D or the arrows to move · Space or E up, Q down · Shift for faster · drag to look · scroll for the lens</div>
+      <div className={`absolute ${flight ? "bottom-[176px]" : "bottom-[136px]"} left-1/2 -translate-x-1/2 text-[12px] text-white/85 bg-black/45 rounded-lg px-2.5 py-1 whitespace-nowrap`}>W A S D or the arrows to move · Space or E up, Q down · Shift for faster · drag to look · scroll for the lens</div>
       <div className="absolute bottom-5 left-1/2 -translate-x-1/2 w-[min(760px,calc(100%-32px))] pointer-events-auto glass rounded-[24px] p-2 border border-white/10 shadow-2xl">
         {strip}
         {timeline}
