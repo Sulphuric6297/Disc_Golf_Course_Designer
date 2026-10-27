@@ -81,7 +81,7 @@ export async function profiled<T>(page: Page, run: () => Promise<T>) {
   const self = new Map<string, number>(), byId = new Map(profile.nodes.map(n => [n.id, n]));
   profile.samples?.forEach((id, k) => {
     const n = byId.get(id)!, f = n.callFrame;
-    if (["(idle)", "(program)", "(root)"].includes(f.functionName)) return;
+    if (["(idle)", "(root)"].includes(f.functionName)) return;
     const key = `${f.functionName || "(anonymous)"} ${f.url.split("/").pop()}:${f.lineNumber + 1}`;
     self.set(key, (self.get(key) ?? 0) + (profile.timeDeltas?.[k] ?? 0) / 1000);
   });
