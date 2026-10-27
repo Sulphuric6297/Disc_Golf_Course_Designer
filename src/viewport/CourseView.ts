@@ -2419,6 +2419,14 @@ export class CourseView {
       group.add(obj);
       this.shapes.set(key, { obj, sig });
     };
+    /** A slow thing (woods, underbrush) already made, while a drag is under way: kept as it is,
+     * without working out what it depends on; made again at the drag's end. */
+    const held = (key: string) => {
+      if (!this.dragging || !this.shapes.has(key)) return false;
+      seen.add(key);
+      this.afterDrag = true;
+      return true;
+    };
     const pdga = st.markings === "pdga";
     const color = (kind: string) => (kind === "ob" ? (pdga ? "#ffffff" : st.ob) : kind === "nogo" && pdga ? RESTRICTED : kind === "hazard" ? st.hazard : kind === "water" ? st.water : kind === "fairway" ? st.fairway : kind === "woods" ? st.trees : null);
     const photo = !!doc.background.url && doc.background.opacity > 0.3;
@@ -2521,13 +2529,15 @@ export class CourseView {
           for (const d of ds) if (Math.hypot(p.x - d.p.x, p.y - d.p.y) < d.r + reach) return true;
           return false;
         };
-        const key = JSON.stringify([ss.map(x => x.pts.map(q => [r(q.x), r(q.y)])), ls.map(l => [l.half, l.pts.map(q => [r(q.x), r(q.y)])]), ds.map(d => [r(d.p.x), r(d.p.y), d.r])]);
-        return { test, key };
+        let key: string | null = null;
+        return { test, get key() { return (key ??= JSON.stringify([ss.map(x => x.pts.map(q => [r(q.x), r(q.y)])), ls.map(l => [l.half, l.pts.map(q => [r(q.x), r(q.y)])]), ds.map(d => [r(d.p.x), r(d.p.y), d.r])])); } };
       };
       const all = near();
-      return { test: all.test, key: all.key, near };
+      return { test: all.test, get key() { return all.key; }, near };
     };
-    const clearings = clearingsFor(false);
+    // (worked out only when something asks: during a drag, nothing may)
+    let clearingsMade: ReturnType<typeof clearingsFor> | null = null;
+    const clearings = () => (clearingsMade ??= clearingsFor(false));
     // Where no tree stands, whatever the survey found: in water, on roads, paths, creeks and walks,
     // on buildings, parking and built things (a trunk there is a bridge, a car, a wire or noise)
     const nowhereFor = () => {
@@ -2573,22 +2583,23 @@ export class CourseView {
     const measured = !!lidar;
     this.lidarState = null;
     if (lidar) {
-      const forPlay = clearingsFor(true);
-      const nowhere = nowhereFor();
-      const cleared = forPlay.test;
+      // (while a drag is under way: the trees standing as they were, worked out again at its end)
+      const held = this.dragging && !!this.lidarKey;
+      let forPlayMade: ReturnType<typeof clearingsFor> | null = null, nowhereMade: ReturnType<typeof nowhereFor> | null = null;
+      const forPlay = () => (forPlayMade ??= clearingsFor(true)), nowhere = () => (nowhereMade ??= nowhereFor());
+      const cleared = (p: P, reach: number) => forPlay().test(p, reach);
       const clearing = lidar.clearFairways === true;
-      this.clearedAt = (p, reach) => (clearing && cleared(p, reach)) || nowhere.test(p);
+      if (!held) this.clearedAt = (p, reach) => (clearing && cleared(p, reach)) || nowhere().test(p);
       // (the woods over the trees that belong to woods)
       const woodsShapes = lidar.bound?.length ? course.items.filter((i): i is AreaItem => i.type === "area" && i.kind === "woods" && i.points.length >= 3).map(i => { const pts = this.shapeOf(i).pts; return { pts, box: boundsOf(pts) }; }) : [];
       const inWoods = (p: P) => woodsShapes.some(w => p.x >= w.box.minX && p.x <= w.box.maxX && p.y >= w.box.minY && p.y <= w.box.maxY && pointInPolygon(p, w.pts));
       const woodsKey = woodsShapes.length ? JSON.stringify(woodsShapes.map(w => w.pts.map(q => [Math.round(q.x), Math.round(q.y)]))) : "";
-      const fresh = JSON.stringify([lidar.kept, lidar.removed, lidar.bound, lidar.minHeight ?? 0, lidar.growYears ?? 0, lidar.crownSize ?? 1, lidar.clearFairways === true, forPlay.key, nowhere.key, cutKey, woodsKey]);
-      if (this.dragging && this.lidarKey && fresh !== this.lidarKey) this.afterDrag = true;
-      else this.lidarKey = fresh;
-      const state = this.keep("lidar", lidar.trees, this.lidarKey, () => {
-        const { stand, cut } = standingTrees(lidar, cleared, nowhere.test, inWoods);
+      if (held) this.afterDrag = true;
+      else this.lidarKey = JSON.stringify([lidar.kept, lidar.removed, lidar.bound, lidar.minHeight ?? 0, lidar.growYears ?? 0, lidar.crownSize ?? 1, lidar.clearFairways === true, forPlay().key, nowhere().key, cutKey, woodsKey]);
+      const state = this.keep("lidar", lidar.trees, this.lidarKey!, () => {
+        const { stand, cut } = standingTrees(lidar, cleared, p => nowhere().test(p), inWoods);
         const keptSet = new Set(lidar.kept ?? []);
-        return { stand, cut, kept: clearing ? stand.filter(k => keptSet.has(k) && forPlay.test({ x: lidar.trees[k][0], y: lidar.trees[k][1] }, lidar.trees[k][3] * 0.3)) : [] };
+        return { stand, cut, kept: clearing ? stand.filter(k => keptSet.has(k) && forPlay().test({ x: lidar.trees[k][0], y: lidar.trees[k][1] }, lidar.trees[k][3] * 0.3)) : [] };
       });
       this.lidarState = state;
       // (the painted map paints the same standing trees)
@@ -2713,8 +2724,8 @@ export class CourseView {
       // Woods: trees standing in it (shadows and all)
       // (its own drawn trees: without measured ones, or when it asks for them, or filling in
       // between the measured ones as thickly as it asks; none when it says so)
-      if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn" || !showsMeasured(a))) {
-        const here = clearings.near(boundsOf(a.points));
+      if (a.kind === "woods" && a.trees !== "none" && (!measured || a.trees === "drawn" || !showsMeasured(a)) && !held(`woods:${a.id}`)) {
+        const here = clearings().near(boundsOf(a.points));
         put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, cutKey, a.pines, a.bushes, a.density, a.heights]), () => {
           this.plantings++;
           const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), (p, r) => here.test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.2, a.density ?? 1)), { pines: a.pines, bushes: a.bushes, heights: a.heights });
@@ -2727,16 +2738,17 @@ export class CourseView {
       // some: its own bushes and young trees, kept off the fairways, paths and water, and off the
       // spots cut by hand
       if (((a.kind === "woods" && a.trees !== "none") || a.kind === "rough") && (a.underbrush || a.brush?.some(b => b.level !== "none"))) {
-        const here = clearings.near(boundsOf(a.points));
+        let hereMade: ReturnType<ReturnType<typeof clearingsFor>["near"]> | null = null;
+        const here = () => (hereMade ??= clearings().near(boundsOf(a.points)));
         const sections = (a.brush ?? []).filter(b => b.points.length >= 3);
         const inSection = (p: P) => sections.some(b => pointInPolygon(p, b.points));
         const edge = Math.min(1, Math.max(0, a.brushEdge ?? 0.6));
         // (`over`: the sections drawn after this one, which have their say where they overlap it)
         const plant = (key: string, outline: P[], level: "light" | "medium" | "heavy", kind: BrushKind, outside: boolean, over: P[][] = []) =>
-          put(key, JSON.stringify([outline, level, kind, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, cutKey, outside ? sections.map(b => b.points) : over, edge, a.points]), () => {
+          held(key) || put(key, JSON.stringify([outline, level, kind, hv, st.trees, st.landscape, st.treeMix, st.conifers, here().key, cutKey, outside ? sections.map(b => b.points) : over, edge, a.points]), () => {
             this.plantings++;
             // (the wood's own level stays out of its sections; a section keeps to the wood)
-            const keepOut = (p: P, r: number) => here.test(p, r) || cutAt(p) || (outside ? inSection(p) : !pointInPolygon(p, a.points) || over.some(o => pointInPolygon(p, o)));
+            const keepOut = (p: P, r: number) => here().test(p, r) || cutAt(p) || (outside ? inSection(p) : !pointInPolygon(p, a.points) || over.some(o => pointInPolygon(p, o)));
             const brush = createUnderbrush(outline, (x, y) => this.h(x, y), st.trees, treeMixOf(st), keepOut, level, edge, a.points, kind);
             brush.traverse(o => { o.userData.itemId = a.id; });
             this.shadowsDirty = true;
@@ -2751,7 +2763,8 @@ export class CourseView {
       if (a.kind === "woods" && a.trees === "custom" && measured && a.patches?.length) {
         const standing = this.lidarState?.stand ?? [], trees = lidar?.trees ?? [];
         a.patches.forEach((patch, i) => {
-          const here = clearings.near(boundsOf(patch.points));
+          if (held(`woods:${a.id}:patch:${i}`)) return;
+          const here = clearings().near(boundsOf(patch.points));
           const fill = Math.min(1, Math.max(0.1, patch.fill));
           put(`woods:${a.id}:patch:${i}`, JSON.stringify([patch.points, fill, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, this.lidarKey, cutKey, a.pines, a.bushes, a.heights]), () => {
             this.plantings++;
@@ -2791,13 +2804,13 @@ export class CourseView {
     // The painted map's own woods: trees standing on it
     const pw = painted && !measured ? this.paintedWoods : null;
     if (pw) {
-      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, st.treeMix, st.conifers, clearings.key, cutKey]), () => {
+      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, st.treeMix, st.conifers, clearings().key, cutKey]), () => {
         const inside = (p: P) => {
           const c = Math.floor((p.x - pw.x0) / pw.ftPerCell), r = Math.floor((p.y - pw.y0) / pw.ftPerCell);
           return c >= 0 && r >= 0 && c < pw.cols && r < pw.rows && pw.data[r * pw.cols + c] === 1;
         };
         // (as thick as the painting's tree cover)
-        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), (p, r) => clearings.test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.15, pw.cover)));
+        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), (p, r) => clearings().test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.15, pw.cover)));
         this.shadowsDirty = true;
         return woods;
       }, this.itemsGroup, true);
