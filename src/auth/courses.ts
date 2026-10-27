@@ -527,3 +527,6 @@ export async function setApproval(on: boolean) {
   set({ approval: on });
   try { await api("POST", `courses/${state().id}/settings`, { approval: on }); } catch (e) { set({ approval: was }); throw e; }
 }
+
+// (for the real-course checks, tests/real: a course started, opened and saved as a person would)
+if (typeof window !== "undefined") (window as unknown as { __dgServer: unknown }).__dgServer = { start: startUnsaved, open: openServerCourse, saveNow, setLive, state };
