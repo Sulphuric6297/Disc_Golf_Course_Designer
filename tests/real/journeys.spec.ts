@@ -310,13 +310,13 @@ test("Hand painted: the demo (made before) stays Classic, a new course starts in
   // (in a browser of its own, its emulated graphics chip in its faster mode: the default one is
   // about 22 times slower, nothing like a real chip; and the 3D view drawing nothing)
   const b = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
-  const ctx = await b.newContext({ viewport: { width: 1280, height: 820 }, storageState: await page.context().storageState() });
+  const ctx = await b.newContext({ baseURL: "http://localhost:4176", viewport: { width: 1280, height: 820 }, storageState: await page.context().storageState() });
   const p2 = await ctx.newPage();
   try {
     await p2.goto("/");
     const id = (await saved(page)).id;
     await p2.evaluate(id => (window as any).__dgServer.open(id), id);
-    await p2.waitForFunction(() => (window as any).__dgCourse?.()?.holes?.length > 0, null, { timeout: 60_000 });
+    await p2.waitForFunction(() => (window as any).__dgCourse?.()?.holes?.length > 0 && !!(window as any).__dgView, null, { timeout: 60_000 });
     const back = p2.getByTestId("back-to-course");
     if (await back.isVisible().catch(() => false)) await back.click();
     await draw(p2, false);
