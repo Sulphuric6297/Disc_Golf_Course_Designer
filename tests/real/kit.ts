@@ -21,6 +21,10 @@ export async function openDemo(page: Page, change: (doc: W) => void = () => {}) 
   await page.waitForFunction(() => !!(window as W).__dgView && (window as W).__dgCourse?.()?.holes?.length > 0, null, { timeout: 60_000 });
   await page.evaluate(() => (window as W).__dgServer.saveNow());
   await expect.poll(() => page.evaluate(() => (window as W).__dgServer.state().id), { timeout: 30_000 }).toBeTruthy();
+  // (the course list away: the editor in front, as after picking a course there)
+  const back = page.getByTestId("back-to-course");
+  if (await back.isVisible().catch(() => false)) await back.click();
+  await expect(page.getByTestId("home")).toBeHidden();
   return doc;
 }
 
