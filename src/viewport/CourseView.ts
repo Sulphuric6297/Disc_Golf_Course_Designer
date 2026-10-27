@@ -42,7 +42,7 @@ import { measuredStanding, setMeasuredStanding, showsMeasured } from "../lib/sta
 import { createFieldGround, createFieldProps, createHedge, createPowerLine } from "../three/parkProps";
 import { fieldInks, fieldPlan } from "../lib/fieldPlan";
 import { fieldKeepsTreesOut, fieldOutline } from "../lib/fields";
-import { isLineKind, orientedBox, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
+import { isLineKind, orientedBox, roofOf, structureBounds, structureHeight, structurePath, structureRoof, structureWidth, turnShape } from "../lib/structures";
 import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
@@ -3253,19 +3253,33 @@ export class CourseView {
    * ray meets (so a tree seen past the edge of a nearer one's crown is the one picked, not the
    * nearer). The trees whose rough shape the ray passes through are tried; a finger, or a tree
    * drawn too thin to hit, falls back to that shape. */
-  /** The built thing drawn first along `ray` (a roof, a wall, a deck), and how far along. */
+  /** The building, shelter or deck `ray` first meets (its roof or walls, by their real shape),
+   * and how far along. */
   private builtUnder(ray: THREE.Ray): { id: string; t: number } | null {
     const doc = this.doc;
     if (!doc) return null;
-    const shown = (o: THREE.Object3D | null) => { for (let x = o; x; x = x.parent) if (!x.visible) return false; return true; };
-    const caster = new THREE.Raycaster(ray.origin.clone(), ray.direction.clone());
     let best: { id: string; t: number } | null = null;
-    for (const item of doc.course.items) {
-      if (item.type !== "structure") continue;
-      const obj = this.objects.get(item.id)?.obj;
-      if (!obj || !shown(obj)) continue;
-      const hit = caster.intersectObject(obj, true).find(h => shown(h.object));
-      if (hit && hit.distance < (best?.t ?? Infinity)) best = { id: item.id, t: hit.distance };
+    const o = ray.origin, d = ray.direction;
+    for (const st of doc.course.items) {
+      if (st.type !== "structure" || isLineKind(st.kind) || st.points.length < 3) continue;
+      const tall = structureHeight(st), house = st.kind === "building" || st.kind === "shelter";
+      const roof = house ? roofOf(st.points, structureRoof(st), 1.5) : null;
+      const shape = roof ? roof.eaves : st.points;
+      const base = Math.max(...st.points.map(p => this.h(p.x, p.y)));
+      const top = (p: { x: number; y: number }) => base + (roof ? tall + roof.pitch * roof.run(p) : tall + (st.kind === "deck" && tall > 2 ? 3 : 0));
+      // (where the ray is over its outline's box and below its highest point: stepped through)
+      const b = boundsOf(shape), peak = base + tall + (roof ? roof.rise : 3) + 1;
+      let t0 = 0, t1 = Infinity;
+      for (const [lo, hi, oo, dd] of [[b.minX, b.maxX, o.x, d.x], [base - 1, peak, o.y, d.y], [b.minY, b.maxY, o.z, d.z]]) {
+        if (Math.abs(dd) < 1e-9) { if (oo < lo || oo > hi) t1 = -1; continue; }
+        const a = (lo - oo) / dd, c = (hi - oo) / dd;
+        t0 = Math.max(t0, Math.min(a, c)); t1 = Math.min(t1, Math.max(a, c));
+      }
+      if (!(t1 > t0) || t0 >= (best?.t ?? Infinity)) continue;
+      for (let t = t0; t <= t1; t += 0.25) {
+        const p = { x: o.x + d.x * t, y: o.z + d.z * t };
+        if (pointInPolygon(p, shape) && o.y + d.y * t <= top(p)) { best = { id: st.id, t }; break; }
+      }
     }
     return best;
   }
