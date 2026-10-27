@@ -8,27 +8,16 @@ import { courseStats, holeStats } from "../lib/holeStats";
 import type { CourseDoc } from "../types";
 import { useCourse } from "./course";
 import { idbDelete, idbGet, idbSet } from "../lib/storage";
-import { getView } from "./view";
+import { spareMoment } from "./pace";
 
 /** The paintings wanted now (a tee view, a flyover, a video, a viewer's look), by key. The rest are
  * painted ahead, gently: only while the view is still and the browser has time to spare, a few
  * ms at a time, so looking round the 3D view never stalls for them. */
 const wanted = new Set<string>();
-const sleep = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
-const gently = (key: string, stop: AbortController) => async () => {
-  for (;;) {
-    if (wanted.has(key)) { await sleep(0); return 8; }
-    // (the course changed since: this painting is out of date before it's done, so it stops)
-    if (paintKey(useCourse.getState().doc) !== key) { stop.abort(); return 8; }
-    // (the view moving: later)
-    if ((getView()?.stillFor() ?? Infinity) < 800) { await sleep(250); continue; }
-    const idle = (window as { requestIdleCallback?: (f: (d: { timeRemaining: () => number }) => void, o?: { timeout: number }) => void }).requestIdleCallback;
-    if (!idle) { await sleep(30); return 4; }
-    const left = await new Promise<number>(res => idle(d => res(d.timeRemaining()), { timeout: 1000 }));
-    if (wanted.has(key)) return 8;
-    if (left >= 3) return Math.min(10, left - 1);
-    await sleep(16);
-  }
+const gently = (key: string, stop: AbortController) => () => {
+  // (the course changed since: this painting is out of date before it's done, so it stops)
+  if (!wanted.has(key) && paintKey(useCourse.getState().doc) !== key) { stop.abort(); return Promise.resolve(8); }
+  return spareMoment(() => wanted.has(key));
 };
 
 // Paintings kept on this device, by what they depend on: the next session skips the painting

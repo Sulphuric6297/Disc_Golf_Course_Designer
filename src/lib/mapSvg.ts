@@ -730,14 +730,17 @@ let paintLive = false;
 let printDensity: number | null = null;
 /** The paintings the first drawing of a print asks for (painted before it is drawn again). */
 let printJobs: (() => Promise<void>)[] | null = null;
+/** How a print's paintings wait between slices (unset: between frames, as fast as they go). */
+let printPace: (() => Promise<number>) | null = null;
 
 /**
  * Draws a page for print: a first drawing notes the paintings it needs, they are painted at
  * `dpi` (a slice at a time, so the page never freezes; at most 250 dpi, plenty for the painted
  * texture, and no bigger than a browser holds), then the page is drawn with them.
  */
-export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), draw: () => T): Promise<T> => {
+export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), draw: () => T, pace?: () => Promise<number>): Promise<T> => {
   const was = printDensity;
+  printPace = pace ?? null;
   try {
     // (a resolution that depends on the page: measured by a drawing that paints nothing)
     if (typeof dpi === "function") {
@@ -755,6 +758,7 @@ export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), dr
   } finally {
     printDensity = was;
     printJobs = null;
+    printPace = null;
   }
 };
 
@@ -856,9 +860,10 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   };
   if (printJobs) {
     // (a print's first drawing: painted between frames, and finer JPEG, before it is drawn again)
+    const pace = printPace ?? undefined;
     printJobs.push(async () => {
       if (forestCache.has(key)) return;
-      const canvas = await forestCanvasAsync(doc, view, layers.stats, opts);
+      const canvas = await forestCanvasAsync(doc, view, layers.stats, opts, undefined, undefined, pace);
       const over = treesOverOf(canvas);
       const overUrl = over ? { url: over.picture.toDataURL("image/png"), hidden: over.hidden } : null;
       const url = await new Promise<string>((res, rej) => canvas.toBlob(b => {

@@ -148,7 +148,9 @@ async function makeThumbnail(doc = getDoc()) {
     // (the painter loaded only when a picture is made: the course list doesn't wait for it)
     const [{ canopyFor }, { paintedForPrint, renderPoster }, { canvasBlob, svgToCanvas }, { reliefOf }] = await Promise.all([import("../lib/forest"), import("../lib/mapSvg"), import("../lib/raster"), import("../components/useRelief")]);
     const art = { ...reliefOf(doc), canopy: await canopyFor(doc) };
-    const p = await paintedForPrint(page => (72 * THUMB_PX) / page.width, () => renderPoster(doc, art));
+    // (painted in the map's spare moments, while the course is being worked on)
+    const { spareMoment } = await import("../state/pace");
+    const p = await paintedForPrint(page => (72 * THUMB_PX) / page.width, () => renderPoster(doc, art), () => spareMoment());
     const canvas = await svgToCanvas(p.svg, p.width, p.height, (72 * THUMB_PX) / p.width);
     const blob = await canvasBlob(canvas, "image/webp", 0.8);
     const data = await new Promise<string>((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = bad; r.readAsDataURL(blob); });
