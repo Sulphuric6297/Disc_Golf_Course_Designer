@@ -173,6 +173,13 @@ export default function App() {
   const readOnly = useCourse(s => s.readOnly);
   // (and none left chosen: the map acts as Select for a viewer)
   useEffect(() => { if (readOnly && useEditor.getState().tool !== "select") useEditor.getState().set({ tool: "select", dragSelect: false }); }, [readOnly]);
+  // (?timing=1: how long Hand painted's trees took to paint, each time, for measuring on a device)
+  useEffect(() => {
+    if (!new URLSearchParams(location.search).has("timing")) return;
+    const said = (e: Event) => { const t = (e as CustomEvent<{ trees: number; strokes: number; listing: number; painting: number; total: number; how: string }>).detail; toast(`${t.trees.toLocaleString()} trees in ${(t.total / 1000).toFixed(1)} s (${t.how}${t.strokes ? `: ${t.strokes.toLocaleString()} strokes, listed ${(t.listing / 1000).toFixed(1)} s, painted ${(t.painting / 1000).toFixed(1)} s` : ""})`, "info", false, undefined, 12000); };
+    window.addEventListener("dg-tree-timing", said);
+    return () => window.removeEventListener("dg-tree-timing", said);
+  }, []);
   const layout = useLayout();
   const doc = useCourse(s => s.doc);
   const [findSite, setFindSite] = useState(false);

@@ -4,14 +4,24 @@
 // the map's sun: the clumps toward it in yellow-green, those away from it in deep shade; the sunny
 // groups lie over the shaded ones and each casts a soft shadow on the leaves under it. Nothing is
 // pasted: every tree is painted from its own seed. Each tree is painted on a small canvas of its
-// own (so the soft shadows only blur that much), then laid on the map; where the browser can, by
-// background workers several at once (brushCrown.worker.ts), the page free meanwhile.
+// own (so the soft shadows only blur that much), then laid on the map. Where the browser has
+// WebGL2, the graphics chip paints them instead (lib/brushGpu), all their strokes at once: this
+// lists them. Without it, background workers paint them several at once (brushCrown.worker.ts).
 type RGB = [number, number, number];
 type Ctx = CanvasRenderingContext2D;
 type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
 export type BrushTree = { x: number; y: number; r: number; col: RGB; seed: number };
 
+import { OP, gpuPainter, paintBatch } from "./brushGpu";
+
 const hash = (a: number, b: number) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
+/** A stroke's own random numbers (0..1), from its seed: whole-number maths, so the graphics chip's
+ * shader works out the very same ones (lib/brushGpu, sh). */
+const sh = (seed: number, k: number) => {
+  let x = (Math.imul(seed | 0, 374761393) + Math.imul(k | 0, 668265263)) >>> 0;
+  x = Math.imul(x ^ (x >>> 13), 1274126177) >>> 0;
+  return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+};
 const css = (c: number[], a = 1) => `rgba(${c.map(v => Math.round(Math.max(0, Math.min(255, v)))).join(",")},${a})`;
 const mix = (a: number[], b: number[], k: number): RGB => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
 const rng = (s: number) => { s = (Math.abs(Math.floor(s)) % 2147483646) + 1; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
@@ -51,12 +61,21 @@ const bristles = () => {
 };
 
 type StrokeOpts = { sun: number[]; bumps: number; flat?: boolean; alpha?: number; rim?: number; rimCol?: RGB; texMin?: number };
+
+/** The strokes listed for the graphics chip instead of painted (lib/brushGpu: OP numbers each). */
+type Rec = { data: Float32Array; n: number; soft: number; crown: number[] };
+let rec: Rec | null = null;
+const put = (...v: number[]) => {
+  const r = rec!;
+  if ((r.n + 1) * OP > r.data.length) { const d = new Float32Array(r.data.length * 2); d.set(r.data); r.data = d; }
+  r.data.set(v, r.n * OP); r.n++;
+};
 /** A stroke's outline from its base at (x0, y0) toward `ang`: squarish, as a flat brush leaves it,
  * narrower at the base, a little lopsided, its edge in scallops each its own size (at least seven
  * points a scallop, so each stays round, and about one every pixel and a half). */
 const outline = (g: Ctx, x0: number, y0: number, ang: number, len: number, wid: number, sd: number, bumps: number) => {
   const ux = Math.cos(ang), uy = Math.sin(ang), vx = -uy, vy = ux, n = Math.max(bumps * 7, Math.min(160, Math.round((len + wid) * 1.6)));
-  const cx = x0 + ux * len * 0.5, cy = y0 + uy * len * 0.5, sc = P.scallop, ph = hash(sd, 1) * 6.28, asymK = (hash(sd, 8) - 0.5) * 0.35;
+  const cx = x0 + ux * len * 0.5, cy = y0 + uy * len * 0.5, sc = P.scallop, ph = sh(sd, 1) * 6.28, asymK = (sh(sd, 8) - 0.5) * 0.35;
   g.beginPath();
   for (let i = 0; i <= n; i++) {
     const t = (i / n) * 6.2832, c = Math.cos(t), s = Math.sin(t);
@@ -64,7 +83,7 @@ const outline = (g: Ctx, x0: number, y0: number, ang: number, len: number, wid: 
     const w = (wid / 2) * (0.74 + 0.26 * c) * (1 + asymK * s);
     const warp = t + 0.35 * Math.sin(t * 2 + ph) + 0.18 * Math.sin(t * 5 + ph * 2);
     const u = (warp * bumps) / 6.2832 + ph, bi = Math.floor(u), f = u - bi;
-    const size = 0.72 + hash(((bi % bumps) + bumps) % bumps, sd) * 0.7;
+    const size = 0.72 + sh(sd, 100 + (((bi % bumps) + bumps) % bumps)) * 0.7;
     const bump = 1 - sc * size + sc * size * 2 * Math.pow(Math.sin(f * Math.PI), 0.45);
     const px = c2 * (len / 2) * bump, py = s2 * w * bump;
     g.lineTo(cx + ux * px + vx * py, cy + uy * px + vy * py);
@@ -75,6 +94,12 @@ const outline = (g: Ctx, x0: number, y0: number, ang: number, len: number, wid: 
  * the sun and darker away, the bristles' marks along it, its edge a shade darker where the paint
  * gathers. Flat: the shape alone, one paint (shadows, and the deep shade under the leaves). */
 const stroke = (g: Ctx, x0: number, y0: number, ang: number, len: number, wid: number, col: RGB, sd: number, o: StrokeOpts) => {
+  if (rec) {
+    // (where, how big; flat, painted or a soft shadow; its paint; its edge, bristles, seed, softness; its crown)
+    const shade = o.rimCol === P.shadeRimCol ? 1 : 0;
+    put(x0, y0, ang, len, wid, o.flat ? (rec.soft ? 2 : 0) : 1, o.alpha ?? 1, o.bumps, col[0], col[1], col[2], o.rim ?? 0, shade, o.texMin ?? 0.35, sd, rec.soft, ...rec.crown);
+    return;
+  }
   const light = mix(P.sun, [255, 255, 255], 0.3), dark = P.shadow, sun = o.sun;
   outline(g, x0, y0, ang, len, wid, sd, o.bumps);
   g.fillStyle = css(col, o.alpha ?? 1); g.fill();
@@ -94,11 +119,11 @@ const stroke = (g: Ctx, x0: number, y0: number, ang: number, len: number, wid: n
   if (wid >= 5) {
     const px = Math.max(1.5, wid / 40), fine = Math.min(1, wid / 60), lum = (0.3 * col[0] + 0.59 * col[1] + 0.11 * col[2]) / 255;
     g.save();
-    g.translate(cx, cy); g.rotate(ang + Math.PI / 2 + (hash(sd, 4) - 0.5) * 0.15); g.scale(px, px);
-    g.translate(-hash(sd, 6) * 256, -hash(sd, 7) * 256);
+    g.translate(cx, cy); g.rotate(ang + Math.PI / 2 + (sh(sd, 4) - 0.5) * 0.15); g.scale(px, px);
+    g.translate(-sh(sd, 6) * 256, -sh(sd, 7) * 256);
     g.globalCompositeOperation = "overlay"; g.globalAlpha = P.tex * Math.min(1, Math.max(o.texMin ?? 0.35, (lum - 0.2) * 2.2)) * (0.45 + 0.55 * fine);
     g.fillStyle = g.createPattern(bristles() as CanvasImageSource, "repeat")!;
-    const span = (R * 1.5) / px; g.fillRect(hash(sd, 6) * 256 - span / 2, hash(sd, 7) * 256 - span / 2, span, span);
+    const span = (R * 1.5) / px; g.fillRect(sh(sd, 6) * 256 - span / 2, sh(sd, 7) * 256 - span / 2, span, span);
     g.restore();
   }
   outline(g, x0, y0, ang, len, wid, sd, o.bumps);
@@ -183,22 +208,31 @@ const paintCrown = (g: Ctx, x: number, y: number, R: number, base: RGB, seed: nu
   const ox = -sun[0] * sr * 0.12, oy = -sun[1] * sr * 0.12;
   // Under it all: the crown's deep shade, solid inside its edge, then in the groups' own shapes
   const deep = mix(band(0), P.shadow, 0.5);
-  g.fillStyle = css(deep);
-  g.beginPath();
-  for (let i = 0; i <= 72; i++) { const a = (i / 72) * 6.2832, rr = edgeAt(a) * 0.8; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
-  g.fill();
+  if (rec) { rec.crown = [x, y, R * P.env, P.envLump, eph, eph2, 0, 0]; put(0, 0, 0, 0, 0, 3, 1, 0, deep[0], deep[1], deep[2], 0, 0, 0, 0, 0, ...rec.crown); }
+  else {
+    g.fillStyle = css(deep);
+    g.beginPath();
+    for (let i = 0; i <= 72; i++) { const a = (i / 72) * 6.2832, rr = edgeAt(a) * 0.8; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+    g.fill();
+  }
   for (const o of groups) for (const s of o.arms) stroke(g, s.x + ox * 0.6, s.y + oy * 0.6, s.a, s.len, s.wid, deep, s.sd, { sun, bumps: s.bumps, flat: true });
   // (its limbs, showing here and there between the clumps)
-  g.strokeStyle = "rgba(60,46,30,0.9)"; g.lineCap = "round";
-  for (const c of clumps) { g.lineWidth = Math.max(0.6, R * 0.025); g.beginPath(); g.moveTo(x, y); g.lineTo(c.x, c.y); g.stroke(); }
+  if (rec) for (const c of clumps) put(x, y, c.x, c.y, Math.max(0.6, R * 0.025), 4, 0.9, 0, 60, 46, 30, 0, 0, 0, 0, 0, ...rec.crown);
+  else {
+    g.strokeStyle = "rgba(60,46,30,0.9)"; g.lineCap = "round";
+    for (const c of clumps) { g.lineWidth = Math.max(0.6, R * 0.025); g.beginPath(); g.moveTo(x, y); g.lineTo(c.x, c.y); g.stroke(); }
+  }
   const blur = sr * 0.06;
   let last = -1;
   for (const o of groups) {
     if (o.c !== last) { last = o.c; for (const q of under) if (q.c === o.c) draw(q, q.k + 1); }
     // (each group's soft shadow on the leaves under it, never past the crown's edge)
-    g.save(); g.globalCompositeOperation = "source-atop"; if (blur >= 0.5) g.filter = `blur(${Math.max(0.8, blur).toFixed(1)}px)`;
-    draw(o, o.k - 3, true, ox * 1.4, oy * 1.4, 0.6);
-    g.restore();
+    if (rec) { rec.soft = blur >= 0.5 ? Math.max(0.8, blur) : 0.35; draw(o, o.k - 3, true, ox * 1.4, oy * 1.4, 0.6); rec.soft = 0; }
+    else {
+      g.save(); g.globalCompositeOperation = "source-atop"; if (blur >= 0.5) g.filter = `blur(${Math.max(0.8, blur).toFixed(1)}px)`;
+      draw(o, o.k - 3, true, ox * 1.4, oy * 1.4, 0.6);
+      g.restore();
+    }
     draw(o, o.k);
   }
 };
@@ -250,6 +284,34 @@ export type Wait = { wait: Promise<unknown> };
  * a batch each at a time, and here they're laid on the map in order. `sun`: toward the sun. */
 export function* drawBrushedSteps(g: Ctx, trees: BrushTree[], sun: number[]): Generator<void | Wait, void, unknown> {
   const sorted = [...trees].sort((p, q) => p.x * sun[0] + p.y * sun[1] - (q.x * sun[0] + q.y * sun[1]));
+  const t0 = performance.now();
+  let listing = 0, painting = 0, strokes = 0;
+  // The graphics chip, where there is one: the trees' strokes listed a slice at a time, painted a
+  // batch at a time (a batch ends between trees: a tree's shadows fall on its own leaves)
+  const p = gpuPainter();
+  if (p && sorted.length) {
+    const W = g.canvas.width, H = g.canvas.height, BATCH = 40000;
+    const look = { sun, light: mix(P.sun, [255, 255, 255], 0.3), dark: P.shadow, shadeRim: P.shadeRimCol, tex: P.tex, lift: P.lift, sink: P.sink, scallop: P.scallop };
+    // (listing only while a tree is listed: other painting in between paints as usual)
+    const mine: Rec = { data: new Float32Array(BATCH * OP * 1.25), n: 0, soft: 0, crown: [0, 0, 1, 0, 0, 0, 0, 0] };
+    let ok = true, i = 0, start = 0, since = performance.now();
+    for (; i < sorted.length && ok; i++) {
+      const t = sorted[i], l0 = performance.now();
+      rec = mine;
+      try { paintCrown(g, t.x, t.y, t.r, t.col, t.seed, sun); } finally { rec = null; }
+      listing += performance.now() - l0;
+      if (mine.n >= BATCH || i === sorted.length - 1) {
+        const q0 = performance.now();
+        ok = paintBatch(p, g, mine.data, mine.n, W, H, look, bristles() as TexImageSource);
+        painting += performance.now() - q0; strokes += mine.n; mine.n = 0;
+        if (ok) start = i + 1;
+      }
+      if (performance.now() - since > 12) { yield; since = performance.now(); }
+    }
+    if (ok) { told(sorted.length, strokes, listing, painting, performance.now() - t0, "graphics chip"); return; }
+    // (the chip was lost: the trees from the last batch on, painted the other way)
+    sorted.splice(0, start);
+  }
   const ws = canWork() ? workers() : [];
   if (ws.length && sorted.length > 24) {
     const BATCH = 24, batches: BrushTree[][] = [];
@@ -268,7 +330,7 @@ export function* drawBrushedSteps(g: Ctx, trees: BrushTree[], sun: number[]): Ge
       done++;
       more();
     }
-    if (done === batches.length) return;
+    if (done === batches.length) { told(sorted.length, 0, 0, 0, performance.now() - t0, "workers"); return; }
     // (the driver can't wait, or a worker failed: the rest painted here)
     sorted.splice(0, done * BATCH);
   }
@@ -280,4 +342,12 @@ export function* drawBrushedSteps(g: Ctx, trees: BrushTree[], sun: number[]): Ge
     layTree(g, own as CanvasImageSource, t, S);
     if (performance.now() - since > 12) { yield; since = performance.now(); }
   }
+  told(sorted.length, 0, 0, 0, performance.now() - t0, "page");
 }
+
+/** How long the trees took, the last time (and to anyone listening: ?timing=1 shows it). */
+export let treeTiming: { trees: number; strokes: number; listing: number; painting: number; total: number; how: string } | null = null;
+const told = (trees: number, strokes: number, listing: number, painting: number, total: number, how: string) => {
+  treeTiming = { trees, strokes, listing: Math.round(listing), painting: Math.round(painting), total: Math.round(total), how };
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("dg-tree-timing", { detail: treeTiming }));
+};
