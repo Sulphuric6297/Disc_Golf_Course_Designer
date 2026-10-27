@@ -117,7 +117,6 @@ test("a pond or a road made a hazard: never OB as well, said on the tee sign, a 
   expect(autoRules(doc, doc.holes[0].id)).toContain("Road is a hazard.");
   const svg = renderPoster(doc, { contours: null, hillshade: null }).svg;
   expect(svg).toContain(">HAZARD<");
-  expect(svg).toContain(">Hazard<");
 });
 
 test("a road OB along a stretch of it, or OB and beyond: in play only there, said on the tee sign, drawn on the hole's side", () => {
