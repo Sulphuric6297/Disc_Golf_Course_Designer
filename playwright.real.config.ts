@@ -34,7 +34,8 @@ export default defineConfig({
       env: { DATABASE_URL: db, APP_SECRET: Buffer.alloc(32, 9).toString("base64"), APP_ORIGINS: "http://localhost:4176", PORT: "8798", SETUP_CODE }
     },
     {
-      command: "npx vite build --outDir dist-real && npx vite preview --outDir dist-real --port 4176 --strictPort",
+      // (not minified: a too-slow check names the functions its time went to)
+      command: "npx vite build --outDir dist-real --minify false && npx vite preview --outDir dist-real --port 4176 --strictPort",
       url: "http://localhost:4176",
       reuseExistingServer: false,
       timeout: 180_000,
