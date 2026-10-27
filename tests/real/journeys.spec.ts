@@ -4,7 +4,7 @@
 //
 // Speed limits are for this test machine, which has no graphics card: the 3D drawing is left out
 // of them (see kit.ts: draw), so they measure the app's own work, which is what has stalled.
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, chromium, type Page } from "@playwright/test";
 import { at, course, draw, editor, frame, frames, openDemo, profiled, saved, stalls, watch } from "./kit";
 import { createEmptyCourse, normalizeCourse } from "../../src/lib/course";
 
@@ -307,18 +307,31 @@ test("Hand painted: the demo (made before) stays Classic, a new course starts in
   expect((await course(page)).style.mapLook).toBeUndefined();
   expect(createEmptyCourse().style.mapLook).toBe("handpainted");
   expect(normalizeCourse({ ...createEmptyCourse(), style: { ...createEmptyCourse().style, mapLook: undefined } }).style.mapLook).toBeUndefined();
-  // (the 3D view drawing nothing: on this machine its frames take seconds on the same emulated
-  // graphics chip the trees are painted on, as the other speed checks say)
-  await draw(page, false);
-  await page.evaluate(() => (window as any).__dgEditor().set({ step: "map", tool: "select" }));
-  await page.getByTestId("map-style-handpainted").click();
-  await expect.poll(async () => (await course(page)).style.mapLook).toBe("handpainted");
-  const s = Date.now();
-  await page.waitForFunction(() => !(window as any).__dgPainting(), null, { timeout: 280_000 });
-  const took = Math.round((Date.now() - s) / 1000);
-  console.log("Hand painted map painted in", took, "s ·", JSON.stringify(await page.evaluate(() => (window as any).__dgTreeTiming)));
-  await page.waitForTimeout(1500);
-  await page.getByTestId("design-page").first().screenshot({ path: "test-results/handpainted-map.png" });
-  await page.keyboard.press("Control+z");
+  // (in a browser of its own, its emulated graphics chip in its faster mode: the default one is
+  // about 22 times slower, nothing like a real chip; and the 3D view drawing nothing)
+  const b = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 820 }, storageState: await page.context().storageState() });
+  const p2 = await ctx.newPage();
+  try {
+    await p2.goto("/");
+    const id = (await saved(page)).id;
+    await p2.evaluate(id => (window as any).__dgServer.open(id), id);
+    await p2.waitForFunction(() => (window as any).__dgCourse?.()?.holes?.length > 0, null, { timeout: 60_000 });
+    const back = p2.getByTestId("back-to-course");
+    if (await back.isVisible().catch(() => false)) await back.click();
+    await draw(p2, false);
+    await p2.evaluate(() => (window as any).__dgEditor().set({ step: "map", tool: "select" }));
+    await p2.getByTestId("map-style-handpainted").click();
+    await expect.poll(async () => (await course(p2)).style.mapLook).toBe("handpainted");
+    await p2.waitForFunction(() => !!(window as any).__dgTreeTiming, null, { timeout: 170_000 });
+    const t = await p2.evaluate(() => (window as any).__dgTreeTiming);
+    console.log("Hand painted trees:", JSON.stringify(t));
+    expect(t.how).toContain("graphics chip");
+    await p2.waitForFunction(() => !(window as any).__dgPainting(), null, { timeout: 120_000 });
+    await p2.waitForTimeout(1500);
+    await p2.getByTestId("design-page").first().screenshot({ path: "test-results/handpainted-map.png" });
+    // (on the emulated chip, a whole 18-hole course in under 20 s; a real one is far quicker)
+    expect(t.total).toBeLessThan(20_000);
+    await p2.keyboard.press("Control+z");
+  } finally { await b.close(); }
 });
-
