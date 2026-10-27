@@ -2,7 +2,7 @@
 // Build tool, edited in the inspector, reshaped with handles, real 3D models in the map view, and
 // drawn on the printed map (every style) with their legend lines.
 import { test as plain, expect as plainExpect } from "@playwright/test";
-import { test, expect, addHole, blankCourse, clickPlan, course, drag, editorState, handleCenter, screenOf } from "./fixtures";
+import { test, expect, blankCourse, clickPlan, course, drag, editorState, handleCenter, screenOf } from "./fixtures";
 import { STRUCTURE_ORDER } from "../../src/constants";
 import { createArea, createBasket, createEmptyCourse, createStructure, createTee, newHole, normalizeCourse, createAmenity } from "../../src/lib/course";
 import { THEMES, renderPoster } from "../../src/lib/mapSvg";
@@ -220,37 +220,25 @@ test("in 3D a click on a roof picks the building, not the tree standing over its
   await expect.poll(async () => (await editorState(page)).selectedId).toBe(tree.id);
 });
 
-test("in 3D a basket behind a tree's leaves isn't picked through them: where the leaves hide it, the tree is", async ({ page }) => {
+test("in 3D a click on a path just in front of a tree picks the path, not the tree", async ({ page }) => {
   await blankCourse(page);
   await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 300, minY: 300, maxX: 700, maxY: 600 }, { animate: false }));
-  // A hole played away from the view, its basket just behind a tree
-  await addHole(page, { x: 440, y: 560 }, { x: 440, y: 404 });
-  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "2 Design" }).click();
   await page.keyboard.press("r");
   await clickPlan(page, 440, 420);
   await page.keyboard.press("Escape");
   await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "tree").length).toBe(1);
-  const items = (await course(page)).items;
-  const tree = items.find((i: any) => i.type === "tree"), basket = items.find((i: any) => i.type === "basket");
+  // A path passing the tree on the near side (from where the 3D view looks), inside its crown's reach
+  await page.evaluate(() => (window as any).__dgActions.addDrawn("line", [{ x: 380, y: 431 }, { x: 500, y: 431 }]));
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "line").length).toBe(1);
+  const path = (await course(page)).items.find((i: any) => i.type === "line");
   await page.keyboard.press("v");
   await page.evaluate(() => (window as any).__dgActions.select(null));
   await page.keyboard.press("3");
   await page.waitForTimeout(1500);
-  // A spot within a finger's reach of the basket where leaves are drawn in front of it
-  const at = await screenOf(page, basket.x, basket.y, 1);
-  const spot = await page.evaluate(([x, y, bx, by]) => {
-    const v = (window as any).__dgView, eye = v.camera.position;
-    const far = Math.hypot(eye.x - bx, eye.z - by);
-    for (let r = 0; r <= 10; r += 2) for (let a = 0; a < 6.28; a += 0.5) {
-      const p = { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r }, hit = v.treeUnder(v.ray(p.x, p.y));
-      if (hit?.drawn && hit.t < far - 5) return p;
-    }
-    return null;
-  }, [at.x, at.y, basket.x, basket.y] as const);
-  expect(spot).not.toBeNull();
-  await page.mouse.click(spot!.x, spot!.y);
-  await expect.poll(async () => (await editorState(page)).selectedId).toBe(tree.id);
+  const at = await screenOf(page, 434, 431, 0);
+  await page.mouse.click(at.x, at.y);
+  await expect.poll(async () => (await editorState(page)).selectedId).toBe(path.id);
 });
 
 // --- Pure logic
