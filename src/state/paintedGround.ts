@@ -15,9 +15,11 @@ import { getView } from "./view";
  * ms at a time, so looking round the 3D view never stalls for them. */
 const wanted = new Set<string>();
 const sleep = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
-const gently = (key: string) => async () => {
+const gently = (key: string, stop: AbortController) => async () => {
   for (;;) {
     if (wanted.has(key)) { await sleep(0); return 8; }
+    // (the course changed since: this painting is out of date before it's done, so it stops)
+    if (paintKey(useCourse.getState().doc) !== key) { stop.abort(); return 8; }
     // (the view moving: later)
     if ((getView()?.stillFor() ?? Infinity) < 800) { await sleep(250); continue; }
     const idle = (window as { requestIdleCallback?: (f: (d: { timeRemaining: () => number }) => void, o?: { timeout: number }) => void }).requestIdleCallback;
@@ -119,7 +121,7 @@ export const paintedGround = (doc: CourseDoc, ahead = false): Promise<PaintedGro
     else {
       if (job.stop.signal.aborted) throw new Error("stopped");
       const canopy = doc.style.forest === "photo" ? await canopyFor(doc) : null;
-      const canvas = await forestCanvasAsync(doc, view, courseStats(doc), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1, under: true }, job.stop.signal, undefined, gently(key));
+      const canvas = await forestCanvasAsync(doc, view, courseStats(doc), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1, under: true }, job.stop.signal, undefined, gently(key, job.stop));
       blob = await toBlob(canvas, "image/jpeg", 0.9);
       wooded = woodedOf(canvas);
       if (blob) void savePaint(diskKey, { blob, wooded });

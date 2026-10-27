@@ -874,8 +874,10 @@ export class CourseView {
   private movedAt = 0;
   private lastEye = new THREE.Vector3();
   private lastLook = new THREE.Quaternion();
-  /** How long the view has been still, ms (work that can wait waits for it). */
+  /** How long the view has been still, ms (work that can wait waits for it); a drag under way is
+   * never still. */
   stillFor() {
+    if (this.dragging) { this.movedAt = performance.now(); return 0; }
     return this.paused ? Infinity : performance.now() - this.movedAt;
   }
 
@@ -2609,7 +2611,8 @@ export class CourseView {
     const hazardEdge = (a: AreaItem, g: THREE.Group) => {
       if (a.hazard === true && a.kind !== "hazard") g.add(this.fatLine(this.drapeLine(a.points, LIFT + 0.05, true), color("hazard")!, 3, { order: 5, dashed: 6 }));
     };
-    const areas = (course.items.filter(i => i.type === "area") as AreaItem[]).map(a => ({ ...a, points: this.shapeOf(a).pts })).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
+    // (biggest first: each one's size worked out once, not at every comparison)
+    const areas = (course.items.filter(i => i.type === "area") as AreaItem[]).map(a => { const points = this.shapeOf(a).pts; return { a: { ...a, points }, size: polygonArea(points) }; }).sort((x, y) => y.size - x.size).map(x => x.a);
     // (fields in their real colors, their grass leaning toward the map's)
     const inks = fieldInks("natural", st.fairway);
     const nogoColor = pdga ? RESTRICTED : AREA_KINDS.nogo.color;
