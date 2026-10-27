@@ -307,6 +307,9 @@ test("Hand painted: the demo (made before) stays Classic, a new course starts in
   expect((await course(page)).style.mapLook).toBeUndefined();
   expect(createEmptyCourse().style.mapLook).toBe("handpainted");
   expect(normalizeCourse({ ...createEmptyCourse(), style: { ...createEmptyCourse().style, mapLook: undefined } }).style.mapLook).toBeUndefined();
+  // (the 3D view drawing nothing: on this machine its frames take seconds on the same emulated
+  // graphics chip the trees are painted on, as the other speed checks say)
+  await draw(page, false);
   await page.evaluate(() => (window as any).__dgEditor().set({ step: "map", tool: "select" }));
   await page.getByTestId("map-style-handpainted").click();
   await expect.poll(async () => (await course(page)).style.mapLook).toBe("handpainted");
