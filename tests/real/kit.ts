@@ -10,7 +10,8 @@ type W = Record<string, any>;
 export async function openDemo(page: Page, change: (doc: W) => void = () => {}) {
   page.on("pageerror", e => console.log("[page error]", e.message));
   await page.goto("/");
-  const r = await page.request.post("/api/setup", { data: { code: SETUP_CODE, username: "tester", displayName: "Tester", password: "a long test password 1" } });
+  // (as the app asks: its own header, from its own page)
+  const r = await page.request.post("/api/setup", { headers: { "x-hyzerlab": "1", origin: "http://localhost:4176" }, data: { code: SETUP_CODE, username: "tester", displayName: "Tester", password: "a long test password 1" } });
   expect(r.ok(), await r.text()).toBe(true);
   await page.goto("/");
   await expect(page.getByTestId("home")).toBeVisible();
