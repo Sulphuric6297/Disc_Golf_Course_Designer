@@ -181,6 +181,46 @@ test("a pond made a hazard: never OB as well", async () => {
   await page.keyboard.press("Control+z");
 });
 
+test("a flyover's keyframes: two set, the timeline scrubbed (the camera follows it), and a keyframe added at that moment", async () => {
+  await draw(page, false);
+  await page.evaluate(() => (window as any).__dgEditor().set({ step: "design", tool: "select" }));
+  const hole = (await course(page)).holes[0];
+  await page.evaluate(id => (window as any).__dgActions.select(id), hole.id);
+  await page.getByTestId("hole-flight").getByTestId("fly-camera").click();
+  await expect(page.getByTestId("camera-hud")).toBeVisible();
+  const keys = async () => ((await course(page)).holes.find((h: any) => h.id === hole.id).flyKeys ?? []) as any[];
+  const had = (await keys()).length;
+  await page.keyboard.press("Enter");
+  await page.keyboard.down("w");
+  await page.waitForTimeout(900);
+  await page.keyboard.up("w");
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await keys()).length).toBe(had + 2);
+  await expect(page.getByTestId("cam-timeline")).toBeVisible();
+  // (half way through the flight: the camera there, the status says so)
+  const end = Number(await page.getByTestId("cam-scrub").getAttribute("max"));
+  await page.getByTestId("cam-scrub").fill(String(Math.round((end / 2) * 20) / 20));
+  await expect(page.getByTestId("cam-status")).toContainText("At ");
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await keys()).length).toBe(had + 3);
+  expect((await editor(page)).flyKey).toBe(had + 1);
+  await page.getByTestId("cam-done").click();
+});
+
+test("on a phone, the Trees tool has the same kinds, woods included", async ({ browser }) => {
+  const phone = await browser.newPage({ viewport: { width: 393, height: 851 }, isMobile: true, hasTouch: true, storageState: await page.context().storageState() });
+  await phone.goto("/");
+  const id = (await saved(page)).id;
+  await phone.evaluate(id => (window as any).__dgServer.open(id), id);
+  await phone.waitForFunction(() => (window as any).__dgCourse?.()?.holes?.length > 0, null, { timeout: 60_000 });
+  const back = phone.getByTestId("back-to-course");
+  if (await back.isVisible().catch(() => false)) await back.click();
+  await phone.evaluate(() => (window as any).__dgEditor().set({ step: "design", tool: "add-tree" }));
+  for (const t of ["tree-kind-deciduous", "tree-kind-conifer", "tree-kind-bush", "area-kind-woods", "line-kind-hedge"]) await expect(phone.getByTestId(t)).toBeAttached();
+  await expect(phone.getByTestId("area-kind-woods")).toBeVisible();
+  await phone.close();
+});
+
 test("the painted map: Where to paint the woods is there with measured trees, and the map paints in time", async () => {
   await page.evaluate(() => (window as any).__dgEditor().set({ step: "map", tool: "select" }));
   const trees = page.getByTestId("part-trees");
