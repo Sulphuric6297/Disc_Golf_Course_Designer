@@ -313,7 +313,7 @@ test("Hand painted: the demo (made before) stays Classic, a new course starts in
   const s = Date.now();
   await page.waitForFunction(() => !(window as any).__dgPainting(), null, { timeout: 280_000 });
   const took = Math.round((Date.now() - s) / 1000);
-  console.log("Hand painted map painted in", took, "s");
+  console.log("Hand painted map painted in", took, "s ·", JSON.stringify(await page.evaluate(() => (window as any).__dgTreeTiming)));
   await page.waitForTimeout(1500);
   await page.getByTestId("design-page").first().screenshot({ path: "test-results/handpainted-map.png" });
   await page.keyboard.press("Control+z");

@@ -349,5 +349,5 @@ export function* drawBrushedSteps(g: Ctx, trees: BrushTree[], sun: number[]): Ge
 export let treeTiming: { trees: number; strokes: number; listing: number; painting: number; total: number; how: string } | null = null;
 const told = (trees: number, strokes: number, listing: number, painting: number, total: number, how: string) => {
   treeTiming = { trees, strokes, listing: Math.round(listing), painting: Math.round(painting), total: Math.round(total), how };
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("dg-tree-timing", { detail: treeTiming }));
+  if (typeof window !== "undefined") { (window as unknown as { __dgTreeTiming: unknown }).__dgTreeTiming = treeTiming; window.dispatchEvent(new CustomEvent("dg-tree-timing", { detail: treeTiming })); }
 };
