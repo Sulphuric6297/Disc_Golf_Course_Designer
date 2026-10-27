@@ -10,7 +10,7 @@ import { latitudeOf, sunFromOf } from "./mapLook";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FIELD_KINDS, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
 import { activeLayout, areaObEdges, beyondSides, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, sharedWalks, teeAim, walkRoutes, taglineOf, titleFontOf } from "./course";
-import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
+import { boundsOf, dist, offsetPath, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
 import { courseTotals, holeStats, isOb, isOutOfPlay, playsOf, type HoleStats } from "./holeStats";
 import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, treesOverOf, type CanopyGrid } from "./forest";
 import { BASKET_MARKS, RESTRICTED, STRUCTURE_INK, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol, structureLegend, structureSymbol, type StructureDraw, type StructureInk } from "./symbols";
@@ -120,7 +120,7 @@ export const markingsInView = (doc: Pick<CourseDoc, "items">, view: MapView) => 
   const shown = doc.items.filter(shows);
   return {
     ob: shown.some(i => (i.type === "area" || i.type === "line") && (i.kind === "ob" || i.ob === true)),
-    hazard: shown.some(i => i.type === "area" && i.kind === "hazard"),
+    hazard: shown.some(i => (i.type === "area" && i.kind === "hazard") || ((i.type === "area" || i.type === "line") && i.hazard === true)),
     mando: shown.some(i => i.type === "mando" || i.type === "dropzone")
   };
 };
@@ -494,6 +494,29 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       const len = pathLength(longest);
       // (Away from its name, which sits in the middle)
       if (len * k > 70 * ts) tags.push({ id: `tag:${l.id}`, at: toScreen(pointAlong(longest, len * (l.label && longest.length === g.points.length ? 0.72 : 0.5)).point), text: "OB", bg: obCol, fg: obInk, o });
+    }
+  }
+
+  // Water, creeks, roads, fences and the rest made hazards: a dashed hazard edge round them (both
+  // banks of a creek or road), white under it
+  {
+    const hz = (d: string, o: number) => out.push(`<path d="${d}" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="${n(px(3.8))}" stroke-linejoin="round" opacity="${n(o)}"/><path d="${d}" fill="none" stroke="${s.hazard}" stroke-width="${n(px(2.2))}" stroke-dasharray="${n(px(6))} ${n(px(3.5))}" stroke-linejoin="round" opacity="${n(o)}"/>`);
+    for (const a of areas) {
+      if (a.hazard !== true || a.kind === "hazard" || a.points.length < 3) continue;
+      const o = dim(a.holeId, a.alsoHoles);
+      hz(`${pathD(a.points)}Z`, o);
+      const b = boundsOf(a.points);
+      if (!a.label && Math.min(b.maxX - b.minX, b.maxY - b.minY) * k > 34 * ts) tags.push({ id: `tag:${a.id}`, at: toScreen(labelPoint(a.points)), text: "HAZARD", bg: s.hazard, fg: "#1b1d1a", o });
+    }
+    for (const l of lines) {
+      if (l.hazard !== true || l.kind === "ob" || l.points.length < 2) continue;
+      const o = dim(l.holeId, l.alsoHoles);
+      const pts = linePath(l), w = l.width ?? LINE_KINDS[l.kind].width;
+      const half = Math.max(w, px(2)) / 2 + px(1.6);
+      if (l.kind === "fence" || l.kind === "walk" || w <= 0) hz(pathD(pts), o);
+      else for (const side of [1, -1]) hz(pathD(offsetPath(pts, () => side * half)), o);
+      const len = pathLength(pts);
+      if (len * k > 70 * ts) tags.push({ id: `tag:${l.id}`, at: toScreen(pointAlong(pts, len * (l.label ? 0.72 : 0.5)).point), text: "HAZARD", bg: s.hazard, fg: "#1b1d1a", o });
     }
   }
 
@@ -1496,7 +1519,7 @@ const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal
     if (areaKinds.has("ob") || obItems.some(i => i.type === "area" && (i as AreaItem).kind !== "water")) entries.push({ sym: box(obCol, obCol, obCase), text: "Out of bounds" });
     if (obItems.some(i => (i.type === "area" && (i as AreaItem).kind === "water") || (i.type === "line" && (i as LineItem).kind === "stream"))) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" rx="${n(2 * ts)}" fill="${s.water}"/><rect x="${n(1.5 * ts)}" y="${n(1.5 * ts)}" width="${n(sw - 3 * ts)}" height="${n(sh - 3 * ts)}" rx="${n(2 * ts)}" fill="none" stroke="${obCase}" stroke-width="${n(2.6 * ts)}"/><rect x="${n(1.5 * ts)}" y="${n(1.5 * ts)}" width="${n(sw - 3 * ts)}" height="${n(sh - 3 * ts)}" rx="${n(2 * ts)}" fill="none" stroke="${obCol}" stroke-width="${n(1.3 * ts)}"/>`, text: "OB water" });
     if (obItems.some(i => i.type === "line" && (i as LineItem).kind !== "stream")) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${obCase}" stroke-width="${n(4.2 * ts)}" stroke-linecap="round"/><line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${obCol}" stroke-width="${n(2.2 * ts)}" stroke-linecap="round"/>`, text: "OB line (road, fence)" });
-    if (areaKinds.has("hazard")) entries.push({ sym: box(s.hazard, s.hazard, "#ffffff", dashed), text: "Hazard" });
+    if (areaKinds.has("hazard") || doc.items.some(i => (i.type === "area" || i.type === "line") && i.hazard === true)) entries.push({ sym: box(s.hazard, s.hazard, "#ffffff", dashed), text: "Hazard" });
     if (areaKinds.has("casual")) entries.push({ sym: box(casualCol, casualCol, "#ffffff", dashed), text: "Casual area" });
     if (doc.items.some(isOutOfPlay)) entries.push({ sym: box(nogoCol, nogoCol, "#ffffff", dashed), text: "Out of play" });
   }

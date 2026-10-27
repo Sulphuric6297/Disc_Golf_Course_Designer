@@ -4,7 +4,7 @@ import { ClipboardPaste, Copy, Eye, Lock, Maximize2, Plane, Ruler, Trash2, Unloc
 import { AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS } from "../constants";
 import { holeLabel } from "../lib/course";
 import { holeStats } from "../lib/holeStats";
-import { bendHoleAt, canPaste, copySelection, deleteSelection, duplicateSelection, markObBeyond, pasteClipboard, placeAt, select, setFieldPlay } from "../state/actions";
+import { bendHoleAt, canPaste, copySelection, deleteSelection, duplicateSelection, markObBeyond, pasteClipboard, placeAt, select, setFieldPlay, setObChoice } from "../state/actions";
 import { changeDoc, getDoc, updateItem, useCourse, useEditor } from "../state/course";
 import { toast } from "../state/toast";
 import { getView } from "../state/view";
@@ -67,6 +67,8 @@ export const itemActions = (itemId: string, ground: P | null, named = false): It
     a.push({ label: shape.ob === true ? "Remove the red OB edge" : wet ? "Red OB edge" : "Mark as OB (red edge)", run: () => updateItem(shape.id, (shape.ob === true ? { ob: undefined, obBeyond: undefined, obHoles: undefined, obStretches: undefined } : { ob: true }) as Partial<CourseItem>), testid: "menu-ob" });
     if (shape.type === "line" && !(shape.ob === true && shape.obBeyond)) a.push({ label: "Mark as OB and beyond", run: () => markObBeyond(shape.id), testid: "menu-ob-beyond" });
     a.push({ label: "OB along a stretch", run: stretch(false), testid: shape.type === "area" ? "menu-ob-edge" : "menu-ob-stretch" });
+    // (or a hazard instead: never both)
+    a.push({ label: shape.hazard === true ? "No longer a hazard" : "Make it a hazard", run: () => setObChoice(shape.id, shape.hazard === true ? "no" : "hazard"), testid: "menu-hazard" });
   }
   if (item?.type === "line" && !item.locked) a.push({ label: "Remove a stretch", run: stretch(true), testid: "menu-cut-stretch" });
   // (a field, court or play area: in play or out of it)

@@ -237,9 +237,9 @@ export function ItemStrip({ item }: { item: CourseItem }) {
     if (hasObChoice(a)) {
       const ob = obChoiceOf(a);
       const opts = obOptions(a);
-      // (the picked choice's own words, with OB in front when they don't say it)
+      // (the picked choice's own words: OB, Hazard; Penalty none when there's none)
       const said = opts.find(o => o.value === ob)?.label ?? "";
-      chips.push({ id: "ob", label: said.includes("OB") ? <>{said}</> : <>OB <span className="opacity-60">{said}</span></>, control: <ChipPick row label="Out of bounds" value={ob} onChange={(v: ObChoice) => setObChoice(a.id, v)} options={opts} /> });
+      chips.push({ id: "ob", label: ob === "no" ? <>Penalty <span className="opacity-60">none</span></> : <>{said}</>, control: <ChipPick row label="Penalty" value={ob} onChange={(v: ObChoice) => setObChoice(a.id, v)} options={opts} /> });
     }
     if (item.type === "area" && item.kind === "woods") {
       const trees = item.trees ?? "measured";

@@ -310,9 +310,9 @@ test("a road marked OB from its right-click menu", async ({ page }) => {
   await expect.poll(async () => (await course(page)).items[0].ob).toBe(true);
   // The inspector says so, and it can be taken back there
   await page.evaluate(id => (window as any).__dgActions.select(id), (await course(page)).items[0].id);
-  const ob = page.getByRole("radiogroup", { name: "Out of bounds" });
+  const ob = page.getByRole("radiogroup", { name: "Penalty" });
   await expect(ob.getByRole("radio", { name: "OB", exact: true })).toHaveAttribute("aria-checked", "true");
-  await ob.getByRole("radio", { name: "Not OB" }).click();
+  await ob.getByRole("radio", { name: "None" }).click();
   await expect.poll(async () => (await course(page)).items[0].ob).toBeUndefined();
 });
 
@@ -330,7 +330,7 @@ test("a stretch of a road marked OB with two clicks on it (or from its right-cli
   const road = () => course(page).then(c => c.items.find((i: any) => i.type === "line"));
   await page.evaluate(id => (window as any).__dgActions.select(id), (await road()).id);
   // Only a stretch: where it starts, then where it ends (a click off the road does nothing)
-  await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "OB", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Penalty" }).getByRole("radio", { name: "OB", exact: true }).click();
   await page.getByTestId("ob-mark-stretch").click();
   await expect(page.getByTestId("ob-pick-bar")).toBeVisible();
   await clickPlan(page, 400, 600);
@@ -346,7 +346,7 @@ test("a stretch of a road marked OB with two clicks on it (or from its right-cli
   await drag(page, await handleCenter(page, "obend", 1), await screenOf(page, 850, 610));
   await expect.poll(async () => Math.round((await road()).obStretches[0][1] * 800)).toBeGreaterThan(680);
   // OB and beyond, then one undo step back
-  await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "And beyond" }).click();
+  await page.getByRole("radiogroup", { name: "Penalty" }).getByRole("radio", { name: "OB and beyond" }).click();
   await expect.poll(async () => (await road()).obBeyond).toBe(true);
   // For the hole beside it; then for all holes, and that hole picked again
   const holeId = (await course(page)).holes[0].id;
@@ -694,7 +694,7 @@ test("any area's edge OB: all round, or a stretch traced the long way round", as
     return (window as any).__dgEditor().selectedId;
   });
   const area = () => course(page).then(c => c.items.find((i: any) => i.id === id));
-  await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "OB", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Penalty" }).getByRole("radio", { name: "OB", exact: true }).click();
   await expect.poll(async () => (await area()).ob).toBe(true);
   await expect(page.getByTestId("ob-stretches")).toContainText("All the way round");
   // Only a stretch: from the top's middle, round by the right, the bottom and the left, to near the top-left corner
@@ -740,7 +740,7 @@ test("OB and beyond: the app's side, or either side chosen (named by the compass
     return (window as any).__dgEditor().selectedId;
   });
   const road = () => course(page).then(c => c.items.find((i: any) => i.id === id));
-  await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "And beyond" }).click();
+  await page.getByRole("radiogroup", { name: "Penalty" }).getByRole("radio", { name: "OB and beyond" }).click();
   // (the hole is north of the road: OB runs south, away from it)
   const side = page.getByRole("radiogroup", { name: "OB side" });
   await expect(side.getByRole("radio", { name: "Auto (south)" })).toHaveAttribute("aria-checked", "true");

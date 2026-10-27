@@ -510,16 +510,24 @@ const obMark = (color: string, beyond = false) => (
   </svg>
 );
 
-/** A shape's choices of OB (the panel and the phone's strip). */
+/** A hazard's mark: a dashed yellow edge. */
+const hazardMark = (
+  <svg width="16" height="10" viewBox="0 0 16 10" aria-hidden className="shrink-0">
+    <path d="M1 5 H15" stroke="#f2c230" strokeWidth="2.2" strokeDasharray="3.5 2" />
+  </svg>
+);
+
+/** A shape's choices of penalty, OB or hazard (the panel and the phone's strip). */
 export const obOptions = (item: AreaItem | LineItem): { value: ObChoice; label: string; icon?: JSX.Element }[] => {
   const wet = item.kind === "water" || item.kind === "stream";
   const line = item.type === "line";
   const own = item.type === "line" ? LINE_KINDS[item.kind].color : AREA_KINDS[item.kind].color;
   return [
-    { value: "no", label: "Not OB" },
+    { value: "no", label: "None" },
     { value: "edge", label: "OB", icon: obMark("#ef4444") },
-    ...(wet ? [{ value: "yes" as const, label: "No red edge", icon: obMark(own) }] : []),
-    ...(line ? [{ value: "beyond" as const, label: "And beyond", icon: obMark("#ef4444", true) }] : [])
+    ...(wet ? [{ value: "yes" as const, label: "OB, no red edge", icon: obMark(own) }] : []),
+    ...(line ? [{ value: "beyond" as const, label: "OB and beyond", icon: obMark("#ef4444", true) }] : []),
+    { value: "hazard", label: "Hazard", icon: hazardMark }
   ];
 };
 
@@ -538,8 +546,8 @@ function ObPick({ item }: { item: AreaItem | LineItem }) {
   const setObHoles = (ids: string[]) => updateItem(item.id, { obHoles: ids.length ? ids : undefined } as Partial<CourseItem>);
   return (
     <>
-      <Field label="Out of bounds" help="ob">
-        <ChipPick label="Out of bounds" testid="ob-choice" value={obChoiceOf(item)} onChange={v => setObChoice(item.id, v)} options={obOptions(item)} />
+      <Field label="Penalty" help="ob">
+        <ChipPick label="Penalty" testid="ob-choice" value={obChoiceOf(item)} onChange={v => setObChoice(item.id, v)} options={obOptions(item)} />
       </Field>
       {line?.obBeyond && item.ob === true && (() => {
         // Which side is out: the app's guess (away from the holes beside it), or either side

@@ -2592,6 +2592,10 @@ export class CourseView {
     const obEdge = (a: AreaItem, g: THREE.Group) => {
       for (const piece of areaObEdges({ ...a, straight: true })) g.add(this.fatLine(this.drapeLine(piece, LIFT + 0.05), color("ob")!, 3, { order: 5 }));
     };
+    // (an area made a hazard: the hazard's dashed edge round it)
+    const hazardEdge = (a: AreaItem, g: THREE.Group) => {
+      if (a.hazard === true && a.kind !== "hazard") g.add(this.fatLine(this.drapeLine(a.points, LIFT + 0.05, true), color("hazard")!, 3, { order: 5, dashed: 6 }));
+    };
     const areas = (course.items.filter(i => i.type === "area") as AreaItem[]).map(a => ({ ...a, points: this.shapeOf(a).pts })).sort((a, b) => polygonArea(b.points) - polygonArea(a.points));
     // (fields in their real colors, their grass leaning toward the map's)
     const inks = fieldInks("natural", st.fairway);
@@ -2603,7 +2607,7 @@ export class CourseView {
         // stands on it (goals, nets, hoops, fences, play structures)
         const out = isOutOfPlay(a);
         const shape = [a.points, a.field, a.fieldTurn, a.home];
-        put(`area:${a.id}`, JSON.stringify([...shape, hv, order, inks.grass, out, nogoColor, a.ob, a.obStretches]), () => {
+        put(`area:${a.id}`, JSON.stringify([...shape, hv, order, inks.grass, out, nogoColor, a.ob, a.obStretches, a.hazard]), () => {
           const g = new THREE.Group();
           const plan = fieldPlan(a);
           if (plan) {
@@ -2613,6 +2617,7 @@ export class CourseView {
           }
           if (out) g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), nogoColor, 3, { order: 4, dashed: 6 }));
           if (a.ob === true) obEdge(a, g);
+          hazardEdge(a, g);
           return g;
         });
         put(`field:${a.id}`, JSON.stringify([...shape, hv]), () => {
@@ -2629,7 +2634,7 @@ export class CourseView {
       const c = color(a.kind) ?? meta.color;
       // (woods: no fill, the ground under the trees as it is; the trees show it, its edge line only)
       const bare = a.kind === "woods";
-      put(`area:${a.id}`, JSON.stringify([a.points, a.kind, hv, c, photo, order, a.ob, a.obStretches, a.kind === "water" ? this.waterShore(a.points) : 0, painted, clean, bare]), () => {
+      put(`area:${a.id}`, JSON.stringify([a.points, a.kind, hv, c, photo, order, a.ob, a.obStretches, a.hazard, a.kind === "water" ? this.waterShore(a.points) : 0, painted, clean, bare]), () => {
         const g = new THREE.Group();
         const fill = photo ? meta.fill : Math.min(0.9, meta.fill + 0.35);
         const rule = a.kind === "ob" || a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo";
@@ -2637,6 +2642,7 @@ export class CourseView {
         if ((painted || clean) && a.kind !== "water") {
           if (rule) g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, 3, { order: 4, dashed: a.kind === "ob" ? undefined : 6 }));
           if (a.ob === true && a.kind !== "ob") obEdge(a, g);
+          hazardEdge(a, g);
           return g;
         }
         if (a.kind === "water") {
@@ -2683,8 +2689,9 @@ export class CourseView {
         }
         const w = a.kind === "ob" || a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo" ? 3 : 1.5;
         if (w === 3 || !clean) g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, w, { order: 4, dashed: a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo" ? 6 : undefined }));
-        // Marked OB (water, say): its red OB edge
+        // Marked OB (water, say): its red OB edge; a hazard, its dashed hazard edge
         if (a.ob === true && a.kind !== "ob") obEdge(a, g);
+        hazardEdge(a, g);
         return g;
       });
       // Woods: trees standing in it (shadows and all)
@@ -2792,11 +2799,18 @@ export class CourseView {
         const piece = subPath(this.shapeOf(l).pts, a, b);
         return { a, b, piece, sides: l.obBeyond ? beyondSides(l, piece, doc.stats.filter(st => st.complete && obFor(course, l, st.holeId)).map(st => st.line), !obPicked(course, l).length) : null };
       }).filter(o => o.piece.length >= 2) : [];
-      put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, l.widths, hv, c, l.ob, l.obToward, l.kind === "stream" ? this.waterShore(l.points) : 0, obParts.map(o => [o.a, o.b, o.sides]), st.pathOrder, l.fenceStyle, l.fenceHeight]), () => {
+      put(`line:${l.id}`, JSON.stringify([l.points, l.straight, l.kind, width, l.widths, hv, c, l.ob, l.obToward, l.kind === "stream" ? this.waterShore(l.points) : 0, obParts.map(o => [o.a, o.b, o.sides]), st.pathOrder, l.fenceStyle, l.fenceHeight, l.hazard]), () => {
         const g = new THREE.Group();
         const pts = this.shapeOf(l).pts;
         // (wider or narrower along the way: a creek that opens out)
         const along = widthAlong(l, width);
+        // A hazard: the hazard's dashed edge along it (either side of a creek, road or path)
+        if (l.hazard === true && l.kind !== "ob" && pts.length >= 2) {
+          for (const side of width > 0 ? [1, -1] : [0]) {
+            const edge = side ? offsetPath(pts, u => side * (along(u) / 2 + 2)) : pts;
+            g.add(this.fatLine(this.drapeLine(edge, LIFT + 0.05), color("hazard")!, 3, { order: 5, dashed: 6 }));
+          }
+        }
         // Marked OB (a creek, a road): a red edge either side (or on the holes' side only)
         const obMat = () => new THREE.MeshLambertMaterial({ color: color("ob")!, transparent: true, opacity: 0.95, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
         for (const { a, b, piece, sides } of obParts) {

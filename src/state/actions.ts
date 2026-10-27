@@ -519,21 +519,23 @@ export const setPinPosition = (basketId: string, position: PinPosition) => {
   changeDoc(d => ({ items: d.items.map(i => (i.id === basketId ? { ...i, position } as CourseItem : other && i.id === other.id ? { ...i, position: b.position } as CourseItem : i)) }));
 };
 
-/** Whether a shape is out of bounds: not OB, OB with no red edge (water and streams, unless
- * they're set otherwise), OB with a red edge, or (a line) OB and everything beyond it. */
-export type ObChoice = "no" | "yes" | "edge" | "beyond";
+/** A shape's penalty: none, OB with no red edge (water and streams, unless they're set otherwise),
+ * OB with a red edge, (a line) OB and everything beyond it, or a hazard. */
+export type ObChoice = "no" | "yes" | "edge" | "beyond" | "hazard";
 const wetKind = (i: AreaItem | LineItem) => i.kind === "water" || i.kind === "stream";
 export const obChoiceOf = (i: AreaItem | LineItem): ObChoice =>
-  i.ob === true ? (i.type === "line" && i.obBeyond ? "beyond" : "edge") : i.ob === false || !wetKind(i) ? "no" : "yes";
+  i.hazard === true ? "hazard" : i.ob === true ? (i.type === "line" && i.obBeyond ? "beyond" : "edge") : i.ob === false || !wetKind(i) ? "no" : "yes";
 /** A shape's OB set to one of those (OB and beyond: for the hole beside it, as markObBeyond). One
  * undo step. Not OB on water is kept as such (water is OB unless it says not). */
 export const setObChoice = (id: string, v: ObChoice) => {
   const item = getDoc().items.find(i => i.id === id);
   if (!item || (item.type !== "area" && item.type !== "line")) return;
   const line = item.type === "line";
-  if (line && v === "beyond") return markObBeyond(id);
+  if (line && v === "beyond") { if (item.hazard) updateItem(id, { hazard: undefined } as Partial<CourseItem>, false); return markObBeyond(id); }
   updateItem(id, {
-    ob: v === "edge" ? true : v === "no" ? (wetKind(item) ? false : undefined) : undefined,
+    // (a hazard is never OB: water made one is no longer OB)
+    hazard: v === "hazard" ? true : undefined,
+    ob: v === "edge" ? true : v === "no" || v === "hazard" ? (wetKind(item) ? false : undefined) : undefined,
     ...(line ? { obBeyond: undefined, obToward: undefined, ...(v === "edge" ? {} : { obStretches: undefined, obHoles: undefined }) } : v === "edge" ? {} : { obStretches: undefined })
   } as Partial<CourseItem>);
 };

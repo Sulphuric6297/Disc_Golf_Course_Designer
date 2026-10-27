@@ -146,6 +146,9 @@ export interface AreaItem extends BaseItem {
   label?: string;
   /** Out of bounds: water is unless set false; true also draws the red OB edge on the map. */
   ob?: boolean;
+  /** A hazard (a stroke's penalty, played from where it went in): its dashed hazard edge on the
+   * map. Never OB as well. */
+  hazard?: boolean;
   /** The stretches of its edge that are OB, each from-to as fractions round it from its first
    * point (unset: all the way round). */
   obStretches?: [number, number][];
@@ -211,6 +214,8 @@ export interface LineItem extends BaseItem {
   /** Out of bounds: a stream is unless set false; a road, fence or path is when true (and then
    * its red OB edge is drawn on the map). */
   ob?: boolean;
+  /** A hazard (a stroke's penalty): its dashed hazard edge along it on the map. Never OB as well. */
+  hazard?: boolean;
   /** Out of bounds beyond it too (the road and beyond): OB from its edge on the holes' side. */
   obBeyond?: boolean;
   /** OB and beyond: the side that is out (1: right of the way it was drawn, -1: left); unset: the
