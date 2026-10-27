@@ -92,7 +92,8 @@ export function HoleTrees({ hole, line }: { hole: Hole; line: P[] }) {
   const setLidar = (patch: { kept?: number[]; removed?: number[] }) => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, ...patch } } : {}));
   const list = (v: number[]) => (v.length ? [...new Set(v)].sort((a, b) => a - b) : undefined);
   const back = () => {
-    setLidar({ kept: list([...(lidar?.kept ?? []), ...cut]), removed: list((lidar?.removed ?? []).filter(k => !cut.includes(k))) });
+    // (kept, so the fairways' clearing leaves them, only where the course clears its fairways)
+    setLidar({ ...(lidar?.clearFairways === true ? { kept: list([...(lidar?.kept ?? []), ...cut]) } : {}), removed: list((lidar?.removed ?? []).filter(k => !cut.includes(k))) });
     toast(`${cut.length === 1 ? "1 tree" : `${cut.length} trees`} back on hole ${holeLabel(useCourse.getState().doc, hole.id)}.`, "success", true);
   };
   // (trees left standing in the way: cut down only when asked, and said)
