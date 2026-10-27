@@ -72,7 +72,7 @@ test("measured trees stand on their own: the woods an older import made from the
   // (the older wood: the measured trees kept and the gaps filled; its section, woods of bushes)
   const old = doc.items.find((i: any) => i.id === "t-oldwood");
   expect([old.trees, old.patches, old.brush, old.brushEdge]).toEqual([undefined, undefined, undefined, undefined]);
-  expect(doc.items.filter((i: any) => i.kind === "woods" && i.bushes === 1 && i.density === 2)).toHaveLength(1);
+  expect(doc.items.filter((i: any) => i.kind === "woods" && i.bushes === 1 && i.density === 2 && Math.abs(i.x - (old.x + 20)) < 1 && Math.abs(i.y - old.y) < 1)).toHaveLength(1);
 });
 
 test("autosave: edits made quickly, and two saves asked for at once, all reach the server with no clash", async () => {
