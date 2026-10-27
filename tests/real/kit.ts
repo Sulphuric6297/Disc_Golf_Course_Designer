@@ -67,3 +67,24 @@ export const stalls = async (page: Page, over = 200) => {
   const all = (await page.evaluate(() => (window as W).__stalls as number[])) ?? [];
   return { longest: Math.max(0, ...all), over: all.filter(d => d > over).length, all };
 };
+
+/** `run` with the CPU profiled: what it returns, and the functions that took the most of its time
+ * (their own time, ms), to say where a check that's too slow spent it. */
+export async function profiled<T>(page: Page, run: () => Promise<T>) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Profiler.enable");
+  await cdp.send("Profiler.setSamplingInterval", { interval: 500 });
+  await cdp.send("Profiler.start");
+  const result = await run();
+  const { profile } = await cdp.send("Profiler.stop");
+  await cdp.detach();
+  const self = new Map<string, number>(), byId = new Map(profile.nodes.map(n => [n.id, n]));
+  profile.samples?.forEach((id, k) => {
+    const n = byId.get(id)!, f = n.callFrame;
+    if (["(idle)", "(program)", "(root)"].includes(f.functionName)) return;
+    const key = `${f.functionName || "(anonymous)"} ${f.url.split("/").pop()}:${f.lineNumber + 1}`;
+    self.set(key, (self.get(key) ?? 0) + (profile.timeDeltas?.[k] ?? 0) / 1000);
+  });
+  const top = [...self].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, ms]) => `${Math.round(ms).toString().padStart(5)} ms  ${k}`);
+  return { result, top };
+}

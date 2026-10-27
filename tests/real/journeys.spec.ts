@@ -5,7 +5,7 @@
 // Speed limits are for this test machine, which has no graphics card: the 3D drawing is left out
 // of them (see kit.ts: draw), so they measure the app's own work, which is what has stalled.
 import { test, expect, type Page } from "@playwright/test";
-import { at, course, draw, editor, frame, frames, openDemo, saved, stalls, watch } from "./kit";
+import { at, course, draw, editor, frame, frames, openDemo, profiled, saved, stalls, watch } from "./kit";
 
 test.describe.configure({ mode: "serial" });
 
@@ -96,17 +96,20 @@ test("dragging a house: each step quick, letting go quick, back with one undo", 
   await page.mouse.move(c.x, c.y);
   await page.mouse.down();
   const steps: number[] = [];
-  for (let i = 1; i <= 10; i++) {
-    const s = Date.now();
-    await page.mouse.move(c.x + i * 4, c.y + i * 2);
-    await frames(page);
-    steps.push(Date.now() - s);
-  }
+  const { top } = await profiled(page, async () => {
+    for (let i = 1; i <= 10; i++) {
+      const s = Date.now();
+      await page.mouse.move(c.x + i * 4, c.y + i * 2);
+      await frames(page);
+      steps.push(Date.now() - s);
+    }
+  });
   const s = Date.now();
   await page.mouse.up();
   await frames(page);
   const letGo = Date.now() - s;
   console.log("drag steps ms", steps.join(" "), "let go", letGo);
+  if (Math.max(...steps.slice(1)) >= 160) console.log("where the drag's time went:\n" + top.join("\n"));
   // (two frames are waited for each step: about 35 ms of it is that wait)
   expect(Math.max(...steps.slice(1))).toBeLessThan(160);
   expect(letGo).toBeLessThan(1500);
