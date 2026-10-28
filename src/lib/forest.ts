@@ -496,13 +496,14 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     return g.getImageData(0, 0, mw, mh).data;
   };
   yield;
-  const a = read(A.c, 1.2 * (pt / cell));
+  // (fairways and tall grass a little softer: their edges fade, not step)
+  const a = read(A.c, 2 * (pt / cell));
   yield;
   const b = read(B.c, 0.9 * (pt / cell));
   yield;
   const c = read(C.c, 1 * (pt / cell));
   yield;
-  const dd = read(D.c, 0.9 * (pt / cell));
+  const dd = read(D.c, 2.6 * (pt / cell));
   const ee = read(E.c, 0.8 * (pt / cell));
   yield;
   const wet = read(A.c, 0.6 * (pt / cell));
@@ -1252,12 +1253,13 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
           if (thick > 0.5 && !opts.under) lay(floorPal, (0.5 + mott * 0.4 + grain * 0.2) * (0.35 + 0.65 * lit), deep);
           else lay(lawn, (0.45 + mott * 0.4 + grain * 0.2) * lit * 0.8, deep);
         }
-        // Tall grass: in tufts, its blades streaked up and down, a soft ragged edge
+        // Tall grass: in tufts, its blades streaked up and down; its edge fading into the grass
+        // over a few feet, ragged, tufts reaching out past it and the lawn reaching in
         const tg = S(dd, 2) / 255;
-        if (tg > 0.1) {
+        if (tg > 0.04) {
           const tuft = noise(x / pt * 0.9 + 30, y / pt * 0.3) - 0.5;
-          const edge = (fbm(x / pt * 0.3 + 160, y / pt * 0.3) - 0.5) * 0.14;
-          lay(tallPal, (0.5 + tuft * 0.55 + (GRIT[tr | (x & 511)] - 0.5) * 0.3 + mott * 0.2) * lit, smooth(0.42, 0.55, tg + edge));
+          const edge = (fbm(x / pt * 0.3 + 160, y / pt * 0.3) - 0.5) * 0.3 + (noise(x / pt * 1.4 + 7, y / pt * 0.45) - 0.5) * 0.22;
+          lay(tallPal, (0.5 + tuft * 0.55 + (GRIT[tr | (x & 511)] - 0.5) * 0.3 + mott * 0.2) * lit, smooth(0.2, 0.72, tg + edge));
         }
         const f = S(a, 0) / 255, r = S(b, 1) / 255;
         const rag = f > 0.05 || r > 0.2 ? fbm(x / pt * 0.16 + 50, y / pt * 0.16) - 0.5 : 0;
@@ -1265,7 +1267,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         if (f > 0.05) {
           const mid = smooth(0.05, 0.9, S(middle, 2) / 255);
           const fv = (0.44 + 0.62 * mid + at(fairMottle, x, y) * 0.3 + grain * 0.08) * look.fairway.bright * lit;
-          const fa = smooth(0.42, 0.52, f + rag * 0.35);
+          // (its edge fading into the grass round it)
+          const fa = smooth(0.3, 0.62, f + rag * 0.45);
           if (look.fairway.style === "stripes") {
             // mown stripes: bands across the plan, about 26 ft, blended over a pixel
             const sxp = (x - W / 2) / k, syp = (y - H / 2) / k, X = view.cx + sxp * cos + syp * sin, Y = view.cy - sxp * sin + syp * cos;
