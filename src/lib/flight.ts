@@ -360,16 +360,32 @@ const smoothEnds = (v: number[], w: number, passes = 3) => {
   return z;
 };
 
-/** Seconds from each keyframe to the next. A keyframe's own time (`secs`) is kept at speed 1, so the
- * flyover's Speed scales the whole flight: retimed, a stretch saves its seconds × the speed. */
-export const keySeconds = (keys: FlyKey[], set: FlyoverSettings, ground: (x: number, y: number) => number) =>
+/** Seconds from each keyframe to the next: its own (`secs`), as the timeline shows them (the
+ * flyover's Speed is for a hole flying by itself), or at the pace a hole flies by itself. */
+export const keySeconds = (keys: FlyKey[], _set: FlyoverSettings, ground: (x: number, y: number) => number) =>
   keys.slice(1).map((k, i) => {
-    if (k.secs && k.secs > 0) return k.secs / Math.max(0.1, set.speed);
+    if (k.secs && k.secs > 0) return k.secs;
     const a = keys[i];
     const d = Math.hypot(k.x - a.x, k.y - a.y, ground(k.x, k.y) + k.alt - (ground(a.x, a.y) + a.alt));
-    // (at the pace a hole flies by itself)
-    return Math.max(0.5, (d / 70) * 1.6 / Math.max(0.1, set.speed));
+    return Math.max(0.5, (d / 70) * 1.6);
   });
+
+/**
+ * A keyframed flight saved before Speed and the flyover's Lens stopped applying to keyframes:
+ * each keyframe given the seconds and lens it flew with (Speed `speed`, Lens `fov`), so it flies
+ * just as it did. (Seconds by the pace alone where a keyframe had none: the ground's rise
+ * between them isn't known here.)
+ */
+export const keysAsTheyFlew = (keys: FlyKey[], speed: number, fov: number): FlyKey[] => {
+  const sp = Math.max(0.1, speed), r1 = (v: number) => Math.round(v * 10) / 10;
+  return keys.map((k, i) => {
+    const out = { ...k, ...(k.fov === undefined ? { fov: Math.round(fov) } : {}) };
+    if (!i || sp === 1) return out;
+    const a = keys[i - 1];
+    const secs = k.secs && k.secs > 0 ? k.secs : Math.max(0.5, (Math.hypot(k.x - a.x, k.y - a.y, k.alt - a.alt) / 70) * 1.6);
+    return { ...out, secs: r1(secs / sp) };
+  });
+};
 
 /** A smooth curve through values `ys` at `xs` (rising) that never overshoots between them
  * (Steffen's monotone cubic): its value at `x`. */
@@ -506,8 +522,7 @@ export const insertKey = (keys: FlyKey[], i: number, set: FlyoverSettings, groun
   const j = Math.round((t / f.dur) * (f.cam.length - 1));
   const c = f.cam[j], l = f.look[j];
   const fov = keys[i].fov === undefined && keys[i + 1].fov === undefined ? undefined : f.fov[j];
-  // (saved at speed 1: see keySeconds)
-  const half = ((times[i + 1] - times[i]) / 2) * Math.max(0.1, set.speed);
+  const half = (times[i + 1] - times[i]) / 2;
   const mid = r({ x: c.x, y: c.y, alt: c.z - ground(c.x, c.y), lookX: l.x, lookY: l.y, lookAlt: l.z - ground(l.x, l.y), ...(fov !== undefined ? { fov: Math.round(fov) } : {}), secs: Math.round(half * 10) / 10 });
   const after = { ...keys[i + 1], secs: Math.round(half * 10) / 10 };
   return { keys: [...keys.slice(0, i + 1), mid, after, ...keys.slice(i + 2)], at: i + 1 };
@@ -528,8 +543,7 @@ export const insertKeyAt = (keys: FlyKey[], t: number, key: FlyKey, set: Flyover
   const times = keyTimes(keys, set, ground);
   const i = times.findIndex((x, j) => j + 1 < times.length && t >= x && t < times[j + 1]);
   if (i < 0) return { keys: [...keys, key], at: keys.length };
-  // (saved at speed 1: see keySeconds)
-  const speed = Math.max(0.1, set.speed), r = (x: number) => Math.round(Math.max(0.2, x) * speed * 10) / 10;
+  const r = (x: number) => Math.round(Math.max(0.2, x) * 10) / 10;
   const mid = { ...key, secs: r(t - times[i]) };
   const after = { ...keys[i + 1], secs: r(times[i + 1] - t) };
   return { keys: [...keys.slice(0, i + 1), mid, after, ...keys.slice(i + 2)], at: i + 1 };

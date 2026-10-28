@@ -772,3 +772,19 @@ test("tall grass has no underbrush until you pick some; then it grows there in 3
   await brush.getByRole("radio", { name: "None" }).click();
   await expect.poll(grows, { timeout: 30_000 }).toBe(false);
 });
+
+test("the ? in the hint over the tool bar opens its tip on the screen, above the hint", async ({ page }) => {
+  await blankCourse(page);
+  await page.getByTestId("tool-bar").getByRole("button", { name: /Build/ }).click();
+  const hint = page.getByTestId("tool-hint");
+  await hint.getByRole("button", { name: /^Help:/ }).click();
+  const tip = page.getByTestId("help-tip");
+  await expect(tip).toBeVisible();
+  const t = (await tip.boundingBox())!, h = (await hint.boundingBox())!, vh = page.viewportSize()!.height;
+  plainExpect(t.y).toBeGreaterThanOrEqual(0);
+  plainExpect(t.y + t.height).toBeLessThanOrEqual(h.y);
+  plainExpect(t.y + t.height).toBeLessThanOrEqual(vh);
+  // (its way on to the guide works from there too)
+  await tip.getByTestId("help-tip-more").click();
+  await expect(tip).toHaveCount(0);
+});

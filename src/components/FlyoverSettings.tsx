@@ -1,18 +1,19 @@
-// How flyovers fly (the course's own, on screen and in videos): the ground they show, the
-// camera's height, speed and field of view, where it starts and how far ahead it looks; and a
-// hole's own flight through keyframes.
-import { LENS, lensLabel } from "../lib/flight";
-import { ChevronLeft, ChevronRight, Play, Plus, Trash2, Video } from "lucide-react";
-import { useRef, useState, type PointerEvent as RPointerEvent } from "react";
-import { flyoverOf, insertKey, keyTimes } from "../lib/flight";
+// A hole's Flyover panel, the same in the hole's panel and from the tee's Settings: Automatic (the
+// camera's height, speed and lens, where it starts) or through keyframes (a timeline of them, the
+// picked one's height, lens and time, the camera to fly yourself, the keyframes moved in 3D); and
+// what shows while it flies.
+import { ChevronLeft, ChevronRight, Move3d, Play, Plus, Trash2, Video } from "lucide-react";
+import { useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from "react";
+import { LENS, flyoverOf, insertKey, keyTimes, lensLabel } from "../lib/flight";
 import { holeLabel } from "../lib/course";
 import { fmtDist } from "../lib/units";
 import { changeDoc, updateHole, useCourse, useEditor } from "../state/course";
+import { select } from "../state/actions";
 import type { FlyKey, FlyoverSettings, FlyShow, Hole } from "../types";
 import { getView } from "../state/view";
 import { toast } from "../state/toast";
 import { ApplyToHoles } from "./ApplyToHoles";
-import { Button, Segmented, Slider, Toggle } from "./ui";
+import { Button, Field, Segmented, Slider, Toggle } from "./ui";
 
 /** What a flyover can show, in the order the switches are listed. */
 const FLY_SHOW: [FlyShow, string][] = [
@@ -27,75 +28,16 @@ const FLY_SHOW: [FlyShow, string][] = [
   ["walks", "Paths to the next tee"]
 ];
 
-/** How flyovers fly: for one hole (`holeId`: its own settings, over the course's) or for all
- * holes (the course's). `only`: this hole's, with no choice; `keys`: through keyframes (only the
- * speed and field of view apply); `ground`: with the choice of ground. They start on the hole's
- * own when it has some (or `own`: in the hole's own panel), else on the ones for all holes. */
-export function FlyoverSettingsPanel({ holeId, only, keys, ground = true, own = false }: { holeId?: string; only?: boolean; keys?: boolean; ground?: boolean; own?: boolean }) {
-  const doc = useCourse(s => s.doc);
-  const look = useEditor(e => e.flyLook);
-  const setEd = useEditor(e => e.set);
-  const hole = holeId ? doc.holes.find(h => h.id === holeId) : undefined;
-  const [scope, setScope] = useState<"hole" | "course">(hole && (own || hole.flyover) ? "hole" : "course");
-  const forHole = !!hole && (only || scope === "hole");
-  const f = flyoverOf(doc, forHole ? hole : undefined);
-  // (keyframes are this hole's own: for all holes, every setting)
-  const keyed = !!keys && forHole;
-  const u = doc.units;
-  // (live while a slider moves; one undo step when it is let go)
-  const set = (patch: Partial<FlyoverSettings>) =>
-    forHole
-      ? changeDoc(d => ({ holes: d.holes.map(h => (h.id === hole!.id ? { ...h, flyover: { ...h.flyover, ...patch } } : h)) }), false)
-      : changeDoc(d => ({ flyover: { ...d.flyover, ...patch } }), false);
-  const done = () => useCourse.getState().commit();
-  const ft = (v: number) => fmtDist(v, u);
-  // A switch: one undo step
-  const showPart = (k: FlyShow, v: boolean) =>
-    changeDoc(d => (forHole ? { holes: d.holes.map(h => (h.id === hole!.id ? { ...h, flyover: { ...h.flyover, [k]: v } } : h)) } : { flyover: { ...d.flyover, [k]: v } }));
-  return (
-    <div data-testid="flyover-settings">
-      {ground && (
-        <div className="mb-2.5">
-          <Segmented label="Ground" value={look} onChange={v => setEd({ flyLook: v })} options={[{ value: "painted", label: "Painted map" }, { value: "photo", label: "Photo" }]} />
-        </div>
-      )}
-      {hole && !only && (
-        <div className="mb-2.5">
-          <div className="text-xs text-zinc-400 mb-1">These settings are for</div>
-          <Segmented label="These settings are for" value={scope} onChange={setScope} options={[{ value: "course", label: "All holes" }, { value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }]} />
-        </div>
-      )}
-      {!keyed && <Slider label="Camera height" min={4} max={250} step={1} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />}
-      <Slider label="Speed" min={0.25} max={3} step={0.05} value={f.speed} onChange={v => set({ speed: v })} onDone={done} format={v => `${Math.round(v * 100) / 100}×`} />
-      <Slider label="Lens" min={LENS.min} max={LENS.max} value={f.fov} onChange={v => set({ fov: v })} onDone={done} format={lensLabel} />
-      {!keyed && (
-        <>
-          <Slider label="Camera starts behind the tee" min={0} max={400} step={5} value={f.behind} onChange={v => set({ behind: v })} onDone={done} format={ft} />
-          <Slider label="Camera off to the side" min={-200} max={200} step={5} value={f.side} onChange={v => set({ side: v })} onDone={done} format={v => (v === 0 ? "On the line" : `${ft(Math.abs(v))} ${v > 0 ? "right" : "left"}`)} />
-          <Slider label="Camera looks ahead" min={30} max={500} step={10} value={f.lookAhead} onChange={v => set({ lookAhead: v })} onDone={done} format={ft} />
-        </>
-      )}
-      <div className="text-xs text-zinc-300 mt-2.5 mb-0.5">On screen</div>
-      <div className="flex flex-col mb-2" data-testid="flyover-show">
-        {FLY_SHOW.map(([k, label]) => (
-          <Toggle key={k} label={label} checked={f[k]} onChange={v => showPart(k, v)} />
-        ))}
-      </div>
-      {/* (from a hole: its settings to the holes picked; for all holes: the picked holes follow them) */}
-      <div className="flex flex-wrap items-start gap-2">
-        <ApplyToHoles
-          fromId={forHole ? hole!.id : undefined}
-          testid="flyover-apply"
-          apply={ids => changeDoc(d => ({ holes: d.holes.map(h => (ids.includes(h.id) ? { ...h, flyover: forHole && hole!.flyover ? { ...hole!.flyover } : undefined } : h)) }))}
-        />
-        {/* (a hole's own back to the all-holes ones; those back to the app's own) */}
-        {forHole
-          ? <Button small onClick={() => updateHole(hole!.id, { flyover: undefined })} disabled={!hole!.flyover} testid="flyover-hole-reset">Reset</Button>
-          : <Button small onClick={() => changeDoc(() => ({ flyover: undefined }))} disabled={!doc.flyover} testid="flyover-defaults">Reset</Button>}
-      </div>
-    </div>
-  );
-}
+/** A part folded away, its name and a few words on what's in it. */
+const Fold = ({ title, note, testid, children }: { title: string; note?: string; testid?: string; children: ReactNode }) => (
+  <details className="mt-3 rounded-[14px] bg-white/[0.06] group" data-testid={testid}>
+    <summary className="cursor-pointer list-none flex items-center justify-between gap-2 px-2.5 py-2 text-[13px] font-medium text-zinc-100">
+      {title}
+      <span className="flex items-center gap-2 text-xs text-zinc-500">{note}<span className="group-open:rotate-90 transition-transform">›</span></span>
+    </summary>
+    <div className="px-2.5 pb-2.5">{children}</div>
+  </details>
+);
 
 /** The keyframes along the flight's time: each a numbered mark to pick, or (after the first) to
  * drag to change when it comes, the ones either side staying put. */
@@ -157,92 +99,166 @@ function KeyTimeline({ times, picked, onPick, onRetime }: { times: number[]; pic
 /** Flying the camera yourself, from keyframe `at` of a hole (null: from the tee). */
 export const cameraFrom = (holeId: string, at: number | null) => useEditor.getState().set({ teeView: holeId, teeViewTee: null, flyover: false, flyCam: true, flyKey: at });
 
-/** A hole's flight: Automatic, or through keyframes. With keyframes: a timeline of them (pick one;
- * drag it to change when it comes), the picked one's height, lens and time, a new one, and the
- * camera to fly yourself and add them where it is. */
-export function HoleFlight({ hole }: { hole: Hole }) {
+/** A hole's keyframes on the map, tilted into 3D: each camera at its height, to drag. */
+export const keysIn3D = (holeId: string) => {
+  const ed = useEditor.getState();
+  ed.set({ teeView: null, flyover: false, flyCam: false, teeSettings: false, view: "3d", ...(ed.step !== "design" ? { step: "design" as const } : {}) });
+  select(holeId);
+  requestAnimationFrame(() => getView()?.fitHole(holeId));
+};
+
+/** Which flyover settings change: this hole's own, or the ones for all holes. They start on the
+ * hole's own when it has some. */
+const useScope = (hole: Hole) => useState<"hole" | "course">(hole.flyover ? "hole" : "course");
+
+/** What shows while it flies: the switches, for all holes or this hole (`scope`; its choice here
+ * unless `chosen` says it's chosen above), Apply to holes and Reset. */
+function OnScreen({ hole, scope, setScope, chosen = false }: { hole: Hole; scope: "hole" | "course"; setScope: (v: "hole" | "course") => void; chosen?: boolean }) {
+  const doc = useCourse(s => s.doc);
+  const forHole = scope === "hole";
+  const f = flyoverOf(doc, forHole ? hole : undefined);
+  // A switch: one undo step
+  const showPart = (k: FlyShow, v: boolean) =>
+    changeDoc(d => (forHole ? { holes: d.holes.map(h => (h.id === hole.id ? { ...h, flyover: { ...h.flyover, [k]: v } } : h)) } : { flyover: { ...d.flyover, [k]: v } }));
+  const on = FLY_SHOW.filter(([k]) => f[k]).length;
+  return (
+    <Fold title="What's on screen" note={`${on} of ${FLY_SHOW.length}`} testid="flyover-onscreen">
+      {!chosen && <Field label="These are for"><Segmented label="These are for" value={scope} onChange={setScope} options={[{ value: "course", label: "All holes" }, { value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }]} /></Field>}
+      <div className="flex flex-col mb-2" data-testid="flyover-show">
+        {FLY_SHOW.map(([k, label]) => <Toggle key={k} label={label} checked={f[k]} onChange={v => showPart(k, v)} />)}
+      </div>
+      {/* (from a hole: its settings to the holes picked; for all holes: the picked holes follow them) */}
+      <div className="flex flex-wrap items-start gap-2">
+        <ApplyToHoles
+          fromId={forHole ? hole.id : undefined}
+          testid="flyover-apply"
+          apply={ids => changeDoc(d => ({ holes: d.holes.map(h => (ids.includes(h.id) ? { ...h, flyover: forHole && hole.flyover ? { ...hole.flyover } : undefined } : h)) }))}
+        />
+        {/* (a hole's own back to the all-holes ones; those back to the app's own) */}
+        {forHole
+          ? <Button small onClick={() => updateHole(hole.id, { flyover: undefined })} disabled={!hole.flyover} testid="flyover-hole-reset">Reset</Button>
+          : <Button small onClick={() => changeDoc(() => ({ flyover: undefined }))} disabled={!doc.flyover} testid="flyover-defaults">Reset</Button>}
+      </div>
+    </Fold>
+  );
+}
+
+/** A hole flying by itself: the camera's height, speed and lens (this hole's own or for all
+ * holes), where it starts folded under them, and the camera to fly yourself and add keyframes. */
+function AutoFlight({ hole }: { hole: Hole }) {
+  const doc = useCourse(s => s.doc);
+  const [scope, setScope] = useScope(hole);
+  const forHole = scope === "hole";
+  const f = flyoverOf(doc, forHole ? hole : undefined);
+  const ft = (v: number) => fmtDist(v, doc.units);
+  // (live while a slider moves; one undo step when it is let go)
+  const set = (patch: Partial<FlyoverSettings>) =>
+    forHole
+      ? changeDoc(d => ({ holes: d.holes.map(h => (h.id === hole.id ? { ...h, flyover: { ...h.flyover, ...patch } } : h)) }), false)
+      : changeDoc(d => ({ flyover: { ...d.flyover, ...patch } }), false);
+  const done = () => useCourse.getState().commit();
+  const all = hole.flyKeys ?? [];
+  return (
+    <div className="mt-3">
+      <Field label="These are for"><Segmented label="These are for" value={scope} onChange={setScope} options={[{ value: "course", label: "All holes" }, { value: "hole", label: `Hole ${holeLabel(doc, hole.id)}` }]} /></Field>
+      <Slider label="Camera height" min={4} max={250} step={1} value={f.height} onChange={v => set({ height: v })} onDone={done} format={ft} />
+      <Slider label="Speed" min={0.25} max={3} step={0.05} value={f.speed} onChange={v => set({ speed: v })} onDone={done} format={v => `${Math.round(v * 100) / 100}×`} />
+      <Slider label="Lens" min={LENS.min} max={LENS.max} value={f.fov} onChange={v => set({ fov: v })} onDone={done} format={lensLabel} />
+      <Fold title="Where the camera starts" note="Behind, side, ahead" testid="flyover-start">
+        <Slider label="Camera starts behind the tee" min={0} max={400} step={5} value={f.behind} onChange={v => set({ behind: v })} onDone={done} format={ft} />
+        <Slider label="Camera off to the side" min={-200} max={200} step={5} value={f.side} onChange={v => set({ side: v })} onDone={done} format={v => (v === 0 ? "On the line" : `${ft(Math.abs(v))} ${v > 0 ? "right" : "left"}`)} />
+        <Slider label="Camera looks ahead" min={30} max={500} step={10} value={f.lookAhead} onChange={v => set({ lookAhead: v })} onDone={done} format={ft} />
+      </Fold>
+      <div className="mt-2.5"><Button full onClick={() => cameraFrom(hole.id, all.length ? all.length - 1 : null)} testid="fly-camera"><Video size={15} /> Fly the camera and add keyframes</Button></div>
+      <OnScreen hole={hole} scope={scope} setScope={setScope} chosen />
+    </div>
+  );
+}
+
+/** A hole flying through its keyframes: a timeline of them (pick one; drag it to change when it
+ * comes), the picked one's height, lens and time, the camera to fly yourself, the keyframes moved
+ * in 3D, a new one, and playing it. */
+function KeyFlight({ hole, keys }: { hole: Hole; keys: FlyKey[] }) {
   const doc = useCourse(s => s.doc);
   const pickedRaw = useEditor(e => e.flyKey);
   const setEd = useEditor(e => e.set);
-  const all = hole.flyKeys ?? [];
-  const keys = all.length >= 2 ? all : null;
+  const [scope, setScope] = useScope(hole);
   const fs = flyoverOf(doc, hole);
-  const u = doc.units;
   const ground = (x: number, y: number) => getView()?.groundHeight(x, y) ?? 0;
-  const times = keys ? keyTimes(keys, fs, ground) : [];
-  const p = keys && pickedRaw !== null ? Math.min(pickedRaw, keys.length - 1) : null;
-  const k = p !== null && keys ? keys[p] : null;
-  const setKeys = (next: FlyKey[] | undefined, history = true) => updateHole(hole.id, { flyKeys: next }, history);
+  const times = keyTimes(keys, fs, ground);
+  const p = pickedRaw !== null ? Math.min(pickedRaw, keys.length - 1) : null;
+  const k = p !== null ? keys[p] : null;
+  const setKeys = (next: FlyKey[], history = true) => updateHole(hole.id, { flyKeys: next }, history);
   // (live while a slider or mark moves; one undo step when it's let go)
-  const edit = (i: number, patch: Partial<FlyKey>) => keys && setKeys(keys.map((k, j) => (j === i ? { ...k, ...patch } : k)), false);
+  const edit = (i: number, patch: Partial<FlyKey>) => setKeys(keys.map((k, j) => (j === i ? { ...k, ...patch } : k)), false);
   const done = () => useCourse.getState().commit();
-  const byHand = () => {
-    const start = getView()?.autoKeys(hole.id);
-    if (start) { setKeys(start); setEd({ flyKey: 0 }); }
-  };
   const add = () => {
-    if (!keys) return;
     const r = insertKey(keys, p ?? keys.length - 2, fs, ground);
     setKeys(r.keys);
     setEd({ flyKey: r.at });
   };
   const remove = () => {
-    if (!keys || p === null || keys.length <= 2) return;
+    if (p === null || keys.length <= 2) return;
     setKeys(keys.filter((_, j) => j !== p));
     setEd({ flyKey: Math.max(0, p - 1) });
+  };
+  // (a mark dragged to time t: it and the one after split the time between their neighbours)
+  const r1 = (v: number) => Math.round(v * 10) / 10;
+  const retime = (i: number, t: number, end: boolean) => {
+    setKeys(keys.map((k, j) => (j === i ? { ...k, secs: r1(t - times[i - 1]) } : j === i + 1 ? { ...k, secs: r1(times[i + 1] - t) } : k)), false);
+    if (end) done();
+  };
+  const step = "w-8 h-8 touch:w-11 touch:h-11 rounded-lg flex items-center justify-center text-zinc-300 hover:bg-white/[0.09] hover:text-zinc-50 disabled:opacity-30 disabled:hover:bg-transparent";
+  return (
+    <div className="mt-2" data-testid="fly-keys">
+      <KeyTimeline times={times} picked={p} onPick={i => setEd({ flyKey: i })} onRetime={retime} />
+      {k && p !== null && (
+        <div className="mt-1.5 rounded-[14px] bg-white/[0.06] px-2.5 pt-1.5 pb-0.5" data-testid="fly-key-card">
+          <div className="flex items-center gap-0.5 mb-1.5">
+            <button className={step} aria-label="Previous keyframe" disabled={p === 0} onClick={() => setEd({ flyKey: p - 1 })}><ChevronLeft size={17} /></button>
+            <span className="flex-1 text-center text-[13px] font-semibold text-zinc-100"><span data-testid="fly-key-title">Keyframe {p + 1}</span> <span className="font-normal text-zinc-400 tabular-nums">· {times[p].toFixed(1)} s</span></span>
+            <button className={step} aria-label="Next keyframe" disabled={p === keys.length - 1} onClick={() => setEd({ flyKey: p + 1 })}><ChevronRight size={17} /></button>
+            <button className={`${step} hover:!text-red-400`} aria-label={`Remove keyframe ${p + 1}`} title={keys.length <= 2 ? "A flight needs two keyframes" : "Remove it"} disabled={keys.length <= 2} onClick={remove}><Trash2 size={15} /></button>
+          </div>
+          <Slider label="Height" min={2} max={Math.max(400, Math.round(k.alt))} value={Math.round(k.alt)} onChange={v => edit(p, { alt: v })} onDone={done} format={v => fmtDist(v, doc.units)} />
+          <Slider label="Lens" min={LENS.min} max={LENS.max} value={k.fov ?? fs.fov} onChange={v => edit(p, { fov: v })} onDone={done} format={lensLabel} />
+          {p > 0 && <Slider label={`Time from keyframe ${p}`} min={0.5} max={Math.max(30, Math.ceil(times[p] - times[p - 1]))} step={0.1} value={r1(times[p] - times[p - 1])} onChange={v => edit(p, { secs: r1(v) })} onDone={done} format={v => `${v.toFixed(1)} s`} />}
+        </div>
+      )}
+      <div className="mt-2.5"><Button full tone="primary" onClick={() => cameraFrom(hole.id, p ?? 0)} testid="fly-camera"><Video size={15} /> Fly the camera</Button></div>
+      <div className="grid grid-cols-3 gap-1.5 mt-1.5">
+        <Button small onClick={() => keysIn3D(hole.id)} testid="fly-in-3d" title="On the map, tilted: drag each camera up, down or along"><Move3d size={13} /> In 3D</Button>
+        <Button small onClick={add} testid="fly-key-add" title={p !== null ? `A new one after keyframe ${p + 1}` : undefined}><Plus size={13} /> Keyframe</Button>
+        <Button small onClick={() => setEd({ teeView: hole.id, flyover: true, flyCam: false, teeSettings: false })} testid="fly-preview"><Play size={13} /> Play</Button>
+      </div>
+      <OnScreen hole={hole} scope={scope} setScope={setScope} />
+    </div>
+  );
+}
+
+/** A hole's Flyover panel: Automatic, or through keyframes, and what's on screen. The same in the
+ * hole's panel and from the tee's Settings. */
+export function HoleFlight({ hole }: { hole: Hole }) {
+  const setEd = useEditor(e => e.set);
+  const all = hole.flyKeys ?? [];
+  const keys = all.length >= 2 ? all : null;
+  const byHand = () => {
+    const start = getView()?.autoKeys(hole.id);
+    if (start) { updateHole(hole.id, { flyKeys: start }); setEd({ flyKey: 0 }); }
   };
   // (back to Automatic: the keyframes go, said so, with Undo)
   const automatic = () => {
     if (!keys) return;
-    setKeys(undefined);
+    updateHole(hole.id, { flyKeys: undefined });
     toast("Keyframes removed. This hole flies by itself again.", "info", true);
   };
-  // (a mark dragged to time t: it and the one after split the time between their neighbours)
-  const retime = (i: number, t: number, end: boolean) => {
-    if (!keys) return;
-    const r1 = (v: number) => Math.round(v * 10) / 10;
-    // (kept at speed 1: the flyover's speed divides them again, see keySeconds)
-    const sp = Math.max(0.1, fs.speed);
-    setKeys(keys.map((k, j) => (j === i ? { ...k, secs: r1((t - times[i - 1]) * sp) } : j === i + 1 ? { ...k, secs: r1((times[i + 1] - t) * sp) } : k)), false);
-    if (end) done();
-  };
-  const ft = (v: number) => fmtDist(v, u);
-  const step = "w-8 h-8 touch:w-11 touch:h-11 rounded-lg flex items-center justify-center text-zinc-300 hover:bg-white/[0.09] hover:text-zinc-50 disabled:opacity-30 disabled:hover:bg-transparent";
   return (
     <div data-testid="hole-flight">
-      <Segmented label="Flyover" value={keys ? "keys" : "auto"} onChange={v => (v === "keys" ? byHand() : automatic())} options={[{ value: "auto", label: "Automatic" }, { value: "keys", label: "Keyframes" }]} />
-      {keys ? (
-        <div className="mt-2" data-testid="fly-keys">
-          <KeyTimeline times={times} picked={p} onPick={i => setEd({ flyKey: i })} onRetime={retime} />
-          {k && p !== null && (
-            <div className="mt-1.5 rounded-[14px] bg-white/[0.06] px-2.5 pt-1.5 pb-0.5" data-testid="fly-key-card">
-              <div className="flex items-center gap-0.5 mb-1.5">
-                <button className={step} aria-label="Previous keyframe" disabled={p === 0} onClick={() => setEd({ flyKey: p - 1 })}><ChevronLeft size={17} /></button>
-                <span className="flex-1 text-center text-[13px] font-semibold text-zinc-100" data-testid="fly-key-title">Keyframe {p + 1} of {keys.length}</span>
-                <button className={step} aria-label="Next keyframe" disabled={p === keys.length - 1} onClick={() => setEd({ flyKey: p + 1 })}><ChevronRight size={17} /></button>
-                <button className={`${step} hover:!text-red-400`} aria-label={`Remove keyframe ${p + 1}`} title={keys.length <= 2 ? "A flight needs two keyframes" : "Remove it"} disabled={keys.length <= 2} onClick={remove}><Trash2 size={15} /></button>
-              </div>
-              <Slider label="Height" min={2} max={Math.max(400, Math.round(k.alt))} value={Math.round(k.alt)} onChange={v => edit(p, { alt: v })} onDone={done} format={ft} />
-              <Slider label="Lens" min={LENS.min} max={LENS.max} value={k.fov ?? fs.fov} onChange={v => edit(p, { fov: v })} onDone={done} format={lensLabel} />
-              {p > 0 && <Slider label={`Time from keyframe ${p}`} min={0.5} max={Math.max(30, Math.ceil(times[p] - times[p - 1]))} step={0.1} value={Math.round((times[p] - times[p - 1]) * 10) / 10} onChange={v => edit(p, { secs: Math.round(v * Math.max(0.1, fs.speed) * 100) / 100 })} onDone={done} format={v => `${v.toFixed(1)} s`} />}
-            </div>
-          )}
-          <div className="flex flex-wrap gap-1.5 pt-2">
-            <Button small onClick={() => cameraFrom(hole.id, p ?? 0)} testid="fly-camera"><Video size={13} /> Set keyframe locations</Button>
-            <Button small onClick={add} testid="fly-key-add" title={p !== null ? `A new one after keyframe ${p + 1}` : undefined}><Plus size={13} /> Keyframe</Button>
-            <Button small onClick={() => setEd({ teeView: hole.id, flyover: true, flyCam: false })} testid="fly-preview"><Play size={13} /> Fly over</Button>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-2">
-          <Button small onClick={() => cameraFrom(hole.id, all.length ? all.length - 1 : null)} testid="fly-camera"><Video size={13} /> Set keyframe locations</Button>
-        </div>
-      )}
-      {/* (the camera and the switches, folded away: most holes never need them) */}
-      <details className="mt-3 rounded-[14px] bg-white/[0.06] group" data-testid="hole-flight-settings">
-        <summary className="cursor-pointer list-none flex items-center justify-between px-2.5 py-2 text-[13px] font-medium text-zinc-100">Camera and what's on screen <span className="text-zinc-500 group-open:rotate-90 transition-transform">›</span></summary>
-        <div className="px-2.5 pb-2.5"><FlyoverSettingsPanel holeId={hole.id} keys={!!keys} ground={false} own /></div>
-      </details>
+      <div data-testid="flyover-settings">
+        <Segmented label="Flyover" value={keys ? "keys" : "auto"} onChange={v => (v === "keys" ? byHand() : automatic())} options={[{ value: "auto", label: "Automatic" }, { value: "keys", label: "Keyframes" }]} />
+        {/* (a new hole, or keys gone: its own settings start again) */}
+        {keys ? <KeyFlight key={hole.id} hole={hole} keys={keys} /> : <AutoFlight key={hole.id} hole={hole} />}
+      </div>
     </div>
   );
 }

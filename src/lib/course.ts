@@ -6,6 +6,7 @@ import type {
 } from "../types";
 import { centroid, corridor, dist, nearestAlong, nearestOnSegment, pathLength, pointAlong, pointInPolygon, smoothClosed, smoothPath, subPath } from "./geom";
 import { landscapeOf } from "./landscapes";
+import { flyoverOf, keysAsTheyFlew } from "./flight";
 
 export const defaultStyle = (): MapStyle => ({
   theme: "forest",
@@ -148,6 +149,11 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
       const shift = Array.isArray(h.fairwayShift) && h.fairwayShift.length === S.length && h.fairwayShift.every(v => Number.isFinite(v)) ? h.fairwayShift : undefined;
       const number = Number.isInteger(h.number) && h.number! > 0 ? h.number : undefined;
       const alsoNumbers = Array.isArray(h.alsoNumbers) ? h.alsoNumbers.filter(v => Number.isInteger(v) && v > 0) : [];
+      // (a flight through keyframes saved while Speed and the flyover's Lens still applied to it:
+      // its keyframes given the seconds and lens it flew with, and Speed 1 of its own, so it's
+      // done once)
+      const fly = h.flyKeys && h.flyKeys.length >= 2 ? flyoverOf({ flyover: raw.flyover }, h) : null;
+      if (fly && (fly.speed !== 1 || h.flyKeys!.some(k => k.fov === undefined))) h = { ...h, flyKeys: keysAsTheyFlew(h.flyKeys!, fly.speed, fly.fov), ...(fly.speed !== 1 ? { flyover: { ...h.flyover, speed: 1 } } : {}) };
       return { ...h, number, alsoNumbers: alsoNumbers.length ? alsoNumbers : undefined, fairwayWidth: h.fairwayWidth ?? DEFAULT_FAIRWAY_FT, fairway: h.fairway ?? true, doglegs: h.doglegs ?? [], fairwayShape: shape, fairwayShift: shift, fairwayStations: stations && (shape || shift) ? stations : undefined };
     }),
     // (A structure needs its points and a kind this version knows)

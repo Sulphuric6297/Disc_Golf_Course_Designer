@@ -22,14 +22,10 @@ const now = () => {
   return { ed, hole, keys, at };
 };
 
-/** Where the camera is, as a keyframe: without a lens of its own when it has the flyover's (so the
- * flyover's Lens still changes it). */
+/** Where the camera is, as a keyframe, its lens too (each keyframe has its own). */
 const keyHere = (hole: Hole): FlyKey | null => {
   const k = getView()?.freeKey();
-  if (!k) return null;
-  if (k.fov === undefined || Math.round(k.fov) !== Math.round(flyoverOf(getDoc(), hole).fov)) return k;
-  const { fov: _fov, ...rest } = k;
-  return rest;
+  return k ? { ...k, fov: Math.round(k.fov ?? flyoverOf(getDoc(), hole).fov) } : null;
 };
 
 /** Where the timeline was scrubbed to, seconds into the flight (null: not scrubbed, or since moved
