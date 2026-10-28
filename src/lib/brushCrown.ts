@@ -10,7 +10,7 @@
 type RGB = [number, number, number];
 type Ctx = CanvasRenderingContext2D;
 type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
-export type BrushTree = { x: number; y: number; r: number; col: RGB; seed: number };
+export type BrushTree = { x: number; y: number; r: number; col: RGB; seed: number; pine?: boolean };
 
 import { OP, beginMap, endMap, gpuPainter, paintBatch } from "./brushGpu";
 
@@ -60,7 +60,7 @@ const bristles = () => {
   return (bristleTex = c);
 };
 
-type StrokeOpts = { sun: number[]; bumps: number; flat?: boolean; alpha?: number; rim?: number; rimCol?: RGB; texMin?: number };
+type StrokeOpts = { sun: number[]; bumps: number; flat?: boolean; alpha?: number; rim?: number; rimCol?: RGB; texMin?: number; pine?: boolean; veins?: number };
 
 /** The strokes listed for the graphics chip instead of painted (lib/brushGpu: OP numbers each). */
 type Rec = { data: Float32Array; n: number; soft: number; crown: number[] };
@@ -73,14 +73,16 @@ const put = (...v: number[]) => {
 /** A stroke's outline from its base at (x0, y0) toward `ang`: squarish, as a flat brush leaves it,
  * narrower at the base, a little lopsided, its edge in scallops each its own size (at least seven
  * points a scallop, so each stays round, and about one every pixel and a half). */
-const outline = (g: Ctx, x0: number, y0: number, ang: number, len: number, wid: number, sd: number, bumps: number) => {
+// (a pine's leaflet: squarer, and wider toward its tip)
+const outline = (g: Ctx, x0: number, y0: number, ang: number, len: number, wid: number, sd: number, bumps: number, pine = false) => {
+  const pe = pine ? 0.92 : 0.82;
   const ux = Math.cos(ang), uy = Math.sin(ang), vx = -uy, vy = ux, n = Math.max(bumps * 7, Math.min(160, Math.round((len + wid) * 1.6)));
   const cx = x0 + ux * len * 0.5, cy = y0 + uy * len * 0.5, sc = P.scallop, ph = sh(sd, 1) * 6.28, asymK = (sh(sd, 8) - 0.5) * 0.35;
   g.beginPath();
   for (let i = 0; i <= n; i++) {
     const t = (i / n) * 6.2832, c = Math.cos(t), s = Math.sin(t);
-    const c2 = Math.sign(c) * Math.pow(Math.abs(c), 0.82), s2 = Math.sign(s) * Math.pow(Math.abs(s), 0.82);
-    const w = (wid / 2) * (0.74 + 0.26 * c) * (1 + asymK * s);
+    const c2 = Math.sign(c) * Math.pow(Math.abs(c), pe), s2 = Math.sign(s) * Math.pow(Math.abs(s), pe);
+    const w = (wid / 2) * (pine ? 0.6 + 0.4 * c : 0.74 + 0.26 * c) * (1 + asymK * s);
     const warp = t + 0.35 * Math.sin(t * 2 + ph) + 0.18 * Math.sin(t * 5 + ph * 2);
     const u = (warp * bumps) / 6.2832 + ph, bi = Math.floor(u), f = u - bi;
     const size = 0.72 + sh(sd, 100 + (((bi % bumps) + bumps) % bumps)) * 0.7;
@@ -96,18 +98,18 @@ const outline = (g: Ctx, x0: number, y0: number, ang: number, len: number, wid: 
 const stroke = (g: Ctx, x0: number, y0: number, ang: number, len: number, wid: number, col: RGB, sd: number, o: StrokeOpts) => {
   if (rec) {
     // (where, how big; flat, painted or a soft shadow; its paint; its edge, bristles, seed, softness; its crown)
-    const shade = o.rimCol === P.shadeRimCol ? 1 : 0;
+    const shade = o.rimCol === P.shadeRimCol || o.rimCol === PINE.shadeRimCol ? 1 : 0;
     put(x0, y0, ang, len, wid, o.flat ? (rec.soft ? 2 : 0) : 1, o.alpha ?? 1, o.bumps, col[0], col[1], col[2], o.rim ?? 0, shade, o.texMin ?? 0.35, sd, rec.soft, ...rec.crown);
     return;
   }
   const light = mix(P.sun, [255, 255, 255], 0.3), dark = P.shadow, sun = o.sun;
-  outline(g, x0, y0, ang, len, wid, sd, o.bumps);
+  outline(g, x0, y0, ang, len, wid, sd, o.bumps, o.pine);
   g.fillStyle = css(col, o.alpha ?? 1); g.fill();
   if (o.flat) return;
   g.save(); g.clip();
   if (o.rim) {
     g.strokeStyle = css(mix(col, o.rimCol ?? light, o.rim)); g.lineWidth = Math.max(1.2, wid * 0.16); g.stroke();
-    outline(g, x0 - sun[0] * wid * 0.07, y0 - sun[1] * wid * 0.07, ang, len, wid, sd, o.bumps);
+    outline(g, x0 - sun[0] * wid * 0.07, y0 - sun[1] * wid * 0.07, ang, len, wid, sd, o.bumps, o.pine);
     g.fillStyle = css(col); g.fill();
   }
   const cx = x0 + Math.cos(ang) * len * 0.5, cy = y0 + Math.sin(ang) * len * 0.5, R = Math.max(len, wid);
@@ -126,7 +128,18 @@ const stroke = (g: Ctx, x0: number, y0: number, ang: number, len: number, wid: n
     const span = (R * 1.5) / px; g.fillRect(sh(sd, 6) * 256 - span / 2, sh(sd, 7) * 256 - span / 2, span, span);
     g.restore();
   }
-  outline(g, x0, y0, ang, len, wid, sd, o.bumps);
+  // (a pine's leaflet: a lighter vein down its middle, fainter ones out to its lobes)
+  if (o.veins) {
+    const ux = Math.cos(ang), uy = Math.sin(ang), vx = -uy, vy = ux, vc = mix(col, light, o.veins);
+    g.lineCap = "round"; g.strokeStyle = css(vc, 0.75); g.lineWidth = Math.max(0.6, wid * 0.05);
+    g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + ux * len * 0.82, y0 + uy * len * 0.82); g.stroke();
+    g.strokeStyle = css(vc, 0.4); g.lineWidth = Math.max(0.5, wid * 0.03);
+    for (const at of [0.35, 0.55, 0.72]) for (const side of [1, -1]) {
+      const bx = x0 + ux * len * at, by = y0 + uy * len * at, l = wid * (0.32 + at * 0.2);
+      g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + (ux * 0.7 + vx * side * 0.7) * l, by + (uy * 0.7 + vy * side * 0.7) * l); g.stroke();
+    }
+  }
+  outline(g, x0, y0, ang, len, wid, sd, o.bumps, o.pine);
   g.strokeStyle = css(mix(col, dark, 0.25), 0.22); g.lineWidth = Math.max(1, wid * 0.08); g.stroke();
   g.restore();
 };
@@ -209,7 +222,7 @@ const paintCrown = (g: Ctx, x: number, y: number, R: number, base: RGB, seed: nu
   const ox = -sun[0] * sr * 0.12, oy = -sun[1] * sr * 0.12;
   // Under it all: the crown's deep shade, solid inside its edge, then in the groups' own shapes
   const deep = mix(band(0), P.shadow, 0.5);
-  if (rec) { rec.crown = [x, y, R * P.env, P.envLump, eph, eph2, 0, 0]; put(0, 0, 0, 0, 0, 3, 1, 0, deep[0], deep[1], deep[2], 0, 0, 0, 0, 0, ...rec.crown); }
+  if (rec) { rec.crown = [x, y, R * P.env, P.envLump, eph, eph2, 0, 0]; /* (7th: 0 leafy, 1 pine) */ put(0, 0, 0, 0, 0, 3, 1, 0, deep[0], deep[1], deep[2], 0, 0, 0, 0, 0, ...rec.crown); }
   else {
     g.fillStyle = css(deep);
     g.beginPath();
@@ -238,6 +251,84 @@ const paintCrown = (g: Ctx, x: number, y: number, R: number, base: RGB, seed: nu
   }
 };
 
+// ---------------------------------------------------------------- one pine
+
+/** A pine, as the reference paints it: fronds out from the trunk in rings, each a fan of lobed
+ * leaflets (wider toward the tip, a lighter vein down each), the outer, lower rings first, their
+ * stems showing between them, a dark leaf-green shade under it all. Its green is the map's own
+ * (`base`), its light and shade between a pine's teal and the map's warm olive. No two alike: each
+ * its own count of fronds, their length and spread, leaflet width, lumps, green and sun. */
+const PINE = { shadow: [22, 56, 66] as RGB, sun: [206, 196, 78] as RGB, lo: -0.6, hi: 0.72, wid: 0.72, bumps: 9, noise: 0.7, shadeRimCol: [96, 146, 146] as RGB };
+const paintPine = (g: Ctx, x: number, y: number, R: number, base: RGB, seed: number, sun: number[]) => {
+  const r = rng(seed * 1e6 + 7);
+  // (this pine's own: how dense, how long and wide its fronds and leaflets, how lumpy, how sunny,
+  // its green a touch lighter or darker, bluer or yellower)
+  const dense = 0.8 + r() * 0.4, flen = 0.9 + r() * 0.24, spread0 = 0.65 + r() * 0.3, wid = PINE.wid * (0.86 + r() * 0.24);
+  const lump = 0.03 + r() * 0.05, sunny = (r() - 0.5) * 0.16, li = 0.9 + r() * 0.2, hue = (r() - 0.5) * 16;
+  const col0: RGB = [base[0] * li + hue * 0.6, base[1] * li, base[2] * li - hue * 0.4];
+  const shadow = mix(PINE.shadow, P.shadow, 0.45), sunC = mix(PINE.sun, P.sun, 0.45);
+  const band = (v: number) => (v < 0 ? mix(col0, shadow, Math.min(1, -v)) : mix(col0, sunC, Math.min(1, v)));
+  const tone = (lit: number) => band(PINE.lo + (PINE.hi - PINE.lo) * Math.max(0, Math.min(1, lit + sunny)));
+  const toSun = (dx: number, dy: number) => (dx * sun[0] + dy * sun[1]) / R;
+  const a0 = r() * 6.2832, eph = r() * 7, f3 = 2 + Math.floor(r() * 3);
+  // (small pines: fewer, simpler fronds, so they read at their size)
+  const small = Math.max(0.45, Math.min(1, R / 34));
+  // (its shade inside, round and lumpy: a gap between fronds is shade, not a hole)
+  const deep = tone(0.08), shadeR = R * 0.74;
+  if (rec) { rec.crown = [x, y, shadeR / 0.8, lump, eph, a0, 1, 0]; put(0, 0, 0, 0, 0, 3, 1, 0, deep[0], deep[1], deep[2], 0, 0, 0, 0, 0, ...rec.crown); }
+  else {
+    g.fillStyle = css(deep);
+    g.beginPath();
+    for (let i = 0; i <= 48; i++) { const a = (i / 48) * 6.2832, rr = shadeR * (1 + lump * Math.sin(a * 3 + eph) + lump * 0.6 * Math.sin(a * 5 + a0)); g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+    g.fill();
+  }
+  // (the crown's edge: round, gently lumpy; no leaflet reaches past it)
+  const edgeAt = (a: number) => R * 1.02 * (1 + lump * Math.sin(a * f3 + eph) + lump * 0.6 * Math.sin(a * 5 + eph * 2));
+  const blur = (len: number) => Math.max(0.5, len * 0.025);
+  const leaflet = (bx: number, by: number, a: number, len: number, lit: number) => {
+    const tx = bx + Math.cos(a) * len, ty = by + Math.sin(a) * len, d = Math.hypot(tx - x, ty - y), m = edgeAt(Math.atan2(ty - y, tx - x));
+    if (d > m) len = Math.max(len * 0.55, len - (d - m));
+    const sd = Math.floor(r() * 1e6), w = len * wid * (0.85 + r() * 0.3), bumps = PINE.bumps + Math.floor(r() * 3), shade = lit < 0.35;
+    // (its soft shadow, only on what's painted already)
+    const sc = mix(tone(lit - 1.0), shadow, 0.35);
+    if (rec) { rec.soft = blur(len); stroke(g, bx - sun[0] * len * 0.17, by - sun[1] * len * 0.17, a, len * 1.06, w * 1.08, sc, sd, { sun, bumps, flat: true, alpha: 0.82, pine: true }); rec.soft = 0; }
+    else {
+      g.save(); g.globalCompositeOperation = "source-atop"; g.filter = `blur(${blur(len).toFixed(1)}px)`;
+      stroke(g, bx - sun[0] * len * 0.17, by - sun[1] * len * 0.17, a, len * 1.06, w * 1.08, sc, sd, { sun, bumps, flat: true, alpha: 0.82, pine: true });
+      g.restore();
+    }
+    stroke(g, bx, by, a, len, w, tone(lit), sd, { sun, bumps, pine: true, rim: shade ? 0.38 : 0.12, rimCol: shade ? PINE.shadeRimCol : undefined, texMin: shade ? 0.25 : 0.4, veins: shade ? 0.18 : 0.32 });
+  };
+  type Frond = { ri: number; a: number; x: number; y: number; len: number; up: number; toS: number; dl: number };
+  const fronds: Frond[] = [];
+  const rings: [number, number, number, number][] = [[0.6, 14, 0.33, 0], [0.42, 11, 0.31, 0.08], [0.25, 8, 0.29, 0.16], [0.08, 4, 0.27, 0.26]];
+  rings.forEach(([d, cnt, fl, up], ri) => {
+    const m = Math.max(3, Math.round((cnt + Math.floor(r() * 3)) * dense * small)), b0 = a0 + ri * (0.3 + r() * 0.3);
+    for (let i = 0; i < m; i++) {
+      const a = b0 + (i / m) * 6.2832 + (r() - 0.5) * 0.35, dd = R * d * (0.88 + r() * 0.24), pa = a + (r() - 0.5) * (ri === 3 ? 3 : 0.32);
+      fronds.push({ ri, a: pa, x: x + Math.cos(a) * dd, y: y + Math.sin(a) * dd, len: R * fl * flen * (0.85 + r() * 0.3) / Math.sqrt(small), up, toS: Math.cos(pa) * sun[0] + Math.sin(pa) * sun[1], dl: (r() - 0.5) * 0.25 });
+    }
+  });
+  fronds.sort((p, q) => p.ri - q.ri || p.toS - q.toS);
+  // (the stems, from part way out, showing between the outer fronds)
+  for (const f of fronds) if (f.ri === 0) {
+    const sx = x + (f.x - x) * 0.3, sy = y + (f.y - y) * 0.3, lw = Math.max(0.8, R * 0.026);
+    if (rec) put(sx, sy, f.x, f.y, lw, 4, 0.95, 0, 68, 48, 32, 0, 0, 0, 0, 0, ...rec.crown);
+    else { g.strokeStyle = "rgba(68,48,32,0.95)"; g.lineCap = "round"; g.lineWidth = lw; g.beginPath(); g.moveTo(sx, sy); g.lineTo(f.x, f.y); g.stroke(); }
+  }
+  for (const f of fronds) {
+    const n = small < 0.7 ? 3 + Math.floor(r() * 2) : 4 + Math.floor(r() * 3), spread = spread0 + r() * 0.25, order: number[] = [];
+    for (let i = 0; i < n; i++) order.push((i / (n - 1)) * 2 - 1);
+    // (the side leaflets first, the middle one on top)
+    order.sort((p, q) => Math.abs(q) - Math.abs(p));
+    for (const t of order) {
+      const a = f.a + t * spread + (r() - 0.5) * 0.15, len = f.len * (1 - 0.28 * Math.abs(t)) * (0.9 + r() * 0.2);
+      const lit = 0.44 + f.up + f.dl + toSun(f.x - x + Math.cos(a) * len * 0.5, f.y - y + Math.sin(a) * len * 0.5) * 0.95 + (r() - 0.5) * PINE.noise * 0.6;
+      leaflet(f.x - Math.cos(a) * len * 0.08, f.y - Math.sin(a) * len * 0.08, a, len, lit);
+    }
+  }
+};
+
 /** A tree's own canvas: its size, and where it lands on the map (to the pixel, so it's painted the
  * same wherever it's painted). */
 const sizeOf = (t: BrushTree) => Math.ceil(t.r * 3.4) + 24;
@@ -246,7 +337,7 @@ let own: AnyCanvas | null = null;
 export const paintTree = (c: AnyCanvas, t: BrushTree, sun: number[]) => {
   const S = sizeOf(t), half = S / 2, o = ctx2d(c);
   o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, S, S);
-  paintCrown(o, half + (t.x - Math.floor(t.x)), half + (t.y - Math.floor(t.y)), t.r, t.col, t.seed, sun);
+  (t.pine ? paintPine : paintCrown)(o, half + (t.x - Math.floor(t.x)), half + (t.y - Math.floor(t.y)), t.r, t.col, t.seed, sun);
   return S;
 };
 const layTree = (g: Ctx, img: CanvasImageSource, t: BrushTree, S: number) => g.drawImage(img, 0, 0, S, S, Math.floor(t.x) - S / 2, Math.floor(t.y) - S / 2, S, S);
@@ -300,7 +391,7 @@ export function* drawBrushedSteps(g: Ctx, trees: BrushTree[], sun: number[]): Ge
     for (; i < sorted.length && ok; i++) {
       const t = sorted[i], l0 = performance.now();
       rec = mine;
-      try { paintCrown(g, t.x, t.y, t.r, t.col, t.seed, sun); } finally { rec = null; }
+      try { (t.pine ? paintPine : paintCrown)(g, t.x, t.y, t.r, t.col, t.seed, sun); } finally { rec = null; }
       listing += performance.now() - l0;
       if (mine.n >= BATCH || i === sorted.length - 1) {
         const q0 = performance.now();

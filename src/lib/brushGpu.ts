@@ -47,12 +47,13 @@ float sh(float seed, float k) {
   x = (x ^ (x >> 13u)) * 1274126177u; x ^= x >> 16u;
   return float(x) / 4294967296.0;
 }
-float shape(vec2 p, float len, float wid, float bumps, float seed) {
+// (a pine's leaflet, pine > 0.5: squarer, and wider toward its tip)
+float shape(vec2 p, float len, float wid, float bumps, float seed, float pine) {
   float ph = sh(seed, 1.0) * 6.28, asymK = (sh(seed, 8.0) - 0.5) * 0.35;
-  float L2 = len * 0.5, pe = 0.82, t = atan(p.y, p.x), X = 0.0, Y = 0.0, w = 0.0, b = 1.0;
+  float L2 = len * 0.5, pe = pine > 0.5 ? 0.92 : 0.82, t = atan(p.y, p.x), X = 0.0, Y = 0.0, w = 0.0, b = 1.0;
   for (int it = 0; it < 4; it++) {
     float c = cos(t), s = sin(t);
-    w = (wid * 0.5) * (0.74 + 0.26 * c) * (1.0 + asymK * s);
+    w = (wid * 0.5) * (pine > 0.5 ? 0.6 + 0.4 * c : 0.74 + 0.26 * c) * (1.0 + asymK * s);
     float warp = t + 0.35 * sin(t * 2.0 + ph) + 0.18 * sin(t * 5.0 + ph * 2.0);
     float u = (warp * bumps) / 6.2832 + ph, bi = floor(u), f = u - bi;
     float size = 0.72 + sh(seed, 100.0 + mod(bi, bumps)) * 0.7;
@@ -78,7 +79,9 @@ void main() {
   }
   float ang = v0.z, len = v0.w, wid = v1.x, bumps = v1.w, seed = v3.z;
   vec2 u = vec2(cos(ang), sin(ang)), n = vec2(-u.y, u.x), c = v0.xy + u * len * 0.5, rel = px - c;
-  float d = shape(vec2(dot(rel, u), dot(rel, n)), len, wid, bumps, seed);
+  float pine = v5.z;
+  vec2 lp = vec2(dot(rel, u), dot(rel, n));
+  float d = shape(lp, len, wid, bumps, seed, pine);
   if (type < 0.5) { float cov = clamp(d + 0.5, 0.0, 1.0) * v1.z; outc = vec4(col * cov, cov); return; }
   if (type > 1.5) {
     // a soft shadow: as soft as the canvas's blur, only on paint already there
@@ -91,7 +94,7 @@ void main() {
   // its edge toward the sun lighter: where the shape moved away from the sun doesn't cover
   if (v2.w > 0.0) {
     vec2 rT = rel + uSun * wid * 0.07;
-    float dT = shape(vec2(dot(rT, u), dot(rT, n)), len, wid, bumps, seed), band = max(0.6, wid * 0.08);
+    float dT = shape(vec2(dot(rT, u), dot(rT, n)), len, wid, bumps, seed, pine), band = max(0.6, wid * 0.08);
     float r = (1.0 - clamp(dT + 0.5, 0.0, 1.0)) * (1.0 - smoothstep(band - 0.5, band + 0.5, d));
     o = mix(o, mix(col, v3.x > 0.5 ? uShadeRim / 255.0 : uLight, v2.w), r);
   }
@@ -107,6 +110,20 @@ void main() {
     vec2 cr = vec2(cos(-rot), sin(-rot));
     vec2 q = vec2(rel.x * cr.x - rel.y * cr.y, rel.x * cr.y + rel.y * cr.x) / pxs + vec2(sh(seed, 6.0), sh(seed, 7.0)) * 256.0;
     o = mix(o, overlay(o, vec3(texture(uTexB, q / 256.0).r)), a);
+  }
+  // a pine leaflet's veins: a lighter one down its middle, fainter ones out to its lobes
+  if (pine > 0.5) {
+    vec3 vc = mix(col, uLight, v3.x > 0.5 ? 0.18 : 0.32);
+    vec2 q = lp + vec2(len * 0.5, 0.0);
+    float mw = max(0.6, wid * 0.05), md = length(q - vec2(clamp(q.x, 0.0, len * 0.82), 0.0));
+    o = mix(o, vc, 0.75 * clamp(mw * 0.5 - md + 0.5, 0.0, 1.0));
+    float sw = max(0.5, wid * 0.03);
+    for (int k = 0; k < 6; k++) {
+      float at = k < 2 ? 0.35 : k < 4 ? 0.55 : 0.72, side = (k - (k / 2) * 2) == 0 ? 1.0 : -1.0, l = wid * (0.32 + at * 0.2);
+      vec2 a = vec2(len * at, 0.0), dir = vec2(0.7, side * 0.7) * l, pa = q - a;
+      float hh = clamp(dot(pa, dir) / dot(dir, dir), 0.0, 1.0), sd = length(pa - dir * hh);
+      o = mix(o, vc, 0.4 * clamp(sw * 0.5 - sd + 0.5, 0.0, 1.0));
+    }
   }
   // the edge a shade darker, where the paint gathers
   float eb = max(0.5, wid * 0.04);

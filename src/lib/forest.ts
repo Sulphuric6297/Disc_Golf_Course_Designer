@@ -1487,11 +1487,16 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     drawShadows(ctx, vtrees, Lx, Ly, pl, strength, vstyle === "drybrush" ? 1 : vstyle === "cloud" ? 0.3 : 0.6);
     yield 0.92;
     if (vstyle === "brushed") {
-      // (each leafy crown brushed on, a step at a time, the smallest too (as a leaf group or two);
-      // the pines, and specks too small to paint, as the other looks draw them, over them)
-      const leafy = vtrees.filter(t => !t.pine && t.r >= 1.5);
-      yield* drawBrushedSteps(ctx, leafy.map(t => ({ x: t.x, y: t.y, r: t.r, col: t.col, seed: t.seed })), [Lx, Ly]);
-      drawTrees(ctx, vtrees.filter(t => t.pine || t.r < 1.5), "cluster", Lx, Ly, pl);
+      // (every crown brushed on, a step at a time, leafy and pine, the smallest too; a pine in the
+      // map's own green, as an evergreen keeps (not the autumn mix); specks too small to paint, as
+      // the other looks draw them)
+      const pineGreens = (() => {
+        const [h0, s0, l0] = rgbToHsl(hexRgb("#354a2c")), [h1, s1, l1] = rgbToHsl(hexRgb(s.trees));
+        return STYLE_GREENS.brushed.map(c => { const [h, sl, l] = rgbToHsl(hexRgb(c)); const g = hslToRgb(h + (h1 - h0), Math.max(0, Math.min(1, sl * (s1 / Math.max(0.05, s0)))), Math.max(0.05, Math.min(0.9, l * (l1 / Math.max(0.05, l0))))); return [g[0] * 0.9, g[1] * 1.03, g[2] * 1.12] as RGB; });
+      })();
+      const painted = vtrees.filter(t => t.r >= 1.5);
+      yield* drawBrushedSteps(ctx, painted.map(t => ({ x: t.x, y: t.y, r: t.r, seed: t.seed, pine: t.pine, col: t.pine ? pineGreens[Math.floor(t.seed * 997) % pineGreens.length] : t.col })), [Lx, Ly]);
+      drawTrees(ctx, vtrees.filter(t => t.r < 1.5), "cluster", Lx, Ly, pl);
     } else drawTrees(ctx, vtrees, vstyle, Lx, Ly, pl);
   }
   if (pl.mist) {
