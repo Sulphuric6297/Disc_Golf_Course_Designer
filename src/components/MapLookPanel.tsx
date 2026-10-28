@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight, RotateCcw } from "lucide-react";
 import { defaultStyle } from "../lib/course";
-import { COLOR_PICKS, conifersOf, paintedPinesOf, tallGrassOf, treeMixOf } from "../lib/landscapes";
+import { COLOR_PICKS, tallGrassOf, treeMixOf } from "../lib/landscapes";
 import { LIGHT_MODES, LOOK_THEMES, PART_CHOICES, compassName, latitudeOf, lightOf, lookParts, partChanged, sunArc, sunFromOf, themeOf, type LookPart, type LookParts } from "../lib/mapLook";
 import { useCourse } from "../state/course";
 import type { MapStyle, PathTier } from "../types";
@@ -158,7 +158,6 @@ export function MapLookPanel() {
   const base = import.meta.env.BASE_URL;
   const painted = parts.trees.style !== "classic";
   const measured = useCourse(c => !!c.doc.lidar?.trees.length);
-  const pinesNow = painted ? paintedPinesOf(s, parts.trees.pines) : conifersOf(s);
 
   return (
     <div data-testid="map-look">
@@ -217,7 +216,6 @@ export function MapLookPanel() {
                     <PartColors p={p} s={s} />
                     {p === "trees" && (
                       <>
-                        <LookSlider value={pinesNow} label="Pines" min={0} max={0.9} step={0.05} format={pct} onDone={v => setStyle({ conifers: v })} />
                         {/* (measured trees: the woods are those trees, as wide as Crown size makes them in 3D,
                         and the woods drawn; more painted only when asked) */}
                         <WoodsOptions s={s} measured={measured} />
