@@ -467,9 +467,13 @@ test("a mando joins the hole it is placed beside, not just the one being worked 
   const second = await addHole(page, { x: 900, y: 300 }, { x: 900, y: 800 });
   expect((await editorState(page)).activeHoleId).toBe(second.id);
   await page.keyboard.press("m");
-  await clickPlan(page, 320, 550);
+  // (the pointer there first, as a person's is: on a slow machine its move can come after the click)
+  const p = await screenOf(page, 320, 550);
+  await page.mouse.move(p.x, p.y, { steps: 4 });
+  await page.waitForTimeout(300);
+  await page.mouse.click(p.x, p.y);
+  await expect.poll(async () => (await course(page)).items.find((i: any) => i.type === "mando")?.holeId).toBe(first.id);
   const mando = (await course(page)).items.find((i: any) => i.type === "mando");
-  expect(mando.holeId).toBe(first.id);
   // Facing up the first hole (north)
   expect(Math.round(mando.rotation)).toBe(-90);
 });

@@ -125,7 +125,8 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
     const before = await painting.getAttribute("href");
     await styles.getByRole("radio", { name }).click();
     await expect.poll(async () => (await course(page)).style.mapLook).toBe(id);
-    await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
+    // (Golden hour's trees are brushed: slower to paint on a test machine with no graphics chip)
+    await expect.poll(async () => painting.getAttribute("href"), { timeout: 120_000 }).not.toBe(before);
   }
   await styles.getByRole("radio", { name: "Classic" }).click();
   await expect.poll(async () => (await course(page)).style.mapLook).toBeUndefined();

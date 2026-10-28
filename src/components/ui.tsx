@@ -3,7 +3,6 @@
 // text-sm with zinc-400 for the quieter words, one orange button per view (dark words on it),
 // and a sky-blue ring where the keyboard focus is.
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 import { Loader2 } from "lucide-react";
 import { TOPICS } from "../lib/guide";
 
@@ -108,6 +107,16 @@ export function HelpLink({ topic, label }: { topic: string; label: string }) {
     window.addEventListener("keydown", key, true);
     return () => { window.removeEventListener("pointerdown", down, true); window.removeEventListener("keydown", key, true); };
   }, [at]);
+  // (inside a glassy or moved box, "fixed" is that box's, not the screen's: once drawn, the tip is
+  // moved onto the spot it was meant for. It stays in its panel, so a click on it is in the panel.)
+  useLayoutEffect(() => {
+    const el = tip.current;
+    if (!at || !el) return;
+    const r = el.getBoundingClientRect();
+    const top = at.above !== undefined ? window.innerHeight - at.above - r.height : at.y ?? 0;
+    el.style.left = `${parseFloat(el.style.left) + at.x - r.left}px`;
+    el.style.top = `${parseFloat(el.style.top) + top - r.top}px`;
+  }, [at]);
   const open = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -123,14 +132,12 @@ export function HelpLink({ topic, label }: { topic: string; label: string }) {
     <>
       <button ref={btn} type="button" aria-label={`Help: ${label}`} aria-expanded={!!at} data-testid={`help-${topic}`} onClick={open}
         className={`relative w-[18px] h-[18px] touch:w-7 touch:h-7 touch:before:content-[''] touch:before:absolute touch:before:-inset-2 shrink-0 rounded-full inline-flex items-center justify-center text-[11px] font-bold align-middle ${at ? "bg-orange-300 text-zinc-950" : "text-zinc-300 bg-white/[0.09] hover:bg-white/[0.16] hover:text-zinc-50"} ${FOCUS}`}>?</button>
-      {/* (on the page itself: inside a moved or glassy box, "fixed" would be that box's, not the screen's) */}
-      {at && t && createPortal(
-        <div ref={tip} role="dialog" aria-label={t.title} data-testid="help-tip" className="fixed z-[60] w-[288px] glass-solid rounded-[16px] shadow-xl shadow-black/40 ring-1 ring-white/10 p-3 text-left normal-case tracking-normal" style={{ left: at.x, ...(at.above !== undefined ? { bottom: at.above } : { top: at.y }) }}>
+      {at && t && (
+        <div ref={tip} role="dialog" aria-label={t.title} data-testid="help-tip" className="fixed z-[60] w-[288px] glass-solid rounded-[16px] shadow-xl shadow-black/40 ring-1 ring-white/10 p-3 text-left normal-case tracking-normal" style={{ left: at.x, top: at.y ?? 0 }}>
           <div className="text-[13px] font-bold text-zinc-50 mb-1">{t.title}</div>
           <p className="text-[12.5px] leading-relaxed text-zinc-300 font-normal">{text}</p>
           <button className="mt-2 text-[12.5px] font-semibold text-orange-300 hover:text-orange-200" onClick={() => { setAt(null); askHelp(topic); }} data-testid="help-tip-more">More in the help guide ›</button>
-        </div>,
-        document.body
+        </div>
       )}
     </>
   );

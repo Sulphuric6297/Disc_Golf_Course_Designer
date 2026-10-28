@@ -384,6 +384,8 @@ test("flyover on-screen switches: off for all holes, back on for one; no disc fl
   // (the hole's switches, folded at the bottom of its Flyover panel)
   await page.getByTestId("hole-flight").getByTestId("flyover-onscreen").locator("summary").click();
   await expect(page.getByTestId("hole-flight").getByTestId("flyover-show")).toBeVisible();
+  // (they start on All holes, as from the tee, until the hole has settings of its own)
+  await page.getByTestId("hole-flight").getByRole("radio", { name: /^Hole 1/ }).click();
   const own = (name: string) => page.getByTestId("hole-flight").getByRole("checkbox", { name, exact: true });
   await expect(own("Distance to the pin")).not.toBeChecked();
   await own("Distance to the pin").check();
