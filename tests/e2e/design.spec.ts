@@ -1,5 +1,5 @@
 import { test as plain, expect as plainExpect } from "@playwright/test";
-import { test, expect, addHole, blankCourse, course, editorState, importSite } from "./fixtures";
+import { test, expect, addHole, blankCourse, classicLook, course, editorState, importSite } from "./fixtures";
 import { areaPath, autoWalks, createAmenity, createArea, createBasket, createDropZone, createEmptyCourse, createLine, createMando, createTee, createTree, curves, drawnAreas, linePath, newHole, normalizeCourse, widthAlong, widthsWithEnd, widthsWithout, widthsWithPoint, widthVaries } from "../../src/lib/course";
 import { contourInterval, meander, paintedFrom, paintedLine } from "../../src/lib/forest";
 import { contoursOf, reliefExaggeration } from "../../src/lib/relief";
@@ -14,6 +14,7 @@ const painted = (page: import("@playwright/test").Page) => expect.poll(() => pag
 
 test("the Design step shows the printed map; its styles are the painted map in each landscape", async ({ page }) => {
   await blankCourse(page);
+  await classicLook(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await addHole(page, { x: 700, y: 650 }, { x: 700, y: 300 });
   await page.keyboard.press("Escape");
@@ -73,6 +74,7 @@ test("turning the map to fill the page", async ({ page }) => {
 test("tree cover: sparse woods leave grass between the trees", async ({ page }) => {
   test.setTimeout(300_000);
   await blankCourse(page);
+  await classicLook(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "3 Map" }).click();
@@ -132,6 +134,7 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
 test("light and shadow: the sun, shadows and brightness repaint the Forest map, and Reset brings them back", async ({ page }) => {
   test.setTimeout(150_000);
   await blankCourse(page);
+  await classicLook(page);
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "3 Map" }).click();
@@ -757,6 +760,7 @@ test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
   test("the live preview's painting is smaller on a phone (quicker, lighter on memory)", async ({ page }) => {
     await blankCourse(page);
+    await classicLook(page);
     await page.evaluate(() => {
       (window as any).__dgActions.addHole({ x: 300, y: 700 }, { x: 650, y: 700 }, "blue");
       (window as any).__dgEditor().set({ step: "map", tool: "select" });

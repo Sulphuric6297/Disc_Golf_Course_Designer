@@ -262,6 +262,13 @@ export async function withLidar(page: Page) {
   });
 }
 
+/** The course in the Classic look (a new one starts in Brushed): for the checks on the painting's
+ * own parts, quick to paint on a test machine with no graphics chip. Brushed has its own checks
+ * in tests/real. */
+export async function classicLook(page: Page) {
+  await page.evaluate(() => (window as any).__dgActions.style({ mapLook: undefined }));
+}
+
 /** No survey over the test site (the app's list of surveys empty), so the photo's trees are the
  * ones: where a survey covers a site, the photo is looked over for water only. */
 export async function noSurvey(page: Page) {

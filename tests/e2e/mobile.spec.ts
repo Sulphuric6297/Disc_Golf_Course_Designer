@@ -1,7 +1,7 @@
 // Phones and tablets: the step bar, the bottom sheet (peek, half, full), tools by tap with Undo,
 // Cancel and Done, the selection in the sheet, long-press menus, the Design preview fitted to the
 // screen, the tee view, a phone on its side, a tablet, and the desktop layout left as it was.
-import { test, expect, course, editorState, tapPlan, longPress, touchDrag, touches, pinch, screenOf } from "./fixtures";
+import { test, expect, classicLook, course, editorState, tapPlan, longPress, touchDrag, touches, pinch, screenOf } from "./fixtures";
 import { devices, type Page } from "@playwright/test";
 import { writeFileSync } from "fs";
 import { createBasket, createEmptyCourse, createTee, newHole } from "../../src/lib/course";
@@ -527,6 +527,7 @@ test.describe("phone", () => {
 
   test("a pinch on the Map step's preview while the map paints still ends (the painting goes in once the fingers lift)", async ({ page }) => {
     await oneHole(page);
+    await classicLook(page);
     await nav(page).getByRole("button", { name: /Map/ }).tap();
     await expect(page.getByTestId("design-page")).toBeVisible();
     const painting = () => page.evaluate(() => (window as any).__dgPainting());
