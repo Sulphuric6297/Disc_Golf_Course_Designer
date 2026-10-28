@@ -24,6 +24,33 @@ const sh = (seed: number, k: number) => {
 };
 const css = (c: number[], a = 1) => `rgba(${c.map(v => Math.round(Math.max(0, Math.min(255, v)))).join(",")},${a})`;
 const mix = (a: number[], b: number[], k: number): RGB => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+// (colour by hue, saturation and lightness, for autumn's own light and shade)
+const toHsl = (c: number[]): [number, number, number] => {
+  const r = c[0] / 255, g = c[1] / 255, b = c[2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (!d) return [0, 0, l];
+  const s = d / (1 - Math.abs(2 * l - 1)), h = mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s, l];
+};
+const fromHsl = (h: number, s: number, l: number): RGB => {
+  h = ((h % 360) + 360) % 360; s = Math.max(0, Math.min(1, s)); l = Math.max(0, Math.min(1, l));
+  const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - c / 2;
+  const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+};
+/** How green a leaf colour is (1: green, as the look was tuned for; 0: autumn's reds, oranges and golds). */
+const greenness = (h: number) => Math.max(0, Math.min(1, (h - 52) / 22));
+/**
+ * A crown's leaf colour and its light and shade. A green one: as tuned, shaded toward the map's
+ * own olive. An autumn one: brighter and fuller, shaded within its own hue (a deep red-brown in
+ * the shade, a glowing yellow-orange in the sun), as a painter keeps fall colour vivid.
+ */
+const leafLight = (base: RGB) => {
+  const [h, s, l] = toHsl(base), w = greenness(h);
+  if (w >= 1) return { base, shadow: P.shadow, sun: P.sun };
+  const vivid = fromHsl(h, Math.min(0.92, s * 1.45 + 0.08), Math.min(0.62, l * 1.18 + 0.04));
+  const own = { base: vivid, shadow: fromHsl(h - 10, Math.min(0.95, s * 1.4 + 0.1), Math.max(0.07, l * 0.36)), sun: fromHsl(h + 14, Math.min(1, s * 1.5 + 0.15), Math.min(0.78, l * 1.5 + 0.18)) };
+  return { base: mix(own.base, base, w), shadow: mix(own.shadow, P.shadow, w), sun: mix(own.sun, P.sun, w) };
+};
 const rng = (s: number) => { s = (Math.abs(Math.floor(s)) % 2147483646) + 1; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
 // (in a worker there's no page: an offscreen canvas)
 const canvas = (w: number, h: number): AnyCanvas => { if (typeof document === "undefined") return new OffscreenCanvas(w, h); const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
@@ -151,10 +178,10 @@ type Group = { c: number; k: number; arms: Arm[]; edge?: boolean };
 type Clump = { x: number; y: number; r: number; top?: boolean; k: number; dl: number; hue: number };
 
 /** A crown at (x, y), R px across its middle, in its leaf colour `base`, lit from `sun` (toward it). */
-const paintCrown = (g: Ctx, x: number, y: number, R: number, base: RGB, seed: number, sun: number[]) => {
-  const r = rng(seed * 1e6 + 1), nb = P.nb;
+const paintCrown = (g: Ctx, x: number, y: number, R: number, leaf: RGB, seed: number, sun: number[]) => {
+  const r = rng(seed * 1e6 + 1), nb = P.nb, { base, shadow: shadowC, sun: sunC } = leafLight(leaf);
   // (its bands of light, shade to sun; a band past the darkest goes darker still)
-  const band = (k: number) => { const v = Math.max(-1, P.lo + ((P.hi - P.lo) * Math.min(nb - 1, k)) / (nb - 1)); return v < 0 ? mix(base, P.shadow, -v) : mix(base, P.sun, v); };
+  const band = (k: number) => { const v = Math.max(-1, P.lo + ((P.hi - P.lo) * Math.min(nb - 1, k)) / (nb - 1)); return v < 0 ? mix(base, shadowC, -v) : mix(base, sunC, v); };
   const bandOf = (lit: number) => Math.max(0, Math.min(nb - 1, Math.round(lit * (nb - 1))));
   const toSun = (dx: number, dy: number) => dx * sun[0] + dy * sun[1];
   // (small crowns: leaf groups never smaller than reads, so fewer of them)
@@ -221,7 +248,7 @@ const paintCrown = (g: Ctx, x: number, y: number, R: number, base: RGB, seed: nu
   // (shadows fall away from the sun)
   const ox = -sun[0] * sr * 0.12, oy = -sun[1] * sr * 0.12;
   // Under it all: the crown's deep shade, solid inside its edge, then in the groups' own shapes
-  const deep = mix(band(0), P.shadow, 0.5);
+  const deep = mix(band(0), shadowC, 0.5);
   if (rec) { rec.crown = [x, y, R * P.env, P.envLump, eph, eph2, 0, 0]; /* (7th: 0 leafy, 1 pine) */ put(0, 0, 0, 0, 0, 3, 1, 0, deep[0], deep[1], deep[2], 0, 0, 0, 0, 0, ...rec.crown); }
   else {
     g.fillStyle = css(deep);
