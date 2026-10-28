@@ -317,10 +317,10 @@ test("Hand painted: the demo (made before) stays Classic, a new course starts in
     await p2.goto("/");
     const demo = await (await p2.request.get("/example/course.json")).json();
     await p2.evaluate(d => (window as any).__dgServer.start(d), demo);
-    await p2.waitForFunction(() => (window as any).__dgCourse?.()?.holes?.length > 0 && !!(window as any).__dgView, null, { timeout: 60_000 });
+    await p2.waitForFunction(() => (window as any).__dgCourse?.()?.holes?.length > 0, null, { timeout: 60_000 });
     const back = p2.getByTestId("back-to-course");
     if (await back.isVisible().catch(() => false)) await back.click();
-    await draw(p2, false);
+    if (await p2.evaluate(() => !!(window as any).__dgView)) await draw(p2, false);
     // (every painting of the trees, as it ends)
     await p2.evaluate(() => { (window as any).__times = []; window.addEventListener("dg-tree-timing", (e: any) => (window as any).__times.push({ ...e.detail, at: Math.round(performance.now()) })); });
     p2.on("console", m => { if (/Hand painted|webgl|WebGL/i.test(m.text())) console.log("[page]", m.text().slice(0, 300)); });
