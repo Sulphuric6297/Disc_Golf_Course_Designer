@@ -37,6 +37,8 @@ const fromHsl = (h: number, s: number, l: number): RGB => {
   const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
   return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
 };
+/** A green crown's shade and sunlight: a deep green and a fresh yellow-green (not olive: muted). */
+const GREEN_SHADE: RGB = [20, 46, 34], GREEN_SUN: RGB = [196, 210, 82];
 /** How green a leaf colour is (1: green, as the look was tuned for; 0: autumn's reds, oranges and golds). */
 const greenness = (h: number) => Math.max(0, Math.min(1, (h - 52) / 22));
 /**
@@ -46,10 +48,10 @@ const greenness = (h: number) => Math.max(0, Math.min(1, (h - 52) / 22));
  */
 const leafLight = (base: RGB) => {
   const [h, s, l] = toHsl(base), w = greenness(h);
-  if (w >= 1) return { base, shadow: P.shadow, sun: P.sun };
+  if (w >= 1) return { base, shadow: GREEN_SHADE, sun: GREEN_SUN };
   const vivid = fromHsl(h, Math.min(0.92, s * 1.45 + 0.08), Math.min(0.62, l * 1.18 + 0.04));
   const own = { base: vivid, shadow: fromHsl(h - 10, Math.min(0.95, s * 1.4 + 0.1), Math.max(0.07, l * 0.36)), sun: fromHsl(h + 14, Math.min(1, s * 1.5 + 0.15), Math.min(0.78, l * 1.5 + 0.18)) };
-  return { base: mix(own.base, base, w), shadow: mix(own.shadow, P.shadow, w), sun: mix(own.sun, P.sun, w) };
+  return { base: mix(own.base, base, w), shadow: mix(own.shadow, GREEN_SHADE, w), sun: mix(own.sun, GREEN_SUN, w) };
 };
 const rng = (s: number) => { s = (Math.abs(Math.floor(s)) % 2147483646) + 1; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
 // (in a worker there's no page: an offscreen canvas)
@@ -239,6 +241,8 @@ const paintCrown = (g: Ctx, x: number, y: number, R: number, leaf: RGB, seed: nu
     const a = (i / ring) * 6.2832 + (r() - 0.5) * 0.2, d = edgeAt(a) - sr * 0.75, ex = x + Math.cos(a) * d, ey = y + Math.sin(a) * d;
     let ci = 0, best = Infinity;
     clumps.forEach((c, j) => { const dd = Math.hypot(c.x - ex, c.y - ey) - c.r; if (dd < best) { best = dd; ci = j; } });
+    // (only where the crown's clumps reach: never a leaf on its own out past them)
+    if (best > sr * 0.4) continue;
     groups.push({ ...groupOf(ex, ey, sr * (0.85 + r() * 0.3), bandOf(litAt(ex, ey, clumps[ci]) - 0.08), ci), edge: true });
   }
   // (clump by clump, its edge groups first)
@@ -256,7 +260,7 @@ const paintCrown = (g: Ctx, x: number, y: number, R: number, leaf: RGB, seed: nu
   else {
     g.fillStyle = css(deep);
     g.beginPath();
-    for (let i = 0; i <= 72; i++) { const a = (i / 72) * 6.2832, rr = edgeAt(a) * 0.8; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+    for (let i = 0; i <= 72; i++) { const a = (i / 72) * 6.2832, rr = edgeAt(a) * (sr < R * 0.2 ? 0.88 : 0.8); g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
     g.fill();
   }
   for (const o of groups) for (const s of o.arms) stroke(g, s.x + ox * 0.6, s.y + oy * 0.6, s.a, s.len, s.wid, deep, s.sd, { sun, bumps: s.bumps, flat: true });
@@ -296,7 +300,7 @@ const paintPine = (g: Ctx, x: number, y: number, R: number, base: RGB, seed: num
   const dense = 0.8 + r() * 0.4, flen = 0.9 + r() * 0.24, spread0 = 0.65 + r() * 0.3, wid = PINE.wid * (0.86 + r() * 0.24);
   const lump = 0.03 + r() * 0.05, sunny = (r() - 0.5) * 0.16, li = 0.9 + r() * 0.2, hue = (r() - 0.5) * 16;
   const col0: RGB = [base[0] * li + hue * 0.6, base[1] * li, base[2] * li - hue * 0.4];
-  const shadow = mix(PINE.shadow, P.shadow, 0.45), sunC = mix(PINE.sun, P.sun, 0.45);
+  const shadow = mix(PINE.shadow, GREEN_SHADE, 0.45), sunC = mix(PINE.sun, GREEN_SUN, 0.45);
   const band = (v: number) => (v < 0 ? mix(col0, shadow, Math.min(1, -v)) : mix(col0, sunC, Math.min(1, v)));
   const tone = (lit: number) => band(PINE.lo + (PINE.hi - PINE.lo) * Math.max(0, Math.min(1, lit + sunny)));
   const toSun = (dx: number, dy: number) => (dx * sun[0] + dy * sun[1]) / R;

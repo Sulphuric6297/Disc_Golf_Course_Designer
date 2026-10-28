@@ -24,7 +24,7 @@ export const STYLE_GREENS: Record<Exclude<TreeStyle, "classic">, string[]> = {
   // tree's light, from its shade to its sun)
   // (one family of greens, a touch lighter or darker tree to tree: not olive, grey and teal at
   // once, which reads as camouflage)
-  brushed: ["#566a38", "#5c6e3a", "#516535", "#5f703c", "#536836", "#5a6c39", "#4f6334"],
+  brushed: ["#4f7a2e", "#578232", "#4a742c", "#5e8836", "#527c30", "#5a8434", "#46702a"],
   cluster: ["#3d6b2c", "#4a7a31", "#33602e", "#567f36", "#2f5a2a", "#44713a"],
   drybrush: ["#2e5524", "#3a6428", "#47702c", "#264b2c", "#507834", "#33592d"],
   cloud: ["#3f8a3a", "#4f9a3e", "#358040", "#62a03f", "#4a8f3c"],
