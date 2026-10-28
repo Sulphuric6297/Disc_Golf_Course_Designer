@@ -313,9 +313,10 @@ test("Hand painted: the demo (made before) stays Classic, a new course starts in
   const ctx = await b.newContext({ baseURL: "http://localhost:4176", viewport: { width: 1280, height: 820 }, storageState: await page.context().storageState() });
   const p2 = await ctx.newPage();
   try {
+    // (its own copy of the demo: two pages saving the same course would each paint again and again)
     await p2.goto("/");
-    const id = (await saved(page)).id;
-    await p2.evaluate(id => (window as any).__dgServer.open(id), id);
+    const demo = await (await p2.request.get("/example/course.json")).json();
+    await p2.evaluate(d => (window as any).__dgServer.start(d), demo);
     await p2.waitForFunction(() => (window as any).__dgCourse?.()?.holes?.length > 0 && !!(window as any).__dgView, null, { timeout: 60_000 });
     const back = p2.getByTestId("back-to-course");
     if (await back.isVisible().catch(() => false)) await back.click();
