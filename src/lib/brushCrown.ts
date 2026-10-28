@@ -186,7 +186,10 @@ const paintCrown = (g: Ctx, x: number, y: number, R: number, leaf: RGB, seed: nu
   const toSun = (dx: number, dy: number) => dx * sun[0] + dy * sun[1];
   // (small crowns: leaf groups never smaller than reads, so fewer of them)
   // (and a crown smaller than that: a leaf group or two, never bigger than the crown)
-  const sec = Math.max(P.sec * Math.min(1.7, Math.max(1, 34 / R)), Math.min(3.4 / R, 0.55)), sr = R * sec;
+  // (and a big crown: its leaf groups as big as a middling tree's, about 3.5 ft, so a big tree has
+  // more leaves, not bigger ones)
+  const secOf = P.sec * Math.min(1.7, Math.max(1, 34 / R)), cap = pxPerFt > 0 ? (3.5 * pxPerFt) / R : Infinity;
+  const sec = Math.max(Math.min(secOf, Math.max(cap, 0.08)), Math.min(3.4 / R, 0.55)), sr = R * sec;
   const groupOf = (gx: number, gy: number, rad: number, k: number, c: number): Group => {
     const n = r() < 0.6 ? 4 : r() < 0.5 ? 3 : 5, a0 = r() * 6.2832, arms: Arm[] = [];
     for (let i = 0; i < n; i++) {
@@ -300,6 +303,8 @@ const paintPine = (g: Ctx, x: number, y: number, R: number, base: RGB, seed: num
   const a0 = r() * 6.2832, eph = r() * 7, f3 = 2 + Math.floor(r() * 3);
   // (small pines: fewer, simpler fronds, so they read at their size)
   const small = Math.max(0.45, Math.min(1, R / 34));
+  // (a big pine: more fronds round each ring, each the size a middling pine's are)
+  const big = pxPerFt > 0 ? Math.max(1, Math.min(2.4, R / (13 * pxPerFt))) : 1;
   // (its shade inside, round and lumpy: a gap between fronds is shade, not a hole)
   const deep = tone(0.08), shadeR = R * 0.74;
   if (rec) { rec.crown = [x, y, shadeR / 0.8, lump, eph, a0, 1, 0]; put(0, 0, 0, 0, 0, 3, 1, 0, deep[0], deep[1], deep[2], 0, 0, 0, 0, 0, ...rec.crown); }
@@ -330,10 +335,10 @@ const paintPine = (g: Ctx, x: number, y: number, R: number, base: RGB, seed: num
   const fronds: Frond[] = [];
   const rings: [number, number, number, number][] = [[0.6, 14, 0.33, 0], [0.42, 11, 0.31, 0.08], [0.25, 8, 0.29, 0.16], [0.08, 4, 0.27, 0.26]];
   rings.forEach(([d, cnt, fl, up], ri) => {
-    const m = Math.max(3, Math.round((cnt + Math.floor(r() * 3)) * dense * small)), b0 = a0 + ri * (0.3 + r() * 0.3);
+    const m = Math.max(3, Math.round((cnt + Math.floor(r() * 3)) * dense * small * big)), b0 = a0 + ri * (0.3 + r() * 0.3);
     for (let i = 0; i < m; i++) {
       const a = b0 + (i / m) * 6.2832 + (r() - 0.5) * 0.35, dd = R * d * (0.88 + r() * 0.24), pa = a + (r() - 0.5) * (ri === 3 ? 3 : 0.32);
-      fronds.push({ ri, a: pa, x: x + Math.cos(a) * dd, y: y + Math.sin(a) * dd, len: R * fl * flen * (0.85 + r() * 0.3) / Math.sqrt(small), up, toS: Math.cos(pa) * sun[0] + Math.sin(pa) * sun[1], dl: (r() - 0.5) * 0.25 });
+      fronds.push({ ri, a: pa, x: x + Math.cos(a) * dd, y: y + Math.sin(a) * dd, len: R * fl * flen * (0.85 + r() * 0.3) / Math.sqrt(small) / Math.sqrt(big), up, toS: Math.cos(pa) * sun[0] + Math.sin(pa) * sun[1], dl: (r() - 0.5) * 0.25 });
     }
   });
   fronds.sort((p, q) => p.ri - q.ri || p.toS - q.toS);
@@ -401,7 +406,10 @@ export type Wait = { wait: Promise<unknown> };
  * the sun first so the sunny side of the woods lies over the rest; a step at a time, so the page
  * stays free while they paint. Where the browser can and the driver waits, the workers paint them,
  * a batch each at a time, and here they're laid on the map in order. `sun`: toward the sun. */
-export function* drawBrushedSteps(g: Ctx, trees: BrushTree[], sun: number[]): Generator<void | Wait, void, unknown> {
+/** The map's scale while its trees paint (pixels a foot; 0: not known): leaves a real size. */
+let pxPerFt = 0;
+export function* drawBrushedSteps(g: Ctx, trees: BrushTree[], sun: number[], scale = 0): Generator<void | Wait, void, unknown> {
+  pxPerFt = scale;
   const sorted = [...trees].sort((p, q) => p.x * sun[0] + p.y * sun[1] - (q.x * sun[0] + q.y * sun[1]));
   const t0 = performance.now();
   let listing = 0, painting = 0, strokes = 0;
