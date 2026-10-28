@@ -23,7 +23,18 @@ void main() {
   float type = a1.y; vec2 c; float h;
   if (type > 2.5 && type < 3.5) { c = a4.xy; h = a4.z * 1.3 + 2.0; }
   else if (type > 3.5) { c = (a0.xy + a0.zw) * 0.5; h = length(a0.zw - a0.xy) * 0.5 + a1.x + 2.0; }
-  else { vec2 u = vec2(cos(a0.z), sin(a0.z)); c = a0.xy + u * a0.w * 0.5; h = max(a0.w, a1.x) * 0.75 + a3.w * 3.0 + 3.0; }
+  else {
+    // (a stroke: its quad along it, as long and wide as its scallops reach, its soft edge too; a
+    // square round it would be mostly empty corners, each pixel worked out for nothing)
+    vec2 u = vec2(cos(a0.z), sin(a0.z)), n = vec2(-u.y, u.x), pad = vec2(a3.w * 2.0 + 1.5);
+    c = a0.xy + u * a0.w * 0.5;
+    vec2 e = vec2(a0.w * 0.66, a1.x * 0.8) + pad;
+    px = c + u * corner.x * e.x + n * corner.y * e.y;
+    vec2 q0 = (px - uOff) / uSize * 2.0 - 1.0;
+    gl_Position = vec4(q0.x, -q0.y, 0.0, 1.0);
+    v0 = a0; v1 = a1; v2 = a2; v3 = a3; v4 = a4; v5 = a5;
+    return;
+  }
   px = c + corner * h;
   vec2 q = (px - uOff) / uSize * 2.0 - 1.0;
   gl_Position = vec4(q.x, -q.y, 0.0, 1.0);
