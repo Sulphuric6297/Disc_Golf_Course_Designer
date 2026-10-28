@@ -22,7 +22,9 @@ type Ctx = CanvasRenderingContext2D;
 export const STYLE_GREENS: Record<Exclude<TreeStyle, "classic">, string[]> = {
   // (Hand painted: the warm olive greens of a painted map, its leaf colour the middle of each
   // tree's light, from its shade to its sun)
-  brushed: ["#555f39", "#4b5834", "#5f6437", "#46543c", "#586232", "#3e4e3e", "#66663a"],
+  // (one family of greens, a touch lighter or darker tree to tree: not olive, grey and teal at
+  // once, which reads as camouflage)
+  brushed: ["#566a38", "#5c6e3a", "#516535", "#5f703c", "#536836", "#5a6c39", "#4f6334"],
   cluster: ["#3d6b2c", "#4a7a31", "#33602e", "#567f36", "#2f5a2a", "#44713a"],
   drybrush: ["#2e5524", "#3a6428", "#47702c", "#264b2c", "#507834", "#33592d"],
   cloud: ["#3f8a3a", "#4f9a3e", "#358040", "#62a03f", "#4a8f3c"],

@@ -789,7 +789,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   })();
   /** A tree's color: one of the style's greens, as varied as the style says. */
   const treeColor = (u: number): RGB => {
-    const a = vGreens[0], b = vGreens[Math.floor(u * vGreens.length) % vGreens.length], v = look.trees.variety;
+    // (autumn's mix: each tree its own colour of it; greens as varied as the style says)
+    const a = vGreens[0], b = vGreens[Math.floor(u * vGreens.length) % vGreens.length], v = vstyle === "brushed" && treeMixOf(s).length ? 1 : look.trees.variety;
     const k2 = 0.92 + ((u * 7.31) % 1) * 0.16 * (0.4 + v);
     return [(a[0] + (b[0] - a[0]) * v) * k2, (a[1] + (b[1] - a[1]) * v) * k2, (a[2] + (b[2] - a[2]) * v) * k2];
   };
@@ -1496,7 +1497,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       // the other looks draw them)
       const pineGreens = (() => {
         const [h0, s0, l0] = rgbToHsl(hexRgb("#354a2c")), [h1, s1, l1] = rgbToHsl(hexRgb(s.trees));
-        return STYLE_GREENS.brushed.map(c => { const [h, sl, l] = rgbToHsl(hexRgb(c)); const g = hslToRgb(h + (h1 - h0), Math.max(0, Math.min(1, sl * (s1 / Math.max(0.05, s0)))), Math.max(0.05, Math.min(0.9, l * (l1 / Math.max(0.05, l0))))); return [g[0] * 0.9, g[1] * 1.03, g[2] * 1.12] as RGB; });
+        return STYLE_GREENS.brushed.map(c => { const [h, sl, l] = rgbToHsl(hexRgb(c)); const g = hslToRgb(h + (h1 - h0), Math.max(0, Math.min(1, sl * (s1 / Math.max(0.05, s0)))), Math.max(0.05, Math.min(0.9, l * (l1 / Math.max(0.05, l0))))); return [g[0] * 0.86, g[1] * 0.94, g[2] * 0.96] as RGB; });
       })();
       const painted = vtrees.filter(t => t.r >= 1.5);
       yield* drawBrushedSteps(ctx, painted.map(t => ({ x: t.x, y: t.y, r: t.r, seed: t.seed, pine: t.pine, col: t.pine ? pineGreens[Math.floor(t.seed * 997) % pineGreens.length] : t.col })), [Lx, Ly], k);

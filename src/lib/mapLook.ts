@@ -25,7 +25,7 @@ export const LOOK_THEMES: ThemeDef[] = [
   {
     // (new courses start in it; unset is still Classic, so a course made before keeps its look)
     id: "handpainted", label: "Brushed", hint: "Every leaf brushed on, soft light",
-    parts: { trees: { style: "brushed", density: 1, size: 1, variety: 0.9, pines: 0.12 }, grass: { style: "painted", bright: 1, texture: 1 }, fairway: { style: "soft", bright: 1 }, paths: { style: "painted" }, water: { style: "deep" } },
+    parts: { trees: { style: "brushed", density: 1, size: 1, variety: 0.5, pines: 0.12 }, grass: { style: "painted", bright: 1, texture: 1 }, fairway: { style: "soft", bright: 1 }, paths: { style: "painted" }, water: { style: "deep" } },
     light: "midday", sun: 0.8
   },
   {
