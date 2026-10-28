@@ -132,7 +132,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { const t = window.setTimeout(() => setRestingDoc(doc), 1500); return () => window.clearTimeout(t); }, [doc]);
   const warmHole = ed.selectedId && doc.holes.some(h => h.id === ed.selectedId) ? ed.selectedId : ed.activeHoleId;
   const warm = !ed.teeView && ed.flyLook === "painted" && restingDoc === doc && doc.holes.length > 0 && ed.step !== "map";
-  const [painted, paintedFresh] = usePaintedGround(paintedOn || warm);
+  // (painted ahead gently: only while the view is still, a few ms at a time)
+  const [painted, paintedFresh] = usePaintedGround(paintedOn || warm, !paintedOn);
   useEffect(() => {
     if (!warm || !warmHole || !painted) return;
     // (only once the hole has stayed picked a few seconds: clicking through holes paints nothing)
@@ -183,6 +184,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { if (layoutTee) useEditor.getState().set({ teeLevel: layoutTee }); }, [layoutTee]);
   useEffect(() => { view?.setReadOnly(viewOnly); }, [view, viewOnly]);
   useEffect(() => { view?.setShowStumps(ed.stumps); }, [view, ed.stumps]);
+  useEffect(() => { view?.setTreesHidden(ed.hideTrees); }, [view, ed.hideTrees]);
   useEffect(() => { view?.setGroup(ed.group); }, [view, ed.group]);
   useEffect(() => { view?.setPlotLine(ed.plotLine); }, [view, ed.plotLine]);
   useEffect(() => { view?.setObPick(ed.obPick, ed.pickCut); }, [view, ed.obPick, ed.pickCut]);

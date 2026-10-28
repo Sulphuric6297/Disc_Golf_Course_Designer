@@ -30,7 +30,9 @@ export function SitePickerMap({
   units = "ft",
   outline,
   fit,
-  arrived
+  arrived,
+  angle = 0,
+  onAngle
 }: {
   imagery: MapImagerySource;
   view: { lat: number; lon: number; zoom: number; key: number };
@@ -49,6 +51,9 @@ export function SitePickerMap({
   fit?: { bounds: GeoBounds; key: number } | null;
   /** What has come in so far, drawn on the map as it lands: the photo, then the shapes and trees. */
   arrived?: Arrived | null;
+  /** The frame turned this many degrees clockwise from north, and told when it's turned. */
+  angle?: number;
+  onAngle?: (deg: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -59,6 +64,8 @@ export function SitePickerMap({
   const onDrawingChangeRef = useRef(onDrawingChange);
   const onTooSmallRef = useRef(onTooSmall);
   const onLocateRef = useRef(onLocate);
+  const onAngleRef = useRef(onAngle);
+  onAngleRef.current = onAngle;
   const drawingRef = useRef(drawing);
   onSelectRef.current = onSelect;
   onDrawingChangeRef.current = onDrawingChange;
@@ -221,91 +228,101 @@ export function SitePickerMap({
     return () => { map.off("moveend", sync); };
   }, [imagery]);
 
-  // Selection rectangle with corner handles (resize) and a center handle (move).
+  // The frame: its corners (resize, the opposite corner staying put), the middle of its top edge
+  // (move), and a round handle past it (turn: which way is up on the course; north stays north)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     handlesRef.current.forEach(h => h.remove());
     handlesRef.current = [];
-    if (!selection) {
-      rectRef.current?.remove();
-      rectRef.current = null;
-      return;
-    }
-    const latLngBounds = L.latLngBounds([selection.south, selection.west], [selection.north, selection.east]);
-    if (!rectRef.current) {
-      rectRef.current = L.rectangle(latLngBounds, {
-        color: FRAME,
-        weight: 2.5,
-        fillColor: FRAME,
-        fillOpacity: 0.04,
-        interactive: false
-      }).addTo(map);
-    } else {
-      rectRef.current.setBounds(latLngBounds);
-    }
-    const rect = rectRef.current;
-    const setLabel = (b: GeoBounds) => {
-      rect.unbindTooltip();
-      rect.bindTooltip(dimsLabel(b), { permanent: true, direction: "top", className: "site-picker-tooltip", offset: [0, -22] }).openTooltip(L.latLng(b.north, (b.west + b.east) / 2));
+    rectRef.current?.remove();
+    rectRef.current = null;
+    if (!selection) return;
+    // (meters east and north of the frame's middle, and back)
+    const lat0 = (selection.north + selection.south) / 2, lon0 = (selection.east + selection.west) / 2;
+    const mx = 111320 * Math.cos((lat0 * Math.PI) / 180), my = 110540;
+    const toLL = (p: { x: number; y: number }) => L.latLng(lat0 + p.y / my, lon0 + p.x / mx);
+    const toXY = (ll: L.LatLng) => ({ x: (ll.lng - lon0) * mx, y: (ll.lat - lat0) * my });
+    // (turned clockwise by `a`, the way a compass turns)
+    const turn = (p: { x: number; y: number }, a: number) => ({ x: p.x * Math.cos(a) + p.y * Math.sin(a), y: -p.x * Math.sin(a) + p.y * Math.cos(a) });
+    let live = { c: { x: 0, y: 0 }, hw: ((selection.east - selection.west) * mx) / 2, hh: ((selection.north - selection.south) * my) / 2, a: ((angle ?? 0) * Math.PI) / 180 };
+    const corner = (sx: number, sy: number) => { const q = turn({ x: sx * live.hw, y: sy * live.hh }, live.a); return { x: live.c.x + q.x, y: live.c.y + q.y }; };
+    const SIGNS: [number, number][] = [[-1, 1], [1, 1], [1, -1], [-1, -1]];
+    const ring = () => SIGNS.map(([sx, sy]) => toLL(corner(sx, sy)));
+    const frame = L.polygon(ring(), { color: FRAME, weight: 2.5, fillColor: FRAME, fillOpacity: 0.04, interactive: false }).addTo(map);
+    rectRef.current = frame as unknown as L.Rectangle;
+    const topMid = () => { const q = turn({ x: 0, y: live.hh }, live.a); return toLL({ x: live.c.x + q.x, y: live.c.y + q.y }); };
+    const knob = () => {
+      // (past the top edge by about 34 px on screen)
+      const z = map.getZoom(), mPerPx = (156543.03 * Math.cos((lat0 * Math.PI) / 180)) / 2 ** z;
+      const q = turn({ x: 0, y: live.hh + 34 * mPerPx }, live.a);
+      return toLL({ x: live.c.x + q.x, y: live.c.y + q.y });
     };
-    setLabel(selection);
-
-    let live: GeoBounds = { ...selection };
-    // (a finger gets 44 px round each corner's square; the NE and SW corners resize the other way)
+    const setLabel = () => {
+      frame.unbindTooltip();
+      const b = boundsOfLive();
+      frame.bindTooltip(dimsLabel(b), { permanent: true, direction: "top", className: "site-picker-tooltip", offset: [0, -22] }).openTooltip(topMid());
+    };
+    /** The frame as it is (not turned): its box round its middle. */
+    const boundsOfLive = (): GeoBounds => {
+      const c = toLL(live.c);
+      const dLat = live.hh / my, dLon = live.hw / mx;
+      return { north: c.lat + dLat, south: c.lat - dLat, east: c.lng + dLon, west: c.lng - dLon };
+    };
     const touch = typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
     const cornerIcon = (key: string) => L.divIcon({ className: `site-handle site-handle-corner site-handle-${key}`, iconSize: touch ? [44, 44] : [24, 24], html: "<span></span>" });
     const moveIcon = L.divIcon({ className: "site-handle site-handle-move", iconSize: touch ? [40, 40] : [30, 30], html: "<span>✥</span>" });
-    const corners: { key: "nw" | "ne" | "se" | "sw"; pos: () => L.LatLngExpression }[] = [
-      { key: "nw", pos: () => [live.north, live.west] },
-      { key: "ne", pos: () => [live.north, live.east] },
-      { key: "se", pos: () => [live.south, live.east] },
-      { key: "sw", pos: () => [live.south, live.west] }
-    ];
+    const turnIcon = L.divIcon({ className: "site-handle site-handle-turn", iconSize: touch ? [44, 44] : [28, 28], html: "<span>⟳</span>" });
     const markers: L.Marker[] = [];
-    // Move handle sits on the top edge: the middle of the area is usually the house the user searched for.
-    const center = () => L.latLng(live.north, (live.west + live.east) / 2);
+    const keys = ["nw", "ne", "se", "sw"];
     const refresh = (except?: L.Marker) => {
-      rect.setBounds(L.latLngBounds([live.south, live.west], [live.north, live.east]));
-      setLabel(live);
-      corners.forEach((c, i) => { if (markers[i] !== except) markers[i].setLatLng(c.pos()); });
-      if (markers[4] !== except) markers[4].setLatLng(center());
+      frame.setLatLngs(ring());
+      setLabel();
+      SIGNS.forEach(([sx, sy], i) => { if (markers[i] !== except) markers[i].setLatLng(toLL(corner(sx, sy))); });
+      if (markers[4] !== except) markers[4].setLatLng(topMid());
+      if (markers[5] !== except) markers[5].setLatLng(knob());
     };
-    corners.forEach(c => {
-      const marker = L.marker(c.pos(), { icon: cornerIcon(c.key), draggable: true, keyboard: false, zIndexOffset: 1000 }).addTo(map);
-      marker.on("drag", () => {
-        const p = marker.getLatLng();
-        if (c.key.includes("n")) live.north = p.lat; else live.south = p.lat;
-        if (c.key.includes("w")) live.west = p.lng; else live.east = p.lng;
-        const n = Math.max(live.north, live.south);
-        const sth = Math.min(live.north, live.south);
-        const e = Math.max(live.east, live.west);
-        const w = Math.min(live.east, live.west);
-        live = { north: n, south: sth, east: e, west: w };
-        refresh(marker);
+    const done = () => {
+      const b = boundsOfLive();
+      if (isUsable(b)) { onSelectRef.current(b); onAngleRef.current?.(Math.round(((live.a * 180) / Math.PI + 360) % 360)); }
+      else { onTooSmallRef.current?.(); refresh(); }
+    };
+    SIGNS.forEach(([sx, sy], i) => {
+      const m = L.marker(toLL(corner(sx, sy)), { icon: cornerIcon(keys[i]), draggable: true, keyboard: false, zIndexOffset: 1000 }).addTo(map);
+      m.on("drag", () => {
+        // (the opposite corner stays where it is)
+        const f = corner(-sx, -sy), p = toXY(m.getLatLng());
+        const d = { x: p.x - f.x, y: p.y - f.y }, u = turn(d, -live.a);
+        live = { ...live, c: { x: f.x + d.x / 2, y: f.y + d.y / 2 }, hw: Math.abs(u.x) / 2, hh: Math.abs(u.y) / 2 };
+        refresh(m);
       });
-      marker.on("dragend", () => {
-        if (isUsable(live)) onSelectRef.current({ ...live });
-        else { live = { ...selection }; refresh(); onTooSmallRef.current?.(); }
-      });
-      markers.push(marker);
+      m.on("dragend", done);
+      markers.push(m);
     });
-    const mover = L.marker(center(), { icon: moveIcon, draggable: true, keyboard: false, zIndexOffset: 1000, title: "Drag to move the area" }).addTo(map);
-    let moveStart: L.LatLng | null = null;
-    let startBounds = live;
-    mover.on("dragstart", () => { moveStart = mover.getLatLng(); startBounds = { ...live }; });
-    mover.on("drag", () => {
-      if (!moveStart) return;
-      const p = mover.getLatLng();
-      const dLat = p.lat - moveStart.lat;
-      const dLon = p.lng - moveStart.lng;
-      live = { north: startBounds.north + dLat, south: startBounds.south + dLat, west: startBounds.west + dLon, east: startBounds.east + dLon };
-      refresh(mover);
-    });
-    mover.on("dragend", () => onSelectRef.current({ ...live }));
+    const mover = L.marker(topMid(), { icon: moveIcon, draggable: true, keyboard: false, zIndexOffset: 1000, title: "Drag to move the area" }).addTo(map);
+    let grab = { x: 0, y: 0 }, from = live.c;
+    mover.on("dragstart", () => { grab = toXY(mover.getLatLng()); from = live.c; });
+    mover.on("drag", () => { const p = toXY(mover.getLatLng()); live = { ...live, c: { x: from.x + p.x - grab.x, y: from.y + p.y - grab.y } }; refresh(mover); });
+    mover.on("dragend", done);
     markers.push(mover);
+    const turner = L.marker(knob(), { icon: turnIcon, draggable: true, keyboard: false, zIndexOffset: 1000, title: "Drag to turn the area" }).addTo(map);
+    turner.on("drag", () => {
+      const p = toXY(turner.getLatLng());
+      // (the way from the middle to the pointer, by compass; to the degree)
+      let a = Math.atan2(p.x - live.c.x, p.y - live.c.y);
+      a = (Math.round((a * 180) / Math.PI) * Math.PI) / 180;
+      live = { ...live, a };
+      refresh(turner);
+    });
+    turner.on("dragend", done);
+    markers.push(turner);
     handlesRef.current = markers;
-  }, [selection]);
+    refresh();
+    // (the knob stays the same distance off the edge on screen as the map zooms)
+    const onZoom = () => markers[5]?.setLatLng(knob());
+    map.on("zoomend", onZoom);
+    return () => { map.off("zoomend", onZoom); };
+  }, [selection, angle]);
 
   // The park's outline, dashed
   useEffect(() => {

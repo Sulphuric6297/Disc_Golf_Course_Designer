@@ -146,6 +146,9 @@ export interface AreaItem extends BaseItem {
   label?: string;
   /** Out of bounds: water is unless set false; true also draws the red OB edge on the map. */
   ob?: boolean;
+  /** A hazard (a stroke's penalty, played from where it went in): its dashed hazard edge on the
+   * map. Never OB as well. */
+  hazard?: boolean;
   /** The stretches of its edge that are OB, each from-to as fractions round it from its first
    * point (unset: all the way round). */
   obStretches?: [number, number][];
@@ -211,6 +214,8 @@ export interface LineItem extends BaseItem {
   /** Out of bounds: a stream is unless set false; a road, fence or path is when true (and then
    * its red OB edge is drawn on the map). */
   ob?: boolean;
+  /** A hazard (a stroke's penalty): its dashed hazard edge along it on the map. Never OB as well. */
+  hazard?: boolean;
   /** Out of bounds beyond it too (the road and beyond): OB from its edge on the holes' side. */
   obBeyond?: boolean;
   /** OB and beyond: the side that is out (1: right of the way it was drawn, -1: left); unset: the
@@ -619,6 +624,9 @@ export interface MapStyle {
   /** Forest style: where to paint woods (everywhere off the fairways, where the photo shows trees,
    * or only drawn woods and single trees). */
   forest: "everywhere" | "photo" | "woods";
+  /** With measured trees: woods painted besides them (unset: only the woods drawn), where the photo
+   * shows trees the survey missed or over all the open ground; never under a measured crown. */
+  forestMeasured?: "everywhere" | "photo";
   /** Forest style: how thick the woods are, from a few scattered clumps (0.1) to solid canopy (1). */
   treeCover: number;
   /** The painted map's look (lib/mapLook): its style (unset: classic), and any part of it changed
@@ -656,6 +664,8 @@ export interface MapStyle {
   /** The woods' leaf colors tree by tree (autumn's reds and golds; empty: one color), on the map
    * and in 3D. Unset: the landscape's. */
   treeMix?: string[];
+  /** How vivid autumn's leaf colours are on the map (1: as they are; less, softer; more, brighter). */
+  autumnVivid?: number;
   /** Share of the woods' trees that are pines (0..1), on the map and in 3D. Unset: the landscape's
    * (and on the painted styles, the style's own). */
   conifers?: number;
@@ -728,15 +738,19 @@ export interface CourseDoc {
   canvas: { width: number; height: number };
   /** Terrain grid spacing, ft; heights are keyed "x,y" at grid points. */
   gridSize: number;
-  /** The site's trees measured from the air (LiDAR): those on fairways, tees and baskets' circles
-   * are cut down unless `kept` (by index); `removed` ones taken out wherever they stand. */
-  /** `growYears`: the measured trees grown that many years (the survey is older than today). */
-  /** `clearFairways: false`: the measured trees stay where the holes play (cut by hand only). */
+  /** The site's trees measured from the air (LiDAR): `removed` ones (by index) are taken out
+   * wherever they stand. With `clearFairways: true`, those on fairways, tees and baskets' circles
+   * are cut down too unless `kept`; unset, they stand (cut by hand, or a hole's Clear them). */
+  /** `growYears`: the measured trees grown that many years (the survey is older than today);
+   * `saplings: true`: young trees grown in the gaps and edges since, too (unset: none). */
   /** `bound`: measured trees that belong to woods. They stand only while a woods area covers them:
    * a wood's edge pulled in past one, or the wood deleted, takes it out; the edge pushed back
    * out over it brings it back. (A tree becomes bound the first time a woods it stood in changes
    * shape or goes; trees out on their own never do.) */
-  lidar?: { source: string; trees: LidarTree[]; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number; clearFairways?: false; bound?: number[] };
+  /** `fromPhoto`: how many of the trees, the last ones, came from the summer photo where a survey
+   * flown bare couldn't pick them out (lib/summerTrees). `crownSize`: every crown this much as wide,
+   * in 3D and on the map (unset: as measured). */
+  lidar?: { source: string; trees: LidarTree[]; fromPhoto?: number; crownSize?: number; kept?: number[]; removed?: number[]; minHeight?: number; growYears?: number; saplings?: true; clearFairways?: true; bound?: number[] };
   /** Where trees were cut down by hand that have no list of their own: saplings grown since the
    * survey and the trees the app plants in woods and patches. None stands within 4 ft of one. */
   cutTrees?: P[];

@@ -95,7 +95,7 @@ const askHelp = (topic: string) => window.dispatchEvent(new CustomEvent(HELP_EVE
 /** A small ? beside a setting: a tip about it (the help guide's own words), and the way on to its
  * page in the guide. */
 export function HelpLink({ topic, label }: { topic: string; label: string }) {
-  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const [at, setAt] = useState<{ x: number; y?: number; above?: number } | null>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const tip = useRef<HTMLDivElement>(null);
   const t = TOPICS.find(x => x.id === topic);
@@ -107,12 +107,24 @@ export function HelpLink({ topic, label }: { topic: string; label: string }) {
     window.addEventListener("keydown", key, true);
     return () => { window.removeEventListener("pointerdown", down, true); window.removeEventListener("keydown", key, true); };
   }, [at]);
+  // (inside a glassy or moved box, "fixed" is that box's, not the screen's: once drawn, the tip is
+  // moved onto the spot it was meant for. It stays in its panel, so a click on it is in the panel.)
+  useLayoutEffect(() => {
+    const el = tip.current;
+    if (!at || !el) return;
+    const r = el.getBoundingClientRect();
+    const top = at.above !== undefined ? window.innerHeight - at.above - r.height : at.y ?? 0;
+    el.style.left = `${parseFloat(el.style.left) + at.x - r.left}px`;
+    el.style.top = `${parseFloat(el.style.top) + top - r.top}px`;
+  }, [at]);
   const open = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (at) return setAt(null);
     const r = btn.current!.getBoundingClientRect();
-    setAt({ x: Math.max(8, Math.min(r.left - 12, window.innerWidth - 300)), y: r.bottom + 6 });
+    // (under the ?, or over it where there's no room under it: down by a phone's tool bar, say)
+    const x = Math.max(8, Math.min(r.left - 12, window.innerWidth - 300));
+    setAt(r.bottom + 240 > window.innerHeight && r.top > 240 ? { x, above: window.innerHeight - r.top + 6 } : { x, y: Math.min(r.bottom + 6, window.innerHeight - 220) });
   };
   // (its first paragraph: the tip; the rest is in the guide)
   const text = t?.body.split("\n\n")[0] ?? "";
@@ -121,7 +133,7 @@ export function HelpLink({ topic, label }: { topic: string; label: string }) {
       <button ref={btn} type="button" aria-label={`Help: ${label}`} aria-expanded={!!at} data-testid={`help-${topic}`} onClick={open}
         className={`relative w-[18px] h-[18px] touch:w-7 touch:h-7 touch:before:content-[''] touch:before:absolute touch:before:-inset-2 shrink-0 rounded-full inline-flex items-center justify-center text-[11px] font-bold align-middle ${at ? "bg-orange-300 text-zinc-950" : "text-zinc-300 bg-white/[0.09] hover:bg-white/[0.16] hover:text-zinc-50"} ${FOCUS}`}>?</button>
       {at && t && (
-        <div ref={tip} role="dialog" aria-label={t.title} data-testid="help-tip" className="fixed z-[60] w-[288px] glass-solid rounded-[16px] shadow-xl shadow-black/40 ring-1 ring-white/10 p-3 text-left normal-case tracking-normal" style={{ left: at.x, top: Math.min(at.y, window.innerHeight - 220) }}>
+        <div ref={tip} role="dialog" aria-label={t.title} data-testid="help-tip" className="fixed z-[60] w-[288px] glass-solid rounded-[16px] shadow-xl shadow-black/40 ring-1 ring-white/10 p-3 text-left normal-case tracking-normal" style={{ left: at.x, top: at.y ?? 0 }}>
           <div className="text-[13px] font-bold text-zinc-50 mb-1">{t.title}</div>
           <p className="text-[12.5px] leading-relaxed text-zinc-300 font-normal">{text}</p>
           <button className="mt-2 text-[12.5px] font-semibold text-orange-300 hover:text-orange-200" onClick={() => { setAt(null); askHelp(topic); }} data-testid="help-tip-more">More in the help guide ›</button>
@@ -343,23 +355,68 @@ export const Button = ({ children, onClick, tone = "default", disabled, title, t
 
 /** A color, picked with the system's color picker. `onDone` once it's closed (its one undo step,
  * when the colors on the way there were live without one). */
+// (colour by hue 0..360, saturation and lightness 0..100)
+const hexHsl = (hex: string): [number, number, number] => {
+  const n = parseInt(hex.slice(1), 16), r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (!d) return [0, 0, Math.round(l * 100)];
+  const sat = d / (1 - Math.abs(2 * l - 1)), h = mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [Math.round(h * 60), Math.round(sat * 100), Math.round(l * 100)];
+};
+const hslHex = (h: number, sat: number, l: number) => {
+  const S = sat / 100, L = l / 100, c = (1 - Math.abs(2 * L - 1)) * S, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = L - c / 2;
+  const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return "#" + [r, g, b].map(v => Math.round((v + m) * 255).toString(16).padStart(2, "0")).join("");
+};
+/**
+ * A colour: its swatch, and tapped, the app's own picker under it, starting on the colour it is
+ * (a phone's own picker opens on its presets instead): hue, saturation and lightness, each a
+ * slider painted with the colours it goes through, and the colour's code. Live as it moves;
+ * `onDone` when a slider is let go or the picker closes.
+ */
 export function ColorInput({ value, onChange, label, onDone }: { value: string; onChange: (v: string) => void; label: string; onDone?: () => void }) {
-  const ref = useRef<HTMLInputElement>(null);
-  const done = useRef(onDone);
-  done.current = onDone;
-  // (React's onChange is the browser's input event, live while the color moves; the browser's own
-  // change event comes once, when the picker closes)
+  const [open, setOpen] = useState(false);
+  const [hsl, setHsl] = useState(() => hexHsl(value));
+  const [code, setCode] = useState(value);
+  const box = useRef<HTMLDivElement>(null);
+  // (opened: from the colour it is now)
+  useEffect(() => { if (open) { setHsl(hexHsl(value)); setCode(value); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const el = ref.current;
-    const end = () => done.current?.();
-    el?.addEventListener("change", end);
-    return () => el?.removeEventListener("change", end);
-  }, []);
+    if (!open) return;
+    const away = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) { setOpen(false); onDone?.(); } };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); onDone?.(); } };
+    window.addEventListener("pointerdown", away); window.addEventListener("keydown", esc, true);
+    return () => { window.removeEventListener("pointerdown", away); window.removeEventListener("keydown", esc, true); };
+  }, [open, onDone]);
+  const set = (next: [number, number, number]) => { setHsl(next); const hex = hslHex(...next); setCode(hex); onChange(hex); };
+  const [h, sat, l] = hsl;
+  const bars: { name: string; v: number; max: number; bg: string; to: (v: number) => [number, number, number] }[] = [
+    { name: "Hue", v: h, max: 359, bg: `linear-gradient(to right, ${[0, 60, 120, 180, 240, 300, 360].map(x => hslHex(x % 360, Math.max(30, sat), Math.min(70, Math.max(30, l)))).join(",")})`, to: v => [v, sat, l] },
+    { name: "Saturation", v: sat, max: 100, bg: `linear-gradient(to right, ${hslHex(h, 0, l)}, ${hslHex(h, 100, l)})`, to: v => [h, v, l] },
+    { name: "Lightness", v: l, max: 100, bg: `linear-gradient(to right, #000, ${hslHex(h, sat, 50)}, #fff)`, to: v => [h, sat, v] }
+  ];
   return (
-    <label className="flex items-center justify-between gap-2 py-1">
-      <span className="text-xs text-zinc-300">{label}</span>
-      <input ref={ref} aria-label={label} type="color" className={`w-9 h-7 touch:w-11 touch:h-9 rounded bg-transparent cursor-pointer ${FOCUS}`} value={value} onChange={e => onChange(e.target.value)} onBlur={onDone} />
-    </label>
+    <div ref={box} className="py-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-zinc-300">{label}</span>
+        <button type="button" aria-label={label} aria-expanded={open} onClick={() => { if (open) onDone?.(); setOpen(o => !o); }} className={`w-9 h-7 touch:w-11 touch:h-9 rounded-md ring-1 ring-white/25 ${FOCUS}`} style={{ background: value }} data-testid="color-swatch" />
+      </div>
+      {open && (
+        <div className="mt-2 rounded-xl bg-black/25 ring-1 ring-white/10 p-2.5 space-y-2.5" data-testid="color-picker">
+          {bars.map(b => (
+            <label key={b.name} className="block">
+              <span className="flex justify-between text-[11px] text-zinc-400"><span>{b.name}</span><span className="tabular-nums">{b.v}{b.name === "Hue" ? "°" : "%"}</span></span>
+              <input type="range" aria-label={`${label}: ${b.name.toLowerCase()}`} min={0} max={b.max} value={b.v} onChange={e => set(b.to(Number(e.target.value)))} onPointerUp={onDone} onKeyUp={onDone}
+                className="dg-colorbar w-full h-5 touch:h-7 rounded-full appearance-none cursor-pointer" style={{ background: b.bg }} />
+            </label>
+          ))}
+          <label className="flex items-center gap-2 text-[11px] text-zinc-400">Code
+            <input aria-label={`${label}: code`} value={code} maxLength={7} spellCheck={false} onChange={e => { const v = e.target.value.trim(); setCode(v); if (/^#[0-9a-f]{6}$/i.test(v)) { setHsl(hexHsl(v)); onChange(v.toLowerCase()); } }} onBlur={onDone}
+              className={`flex-1 min-w-0 rounded-md bg-white/[0.07] px-2 py-1 text-xs text-zinc-100 font-mono ${FOCUS}`} />
+          </label>
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -7,8 +7,10 @@ import { usgsDem } from "../lib/geo/elevation";
 import { withMeasuredHeights } from "../lib/geo/buildings";
 import { fetchLidar } from "../lib/geo/lidarFetch";
 import { groundOnGrid } from "../lib/lidar";
-import { canopyKeepOut, signed, withMeasuredTrees } from "../lib/importSite";
-import { canopyStands } from "../lib/canopy";
+import { signed, withMeasuredTrees } from "../lib/importSite";
+import { natureFromPhoto } from "../lib/geo/photoNature";
+import { summerFills, treesFromSummer } from "../lib/summerTrees";
+import { treeFree } from "../lib/treeFree";
 import type { P } from "../types";
 import { changeDoc, getDoc, useEditor } from "./course";
 import { toast } from "./toast";
@@ -30,14 +32,18 @@ export const measureLidar = async () => {
       return;
     }
     const g = groundOnGrid(got.measured, d.canvas.width, d.canvas.height, d.gridSize);
+    // (flown bare, under a photo taken in leaf: the trees it couldn't pick out, from the photo, as on
+    // the import)
+    const photo = d.background && summerFills(got.measured.leafOn, d.site.photo?.season) ? await natureFromPhoto(d.background, d.canvas.width, d.canvas.height, undefined, { waterOnly: true, canopy: true }).catch(() => null) : null;
     changeDoc(doc => {
       const items = withMeasuredHeights(doc.items, got.measured, signed);
-      // (the woods from the measured canopy, kept off what's built, water, fields and roads, as on the import)
+      const summer = photo?.leaf ? treesFromSummer(got.trees, got.measured, photo.leaf, doc.canvas.width, doc.canvas.height, treeFree(items)) : [];
+      const trees = summer.length ? [...got.trees, ...summer] : got.trees;
       return {
-        lidar: { source: got.source, trees: got.trees },
+        lidar: { source: got.source, trees, ...(summer.length ? { fromPhoto: summer.length } : {}) },
         terrainHeights: g.heights,
         terrainOriginal: undefined,
-        items: withMeasuredTrees(items, got.trees, doc.canvas.width, doc.canvas.height, canopyStands(got.measured, got.trees, canopyKeepOut(items)).stands).items,
+        items: withMeasuredTrees(items, trees).items,
         site: { ...doc.site, baseElevationFt: Math.round(g.min * 10) / 10, elevationSource: got.source, noLidar: undefined, lidarFailed: undefined }
       };
     });

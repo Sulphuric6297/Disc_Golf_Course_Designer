@@ -2,7 +2,6 @@
 import { create } from "zustand";
 import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, DrawShape, StructureKind, FieldKind } from "../types";
 import { byNumber, createEmptyCourse, holeNumber, holeNumbers } from "../lib/course";
-import { bindToWoods } from "../lib/lidar";
 
 const HISTORY = 120;
 
@@ -33,10 +32,7 @@ export const useCourse = create<CourseStore>()((set, get) => ({
   change: (fn, history = true) => {
     const { doc, past, gestureStart, readOnly } = get();
     if (readOnly) return;
-    let next = { ...doc, ...fn(doc) };
-    // (a woods' edge moved or the woods gone: the measured trees it covered go with it)
-    const bound = next.lidar ? bindToWoods(doc, next) : null;
-    if (bound) next = { ...next, lidar: { ...next.lidar!, bound } };
+    const next = { ...doc, ...fn(doc) };
     if (history) set({ doc: next, past: [...past.slice(-HISTORY + 1), gestureStart ?? doc], future: [], gestureStart: null });
     else set({ doc: next, gestureStart: gestureStart ?? doc });
   },
@@ -177,6 +173,9 @@ type EditorStore = {
   /** What the Park tool puts down: a ball field, a court, a playground… */
   fieldKind: FieldKind;
   treeKind: TreeKind;
+  /** The Trees tool drawing a stand of one kind (woods that grow only it, around the trees
+   * measured there); null: a tree at a time, or the Woods choice's own mix. */
+  standOf: TreeKind | null;
   /** Looking from a tee down its hole (the hole's id), or flying over it. */
   teeView: string | null;
   /** The tee the tee view stands on (another skill level's), unset: the layout's. */
@@ -203,6 +202,8 @@ type EditorStore = {
   wind: boolean;
   /** The stumps of the measured trees cut down, everywhere (not only on the hole picked). */
   stumps: boolean;
+  /** Every tree hidden, to see the photo under them (this screen only, not kept). */
+  hideTrees: boolean;
   /** The ground from a tee, in flyovers and videos: the painted map (the Design look) or the photo. */
   flyLook: "painted" | "photo";
   set: (patch: Partial<Omit<EditorStore, "set">>) => void;
@@ -250,6 +251,7 @@ export const useEditor = create<EditorStore>()(set => ({
   amenityKind: "bench",
   fieldKind: "baseball",
   treeKind: "deciduous",
+  standOf: null,
   teeView: null,
   flyover: false,
   flyKey: null,
@@ -263,6 +265,7 @@ export const useEditor = create<EditorStore>()(set => ({
   grass: "auto",
   wind: true,
   stumps: false,
+  hideTrees: false,
   flyLook: "painted",
   ...(typeof localStorage !== "undefined" ? savedDisplay() : {}),
   set: patch => {

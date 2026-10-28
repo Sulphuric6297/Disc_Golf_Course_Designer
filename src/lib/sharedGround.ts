@@ -66,7 +66,7 @@ export function withGround(to: CourseDoc, from: CourseDoc, share: boolean | Grou
     lidar = {
       source: from.lidar.source, trees: moved,
       removed: samePlaces(to.lidar?.removed, own, moved), kept: samePlaces(to.lidar?.kept, own, moved),
-      minHeight: to.lidar?.minHeight ?? from.lidar.minHeight, growYears: to.lidar?.growYears ?? from.lidar.growYears, clearFairways: to.lidar?.clearFairways,
+      minHeight: to.lidar?.minHeight ?? from.lidar.minHeight, growYears: to.lidar?.growYears ?? from.lidar.growYears, saplings: to.lidar?.saplings ?? from.lidar.saplings, clearFairways: to.lidar?.clearFairways,
     };
   }
   let items = to.items, sharedTrees = to.site.sharedTrees;

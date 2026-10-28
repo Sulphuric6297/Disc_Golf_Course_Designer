@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight, RotateCcw } from "lucide-react";
 import { defaultStyle } from "../lib/course";
-import { COLOR_PICKS, conifersOf, paintedPinesOf, tallGrassOf, treeMixOf } from "../lib/landscapes";
+import { COLOR_PICKS, tallGrassOf, treeMixOf } from "../lib/landscapes";
 import { LIGHT_MODES, LOOK_THEMES, PART_CHOICES, compassName, latitudeOf, lightOf, lookParts, partChanged, sunArc, sunFromOf, themeOf, type LookPart, type LookParts } from "../lib/mapLook";
 import { useCourse } from "../state/course";
 import type { MapStyle, PathTier } from "../types";
@@ -78,7 +78,7 @@ const LIGHT_KEYS = ["sunHeight", "shadows", "light", "contrast", "colorStrength"
 const LIGHT_RESET: Partial<MapStyle> = { lightMode: undefined, goldenSun: undefined, sunFrom: undefined, sunHeight: undefined, shadows: undefined, light: undefined, contrast: undefined, colorStrength: undefined, paint: undefined };
 const ELEVATION_RESET: Partial<MapStyle> = { hillshade: true, reliefLook: undefined, reliefScale: undefined };
 /** The woods' own settings beside the tree style (pines, where to paint them, how thick). */
-const WOODS_RESET: Partial<MapStyle> = { conifers: undefined, treeCover: DEF.treeCover, forest: DEF.forest };
+const WOODS_RESET: Partial<MapStyle> = { conifers: undefined, autumnVivid: undefined, treeCover: DEF.treeCover, forest: DEF.forest };
 /** Each part's color on the map (its field in the style), and its own color's label. */
 const COLOR_FIELD = { trees: "trees", grass: "rough", fairway: "fairway", paths: "path", water: "water" } as const;
 const COLOR_LABEL: Record<LookPart, string> = { trees: "Trees", grass: "Grass", fairway: "Fairway", paths: "Paths", water: "Water" };
@@ -151,13 +151,13 @@ export function MapLookPanel() {
   const resetAll = () => setStyle({ ...LIGHT_RESET, ...ELEVATION_RESET, ...WOODS_RESET, lookParts: undefined, pathOrder: undefined });
   const current = (p: Part) => (p === "elevation" ? ELEVATION_LOOKS.find(l => l.id === relief)!.label : p === "light" ? LIGHT_MODES.find(m => m.id === lt.mode)!.label : (PART_CHOICES[p] as { id: string; label: string }[]).find(c => c.id === parts[p].style)?.label ?? "");
   const lightChanged = !!s.lightMode || s.goldenSun !== undefined || s.sunFrom !== undefined || LIGHT_KEYS.some(k => s[k] !== undefined && s[k] !== DEF[k]);
-  const woodsChanged = s.conifers !== undefined || (s.treeCover ?? DEF.treeCover) !== DEF.treeCover || (s.forest ?? DEF.forest) !== DEF.forest;
+  const woodsChanged = s.conifers !== undefined || s.autumnVivid !== undefined || (s.treeCover ?? DEF.treeCover) !== DEF.treeCover || (s.forest ?? DEF.forest) !== DEF.forest;
   const changed = (p: Part) => (p === "elevation" ? relief !== "shaded" || (s.reliefScale ?? 1) !== 1 : p === "light" ? lightChanged : partChanged(s, p) || (p === "paths" && !!s.pathOrder) || (p === "trees" && woodsChanged));
   // (the style card says Changed when any part shows its dot; Reset all takes every dot away)
   const mixed = PARTS.some(changed);
   const base = import.meta.env.BASE_URL;
   const painted = parts.trees.style !== "classic";
-  const pinesNow = painted ? paintedPinesOf(s, parts.trees.pines) : conifersOf(s);
+  const measured = useCourse(c => !!c.doc.lidar?.trees.length);
 
   return (
     <div data-testid="map-look">
@@ -184,7 +184,7 @@ export function MapLookPanel() {
         const pic = p === "elevation" ? `${base}relief/${relief}.jpg` : p === "light" ? `${base}parts/light-${lt.mode}.jpg` : `${base}parts/${p}-${parts[p].style}.jpg`;
         return (
           <div key={p} className="relative before:absolute before:left-[52px] before:right-0 before:top-0 before:h-px before:bg-white/[0.07] first:before:hidden" data-testid={`look-part-${p}`}>
-            <button className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-white/[0.04]" aria-expanded={isOpen} onClick={e => { keep(e.currentTarget); setOpen(isOpen ? null : p); }}>
+            <button className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-white/[0.04]" aria-expanded={isOpen} onClick={e => { keep(e.currentTarget); setOpen(isOpen ? null : p); }} data-testid={`part-${p}`}>
               <img src={pic} alt="" className="w-7 h-7 rounded-[8px] object-cover ring-1 ring-white/10" draggable={false} />
               <span className="text-[13.5px] font-medium text-zinc-100 flex-1">{PART_LABEL[p]}</span>
               {changed(p) && <span className="w-1.5 h-1.5 rounded-full bg-orange-400" aria-label="Changed" />}
@@ -216,11 +216,14 @@ export function MapLookPanel() {
                     <PartColors p={p} s={s} />
                     {p === "trees" && (
                       <>
-                        <LookSlider value={pinesNow} label="Pines" min={0} max={0.9} step={0.05} format={pct} onDone={v => setStyle({ conifers: v })} />
-                        <WoodsOptions s={s} />
+                        {/* (autumn's colours: how vivid, only while the leaves are autumn's) */}
+                        {treeMixOf(s).length > 0 && <LookSlider value={s.autumnVivid ?? 1} label="Autumn colors" min={0.4} max={1.6} step={0.05} format={x => (x < 0.95 ? "Softer" : x > 1.05 ? "More vivid" : "As they are")} onDone={v => setStyle({ autumnVivid: Math.abs(v - 1) < 0.01 ? undefined : v })} />}
+                        {/* (measured trees: the woods are those trees, as wide as Crown size makes them in 3D,
+                        and the woods drawn; more painted only when asked) */}
+                        <WoodsOptions s={s} measured={measured} />
                         {painted && (
                           <>
-                            <LookSlider value={parts.trees.density} label="Tree spacing" min={0.4} max={1.6} step={0.05} format={x => `${x < 0.95 ? "Wider" : x > 1.05 ? "Closer" : "Usual"} · ${pct(x)}`} onDone={v => setPart("trees", { density: v })} />
+                            {!measured && <LookSlider value={parts.trees.density} label="Tree spacing" min={0.4} max={1.6} step={0.05} format={x => `${x < 0.95 ? "Wider" : x > 1.05 ? "Closer" : "Usual"} · ${pct(x)}`} onDone={v => setPart("trees", { density: v })} />}
                             <LookSlider value={parts.trees.size} label="Size" min={0.6} max={1.5} step={0.05} format={pct} onDone={v => setPart("trees", { size: v })} />
                             <LookSlider value={parts.trees.variety} label="Color variety" min={0} max={1} step={0.05} format={pct} onDone={v => setPart("trees", { variety: v })} />
                           </>

@@ -4,8 +4,9 @@ import type {
   AmenityItem, AmenityKind, AreaItem, AreaKind, BasketItem, CourseDoc, CourseItem, CourseRules, DropZoneItem, Hole, LabelItem,
   Layout, LineItem, LineKind, MandoItem, MapStyle, P, PinPosition, StructureItem, StructureKind, TeeItem, TeeLevel, TreeItem
 } from "../types";
-import { centroid, corridor, dist, nearestAlong, nearestOnSegment, pathLength, pointAlong, smoothClosed, smoothPath, subPath } from "./geom";
+import { centroid, corridor, dist, nearestAlong, nearestOnSegment, pathLength, pointAlong, pointInPolygon, smoothClosed, smoothPath, subPath } from "./geom";
 import { landscapeOf } from "./landscapes";
+import { flyoverOf, keysAsTheyFlew } from "./flight";
 
 export const defaultStyle = (): MapStyle => ({
   theme: "forest",
@@ -80,7 +81,8 @@ export const createEmptyCourse = (): CourseDoc => ({
   items: [],
   layouts: defaultLayouts(),
   activeLayout: "layout-main",
-  style: defaultStyle(),
+  // (a new course starts in Brushed; one saved without a look is Classic, as it was)
+  style: { ...defaultStyle(), mapLook: "handpainted" },
   units: "ft",
   rules: defaultRules()
 });
@@ -94,9 +96,44 @@ const forestStyle = (style: CourseDoc["style"]): CourseDoc["style"] => {
   return { ...style, theme: "forest", ...l.colors, ob: "#e0483d", hazard: "#e8c547", basket: "#ffffff" };
 };
 
+/** The woods an older import made from the measured trees, with nothing set on them by hand: only
+ * a painting under the trees, so they go (the trees each stand on their own). */
+const bareStand = (i: CourseItem) =>
+  i.type === "area" && i.kind === "woods" && i.importSource === "lidar" && !i.label && i.ob === undefined && !i.hazard && !i.underbrush && !i.brush?.length &&
+  i.trees === undefined && i.pines === undefined && i.bushes === undefined && i.density === undefined && i.heights === undefined;
+
+/** Measured trees no longer go with a wood: the ones a wood took with it (its edge pulled in past
+ * them, or the wood deleted) are cut down for good, and the rest stand on their own. */
+const unbound = (lidar: NonNullable<CourseDoc["lidar"]>, items: CourseItem[]): NonNullable<CourseDoc["lidar"]> => {
+  if (!lidar.bound?.length) return lidar;
+  const woods = items.filter((i): i is AreaItem => i.type === "area" && i.kind === "woods" && i.points.length >= 3).map(areaPath);
+  const gone = lidar.bound.filter(k => { const t = lidar.trees[k]; return t && !woods.some(w => pointInPolygon({ x: t[0], y: t[1] }, w)); });
+  const removed = [...new Set([...(lidar.removed ?? []), ...gone])].sort((a, b) => a - b);
+  return { ...lidar, bound: undefined, removed: removed.length ? removed : undefined };
+};
+
+/** A wood's or tall grass's older settings, made simple: trees from the survey only, or filled
+ * in, or in patches, all keep the measured trees and fill in the whole wood; each underbrush
+ * section becomes woods of bushes of its own (as thick as its level). */
+const simpleWoods = (items: CourseItem[]): CourseItem[] => {
+  if (!items.some(i => i.type === "area" && (i.trees === "measured" || i.trees === "custom" || i.patches || i.brush || i.brushEdge !== undefined))) return items;
+  return items.flatMap((i): CourseItem[] => {
+    if (i.type !== "area" || (i.kind !== "woods" && i.kind !== "rough")) return [i];
+    const { patches: _p, brush, brushEdge: _e, ...rest } = i;
+    const own: AreaItem = { ...rest, trees: i.trees === "measured" || i.trees === "custom" ? undefined : i.trees };
+    const bushes = (brush ?? []).filter(b => b.level !== "none" && b.points.length >= 3).map(b => {
+      const at = centroid(b.points);
+      return { id: generateId(), type: "area", kind: "woods", x: at.x, y: at.y, points: b.points, bushes: 1, density: b.level === "light" ? 0.5 : b.level === "heavy" ? 2 : undefined, brushKind: b.kind ?? i.brushKind } as AreaItem;
+    });
+    return [own, ...bushes];
+  });
+};
+
 /** Fills in anything an older or hand-edited file is missing. */
 export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
   const base = createEmptyCourse();
+  // (a course's look is its own: an older one, saved without one, stays Classic)
+  delete base.style.mapLook;
   const doc: CourseDoc = {
     ...base,
     ...raw,
@@ -112,6 +149,11 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
       const shift = Array.isArray(h.fairwayShift) && h.fairwayShift.length === S.length && h.fairwayShift.every(v => Number.isFinite(v)) ? h.fairwayShift : undefined;
       const number = Number.isInteger(h.number) && h.number! > 0 ? h.number : undefined;
       const alsoNumbers = Array.isArray(h.alsoNumbers) ? h.alsoNumbers.filter(v => Number.isInteger(v) && v > 0) : [];
+      // (a flight through keyframes saved while Speed and the flyover's Lens still applied to it:
+      // its keyframes given the seconds and lens it flew with, and Speed 1 of its own, so it's
+      // done once)
+      const fly = h.flyKeys && h.flyKeys.length >= 2 ? flyoverOf({ flyover: raw.flyover }, h) : null;
+      if (fly && (fly.speed !== 1 || h.flyKeys!.some(k => k.fov === undefined))) h = { ...h, flyKeys: keysAsTheyFlew(h.flyKeys!, fly.speed, fly.fov), ...(fly.speed !== 1 ? { flyover: { ...h.flyover, speed: 1 } } : {}) };
       return { ...h, number, alsoNumbers: alsoNumbers.length ? alsoNumbers : undefined, fairwayWidth: h.fairwayWidth ?? DEFAULT_FAIRWAY_FT, fairway: h.fairway ?? true, doglegs: h.doglegs ?? [], fairwayShape: shape, fairwayShift: shift, fairwayStations: stations && (shape || shift) ? stations : undefined };
     }),
     // (A structure needs its points and a kind this version knows)
@@ -128,11 +170,15 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
     terrainHeights: raw.terrainHeights ?? {},
     terrainOriginal: raw.terrainOriginal && typeof raw.terrainOriginal === "object" ? raw.terrainOriginal : undefined,
     groundPaint: raw.groundPaint ?? {},
-    lidar: raw.lidar && typeof raw.lidar.source === "string" && Array.isArray(raw.lidar.trees) ? raw.lidar : undefined,
+    lidar: raw.lidar && typeof raw.lidar.source === "string" && Array.isArray(raw.lidar.trees) ? unbound(raw.lidar, Array.isArray(raw.items) ? raw.items : []) : undefined,
     ignoredChecks: Array.isArray(raw.ignoredChecks) ? raw.ignoredChecks.filter(x => typeof x === "string") : undefined,
     version: 1
   };
   if (!doc.layouts.some(l => l.id === doc.activeLayout)) doc.activeLayout = doc.layouts[0].id;
+  if (doc.lidar) doc.items = doc.items.filter(i => !bareStand(i));
+  doc.items = simpleWoods(doc.items);
+  // (the Golden trees are gone: Brushed's in their place)
+  if ((doc.style.lookParts?.trees?.style as string | undefined) === "golden") doc.style = { ...doc.style, lookParts: { ...doc.style.lookParts, trees: { ...doc.style.lookParts!.trees, style: "brushed" } } };
   return doc;
 };
 

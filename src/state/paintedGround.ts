@@ -3,11 +3,22 @@
 // the satellite photo. Painted a slice at a time, once per version of the course.
 import { measuredStanding, onStanding } from "../lib/standing";
 import { useEffect, useState } from "react";
-import { canopyFor, detailArea, forestCanvasAsync, paintedFrom, woodedOf, type WoodedGrid } from "../lib/forest";
+import { canopyFor, detailArea, forestCanvasAsync, paintedFrom, paintsFromPhoto, woodedOf, type WoodedGrid } from "../lib/forest";
 import { courseStats, holeStats } from "../lib/holeStats";
 import type { CourseDoc } from "../types";
 import { useCourse } from "./course";
 import { idbDelete, idbGet, idbSet } from "../lib/storage";
+import { spareMoment } from "./pace";
+
+/** The paintings wanted now (a tee view, a flyover, a video, a viewer's look), by key. The rest are
+ * painted ahead, gently: only while the view is still and the browser has time to spare, a few
+ * ms at a time, so looking round the 3D view never stalls for them. */
+const wanted = new Set<string>();
+const gently = (key: string, stop: AbortController) => () => {
+  // (the course changed since: this painting is out of date before it's done, so it stops)
+  if (!wanted.has(key) && paintKey(useCourse.getState().doc) !== key) { stop.abort(); return Promise.resolve(8); }
+  return spareMoment(() => wanted.has(key));
+};
 
 // Paintings kept on this device, by what they depend on: the next session skips the painting
 // (the slowest part of a flyover's wait). A short list; the oldest go.
@@ -77,9 +88,11 @@ const made = new Map<string, Promise<PaintedGround | null>>();
 const kept: { key: string; url: string }[] = [];
 let under: { key: string; stop: AbortController } | null = null;
 
-/** The painted ground of a course, or null when it can't be painted. */
-export const paintedGround = (doc: CourseDoc): Promise<PaintedGround | null> => {
+/** The painted ground of a course, or null when it can't be painted; `ahead`: not wanted yet,
+ * painted gently (one wanted later speeds up). */
+export const paintedGround = (doc: CourseDoc, ahead = false): Promise<PaintedGround | null> => {
   const key = paintKey(doc);
+  if (!ahead) wanted.add(key);
   const hit = made.get(key);
   if (hit) return hit;
   // (a newer version of the course: the one under way is no longer wanted)
@@ -96,8 +109,8 @@ export const paintedGround = (doc: CourseDoc): Promise<PaintedGround | null> => 
     if (saved) ({ blob, wooded } = saved);
     else {
       if (job.stop.signal.aborted) throw new Error("stopped");
-      const canopy = doc.style.forest === "photo" ? await canopyFor(doc) : null;
-      const canvas = await forestCanvasAsync(doc, view, courseStats(doc), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1, under: true }, job.stop.signal);
+      const canopy = paintsFromPhoto(doc) ? await canopyFor(doc) : null;
+      const canvas = await forestCanvasAsync(doc, view, courseStats(doc), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1, under: true }, job.stop.signal, undefined, gently(key, job.stop));
       blob = await toBlob(canvas, "image/jpeg", 0.9);
       wooded = woodedOf(canvas);
       if (blob) void savePaint(diskKey, { blob, wooded });
@@ -118,6 +131,7 @@ export const paintedGround = (doc: CourseDoc): Promise<PaintedGround | null> => 
     return null;
   }).finally(() => {
     if (under === job) under = null;
+    wanted.delete(key);
   });
   made.set(key, work);
   return work;
@@ -156,7 +170,7 @@ export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Pro
     const saved = await savedPaint<{ blob: Blob }>(diskKey);
     if (saved) return { canvas: await canvasOf(saved.blob), rect };
     if (job.stop.signal.aborted) throw new Error("stopped");
-    const canopy = doc.style.forest === "photo" ? await canopyFor(doc) : null;
+    const canopy = paintsFromPhoto(doc) ? await canopyFor(doc) : null;
     const canvas = await forestCanvasAsync(doc, view, courseStats(doc), { mode: doc.style.forest ?? "everywhere", canopy, style: doc.style, density: 1, under: true }, job.stop.signal);
     // Its edges fade into the painting of the whole site (none where it meets the site's edge)
     const c = canvas.getContext("2d")!;
@@ -194,7 +208,7 @@ export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Pro
 /** The painted ground for the course as it is, while `active` (null until it is painted), and
  * whether it is of the course as it is now (the last painting stands in while the newest
  * version paints: a flyover waits for the new one). */
-export const usePaintedGround = (active: boolean): [PaintedGround | null, boolean] => {
+export const usePaintedGround = (active: boolean, ahead = false): [PaintedGround | null, boolean] => {
   const doc = useCourse(s => s.doc);
   const [got, setGot] = useState<{ key: string; p: PaintedGround } | null>(null);
   const [trees, bump] = useState(0);
@@ -203,9 +217,9 @@ export const usePaintedGround = (active: boolean): [PaintedGround | null, boolea
     if (!active) return;
     let live = true;
     const key = paintKey(doc);
-    void paintedGround(doc).then(p => { if (live && p) setGot({ key, p }); });
+    void paintedGround(doc, ahead).then(p => { if (live && p) setGot({ key, p }); });
     return () => { live = false; };
-  }, [active, doc, trees]);
+  }, [active, ahead, doc, trees]);
   const fresh = !!got && got.key === paintKey(doc);
   return [active ? got?.p ?? null : null, fresh];
 };

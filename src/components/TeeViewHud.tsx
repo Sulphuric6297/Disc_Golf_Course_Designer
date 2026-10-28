@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Clapperboard, Plane, Settings2, Square, Video, X } from "lucide-react";
 import { useAllowed } from "../auth/perms";
 import { TEE_LEVELS } from "../constants";
-import { activeLayout } from "../lib/course";
+import { activeLayout, holeLabel } from "../lib/course";
 import { courseStats, holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
 import { useCourse, useEditor } from "../state/course";
@@ -13,7 +13,7 @@ import { VIDEO_SIZES } from "../lib/video";
 import type { Hole, TeeItem } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { SceneButton } from "./ScenePanel";
-import { cameraFrom, FlyoverSettingsPanel } from "./FlyoverSettings";
+import { cameraFrom, HoleFlight } from "./FlyoverSettings";
 import { HelpLink } from "./ui";
 
 /** While a flyover waits for its pictures: the hole's name and numbers and a thin moving bar,
@@ -37,14 +37,13 @@ function FlyoverLoading({ title, facts, on, stage, onCancel }: { title: string; 
   );
 }
 
-/** The flyover's settings over the view. A hole flying through its keyframes takes its height and
- * start from them, so those settings aren't offered for it. (The ground is in View, beside it.) */
+/** The hole's Flyover panel over the view, as in the hole's panel. (The ground is in View, beside it.) */
 function SettingsBox({ hole }: { hole: Hole }) {
-  const keyed = (hole.flyKeys?.length ?? 0) >= 2;
+  const doc = useCourse(s => s.doc);
   return (
     <>
-      <div className="flex items-center gap-1.5 text-sm font-semibold text-zinc-100 mb-2">Flyover settings <HelpLink topic="camera" label="Flyover settings" /></div>
-      <FlyoverSettingsPanel holeId={hole.id} keys={keyed} ground={false} />
+      <div className="flex items-center gap-1.5 text-sm font-semibold text-zinc-100 mb-2">Flyover · Hole {holeLabel(doc, hole.id)} <HelpLink topic="flyover" label="Flyover" /></div>
+      <HoleFlight hole={hole} />
     </>
   );
 }
@@ -174,7 +173,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
           <Clapperboard size={15} /> {job?.kind === "video" ? (recPct ? `Recording ${recPct}` : "Recording…") : "Record"}
         </button>}
         {!readOnly && <button className="px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 text-white hover:bg-white/10" onClick={() => cameraFrom(hole.id, null)} title="Fly the camera yourself and add keyframes" data-testid="hud-freecam"><Video size={15} /> Camera</button>}
-        {!readOnly && <button className={`px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 text-white ${camera ? "bg-white/15" : "hover:bg-white/10"}`} onClick={() => setCamera(c => !c)} aria-pressed={camera} title="Flyover settings" data-testid="hud-settings"><Settings2 size={15} /> Settings</button>}
+        {!readOnly && <button className={`px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 text-white ${camera ? "bg-white/15" : "hover:bg-white/10"}`} onClick={() => setCamera(c => !c)} aria-pressed={camera} title="The hole's Flyover panel" data-testid="hud-settings"><Settings2 size={15} /> Settings</button>}
         <button className="px-3 py-1.5 rounded-full text-sm font-semibold text-white hover:bg-white/10 flex items-center gap-1.5" onClick={() => ed.set({ teeView: null, flyover: false })} data-testid="hud-close"><X size={15} /> Back to map</button>
       </div>
       {camera && (

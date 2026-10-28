@@ -69,7 +69,7 @@ export const photoPixels = async (url: string, width: number, nirUrl?: string | 
 
 /** findNature in a worker (the page keeps moving), or here where workers can't run. Stopped, the
  * worker is ended. */
-const findInWorker = (photo: NonNullable<Awaited<ReturnType<typeof photoPixels>>>, opts: { date?: string; lat?: number; waterOnly?: boolean; season?: string }, signal?: AbortSignal): Promise<PhotoFound> => {
+const findInWorker = (photo: NonNullable<Awaited<ReturnType<typeof photoPixels>>>, opts: { date?: string; lat?: number; waterOnly?: boolean; season?: string; canopy?: boolean }, signal?: AbortSignal): Promise<PhotoFound> => {
   if (typeof Worker === "undefined") return Promise.resolve(findNature(photo, opts));
   return new Promise<PhotoFound>((resolve, reject) => {
     let worker: Worker;
@@ -99,20 +99,21 @@ const findInWorker = (photo: NonNullable<Awaited<ReturnType<typeof photoPixels>>
  * own (as trees) and open water (as water areas). `waterOnly`: only the water (trees measured from
  * the air stand in for the rest). `nir`: the photo's near-infrared band, as an image of the same
  * ground; `date`, `season` and `lat`: when and where it was taken (a tree's shadow then says its
- * height; without the infrared, none of the lone trees come from a bare winter photo). */
+ * height; without the infrared, none of the lone trees come from a bare winter photo). `canopy`
+ * with `waterOnly`: the photo's tree canopy as well, a pixel each (`leaf`). */
 export const natureFromPhoto = async (
   url: string,
   width: number,
   height: number,
   onStep: (text: string, fraction: number) => void = () => {},
-  opts: { signal?: AbortSignal; waterOnly?: boolean; nir?: string | null; date?: string; lat?: number; season?: string } = {}
-): Promise<{ trees: TreeItem[]; woods: AreaItem[]; water: AreaItem[] }> => {
+  opts: { signal?: AbortSignal; waterOnly?: boolean; nir?: string | null; date?: string; lat?: number; season?: string; canopy?: boolean } = {}
+): Promise<{ trees: TreeItem[]; woods: AreaItem[]; water: AreaItem[]; leaf?: { mask: Uint8Array; w: number; h: number } }> => {
   onStep(opts.waterOnly ? "Finding water on the photo…" : "Finding woods, trees and water on the photo…", 0.05);
-  const photo = await photoPixels(url, width, opts.waterOnly ? null : opts.nir);
+  const photo = await photoPixels(url, width, opts.waterOnly && !opts.canopy ? null : opts.nir);
   stopped(opts.signal);
   if (!photo) return { trees: [], woods: [], water: [] };
   onStep(opts.waterOnly ? "Finding water on the photo…" : "Finding woods, trees and water on the photo…", 0.2);
-  const found = await findInWorker(photo, { date: opts.date, lat: opts.lat, waterOnly: opts.waterOnly, season: opts.season }, opts.signal);
+  const found = await findInWorker(photo, { date: opts.date, lat: opts.lat, waterOnly: opts.waterOnly, season: opts.season, canopy: opts.canopy }, opts.signal);
   stopped(opts.signal);
   onStep("Tracing the woods…", 0.9);
   const { w, h } = photo;
@@ -123,5 +124,5 @@ export const natureFromPhoto = async (
   const trees = found.trees
     .map(t => createTree({ x: (t.x / w) * width, y: (t.y / h) * height }, { radius: Math.round(clamp(t.radiusPx * photo.mpp * FEET_PER_METER, 5, 35)), height: t.heightFt ?? PHOTO_TREE_HEIGHT, importSource: "photo" }))
     .filter(t => !water.some(a => pointInPolygon(t, a.points)));
-  return { trees, woods, water };
+  return { trees, woods, water, ...(opts.canopy && found.mask ? { leaf: { mask: found.mask, w, h } } : {}) };
 };

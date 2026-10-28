@@ -310,9 +310,9 @@ test("a road marked OB from its right-click menu", async ({ page }) => {
   await expect.poll(async () => (await course(page)).items[0].ob).toBe(true);
   // The inspector says so, and it can be taken back there
   await page.evaluate(id => (window as any).__dgActions.select(id), (await course(page)).items[0].id);
-  const ob = page.getByRole("radiogroup", { name: "Out of bounds" });
+  const ob = page.getByRole("radiogroup", { name: "Penalty" });
   await expect(ob.getByRole("radio", { name: "OB", exact: true })).toHaveAttribute("aria-checked", "true");
-  await ob.getByRole("radio", { name: "Not OB" }).click();
+  await ob.getByRole("radio", { name: "None" }).click();
   await expect.poll(async () => (await course(page)).items[0].ob).toBeUndefined();
 });
 
@@ -330,7 +330,7 @@ test("a stretch of a road marked OB with two clicks on it (or from its right-cli
   const road = () => course(page).then(c => c.items.find((i: any) => i.type === "line"));
   await page.evaluate(id => (window as any).__dgActions.select(id), (await road()).id);
   // Only a stretch: where it starts, then where it ends (a click off the road does nothing)
-  await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "OB", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Penalty" }).getByRole("radio", { name: "OB", exact: true }).click();
   await page.getByTestId("ob-mark-stretch").click();
   await expect(page.getByTestId("ob-pick-bar")).toBeVisible();
   await clickPlan(page, 400, 600);
@@ -346,7 +346,7 @@ test("a stretch of a road marked OB with two clicks on it (or from its right-cli
   await drag(page, await handleCenter(page, "obend", 1), await screenOf(page, 850, 610));
   await expect.poll(async () => Math.round((await road()).obStretches[0][1] * 800)).toBeGreaterThan(680);
   // OB and beyond, then one undo step back
-  await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "And beyond" }).click();
+  await page.getByRole("radiogroup", { name: "Penalty" }).getByRole("radio", { name: "OB and beyond" }).click();
   await expect.poll(async () => (await road()).obBeyond).toBe(true);
   // For the hole beside it; then for all holes, and that hole picked again
   const holeId = (await course(page)).holes[0].id;
@@ -467,9 +467,13 @@ test("a mando joins the hole it is placed beside, not just the one being worked 
   const second = await addHole(page, { x: 900, y: 300 }, { x: 900, y: 800 });
   expect((await editorState(page)).activeHoleId).toBe(second.id);
   await page.keyboard.press("m");
-  await clickPlan(page, 320, 550);
+  // (the pointer there first, as a person's is: on a slow machine its move can come after the click)
+  const p = await screenOf(page, 320, 550);
+  await page.mouse.move(p.x, p.y, { steps: 4 });
+  await page.waitForTimeout(300);
+  await page.mouse.click(p.x, p.y);
+  await expect.poll(async () => (await course(page)).items.find((i: any) => i.type === "mando")?.holeId).toBe(first.id);
   const mando = (await course(page)).items.find((i: any) => i.type === "mando");
-  expect(mando.holeId).toBe(first.id);
   // Facing up the first hole (north)
   expect(Math.round(mando.rotation)).toBe(-90);
 });
@@ -694,7 +698,7 @@ test("any area's edge OB: all round, or a stretch traced the long way round", as
     return (window as any).__dgEditor().selectedId;
   });
   const area = () => course(page).then(c => c.items.find((i: any) => i.id === id));
-  await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "OB", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Penalty" }).getByRole("radio", { name: "OB", exact: true }).click();
   await expect.poll(async () => (await area()).ob).toBe(true);
   await expect(page.getByTestId("ob-stretches")).toContainText("All the way round");
   // Only a stretch: from the top's middle, round by the right, the bottom and the left, to near the top-left corner
@@ -740,7 +744,7 @@ test("OB and beyond: the app's side, or either side chosen (named by the compass
     return (window as any).__dgEditor().selectedId;
   });
   const road = () => course(page).then(c => c.items.find((i: any) => i.id === id));
-  await page.getByRole("radiogroup", { name: "Out of bounds" }).getByRole("radio", { name: "And beyond" }).click();
+  await page.getByRole("radiogroup", { name: "Penalty" }).getByRole("radio", { name: "OB and beyond" }).click();
   // (the hole is north of the road: OB runs south, away from it)
   const side = page.getByRole("radiogroup", { name: "OB side" });
   await expect(side.getByRole("radio", { name: "Auto (south)" })).toHaveAttribute("aria-checked", "true");
@@ -750,7 +754,7 @@ test("OB and beyond: the app's side, or either side chosen (named by the compass
   await expect.poll(async () => (await road()).obToward).toBeUndefined();
 });
 
-test("tall grass has no underbrush until you pick some; then it grows there in 3D, and its kind and sections are set like a wood's", async ({ page }) => {
+test("tall grass has no underbrush until you pick some; then it grows there in 3D", async ({ page }) => {
   await blankCourse(page);
   const id = await page.evaluate(() => {
     (window as any).__dgEditor().set({ areaKind: "rough", tool: "select" });
@@ -768,10 +772,23 @@ test("tall grass has no underbrush until you pick some; then it grows there in 3
   await brush.getByRole("radio", { name: "Light" }).click();
   await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === id).underbrush).toBe("light");
   await expect.poll(grows, { timeout: 30_000 }).toBe(true);
-  // (what grows: weeds, say)
-  await insp.getByTestId("brush-kind").getByRole("radio", { name: "Weeds" }).click();
-  await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === id).brushKind).toBe("weeds");
   // Back to none: gone again
   await brush.getByRole("radio", { name: "None" }).click();
   await expect.poll(grows, { timeout: 30_000 }).toBe(false);
+});
+
+test("the ? in the hint over the tool bar opens its tip on the screen, above the hint", async ({ page }) => {
+  await blankCourse(page);
+  await page.getByTestId("tool-bar").getByRole("button", { name: /Build/ }).click();
+  const hint = page.getByTestId("tool-hint");
+  await hint.getByRole("button", { name: /^Help:/ }).click();
+  const tip = page.getByTestId("help-tip");
+  await expect(tip).toBeVisible();
+  const t = (await tip.boundingBox())!, h = (await hint.boundingBox())!, vh = page.viewportSize()!.height;
+  plainExpect(t.y).toBeGreaterThanOrEqual(0);
+  plainExpect(t.y + t.height).toBeLessThanOrEqual(h.y);
+  plainExpect(t.y + t.height).toBeLessThanOrEqual(vh);
+  // (its way on to the guide works from there too)
+  await tip.getByTestId("help-tip-more").click();
+  await expect(tip).toHaveCount(0);
 });

@@ -818,17 +818,19 @@ export const saplings = (trees: LidarTree[], years: number): LidarTree[] => {
   return out;
 };
 
-const grown = new WeakMap<LidarTree[], { years: number; out: LidarTree[] }>();
+const grown = new WeakMap<LidarTree[], { years: number; young: boolean; size: number; out: LidarTree[] }>();
 /** The course's measured trees, grown as many years as it asks (the same list when none), with
  * the saplings that came up since after them (so the measured trees keep their places in the
- * list: what was cut down or kept by index stays so). */
+ * list: what was cut down or kept by index stays so), their crowns as wide as Crown size says. */
 export const grownTrees = (lidar: NonNullable<CourseDoc["lidar"]>) => {
-  const years = lidar.growYears ?? 0;
-  if (!years) return lidar.trees;
+  const years = lidar.growYears ?? 0, size = lidar.crownSize ?? 1, young = lidar.saplings === true;
+  if (!years && size === 1) return lidar.trees;
   const hit = grown.get(lidar.trees);
-  if (hit?.years === years) return hit.out;
-  const out = [...lidar.trees.map(t => grownTree(t, years)), ...saplings(lidar.trees, years)];
-  grown.set(lidar.trees, { years, out });
+  if (hit?.years === years && hit.size === size && hit.young === young) return hit.out;
+  // (the saplings grown in the gaps since only when asked for)
+  const aged = years ? [...lidar.trees.map(t => grownTree(t, years)), ...(young ? saplings(lidar.trees, years) : [])] : lidar.trees;
+  const out = size === 1 ? aged : aged.map(([x, y, h, r, c]): LidarTree => [x, y, h, Math.round(r * size * 10) / 10, c]);
+  grown.set(lidar.trees, { years, size, young, out });
   return out;
 };
 
@@ -865,13 +867,14 @@ export const bindToWoods = (before: CourseDoc, after: CourseDoc): number[] | nul
   return bound.size === had ? null : [...bound].sort((a, b) => a - b);
 };
 
-/** Which measured trees stand: those on a fairway, a tee or a basket's circle (as
- * `cleared` says) are cut down unless kept; any taken out are gone; a woods' own tree only
+/** Which measured trees stand: any taken out are gone; with `clearFairways`, those on a fairway, a
+ * tee or a basket's circle (as `cleared` says) are cut down unless kept; a woods' own tree only
  * while a woods covers it (`inWoods`). */
 export const standingTrees = (lidar: NonNullable<CourseDoc["lidar"]>, cleared: (p: P, reach: number) => boolean, nowhere: (p: P) => boolean = () => false, inWoods: (p: P) => boolean = () => true) => {
   const kept = new Set(lidar.kept ?? []), removed = new Set(lidar.removed ?? []), bound = new Set(lidar.bound ?? []);
-  // (a course can keep its measured trees on the fairways and cut by hand only)
-  if (lidar.clearFairways === false) cleared = () => false;
+  // (unless the course asks for its fairways cleared, measured trees stand where the holes play:
+  // cut by hand, or a hole's Clear them)
+  if (lidar.clearFairways !== true) cleared = () => false;
   const stand: number[] = [], cut: number[] = [];
   lidar.trees.forEach((t, k) => {
     const p = { x: t[0], y: t[1] };
@@ -887,19 +890,22 @@ export const standingTrees = (lidar: NonNullable<CourseDoc["lidar"]>, cleared: (
   return { stand, cut };
 };
 
-/** The measured trees on a hole's fairway (its line as played): those cut down (cleared for play,
- * or taken out) and those kept standing. */
+/** The measured trees on a hole's fairway (its line as played): those cut down (taken out, or
+ * cleared for play), those kept standing where the fairways are cleared, and those standing in the
+ * way where they aren't. */
 export const fairwayTrees = (doc: Pick<CourseDoc, "lidar">, hole: Hole, line: P[]) => {
-  const out = { cut: [] as number[], kept: [] as number[] };
+  const out = { cut: [] as number[], kept: [] as number[], standing: [] as number[] };
   const lidar = doc.lidar;
-  if (!lidar?.trees.length || line.length < 2 || lidar.clearFairways === false) return out;
+  if (!lidar?.trees.length || line.length < 2) return out;
   const poly = fairwayOutline(hole, smoothPath(line, 8), hole.fairway ? 0 : -hole.fairwayWidth * 0.4, 6);
-  const box = boundsOf(poly), kept = new Set(lidar.kept ?? []);
+  const box = boundsOf(poly), kept = new Set(lidar.kept ?? []), removed = new Set(lidar.removed ?? []), clearing = lidar.clearFairways === true;
   lidar.trees.forEach(([x, y, , r], k) => {
     const reach = r * 0.3;
     if (x < box.minX - reach || x > box.maxX + reach || y < box.minY - reach || y > box.maxY + reach) return;
     if (!pointInPolygon({ x, y }, poly) && distanceToPolygon({ x, y }, poly) >= reach) return;
-    (kept.has(k) ? out.kept : out.cut).push(k);
+    if (removed.has(k)) out.cut.push(k);
+    else if (!clearing) out.standing.push(k);
+    else (kept.has(k) ? out.kept : out.cut).push(k);
   });
   return out;
 };

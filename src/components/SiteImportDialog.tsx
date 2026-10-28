@@ -33,6 +33,17 @@ const startFrom = () => {
 /** An import under way (whichever dialog started it). */
 let importing = false;
 
+/** The north-up box round a frame turned `deg` clockwise: what's brought in (north stays north; the
+ * course map is turned to match). */
+const turnedBox = (b: GeoBounds, deg: number): GeoBounds => {
+  if (!deg) return b;
+  const lat0 = (b.north + b.south) / 2, lon0 = (b.east + b.west) / 2;
+  const mx = 111320 * Math.cos((lat0 * Math.PI) / 180), my = 110540, a = (deg * Math.PI) / 180;
+  const hw = ((b.east - b.west) * mx) / 2, hh = ((b.north - b.south) * my) / 2;
+  const ex = Math.abs(hw * Math.cos(a)) + Math.abs(hh * Math.sin(a)), ey = Math.abs(hw * Math.sin(a)) + Math.abs(hh * Math.cos(a));
+  return { north: lat0 + ey / my, south: lat0 - ey / my, east: lon0 + ex / mx, west: lon0 - ex / mx };
+};
+
 /** A frame round an outline, a little past its edges, kept within the size a site can be. */
 const frameAround = (b: GeoBounds): GeoBounds => {
   const lat = (b.north + b.south) / 2;
@@ -58,7 +69,7 @@ const drawnAs = (i: CourseItem): { area?: string; line?: string; weight?: number
   return {};
 };
 
-export function SiteImportDialog({ onClose, onImported }: { onClose: () => void; onImported: (site: ImportedSite, opts: { trees: boolean; osm: boolean; course?: boolean }) => void }) {
+export function SiteImportDialog({ onClose, onImported }: { onClose: () => void; onImported: (site: ImportedSite, opts: { trees: boolean; osm: boolean; course?: boolean; turn?: number }) => void }) {
   // (open again each time it mounts: React mounts it twice in development, and a flag only ever
   // set to closed left every import there unapplied, stuck short of the end)
   const open = useRef(true);
@@ -78,6 +89,8 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   const [selection, setSelection] = useState<GeoBounds | null>(start.selection);
   const [label, setLabel] = useState(start.label);
   const [drawing, setDrawing] = useState(false);
+  // (the frame turned, degrees clockwise from north: the course map is turned to match)
+  const [angle, setAngle] = useState(() => Math.round(getDoc().style.rotation ?? 0));
   const [outline, setOutline] = useState<SiteOutline | null>(null);
   const [fit, setFit] = useState<{ bounds: GeoBounds; key: number } | null>(null);
   const [imagery, setImagery] = useState<MapImagerySource>("satellite");
@@ -203,7 +216,9 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   });
 
   const dims = selection ? selectionFromBounds(selection, label) : null;
-  const tooBig = !!dims && (dims.widthFt > SITE_MAX_WIDTH_FT || dims.heightFt > SITE_MAX_WIDTH_FT);
+  // (what's brought in: the north-up box round the frame as turned)
+  const box = selection ? selectionFromBounds(turnedBox(selection, angle), label) : null;
+  const tooBig = !!box && (box.widthFt > SITE_MAX_WIDTH_FT || box.heightFt > SITE_MAX_WIDTH_FT);
   const tooSmall = () => setStatus({ state: "error", text: `Too small: at least ${fmtDist(SITE_MIN_WIDTH_FT, units)} each way.` });
   const onSelect = (b: GeoBounds) => {
     setSelection(b);
@@ -242,11 +257,11 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     setArrived(null);
     setStatus({ state: "loading", text: "Starting…" });
     try {
-      const site = await importSite(selectionFromBounds(selection, label), { imagery, trees, osm, lidar, signal: stop.signal, onLayer, onProgress: p => {
+      const site = await importSite(selectionFromBounds(turnedBox(selection, angle), label), { imagery, trees, surveyed: !!survey, osm, lidar, signal: stop.signal, onLayer, onProgress: p => {
         (window as { __dgImportProgress?: unknown }).__dgImportProgress = p;
         if (!stop.signal.aborted) { setStatus({ state: "loading", text: p.text, progress: { fraction: p.fraction } }); setSources({ ...p.sources }); }
       } });
-      if (open.current && !stop.signal.aborted) onImported(site, { trees, osm, course: course && !!outline?.course?.holes });
+      if (open.current && !stop.signal.aborted) onImported(site, { trees, osm, course: course && !!outline?.course?.holes, turn: angle });
     } catch (err) {
       if (isAbort(err) || stop.signal.aborted) return;
       console.error(err);
@@ -275,7 +290,8 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     <div className={`text-[13px] rounded-xl px-3 py-2 ${tooBig ? "bg-red-900/40 text-red-200" : "bg-white/[0.07] text-zinc-200"}`} data-testid="site-size">
       <span className="font-semibold">{fmtArea(dims.widthFt * dims.heightFt, units)}</span> · {fmtDist(dims.widthFt, units, false)} × {fmtDist(dims.heightFt, units)}
       {tooBig && <div className="text-xs mt-1">Keep it under {fmtDist(SITE_MAX_WIDTH_FT, units)} each way.</div>}
-      {!drawing && <div className="text-[11.5px] text-zinc-400 mt-0.5" data-testid="frame-hint">{touch ? "Drag the corners · Draw for a new one" : "Drag the corners · Shift+drag draws a new one"}</div>}
+      {!drawing && <div className="text-[11.5px] text-zinc-400 mt-0.5" data-testid="frame-hint">{touch ? "Drag the corners · ⟳ turns it" : "Drag the corners · ⟳ turns it · Shift+drag draws a new one"}</div>}
+      {angle !== 0 && <div className="flex items-center justify-between mt-1 text-[12px] text-zinc-300" data-testid="frame-turn">Turned {angle > 180 ? `${360 - angle}° left` : `${angle}° right`} <button className="text-orange-300 hover:text-orange-200 touch:min-h-[44px]" onClick={() => setAngle(0)}>North up</button></div>}
     </div>
   );
   const emptyEl = <div className="text-[13px] touch:text-[14px] text-zinc-400 px-1" data-testid="frame-empty">{touch ? "Search for your park, or tap Draw." : "Search for your park, or click Draw."}</div>;
@@ -295,7 +311,8 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     pill({ id: "photo", icon: <ImageIcon size={15} />, label: photo ? "Photo" : "Street map", value: photo ? photoValue : undefined, on: true, set: () => setImagery(photo ? "streets" : "satellite") }),
     <fieldset key="ground" disabled className="contents" data-testid="import-elevation">{pill({ id: "ground", icon: <Mountain size={15} />, label: "Ground", value: survey ? `${survey.year} survey` : undefined, on: true, fixed: true })}</fieldset>,
     survey ? pill({ id: "lidar", icon: <Trees size={15} />, label: "Measured trees", value: `${survey.year}${survey.covered === "partial" ? " · part" : ""}`, on: lidar, set: setLidar }) : null,
-    (!survey || !lidar) && photo ? pill({ id: "photo-trees", icon: <TreeDeciduous size={15} />, label: "Trees from the photo", on: trees, set: setTrees }) : null,
+    // (only where no survey covers the site: where one does, its measured trees are the ones)
+    !survey && photo ? pill({ id: "photo-trees", icon: <TreeDeciduous size={15} />, label: "Trees from the photo", on: trees, set: setTrees }) : null,
     pill({ id: "osm", icon: <Route size={15} />, label: "Paths, roads and more", value: "OpenStreetMap", on: osm, set: setOsm }),
     outline?.course?.holes ? pill({ id: "course", icon: <Flag size={15} />, label: "Holes", value: `${outline.course.holes} mapped`, on: course, set: setCourse }) : null
   ];
@@ -420,7 +437,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
 
   const mapEl = (
     <SitePickerMap imagery={imagery} view={view} selection={selection} drawing={drawing} onDrawingChange={setDrawing} onSelect={onSelect} onTooSmall={tooSmall} onLocate={locate}
-      selectViewSignal={0} units={units} outline={outline?.outline ?? null} fit={fit} arrived={arrived} />
+      selectViewSignal={0} units={units} outline={outline?.outline ?? null} fit={fit} arrived={arrived} angle={angle} onAngle={setAngle} />
   );
   const framing = !!selection && !loading;
   const panel = loading ? <>{checklist}{stopEl}</> : framing ? (

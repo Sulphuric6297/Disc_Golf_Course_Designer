@@ -10,9 +10,9 @@ import { latitudeOf, sunFromOf } from "./mapLook";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FIELD_KINDS, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
 import { activeLayout, areaObEdges, beyondSides, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, sharedWalks, teeAim, walkRoutes, taglineOf, titleFontOf } from "./course";
-import { boundsOf, dist, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
+import { boundsOf, dist, offsetPath, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
 import { courseTotals, holeStats, isOb, isOutOfPlay, playsOf, type HoleStats } from "./holeStats";
-import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, type CanopyGrid } from "./forest";
+import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, paintsFromPhoto, treesOverOf, type CanopyGrid } from "./forest";
 import { BASKET_MARKS, RESTRICTED, STRUCTURE_INK, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol, structureLegend, structureSymbol, type StructureDraw, type StructureInk } from "./symbols";
 import { isLineKind, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
 import { chainContours, type Contours } from "./relief";
@@ -120,7 +120,7 @@ export const markingsInView = (doc: Pick<CourseDoc, "items">, view: MapView) => 
   const shown = doc.items.filter(shows);
   return {
     ob: shown.some(i => (i.type === "area" || i.type === "line") && (i.kind === "ob" || i.ob === true)),
-    hazard: shown.some(i => i.type === "area" && i.kind === "hazard"),
+    hazard: shown.some(i => (i.type === "area" && i.kind === "hazard") || ((i.type === "area" || i.type === "line") && i.hazard === true)),
     mando: shown.some(i => i.type === "mando" || i.type === "dropzone")
   };
 };
@@ -205,11 +205,13 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   out.push(`<rect width="${n(view.width)}" height="${n(view.height)}" fill="${pal.bg}"/>`);
   out.push(`<g transform="${g}">`);
   // Ground: the photo, the painted land (Forest), or the drawn grass
+  let treesOver: { url: string; hidden: Set<string> } | null = null;
+  let at = { x: 0, y: 0, w: view.width, h: view.height };
   if (forest && typeof document !== "undefined") {
     // (while the first painting of a live preview is under way: the grass color alone)
     const painted = forestPicture(doc, view, layers);
+    treesOver = painted ? overOf.get(painted.url) ?? null : null;
     // (a painting made for another view of the same turn stands in where it falls in this one)
-    let at = { x: 0, y: 0, w: view.width, h: view.height };
     if (painted && painted.view !== view) {
       const v0 = painted.view, r = view.scale / v0.scale;
       const c = Math.cos(-rot), sn = Math.sin(-rot), dx = v0.cx - view.cx, dy = v0.cy - view.cy;
@@ -360,11 +362,12 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       const r = t.radius * (t.width ?? 1);
       const c = t.treeType === "conifer" ? shade(s.trees, -0.12) : t.treeType === "bush" ? shade(s.trees, 0.12) : s.trees;
       if (t.treeType === "conifer") {
-        const star = Array.from({ length: 16 }, (_, i) => {
-          const a = (i / 16) * Math.PI * 2, rr = i % 2 ? r * 0.72 : r;
-          return { x: t.x + Math.cos(a) * rr, y: t.y + Math.sin(a) * rr };
-        });
-        out.push(`<polygon points="${pts(star)}" fill="${c}" stroke="${shade(c, -0.3)}" stroke-width="${n(px(0.6))}"/><polygon points="${pts(star)}" fill="url(#${uid}-crown)"/>`);
+        // (tufted: a ring of soft needle tufts round the middle, as every map style draws a pine)
+        const tufts = Array.from({ length: 8 }, (_, i) => {
+          const a = (i / 8) * Math.PI * 2;
+          return `<circle cx="${n(t.x + Math.cos(a) * r * 0.6)}" cy="${n(t.y + Math.sin(a) * r * 0.6)}" r="${n(r * 0.4)}"/>`;
+        }).join("");
+        out.push(`<g fill="${c}" stroke="${shade(c, -0.3)}" stroke-width="${n(px(0.6))}">${tufts}<circle cx="${n(t.x)}" cy="${n(t.y)}" r="${n(r * 0.42)}"/></g><circle cx="${n(t.x)}" cy="${n(t.y)}" r="${n(r)}" fill="url(#${uid}-crown)"/>`);
       } else {
         out.push(`<circle cx="${n(t.x)}" cy="${n(t.y)}" r="${n(r)}" fill="${c}" stroke="${shade(c, -0.3)}" stroke-width="${n(px(0.6))}"/><circle cx="${n(t.x)}" cy="${n(t.y)}" r="${n(r)}" fill="url(#${uid}-crown)"/>`);
       }
@@ -390,6 +393,14 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       const shape = isLineKind(st.kind) ? structurePath(st) : st.points;
       out.push(`<g opacity="${dim(st.holeId, st.alsoHoles)}">${structureSymbol(st.kind, shape, structureWidth(st), structureHeight(st), structureRoof(st), { ...draw, id: `${uid}-s${st.id}`, ink: st.roofColor ? { ...draw.ink, roof: st.roofColor, shelter: st.roofColor } : draw.ink })}</g>`);
     }
+  }
+  // (the painted treetops over the buildings, and their shade on the roofs: crowns overhang roofs
+  // as they do from the air)
+  if (treesOver) out.push(`</g><image href="${treesOver.url}" x="${n(at.x)}" y="${n(at.y)}" width="${n(at.w)}" height="${n(at.h)}" preserveAspectRatio="none"/><g transform="${g}">`);
+  // (and the outlines of the buildings mostly under leaves, faint and dashed: still there under them)
+  if (treesOver) {
+    const under = structures.filter(st => (st.kind === "building" || st.kind === "shelter") && st.points.length >= 3 && treesOver!.hidden.has(st.id));
+    if (under.length) out.push(`<g fill="none" stroke="${structureInk(theme).casing}" stroke-opacity="0.55" stroke-width="${n(px(0.8))}" stroke-dasharray="${n(px(2.5))} ${n(px(2))}" stroke-linejoin="round">${under.map(st => `<polygon points="${pts(st.points)}"/>`).join("")}</g>`);
   }
 
   // OB, hazards and no-go areas over the land: a soft band of color inside the edge, the edge
@@ -483,6 +494,29 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       const len = pathLength(longest);
       // (Away from its name, which sits in the middle)
       if (len * k > 70 * ts) tags.push({ id: `tag:${l.id}`, at: toScreen(pointAlong(longest, len * (l.label && longest.length === g.points.length ? 0.72 : 0.5)).point), text: "OB", bg: obCol, fg: obInk, o });
+    }
+  }
+
+  // Water, creeks, roads, fences and the rest made hazards: a dashed hazard edge round them (both
+  // banks of a creek or road), white under it
+  {
+    const hz = (d: string, o: number) => out.push(`<path d="${d}" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="${n(px(3.8))}" stroke-linejoin="round" opacity="${n(o)}"/><path d="${d}" fill="none" stroke="${s.hazard}" stroke-width="${n(px(2.2))}" stroke-dasharray="${n(px(6))} ${n(px(3.5))}" stroke-linejoin="round" opacity="${n(o)}"/>`);
+    for (const a of areas) {
+      if (a.hazard !== true || a.kind === "hazard" || a.points.length < 3) continue;
+      const o = dim(a.holeId, a.alsoHoles);
+      hz(`${pathD(a.points)}Z`, o);
+      const b = boundsOf(a.points);
+      if (!a.label && Math.min(b.maxX - b.minX, b.maxY - b.minY) * k > 34 * ts) tags.push({ id: `tag:${a.id}`, at: toScreen(labelPoint(a.points)), text: "HAZARD", bg: s.hazard, fg: "#1b1d1a", o });
+    }
+    for (const l of lines) {
+      if (l.hazard !== true || l.kind === "ob" || l.points.length < 2) continue;
+      const o = dim(l.holeId, l.alsoHoles);
+      const pts = linePath(l), w = l.width ?? LINE_KINDS[l.kind].width;
+      const half = Math.max(w, px(2)) / 2 + px(1.6);
+      if (l.kind === "fence" || l.kind === "walk" || w <= 0) hz(pathD(pts), o);
+      else for (const side of [1, -1]) hz(pathD(offsetPath(pts, () => side * half)), o);
+      const len = pathLength(pts);
+      if (len * k > 70 * ts) tags.push({ id: `tag:${l.id}`, at: toScreen(pointAlong(pts, len * (l.label ? 0.72 : 0.5)).point), text: "HAZARD", bg: s.hazard, fg: "#1b1d1a", o });
     }
   }
 
@@ -696,14 +730,17 @@ let paintLive = false;
 let printDensity: number | null = null;
 /** The paintings the first drawing of a print asks for (painted before it is drawn again). */
 let printJobs: (() => Promise<void>)[] | null = null;
+/** How a print's paintings wait between slices (unset: between frames, as fast as they go). */
+let printPace: (() => Promise<number>) | null = null;
 
 /**
  * Draws a page for print: a first drawing notes the paintings it needs, they are painted at
  * `dpi` (a slice at a time, so the page never freezes; at most 250 dpi, plenty for the painted
  * texture, and no bigger than a browser holds), then the page is drawn with them.
  */
-export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), draw: () => T): Promise<T> => {
+export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), draw: () => T, pace?: () => Promise<number>): Promise<T> => {
   const was = printDensity;
+  printPace = pace ?? null;
   try {
     // (a resolution that depends on the page: measured by a drawing that paints nothing)
     if (typeof dpi === "function") {
@@ -721,6 +758,7 @@ export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), dr
   } finally {
     printDensity = was;
     printJobs = null;
+    printPace = null;
   }
 };
 
@@ -776,12 +814,24 @@ export const onPaintProgress = (fn: (fraction: number | null) => void) => {
 const tellProgress = () => progressListeners.forEach(fn => fn(livePaint ? liveProgress : null));
 if (typeof window !== "undefined") (window as any).__dgPainting = paintingNow;
 
+/** Each painting's treetops over the buildings, by the painting's url (a PNG: clear elsewhere), and
+ * the buildings mostly under them. */
+const overOf = new Map<string, { url: string; hidden: Set<string> }>();
+const keepOver = (url: string, over: { url: string; hidden: Set<string> } | null) => {
+  if (!over) return;
+  overOf.set(url, over);
+  if (overOf.size > 16) {
+    const [k0, v0] = overOf.entries().next().value!;
+    overOf.delete(k0);
+    if (v0.url.startsWith("blob:")) URL.revokeObjectURL(v0.url);
+  }
+};
 /** The quick drafts shown while the sharp pictures paint (freed when no longer shown). */
 const draftUrls: string[] = [];
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
-  const canopy = s.forest === "photo" ? layers.canopy ?? null : null;
-  const look = [s.forest, s.treeCover, s.treeLook, s.landscape, s.treeMix, s.conifers, s.contours, s.trees, s.fairway, s.rough, s.tallGrass, s.water, s.path, s.nextTee, s.walkWidth, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale, s.reliefLook, s.mapLook, s.lookParts, s.lightMode, s.goldenSun, s.sunFrom, s.pathOrder, doc.site.location, doc.site.bounds];
+  const canopy = paintsFromPhoto(doc) ? layers.canopy ?? null : null;
+  const look = [s.forest, s.treeCover, s.treeLook, s.landscape, s.treeMix, s.autumnVivid, s.conifers, s.contours, s.trees, s.fairway, s.rough, s.tallGrass, s.water, s.path, s.nextTee, s.walkWidth, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale, s.reliefLook, s.mapLook, s.lookParts, s.lightMode, s.goldenSun, s.sunFrom, s.pathOrder, doc.site.location, doc.site.bounds];
   const key = JSON.stringify([paintLimit, printDensity, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), paintedFrom(doc), doc.canvas, doc.id]);
   // (A live preview may show a picture made for print; a print never uses a live one, which is a
   // blob only this page can read)
@@ -802,15 +852,20 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   // A photo-like picture: JPEG keeps it a tenth the size of a PNG
   const keep = (canvas: HTMLCanvasElement) => {
     const url = canvas.toDataURL("image/jpeg", 0.9);
+    const over = treesOverOf(canvas);
+    keepOver(url, over ? { url: over.picture.toDataURL("image/png"), hidden: over.hidden } : null);
     forestCache.set(key, url);
     if (forestCache.size > 6) forestCache.delete(forestCache.keys().next().value!);
     return { url, view };
   };
   if (printJobs) {
     // (a print's first drawing: painted between frames, and finer JPEG, before it is drawn again)
+    const pace = printPace ?? undefined;
     printJobs.push(async () => {
       if (forestCache.has(key)) return;
-      const canvas = await forestCanvasAsync(doc, view, layers.stats, opts);
+      const canvas = await forestCanvasAsync(doc, view, layers.stats, opts, undefined, undefined, pace);
+      const over = treesOverOf(canvas);
+      const overUrl = over ? { url: over.picture.toDataURL("image/png"), hidden: over.hidden } : null;
       const url = await new Promise<string>((res, rej) => canvas.toBlob(b => {
         if (!b) return rej(new Error("The map couldn't be painted."));
         const r = new FileReader();
@@ -819,6 +874,7 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
         r.readAsDataURL(b);
       }, "image/jpeg", 0.95));
       canvas.width = canvas.height = 1;
+      keepOver(url, overUrl);
       forestCache.set(key, url);
       if (forestCache.size > 6) forestCache.delete(forestCache.keys().next().value!);
     });
@@ -834,13 +890,24 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
     queueMicrotask(tellProgress);
     // First a quick draft (a fifth of the pixels: shown in a moment), then the sharp picture
     const toBlob = (canvas: HTMLCanvasElement) => new Promise<Blob>((res, rej) => canvas.toBlob(b => (b ? res(b) : rej(new Error("no picture"))), "image/jpeg", 0.9));
+    // (and its treetops over the buildings, as a PNG, the same moment)
+    let overBlob: Promise<Blob | null> = Promise.resolve(null), overHidden = new Set<string>();
+    const withOver = (canvas: HTMLCanvasElement) => {
+      const over = treesOverOf(canvas);
+      overHidden = over?.hidden ?? new Set();
+      overBlob = over ? new Promise<Blob | null>(res => over.picture.toBlob(b => res(b), "image/png")) : Promise.resolve(null);
+      return canvas;
+    };
+    const tieOver = async (url: string) => { const hidden = overHidden, b = await overBlob; if (b) keepOver(url, { url: URL.createObjectURL(b), hidden }); };
     const draftDensity = density * 0.32;
     const draft = draftDensity * Math.max(view.width, view.height) >= 500
       ? forestCanvasAsync(doc, view, layers.stats, { ...opts, density: draftDensity }, job.stop.signal, f => { if (livePaint === job) { liveProgress = f * 0.3; tellProgress(); } })
+        .then(withOver)
         .then(toBlob)
-        .then(blob => {
+        .then(async blob => {
           if (livePaint !== job) return;
           const url = URL.createObjectURL(blob);
+          await tieOver(url);
           draftUrls.push(url);
           while (draftUrls.length > 3) URL.revokeObjectURL(draftUrls.shift()!);
           lastForView.set(viewKey, url);
@@ -855,9 +922,11 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
         tellProgress();
       }))
       // (encoded off the page's thread, unlike toDataURL)
+      .then(withOver)
       .then(toBlob)
-      .then(blob => {
+      .then(async blob => {
         const url = URL.createObjectURL(blob);
+        await tieOver(url);
         liveCache.set(key, url);
         if (liveCache.size > 6) {
           const [oldKey, oldUrl] = liveCache.entries().next().value!;
@@ -1455,7 +1524,7 @@ const legend = (doc: CourseDoc, x: number, y: number, w: number, ts: number, pal
     if (areaKinds.has("ob") || obItems.some(i => i.type === "area" && (i as AreaItem).kind !== "water")) entries.push({ sym: box(obCol, obCol, obCase), text: "Out of bounds" });
     if (obItems.some(i => (i.type === "area" && (i as AreaItem).kind === "water") || (i.type === "line" && (i as LineItem).kind === "stream"))) entries.push({ sym: `<rect width="${n(sw)}" height="${n(sh)}" rx="${n(2 * ts)}" fill="${s.water}"/><rect x="${n(1.5 * ts)}" y="${n(1.5 * ts)}" width="${n(sw - 3 * ts)}" height="${n(sh - 3 * ts)}" rx="${n(2 * ts)}" fill="none" stroke="${obCase}" stroke-width="${n(2.6 * ts)}"/><rect x="${n(1.5 * ts)}" y="${n(1.5 * ts)}" width="${n(sw - 3 * ts)}" height="${n(sh - 3 * ts)}" rx="${n(2 * ts)}" fill="none" stroke="${obCol}" stroke-width="${n(1.3 * ts)}"/>`, text: "OB water" });
     if (obItems.some(i => i.type === "line" && (i as LineItem).kind !== "stream")) entries.push({ sym: `<line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${obCase}" stroke-width="${n(4.2 * ts)}" stroke-linecap="round"/><line x1="0" y1="${n(sh / 2)}" x2="${n(sw)}" y2="${n(sh / 2)}" stroke="${obCol}" stroke-width="${n(2.2 * ts)}" stroke-linecap="round"/>`, text: "OB line (road, fence)" });
-    if (areaKinds.has("hazard")) entries.push({ sym: box(s.hazard, s.hazard, "#ffffff", dashed), text: "Hazard" });
+    if (areaKinds.has("hazard") || doc.items.some(i => (i.type === "area" || i.type === "line") && i.hazard === true)) entries.push({ sym: box(s.hazard, s.hazard, "#ffffff", dashed), text: "Hazard" });
     if (areaKinds.has("casual")) entries.push({ sym: box(casualCol, casualCol, "#ffffff", dashed), text: "Casual area" });
     if (doc.items.some(isOutOfPlay)) entries.push({ sym: box(nogoCol, nogoCol, "#ffffff", dashed), text: "Out of play" });
   }

@@ -9,7 +9,7 @@ import {
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { courseStats, holeStats } from "../lib/holeStats";
-import type { AreaItem, BasketItem, CourseDoc, CourseItem, FieldKind, Hole, LineItem, LineKind, P, PinPosition, TeeLevel, ToolMode, TreeItem } from "../types";
+import type { AreaItem, BasketItem, CourseDoc, CourseItem, FieldKind, Hole, LineItem, LineKind, P, PinPosition, TeeLevel, ToolMode, TreeItem, TreeKind } from "../types";
 import { changeDoc, editor, getDoc, removeHole, removeItems, updateItem, useEditor, useCourse } from "./course";
 import { toast } from "./toast";
 import { keepsTreesOut, treeFree } from "../lib/treeFree";
@@ -268,13 +268,18 @@ const addField = (item: AreaItem) => {
   if (under.size) toast(`Took out ${under.size} tree${under.size === 1 ? "" : "s"} standing in it.`, "info", true);
 };
 
+/** A stand of one kind of tree drawn with the Trees tool: woods that grow only pines, only bushes
+ * or only leafy trees (in the gaps between any measured there, as any wood drawn by hand). */
+const standOf = (k: TreeKind): Partial<AreaItem> => ({ pines: k === "conifer" ? 1 : 0, bushes: k === "bush" ? 1 : undefined });
+
 /** An area, line or built thing (bridge, building...) drawn with the drawing tools. */
 export const addDrawn = (kind: "area" | "line" | "structure", points: P[], opts: { straight?: boolean } = {}) => {
   const ed = editor();
   // (a field by its corners: the Park tool's kind; fields are straight between their corners anyway)
   if (kind === "area" && ed.areaKind === "field") return addField(createField(ed.fieldKind, points));
   const made = kind === "area" ? createArea(ed.areaKind, points) : kind === "structure" ? createStructure(ed.structureKind, points) : createLine(ed.lineKind, points);
-  const item = opts.straight && made.type !== "structure" ? { ...made, straight: true } : made;
+  const drawn = opts.straight && made.type !== "structure" ? { ...made, straight: true } : made;
+  const item = drawn.type === "area" && drawn.kind === "woods" && ed.standOf ? { ...drawn, ...standOf(ed.standOf) } : drawn;
   // (a building, road, parking or water drawn over trees: those standing in it go, the same step)
   const under = keepsTreesOut(item) ? new Set(getDoc().items.filter(i => i.type === "tree" && !i.locked && treeFree([item])(i)).map(i => i.id)) : new Set<string>();
   changeDoc(d => ({ items: [...d.items.filter(i => !under.has(i.id)), item] }));
@@ -519,21 +524,23 @@ export const setPinPosition = (basketId: string, position: PinPosition) => {
   changeDoc(d => ({ items: d.items.map(i => (i.id === basketId ? { ...i, position } as CourseItem : other && i.id === other.id ? { ...i, position: b.position } as CourseItem : i)) }));
 };
 
-/** Whether a shape is out of bounds: not OB, OB with no red edge (water and streams, unless
- * they're set otherwise), OB with a red edge, or (a line) OB and everything beyond it. */
-export type ObChoice = "no" | "yes" | "edge" | "beyond";
+/** A shape's penalty: none, OB with no red edge (water and streams, unless they're set otherwise),
+ * OB with a red edge, (a line) OB and everything beyond it, or a hazard. */
+export type ObChoice = "no" | "yes" | "edge" | "beyond" | "hazard";
 const wetKind = (i: AreaItem | LineItem) => i.kind === "water" || i.kind === "stream";
 export const obChoiceOf = (i: AreaItem | LineItem): ObChoice =>
-  i.ob === true ? (i.type === "line" && i.obBeyond ? "beyond" : "edge") : i.ob === false || !wetKind(i) ? "no" : "yes";
+  i.hazard === true ? "hazard" : i.ob === true ? (i.type === "line" && i.obBeyond ? "beyond" : "edge") : i.ob === false || !wetKind(i) ? "no" : "yes";
 /** A shape's OB set to one of those (OB and beyond: for the hole beside it, as markObBeyond). One
  * undo step. Not OB on water is kept as such (water is OB unless it says not). */
 export const setObChoice = (id: string, v: ObChoice) => {
   const item = getDoc().items.find(i => i.id === id);
   if (!item || (item.type !== "area" && item.type !== "line")) return;
   const line = item.type === "line";
-  if (line && v === "beyond") return markObBeyond(id);
+  if (line && v === "beyond") { if (item.hazard) updateItem(id, { hazard: undefined } as Partial<CourseItem>, false); return markObBeyond(id); }
   updateItem(id, {
-    ob: v === "edge" ? true : v === "no" ? (wetKind(item) ? false : undefined) : undefined,
+    // (a hazard is never OB: water made one is no longer OB)
+    hazard: v === "hazard" ? true : undefined,
+    ob: v === "edge" ? true : v === "no" || v === "hazard" ? (wetKind(item) ? false : undefined) : undefined,
     ...(line ? { obBeyond: undefined, obToward: undefined, ...(v === "edge" ? {} : { obStretches: undefined, obHoles: undefined }) } : v === "edge" ? {} : { obStretches: undefined })
   } as Partial<CourseItem>);
 };
@@ -640,7 +647,7 @@ export const layoutTee = (holeId: string) => {
 export const withCentroid = <T extends { points: P[] }>(item: T): T & P => ({ ...item, ...centroid(item.points) });
 
 // For the automated tests and screenshots: build a course quickly without clicking every spot.
-if (typeof window !== "undefined") (window as any).__dgActions = { addHole, addDrawn, placeAt, select, pickGroup, updateItem, style: (patch: Partial<CourseDoc["style"]>) => changeDoc(d => ({ style: { ...d.style, ...patch } })), site: (patch: Partial<CourseDoc["site"]>) => changeDoc(d => ({ site: { ...d.site, ...patch } })) };
+if (typeof window !== "undefined") (window as any).__dgActions = { addHole, addDrawn, placeAt, select, pickGroup, updateItem, style: (patch: Partial<CourseDoc["style"]>) => changeDoc(d => ({ style: { ...d.style, ...patch } })), site: (patch: Partial<CourseDoc["site"]>) => changeDoc(d => ({ site: { ...d.site, ...patch } })), lidar: (patch: Partial<NonNullable<CourseDoc["lidar"]>>) => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, ...patch } } : {})) };
 
 /**
  * An OB line for a hole, ready to fine-tune with its handles: along the left or right of the

@@ -28,7 +28,7 @@ type Editor = ReturnType<typeof useEditor.getState>;
 type Swatch = "area" | "line" | "dashed";
 /** One thing a tool puts on the course: how it's drawn (an area, a line, a spot) and of what kind;
  * `also`, another way it can be drawn (a field: at its usual size with a click, or by its corners). */
-export type ToolChoice = { id: string; label: string; mode: ToolMode; also?: ToolMode; set: Partial<Editor>; color?: string; swatch?: Swatch; icon?: ReactNode };
+export type ToolChoice = { id: string; label: string; mode: ToolMode; also?: ToolMode; set: Partial<Editor>; color?: string; swatch?: Swatch; icon?: ReactNode; is?: (ed: Editor) => boolean };
 /** A tool: named for what goes on the course (not for how it's drawn), so a fence is under Build and a
  * road under Paths and roads. `choices`: what it has, each drawn its own way; `mode` the first's. */
 export type Tool = { id: string; mode: ToolMode; key: string; label: string; short: string; icon: ReactNode; group: number; choices?: ToolChoice[] };
@@ -36,7 +36,11 @@ export type Tool = { id: string; mode: ToolMode; key: string; label: string; sho
 const area = (k: AreaKind, label = AREA_KINDS[k].label): ToolChoice => ({ id: `area-kind-${k}`, label, mode: "draw-area", set: { areaKind: k }, color: AREA_KINDS[k].color, swatch: "area" });
 const line = (k: LineKind, label: string, icon?: ReactNode): ToolChoice => ({ id: `line-kind-${k}`, label, mode: "draw-line", set: { lineKind: k }, color: icon ? undefined : LINE_KINDS[k].color, swatch: k === "walk" ? "dashed" : "line", icon });
 const built = (k: StructureKind): ToolChoice => ({ id: `structure-kind-${k}`, label: STRUCTURE_KINDS[k].label, mode: "draw-structure", set: { structureKind: k }, icon: <span className="inline-block" dangerouslySetInnerHTML={{ __html: structureIcon(k, 16, `chip-${k}`) }} /> });
-const tree = (k: TreeKind, label: string, icon: ReactNode): ToolChoice => ({ id: `tree-kind-${k}`, label, mode: "add-tree", set: { treeKind: k }, icon });
+// (a tree at a time, or a stand of that kind drawn as woods)
+const tree = (k: TreeKind, label: string, icon: ReactNode): ToolChoice => ({
+  id: `tree-kind-${k}`, label, mode: "add-tree", also: "draw-area", set: { treeKind: k }, icon,
+  is: ed => ed.treeKind === k && (ed.tool === "add-tree" || (ed.tool === "draw-area" && ed.areaKind === "woods" && ed.standOf === k))
+});
 const field = (k: FieldKind): ToolChoice => ({ id: `field-kind-${k}`, label: FIELD_KINDS[k].label, mode: "add-field", also: "draw-area", set: { areaKind: "field", fieldKind: k }, icon: fieldIcon(k) });
 
 export const TOOLS: Tool[] = [
@@ -59,7 +63,7 @@ export const TOOLS: Tool[] = [
     id: "trees", mode: "add-tree", key: "R", label: "Trees and woods: a tree at a time, a stand of woods, or a hedge", short: "Trees", icon: <TreeDeciduous size={18} />, group: 3,
     choices: [
       ...TREE_KINDS.map(k => tree(k.value, k.label, k.icon)),
-      { ...area("woods"), color: undefined, swatch: undefined, icon: <Trees size={14} /> },
+      { ...area("woods"), set: { areaKind: "woods", standOf: null }, color: undefined, swatch: undefined, icon: <Trees size={14} /> },
       line("hedge", "Hedge", <Shrub size={14} />)
     ]
   },
@@ -94,7 +98,7 @@ export const toolHelp = (ed: Editor) => {
   return (c && CHOICE_HELP[c.id]) ?? (t ? TOOL_HELP[t.id] : undefined);
 };
 
-const matches = (ed: Editor, c: ToolChoice) => (ed.tool === c.mode || ed.tool === c.also) && Object.entries(c.set).every(([k, v]) => (ed as Record<string, unknown>)[k] === v);
+const matches = (ed: Editor, c: ToolChoice) => c.is ? c.is(ed) : (ed.tool === c.mode || ed.tool === c.also) && Object.entries(c.set).every(([k, v]) => (ed as Record<string, unknown>)[k] === v);
 /** The tool in use: the one whose choice is being drawn (or, a kind no tool lists, the first that draws that way). */
 export const toolOf = (ed: Editor): Tool | undefined =>
   TOOLS.find(t => (t.choices ? t.choices.some(c => matches(ed, c)) : t.mode === ed.tool)) ?? TOOLS.find(t => t.choices?.some(c => c.mode === ed.tool));
@@ -104,6 +108,10 @@ export const choiceOf = (ed: Editor) => toolOf(ed)?.choices?.find(c => matches(e
 // (each tool picks up again with what it last drew, and a field the way it was last put down)
 const lastChoice = new Map<string, ToolChoice>();
 let fieldWay: { tool: ToolMode; shape?: DrawShape } = { tool: "add-field" };
+// (and trees a tree at a time, or a stand drawn the way it was last)
+let treeWay: DrawShape | null = null;
+const plant = (k: TreeKind, shape: DrawShape | null): Partial<Editor> =>
+  shape ? { tool: "draw-area", areaKind: "woods", standOf: k, treeKind: k, drawShape: shape } : { tool: "add-tree", treeKind: k, standOf: null };
 /** Draw this choice (its tool comes forward); `remember`: the tool picks up with it next time
  * (not for a key that goes straight to it, like Z for a drop zone: O still gives what O last did). */
 export const drawChoice = (c: ToolChoice, remember = true) => {
@@ -111,7 +119,8 @@ export const drawChoice = (c: ToolChoice, remember = true) => {
   const t = TOOLS.find(x => x.choices?.includes(c));
   if (t && remember) lastChoice.set(t.id, c);
   const set: Partial<Editor> = { tool: c.mode, ...c.set };
-  if (c.also && fieldWay.tool === c.also) Object.assign(set, { tool: c.also, drawShape: fieldWay.shape ?? "points" });
+  if (c.also && c.mode === "add-field" && fieldWay.tool === c.also) Object.assign(set, { tool: c.also, drawShape: fieldWay.shape ?? "points" });
+  if (c.mode === "add-tree" && c.set.treeKind) Object.assign(set, plant(c.set.treeKind, treeWay));
   // (built things: outlines by a box, a bridge or wall along its line, as before)
   if (c.mode === "draw-structure" && c.set.structureKind) set.drawShape = STRUCTURE_KINDS[c.set.structureKind].shape === "outline" ? "box" : "points";
   ed.set(set);
@@ -270,6 +279,22 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
 /** How the active tool draws (point by point, or a rectangle, a circle, freehand, painted), with
  * the brush's size while painting: a row of its own under the kinds. Null when it draws one way. */
 export function toolShapes(ed: Editor): ReactNode[] | null {
+  // (trees: one where you click, or a stand of them drawn like any area)
+  if (ed.tool === "add-tree" || (ed.tool === "draw-area" && ed.areaKind === "woods" && ed.standOf)) {
+    const ways: (DrawShape | null)[] = [null, "points", "box", "circle", "freehand", "paint"];
+    const now = ed.tool === "add-tree" ? null : ed.drawShape;
+    return [
+      <div key="shapes" className={GROUP} role="radiogroup" aria-label="How to plant">
+        {ways.map(w => (
+          <button key={w ?? "one"} role="radio" aria-checked={now === w} data-testid={`draw-shape-${w ?? "one"}`} title={w ? `A stand of them: ${SHAPES[w].title.toLowerCase()}` : "Click where each tree goes"}
+            onClick={() => { treeWay = w; ed.set(plant(ed.treeKind, w)); }} className={radio(now === w)}>
+            {w ? <>{SHAPES[w].icon}{SHAPES[w].label}</> : <><MousePointerClick size={13} />One tree</>}
+          </button>
+        ))}
+      </div>,
+      ...(now === "paint" ? [<BrushSliders key="brush" ed={ed} strength={false} />] : [])
+    ];
+  }
   // (a field: at its usual size with one click, or by its corners, or as a rectangle)
   if (ed.tool === "add-field" || (ed.tool === "draw-area" && ed.areaKind === "field")) {
     const ways: { id: string; tool: ToolMode; shape?: DrawShape; label: string; title: string; icon: ReactNode }[] = [
@@ -315,6 +340,7 @@ export function toolShapes(ed: Editor): ReactNode[] | null {
 const amenityName = (k: AmenityKind) =>
   k === "here" ? "You are here mark" : k === "parking" ? "parking sign" : k === "kiosk" ? "map board" : k === "firstaid" ? "first aid sign" : AMENITY_KINDS[k].label.toLowerCase();
 const TREE_PLURAL: Partial<Record<TreeKind, string>> = { deciduous: "leafy trees", conifer: "pines", bush: "bushes" };
+const TREE_STAND: Partial<Record<TreeKind, string>> = { deciduous: "stand of leafy trees", conifer: "stand of pines", bush: "patch of bushes" };
 
 /** What to do with the active tool, worded for a mouse and keys or for a touch screen. */
 export function toolHint(ed: Editor, touch = false): string | undefined {
@@ -348,6 +374,7 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
   if (ed.tool === "draw-structure" && ed.structureKind === "bridge") return `${click} one bank, then the other`;
   if (ed.tool === "draw-structure" && !lineDrawn) return `${click} ${HINTS["draw-area"]}`;
   if (ed.tool === "add-tree") return `${click} to plant ${TREE_PLURAL[ed.treeKind] ?? "trees"}`;
+  if (ed.tool === "draw-area" && ed.areaKind === "woods" && ed.standOf) return `${click} the corners of the ${TREE_STAND[ed.standOf] ?? "stand of trees"}`;
   if (ed.tool === "add-amenity") return `${click} where the ${amenityName(ed.amenityKind)} goes`;
   if (ed.tool === "add-field") return `${click} where the ${fieldWord(ed.fieldKind)} goes`;
   if (ed.tool === "measure") return (ed.measureMode ?? "spot") === "path" ? `${click} along the path` : `${click} a start point`;

@@ -541,6 +541,29 @@ test("a tee or basket picked opens its hole's panel, with it opened up under Tee
   expect((await editorState(page)).selectedId).toBe(hole.id);
 });
 
+test("a tip on the map waits for the pointer to rest on a point, and never shows while it's dragged", async ({ page }) => {
+  await blankCourse(page);
+  const hole = await addHole(page, { x: 400, y: 600 }, { x: 800, y: 600 });
+  await page.keyboard.press("Escape");
+  await page.evaluate(id => (window as any).__dgActions.select(id), hole.id);
+  const mid = page.getByTestId("handle-mid").first();
+  await expect(mid).toBeVisible();
+  const tip = page.getByTestId("tooltip");
+  const b = (await mid.boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.waitForTimeout(700);
+  await expect(tip).not.toHaveClass(/show/);
+  await expect(tip).toHaveClass(/show/, { timeout: 3000 });
+  await expect(tip).toContainText("Drag to bend the hole here");
+  // (pressed and dragged: gone, and not back while dragging)
+  await page.mouse.down();
+  await expect(tip).not.toHaveClass(/show/);
+  await page.mouse.move(b.x + b.width / 2 + 30, b.y + 40, { steps: 6 });
+  await page.waitForTimeout(1800);
+  await expect(tip).not.toHaveClass(/show/);
+  await page.mouse.up();
+});
+
 test("a tip on a button at a panel's edge stays inside the panel (and the window)", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 400, y: 600 }, { x: 800, y: 600 });

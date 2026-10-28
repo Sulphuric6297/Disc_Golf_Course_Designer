@@ -4,8 +4,9 @@ import { createLazPerf } from "laz-perf";
 import { test, expect, addHole, blankCourse, importSite, course, editorState, screenOf, withLidar, SITE } from "./fixtures";
 import { createEmptyCourse, newHole } from "../../src/lib/course";
 import { getGeoBounds } from "../../src/lib/geo/core";
-import { claim, flownOn, gather, gatherer, grownTree, leafOnAt, roofHeights, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesFor, tilesOver, depthFor, type LazReader, type TilePoints } from "../../src/lib/lidar";
+import { claim, flownOn, gather, gatherer, grownTree, grownTrees, leafOnAt, roofHeights, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesFor, tilesOver, depthFor, type LazReader, type TilePoints } from "../../src/lib/lidar";
 import { canopyStands } from "../../src/lib/canopy";
+import { summerFills, treesFromSummer } from "../../src/lib/summerTrees";
 import type { LidarTree } from "../../src/types";
 import { treeStands } from "../../src/lib/geo/detect";
 import { pointInPolygon } from "../../src/lib/geom";
@@ -72,21 +73,26 @@ plain("trees and ground from a LiDAR tile: each tree where it stands, as tall an
   plainExpect(surveyYear("CA_FEMA_Z4_B1_2018")).toBe(2018);
 });
 
-plain("trees on a fairway are cut down unless kept; taken out anywhere; a hole's fairway trees counted (pure logic)", () => {
+plain("trees on a fairway stand unless taken out; with the fairways cleared, cut down unless kept; a hole's fairway trees counted (pure logic)", () => {
   const trees: LidarTree[] = [[100, 300, 50, 12, 0], [200, 302, 50, 12, 0], [300, 298, 50, 12, 0], [200, 400, 50, 12, 0]];
-  const doc = { ...createEmptyCourse(), lidar: { source: "USGS LiDAR 2019", trees } };
+  const doc: any = { ...createEmptyCourse(), lidar: { source: "USGS LiDAR 2019", trees } };
   // (the fairway: a strip along y = 300)
   const cleared = (p: { x: number; y: number }, reach: number) => Math.abs(p.y - 300) < 15 + reach;
-  plainExpect(standingTrees(doc.lidar, cleared)).toEqual({ stand: [3], cut: [0, 1, 2] });
-  doc.lidar = { ...doc.lidar, kept: [1], removed: [3] };
-  plainExpect(standingTrees(doc.lidar, cleared)).toEqual({ stand: [1], cut: [0, 2, 3] });
-  // (fairways left alone: only what was taken out by hand is down)
-  plainExpect(standingTrees({ ...doc.lidar, clearFairways: false }, cleared)).toEqual({ stand: [0, 1, 2], cut: [3] });
   const hole = newHole({ fairwayWidth: 30 });
-  plainExpect(fairwayTrees(doc, hole, [{ x: 50, y: 300 }, { x: 350, y: 300 }])).toEqual({ cut: [0, 2], kept: [1] });
+  const line = [{ x: 50, y: 300 }, { x: 350, y: 300 }];
+  // (left alone by default: every one stands, those on the fairway in the way)
+  plainExpect(standingTrees(doc.lidar, cleared)).toEqual({ stand: [0, 1, 2, 3], cut: [] });
+  plainExpect(fairwayTrees(doc, hole, line)).toEqual({ cut: [], kept: [], standing: [0, 1, 2] });
+  doc.lidar = { ...doc.lidar, removed: [0, 3] };
+  plainExpect(standingTrees(doc.lidar, cleared)).toEqual({ stand: [1, 2], cut: [0, 3] });
+  plainExpect(fairwayTrees(doc, hole, line)).toEqual({ cut: [0], kept: [], standing: [1, 2] });
+  // (the fairways cleared: cut down unless kept)
+  doc.lidar = { ...doc.lidar, clearFairways: true, kept: [1], removed: [3] };
+  plainExpect(standingTrees(doc.lidar, cleared)).toEqual({ stand: [1], cut: [0, 2, 3] });
+  plainExpect(fairwayTrees(doc, hole, line)).toEqual({ cut: [0, 2], kept: [1], standing: [] });
 });
 
-test("trees measured from the air on import: cut down on a fairway, a stump to bring each back, all at once from the hole; cut down by hand; flyovers keep clear", async ({ page }) => {
+test("trees measured from the air on import: left standing on a fairway, cleared by the hole when asked; with the fairways cleared, cut down, a stump to bring each back, all at once from the hole; cut down by hand; flyovers keep clear", async ({ page }) => {
   test.setTimeout(240_000);
   await withLidar(page);
   await importSite(page);
@@ -107,6 +113,18 @@ test("trees measured from the air on import: cut down on a fairway, a stump to b
   const hole = await addHole(page, at(-75, -40), at(35, -40));
   await page.keyboard.press("Escape");
   await page.evaluate(id => (window as any).__dgActions.select(id), hole.id);
+  // (left standing: the hole says they're in the way, and clears them when asked; back again)
+  await expect(page.getByTestId("fairway-trees")).toContainText("5 trees in the way");
+  await expect(page.locator("[data-stump]")).toHaveCount(0);
+  await page.getByTestId("trees-clear").click();
+  await expect.poll(async () => (await course(page)).lidar.removed).toEqual([...row].sort((a, b) => a - b));
+  await expect(page.getByTestId("fairway-trees")).toContainText("5 trees cut down");
+  await expect(page.getByText(/^Cut down 5 trees on hole 1/)).toBeVisible();
+  await page.getByTestId("trees-back").click();
+  await expect.poll(async () => (await course(page)).lidar.removed).toBeUndefined();
+  await expect(page.getByTestId("fairway-trees")).toContainText("5 trees in the way");
+  // The fairways cleared for the whole course
+  await page.evaluate(() => (window as any).__dgActions.lidar({ clearFairways: true }));
   for (const k of row) await expect(page.locator(`[data-stump="${k}"]`)).toHaveAttribute("data-testid", "stump");
   await expect(page.getByTestId("fairway-trees")).toContainText("5 trees cut down");
   const before = await forest() + 5;
@@ -201,6 +219,49 @@ plain("measured trees grown since the survey: small ones the most, tall ones har
   plainExpect(grownTree([0, 0, 40, 12, 1], 0)).toEqual([0, 0, 40, 12, 1]);
 });
 
+plain("crown size: every measured crown as much wider or narrower, the list kept as it is otherwise (pure logic)", () => {
+  const trees: LidarTree[] = [[10, 10, 40, 12, 0], [60, 10, 30, 8, 1]];
+  plainExpect(grownTrees({ source: "x", trees })).toBe(trees);
+  const wider = grownTrees({ source: "x", trees, crownSize: 1.5 });
+  plainExpect(wider.map(t => t[3])).toEqual([18, 12]);
+  plainExpect(wider.map(t => [t[0], t[1], t[2], t[4]])).toEqual(trees.map(t => [t[0], t[1], t[2], t[4]]));
+});
+
+plain("trees from the summer photo where a bare survey missed them: in the leafy gaps with height measured near, none under a measured crown, on the lawn or where they may not stand (pure logic)", () => {
+  // (a 400 x 200 ft site, 1 ft a cell: woods 20 to 60 ft high over its left half, bare limbs
+  // standing 8 ft over the rest of the left half too; the photo leafy over the left half)
+  const W2 = 400, H2 = 200, nx = W2, ny = H2;
+  const canopy = new Float32Array(nx * ny);
+  for (let y = 0; y < ny; y++) for (let x = 0; x < 200; x++) canopy[y * nx + x] = x < 100 ? 40 : 8;
+  const mask = new Uint8Array(W2 * H2);
+  for (let y = 0; y < H2; y++) for (let x = 0; x < 200; x++) mask[y * W2 + x] = 1;
+  // (the survey picked out three trees, all in the first 100 ft)
+  const measured: LidarTree[] = [[30, 50, 45, 18, 0], [70, 100, 50, 20, 0], [30, 150, 40, 16, 0]];
+  const added = treesFromSummer(measured, { nx, ny, cell: 1, canopy }, { mask, w: W2, h: H2 }, W2, H2, p => p.x > 160 && p.y < 60);
+  plainExpect(added.length).toBeGreaterThan(10);
+  for (const t of added) {
+    // (on the leafy half, clear of the measured crowns' middles, not where none may stand)
+    plainExpect(t[0]).toBeLessThan(200);
+    for (const m of measured) plainExpect(Math.hypot(t[0] - m[0], t[1] - m[1])).toBeGreaterThan(m[3] * 0.85);
+    plainExpect(t[0] > 160 && t[1] < 60).toBe(false);
+    // (a crown sized from the height near it: never tiny, never past 30 ft)
+    plainExpect(t[3]).toBeGreaterThanOrEqual(7);
+    plainExpect(t[3]).toBeLessThanOrEqual(30);
+    plainExpect(t[4]).toBe(0);
+  }
+  // (where the woods stand tall, trees as tall as them; out on the limbs, at least a grown tree's)
+  plainExpect(added.filter(t => t[0] < 90).every(t => t[2] >= 39)).toBe(true);
+  plainExpect(added.every(t => t[2] >= 12)).toBe(true);
+  // (the added trees don't pile up on each other)
+  for (let i = 0; i < added.length; i++) for (let j = i + 1; j < added.length; j++)
+    plainExpect(Math.hypot(added[i][0] - added[j][0], added[i][1] - added[j][1])).toBeGreaterThan(Math.min(added[i][3], added[j][3]) * 0.8);
+  // Only a bare survey under a photo taken in leaf (or one whose season isn't known)
+  plainExpect(summerFills(false, "leaf-on")).toBe(true);
+  plainExpect(summerFills(null, undefined)).toBe(true);
+  plainExpect(summerFills(true, "leaf-on")).toBe(false);
+  plainExpect(summerFills(false, "leaf-off")).toBe(false);
+});
+
 plain("saplings since the survey: none at once, more with the years, in the gaps (never under or against a crown), fast and narrow (pure logic)", () => {
   // (a wood with gaps: trees 50 ft apart, crowns 15 ft round)
   const woods: [number, number, number, number, 0 | 1][] = Array.from({ length: 200 }, (_, k) => [(k % 20) * 50, Math.floor(k / 20) * 50, 50, 15, 0]);
@@ -222,6 +283,16 @@ plain("saplings since the survey: none at once, more with the years, in the gaps
   // (a wood with no gaps: none)
   const dense: [number, number, number, number, 0 | 1][] = Array.from({ length: 100 }, (_, k) => [(k % 10) * 12 + 200, Math.floor(k / 10) * 12 + 200, 50, 15, 0]);
   plainExpect(saplings(dense, 10).filter(s => s[0] > 215 && s[0] < 293 && s[1] > 215 && s[1] < 293)).toEqual([]);
+});
+
+plain("growth since the survey: the trees aged, and saplings in the gaps only when asked for (pure logic)", () => {
+  const woods: [number, number, number, number, 0 | 1][] = Array.from({ length: 200 }, (_, k) => [(k % 20) * 50, Math.floor(k / 20) * 50, 50, 15, 0]);
+  const aged = grownTrees({ source: "x", trees: woods, growYears: 10 });
+  plainExpect(aged).toHaveLength(woods.length);
+  plainExpect(aged[0][2]).toBeGreaterThan(woods[0][2]);
+  const young = grownTrees({ source: "x", trees: woods, growYears: 10, saplings: true });
+  plainExpect(young.length).toBe(woods.length + saplings(woods, 10).length);
+  plainExpect(young.length).toBeGreaterThan(woods.length);
 });
 
 test("any tree the app planted in a wood acts like a tree placed by hand: picked by a click, the same panel, deleted; a look only is no change", async ({ page }) => {
@@ -319,7 +390,7 @@ test("a drag box takes in the measured trees inside it: each made the course's o
   plainExpect((await course(page)).lidar.removed).toBeUndefined();
 });
 
-test("a wood's measured trees go with it: its edge pulled in past them takes them out, pushed back out brings them back, deleting the wood takes them all; a tree out on its own stays", async ({ page }) => {
+test("measured trees stand on their own: a wood drawn over them, its edge pulled in past them or the wood deleted, they all still stand", async ({ page }) => {
   test.setTimeout(180_000);
   await withLidar(page);
   await importSite(page);
@@ -338,18 +409,15 @@ test("a wood's measured trees go with it: its edge pulled in past them takes the
     return d.items[d.items.length - 1].id;
   }, box(-70, 30));
   await expect.poll(standing).toBe(all);
-  // Its edge pulled in to x -30 m: the two trees west of it are out
+  // Its edge pulled in to x -30 m: the two trees west of it still stand
   await page.evaluate(([id, pts]) => (window as any).__dgActions.updateItem(id, { points: pts }), [id, box(-30, 30)] as const);
-  await expect.poll(standing).toBe(all - 2);
-  expect((await course(page)).lidar.bound).toHaveLength(5);
-  // Pushed back out: they stand again
-  await page.evaluate(([id, pts]) => (window as any).__dgActions.updateItem(id, { points: pts }), [id, box(-70, 30)] as const);
+  await page.waitForTimeout(500);
   await expect.poll(standing).toBe(all);
-  // The wood deleted: all five go; the other trees, out on their own, stay; Undo brings them back
+  // The wood deleted: every tree still stands
   await page.evaluate(id => { (window as any).__dgActions.select(id); }, id);
   await page.keyboard.press("Delete");
-  await expect.poll(standing).toBe(all - 5);
-  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await course(page)).items.some((i: any) => i.id === id)).toBe(false);
+  await page.waitForTimeout(500);
   await expect.poll(standing).toBe(all);
 });
 

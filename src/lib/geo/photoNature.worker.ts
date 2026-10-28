@@ -2,7 +2,7 @@
 // (the work takes seconds on a big site).
 import { findNature } from "./natureFind";
 
-self.onmessage = (e: MessageEvent<{ data: Uint8ClampedArray; width: number; height: number; nir?: Uint8Array; mpp: number; opts: { date?: string; lat?: number; waterOnly?: boolean; season?: string } }>) => {
+self.onmessage = (e: MessageEvent<{ data: Uint8ClampedArray; width: number; height: number; nir?: Uint8Array; mpp: number; opts: { date?: string; lat?: number; waterOnly?: boolean; season?: string; canopy?: boolean } }>) => {
   const { data, width, height, nir, mpp, opts } = e.data;
   try {
     const found = findNature({ pixels: { data, width, height }, nir, mpp }, opts);

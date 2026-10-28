@@ -8,6 +8,10 @@ const PICK = "[title],[data-tip],button[aria-label],a[aria-label],[role=button][
 const FRAME = ".glass,.glass-solid,[role=dialog],[role=menu],[role=toolbar],aside,main";
 /** Waits before the first tip; once one has shown, the next comes at once. */
 const FIRST_MS = 380, WARM_MS = 600;
+/** On the map (a point's or a handle's tip): only once the pointer has rested on it this long, and
+ * not soon after the map was last pressed or dragged, so a tip never sits over the work. */
+const MAP_REST_MS = 1500, MAP_QUIET_MS = 2500;
+const onMap = (el: Element) => !!el.closest('[data-testid="plan"]');
 
 const tipOf = (el: Element) => {
   const title = el.getAttribute("title");
@@ -31,7 +35,7 @@ export function installTooltips() {
   box.setAttribute("role", "tooltip");
   box.setAttribute("data-testid", "tooltip");
   document.body.appendChild(box);
-  let on: Element | null = null, timer = 0, warmUntil = 0;
+  let on: Element | null = null, timer = 0, warmUntil = 0, mapQuietUntil = 0;
 
   const hide = () => {
     window.clearTimeout(timer);
@@ -69,13 +73,28 @@ export function installTooltips() {
     const el = (e.target as Element | null)?.closest?.(PICK) ?? null;
     if (el === on) return;
     hide();
-    if (!el || (el as HTMLButtonElement).disabled && !el.getAttribute("data-tip")) return;
+    // (none while a button is held: something is being dragged or drawn)
+    if (!el || e.buttons || (el as HTMLButtonElement).disabled && !el.getAttribute("data-tip")) return;
     const text = tipOf(el);
     if (!text) return;
     on = el;
     const go = () => { if (on === el && el.isConnected) show(el, text); };
-    if (performance.now() < warmUntil) go();
+    if (onMap(el)) timer = window.setTimeout(go, Math.max(MAP_REST_MS, mapQuietUntil - performance.now()));
+    else if (performance.now() < warmUntil) go();
     else timer = window.setTimeout(go, FIRST_MS);
+  }, true);
+  // On the map: a pointer moving on a point starts its wait again (shown only once it rests), and
+  // one being used (pressed, dragged) hides it
+  document.addEventListener("pointermove", e => {
+    if (!on || !onMap(on) || e.pointerType !== "mouse") return;
+    if (e.buttons) { hide(); mapQuietUntil = performance.now() + MAP_QUIET_MS; return; }
+    if (box.classList.contains("show")) return;
+    const el = on, text = el.getAttribute("data-tip") ?? "";
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => { if (on === el && el.isConnected && text) show(el, text); }, Math.max(MAP_REST_MS, mapQuietUntil - performance.now()));
+  }, true);
+  document.addEventListener("pointerdown", e => {
+    if ((e.target as Element | null)?.closest?.('[data-testid="plan"]')) mapQuietUntil = performance.now() + MAP_QUIET_MS;
   }, true);
   document.addEventListener("pointerout", e => {
     if (on && !on.contains(e.relatedTarget as Node | null)) hide();

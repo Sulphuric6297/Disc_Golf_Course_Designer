@@ -1,0 +1,343 @@
+// The real-course checks: the demo course (18 holes, measured trees, buildings, woods, the photo)
+// on a real server, used the way a person uses it. Each check is a problem that has really come up,
+// so it would have caught it, and most have a speed limit. One page and one course for the run.
+//
+// Speed limits are for this test machine, which has no graphics card: the 3D drawing is left out
+// of them (see kit.ts: draw), so they measure the app's own work, which is what has stalled.
+import { test, expect, chromium, type Page } from "@playwright/test";
+import { at, course, draw, editor, frame, frames, openDemo, profiled, saved, stalls, watch } from "./kit";
+import { createEmptyCourse, normalizeCourse } from "../../src/lib/course";
+
+test.describe.configure({ mode: "serial" });
+
+// A corner of the site kept for the picking checks: a house with a tree just behind it, a path just
+// in front of another tree, and tall grass round a third (the measured trees there taken out)
+const BOX = { minX: 1460, minY: 100, maxX: 1840, maxY: 520 };
+const HOUSE = [{ x: 1600, y: 200 }, { x: 1680, y: 200 }, { x: 1680, y: 250 }, { x: 1600, y: 250 }];
+const BEHIND = { x: 1640, y: 188 };
+const PATH = [{ x: 1520, y: 331 }, { x: 1600, y: 331 }];
+const BY_PATH = { x: 1560, y: 320 };
+const GRASS = [{ x: 1700, y: 270 }, { x: 1790, y: 270 }, { x: 1790, y: 350 }, { x: 1700, y: 350 }];
+const IN_GRASS = { x: 1745, y: 300 };
+const inBox = (p: { x: number; y: number }) => p.x >= BOX.minX && p.x <= BOX.maxX && p.y >= BOX.minY && p.y <= BOX.maxY;
+
+let page: Page;
+test.beforeAll(async ({ browser }) => {
+  page = await browser.newPage();
+  await openDemo(page, doc => {
+    // (the corner cleared of what was there, then the check's own things put in)
+    doc.items = doc.items.filter((i: any) => !(i.points ?? [i]).some(inBox) || i.type === "tee" || i.type === "basket" || i.kind === "water");
+    doc.lidar.removed = [...new Set([...(doc.lidar.removed ?? []), ...doc.lidar.trees.map((t: number[], k: number) => (inBox({ x: t[0], y: t[1] }) ? k : -1)).filter((k: number) => k >= 0)])];
+    doc.items.push(
+      { id: "t-house", type: "structure", kind: "building", points: HOUSE, x: 1640, y: 225, height: 12 },
+      { id: "t-behind", type: "tree", x: BEHIND.x, y: BEHIND.y, radius: 14, height: 40, treeType: "deciduous" },
+      { id: "t-path", type: "line", kind: "path", points: PATH, x: 1560, y: 331 },
+      { id: "t-bypath", type: "tree", x: BY_PATH.x, y: BY_PATH.y, radius: 14, height: 40, treeType: "deciduous" },
+      { id: "t-grass", type: "area", kind: "rough", points: GRASS, x: 1745, y: 310 },
+      { id: "t-ingrass", type: "tree", x: IN_GRASS.x, y: IN_GRASS.y, radius: 14, height: 40, treeType: "deciduous" }
+    );
+    // (woods an older import made from the measured trees, round the first of them, which was tied to it)
+    const [tx, ty] = doc.lidar.trees[0];
+    doc.items.push({ id: "t-stand", type: "area", kind: "woods", importSource: "lidar", x: tx, y: ty, points: [{ x: tx - 30, y: ty - 30 }, { x: tx + 30, y: ty - 30 }, { x: tx + 30, y: ty + 30 }, { x: tx - 30, y: ty + 30 }] });
+    doc.lidar.bound = [0];
+    // (and a wood with the older settings: trees in patches, a section of heavy underbrush)
+    const sq = (x: number, y: number, r: number) => [{ x: x - r, y: y - r }, { x: x + r, y: y - r }, { x: x + r, y: y + r }, { x: x - r, y: y + r }];
+    doc.items.push({ id: "t-oldwood", type: "area", kind: "woods", x: tx + 200, y: ty, points: sq(tx + 200, ty, 60), trees: "custom", patches: [{ points: sq(tx + 200, ty, 20), fill: 0.5 }], brush: [{ points: sq(tx + 220, ty, 25), level: "heavy" }], brushEdge: 0.3 });
+    doc.lidar.removed = (doc.lidar.removed ?? []).filter((k: number) => k !== 0);
+  });
+});
+test.afterAll(async () => { await page?.close(); });
+
+const pickAt = async (p: { x: number; y: number }) => {
+  await page.evaluate(() => (window as any).__dgActions.select(null));
+  await page.mouse.click(p.x, p.y);
+  await expect.poll(async () => (await editor(page)).selectedId, { timeout: 10_000 }).not.toBeNull();
+  const id = (await editor(page)).selectedId;
+  // (what it is, when it's not one of the check's own: said, to see what got in the way)
+  if (!String(id).startsWith("t-")) console.log("picked", id, await page.evaluate(id => { const c = (window as any).__dgCourse(); const i = c.items.find((x: any) => x.id === id); return i ? `${i.type} ${i.kind ?? ""} ${JSON.stringify(i.points?.slice(0, 3) ?? [i.x, i.y])}` : c.holes.some((h: any) => h.id === id) ? "a hole" : "not an item"; }, id));
+  return id;
+};
+
+test("measured trees stand on their own: the woods an older import made from them are gone, the trees kept", async () => {
+  // (as saved: opened again from the server)
+  const id = (await saved(page)).id;
+  await page.evaluate(id => (window as any).__dgServer.open(id), id);
+  await page.waitForFunction(() => (window as any).__dgCourse?.()?.holes?.length > 0 && !(window as any).__dgCourse().items.some((i: any) => i.id === "t-stand"), null, { timeout: 60_000 }).catch(() => {});
+  const back = page.getByTestId("back-to-course");
+  if (await back.isVisible().catch(() => false)) await back.click();
+  const doc = await course(page);
+  expect(doc.items.some((i: any) => i.id === "t-stand")).toBe(false);
+  expect(doc.items.some((i: any) => i.type === "area" && i.importSource === "lidar")).toBe(false);
+  expect(doc.lidar.bound).toBeUndefined();
+  expect(doc.lidar.removed ?? []).not.toContain(0);
+  // (the older wood: the measured trees kept and the gaps filled; its section, woods of bushes)
+  const old = doc.items.find((i: any) => i.id === "t-oldwood");
+  expect([old.trees, old.patches, old.brush, old.brushEdge]).toEqual([undefined, undefined, undefined, undefined]);
+  expect(doc.items.filter((i: any) => i.kind === "woods" && i.bushes === 1 && i.density === 2 && Math.abs(i.x - (old.x + 20)) < 1 && Math.abs(i.y - old.y) < 1)).toHaveLength(1);
+});
+
+test("autosave: edits made quickly, and two saves asked for at once, all reach the server with no clash", async () => {
+  const before = (await saved(page)).version;
+  await page.evaluate(() => (window as any).__dgActions.updateItem("t-house", { label: "Clubhouse" }));
+  await page.evaluate(() => (window as any).__dgActions.updateItem("t-path", { label: "Lane" }));
+  // (as the app does when the course is left while a save is waiting)
+  await page.evaluate(() => Promise.all([(window as any).__dgServer.saveNow(), (window as any).__dgServer.saveNow()]));
+  await page.evaluate(() => (window as any).__dgActions.updateItem("t-grass", { label: "Meadow" }));
+  await expect.poll(async () => (await saved(page)).status, { timeout: 15_000 }).toBe("saved");
+  const s = await saved(page);
+  expect(s.conflict).toBe("");
+  expect(s.version).toBeGreaterThan(before);
+  const onServer = await (await page.request.get(`/api/courses/${s.id}`)).json();
+  const doc = onServer.doc ?? onServer.course?.doc ?? onServer;
+  const label = (id: string) => doc.items.find((i: any) => i.id === id)?.label;
+  expect([label("t-house"), label("t-path"), label("t-grass")]).toEqual(["Clubhouse", "Lane", "Meadow"]);
+});
+
+test("picking in 3D: a roof in front of a tree picks the house; the path in front of a tree, the path; the tall grass round a tree, the grass", async () => {
+  await page.evaluate(() => (window as any).__dgEditor().set({ step: "design", tool: "select" }));
+  await page.keyboard.press("3");
+  await frame(page, BOX);
+  await page.waitForTimeout(1500);
+  await draw(page, false);
+  expect(await pickAt(await at(page, 1640, 238, 14))).toBe("t-house");
+  expect(await pickAt(await at(page, 1532, 331, 0))).toBe("t-path");
+  // (a spot in the grass inside the tree's reach but with no leaves drawn under it)
+  const c = await at(page, IN_GRASS.x, IN_GRASS.y, 25);
+  const spot = await page.evaluate(([x, y]) => {
+    const v = (window as any).__dgView;
+    for (let r = 2; r <= 160; r += 1.5) for (let a = 0; a < 6.28; a += 0.1) {
+      const p = { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r }, hit = v.treeUnder(v.ray(p.x, p.y)), g = v.groundAt(p.x, p.y);
+      if (hit && !hit.drawn && g && g.x > 1705 && g.x < 1785 && g.z > 275 && g.z < 345) return p;
+    }
+    return null;
+  }, [c.x, c.y] as const);
+  if (spot) expect(await pickAt(spot)).toBe("t-grass");
+  expect(await pickAt(await at(page, BEHIND.x, BEHIND.y, 36))).toBe("t-behind");
+});
+
+test("dragging a house: each step quick, letting go quick, back with one undo", async () => {
+  await draw(page, false);
+  const was = (await course(page)).items.find((i: any) => i.id === "t-house").points[0];
+  await page.evaluate(() => (window as any).__dgActions.select("t-house"));
+  // (off the middle of the roof: its height handle is there in 3D)
+  const c = await at(page, 1612, 242, 12);
+  await page.mouse.move(c.x, c.y);
+  await page.mouse.down();
+  const steps: number[] = [];
+  const { top, app } = await profiled(page, async () => {
+    for (let i = 1; i <= 10; i++) {
+      const s = Date.now();
+      await page.mouse.move(c.x + i * 4, c.y + i * 2);
+      await frames(page);
+      steps.push(Date.now() - s);
+    }
+  });
+  const s = Date.now();
+  await page.mouse.up();
+  await frames(page);
+  const letGo = Date.now() - s;
+  const perStep = app / steps.length;
+  console.log("drag steps ms", steps.join(" "), "· the app's own work", Math.round(perStep), "ms a step · let go", letGo);
+  if (perStep >= 80) console.log("where the drag's time went:\n" + top.join("\n"));
+  // (about 40 to 60 ms here, without a graphics card; it was over 100 before the drag was made quicker)
+  expect(perStep).toBeLessThan(80);
+  expect(letGo).toBeLessThan(1500);
+  const now = (await course(page)).items.find((i: any) => i.id === "t-house").points[0];
+  expect(Math.hypot(now.x - was.x, now.y - was.y)).toBeGreaterThan(3);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === "t-house").points[0].x).toBeCloseTo(was.x, 1);
+});
+
+test("looking round 3D with a hole picked and the course at rest: no stall over 0.2 s", async () => {
+  await draw(page, false);
+  const hole = (await course(page)).holes[0];
+  await page.evaluate(id => (window as any).__dgActions.select(id), hole.id);
+  await page.evaluate(() => (window as any).__dgView.fitSite(false));
+  // (at rest long enough for the ground to start painting ahead for a flyover)
+  await page.waitForTimeout(3000);
+  await watch(page);
+  const turn = setInterval(() => void page.evaluate(() => { const v = (window as any).__dgView; v.controls.rotate(0.03, 0, false); v.invalidate(); }).catch(() => {}), 30);
+  await page.waitForTimeout(8000);
+  clearInterval(turn);
+  const s = await stalls(page);
+  console.log("stalls while turning, ms", s.all.join(" ") || "none");
+  expect(s.over).toBe(0);
+});
+
+test("the Trees tool has leafy trees, pines, bushes, woods and hedges; a wood drawn with it is there", async () => {
+  await draw(page, false);
+  await page.keyboard.press("2");
+  await page.evaluate(() => (window as any).__dgEditor().set({ step: "design", tool: "select" }));
+  await page.keyboard.press("r");
+  for (const id of ["tree-kind-deciduous", "tree-kind-conifer", "tree-kind-bush", "area-kind-woods", "line-kind-hedge"]) await expect(page.getByTestId(id)).toBeVisible();
+  const n = (await course(page)).items.filter((i: any) => i.type === "area" && i.kind === "woods").length;
+  await page.getByTestId("area-kind-woods").click();
+  await frame(page, BOX);
+  await page.waitForTimeout(800);
+  for (const p of [{ x: 1520, y: 140 }, { x: 1580, y: 140 }, { x: 1580, y: 180 }, { x: 1520, y: 180 }]) {
+    const c = await at(page, p.x, p.y);
+    await page.mouse.click(c.x, c.y);
+  }
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "area" && i.kind === "woods").length).toBe(n + 1);
+  await page.keyboard.press("Escape");
+});
+
+test("a stand of pines: Pine, then Rectangle, dragged out; a wood that grows only pines round the measured trees, its mix in its panel", async () => {
+  await page.evaluate(() => (window as any).__dgEditor().set({ step: "design", tool: "select" }));
+  await page.keyboard.press("r");
+  await page.getByTestId("tree-kind-conifer").click();
+  for (const w of ["one", "points", "box", "circle", "freehand", "paint"]) await expect(page.getByTestId(`draw-shape-${w}`)).toBeVisible();
+  await page.getByTestId("draw-shape-box").click();
+  await expect(page.getByTestId("tree-kind-conifer")).toHaveClass(/bg-zinc-100/);
+  const had = new Set((await course(page)).items.map((i: any) => i.id));
+  await frame(page, BOX);
+  await page.waitForTimeout(800);
+  const a = await at(page, 1480, 420), b = await at(page, 1560, 480);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 4 });
+  await page.mouse.move(b.x, b.y, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => !had.has(i.id) && i.kind === "woods").length).toBe(1);
+  const stand = (await course(page)).items.find((i: any) => !had.has(i.id) && i.kind === "woods");
+  expect([stand.pines, stand.bushes, stand.trees, stand.patches]).toEqual([1, undefined, undefined, undefined]);
+  // (a wood drawn by hand fills in round the measured trees, its mix in its panel)
+  await page.evaluate(id => (window as any).__dgActions.select(id), stand.id);
+  const panel = page.getByTestId("woods-settings");
+  await expect(panel.getByTestId("grows-pine")).toHaveAttribute("aria-pressed", "true");
+  await expect(panel.getByTestId("grows-leafy")).toHaveAttribute("aria-pressed", "false");
+  await expect(panel.getByRole("checkbox", { name: "Keep the measured trees in it" })).toBeChecked();
+  // (bushes too: half and half; thick)
+  await panel.getByTestId("grows-bush").click();
+  await panel.getByRole("radio", { name: "Thick" }).click();
+  await expect.poll(async () => { const w = (await course(page)).items.find((i: any) => i.id === stand.id); return [w.pines, w.bushes, w.density]; }).toEqual([1, 0.5, 2]);
+  // (the last one on stays on)
+  await panel.getByTestId("grows-pine").click();
+  await panel.getByTestId("grows-bush").click();
+  await expect(panel.getByTestId("grows-bush")).toHaveAttribute("aria-pressed", "true");
+  await expect(panel.getByRole("radiogroup", { name: "Underbrush" })).toHaveCount(0);
+  // (One tree: back to a tree at a time)
+  await page.keyboard.press("r");
+  await page.getByTestId("draw-shape-one").click();
+  expect((await editor(page)).tool).toBe("add-tree");
+  await page.keyboard.press("Escape");
+});
+
+test("a hole's trees in the way: said, cleared when asked (and said), brought back", async () => {
+  const doc = await course(page);
+  let found = false;
+  for (const h of doc.holes) {
+    await page.evaluate(id => (window as any).__dgActions.select(id), h.id);
+    const card = page.getByTestId("fairway-trees");
+    if (!(await card.isVisible().catch(() => false)) || !/in the way/.test(await card.innerText())) continue;
+    found = true;
+    await page.getByTestId("trees-clear").click();
+    await expect(card).toContainText("cut down");
+    await expect(page.getByText(/^Cut down \d+ trees? on hole \d+/)).toBeVisible();
+    await page.getByTestId("trees-back").click();
+    await expect(card).toContainText("in the way");
+    break;
+  }
+  expect(found).toBe(true);
+});
+
+test("a pond made a hazard: never OB as well", async () => {
+  const pond = (await course(page)).items.find((i: any) => i.type === "area" && i.kind === "water");
+  await page.evaluate(id => (window as any).__dgActions.select(id), pond.id);
+  await page.getByRole("radiogroup", { name: "Penalty" }).getByRole("radio", { name: "Hazard" }).click();
+  await expect.poll(async () => { const p = (await course(page)).items.find((i: any) => i.id === pond.id); return [p.hazard, p.ob]; }).toEqual([true, false]);
+  await page.keyboard.press("Control+z");
+});
+
+test("a flyover's keyframes: two set, the timeline scrubbed (the camera follows it), and a keyframe added at that moment", async () => {
+  await draw(page, false);
+  await page.evaluate(() => (window as any).__dgEditor().set({ step: "design", tool: "select" }));
+  const hole = (await course(page)).holes[0];
+  await page.evaluate(id => (window as any).__dgActions.select(id), hole.id);
+  await page.getByTestId("hole-flight").getByTestId("fly-camera").click();
+  await expect(page.getByTestId("camera-hud")).toBeVisible();
+  const keys = async () => ((await course(page)).holes.find((h: any) => h.id === hole.id).flyKeys ?? []) as any[];
+  const had = (await keys()).length;
+  await page.keyboard.press("Enter");
+  await page.keyboard.down("w");
+  await page.waitForTimeout(900);
+  await page.keyboard.up("w");
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await keys()).length).toBe(had + 2);
+  await expect(page.getByTestId("cam-timeline")).toBeVisible();
+  // (half way through the flight: the camera there, the status says so)
+  const end = Number(await page.getByTestId("cam-scrub").getAttribute("max"));
+  await page.getByTestId("cam-scrub").fill(String(Math.round((end / 2) * 20) / 20));
+  await expect(page.getByTestId("cam-status")).toContainText("At ");
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await keys()).length).toBe(had + 3);
+  expect((await editor(page)).flyKey).toBe(had + 1);
+  await page.getByTestId("cam-done").click();
+});
+
+test("on a phone, the Trees tool has the same kinds, woods included, and the ways to plant a stand", async ({ browser }) => {
+  const phone = await browser.newPage({ viewport: { width: 393, height: 851 }, isMobile: true, hasTouch: true, storageState: await page.context().storageState() });
+  await phone.goto("/");
+  const id = (await saved(page)).id;
+  await phone.evaluate(id => (window as any).__dgServer.open(id), id);
+  await phone.waitForFunction(() => (window as any).__dgCourse?.()?.holes?.length > 0, null, { timeout: 60_000 });
+  const back = phone.getByTestId("back-to-course");
+  if (await back.isVisible().catch(() => false)) await back.click();
+  await phone.evaluate(() => (window as any).__dgEditor().set({ step: "design", tool: "add-tree" }));
+  for (const t of ["tree-kind-deciduous", "tree-kind-conifer", "tree-kind-bush", "area-kind-woods", "line-kind-hedge"]) await expect(phone.getByTestId(t)).toBeAttached();
+  await expect(phone.getByTestId("area-kind-woods")).toBeVisible();
+  await expect(phone.getByTestId("draw-shape-points")).toBeAttached();
+  await phone.close();
+});
+
+test("the painted map: Where to paint the woods is there with measured trees, and the map paints in time", async () => {
+  await page.evaluate(() => (window as any).__dgEditor().set({ step: "map", tool: "select" }));
+  const trees = page.getByTestId("part-trees");
+  if ((await trees.getAttribute("aria-expanded")) !== "true") await trees.click();
+  await expect(page.getByTestId("forest-options")).toBeVisible();
+  const s = Date.now();
+  await page.waitForFunction(() => !(window as any).__dgPainting(), null, { timeout: 150_000 });
+  console.log("map painted in", Math.round((Date.now() - s) / 1000), "s");
+  await page.waitForTimeout(1500);
+  await expect(page.getByTestId("design-page").first()).toHaveScreenshot("painted-map.png");
+});
+
+test("Hand painted: the demo (made before) stays Classic, a new course starts in Hand painted, and its map paints in time", async () => {
+  expect((await course(page)).style.mapLook).toBeUndefined();
+  expect(createEmptyCourse().style.mapLook).toBe("handpainted");
+  expect(normalizeCourse({ ...createEmptyCourse(), style: { ...createEmptyCourse().style, mapLook: undefined } }).style.mapLook).toBeUndefined();
+  // (in a browser of its own, its emulated graphics chip in its faster mode: the default one is
+  // about 22 times slower, nothing like a real chip; and the 3D view drawing nothing)
+  const b = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
+  const ctx = await b.newContext({ baseURL: "http://localhost:4176", viewport: { width: 1280, height: 820 }, storageState: await page.context().storageState() });
+  const p2 = await ctx.newPage();
+  try {
+    // (its own copy of the demo: two pages saving the same course would each paint again and again)
+    await p2.goto("/");
+    const demo = await (await p2.request.get("/example/course.json")).json();
+    await p2.evaluate(d => (window as any).__dgServer.start(d), demo);
+    await p2.waitForFunction(() => (window as any).__dgCourse?.()?.holes?.length > 0, null, { timeout: 60_000 });
+    const back = p2.getByTestId("back-to-course");
+    if (await back.isVisible().catch(() => false)) await back.click();
+    if (await p2.evaluate(() => !!(window as any).__dgView)) await draw(p2, false);
+    // (every painting of the trees, as it ends)
+    await p2.evaluate(() => { (window as any).__times = []; window.addEventListener("dg-tree-timing", (e: any) => (window as any).__times.push({ ...e.detail, at: Math.round(performance.now()) })); });
+    p2.on("console", m => { if (/Hand painted|webgl|WebGL/i.test(m.text())) console.log("[page]", m.text().slice(0, 300)); });
+    const ticker = setInterval(() => void p2.evaluate(() => [(window as any).__dgPainting(), JSON.stringify((window as any).__times)]).then(v => console.log("painting", v[0], v[1])).catch(() => {}), 15_000);
+    await p2.evaluate(() => (window as any).__dgEditor().set({ step: "map", tool: "select" }));
+    await p2.getByTestId("map-style-handpainted").click();
+    await expect.poll(async () => (await course(p2)).style.mapLook).toBe("handpainted");
+    await p2.waitForFunction(() => !!(window as any).__dgTreeTiming, null, { timeout: 170_000 });
+    const t = await p2.evaluate(() => (window as any).__dgTreeTiming);
+    console.log("Hand painted trees:", JSON.stringify(t));
+    expect(t.how).toContain("graphics chip");
+    await p2.waitForFunction(() => !(window as any).__dgPainting(), null, { timeout: 120_000 });
+    await p2.waitForTimeout(1500);
+    clearInterval(ticker);
+    await p2.getByTestId("design-page").first().screenshot({ path: "test-results/handpainted-map.png" });
+    // (on the emulated chip, a whole 18-hole course in under 20 s; a real one is far quicker)
+    expect(t.total).toBeLessThan(20_000);
+    await p2.keyboard.press("Control+z");
+  } finally { await b.close(); }
+});

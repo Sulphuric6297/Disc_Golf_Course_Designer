@@ -2,11 +2,11 @@
 // the hole drawn with the tee at the bottom, its elevation profile, the hole's rules, and an arrow
 // to the next tee.
 import { fitAttr, capAttr } from "./fitText";
-import { CIRCLE_ONE_FT, FIELD_KINDS, FT_PER_M, TEE_LEVELS } from "../constants";
+import { AREA_KINDS, CIRCLE_ONE_FT, FIELD_KINDS, FT_PER_M, LINE_KINDS, TEE_LEVELS } from "../constants";
 import { fieldKindOf } from "./fields";
 import type { AreaItem, BasketItem, CourseDoc, CourseItem, LineItem, MapStyle, P, SignLook, SignPart, SignSpot, Units } from "../types";
 import { renderFieldGuide, renderOpenView, renderTrailhead } from "./signLooks";
-import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, obFor, obPieces, throwLine, taglineOf, titleFontOf } from "./course";
+import { activeLayout, belongsTo, fairwayOutline, holeBaskets, holeTees, linePath, obFor, obPieces, throwLine, taglineOf, titleFontOf } from "./course";
 import { boundsOf, dist, distanceToPath, pathLength, pointAlong, pointInPolygon, rotatePoint, smoothPath } from "./geom";
 import { holeStats, isOutOfPlay, playedHoles, type HoleStats } from "./holeStats";
 import { keepsCase, markingsInView, northArrow, palette, renderMapLayers, scaleBar, titleStack, wrapSvg, type MapView } from "./mapSvg";
@@ -68,8 +68,14 @@ export const autoRules = (doc: CourseDoc, holeId: string) => {
   const areas = doc.items.filter(i => i.type === "area") as AreaItem[];
   const obLine = doc.items.some(i => i.type === "line" && i.kind === "ob" && (!i.holeId || belongsTo(i, holeId)) && i.points.some(p => pointInPolygon(p, fairway)));
   if (areas.some(a => a.kind === "ob" && near(a)) || obLine) out.push("OB in play.");
-  if (areas.some(a => a.kind === "water" && near(a))) out.push("Water is OB.");
+  if (areas.some(a => a.kind === "water" && a.ob !== false && a.hazard !== true && near(a))) out.push("Water is OB.");
+  if (areas.some(a => a.kind === "water" && a.hazard === true && near(a))) out.push("Water is a hazard.");
   if (areas.some(a => a.kind === "hazard" && near(a))) out.push("Hazard in play.");
+  // (anything else made a hazard, by its name)
+  for (const a of areas.filter(a => a.hazard === true && a.kind !== "water" && a.kind !== "hazard" && near(a))) {
+    const text = `${a.label?.trim() || (a.kind === "field" ? FIELD_KINDS[fieldKindOf(a)].label : AREA_KINDS[a.kind].label)} is a hazard.`;
+    if (!out.includes(text)) out.push(text);
+  }
   // Fields, courts and play areas by the hole that players stay out of, or that are OB
   for (const a of areas.filter(a => a.kind === "field" && near(a) && (a.ob === true || isOutOfPlay(a)))) {
     const text = `${a.label?.trim() || FIELD_KINDS[fieldKindOf(a)].label} is ${a.ob === true ? "OB" : "out of play"}.`;
@@ -83,6 +89,13 @@ export const autoRules = (doc: CourseDoc, holeId: string) => {
     if (!obPieces(l).some(close)) continue;
     const name = l.label?.trim() || { road: "Road", path: "Path", fence: "Fence", stream: "Creek", ob: "", walk: "", power: "Power line", hedge: "Hedge" }[l.kind];
     const text = `${name}${l.obBeyond ? " and beyond" : ""} is OB.`;
+    if (!said.has(text)) out.push(text);
+    said.add(text);
+  }
+  for (const l of doc.items.filter(i => i.type === "line" && i.kind !== "ob" && i.hazard === true && (!i.holeId || belongsTo(i, holeId))) as LineItem[]) {
+    if (!close(linePath(l))) continue;
+    const name = l.label?.trim() || LINE_KINDS[l.kind].label;
+    const text = `${name} is a hazard.`;
     if (!said.has(text)) out.push(text);
     said.add(text);
   }

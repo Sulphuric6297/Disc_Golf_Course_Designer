@@ -1,7 +1,6 @@
 // The panel for what is selected: a hole (par, fairway, OB, tees and baskets, profile, notes,
 // flyover) or one item.
 import { PlaceByGps } from "./PlaceByGps";
-import { BRUSH_SECTION } from "../lib/view";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronLeft, Copy, Eye, Lock, Maximize2, Plane, RotateCcw, RotateCw, Trash2, TreeDeciduous, Unlock, X, Plus } from "lucide-react";
 import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, AREA_ORDER, CIRCLE_ONE_FT, FIELD_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
@@ -19,15 +18,15 @@ import { turnable } from "../lib/turn";
 import { conifersOf } from "../lib/landscapes";
 import { addHoleOb, deleteSelection, duplicateSelection, forgetNewLabel, isNewLabel, nextHomeCorner, obChoiceOf, pinsFull, setFieldKind, setFieldPlay, setLineKind, setObChoice, setPinPosition, startAnotherPin, startAnotherTee, startHoleToBasket, select, setTeeLevel, shareBasket, teesFull, type ObChoice } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaItem, CourseDoc, CourseItem, FenceStyle, FieldKind, Hole, LabelItem, LineItem, LineKind, P, PathSurface, PinPosition, RoofKind, StructureKind, TeeLevel, TeeSurface, BrushKind } from "../types";
+import type { AmenityKind, AreaItem, CourseDoc, CourseItem, FenceStyle, FieldKind, Hole, LabelItem, LineItem, LineKind, P, PathSurface, PinPosition, RoofKind, StructureKind, TeeLevel, TeeSurface } from "../types";
 import { ElevationProfile } from "./ElevationProfile";
 import { TreeSettings } from "./TreeSettings";
 import { HoleFlight } from "./FlyoverSettings";
 import { HoleChips } from "./ApplyToHoles";
 import { HoleSteps } from "./HoleSteps";
 import { getView } from "../state/view";
-import { useLayout, useTouch } from "./useLayout";
-import { Button, ChipPick, ColorInput, Field, HelpLink, NumberInput, Section, Segmented, Select, Slider, Stat, TextInput, Toggle } from "./ui";
+import { useLayout } from "./useLayout";
+import { Button, ChipPick, chipCls, ColorInput, Field, HelpLink, NumberInput, Section, Segmented, Select, Slider, Stat, TextInput, Toggle } from "./ui";
 
 const shapeText = { straight: "Straight", left: "Turns left", right: "Turns right", "s-curve": "S-curve" };
 /** A small size to the half foot (or tenth of a meter): "2.5 ft". */
@@ -78,34 +77,42 @@ function HoleNumberInput({ holeId, value }: { holeId: string; value: string }) {
   );
 }
 
-/** The measured trees on a hole's fairway: how many are cut down and kept, and all of them back
- * or down at once. */
-/** The measured trees this hole cut down (where it plays), and kept: how many, and the button to
- * bring them back (or cut them again). Near the top of the hole's panel, and a chip on a phone. */
+/** The measured trees on this hole's fairway (where it plays): how many are cut down, kept or in
+ * the way, and the button to bring them back, clear them, or cut them again. Near the top of the
+ * hole's panel, and a chip on a phone. */
 export const useHoleTrees = (hole: Hole, line: P[] | null) => {
   const lidar = useCourse(s => s.doc.lidar);
-  return useMemo(() => (lidar && line ? fairwayTrees({ lidar }, hole, line) : { cut: [], kept: [] }), [lidar, hole, line]);
+  return useMemo(() => (lidar && line ? fairwayTrees({ lidar }, hole, line) : { cut: [], kept: [], standing: [] }), [lidar, hole, line]);
 };
 export function HoleTrees({ hole, line }: { hole: Hole; line: P[] }) {
   const lidar = useCourse(s => s.doc.lidar);
-  const { cut, kept } = useHoleTrees(hole, line);
-  if (!cut.length && !kept.length) return null;
+  const { cut, kept, standing } = useHoleTrees(hole, line);
+  if (!cut.length && !kept.length && !standing.length) return null;
   const setLidar = (patch: { kept?: number[]; removed?: number[] }) => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, ...patch } } : {}));
   const list = (v: number[]) => (v.length ? [...new Set(v)].sort((a, b) => a - b) : undefined);
   const back = () => {
-    setLidar({ kept: list([...(lidar?.kept ?? []), ...cut]), removed: list((lidar?.removed ?? []).filter(k => !cut.includes(k))) });
-    toast(`${cut.length === 1 ? "1 tree" : `${cut.length} trees`} back on hole ${hole.number ?? ""}.`.replace(" .", "."), "success", true);
+    // (kept, so the fairways' clearing leaves them, only where the course clears its fairways)
+    setLidar({ ...(lidar?.clearFairways === true ? { kept: list([...(lidar?.kept ?? []), ...cut]) } : {}), removed: list((lidar?.removed ?? []).filter(k => !cut.includes(k))) });
+    toast(`${cut.length === 1 ? "1 tree" : `${cut.length} trees`} back on hole ${holeLabel(useCourse.getState().doc, hole.id)}.`, "success", true);
+  };
+  // (trees left standing in the way: cut down only when asked, and said)
+  const clear = () => {
+    setLidar({ removed: list([...(lidar?.removed ?? []), ...standing]) });
+    toast(`Cut down ${standing.length === 1 ? "1 tree" : `${standing.length} trees`} on hole ${holeLabel(useCourse.getState().doc, hole.id)}. Bring them back here, or click a stump.`, "info", true);
   };
   return (
     <div className="flex items-center gap-2.5 rounded-[14px] bg-white/[0.06] ring-1 ring-white/[0.08] px-3 py-2.5 mt-2" data-testid="fairway-trees">
       <TreeDeciduous size={20} className="text-[#a2cf6a] shrink-0" />
       <div className="flex-1 min-w-0 leading-tight">
-        <div className="text-[13.5px] font-semibold text-zinc-50 flex items-center gap-1.5">{cut.length ? `${cut.length.toLocaleString()} ${cut.length === 1 ? "tree" : "trees"} cut down` : `${kept.length.toLocaleString()} ${kept.length === 1 ? "tree" : "trees"} kept`}<HelpLink topic="lidar-settings" label="Trees cut for holes" /></div>
+        <div className="text-[13.5px] font-semibold text-zinc-50 flex items-center gap-1.5">{cut.length ? `${cut.length.toLocaleString()} ${cut.length === 1 ? "tree" : "trees"} cut down` : standing.length ? `${standing.length.toLocaleString()} ${standing.length === 1 ? "tree" : "trees"} in the way` : `${kept.length.toLocaleString()} ${kept.length === 1 ? "tree" : "trees"} kept`}<HelpLink topic="lidar-settings" label="Trees cut for holes" /></div>
         {cut.length > 0 && kept.length > 0 && <div className="text-[11.5px] text-zinc-400">{kept.length.toLocaleString()} kept</div>}
+        {cut.length > 0 && standing.length > 0 && <div className="text-[11.5px] text-zinc-400">{standing.length.toLocaleString()} still in the way</div>}
       </div>
       {cut.length > 0
         ? <Button small onClick={back} testid="trees-back"><RotateCcw size={14} /> Bring them back</Button>
-        : <Button small onClick={() => setLidar({ kept: list((lidar?.kept ?? []).filter(k => !kept.includes(k))) })} testid="trees-down">Cut them down</Button>}
+        : standing.length > 0
+          ? <Button small onClick={clear} testid="trees-clear">Clear them</Button>
+          : <Button small onClick={() => setLidar({ kept: list((lidar?.kept ?? []).filter(k => !kept.includes(k))) })} testid="trees-down">Cut them down</Button>}
     </div>
   );
 }
@@ -329,125 +336,67 @@ function SurfacePick({ value, onChange }: { value?: PathSurface; onChange: (v: P
   );
 }
 
-/** A woods area's trees in 3D: measured from the air, drawn, or none (with measured trees only). */
-const BRUSH_LEVELS = [{ value: "none", label: "None" }, { value: "light", label: "Light" }, { value: "medium", label: "Medium" }, { value: "heavy", label: "Heavy" }] as const;
-type BrushLevel = (typeof BRUSH_LEVELS)[number]["value"];
+/** How much underbrush (a wood's or tall grass's: none unless asked for). */
+export const BRUSH_LEVELS = [{ value: "none", label: "None" }, { value: "light", label: "Light" }, { value: "medium", label: "Medium" }, { value: "heavy", label: "Heavy" }] as const;
+/** How thick a wood grows (its density). */
+export const THICK = [{ value: "sparse", label: "Sparse" }, { value: "usual", label: "Usual" }, { value: "thick", label: "Thick" }] as const;
+type Thick = (typeof THICK)[number]["value"];
+export const thickOf = (a: Pick<AreaItem, "density">): Thick => ((a.density ?? 1) < 0.75 ? "sparse" : (a.density ?? 1) > 1.4 ? "thick" : "usual");
+export const densityFor = (t: Thick) => (t === "sparse" ? 0.5 : t === "thick" ? 2 : undefined);
 
-const BRUSH_KINDS: { value: BrushKind; label: string }[] = [{ value: "mixed", label: "A mix" }, { value: "thicket", label: "Thicket" }, { value: "briars", label: "Briars & thorns" }, { value: "weeds", label: "Weeds" }];
+/** What a wood grows: leafy trees, pines, bushes (any of them, in equal shares). */
+export type Grows = { leafy: boolean; pine: boolean; bush: boolean };
+export const growsOf = (a: Pick<AreaItem, "pines" | "bushes">, style: CourseDoc["style"]): Grows => {
+  const b = a.bushes ?? 0, p = a.pines ?? conifersOf(style);
+  return { bush: b > 0.05, pine: b < 0.999 && p > 0.05, leafy: b < 0.999 && p < 0.95 };
+};
+export const growsPatch = (g: Grows): Partial<AreaItem> => {
+  const trees = +g.leafy + +g.pine, n = trees + +g.bush;
+  return { bushes: g.bush ? (trees ? Math.round((1 / n) * 100) / 100 : 1) : undefined, pines: trees ? (g.pine ? (g.leafy ? 0.5 : 1) : 0) : undefined };
+};
+const GROWS: { key: keyof Grows; label: string }[] = [{ key: "leafy", label: "Leafy trees" }, { key: "pine", label: "Pines" }, { key: "bush", label: "Bushes" }];
+export const growsText = (g: Grows) => GROWS.filter(x => g[x.key]).map((x, i) => (i ? x.label.toLowerCase() : x.label)).join(", ");
 
-/** What to do while drawing a shape by hand inside a wood: with the mouse, or a finger. */
-function DrawNote({ what }: { what: string }) {
-  const touch = useTouch();
-  return <div className="text-xs text-orange-300">{touch ? `Draw ${what} with your finger, and lift it to finish. Cancel, over the map, stops.` : `Draw ${what} with the mouse button held down, and let go to finish. Esc cancels.`}</div>;
+/** What a wood grows, as chips that each turn on or off (one stays on). */
+export function GrowsPick({ item, row = false }: { item: AreaItem; row?: boolean }) {
+  const style = useCourse(s => s.doc.style);
+  const g = growsOf(item, style);
+  const flip = (k: keyof Grows) => {
+    const next = { ...g, [k]: !g[k] };
+    if (!next.leafy && !next.pine && !next.bush) return;
+    updateItem(item.id, growsPatch(next) as Partial<CourseItem>);
+  };
+  return (
+    <div className={row ? "flex gap-1.5" : "flex flex-wrap gap-1"} role="group" aria-label="What grows" data-testid="woods-grows">
+      {GROWS.map(x => <button key={x.key} type="button" aria-pressed={g[x.key]} onClick={() => flip(x.key)} className={chipCls(g[x.key])} data-testid={`grows-${x.key}`}>{x.label}</button>)}
+    </div>
+  );
 }
 
-/** A wood's underbrush (or tall grass's: none unless asked for): its own level and kind, and
- * sections drawn inside it with their own. */
-function WoodsBrush({ item }: { item: AreaItem }) {
-  const drawing = useEditor(e => e.patchFor === item.id && e.patchBrush);
-  const sections = item.brush ?? [];
-  const setSections = (next: { points: P[]; level: BrushLevel; kind?: BrushKind }[]) => updateItem(item.id, { brush: next.length ? next : undefined } as Partial<CourseItem>);
-  const draw = () => useEditor.getState().set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", patchFor: item.id, patchBrush: true });
-  const kind = item.brushKind ?? "mixed";
-  const where = item.kind === "rough" ? "grass" : "wood";
+/** A wood's settings: what grows, how thick, its underbrush, and (with measured trees) whether
+ * those inside stay. Tall grass has the underbrush only. */
+function WoodsSettings({ item }: { item: AreaItem }) {
+  const measured = useCourse(s => !!s.doc.lidar?.trees.length);
+  const set = (patch: Partial<AreaItem>) => updateItem(item.id, patch as Partial<CourseItem>);
+  const woods = item.kind === "woods";
+  const brushOnly = woods && (item.bushes ?? 0) >= 1;
   return (
-    <div className="mb-3" data-testid="woods-brush">
-      <Field label={sections.length ? `Underbrush (the rest of the ${where})` : "Underbrush"} help={item.kind === "rough" ? "areas" : "woods"}>
-        <Segmented label="Underbrush" value={item.underbrush ?? "none"} onChange={v => updateItem(item.id, { underbrush: v === "none" ? undefined : v } as Partial<CourseItem>)} options={[...BRUSH_LEVELS]} />
-      </Field>
-      {(item.underbrush || sections.length > 0) && (
-        <Field label="What grows">
-          <ChipPick label="What the underbrush is" testid="brush-kind" value={kind} onChange={v => updateItem(item.id, { brushKind: v === "mixed" ? undefined : v } as Partial<CourseItem>)} options={BRUSH_KINDS} />
+    <div className="mb-3" data-testid="woods-settings">
+      {woods && (
+        <>
+          <Field label="What grows" help="woods"><GrowsPick item={item} /></Field>
+          <Field label="How thick"><Segmented label="How thick" value={thickOf(item)} onChange={v => set({ density: densityFor(v) })} options={[...THICK]} /></Field>
+        </>
+      )}
+      {!brushOnly && (
+        <Field label="Underbrush" help={woods ? "woods" : "areas"}>
+          <Segmented label="Underbrush" value={item.underbrush ?? "none"} onChange={v => set({ underbrush: v === "none" ? undefined : v })} options={[...BRUSH_LEVELS]} />
         </Field>
       )}
-      {sections.map((b, k) => (
-        <div key={k} className="rounded-lg bg-white/[0.07] p-2 mb-1.5" data-testid="brush-section">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-semibold text-zinc-300"><span className="inline-block w-3 border-t-2 border-dashed align-middle mr-1.5" style={{ borderColor: BRUSH_SECTION }} aria-hidden />Section {k + 1}</span>
-            <button className="p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-white/[0.09]" aria-label={`Remove section ${k + 1}`} title="Remove" onClick={() => setSections(sections.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
-          </div>
-          <Segmented label={`Section ${k + 1} underbrush`} value={b.level} onChange={v => setSections(sections.map((q, m) => (m === k ? { ...q, level: v } : q)))} options={[...BRUSH_LEVELS]} />
-          {b.level !== "none" && (
-            <div className="mt-1.5">
-              <ChipPick label={`Section ${k + 1}: what grows`} value={b.kind ?? ""} onChange={v => setSections(sections.map((q, m) => (m === k ? { ...q, kind: (v || undefined) as BrushKind | undefined } : q)))}
-                options={[{ value: "", label: `As the rest (${BRUSH_KINDS.find(x => x.value === kind)!.label.toLowerCase()})` }, ...BRUSH_KINDS]} />
-            </div>
-          )}
-        </div>
-      ))}
-      {drawing
-        ? <DrawNote what={`around the part of the ${where}`} />
-        : <Button small onClick={draw} testid="brush-draw-section"><Plus size={13} /> Draw a section</Button>}
-      {(item.underbrush || sections.some(b => b.level !== "none")) && (
-        <div className="mt-2">
-          <Slider label="Thinner inside" min={0} max={100} step={5} value={Math.round((item.brushEdge ?? 0.6) * 100)}
-            onChange={v => updateItem(item.id, { brushEdge: v / 100 } as Partial<CourseItem>, false)} onDone={commit}
-            format={v => (v === 0 ? "Even" : `${v}% thinner`)} />
-        </div>
+      {woods && measured && (
+        <Toggle label="Keep the measured trees in it" checked={item.trees !== "drawn" && item.trees !== "none"} onChange={v => set({ trees: v ? undefined : "drawn" })} />
       )}
     </div>
-  );
-}
-
-/** How a wood the app plants fills itself: its mix of pines and bushes, how thick, how tall. */
-function WoodsMix({ item }: { item: AreaItem }) {
-  const style = useCourse(s => s.doc.style);
-  const u = useCourse(s => s.doc.units);
-  const set = (patch: Partial<AreaItem>, history = false) => updateItem(item.id, patch as Partial<CourseItem>, history);
-  const [lo, hi] = item.heights ?? [38, 72];
-  const own = item.pines !== undefined || item.bushes !== undefined || item.density !== undefined || item.heights !== undefined;
-  return (
-    <div className="mb-3" data-testid="woods-mix">
-      <div className="text-xs text-zinc-400 mb-1">The trees it grows</div>
-      <Slider label="Pines" min={0} max={100} step={5} value={Math.round((item.pines ?? conifersOf(style)) * 100)} onChange={v => set({ pines: v / 100 })} onDone={commit} format={v => `${v}%`} />
-      <Slider label="Bushes" min={0} max={80} step={5} value={Math.round((item.bushes ?? 0) * 100)} onChange={v => set({ bushes: v ? v / 100 : undefined })} onDone={commit} format={v => (v ? `${v}%` : "None")} />
-      <Slider label="Density" min={20} max={250} step={10} value={Math.round((item.density ?? 1) * 100)} onChange={v => set({ density: v / 100 })} onDone={commit} format={v => (v === 100 ? "Usual" : v < 100 ? `Sparser (${v}%)` : `Denser (${v}%)`)} />
-      <Slider label="Shortest trees" min={8} max={100} value={Math.round(lo)} onChange={v => set({ heights: [Math.min(v, hi - 2), hi] })} onDone={commit} format={v => fmtDist(v, u)} />
-      <Slider label="Tallest trees" min={12} max={130} value={Math.round(hi)} onChange={v => set({ heights: [lo, Math.max(v, lo + 2)] })} onDone={commit} format={v => fmtDist(v, u)} />
-      {own && <Button small tone="ghost" onClick={() => set({ pines: undefined, bushes: undefined, density: undefined, heights: undefined }, true)} testid="woods-usual" title="The landscape's own mix again"><RotateCcw size={13} /> Reset</Button>}
-    </div>
-  );
-}
-
-/** Where a wood's trees come from (its panel and a phone's strip). */
-export const WOODS_TREES: { value: NonNullable<AreaItem["trees"]>; label: string }[] = [
-  { value: "measured", label: "Real trees" }, { value: "custom", label: "Real + fill-in" }, { value: "drawn", label: "Planted" }, { value: "none", label: "No trees" }
-];
-
-function WoodsTrees({ item }: { item: AreaItem }) {
-  const measured = useCourse(s => !!s.doc.lidar?.trees.length);
-  const drawing = useEditor(e => e.patchFor === item.id);
-  // (a course without measured trees: the wood grows its own, set here)
-  if (!measured) return <WoodsMix item={item} />;
-  const mode = item.trees ?? "measured";
-  const patches = item.patches ?? [];
-  const setPatches = (next: { points: P[]; fill: number }[], history = true) => updateItem(item.id, { patches: next.length ? next : undefined } as Partial<CourseItem>, history);
-  // A patch: drawn over the wood (it is drawn as an area); it lands in this wood's patches
-  const draw = () => useEditor.getState().set({ tool: "draw-area", areaKind: "woods", drawShape: "freehand", patchFor: item.id });
-  return (
-    <>
-      <Field label="Trees in these woods" help="woods">
-        <ChipPick label="Trees in these woods" testid="woods-trees" value={mode} onChange={v => updateItem(item.id, { trees: v === "measured" ? undefined : v } as Partial<CourseItem>)} options={WOODS_TREES} />
-      </Field>
-      {(mode === "drawn" || mode === "custom") && <WoodsMix item={item} />}
-      {mode === "custom" && (
-        <div className="mb-3" data-testid="woods-patches">
-          {patches.map((p, k) => (
-            <div key={k} className="flex items-start gap-2" data-testid="woods-patch">
-              <div className="flex-1 min-w-0">
-                <Slider label={`Patch ${k + 1} fill`} min={0.1} max={1} step={0.1} value={p.fill} format={v => `${Math.round(v * 100)}%`}
-                  onChange={v => setPatches(patches.map((q, m) => (m === k ? { ...q, fill: v } : q)), false)} onDone={commit} />
-              </div>
-              <button className="mt-4 p-1 rounded text-zinc-500 hover:text-red-300 hover:bg-white/[0.09]" aria-label={`Remove patch ${k + 1}`} title="Remove" onClick={() => setPatches(patches.filter((_, m) => m !== k))}><Trash2 size={13} /></button>
-            </div>
-          ))}
-          {!patches.length && <div className="text-[11px] text-zinc-500 mb-1">No patches yet.</div>}
-          {drawing
-            ? <DrawNote what="the patch over the wood" />
-            : <Button small onClick={draw} testid="woods-draw-patch"><Plus size={13} /> Draw a patch</Button>}
-        </div>
-      )}
-    </>
   );
 }
 
@@ -503,16 +452,24 @@ const obMark = (color: string, beyond = false) => (
   </svg>
 );
 
-/** A shape's choices of OB (the panel and the phone's strip). */
+/** A hazard's mark: a dashed yellow edge. */
+const hazardMark = (
+  <svg width="16" height="10" viewBox="0 0 16 10" aria-hidden className="shrink-0">
+    <path d="M1 5 H15" stroke="#f2c230" strokeWidth="2.2" strokeDasharray="3.5 2" />
+  </svg>
+);
+
+/** A shape's choices of penalty, OB or hazard (the panel and the phone's strip). */
 export const obOptions = (item: AreaItem | LineItem): { value: ObChoice; label: string; icon?: JSX.Element }[] => {
   const wet = item.kind === "water" || item.kind === "stream";
   const line = item.type === "line";
   const own = item.type === "line" ? LINE_KINDS[item.kind].color : AREA_KINDS[item.kind].color;
   return [
-    { value: "no", label: "Not OB" },
+    { value: "no", label: "None" },
     { value: "edge", label: "OB", icon: obMark("#ef4444") },
-    ...(wet ? [{ value: "yes" as const, label: "No red edge", icon: obMark(own) }] : []),
-    ...(line ? [{ value: "beyond" as const, label: "And beyond", icon: obMark("#ef4444", true) }] : [])
+    ...(wet ? [{ value: "yes" as const, label: "OB, no red edge", icon: obMark(own) }] : []),
+    ...(line ? [{ value: "beyond" as const, label: "OB and beyond", icon: obMark("#ef4444", true) }] : []),
+    { value: "hazard", label: "Hazard", icon: hazardMark }
   ];
 };
 
@@ -531,8 +488,8 @@ function ObPick({ item }: { item: AreaItem | LineItem }) {
   const setObHoles = (ids: string[]) => updateItem(item.id, { obHoles: ids.length ? ids : undefined } as Partial<CourseItem>);
   return (
     <>
-      <Field label="Out of bounds" help="ob">
-        <ChipPick label="Out of bounds" testid="ob-choice" value={obChoiceOf(item)} onChange={v => setObChoice(item.id, v)} options={obOptions(item)} />
+      <Field label="Penalty" help="ob">
+        <ChipPick label="Penalty" testid="ob-choice" value={obChoiceOf(item)} onChange={v => setObChoice(item.id, v)} options={obOptions(item)} />
       </Field>
       {line?.obBeyond && item.ob === true && (() => {
         // Which side is out: the app's guess (away from the holes beside it), or either side
@@ -739,8 +696,7 @@ function ItemInspector({ item, bare = false }: { item: CourseItem; bare?: boolea
             </Field>
           )}
           {fk && <FieldSettings item={item} kind={fk} />}
-          {item.kind === "woods" && <WoodsTrees item={item} />}
-          {(item.kind === "woods" || item.kind === "rough") && <WoodsBrush item={item} />}
+          {(item.kind === "woods" || item.kind === "rough") && <WoodsSettings item={item} />}
           {hasObChoice(item) && <ObPick item={item} />}
           {item.kind === "ob" && holePicker("OB for", "All holes")}
           {(RULE_AREAS.has(item.kind) || (fk && item.outOfPlay)) && holePicker("Counts for", "All holes")}

@@ -165,7 +165,9 @@ export const fetchMapImagery = async (
   const opts = options instanceof AbortSignal ? { signal: options } : options;
   const bounds = getGeoBounds(location, widthFt, heightFt);
   if (source === "streets") return streetMap(bounds, widthFt, onProgress, opts.signal);
-  const choices = opts.choices ?? (await photoChoices(bounds, { signal: opts.signal }));
+  // (waited for longer than the picker does: NAIP's catalog can take 15 s to answer the first time,
+  // and the summer photo with its infrared band shouldn't be passed over for that)
+  const choices = opts.choices ?? (await photoChoices(bounds, { signal: opts.signal, timeoutMs: 20000 }));
   const order = opts.photo ? [...choices.filter(c => c.id === opts.photo), ...choices.filter(c => c.id !== opts.photo)] : choices;
   let lastErr: unknown = null;
   for (const c of order) {

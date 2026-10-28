@@ -251,8 +251,9 @@ test("in real time, getting the next hole ready is left out of the video (its fr
     return { after: (w.__frameTimes as number[]).filter(t => t >= w.__secondReady).length, all: w.__frameTimes.length };
   });
   console.log(`frames: ${all}, after hole 2 was ready: ${after}`);
-  // As many of hole 2's frames as hole 1's (both fly for 6 s; software drawing here skips some of each)
-  expect(after).toBeGreaterThan((all - after) * 0.75);
+  // About as many of hole 2's frames as hole 1's (both fly for 6 s; software drawing here skips some
+  // of each, more on a slow machine); left out, hole 2 would have next to none
+  expect(after).toBeGreaterThan((all - after) * 0.6);
 });
 
 test("where the browser encodes H.264, the video is an MP4", async ({ page }) => {

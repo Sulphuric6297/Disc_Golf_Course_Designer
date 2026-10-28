@@ -1,6 +1,6 @@
 // Contours and hill shading for the printed map, worked out once per terrain.
 import { useEffect, useMemo, useState } from "react";
-import { canopyFor, type CanopyGrid } from "../lib/forest";
+import { canopyFor, paintsFromPhoto, type CanopyGrid } from "../lib/forest";
 import { contoursOf, hillshadeCanvas, type Contours } from "../lib/relief";
 import { terrainStats } from "../lib/terrainGrid";
 import type { CourseDoc } from "../types";
@@ -27,7 +27,7 @@ export const useRelief = (doc: CourseDoc) => useMemo(() => reliefOf(doc), [doc.t
 /** Where the photo shows trees (Forest style), once it has been worked out. */
 export const useCanopy = (doc: CourseDoc) => {
   const [canopy, setCanopy] = useState<CanopyGrid | null>(null);
-  const want = doc.style.theme === "forest" && doc.style.forest === "photo" ? doc.background : null;
+  const want = doc.style.theme === "forest" && paintsFromPhoto(doc) ? doc.background : null;
   useEffect(() => {
     let live = true;
     if (!want) { setCanopy(null); return; }

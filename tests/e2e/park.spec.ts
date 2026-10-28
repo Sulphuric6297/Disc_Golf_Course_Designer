@@ -39,7 +39,7 @@ test("a ball field put down with one click at its usual size; its kind, play, ma
   await expect.poll(async () => (await fields(page))[0].home).toBe(1);
   // No markings to turn on a ball field; the same Out of bounds as any area
   await expect(panel.getByRole("slider", { name: "Markings turn" })).toHaveCount(0);
-  await expect(panel.getByRole("radiogroup", { name: "Out of bounds" })).toBeVisible();
+  await expect(panel.getByRole("radiogroup", { name: "Penalty" })).toBeVisible();
   // Made a soccer field: no home plate, markings to turn
   await panel.getByRole("radiogroup", { name: "Field kind" }).getByRole("radio", { name: "Soccer field" }).click();
   await expect.poll(async () => (await fields(page))[0].field).toBe("soccer");
@@ -149,7 +149,7 @@ test("a grill, a power line and a hedge put down like the others; their panels",
   await expect(panel.getByRole("slider", { name: "Width" })).toHaveCount(0);
   await panel.getByRole("slider", { name: "Wire height" }).fill("40");
   await expect.poll(async () => (await course(page)).items.find((i: any) => i.kind === "power").fenceHeight).toBe(40);
-  await expect(panel.getByRole("radiogroup", { name: "Out of bounds" })).toBeVisible();
+  await expect(panel.getByRole("radiogroup", { name: "Penalty" })).toBeVisible();
   // A hedge from Trees: its width and height
   await page.keyboard.press("r");
   await page.getByTestId("line-kind-hedge").click();

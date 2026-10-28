@@ -262,6 +262,19 @@ export async function withLidar(page: Page) {
   });
 }
 
+/** The course in the Classic look (a new one starts in Brushed): for the checks on the painting's
+ * own parts, quick to paint on a test machine with no graphics chip. Brushed has its own checks
+ * in tests/real. */
+export async function classicLook(page: Page) {
+  await page.evaluate(() => (window as any).__dgActions.style({ mapLook: undefined }));
+}
+
+/** No survey over the test site (the app's list of surveys empty), so the photo's trees are the
+ * ones: where a survey covers a site, the photo is looked over for water only. */
+export async function noSurvey(page: Page) {
+  await page.route(/lidar-index\.json$/, route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ base: "", surveys: [] }) }));
+}
+
 /** USGS NAIP Plus over the test site: its catalog says a summer photo, 60 cm, four bands, and the
  * photo itself is the same made-up ground as the map tiles (its near-infrared band too). */
 export async function withNaip(page: Page) {

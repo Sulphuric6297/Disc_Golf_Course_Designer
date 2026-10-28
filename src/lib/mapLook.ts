@@ -1,10 +1,10 @@
-// The painted map's looks: five styles, each setting every part of the map (its trees, grass,
+// The painted map's looks: seven styles, each setting every part of the map (its trees, grass,
 // fairways, paths and roads, water and light), and any part of any style changeable on its own
 // (mix and match). Pure: the painter (lib/forest) draws what this resolves, the Design step shows it.
 import type { MapStyle } from "../types";
 
-export type LookTheme = "classic" | "brushwood" | "hollow" | "golden" | "storybook" | "gouache";
-export type TreeStyle = "classic" | "cluster" | "drybrush" | "golden" | "cloud" | "gouache";
+export type LookTheme = "classic" | "handpainted" | "brushwood" | "hollow" | "golden" | "storybook" | "gouache";
+export type TreeStyle = "classic" | "brushed" | "cluster" | "drybrush" | "cloud" | "gouache";
 export type GrassStyle = "painted" | "meadow" | "field" | "storybook" | "mown";
 export type FairwayStyle = "soft" | "stripes" | "sunlit" | "outlined";
 export type PathStyle = "painted" | "clean" | "trail";
@@ -23,6 +23,12 @@ export type LookPart = keyof LookParts;
 type ThemeDef = { id: LookTheme; label: string; hint: string; parts: LookParts; light: LightMode; sun: number };
 export const LOOK_THEMES: ThemeDef[] = [
   {
+    // (new courses start in it; unset is still Classic, so a course made before keeps its look)
+    id: "handpainted", label: "Brushed", hint: "Every leaf brushed on, soft light",
+    parts: { trees: { style: "brushed", density: 1, size: 1, variety: 0.5, pines: 0.12 }, grass: { style: "painted", bright: 1, texture: 1 }, fairway: { style: "soft", bright: 1 }, paths: { style: "painted" }, water: { style: "deep" } },
+    light: "midday", sun: 0.8
+  },
+  {
     id: "classic", label: "Classic", hint: "Thick treetops packed close",
     parts: { trees: { style: "classic", density: 1, size: 1, variety: 0.3, pines: 0 }, grass: { style: "painted", bright: 1, texture: 1 }, fairway: { style: "soft", bright: 1 }, paths: { style: "painted" }, water: { style: "deep" } },
     light: "midday", sun: 0.8
@@ -39,7 +45,7 @@ export const LOOK_THEMES: ThemeDef[] = [
   },
   {
     id: "golden", label: "Golden hour", hint: "Low warm sun, long shadows",
-    parts: { trees: { style: "golden", density: 1, size: 1.1, variety: 0.5, pines: 0.4 }, grass: { style: "field", bright: 1, texture: 1 }, fairway: { style: "sunlit", bright: 1 }, paths: { style: "painted" }, water: { style: "glinting" } },
+    parts: { trees: { style: "brushed", density: 1, size: 1.05, variety: 0.8, pines: 0.2 }, grass: { style: "field", bright: 1, texture: 1 }, fairway: { style: "sunlit", bright: 1 }, paths: { style: "painted" }, water: { style: "glinting" } },
     light: "golden", sun: 1
   },
   {
@@ -56,7 +62,7 @@ export const LOOK_THEMES: ThemeDef[] = [
 
 /** The choices for each part, labelled (a part takes any style's look). */
 export const PART_CHOICES: { [K in LookPart]: { id: LookParts[K]["style"]; label: string }[] } = {
-  trees: [{ id: "classic", label: "Classic" }, { id: "cluster", label: "Painted cluster" }, { id: "drybrush", label: "Deep woods" }, { id: "golden", label: "Golden" }, { id: "cloud", label: "Cloud" }, { id: "gouache", label: "Gouache" }],
+  trees: [{ id: "classic", label: "Classic" }, { id: "brushed", label: "Brushed" }, { id: "cluster", label: "Painted cluster" }, { id: "drybrush", label: "Deep woods" }, { id: "cloud", label: "Cloud" }, { id: "gouache", label: "Gouache" }],
   grass: [{ id: "painted", label: "Painted" }, { id: "meadow", label: "Meadow" }, { id: "field", label: "Golden field" }, { id: "storybook", label: "Storybook" }, { id: "mown", label: "Mown" }],
   fairway: [{ id: "soft", label: "Soft" }, { id: "stripes", label: "Mown stripes" }, { id: "sunlit", label: "Sunlit" }, { id: "outlined", label: "Outlined" }],
   paths: [{ id: "painted", label: "Painted" }, { id: "clean", label: "Clean" }, { id: "trail", label: "Trail line" }],
@@ -64,7 +70,8 @@ export const PART_CHOICES: { [K in LookPart]: { id: LookParts[K]["style"]; label
 };
 export const LIGHT_MODES: { id: LightMode; label: string }[] = [{ id: "golden", label: "Golden hour" }, { id: "midday", label: "Midday" }, { id: "night", label: "Night" }];
 
-export const themeOf = (s: Pick<MapStyle, "mapLook">): ThemeDef => LOOK_THEMES.find(t => t.id === s.mapLook) ?? LOOK_THEMES[0];
+// (unset: Classic, as courses made before Brushed was the first)
+export const themeOf = (s: Pick<MapStyle, "mapLook">): ThemeDef => LOOK_THEMES.find(t => t.id === (s.mapLook ?? "classic")) ?? LOOK_THEMES.find(t => t.id === "classic")!;
 
 /** A style's parts: its theme's, with any part changed on its own over them. */
 export const lookParts = (s: Pick<MapStyle, "mapLook" | "lookParts">): LookParts => {
@@ -93,11 +100,12 @@ export const lightOf = (s: Pick<MapStyle, "mapLook" | "lightMode" | "goldenSun">
 export type Daylight = { len: number; warm: number; cool: number; grade: [number[], number[]] | null; mist?: boolean };
 const DAY: Record<TreeStyle, Daylight> = {
   classic: { len: 1, warm: 0, cool: 0, grade: null },
+  // (the map's own warm shade, not blue: the trees sit in it)
+  brushed: { len: 0.9, warm: 0.2, cool: 0.1, grade: [[250, 240, 200, 0.3], [40, 50, 35, 0.15]] },
   cluster: { len: 1.15, warm: 0.3, cool: 0.35, grade: [[250, 240, 190, 0.5], [20, 60, 50, 0.35]] },
   cloud: { len: 0.75, warm: 0.2, cool: 0.25, grade: [[255, 250, 220, 0.4], [40, 80, 120, 0.2]] },
   gouache: { len: 1.05, warm: 0.25, cool: 0.3, grade: [[250, 236, 200, 0.45], [50, 70, 90, 0.25]] },
-  drybrush: { len: 1.15, warm: 0.3, cool: 0.45, grade: [[240, 232, 160, 0.5], [8, 36, 30, 0.5]], mist: true },
-  golden: { len: 1, warm: 0.35, cool: 0.18, grade: [[255, 225, 160, 0.5], [60, 80, 130, 0.22]] }
+  drybrush: { len: 1.15, warm: 0.3, cool: 0.45, grade: [[240, 232, 160, 0.5], [8, 36, 30, 0.5]], mist: true }
 };
 const GOLDEN: Daylight = { len: 1.7, warm: 1, cool: 0.35, grade: [[255, 196, 100, 0.7], [60, 80, 130, 0.28]] };
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;

@@ -258,6 +258,19 @@ select option:disabled {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
   cursor: move;
 }
+.site-handle-turn {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: #18200f;
+  border: 3px solid #a2cf6a;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  cursor: grab;
+}
 /* Site picker: the map's buttons (zoom, where I am) in glass, 44 px for a finger */
 .leaflet-container .leaflet-bar {
   border: 0;
@@ -416,3 +429,8 @@ select option:disabled {
 select {
   color-scheme: dark;
 }
+
+/* the colour picker's bars (ui ColorInput): the track is the bar's own colours, the thumb a ring */
+.dg-colorbar::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 9999px; background: transparent; border: 3px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+.dg-colorbar::-moz-range-thumb { width: 14px; height: 14px; border-radius: 9999px; background: transparent; border: 3px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+@media (pointer: coarse) { .dg-colorbar::-webkit-slider-thumb { width: 26px; height: 26px; } }

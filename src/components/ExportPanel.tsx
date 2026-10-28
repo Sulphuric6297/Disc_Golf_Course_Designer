@@ -433,7 +433,7 @@ export function ExportPanel() {
         {/* (the camera is set where its flight is seen: the view from the tee, its Settings) */}
         <div className="flex flex-wrap gap-1.5 mb-3" data-testid="video-camera">
           <Button small onClick={() => fromTee(false)} disabled={nothing} testid="video-fly"><Plane size={13} /> Fly over</Button>
-          {!readOnly && <Button small onClick={() => fromTee(true)} disabled={nothing} testid="video-camera-settings"><Settings2 size={13} /> Camera and what's on screen</Button>}
+          {!readOnly && <Button small onClick={() => fromTee(true)} disabled={nothing} testid="video-camera-settings"><Settings2 size={13} /> Flyover settings</Button>}
         </div>
         {/* (its progress and Cancel: in the bar at the top of the step) */}
         <Button tone="primary" full onClick={() => void recordVideo(videoHoles)} disabled={busy || nothing} testid="video-record"><Clapperboard size={15} /> Record {videoHoles.length === 1 ? `hole ${holeLabel(doc, videoHoles[0])}` : "the course"}</Button>

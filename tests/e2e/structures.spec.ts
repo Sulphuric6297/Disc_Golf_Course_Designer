@@ -189,6 +189,88 @@ test("buildings like the Security Camera Planner's: looks, roofs, colors, turnin
   expect((await structures(page))[0].roof).toBe("pyramid");
 });
 
+test("in 3D a click on a roof picks the building, not the tree standing over its edge; the tree's leaves pick the tree", async ({ page }) => {
+  await blankCourse(page);
+  await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 300, minY: 300, maxX: 700, maxY: 600 }, { animate: false }));
+  await page.getByRole("button", { name: "2 Design" }).click();
+  await page.keyboard.press("s");
+  await page.getByTestId("structure-kind-building").click();
+  await clickPlan(page, 400, 400);
+  await clickPlan(page, 480, 450);
+  await expect.poll(async () => (await structures(page)).length).toBe(1);
+  const house = (await structures(page))[0].id;
+  await page.keyboard.press("Escape");
+  // A tree just behind the house (from where the 3D view looks), its crown over the roof's back edge
+  await page.keyboard.press("r");
+  await clickPlan(page, 440, 392);
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "tree").length).toBe(1);
+  const tree = (await course(page)).items.find((i: any) => i.type === "tree");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("v");
+  await page.evaluate(() => (window as any).__dgActions.select(null));
+  await page.keyboard.press("3");
+  await page.waitForTimeout(1500);
+  // The roof in front of it: the line of sight goes on through the roof into the tree
+  const roof = await screenOf(page, 440, 412, 14);
+  await page.mouse.click(roof.x, roof.y);
+  await expect.poll(async () => (await editorState(page)).selectedId).toBe(house);
+  // The top of the tree's crown
+  const crown = await screenOf(page, tree.x, tree.y, (tree.height ?? 30) * 0.9);
+  await page.mouse.click(crown.x, crown.y);
+  await expect.poll(async () => (await editorState(page)).selectedId).toBe(tree.id);
+});
+
+test("in 3D a click on a path just in front of a tree picks the path, not the tree", async ({ page }) => {
+  await blankCourse(page);
+  await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 300, minY: 300, maxX: 700, maxY: 600 }, { animate: false }));
+  await page.getByRole("button", { name: "2 Design" }).click();
+  await page.keyboard.press("r");
+  await clickPlan(page, 440, 420);
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "tree").length).toBe(1);
+  // A path passing the tree on the near side (from where the 3D view looks), inside its crown's reach
+  await page.evaluate(() => (window as any).__dgActions.addDrawn("line", [{ x: 380, y: 431 }, { x: 500, y: 431 }]));
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "line").length).toBe(1);
+  const path = (await course(page)).items.find((i: any) => i.type === "line");
+  await page.keyboard.press("v");
+  await page.evaluate(() => (window as any).__dgActions.select(null));
+  await page.keyboard.press("3");
+  await page.waitForTimeout(1500);
+  const at = await screenOf(page, 434, 431, 0);
+  await page.mouse.click(at.x, at.y);
+  await expect.poll(async () => (await editorState(page)).selectedId).toBe(path.id);
+});
+
+test("in 3D the ground cover round a tree is picked where the tree's leaves aren't drawn, even close by", async ({ page }) => {
+  await blankCourse(page);
+  await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 300, minY: 300, maxX: 700, maxY: 600 }, { animate: false }));
+  await page.getByRole("button", { name: "2 Design" }).click();
+  await page.keyboard.press("r");
+  await clickPlan(page, 440, 420);
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "tree").length).toBe(1);
+  await page.evaluate(() => (window as any).__dgActions.addDrawn("area", [{ x: 320, y: 320 }, { x: 560, y: 320 }, { x: 560, y: 520 }, { x: 320, y: 520 }]));
+  await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "area").length).toBe(1);
+  const area = (await course(page)).items.find((i: any) => i.type === "area");
+  await page.keyboard.press("v");
+  await page.evaluate(() => (window as any).__dgActions.select(null));
+  await page.keyboard.press("3");
+  await page.waitForTimeout(1500);
+  // A spot on the area inside the tree's rough crown shape, with no leaves drawn under it
+  const at = await screenOf(page, 440, 420, 25);
+  const spot = await page.evaluate(([x, y]) => {
+    const v = (window as any).__dgView;
+    for (let r = 2; r <= 160; r += 1.5) for (let a = 0; a < 6.28; a += 0.1) {
+      const p = { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r }, hit = v.treeUnder(v.ray(p.x, p.y)), g = v.groundAt(p.x, p.y);
+      if (hit && !hit.drawn && g && g.x > 325 && g.x < 555 && g.z > 325 && g.z < 515) return p;
+    }
+    return null;
+  }, [at.x, at.y] as const);
+  expect(spot).not.toBeNull();
+  await page.mouse.click(spot!.x, spot!.y);
+  await expect.poll(async () => (await editorState(page)).selectedId).toBe(area.id);
+});
+
 // --- Pure logic
 
 plain("roofs that aren't a house's: flat, a single slope (shed), a pyramid over a gazebo's eight sides", () => {

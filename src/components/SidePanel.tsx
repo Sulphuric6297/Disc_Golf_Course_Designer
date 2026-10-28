@@ -127,8 +127,8 @@ function CameIn() {
         {measuring && lidarRow && <div data-testid="lidar-busy" className="pb-1.5"><ProgressBar fraction={lidarBusy} label="Measuring trees and ground" /></div>}
         {stands > 0 && (
           <CameRow testid="stands-found" text={`${many(stands, "stand", "stands")} of woods from the measured trees`}>
-            {/* (a stand's measured trees go with it: they belong to its woods) */}
-            <Button small tone="danger" onClick={() => remove(stand, "Took out the woods made from the measured trees, and the trees standing in them.")}>Remove</Button>
+            {/* (the measured trees stay, each on its own) */}
+            <Button small tone="danger" onClick={() => remove(stand, "Took out the woods made from the measured trees. The trees stay.")}>Remove</Button>
           </CameRow>
         )}
         {(photoTrees > 0 || photoAreas > 0) && (
@@ -174,14 +174,36 @@ function MeasuredSettings() {
           onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, minHeight: v || undefined } } : {}), false)} onDone={() => useCourse.getState().commit()} />
         <div className="text-[11px] text-zinc-500">{`${keptN.toLocaleString()} of ${lidar.trees.length.toLocaleString()} kept`}</div>
       </div>
+      <div className="mt-2" data-testid="lidar-crown">
+        <Slider label="Crown size" min={0.6} max={1.5} step={0.05} value={lidar.crownSize ?? 1}
+          format={v => (Math.abs(v - 1) < 0.001 ? "As measured" : `${Math.round(v * 100)}%`)}
+          onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, crownSize: Math.abs(v - 1) < 0.001 ? undefined : v } } : {}), false)} onDone={() => useCourse.getState().commit()} />
+      </div>
       <div className="mt-2" data-testid="lidar-grow">
         <Slider label="Growth since the survey" min={0} max={25} step={1} value={lidar.growYears ?? 0}
-          format={v => (v ? `${v} year${v === 1 ? "" : "s"} · ${saplings(lidar.trees, v).length.toLocaleString()} new` : "As measured")}
+          format={v => (v ? `${v} year${v === 1 ? "" : "s"}${lidar.saplings ? ` · ${saplings(lidar.trees, v).length.toLocaleString()} new` : ""}` : "As measured")}
           onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, growYears: v || undefined } } : {}), false)} onDone={() => useCourse.getState().commit()} />
         {yearsSince(lidar.source) > 0 && (lidar.growYears ?? 0) !== yearsSince(lidar.source) && (
           <button className="text-[12px] text-orange-300 hover:text-orange-200 touch:min-h-[44px]" onClick={() => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, growYears: yearsSince(d.lidar.source) } } : {}))} data-testid="grow-today">Grow to today ({yearsSince(lidar.source)} years)</button>
         )}
       </div>
+      {(lidar.growYears ?? 0) > 0 && (
+        <div className="mt-2" data-testid="lidar-saplings">
+          <Toggle label="Saplings in the gaps" checked={lidar.saplings === true}
+            onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, saplings: v ? true : undefined } } : {}))} />
+        </div>
+      )}
+      {(lidar.fromPhoto ?? 0) > 0 && (
+        <div className="mt-2 text-[11px] text-zinc-400" data-testid="from-photo">{lidar.fromPhoto!.toLocaleString()} of them from the summer photo, where the survey couldn't tell bare trees apart · <button className="text-orange-300 hover:text-orange-200 touch:min-h-[44px]" onClick={() => {
+          changeDoc(d => {
+            if (!d.lidar?.fromPhoto) return {};
+            // (they're the last ones: the measured trees, and which are kept or taken out, stay)
+            const n = d.lidar.trees.length - d.lidar.fromPhoto, within = (k: number) => k < n;
+            return { lidar: { ...d.lidar, trees: d.lidar.trees.slice(0, n), fromPhoto: undefined, kept: d.lidar.kept?.filter(within), removed: d.lidar.removed?.filter(within) } };
+          });
+          toast("Took out the trees from the summer photo.", "info", true);
+        }}>Remove them</button></div>
+      )}
       {(doc.cutTrees?.length ?? 0) > 0 && (
         <div className="mt-2 text-[11px] text-zinc-400" data-testid="cut-by-hand">{doc.cutTrees!.length} sapling{doc.cutTrees!.length === 1 ? "" : "s"} or planted tree{doc.cutTrees!.length === 1 ? "" : "s"} cut down by hand · <button className="text-orange-300 hover:text-orange-200 touch:min-h-[44px]" onClick={uncutTrees}>Bring them back</button></div>
       )}
@@ -189,8 +211,11 @@ function MeasuredSettings() {
         <div className="mt-2 text-[11px] text-zinc-400" data-testid="doubled-trees">{doubled.length} tree{doubled.length === 1 ? "" : "s"} placed by hand stand{doubled.length === 1 ? "s" : ""} on a measured one · <button className="text-orange-300 hover:text-orange-200 touch:min-h-[44px]" onClick={() => { const ids = new Set(doubled.map(i => i.id)); changeDoc(d => ({ items: d.items.filter(i => !ids.has(i.id)) })); toast(`Took out ${doubled.length === 1 ? "the tree" : `${doubled.length} trees`} placed by hand.`, "info", true); }}>Remove those placed by hand</button></div>
       )}
       <div className="mt-2" data-testid="lidar-clear">
-        <Toggle label="Clear trees from the fairways" checked={lidar.clearFairways !== false}
-          onChange={v => changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, clearFairways: v ? undefined : false } } : {}))} />
+        <Toggle label="Clear trees from the fairways" checked={lidar.clearFairways === true}
+          onChange={v => {
+            changeDoc(d => (d.lidar ? { lidar: { ...d.lidar, clearFairways: v ? true : undefined } } : {}));
+            toast(v ? "Trees on the fairways, tees and baskets are cut down. Each hole's panel brings them back." : "Trees on the fairways are standing again.", "info", true);
+          }} />
       </div>
     </Fold>
   );

@@ -100,6 +100,25 @@ test.describe("par and effective length (PDGA)", () => {
   });
 });
 
+test("a pond or a road made a hazard: never OB as well, said on the tee sign, a dashed hazard edge and HAZARD on the printed map", () => {
+  const doc = make([[{ x: 300, y: 300 }, { x: 700, y: 300 }]]);
+  const pond = createArea("water", [{ x: 450, y: 280 }, { x: 520, y: 280 }, { x: 520, y: 330 }, { x: 450, y: 330 }]);
+  doc.items.push(pond);
+  expect(isOb(pond)).toBe(true);
+  expect(autoRules(doc, doc.holes[0].id)).toContain("Water is OB.");
+  // (a hazard: no longer OB)
+  pond.hazard = true; pond.ob = false;
+  expect(isOb(pond)).toBe(false);
+  expect(autoRules(doc, doc.holes[0].id)).toContain("Water is a hazard.");
+  expect(autoRules(doc, doc.holes[0].id)).not.toContain("Water is OB.");
+  const road = createLine("road", [{ x: 0, y: 340 }, { x: 1000, y: 340 }]);
+  road.hazard = true;
+  doc.items.push(road);
+  expect(autoRules(doc, doc.holes[0].id)).toContain("Road is a hazard.");
+  const svg = renderPoster(doc, { contours: null, hillshade: null }).svg;
+  expect(svg).toContain(">HAZARD<");
+});
+
 test("a road OB along a stretch of it, or OB and beyond: in play only there, said on the tee sign, drawn on the hole's side", () => {
   // A hole running east, a road 10 ft south of its line, 1,000 ft long
   const doc = make([[{ x: 300, y: 300 }, { x: 700, y: 300 }]]);
