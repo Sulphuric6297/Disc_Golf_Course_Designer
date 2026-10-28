@@ -1487,11 +1487,11 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     drawShadows(ctx, vtrees, Lx, Ly, pl, strength, vstyle === "drybrush" ? 1 : vstyle === "cloud" ? 0.3 : 0.6);
     yield 0.92;
     if (vstyle === "brushed") {
-      // (each leafy crown brushed on, a step at a time; the pines, and crowns too small to show
-      // leaves, as the other looks draw them, over them)
-      const leafy = vtrees.filter(t => !t.pine && t.r >= 4);
+      // (each leafy crown brushed on, a step at a time, the smallest too (as a leaf group or two);
+      // the pines, and specks too small to paint, as the other looks draw them, over them)
+      const leafy = vtrees.filter(t => !t.pine && t.r >= 1.5);
       yield* drawBrushedSteps(ctx, leafy.map(t => ({ x: t.x, y: t.y, r: t.r, col: t.col, seed: t.seed })), [Lx, Ly]);
-      drawTrees(ctx, vtrees.filter(t => t.pine || t.r < 4), "cluster", Lx, Ly, pl);
+      drawTrees(ctx, vtrees.filter(t => t.pine || t.r < 1.5), "cluster", Lx, Ly, pl);
     } else drawTrees(ctx, vtrees, vstyle, Lx, Ly, pl);
   }
   if (pl.mist) {

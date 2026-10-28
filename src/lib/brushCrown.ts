@@ -145,7 +145,8 @@ const paintCrown = (g: Ctx, x: number, y: number, R: number, base: RGB, seed: nu
   const bandOf = (lit: number) => Math.max(0, Math.min(nb - 1, Math.round(lit * (nb - 1))));
   const toSun = (dx: number, dy: number) => dx * sun[0] + dy * sun[1];
   // (small crowns: leaf groups never smaller than reads, so fewer of them)
-  const sec = Math.max(P.sec * Math.min(1.7, Math.max(1, 34 / R)), 3.4 / R), sr = R * sec;
+  // (and a crown smaller than that: a leaf group or two, never bigger than the crown)
+  const sec = Math.max(P.sec * Math.min(1.7, Math.max(1, 34 / R)), Math.min(3.4 / R, 0.55)), sr = R * sec;
   const groupOf = (gx: number, gy: number, rad: number, k: number, c: number): Group => {
     const n = r() < 0.6 ? 4 : r() < 0.5 ? 3 : 5, a0 = r() * 6.2832, arms: Arm[] = [];
     for (let i = 0; i < n; i++) {
