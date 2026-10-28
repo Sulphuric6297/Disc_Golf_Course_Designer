@@ -1504,6 +1504,37 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       drawTrees(ctx, vtrees.filter(t => t.r < 1.5), "cluster", Lx, Ly, pl);
     } else drawTrees(ctx, vtrees, vstyle, Lx, Ly, pl);
   }
+  // Paths and walks where the leaves cover them: a pale dashed line with a dark edge over the
+  // treetops, as trail maps draw them, so you can see where a path leads through the woods (in the
+  // open it's painted as it is; the Trail look dashes the unpaved ones everywhere already)
+  const trailed = (l: LineItem) => look.paths.style === "trail" && l.surface !== "paved" && l.surface !== "grass";
+  const covered = (doc.items.filter(i => i.type === "line" && (i.kind === "path" || i.kind === "walk")) as LineItem[]).filter(l => !trailed(l)).map(l => paintedLine(l, view.scale).points).filter(p => p.length >= 2);
+  if (covered.length && !opts.under) {
+    // (where the leaves are: the treetops painted in, and the crowns drawn over the painting)
+    const cover = document.createElement("canvas");
+    cover.width = W; cover.height = H;
+    const cg = cover.getContext("2d")!;
+    const mask = cg.createImageData(W, H), md = mask.data;
+    for (let i = 0; i < W * H; i++) if (height[i] > 0) md[i * 4 + 3] = 255;
+    cg.putImageData(mask, 0, 0);
+    cg.beginPath();
+    for (const t of vtrees) { cg.moveTo(t.x + t.r, t.y); cg.arc(t.x, t.y, t.r, 0, Math.PI * 2); }
+    cg.fill();
+    // (the lines, then only what's under the leaves kept)
+    const lines = document.createElement("canvas");
+    lines.width = W; lines.height = H;
+    const lg = lines.getContext("2d")!;
+    lg.lineCap = "round"; lg.lineJoin = "round";
+    const trace = (pts: P[]) => { lg.beginPath(); pts.forEach((q, i) => { const sp = toScreen(q); if (i) lg.lineTo(sp.x, sp.y); else lg.moveTo(sp.x, sp.y); }); lg.stroke(); };
+    lg.strokeStyle = "rgba(22,28,18,.55)"; lg.lineWidth = Math.max(2, 2.8 * pt);
+    covered.forEach(trace);
+    lg.setLineDash([4 * pt, 3 * pt]); lg.strokeStyle = pl.mode === "night" ? "rgba(220,228,255,.92)" : "rgba(246,238,214,.95)"; lg.lineWidth = Math.max(1.1, 1.5 * pt);
+    covered.forEach(trace);
+    lg.globalCompositeOperation = "destination-in";
+    lg.drawImage(cover, 0, 0);
+    ctx.drawImage(lines, 0, 0);
+  }
+  yield;
   if (pl.mist) {
     const mr = seeded(31), spots: { x: number; y: number; r: number }[] = [];
     // (only over open ground well away from the woods, never on the hole's own fairway)
