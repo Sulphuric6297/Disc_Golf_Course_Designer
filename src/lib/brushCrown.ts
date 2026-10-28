@@ -254,13 +254,26 @@ const paintCrown = (g: Ctx, x: number, y: number, R: number, leaf: RGB, seed: nu
   };
   // (shadows fall away from the sun)
   const ox = -sun[0] * sr * 0.12, oy = -sun[1] * sr * 0.12;
-  // Under it all: the crown's deep shade, solid inside its edge, then in the groups' own shapes
+  // Under it all: the crown's deep shade, solid inside its edge, then in the groups' own shapes.
+  // (no further out than the clumps' leaves reach all the way round: on a big crown's small
+  // leaves, its smooth edge showed past them between the clumps, a near-black blob)
+  let fit = 0.8;
+  for (let i = 0; i < 72; i++) {
+    const a = (i / 72) * 6.2832, ux = Math.cos(a), uy = Math.sin(a);
+    let reach = 0;
+    for (const c of clumps) {
+      const dx = c.x - x, dy = c.y - y, along = dx * ux + dy * uy, rad = c.r * 0.9 + sr * 0.3, off = rad * rad - (dx * dx + dy * dy - along * along);
+      if (off > 0) reach = Math.max(reach, along + Math.sqrt(off));
+    }
+    fit = Math.min(fit, reach / edgeAt(a));
+  }
+  fit = Math.max(0.35, fit);
   const deep = mix(band(0), shadowC, 0.5);
-  if (rec) { rec.crown = [x, y, R * P.env, P.envLump, eph, eph2, 0, 0]; /* (7th: 0 leafy, 1 pine) */ put(0, 0, 0, 0, 0, 3, 1, 0, deep[0], deep[1], deep[2], 0, 0, 0, 0, 0, ...rec.crown); }
+  if (rec) { rec.crown = [x, y, R * P.env, P.envLump, eph, eph2, 0, 0]; /* (7th: 0 leafy, 1 pine) */ put(0, 0, 0, 0, 0, 3, 1, 0, deep[0], deep[1], deep[2], 0, 0, 0, 0, 0, x, y, (R * P.env * fit) / 0.8, ...rec.crown.slice(3)); }
   else {
     g.fillStyle = css(deep);
     g.beginPath();
-    for (let i = 0; i <= 72; i++) { const a = (i / 72) * 6.2832, rr = edgeAt(a) * (sr < R * 0.2 ? 0.88 : 0.8); g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+    for (let i = 0; i <= 72; i++) { const a = (i / 72) * 6.2832, rr = edgeAt(a) * fit; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
     g.fill();
   }
   for (const o of groups) for (const s of o.arms) stroke(g, s.x + ox * 0.6, s.y + oy * 0.6, s.a, s.len, s.wid, deep, s.sd, { sun, bumps: s.bumps, flat: true });
