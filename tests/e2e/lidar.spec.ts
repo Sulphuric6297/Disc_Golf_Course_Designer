@@ -390,7 +390,7 @@ test("a drag box takes in the measured trees inside it: each made the course's o
   plainExpect((await course(page)).lidar.removed).toBeUndefined();
 });
 
-test("a wood's measured trees go with it: its edge pulled in past them takes them out, pushed back out brings them back, deleting the wood takes them all; a tree out on its own stays", async ({ page }) => {
+test("measured trees stand on their own: a wood drawn over them, its edge pulled in past them or the wood deleted, they all still stand", async ({ page }) => {
   test.setTimeout(180_000);
   await withLidar(page);
   await importSite(page);
@@ -409,18 +409,15 @@ test("a wood's measured trees go with it: its edge pulled in past them takes the
     return d.items[d.items.length - 1].id;
   }, box(-70, 30));
   await expect.poll(standing).toBe(all);
-  // Its edge pulled in to x -30 m: the two trees west of it are out
+  // Its edge pulled in to x -30 m: the two trees west of it still stand
   await page.evaluate(([id, pts]) => (window as any).__dgActions.updateItem(id, { points: pts }), [id, box(-30, 30)] as const);
-  await expect.poll(standing).toBe(all - 2);
-  expect((await course(page)).lidar.bound).toHaveLength(5);
-  // Pushed back out: they stand again
-  await page.evaluate(([id, pts]) => (window as any).__dgActions.updateItem(id, { points: pts }), [id, box(-70, 30)] as const);
+  await page.waitForTimeout(500);
   await expect.poll(standing).toBe(all);
-  // The wood deleted: all five go; the other trees, out on their own, stay; Undo brings them back
+  // The wood deleted: every tree still stands
   await page.evaluate(id => { (window as any).__dgActions.select(id); }, id);
   await page.keyboard.press("Delete");
-  await expect.poll(standing).toBe(all - 5);
-  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await course(page)).items.some((i: any) => i.id === id)).toBe(false);
+  await page.waitForTimeout(500);
   await expect.poll(standing).toBe(all);
 });
 

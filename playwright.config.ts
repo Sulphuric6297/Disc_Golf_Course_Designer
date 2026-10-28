@@ -16,7 +16,9 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure"
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1600, height: 1000 } } }],
+  // (no graphics card on a test machine: the painted map's trees are drawn on the graphics chip,
+  // and Chromium's own stand-in for one is many times slower than ANGLE's)
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1600, height: 1000 }, launchOptions: { args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] } } }],
   webServer: {
     command: "npx vite preview --port 4173 --strictPort",
     url: "http://localhost:4173",

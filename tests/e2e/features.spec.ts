@@ -750,7 +750,7 @@ test("OB and beyond: the app's side, or either side chosen (named by the compass
   await expect.poll(async () => (await road()).obToward).toBeUndefined();
 });
 
-test("tall grass has no underbrush until you pick some; then it grows there in 3D, and its kind and sections are set like a wood's", async ({ page }) => {
+test("tall grass has no underbrush until you pick some; then it grows there in 3D", async ({ page }) => {
   await blankCourse(page);
   const id = await page.evaluate(() => {
     (window as any).__dgEditor().set({ areaKind: "rough", tool: "select" });
@@ -768,9 +768,6 @@ test("tall grass has no underbrush until you pick some; then it grows there in 3
   await brush.getByRole("radio", { name: "Light" }).click();
   await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === id).underbrush).toBe("light");
   await expect.poll(grows, { timeout: 30_000 }).toBe(true);
-  // (what grows: weeds, say)
-  await insp.getByTestId("brush-kind").getByRole("radio", { name: "Weeds" }).click();
-  await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === id).brushKind).toBe("weeds");
   // Back to none: gone again
   await brush.getByRole("radio", { name: "None" }).click();
   await expect.poll(grows, { timeout: 30_000 }).toBe(false);

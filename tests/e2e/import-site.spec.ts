@@ -1,5 +1,5 @@
 import { test as plain, expect as plainExpect, type Page } from "@playwright/test";
-import { test, expect, addHole, course, editorState, geoAt, importSite, SITE, STAND } from "./fixtures";
+import { test, expect, addHole, course, editorState, geoAt, importSite, noSurvey, SITE, STAND } from "./fixtures";
 import { mappedCourse, osmFeaturesFrom, overpassQuery } from "../../src/lib/geo/osm";
 import { getGeoBounds } from "../../src/lib/geo/core";
 import { outlineFrom } from "../../src/lib/geo/parks";
@@ -93,8 +93,10 @@ test("a hole up the hill: elevation change and par on the real terrain", async (
 test("re-importing replaces the trees and shapes it brought in, and keeps the holes", async ({ page }) => {
   // (two whole imports)
   test.setTimeout(180_000);
+  await noSurvey(page);
   await importSite(page);
   const before = await course(page);
+  expect(before.items.filter((i: any) => i.type === "tree").length).toBeGreaterThan(0);
   await addHole(page, { x: 300, y: 600 }, { x: 600, y: 600 });
   await page.keyboard.press("Escape");
   await importSite(page);
@@ -631,6 +633,7 @@ plain("suggestions: disc golf courses, then parks, then the rest; the same place
 
 test("every source at once, each saying how it went; Stop lets go of all of it and the next import isn't held up", async ({ page }) => {
   test.setTimeout(120_000);
+  await noSurvey(page);
   let hold = true;
   // OpenStreetMap holds the first import up (it never answers); the second gets its answer
   await page.route(/overpass|maps\.mail\.ru/, route => { if (!hold) void route.fulfill({ contentType: "application/json", body: JSON.stringify({ elements: [footway] }) }); });
