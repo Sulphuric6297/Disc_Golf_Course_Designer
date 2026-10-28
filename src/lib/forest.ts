@@ -781,7 +781,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const vGreens: RGB[] = (() => {
     if (!vector) return [];
     const mixes = treeMixOf(s);
-    if (mixes.length) return mixes.map(c => hexRgb(c));
+    // (autumn's colours as vivid as asked: the greens among them as they are)
+    if (mixes.length) return mixes.map(c => { const rgb = hexRgb(c), k = s.autumnVivid ?? 1; if (k === 1) return rgb; const [h, sl, l] = rgbToHsl(rgb); return h > 70 && h < 170 ? rgb : hslToRgb(h, Math.max(0, Math.min(1, sl * k)), Math.max(0.05, Math.min(0.85, l * (0.9 + 0.1 * k)))); });
     const [h0, s0, l0] = rgbToHsl(hexRgb("#354a2c")), [h1, s1, l1] = rgbToHsl(hexRgb(s.trees));
     return STYLE_GREENS[vstyle].map(c => { const [h, sl, l] = rgbToHsl(hexRgb(c)); return hslToRgb(h + (h1 - h0), Math.max(0, Math.min(1, sl * (s1 / Math.max(0.05, s0)))), Math.max(0.05, Math.min(0.9, l * (l1 / Math.max(0.05, l0))))); });
   })();
@@ -799,7 +800,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const realStep = 15 * k, realR = (f: number) => Math.max(crownR * 0.9, (7 + f * 8) * k);
   const realTop = (r: number) => crownR * (1.9 + rnd() * 0.9) + r * 0.35;
   // (the newer looks: each style's spacing and crown sizes, in feet, never smaller than reads)
-  const VSPACE = { brushed: 12.5, cluster: 13.6, drybrush: 10.5, golden: 13, cloud: 14.3, gouache: 13.6 } as const, VSIZE = { brushed: [8, 14], cluster: [8.2, 13.6], drybrush: [7, 12], golden: [7.5, 13], cloud: [7.5, 12.3], gouache: [7.5, 13] } as const;
+  const VSPACE = { brushed: 12.5, cluster: 13.6, drybrush: 10.5, cloud: 14.3, gouache: 13.6 } as const, VSIZE = { brushed: [8, 14], cluster: [8.2, 13.6], drybrush: [7, 12], cloud: [7.5, 12.3], gouache: [7.5, 13] } as const;
   const vStep = vector ? Math.max(crownR * 1.05, (VSPACE[vstyle] / Math.sqrt(Math.max(0.3, look.trees.density))) * k) : 0;
   const vR = (u: number) => Math.max(crownR * 0.75, (VSIZE[vstyle][0] + u * (VSIZE[vstyle][1] - VSIZE[vstyle][0])) * look.trees.size * k);
   const stepPx = vector ? vStep : natural ? Math.max(crownR * 1.15, realStep) : crownR * 1.15;

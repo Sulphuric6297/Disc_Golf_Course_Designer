@@ -831,7 +831,7 @@ const draftUrls: string[] = [];
 const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
   const s = doc.style;
   const canopy = paintsFromPhoto(doc) ? layers.canopy ?? null : null;
-  const look = [s.forest, s.treeCover, s.treeLook, s.landscape, s.treeMix, s.conifers, s.contours, s.trees, s.fairway, s.rough, s.tallGrass, s.water, s.path, s.nextTee, s.walkWidth, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale, s.reliefLook, s.mapLook, s.lookParts, s.lightMode, s.goldenSun, s.sunFrom, s.pathOrder, doc.site.location, doc.site.bounds];
+  const look = [s.forest, s.treeCover, s.treeLook, s.landscape, s.treeMix, s.autumnVivid, s.conifers, s.contours, s.trees, s.fairway, s.rough, s.tallGrass, s.water, s.path, s.nextTee, s.walkWidth, s.hillshade, s.sunAngle, s.sunHeight, s.shadows, s.light, s.contrast, s.colorStrength, s.paint, s.reliefScale, s.reliefLook, s.mapLook, s.lookParts, s.lightMode, s.goldenSun, s.sunFrom, s.pathOrder, doc.site.location, doc.site.bounds];
   const key = JSON.stringify([paintLimit, printDensity, view, look, idOf(canopy), idOf(doc.terrainHeights), layers.stats.map(st => [st.holeId, st.line]), paintedFrom(doc), doc.canvas, doc.id]);
   // (A live preview may show a picture made for print; a print never uses a live one, which is a
   // blob only this page can read)

@@ -80,7 +80,7 @@ export const createEmptyCourse = (): CourseDoc => ({
   items: [],
   layouts: defaultLayouts(),
   activeLayout: "layout-main",
-  // (a new course starts in Hand painted; one saved without a look is Classic, as it was)
+  // (a new course starts in Brushed; one saved without a look is Classic, as it was)
   style: { ...defaultStyle(), mapLook: "handpainted" },
   units: "ft",
   rules: defaultRules()
@@ -171,6 +171,8 @@ export const normalizeCourse = (raw: Partial<CourseDoc>): CourseDoc => {
   if (!doc.layouts.some(l => l.id === doc.activeLayout)) doc.activeLayout = doc.layouts[0].id;
   if (doc.lidar) doc.items = doc.items.filter(i => !bareStand(i));
   doc.items = simpleWoods(doc.items);
+  // (the Golden trees are gone: Brushed's in their place)
+  if ((doc.style.lookParts?.trees?.style as string | undefined) === "golden") doc.style = { ...doc.style, lookParts: { ...doc.style.lookParts, trees: { ...doc.style.lookParts!.trees, style: "brushed" } } };
   return doc;
 };
 

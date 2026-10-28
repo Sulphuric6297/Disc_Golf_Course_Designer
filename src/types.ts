@@ -664,6 +664,8 @@ export interface MapStyle {
   /** The woods' leaf colors tree by tree (autumn's reds and golds; empty: one color), on the map
    * and in 3D. Unset: the landscape's. */
   treeMix?: string[];
+  /** How vivid autumn's leaf colours are on the map (1: as they are; less, softer; more, brighter). */
+  autumnVivid?: number;
   /** Share of the woods' trees that are pines (0..1), on the map and in 3D. Unset: the landscape's
    * (and on the painted styles, the style's own). */
   conifers?: number;

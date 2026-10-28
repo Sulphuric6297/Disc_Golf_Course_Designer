@@ -1,8 +1,7 @@
 // The painted map's trees in the newer looks (lib/mapLook), drawn as shapes over the painted
 // ground, smooth at any size: Brushwood (painted leaf clusters), Storybook (scalloped cloud crowns),
-// Gouache (flat painted layers), Hollow (dry-brushed leaf dabs, bright where the sun catches the
-// edge) and Golden hour (many leaf clumps lit from the sun's side). Their pines: tufted (Brushwood,
-// Storybook, Gouache) or star-shaped boughs (Hollow, Golden hour). Their shadows lie soft on the
+// Gouache (flat painted layers) and Hollow (dry-brushed leaf dabs, bright where the sun catches the
+// edge); Brushed's are lib/brushCrown's. Their pines: tufted. Their shadows lie soft on the
 // grass before them; mist, the color grade and night are laid over the whole picture after.
 import type { TreeStyle, paintLight } from "./mapLook";
 
@@ -26,7 +25,6 @@ export const STYLE_GREENS: Record<Exclude<TreeStyle, "classic">, string[]> = {
   brushed: ["#555f39", "#4b5834", "#5f6437", "#46543c", "#586232", "#3e4e3e", "#66663a"],
   cluster: ["#3d6b2c", "#4a7a31", "#33602e", "#567f36", "#2f5a2a", "#44713a"],
   drybrush: ["#2e5524", "#3a6428", "#47702c", "#264b2c", "#507834", "#33592d"],
-  golden: ["#3a5a26", "#4b6a2a", "#2e4f2a", "#5a6f2c"],
   cloud: ["#3f8a3a", "#4f9a3e", "#358040", "#62a03f", "#4a8f3c"],
   gouache: ["#3d6b2c", "#4a7a31", "#33602e", "#567f36", "#2f5a2a"]
 };
@@ -60,20 +58,6 @@ const tinyCrown = (g: Ctx, t: PaintTree, Lx: number, Ly: number, hi: number[]) =
   circle(g, t.x, t.y, t.r, gr);
 };
 
-/** Golden: many leaf clumps, each lit from the sun's side, sunlit speckles. */
-const goldenCrown = (g: Ctx, t: PaintTree, Lx: number, Ly: number, R: () => number, warm: number) => {
-  const r = t.r, c = t.col, blobs: [number, number, number][] = [[0, 0, r * 0.5]];
-  for (let i = 0; i < 10; i++) { const a = (i / 10) * 6.283 + R() * 0.5, d = r * (0.42 + R() * 0.2); blobs.push([Math.cos(a) * d, Math.sin(a) * d, r * (0.28 + R() * 0.14)]); }
-  for (let i = 0; i < 6; i++) { const a = (i / 6) * 6.283 + R(); blobs.push([Math.cos(a) * r * 0.22, Math.sin(a) * r * 0.22, r * (0.3 + R() * 0.1)]); }
-  for (const [bx, by, br] of blobs) {
-    const gr = g.createRadialGradient(t.x + bx + Lx * br * 0.55, t.y + by + Ly * br * 0.55, 0, t.x + bx, t.y + by, br * 1.05);
-    gr.addColorStop(0, css(mix(mul(c, 1.6), [255, 205, 110], 0.5 * Math.max(0.3, warm))));
-    gr.addColorStop(0.45, css(mix(c, [190, 150, 60], 0.2 * Math.max(0.3, warm))));
-    gr.addColorStop(1, css(mix(mul(c, 0.4), [30, 45, 90], 0.3)));
-    circle(g, t.x + bx, t.y + by, br, gr);
-  }
-  for (let i = 0; i < 12; i++) { const a = Math.atan2(Ly, Lx) + (R() - 0.5) * 2.2, d = r * (0.25 + R() * 0.6); circle(g, t.x + Math.cos(a) * d, t.y + Math.sin(a) * d, r * (0.06 + R() * 0.1), css(mix(mul(c, 1.7), [255, 210, 120], 0.55 * Math.max(0.4, warm)))); }
-};
 /** A wobbly round outline (a painted crown's edge). */
 const blobPath = (g: Ctx, x: number, y: number, r: number, R: () => number, wob = 0.22, n = 28) => {
   g.beginPath();
@@ -183,12 +167,12 @@ export const drawTrees = (g: Ctx, trees: PaintTree[], style: Exclude<TreeStyle, 
       else tuftedPine(g, t, Lx, Ly, R);
       continue;
     }
-    if (t.r < 4) { tinyCrown(g, t, Lx, Ly, style === "golden" ? [255, 205, 110] : [230, 240, 180]); continue; }
+    if (t.r < 4) { tinyCrown(g, t, Lx, Ly, [230, 240, 180]); continue; }
     if (style === "cluster") clusterCrown(g, t, Lx, Ly, R);
     else if (style === "cloud") cloudCrown(g, t, Lx, Ly, R);
     else if (style === "gouache") gouacheCrown(g, t, Lx, Ly, R);
     else if (style === "drybrush") dryBrushCrown(g, t, Lx, Ly, R);
-    else goldenCrown(g, t, Lx, Ly, R, lt.warm);
+    else clusterCrown(g, t, Lx, Ly, R);
   }
 };
 
