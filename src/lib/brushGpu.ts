@@ -148,13 +148,15 @@ type Gpu = {
 };
 let gpu: Gpu | null | undefined;
 
-/** The graphics chip's painter, made once; null where there's no WebGL2 (or it was lost). */
+/** The graphics chip's painter, made once; null where there's no WebGL2 (or it was lost), or no
+ * real graphics chip: drawn in software (a computer with none, a test machine), the workers'
+ * canvases are many times quicker. */
 export const gpuPainter = (): Gpu | null => {
   if (gpu !== undefined) return gpu && !gpu.gl.isContextLost() ? gpu : (gpu = null);
   try {
     if (typeof document === "undefined") return (gpu = null);
     const cv = document.createElement("canvas");
-    const gl = cv.getContext("webgl2", { premultipliedAlpha: true, preserveDrawingBuffer: true, antialias: false, alpha: true });
+    const gl = cv.getContext("webgl2", { premultipliedAlpha: true, preserveDrawingBuffer: true, antialias: false, alpha: true, failIfMajorPerformanceCaveat: true });
     if (!gl) return (gpu = null);
     const sh = (type: number, src: string) => { const s = gl.createShader(type)!; gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) ?? "shader"); return s; };
     const pr = gl.createProgram()!;
