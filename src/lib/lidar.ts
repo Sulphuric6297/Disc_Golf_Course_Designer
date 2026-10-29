@@ -419,6 +419,8 @@ export type Measured = {
   sorted: boolean;
   /** What grows low, 2 to 25 ft up (tenths of a foot; 0: nothing, or a roof): for the bushes. */
   shrub: Uint8Array;
+  /** Where the survey sorted a point as a building's (class 6). */
+  bldg: Uint8Array;
 };
 
 export const measureSite = (g: Gathered, opts: { dem?: Dem | null; outlines?: P[][]; leafOn?: boolean | null } = {}): Measured => {
@@ -465,7 +467,7 @@ export const measureSite = (g: Gathered, opts: { dem?: Dem | null; outlines?: P[
   for (let c = 0; c < n; c++) if (!near[c]) canopy[c] = 0;
   // (the survey's own season first, then the one it was said to fly in)
   const leafOn = leafOnAt(flownOn(g.times[0] ?? [])) ?? opts.leafOn ?? null;
-  return { nx, ny, cell, width: g.width, height: g.height, ground, canopy, nUp: g.nUp, nMulti: g.nMulti, nGround: g.nGround, surface: g.surface, snx: g.snx, sny: g.sny, leafOn, roofs, sorted, shrub };
+  return { nx, ny, cell, width: g.width, height: g.height, ground, canopy, nUp: g.nUp, nMulti: g.nMulti, nGround: g.nGround, surface: g.surface, snx: g.snx, sny: g.sny, leafOn, roofs, sorted, shrub, bldg: g.building };
 };
 
 /** A bush the survey measured: where it stands, how tall and how wide (ft). */

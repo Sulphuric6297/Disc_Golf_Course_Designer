@@ -277,7 +277,7 @@ export interface StructureItem extends BaseItem {
   wallColor?: string;
   /** Brought in from OpenStreetMap, or (a building nobody's mapped) traced from the air: looking
    * the maps up again replaces it. */
-  importSource?: "osm" | "traced" | "fema";
+  importSource?: "osm" | "traced" | "fema" | "lidar";
   /** From OpenStreetMap: what it is there (a shed, a water tower), whatever kind it's drawn as. */
   park?: ParkDetail;
   holeId?: string;

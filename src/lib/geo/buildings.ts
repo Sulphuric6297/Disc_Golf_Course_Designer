@@ -7,8 +7,10 @@
 import type { CourseItem, P, RoofKind, StructureItem } from "../../types";
 import type { GeoBounds } from "./core";
 import { roofHeights, type Measured } from "../lidar";
-import { boundsOf, nearestOnSegment, pointInPolygon } from "../geom";
-import { roofOf } from "../structures";
+import { boundsOf, nearestOnSegment, pointInPolygon, polygonArea, simplify } from "../geom";
+import { boxOutline, orientedBox, roofOf } from "../structures";
+import { createStructure } from "../course";
+import { components, morph, traceOutline } from "./detect";
 
 export type TracedBuilding = {
   /** Its outline (the outer ring), lat/lon. */
@@ -373,6 +375,125 @@ export const fitToSurvey = (m: Pick<Measured, "nx" | "ny" | "cell" | "ground" | 
 };
 
 /**
+ * The buildings as the survey measured them: on 4 ft squares, where something stands 7 ft or more
+ * over the ground and is a building's (sorted so by the survey, or solid: the laser came back from
+ * it once, as from a roof, not on through as through leaves), in patches of 200 sq ft or more, small
+ * gaps closed. Each patch's outline (a clean rectangle where it nearly is one), and which square is
+ * whose (`label`, 1 the first).
+ */
+export const surveyFootprints = (m: Pick<Measured, "nx" | "ny" | "cell" | "ground" | "surface" | "snx" | "sny" | "nUp" | "nMulti"> & { bldg?: Uint8Array }) => {
+  const { snx, sny, nx, ny } = m, sc = m.cell * 2;
+  const mask = new Uint8Array(snx * sny), raised = new Uint8Array(snx * sny);
+  // A roof is a plane (flat, or a slope the same all over): the square and the eight round it lie on
+  // one within 9 in; a tree's top, leaves or bare, is lumps and gaps
+  const planar = (i: number, j: number) => {
+    if (i < 1 || j < 1 || i >= snx - 1 || j >= sny - 1) return false;
+    let n = 0, sx = 0, sy = 0, sz = 0, sxx = 0, syy = 0, sxy = 0, sxz = 0, syz = 0;
+    const zs: [number, number, number][] = [];
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      const z = m.surface[(j + dj) * snx + i + di];
+      if (!Number.isFinite(z)) return false;
+      zs.push([di, dj, z]);
+      n++; sx += di; sy += dj; sz += z; sxx += di * di; syy += dj * dj; sxy += di * dj; sxz += di * z; syz += dj * z;
+    }
+    // (the grid's offsets are symmetric: the plane's slopes each way are their own sums)
+    const a = sxz / sxx, b = syz / syy, c = sz / n;
+    let rss = 0;
+    for (const [x, y, z] of zs) { const r = z - (c + a * x + b * y); rss += r * r; }
+    return Math.sqrt(rss / n) < 0.75 && Math.abs(a) < sc * 1.2 && Math.abs(b) < sc * 1.2;
+  };
+  for (let j = 0; j < sny; j++) for (let i = 0; i < snx; i++) {
+    let up = 0, mu = 0, b = 0, gr = Infinity;
+    for (let dj = 0; dj < 2; dj++) for (let di = 0; di < 2; di++) {
+      const a = i * 2 + di, c = j * 2 + dj;
+      if (a >= nx || c >= ny) continue;
+      const k = c * nx + a;
+      up += m.nUp[k]; mu += m.nMulti[k]; b |= m.bldg?.[k] ?? 0;
+      if (Number.isFinite(m.ground[k])) gr = Math.min(gr, m.ground[k]);
+    }
+    const top = m.surface[j * snx + i];
+    if (!Number.isFinite(top) || !Number.isFinite(gr) || top - gr < 7) continue;
+    raised[j * snx + i] = 1;
+    if (b || planar(i, j)) mask[j * snx + i] = 1;
+  }
+  // (its ridge and its edges, where the squares round aren't all on its plane: grown back out a
+  // square, over what stands up only)
+  const grown = morph(morph(morph(mask, snx, sny, 1, "grow"), snx, sny, 1, "shrink"), snx, sny, 1, "grow");
+  const closed = new Uint8Array(snx * sny);
+  for (let k = 0; k < closed.length; k++) closed[k] = grown[k] && raised[k] ? 1 : 0;
+  const label = new Int32Array(snx * sny);
+  const outlines: P[][] = [];
+  for (const comp of components(closed, snx, sny, Math.ceil(200 / (sc * sc)))) {
+    const ring = traceOutline(snx, sny, comp).map(q => ({ x: q.x * sc, y: q.y * sc }));
+    let pts = simplify(ring, sc * 0.75);
+    if (pts.length < 3) continue;
+    // (a rectangle near enough: as a rectangle, its sides straight)
+    const box = orientedBox(pts);
+    if (polygonArea(pts) >= box.a * box.b * 4 * 0.85) pts = boxOutline(pts);
+    outlines.push(pts);
+    for (const k of comp) label[k] = outlines.length;
+  }
+  return { outlines, label, snx, sny, sc };
+};
+
+/**
+ * The maps' buildings set by the survey's as they're brought in: one that matches a building the
+ * survey measured takes its outline (where it stands, its true shape: a map's outline is often a
+ * few feet off, or two buildings and a deck run together); FEMA's or one traced from the air over
+ * flat ground (a slab, a deck, a pool) is left out; one the survey doesn't show at all (built since)
+ * stays as it came. A building the survey measured that no map has comes in as measured.
+ */
+export const setBySurvey = (items: CourseItem[], m: Measured) => {
+  const fp = surveyFootprints(m);
+  const { label, snx, sny, sc } = fp;
+  const used = new Set<number>();
+  let matched = 0, dropped = 0;
+  const out: CourseItem[] = [];
+  const isMapped = (i: CourseItem): i is StructureItem => i.type === "structure" && i.kind === "building" && (i.importSource === "osm" || i.importSource === "traced" || i.importSource === "fema");
+  // (the bigger buildings first: they choose their match first)
+  const order = items.map((i, k) => ({ i, k, a: isMapped(i) ? polygonArea(i.points) : 0 })).sort((x, y) => y.a - x.a);
+  const result = new Map<number, CourseItem | null>();
+  for (const { i, k } of order) {
+    if (!isMapped(i)) { result.set(k, i); continue; }
+    // Its squares, and whose they are
+    const b = boundsOf(i.points), count = new Map<number, number>();
+    let n = 0;
+    for (let j = Math.max(0, Math.floor(b.minY / sc)); j <= Math.min(sny - 1, Math.floor(b.maxY / sc)); j++)
+      for (let x = Math.max(0, Math.floor(b.minX / sc)); x <= Math.min(snx - 1, Math.floor(b.maxX / sc)); x++) {
+        if (!pointInPolygon({ x: (x + 0.5) * sc, y: (j + 0.5) * sc }, i.points)) continue;
+        n++;
+        const L = label[j * snx + x];
+        if (L) count.set(L, (count.get(L) ?? 0) + 1);
+      }
+    let best = 0, bestN = 0;
+    for (const [L, c] of count) if (c > bestN && !used.has(L)) { best = L; bestN = c; }
+    const size = best ? fp.outlines[best - 1] && Math.round(polygonArea(fp.outlines[best - 1]) / (sc * sc)) : 0;
+    if (best && n && bestN / n > 0.3 && bestN / Math.max(1, size) > 0.3) {
+      used.add(best);
+      matched++;
+      const pts = fp.outlines[best - 1];
+      const c = pts.reduce((s, p) => ({ x: s.x + p.x / pts.length, y: s.y + p.y / pts.length }), { x: 0, y: 0 });
+      result.set(k, { ...i, points: pts.map(p => ({ ...p })), x: c.x, y: c.y });
+      continue;
+    }
+    // (no building the survey measured there: flat ground under a FEMA or traced one, left out)
+    const share = raisedShare(m, i.points);
+    if (share !== null && share < 0.33 && i.importSource !== "osm") { dropped++; result.set(k, null); continue; }
+    result.set(k, i);
+  }
+  items.forEach((_, k) => { const v = result.get(k); if (v) out.push(v); });
+  // The survey's buildings no map has (450 sq ft and more)
+  let added = 0;
+  fp.outlines.forEach((pts, k) => {
+    if (used.has(k + 1) || polygonArea(pts) < 450) return;
+    if (out.some(i => i.type === "structure" && i.points.length > 2 && pointInPolygon(pts[0], i.points))) return;
+    out.push({ ...createStructure("building", pts.map(p => ({ ...p }))), importSource: "lidar" } as StructureItem);
+    added++;
+  });
+  return { items: out, matched, dropped, added };
+};
+
+/**
  * Buildings lined up with the survey as they're brought in (`opts.fit`): each moved over its roof as
  * the survey shows it; one traced from the air or from FEMA where the survey shows flat ground (a
  * slab, a deck, a pool: under a third of it standing) left out. OpenStreetMap's are kept, moved.
@@ -401,7 +522,7 @@ export const fittedToSurvey = (items: CourseItem[], m: Measured): { items: Cours
  */
 export const withMeasuredHeights = (items: CourseItem[], m: Measured, sign: (i: StructureItem) => StructureItem = i => i): CourseItem[] =>
   items.map(i => {
-    if (i.type !== "structure" || i.kind !== "building" || (i.importSource !== "osm" && i.importSource !== "traced" && i.importSource !== "fema")) return i;
+    if (i.type !== "structure" || i.kind !== "building" || (i.importSource !== "osm" && i.importSource !== "traced" && i.importSource !== "fema" && i.importSource !== "lidar")) return i;
     // The roof's own shape where the survey shows it clearly: its kind (unless the map names one, or
     // it's been measured before), its pitch and the way its ridge runs, the walls up to its eaves
     const shape = roofShape(m, i.points);

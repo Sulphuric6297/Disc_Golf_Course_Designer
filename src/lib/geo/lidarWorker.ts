@@ -15,7 +15,7 @@ let reader: Promise<LazReader> | null = null;
 const post = (self as unknown as { postMessage: (m: unknown, t: Transferable[]) => void }).postMessage.bind(self);
 
 /** The buffers of a measured site, to hand back without copying. */
-export const measuredBuffers = (m: Measured) => [m.ground.buffer, m.canopy.buffer, m.nUp.buffer, m.nMulti.buffer, m.nGround.buffer, m.surface.buffer, m.roofs.buffer, m.shrub.buffer] as ArrayBuffer[];
+export const measuredBuffers = (m: Measured) => [m.ground.buffer, m.canopy.buffer, m.nUp.buffer, m.nMulti.buffer, m.nGround.buffer, m.surface.buffer, m.roofs.buffer, m.shrub.buffer, m.bldg.buffer] as ArrayBuffer[];
 
 self.onmessage = async (e: MessageEvent<LidarJob>) => {
   const job = e.data;

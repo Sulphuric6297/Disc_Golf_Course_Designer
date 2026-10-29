@@ -20,7 +20,7 @@ import { fetchMapImagery, type MapImagerySource } from "./geo/imagery";
 import { natureFromPhoto } from "./geo/photoNature";
 import { mappedCourse, parkWords, type LatLon, type MappedCourse, type OsmBuilding, type OsmFeature } from "./geo/osm";
 import { fetchOsm } from "./geo/osmFetch";
-import { fittedToSurvey, tracedBuildings, withMeasuredHeights, type TracedBuilding } from "./geo/buildings";
+import { setBySurvey, tracedBuildings, withMeasuredHeights, type TracedBuilding } from "./geo/buildings";
 import { createAmenity, createArea, createBasket, createLine, createStructure, createTee, createTree, newHole } from "./course";
 import { courtCount, createField, fieldKindOf, fieldWord } from "./fields";
 import { fieldOf } from "./geo/parkKinds";
@@ -896,9 +896,11 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     if (lidar && measured) {
       // The buildings' heights the survey measured (where the maps have none)
       // (the buildings lined up with their roofs in the survey; a slab or a deck the maps took for one, left out)
-      const fitted = fittedToSurvey(all, measured.lidar.measured);
-      all = withMeasuredHeights(fitted.items, measured.lidar.measured, signed);
-      if (fitted.dropped) notes.push(`${fitted.dropped} ${fitted.dropped === 1 ? "building" : "buildings"} on the maps left out: the survey shows flat ground there (a slab, a deck or a pool).`);
+      const set = setBySurvey(all, measured.lidar.measured);
+      all = withMeasuredHeights(set.items, measured.lidar.measured, signed);
+      if (set.matched) notes.push(`${set.matched} ${set.matched === 1 ? "building" : "buildings"} outlined as the survey measured them.`);
+      if (set.added) notes.push(`${set.added} ${set.added === 1 ? "building" : "buildings"} measured from the air that no map has.`);
+      if (set.dropped) notes.push(`${set.dropped} ${set.dropped === 1 ? "building" : "buildings"} on the maps left out: the survey shows flat ground there (a slab, a deck or a pool).`);
       // (the trees a bare survey couldn't pick out, from the summer photo's canopy: after the
       // measured ones, so the list of those stays as it was)
       const summer = "leaf" in found && found.leaf ? treesFromSummer(lidar.trees, measured.lidar.measured, found.leaf, width, height, treeFree(all)) : [];

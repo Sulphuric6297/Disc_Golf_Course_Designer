@@ -129,7 +129,7 @@ export const components = (mask: Uint8Array, w: number, h: number, minSize: numb
 };
 
 /** Square-window morphology via an integral image: O(pixels) for any radius. */
-const morph = (mask: Uint8Array, w: number, h: number, r: number, op: "grow" | "shrink"): Uint8Array => {
+export const morph = (mask: Uint8Array, w: number, h: number, r: number, op: "grow" | "shrink"): Uint8Array => {
   if (r <= 0) return mask;
   const W = w + 1;
   const sum = new Uint32Array(W * (h + 1));

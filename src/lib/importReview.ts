@@ -7,7 +7,7 @@ import { centroid, pointInPolygon } from "./geom";
 
 export type SourceKey =
   | "lidarTrees" | "summerTrees" | "photoTrees" | "bushes" | "osmTrees"
-  | "osmBuildings" | "femaBuildings" | "tracedBuildings"
+  | "osmBuildings" | "femaBuildings" | "tracedBuildings" | "lidarBuildings"
   | "osmWater" | "govWater" | "photoWater"
   | "foundParking" | "osmParking" | "courts"
   | "osmPaths" | "osmOther";
@@ -24,6 +24,7 @@ export const SOURCES: Record<SourceKey, { group: SourceGroup; label: string; who
   femaBuildings: { group: "buildings", label: "FEMA", who: "checked by hand", color: "#facc15" },
   osmBuildings: { group: "buildings", label: "OpenStreetMap", color: "#ffffff" },
   tracedBuildings: { group: "buildings", label: "Traced from the air", color: "#a78bfa" },
+  lidarBuildings: { group: "buildings", label: "Measured from the air", who: "LiDAR, no map has them", color: "#34d399" },
   osmWater: { group: "water", label: "OpenStreetMap", color: "#3b82f6" },
   govWater: { group: "water", label: "USGS and USFWS", color: "#22d3ee" },
   photoWater: { group: "water", label: "From the photo", color: "#f472b6" },
@@ -51,7 +52,7 @@ export const sourceOf = (i: CourseItem): SourceKey | null => {
   const src = (i as { importSource?: string }).importSource;
   if (!src) return null;
   if (i.type === "tree") return src === "lidar" ? "bushes" : src === "photo" ? "photoTrees" : "osmTrees";
-  if (isBuilding(i)) return src === "fema" ? "femaBuildings" : src === "traced" ? "tracedBuildings" : "osmBuildings";
+  if (isBuilding(i)) return src === "fema" ? "femaBuildings" : src === "traced" ? "tracedBuildings" : src === "lidar" ? "lidarBuildings" : "osmBuildings";
   if (src === "usgs" || src === "nwi") return "govWater";
   if (i.type === "area" && i.kind === "field" && src === "photo") return "courts";
   if (i.type === "area" && i.kind === "parking") return src === "photo" ? "foundParking" : "osmParking";
