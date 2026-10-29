@@ -112,8 +112,9 @@ export function CommentLayer() {
   const view = getView();
   if (!view || !rect) return null;
   const shown = threads.filter(t => showResolved || !t.resolvedAt);
-  const at = (p: P) => view.toClient(p.x, p.y, 0) as { x: number; y: number };
-  const inside = (q: { x: number; y: number }) => q.x >= rect.left && q.x <= rect.right && q.y >= rect.top && q.y <= rect.bottom;
+  // (none for a spot behind the camera: tilted low in 3D, much of the ground is)
+  const at = (p: P) => view.toClient(p.x, p.y, 0) as { x: number; y: number } | null;
+  const inside = (q: { x: number; y: number } | null): q is { x: number; y: number } => !!q && q.x >= rect.left && q.x <= rect.right && q.y >= rect.top && q.y <= rect.bottom;
   return (
     <>
       {shown.map((t, i) => {
@@ -141,7 +142,8 @@ export function CommentLayer() {
           <div className="absolute left-1/2 -translate-x-1/2 top-3 px-3 py-1.5 rounded-lg glass border border-white/[0.12] text-sm text-zinc-100 pointer-events-none">Click where the comment goes · Esc to cancel</div>
         </div>
       )}
-      {draftAt && <Composer at={at(draftAt.p)} />}
+      {/* (its spot out of sight while you type: the box stays, in the middle of the map) */}
+      {draftAt && <Composer at={at(draftAt.p) ?? { x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2 }} />}
     </>
   );
 }
