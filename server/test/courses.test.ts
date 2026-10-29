@@ -254,7 +254,7 @@ test("history: restoring a version makes a new one (with its photo), nothing is 
   } finally { await w.close(); }
 });
 
-test("how you edit: a course's maker publishes as they go; an owner can work in a draft instead (not with one waiting)", async () => {
+test("how you edit: a course's maker publishes as they go; an owner can work in a draft instead (not with one waiting); an editor can publish as they go unless the owner OKs changes first", async () => {
   const w = await world();
   try {
     const { c: admin } = await adminSignedIn(w);
@@ -263,8 +263,14 @@ test("how you edit: a course's maker publishes as they go; an owner can work in 
     const url = `/api/courses/${made.id}`;
     await admin.post(`${url}/members`, { username: "pat", role: "editor" });
     assert.equal((await admin.get(url)).body.live, true);
+    // (an editor starts in a draft, and chooses)
     assert.equal((await pat.get(url)).body.live, false);
+    assert.equal((await pat.post(`${url}/live`, { live: true })).status, 200);
+    assert.equal((await pat.get(url)).body.live, true);
+    assert.equal((await pat.post(`${url}/live`, { live: false })).status, 200);
+    await admin.post(`${url}/settings`, { approval: true });
     assert.equal((await pat.post(`${url}/live`, { live: true })).status, 403);
+    await admin.post(`${url}/settings`, { approval: false });
     await admin.post(`${url}/live`, { live: false });
     assert.equal((await admin.get(url)).body.live, false);
     // An owner's draft, publishing whatever the owner's OK switch says
