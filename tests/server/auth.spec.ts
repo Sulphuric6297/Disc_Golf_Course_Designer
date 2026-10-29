@@ -509,10 +509,11 @@ test("live: two people in one course see each other's changes as they're made; u
   await expect.poll(() => holeIds(admin)).toEqual([first.id, third.id].sort());
   await expect.poll(() => holeIds(pat)).toEqual([first.id, third.id].sort());
 
-  // Pat offline: the change waits, and goes in once Pat is back
+  // Pat offline: the change can't be sent, waits, and goes in once Pat is back (the connection
+  // open already isn't cut by the test's offline: the change failing to go is what tells)
   await pat.context().setOffline(true);
-  await expect.poll(async () => (await live(pat)).connected).toBe(false);
   const fourth = await addHole(pat, { x: 100, y: 650 }, { x: 650, y: 650 });
+  await expect.poll(async () => (await live(pat)).connected).toBe(false);
   expect(await holeIds(admin)).not.toContain(fourth.id);
   await pat.context().setOffline(false);
   await expect.poll(() => holeIds(admin), { timeout: 30_000 }).toEqual([first.id, third.id, fourth.id].sort());
