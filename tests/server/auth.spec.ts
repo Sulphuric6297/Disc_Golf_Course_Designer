@@ -246,10 +246,12 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await expect(versions.first()).toContainText("a long hole by the creek");
   await versions.filter({ hasText: "Created" }).getByRole("button", { name: "Look" }).click();
   await expect(admin.getByTestId("preview-bar")).toBeVisible();
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(1);
+  // (longer: on a machine without a graphics card the test's own recording of the 3D view can
+  // hold the page for many seconds here)
+  await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(1);
   await expect(admin.getByTestId("viewer-panel")).toBeVisible();
   await admin.getByTestId("preview-back").click();
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(3);
+  await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(3);
   await expect(admin.getByTestId("preview-bar")).toHaveCount(0);
 
   // The owner's OK, turned on: Pat sends, the owner accepts
