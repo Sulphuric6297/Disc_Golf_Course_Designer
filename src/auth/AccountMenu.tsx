@@ -43,7 +43,7 @@ const BAR = `relative p-2 rounded-lg text-zinc-400 hover:text-zinc-50 hover:bg-w
 /** How the course is saved (live, or a draft), with the others in it beside it. */
 export function CourseChip() {
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1 sm:gap-1.5">
       <Faces />
       <SaveChip />
     </div>

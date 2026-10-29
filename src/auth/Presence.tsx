@@ -41,10 +41,11 @@ const whereOf = (at: Here | null | undefined, doc: CourseDoc) => {
 const latestOf = (p: Person, pointers: Record<string, Pointer>) =>
   p.clients.map(c => pointers[c]).filter(Boolean).sort((a, b) => b.when - a.when)[0];
 
-function Face({ name, color, size = 26 }: { name: string; color: string; size?: number }) {
+/** A person's face: their initial in their color (`bar`: in the top bar, smaller on a phone). */
+function Face({ name, color, size = 22, bar = false }: { name: string; color: string; size?: number; bar?: boolean }) {
   return (
-    <span className="grid place-items-center rounded-full font-bold text-zinc-900 border-2 border-[#1b2118] shrink-0"
-      style={{ width: size, height: size, fontSize: size * 0.42, background: color }} aria-hidden>
+    <span className={`grid place-items-center rounded-full font-bold text-zinc-900 border-2 border-[#1b2118] shrink-0 ${bar ? "w-5 h-5 text-[9px] sm:w-[26px] sm:h-[26px] sm:text-[11px]" : ""}`}
+      style={bar ? { background: color } : { width: size, height: size, fontSize: size * 0.42, background: color }} aria-hidden>
       {initial(name)}
     </span>
   );
@@ -64,13 +65,13 @@ export function Faces() {
       <button className={`flex items-center rounded-full ${FOCUS}`} onClick={() => m.setOpen(o => !o)} aria-haspopup="dialog" aria-expanded={m.open}
         aria-label={`Also in this course: ${names}`} title={`Also here: ${names}`} data-testid="live-faces">
         {list.map((p, i) => (
-          <span key={p.userId} className={`${i ? "-ml-1.5" : ""} ${i >= 3 ? "hidden" : i >= 2 ? "hidden sm:block" : ""}`}><Face name={p.name} color={colorOf(p.userId)} /></span>
+          <span key={p.userId} className={`${i ? "-ml-1.5" : ""} ${i >= 3 ? "hidden" : i >= 2 ? "hidden sm:block" : ""}`}><Face name={p.name} color={colorOf(p.userId)} bar /></span>
         ))}
-        {list.length > 2 && <span className="sm:hidden -ml-1.5 grid place-items-center w-[26px] h-[26px] rounded-full bg-zinc-700 border-2 border-[#1b2118] text-[10px] font-bold text-zinc-100">+{list.length - 2}</span>}
+        {list.length > 2 && <span className="sm:hidden -ml-1.5 grid place-items-center w-5 h-5 rounded-full bg-zinc-700 border-2 border-[#1b2118] text-[10px] font-bold text-zinc-100">+{list.length - 2}</span>}
         {list.length > 3 && <span className="hidden sm:grid -ml-1.5 place-items-center w-[26px] h-[26px] rounded-full bg-zinc-700 border-2 border-[#1b2118] text-[10px] font-bold text-zinc-100">+{list.length - 3}</span>}
       </button>
       {m.open && (
-        <div className={`absolute right-0 top-full mt-1 w-64 ${POPOVER} py-1.5 z-50 text-[13px]`} role="dialog" aria-label="In this course now" data-testid="live-people">
+        <div className={`max-sm:fixed max-sm:left-2 max-sm:right-2 max-sm:top-[72px] sm:absolute sm:right-0 sm:top-full sm:mt-1 sm:w-64 ${POPOVER} py-1.5 z-50 text-[13px]`} role="dialog" aria-label="In this course now" data-testid="live-people">
           <div className={`${MENU_HEAD} flex items-center gap-1.5`}>In this course now<HelpLink topic="live-together" label="Editing together, live" /></div>
           <div className="flex items-center gap-2.5 px-3 py-1.5 text-zinc-100"><Face name={me?.displayName || me?.username || "You"} color={YOU} size={22} />You</div>
           {list.map(p => (
