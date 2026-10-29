@@ -92,12 +92,12 @@ export async function courseRoutes(app: FastifyInstance, { sql, live }: RouteCtx
     // (open live: what it has is written first, and its own copy given, the newest)
     await live.settle(id);
     const [c] = await sql`
-      select c.doc, c.version, c.park,
+      select c.doc, c.version, c.park, c.editors_links,
         exists (select 1 from course_backgrounds b where b.course_id = c.id) as has_background,
         exists (select 1 from course_thumbnails t where t.course_id = c.id) as has_thumbnail
       from courses c where c.id = ${id}`;
     const now = live.current(id);
-    return { id, version: now?.version ?? c.version, seq: now?.seq ?? 0, role: r, park: c.park, perms: r === "viewer" ? m.perms : null, doc: now?.doc ?? c.doc, hasBackground: c.has_background, hasThumbnail: c.has_thumbnail };
+    return { id, version: now?.version ?? c.version, seq: now?.seq ?? 0, role: r, park: c.park, editorsLinks: c.editors_links, perms: r === "viewer" ? m.perms : null, doc: now?.doc ?? c.doc, hasBackground: c.has_background, hasThumbnail: c.has_thumbnail };
   });
 
   // The whole course saved (an app opened before live editing, or another course's ground shared
@@ -158,7 +158,7 @@ export async function courseRoutes(app: FastifyInstance, { sql, live }: RouteCtx
     const { id } = parse(ids, req.params);
     const { a } = await role(req, id, "viewer");
     const n = z.number().finite().min(-1e7).max(1e7);
-    const b = parse(z.object({ client, at: z.object({ x: n.nullable().optional(), y: n.nullable().optional(), picked: z.string().max(100).nullable().optional(), view: z.enum(["2d", "3d", "map"]).optional() }).nullable() }), req.body);
+    const b = parse(z.object({ client, at: z.object({ x: n.nullable().optional(), y: n.nullable().optional(), picked: z.string().max(100).nullable().optional(), view: z.enum(["2d", "3d", "map"]).optional(), drag: z.boolean().optional() }).nullable() }), req.body);
     if (!live.here(id, b.client, a.user.id, b.at)) throw new ApiError(409, "Not connected", { rejoin: true });
     return { ok: true };
   });
@@ -169,6 +169,16 @@ export async function courseRoutes(app: FastifyInstance, { sql, live }: RouteCtx
     const [c] = await sql`delete from courses where id = ${id} returning name`;
     live.closeRoom(id);
     await audit(sql, req, "course.deleted", { course: id, name: c.name });
+    return { ok: true };
+  });
+
+  // The owner's switch: editors may make public links and update the site too
+  app.post<Id>("/api/courses/:id/settings", async req => {
+    const { id } = parse(ids, req.params);
+    await role(req, id, "owner");
+    const b = parse(z.object({ editorsLinks: z.boolean() }), req.body);
+    await sql`update courses set editors_links = ${b.editorsLinks} where id = ${id}`;
+    await audit(sql, req, "course.settings", { course: id, editorsLinks: b.editorsLinks });
     return { ok: true };
   });
 

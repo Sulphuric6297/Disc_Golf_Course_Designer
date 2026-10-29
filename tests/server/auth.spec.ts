@@ -9,6 +9,9 @@ test.describe.configure({ mode: "serial" });
 // The browser stays offline but for the app and its server
 const offline = (c: BrowserContext) => c.route(url => !/^http:\/\/localhost:4175\//.test(url.href), r => r.abort());
 test.beforeEach(async ({ context }) => { await offline(context); });
+// (each test's own windows closed when it ends: left open, every one in a course redraws each live
+// change, and a machine without a graphics card crawls)
+test.afterEach(async ({ browser }) => { for (const c of browser.contexts()) await c.close().catch(() => {}); });
 
 /** The whole site in view, at once (a hole picked earlier leaves the map zoomed to it), once the
  *  map is there (a course's parts can arrive a moment before its map does). */
@@ -184,7 +187,14 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await expect(pat.getByTestId("view-only")).toBeVisible();
   await expect(pat.getByRole("navigation", { name: "Steps" })).toHaveCount(0);
   await expect(pat.getByRole("textbox", { name: "Course name" })).toHaveCount(0);
-  await expect(pat.getByTestId("share-button")).toHaveCount(0);
+  // (Share: who has it, and the links to copy; nothing to change)
+  await pat.getByTestId("share-button").click();
+  await expect(pat.getByTestId("share-add")).toHaveCount(0);
+  await pat.getByTestId("share-tab-public").click();
+  await expect(pat.getByTestId("no-links")).toBeVisible();
+  await expect(pat.getByTestId("new-link")).toHaveCount(0);
+  await expect(pat.getByTestId("update-site")).toHaveCount(0);
+  await pat.keyboard.press("Escape");
   expect((await course(pat)).holes.length).toBe(1);
   await pat.getByTestId("hole-row").click();
   await expect(pat.getByTestId("viewer-hole")).toContainText("550 ft");
@@ -228,7 +238,7 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   const versions = admin.getByTestId("versions").locator("li");
   await expect(versions.first()).toContainText("Saved by Pat");
   await versions.filter({ hasText: "Created" }).getByRole("button", { name: "Look" }).click();
-  await expect(admin.getByTestId("preview-bar")).toBeVisible();
+  await expect(admin.getByTestId("preview-bar")).toBeVisible({ timeout: 40_000 });
   // (longer: on a machine without a graphics card the test's own recording of the 3D view can
   // hold the page for many seconds here)
   await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(1);
@@ -425,8 +435,8 @@ test("live: two people in one course see each other's changes as they're made, a
   await expect.poll(() => holeIds(admin)).toEqual([first.id, third.id].sort());
   await expect.poll(() => holeIds(pat)).toEqual([first.id, third.id].sort());
 
-  // Who's here: each sees the other's face; Pat sees Admin's pointer, and a ring round the basket
-  // Admin picks, and the list says which hole Admin is on
+  // Who's here: each sees the other's face; Pat sees Admin's pointer, and the basket Admin picks
+  // outlined, and the list says which hole Admin is on; Pat can hide the pointers
   await expect(pat.getByTestId("live-faces")).toBeVisible();
   await expect(admin.getByTestId("live-faces")).toBeVisible();
   const basket = (await course(admin)).items.find((i: any) => i.type === "basket" && i.holeId === first.id);
@@ -437,9 +447,13 @@ test("live: two people in one course see each other's changes as they're made, a
   const on = await screenOf(admin, basket.x, basket.y);
   await admin.mouse.click(on.x, on.y);
   await expect.poll(() => admin.evaluate(() => (window as any).__dgEditor().selectedId)).toBe(basket.id);
-  await expect(pat.getByTestId("live-ring")).toHaveCount(1);
+  // (outlined on Pat's map as Pat's own pick would be, in Admin's color)
+  await expect.poll(() => pat.evaluate(() => (window as any).__dgView.othersPicked())).toEqual([basket.id]);
   await pat.getByTestId("live-faces").click();
   await expect(pat.getByTestId("live-person")).toContainText("Hole 1");
+  await pat.getByTestId("live-people").getByText("Show their pointers").click();
+  await expect(pat.getByTestId("live-pointer")).toHaveCount(0);
+  await pat.getByTestId("live-people").getByText("Show their pointers").click();
   await pat.keyboard.press("Escape");
   await admin.keyboard.press("Escape");
 
@@ -459,4 +473,15 @@ test("live: two people in one course see each other's changes as they're made, a
   await admin.evaluate(id => (window as any).__dgServer.open(id), id);
   await admin.getByTestId("back-to-course").click();
   await expect.poll(() => holeIds(admin)).toEqual([first.id, third.id, fourth.id].sort());
+
+  // On the Map step, the drawn map takes the others' changes too
+  await pat.getByRole("navigation", { name: "Steps" }).getByRole("button", { name: /Map/ }).click();
+  const drawn = pat.getByTestId("design-page");
+  await expect(drawn).toBeVisible();
+  await pat.waitForTimeout(1500);
+  const before = await drawn.innerHTML();
+  await site(admin);
+  const fifth = await addHole(admin, { x: 900, y: 150 }, { x: 900, y: 650 });
+  await expect.poll(() => holeIds(pat), { timeout: 30_000 }).toContain(fifth.id);
+  await expect.poll(() => drawn.innerHTML(), { timeout: 30_000 }).not.toBe(before);
 });

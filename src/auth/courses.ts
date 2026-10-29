@@ -47,7 +47,9 @@ export const useServerCourse = create<{
   perms: Perms | null;
   /** The park it's in (its owner names it; "" none). */
   park: string;
-}>(() => ({ id: null, version: 0, role: null, status: "saved", conflict: "", preview: null, perms: null, park: "" }));
+  /** The owner's switch: editors may make public links and update the site too. */
+  editorsLinks: boolean;
+}>(() => ({ id: null, version: 0, role: null, status: "saved", conflict: "", preview: null, perms: null, park: "", editorsLinks: false }));
 const state = () => useServerCourse.getState();
 const set = (s: Partial<ReturnType<typeof state>>) => useServerCourse.setState(s);
 
@@ -206,7 +208,7 @@ export const startServerAutosave = () => {
   return () => { stopSaving(); keepSelect(); };
 };
 
-type CourseRead = { id: string; version: number; seq?: number; role: Role; park: string; perms: Perms | null; doc: CourseDoc; hasBackground: boolean; hasThumbnail: boolean };
+type CourseRead = { id: string; version: number; seq?: number; role: Role; park: string; editorsLinks?: boolean; perms: Perms | null; doc: CourseDoc; hasBackground: boolean; hasThumbnail: boolean };
 const readCourse = (id: string) => api<CourseRead>("GET", `courses/${id}`);
 const readPhoto = async (id: string, has: boolean) => (has ? (await api<{ data: string | null }>("GET", `courses/${id}/background`)).data : null);
 
@@ -230,7 +232,7 @@ export async function openServerCourse(id: string, quiet = false): Promise<boole
     const c = await readCourse(id);
     const photo = await readPhoto(id, c.hasBackground);
     if (mine !== opening) return null;
-    set({ id, version: c.version, role: c.role, perms: c.perms, park: c.park ?? "", status: "saved", conflict: "", preview: null });
+    set({ id, version: c.version, role: c.role, perms: c.perms, park: c.park ?? "", editorsLinks: !!c.editorsLinks, status: "saved", conflict: "", preview: null });
     thumbFor = null;
     thumbAt = 0;
     sentBackground = photo;
@@ -375,6 +377,16 @@ export async function restoreVersion(vid: number) {
   toast(`Restored. It's version ${r.version} now.`, "success");
 }
 
+
+/** The owner's switch: editors may make public links and update the site too. */
+export async function setEditorsLinks(on: boolean) {
+  const was = state().editorsLinks;
+  set({ editorsLinks: on });
+  try { await api("POST", `courses/${state().id}/settings`, { editorsLinks: on }); } catch (e) { set({ editorsLinks: was }); throw e; }
+}
+
+/** Whether you make the public links and update the site: owners, and editors when allowed. */
+export const managesLinks = (s: { role: Role | null; editorsLinks: boolean }) => s.role === "owner" || (s.role === "editor" && s.editorsLinks);
 
 /** Back from looking at an earlier version. */
 export const endPreview = async () => { set({ preview: null }); await reopen(); };

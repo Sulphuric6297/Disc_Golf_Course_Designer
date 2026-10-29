@@ -108,7 +108,7 @@ function CommentsButton() {
 export function AccountMenu({ home = false, onHelp }: { home?: boolean; onHelp?: () => void }) {
   const user = useAuth(s => s.session?.user);
   const open = useAuth(s => s.open);
-  const { role, preview, id: courseId } = useServerCourse();
+  const { preview, id: courseId } = useServerCourse();
   // (the course list covers the app: only its own menu then)
   const covered = useAuth(s => s.home) && !home;
   const m = useMenu();
@@ -119,7 +119,7 @@ export function AccountMenu({ home = false, onHelp }: { home?: boolean; onHelp?:
     <>
       {!home && <CourseChip />}
       {course && mayComment && <CommentsButton />}
-      {course && role === "owner" && (
+      {course && (
         <button className={BAR} aria-label="Share" title="Share" onClick={() => open("share")} data-testid="share-button"><Share2 size={18} /></button>
       )}
       <NoticeBell />

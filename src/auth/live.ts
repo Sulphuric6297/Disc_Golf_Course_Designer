@@ -15,8 +15,9 @@ import { api, ApiFail } from "./api";
 export interface Person { userId: string; name: string; clients: string[] }
 /** Where someone is pointing on the map (plan feet; none: off the map), what they've picked, and
  * how they're looking (the map from above, in 3D, or on the Map step). */
-export interface Here { x?: number | null; y?: number | null; picked?: string | null; view?: "2d" | "3d" | "map" }
-export interface Pointer { userId: string; name: string; at: Here | null; when: number }
+export interface Here { x?: number | null; y?: number | null; picked?: string | null; view?: "2d" | "3d" | "map"; /** Dragging what they picked. */ drag?: boolean }
+/** Someone's pointer: as they last said, when, and when it last moved. */
+export interface Pointer { userId: string; name: string; at: Here | null; when: number; movedAt: number }
 
 export const useLive = create<{ on: boolean; connected: boolean; people: Person[]; pointers: Record<string, Pointer> }>(() => ({ on: false, connected: false, people: [], pointers: {} }));
 
@@ -156,7 +157,11 @@ function connect() {
     useLive.setState({ people: d.people, pointers });
   });
   on<{ client: string; userId: string; name: string; at: Here | null }>("here", d => {
-    useLive.setState(s => ({ pointers: { ...s.pointers, [d.client]: { userId: d.userId, name: d.name, at: d.at, when: Date.now() } } }));
+    useLive.setState(s => {
+      const was = s.pointers[d.client], now = Date.now();
+      const moved = !was || was.at?.x !== d.at?.x || was.at?.y !== d.at?.y;
+      return { pointers: { ...s.pointers, [d.client]: { userId: d.userId, name: d.name, at: d.at, when: now, movedAt: moved ? now : was.movedAt } } };
+    });
   });
   on("photo", () => hooks?.photo());
   on("role", () => viewOnly());

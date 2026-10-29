@@ -3,6 +3,7 @@
 // people don't move the same thing at once. Each person has one color, the same everywhere.
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { create } from "zustand";
 import { FOCUS, HelpLink, MENU_HEAD, POPOVER } from "../components/ui";
 import { holeLabel } from "../lib/course";
 import { useCourse, useEditor } from "../state/course";
@@ -21,8 +22,25 @@ export const colorOf = (userId: string) => {
 };
 const initial = (name: string) => (name.trim()[0] ?? "?").toUpperCase();
 
-/** Pointers fade after this long still, and go a little after. */
-const FADE = 4000, GONE = 6000;
+/** A pointer's name shows while it moves and this long after; the pointer goes after this long
+ * still; and fades to a ghost this close to your own pointer (px). */
+const NAMED = 2000, IDLE = 60_000, NEAR = 24;
+
+/** Whether you see the others' pointers (their picks show all the same): yours to turn off, kept
+ * in this browser. */
+const SHOW_KEY = "hyzerlab:show-pointers";
+export const usePointerPrefs = create<{ show: boolean; setShow: (on: boolean) => void }>(set => ({
+  show: (() => { try { return localStorage.getItem(SHOW_KEY) !== "0"; } catch { return true; } })(),
+  setShow: on => { set({ show: on }); try { localStorage.setItem(SHOW_KEY, on ? "1" : "0"); } catch { /* private window */ } }
+}));
+
+// Your own pointer, and whether a button is held (theirs fade out of your way)
+const mine = { x: -1e4, y: -1e4, held: false };
+if (typeof window !== "undefined") {
+  window.addEventListener("pointermove", e => { mine.x = e.clientX; mine.y = e.clientY; }, { passive: true, capture: true });
+  window.addEventListener("pointerdown", () => { mine.held = true; }, true);
+  for (const ev of ["pointerup", "pointercancel", "blur"]) window.addEventListener(ev, () => { mine.held = false; }, true);
+}
 
 const others = (people: Person[], me: string | undefined) => people.filter(p => p.userId !== me);
 
@@ -56,6 +74,7 @@ export function Faces() {
   const { on, people, pointers } = useLive();
   const me = useAuth(s => s.session?.user);
   const doc = useCourse(s => s.doc);
+  const { show: showPointers, setShow } = usePointerPrefs();
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -96,6 +115,12 @@ export function Faces() {
               <small className="ml-auto text-zinc-400 whitespace-nowrap">{whereOf(latestOf(p, pointers)?.at, doc)}</small>
             </div>
           ))}
+          <div className="border-t border-white/[0.08] my-1.5" />
+          <label className="flex items-center gap-2.5 px-3 py-1.5 text-zinc-100 cursor-pointer">
+            Show their pointers
+            <input type="checkbox" className="sr-only peer" checked={showPointers} onChange={e => setShow(e.target.checked)} data-testid="show-pointers" />
+            <span aria-hidden className="ml-auto relative w-[30px] h-[17px] rounded-full bg-zinc-600 peer-checked:bg-emerald-400 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-400 transition-colors after:absolute after:top-[2px] after:left-[2px] after:w-[13px] after:h-[13px] after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-[13px]" />
+          </label>
         </div>,
         document.body
       )}
@@ -105,62 +130,86 @@ export function Faces() {
 
 const ARROW = "M1 1 L1 18 L5.5 13.5 L9 21 L12 19.6 L8.6 12.4 L15 12.4 Z";
 
-/** The others' pointers and what they've picked, over the map. */
+/** The others' pointers over the map (small, named while they move, a ghost near yours), and what
+ * they've picked outlined on the map itself (named while they drag it). */
 export function PresenceLayer() {
   const { on, pointers } = useLive();
   const me = useAuth(s => s.session?.user?.id);
   const doc = useCourse(s => s.doc);
   const step = useEditor(s => s.step);
+  const show = usePointerPrefs(s => s.show);
   const [, bump] = useState(0);
   const [view, setView] = useState(getView);
   useEffect(() => onLiveView(setView), []);
-  // (moved with the map, and the pointers faded as time goes)
+  // (moved with the map, with your own pointer, and as time goes)
   useEffect(() => {
     if (!view) return;
     const off = view.onView(() => bump(n => n + 1));
-    const t = window.setInterval(() => bump(n => n + 1), 1000);
-    return () => { off(); window.clearInterval(t); };
+    let frame = 0;
+    const soon = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; bump(n => n + 1); }); };
+    window.addEventListener("pointermove", soon, { passive: true });
+    window.addEventListener("pointerdown", soon);
+    window.addEventListener("pointerup", soon);
+    const t = window.setInterval(() => bump(n => n + 1), 500);
+    return () => {
+      off();
+      cancelAnimationFrame(frame);
+      window.removeEventListener("pointermove", soon);
+      window.removeEventListener("pointerdown", soon);
+      window.removeEventListener("pointerup", soon);
+      window.clearInterval(t);
+    };
   }, [view]);
-  if (!on || !view || step === "map" || step === "export") return null;
-  const el = document.querySelector("[data-testid=plan]");
-  const rect = el?.getBoundingClientRect();
-  if (!rect) return null;
+  const shownHere = on && !!view && step !== "map" && step !== "export";
   const now = Date.now();
+  const others = shownHere ? Object.entries(pointers).filter(([c, p]) => c !== CLIENT && p.userId !== me && p.at) : [];
+  // (each picked thing once: by whoever picked it last; strong while they drag it)
+  const picks = new Map<string, Pointer>();
+  for (const [, p] of others) {
+    const id = p.at!.picked;
+    if (id && (doc.items.some(i => i.id === id) || doc.holes.some(h => h.id === id)) && (!picks.get(id) || picks.get(id)!.when < p.when)) picks.set(id, p);
+  }
+  const dragging = (p: Pointer) => !!p.at?.drag && now - p.movedAt < 1500;
+  const key = JSON.stringify([...picks].map(([id, p]) => [id, p.userId, dragging(p)]));
+  useEffect(() => {
+    if (!view) return;
+    view.setOthersPicked(JSON.parse(key).map(([id, userId, strong]: [string, string, boolean]) => ({ id, color: colorOf(userId), strong })));
+  }, [view, key]);
+  useEffect(() => () => view?.setOthersPicked([]), [view]);
+  if (!shownHere || !view) return null;
+  const rect = document.querySelector("[data-testid=plan]")?.getBoundingClientRect();
+  if (!rect) return null;
   const inside = (x: number, y: number) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-  const shown = Object.entries(pointers).filter(([c, p]) => c !== CLIENT && p.userId !== me && p.at);
-  // (each picked thing ringed once: by whoever picked it last)
-  const rings = new Map<string, Pointer>();
-  for (const [, p] of shown) if (p.at!.picked && (!rings.get(p.at!.picked) || rings.get(p.at!.picked)!.when < p.when)) rings.set(p.at!.picked, p);
+  const youDrag = mine.held && inside(mine.x, mine.y);
   return (
     <div className="fixed inset-0 pointer-events-none z-[15]" data-testid="live-presence">
-      {[...rings].map(([id, p]) => {
-        if (!doc.items.some(i => i.id === id) && !doc.holes.some(h => h.id === id)) return null;
+      {[...picks].filter(([, p]) => dragging(p)).map(([id, p]) => {
         const b = view.screenBox(id);
         if (!b) return null;
-        const c = colorOf(p.userId);
-        const cx = rect.left + b.x + b.width / 2, cy = rect.top + b.y + b.height / 2;
-        if (!inside(cx, cy)) return null;
-        const w = Math.max(34, b.width + 12), h = Math.max(34, b.height + 12);
-        const round = w <= 40 && h <= 40;
+        const x = rect.left + b.x + b.width / 2, y = rect.top + b.y;
+        if (!inside(x, y)) return null;
         return (
-          <div key={id} className="absolute" data-testid="live-ring" data-name={p.name}
-            style={{ left: cx - w / 2, top: cy - h / 2, width: w, height: h, borderRadius: round ? "50%" : 12, boxShadow: `0 0 0 3px ${c}, 0 0 12px 2px ${c}` }}>
-            <b className="absolute left-1/2 -translate-x-1/2 -top-5 px-1.5 rounded-full text-[11px] text-zinc-900 whitespace-nowrap" style={{ background: c }}>{p.name}</b>
-          </div>
+          <b key={id} className="absolute -translate-x-1/2 -translate-y-full -mt-1.5 px-1.5 rounded-full text-[10px] font-semibold text-zinc-900 whitespace-nowrap shadow" data-testid="live-pick-name"
+            style={{ left: x, top: y, background: colorOf(p.userId) }}>{p.name}</b>
         );
       })}
-      {shown.map(([client, p]) => {
+      {show && others.map(([client, p]) => {
         const at = p.at!;
-        const age = now - p.when;
-        if (at.x == null || at.y == null || age > GONE) return null;
+        if (at.x == null || at.y == null || now - p.movedAt > IDLE) return null;
         const q = view.toClient(at.x, at.y);
         if (!q || !inside(q.x, q.y)) return null;
         const c = colorOf(p.userId);
+        const moving = now - p.movedAt < NAMED;
+        const near = Math.hypot(q.x - mine.x, q.y - mine.y) < NEAR;
+        const ghost = near || youDrag;
+        // (named while they move, and when yours comes close: who it is, the arrow out of your way)
+        const named = near || (moving && !youDrag);
         return (
-          <div key={client} className="absolute transition-[left,top,opacity] duration-150 ease-linear" data-testid="live-pointer" data-name={p.name}
-            style={{ left: q.x, top: q.y, opacity: age < FADE ? 1 : 1 - (age - FADE) / (GONE - FADE) }}>
-            <svg width="18" height="22" viewBox="0 0 18 22" className="block drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"><path d={ARROW} fill={c} stroke="#1b2118" strokeWidth="1.5" strokeLinejoin="round" /></svg>
-            <span className="absolute left-3.5 top-4 px-2 py-px rounded-full text-[12px] font-bold text-zinc-900 whitespace-nowrap shadow" style={{ background: c }}>{p.name}</span>
+          <div key={client} className="absolute transition-[left,top] duration-150 ease-linear" data-testid="live-pointer" data-name={p.name} style={{ left: q.x, top: q.y }}>
+            <svg width="12" height="15" viewBox="0 0 18 22" className="block drop-shadow-[0_1px_1.5px_rgba(0,0,0,0.65)] transition-opacity duration-150" style={{ opacity: ghost ? 0.22 : moving ? 1 : 0.85 }}>
+              <path d={ARROW} fill={c} stroke="#1b2118" strokeWidth="2" strokeLinejoin="round" />
+            </svg>
+            {named && <span className="absolute left-[9px] top-3 px-1.5 rounded-full text-[11px] font-semibold text-zinc-900 whitespace-nowrap max-w-[120px] truncate shadow" style={{ background: c }}>{p.name}</span>}
           </div>
         );
       })}
@@ -177,7 +226,8 @@ export function useSendHere() {
     let x: number | null = null, y: number | null = null;
     const now = (): Here => {
       const e = useEditor.getState();
-      return { x, y, picked: e.selectedId ?? e.group[0] ?? null, view: e.step === "map" || e.step === "export" ? "map" : e.view };
+      const picked = e.selectedId ?? e.group[0] ?? null;
+      return { x, y, picked, view: e.step === "map" || e.step === "export" ? "map" : e.view, drag: !!picked && !!getView()?.isDragging() };
     };
     const move = (ev: PointerEvent) => {
       if (ev.pointerType !== "mouse") return;
@@ -189,8 +239,11 @@ export function useSendHere() {
       sendHere(now());
     };
     const away = () => { if (x === null) return; x = y = null; sendHere(now()); };
+    // (let go: not dragging any more)
+    const up = () => sendHere(now());
     const hidden = () => { if (document.hidden) away(); };
     window.addEventListener("pointermove", move, { passive: true });
+    window.addEventListener("pointerup", up);
     document.documentElement.addEventListener("pointerleave", away);
     document.addEventListener("visibilitychange", hidden);
     const off = useEditor.subscribe((s, prev) => {
@@ -199,6 +252,7 @@ export function useSendHere() {
     sendHere(now());
     return () => {
       window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
       document.documentElement.removeEventListener("pointerleave", away);
       document.removeEventListener("visibilitychange", hidden);
       off();

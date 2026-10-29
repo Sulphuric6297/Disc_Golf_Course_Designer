@@ -219,6 +219,9 @@ export class CourseView {
   /** The box being drawn to pick things with. */
   private marquee: HTMLDivElement | null = null;
   private hoverFx: THREE.Object3D | null = null;
+  /** What others in the course have picked (their color; strong while they drag it), outlined. */
+  private others: { id: string; color: string; strong: boolean }[] = [];
+  private othersFx: THREE.Object3D | null = null;
   private ghost: THREE.Object3D | null = null;
   private ghostKey = "";
   private lastCorner: { id: string; index: number; time: number } | null = null;
@@ -518,6 +521,7 @@ export class CourseView {
     this.syncItems();
     this.syncShapes();
     this.syncSelection();
+    this.syncOthers();
     this.syncOverlays();
     this.syncHandles();
     this.updateLimits();
@@ -3022,7 +3026,7 @@ export class CourseView {
     }
   }
 
-  private outlineFor(id: string | null, color: string, opacity: number): THREE.Object3D | null {
+  private outlineFor(id: string | null, color: string, opacity: number, grow = 0, order = 9): THREE.Object3D | null {
     const doc = this.doc;
     if (!doc || !id) return null;
     const g = new THREE.Group();
@@ -3031,7 +3035,7 @@ export class CourseView {
       const s = doc.stats.find(x => x.holeId === hole.id);
       if (!s || s.line.length < 2) return null;
       const line = smoothPath(s.line, 10);
-      g.add(this.fatLine(this.drapeLine(fairwayOutline(hole, line, 0, 12), 0.5, true), color, 2, { opacity: opacity * 0.9, dashed: 5, order: 9 }));
+      g.add(this.fatLine(this.drapeLine(fairwayOutline(hole, line, 0, 12), 0.5, true), color, 2 + grow, { opacity: opacity * 0.9, dashed: 5, order }));
       return g;
     }
     const item = this.item(id);
@@ -3045,18 +3049,52 @@ export class CourseView {
         return { x: p.x - ((b.y - a.y) / l) * off, y: p.y + ((b.x - a.x) / l) * off };
       });
       const rings = w ? [[...edge(w), ...edge(-w).reverse()]] : [pts];
-      for (const r of rings) g.add(this.fatLine(this.drapeLine(r, LIFT + 0.3, true), color, 3, { opacity, order: 9, depthTest: false }));
+      for (const r of rings) g.add(this.fatLine(this.drapeLine(r, LIFT + 0.3, true), color, 3 + grow, { opacity, order, depthTest: false }));
     } else if (item.type === "area") {
-      g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2, true), color, 3.5, { opacity, order: 9 }));
+      g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2, true), color, 3.5 + grow, { opacity, order }));
     }
-    else if (item.type === "line") g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2), color, 5, { opacity: opacity * 0.6, order: 9 }));
+    else if (item.type === "line") g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2), color, 5 + grow, { opacity: opacity * 0.6, order }));
     else {
       const r = item.type === "tree" ? item.radius * (item.width ?? 1) * 1.05 : item.type === "tee" ? item.padLength * 0.62 : item.type === "basket" ? 3 : 3.5;
       const ring: P[] = [];
       for (let i = 0; i < 48; i++) ring.push({ x: item.x + Math.cos((i / 48) * Math.PI * 2) * r, y: item.y + Math.sin((i / 48) * Math.PI * 2) * r });
-      g.add(this.fatLine(this.drapeLine(ring, 0.4, true), color, 2.5, { opacity, order: 9 }));
+      g.add(this.fatLine(this.drapeLine(ring, 0.4, true), color, 2.5 + grow, { opacity, order }));
     }
     return g;
+  }
+
+  /** What the others in the course have picked: each outlined as your own pick is, thin, in their
+   * color, over a faint dark edge so it reads on the photo (stronger while they drag it). */
+  setOthersPicked(picks: { id: string; color: string; strong: boolean }[]) {
+    if (JSON.stringify(picks) === JSON.stringify(this.others)) return;
+    this.others = picks;
+    this.syncOthers();
+    this.invalidate();
+  }
+
+  /** (for tests: the ids others have picked, as outlined) */
+  othersPicked() { return this.othersFx ? this.others.map(p => p.id) : []; }
+
+  /** Whether something is being dragged on the map now. */
+  isDragging() { return this.dragging; }
+
+  private syncOthers() {
+    if (this.othersFx) {
+      this.fx.remove(this.othersFx);
+      disposeObjectDeep(this.othersFx);
+      this.othersFx = null;
+    }
+    if (!this.others.length) return;
+    const g = new THREE.Group();
+    for (const p of this.others) {
+      const under = this.outlineFor(p.id, "#000000", 0.35, 2, 8);
+      const line = this.outlineFor(p.id, p.color, p.strong ? 0.95 : 0.75, -0.5, 9);
+      if (under) g.add(under);
+      if (line) g.add(line);
+    }
+    if (!g.children.length) return;
+    this.othersFx = g;
+    this.fx.add(g);
   }
 
   private setHover(id: string | null) {
