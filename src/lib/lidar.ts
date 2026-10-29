@@ -701,7 +701,7 @@ export const findTrees = (m: { nx: number; ny: number; cell: number; canopy: Flo
     if (canopy[c] > high[k]) high[k] = canopy[c];
   }
   const round1 = (v: number) => Math.round(v * 10) / 10;
-  const trees: LidarTree[] = [];
+  const trees: LidarTree[] = [], density: number[] = [];
   tops.forEach((c, k) => {
     if (find(k) !== k) return;
     // (in a survey that didn't sort what grows: one whose pulses nearly all came back once is
@@ -738,8 +738,48 @@ export const findTrees = (m: { nx: number; ny: number; cell: number; canopy: Flo
     const solid = up[k] + down[k] > 0 ? up[k] / (up[k] + down[k]) : 0;
     const conifer = m.leafOn === true ? r / h < 0.2 && fall > 0.15 : m.leafOn === false ? solid > 0.8 && r / h < 0.3 : r / h < 0.13 && fall > 0.22;
     trees.push([round1((ti[k] + 0.5) * cell), round1((tj[k] + 0.5) * cell), round1(h), round1(r), conifer ? 1 : 0]);
+    density.push(cells[k] ? up[k] / cells[k] : 0);
   });
-  return trees;
+  return withoutWires(trees, m.nUp ? density : null);
+};
+
+/**
+ * Trees that are a power line: four or more small crowns in a dead straight row (each within 3 ft
+ * of one line, up to 120 ft apart), about as high as each other and each thinly hit (a wire is a
+ * few points, a crown is hit all over), are left out. (A pulse that grazes a wire goes on to the
+ * ground, so a wire isn't solid like a pole: the row and how thinly it's hit tell it.) A row of
+ * trees along a road is kept: it's hit all over.
+ */
+export const withoutWires = (trees: LidarTree[], density: number[] | null) => {
+  const small = trees.map((t, k) => k).filter(k => trees[k][3] <= 10);
+  const wire = new Set<number>();
+  for (const k of small) {
+    const [x, y] = trees[k];
+    // (the others round it, by the way they lie from it)
+    const bins = new Map<number, number[]>();
+    for (const o of small) {
+      if (o === k) continue;
+      const dx = trees[o][0] - x, dy = trees[o][1] - y, d = Math.hypot(dx, dy);
+      if (d < 10 || d > 120) continue;
+      const a = ((Math.atan2(dy, dx) * 180) / Math.PI + 180) % 180;
+      const b = Math.floor(a / 4);
+      (bins.get(b) ?? bins.set(b, []).get(b)!).push(o);
+    }
+    for (const [b, list] of bins) {
+      const cand = [...list, ...(bins.get((b + 1) % 45) ?? []), ...(bins.get((b + 44) % 45) ?? [])];
+      if (cand.length < 3) continue;
+      // The line through it at their mean way, and those right on it
+      const a = ((b + 0.5) * 4 * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a);
+      const on = cand.filter(o => Math.abs((trees[o][0] - x) * -uy + (trees[o][1] - y) * ux) <= 3);
+      if (on.length < 3) continue;
+      const row = [k, ...on];
+      const hs = row.map(o => trees[o][2]).sort((p, q) => p - q), mid = hs[Math.floor(hs.length / 2)];
+      const even = row.filter(o => Math.abs(trees[o][2] - mid) <= 6).length >= row.length * 0.75;
+      const thin = density ? row.filter(o => density[o] < 0.9).length >= row.length * 0.75 : true;
+      if (even && thin) row.forEach(o => wire.add(o));
+    }
+  }
+  return wire.size ? trees.filter((_, k) => !wire.has(k)) : trees;
 };
 
 /** A box blur `r` cells round, run twice (near enough a Gaussian). */

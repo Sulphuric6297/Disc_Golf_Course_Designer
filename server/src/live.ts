@@ -25,7 +25,8 @@ export const change = z.discriminatedUnion("op", [
   z.object({ op: z.literal("put"), list: z.enum(LISTS), value: entity }),
   z.object({ op: z.literal("del"), list: z.enum(LISTS), id }),
   z.object({ op: z.literal("order"), list: z.enum(LISTS), ids: z.array(id).max(50_000) }),
-  z.object({ op: z.literal("set"), key: z.string().min(1).max(60).refine(k => !(LISTS as readonly string[]).includes(k) && k !== "background" && k !== "id", "Not a part that's set"), value: z.unknown() })
+  // (a part taken out comes as null, or with no value at all: JSON drops an undefined one)
+  z.object({ op: z.literal("set"), key: z.string().min(1).max(60).refine(k => !(LISTS as readonly string[]).includes(k) && k !== "background" && k !== "id", "Not a part that's set"), value: z.unknown().optional() })
 ]);
 export type Change = z.infer<typeof change>;
 /** Most of each list a course can have (the same as a whole save). */
@@ -35,7 +36,7 @@ const MOST: Record<List, number> = { holes: 500, items: 50_000, layouts: 500 };
 export function applyChanges(doc: Doc, changes: Change[]) {
   for (const c of changes) {
     if (c.op === "set") {
-      if (c.value === undefined) delete doc[c.key];
+      if (c.value === undefined || c.value === null) delete doc[c.key];
       else doc[c.key] = c.value;
       continue;
     }

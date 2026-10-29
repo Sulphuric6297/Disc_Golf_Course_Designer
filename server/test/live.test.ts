@@ -96,6 +96,16 @@ test("live: changes go to everyone in the course as they're made, in order, and 
     const [row2] = await w.sql`select doc from courses where id = ${made.id}`;
     assert.deepEqual(row2.doc.items.map((i: any) => i.id), ["t2"]);
     assert.deepEqual(row2.doc.style, { theme: "classic" });
+    // A part taken out: as null, and with no value at all (JSON drops an undefined one)
+    const at3 = a.events.length;
+    await admin.post(`${url}/live/changes`, { client: "adminTab01", batch: 2, changes: [{ op: "set", key: "lidar", value: { source: "x", trees: [] } }, { op: "set", key: "style", value: null }] });
+    await a.next("saved", at3);
+    const at4 = a.events.length;
+    await admin.post(`${url}/live/changes`, { client: "adminTab01", batch: 3, changes: [{ op: "set", key: "lidar" }] });
+    await a.next("saved", at4);
+    const [row3] = await w.sql`select doc from courses where id = ${made.id}`;
+    assert.equal(row3.doc.style, undefined);
+    assert.equal(row3.doc.lidar, undefined);
     a.close(); p.close();
   } finally { await w.close(); }
 });

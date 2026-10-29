@@ -26,7 +26,7 @@ import { courtCount, createField, fieldKindOf, fieldWord } from "./fields";
 import { fieldOf } from "./geo/parkKinds";
 import { centroid, clipPathToRect, clipPolygonToRect, nearestOnSegment, pointInPolygon, polygonArea, simplify } from "./geom";
 import { fetchStructures, fetchWater, fetchWetlands, inUS } from "./geo/usgov";
-import { courtsFromPhoto, parkingFromPhoto } from "./geo/parking";
+import { courtsFromPhoto } from "./geo/courtsFound";
 import { fittedToPhoto } from "./geo/photoFit";
 import type { PhotoSourceId } from "./geo/photoSources";
 import { reframe, toPlanXY, type GeoRef } from "./geoRef";
@@ -742,8 +742,8 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     // The buildings traced from the air (sorted out against OpenStreetMap's once both are in)
     const tracedJob = !opts.osm ? Promise.resolve(null) : soft("buildings", async () => {
       progress.set("buildings", { state: "coming" });
-      // (90 s at most: the rest of the import never waits on it for longer)
-      const got = cached("buildings", "traced", () => Promise.race([tracedBuildings(bounds), new Promise<never>((_, no) => setTimeout(() => no(new Error("The buildings from the air took too long")), 90000))]), { signal, within: bounds });
+      // (45 s at most: the rest of the import never waits on it for longer)
+      const got = cached("buildings", "traced", () => Promise.race([tracedBuildings(bounds), new Promise<never>((_, no) => setTimeout(() => no(new Error("The buildings from the air took too long")), 45000))]), { signal, within: bounds });
       const list = await untilAborted(got.value, signal);
       return { list, hit: got.hit };
     });
@@ -796,8 +796,8 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     });
 
     // OpenStreetMap: waited for a little longer while the rest is still coming
-    // (the rest given 3 minutes at most: one that stalls doesn't hold OpenStreetMap up for ever)
-    const restIn = Promise.race([Promise.allSettled([photoJob, elevationJob, lidarJob, tracedJob, natureJob, govJob]), new Promise(r => setTimeout(r, 180000))]);
+    // (the rest given 45 s at most: one that stalls doesn't hold OpenStreetMap up)
+    const restIn = Promise.race([Promise.allSettled([photoJob, elevationJob, lidarJob, tracedJob, natureJob, govJob]), new Promise(r => setTimeout(r, 45000))]);
     const osmJob = !opts.osm ? Promise.resolve(null) : soft("osm", async () => {
       progress.set("osm", { state: "coming" });
       const got = fetchOsm(bounds, { signal, settle: restIn, onBusy: () => progress.set("osm", { busy: true }), onTiles: () => progress.set("osm", { busy: false }) });
@@ -922,13 +922,10 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       const measuredAll = withMeasuredTrees(all, lidar.trees, findBushes(measured.lidar.measured), p => !nowhere(p));
       all = measuredAll.items;
       if (measuredAll.bushes) notes.push(`${measuredAll.bushes.toLocaleString()} ${measuredAll.bushes === 1 ? "bush" : "bushes"} measured from the air.`);
-      // Parking lots no map has: the photo and the survey together
+      // Courts and pools no map has: the photo and the survey together. (Parking lots aren't looked
+      // for on the photo: a lot full of cars and bare winter woods can't be told apart reliably
+      // without machine learning; the maps' lots come in, and the rest are drawn.)
       if (background && satellite) {
-        const lots = await untilAborted(parkingFromPhoto(background, width, height, measured.lidar.measured, all), signal).catch(err => { if (isAbort(err)) throw err; console.info("Parking lots not looked for", err); return [] as AreaItem[]; });
-        if (lots.length) {
-          all = [...all, ...lots];
-          notes.push(`${lots.length} parking ${lots.length === 1 ? "lot" : "lots"} found on the photo and the survey.`);
-        }
         // Courts on the photo the maps haven't got (blue ones), where none came already
         const found = await untilAborted(courtsFromPhoto(background, width, height, measured.lidar.measured, all), signal).catch(err => { if (isAbort(err)) throw err; console.info("Courts not looked for", err); return [] as AreaItem[]; });
         // (a pool the photo shows where the maps have a little water: that water is the pool, its

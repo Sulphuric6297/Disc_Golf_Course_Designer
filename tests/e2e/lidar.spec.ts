@@ -4,7 +4,7 @@ import { createLazPerf } from "laz-perf";
 import { test, expect, addHole, blankCourse, importSite, course, editorState, screenOf, withLidar, SITE } from "./fixtures";
 import { createEmptyCourse, newHole } from "../../src/lib/course";
 import { getGeoBounds } from "../../src/lib/geo/core";
-import { claim, flownOn, gather, gatherer, grownTree, grownTrees, leafOnAt, roofHeights, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesFor, tilesOver, depthFor, type LazReader, type TilePoints } from "../../src/lib/lidar";
+import { claim, flownOn, gather, gatherer, grownTree, grownTrees, leafOnAt, roofHeights, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesFor, tilesOver, depthFor, withoutWires, type LazReader, type TilePoints } from "../../src/lib/lidar";
 import { canopyStands } from "../../src/lib/canopy";
 import { summerFills, treesFromSummer } from "../../src/lib/summerTrees";
 import type { LidarTree } from "../../src/types";
@@ -579,4 +579,15 @@ plain("a light pole is no tree: a lamp head the laser came back from once, hit h
   const trees = findTrees({ nx, ny, cell, canopy, nUp, nMulti, nGround, leafOn: true });
   plainExpect(trees.length).toBe(1);
   plainExpect(trees[0][0]).toBeGreaterThan(45);
+});
+
+plain("a power line is no row of trees: small crowns in a dead straight row, as high, thinly hit, left out; a row of trees along a road, hit all over, kept (pure logic)", () => {
+  const wire: LidarTree[] = [0, 1, 2, 3, 4, 5].map(i => [100 + i * 40, 100 + i * 12, 28, 6, 0]);
+  const row: LidarTree[] = [0, 1, 2, 3, 4].map(i => [100 + i * 30, 300, 30 + (i % 2) * 3, 8, 0]);
+  const other: LidarTree[] = [[400, 400, 60, 25, 0]];
+  const all = [...wire, ...row, ...other];
+  const density = [...wire.map(() => 0.4), ...row.map(() => 2.2), 2.5];
+  const kept = withoutWires(all, density);
+  plainExpect(kept).toHaveLength(row.length + other.length);
+  plainExpect(kept.every(t => t[1] !== 100 && !wire.includes(t))).toBe(true);
 });

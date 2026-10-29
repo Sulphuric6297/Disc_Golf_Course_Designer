@@ -28,7 +28,7 @@ export const SOURCES: Record<SourceKey, { group: SourceGroup; label: string; who
   osmWater: { group: "water", label: "OpenStreetMap", color: "#3b82f6" },
   govWater: { group: "water", label: "USGS and USFWS", color: "#22d3ee" },
   photoWater: { group: "water", label: "From the photo", color: "#f472b6" },
-  foundParking: { group: "parking", label: "Found on the photo and survey", color: "#d4d4d8" },
+  foundParking: { group: "parking", label: "Found on the photo", color: "#d4d4d8" },
   osmParking: { group: "parking", label: "Parking from OpenStreetMap", color: "#a1a1aa" },
   courts: { group: "parking", label: "Courts found on the photo", color: "#fb923c" },
   osmPaths: { group: "paths", label: "OpenStreetMap", color: "#e5e7eb" },

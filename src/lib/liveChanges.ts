@@ -26,7 +26,8 @@ export function changesBetween(from: CourseDoc, to: CourseDoc): Change[] {
   const out: Change[] = [];
   for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
     if (SKIP.has(k) || a[k] === b[k]) continue;
-    out.push({ op: "set", key: k, value: b[k] });
+    // (taken out: sent as null, as JSON keeps it)
+    out.push({ op: "set", key: k, value: b[k] === undefined ? null : b[k] });
   }
   for (const l of LISTS) {
     const x = listOf(a, l), y = listOf(b, l);
@@ -54,7 +55,7 @@ export function applyChanges(doc: CourseDoc, changes: Change[]): CourseDoc {
   };
   for (const c of changes) {
     if (c.op === "set") {
-      if (c.value === undefined) delete d[c.key];
+      if (c.value === undefined || c.value === null) delete d[c.key];
       else d[c.key] = c.value;
     } else if (c.op === "put") {
       const xs = list(c.list), i = xs.findIndex(e => e.id === c.value.id);
