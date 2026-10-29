@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, Droplets, Flag, Image as ImageIcon, Loader2, MapPin, Mountain, Pencil, Route, Search, Target, TreeDeciduous, Trees, X } from "lucide-react";
 import { SitePickerMap, type Arrived } from "./SitePickerMap";
 import { fetchPlaceSuggestions, resolveSiteLocation, type PlaceSuggestion } from "../lib/geo/geocode";
-import { SITE_MAX_WIDTH_FT, SITE_MIN_WIDTH_FT, getGeoBounds, isAbort, selectionFromBounds, type GeoBounds } from "../lib/geo/core";
+import { SITE_MAX_WIDTH_FT, SITE_MIN_WIDTH_FT, getGeoBounds, selectionFromBounds, type GeoBounds } from "../lib/geo/core";
 import type { MapImagerySource } from "../lib/geo/imagery";
 import { findSiteOutline, type SiteOutline } from "../lib/geo/parks";
 import { lidarCoverage } from "../lib/geo/lidarFetch";
@@ -294,7 +294,8 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
         setStatus({ state: "idle", text: "" });
       }
     } catch (err) {
-      if (isAbort(err) || stop.signal.aborted) return;
+      // (stopped: nothing to say; anything else, said, never left hanging)
+      if (stop.signal.aborted) return;
       console.error(err);
       setStatus({ state: "error", text: err instanceof Error ? err.message : "Couldn't bring in the site." });
     } finally {

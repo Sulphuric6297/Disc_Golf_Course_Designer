@@ -10,7 +10,7 @@
 // with no keys, as in the Security Camera Planner.
 import { STRUCTURE_KINDS, LINE_KINDS, clamp, generateId } from "../constants";
 import type { AmenityItem, AreaItem, CourseDoc, CourseItem, Hole, LidarTree, LineItem, P, ParkDetail, RoofKind, SiteInfo, StructureItem, TreeItem } from "../types";
-import { FEET_PER_METER, getGeoBounds, isAbort, throwIfAborted, untilAborted, type GeoBounds, type SiteSelection } from "./geo/core";
+import { FEET_PER_METER, getGeoBounds, throwIfAborted, untilAborted, type GeoBounds, type SiteSelection } from "./geo/core";
 import { boundsKey, cached } from "./geo/cache";
 import { fetchBestElevationGrid, usgsGroundLabel } from "./geo/elevation";
 import { fetchLidar } from "./geo/lidarFetch";
@@ -455,7 +455,7 @@ export const courseFromMap = (course: MappedCourse, ref: GeoBounds & { width: nu
  */
 export const osmItems = async (bounds: GeoBounds, width: number, height: number, opts: { signal?: AbortSignal; fresh?: boolean } = {}) => {
   const traced = cached("buildings", "traced", () => tracedBuildings(bounds), { signal: opts.signal, within: bounds }).value.catch(err => {
-    if (isAbort(err)) throw err;
+    if (opts.signal?.aborted) throw err;
     console.warn("Traced buildings lookup failed", err);
     return [] as TracedBuilding[];
   });
@@ -679,7 +679,8 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     try {
       return await run();
     } catch (err) {
-      if (isAbort(err) || signal?.aborted) throw err;
+      // (only a stop of the import itself stops it: a source that ran out of time just failed)
+      if (signal?.aborted) throw err;
       console.warn(`Import: ${id} failed`, err);
       progress.set(id, { state: "failed", error: err instanceof Error ? err.message : String(err) });
       return null;
@@ -695,7 +696,7 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       const get = (source: MapImagerySource) => { const nir = source === "satellite"; return cached("photo", `${source}|${nir ? "nir" : ""}|${opts.photo ?? ""}|${here}`, report => fetchMapImagery(location, width, height, source, report, { signal, nir, photo: opts.photo }), { signal, onProgress: f => progress.set("photo", { fraction: f * 0.95 }) }); };
       let got = get(opts.imagery as MapImagerySource);
       const map = await untilAborted(got.value, signal).catch(async err => {
-        if (isAbort(err) || !satellite) throw err;
+        if (signal?.aborted || !satellite) throw err;
         console.warn("Satellite photo failed: the street map instead", err);
         got = get("streets");
         const streets = await untilAborted(got.value, signal);
@@ -767,7 +768,7 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
         const fresh = <T extends CourseItem>(i: T): T => ({ ...i, id: generateId() });
         let leaf = n.leaf;
         if (inLeaf) {
-          const summer = await untilAborted(cached("photo", `summer|${inLeaf.id}|${here}`, () => fetchMapImagery(location, width, height, "satellite", undefined, { signal, nir: true, photo: inLeaf.id, choices: [inLeaf] }), { signal }).value, signal).catch(err => { if (isAbort(err)) throw err; console.info("No photo in leaf to find trees on", err); return null; });
+          const summer = await untilAborted(cached("photo", `summer|${inLeaf.id}|${here}`, () => fetchMapImagery(location, width, height, "satellite", undefined, { signal, nir: true, photo: inLeaf.id, choices: [inLeaf] }), { signal }).value, signal).catch(err => { if (signal?.aborted) throw err; console.info("No photo in leaf to find trees on", err); return null; });
           if (summer) leaf = (await untilAborted(natureFromPhoto(summer.url, width, height, undefined, { signal, waterOnly: true, canopy: true, nir: summer.nir }), signal)).leaf;
         }
         const found = { trees: n.trees.map(fresh), woods: n.woods.map(fresh), water: n.water.map(fresh), leaf };
@@ -782,7 +783,8 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     const govJob = !wantsGov ? Promise.resolve(null) : soft("gov", async () => {
       progress.set("gov", { state: "coming" });
       const got = cached("gov", here, async () => {
-        const one = (what: string, run: Promise<OsmFeature[]>) => run.catch(err => { if (isAbort(err)) throw err; console.info(`US maps: no ${what}`, err); return null; });
+        const t0 = performance.now();
+        const one = (what: string, run: Promise<OsmFeature[]>) => run.catch(err => { if (signal?.aborted) throw err; console.info(`US maps: no ${what} after ${Math.round(performance.now() - t0)} ms`, err); return null; });
         const [water, wet, built] = await Promise.all([one("water", fetchWater(bounds, { signal })), one("wetlands", fetchWetlands(bounds, { signal })), one("buildings", fetchStructures(bounds, { signal }))]);
         if (!water && !wet && !built) throw new Error("None of the US maps answered");
         return { water: water ?? [], wet: wet ?? [], built: built ?? [], waterOk: !!water || !!wet };
@@ -900,7 +902,7 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     // The maps' buildings fitted to their roofs on the photo (moved and turned a little where it
     // clearly fits better: the photo is what's seen under the course)
     if (background && satellite) {
-      const fit = await untilAborted(fittedToPhoto(all, background, width, height), signal).catch(err => { if (isAbort(err)) throw err; console.info("Buildings not fitted to the photo", err); return null; });
+      const fit = await untilAborted(fittedToPhoto(all, background, width, height), signal).catch(err => { if (signal?.aborted) throw err; console.info("Buildings not fitted to the photo", err); return null; });
       if (fit) {
         all = fit.items;
         if (fit.moved) notes.push(`${fit.moved} ${fit.moved === 1 ? "building" : "buildings"} lined up with their roofs on the photo.`);
@@ -927,7 +929,7 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       // without machine learning; the maps' lots come in, and the rest are drawn.)
       if (background && satellite) {
         // Courts on the photo the maps haven't got (blue ones), where none came already
-        const found = await untilAborted(courtsFromPhoto(background, width, height, measured.lidar.measured, all), signal).catch(err => { if (isAbort(err)) throw err; console.info("Courts not looked for", err); return [] as AreaItem[]; });
+        const found = await untilAborted(courtsFromPhoto(background, width, height, measured.lidar.measured, all), signal).catch(err => { if (signal?.aborted) throw err; console.info("Courts not looked for", err); return [] as AreaItem[]; });
         // (a pool the photo shows where the maps have a little water: that water is the pool, its
         // mapped outline kept)
         const small = (a: AreaItem) => polygonArea(a.points) < 15000;

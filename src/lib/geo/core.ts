@@ -61,6 +61,10 @@ export const fetchJson = async (url: string, timeoutMs = 8000, signal?: AbortSig
     const json = await res.json();
     if (json?.error) throw new Error(json.error.message || "Service error");
     return json;
+  } catch (err) {
+    // (out of time is a failure, not a stop: only the caller's own signal stops it)
+    if (isAbort(err) && !signal?.aborted && controller.signal.aborted) throw new Error(`No answer in ${Math.round(timeoutMs / 1000)} s`);
+    throw err;
   } finally {
     window.clearTimeout(timer);
   }
