@@ -1,7 +1,8 @@
 // Who else is in a course being edited live: their faces beside the Live chip (the list says where
 // each is), their pointers on the map, and a ring in their color round what they've picked, so two
 // people don't move the same thing at once. Each person has one color, the same everywhere.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { FOCUS, HelpLink, MENU_HEAD, POPOVER } from "../components/ui";
 import { holeLabel } from "../lib/course";
 import { useCourse, useEditor } from "../state/course";
@@ -9,7 +10,6 @@ import { getView, onLiveView } from "../state/view";
 import type { CourseDoc } from "../types";
 import { useAuth } from "./api";
 import { CLIENT, sendHere, useLive, type Here, type Person, type Pointer } from "./live";
-import { useMenu } from "./AccountMenu";
 
 const COLORS = ["#f9a8d4", "#c4b5fd", "#7dd3fc", "#fcd34d", "#fdba74", "#5eead4", "#fda4af", "#a5b4fc"];
 const YOU = "#86efac";
@@ -56,13 +56,27 @@ export function Faces() {
   const { on, people, pointers } = useLive();
   const me = useAuth(s => s.session?.user);
   const doc = useCourse(s => s.doc);
-  const m = useMenu();
+  const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   const list = on ? others(people, me?.id) : [];
+  // (closed by a click outside it, Esc, or the others all gone)
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => { const t = e.target as Node; if (!btn.current?.contains(t) && !panel.current?.contains(t)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", esc, true);
+    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc, true); };
+  }, [open]);
+  useEffect(() => { if (!list.length) setOpen(false); }, [list.length]);
   if (!list.length) return null;
   const names = list.map(p => p.name).join(", ");
+  const r = open ? btn.current?.getBoundingClientRect() : null;
+  const phone = window.innerWidth < 640;
   return (
-    <div className="relative" ref={m.ref}>
-      <button className={`flex items-center rounded-full ${FOCUS}`} onClick={() => m.setOpen(o => !o)} aria-haspopup="dialog" aria-expanded={m.open}
+    <>
+      <button ref={btn} className={`flex items-center rounded-full ${FOCUS}`} onClick={() => setOpen(o => !o)} aria-haspopup="dialog" aria-expanded={open}
         aria-label={`Also in this course: ${names}`} title={`Also here: ${names}`} data-testid="live-faces">
         {list.map((p, i) => (
           <span key={p.userId} className={`${i ? "-ml-1.5" : ""} ${i >= 3 ? "hidden" : i >= 2 ? "hidden sm:block" : ""}`}><Face name={p.name} color={colorOf(p.userId)} bar /></span>
@@ -70,8 +84,9 @@ export function Faces() {
         {list.length > 2 && <span className="sm:hidden -ml-1.5 grid place-items-center w-5 h-5 rounded-full bg-zinc-700 border-2 border-[#1b2118] text-[10px] font-bold text-zinc-100">+{list.length - 2}</span>}
         {list.length > 3 && <span className="hidden sm:grid -ml-1.5 place-items-center w-[26px] h-[26px] rounded-full bg-zinc-700 border-2 border-[#1b2118] text-[10px] font-bold text-zinc-100">+{list.length - 3}</span>}
       </button>
-      {m.open && (
-        <div className={`max-sm:fixed max-sm:left-2 max-sm:right-2 max-sm:top-[72px] sm:absolute sm:right-0 sm:top-full sm:mt-1 sm:w-64 ${POPOVER} py-1.5 z-50 text-[13px]`} role="dialog" aria-label="In this course now" data-testid="live-people">
+      {open && r && createPortal(
+        <div ref={panel} className={`fixed ${POPOVER} py-1.5 z-50 text-[13px]`} role="dialog" aria-label="In this course now" data-testid="live-people"
+          style={phone ? { left: 8, right: 8, top: r.bottom + 8 } : { right: Math.max(8, window.innerWidth - r.right), top: r.bottom + 6, width: 256 }}>
           <div className={`${MENU_HEAD} flex items-center gap-1.5`}>In this course now<HelpLink topic="live-together" label="Editing together, live" /></div>
           <div className="flex items-center gap-2.5 px-3 py-1.5 text-zinc-100"><Face name={me?.displayName || me?.username || "You"} color={YOU} size={22} />You</div>
           {list.map(p => (
@@ -81,9 +96,10 @@ export function Faces() {
               <small className="ml-auto text-zinc-400 whitespace-nowrap">{whereOf(latestOf(p, pointers)?.at, doc)}</small>
             </div>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
 

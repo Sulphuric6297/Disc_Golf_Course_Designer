@@ -20,7 +20,7 @@ const signOut = async () => { await saveNow(); await useAuth.getState().signOut(
 export const goHome = () => { useAuth.getState().showHome(true); void saveNow().then(thumbnailNow).then(() => useAuth.getState().bump()); };
 
 /** A menu that closes on a click outside it or Esc. */
-export function useMenu() {
+function useMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
