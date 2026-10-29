@@ -18,7 +18,7 @@ import { toast } from "../state/toast";
 import type { CourseDoc } from "../types";
 import { api, ApiFail, useAuth } from "./api";
 import type { Perms } from "./perms";
-import { liveRetry, liveSaveNow, livePending, startLive, stopLive } from "./live";
+import { liveRetry, liveSaveNow, livePending, liveWritten, startLive, stopLive } from "./live";
 
 export type Role = "owner" | "editor" | "viewer";
 export interface Summary { par: number; length: number; units: "ft" | "m"; canvas: { width: number; height: number }; lines: [number, number][][] }
@@ -104,7 +104,6 @@ let lastSaved: CourseDoc | null = null;
 async function save() {
   const doc = getDoc();
   if (doc === opened || doc === lastSaved || !canSave()) return;
-  let made = false;
   if (!state().id && isEmpty(doc)) return;
   set({ status: "saving" });
   try {
@@ -119,6 +118,7 @@ async function save() {
         sentBackground = doc.background;
       }
       lastSaved = doc;
+      set({ status: liveWritten() ? "saved" : "saving" });
       return;
     }
     if (!id) {
@@ -126,7 +126,9 @@ async function save() {
       set({ id: r.id, version: r.version, role: r.role });
       sentBackground = null;
       remember(r.id);
-      made = true;
+      // (live from now on, from what was sent: anything changed meanwhile goes as a change)
+      opened = doc;
+      if (editsLive()) startLive(r.id, doc, 0, liveHooks);
     } else if (inDraft()) {
       const r = await api<{ version: number }>("PUT", `courses/${id}/draft`, { doc: noPhoto(doc), summary, base: state().draft ? undefined : { doc: noPhoto(base!.doc), version: base!.version } });
       set({ draft: true, behind: r.version > base!.version });
@@ -139,14 +141,14 @@ async function save() {
       sentBackground = doc.background;
     }
     lastSaved = doc;
+    // (live now: saved once the live connection has it all)
+    if (editsLive()) { set({ status: liveWritten() ? "saved" : "saving" }); return; }
     set({ status: getDoc() === doc ? "saved" : "unsaved" });
     if (!inDraft()) thumbnailSoon();
   } catch (e) {
     if (e instanceof ApiFail && e.status === 409) set({ status: "conflict", conflict: e.message });
     else { set({ status: "error" }); console.warn("Save failed", e); }
   }
-  // (a course just made: changed live from now on, from what was sent)
-  if (made && editsLive()) void reopenLive(doc);
 }
 
 // --- The course list's picture: the printed map, small, made after a save (at most every two
@@ -293,17 +295,6 @@ export async function openServerCourse(id: string, quiet = false): Promise<boole
 const reopen = () => { const id = state().id; return id ? openServerCourse(id) : Promise.resolve(false as const); };
 /** Courses asked to open, counted (a newer ask, or a preview, makes an older one's answer stale). */
 let opening = 0;
-
-/** A course just made on the server: live from now on, keeping what's on the screen (`sent`:
- * what went to the server; anything changed since goes as live changes). */
-async function reopenLive(sent: CourseDoc) {
-  const id = state().id;
-  if (!id || state().preview) return;
-  const c = await readCourse(id);
-  if (state().id !== id || !editsLive() || state().preview) return;
-  opened = sent;
-  startLive(id, sent, c.seq ?? 0, liveHooks);
-}
 
 /** What the live connection asks of the course here. */
 const liveHooks = {

@@ -109,12 +109,17 @@ export function stopLive() {
 /** Changes not on the server yet (the tab asks before it's closed). */
 export const livePending = () => !!course && (sending || flying.size > 0 || (getDoc() !== sent && !!hooks?.canSend()));
 
-/** Sends what's waiting now (before switching courses or modes). */
+/** Everything here is on the server and written to the database. */
+export const liveWritten = () => !livePending() && savedSeq >= mine;
+
+/** Sends what's waiting now, and waits (a few seconds at most) for the server to take it all:
+ * before switching courses or modes, or leaving for the course list. */
 export async function liveSaveNow() {
   window.clearTimeout(timer);
   timer = 0;
-  for (let i = 0; i < 50 && course && (sending || getDoc() !== sent); i++) {
-    if (!sending) await flush();
+  const id = course;
+  for (let i = 0; i < 100 && course === id && livePending(); i++) {
+    if (!sending && useLive.getState().connected && getDoc() !== sent) await flush();
     else await new Promise(ok => setTimeout(ok, 100));
   }
 }
