@@ -564,3 +564,19 @@ plain("woods from the canopy: crowns close together one wood, a clearing 40 ft a
   plainExpect(pointInPolygon({ x: 230, y: 100 }, west.outline)).toBe(false);
   plainExpect(inStand).toEqual([1, 1, 1, 1, 1, 1, 0]);
 });
+
+plain("a light pole is no tree: a lamp head the laser came back from once, hit here and there, left out; a small tree beside it kept (pure logic)", () => {
+  const nx = 40, ny = 20, cell = 2, n = nx * ny;
+  const canopy = new Float32Array(n), nUp = new Uint8Array(n), nMulti = new Uint8Array(n), nGround = new Uint8Array(n);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const c = j * nx + i, x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+    const dp = Math.hypot(x - 15, y - 20), dt = Math.hypot(x - 55, y - 20);
+    // A lamp 25 ft up, its head 8 ft across: solid, one return a pulse, a point in every other cell
+    if (dp <= 4) { canopy[c] = 25 - dp * 0.2; nUp[c] = (i + j) % 2; nMulti[c] = 0; }
+    // A small tree 25 ft up, 14 ft across: hit all over, its pulses going on through
+    else if (dt <= 7) { canopy[c] = 25 - 2 * (dt / 7) ** 2 * 5; nUp[c] = 3; nMulti[c] = 2; nGround[c] = 1; }
+  }
+  const trees = findTrees({ nx, ny, cell, canopy, nUp, nMulti, nGround, leafOn: true });
+  plainExpect(trees.length).toBe(1);
+  plainExpect(trees[0][0]).toBeGreaterThan(45);
+});

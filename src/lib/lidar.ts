@@ -716,7 +716,7 @@ export const findTrees = (m: { nx: number; ny: number; cell: number; canopy: Flo
     // (a light pole's lamp head or a sign spreads wider: but it's solid, so the laser came back from
     // it once, and few points stood over its spot; a tree that small, leaves or bare, lets part of
     // each pulse on through and is hit all over)
-    if (r < 9 && m.nUp && (multi[k] < up[k] * 0.3 || up[k] < cells[k] * 0.35)) return;
+    if (r < 9 && m.nUp && m.nMulti && (multi[k] < up[k] * 0.3 || up[k] < cells[k] * 0.35)) return;
     {
       const N = cells[k], ax = mx[k] / N, ay = my[k] / N;
       const vxx = mxx[k] / N - ax * ax, vyy = myy[k] / N - ay * ay, vxy = mxy[k] / N - ax * ay;
