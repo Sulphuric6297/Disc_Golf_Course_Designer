@@ -1,6 +1,6 @@
 // The open course (the saved document) with undo and redo, and the editor's own state.
 import { create } from "zustand";
-import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, DrawShape, StructureKind, FieldKind } from "../types";
+import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, DrawShape, StructureKind, FieldKind, FieldPart } from "../types";
 import { byNumber, createEmptyCourse, holeNumber, holeNumbers } from "../lib/course";
 
 const HISTORY = 120;
@@ -192,6 +192,8 @@ type EditorStore = {
   teeStand?: { x: number; y: number; face?: number } | null;
   /** The map from above in the tee view's corner while editing. */
   teeMap?: "small" | "big" | "off";
+  /** A part of the picked field (its backstop, its fence…): outlined, its own settings shown. */
+  fieldPart?: FieldPart | null;
   /** The tee view's flyover settings open over it. */
   teeSettings?: boolean;
   flyover: boolean;
@@ -300,3 +302,5 @@ if (typeof window !== "undefined") {
 
 // (another hole, or back to the map: standing on its tee again, unless a spot came with it)
 useEditor.subscribe((s, p) => { if (s.teeView !== p.teeView && s.teeStand && s.teeStand === p.teeStand) s.set({ teeStand: null }); });
+// (another thing picked: no part of the last one)
+useEditor.subscribe((s, p) => { if (s.selectedId !== p.selectedId && s.fieldPart) s.set({ fieldPart: null }); });

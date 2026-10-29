@@ -104,7 +104,7 @@ const boxMean = (v: Float32Array, w: number, h: number, r: number) => {
 };
 
 /** Connected components (4-neighbour) of a mask; returns pixel index lists. */
-const components = (mask: Uint8Array, w: number, h: number, minSize: number) => {
+export const components = (mask: Uint8Array, w: number, h: number, minSize: number) => {
   const seen = new Uint8Array(w * h);
   const out: number[][] = [];
   const stack: number[] = [];
@@ -154,10 +154,10 @@ const morph = (mask: Uint8Array, w: number, h: number, r: number, op: "grow" | "
 /** Fill small gaps (grow, then shrink). */
 const close = (m: Uint8Array, w: number, h: number, r: number) => morph(morph(m, w, h, r, "grow"), w, h, r, "shrink");
 /** Remove thin bits (shrink, then grow). */
-const open = (m: Uint8Array, w: number, h: number, r: number) => morph(morph(m, w, h, r, "shrink"), w, h, r, "grow");
+export const open = (m: Uint8Array, w: number, h: number, r: number) => morph(morph(m, w, h, r, "shrink"), w, h, r, "grow");
 
 /** Distance (pixels) from each set pixel to the nearest unset one (chamfer 3-4, ~exact to 8%). */
-const distanceTransform = (mask: Uint8Array, w: number, h: number) => {
+export const distanceTransform = (mask: Uint8Array, w: number, h: number) => {
   const INF = 1e9;
   const d = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) d[i] = mask[i] ? INF : 0;

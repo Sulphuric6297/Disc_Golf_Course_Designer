@@ -90,7 +90,7 @@ export interface TreeItem extends BaseItem {
   fullness?: number;
   /** Found on the imported aerial photo, or mapped on OpenStreetMap (one by one, in a row, or a
    * hedge's bushes): replaced on re-import. */
-  importSource?: "photo" | "osm";
+  importSource?: "photo" | "osm" | "lidar";
 }
 
 /** What a park's thing is on OpenStreetMap (a ball field, a playground, a pool…), kept with it
@@ -117,6 +117,15 @@ export interface LabelItem extends BaseItem {
 
 /** Areas drawn on the map. OB and hazards are what play cares about; the rest make the map read. */
 export type AreaKind = "ob" | "hazard" | "casual" | "water" | "fairway" | "green" | "woods" | "rough" | "nogo" | "parking" | "building" | "sand" | "field";
+/** A ball field's size, by who plays on it. */
+export type FieldLeague = "teeball" | "little" | "softball" | "high";
+/** The pieces a field or court is made of, each picked and set on its own. */
+export type FieldPart = "grass" | "infield" | "mound" | "lines" | "backstop" | "fence" | "dugouts" | "track" | "courts" | "surround" | "nets";
+/** A part's own settings: off; its height, distance and width (ft; what each is for depends on
+ * the part: a backstop's height and how far behind home, a dugout's length and how far out); a
+ * color by name; mown bands (0: none). */
+export type FieldPartSet = { off?: boolean; h?: number; d?: number; w?: number; c?: string; n?: number };
+export type CourtColors = "blue" | "green" | "red";
 /** What a park's field, court or play area is (an area of kind "field"). */
 export type FieldKind = "baseball" | "softball" | "soccer" | "football" | "multi" | "tennis" | "pickleball" | "basketball" | "volleyball"
   | "playground" | "pool" | "splash" | "dog" | "skate" | "track" | "garden";
@@ -139,6 +148,13 @@ export interface AreaItem extends BaseItem {
    * a ball field's home plate at corner `home` of its outline (unset: the corner nearest a right angle). */
   fieldTurn?: number;
   home?: number;
+  /** A ball field's size, by who plays on it (unset: worked out from the outline). */
+  league?: FieldLeague;
+  /** Its parts' own settings: one switched off, a backstop's height and how far behind home it
+   * stands, a fence's height (by part). */
+  parts?: Partial<Record<FieldPart, FieldPartSet>>;
+  /** Courts' colors (unset: blue courts in green). */
+  courtColors?: CourtColors;
   /** Outline in plan coordinates (x, y of the item is its middle). */
   points: P[];
   /** For one hole only (unset: the whole course). */

@@ -220,7 +220,19 @@ export const createFieldProps = (plan: FieldPlan, groundAt: Ground) => {
       }
       case "fence": {
         const pts = pr.closed ? [...pr.pts, pr.pts[0]] : pr.pts;
-        if (pts.length >= 2) group.add(createFence(pts, groundAt, pr.h, "chain"));
+        if (pts.length >= 2) group.add(createFence(pts, groundAt, pr.h, "chain", pr.cap));
+        break;
+      }
+      case "dugout": {
+        // Block walls on three sides and a low one in front, a roof slab over it all, a bench along
+        // the back wall
+        const BLOCK = "#9a9f9f", ROOF = "#4f565a", BENCH = "#7a5a3a";
+        const t = pr.toward, back = plus(pr.c, t, -pr.depth / 2), front = plus(pr.c, t, pr.depth / 2), hl = pr.len / 2;
+        kit.box(at(back, pr.h / 2), pr.len, pr.h, 0.7, pr.u, BLOCK);
+        for (const e of [-1, 1]) kit.box(at(plus(pr.c, pr.u, e * hl), pr.h / 2), 0.7, pr.h, pr.depth, pr.u, BLOCK);
+        kit.box(at(front, 1.5), pr.len, 3, 0.6, pr.u, BLOCK);
+        kit.box(at(pr.c, pr.h + 0.25), pr.len + 1.2, 0.5, pr.depth + 1.6, pr.u, ROOF);
+        kit.box(at(plus(back, t, 1.2), 1.4), pr.len - 2, 0.25, 1.4, pr.u, BENCH);
         break;
       }
       case "deck": {

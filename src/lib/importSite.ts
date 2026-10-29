@@ -14,7 +14,7 @@ import { FEET_PER_METER, getGeoBounds, isAbort, throwIfAborted, untilAborted, ty
 import { boundsKey, cached } from "./geo/cache";
 import { fetchBestElevationGrid, usgsGroundLabel } from "./geo/elevation";
 import { fetchLidar } from "./geo/lidarFetch";
-import { groundOnGrid, standingTrees, surveyYear } from "./lidar";
+import { findBushes, groundOnGrid, standingTrees, surveyYear, type LidarBush } from "./lidar";
 import { summerFills, treesFromSummer } from "./summerTrees";
 import { fetchMapImagery, type MapImagerySource } from "./geo/imagery";
 import { natureFromPhoto } from "./geo/photoNature";
@@ -26,8 +26,10 @@ import { createField, fieldWord } from "./fields";
 import { fieldOf } from "./geo/parkKinds";
 import { centroid, clipPathToRect, clipPolygonToRect, nearestOnSegment, pointInPolygon, polygonArea, simplify } from "./geom";
 import { fetchStructures, fetchWater, fetchWetlands, inUS } from "./geo/usgov";
+import { parkingFromPhoto } from "./geo/parking";
+import type { PhotoSourceId } from "./geo/photoSources";
 import { reframe, toPlanXY, type GeoRef } from "./geoRef";
-import { roofOf } from "./structures";
+import { boxOutline, orientedBox, roofOf } from "./structures";
 import { treeFree } from "./treeFree";
 
 export type ImportedSite = {
@@ -50,6 +52,10 @@ export type ImportedSite = {
   course?: { name?: string; holes: Hole[]; items: CourseItem[] };
   /** How each source went, as at the end. */
   sources: ImportProgress["sources"];
+  /** What was left out but could be brought in instead (looking before it comes in): the photo's
+   * water where the government's maps of water came, and all of FEMA's buildings (those
+   * OpenStreetMap has too among them). */
+  alternates?: { photoWater: CourseItem[]; fema: CourseItem[] };
 };
 
 /** The sources a site comes from, each with its own progress. */
@@ -114,6 +120,8 @@ export type ImportOptions = {
   summerFill?: boolean;
   /** The US government's maps: creeks and ponds (USGS), wetlands (USFWS), buildings (FEMA). */
   gov?: boolean;
+  /** The photo to use, by its source (unset: the best one there). */
+  photo?: PhotoSourceId;
   /** How each source is going, and all of it together. */
   onProgress?: (p: ImportProgress) => void;
   /** What each source brought, as it lands. */
@@ -209,6 +217,19 @@ const govSummary = (added: CourseItem[]) => {
     built ? `${built} ${built === 1 ? "building" : "buildings"}` : ""
   ].filter(Boolean);
   return `From the US maps, not on OpenStreetMap: ${parts.join(", ")}.`;
+};
+
+/** A painted court the photo's water pass took for a pond: a patch that's a rectangle (its outline
+ * fills 85% of the box round it or more), 30 to 130 ft across and 45 to 260 ft long (one
+ * court with its run-off, or a row of them). Tennis from 55 ft across, pickleball under that. */
+export const courtOf = (a: AreaItem): AreaItem | null => {
+  if (a.points.length < 4) return null;
+  const { a: half, b: halfW } = orientedBox(a.points);
+  const long = half * 2, wide = halfW * 2;
+  if (wide < 30 || wide > 130 || long < 45 || long > 260) return null;
+  if (polygonArea(a.points) < long * wide * 0.85) return null;
+  const c = createField(wide >= 55 ? "tennis" : "pickleball", boxOutline(a.points));
+  return { ...c, importSource: "photo" };
 };
 
 const OSM_NAMES: Record<string, [string, string]> = {
@@ -488,15 +509,21 @@ export const canopyKeepOut = (items: CourseItem[]) => ({
   lines: items.filter((i): i is LineItem => i.type === "line" && i.kind === "road").map(i => ({ points: i.points, width: i.width ?? LINE_KINDS.road.width }))
 });
 
-export const withMeasuredTrees = (items: CourseItem[], trees: LidarTree[]) => {
+export const withMeasuredTrees = (items: CourseItem[], trees: LidarTree[], bushes: LidarBush[] = [], free: (p: P) => boolean = () => true) => {
   const items2 = items.filter(i => {
     if (!isImported(i)) return true;
-    if (i.type === "area" && i.importSource === "lidar") return false;
+    if ((i.type === "area" || i.type === "tree") && i.importSource === "lidar") return false;
     if (!trees.length) return true;
     if (i.type === "tree" && (i.importSource === "photo" || (i.importSource === "osm" && i.treeType !== "bush"))) return false;
     return !(i.type === "area" && i.kind === "woods" && (i.importSource === "photo" || i.importSource === "osm"));
   });
-  return { items: items2 };
+  // The bushes the survey measured, each one to edit like one planted (not on a road, a building or
+  // in water, and not where a bush is already)
+  const had = items2.filter((t): t is TreeItem => t.type === "tree" && t.treeType === "bush");
+  const measured = bushes
+    .filter(([x, y, , r]) => free({ x, y }) && !had.some(t => Math.hypot(t.x - x, t.y - y) < Math.max(4, r + t.radius * 0.5)))
+    .map(([x, y, h, r]) => ({ ...createTree({ x, y }, { radius: Math.round(r * 2) / 2, height: Math.max(3, Math.round(h)), treeType: "bush" }), importSource: "lidar" as const }));
+  return { items: [...items2, ...measured], bushes: measured.length };
 };
 
 /**
@@ -664,7 +691,7 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       progress.set("photo", { state: "coming", fraction: 0 });
       // (its near-infrared band too, a second download: leaves and water are told apart by it, and a
       // shadow or a blue roof isn't taken for a pond)
-      const get = (source: MapImagerySource) => { const nir = source === "satellite"; return cached("photo", `${source}|${nir ? "nir" : ""}|${here}`, report => fetchMapImagery(location, width, height, source, report, { signal, nir }), { signal, onProgress: f => progress.set("photo", { fraction: f * 0.95 }) }); };
+      const get = (source: MapImagerySource) => { const nir = source === "satellite"; return cached("photo", `${source}|${nir ? "nir" : ""}|${opts.photo ?? ""}|${here}`, report => fetchMapImagery(location, width, height, source, report, { signal, nir, photo: opts.photo }), { signal, onProgress: f => progress.set("photo", { fraction: f * 0.95 }) }); };
       let got = get(opts.imagery as MapImagerySource);
       const map = await untilAborted(got.value, signal).catch(async err => {
         if (isAbort(err) || !satellite) throw err;
@@ -714,7 +741,8 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     // The buildings traced from the air (sorted out against OpenStreetMap's once both are in)
     const tracedJob = !opts.osm ? Promise.resolve(null) : soft("buildings", async () => {
       progress.set("buildings", { state: "coming" });
-      const got = cached("buildings", "traced", () => tracedBuildings(bounds), { signal, within: bounds });
+      // (90 s at most: the rest of the import never waits on it for longer)
+      const got = cached("buildings", "traced", () => Promise.race([tracedBuildings(bounds), new Promise<never>((_, no) => setTimeout(() => no(new Error("The buildings from the air took too long")), 90000))]), { signal, within: bounds });
       const list = await untilAborted(got.value, signal);
       return { list, hit: got.hit };
     });
@@ -756,18 +784,19 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
         const one = (what: string, run: Promise<OsmFeature[]>) => run.catch(err => { if (isAbort(err)) throw err; console.info(`US maps: no ${what}`, err); return null; });
         const [water, wet, built] = await Promise.all([one("water", fetchWater(bounds, { signal })), one("wetlands", fetchWetlands(bounds, { signal })), one("buildings", fetchStructures(bounds, { signal }))]);
         if (!water && !wet && !built) throw new Error("None of the US maps answered");
-        return { water: water ?? [], wet: wet ?? [], built: built ?? [] };
+        return { water: water ?? [], wet: wet ?? [], built: built ?? [], waterOk: !!water || !!wet };
       }, { signal, within: bounds });
       const v = await untilAborted(got.value, signal);
       const tag = <S extends "usgs" | "nwi" | "fema">(fs: OsmFeature[], src: S) => osmFeatureItems(fs, ref).items.map(i => ({ ...i, importSource: src }) as CourseItem);
-      const found = { water: tag(v.water, "usgs"), wet: tag(v.wet, "nwi"), built: tag(v.built, "fema") };
+      const found = { water: tag(v.water, "usgs"), wet: tag(v.wet, "nwi"), built: tag(v.built, "fema"), waterOk: v.waterOk };
       const n = found.water.length + found.wet.length + found.built.length;
       progress.set("gov", { state: n ? "done" : "not-here", count: n, source: "USGS, USFWS, FEMA", cached: got.hit });
       return found;
     });
 
     // OpenStreetMap: waited for a little longer while the rest is still coming
-    const restIn = Promise.allSettled([photoJob, elevationJob, lidarJob, tracedJob, natureJob, govJob]);
+    // (the rest given 3 minutes at most: one that stalls doesn't hold OpenStreetMap up for ever)
+    const restIn = Promise.race([Promise.allSettled([photoJob, elevationJob, lidarJob, tracedJob, natureJob, govJob]), new Promise(r => setTimeout(r, 180000))]);
     const osmJob = !opts.osm ? Promise.resolve(null) : soft("osm", async () => {
       progress.set("osm", { state: "coming" });
       const got = fetchOsm(bounds, { signal, settle: restIn, onBusy: () => progress.set("osm", { busy: true }), onTiles: () => progress.set("osm", { busy: false }) });
@@ -844,13 +873,21 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     // What OpenStreetMap maps already (its woods and water) needn't come again from the photo
     const mappedAs = (kind: string) => mapped.filter((m): m is AreaItem => m.type === "area" && m.kind === kind);
     const inside = (p: P, kind: string) => mappedAs(kind).some(a => pointInPolygon(p, a.points));
-    const water = found.water.filter(a => !inside(centroid(a.points), "water"));
+    // (the photo's water: where the US maps of water answered, theirs is the water, and the photo's
+    // dark patches are tree shadows more often than ponds; a painted court, blue or green, is a court)
+    const courts = found.water.map(courtOf).filter((c): c is AreaItem => !!c && !mapped.some(m => m.type === "area" && (m.kind === "water" || m.kind === "field") && pointInPolygon(centroid(c.points), m.points)));
+    const photoWater = found.water.filter(a => !courtOf(a));
+    const water = (gov?.waterOk ? [] : photoWater).filter(a => !inside(centroid(a.points), "water"));
+    const alternates = { photoWater: (gov?.waterOk ? photoWater.filter(a => !inside(centroid(a.points), "water")) : []).map(signed), fema: (gov?.built ?? []).map(signed) };
+    if (gov?.waterOk && photoWater.length) notes.push("The water came from the USGS and USFWS maps, not the photo, where tree shadows look like ponds.");
+    if (courts.length) notes.push(`${courts.length} ${courts.length === 1 ? "court" : "courts"} found on the photo.`);
     // (and never on a road, a building, parking or in water, as OpenStreetMap or the photo has them)
     const nowhere = treeFree([...mapped, ...found.water]);
     let all: CourseItem[] = [
       ...mapped,
       ...found.woods.filter(a => !inside(centroid(a.points), "woods") && !nowhere(centroid(a.points))),
       ...water,
+      ...courts,
       ...found.trees.filter(t => !inside(t, "woods") && !inside(t, "water") && !nowhere(t))
     ];
     // With trees measured from the air: each on its own, in place of the photo's (the same step as
@@ -863,7 +900,17 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       // measured ones, so the list of those stays as it was)
       const summer = "leaf" in found && found.leaf ? treesFromSummer(lidar.trees, measured.lidar.measured, found.leaf, width, height, treeFree(all)) : [];
       if (summer.length) lidar = { ...lidar, trees: [...lidar.trees, ...summer], fromPhoto: summer.length };
-      all = withMeasuredTrees(all, lidar.trees).items;
+      const measuredAll = withMeasuredTrees(all, lidar.trees, findBushes(measured.lidar.measured), p => !nowhere(p));
+      all = measuredAll.items;
+      if (measuredAll.bushes) notes.push(`${measuredAll.bushes.toLocaleString()} ${measuredAll.bushes === 1 ? "bush" : "bushes"} measured from the air.`);
+      // Parking lots no map has: the photo and the survey together
+      if (background && satellite) {
+        const lots = await untilAborted(parkingFromPhoto(background, width, height, measured.lidar.measured, all), signal).catch(err => { if (isAbort(err)) throw err; console.info("Parking lots not looked for", err); return [] as AreaItem[]; });
+        if (lots.length) {
+          all = [...all, ...lots];
+          notes.push(`${lots.length} parking ${lots.length === 1 ? "lot" : "lots"} found on the photo and the survey.`);
+        }
+      }
       const stand = standingTrees(lidar, () => false, treeFree(mapped)).stand, first = lidar.trees.length - summer.length;
       standing = stand.length;
       const fromSummer = stand.filter(k => k >= first).length;
@@ -904,6 +951,7 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       osmFailed,
       lidar,
       standing,
+      alternates,
       course,
       sources: progress.sources
     };

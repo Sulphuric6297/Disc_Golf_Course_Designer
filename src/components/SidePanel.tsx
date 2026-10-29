@@ -122,7 +122,7 @@ function CameIn() {
             text={lidar ? many(lidar.trees.length, "measured tree", "measured trees") : site.noLidar ? "No aerial survey covers this spot" : "Couldn't read the aerial survey"}
             sub={lidar ? lidar.source : undefined} warn={!lidar}>
             {!measuring && placed && <Button small onClick={() => void measureLidar()} testid="measure-lidar">{lidar ? "Measure again" : site.noLidar ? "Check again" : "Try again"}</Button>}
-            {!measuring && lidar && <Button small tone="danger" onClick={() => { changeDoc(d => ({ lidar: undefined, site: { ...d.site, noLidar: undefined, lidarFailed: undefined } })); toast("Took out the measured trees.", "info", true); }} testid="remove-lidar">Remove</Button>}
+            {!measuring && lidar && <Button small tone="danger" onClick={() => { changeDoc(d => ({ lidar: undefined, items: d.items.filter(i => !(i.type === "tree" && i.importSource === "lidar" && asItCame(i))), site: { ...d.site, noLidar: undefined, lidarFailed: undefined } })); toast("Took out the measured trees and bushes.", "info", true); }} testid="remove-lidar">Remove</Button>}
           </CameRow>
         )}
         {measuring && lidarRow && <div data-testid="lidar-busy" className="pb-1.5"><ProgressBar fraction={lidarBusy} label="Measuring trees and ground" /></div>}

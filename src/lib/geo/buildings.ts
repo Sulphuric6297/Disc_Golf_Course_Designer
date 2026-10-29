@@ -29,7 +29,8 @@ const Z = 14;
 
 /** Bytes `from` to `to` (inclusive) of the file. (Only a Range header: no preflight needed.) */
 const range = async (url: string, from: number, to: number) => {
-  const res = await fetch(url, { headers: { Range: `bytes=${from}-${to}` } });
+  // (a request that stalls gives up after 20 s, so the import never waits on it for ever)
+  const res = await fetch(url, { headers: { Range: `bytes=${from}-${to}` }, signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return new Uint8Array(await res.arrayBuffer());
 };
@@ -231,7 +232,7 @@ export const allBuildings = (bounds: GeoBounds): Promise<TracedBuilding[]> => {
 };
 
 const overtureBuildings = async (bounds: GeoBounds): Promise<TracedBuilding[]> => {
-  const release = ((await (await fetch(CATALOG)).json()) as { latest?: string }).latest;
+  const release = ((await (await fetch(CATALOG, { signal: AbortSignal.timeout(15000) })).json()) as { latest?: string }).latest;
   if (!release) throw new Error("no Overture release");
   const url = FILE(release);
   const head = await range(url, 0, 16383);

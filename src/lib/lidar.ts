@@ -417,6 +417,8 @@ export type Measured = {
   surface: Float32Array; snx: number; sny: number; leafOn: boolean | null; roofs: Uint8Array;
   /** The survey told what grows apart (its vegetation classes). */
   sorted: boolean;
+  /** What grows low, 2 to 25 ft up (tenths of a foot; 0: nothing, or a roof): for the bushes. */
+  shrub: Uint8Array;
 };
 
 export const measureSite = (g: Gathered, opts: { dem?: Dem | null; outlines?: P[][]; leafOn?: boolean | null } = {}): Measured => {
@@ -449,6 +451,8 @@ export const measureSite = (g: Gathered, opts: { dem?: Dem | null; outlines?: P[
   }
   const canopy = new Float32Array(n);
   for (let c = 0; c < n; c++) canopy[c] = roofs[c] ? 0 : h[c];
+  const shrub = new Uint8Array(n);
+  for (let c = 0; c < n; c++) if (!roofs[c] && h[c] >= 2 && h[c] <= 25) shrub[c] = Math.round(h[c] * 10);
   // (only where a 3 x 3 block of it stands: a wire or a fence line is one or two cells wide)
   const on = (c: number) => canopy[c] > 8;
   const core = new Uint8Array(n);
@@ -461,7 +465,55 @@ export const measureSite = (g: Gathered, opts: { dem?: Dem | null; outlines?: P[
   for (let c = 0; c < n; c++) if (!near[c]) canopy[c] = 0;
   // (the survey's own season first, then the one it was said to fly in)
   const leafOn = leafOnAt(flownOn(g.times[0] ?? [])) ?? opts.leafOn ?? null;
-  return { nx, ny, cell, width: g.width, height: g.height, ground, canopy, nUp: g.nUp, nMulti: g.nMulti, nGround: g.nGround, surface: g.surface, snx: g.snx, sny: g.sny, leafOn, roofs, sorted };
+  return { nx, ny, cell, width: g.width, height: g.height, ground, canopy, nUp: g.nUp, nMulti: g.nMulti, nGround: g.nGround, surface: g.surface, snx: g.snx, sny: g.sny, leafOn, roofs, sorted, shrub };
+};
+
+/** A bush the survey measured: where it stands, how tall and how wide (ft). */
+export type LidarBush = [x: number, y: number, height: number, radius: number];
+
+/** The bushes: clumps of low growth (3 to 15 ft) out from under the trees' crowns, round (no more
+ * than two and a half times as long as wide: a hedge or a fence line is longer) and 3 to 24 ft
+ * across, that the laser partly went through (what grows lets some of it on to the ground; a car,
+ * a shed or a stack of something doesn't), or that the survey itself sorted as growing. */
+export const findBushes = (m: Pick<Measured, "nx" | "ny" | "cell" | "canopy" | "shrub" | "nUp" | "nMulti" | "sorted">): LidarBush[] => {
+  const { nx, ny, cell, canopy, shrub } = m, n = nx * ny;
+  // (a survey measured before bushes were looked for)
+  if (!shrub) return [];
+  const on = (c: number) => shrub[c] >= 30 && shrub[c] <= 150 && canopy[c] <= 0;
+  const seen = new Uint8Array(n), out: LidarBush[] = [];
+  const stack: number[] = [];
+  for (let s0 = 0; s0 < n; s0++) {
+    if (seen[s0] || !on(s0)) continue;
+    // (one clump: every low cell joined to it, corners too)
+    let N = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, top = 0, up = 0, multi = 0, tall = false;
+    seen[s0] = 1;
+    stack.push(s0);
+    while (stack.length) {
+      const c = stack.pop()!, i = c % nx, j = (c - i) / nx;
+      N++; sx += i; sy += j; sxx += i * i; syy += j * j; sxy += i * j;
+      top = Math.max(top, shrub[c]); up += m.nUp[c]; multi += m.nMulti[c];
+      for (let b = Math.max(0, j - 1); b <= Math.min(ny - 1, j + 1); b++) for (let a = Math.max(0, i - 1); a <= Math.min(nx - 1, i + 1); a++) {
+        const d = b * nx + a;
+        if (seen[d]) continue;
+        // (a clump that runs on into a tree's crown or something taller is part of that)
+        if (shrub[d] > 150 || canopy[d] > 0) tall = true;
+        if (!on(d)) continue;
+        seen[d] = 1;
+        stack.push(d);
+      }
+      if (N > 4000) break;
+    }
+    if (tall || N > 4000) continue;
+    // (its cells reach a cell past the clump all round: the highest within a cell of each)
+    const r = Math.sqrt((N * cell * cell) / Math.PI) - cell;
+    if (r < 1.5 || r > 12) continue;
+    const ax = sx / N, ay = sy / N, vxx = sxx / N - ax * ax, vyy = syy / N - ay * ay, vxy = sxy / N - ax * ay;
+    const mid = (vxx + vyy) / 2, dev = Math.sqrt(Math.max(0, ((vxx - vyy) / 2) ** 2 + vxy * vxy));
+    if (Math.sqrt(Math.max(0, mid + dev)) > 2.5 * Math.sqrt(Math.max(1e-6, mid - dev))) continue;
+    if (!m.sorted && multi < up * 0.2) continue;
+    out.push([Math.round((ax + 0.5) * cell * 10) / 10, Math.round((ay + 0.5) * cell * 10) / 10, Math.round(top) / 10, Math.round(r * 10) / 10]);
+  }
+  return out;
 };
 
 /** Roofs in a survey that didn't sort them out: cells 6 ft and more up where, over 10 ft round,
@@ -632,10 +684,14 @@ export const findTrees = (m: { nx: number; ny: number; cell: number; canopy: Flo
   }
   // Each tree: its crown's cells, how many points stood there and reached the ground, its top
   const cells = new Float64Array(tops.length), up = new Float64Array(tops.length), multi = new Float64Array(tops.length), down = new Float64Array(tops.length), high = new Float32Array(tops.length);
+  // (and its crown's spread each way, for one that's a long thin streak: a wire)
+  const mx = new Float64Array(tops.length), my = new Float64Array(tops.length), mxx = new Float64Array(tops.length), myy = new Float64Array(tops.length), mxy = new Float64Array(tops.length);
   for (let c = 0; c < n; c++) {
     if (!label[c]) continue;
     const k = find(label[c] - 1);
     cells[k]++;
+    const ci = c % nx, cj = (c - ci) / nx;
+    mx[k] += ci; my[k] += cj; mxx[k] += ci * ci; myy[k] += cj * cj; mxy[k] += ci * cj;
     if (m.nUp) up[k] += m.nUp[c];
     if (m.nMulti) multi[k] += m.nMulti[c];
     if (m.nGround) down[k] += m.nGround[c];
@@ -650,6 +706,17 @@ export const findTrees = (m: { nx: number; ny: number; cell: number; canopy: Flo
     if (m.sorted === false && multi[k] < up[k] * 0.1) return;
     const h = Math.max(high[k], topH[k]);
     const r = Math.min(Math.max(3, Math.sqrt((cells[k] * cell * cell) / Math.PI) - cell / 2), CROWN_MAX * h);
+    // Not trees: a power pole (a crown hardly wider than the pole, standing tall: a real tree that
+    // tall spreads 8 ft or more) and a wire (its crown a long thin streak, its width under 10 ft
+    // and a third of its length or less), wherever the survey didn't sort them out
+    if (r <= 3.5 && h > 12) return;
+    {
+      const N = cells[k], ax = mx[k] / N, ay = my[k] / N;
+      const vxx = mxx[k] / N - ax * ax, vyy = myy[k] / N - ay * ay, vxy = mxy[k] / N - ax * ay;
+      const mid = (vxx + vyy) / 2, dev = Math.sqrt(Math.max(0, ((vxx - vyy) / 2) ** 2 + vxy * vxy));
+      const long = Math.sqrt(Math.max(0, mid + dev)), thin = Math.sqrt(Math.max(0, mid - dev));
+      if (N >= 6 && thin * 4 * cell < 10 && long > thin * 3) return;
+    }
     // (how much it falls halfway out, as measured, not smoothed: a cone a good deal, a round
     // crown a little)
     let fall = 0, ways = 0;

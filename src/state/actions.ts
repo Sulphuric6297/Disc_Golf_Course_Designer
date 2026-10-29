@@ -9,7 +9,9 @@ import {
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { courseStats, holeStats } from "../lib/holeStats";
-import type { AreaItem, BasketItem, CourseDoc, CourseItem, FieldKind, Hole, LineItem, LineKind, P, PinPosition, TeeLevel, ToolMode, TreeItem, TreeKind } from "../types";
+import type { AreaItem, BasketItem, CourseDoc, CourseItem, FieldKind, FieldLeague, FieldPart, FieldPartSet, Hole, LineItem, LineKind, P, PinPosition, TeeLevel, ToolMode, TreeItem, TreeKind } from "../types";
+import { LEAGUES } from "../lib/fieldPlan";
+import { orientedBox } from "../lib/structures";
 import { changeDoc, editor, getDoc, removeHole, removeItems, updateItem, useEditor, useCourse } from "./course";
 import { toast } from "./toast";
 import { keepsTreesOut, treeFree } from "../lib/treeFree";
@@ -579,6 +581,46 @@ export const setFieldKind = (id: string, kind: FieldKind) => {
     ...(isBallField(kind) ? {} : { home: undefined }),
     ...(MARKED_FIELDS.includes(kind) ? {} : { fieldTurn: undefined })
   } as Partial<CourseItem>);
+};
+
+/** A ball field set to a league's size: its outline grown or shrunk about home plate so the fence
+ * stands as far out as that league's (and the backstop behind home has room). */
+export const setFieldLeague = (id: string, league: FieldLeague) => {
+  const a = getDoc().items.find(i => i.id === id);
+  if (!a || a.type !== "area" || a.kind !== "field" || !isBallField(fieldKindOf(a))) return;
+  const home = a.points[fieldHome(a)];
+  const reach = Math.max(...a.points.map(p => Math.hypot(p.x - home.x, p.y - home.y)));
+  const L = LEAGUES[league];
+  const k = (L.fence + L.backstop + 2) / Math.max(1, reach);
+  const points = a.points.map(p => ({ x: home.x + (p.x - home.x) * k, y: home.y + (p.y - home.y) * k }));
+  const c = centroid(points);
+  updateItem(id, { league, points, x: c.x, y: c.y } as Partial<CourseItem>);
+};
+
+/** Courts in a row, `n` of them: the outline made that many courts (with their run-off) side by
+ * side, round its middle, the courts' length kept the way it runs. */
+export const setCourtCount = (id: string, n: number) => {
+  const a = getDoc().items.find(i => i.id === id);
+  if (!a || a.type !== "area" || a.kind !== "field") return;
+  const [cl, cw] = FIELD_KINDS[fieldKindOf(a)].size;
+  const box = orientedBox(a.points);
+  // (the courts' length: along the outline's long side when one court is longer than the row is wide)
+  const lenDir = box.a * 2 >= cl * 0.8 && box.b * 2 < cl * 0.8 ? box.u : box.v;
+  const side = { x: -lenDir.y, y: lenDir.x }, hl = cl / 2, hw = (n * cw) / 2;
+  const at = (s: number, t: number) => ({ x: box.c.x + lenDir.x * s + side.x * t, y: box.c.y + lenDir.y * s + side.y * t });
+  const points = [at(-hl, -hw), at(hl, -hw), at(hl, hw), at(-hl, hw)];
+  updateItem(id, { points, x: box.c.x, y: box.c.y, fieldTurn: undefined } as Partial<CourseItem>);
+};
+
+/** One part of a field set: switched off or on, its height, how far it stands. */
+export const setFieldPart = (id: string, part: FieldPart, patch: FieldPartSet, history = true) => {
+  const a = getDoc().items.find(i => i.id === id);
+  if (!a || a.type !== "area" || a.kind !== "field") return;
+  const now = { ...a.parts?.[part], ...patch };
+  for (const k of Object.keys(now) as (keyof FieldPartSet)[]) if (now[k] === undefined || now[k] === false) delete now[k];
+  const parts = { ...a.parts, [part]: now };
+  if (!Object.keys(now).length) delete parts[part];
+  updateItem(id, { parts: Object.keys(parts).length ? parts : undefined } as Partial<CourseItem>, history);
 };
 
 /** A ball field's home plate moved on to its outline's next corner. */

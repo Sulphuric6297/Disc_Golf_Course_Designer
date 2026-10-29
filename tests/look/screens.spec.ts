@@ -653,6 +653,7 @@ test.describe("phone", () => {
     await page.waitForTimeout(1500);
     await shot(page, "m02-phone-find-site");
     await page.getByTestId("import-site").click();
+    await page.getByTestId("review-bring").click({ timeout: 60_000 });
     await expect(page.getByTestId("import-site")).toBeHidden({ timeout: 60_000 });
     await page.waitForTimeout(1500);
     await shot(page, "m03-phone-hole-tool");

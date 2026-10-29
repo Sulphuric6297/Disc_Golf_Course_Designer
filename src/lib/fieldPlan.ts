@@ -3,7 +3,7 @@
 // up (goals, nets, hoops, bases, backstops, play structures). Pure: the printed map draws the marks
 // as SVG, the 3D view paints them into one texture per field and builds the props.
 import { FIELD_KINDS } from "../constants";
-import type { AreaItem, FieldKind, MapTheme, P } from "../types";
+import type { AreaItem, CourtColors, FieldKind, FieldLeague, FieldPart, FieldPartSet, MapTheme, P } from "../types";
 import { courtGrid, fieldHome, fieldKindOf } from "./fields";
 import { offsetPolygon, orientedBox } from "./structures";
 
@@ -13,19 +13,20 @@ export type FieldInk =
   | "grass" | "stripe" | "endzone" | "dirt" | "mound" | "chalk" | "court" | "courtOut" | "kitchen" | "key" | "hard"
   | "sand" | "tape" | "water" | "deep" | "lane" | "coping" | "deck" | "rubber" | "track" | "mulch" | "curb" | "concrete"
   | "skate" | "bowl" | "ramp" | "metal" | "splash" | "spray" | "worn" | "bed" | "path" | "plant" | "plant2" | "flower"
-  | "flower2" | "play1" | "play2" | "play3" | "wood" | "fence" | "shadow" | "net";
+  | "flower2" | "play1" | "play2" | "play3" | "wood" | "fence" | "shadow" | "net" | "courtG" | "courtR" | "block" | "dirtTan" | "dirtBrown" | "outG" | "outB" | "outT";
 
 /** Inks that are grass (the 3D grass grows there, mown). */
 export const GRASS_INKS = new Set<FieldInk>(["grass", "stripe", "endzone", "worn"]);
 
 const NATURAL: Record<FieldInk, string> = {
-  grass: "#5b8a3a", stripe: "#679a44", endzone: "#4f7c33", dirt: "#b17b4e", mound: "#a46c42", chalk: "#f4f4ee",
+  grass: "#5b8a3a", stripe: "#62923f", endzone: "#4f7c33", dirt: "#b17b4e", mound: "#a46c42", chalk: "#f4f4ee",
   court: "#3a6ea9", courtOut: "#4b7e57", kitchen: "#2d5c92", key: "#a34c33", hard: "#5a6168", sand: "#dcc79b", tape: "#2c6db6",
   water: "#45b1dc", deep: "#2f97cc", lane: "#1f4f8c", coping: "#ece7dc", deck: "#d6cfc0", rubber: "#3f7f9a", track: "#b5533c",
   mulch: "#7a5437", curb: "#cfc8b8", concrete: "#c9c4b9", skate: "#bcb8af", bowl: "#a19d94", ramp: "#adaaa2", metal: "#6c7177",
   splash: "#4b8fca", spray: "#eaf7ff", worn: "#9f8c60", bed: "#4f3725", path: "#bdb29a", plant: "#3e7b33", plant2: "#5e9339",
   flower: "#d8577a", flower2: "#e8b33a", play1: "#d24532", play2: "#2f6fd0", play3: "#f2c230", wood: "#b88a58", fence: "#56524c",
-  shadow: "#2b2a27", net: "#262626"
+  shadow: "#2b2a27", net: "#262626", courtG: "#2f6b45", courtR: "#a8513a", block: "#8f969a",
+  dirtTan: "#c9a06a", dirtBrown: "#8e6440", outG: "#3d7a52", outB: "#4a6f9e", outT: "#9e8a6c"
 };
 
 const hex = (c: string) => { const v = parseInt(c.replace("#", "").slice(0, 6), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
@@ -73,7 +74,7 @@ export type FieldMark = (
   | { k: "fill"; pts: P[]; ink: FieldInk; out?: boolean }
   | { k: "line"; pts: P[]; w: number; ink: FieldInk; closed?: boolean; dash?: [number, number]; round?: boolean; out?: boolean; minor?: boolean }
   | { k: "disc"; c: P; r: number; ink: FieldInk; out?: boolean }
-) & { up?: boolean };
+) & { up?: boolean; part?: FieldPart };
 
 /** What stands up, at real size (ft): `dir` is a unit vector in plan coordinates. */
 export type FieldProp =
@@ -82,7 +83,10 @@ export type FieldProp =
   | { k: "net"; a: P; b: P; top: number; mid: number; drop: number; post: number }
   | { k: "hoop"; at: P; dir: P }
   | { k: "base"; at: P; dir: P; size: number; h: number }
-  | { k: "fence"; pts: P[]; h: number; closed?: boolean }
+  | { k: "fence"; pts: P[]; h: number; closed?: boolean; cap?: string }
+  /** A dugout: block walls on three sides and a low one in front, a roof, a bench; `u` along it,
+   * its open side toward `toward` (the field). */
+  | { k: "dugout"; c: P; u: P; toward: P; len: number; depth: number; h: number }
   | { k: "deck"; c: P; u: P; size: number; h: number; color: string; roof?: string }
   | { k: "slide"; from: P; to: P; top: number; color: string }
   | { k: "bridge"; a: P; b: P; h: number }
@@ -93,12 +97,16 @@ export type FieldProp =
   | { k: "spray"; at: P; h: number; color: string }
   | { k: "bed"; pts: P[]; h: number }
   | { k: "plant"; at: P; r: number; color: string };
+/** (and which part it is) */
+export type FieldPropOf = FieldProp & { part?: FieldPart };
 
 export type FieldPlan = {
   kind: FieldKind;
+  /** A ball field's size, as set or worked out. */
+  league?: FieldLeague;
   outline: P[];
   marks: FieldMark[];
-  props: FieldProp[];
+  props: FieldPropOf[];
   /** How far past the outline the marks reach (ft). */
   reach: number;
 };
@@ -178,7 +186,19 @@ const seeded = (seed: number) => () => ((seed = (seed * 16807) % 2147483647) / 2
 // ------------------------------------------------------------------ the layouts
 
 /** A field's layout, or null for an outline too small to hold one. */
-export const fieldPlan = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "home" | "id">): FieldPlan | null => {
+export const fieldPlan = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "home" | "id" | "league" | "parts" | "courtColors">): FieldPlan | null => {
+  const plan = layOut(a);
+  if (!plan) return null;
+  // (a part switched off: none of it, on the ground or standing)
+  const off = new Set(Object.entries(a.parts ?? {}).filter(([, v]) => v?.off).map(([k]) => k));
+  if (off.size) {
+    plan.marks = plan.marks.filter(m => !m.part || !off.has(m.part));
+    plan.props = plan.props.filter(q => !q.part || !off.has(q.part));
+  }
+  return plan;
+};
+
+const layOut = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "home" | "id" | "league" | "parts" | "courtColors">): FieldPlan | null => {
   const outline = a.points;
   if (outline.length < 3) return null;
   const kind = fieldKindOf(a);
@@ -187,7 +207,7 @@ export const fieldPlan = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "
   const at = (s: number, t: number): P => ({ x: F.c.x + F.u.x * s + F.v.x * t, y: F.c.y + F.u.y * s + F.v.y * t });
   const rect = (s0: number, t0: number, s1: number, t1: number) => [at(s0, t0), at(s1, t0), at(s1, t1), at(s0, t1)];
   const marks: FieldMark[] = [];
-  const props: FieldProp[] = [];
+  const props: FieldPropOf[] = [];
   const plan: FieldPlan = { kind, outline, marks, props, reach: 0 };
   const fill = (pts: P[], ink: FieldInk, out = false) => marks.push({ k: "fill", pts, ink, ...(out ? { out } : {}) });
   const line = (pts: P[], w: number, ink: FieldInk = "chalk", more: Partial<Extract<FieldMark, { k: "line" }>> = {}) => marks.push({ k: "line", pts, w, ink, ...more });
@@ -202,7 +222,7 @@ export const fieldPlan = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "
   switch (kind) {
     case "baseball":
     case "softball":
-      ballField(plan, fieldHome(a), kind === "softball");
+      ballField(plan, fieldHome(a), kind === "softball", a.league, a.parts ?? {});
       break;
 
     case "soccer": {
@@ -271,7 +291,7 @@ export const fieldPlan = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "
     case "pickleball":
     case "basketball":
     case "volleyball":
-      courts(plan, kind, a.fieldTurn ?? 0);
+      courts(plan, kind, a.fieldTurn ?? 0, a.courtColors ?? "blue", a.parts ?? {});
       break;
 
     case "playground": {
@@ -374,37 +394,61 @@ export const fieldPlan = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "
 
 const polyArea = (pts: P[]) => pts.reduce((s, p, i) => { const q = pts[(i + 1) % pts.length]; return s + p.x * q.y - q.x * p.y; }, 0) / 2;
 
+/** A ball field's sizes by who plays on it (ft): the bases apart, home to the rubber, the infield
+ * dirt's reach from the rubber, the mound's or pitcher's circle's radius, the backstop behind home
+ * and its height, the dugouts' length, the mown bands' width. Little League's and the high
+ * schools' own figures; softball's infield all dirt. */
+export const LEAGUES: Record<FieldLeague, { label: string; bases: number; pitch: number; arc: number; mound: number; circle?: boolean; skinned?: boolean; backstop: number; backH: number; dugout: number; band: number; fence: number }> = {
+  teeball: { label: "Tee-ball", bases: 50, pitch: 38, arc: 45, mound: 5, circle: true, skinned: true, backstop: 20, backH: 12, dugout: 18, band: 10, fence: 150 },
+  little: { label: "Little League", bases: 60, pitch: 46, arc: 50, mound: 5, backstop: 25, backH: 16, dugout: 24, band: 12, fence: 200 },
+  softball: { label: "Softball", bases: 60, pitch: 40, arc: 60, mound: 8, circle: true, skinned: true, backstop: 25, backH: 16, dugout: 24, band: 12, fence: 200 },
+  high: { label: "High school", bases: 90, pitch: 60.5, arc: 95, mound: 9, backstop: 45, backH: 20, dugout: 36, band: 18, fence: 320 }
+};
+
+/** The sizes in the order they're offered. */
+export const LEAGUE_ORDER: FieldLeague[] = ["teeball", "little", "softball", "high"];
+
+/** A ball field's size: as set, or by how far it reaches to center field (softball's own). */
+export const leagueOf = (soft: boolean, set: FieldLeague | undefined, reach: number): FieldLeague =>
+  set ?? (soft ? "softball" : reach < 175 ? "teeball" : reach < 260 ? "little" : "high");
+
 /**
- * A baseball or softball field: home plate at a corner, the bases on a diamond as big as the field
- * allows (90 ft bases on a full baseball field, 60 on a softball or a Little League one), the dirt
- * infield, the mound or pitcher's circle, foul lines out to the outline, a warning track along the
- * outfield and a chain-link backstop behind home.
+ * A baseball or softball field, as big as its league's: home plate in the outline's corner with the
+ * backstop behind it, the bases on their diamond, the infield dirt round the rubber out to its reach
+ * (all dirt on a softball field), the mound or pitcher's circle, foul lines out to the outline, the
+ * outfield mown in bands, a warning track and a capped fence along the outfield, a dugout off each
+ * baseline. Smaller all round if the outline is too small for the league. Each mark and prop says
+ * which part it is.
  */
-const ballField = (plan: FieldPlan, hi: number, soft: boolean) => {
+const ballField = (plan: FieldPlan, hi: number, soft: boolean, set: FieldLeague | undefined, parts: Partial<Record<FieldPart, FieldPartSet>>) => {
   const { outline, marks, props } = plan;
-  const fill = (pts: P[], ink: FieldInk) => marks.push({ k: "fill", pts, ink });
-  const line = (pts: P[], w: number, ink: FieldInk = "chalk", closed = false) => marks.push({ k: "line", pts, w, ink, closed });
-  fill(outline, "grass");
+  const fill = (pts: P[], ink: FieldInk, part: FieldPart) => marks.push({ k: "fill", pts, ink, part });
+  const line = (pts: P[], w: number, part: FieldPart, ink: FieldInk = "chalk", closed = false) => marks.push({ k: "line", pts, w, ink, closed, part });
   const corner = outline[hi];
   const prev = outline[(hi + outline.length - 1) % outline.length], next = outline[(hi + 1) % outline.length];
   let f = unit({ x: unit({ x: prev.x - corner.x, y: prev.y - corner.y }).x + unit({ x: next.x - corner.x, y: next.y - corner.y }).x, y: unit({ x: prev.x - corner.x, y: prev.y - corner.y }).y + unit({ x: next.x - corner.x, y: next.y - corner.y }).y });
   if (!Number.isFinite(f.x) || len(f) < 0.5) f = unit({ x: polyCentroid(outline).x - corner.x, y: polyCentroid(outline).y - corner.y });
   const D0 = rayOut(outline, corner, f).t;
   if (!Number.isFinite(D0) || D0 < 30) return;
-  const s = soft ? clampN(D0 * 0.27, 35, 60) : clampN(D0 * 0.25, 40, 90);
-  const sc = s / (soft ? 60 : 90);
-  const rb = clampN(s * 0.33, 12, 30);
-  const H = add(corner, f, rb);
+  const league = leagueOf(soft, set, D0);
+  plan.league = league;
+  const L = LEAGUES[league];
+  // (an outline too small for the league: everything smaller to fit, the infield in its first half)
+  const sc = Math.min(1, (D0 * 0.55) / ((parts.mound?.d ?? L.pitch) + (parts.infield?.d ?? L.arc)));
+  const clay: FieldInk = parts.infield?.c === "tan" ? "dirtTan" : parts.infield?.c === "brown" ? "dirtBrown" : "dirt";
+  const behind = (parts.backstop?.d ?? L.backstop) * sc;
+  fill(outline, "grass", "grass");
+  const H = add(corner, f, Math.min(behind + 2, D0 * 0.2));
   const right = { x: -f.y, y: f.x };
   const at = (x: number, y: number): P => ({ x: H.x + f.x * x + right.x * y, y: H.y + f.y * x + right.y * y });
-  // The outfield mown in bands across the line to center field
-  const band = clampN(D0 * 0.05, 8, 20), wide = D0 * 1.5;
-  for (let d = -rb; d < D0 * 1.2; d += band * 2) marks.push({ k: "fill", pts: [at(d, -wide), at(d + band, -wide), at(d + band, wide), at(d, wide)], ink: "stripe" });
-  const q = s / Math.SQRT2;
+  // The outfield mown in bands across the line to center field, the mower's width apart
+  const band = parts.grass?.w ?? L.band, wide = D0 * 1.5;
+  if (parts.grass?.n !== 0) for (let d = -behind; d < D0 * 1.2; d += band * 2) fill([at(d, -wide), at(d + band, -wide), at(d + band, wide), at(d, wide)], "stripe", "grass");
+  const s = (parts.lines?.d ?? L.bases) * sc, q = s / Math.SQRT2;
   const first = at(q, q), second = at(2 * q, 0), third = at(q, -q);
   const dR = turnBy(f, 45), dL = turnBy(f, -45);
   const hitR = rayOut(outline, H, dR), hitL = rayOut(outline, H, dL);
-  // The outfield: the outline between the foul lines, away from home
+  // The outfield fence: the outline between the foul lines, away from home
   const fence: P[] = [];
   if (hitR.edge >= 0 && hitL.edge >= 0) {
     const n = outline.length;
@@ -418,45 +462,59 @@ const ballField = (plan: FieldPlan, hi: number, soft: boolean) => {
     const mid = fwd ?? back;
     if (mid) fence.push(hitR.p, ...mid, hitL.p);
   }
-  // Warning track along the outfield fence
-  if (fence.length >= 2) line(fence, clampN(D0 * 0.035, 6, 15) * 2, "dirt");
-  // The infield dirt: round the mound out to the edge of the grass, between the foul lines
-  const mound = at((soft ? 43 : 60.5) * sc, 0);
-  const R = (soft ? 63 : 95) * sc;
-  let dirt = ellipse(mound, f, R, R, 56);
-  const nR = turnBy(f, 135), nL = turnBy(f, -135);
-  dirt = clipHalf(dirt, H, nR, 4 * sc);
-  dirt = clipHalf(dirt, H, nL, 4 * sc);
+  // Warning track along the fence, 15 ft (less on a small field)
+  if (fence.length >= 2) line(fence, (parts.track?.w ?? clampN(D0 * 0.05, 8, 15)) * 2, "track", clay);
+  // The infield dirt: round the rubber out to the league's reach, between the foul lines (a little
+  // past them), and the grass inside the base paths unless it's all dirt
+  const pitch = (parts.mound?.d ?? L.pitch) * sc;
+  const mound = at(pitch, 0);
+  const R = (parts.infield?.d ?? L.arc) * sc;
+  let dirt = ellipse(mound, f, R, R, 64);
+  dirt = clipHalf(dirt, H, turnBy(f, 135), 3 * sc);
+  dirt = clipHalf(dirt, H, turnBy(f, -135), 3 * sc);
   dirt = clipHalf(dirt, H, { x: -f.x, y: -f.y }, 2 * sc);
-  fill(dirt, "dirt");
-  // Baseball's infield grass, inside the base paths
-  if (!soft) {
+  fill(dirt, clay, "infield");
+  if (!L.skinned) {
     const w = 3.5 * sc;
-    fill([at(w * Math.SQRT2 + 4 * sc, 0), at(q, q - w * Math.SQRT2), at(2 * q - w * Math.SQRT2, 0), at(q, -q + w * Math.SQRT2)], "grass");
+    fill([at(w * Math.SQRT2 + 4 * sc, 0), at(q, q - w * Math.SQRT2), at(2 * q - w * Math.SQRT2, 0), at(q, -q + w * Math.SQRT2)], "grass", "grass");
   }
-  marks.push({ k: "disc", c: H, r: 13 * sc, ink: "dirt" });
-  for (const b of [first, second, third]) marks.push({ k: "disc", c: b, r: 6 * sc, ink: "dirt" });
-  if (soft) marks.push({ k: "line", pts: ellipse(mound, f, 8, 8, 32), w: 0.25, ink: "chalk", closed: true });
-  else marks.push({ k: "disc", c: mound, r: 9 * sc, ink: "mound" });
-  // Foul lines, out to the outline
-  if (Number.isFinite(hitR.t)) line([H, hitR.p], 0.33);
-  if (Number.isFinite(hitL.t)) line([H, hitL.p], 0.33);
-  // Batter's boxes, home plate, the rubber and the bases
-  for (const sg of [-1, 1]) line([at(-3, sg * 1.2), at(3, sg * 1.2), at(3, sg * 5.2), at(-3, sg * 5.2)], 0.25, "chalk", true);
-  fill([at(0.35, -0.71), at(0.35, 0.71), at(-0.35, 0.71), at(-0.85, 0), at(-0.35, -0.71)], "chalk");
-  const pitch = (soft ? 43 : 60.5) * sc;
-  fill([at(pitch - 0.25, -1), at(pitch + 0.25, -1), at(pitch + 0.25, 1), at(pitch - 0.25, 1)], "chalk");
+  marks.push({ k: "disc", c: H, r: (league === "high" ? 13 : 10) * sc, ink: clay, part: "infield" });
+  for (const b of [first, second, third]) marks.push({ k: "disc", c: b, r: (league === "high" ? 6 : 5) * sc, ink: clay, part: "infield" });
+  if (L.circle) marks.push({ k: "line", pts: ellipse(mound, f, L.mound * sc, L.mound * sc, 40), w: 0.25, ink: "chalk", closed: true, part: "mound" });
+  else marks.push({ k: "disc", c: mound, r: L.mound * sc, ink: "mound", part: "mound" });
+  fill([at(pitch - 0.25, -1), at(pitch + 0.25, -1), at(pitch + 0.25, 1), at(pitch - 0.25, 1)], "chalk", "mound");
+  // Foul lines out to the outline, the batter's boxes, home plate and the bases
+  if (Number.isFinite(hitR.t)) line([H, hitR.p], 0.33, "lines");
+  if (Number.isFinite(hitL.t)) line([H, hitL.p], 0.33, "lines");
+  for (const sg of [-1, 1]) line([at(-3, sg * 1.2), at(3, sg * 1.2), at(3, sg * 5.2), at(-3, sg * 5.2)], 0.25, "lines", "chalk", true);
+  fill([at(0.35, -0.71), at(0.35, 0.71), at(-0.35, 0.71), at(-0.85, 0), at(-0.35, -0.71)], "chalk", "lines");
   const bs = 1.25;
   for (const b of [first, second, third]) {
-    fill([add(add(b, dR, bs / 2), dL, bs / 2), add(add(b, dR, bs / 2), dL, -bs / 2), add(add(b, dR, -bs / 2), dL, -bs / 2), add(add(b, dR, -bs / 2), dL, bs / 2)], "chalk");
-    props.push({ k: "base", at: b, dir: dR, size: bs, h: 0.25 });
+    fill([add(add(b, dR, bs / 2), dL, bs / 2), add(add(b, dR, bs / 2), dL, -bs / 2), add(add(b, dR, -bs / 2), dL, -bs / 2), add(add(b, dR, -bs / 2), dL, bs / 2)], "chalk", "lines");
+    props.push({ k: "base", at: b, dir: dR, size: bs, h: 0.25, part: "lines" });
   }
-  // The backstop: chain link round behind home
+  // The backstop: chain link round behind home, its wings running out toward the dugouts
   const back: P[] = [];
-  for (let i = 0; i <= 12; i++) back.push(add(H, turnBy(f, 112 + (136 * i) / 12), rb));
-  props.push({ k: "fence", pts: back, h: soft ? 14 : 16 });
-  if (fence.length >= 2) props.push({ k: "fence", pts: fence, h: soft ? 5 : 6 });
-  plan.reach = 0;
+  for (let i = 0; i <= 16; i++) back.push(add(H, turnBy(f, 105 + (150 * i) / 16), behind));
+  props.push({ k: "fence", pts: back, h: parts.backstop?.h ?? L.backH, part: "backstop" });
+  marks.push({ k: "line", pts: back, w: 0.6, ink: "fence", part: "backstop", up: true, out: true });
+  // The outfield fence, its top capped yellow
+  if (fence.length >= 2) {
+    const cap = parts.fence?.c === "none" ? undefined : parts.fence?.c === "green" ? "#1f5a36" : "#f2c318";
+    props.push({ k: "fence", pts: fence, h: parts.fence?.h ?? (league === "high" ? 8 : 6), cap, part: "fence" });
+    marks.push({ k: "line", pts: fence, w: 0.8, ink: "fence", part: "fence", up: true });
+  }
+  // A dugout off each baseline: in foul ground, out from the line, its open side to the field
+  const dlen = parts.dugouts?.w ?? L.dugout * Math.max(0.7, sc), depth = 7, dout = parts.dugouts?.d ?? Math.max(14, behind * 0.6);
+  for (const sg of [1, -1]) {
+    const along = sg > 0 ? dR : dL, out = turnBy(along, sg * 90);
+    const c = add(add(H, along, Math.max(dlen / 2 + 6, s * 0.42)), out, dout + depth / 2);
+    const toward = { x: -out.x, y: -out.y };
+    props.push({ k: "dugout", c, u: along, toward, len: dlen, depth, h: 7.5, part: "dugouts" });
+    const hu = dlen / 2, hd = depth / 2;
+    marks.push({ k: "fill", pts: [add(add(c, along, -hu), out, -hd), add(add(c, along, hu), out, -hd), add(add(c, along, hu), out, hd), add(add(c, along, -hu), out, hd)], ink: "block", part: "dugouts", out: true });
+  }
+  plan.reach = dout + 8;
 };
 
 const polyCentroid = (pts: P[]) => ({ x: pts.reduce((s, p) => s + p.x, 0) / pts.length, y: pts.reduce((s, p) => s + p.y, 0) / pts.length });
@@ -476,7 +534,7 @@ const COURTS = {
  * courts); basketball with the keys, circles and three-point arcs and a hoop at each end (half a
  * court when its share is short); sand volleyball with its boundary straps and net.
  */
-const courts = (plan: FieldPlan, kind: keyof typeof COURTS, turn: number) => {
+const courts = (plan: FieldPlan, kind: keyof typeof COURTS, turn: number, colors: CourtColors = "blue", parts: Partial<Record<FieldPart, FieldPartSet>> = {}) => {
   const { marks, props, outline } = plan;
   const F = frameOf(outline, turn);
   const [cl, cw] = FIELD_KINDS[kind].size;
@@ -492,9 +550,13 @@ const courts = (plan: FieldPlan, kind: keyof typeof COURTS, turn: number) => {
   })() : courtGrid(kind, outline);
   const { nx, ny, across } = grid;
   const at = (s: number, t: number): P => ({ x: F.c.x + F.u.x * s + F.v.x * t, y: F.c.y + F.u.y * s + F.v.y * t });
-  const fill = (pts: P[], ink: FieldInk) => marks.push({ k: "fill", pts, ink });
-  const line = (pts: P[], w: number, ink: FieldInk = "chalk", closed = false) => marks.push({ k: "line", pts, w, ink, closed });
-  fill(outline, kind === "volleyball" ? "sand" : kind === "basketball" ? "hard" : "courtOut");
+  // (each mark's part: the surround, a court's own color, its lines, a net)
+  const courtInk: FieldInk = colors === "green" ? "courtG" : colors === "red" ? "courtR" : "court";
+  const partOf = (ink: FieldInk): FieldPart => (ink === "court" || ink === "kitchen" || ink === "key" ? "courts" : ink === "net" ? "nets" : "lines");
+  const fill = (pts: P[], ink: FieldInk) => marks.push({ k: "fill", pts, ink: ink === "court" ? courtInk : ink, part: partOf(ink) });
+  const line = (pts: P[], w: number, ink: FieldInk = "chalk", closed = false) => marks.push({ k: "line", pts, w, ink, closed, part: partOf(ink) });
+  const around: FieldInk = parts.surround?.c === "blue" ? "outB" : parts.surround?.c === "tan" ? "outT" : parts.surround?.c === "green" ? "outG" : kind === "volleyball" ? "sand" : kind === "basketball" ? "hard" : "courtOut";
+  marks.push({ k: "fill", pts: outline, ink: around, part: "surround" });
   const cu = (2 * F.a) / nx, cv = (2 * F.b) / ny;
   const lw = 0.17;
   for (let i = 0; i < nx; i++) {
@@ -523,7 +585,7 @@ const courts = (plan: FieldPlan, kind: keyof typeof COURTS, turn: number) => {
         line([C(-hl, 0), C(-hl + 0.5, 0)], lw);
         line([C(hl, 0), C(hl - 0.5, 0)], lw);
         line([C(0, -hw - 3 * k), C(0, hw + 3 * k)], 0.35, "net");
-        props.push({ k: "net", a: C(0, -hw - 3 * k), b: C(0, hw + 3 * k), top: 3.5, mid: 3, drop: 3.5, post: 3.6 });
+        props.push({ k: "net", a: C(0, -hw - 3 * k), b: C(0, hw + 3 * k), top: 3.5, mid: 3, drop: 3.5, post: 3.6, part: "nets" });
       } else if (kind === "pickleball") {
         fill(R(-hl, -hw, hl, hw), "court");
         fill(R(-7 * k, -hw, 7 * k, hw), "kitchen");
@@ -533,7 +595,7 @@ const courts = (plan: FieldPlan, kind: keyof typeof COURTS, turn: number) => {
         line([C(-hl, 0), C(-7 * k, 0)], lw);
         line([C(7 * k, 0), C(hl, 0)], lw);
         line([C(0, -hw - 1), C(0, hw + 1)], 0.3, "net");
-        props.push({ k: "net", a: C(0, -hw - 1), b: C(0, hw + 1), top: 3, mid: 2.83, drop: 2.6, post: 3.1 });
+        props.push({ k: "net", a: C(0, -hw - 1), b: C(0, hw + 1), top: 3, mid: 2.83, drop: 2.6, post: 3.1, part: "nets" });
       } else if (kind === "volleyball") {
         line(R(-hl, -hw, hl, hw), 0.25, "tape", true);
         line([C(0, -hw - 3), C(0, hw + 3)], 0.3, "net");
@@ -560,7 +622,10 @@ const courts = (plan: FieldPlan, kind: keyof typeof COURTS, turn: number) => {
       }
     }
   }
-  if (kind === "tennis") props.push({ k: "fence", pts: outline, h: 10, closed: true });
+  if (kind === "tennis") {
+    props.push({ k: "fence", pts: outline, h: parts.fence?.h ?? 10, closed: true, cap: "#1f5a36", part: "fence" });
+    marks.push({ k: "line", pts: outline, w: 0.6, ink: "fence", closed: true, part: "fence", up: true });
+  }
 };
 
 /**
@@ -766,4 +831,67 @@ export const fieldLegend = (kind: FieldKind, w: number, h: number, inks: Record<
   const tx = w / 2 - ((x0 + x1) / 2) * k, ty = h / 2 - ((y0 + y1) / 2) * k;
   const edge = `<path d="${dOf(outline, true)}" fill="none" stroke="#000" stroke-opacity="0.25" stroke-width="${num(0.6 / k)}"/>`;
   return `<g transform="translate(${num(tx)} ${num(ty)}) scale(${num(k)})">${fieldSvg(plan, inks, 0.5 / k, `lg-${id}`)}${edge}</g>`;
+};
+
+/** How far a point is from a line through `pts`. */
+const toLine = (p: P, pts: P[]) => {
+  let best = Infinity;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+    best = Math.min(best, Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t));
+  }
+  return best;
+};
+
+/** A dugout's footprint on the ground. */
+const dugoutBox = (q: Extract<FieldProp, { k: "dugout" }>) => {
+  const hu = q.len / 2, hd = q.depth / 2, t = q.toward;
+  const at = (s: number, d: number): P => ({ x: q.c.x + q.u.x * s + t.x * d, y: q.c.y + q.u.y * s + t.y * d });
+  return [at(-hu, -hd), at(hu, -hd), at(hu, hd), at(-hu, hd)];
+};
+
+/** The part of a field under a spot on the ground: what stands there first (a fence or the
+ * backstop within 3 ft, a dugout, a net, a base), then the topmost of what's painted there. */
+export const fieldPartAt = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "home" | "id" | "league" | "parts" | "courtColors">, p: P): FieldPart | null => {
+  const plan = fieldPlan(a);
+  if (!plan) return null;
+  for (const q of plan.props) {
+    if (!q.part) continue;
+    if (q.k === "fence" && toLine(p, q.closed ? [...q.pts, q.pts[0]] : q.pts) < 3) return q.part;
+    if (q.k === "dugout" && inside(p, dugoutBox(q))) return q.part;
+    if (q.k === "net" && toLine(p, [q.a, q.b]) < 2) return q.part;
+    if (q.k === "base" && Math.hypot(p.x - q.at.x, p.y - q.at.y) < 3) return q.part;
+  }
+  for (let i = plan.marks.length - 1; i >= 0; i--) {
+    const m = plan.marks[i];
+    if (!m.part || m.up) continue;
+    if (m.k === "line" && toLine(p, m.closed ? [...m.pts, m.pts[0]] : m.pts) < m.w / 2 + 1.5) return m.part;
+    if (m.k === "fill" && inside(p, m.pts)) return m.part;
+    if (m.k === "disc" && Math.hypot(p.x - m.c.x, p.y - m.c.y) < m.r) return m.part;
+  }
+  return null;
+};
+
+/** A part's shape on the ground, to draw round it when it's picked: its painted shapes' edges,
+ * its lines, a fence's run, a dugout's footprint (closed ones flagged). Grass: the outline only. */
+export const fieldPartShape = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "home" | "id" | "league" | "parts" | "courtColors">, part: FieldPart): { pts: P[]; closed: boolean }[] => {
+  const plan = fieldPlan(a);
+  if (!plan) return [];
+  if (part === "grass" || part === "surround") return [{ pts: plan.outline, closed: true }];
+  const out: { pts: P[]; closed: boolean }[] = [];
+  for (const q of plan.props) {
+    if (q.part !== part) continue;
+    if (q.k === "fence") out.push({ pts: q.pts, closed: !!q.closed });
+    else if (q.k === "dugout") out.push({ pts: dugoutBox(q), closed: true });
+    else if (q.k === "net") out.push({ pts: [q.a, q.b], closed: false });
+  }
+  if (out.length) return out;
+  for (const m of plan.marks) {
+    if (m.part !== part || m.up) continue;
+    if (m.k === "fill") out.push({ pts: m.pts, closed: true });
+    else if (m.k === "line") out.push({ pts: m.pts, closed: !!m.closed });
+    else out.push({ pts: ellipse(m.c, { x: 1, y: 0 }, m.r, m.r, 24), closed: true });
+  }
+  return out;
 };

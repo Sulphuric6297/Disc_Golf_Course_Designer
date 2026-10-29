@@ -2,7 +2,7 @@
 // flyover) or one item.
 import { PlaceByGps } from "./PlaceByGps";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronLeft, Copy, Eye, Lock, Maximize2, Plane, RotateCcw, RotateCw, Trash2, TreeDeciduous, Unlock, X, Plus } from "lucide-react";
+import { ChevronDown, ChevronLeft, Copy, Eye, EyeOff, Lock, Maximize2, Plane, RotateCcw, RotateCw, Trash2, TreeDeciduous, Unlock, X, Plus } from "lucide-react";
 import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, AREA_ORDER, CIRCLE_ONE_FT, FIELD_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
 import { areaPath, areaRing, obFor, obSides, sideCompass, holeBaskets, holeLabel, holeNumber, holeTees, ITEM_LABELS, linePath, obPicked, parseHoleNumbers, teeAim, wholeHoles, widthFactors, widthVaries } from "../lib/course";
 import { pathLength, polygonArea } from "../lib/geom";
@@ -16,9 +16,10 @@ import { fairwayTrees } from "../lib/lidar";
 import { toast } from "../state/toast";
 import { turnable } from "../lib/turn";
 import { conifersOf } from "../lib/landscapes";
-import { addHoleOb, deleteSelection, duplicateSelection, forgetNewLabel, isNewLabel, nextHomeCorner, obChoiceOf, pinsFull, setFieldKind, setFieldPlay, setLineKind, setObChoice, setPinPosition, startAnotherPin, startAnotherTee, startHoleToBasket, select, setTeeLevel, shareBasket, teesFull, type ObChoice } from "../state/actions";
+import { addHoleOb, deleteSelection, duplicateSelection, forgetNewLabel, isNewLabel, nextHomeCorner, obChoiceOf, pinsFull, setCourtCount, setFieldKind, setFieldLeague, setFieldPart, setFieldPlay, setLineKind, setObChoice, setPinPosition, startAnotherPin, startAnotherTee, startHoleToBasket, select, setTeeLevel, shareBasket, teesFull, type ObChoice } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaItem, CourseDoc, CourseItem, FenceStyle, FieldKind, Hole, LabelItem, LineItem, LineKind, P, PathSurface, PinPosition, RoofKind, StructureKind, TeeLevel, TeeSurface } from "../types";
+import type { AmenityKind, AreaItem, CourseDoc, CourseItem, FenceStyle, FieldKind, FieldLeague, FieldPart, Hole, LabelItem, LineItem, LineKind, P, PathSurface, PinPosition, RoofKind, StructureKind, TeeLevel, TeeSurface } from "../types";
+import { fieldInks, fieldPlan, LEAGUE_ORDER, LEAGUES } from "../lib/fieldPlan";
 import { ElevationProfile } from "./ElevationProfile";
 import { TreeSettings } from "./TreeSettings";
 import { HoleFlight } from "./FlyoverSettings";
@@ -415,8 +416,26 @@ export const heightLabel = (k: LineKind) => (k === "power" ? "Wire height" : "He
  * field's home plate. */
 function FieldSettings({ item, kind }: { item: AreaItem; kind: FieldKind }) {
   const set = (patch: Partial<AreaItem>, history = true) => updateItem(item.id, patch as Partial<CourseItem>, history);
+  const league = useMemo(() => (isBallField(kind) ? fieldPlan(item)?.league : undefined), [item, kind]);
+  const n = courtCount(kind, item.points);
   return (
     <>
+      {league && (
+        <Field label="Size" help="park">
+          <ChipPick label="Size" testid="field-league" value={league} onChange={v => setFieldLeague(item.id, v)} options={LEAGUE_ORDER.map(k => ({ value: k, label: LEAGUES[k].label }))} />
+        </Field>
+      )}
+      {(kind === "tennis" || kind === "pickleball") && (
+        <Field label="Courts" help="park">
+          <ChipPick label="Courts" testid="field-courts" value={String(Math.min(4, n))} onChange={v => setCourtCount(item.id, Number(v))} options={["1", "2", "3", "4"].map(v => ({ value: v, label: v === "2" ? "2 in a row" : v }))} />
+        </Field>
+      )}
+      {(kind === "tennis" || kind === "pickleball" || kind === "basketball") && (
+        <Field label="Colors" help="park">
+          <ChipPick label="Colors" testid="field-colors" value={item.courtColors ?? "blue"} onChange={v => set({ courtColors: v === "blue" ? undefined : v })} options={[{ value: "blue", label: "Blue in green" }, { value: "green", label: "All green" }, { value: "red", label: "Red and green" }]} />
+        </Field>
+      )}
+      <FieldParts item={item} kind={kind} league={league} />
       <Field label="Play" help="park">
         <Segmented label="Play" value={item.outOfPlay ? "out" : "in"} onChange={v => setFieldPlay(item.id, v === "out")} options={[...PLAY_OPTIONS]} />
       </Field>
@@ -431,6 +450,86 @@ function FieldSettings({ item, kind }: { item: AreaItem; kind: FieldKind }) {
       )}
     </>
   );
+}
+
+/** A field's parts, each a row: its color, what it is, its size, a switch to show it or not; a
+ * row (or a click on the part on the map) picks it, outlined, its own settings under the list. */
+const PART_LIST: Partial<Record<FieldKind, FieldPart[]>> = {
+  baseball: ["infield", "grass", "lines", "mound", "backstop", "fence", "dugouts", "track"],
+  softball: ["infield", "grass", "lines", "mound", "backstop", "fence", "dugouts", "track"],
+  tennis: ["courts", "surround", "lines", "nets", "fence"],
+  pickleball: ["courts", "surround", "lines", "nets"],
+  basketball: ["courts", "surround", "lines"]
+};
+function FieldParts({ item, kind, league }: { item: AreaItem; kind: FieldKind; league?: FieldLeague }) {
+  const picked = useEditor(e => e.fieldPart);
+  const list = PART_LIST[kind];
+  if (!list) return null;
+  const L = league ? LEAGUES[league] : null;
+  const ink = fieldInks("natural");
+  const ball = isBallField(kind);
+  const backH = item.parts?.backstop?.h ?? L?.backH ?? 16, back = item.parts?.backstop?.d ?? L?.backstop ?? 25;
+  const fenceH = item.parts?.fence?.h ?? (ball ? (league === "high" ? 8 : 6) : 10);
+  const [cl, cw] = FIELD_KINDS[kind].size;
+  const row: Record<FieldPart, { label: string; color: string; value: string }> = {
+    infield: { label: "Infield", color: ink.dirt, value: L ? `${L.arc} ft from the rubber` : "" },
+    grass: { label: "Grass", color: ink.stripe, value: "mown in bands" },
+    lines: { label: ball ? "Lines and bases" : "Lines", color: ink.chalk, value: L ? `${L.bases} ft bases` : FIELD_KINDS[kind].label.toLowerCase() },
+    mound: { label: L?.circle ? "Pitcher's circle" : "Mound", color: ink.mound, value: L ? `${L.pitch} ft` : "" },
+    backstop: { label: "Backstop", color: ink.fence, value: `${backH} ft tall` },
+    fence: { label: ball ? "Outfield fence" : "Fence", color: ball ? "#f2c318" : ink.fence, value: `${fenceH} ft` },
+    dugouts: { label: "Dugouts", color: ink.block, value: "2" },
+    track: { label: "Warning track", color: ink.dirt, value: "" },
+    courts: { label: "Courts", color: item.courtColors === "green" ? ink.courtG : item.courtColors === "red" ? ink.courtR : ink.court, value: kind === "tennis" ? "78 × 36 ft" : kind === "pickleball" ? "44 × 20 ft" : "94 × 50 ft" },
+    surround: { label: "Surround", color: ink.courtOut, value: `${cl} × ${Math.round(courtCount(kind, item.points) * cw)} ft` },
+    nets: { label: "Nets", color: ink.net, value: kind === "tennis" ? "3 ft" : "34 in" }
+  };
+  return (
+    <Field label="Parts" help="park">
+      <div className="grid gap-0.5" data-testid="field-parts">
+        {list.map(p => {
+          const off = !!item.parts?.[p]?.off;
+          return (
+            <div key={p} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] cursor-pointer ${picked === p ? "bg-white/[0.09] ring-[1.5px] ring-cyan-400" : "hover:bg-white/[0.05]"} ${off ? "text-zinc-500" : "text-zinc-100"}`}
+              onClick={() => useEditor.getState().set({ fieldPart: picked === p ? null : p })} data-testid={`part-${p}`}>
+              <span className="w-3.5 h-3.5 rounded shrink-0 border border-white/25" style={{ background: row[p].color, opacity: off ? 0.35 : 1 }} />
+              <span className="truncate">{row[p].label}</span>
+              <span className="ml-auto text-xs text-zinc-400 truncate">{row[p].value}</span>
+              <button type="button" className="p-0.5 text-zinc-400 hover:text-zinc-100" aria-label={off ? `Show the ${row[p].label.toLowerCase()}` : `Hide the ${row[p].label.toLowerCase()}`} title={off ? "Show it" : "Hide it"}
+                onClick={e => { e.stopPropagation(); setFieldPart(item.id, p, { off: !off }); }} data-testid={`part-${p}-eye`}>
+                {off ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {picked && list.includes(picked) && <PartSettings item={item} part={picked} ball={ball} L={L} backH={backH} back={back} fenceH={fenceH} />}
+      <div className="text-[11.5px] text-zinc-500 mt-1.5">Click a part here or on the map to pick it.</div>
+    </Field>
+  );
+}
+
+/** A picked part's own settings: its sizes and colors, so a field can look like the real one. */
+function PartSettings({ item, part, ball, L, backH, back, fenceH }: { item: AreaItem; part: FieldPart; ball: boolean; L: (typeof LEAGUES)[FieldLeague] | null; backH: number; back: number; fenceH: number }) {
+  const ps = item.parts?.[part] ?? {};
+  const set = (patch: Parameters<typeof setFieldPart>[2], history = false) => setFieldPart(item.id, part, patch, history);
+  const ft = (v: number) => `${v} ft`;
+  const slide = (label: string, key: "h" | "d" | "w", min: number, max: number, value: number) =>
+    <Slider label={label} min={min} max={max} step={1} value={value} onChange={v => set({ [key]: v })} onDone={commit} format={ft} />;
+  const colors = (label: string, options: { value: string; label: string }[], value: string) =>
+    <Field label={label}><ChipPick label={label} value={value} onChange={v => set({ c: v }, true)} options={options} /></Field>;
+  let body: ReactNode = null;
+  if (part === "infield" && L) body = <>{slide("Reach from the rubber", "d", 30, 130, ps.d ?? L.arc)}{colors("Clay", [{ value: "red", label: "Red" }, { value: "tan", label: "Tan" }, { value: "brown", label: "Brown" }], ps.c ?? "red")}</>;
+  else if (part === "grass" && L) body = <><Toggle label="Mown in bands" checked={ps.n !== 0} onChange={v => set({ n: v ? undefined : 0 }, true)} />{ps.n !== 0 && slide("Band width", "w", 4, 30, ps.w ?? L.band)}</>;
+  else if (part === "lines" && L) body = slide("Bases apart", "d", 40, 90, ps.d ?? L.bases);
+  else if (part === "mound" && L) body = slide("Home to the rubber", "d", 30, 61, ps.d ?? L.pitch);
+  else if (part === "backstop") body = <>{slide("Backstop height", "h", 8, 30, backH)}{slide("Behind home plate", "d", 15, 70, back)}</>;
+  else if (part === "fence") body = <>{slide("Fence height", "h", 4, 14, fenceH)}{ball && colors("Top", [{ value: "yellow", label: "Yellow" }, { value: "green", label: "Green" }, { value: "none", label: "None" }], ps.c ?? "yellow")}</>;
+  else if (part === "dugouts" && L) body = <>{slide("Length", "w", 10, 60, ps.w ?? L.dugout)}{slide("Out from the foul line", "d", 6, 60, ps.d ?? Math.max(14, back * 0.6))}</>;
+  else if (part === "track") body = slide("Width", "w", 4, 20, ps.w ?? 15);
+  else if (part === "surround") body = colors("Color", [{ value: "green", label: "Green" }, { value: "blue", label: "Blue" }, { value: "tan", label: "Tan" }], ps.c ?? "green");
+  if (!body) return null;
+  return <div className="mt-2" data-testid="part-settings">{body}</div>;
 }
 
 /** What a fence is (its panel and a phone's strip). */

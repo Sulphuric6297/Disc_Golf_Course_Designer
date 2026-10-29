@@ -173,7 +173,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
       </div>
       {editing && <TeeMap big={ed.teeMap === "big"} off={ed.teeMap === "off"} />}
       {/* (editing: above the toolbar) */}
-      <div className="absolute left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-2 glass backdrop-blur rounded-full px-2 py-1.5 border border-white/10 shadow-2xl" style={{ bottom: editing ? toolbar + 24 : 24 }}>
+      <div className="absolute left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-2 whitespace-nowrap glass backdrop-blur rounded-full px-2 py-1.5 border border-white/10 shadow-2xl" style={{ bottom: editing ? toolbar + 24 : 24 }}>
         {ed.teeStand && !ed.flyover && <button className="px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 text-white hover:bg-white/10" onClick={() => ed.set({ teeStand: null })} title="Back to the tee" data-testid="hud-to-tee"><Home size={15} /> Tee</button>}
         <button className="p-2 rounded-full hover:bg-white/10 text-white" aria-label="Previous hole" title="Previous hole (←)" onClick={() => go(-1)}><ChevronLeft size={18} /></button>
         <button className={`px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 ${ed.flyover ? "bg-orange-500 text-zinc-950" : "text-white hover:bg-white/10"}`} onClick={() => ed.set({ flyover: !ed.flyover })} data-testid="hud-flyover">{ed.flyover ? <><Square size={14} /> Stop</> : <><Plane size={15} /> Fly over</>}</button>

@@ -160,7 +160,12 @@ test("the US maps add what OpenStreetMap hasn't got: a creek, a marsh and a buil
   // USFWS: a marsh east of the middle; FEMA: a building nobody has mapped
   await page.route(/wetlandsmapservice/, route => route.fulfill({ json: { features: [{ attributes: { WETLAND_TYPE: "Freshwater Emergent Wetland", ATTRIBUTE: "PEM1C" }, geometry: { rings: [ring(150, 70, 30)] } }] } }));
   await page.route(/USA_Structures_View/, route => route.fulfill({ json: { features: [{ attributes: { OCC_CLS: "Government", PRIM_OCC: "Public Restroom", HEIGHT: null }, geometry: { rings: [box(90, -40, 12, 9)] } }] } }));
-  const summary = await importSite(page);
+  const summary = await importSite(page, { review: async p => {
+    // Looked at first: the groups and their counts on the panel; the US maps' water on, as found
+    await expect(p.getByTestId("review-buildings")).toContainText("FEMA");
+    await expect(p.getByTestId("review-water")).toContainText("USGS and USFWS");
+    await expect(p.getByTestId("review-govWater")).toHaveAttribute("aria-checked", "true");
+  } });
   expect(summary).toMatch(/From the US maps, not on OpenStreetMap: 1 creek, 1 wetland, 1 building/);
   const items = (await course(page)).items;
   const creek = items.find((i: any) => i.type === "line" && i.importSource === "usgs");
@@ -292,6 +297,7 @@ test("making the site bigger keeps the design on the same ground", async ({ page
   if (await page.getByTestId("bring-photo-trees").isVisible()) await page.getByTestId("bring-photo-trees").click();
   await page.getByTestId("bring-osm").click();
   await page.getByTestId("import-site").click();
+  await page.getByTestId("review-bring").click({ timeout: 90_000 });
   await expect.poll(async () => (await course(page)).canvas.width, { timeout: 90_000 }).toBeGreaterThan(W + 100);
   expect((await course(page)).canvas.height).toBeGreaterThan(H + 50);
   // Everything within a foot of where it was
@@ -724,4 +730,18 @@ test("the same spot brought in again asks for nothing it has already (photo, ele
   expect(asked).toEqual(first);
   const s = await page.evaluate(() => (window as any).__dgImportProgress.sources);
   plainExpect([s.photo.cached, s.elevation.cached, s.osm.cached]).toEqual([true, true, true]);
+});
+
+test("looking first: a source switched off doesn't come in; the rest does", async ({ page }) => {
+  const ll = (e: number, n: number) => { const g = geoAt(e, n); return [g.lon, g.lat]; };
+  const box = (e: number, n: number, w: number, h: number) => [ll(e, n), ll(e + w, n), ll(e + w, n + h), ll(e, n + h), ll(e, n)];
+  await page.route(/USA_Structures_View/, route => route.fulfill({ json: { features: [{ attributes: { OCC_CLS: "Residential" }, geometry: { rings: [box(90, -40, 12, 9)] } }, { attributes: { OCC_CLS: "Residential" }, geometry: { rings: [box(140, 60, 14, 10)] } }] } }));
+  await importSite(page, { review: async p => {
+    await expect(p.getByTestId("review-femaBuildings")).toHaveAttribute("aria-checked", "true");
+    await p.getByTestId("review-femaBuildings").click();
+    await expect(p.getByTestId("review-femaBuildings")).toHaveAttribute("aria-checked", "false");
+  } });
+  const items = (await course(page)).items;
+  expect(items.filter((i: any) => i.importSource === "fema")).toHaveLength(0);
+  expect(items.some((i: any) => i.importSource === "osm")).toBe(true);
 });

@@ -39,10 +39,10 @@ import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createFence, createStructure, onPartLoaded } from "../three/structures";
 import { measuredStanding, setMeasuredStanding } from "../lib/standing";
 import { createFieldGround, createFieldProps, createHedge, createPowerLine } from "../three/parkProps";
-import { fieldInks, fieldPlan } from "../lib/fieldPlan";
+import { fieldInks, fieldPartAt, fieldPartShape, fieldPlan } from "../lib/fieldPlan";
 import { fieldKeepsTreesOut, fieldOutline } from "../lib/fields";
 import { isLineKind, orientedBox, roofFor, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
-import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier } from "../types";
+import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier, FieldPart } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
 import type { FlightFrames, FlyoverVideo, FrameInfo, RecordOptions } from "./flyoverVideo";
@@ -2912,7 +2912,7 @@ export class CourseView {
         // only looked at, too), the dashed edge of an out-of-play area or a red OB edge; and what
         // stands on it (goals, nets, hoops, fences, play structures)
         const out = isOutOfPlay(a);
-        const shape = [a.points, a.field, a.fieldTurn, a.home];
+        const shape = [a.points, a.field, a.fieldTurn, a.home, a.league, a.parts, a.courtColors];
         put(`area:${a.id}`, JSON.stringify([...shape, hv, order, inks.grass, out, nogoColor, a.ob, a.obStretches, a.hazard]), () => {
           const g = new THREE.Group();
           const plan = fieldPlan(a);
@@ -5513,9 +5513,32 @@ export class CourseView {
       return;
     }
     e.stopPropagation();
-    if (hit !== this.selectedId) this.cb.onSelect(hit);
-    this.gesture(e, { drag: s => this.itemDrag(s, hit) });
+    const picked = hit === this.selectedId;
+    if (!picked) this.cb.onSelect(hit);
+    // (the field already picked: a click picks the part of it there)
+    const field = picked && item.type === "area" && item.kind === "field" ? item : null;
+    this.gesture(e, {
+      drag: s => this.itemDrag(s, hit),
+      ...(field ? { click: (ev: PointerEvent) => { const g = this.groundAt(ev.clientX, ev.clientY); this.cb.onFieldPart?.(g ? fieldPartAt(field, { x: g.x, y: g.z }) : null); } } : {})
+    });
   }
+
+  /** The picked field's part outlined, as a pick is (none: null). */
+  setFieldPart(id: string | null, part: FieldPart | null) {
+    if (this.partFx) { this.fx.remove(this.partFx); disposeObjectDeep(this.partFx); this.partFx = null; }
+    const a = id && part ? this.doc?.course.items.find(i => i.id === id) : null;
+    if (a && a.type === "area" && a.kind === "field" && part) {
+      const g = new THREE.Group();
+      for (const s of fieldPartShape(a, part)) {
+        g.add(this.fatLine(this.drapeLine(s.pts, 0.5, s.closed), "#000000", 5, { opacity: 0.35, order: 9 }));
+        g.add(this.fatLine(this.drapeLine(s.pts, 0.55, s.closed), SELECT, 3, { order: 10 }));
+      }
+      this.partFx = g;
+      this.fx.add(g);
+    }
+    this.invalidate();
+  }
+  private partFx: THREE.Group | null = null;
 
   /** Draws a box on the screen; what lies inside it when let go is picked (a shape when all of it
    * is inside, so a big area under everything doesn't come along). */

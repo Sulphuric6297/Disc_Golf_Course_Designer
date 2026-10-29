@@ -29,12 +29,15 @@ export const MAP_IMAGERY_SOURCES: Record<MapImagerySource, {
 // Statewide high-resolution orthoimagery (public ArcGIS ImageServers, no key): the state services
 // of photoSources, as the site picker draws them over Esri inside their states.
 export const STATE_ORTHO_SOURCES: {
+  id: string;
+  /** A map service (export), not an image service (exportImage). */
+  map: boolean;
   label: string;
   attribution: string;
   region: GeoBounds;
   feetPerPixel: number;
   services: string[];
-}[] = IMAGE_SERVICES.filter(s => s.id !== "naip").map(s => ({ label: s.label, attribution: s.credit, region: s.regions[0], feetPerPixel: s.metersPerPx * FEET_PER_METER, services: s.urls }));
+}[] = IMAGE_SERVICES.filter(s => s.id !== "naip").map(s => ({ id: s.id, map: !!s.map, label: s.label, attribution: s.credit, region: s.regions[0], feetPerPixel: s.metersPerPx * FEET_PER_METER, services: s.urls }));
 
 export const findStateOrtho = (lat: number, lon: number) =>
   STATE_ORTHO_SOURCES.find(src => lat >= src.region.south && lat <= src.region.north && lon >= src.region.west && lon <= src.region.east);

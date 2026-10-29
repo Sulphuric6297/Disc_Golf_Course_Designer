@@ -12,6 +12,8 @@ import { lidarCoverage } from "../lib/geo/lidarFetch";
 import { inUS } from "../lib/geo/usgov";
 import { photoChoices, photoDateText, photoFeetPerPx, type PhotoChoice } from "../lib/geo/photoSources";
 import { importSite, type ImportedSite, type ImportLayer, type SourceId, type SourceStatus } from "../lib/importSite";
+import { GROUPS, SOURCES, reviewedSite, sharedBuildings, sourceCounts, sourceOf, startsOn, type SourceKey } from "../lib/importReview";
+import type { PhotoSourceId } from "../lib/geo/photoSources";
 import { fmtArea, fmtDist } from "../lib/units";
 import { getDoc } from "../state/course";
 import type { CourseItem } from "../types";
@@ -103,7 +105,9 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   const [gov, setGov] = useState(true);
   const [course, setCourse] = useState(true);
   // What this spot has (looked up as the frame settles)
-  const [here, setHere] = useState<{ photo?: PhotoChoice; survey?: { year: number; covered: "full" | "partial" | "none" } } | null>(null);
+  // (looking before it comes in: what came, which sources are on, which wins where two overlap)
+  const [review, setReview] = useState<{ site: ImportedSite; on: Partial<Record<SourceKey, boolean>>; keep: "osm" | "fema"; photo?: PhotoSourceId } | null>(null);
+  const [here, setHere] = useState<{ photo?: PhotoChoice; photos?: PhotoChoice[]; photoIds?: string[]; survey?: { year: number; covered: "full" | "partial" | "none" } } | null>(null);
   const [status, setStatus] = useState<{ state: "idle" | "searching" | "loading" | "error"; text: string; progress?: { fraction: number } }>({ state: "idle", text: "" });
   const [sources, setSources] = useState<Partial<Record<SourceId, SourceStatus>>>({});
   const [arrived, setArrived] = useState<Arrived | null>(null);
@@ -148,7 +152,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
         within(photoChoices(selection, { signal: stop.signal, timeoutMs: 6000 }), [] as PhotoChoice[])
       ]).then(([cov, photos]) => {
         if (stop.signal.aborted) return;
-        setHere({ photo: photos[0], survey: cov ? { year: cov.surveys[0]?.year ?? 0, covered: cov.covered } : undefined });
+        setHere({ photo: photos[0], photos, photoIds: photos.map(p => p.id), survey: cov ? { year: cov.surveys[0]?.year ?? 0, covered: cov.covered } : undefined });
       });
     }, 400);
     return () => { window.clearTimeout(t); stop.abort(); };
@@ -248,8 +252,25 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     setArrived({ ...a });
   };
 
-  const run = async () => {
+  // Looked at before it comes in: what's on, each source in its own color, where it came from on hover
+  useEffect(() => {
+    if (!review || !landed.current) return;
+    const s = reviewedSite(review.site, review.on, review.keep);
+    const a: Arrived = { ...landed.current, areas: [], lines: [], trees: [] };
+    for (const i of [...s.mapped, ...s.trees]) {
+      const k = sourceOf(i), c = k ? SOURCES[k].color : "#e5e7eb", tip = k ? `${SOURCES[k].label}${SOURCES[k].who ? ` · ${SOURCES[k].who}` : ""}` : undefined;
+      if (i.type === "tree") a.trees.push({ x: i.x, y: i.y, r: i.radius, color: c });
+      else if (i.type === "line") a.lines.push({ points: i.points, color: c, weight: 2.5, tip });
+      else if ("points" in i && i.points.length >= 3) a.areas.push({ points: i.points, color: c, opacity: 0.18, stroke: c, tip });
+    }
+    const lt = s.lidar?.trees ?? [], fromSummer = lt.length - (s.lidar?.fromPhoto ?? 0), step = Math.max(1, Math.ceil(lt.length / 4000));
+    for (let k = 0; k < lt.length; k += step) a.trees.push({ x: lt[k][0], y: lt[k][1], r: lt[k][3], color: k >= fromSummer ? SOURCES.summerTrees.color : SOURCES.lidarTrees.color });
+    setArrived(a);
+  }, [review]);
+
+  const run = async (photoId?: PhotoSourceId) => {
     if (!selection || tooBig || running.current) return;
+    setReview(null);
     if (importing) { setStatus({ state: "error", text: "The site from before is still coming in. Try again in a moment." }); return; }
     importing = true;
     running.current = true;
@@ -261,11 +282,17 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     setArrived(null);
     setStatus({ state: "loading", text: "Starting…" });
     try {
-      const site = await importSite(selectionFromBounds(turnedBox(selection, angle), label), { imagery, trees, surveyed: !!survey, osm, lidar, summerFill: fill, gov, signal: stop.signal, onLayer, onProgress: p => {
+      const site = await importSite(selectionFromBounds(turnedBox(selection, angle), label), { imagery, trees, surveyed: !!survey, osm, lidar, summerFill: fill, gov, photo: photoId, signal: stop.signal, onLayer, onProgress: p => {
         (window as { __dgImportProgress?: unknown }).__dgImportProgress = p;
         if (!stop.signal.aborted) { setStatus({ state: "loading", text: p.text, progress: { fraction: p.fraction } }); setSources({ ...p.sources }); }
       } });
-      if (open.current && !stop.signal.aborted) onImported(site, { trees, osm, course: course && !!outline?.course?.holes, turn: angle });
+      // (all in: looked at first, each source on or off, before any of it comes into the course)
+      if (open.current && !stop.signal.aborted) {
+        const counts = sourceCounts(site);
+        const on = Object.fromEntries((Object.keys(counts) as SourceKey[]).map(k => [k, startsOn(k, site)]));
+        setReview({ site, on, keep: "osm", photo: photoId ?? (site.site.photo?.id as PhotoSourceId | undefined) });
+        setStatus({ state: "idle", text: "" });
+      }
     } catch (err) {
       if (isAbort(err) || stop.signal.aborted) return;
       console.error(err);
@@ -340,7 +367,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     <button className={`inline-flex items-center gap-1.5 h-9 touch:h-11 px-3.5 rounded-full text-[13px] font-semibold ${drawing ? "bg-orange-500 text-zinc-950" : "bg-white/[0.08] text-zinc-200 hover:bg-white/[0.12]"}`} aria-pressed={drawing} onClick={() => setDrawing(d => !d)}><Pencil size={13} /> Draw the area</button>
   );
   const againEl = again && !loading && <p className="text-[12.5px] text-amber-200/90 flex items-center gap-1.5" data-testid="import-again">Replaces what came in last time <HelpLink topic="re-import" label="Bring it in again" /></p>;
-  const goLabel = again ? "Bring it in again" : "Bring it in";
+  const goLabel = "Look first";
   const errorEl = status.state === "error" && <div className="text-sm text-red-300" data-testid="import-status">{status.text}</div>;
   const goBtn = (
     <button className="w-full h-12 rounded-[14px] bg-[#a2cf6a] hover:bg-[#b3db80] active:bg-[#93c05c] text-zinc-950 text-[15px] font-bold disabled:opacity-40" onClick={() => void run()} disabled={!selection || tooBig || loading} data-testid="import-site">{goLabel}</button>
@@ -444,11 +471,76 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   );
 
   const mapEl = (
-    <SitePickerMap imagery={imagery} view={view} selection={selection} drawing={drawing} onDrawingChange={setDrawing} onSelect={onSelect} onTooSmall={tooSmall} onLocate={locate}
+    <SitePickerMap imagery={imagery} photoIds={here?.photoIds} view={view} selection={selection} drawing={drawing} onDrawingChange={setDrawing} onSelect={onSelect} onTooSmall={tooSmall} onLocate={locate}
       selectViewSignal={0} units={units} outline={outline?.outline ?? null} fit={fit} arrived={arrived} angle={angle} onAngle={setAngle} />
   );
   const framing = !!selection && !loading;
-  const panel = loading ? <>{checklist}{stopEl}</> : framing ? (
+  // Looking before it comes in: each source a row, grouped, with its count and a switch
+  const counts = review ? sourceCounts(review.site) : {};
+  const shared = review ? sharedBuildings(review.site) : 0;
+  const choices = (here?.photos ?? []).filter(c => c.id !== "esri" || (here?.photos ?? []).length < 3);
+  const setOn = (k: SourceKey, v: boolean) => setReview(r => (r ? { ...r, on: { ...r.on, [k]: v } } : r));
+  const bring = () => { if (review) onImported(reviewedSite(review.site, review.on, review.keep), { trees, osm, course: course && !!outline?.course?.holes, turn: angle }); };
+  const reviewPanel = review && (
+    <div className="flex flex-col gap-2" data-testid="import-review">
+      <div className="rounded-xl px-3 py-2 bg-white/[0.07] text-[13px] text-zinc-200"><span className="font-semibold">Everything's in.</span> <span className="text-zinc-400">Switch off what you don't want, then bring it in.</span></div>
+      <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 mt-1 flex justify-between"><span>What comes in</span><span className="font-normal normal-case tracking-normal">shown on the map</span></div>
+      {choices.length > 1 && (
+        <div className="rounded-[14px] bg-white/[0.045] p-1" data-testid="review-photo">
+          <div className="text-[13px] font-semibold px-2 pt-1 pb-1">Photo</div>
+          <div className="flex gap-0.5 p-[2px] rounded-[10px] bg-white/[0.06]">
+            {choices.slice(0, 3).map(c => (
+              <button key={c.id} className={`flex-1 min-w-0 truncate px-2 py-1.5 rounded-[8px] text-[11.5px] ${review.photo === c.id ? "bg-white/[0.14] text-zinc-50 font-semibold" : "text-zinc-400 hover:text-zinc-200"}`} onClick={() => { if (review.photo !== c.id) void run(c.id); }}>
+                {c.label.replace(/ aerial photo| satellite/i, "")}{c.year ? ` · ${c.season === "leaf-on" ? "summer " : c.season === "leaf-off" ? "winter " : ""}${c.year}` : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {GROUPS.map(g => {
+        const keys = (Object.keys(SOURCES) as SourceKey[]).filter(k => SOURCES[k].group === g.id && (counts[k] ?? 0) > 0);
+        if (!keys.length) return null;
+        const total = keys.reduce((s, k) => s + (review.on[k] !== false ? counts[k] ?? 0 : 0), 0);
+        return (
+          <div key={g.id} className="rounded-[14px] bg-white/[0.045] p-1" data-testid={`review-${g.id}`}>
+            <div className="flex items-center text-[13px] font-semibold px-2 pt-1 pb-0.5">{g.label}<span className="ml-auto text-[12px] font-normal text-zinc-400 tabular-nums">{total.toLocaleString()}</span></div>
+            {keys.map(k => {
+              const on = review.on[k] !== false, s = SOURCES[k];
+              return (
+                <div key={k}>
+                  <div className={`flex items-center gap-2 px-2 py-1 rounded-[10px] text-[12.5px] ${on ? "text-zinc-100" : "text-zinc-500"}`}>
+                    <span className="w-[11px] h-[11px] rounded-[3px] shrink-0" style={{ background: s.color, opacity: on ? 1 : 0.35 }} />
+                    <span className="truncate">{s.label}{s.who && <span className="text-zinc-400 text-[11.5px]"> {s.who}</span>}</span>
+                    <span className="ml-auto tabular-nums text-zinc-300">{(counts[k] ?? 0).toLocaleString()}</span>
+                    <button type="button" role="switch" aria-checked={on} aria-label={`${g.label}: ${s.label}`} data-testid={`review-${k}`} onClick={() => setOn(k, !on)}
+                      className={`relative w-[30px] h-[17px] rounded-full shrink-0 ${on ? "bg-[#a2cf6a]" : "bg-white/[0.14]"}`}>
+                      <span className={`absolute top-[2px] w-[13px] h-[13px] rounded-full ${on ? "right-[2px] bg-zinc-900" : "left-[2px] bg-zinc-400"}`} />
+                    </button>
+                  </div>
+                  {k === "photoWater" && !on && <div className="text-[11.5px] text-zinc-500 pl-[27px] pb-1">Off: here most are tree shadows</div>}
+                </div>
+              );
+            })}
+            {g.id === "buildings" && shared > 0 && review.on.femaBuildings !== false && review.on.osmBuildings !== false && (
+              <div className="px-2 pb-1.5">
+                <div className="text-[11.5px] text-zinc-400 py-1">Where both have the same building ({shared}), keep</div>
+                <div className="flex gap-0.5 p-[2px] rounded-[10px] bg-white/[0.06]" data-testid="review-keep">
+                  {(["osm", "fema"] as const).map(v => (
+                    <button key={v} className={`flex-1 px-2 py-1.5 rounded-[8px] text-[11.5px] ${review.keep === v ? "bg-white/[0.14] text-zinc-50 font-semibold" : "text-zinc-400 hover:text-zinc-200"}`} onClick={() => setReview(r => (r ? { ...r, keep: v } : r))}>{v === "osm" ? "OpenStreetMap" : "FEMA"}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <div className="flex gap-2">
+        <button className="h-12 px-4 rounded-[14px] bg-white/[0.08] hover:bg-white/[0.12] text-[14px] font-semibold text-zinc-200" onClick={() => { setReview(null); setArrived(null); }} data-testid="review-back">Back</button>
+        <button className="flex-1 h-12 rounded-[14px] bg-[#a2cf6a] hover:bg-[#b3db80] active:bg-[#93c05c] text-zinc-950 text-[15px] font-bold" onClick={bring} data-testid="review-bring">{again ? "Bring it in again" : "Bring it in"}</button>
+      </div>
+    </div>
+  );
+  const panel = loading ? <>{checklist}{stopEl}</> : review ? reviewPanel : framing ? (
     <>
       {frameChoice}
       {drawBtn}

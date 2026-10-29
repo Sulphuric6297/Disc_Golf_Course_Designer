@@ -226,6 +226,7 @@ test.describe("phone", () => {
     expect(place.y).toBeLessThan(vh * 0.15);
     expect(go.y + go.height).toBeGreaterThan(vh * 0.85);
     await page.getByTestId("import-site").tap();
+    await page.getByTestId("review-bring").tap({ timeout: 60_000 });
     await expect.poll(async () => (await course(page)).background, { timeout: 60_000 }).not.toBeNull();
     await expect.poll(async () => (await editorState(page)).step).toBe("design");
     // (the pointer first: a look round before the first hole)

@@ -90,6 +90,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       onTeeView: id => useEditor.getState().set({ teeView: id }),
       onContextMenu: i => menuRef.current(i),
       onStand: p => useEditor.getState().set({ teeStand: p }),
+      onFieldPart: part => useEditor.getState().set({ fieldPart: part }),
       onDrawProgress: n => useEditor.getState().set({ drawPoints: n }),
       onPlotEnd: () => useEditor.getState().set({ plotLine: null }),
       onObPickEnd: () => useEditor.getState().set({ obPick: null, pickCut: false }),
@@ -228,6 +229,9 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const readOnlyView = useCourse(s => s.readOnly);
   // (standing in 3D: editors pick as they walk; anyone walks; the map from above in a corner)
   useEffect(() => { view?.setTeeEdit(!!ed.teeView && !ed.flyover && !readOnlyView, ed.teeMap === "off" ? null : ed.teeMap ?? "small"); }, [view, ed.teeView, ed.teeMap, ed.flyover, readOnlyView]);
+  // (the picked field's part outlined; redrawn as the field changes)
+  const partItem = useCourse(s => (ed.fieldPart && ed.selectedId ? s.doc.items.find(i => i.id === ed.selectedId) : undefined));
+  useEffect(() => { view?.setFieldPart(partItem ? partItem.id : null, ed.fieldPart ?? null); }, [view, partItem, ed.fieldPart]);
   // (the picked keyframe stands out on the map; another hole picked, none is)
   useEffect(() => { view?.setFlyKey(ed.flyKey); }, [view, ed.flyKey]);
   useEffect(() => { if (!useEditor.getState().flyCam) useEditor.getState().set({ flyKey: null }); }, [ed.selectedId]);
