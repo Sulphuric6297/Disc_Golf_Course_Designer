@@ -6,6 +6,21 @@ import { clamp } from "../constants";
 import type { TreeItem } from "../types";
 import { treeMeshes, variantOf, type TreeShape, forestDetail, midOf } from "./treeKit";
 
+/** Where a tree gives way to its middle and far versions, ft from the camera (never, while
+ * forestDetail says all). */
+const switchesAt = () => (forestDetail.all ? [Infinity, Infinity] : [forestDetail.nearFt, midOf(forestDetail.nearFt)]);
+
+/** The trees under `root` switch where forestDetail says now (it changed since they were made). */
+export function retuneTrees(root: THREE.Object3D) {
+  const [mid, far] = switchesAt();
+  root.traverse(o => {
+    if (!(o as THREE.LOD).isLOD || !o.userData.tree) return;
+    const levels = (o as THREE.LOD).levels;
+    levels[1].distance = mid;
+    levels[2].distance = far;
+  });
+}
+
 export const getTreeSignature = (item: TreeItem) =>
   `${item.radius}|${item.height ?? 30}|${item.width ?? 1}|${item.treeType ?? 'deciduous'}|${item.color}|${item.variant ?? ""}|${item.leaf ?? ""}|` +
   JSON.stringify([item.species, item.seed, item.crownBase, item.lean, item.leanDir, item.limbs, item.trunk, item.fullness, item.rotation]);
@@ -58,9 +73,11 @@ export const create3dTree = (item: TreeItem, look?: TreeLook): THREE.Group => {
   const variant = item.variant ?? variantOf(item.id, shape), w = item.radius * 2 * widthMultiplier;
   const spec = itemSpec(item, shape, variant, height);
   const lod = new THREE.LOD();
+  const [mid, far] = switchesAt();
   lod.addLevel(treeMeshes(shape, variant, height, w, tint, "near", false, spec), 0);
-  lod.addLevel(treeMeshes(shape, variant, height, w, tint, "mid", false, spec), forestDetail.nearFt);
-  lod.addLevel(treeMeshes(shape, variant, height, w, tint, "far", false, spec), midOf(forestDetail.nearFt));
+  lod.addLevel(treeMeshes(shape, variant, height, w, tint, "mid", false, spec), mid);
+  lod.addLevel(treeMeshes(shape, variant, height, w, tint, "far", false, spec), far);
+  lod.userData.tree = true;
   // Its lean: tilted over about its foot (the map's north is -z; the turn is undone so the lean
   // keeps its compass direction whichever way the tree is turned)
   const tilt = new THREE.Group();

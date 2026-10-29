@@ -25,7 +25,7 @@ import { BASKET_BAND, createAmenity, createBasket, createDropZone, createMando, 
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
 import { dab, strokeOutline } from "../lib/brush";
 import { disposeObjectDeep } from "../three/dispose";
-import { create3dTree, getTreeSignature } from "../three/trees";
+import { create3dTree, getTreeSignature, retuneTrees } from "../three/trees";
 import { createMeasuredWoods, createUnderbrush, createWoods, createWoodsWhere } from "../three/woods";
 import { standingTrees, grownTree, grownTrees } from "../lib/lidar";
 import type { WoodedGrid } from "../lib/forest";
@@ -1819,12 +1819,15 @@ export class CourseView {
       this.shadowsDirty = true;
     }
     forestDetail.nearFt = (this.software ? 70 : this.mobile ? 150 : 260) * (this.tier >= 3 ? 0.6 : 1);
+    forestDetail.all = false;
     forestDetail.version++;
+    retuneTrees(this.itemsGroup);
     this.invalidate();
   }
 
-  /** While a video records: drawn farther and finer than on screen (each frame can take its time):
-   * trees in full detail much farther out, the most grass, finer shadows, thinner haze. */
+  /** While a video records: drawn finer than on screen (each frame can take its time): every
+   * tree in full detail however far off, so none changes as the camera comes up to it, the most
+   * grass, finer shadows, thinner haze. */
   private videoDetail = false;
   private setVideoDetail(on: boolean) {
     if (on === this.videoDetail) return;
@@ -1836,8 +1839,9 @@ export class CourseView {
     }
     // (without a graphics card, only the thinner haze: each frame is slow enough already)
     if (this.software) return;
-    forestDetail.nearFt = this.mobile ? 400 : 700;
+    forestDetail.all = true;
     forestDetail.version++;
+    retuneTrees(this.itemsGroup);
     const shadow = Math.min(this.mobile ? 2048 : 4096, this.renderer.capabilities.maxTextureSize);
     if (this.sun.shadow.mapSize.x !== shadow) {
       this.sun.shadow.mapSize.set(shadow, shadow);
@@ -1865,7 +1869,7 @@ export class CourseView {
 
   /** For tests: the quality level now. */
   qualityInfo() {
-    return { tier: this.tier, pixelRatio: this.renderer.getPixelRatio(), shadow: this.sun.shadow.mapSize.x, nearFt: forestDetail.nearFt, grass: this.grassQuality(), mobile: this.mobile, software: this.software, video: this.videoDetail, haze: this.videoDetail ? 0.5 : 1 };
+    return { tier: this.tier, pixelRatio: this.renderer.getPixelRatio(), shadow: this.sun.shadow.mapSize.x, nearFt: forestDetail.nearFt, allTrees: forestDetail.all, grass: this.grassQuality(), mobile: this.mobile, software: this.software, video: this.videoDetail, haze: this.videoDetail ? 0.5 : 1 };
   }
 
   /** For tests: let the frame-rate watch work under software rendering too (a fresh window). */

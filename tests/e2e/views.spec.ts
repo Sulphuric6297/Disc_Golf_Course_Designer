@@ -250,7 +250,7 @@ plain("a flight's motion slows smoothly to a stop at its end (and by itself gets
   }
 });
 
-test("a video is drawn farther and finer than the screen (thinner haze; with a graphics card, trees in full detail farther out), and the screen's back after", async ({ page }) => {
+test("a video is drawn finer than the screen (thinner haze; with a graphics card, every tree in full detail however far off), and the screen's back after", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
   const info = () => page.evaluate(() => (window as any).__dgView.qualityInfo());
@@ -265,9 +265,9 @@ test("a video is drawn farther and finer than the screen (thinner haze; with a g
   expect(during.video).toBe(true);
   expect(during.haze).toBeLessThan(screen.haze);
   // (drawn in software here, where only the haze changes)
-  if (!during.software) expect(during.nearFt).toBeGreaterThan(screen.nearFt * 1.5);
+  expect(during.allTrees).toBe(!during.software);
   const after = await info();
-  expect([after.video, after.nearFt, after.haze, after.shadow]).toEqual([false, screen.nearFt, screen.haze, screen.shadow]);
+  expect([after.video, after.nearFt, after.allTrees, after.haze, after.shadow]).toEqual([false, screen.nearFt, false, screen.haze, screen.shadow]);
 });
 
 plain("where a hole is painted sharper: round its line on the terrain's grid, at most 6 px a foot, none when no sharper than the whole site", () => {

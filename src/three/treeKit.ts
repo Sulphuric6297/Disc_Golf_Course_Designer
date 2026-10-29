@@ -524,8 +524,10 @@ const tintedFoliage = (base: THREE.MeshStandardMaterial, tint: THREE.Color) => {
 export type TreeSpot = { x: number; y: number; ground: number; height: number; width: number; shape: TreeShape; variant: number; tint: THREE.Color; turn: number; lean: number };
 
 /** Trees nearer than this to the camera use the close shapes, ft (less without a graphics card);
- * the middle ones out to `midOf(nearFt)`, the rest the far ones. */
-export const forestDetail = { nearFt: 260, version: 0 };
+ * the middle ones out to `midOf(nearFt)`, the rest the far ones. `all`: every tree, bush and bit
+ * of underbrush in its closest version however far off (a video recording: nothing changes as
+ * the camera comes up to it). */
+export const forestDetail = { nearFt: 260, version: 0, all: false };
 export const midOf = (nearFt: number) => nearFt * 3;
 
 /**
@@ -593,15 +595,15 @@ export class Forest {
     this.version = forestDetail.version;
     this.last.copy(eye);
     const nearFt = this.ladder.nearFt ?? forestDetail.nearFt, midFt = this.ladder.midFt ?? midOf(forestDetail.nearFt);
-    const r2 = nearFt * nearFt, m2 = midFt * midFt;
+    const r2 = nearFt * nearFt, m2 = midFt * midFt, all = forestDetail.all;
     this.sets.forEach((set, si) => {
       const n = [0, 0, 0];
       const levels = [set.near, set.mid, set.far];
       set.spots.forEach((s, i) => {
         const dx = s.x - eye.x, dz = s.y - eye.z, dy = s.ground + s.height * 0.5 - eye.y;
         const d2 = dx * dx + dz * dz + dy * dy;
-        if (d2 > this.maxFt * this.maxFt) return;
-        const l = d2 < r2 ? 0 : d2 < m2 ? 1 : 2;
+        if (!all && d2 > this.maxFt * this.maxFt) return;
+        const l = all || d2 < r2 ? 0 : d2 < m2 ? 1 : 2;
         const mat = this.matrices[si][i];
         levels[l][0].setMatrixAt(n[l], mat);
         levels[l][1].setMatrixAt(n[l], mat);
