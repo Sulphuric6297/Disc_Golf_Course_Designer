@@ -350,6 +350,8 @@ export async function copyCourse() {
 }
 
 export async function restoreServer() {
+  // (something was opened already, a course picked on the home page: that stays)
+  if (opening) return true;
   let last: string | null = null;
   try { last = localStorage.getItem(lastKey()); } catch { /* private window */ }
   // (opened, or something opened since in its place: nothing more to do)
