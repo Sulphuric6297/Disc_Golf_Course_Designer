@@ -67,9 +67,20 @@ test("what a draft changes, counted", () => {
 test("a version's name from what changed; the holes a draft changes (a moved basket counts)", () => {
   const before = doc([hole("a"), hole("b")], [{ id: "t", type: "tee", holeId: "a", x: 0 }, { id: "k", type: "basket", holeId: "b", x: 0 }]);
   const after = doc([hole("a"), hole("b"), hole("c")], [{ id: "t", type: "tee", holeId: "a", x: 0 }, { id: "k", type: "basket", holeId: "b", x: 9 }, { id: "z", type: "tree" }]);
-  expect(describeChanges(before, after)).toBe("Holes: 1 added · On the map: 1 added");
+  expect(describeChanges(before, after)).toBe("Holes: 1 added, 1 changed · On the map: 1 added");
   expect([...holesChanged(before, after)].sort()).toEqual(["b", "c"]);
   expect(describeChanges(before, before)).toBe("No changes");
+});
+
+test("a draft that only moves tees and baskets has changes (its Publish button shows)", () => {
+  const before = doc([hole("a"), hole("b")], [{ id: "t", type: "tee", holeId: "a", x: 0 }, { id: "k", type: "basket", holeId: "a", x: 0 }, { id: "u", type: "tee", holeId: "b", x: 0 }]);
+  // (both of hole a's moved: one change; a tee added to hole b: another)
+  const after = doc([hole("a"), hole("b")], [{ id: "t", type: "tee", holeId: "a", x: 5 }, { id: "k", type: "basket", holeId: "a", x: 9 }, { id: "u", type: "tee", holeId: "b", x: 0 }, { id: "v", type: "tee", holeId: "b", x: 3 }]);
+  expect(changesBetween(before, after).holes).toEqual({ added: 0, removed: 0, changed: 2 });
+  expect(describeChanges(before, after)).toBe("Holes: 2 changed");
+  // (a pin taken out counts too)
+  const fewer = doc([hole("a"), hole("b")], [{ id: "t", type: "tee", holeId: "a", x: 0 }, { id: "u", type: "tee", holeId: "b", x: 0 }]);
+  expect(describeChanges(before, fewer)).toBe("Holes: 1 changed");
 });
 
 test("one ground for the park: a course takes another's ground where they overlap, its own elsewhere; its holes as they are (pure logic)", async () => {

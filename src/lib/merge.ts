@@ -115,7 +115,13 @@ export function changesBetween(before: Doc, after: Doc) {
   };
   const other = [...new Set([...Object.keys(before), ...Object.keys(after)])]
     .filter(k => !SKIP.has(k) && k !== "holes" && k !== "items" && !same(before[k], after[k]));
-  return { holes: count("holes"), items: count("items"), other };
+  // (a hole whose tee or basket moved, came or went changed too, though the hole itself didn't:
+  // counted once, and only for a hole on both sides)
+  const holes = count("holes");
+  const was = new Map(((before.holes ?? []) as Entity[]).map(h => [h.id, h]));
+  const touched = new Set([...holesChanged(before, after), ...holesChanged(after, before)]);
+  for (const h of (after.holes ?? []) as Entity[]) if (touched.has(h.id) && was.has(h.id) && same(was.get(h.id), h)) holes.changed++;
+  return { holes, items: count("items"), other };
 }
 
 /** "Holes: 1 added, 2 changed · On the map: 3 changed" (a version's name, when none is given) */
