@@ -20,13 +20,14 @@ import { fetchMapImagery, type MapImagerySource } from "./geo/imagery";
 import { natureFromPhoto } from "./geo/photoNature";
 import { mappedCourse, parkWords, type LatLon, type MappedCourse, type OsmBuilding, type OsmFeature } from "./geo/osm";
 import { fetchOsm } from "./geo/osmFetch";
-import { alignedToSurvey, withoutSlabs, tracedBuildings, withMeasuredHeights, type TracedBuilding } from "./geo/buildings";
+import { withoutSlabs, tracedBuildings, withMeasuredHeights, type TracedBuilding } from "./geo/buildings";
 import { createAmenity, createArea, createBasket, createLine, createStructure, createTee, createTree, newHole } from "./course";
 import { courtCount, createField, fieldKindOf, fieldWord } from "./fields";
 import { fieldOf } from "./geo/parkKinds";
 import { centroid, clipPathToRect, clipPolygonToRect, nearestOnSegment, pointInPolygon, polygonArea, simplify } from "./geom";
 import { fetchStructures, fetchWater, fetchWetlands, inUS } from "./geo/usgov";
 import { courtsFromPhoto, parkingFromPhoto } from "./geo/parking";
+import { fittedToPhoto } from "./geo/photoFit";
 import type { PhotoSourceId } from "./geo/photoSources";
 import { reframe, toPlanXY, type GeoRef } from "./geoRef";
 import { boxOutline, orientedBox, roofOf } from "./structures";
@@ -890,16 +891,28 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       ...courts,
       ...found.trees.filter(t => !inside(t, "woods") && !inside(t, "water") && !nowhere(t))
     ];
+    // Pools: a small rectangle of the maps' water is a pool (a pond is never a rectangle); a building
+    // from FEMA or traced from the air that takes in a pool isn't one (it's the pool's deck)
+    const rectish = (a: AreaItem) => { const b = orientedBox(a.points), area = polygonArea(a.points); return area < 15000 && area >= b.a * b.b * 4 * 0.8; };
+    all = all.map(i => (i.type === "area" && i.kind === "water" && rectish(i) ? ({ ...createField("pool", i.points), importSource: i.importSource } as AreaItem) : i));
+    const pools = all.filter((i): i is AreaItem => i.type === "area" && i.kind === "field" && fieldKindOf(i) === "pool");
+    all = all.filter(i => !(i.type === "structure" && i.kind === "building" && (i.importSource === "fema" || i.importSource === "traced") && pools.some(pl => pointInPolygon(centroid(pl.points), i.points))));
+    // The maps' buildings fitted to their roofs on the photo (moved and turned a little where it
+    // clearly fits better: the photo is what's seen under the course)
+    if (background && satellite) {
+      const fit = await untilAborted(fittedToPhoto(all, background, width, height), signal).catch(err => { if (isAbort(err)) throw err; console.info("Buildings not fitted to the photo", err); return null; });
+      if (fit) {
+        all = fit.items;
+        if (fit.moved) notes.push(`${fit.moved} ${fit.moved === 1 ? "building" : "buildings"} lined up with their roofs on the photo.`);
+      }
+    }
     // With trees measured from the air: each on its own, in place of the photo's (the same step as
     // Measure trees and ground on the Site step)
     let standing: number | undefined;
     if (lidar && measured) {
       // The buildings' heights the survey measured (where the maps have none)
-      // (the maps' buildings lined up with their roofs in the survey, then a slab or a deck the maps
-      // took for a building left out)
-      const lined = alignedToSurvey(all, measured.lidar.measured);
-      if (lined.moved) notes.push(`${lined.moved} ${lined.moved === 1 ? "building" : "buildings"} lined up with the survey${lined.site.dx || lined.site.dy ? ` (the maps sit about ${Math.round(Math.hypot(lined.site.dx, lined.site.dy))} ft off here)` : ""}.`);
-      const set = withoutSlabs(lined.items, measured.lidar.measured);
+      // (a slab or a deck the maps took for a building, left out)
+      const set = withoutSlabs(all, measured.lidar.measured);
       all = withMeasuredHeights(set.items, measured.lidar.measured, signed);
       if (set.dropped) notes.push(`${set.dropped} ${set.dropped === 1 ? "building" : "buildings"} on the maps left out: the survey shows flat ground there (a slab, a deck or a pool).`);
       // (the trees a bare survey couldn't pick out, from the summer photo's canopy: after the
