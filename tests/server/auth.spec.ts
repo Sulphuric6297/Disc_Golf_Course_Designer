@@ -10,8 +10,12 @@ test.describe.configure({ mode: "serial" });
 const offline = (c: BrowserContext) => c.route(url => !/^http:\/\/localhost:4175\//.test(url.href), r => r.abort());
 test.beforeEach(async ({ context }) => { await offline(context); });
 
-/** The whole site in view, at once (a hole picked earlier leaves the map zoomed to it). */
-const site = (page: Page) => page.evaluate(() => (window as any).__dgView.fitSite(false));
+/** The whole site in view, at once (a hole picked earlier leaves the map zoomed to it), once the
+ *  map is there (a course's parts can arrive a moment before its map does). */
+const site = async (page: Page) => {
+  await page.waitForFunction(() => (window as any).__dgView, null, { timeout: 30_000 });
+  await page.evaluate(() => (window as any).__dgView.fitSite(false));
+};
 
 /** Signed in, as saved at the end of the first test. */
 const signedIn: Record<string, Awaited<ReturnType<BrowserContext["storageState"]>>> = {};
@@ -407,10 +411,13 @@ test("comments: pinned on a basket (moving with it), @mention, the bell, a reply
   // The basket moved: its pin goes with it
   await admin.getByTestId("comments-panel").getByRole("button", { name: "Close" }).click();
   await site(admin);
-  // (where the pin is with the whole site in view, before the basket moves)
+  // (where the pin is with the whole site in view, before the basket moves: pins follow the map on
+  // its next frame, which can be a while here without a graphics card, so once it's by the basket)
   await expect(admin.getByTestId("comment-pin")).toHaveCount(1);
-  const pin0 = (await admin.getByTestId("comment-pin").boundingBox())!;
   const from = await screenOf(admin, b.x, b.y);
+  const pinX = async () => { const p = (await admin.getByTestId("comment-pin").boundingBox())!; return p.x + p.width / 2; };
+  await expect.poll(async () => Math.abs(await pinX() - from.x - 8), { timeout: 20_000 }).toBeLessThan(6);
+  const pin0 = (await admin.getByTestId("comment-pin").boundingBox())!;
   await admin.mouse.move(from.x, from.y);
   await admin.mouse.down();
   await admin.mouse.move(from.x + 40, from.y + 30, { steps: 6 });
@@ -420,7 +427,8 @@ test("comments: pinned on a basket (moving with it), @mention, the bell, a reply
 });
 
 test("a public link: the site with what it allows (pictures, numbers), 3D when allowed; no account", async ({ browser }) => {
-  test.setTimeout(240_000);
+  // (its printed map and tee signs painted here without a graphics card: two minutes and more)
+  test.setTimeout(600_000);
   const admin = await as(browser, "admin");
   await admin.getByTestId("my-courses").getByTestId("course-card").click();
   await admin.getByTestId("share-button").click();
@@ -428,8 +436,8 @@ test("a public link: the site with what it allows (pictures, numbers), 3D when a
   await admin.getByTestId("new-link").click();
   await admin.getByTestId("link-form").getByLabel("Label").fill("Club website");
   await admin.getByTestId("save-link").click();
-  await expect(admin.getByTestId("link")).toHaveCount(1, { timeout: 120_000 });
-  await expect(admin.getByTestId("site-state")).toContainText("Shows version", { timeout: 120_000 });
+  await expect(admin.getByTestId("link")).toHaveCount(1, { timeout: 360_000 });
+  await expect(admin.getByTestId("site-state")).toContainText("Shows version", { timeout: 60_000 });
   const token = await admin.evaluate(async () => {
     const id = JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith("hyzerlab:last:"))!) ?? "null") ?? localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith("hyzerlab:last:"))!);
     const links = await (await fetch(`./api/courses/${id}/links`)).json();

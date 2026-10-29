@@ -732,15 +732,25 @@ let printDensity: number | null = null;
 let printJobs: (() => Promise<void>)[] | null = null;
 /** How a print's paintings wait between slices (unset: between frames, as fast as they go). */
 let printPace: (() => Promise<number>) | null = null;
+/** Prints take turns (they share the settings above): the one painting now, and how many wait. */
+let printTurn: Promise<void> = Promise.resolve();
+let printsWaiting = 0;
 
 /**
  * Draws a page for print: a first drawing notes the paintings it needs, they are painted at
  * `dpi` (a slice at a time, so the page never freezes; at most 250 dpi, plenty for the painted
- * texture, and no bigger than a browser holds), then the page is drawn with them.
+ * texture, and no bigger than a browser holds), then the page is drawn with them. One at a time:
+ * `pace` (painting in spare moments) is told to hurry while another waits its turn.
  */
-export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), draw: () => T, pace?: () => Promise<number>): Promise<T> => {
+export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), draw: () => T, pace?: (hurry: () => boolean) => Promise<number>): Promise<T> => {
+  const before = printTurn;
+  let done = () => {};
+  printTurn = new Promise<void>(res => { done = res; });
+  printsWaiting++;
+  await before;
+  printsWaiting--;
   const was = printDensity;
-  printPace = pace ?? null;
+  printPace = pace ? () => pace(() => printsWaiting > 0) : null;
   try {
     // (a resolution that depends on the page: measured by a drawing that paints nothing)
     if (typeof dpi === "function") {
@@ -759,6 +769,7 @@ export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), dr
     printDensity = was;
     printJobs = null;
     printPace = null;
+    done();
   }
 };
 
