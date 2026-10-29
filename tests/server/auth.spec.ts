@@ -487,6 +487,7 @@ test("live: two people in one course see each other's changes as they're made; u
   // Pat, an editor, starts in a draft and chooses to publish as they go
   const pat = await as(browser, "pat");
   await pat.evaluate(id => (window as any).__dgServer.open(id), id);
+  await pat.getByTestId("back-to-course").click();
   await expect(pat.getByTestId("course-chip")).toContainText("Draft");
   await pat.getByTestId("course-chip").click();
   await pat.getByTestId("mode-live").click();
@@ -519,5 +520,6 @@ test("live: two people in one course see each other's changes as they're made; u
   await admin.reload();
   await expect(admin.getByTestId("home")).toBeVisible();
   await admin.evaluate(id => (window as any).__dgServer.open(id), id);
+  await admin.getByTestId("back-to-course").click();
   await expect.poll(() => holeIds(admin)).toEqual([first.id, third.id, fourth.id].sort());
 });
