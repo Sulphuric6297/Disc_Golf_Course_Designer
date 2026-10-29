@@ -42,6 +42,18 @@ test("tee view, Edit: a tree picked where it stands (its panel opens) and dragge
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await course(page)).items.some((i: any) => i.id === tree.id)).toBe(true);
 
+  // The basket down the fairway picks as itself, not the pad underfoot; the fairway picks nothing
+  await expect(page.getByTestId("tee-view-hud")).toBeVisible();
+  const basket = (await course(page)).items.find((i: any) => i.type === "basket" && i.holeId === hole.id);
+  const far = await screenOf(page, basket.x, basket.y, 1);
+  await page.mouse.click(far.x, far.y);
+  await expect.poll(async () => (await editorState(page)).selectedId).toBe(basket.id);
+  await page.keyboard.press("Escape");
+  const fairway = await screenOf(page, 330, 600, 0);
+  await page.mouse.click(fairway.x, fairway.y);
+  await page.waitForTimeout(1500);
+  expect((await editorState(page)).selectedId).toBeNull();
+
   // E: back to Look; the toolbar goes, the tee view stays
   await page.keyboard.press("e");
   await expect(page.getByTestId("tee-look")).toHaveAttribute("aria-checked", "true");

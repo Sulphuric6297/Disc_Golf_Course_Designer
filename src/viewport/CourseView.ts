@@ -4555,14 +4555,19 @@ export class CourseView {
     const seen = leaves?.drawn && !(roof && roof.t < leaves.t) ? leaves : roof;
     // (leaves only near the pointer, none drawn right there: only when nothing is on the ground there)
     const guessed = leaves && !leaves.drawn && !roof ? leaves : null;
+    // (from the tee view: the camera stands on a pad, close enough to fill the view; that pad isn't
+    // what a click means, and nothing near the eye gets a target bigger than a thumb)
+    const eye = this.eye ?? this.mainEye();
+    const pov = eye.cam === this.povCam;
     for (const item of doc.course.items) {
       if (item.type === "area" || item.type === "line" || item.type === "label" || item.type === "structure" || item.type === "tree") continue;
       const a = new THREE.Vector3(item.x, this.h(item.x, item.y) + 1, item.y);
+      if (pov && Math.hypot(a.x - eye.cam.position.x, a.z - eye.cam.position.z) < 15) continue;
       const s = this.project(a);
       if (!s) continue;
       const upp = this.upp(a);
       const real = item.type === "tee" ? item.padLength / 2 : item.type === "amenity" ? 4 : 2;
-      const radius = Math.max(13 * reach, real / upp);
+      const radius = pov ? Math.min(40 * reach, Math.max(16 * reach, real / upp)) : Math.max(13 * reach, real / upp);
       const d = Math.hypot(s.x - sx, s.y - sy);
       // (a mark hidden behind leaves or a roof isn't what the pointer is on)
       if (d <= radius && !(seen && seen.t < a.distanceTo(ray.origin) - 3)) {
@@ -4570,8 +4575,11 @@ export class CourseView {
         if (!best || score < best.score) best = { id: item.id, score };
       }
     }
+    // (from the tee: a tree or roof right under the pointer comes before a mark beside it)
+    if (pov && seen && (!best || best.score > 0.45)) return seen.id;
     if (best) return best.id;
     if (seen) return seen.id;
+    if (pov) return guessed?.id ?? null;
     const g = this.groundAt(clientX, clientY);
     if (!g) return guessed?.id ?? null;
     const p = { x: g.x, y: g.z };
