@@ -295,6 +295,20 @@ test("one click adds OB along a hole's side or behind its basket", async ({ page
   await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "line").length).toBe(1);
 });
 
+test("the right-click menu goes with a left click anywhere: on the map, or on the page around it", async ({ page }) => {
+  await blankCourse(page);
+  const at = await screenOf(page, 700, 600);
+  await page.mouse.click(at.x, at.y, { button: "right" });
+  await expect(page.getByTestId("map-menu")).toBeVisible();
+  const away = await screenOf(page, 300, 300);
+  await page.mouse.click(away.x, away.y);
+  await expect(page.getByTestId("map-menu")).toHaveCount(0);
+  await page.mouse.click(at.x, at.y, { button: "right" });
+  await expect(page.getByTestId("map-menu")).toBeVisible();
+  await page.mouse.click(5, 5);
+  await expect(page.getByTestId("map-menu")).toHaveCount(0);
+});
+
 test("a road marked OB from its right-click menu", async ({ page }) => {
   await blankCourse(page);
   await page.keyboard.press("l");

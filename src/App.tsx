@@ -75,17 +75,18 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
   const doc = getDoc();
   const hole = doc.holes.find(h => h.id === info.itemId);
   const item = doc.items.find(i => i.id === info.itemId);
-  useEffect(() => {
-    const close = () => onClose();
-    // (Esc closes the menu, and only the menu: the tool and the selection stay)
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
-    window.addEventListener("pointerdown", close);
-    window.addEventListener("keydown", esc, true);
-    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc, true); };
-  }, [onClose]);
   // Where it opens: down and right of the pointer, or up or left of it where there's no room
   // (measured once drawn; a screen too short for it scrolls it)
   const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // (a press anywhere outside it closes it, the map too: heard before the map takes it)
+    const close = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) onClose(); };
+    // (Esc closes the menu, and only the menu: the tool and the selection stay)
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    window.addEventListener("pointerdown", close, true);
+    window.addEventListener("keydown", esc, true);
+    return () => { window.removeEventListener("pointerdown", close, true); window.removeEventListener("keydown", esc, true); };
+  }, [onClose]);
   const [at, setAt] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
     const el = box.current;
