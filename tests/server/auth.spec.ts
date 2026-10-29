@@ -274,10 +274,11 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await admin.getByTestId("course-chip").click();
   await admin.getByTestId("review-button").click();
   await admin.getByTestId("submissions").getByRole("button", { name: "Look" }).click();
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(4);
+  // (longer, as for the version above: the test's recording of the 3D view)
+  await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(4);
   await admin.getByTestId("preview-bar").getByRole("button", { name: "Accept" }).click();
-  await expect(admin.getByTestId("preview-bar")).toHaveCount(0);
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(4);
+  await expect(admin.getByTestId("preview-bar")).toHaveCount(0, { timeout: 40_000 });
+  await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(4);
   await expect(admin.getByTestId("review-count")).toHaveCount(0);
 
   // Restored: back to before Pat's holes; the history keeps everything
@@ -285,7 +286,7 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await admin.getByTestId("history-button").click();
   admin.once("dialog", d => void d.accept());
   await versions.filter({ hasText: "Created" }).getByRole("button", { name: "Restore" }).click();
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(1);
+  await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(1);
   await admin.getByTestId("course-chip").click();
   await admin.getByTestId("history-button").click();
   await expect(versions.first()).toContainText("Restored");
