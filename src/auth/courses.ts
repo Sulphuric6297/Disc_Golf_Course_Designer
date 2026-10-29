@@ -103,8 +103,8 @@ let lastSaved: CourseDoc | null = null;
 
 async function save() {
   const doc = getDoc();
-  const wasLive = editsLive();
   if (doc === opened || doc === lastSaved || !canSave()) return;
+  let made = false;
   if (!state().id && isEmpty(doc)) return;
   set({ status: "saving" });
   try {
@@ -126,6 +126,7 @@ async function save() {
       set({ id: r.id, version: r.version, role: r.role });
       sentBackground = null;
       remember(r.id);
+      made = true;
     } else if (inDraft()) {
       const r = await api<{ version: number }>("PUT", `courses/${id}/draft`, { doc: noPhoto(doc), summary, base: state().draft ? undefined : { doc: noPhoto(base!.doc), version: base!.version } });
       set({ draft: true, behind: r.version > base!.version });
@@ -144,8 +145,8 @@ async function save() {
     if (e instanceof ApiFail && e.status === 409) set({ status: "conflict", conflict: e.message });
     else { set({ status: "error" }); console.warn("Save failed", e); }
   }
-  // (a course just made, and changed live from now on)
-  if (!wasLive && editsLive()) void reopenLive();
+  // (a course just made: changed live from now on, from what was sent)
+  if (made && editsLive()) void reopenLive(doc);
 }
 
 // --- The course list's picture: the printed map, small, made after a save (at most every two
@@ -286,16 +287,15 @@ export async function openServerCourse(id: string, quiet = false) {
 
 const reopen = () => { const id = state().id; return id ? openServerCourse(id) : Promise.resolve(false); };
 
-/** A course just made on the server: opened again, live, keeping what's on the screen. */
-async function reopenLive() {
+/** A course just made on the server: live from now on, keeping what's on the screen (`sent`:
+ * what went to the server; anything changed since goes as live changes). */
+async function reopenLive(sent: CourseDoc) {
   const id = state().id;
   if (!id || state().preview) return;
   const c = await readCourse(id);
-  if (state().id !== id || !editsLive()) return;
-  // (from what was sent: anything changed since goes as live changes)
-  const doc = lastSaved ?? getDoc();
-  opened = doc;
-  startLive(id, doc, c.seq ?? 0, liveHooks);
+  if (state().id !== id || !editsLive() || state().preview) return;
+  opened = sent;
+  startLive(id, sent, c.seq ?? 0, liveHooks);
 }
 
 /** What the live connection asks of the course here. */
