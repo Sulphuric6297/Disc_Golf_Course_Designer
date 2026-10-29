@@ -634,7 +634,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "comments", section: "share", title: "Comments",
-    body: "Drop a comment on any spot on the map, or on a tee, basket or anything else (it moves with it). Everyone the course is shared with can see it, reply, and resolve it when it's sorted. Type @ and a name to tell someone.",
+    body: "Drop a comment on any spot on the map, or on a tee, basket or anything else (it moves with it). Everyone the course is shared with can see it, reply, and resolve it when it's sorted. Type @ and a name to tell someone.\n\nThe pins sit on the course map in the Site and Design steps, in 2D and 3D. The Map and Export steps show your printed pages instead, so the pins aren't there. Adding a comment, or opening one from the list, takes you back to the map.",
     words: "comments notes discuss reply resolve mention",
     path: "Top bar › Comments", server: true
   },

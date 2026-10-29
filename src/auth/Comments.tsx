@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import { Check, MessageCircle, MessageSquarePlus, RotateCcw, Trash2, X } from "lucide-react";
 import { holeLabel } from "../lib/course";
-import { getDoc, useCourse } from "../state/course";
+import { getDoc, useCourse, useEditor } from "../state/course";
 import { getView } from "../state/view";
 import { toast } from "../state/toast";
 import { inputCls } from "../components/ui";
@@ -67,7 +67,11 @@ export const pinAt = (t: Thread, doc: CourseDoc): P | null => {
   return { x: t.anchor.x, y: t.anchor.y };
 };
 
+/** Comments are on the course map: from the Map or Export step, back to it (Design) first. */
+const toTheMap = () => { const e = useEditor.getState(); if (e.step === "map" || e.step === "export") e.set({ step: "design" }); };
+
 const focusOn = (t: Thread) => {
+  toTheMap();
   const p = pinAt(t, getDoc());
   if (p) getView()?.fitBounds({ minX: p.x - 120, minY: p.y - 120, maxX: p.x + 120, maxY: p.y + 120 }, { minSpan: 240 });
 };
@@ -98,6 +102,7 @@ const landOn = (p: P, doc: CourseDoc): { kind: "hole" | "item"; id: string } | u
 export function CommentLayer() {
   const { threads, placing, draftAt, selected, showResolved, panel } = useComments();
   const doc = useCourse(s => s.doc);
+  const step = useEditor(s => s.step);
   const [, bump] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
   useEffect(() => {
@@ -108,9 +113,10 @@ export function CommentLayer() {
     const off = v?.onView(again);
     window.addEventListener("resize", again);
     return () => { off?.(); window.removeEventListener("resize", again); };
-  }, [panel]);
+  }, [panel, step]);
   const view = getView();
-  if (!view || !rect) return null;
+  // (not over the Map and Export steps' pages: the map under them is put away)
+  if (!view || !rect || step === "map" || step === "export") return null;
   const shown = threads.filter(t => showResolved || !t.resolvedAt);
   // (none for a spot behind the camera: tilted low in 3D, much of the ground is)
   const at = (p: P) => view.toClient(p.x, p.y, 0) as { x: number; y: number } | null;
@@ -196,7 +202,7 @@ export function CommentsPanel() {
         <label className="flex items-center gap-1.5 text-xs text-zinc-400"><input type="checkbox" checked={showResolved} onChange={e => useComments.setState({ showResolved: e.target.checked })} /> Resolved</label>
         <button aria-label="Close" className="text-zinc-400 hover:text-zinc-50" onClick={() => useComments.setState({ panel: false })}><X size={18} /></button>
       </div>
-      <button className="mx-4 mt-3 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950" onClick={() => useComments.setState({ placing: true, draftAt: null })} data-testid="add-comment">
+      <button className="mx-4 mt-3 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950" onClick={() => { toTheMap(); useComments.setState({ placing: true, draftAt: null }); }} data-testid="add-comment">
         <MessageSquarePlus size={15} /> Add a comment
       </button>
       <ol className="flex-1 overflow-y-auto p-3 space-y-2" data-testid="threads">

@@ -340,6 +340,16 @@ test("comments: pinned on a basket (moving with it), @mention, the bell, a reply
   await admin.mouse.up();
   await expect.poll(async () => (await admin.evaluate(id => (window as any).__dgCourse().items.find((i: any) => i.id === id).x, b.id))).toBeGreaterThan(b.x + 5);
   await expect.poll(async () => (await admin.getByTestId("comment-pin").boundingBox())!.x).toBeGreaterThan(pin0.x + 10);
+
+  // Not over the Map step's page (the map under it is put away); a comment opened from there goes
+  // back to the map
+  await admin.getByRole("navigation", { name: "Steps" }).getByRole("button", { name: /Map/ }).click();
+  await expect(admin.getByTestId("design-page")).toBeVisible();
+  await expect(admin.getByTestId("comment-pin")).toHaveCount(0);
+  await admin.getByTestId("comments-button").click();
+  await admin.getByTestId("thread-focus").first().click();
+  await expect(admin.getByTestId("comment-pin")).toHaveCount(1);
+  await expect(admin.getByTestId("design-page")).toHaveCount(0);
 });
 
 test("a public link: the site with what it allows (pictures, numbers), 3D when allowed; no account", async ({ browser }) => {
