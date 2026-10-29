@@ -11,6 +11,7 @@ import { SERVER, useAuth } from "./api";
 import { discardDraft, draftChangeCount, draftChanges, inDraft, keepMine, reloadTheirs, saveDraftAs, saveNow, setLive, thumbnailNow, useServerCourse } from "./courses";
 import { useCourse } from "../state/course";
 import { useAllowed } from "./perms";
+import { Faces } from "./Presence";
 
 /** Up to two letters for the avatar. */
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join("") || "?";
@@ -19,7 +20,7 @@ const signOut = async () => { await saveNow(); await useAuth.getState().signOut(
 export const goHome = () => { useAuth.getState().showHome(true); void saveNow().then(thumbnailNow).then(() => useAuth.getState().bump()); };
 
 /** A menu that closes on a click outside it or Esc. */
-function useMenu() {
+export function useMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -39,7 +40,17 @@ const ROW = MENU_ROW, Row = MenuRow;
 const BAR = `relative p-2 rounded-lg text-zinc-400 hover:text-zinc-50 hover:bg-white/[0.09] ${FOCUS}`;
 
 /** The open course: how it's being changed, and what can be done about it. */
+/** How the course is saved (live, or a draft), with the others in it beside it. */
 export function CourseChip() {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Faces />
+      <SaveChip />
+    </div>
+  );
+}
+
+function SaveChip() {
   const { status, role, conflict, preview, draft, approval, pending, id } = useServerCourse();
   const open = useAuth(s => s.open);
   useCourse(s => s.doc); // (what the draft changes, kept up to date)

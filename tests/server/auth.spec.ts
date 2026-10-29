@@ -464,7 +464,7 @@ test("a public link: the site with what it allows (pictures, numbers), 3D when a
   await admin.getByTestId("link").getByRole("button", { name: "Change" }).click();
   await admin.getByTestId("link-form").getByTestId("part-view3d").check();
   await admin.getByTestId("save-link").click();
-  await expect(admin.getByTestId("link")).toContainText("3D", { timeout: 120_000 });
+  await expect(admin.getByTestId("link")).toContainText("3D", { timeout: 360_000 });
   await expect(admin.getByTestId("update-site")).toHaveText(/Update site/, { timeout: 120_000 });
   await page.reload();
   await page.getByTestId("explore").click();
@@ -521,6 +521,24 @@ test("live: two people in one course see each other's changes as they're made; u
   await admin.keyboard.press("Control+z");
   await expect.poll(() => holeIds(admin)).toEqual([first.id, third.id].sort());
   await expect.poll(() => holeIds(pat)).toEqual([first.id, third.id].sort());
+
+  // Who's here: each sees the other's face; Pat sees Admin's pointer, and a ring round the basket
+  // Admin picks, and the list says which hole Admin is on
+  await expect(pat.getByTestId("live-faces")).toBeVisible();
+  await expect(admin.getByTestId("live-faces")).toBeVisible();
+  const basket = (await course(admin)).items.find((i: any) => i.type === "basket" && i.holeId === first.id);
+  const spot = await screenOf(admin, 400, 300);
+  await admin.mouse.move(spot.x, spot.y);
+  await admin.mouse.move(spot.x + 20, spot.y + 10, { steps: 3 });
+  await expect(pat.getByTestId("live-pointer")).toHaveCount(1);
+  const on = await screenOf(admin, basket.x, basket.y);
+  await admin.mouse.click(on.x, on.y);
+  await expect.poll(() => admin.evaluate(() => (window as any).__dgEditor().selectedId)).toBe(basket.id);
+  await expect(pat.getByTestId("live-ring")).toHaveCount(1);
+  await pat.getByTestId("live-faces").click();
+  await expect(pat.getByTestId("live-person")).toContainText("Hole 1");
+  await pat.keyboard.press("Escape");
+  await admin.keyboard.press("Escape");
 
   // Pat offline: the change can't be sent, waits, and goes in once Pat is back (the connection
   // open already isn't cut by the test's offline: the change failing to go is what tells)

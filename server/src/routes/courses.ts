@@ -171,7 +171,7 @@ export async function courseRoutes(app: FastifyInstance, { sql, live }: RouteCtx
     const { id } = parse(ids, req.params);
     const { a } = await role(req, id, "viewer");
     const n = z.number().finite().min(-1e7).max(1e7);
-    const b = parse(z.object({ client, at: z.object({ x: n, y: n, picked: z.string().max(100).nullable().optional(), view: z.enum(["2d", "3d"]).optional() }).nullable() }), req.body);
+    const b = parse(z.object({ client, at: z.object({ x: n.nullable().optional(), y: n.nullable().optional(), picked: z.string().max(100).nullable().optional(), view: z.enum(["2d", "3d", "map"]).optional() }).nullable() }), req.body);
     if (!live.here(id, b.client, a.user.id, b.at)) throw new ApiError(409, "Not connected", { rejoin: true });
     return { ok: true };
   });

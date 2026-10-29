@@ -10,6 +10,7 @@ import { Home, mapRests } from "./Home";
 import { getView, onLiveView } from "../state/view";
 import { HistoryDialog, PreviewBar, PublishDialog, ReviewDialog, UpdateDialog } from "./ChangesDialogs";
 import { CommentLayer, CommentsPanel, loadComments, useCommentKeys, useComments } from "./Comments";
+import { PresenceLayer, useSendHere } from "./Presence";
 import { useServerCourse } from "./courses";
 import { NearbyLayer } from "./Nearby";
 
@@ -199,6 +200,7 @@ function CourseComments() {
   const id = useServerCourse(s => s.id);
   const preview = useServerCourse(s => s.preview);
   useCommentKeys();
+  useSendHere();
   useEffect(() => {
     useComments.setState({ threads: [], selected: null, placing: false, draftAt: null });
     void loadComments();
@@ -210,6 +212,7 @@ function CourseComments() {
   return (
     <>
       <CommentLayer />
+      <PresenceLayer />
       <CommentsPanel />
     </>
   );

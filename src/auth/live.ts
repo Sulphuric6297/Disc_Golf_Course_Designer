@@ -13,8 +13,9 @@ import { applyChanges, changesBetween, theirsInto, type Change } from "../lib/li
 import { api, ApiFail } from "./api";
 
 export interface Person { userId: string; name: string; clients: string[] }
-/** Where someone is pointing on the map (plan feet), and what they've picked. */
-export interface Here { x: number; y: number; picked?: string | null; view?: "2d" | "3d" }
+/** Where someone is pointing on the map (plan feet; none: off the map), what they've picked, and
+ * how they're looking (the map from above, in 3D, or on the Map step). */
+export interface Here { x?: number | null; y?: number | null; picked?: string | null; view?: "2d" | "3d" | "map" }
 export interface Pointer { userId: string; name: string; at: Here | null; when: number }
 
 export const useLive = create<{ on: boolean; connected: boolean; people: Person[]; pointers: Record<string, Pointer> }>(() => ({ on: false, connected: false, people: [], pointers: {} }));

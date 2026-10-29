@@ -121,7 +121,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "save-server", section: "start", title: "Saving (on the server)",
-    body: "On a HyzerLab server the course saves itself a moment after each change. The chip in the top bar says Live or Draft, and its dot pulses while it saves. Ctrl+S saves right now.\n\nIf a save fails, Not saved · try again shows up next to the chip. Click it to send your changes again. If someone else saved over you at the same time, Not saved lets you keep yours (Save mine) or load theirs (Open theirs).",
+    body: "On a HyzerLab server the course saves itself a moment after each change. The chip in the top bar says Live or Draft, and its dot pulses while it saves. Live, everyone else in the course sees each change as you make it. Ctrl+S saves right now.\n\nIf a save fails, Not saved · try again shows up next to the chip. Click it to send your changes again. If someone else saved over you at the same time, Not saved lets you keep yours (Save mine) or load theirs (Open theirs).",
     words: "save autosave ctrl s not saved conflict",
     server: true
   },
@@ -601,9 +601,23 @@ export const TOPICS: Topic[] = [
   // ------------------------------------------------------------------ Sharing
   {
     id: "live-draft", section: "share", title: "Live or in a draft",
-    body: "Publish as I go means your changes go straight into the course. Work in a draft keeps them off to the side until you publish them (or send them to the owner for an OK). The chip in the top bar shows which one you're in, and its menu switches.",
-    words: "draft live publish chip publish as i go work in a draft",
+    body: "Publish as I go means your changes go straight into the course, and everyone who has it open sees them as you make them. Work in a draft keeps them off to the side until you publish them (or send them to the owner for an OK). The chip in the top bar shows which one you're in, and its menu switches.
+
+Owners and editors can both publish as they go. If the owner turns on Need my OK before they go in, editors work in drafts only.",
+    words: "draft live publish chip publish as i go work in a draft editor",
     path: "Top bar › Live / Draft", server: true
+  },
+  {
+    id: "live-together", section: "share", title: "Editing together, live",
+    body: "When more than one person has the course open, each change shows up for the others as it's made: a tree moved, a hole added, the map's style changed. That goes for the map, 3D and the Map step.
+
+The faces next to the Live chip are the others in the course, one per person however many tabs they have open. Click them for the list: who's there and which hole they're on, or whether they're looking in 3D or on the Map step. On the map, each person's pointer shows in their own color with their name, and fades after a few seconds still. A ring in their color goes round whatever they've picked, so two people don't drag the same basket at once. Taps on a phone or tablet don't send a pointer, only what you pick.
+
+If two people change the same thing at the same moment, the later change stays. Undo only takes back your own changes: what others did since stays put. If your connection drops, keep working. Your changes go in once it's back, and the chip says Not saved · try again if it's gone for a while. Someone with a tab open from before live editing still saves the old way, and their saves go in too.
+
+Viewers see the changes as they're made, and their pointers show, but they can't change anything.",
+    words: "live together real time collaborate others pointer cursor faces who is here presence ring picked same time undo offline",
+    path: "Top bar › faces next to Live", server: true
   },
   {
     id: "save-draft", section: "share", title: "Save draft and history",

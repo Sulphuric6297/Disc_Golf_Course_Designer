@@ -67,6 +67,8 @@ interface Member {
   reply: FastifyReply;
   /** Still signed in and on the course (asked now and then: let go when not). */
   allowed: () => Promise<boolean>;
+  /** Where they last said they're pointing, and what they've picked (for anyone who comes in). */
+  at?: unknown;
 }
 interface Room {
   id: string;
@@ -191,6 +193,8 @@ export function liveRooms(sql: Sql) {
       r.members.set(member.client, m);
       send(m, "hello", { seq: r.seq, savedSeq: r.savedSeq, version: r.version, people: people(r) });
       everyone(r, "people", { people: people(r) }, member.client);
+      // (where the others are pointing, and what they've picked, as they last said)
+      for (const o of r.members.values()) if (o !== m && o.at) send(m, "here", { client: o.client, userId: o.userId, name: o.name, at: o.at });
       // (and whether they may still see it: signed out, disabled or taken off the course, let go)
       const alive = setInterval(() => {
         void m.allowed().then(ok => {
@@ -230,6 +234,7 @@ export function liveRooms(sql: Sql) {
       const r = rooms.get(courseId);
       const m = r?.members.get(client);
       if (!r || !m || m.userId !== userId) return false;
+      m.at = at ?? undefined;
       everyone(r, "here", { client, userId, name: m.name, at }, client);
       return true;
     },
