@@ -54,8 +54,9 @@ let recent: { seq: number; doc: CourseDoc }[] = [];
 /** This tab's changes sent and not back yet, by their number. */
 const flying = new Map<number, Change[]>();
 let batch = 0;
-/** The last of this tab's changes taken, and the last change written. */
-let mine = 0, savedSeq = 0;
+/** The last of this tab's changes taken, the last change written, and the last of ours said to
+ * be written (the course list's picture is made after our own changes, not others'). */
+let mine = 0, savedSeq = 0, toldMine = 0;
 let sending = false, needsRead = false;
 let timer = 0, retry = 0, retryTimer = 0, offlineSince = 0;
 let summaryAt = 0;
@@ -75,7 +76,7 @@ export function startLive(id: string, doc: CourseDoc, startSeq: number, h: LiveH
   hooks = h;
   server = sent = saved = doc;
   seq = savedSeq = startSeq;
-  mine = 0;
+  mine = toldMine = 0;
   recent = [{ seq, doc }];
   posOf.set(doc, logPos);
   setCatchUp(catchUp);
@@ -214,7 +215,7 @@ function settle() {
   if (!hooks || sending || flying.size || getDoc() !== sent) return;
   const written = savedSeq >= mine;
   hooks.status(written ? "saved" : "saving");
-  if (written) hooks.written();
+  if (written && mine > toldMine) { toldMine = mine; hooks.written(); }
 }
 
 function sendSoon() {
@@ -272,7 +273,7 @@ function reread() {
       const next = since(doc);
       server = sent = saved = fresh.doc;
       seq = savedSeq = fresh.seq;
-      mine = 0;
+      mine = toldMine = 0;
       recent = [{ seq, doc: fresh.doc }];
       flying.clear();
       needsRead = false;
