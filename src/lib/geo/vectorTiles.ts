@@ -178,7 +178,8 @@ export const classifyTileFeature = (layer: string, f: TileFeature): { geom: "lin
     return null;
   }
   if (layer === "waterway" && f.type === 2 && STREAM_CLASSES.has(cls)) return { geom: "line", kind: "stream" };
-  if (layer === "water" && f.type === 3) return { geom: "area", kind: "water" };
+  // (a swimming pool's water: the pool, as a park's field)
+  if (layer === "water" && f.type === 3) return { geom: "area", kind: cls === "swimming_pool" ? "field" : "water" };
   if (layer === "landcover" && f.type === 3) {
     if (cls === "wood") return { geom: "area", kind: "woods" };
     if (GRASS_CLASSES.has(cls) && sub !== "park") return { geom: "area", kind: "rough" };

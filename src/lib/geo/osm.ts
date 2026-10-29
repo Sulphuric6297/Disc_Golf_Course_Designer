@@ -164,6 +164,8 @@ export const classifyOsm = (tags: Record<string, string>, closed: boolean): { ge
   if (tags.disc_golf === "hole") return { geom: "line", kind: "dgHole" };
   if (tags.golf === "hole") return { geom: "line", kind: "dgHole" };
   if (tags.highway && notOnTheGround(tags)) return null;
+  // (a pool is a pool, whatever water it's also tagged as)
+  if (closed && (tags.leisure === "swimming_pool" || tags.amenity === "swimming_pool" || tags.water === "pool") && fieldKindOfTags(tags)) return { geom: "area", kind: "field" };
   if (closed && (tags.natural === "water" || tags.landuse === "reservoir" || tags.landuse === "basin" || tags.water || tags.waterway === "riverbank")) return { geom: "area", kind: "water" };
   if (closed && tags.amenity === "parking") return { geom: "area", kind: "parking" };
   // (a picnic shelter is often mapped as a roof: a shelter, open at the sides)

@@ -340,6 +340,59 @@ export const roofShape = (m: Pick<Measured, "nx" | "ny" | "cell" | "ground" | "s
   };
 };
 
+/** How much of an outline (moved by `dx`, `dy`) the survey shows standing 6 ft or more over the
+ * ground: a share of its spots (4 ft apart). */
+const raisedShare = (m: Pick<Measured, "nx" | "ny" | "cell" | "ground" | "surface" | "snx" | "sny">, outline: P[], dx = 0, dy = 0) => {
+  const sc = m.cell * 2, b = boundsOf(outline);
+  let n = 0, up = 0;
+  for (let j = Math.max(0, Math.floor((b.minY + dy) / sc)); j <= Math.min(m.sny - 1, Math.floor((b.maxY + dy) / sc)); j++)
+    for (let i = Math.max(0, Math.floor((b.minX + dx) / sc)); i <= Math.min(m.snx - 1, Math.floor((b.maxX + dx) / sc)); i++) {
+      const p = { x: (i + 0.5) * sc - dx, y: (j + 0.5) * sc - dy };
+      if (!pointInPolygon(p, outline)) continue;
+      const top = m.surface[j * m.snx + i], gi = Math.min(m.nx - 1, i * 2), gj = Math.min(m.ny - 1, j * 2), gr = m.ground[gj * m.nx + gi];
+      if (!Number.isFinite(top) || !Number.isFinite(gr)) continue;
+      n++;
+      if (top - gr > 6) up++;
+    }
+  return n ? up / n : null;
+};
+
+/** A building's outline lined up with where the survey shows its roof: moved up to 12 ft (2 ft at a
+ * time) to stand over the most of it, where that's clearly better than where it came (maps and
+ * photos are often a few feet off). Its share standing, as it came and as moved. */
+export const fitToSurvey = (m: Pick<Measured, "nx" | "ny" | "cell" | "ground" | "surface" | "snx" | "sny">, outline: P[]) => {
+  const was = raisedShare(m, outline);
+  if (was === null) return null;
+  let best = { dx: 0, dy: 0, share: was };
+  for (let dy = -12; dy <= 12; dy += 2) for (let dx = -12; dx <= 12; dx += 2) {
+    if (!dx && !dy) continue;
+    const s = raisedShare(m, outline, dx, dy);
+    if (s !== null && s > best.share + 1e-9) best = { dx, dy, share: s };
+  }
+  return { was, ...(best.share > was + 0.15 ? best : { dx: 0, dy: 0, share: was }) };
+};
+
+/**
+ * Buildings lined up with the survey as they're brought in (`opts.fit`): each moved over its roof as
+ * the survey shows it; one traced from the air or from FEMA where the survey shows flat ground (a
+ * slab, a deck, a pool: under a third of it standing) left out. OpenStreetMap's are kept, moved.
+ */
+export const fittedToSurvey = (items: CourseItem[], m: Measured): { items: CourseItem[]; moved: number; dropped: number } => {
+  let moved = 0, dropped = 0;
+  const out: CourseItem[] = [];
+  for (const i of items) {
+    if (i.type !== "structure" || i.kind !== "building" || (i.importSource !== "osm" && i.importSource !== "traced" && i.importSource !== "fema")) { out.push(i); continue; }
+    const fit = fitToSurvey(m, i.points);
+    if (!fit) { out.push(i); continue; }
+    if (fit.share < 0.33 && i.importSource !== "osm") { dropped++; continue; }
+    if (fit.dx || fit.dy) {
+      moved++;
+      out.push({ ...i, x: i.x + fit.dx, y: i.y + fit.dy, points: i.points.map(p => ({ x: p.x + fit.dx, y: p.y + fit.dy })) });
+    } else out.push(i);
+  }
+  return { items: out, moved, dropped };
+};
+
 /**
  * The buildings that came in without a height (OpenStreetMap's and those traced from the air),
  * given the one the survey measured over their roofs: the walls up to the eaves, and a flat roof

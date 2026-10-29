@@ -43,7 +43,7 @@ export const fieldKindOfTags = (tags: Tags): FieldKind | null => {
     if (part === "infield" || part === "outfield" || part === "diamond" || NOT_A_FIELD.has(sport)) return null;
     field = SPORTS[sport] ?? "multi";
   } else if (l === "playground") field = tags.playground === "splash_pad" ? "splash" : "playground";
-  else if (l === "swimming_pool" || tags.amenity === "swimming_pool") {
+  else if (l === "swimming_pool" || tags.amenity === "swimming_pool" || tags.water === "pool") {
     if (privateOrIndoor(tags)) return null;
     field = "pool";
   } else if (l === "splash_pad" || (tags.amenity === "fountain" && tags.fountain === "splash_pad") || (l === "water_park" && (tags.water_park === "splash_pad" || /splash|spray/i.test(tags.name ?? "")))) field = "splash";

@@ -510,7 +510,8 @@ export const findBushes = (m: Pick<Measured, "nx" | "ny" | "cell" | "canopy" | "
     const ax = sx / N, ay = sy / N, vxx = sxx / N - ax * ax, vyy = syy / N - ay * ay, vxy = sxy / N - ax * ay;
     const mid = (vxx + vyy) / 2, dev = Math.sqrt(Math.max(0, ((vxx - vyy) / 2) ** 2 + vxy * vxy));
     if (Math.sqrt(Math.max(0, mid + dev)) > 2.5 * Math.sqrt(Math.max(1e-6, mid - dev))) continue;
-    if (!m.sorted && multi < up * 0.2) continue;
+    // (and what grows lets part of the laser through: a post, a lamp, a car or a sign doesn't)
+    if (multi < up * (m.sorted ? 0.08 : 0.3)) continue;
     out.push([Math.round((ax + 0.5) * cell * 10) / 10, Math.round((ay + 0.5) * cell * 10) / 10, Math.round(top) / 10, Math.round(r * 10) / 10]);
   }
   return out;
@@ -710,6 +711,10 @@ export const findTrees = (m: { nx: number; ny: number; cell: number; canopy: Flo
     // tall spreads 8 ft or more) and a wire (its crown a long thin streak, its width under 10 ft
     // and a third of its length or less), wherever the survey didn't sort them out
     if (r <= 3.5 && h > 12) return;
+    // (a light pole's lamp head or a sign spreads wider: but it's solid, so the laser came back from
+    // it once, and few points stood over its spot; a tree that small, leaves or bare, lets part of
+    // each pulse on through and is hit all over)
+    if (r < 9 && m.nUp && (multi[k] < up[k] * 0.3 || up[k] < cells[k] * 0.35)) return;
     {
       const N = cells[k], ax = mx[k] / N, ay = my[k] / N;
       const vxx = mxx[k] / N - ax * ax, vyy = myy[k] / N - ay * ay, vxy = mxy[k] / N - ax * ay;

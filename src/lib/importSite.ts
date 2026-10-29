@@ -20,13 +20,13 @@ import { fetchMapImagery, type MapImagerySource } from "./geo/imagery";
 import { natureFromPhoto } from "./geo/photoNature";
 import { mappedCourse, parkWords, type LatLon, type MappedCourse, type OsmBuilding, type OsmFeature } from "./geo/osm";
 import { fetchOsm } from "./geo/osmFetch";
-import { tracedBuildings, withMeasuredHeights, type TracedBuilding } from "./geo/buildings";
+import { fittedToSurvey, tracedBuildings, withMeasuredHeights, type TracedBuilding } from "./geo/buildings";
 import { createAmenity, createArea, createBasket, createLine, createStructure, createTee, createTree, newHole } from "./course";
-import { createField, fieldWord } from "./fields";
+import { courtCount, createField, fieldKindOf, fieldWord } from "./fields";
 import { fieldOf } from "./geo/parkKinds";
 import { centroid, clipPathToRect, clipPolygonToRect, nearestOnSegment, pointInPolygon, polygonArea, simplify } from "./geom";
 import { fetchStructures, fetchWater, fetchWetlands, inUS } from "./geo/usgov";
-import { parkingFromPhoto } from "./geo/parking";
+import { courtsFromPhoto, parkingFromPhoto } from "./geo/parking";
 import type { PhotoSourceId } from "./geo/photoSources";
 import { reframe, toPlanXY, type GeoRef } from "./geoRef";
 import { boxOutline, orientedBox, roofOf } from "./structures";
@@ -895,7 +895,10 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     let standing: number | undefined;
     if (lidar && measured) {
       // The buildings' heights the survey measured (where the maps have none)
-      all = withMeasuredHeights(all, measured.lidar.measured, signed);
+      // (the buildings lined up with their roofs in the survey; a slab or a deck the maps took for one, left out)
+      const fitted = fittedToSurvey(all, measured.lidar.measured);
+      all = withMeasuredHeights(fitted.items, measured.lidar.measured, signed);
+      if (fitted.dropped) notes.push(`${fitted.dropped} ${fitted.dropped === 1 ? "building" : "buildings"} on the maps left out: the survey shows flat ground there (a slab, a deck or a pool).`);
       // (the trees a bare survey couldn't pick out, from the summer photo's canopy: after the
       // measured ones, so the list of those stays as it was)
       const summer = "leaf" in found && found.leaf ? treesFromSummer(lidar.trees, measured.lidar.measured, found.leaf, width, height, treeFree(all)) : [];
@@ -909,6 +912,29 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
         if (lots.length) {
           all = [...all, ...lots];
           notes.push(`${lots.length} parking ${lots.length === 1 ? "lot" : "lots"} found on the photo and the survey.`);
+        }
+        // Courts on the photo the maps haven't got (blue ones), where none came already
+        const found = await untilAborted(courtsFromPhoto(background, width, height, measured.lidar.measured, all), signal).catch(err => { if (isAbort(err)) throw err; console.info("Courts not looked for", err); return [] as AreaItem[]; });
+        // (a pool the photo shows where the maps have a little water: that water is the pool, its
+        // mapped outline kept)
+        const small = (a: AreaItem) => polygonArea(a.points) < 15000;
+        for (const pool of found.filter(f => fieldKindOf(f) === "pool")) {
+          const c = centroid(pool.points);
+          const w = all.find((i): i is AreaItem => i.type === "area" && i.kind === "water" && small(i) && pointInPolygon(c, i.points));
+          if (!w) continue;
+          all = all.map(i => (i === w ? { ...createField("pool", w.points), importSource: w.importSource } as AreaItem : i));
+          found.splice(found.indexOf(pool), 1);
+        }
+        for (const pool of found.filter(f => fieldKindOf(f) === "pool")) {
+          const c = centroid(pool.points);
+          if (all.some(i => i.type === "area" && i.kind === "water" && pointInPolygon(c, i.points))) found.splice(found.indexOf(pool), 1);
+        }
+        if (found.length) {
+          all = [...all, ...found];
+          const pools = found.filter(f => fieldKindOf(f) === "pool").length;
+          const n = found.filter(f => fieldKindOf(f) !== "pool").reduce((s, f) => s + courtCount(fieldKindOf(f), f.points), 0);
+          if (n) notes.push(`${n} ${n === 1 ? "court" : "courts"} found on the photo.`);
+          if (pools) notes.push(`${pools} ${pools === 1 ? "pool" : "pools"} found on the photo.`);
         }
       }
       const stand = standingTrees(lidar, () => false, treeFree(mapped)).stand, first = lidar.trees.length - summer.length;
