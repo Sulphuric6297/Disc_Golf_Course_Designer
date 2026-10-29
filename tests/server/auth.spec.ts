@@ -495,7 +495,9 @@ test("live: two people in one course see each other's changes as they're made; u
   await expect.poll(async () => (await live(pat)).connected).toBe(true);
   await expect.poll(async () => (await live(admin)).people).toBe(2);
 
-  // Each sees the other's hole as it's made
+  // Each sees the other's hole as it's made (the whole site in view for both)
+  await site(admin);
+  await site(pat);
   const second = await addHole(admin, { x: 100, y: 350 }, { x: 650, y: 350 });
   await expect.poll(() => holeIds(pat)).toEqual([first.id, second.id].sort());
   const third = await addHole(pat, { x: 100, y: 500 }, { x: 650, y: 500 });
