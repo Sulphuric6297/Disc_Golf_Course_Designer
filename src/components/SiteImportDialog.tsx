@@ -96,6 +96,8 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   const [imagery, setImagery] = useState<MapImagerySource>("satellite");
   const [trees, setTrees] = useState(true);
   const [lidar, setLidar] = useState(true);
+  // (with measured trees: the ones the survey missed, from the photo)
+  const [fill, setFill] = useState(true);
   const [osm, setOsm] = useState(true);
   const [course, setCourse] = useState(true);
   // What this spot has (looked up as the frame settles)
@@ -257,7 +259,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     setArrived(null);
     setStatus({ state: "loading", text: "Starting…" });
     try {
-      const site = await importSite(selectionFromBounds(turnedBox(selection, angle), label), { imagery, trees, surveyed: !!survey, osm, lidar, signal: stop.signal, onLayer, onProgress: p => {
+      const site = await importSite(selectionFromBounds(turnedBox(selection, angle), label), { imagery, trees, surveyed: !!survey, osm, lidar, summerFill: fill, signal: stop.signal, onLayer, onProgress: p => {
         (window as { __dgImportProgress?: unknown }).__dgImportProgress = p;
         if (!stop.signal.aborted) { setStatus({ state: "loading", text: p.text, progress: { fraction: p.fraction } }); setSources({ ...p.sources }); }
       } });
@@ -313,6 +315,8 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     survey ? pill({ id: "lidar", icon: <Trees size={15} />, label: "Measured trees", value: `${survey.year}${survey.covered === "partial" ? " · part" : ""}`, on: lidar, set: setLidar }) : null,
     // (only where no survey covers the site: where one does, its measured trees are the ones)
     !survey && photo ? pill({ id: "photo-trees", icon: <TreeDeciduous size={15} />, label: "Trees from the photo", on: trees, set: setTrees }) : null,
+    // (and where one does: the trees it missed, filled in from the photo)
+    survey && lidar && photo ? pill({ id: "photo-fill", icon: <TreeDeciduous size={15} />, label: "Trees from the photo", value: "where the survey missed them", on: fill, set: setFill }) : null,
     pill({ id: "osm", icon: <Route size={15} />, label: "Paths, roads and more", value: "OpenStreetMap", on: osm, set: setOsm }),
     outline?.course?.holes ? pill({ id: "course", icon: <Flag size={15} />, label: "Holes", value: `${outline.course.holes} mapped`, on: course, set: setCourse }) : null
   ];

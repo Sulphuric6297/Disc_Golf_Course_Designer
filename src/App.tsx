@@ -289,19 +289,18 @@ export default function App() {
       // (Ctrl+S: saved now)
       if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); saveByHand(); return; }
       if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (s.step !== "map") duplicateSelection(); return; }
-      if (mod && e.key.toLowerCase() === "c" && (!s.teeView || s.teeEdit) && s.step !== "map") { if (copySelection()) { e.preventDefault(); toast("Copied."); } return; }
-      if (mod && e.key.toLowerCase() === "x" && (!s.teeView || s.teeEdit) && s.step !== "map") { e.preventDefault(); cutSelection(); return; }
+      if (mod && e.key.toLowerCase() === "c" && !s.flyover && s.step !== "map") { if (copySelection()) { e.preventDefault(); toast("Copied."); } return; }
+      if (mod && e.key.toLowerCase() === "x" && !s.flyover && s.step !== "map") { e.preventDefault(); cutSelection(); return; }
       // (where the pointer is over the map; off it, next to where it was copied from)
-      if (mod && e.key.toLowerCase() === "v" && (!s.teeView || s.teeEdit) && s.step !== "map") { e.preventDefault(); s.set({ tool: "select" }); pasteClipboard(view?.pointerGround()); return; }
-      if (mod && e.key.toLowerCase() === "a" && (!s.teeView || s.teeEdit) && s.step !== "map") { e.preventDefault(); s.set({ tool: "select" }); selectAll(); return; }
+      if (mod && e.key.toLowerCase() === "v" && !s.flyover && s.step !== "map") { e.preventDefault(); s.set({ tool: "select" }); pasteClipboard(view?.pointerGround()); return; }
+      if (mod && e.key.toLowerCase() === "a" && !s.flyover && s.step !== "map") { e.preventDefault(); s.set({ tool: "select" }); selectAll(); return; }
       if (mod) return;
       // (AltGr types characters: only the [ and ] it types go on to the shortcuts)
       if (((e.ctrlKey && e.altKey) || e.getModifierState?.("AltGraph")) && e.key !== "[" && e.key !== "]") return;
       if (s.teeView) {
-        // (E: Look or Edit; editing, the map's keys go on to what's picked: Delete, the tools, Esc
-        // letting go of it first)
-        if (e.key.toLowerCase() === "e" && !viewOnly && !s.flyover) { e.preventDefault(); s.set({ teeEdit: !s.teeEdit }); return; }
-        const editing = !!s.teeEdit && !viewOnly && !s.flyover;
+        // (standing there: the map's keys go on to what's picked, Delete, the tools; Esc lets go of
+        // what's picked first)
+        const editing = !viewOnly && !s.flyover;
         const picked = !!s.selectedId || s.group.length > 0;
         const mapKey = e.key === "Escape" ? picked || s.tool !== "select" : !e.key.startsWith("Arrow") || picked;
         if (!(editing && mapKey)) {

@@ -1,6 +1,6 @@
 // What shows over the view from the tee or a flyover: the hole's numbers and the controls.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Clapperboard, Maximize2, Minimize2, Plane, Settings2, Square, Video, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clapperboard, Home, Maximize2, Minimize2, Plane, Settings2, Square, Video, X } from "lucide-react";
 import { useAllowed } from "../auth/perms";
 import { TEE_LEVELS } from "../constants";
 import { activeLayout, holeLabel } from "../lib/course";
@@ -87,7 +87,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
     const t = window.setTimeout(() => setShowLoading(false), 320);
     return () => window.clearTimeout(t);
   }, [waiting]);
-  const editing = !!ed.teeEdit && !ed.flyover && !readOnly && !compact;
+  const editing = !ed.flyover && !readOnly && !compact;
   const panel = useSelection().open;
   const toolbar = useToolbarRoom(r => r.height);
   if (!hole || !s) return null;
@@ -103,11 +103,15 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
   };
   const lvl = TEE_LEVELS[s.level];
   // (beside the big number: the hole's name, or the tee it's seen from)
-  const sub = hole.name || `${lvl.label} tee`;
+  // (standing away from the tee: how far the basket is from there)
+  const basket = ed.teeStand && s.basketId ? doc.items.find(i => i.id === s.basketId) : undefined;
+  const sub = basket && ed.teeStand ? `${fmtDist(Math.hypot(basket.x - ed.teeStand.x, basket.y - ed.teeStand.y), doc.units)} to the basket` : hole.name || `${lvl.label} tee`;
   const hint = !ed.flyover && !camera && !job;
   if (compact) {
     // A phone: the hole's card across the top, big buttons along the bottom (thumb's reach)
-    const bar = "flex-1 min-w-0 h-14 rounded-2xl flex flex-col items-center justify-center gap-1 text-[12px] font-semibold text-white active:bg-white/15 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
+    // (a thing picked: its sheet is up in the bar's place)
+    const sheetUp = !readOnly && !ed.flyover && !!ed.selectedId && doc.items.some(i => i.id === ed.selectedId);
+    const bar = "flex-1 min-w-0 h-14 rounded-2xl flex flex-col items-center justify-center gap-1 whitespace-nowrap " + (ed.teeStand ? "text-[11px]" : "text-[12px]") + " font-semibold text-white active:bg-white/15 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
     // (the flyover's settings and the View panel: icon over label, as along the bottom; in the
     // card, or by themselves at the top right while it flies, the card hidden)
     const tiles = (
@@ -133,15 +137,16 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
           {hole.notes && <p className="text-[13px] text-zinc-200 mt-1 line-clamp-2">{hole.notes}</p>}
         </div>
         {ed.flyover && <div className="absolute right-2 top-[max(8px,env(safe-area-inset-top))] pointer-events-auto glass rounded-2xl p-1.5 border border-white/10 shadow-2xl">{tiles}</div>}
-        {hint && <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+92px)] left-1/2 -translate-x-1/2 text-[13px] text-white/90 bg-black/45 rounded-full px-3 py-1 whitespace-nowrap">Drag to look around</div>}
-        <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto flex items-center gap-1 glass rounded-[22px] p-1.5 border border-white/10 shadow-2xl">
+        {hint && !sheetUp && <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+92px)] left-1/2 -translate-x-1/2 text-[13px] text-white/90 bg-black/45 rounded-full px-3 py-1 whitespace-nowrap">Tap the ground to walk · drag to look around</div>}
+        {!sheetUp && <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto flex items-center gap-1 glass rounded-[22px] p-1.5 border border-white/10 shadow-2xl">
+          {ed.teeStand && !ed.flyover && <button className={bar} onClick={() => ed.set({ teeStand: null })} data-testid="hud-to-tee"><Home size={20} /><span>Tee</span></button>}
           <button className={bar} onClick={() => go(-1)}><ChevronLeft size={22} /><span>Previous</span></button>
           <button className={`${bar} ${ed.flyover ? "bg-orange-500" : ""}`} onClick={() => ed.set({ flyover: !ed.flyover })} data-testid="hud-flyover">{ed.flyover ? <Square size={18} /> : <Plane size={20} />}<span>{ed.flyover ? "Stop" : "Fly over"}</span></button>
           <button className={bar} onClick={() => go(1)}><ChevronRight size={22} /><span>Next</span></button>
           {mayRecord && <button className={bar} onClick={() => void recordVideo([hole.id])} disabled={!!job} data-testid="hud-record"><Clapperboard size={20} /><span>{job?.kind === "video" ? recPct ?? "…" : "Record"}</span></button>}
           {!readOnly && <button className={bar} onClick={() => cameraFrom(hole.id, null)} data-testid="hud-freecam"><Video size={20} /><span>Camera</span></button>}
           <button className={bar} onClick={() => ed.set({ teeView: null, flyover: false })} data-testid="hud-close"><X size={20} /><span>Back</span></button>
-        </div>
+        </div>}
         {camera && (
           <div className="absolute left-2 right-2 bottom-[calc(max(8px,env(safe-area-inset-bottom))+80px)] pointer-events-auto glass rounded-2xl p-3 border border-white/10 shadow-2xl max-h-[45vh] overflow-y-auto dg-scroll">
             <SettingsBox key={hole.id} hole={hole} />
@@ -169,14 +174,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
       {editing && <TeeMap big={ed.teeMap === "big"} off={ed.teeMap === "off"} />}
       {/* (editing: above the toolbar) */}
       <div className="absolute left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-2 glass backdrop-blur rounded-full px-2 py-1.5 border border-white/10 shadow-2xl" style={{ bottom: editing ? toolbar + 24 : 24 }}>
-        {!readOnly && !ed.flyover && (
-          <div className="flex rounded-full bg-white/[0.08] p-0.5 mr-1" role="radiogroup" aria-label="Look or edit" title="E switches">
-            {([["look", "Look"], ["edit", "Edit"]] as const).map(([k, label]) => {
-              const on = (k === "edit") === !!ed.teeEdit;
-              return <button key={k} role="radio" aria-checked={on} className={`px-3 py-1 rounded-full text-sm font-semibold ${on ? "bg-lime-400 text-lime-950" : "text-white hover:bg-white/10"}`} onClick={() => ed.set({ teeEdit: k === "edit" })} data-testid={`tee-${k}`}>{label}</button>;
-            })}
-          </div>
-        )}
+        {ed.teeStand && !ed.flyover && <button className="px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 text-white hover:bg-white/10" onClick={() => ed.set({ teeStand: null })} title="Back to the tee" data-testid="hud-to-tee"><Home size={15} /> Tee</button>}
         <button className="p-2 rounded-full hover:bg-white/10 text-white" aria-label="Previous hole" title="Previous hole (←)" onClick={() => go(-1)}><ChevronLeft size={18} /></button>
         <button className={`px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 ${ed.flyover ? "bg-orange-500 text-zinc-950" : "text-white hover:bg-white/10"}`} onClick={() => ed.set({ flyover: !ed.flyover })} data-testid="hud-flyover">{ed.flyover ? <><Square size={14} /> Stop</> : <><Plane size={15} /> Fly over</>}</button>
         <button className="p-2 rounded-full hover:bg-white/10 text-white" aria-label="Next hole" title="Next hole (→)" onClick={() => go(1)}><ChevronRight size={18} /></button>
@@ -199,8 +197,8 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
         </div>
       )}
       <div className="absolute top-4 right-4 pointer-events-auto"><SceneButton /></div>
-      {hint && <div className="absolute left-1/2 -translate-x-1/2 text-xs text-white/80 bg-black/40 rounded px-2 py-1 whitespace-nowrap" style={{ bottom: (editing ? toolbar + 24 : 24) + 56 }}>
-        {editing ? "Click a tree or anything else to pick it · drag it along the ground · drag open ground to look around · E: Look" : "Drag to look around · scroll to zoom · ← → other holes · Esc back to the map"}
+      {hint && (!editing || ed.tool === "select") && <div className="absolute left-1/2 -translate-x-1/2 text-xs text-white/80 bg-black/40 rounded px-2 py-1 whitespace-nowrap" style={{ bottom: (editing ? toolbar + 24 : 24) + 56 }}>
+        {editing ? "Click a thing to pick it · click the ground to walk · drag to look around · Esc back to the map" : "Click the ground to walk · drag to look around · ← → other holes · Esc back to the map"}
       </div>}
     </div>
   );

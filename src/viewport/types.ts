@@ -97,6 +97,8 @@ export type ViewCallbacks = {
   onHoleChange: (holeId: string, patch: Record<string, unknown>) => void;
   onCommit: () => void;
   onHover: (p: P | null) => void;
+  /** Standing in the 3D view, a walk ended there (and faces this way: radians on the plan). */
+  onStand?: (p: { x: number; y: number; face: number }) => void;
   onPose: (pose: "top" | "tilt") => void;
   /** Tee view: moved to another hole with the arrow keys, or closed. */
   onTeeView: (holeId: string | null) => void;

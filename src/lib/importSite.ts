@@ -109,6 +109,8 @@ export type ImportOptions = {
   osm: boolean;
   /** Trees and ground measured from the air (LiDAR), where a survey covers the site. */
   lidar?: boolean;
+  /** With a survey flown bare: the trees it missed filled in from the summer photo (unset: yes). */
+  summerFill?: boolean;
   /** How each source is going, and all of it together. */
   onProgress?: (p: ImportProgress) => void;
   /** What each source brought, as it lands. */
@@ -689,7 +691,7 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       // (a survey flown bare, a photo taken in leaf: its canopy too, for the trees the survey missed;
       // under a bare photo, the best one of the site's taken in leaf, only to find them on)
       const bare = !!measured?.lidar.trees.length && measured.lidar.measured.leafOn !== true;
-      const leafToo = bare && summerFills(measured.lidar.measured.leafOn, map.photo?.season);
+      const leafToo = bare && opts.summerFill !== false && summerFills(measured.lidar.measured.leafOn, map.photo?.season);
       const inLeaf = bare && !leafToo ? map.choices?.find(c => c.season === "leaf-on" && c.nir) ?? map.choices?.find(c => c.season === "leaf-on") : undefined;
       return soft("photoTrees", async () => {
         progress.set("photoTrees", { state: "coming", fraction: 0 });

@@ -229,6 +229,14 @@ export class CourseView {
   /** The corner map's place (the container's pixels; null: none shown) and its camera. */
   private miniRect: Rect | null = null;
   private miniCam = new THREE.PerspectiveCamera(40, 1, 1, 200000);
+  /** Standing somewhere other than the tee (and which way: radians on the plan), and a walk there. */
+  private povStand: { x: number; y: number; face: number } | null = null;
+  private walk: { from: P; to: P; t0: number } | null = null;
+  /** Standing: the ring where a click would step, the ring where the person would land (on the
+   * map), and the tip by the pointer saying what a click does. */
+  private stepRing: THREE.Object3D | null = null;
+  private dropRingFx: THREE.Object3D | null = null;
+  private povTip: HTMLDivElement | null = null;
   /** The picture a drag began in (its camera and place), kept until it's let go. */
   private dragEye: Eye | null = null;
   /** The picture being looked at by what's worked out now (a pick at a pointer). */
@@ -498,7 +506,7 @@ export class CourseView {
     on(container, "pointerdown", e => this.onPointerDown(e), { capture: true });
     on(container, "wheel", e => this.onWheel(e), { capture: true, passive: false });
     on(container, "pointermove", e => this.onHoverMove(e));
-    on(container, "pointerleave", () => { this.lastPointer = null; this.cb.onHover(null); this.setHover(null); this.updateGhost(null); this.invalidate(); });
+    on(container, "pointerleave", () => { this.lastPointer = null; this.cb.onHover(null); this.setHover(null); this.updateGhost(null); this.showStep(null); this.tip(null); this.invalidate(); });
     on(container, "dblclick", e => this.onDoubleClick(e));
     on(window, "pointerup", e => this.touchUp(e));
     on(window, "pointercancel", e => this.touchUp(e));
@@ -1091,10 +1099,21 @@ export class CourseView {
 
   /** Look from a hole's tee down the hole (null: back to the map); `teeId`: from that tee of it
    * (another skill level's), not the one the layout plays. */
-  setTeeView(holeId: string | null, teeId: string | null = null) {
+  setTeeView(holeId: string | null, teeId: string | null = null, stand: { x: number; y: number; face?: number } | null = null) {
     this.fly = null;
     const tee = teeId && holeId ? this.doc?.course.items.find(i => i.id === teeId && i.type === "tee" && i.holeId === holeId) : null;
     const nextTee = tee ? tee.id : null;
+    // (standing somewhere: facing down the hole, unless told otherwise; the same spot again: as it is)
+    const same = (a: typeof this.povStand, b: typeof stand) => (!a && !b) || (!!a && !!b && Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01);
+    if (holeId === this.povHole && nextTee === this.povTee && same(this.povStand, stand)) return;
+    if (holeId === this.povHole && nextTee === this.povTee && stand && !this.walk) {
+      this.povStand = { x: stand.x, y: stand.y, face: stand.face ?? this.faceDownHole(holeId!, stand) };
+      this.povLook = { yaw: 0, pitch: 0 };
+      this.invalidate();
+      return;
+    }
+    this.walk = null;
+    this.povStand = holeId && stand ? { x: stand.x, y: stand.y, face: stand.face ?? this.faceDownHole(holeId, stand) } : null;
     if (holeId === this.povHole && nextTee === this.povTee) return;
     this.povTee = nextTee;
     if (holeId === this.povHole) { this.povLook = { yaw: 0, pitch: 0 }; this.invalidate(); return; }
@@ -1112,12 +1131,141 @@ export class CourseView {
     this.invalidate();
   }
 
+  /** Which way to face from a spot on a hole: toward its basket (from close to it, back to its tee). */
+  private faceDownHole(holeId: string, p: P) {
+    const s = this.doc?.stats.find(x => x.holeId === holeId);
+    if (!s || s.line.length < 2) return 0;
+    const a = s.line[0], z = s.line[s.line.length - 1];
+    const to = dist(p, z) < 40 ? a : z;
+    return Math.atan2(to.y - p.y, to.x - p.x);
+  }
+
+  /** The hole whose line is nearest a spot (for standing there), if any is complete. */
+  holeNear(p: P): string | null {
+    let best: { id: string; d: number } | null = null;
+    for (const s of this.doc?.stats ?? []) {
+      if (!s.complete || s.line.length < 2) continue;
+      const d = distanceToPath(p, s.line);
+      if (!best || d < best.d) best = { id: s.holeId, d };
+    }
+    return best?.id ?? null;
+  }
+
+  /** Where the person would land dropped at a screen point (the map's ground there), with a ring
+   * there; null: none (the ring goes). */
+  dropPreview(clientX: number | null, clientY = 0): P | null {
+    if (this.dropRingFx) { this.fx.remove(this.dropRingFx); disposeObjectDeep(this.dropRingFx); this.dropRingFx = null; }
+    if (clientX === null || this.povHole) { this.invalidate(); return null; }
+    const g = this.groundAt(clientX, clientY);
+    if (!g) { this.invalidate(); return null; }
+    const p = { x: g.x, y: g.z };
+    // (6 ft across, or about 16 px when zoomed out: a ring to see)
+    const worldPerPx = (2 * this.controls.distance * Math.tan((this.camera.fov * DEG) / 2)) / Math.max(1, this.size.height);
+    this.dropRingFx = this.groundRing(p, Math.max(6, 16 * worldPerPx), SELECT, 0.95, 3);
+    this.fx.add(this.dropRingFx);
+    this.invalidate();
+    return p;
+  }
+
+  /** A ring lying on the ground (radius in feet). */
+  private groundRing(p: P, r: number, color: string, opacity: number, width: number) {
+    const ring: P[] = [];
+    for (let i = 0; i < 48; i++) ring.push({ x: p.x + Math.cos((i / 48) * Math.PI * 2) * r, y: p.y + Math.sin((i / 48) * Math.PI * 2) * r });
+    const g = new THREE.Group();
+    g.add(this.fatLine(this.drapeLine(ring, 0.4, true), "#000000", width + 2, { opacity: opacity * 0.4, order: 8 }));
+    g.add(this.fatLine(this.drapeLine(ring, 0.45, true), color, width, { opacity, order: 9 }));
+    return g;
+  }
+
+  /** Standing: walks to a spot (a glide there), still looking the way you were. */
+  private walkTo(p: P) {
+    const pose = this.povPose();
+    if (!pose || !this.povHole) return;
+    const dir = new THREE.Vector3().subVectors(pose.target, pose.eye);
+    const face = Math.atan2(dir.z, dir.x);
+    const from = { x: pose.eye.x, y: pose.eye.z };
+    this.povLook = { yaw: 0, pitch: this.povLook.pitch };
+    this.povStand = { x: p.x, y: p.y, face };
+    this.walk = { from, to: p, t0: performance.now() };
+    this.showStep(null);
+    this.invalidate();
+  }
+
+  /** The ring where a click would step (null: none). */
+  private showStep(p: P | null) {
+    if (this.stepRing) { this.fx.remove(this.stepRing); disposeObjectDeep(this.stepRing); this.stepRing = null; }
+    if (p) { this.stepRing = this.groundRing(p, 3, "#ffffff", 0.85, 2.5); this.fx.add(this.stepRing); }
+    this.invalidate();
+  }
+
+  /** The tip by the pointer, standing: what a click does, or where a dragged thing is. */
+  private tip(text: string | null, clientX = 0, clientY = 0) {
+    if (!text) { if (this.povTip) this.povTip.style.display = "none"; return; }
+    if (!this.povTip) {
+      const el = document.createElement("div");
+      el.dataset.testid = "stand-tip";
+      el.style.cssText = "position:absolute;z-index:6;pointer-events:none;padding:6px 11px;border-radius:9px;background:rgba(24,24,27,.92);color:#f4f4f5;font:500 13px Inter,system-ui,sans-serif;white-space:nowrap;box-shadow:0 6px 16px rgba(0,0,0,.4)";
+      this.container.appendChild(el);
+      this.povTip = el;
+    }
+    const r = this.container.getBoundingClientRect();
+    this.povTip.textContent = text;
+    this.povTip.style.display = "";
+    this.povTip.style.left = `${clientX - r.left + 16}px`;
+    this.povTip.style.top = `${clientY - r.top + 18}px`;
+  }
+
+  /** What a thing is called, for the tip. */
+  private nameOf(id: string) {
+    const it = this.item(id);
+    if (!it) return "It";
+    if (it.type === "tree") return it.treeType === "conifer" ? "Pine" : it.treeType === "bush" ? "Bush" : "Tree";
+    if (it.type === "basket") return "Basket";
+    if (it.type === "tee") return "Tee";
+    if (it.type === "structure") return it.label || "Building";
+    if (it.type === "amenity") return it.label || "Amenity";
+    return it.type[0].toUpperCase() + it.type.slice(1);
+  }
+
+  /** Standing, the pointer over the view: a thing's outline and name (a click picks it), or a ring
+   * where you'd step (a click walks there). */
+  private povHover(p: { x: number; y: number }, g: THREE.Vector3 | null) {
+    const id = this.teeEdit && !this.readOnly ? this.pick(p.x, p.y) : null;
+    this.setHover(id);
+    if (id) { this.showStep(null); this.tip(`${this.nameOf(id)} · click to pick it`, p.x, p.y); return; }
+    const eye = this.povPose()?.eye;
+    if (g && eye && this.eyeAt(p.x, p.y).cam === this.povCam) {
+      this.showStep({ x: g.x, y: g.z });
+      const far = Math.hypot(g.x - eye.x, g.z - eye.z);
+      this.tip(`Click to walk here · ${Math.round(this.doc?.course.units === "m" ? far * 0.3048 : far)} ${this.doc?.course.units === "m" ? "m" : "ft"}`, p.x, p.y);
+    } else { this.showStep(null); this.tip(null); }
+  }
+
+  /** Standing, a thing dragged: how far off the hole's line it is, and whether it's on the throw line. */
+  private povDragTip(id: string, at: P, clientX: number, clientY: number) {
+    const s = this.doc?.stats.find(x => x.holeId === this.povHole);
+    const it = this.item(id);
+    if (!s || s.line.length < 2 || !it) return;
+    const off = distanceToPath(at, s.line);
+    // (which side: of the nearest leg, looking down the hole)
+    let side = "", best = Infinity;
+    for (let i = 1; i < s.line.length; i++) {
+      const a = s.line[i - 1], b = s.line[i];
+      const d = distanceToPath(at, [a, b]);
+      if (d < best) { best = d; side = (b.x - a.x) * (at.y - a.y) - (b.y - a.y) * (at.x - a.x) < 0 ? "left" : "right"; }
+    }
+    const reach = it.type === "tree" ? it.radius * (it.width ?? 1) : 2;
+    const metric = this.doc?.course.units === "m";
+    const n = (v: number) => `${Math.round(metric ? v * 0.3048 : v)} ${metric ? "m" : "ft"}`;
+    this.tip(`${off < 1 ? "On the line" : `${n(off)} ${side} of the line`}${off < reach + 3 ? " · on the throw line" : ""}`, clientX, clientY);
+  }
+
   /** Tee view, editing (a press on a thing picks or drags it; on open ground, looks around), with
    * the map from above in a corner ("small", "big") or none. */
   setTeeEdit(on: boolean, mini: "small" | "big" | null = "small") {
     if (on === this.teeEdit && mini === this.miniSize) return;
     this.teeEdit = on;
-    this.miniSize = on ? mini : null;
+    this.miniSize = mini;
     if (!on) this.setHover(null);
     this.updateCursor();
     this.invalidate();
@@ -1142,7 +1290,7 @@ export class CourseView {
 
   /** The corner map's place in the view (the container's pixels). */
   private miniPlace(): Rect | null {
-    if (!this.teeEdit || !this.miniSize || !this.povHole || this.fly) return null;
+    if (!this.miniSize || !this.povHole || this.fly) return null;
     const W = this.size.width, H = this.size.height;
     if (W < 500 || H < 360) return null;
     const big = this.miniSize === "big";
@@ -1457,10 +1605,22 @@ export class CourseView {
     const s = doc.stats.find(x => x.holeId === this.povHole);
     if (!s || s.line.length < 2) return null;
     const own = this.povTee ? doc.course.items.find(i => i.id === this.povTee) : null;
-    const tee = own ? { x: own.x, y: own.y } : s.line[0];
-    const next = s.line[1];
+    // (standing somewhere else: there, the way it faces; walking: on the way, eased)
+    let tee: P = own ? { x: own.x, y: own.y } : s.line[0];
+    let face: number | null = null;
+    if (this.povStand) {
+      tee = { x: this.povStand.x, y: this.povStand.y };
+      face = this.povStand.face;
+      const w = this.walk;
+      if (w) {
+        const k = clamp((performance.now() - w.t0) / 550, 0, 1), e = k * k * (3 - 2 * k);
+        tee = { x: w.from.x + (w.to.x - w.from.x) * e, y: w.from.y + (w.to.y - w.from.y) * e };
+        if (k >= 1) { this.walk = null; this.cb.onStand?.({ x: w.to.x, y: w.to.y, face: this.povStand.face }); } else this.invalidate();
+      }
+    }
+    const next = face === null ? s.line[1] : { x: tee.x + Math.cos(face) * 60, y: tee.y + Math.sin(face) * 60 };
     const eye = new THREE.Vector3(tee.x, this.h(tee.x, tee.y) + EYE_HEIGHT_FT + 0.35, tee.y);
-    const base = Math.atan2(next.y - tee.y, next.x - tee.x) + this.povLook.yaw;
+    const base = (face ?? Math.atan2(next.y - tee.y, next.x - tee.x)) + this.povLook.yaw;
     const d = Math.max(60, dist(tee, next));
     const tx = tee.x + Math.cos(base) * d, ty = tee.y + Math.sin(base) * d;
     const ground = this.h(next.x, next.y) + 3;
@@ -4743,8 +4903,9 @@ export class CourseView {
         } else {
           this.cb.onChange(id, { x: hit.x + off.x, y: hit.z + off.y });
         }
+        if (this.povHole) this.povDragTip(id, { x: hit.x + off.x, y: hit.z + off.y }, ev.clientX, ev.clientY);
       },
-      end: () => this.cb.onCommit()
+      end: () => { this.tip(null); this.cb.onCommit(); }
     };
   }
 
@@ -5040,7 +5201,10 @@ export class CourseView {
       if (!this.povHole && this.tool.mode === "select" && e.button === 0 && (!handle || handle === "mid")) this.startLongPress(e, target);
     }
     if (this.povHole) {
-      if (e.button !== 0 || target.closest?.("button,input,select,[data-pov-ui]")) return;
+      if (target.closest?.("button,input,select,[data-pov-ui]")) return;
+      // (the right button, or Space held: looking around, whatever the tool)
+      if ((e.button === 2 || this.spaceDown) && !this.fly) { e.preventDefault(); e.stopPropagation(); this.povDrag(e, true); return; }
+      if (e.button !== 0) return;
       // (editing: a press on a thing, or with a tool that places one, goes on as on the map,
       // through the picture it's in; on open ground it looks around; on the corner map's open
       // ground, nothing)
@@ -6107,13 +6271,15 @@ export class CourseView {
   }
 
   /** Drag in the tee view to look around. */
-  private povDrag(e: PointerEvent) {
+  private povDrag(e: PointerEvent, lookOnly = false) {
     if (this.fly) return;
     const x0 = e.clientX, y0 = e.clientY;
+    let moved = false;
     const start = { ...this.povLook };
     const degPerPx = this.povCam.fov / Math.max(1, this.size.height);
     const free = this.free, from = free ? { yaw: free.yaw, pitch: free.pitch } : null;
     const move = (ev: PointerEvent) => {
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 5) moved = true;
       // (by hand: the camera turns the same way the view from a tee does)
       if (free && from) {
         if (this.free !== free) return;
@@ -6128,9 +6294,14 @@ export class CourseView {
       };
       this.invalidate();
     };
-    const up = () => {
+    const up = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      // (a press that didn't move, on open ground in the view: a step there)
+      if (!moved && !lookOnly && !this.fly && !free && this.tool.mode === "select" && this.eyeAt(ev.clientX, ev.clientY).cam === this.povCam) {
+        const g = this.groundAt(ev.clientX, ev.clientY);
+        if (g) this.walkTo({ x: g.x, y: g.z });
+      }
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -6166,7 +6337,7 @@ export class CourseView {
   }
 
   private onHoverMove(e: PointerEvent) {
-    if (e.buttons || this.dragging || (this.povHole && (!this.teeEdit || this.fly || this.free))) return;
+    if (e.buttons || this.dragging || (this.povHole && (this.fly || this.free))) return;
     this.lastPointer = { x: e.clientX, y: e.clientY };
     if (this.hoverFrame) return;
     this.hoverFrame = requestAnimationFrame(() => {
@@ -6176,6 +6347,9 @@ export class CourseView {
       const g = this.groundAt(p.x, p.y);
       this.cb.onHover(g ? { x: g.x, y: g.z } : null);
       if (this.obPick && g) { this.obPickHover({ x: g.x, y: g.z }); return; }
+      // (standing, picking or walking: the pointer says which)
+      if (this.povHole && this.tool.mode === "select") { this.povHover(p, g); return; }
+      if (this.povHole) { this.showStep(null); this.tip(null); }
       // (the brush's circle where it would paint)
       const painting = this.tool.mode === "sculpt" || (this.tool.mode === "draw-area" && this.tool.shape === "paint");
       if (painting) this.showBrush(g ? { x: g.x, y: g.z } : null, this.tool.brush?.size ?? 20);

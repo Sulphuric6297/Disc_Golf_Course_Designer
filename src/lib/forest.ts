@@ -1560,6 +1560,46 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // The treetops over the buildings, and the trees' shade on the roofs: a picture of its own (clear
   // elsewhere), laid over the buildings, which are drawn over the painting
   {
+    // (the newer looks draw their crowns as shapes, not into the height field: their tops stamped
+    // here, a low dome each, for which roofs they cover and shade)
+    let tops = height, topMost = tallest;
+    if (vector && vtrees.length) {
+      tops = new Float32Array(height);
+      for (const t of vtrees) {
+        const r = t.r, r2 = r * r;
+        for (let y = Math.max(0, Math.floor(t.y - r)); y <= Math.min(H - 1, Math.ceil(t.y + r)); y++) {
+          for (let x = Math.max(0, Math.floor(t.x - r)); x <= Math.min(W - 1, Math.ceil(t.x + r)); x++) {
+            const d2 = ((x + 0.5 - t.x) ** 2 + (y + 0.5 - t.y) ** 2) / r2;
+            if (d2 > 1) continue;
+            const h = t.h * (0.75 + 0.25 * Math.sqrt(1 - d2)), i = y * W + x;
+            if (h > tops[i]) tops[i] = h;
+            if (h > topMost) topMost = h;
+          }
+        }
+      }
+    }
+    // (the shade on a roof, from whatever stands between it and the sun: the treetops as stamped)
+    const tdx: number[] = [], tdy: number[] = [], tup: number[] = [];
+    for (let d = 1.5; d < topMost / rise + 2 && d < 400; d *= 1.3) {
+      const dx = Math.round(sunX * d), dy = Math.round(sunY * d);
+      if (tdx.length && dx === tdx[tdx.length - 1] && dy === tdy[tdy.length - 1]) continue;
+      tdx.push(dx); tdy.push(dy); tup.push(d * rise);
+    }
+    const roofSun = (x: number, y: number, h0: number) => {
+      let shade = 0;
+      for (let j = 0; j < tdx.length; j++) {
+        const up = h0 + tup[j];
+        if (up >= topMost) break;
+        const sx = x + tdx[j], sy = y + tdy[j];
+        if (sx < 0 || sy < 0 || sx >= W || sy >= H) break;
+        const over = Math.max(tops[sy * W + sx], built[sy * W + sx]) - up;
+        if (over > 0) {
+          shade = Math.max(shade, over / soft);
+          if (shade >= 1) return 0;
+        }
+      }
+      return 1 - shade;
+    };
     const near = new Uint8Array(W * H);
     let any = false;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -1578,11 +1618,11 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       for (let i = 0; i < W * H; i++) {
         if (!near[i]) continue;
         const o4 = i * 4;
-        if (height[i] > built[i]) {
+        if (tops[i] > built[i]) {
           od[o4] = fin[o4]; od[o4 + 1] = fin[o4 + 1]; od[o4 + 2] = fin[o4 + 2]; od[o4 + 3] = 255;
         } else if (built[i] > 0) {
           const x = i % W, y = (i / W) | 0;
-          const shade = shadowK * 0.75 * (1 - sunlit(x, y, built[i]));
+          const shade = shadowK * 0.75 * (1 - roofSun(x, y, built[i]));
           if (shade > 0.01) { od[o4 + 3] = Math.round(shade * 255); }
         }
       }
@@ -1595,7 +1635,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         const o = roofOwner[i];
         if (!o) continue;
         roofPx[o]++;
-        if (height[i] > built[i]) leafPx[o]++;
+        if (tops[i] > built[i]) leafPx[o]++;
       }
       const hidden = new Set(roofIds.filter((_, j) => roofPx[j + 1] > 0 && leafPx[j + 1] > roofPx[j + 1] * 0.5));
       overGrids.set(canvas, { picture: oc, hidden });

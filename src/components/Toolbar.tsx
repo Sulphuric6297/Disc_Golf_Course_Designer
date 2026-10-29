@@ -378,7 +378,7 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
   if (ed.tool === "add-amenity") return `${click} where the ${amenityName(ed.amenityKind)} goes`;
   if (ed.tool === "add-field") return `${click} where the ${fieldWord(ed.fieldKind)} goes`;
   if (ed.tool === "measure") return (ed.measureMode ?? "spot") === "path" ? `${click} along the path` : `${click} a start point`;
-  if (ed.tool === "sculpt") return touch ? "Paint the ground with one finger · two fingers move the map" : "Drag over the ground to paint it · Space+drag moves the map";
+  if (ed.tool === "sculpt") return touch ? "Paint the ground with one finger · two fingers move the map" : `Drag over the ground to paint it · Space+drag ${ed.teeView ? "looks around" : "moves the map"}`;
   const h = HINTS[ed.tool];
   return h && `${click} ${h}`;
 }
@@ -447,8 +447,8 @@ export function Toolbar() {
     watch.current = new ResizeObserver(() => useToolbarRoom.setState({ height: el.offsetHeight }));
     watch.current.observe(el);
   }, []);
-  // (tee view: only while editing there)
-  if (ed.teeView && (!ed.teeEdit || ed.flyover)) return null;
+  // (standing in 3D: there too, while not flying)
+  if (ed.teeView && ed.flyover) return null;
   const options = toolOptions(ed);
   const shapes = toolShapes(ed);
   const hint = toolHint(ed, touch);

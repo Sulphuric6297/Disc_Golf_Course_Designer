@@ -861,7 +861,7 @@ export function useSelection() {
   const selectedId = useEditor(e => e.selectedId);
   const teeView = useEditor(e => e.teeView);
   // (tee view, editing: what's picked there has its panel too)
-  const teeEditing = useEditor(e => !!e.teeEdit && !e.flyover);
+  const teeEditing = useEditor(e => !e.flyover);
   const tool = useEditor(e => e.tool);
   const ids = useEditor(e => e.group);
   const hole = doc.holes.find(h => h.id === selectedId);

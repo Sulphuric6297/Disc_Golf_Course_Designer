@@ -187,6 +187,9 @@ type EditorStore = {
   teeViewTee?: string | null;
   /** Tee view, editing: a press on a thing picks or drags it as on the map (else: looking). */
   teeEdit?: boolean;
+  /** Standing somewhere other than the tee (the person dropped there, or walked to), on `teeView`'s
+   * hole; and which way, radians on the plan (unset: down the hole). */
+  teeStand?: { x: number; y: number; face?: number } | null;
   /** The map from above in the tee view's corner while editing. */
   teeMap?: "small" | "big" | "off";
   /** The tee view's flyover settings open over it. */
@@ -294,3 +297,6 @@ if (typeof window !== "undefined") {
   (window as any).__dgEditor = () => useEditor.getState();
   (window as any).__dgHistory = () => ({ past: useCourse.getState().past.length, future: useCourse.getState().future.length });
 }
+
+// (another hole, or back to the map: standing on its tee again, unless a spot came with it)
+useEditor.subscribe((s, p) => { if (s.teeView !== p.teeView && s.teeStand && s.teeStand === p.teeStand) s.set({ teeStand: null }); });

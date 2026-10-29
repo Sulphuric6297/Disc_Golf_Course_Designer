@@ -1,7 +1,8 @@
 // The map view (2D and 3D are one view): the CourseView engine, fed from the course store.
 import { latitudeOf, paintLight, sunFromOf } from "../lib/mapLook";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BoxSelect, Compass, Maximize2, Minus, Plus, RotateCcw, RotateCw } from "lucide-react";
+import { BoxSelect, Compass, Maximize2, Minus, PersonStanding, Plus, RotateCcw, RotateCw } from "lucide-react";
+import { toast } from "../state/toast";
 import { FOCUS } from "./ui";
 import { ViewToggle } from "./ViewToggle";
 import { PlotPill } from "./DrawBar";
@@ -88,6 +89,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       onPose: pose => useEditor.getState().set({ view: pose === "top" ? "2d" : "3d" }),
       onTeeView: id => useEditor.getState().set({ teeView: id }),
       onContextMenu: i => menuRef.current(i),
+      onStand: p => useEditor.getState().set({ teeStand: p }),
       onDrawProgress: n => useEditor.getState().set({ drawPoints: n }),
       onPlotEnd: () => useEditor.getState().set({ plotLine: null }),
       onObPickEnd: () => useEditor.getState().set({ obPick: null, pickCut: false }),
@@ -224,15 +226,16 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { view?.setPaused((ed.step === "map" || ed.step === "export") && !ed.teeView); }, [view, ed.step, ed.teeView]);
   // (tee view, editing: picking and dragging there, the map from above in a corner)
   const readOnlyView = useCourse(s => s.readOnly);
-  useEffect(() => { view?.setTeeEdit(!!ed.teeView && !!ed.teeEdit && !ed.flyover && !readOnlyView, ed.teeMap === "off" ? null : ed.teeMap ?? "small"); }, [view, ed.teeView, ed.teeEdit, ed.teeMap, ed.flyover, readOnlyView]);
+  // (standing in 3D: editors pick as they walk; anyone walks; the map from above in a corner)
+  useEffect(() => { view?.setTeeEdit(!!ed.teeView && !ed.flyover && !readOnlyView, ed.teeMap === "off" ? null : ed.teeMap ?? "small"); }, [view, ed.teeView, ed.teeMap, ed.flyover, readOnlyView]);
   // (the picked keyframe stands out on the map; another hole picked, none is)
   useEffect(() => { view?.setFlyKey(ed.flyKey); }, [view, ed.flyKey]);
   useEffect(() => { if (!useEditor.getState().flyCam) useEditor.getState().set({ flyKey: null }); }, [ed.selectedId]);
   useEffect(() => {
     if (!view) return;
     if (ed.flyover && ed.teeView) view.flyover(ed.teeView, () => useEditor.getState().set({ flyover: false }));
-    else { view.setTeeView(ed.teeView, ed.teeViewTee ?? null); useEditor.getState().set({ flyLoading: null, ...(ed.teeView ? {} : { teeViewTee: null }) }); }
-  }, [view, ed.teeView, ed.teeViewTee, ed.flyover]);
+    else { view.setTeeView(ed.teeView, ed.teeViewTee ?? null, ed.teeStand ?? null); useEditor.getState().set({ flyLoading: null, ...(ed.teeView ? {} : { teeViewTee: null, teeStand: null }) }); }
+  }, [view, ed.teeView, ed.teeViewTee, ed.flyover, ed.teeStand]);
 
   const scale = info ? scaleBar(info.pxPerUnit, 110, doc.units) : null;
   const elevation = hover ? heightAt(doc.terrainHeights, doc.gridSize, hover.x, hover.y) + doc.site.baseElevationFt : null;
@@ -300,6 +303,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
                   <button className={btn} title="Turn right (E)" onClick={() => view?.rotateBy(30)}><RotateCw size={15} /></button>
                 </div>
                 <SceneButton big={touch} size="big" />
+                <StandButton view={view} className={`${pad} w-11 h-11 flex items-center justify-center text-zinc-300 hover:text-zinc-50 ${FOCUS}`} size={19} />
               </div>
             </div>
             {hover && (
@@ -410,7 +414,88 @@ function TouchControls({ view, info, scale, phone, top, room, threeD, editing }:
           </div>
         </div>
         {scene && <SceneButton big />}
+        <StandButton view={view} className={`${group} ${b}`} size={20} />
       </div>
+    </>
+  );
+}
+
+/** The person: dragged onto the map (or clicked, then a spot clicked), you stand there in 3D at eye
+ * height, looking down the hole you're nearest. */
+function StandButton({ view, className, size }: { view: CourseView | null; className: string; size: number }) {
+  const [placing, setPlacing] = useState(false);
+  const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
+  // (waiting for the spot: a note beside the button, for a finger that has no pointer to follow)
+  const [note, setNote] = useState<{ right: number; top: number } | null>(null);
+  const standAt = (p: { x: number; y: number } | null) => {
+    view?.dropPreview(null);
+    setTip(null);
+    setNote(null);
+    setPlacing(false);
+    if (!p || !view) return;
+    const hole = view.holeNear(p);
+    if (!hole) { toast("Standing needs a hole with a tee and a basket: make one first.", "info"); return; }
+    useEditor.getState().set({ teeView: hole, teeViewTee: null, teeStand: { x: p.x, y: p.y }, flyover: false });
+  };
+  // (clicked: the next click on the map picks the spot; Esc lets go)
+  useEffect(() => {
+    if (!placing || !view) return;
+    const move = (e: PointerEvent) => { const p = view.dropPreview(e.clientX, e.clientY); setTip(p ? { x: e.clientX, y: e.clientY, text: "Click a spot to stand there" } : null); };
+    const down = (e: PointerEvent) => {
+      const el = e.target as Element;
+      if (!el.closest?.("[data-testid=plan]")) { standAt(null); return; }
+      e.preventDefault();
+      e.stopPropagation();
+      standAt(view.dropPreview(e.clientX, e.clientY));
+    };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); standAt(null); } };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerdown", down, true);
+    window.addEventListener("keydown", esc, true);
+    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerdown", down, true); window.removeEventListener("keydown", esc, true); };
+  }, [placing, view]);
+  return (
+    <>
+      <button className={`${className} pointer-events-auto touch-none ${placing ? "!bg-cyan-400 !text-zinc-950" : ""}`} title="Stand here: drag me onto the map, or click me, then a spot" aria-label="Stand on the map, in 3D" aria-pressed={placing} data-testid="stand-button"
+        onPointerDown={e => {
+          if (placing) return;
+          const x0 = e.clientX, y0 = e.clientY, id = e.pointerId;
+          (e.currentTarget as HTMLElement).setPointerCapture(id);
+          let dragged = false;
+          const move = (ev: PointerEvent) => {
+            if (ev.pointerId !== id) return;
+            if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 6) dragged = true;
+            if (!dragged || !view) return;
+            const p = view.dropPreview(ev.clientX, ev.clientY);
+            setTip({ x: ev.clientX, y: ev.clientY, text: p ? "Let go to stand here" : "Over the map" });
+          };
+          const up = (ev: PointerEvent) => {
+            if (ev.pointerId !== id) return;
+            window.removeEventListener("pointermove", move);
+            window.removeEventListener("pointerup", up);
+            if (dragged) standAt(view?.dropPreview(ev.clientX, ev.clientY) ?? null);
+            else {
+              const r = (e.target as HTMLElement).closest("button")!.getBoundingClientRect();
+              setNote({ right: window.innerWidth - r.left + 8, top: r.top + r.height / 2 });
+              setPlacing(true);
+            }
+          };
+          window.addEventListener("pointermove", move);
+          window.addEventListener("pointerup", up);
+        }}>
+        <PersonStanding size={size} />
+      </button>
+      {placing && note && !tip && (
+        <div className="fixed z-50 pointer-events-none -translate-y-1/2 px-2.5 py-1.5 rounded-[9px] bg-zinc-900/90 text-[13px] text-zinc-100 whitespace-nowrap shadow-lg" style={{ right: note.right, top: note.top }} data-testid="stand-note">
+          {matchMedia("(pointer: coarse)").matches ? "Tap a spot to stand there" : "Click a spot to stand there"}
+        </div>
+      )}
+      {tip && (
+        <div className="fixed z-50 pointer-events-none" style={{ left: tip.x - 14, top: tip.y - 34 }}>
+          <PersonStanding size={28} className="text-white drop-shadow-[0_2px_3px_rgba(0,0,0,0.8)]" />
+          <div className="absolute left-9 top-6 px-2.5 py-1.5 rounded-[9px] bg-zinc-900/90 text-[13px] text-zinc-100 whitespace-nowrap shadow-lg">{tip.text}</div>
+        </div>
+      )}
     </>
   );
 }

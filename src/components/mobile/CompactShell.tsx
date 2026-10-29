@@ -615,7 +615,9 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
   // (No sheet under the welcome card: it is the first step's panel, with the same two choices;
   // and none on the Map step, where the page's settings are a row of tools under it)
   const pageTools = ed.step === "map" && !immersive && !readOnly;
-  const sheet = !immersive && !welcome && !pageTools;
+  // (standing in 3D with a thing picked: its usual sheet, over the tee view's bar)
+  const pickedInTee = immersive && !readOnly && !ed.flyover && !ed.flyCam && !!ed.selectedId && getDoc().items.some(i => i.id === ed.selectedId);
+  const sheet = (!immersive || pickedInTee) && !welcome && !pageTools;
   const sheetH = sheet ? restH : 0;
 
   useEffect(() => {
