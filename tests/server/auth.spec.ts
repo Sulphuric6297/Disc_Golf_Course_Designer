@@ -405,9 +405,11 @@ test("comments: pinned on a basket (moving with it), @mention, the bell, a reply
   await expect(admin.getByTestId("comment-pin")).toHaveCount(1);
 
   // The basket moved: its pin goes with it
-  const pin0 = (await admin.getByTestId("comment-pin").boundingBox())!;
   await admin.getByTestId("comments-panel").getByRole("button", { name: "Close" }).click();
   await site(admin);
+  // (where the pin is with the whole site in view, before the basket moves)
+  await expect(admin.getByTestId("comment-pin")).toHaveCount(1);
+  const pin0 = (await admin.getByTestId("comment-pin").boundingBox())!;
   const from = await screenOf(admin, b.x, b.y);
   await admin.mouse.move(from.x, from.y);
   await admin.mouse.down();

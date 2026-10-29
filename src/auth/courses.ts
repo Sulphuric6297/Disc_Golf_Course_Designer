@@ -142,7 +142,7 @@ async function save() {
     }
     lastSaved = doc;
     // (live now: saved once the live connection has it all)
-    if (editsLive()) { set({ status: liveWritten() ? "saved" : "saving" }); return; }
+    if (editsLive()) { set({ status: liveWritten() ? "saved" : "saving" }); thumbnailSoon(); return; }
     set({ status: getDoc() === doc ? "saved" : "unsaved" });
     if (!inDraft()) thumbnailSoon();
   } catch (e) {
