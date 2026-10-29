@@ -8,7 +8,7 @@
 // as versions; restoring one makes a new version, so nothing is lost.
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { Ctx } from "../app.js";
+import type { RouteCtx } from "../app.js";
 import { ApiError, audit, parse } from "../http.js";
 import { draftCheckpoint, keepCurrent, saveDraft, snapshot } from "../history.js";
 import { BIG, IMAGE, courseDoc, ids, roleOn, stored, summary, type Id } from "./courses.js";
@@ -17,12 +17,14 @@ import { BIG, IMAGE, courseDoc, ids, roleOn, stored, summary, type Id } from "./
 const photo = z.string().max(60 << 20).regex(IMAGE, "Not an image").nullable().optional();
 const note = z.string().trim().max(500).default("");
 
-export async function versionRoutes(app: FastifyInstance, { sql }: Ctx) {
+export async function versionRoutes(app: FastifyInstance, { sql, live }: RouteCtx) {
   const role = roleOn(sql);
 
   /** The main version replaced by a merged draft (from the version it was merged with). */
-  const publish = async (courseId: string, b: { doc: z.infer<typeof courseDoc>; version: number; summary?: z.infer<typeof summary>; photo?: string | null; note: string }, by: string, approvedBy: string | null) =>
-    sql.begin(async tx => {
+  const publish = async (courseId: string, b: { doc: z.infer<typeof courseDoc>; version: number; summary?: z.infer<typeof summary>; photo?: string | null; note: string }, by: string, approvedBy: string | null) => {
+    // (what's open live goes in first: a draft merged with an older course is refused, and merged again)
+    await live.settle(courseId);
+    const version = await sql.begin(async tx => {
       await keepCurrent(tx, courseId);
       const [done] = await tx`
         update courses set doc = ${tx.json(stored(b.doc) as never)}, summary = ${tx.json((b.summary ?? {}) as never)}, name = ${b.doc.name}, holes = ${b.doc.holes.length},
@@ -37,6 +39,10 @@ export async function versionRoutes(app: FastifyInstance, { sql }: Ctx) {
       await snapshot(tx, courseId, "publish", b.note, by, approvedBy);
       return done.version as number;
     });
+    await live.changed(courseId);
+    if (b.photo !== undefined) live.photo(courseId);
+    return version;
+  };
   const published = z.object({ doc: courseDoc, version: z.number().int(), summary, photo, note });
 
   // --- Your draft
@@ -218,6 +224,7 @@ export async function versionRoutes(app: FastifyInstance, { sql }: Ctx) {
     const { id, vid } = parse(verIds, req.params);
     const { a } = await role(req, id, "editor");
     const v = await findVersion(id, vid, a.user.id);
+    await live.settle(id);
     const [c] = await sql`select doc, version, summary from courses where id = ${id}`;
     await sql`
       insert into course_drafts (course_id, user_id, doc, base_doc, base_version, summary)
@@ -241,6 +248,7 @@ export async function versionRoutes(app: FastifyInstance, { sql }: Ctx) {
     if (c.approval && r !== "owner") throw new ApiError(403, "Only an owner can do that");
     const v = await findVersion(id, vid, a.user.id);
     if (v.kind === "draft") throw new ApiError(400, "Bring a draft's checkpoint into your draft instead");
+    await live.settle(id);
     const version = await sql.begin(async tx => {
       await keepCurrent(tx, id);
       const [done] = await tx`
@@ -254,6 +262,8 @@ export async function versionRoutes(app: FastifyInstance, { sql }: Ctx) {
       await tx`delete from course_drafts where course_id = ${id} and user_id = ${a.user.id}`;
       return done.version as number;
     });
+    await live.changed(id);
+    live.photo(id);
     await audit(sql, req, "course.restored", { course: id, from: v.version, version });
     return { version };
   });
