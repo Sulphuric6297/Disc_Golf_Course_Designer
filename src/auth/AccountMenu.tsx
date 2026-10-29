@@ -78,7 +78,7 @@ export function CourseChip() {
       <button
         className={`inline-flex items-center gap-1.5 pl-2.5 pr-2 py-1 rounded-full text-[12px] font-semibold ${FOCUS} ${drafting ? "bg-orange-500/15 text-orange-200" : "bg-emerald-500/10 text-emerald-200"}`}
         onClick={() => m.setOpen(o => !o)} aria-haspopup="menu" aria-expanded={m.open} data-testid="course-chip"
-        title={drafting ? draftChanges() : "Changes go straight into the official layout"}>
+        title={drafting ? draftChanges() : "Changes go straight into the course, live for everyone in it"}>
         <span className={`w-1.5 h-1.5 rounded-full ${busy ? "bg-zinc-400 animate-pulse" : drafting ? "bg-orange-400" : "bg-emerald-400"}`} data-testid="save-status" data-state={busy ? "saving" : "saved"} />
         {label}
         {role === "owner" && pending > 0 && <span className="ml-0.5 px-1.5 rounded-full bg-amber-500 text-zinc-950 text-[10px]" data-testid="review-count">{pending}</span>}
@@ -104,7 +104,7 @@ export function CourseChip() {
               <div className="border-t border-white/[0.08] my-1" />
             </>
           )}
-          {role === "owner" && (
+          {(role === "owner" || (role === "editor" && !approval)) && (
             <>
               <button className={`${ROW} ${!drafting ? "text-emerald-200" : ""}`} role="menuitemradio" aria-checked={!drafting} data-testid="mode-live"
                 onClick={() => void choose(async () => {
@@ -112,15 +112,15 @@ export function CourseChip() {
                   if (draft) await discardDraft();
                   await setLive(true);
                 })}>
-                <span><span className="block">Publish as I go</span><span className="block text-[12px] text-zinc-500">Changes go straight into the official layout</span></span>
+                <span><span className="block">Publish as I go</span><span className="block text-[12px] text-zinc-500">Changes go straight into the course, live for everyone in it</span></span>
               </button>
               <button className={`${ROW} ${drafting ? "text-orange-200" : ""}`} role="menuitemradio" aria-checked={drafting} data-testid="mode-draft" onClick={() => void choose(() => setLive(false))}>
                 <span><span className="block">Work in a draft</span><span className="block text-[12px] text-zinc-500">Publish when it's ready</span></span>
               </button>
               <div className="border-t border-white/[0.08] my-1" />
-              {pending > 0 && <Row icon={<Inbox size={15} />} testid="review-button" onClick={() => { m.setOpen(false); open("review"); }}>{pending} to review</Row>}
             </>
           )}
+          {role === "owner" && pending > 0 && <Row icon={<Inbox size={15} />} testid="review-button" onClick={() => { m.setOpen(false); open("review"); }}>{pending} to review</Row>}
           {id && <Row icon={<History size={15} />} testid="history-button" onClick={() => { m.setOpen(false); open("history"); }}>History</Row>}
           {error && <p role="alert" className="px-3 py-1.5 text-xs text-red-300">{error}</p>}
         </div>

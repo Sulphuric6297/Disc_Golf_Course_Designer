@@ -1,7 +1,8 @@
 // Courses kept on the HyzerLab server. Changes save into a draft of your own, which Publish
 // merges into the course (editors: or sends for the owner's OK, when the owner asks for it);
-// owners can instead "Publish as I go", saving straight into the course (one made over a newer
-// save is stopped and asked about). When both a draft and the course changed the same part, you
+// owners and editors can instead "Publish as I go", changing the course itself live, with everyone
+// else who has it open (live.ts; editors only while the owner doesn't want to OK changes first).
+// When both a draft and the course changed the same part, you
 // pick which to keep. Earlier versions and sent drafts can be looked at (view only) before restoring or
 // accepting them. The File menu and the home page list the courses shared with you.
 import { create } from "zustand";
@@ -17,6 +18,7 @@ import { toast } from "../state/toast";
 import type { CourseDoc } from "../types";
 import { api, ApiFail, useAuth } from "./api";
 import type { Perms } from "./perms";
+import { liveRetry, liveSaveNow, livePending, startLive, stopLive } from "./live";
 
 export type Role = "owner" | "editor" | "viewer";
 export interface Summary { par: number; length: number; units: "ft" | "m"; canvas: { width: number; height: number }; lines: [number, number][][] }
@@ -26,7 +28,7 @@ export type ServerPlan = PlanMeta & {
 };
 
 /** What the course list shows of a course: totals, and each hole's throw line for a small map. */
-const summaryOf = (doc: CourseDoc): Summary => {
+export const summaryOf = (doc: CourseDoc): Summary => {
   const stats = courseStats(doc);
   const t = courseTotals(doc, stats);
   // (long lines thinned to 64 points: plenty for a picture)
@@ -47,7 +49,8 @@ export const useServerCourse = create<{
   /** Working in a draft (editors always; owners unless publishing as they go); it exists once
    * something was changed. */
   draft: boolean;
-  /** An owner saving straight into the course ("Publish as I go"). */
+  /** Changing the course itself, live ("Publish as I go": owners, and editors unless the owner
+   * OKs changes first). */
   live: boolean;
   /** When the draft was last saved by hand (Save draft). */
   savedAt?: number;
@@ -82,7 +85,9 @@ const remember = (id: string | null) => { try { if (id) localStorage.setItem(las
 
 const editing = () => state().role === "owner" || state().role === "editor";
 const canSave = () => editing() && state().status !== "conflict" && !state().preview;
-export const inDraft = () => state().role === "editor" || (state().role === "owner" && !state().live);
+export const inDraft = () => editing() && !state().live;
+/** Changing the course itself as it's open, with everyone else in it (a course on the server). */
+const editsLive = () => !!state().id && editing() && !inDraft();
 const noPhoto = (doc: CourseDoc) => ({ ...doc, background: null });
 /** A document from the server in the app's own form (filled in, cleaned): what it's compared in
  * (made once for each document). */
@@ -98,12 +103,24 @@ let lastSaved: CourseDoc | null = null;
 
 async function save() {
   const doc = getDoc();
+  const wasLive = editsLive();
   if (doc === opened || doc === lastSaved || !canSave()) return;
   if (!state().id && isEmpty(doc)) return;
   set({ status: "saving" });
   try {
     const summary = summaryOf(doc);
     const id = state().id;
+    if (editsLive()) {
+      // (live: the changes are on their way already; the photo goes on its own)
+      liveRetry();
+      await liveSaveNow();
+      if (doc.background !== sentBackground && doc.background) {
+        await api("PUT", `courses/${id}/background`, { data: doc.background });
+        sentBackground = doc.background;
+      }
+      lastSaved = doc;
+      return;
+    }
     if (!id) {
       const r = await api<{ id: string; version: number; role: Role }>("POST", "courses", { doc: noPhoto(doc), summary });
       set({ id: r.id, version: r.version, role: r.role });
@@ -127,6 +144,8 @@ async function save() {
     if (e instanceof ApiFail && e.status === 409) set({ status: "conflict", conflict: e.message });
     else { set({ status: "error" }); console.warn("Save failed", e); }
   }
+  // (a course just made, and changed live from now on)
+  if (!wasLive && editsLive()) void reopenLive();
 }
 
 // --- The course list's picture: the printed map, small, made after a save (at most every two
@@ -188,12 +207,17 @@ export async function saveNow() {
 // (the tab closed or reloaded after a save failed: the browser asks first, the changes not on
 // the server; a save only waiting its moment goes on its own)
 if (typeof window !== "undefined") window.addEventListener("beforeunload", e => {
-  if (state().status === "error") { e.preventDefault(); e.returnValue = ""; }
+  if (state().status === "error" || livePending()) { e.preventDefault(); e.returnValue = ""; }
 });
 
 export const startServerAutosave = () => {
   const stopSaving = useCourse.subscribe((s, prev) => {
     if (s.doc === prev.doc || s.doc === opened || !canSave()) return;
+    // (live: sent as they're made; a new photo goes on its own)
+    if (editsLive()) {
+      if (s.doc.background !== sentBackground && s.doc.background && s.doc.background !== prev.doc.background) { window.clearTimeout(timer); timer = window.setTimeout(() => void saveNow(), 1500); }
+      return;
+    }
     if (state().status === "saved") set({ status: "unsaved" });
     window.clearTimeout(timer);
     timer = window.setTimeout(() => void saveNow(), 1500);
@@ -212,7 +236,7 @@ export const startServerAutosave = () => {
   return () => { stopSaving(); keepSelect(); };
 };
 
-type CourseRead = { id: string; version: number; role: Role; approval: boolean; live: boolean; park: string; perms: Perms | null; doc: CourseDoc; hasBackground: boolean; hasThumbnail: boolean };
+type CourseRead = { id: string; version: number; seq?: number; role: Role; approval: boolean; live: boolean; park: string; perms: Perms | null; doc: CourseDoc; hasBackground: boolean; hasThumbnail: boolean };
 const readCourse = (id: string) => api<CourseRead>("GET", `courses/${id}`);
 const readPhoto = async (id: string, has: boolean) => (has ? (await api<{ data: string | null }>("GET", `courses/${id}/background`)).data : null);
 
@@ -246,7 +270,9 @@ export async function openServerCourse(id: string, quiet = false) {
     thumbFor = null;
     thumbAt = 0;
     sentBackground = shown;
-    display(doc, shown, c.role === "viewer");
+    stopLive();
+    const shownDoc = display(doc, shown, c.role === "viewer");
+    if (c.role === "viewer" || editsLive()) startLive(id, shownDoc, c.seq ?? 0, liveHooks);
     remember(id);
     if (c.role === "owner") void api<unknown[]>("GET", `courses/${id}/submissions`).then(l => { if (state().id === id) set({ pending: l.length }); }, () => {});
     // (a course from before the list had pictures: one now)
@@ -260,9 +286,51 @@ export async function openServerCourse(id: string, quiet = false) {
 
 const reopen = () => { const id = state().id; return id ? openServerCourse(id) : Promise.resolve(false); };
 
+/** A course just made on the server: opened again, live, keeping what's on the screen. */
+async function reopenLive() {
+  const id = state().id;
+  if (!id || state().preview) return;
+  const c = await readCourse(id);
+  if (state().id !== id || !editsLive()) return;
+  // (from what was sent: anything changed since goes as live changes)
+  const doc = lastSaved ?? getDoc();
+  opened = doc;
+  startLive(id, doc, c.seq ?? 0, liveHooks);
+}
+
+/** What the live connection asks of the course here. */
+const liveHooks = {
+  read: async () => {
+    const c = await readCourse(state().id!);
+    set({ version: c.version });
+    return { doc: normalizeCourse(safeDoc({ ...c.doc, background: getDoc().background })), seq: c.seq ?? 0 };
+  },
+  summary: (doc: CourseDoc) => summaryOf(doc),
+  canSend: () => editsLive() && !state().preview && !useCourse.getState().readOnly,
+  status: (s: "saved" | "saving" | "error") => set({ status: s }),
+  written: () => thumbnailSoon(),
+  toDraft: (server: CourseDoc, mine: CourseDoc) => {
+    // (the owner wants to OK changes first: ours, from here on, in a draft of our own)
+    base = { doc: server, version: state().version, photo: sentBackground };
+    set({ live: false, draft: false, status: "unsaved" });
+    opened = server;
+    toast("The owner now OKs changes before they go in. Yours are in a draft: Send puts them in front of the owner.", "info");
+    if (mine !== server) void saveNow();
+  },
+  photo: async () => {
+    const id = state().id;
+    if (!id) return;
+    const data = await readPhoto(id, true).catch(() => null);
+    if (state().id !== id) return;
+    sentBackground = data;
+    useCourse.setState(s => ({ doc: { ...s.doc, background: data } }));
+  }
+};
+
 /** A course not on the server yet: saved there (yours) once something is on it. */
 export async function startUnsaved(doc: CourseDoc) {
   if (state().id) await saveNow();
+  stopLive();
   set({ id: null, version: 0, role: "owner", status: "saved", conflict: "", draft: false, live: true, behind: false, approval: false, preview: null, pending: 0, perms: null, park: "" });
   sentBackground = null;
   base = null;
@@ -413,7 +481,7 @@ export async function updateDraft(m: Merge, picked = new Set<number>()) {
   toast("Your draft has the course's latest changes.", "success");
 }
 
-/** An owner: straight into the course as they go, or in a draft. */
+/** Straight into the course as you go (live, with everyone else in it), or in a draft. */
 export async function setLive(on: boolean) {
   const id = state().id;
   if (!id) { set({ live: on }); return; }
@@ -449,6 +517,7 @@ export const listSubmissions = () => api<SubmissionRow[]>("GET", `courses/${stat
 export async function previewVersion(v: VersionRow, label: string) {
   await saveNow();
   const r = await api<{ doc: CourseDoc; photo: string | null }>("GET", `courses/${state().id}/versions/${v.id}`);
+  stopLive();
   set({ preview: { kind: "version", id: v.id, label } });
   display(r.doc, r.photo, true);
 }
@@ -459,8 +528,8 @@ export async function versionToDraft(vid: number) {
   if (!id) return;
   await saveNow();
   await api("POST", `courses/${id}/versions/${vid}/to-draft`);
-  // (an owner publishing as they go: into a draft now)
-  if (state().role === "owner" && state().live) await api("POST", `courses/${id}/live`, { live: false });
+  // (publishing as they go: into a draft now)
+  if (state().live) await api("POST", `courses/${id}/live`, { live: false });
   await reopen();
   toast("It's in your draft now: Publish puts it in the course.", "success");
 }
@@ -481,6 +550,7 @@ export async function previewSubmission(s: SubmissionRow, label: string) {
   await saveNow();
   const r = await api<{ doc: CourseDoc; photo: string | null }>("GET", `courses/${state().id}/submissions/${s.id}`);
   const c = await readCourse(state().id!);
+  stopLive();
   set({ preview: { kind: "submission", id: s.id, label } });
   display(r.doc, r.photo ?? (await readPhoto(state().id!, c.hasBackground)), true);
 }

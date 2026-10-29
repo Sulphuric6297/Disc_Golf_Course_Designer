@@ -464,3 +464,60 @@ test("a public link: the site with what it allows (pictures, numbers), 3D when a
   await expect.poll(async () => (await course(page)).holes.length).toBe(holes);
   await anon.close();
 });
+
+test("live: two people in one course see each other's changes as they're made; undo takes back only your own; a change made offline goes in once back", async ({ browser }) => {
+  test.setTimeout(240_000);
+  const live = (page: Page) => page.evaluate(() => (window as any).__dgLive.state());
+  const holeIds = async (page: Page) => (await course(page)).holes.map((h: any) => h.id).sort();
+  const admin = await as(browser, "admin");
+  await admin.getByTestId("new-course").click();
+  await blankCourse(admin);
+  const first = await addHole(admin, { x: 100, y: 200 }, { x: 650, y: 200 });
+  await expect(admin.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
+  // (the course just made: changed live from now on)
+  await expect.poll(async () => (await live(admin)).connected).toBe(true);
+  const id = await admin.evaluate(() => (window as any).__dgServer.state().id);
+  await admin.getByTestId("share-button").click();
+  await admin.getByTestId("share-add").getByLabel("Username").fill("pat");
+  await admin.getByTestId("share-add").getByLabel("Role").selectOption("editor");
+  await admin.getByTestId("share-add").getByRole("button", { name: "Share" }).click();
+  await expect(admin.getByTestId("members").locator("li")).toHaveCount(2);
+  await admin.keyboard.press("Escape");
+
+  // Pat, an editor, starts in a draft and chooses to publish as they go
+  const pat = await as(browser, "pat");
+  await pat.evaluate(id => (window as any).__dgServer.open(id), id);
+  await expect(pat.getByTestId("course-chip")).toContainText("Draft");
+  await pat.getByTestId("course-chip").click();
+  await pat.getByTestId("mode-live").click();
+  await expect(pat.getByTestId("course-chip")).toContainText("Live");
+  await expect.poll(async () => (await live(pat)).connected).toBe(true);
+  await expect.poll(async () => (await live(admin)).people).toBe(2);
+
+  // Each sees the other's hole as it's made
+  const second = await addHole(admin, { x: 100, y: 350 }, { x: 650, y: 350 });
+  await expect.poll(() => holeIds(pat)).toEqual([first.id, second.id].sort());
+  const third = await addHole(pat, { x: 100, y: 500 }, { x: 650, y: 500 });
+  await expect.poll(() => holeIds(admin)).toEqual([first.id, second.id, third.id].sort());
+
+  // Admin's undo takes back Admin's own hole; Pat's stays, for both
+  await admin.keyboard.press("Escape");
+  await admin.keyboard.press("Control+z");
+  await expect.poll(() => holeIds(admin)).toEqual([first.id, third.id].sort());
+  await expect.poll(() => holeIds(pat)).toEqual([first.id, third.id].sort());
+
+  // Pat offline: the change waits, and goes in once Pat is back
+  await pat.context().setOffline(true);
+  await expect.poll(async () => (await live(pat)).connected).toBe(false);
+  const fourth = await addHole(pat, { x: 100, y: 650 }, { x: 650, y: 650 });
+  expect(await holeIds(admin)).not.toContain(fourth.id);
+  await pat.context().setOffline(false);
+  await expect.poll(() => holeIds(admin), { timeout: 30_000 }).toEqual([first.id, third.id, fourth.id].sort());
+  await expect(pat.getByTestId("save-status")).toHaveAttribute("data-state", "saved", { timeout: 30_000 });
+
+  // Written: opened again, it's all there
+  await admin.reload();
+  await expect(admin.getByTestId("home")).toBeVisible();
+  await admin.evaluate(id => (window as any).__dgServer.open(id), id);
+  await expect.poll(() => holeIds(admin)).toEqual([first.id, third.id, fourth.id].sort());
+});

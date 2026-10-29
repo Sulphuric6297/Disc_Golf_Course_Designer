@@ -5,6 +5,11 @@ import { byNumber, createEmptyCourse, holeNumber, holeNumbers } from "../lib/cou
 
 const HISTORY = 120;
 
+/** Brings a document from the undo history up to date before it's put back (editing live: what
+ * others changed since stays, so only your own changes are undone). */
+let catchUp: (doc: CourseDoc) => CourseDoc = d => d;
+export const setCatchUp = (f: (doc: CourseDoc) => CourseDoc) => { catchUp = f; };
+
 type CourseStore = {
   doc: CourseDoc;
   past: CourseDoc[];
@@ -46,15 +51,15 @@ export const useCourse = create<CourseStore>()((set, get) => ({
     const { past, future, doc, gestureStart, readOnly } = get();
     if (readOnly) return;
     // (a gesture not ended yet, a color picker still open: back to where it started, one step)
-    if (gestureStart && gestureStart !== doc) { set({ doc: gestureStart, future: [doc, ...future], gestureStart: null }); return; }
+    if (gestureStart && gestureStart !== doc) { set({ doc: catchUp(gestureStart), future: [doc, ...future], gestureStart: null }); return; }
     if (!past.length) return;
-    set({ doc: past[past.length - 1], past: past.slice(0, -1), future: [doc, ...future], gestureStart: null });
+    set({ doc: catchUp(past[past.length - 1]), past: past.slice(0, -1), future: [doc, ...future], gestureStart: null });
   },
   redo: () => {
     const { past, future, doc, readOnly } = get();
     if (readOnly) return;
     if (!future.length) return;
-    set({ doc: future[0], future: future.slice(1), past: [...past, doc], gestureStart: null });
+    set({ doc: catchUp(future[0]), future: future.slice(1), past: [...past, doc], gestureStart: null });
   },
   load: doc => set({ doc, past: [], future: [], gestureStart: null })
 }));

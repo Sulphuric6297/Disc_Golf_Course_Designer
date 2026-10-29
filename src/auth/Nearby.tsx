@@ -92,8 +92,8 @@ function useConcerns() {
 
 // --- One ground for the park: this course's terrain (and measured trees) copied to others
 
-/** This course's ground into the others picked: straight in for an owner publishing as they go,
- * else into their draft. */
+/** This course's ground into the others picked: straight in where you publish as you go, else
+ * into your draft. */
 async function shareGround(ids: string[], trees: GroundShare) {
   const from = getDoc();
   let done = 0;
@@ -102,7 +102,7 @@ async function shareGround(ids: string[], trees: GroundShare) {
     if (c.role === "viewer") continue;
     const to = withGround(normalizeCourse(safeDoc({ ...c.doc, background: null })), from, trees);
     const doc = { ...to, background: null };
-    if (c.role === "owner" && c.live) await api("PUT", `courses/${id}`, { doc, version: c.version });
+    if (c.live) await api("PUT", `courses/${id}`, { doc, version: c.version });
     else {
       const d = await api<{ draft: { doc: CourseDoc } | null }>("GET", `courses/${id}/draft`);
       const draft = d.draft ? { ...withGround(normalizeCourse(safeDoc({ ...d.draft.doc, background: null })), from, trees), background: null } : doc;

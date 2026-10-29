@@ -111,10 +111,12 @@ export async function courseRoutes(app: FastifyInstance, { sql, live }: RouteCtx
     return { id, version: now?.version ?? c.version, seq: now?.seq ?? 0, role: r, approval: c.approval, live: editing, park: c.park, perms: r === "viewer" ? m.perms : null, doc: now?.doc ?? c.doc, hasBackground: c.has_background, hasThumbnail: c.has_thumbnail };
   });
 
-  // The owner's own changes, as they go (editors change a draft, and publish it)
+  // The whole course saved, by someone who publishes as they go (an app opened before live
+  // editing, or another course's ground shared into it); others change a draft, and publish it
   app.put<Id>("/api/courses/:id", BIG, async req => {
     const { id } = parse(ids, req.params);
-    const { a } = await role(req, id, "owner");
+    const { a, role: r } = await role(req, id, "editor");
+    if (r !== "owner" && !(await editsLive(id, a.user.id))) throw new ApiError(403, "Only an owner can do that");
     const b = parse(z.object({ doc: courseDoc, version: z.number().int(), summary }), req.body);
     // (the whole course, from an app opened before live editing: what the room has goes in
     // first, so a save over it is stopped and asked about, as any other is)
