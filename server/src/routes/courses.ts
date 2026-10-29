@@ -53,12 +53,6 @@ const client = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, "Not found");
 
 export async function courseRoutes(app: FastifyInstance, { sql, live }: RouteCtx) {
   const role = roleOn(sql);
-  /** Whether you change the course itself as you go ("Publish as I go"): owners who chose it, and
-   * editors who did, unless the owner wants to OK changes first. */
-  const editsLive = async (courseId: string, userId: string) => {
-    const [m] = await sql`select m.role, m.live, c.approval from course_members m join courses c on c.id = m.course_id where m.course_id = ${courseId} and m.user_id = ${userId}`;
-    return !!m && m.live && (m.role === "owner" || (m.role === "editor" && !m.approval));
-  };
 
   app.get("/api/courses", async req => {
     const a = need(req);
@@ -67,15 +61,12 @@ export async function courseRoutes(app: FastifyInstance, { sql, live }: RouteCtx
         (select o.display_name from course_members om join users o on o.id = om.user_id
           where om.course_id = c.id and om.role = 'owner' order by om.added_at limit 1) as owner,
         (select count(*)::int from course_members x where x.course_id = c.id) as members,
-        (select t.updated_at from course_thumbnails t where t.course_id = c.id) as thumb_at,
-        exists (select 1 from course_drafts d where d.course_id = c.id and d.user_id = ${a.user.id}) as has_draft,
-        case when m.role = 'owner' then (select count(*)::int from course_submissions s where s.course_id = c.id and s.status = 'pending') else 0 end as to_review
+        (select t.updated_at from course_thumbnails t where t.course_id = c.id) as thumb_at
       from course_members m join courses c on c.id = m.course_id left join users u on u.id = c.updated_by
       where m.user_id = ${a.user.id} order by c.updated_at desc`;
     return rows.map(r => ({
       id: r.id, name: r.name, park: r.park, holes: r.holes, version: r.version, updatedAt: r.updated_at, role: r.role, updatedBy: r.updated_by,
-      owner: r.owner, members: r.members, summary: r.summary, thumbAt: r.thumb_at ? r.thumb_at.getTime() : null,
-      hasDraft: r.has_draft, toReview: r.to_review
+      owner: r.owner, members: r.members, summary: r.summary, thumbAt: r.thumb_at ? r.thumb_at.getTime() : null
     }));
   });
 
@@ -86,7 +77,6 @@ export async function courseRoutes(app: FastifyInstance, { sql, live }: RouteCtx
       const [c] = await tx`
         insert into courses (name, holes, doc, summary, created_by, updated_by)
         values (${doc.name}, ${doc.holes.length}, ${tx.json(stored(doc) as never)}, ${tx.json((sum ?? {}) as never)}, ${a.user.id}, ${a.user.id}) returning id, version`;
-      // (a new course: its maker edits it straight away, publishing as they go)
       await tx`insert into course_members (course_id, user_id, role, live) values (${c.id}, ${a.user.id}, 'owner', true)`;
       await snapshot(tx, c.id, "created", "", a.user.id);
       return c;
@@ -98,25 +88,23 @@ export async function courseRoutes(app: FastifyInstance, { sql, live }: RouteCtx
   app.get<Id>("/api/courses/:id", async req => {
     const { id } = parse(ids, req.params);
     const { a, role: r } = await role(req, id, "viewer");
-    const [m] = await sql`select live, perms from course_members where course_id = ${id} and user_id = ${a.user.id}`;
+    const [m] = await sql`select perms from course_members where course_id = ${id} and user_id = ${a.user.id}`;
     // (open live: what it has is written first, and its own copy given, the newest)
     await live.settle(id);
     const [c] = await sql`
-      select c.doc, c.version, c.approval, c.park,
+      select c.doc, c.version, c.park,
         exists (select 1 from course_backgrounds b where b.course_id = c.id) as has_background,
         exists (select 1 from course_thumbnails t where t.course_id = c.id) as has_thumbnail
       from courses c where c.id = ${id}`;
     const now = live.current(id);
-    const editing = m.live && (r === "owner" || (r === "editor" && !c.approval));
-    return { id, version: now?.version ?? c.version, seq: now?.seq ?? 0, role: r, approval: c.approval, live: editing, park: c.park, perms: r === "viewer" ? m.perms : null, doc: now?.doc ?? c.doc, hasBackground: c.has_background, hasThumbnail: c.has_thumbnail };
+    return { id, version: now?.version ?? c.version, seq: now?.seq ?? 0, role: r, park: c.park, perms: r === "viewer" ? m.perms : null, doc: now?.doc ?? c.doc, hasBackground: c.has_background, hasThumbnail: c.has_thumbnail };
   });
 
-  // The whole course saved, by someone who publishes as they go (an app opened before live
-  // editing, or another course's ground shared into it); others change a draft, and publish it
+  // The whole course saved (an app opened before live editing, or another course's ground shared
+  // into it)
   app.put<Id>("/api/courses/:id", BIG, async req => {
     const { id } = parse(ids, req.params);
-    const { a, role: r } = await role(req, id, "editor");
-    if (r !== "owner" && !(await editsLive(id, a.user.id))) throw new ApiError(403, "Only an owner can do that");
+    const { a } = await role(req, id, "editor");
     const b = parse(z.object({ doc: courseDoc, version: z.number().int(), summary }), req.body);
     // (the whole course, from an app opened before live editing: what the room has goes in
     // first, so a save over it is stopped and asked about, as any other is)
@@ -155,7 +143,6 @@ export async function courseRoutes(app: FastifyInstance, { sql, live }: RouteCtx
     const { id } = parse(ids, req.params);
     const { a } = await role(req, id, "editor");
     const b = parse(z.object({ client, batch: z.number().int().min(0), changes: z.array(change).min(1).max(60_000), summary }), req.body);
-    if (!(await editsLive(id, a.user.id))) throw new ApiError(409, "Work in a draft", { drafts: true });
     let seq: number | null;
     try {
       seq = await live.change(id, b.client, a.user.id, b.batch, b.changes, b.summary);
@@ -185,42 +172,11 @@ export async function courseRoutes(app: FastifyInstance, { sql, live }: RouteCtx
     return { ok: true };
   });
 
-  // How you edit it: straight into the course ("Publish as I go": owners, and editors unless the
-  // owner wants to OK changes first), or in a draft
-  app.post<Id>("/api/courses/:id/live", async req => {
-    const { id } = parse(ids, req.params);
-    const { a, role: r } = await role(req, id, "editor");
-    const b = parse(z.object({ live: z.boolean() }), req.body);
-    if (b.live) {
-      const [c] = await sql`select approval from courses where id = ${id}`;
-      if (r !== "owner" && c.approval) throw new ApiError(403, "The owner OKs changes to this course first: work in a draft");
-      const [d] = await sql`select 1 from course_drafts where course_id = ${id} and user_id = ${a.user.id}`;
-      if (d) throw new ApiError(409, "Publish or discard your draft first");
-    }
-    await sql`update course_members set live = ${b.live} where course_id = ${id} and user_id = ${a.user.id}`;
-    return { ok: true };
-  });
-
   app.post<Id>("/api/courses/:id/park", async req => {
     const { id } = parse(ids, req.params);
     await role(req, id, "owner");
     const b = parse(z.object({ park: z.string().trim().max(100) }), req.body);
     await sql`update courses set park = ${b.park} where id = ${id}`;
-    return { ok: true };
-  });
-
-  app.post<Id>("/api/courses/:id/settings", async req => {
-    const { id } = parse(ids, req.params);
-    await role(req, id, "owner");
-    const b = parse(z.object({ approval: z.boolean() }), req.body);
-    await sql`update courses set approval = ${b.approval} where id = ${id}`;
-    // (the owner's OK first: editors change drafts from now on, and those with it open are told)
-    if (b.approval) {
-      await sql`update course_members set live = false where course_id = ${id} and role = 'editor'`;
-      const owners = await sql`select user_id from course_members where course_id = ${id} and role = 'owner'`;
-      live.draftsOnly(id, new Set(owners.map(o => o.user_id as string)));
-    }
-    await audit(sql, req, "course.settings", { course: id, approval: b.approval });
     return { ok: true };
   });
 
@@ -234,8 +190,7 @@ export async function courseRoutes(app: FastifyInstance, { sql, live }: RouteCtx
 
   app.put<Id>("/api/courses/:id/background", BIG, async req => {
     const { id } = parse(ids, req.params);
-    const { a, role: r } = await role(req, id, "editor");
-    if (r !== "owner" && !(await editsLive(id, a.user.id))) throw new ApiError(403, "Only an owner can do that");
+    await role(req, id, "editor");
     const { data } = parse(z.object({ data: z.string().max(60 << 20).regex(IMAGE, "Not an image").nullable() }), req.body);
     if (data === null) await sql`delete from course_backgrounds where course_id = ${id}`;
     else await sql`insert into course_backgrounds (course_id, data) values (${id}, ${data}) on conflict (course_id) do update set data = excluded.data, updated_at = now()`;
@@ -309,7 +264,7 @@ export async function courseRoutes(app: FastifyInstance, { sql, live }: RouteCtx
     await sql`insert into course_members (course_id, user_id, role, perms) values (${id}, ${u.id}, ${b.role}, ${b.perms ? sql.json(b.perms as never) : null})
       on conflict (course_id, user_id) do update set role = excluded.role, perms = case when ${b.perms === undefined} then course_members.perms else excluded.perms end`;
     // (a viewer now, or an editor whose changes now need the owner's OK: no more live changes)
-    if (b.role === "viewer") { await sql`update course_members set live = false where course_id = ${id} and user_id = ${u.id}`; live.stopEditing(id, u.id, false); }
+    if (b.role === "viewer") live.stopEditing(id, u.id, false);
     await audit(sql, req, "course.shared", { course: id, username: u.username, role: b.role });
     return { ok: true };
   });

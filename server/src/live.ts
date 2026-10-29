@@ -260,21 +260,16 @@ export function liveRooms(sql: Sql) {
       const r = rooms.get(courseId);
       if (r) everyone(r, "photo", {}, except);
     },
-    /** Someone may no longer change it live (their role changed, they were taken off, or the
-     * owner asked for drafts): told, or let go. */
+    /** Someone may no longer change it (made a viewer: told, and it opens again view only; or
+     * taken off it: let go). */
     stopEditing(courseId: string, userId: string, gone: boolean) {
       const r = rooms.get(courseId);
       if (!r) return;
       for (const m of r.members.values()) {
         if (m.userId !== userId) continue;
         if (gone) { try { m.reply.raw.end(); } catch { /* gone */ } }
-        else send(m, "drafts", {});
+        else send(m, "role", {});
       }
-    },
-    /** Everyone told to work in drafts now (the owner asked for their OK first), but the owners. */
-    draftsOnly(courseId: string, owners: Set<string>) {
-      const r = rooms.get(courseId);
-      if (r) for (const m of r.members.values()) if (!owners.has(m.userId)) send(m, "drafts", {});
     },
     /** The course was deleted: everyone in it let go. */
     closeRoom(courseId: string) {

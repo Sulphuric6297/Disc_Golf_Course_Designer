@@ -26,7 +26,6 @@ import { useLayout } from "./useLayout";
 import { LockedRow } from "./DemoNote";
 import { InspectorBody, PANEL_INSET, SelectionHeader, useSelection } from "./Inspector";
 import { SERVER } from "../auth/api";
-import { draftHoles } from "../auth/courses";
 import { NearbyCourses, NearbySafety } from "../auth/Nearby";
 
 export const STEPS: { id: Step; label: string; title: string }[] = [
@@ -393,10 +392,10 @@ function LayoutEditor({ open, setOpen, picker = true }: { open: boolean; setOpen
 
 /** A hole in a list (the computer's column, a phone's or a tablet's panel): its number in its tee
  * color, then its length and par once it has a tee and a basket (or what it needs), its worst
- * check, a draft's change, a dot for each tee color and a link when its basket is shared. `slim`:
+ * check, a dot for each tee color and a link when its basket is shared. `slim`:
  * just the number (the rest for the tooltip and screen readers); `roomy`: its name too, when it
  * has one. */
-function HoleRow({ s, check, draft, slim = false, roomy = false }: { s: HoleStats; check?: SafetyIssue; draft?: boolean; slim?: boolean; roomy?: boolean }) {
+function HoleRow({ s, check, slim = false, roomy = false }: { s: HoleStats; check?: SafetyIssue; slim?: boolean; roomy?: boolean }) {
   const doc = useCourse(st => st.doc);
   const sel = useEditor(e => e.selectedId === s.holeId || e.activeHoleId === s.holeId);
   const hole = doc.holes.find(h => h.id === s.holeId);
@@ -416,7 +415,6 @@ function HoleRow({ s, check, draft, slim = false, roomy = false }: { s: HoleStat
         <span className="block text-[12.5px] tabular-nums truncate">{what}</span>
       </span>
       {!slim && <CheckDot check={check} />}
-      {!slim && draft && <span className="w-2 h-2 rounded-full bg-orange-400 shrink-0" title="Changed in your draft" data-testid="draft-dot" />}
       {!slim && (tees.length > 1 || shared) && (
         <span className="flex items-center gap-0.5 shrink-0" data-testid="hole-row-marks">
           {tees.length > 1 && tees.map(t => <span key={t.id} className="w-1.5 h-1.5 rounded-full ring-1 ring-black/40" style={{ background: TEE_LEVELS[t.level].color }} title={`${TEE_LEVELS[t.level].label} tee`} />)}
@@ -480,8 +478,6 @@ function HolesTable({ doc, stats }: { doc: CourseDoc; stats: HoleStats[] }) {
  * computer's totals card; its column has the list). */
 export function HolesStep({ course = false }: { course?: boolean }) {
   const doc = useCourse(s => s.doc);
-  // (in a draft on a HyzerLab server: the holes it changes)
-  const changed = useMemo(() => (SERVER ? draftHoles(doc) : new Set<string>()), [doc]);
   const stats = useMemo(() => courseStats(doc), [doc]);
   // (a hole with two numbers counts twice, as on the scorecard)
   const played = doc.holes.reduce((n, h) => n + playsOf(doc, h.id), 0);
@@ -496,7 +492,7 @@ export function HolesStep({ course = false }: { course?: boolean }) {
       <Section title={`${played} hole${played === 1 ? "" : "s"}`} testid={course ? "course-holes" : "hole-list"} right={oneLayout ? <button className="text-xs text-orange-300 hover:text-orange-200 touch:min-h-[44px]" onClick={() => setLayoutsOpen(true)}>Edit layouts</button> : undefined}>
         {!course && (
           <ol className="space-y-0.5">
-            {stats.map(s => <li key={s.holeId}><HoleRow s={s} check={checks.get(s.holeId)} draft={changed.has(s.holeId)} roomy /></li>)}
+            {stats.map(s => <li key={s.holeId}><HoleRow s={s} check={checks.get(s.holeId)} roomy /></li>)}
             <li><NewHoleRow roomy /></li>
           </ol>
         )}
@@ -677,7 +673,6 @@ export function HolesColumn() {
   const slim = useSelection().open;
   const stats = useMemo(() => courseStats(doc), [doc]);
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
-  const changed = useMemo(() => (SERVER ? draftHoles(doc) : new Set<string>()), [doc]);
   const [more, setMore] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
   const checks = useHoleChecks();
@@ -714,7 +709,7 @@ export function HolesColumn() {
       <div className={`glass pointer-events-auto rounded-[22px] p-1.5 flex flex-col gap-0.5 max-h-full min-h-0 ${slim ? "w-[52px]" : "w-[172px]"}`} data-testid="hole-list">
         {doc.layouts.length > 1 && <div className="pb-1 mb-0.5 border-b border-white/10"><LayoutPicker compact slim={slim} /></div>}
         <div className="overflow-y-auto min-h-0 flex flex-col gap-0.5">
-          {stats.map(s => <HoleRow key={s.holeId} s={s} check={checks.get(s.holeId)} draft={changed.has(s.holeId)} slim={slim} />)}
+          {stats.map(s => <HoleRow key={s.holeId} s={s} check={checks.get(s.holeId)} slim={slim} />)}
         </div>
         <NewHoleRow slim={slim} />
       </div>

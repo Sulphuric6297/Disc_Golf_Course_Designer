@@ -135,7 +135,7 @@ export function FlyArt() {
   );
 }
 
-/** Saving and sharing: a draft, publishing, people and a public page. */
+/** Saving and sharing: changed together live, kept, shared with people and on a public page. */
 export function ShareArt() {
   const box = (x: number, title: string, sub: string, color: string) => (
     <g>
@@ -151,9 +151,9 @@ export function ShareArt() {
     </g>
   );
   return (
-    <Frame label="Your draft, published into the course, shared with people and on a public page" h={190}>
-      {box(16, "Your draft", "changes kept apart", C.gold)}
-      {arrow(140, "Publish")}
+    <Frame label="The course changed together live, saved with its history, shared with people and on a public page" h={190}>
+      {box(16, "Editing", "together, live", C.gold)}
+      {arrow(140, "Saved")}
       {box(176, "The course", "with its history", C.fern)}
       {arrow(300, "Share")}
       {box(336, "People", "view or edit", C.pond)}

@@ -2,7 +2,7 @@
 // inspector for the selection, and the dialogs.
 import { usePageToasts } from "./auth/Home";
 import { SHOW_EVENT } from "./components/showSetting";
-import { inDraft, saveDraftAs, saveNow, useServerCourse } from "./auth/courses";
+import { saveNow, useServerCourse } from "./auth/courses";
 import { SERVER } from "./auth/api";
 import { HelpGuide } from "./components/help/HelpGuide";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -156,13 +156,12 @@ function cameIn(site: ImportedSite) {
   return `: ${parts.slice(0, -1).join(", ")}${and}${parts[parts.length - 1]}`;
 }
 
-/** Ctrl+S: saved now (a draft into its history too), and said so. */
+/** Ctrl+S: saved now, and said so. */
 function saveByHand() {
   if (!SERVER) { toast("Saved in this browser.", "success"); return; }
   if (useCourse.getState().readOnly) { toast("This course is view only.", "info"); return; }
-  const draft = inDraft();
-  void (draft ? saveDraftAs("") : saveNow()).then(
-    () => { if (useServerCourse.getState().status === "saved") toast(draft ? "Saved to your draft." : "Saved.", "success"); else toast("Not saved yet: see the save status in the top bar.", "error"); },
+  void saveNow().then(
+    () => { if (useServerCourse.getState().status === "saved") toast("Saved.", "success"); else toast("Not saved yet: see the save status in the top bar.", "error"); },
     e => toast(`Couldn't save: ${e instanceof Error ? e.message : "try again"}.`, "error")
   );
 }
@@ -286,7 +285,7 @@ export default function App() {
       // (while drawing, the last point first, as Backspace does)
       if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) useCourse.getState().redo(); else if (!view?.undoPoint()) useCourse.getState().undo(); return; }
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); useCourse.getState().redo(); return; }
-      // (Ctrl+S: your draft saved now, into the history; out of a draft, saved now)
+      // (Ctrl+S: saved now)
       if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); saveByHand(); return; }
       if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (s.step !== "map") duplicateSelection(); return; }
       if (mod && e.key.toLowerCase() === "c" && !s.teeView && s.step !== "map") { if (copySelection()) { e.preventDefault(); toast("Copied."); } return; }

@@ -2,7 +2,7 @@
 // the site (the parts chosen, made in the owner's browser: pictures, GPS files, the course's
 // numbers, and the course itself only if its map or 3D view is a part); each link shows the
 // parts of it the link allows, with an optional password and expiry. Anyone with a link and no
-// account reads only that: never a draft, never the course as it's being changed.
+// account reads only that: never the course as it's being changed.
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { hash, verify } from "@node-rs/argon2";
 import { z } from "zod";

@@ -1,101 +1,31 @@
-// Publishing a draft, the history, drafts sent for the owner's OK, and the bar shown while
-// looking at an earlier version or a sent draft.
+// The history, and the bar shown while looking at an earlier version.
 import { useEffect, useState } from "react";
-import { ArrowLeft, Check, History, RotateCcw, X } from "lucide-react";
+import { ArrowLeft, History, RotateCcw } from "lucide-react";
 import { useAuth } from "./api";
-import {
-  acceptSubmission, compareWithNow, declineSubmission, discardDraft, draftChanges, endPreview, inDraft, listSubmissions, listVersions, prepareMerge, previewSubmission, previewVersion,
-  publishDraft, restoreVersion, submissionHoles, updateDraft, useServerCourse, versionToDraft, type Merge, type SubmissionRow, type VersionRow
-} from "./courses";
-import { Dialog, Form, when } from "./parts";
-import { Loading, inputCls } from "../components/ui";
+import { compareWithNow, endPreview, listVersions, previewVersion, restoreVersion, useServerCourse, type VersionRow } from "./courses";
+import { Dialog, when } from "./parts";
+import { Loading } from "../components/ui";
 import { toast } from "../state/toast";
 
 /** Something started from a dialog that closed: a failure said in a notice, not lost. */
 const orSay = (p: Promise<unknown>, what: string) => { void p.catch(e => toast(`${what}: ${e instanceof Error ? e.message : "try again"}.`, "error")); };
 const NOT_LOADED = "Couldn't load it. Check the connection and open it again.";
 
-
-/** The parts both your draft and the course changed: keep yours (the default) or the course's. */
-function Clashes({ m, picked, setPicked }: { m: Merge; picked: Set<number>; setPicked: (s: Set<number>) => void }) {
-  if (!m.clashes.length) return null;
-  const pick = (i: number, theirs: boolean) => { const n = new Set(picked); if (theirs) n.add(i); else n.delete(i); setPicked(n); };
-  return (
-    <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3" data-testid="clashes">
-      <p className="text-sm text-amber-100 mb-2">Changed in the course too since your draft started:</p>
-      <ul className="space-y-1.5">
-        {m.clashes.map((c, i) => (
-          <li key={`${c.list}:${c.id}`} className="flex items-center gap-2 text-sm" data-testid="clash">
-            <span className="flex-1 min-w-0 truncate text-zinc-100">{c.label}{c.mine === undefined ? " (you removed it)" : c.theirs === undefined ? " (removed in the course)" : ""}</span>
-            <select className="bg-white/[0.07] rounded-lg px-2 py-1 text-xs text-zinc-100" value={picked.has(i) ? "theirs" : "mine"} onChange={e => pick(i, e.target.value === "theirs")} aria-label={`Keep for ${c.label}`}>
-              <option value="mine">Keep mine</option>
-              <option value="theirs">Keep the course's</option>
-            </select>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-export function PublishDialog({ onClose }: { onClose: () => void }) {
-  const { approval, role } = useServerCourse();
-  const sending = approval && role !== "owner";
-  const [note, setNote] = useState("");
-  const [m, setM] = useState<Merge | null>(null);
-  const [picked, setPicked] = useState(new Set<number>());
-  useEffect(() => { if (!sending) void prepareMerge().then(setM); }, [sending]);
-  const summary = draftChanges();
-  return (
-    <Dialog title={sending ? "Send your changes" : "Publish your changes"} onClose={onClose} testid="publish-dialog">
-      <p className="text-sm text-zinc-300 mb-3" data-testid="draft-changes">{summary}</p>
-      {m && <Clashes m={m} picked={picked} setPicked={setPicked} />}
-      <Form compact submit={sending ? "Send to the owner" : "Publish"} testid="publish-form" onSubmit={async () => { await publishDraft(note, m, picked); onClose(); }}>
-        <label className="block">
-          <span className="block text-xs font-medium text-zinc-300 mb-1">Name (optional)</span>
-          <input className={inputCls} value={note} maxLength={200} placeholder={summary} onChange={e => setNote(e.target.value)} />
-        </label>
-      </Form>
-      <button className="mt-4 text-xs text-red-300 hover:text-red-200" onClick={() => { if (confirm("Throw away your draft?")) void discardDraft().then(onClose); }} data-testid="discard-draft">Discard draft</button>
-    </Dialog>
-  );
-}
-
-/** The course's changes since your draft started, brought into the draft. */
-export function UpdateDialog({ onClose }: { onClose: () => void }) {
-  const [m, setM] = useState<Merge | null>(null);
-  const [picked, setPicked] = useState(new Set<number>());
-  useEffect(() => { void prepareMerge().then(setM); }, []);
-  return (
-    <Dialog title="Update your draft" onClose={onClose} testid="update-dialog">
-      <p className="text-sm text-zinc-300 mb-3">The course changed since your draft started. Its changes go into your draft.</p>
-      {m ? (
-        <>
-          <Clashes m={m} picked={picked} setPicked={setPicked} />
-          <Form compact submit="Update draft" testid="update-form" onSubmit={async () => { await updateDraft(m, picked); onClose(); }}>{null}</Form>
-        </>
-      ) : <Loading label="Loading…" className="h-10" />}
-    </Dialog>
-  );
-}
-
-const KIND: Record<VersionRow["kind"], string> = { created: "Created", autosave: "Saved", publish: "Published", restore: "Restored", draft: "Your draft" };
+// (published and drafts: versions from before live editing)
+const KIND: Record<VersionRow["kind"], string> = { created: "Created", autosave: "Saved", publish: "Published", restore: "Restored", draft: "A draft" };
 
 export function HistoryDialog({ onClose }: { onClose: () => void }) {
-  const { role, approval, version } = useServerCourse();
+  const { version } = useServerCourse();
   const [rows, setRows] = useState<VersionRow[] | null>(null);
   const [compared, setCompared] = useState<Record<number, string>>({});
-  const [named, setNamed] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => { void listVersions().then(setRows, () => { setFailed(true); setRows([]); }); }, []);
-  const shown = (rows ?? []).filter(v => !named || v.kind === "publish" || v.kind === "restore" || v.kind === "created");
-  const canRestore = role === "owner" || !approval;
+  const shown = rows ?? [];
   const label = (v: VersionRow) => `Version ${v.version} · ${KIND[v.kind]}${v.by ? ` by ${v.by}` : ""} · ${when(v.at)}`;
   return (
     <Dialog title="History" onClose={onClose} testid="history-dialog" side>
-      <label className="flex items-center gap-2 text-xs text-zinc-400 mb-2"><input type="checkbox" checked={named} onChange={e => setNamed(e.target.checked)} /> Published only</label>
       {failed && <p role="alert" className="text-sm text-red-300">{NOT_LOADED}</p>}
-      {rows === null ? <Loading label="Loading…" className="h-24" /> : !failed && shown.length === 0 ? <p className="text-sm text-zinc-400">{named ? "Nothing published yet." : "No versions yet."}</p> : (
+      {rows === null ? <Loading label="Loading…" className="h-24" /> : !failed && shown.length === 0 ? <p className="text-sm text-zinc-400">No versions yet.</p> : (
         <ol className="divide-y divide-white/[0.08] -mx-1" data-testid="versions">
           {shown.map(v => (
             <li key={v.id} className="py-2 px-1 flex items-start gap-3 text-sm">
@@ -106,15 +36,14 @@ export function HistoryDialog({ onClose }: { onClose: () => void }) {
                   {v.version === version && <span className="ml-2 text-[11px] text-emerald-300">Now</span>}
                 </div>
                 {v.note && <div className="text-zinc-300 text-[13px]">{v.note}</div>}
-                <div className="text-[12px] text-zinc-500">{v.kind === "draft" ? `From version ${v.version}` : `Version ${v.version}`} · {when(v.at)}</div>
+                <div className="text-[12px] text-zinc-500">Version {v.version} · {when(v.at)}</div>
                 {compared[v.id] && <div className="text-[12px] text-sky-300 mt-0.5" data-testid="compared">Since then: {compared[v.id]}</div>}
               </div>
-              {(v.version !== version || v.kind === "draft") && (
+              {v.version !== version && (
                 <div className="flex flex-wrap justify-end gap-x-3 gap-y-1 text-xs shrink-0 pt-0.5 max-w-[45%]">
                   <button className="text-zinc-300 hover:text-zinc-50" onClick={() => void previewVersion(v, label(v))} data-testid="look">Look</button>
                   <button className="text-zinc-300 hover:text-zinc-50" onClick={() => { setCompared(c => ({ ...c, [v.id]: "comparing…" })); void compareWithNow(v.id).then(t => setCompared(c => ({ ...c, [v.id]: t })), () => setCompared(c => ({ ...c, [v.id]: "couldn't compare" }))); }} data-testid="compare">Compare</button>
-                  {(inDraft() || role === "owner") && <button className="text-zinc-300 hover:text-zinc-50" onClick={() => { onClose(); orSay(versionToDraft(v.id), "Couldn't put it in your draft"); }} data-testid="to-draft">Into my draft</button>}
-                  {canRestore && v.kind !== "draft" && <button className="text-orange-300 hover:text-orange-200" onClick={() => { if (confirm(`Restore version ${v.version}? The course as it is now stays in the history${useServerCourse.getState().draft ? ", and your draft is discarded" : ""}.`)) { onClose(); orSay(restoreVersion(v.id), "Couldn't restore it"); } }}>Restore</button>}
+                  <button className="text-orange-300 hover:text-orange-200" onClick={() => { if (confirm(`Restore version ${v.version}? The course as it is now stays in the history.`)) { onClose(); orSay(restoreVersion(v.id), "Couldn't restore it"); } }}>Restore</button>
                 </div>
               )}
             </li>
@@ -125,73 +54,12 @@ export function HistoryDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function ReviewDialog({ onClose }: { onClose: () => void }) {
-  const [rows, setRows] = useState<SubmissionRow[] | null>(null);
-  const [error, setError] = useState("");
-  const [picking, setPicking] = useState<{ sid: string; holes: { id: string; label: string }[] } | null>(null);
-  const [leaveOut, setLeaveOut] = useState(new Set<string>());
-  const refresh = () => listSubmissions().then(setRows, () => { setError(NOT_LOADED); setRows([]); });
-  useEffect(() => { void refresh(); }, []);
-  const act = async (fn: () => Promise<void>) => {
-    setError("");
-    try { await fn(); onClose(); } catch (e) { setError(e instanceof Error ? e.message : "Something went wrong"); }
-  };
-  return (
-    <Dialog title="Sent for your OK" onClose={onClose} testid="review-dialog">
-      {rows === null ? <Loading label="Loading…" className="h-24" /> : rows.length === 0 ? (error ? null : <p className="text-sm text-zinc-400">Nothing waiting.</p>) : (
-        <ul className="divide-y divide-white/[0.08]" data-testid="submissions">
-          {rows.map(s => (
-            <li key={s.id} className="py-2 flex items-start gap-3 text-sm">
-              <div className="flex-1 min-w-0">
-                <div className="text-zinc-100">{s.by ?? "Someone"}</div>
-                {s.note && <div className="text-zinc-300 text-[13px]">{s.note}</div>}
-                <div className="text-[12px] text-zinc-500">{when(s.createdAt)}</div>
-              </div>
-              <div className="flex gap-3 text-xs shrink-0 pt-0.5">
-                <button className="text-zinc-300 hover:text-zinc-50" onClick={() => { onClose(); orSay(previewSubmission(s, `${s.by ?? "Someone"}'s changes${s.note ? `: ${s.note}` : ""}`), "Couldn't show it"); }}>Look</button>
-                <button className="text-emerald-300 hover:text-emerald-200" onClick={() => void submissionHoles(s.id).then(h => { setPicking({ sid: s.id, holes: h }); setLeaveOut(new Set()); })} data-testid="accept-some">Accept…</button>
-                <button className="text-red-300 hover:text-red-200" onClick={() => { const note = prompt("Ask for changes (optional note):", ""); if (note !== null) void act(() => declineSubmission(s.id, note)); }} data-testid="ask-changes">Ask for changes</button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      {picking && (
-        <div className="mt-3 rounded-lg border border-emerald-700/50 bg-emerald-950/30 p-3" data-testid="accept-holes">
-          {picking.holes.length > 0 && <p className="text-sm text-zinc-200 mb-2">The holes it changes (untick to leave one as it is):</p>}
-          <ul className="space-y-1 mb-3">
-            {picking.holes.map(h => (
-              <li key={h.id}><label className="flex items-center gap-2 text-sm text-zinc-200"><input type="checkbox" checked={!leaveOut.has(h.id)} onChange={e => { const n = new Set(leaveOut); if (e.target.checked) n.delete(h.id); else n.add(h.id); setLeaveOut(n); }} /> {h.label}</label></li>
-            ))}
-          </ul>
-          <div className="flex gap-2 justify-end">
-            <button className="px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/[0.09] rounded-lg" onClick={() => setPicking(null)}>Cancel</button>
-            <button className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white" onClick={() => void act(() => acceptSubmission(picking.sid, leaveOut))} data-testid="accept">Accept</button>
-          </div>
-        </div>
-      )}
-      {error && <p role="alert" className="mt-2 text-sm text-red-300">{error}</p>}
-    </Dialog>
-  );
-}
-
-/** Over the map while looking at an earlier version or a sent draft. */
+/** Over the map while looking at an earlier version. */
 export function PreviewBar() {
-  const { preview, role, approval, behind, draft } = useServerCourse();
-  const me = useAuth(s => s.session?.user?.id);
+  const { preview } = useServerCourse();
   // (beside the History panel when it's open, not under it)
   const beside = useAuth(s => s.dialog) === "history" ? "md:left-[calc(50%-200px)]" : "";
-  const open = useAuth(s => s.open);
   const [busy, setBusy] = useState(false);
-  // (in a draft that the course moved on from: bring its changes in)
-  if (!preview && behind && draft) {
-    return (
-      <div className={`fixed left-1/2 -translate-x-1/2 top-[68px] z-30 ${beside} max-w-[calc(100vw-24px)] glass-solid border border-sky-700/60 rounded-xl shadow-2xl px-3 py-2 flex flex-wrap items-center gap-2`} role="region" aria-label="Course changed" data-testid="behind-bar">
-        <span className="text-sm text-zinc-100 mr-2">The course changed since your draft started</span>
-        <button className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold bg-sky-600 hover:bg-sky-500 text-white" onClick={() => open("update")} data-testid="update-draft">Update draft</button>
-      </div>
-    );
-  }
   if (!preview) return null;
   const go = (fn: () => Promise<void>) => async () => { setBusy(true); try { await fn(); } catch (e) { toast(e instanceof Error ? e.message : "That didn't go through. Try again.", "error"); } finally { setBusy(false); } };
   const btn = "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold disabled:opacity-50";
@@ -199,18 +67,7 @@ export function PreviewBar() {
     <div className={`fixed left-1/2 -translate-x-1/2 top-[68px] z-30 ${beside} max-w-[calc(100vw-24px)] glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 px-3 py-2 flex flex-wrap items-center gap-2`} role="region" aria-label="Looking back" data-testid="preview-bar">
       <History size={16} className="text-sky-300 shrink-0" />
       <span className="text-sm text-zinc-100 mr-2 min-w-0 truncate">{preview.label}</span>
-      {preview.kind === "version" && (role === "owner" || !approval) && (
-        <button disabled={busy} className={`${btn} bg-orange-500 hover:bg-orange-400 text-zinc-950`} onClick={go(() => restoreVersion(preview.id))}><RotateCcw size={14} /> Restore</button>
-      )}
-      {preview.kind === "submission" && role === "owner" && (
-        <>
-          <button disabled={busy} className={`${btn} bg-emerald-600 hover:bg-emerald-500 text-white`} onClick={go(() => acceptSubmission(preview.id))}><Check size={14} /> Accept</button>
-          <button disabled={busy} className={`${btn} bg-white/[0.07] hover:bg-white/[0.13] text-zinc-100 border border-white/[0.12]`} onClick={go(() => declineSubmission(preview.id))}><X size={14} /> Decline</button>
-        </>
-      )}
-      {preview.kind === "submission" && role !== "owner" && me && (
-        <button disabled={busy} className={`${btn} bg-white/[0.07] hover:bg-white/[0.13] text-zinc-100 border border-white/[0.12]`} onClick={go(() => declineSubmission(preview.id))}>Take back</button>
-      )}
+      <button disabled={busy} className={`${btn} bg-orange-500 hover:bg-orange-400 text-zinc-950`} onClick={go(() => restoreVersion(preview.id))}><RotateCcw size={14} /> Restore</button>
       <button disabled={busy} className={`${btn} text-zinc-300 hover:bg-white/[0.09]`} onClick={go(endPreview)} data-testid="preview-back"><ArrowLeft size={14} /> Back</button>
     </div>
   );

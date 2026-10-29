@@ -51,7 +51,7 @@ export const SECTIONS: { id: GuideSection; title: string; short?: string; intro:
   { id: "view", title: "3D, tee views and flyovers", short: "3D and flyovers", intro: "The map works in 2D and 3D. You can look at a hole from its tee, fly over it, and record the flight as a video." },
   { id: "map", title: "Map: the printed course map, signs and cards", short: "Map", intro: "The Map step is where you design what gets printed: the course map, the tee signs, the hole pages and the scorecard. The tabs at the top pick which one you're looking at, and the panel only shows that one's settings." },
   { id: "export", title: "Export", intro: "The Export step makes the files: PDFs and pictures to print, videos, and GPS and spreadsheet files for whoever's putting the course in the ground." },
-  { id: "share", title: "Saving, sharing and working together", short: "Sharing", intro: "On a HyzerLab server the course saves as you go and keeps its history. You can share it with people, work in drafts, and publish a public course page." },
+  { id: "share", title: "Saving, sharing and working together", short: "Sharing", intro: "On a HyzerLab server the course saves as you go and keeps its history. You can share it with people, change it together live, and publish a public course page." },
   { id: "phone", title: "On a phone or tablet", short: "Phone and tablet", intro: "Everything works by touch. On a phone the steps are along the bottom, and the panel is a sheet you drag up and down." },
   { id: "keys", title: "Keyboard shortcuts", intro: "Most tools have a key. Press ? any time to open this guide." }
 ];
@@ -109,7 +109,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "the-demo", section: "start", title: "The public demo",
-    body: "This is the public demo of HyzerLab. You can design a full course here: bring in a park, lay out the holes, and make the maps and tee signs. It all saves in this browser.\n\nThe parts that need other people have a lock on their icon: Comments, Drafts and history, Sharing, Accounts, the public course page, and courses that share a park. There's no server behind the demo to keep any of that. Tap one and it tells you what it does. On a phone, About the demo, in the menu right after A walk around the example, lists what hosting adds, with How to host it. To use them, run HyzerLab on your own server. It's free and open source, and the README walks you through the setup.",
+    body: "This is the public demo of HyzerLab. You can design a full course here: bring in a park, lay out the holes, and make the maps and tee signs. It all saves in this browser.\n\nThe parts that need other people have a lock on their icon: Comments, History, Sharing, Accounts, the public course page, and courses that share a park. There's no server behind the demo to keep any of that. Tap one and it tells you what it does. On a phone, About the demo, in the menu right after A walk around the example, lists what hosting adds, with How to host it. To use them, run HyzerLab on your own server. It's free and open source, and the README walks you through the setup.",
     words: "demo public locked lock self host host your own server account sharing comments github pages",
     path: "Top bar › Demo", server: false
   },
@@ -121,7 +121,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "save-server", section: "start", title: "Saving (on the server)",
-    body: "On a HyzerLab server the course saves itself a moment after each change. The chip in the top bar says Live or Draft, and its dot pulses while it saves. Live, everyone else in the course sees each change as you make it. Ctrl+S saves right now.\n\nIf a save fails, Not saved · try again shows up next to the chip. Click it to send your changes again. If someone else saved over you at the same time, Not saved lets you keep yours (Save mine) or load theirs (Open theirs).",
+    body: "On a HyzerLab server the course saves itself a moment after each change. The chip in the top bar says Live, and its dot pulses while it saves. Everyone else in the course sees each change as you make it. Ctrl+S saves right now.\n\nIf a save fails, Not saved · try again shows up next to the chip. Click it to send your changes again. If someone else saved over you at the same time, Not saved lets you keep yours (Save mine) or load theirs (Open theirs).",
     words: "save autosave ctrl s not saved conflict",
     server: true
   },
@@ -600,27 +600,21 @@ export const TOPICS: Topic[] = [
 
   // ------------------------------------------------------------------ Sharing
   {
-    id: "live-draft", section: "share", title: "Live or in a draft",
-    body: "Publish as I go means your changes go straight into the course, and everyone who has it open sees them as you make them. Work in a draft keeps them off to the side until you publish them (or send them to the owner for an OK). The chip in the top bar shows which one you're in, and its menu switches.\n\nOwners and editors can both publish as they go. If the owner turns on Need my OK before they go in, editors work in drafts only.",
-    words: "draft live publish chip publish as i go work in a draft editor",
-    path: "Top bar › Live / Draft", server: true
-  },
-  {
     id: "live-together", section: "share", title: "Editing together, live",
-    body: "When more than one person has the course open, each change shows up for the others as it's made: a tree moved, a hole added, the map's style changed. That goes for the map, 3D and the Map step.\n\nThe faces next to the Live chip are the others in the course, one per person however many tabs they have open. Click them for the list: who's there and which hole they're on, or whether they're looking in 3D or on the Map step. On the map, each person's pointer shows in their own color with their name, and fades after a few seconds still. A ring in their color goes round whatever they've picked, so two people don't drag the same basket at once. Taps on a phone or tablet don't send a pointer, only what you pick.\n\nIf two people change the same thing at the same moment, the later change stays. Undo only takes back your own changes: what others did since stays put. If your connection drops, keep working. Your changes go in once it's back, and the chip says Not saved · try again if it's gone for a while. Someone with a tab open from before live editing still saves the old way, and their saves go in too.\n\nViewers see the changes as they're made, and their pointers show, but they can't change anything.",
+    body: "When more than one person has the course open, each change shows up for the others as it's made: a tree moved, a hole added, the map's style changed. That goes for the map, 3D and the Map step.\n\nThe faces next to the Live chip are the others in the course, one per person however many tabs they have open. Click them for the list: who's there and which hole they're on, or whether they're looking in 3D or on the Map step. On the map, each person's pointer shows in their own color with their name, and fades after a few seconds still. A ring in their color goes round whatever they've picked, so two people don't drag the same basket at once. Taps on a phone or tablet don't send a pointer, only what you pick.\n\nIf two people change the same thing at the same moment, the later change stays. Undo only takes back your own changes: what others did since stays put. If your connection drops, keep working. Your changes go in once it's back, and the chip says Not saved · try again if it's gone for a while. Someone with a tab open from before live editing still saves the old way, and their saves go in too.\n\nOwners and editors change the course. Viewers see the changes as they're made, and their pointers show, but they can't change anything. If something goes wrong, History has the course as it was: look at an earlier version, compare it with now, or restore it.",
     words: "live together real time collaborate others pointer cursor faces who is here presence ring picked same time undo offline",
     path: "Top bar › faces next to Live", server: true
   },
   {
-    id: "save-draft", section: "share", title: "Save draft and history",
-    body: "In a draft, name the save (if you want) and click Save draft (or Ctrl+S) to keep a named point in the history. History lists every version. Look at one, Compare it with now, Restore it, or pull it into your draft.",
-    words: "save draft history version restore compare",
-    path: "Top bar › Draft › History", server: true
+    id: "history", section: "share", title: "History",
+    body: "The course keeps its versions as it changes: when it was made, every ten minutes or so while someone works on it, and each restore. History lists them, newest first, with who made each one.\n\nLook shows one as it was (view only). Compare says what changed since. Restore puts it back, and the course as it is now goes into the history first, so nothing is lost. Owners and editors can all restore.",
+    words: "history version restore compare undo older go back",
+    path: "Top bar › Live › History", server: true
   },
   {
     id: "people", section: "share", title: "People",
-    body: "Share › People adds someone by their username as a viewer, an editor or an owner. For a viewer, What they see picks which parts of the course they get. A viewer's keys are only the ones that look: 2, 3 (when 3D and views from the tees is on for them), 0, F, Q, E, N, + and −, [ and ], Enter, ?, / and Esc. Search leaves out the tools for them, and the 2D/3D buttons follow that same setting on a computer, a tablet and a phone.\n\nTurn on Need my OK before they go in and editors' drafts come to you for an OK before they change the course.",
-    words: "share people invite viewer editor owner role permissions approval need my ok",
+    body: "Share › People adds someone by their username as a viewer, an editor or an owner. For a viewer, What they see picks which parts of the course they get. A viewer's keys are only the ones that look: 2, 3 (when 3D and views from the tees is on for them), 0, F, Q, E, N, + and −, [ and ], Enter, ?, / and Esc. Search leaves out the tools for them, and the 2D/3D buttons follow that same setting on a computer, a tablet and a phone.\n\nEditors change the course with you, live, and can do everything an owner can except share it or delete it.",
+    words: "share people invite viewer editor owner role permissions",
     path: "Share › People",
     where: { open: "share-people" }, server: true
   },

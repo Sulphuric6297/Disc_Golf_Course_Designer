@@ -11,7 +11,7 @@ import { toast } from "../state/toast";
 import { inputCls } from "../components/ui";
 import type { CourseDoc, P } from "../types";
 import { api, useAuth } from "./api";
-import { inDraft, useServerCourse } from "./courses";
+import { useServerCourse } from "./courses";
 import { when } from "./parts";
 
 export interface CommentRow {
@@ -156,7 +156,7 @@ function Composer({ at }: { at: { x: number; y: number } }) {
     if (!d || !text.trim()) return;
     setBusy(true);
     try {
-      const r = await api<{ id: string }>("POST", base(), { body: text, anchor: { x: d.p.x, y: d.p.y, on: d.on }, inDraft: inDraft() && useServerCourse.getState().draft });
+      const r = await api<{ id: string }>("POST", base(), { body: text, anchor: { x: d.p.x, y: d.p.y, on: d.on } });
       useComments.setState({ draftAt: null, selected: r.id, panel: true });
       await loadComments().catch(() => {});
     } catch (e) {
@@ -218,7 +218,7 @@ function ThreadView({ t, n, doc, me, owner, members }: { t: Thread; n: number; d
     <div className={first ? "" : "mt-2 pl-3 border-l border-white/[0.12]"}>
       <div className="flex items-baseline gap-2 text-[12px]">
         <span className="font-semibold text-zinc-100">{c.author ?? "Someone"}</span>
-        <span className="text-zinc-500">{when(c.createdAt)}{c.editedAt ? " · edited" : ""}{c.inDraft ? " · in a draft" : ""}</span>
+        <span className="text-zinc-500">{when(c.createdAt)}{c.editedAt ? " · edited" : ""}</span>
       </div>
       {editing === c.id ? (
         <div className="mt-1">

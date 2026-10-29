@@ -1,5 +1,5 @@
-// Editing a course together, live: those changing the course itself as they go ("Publish as I
-// go", owners and editors) and viewers watching it get each change as it's made. Each change goes
+// Editing a course together, live: owners and editors change the course, and everyone with it
+// open (viewers too, watching) gets each change as it's made. Each change goes
 // to the server as the parts it changed (a tree, a hole, the map's style), and comes back to
 // everyone in the order the server took them. When two people change the same part at once, the
 // later one stays. Someone else's change to a part you've just changed waits behind yours (the
@@ -35,8 +35,8 @@ export interface LiveHooks {
   version: (v: number) => void;
   /** Everything written (the course list's picture can be made). */
   written: () => void;
-  /** Changes now go in a draft (the owner wants to OK them first): ours kept, in it. */
-  toDraft: (server: CourseDoc, mine: CourseDoc) => void;
+  /** You may only look at it now (made a viewer): it opens again, view only. */
+  role: () => void;
   /** Someone changed the photo. */
   photo: () => void;
 }
@@ -92,7 +92,7 @@ export function startLive(id: string, doc: CourseDoc, startSeq: number, h: LiveH
   connect();
 }
 
-/** Closes it (another course, a draft, looking back at a version, signed out). */
+/** Closes it (another course, looking back at a version, signed out). */
 export function stopLive() {
   source?.close();
   source = null;
@@ -159,7 +159,7 @@ function connect() {
     useLive.setState(s => ({ pointers: { ...s.pointers, [d.client]: { userId: d.userId, name: d.name, at: d.at, when: Date.now() } } }));
   });
   on("photo", () => hooks?.photo());
-  on("drafts", () => toDrafts());
+  on("role", () => viewOnly());
   es.onerror = () => {
     if (source !== es) return;
     es.close();
@@ -244,7 +244,8 @@ async function flush() {
     await api("POST", `courses/${id}/live/changes`, { client: CLIENT, batch: b, changes, summary });
   } catch (e) {
     if (course !== id) return;
-    if (e instanceof ApiFail && e.status === 409 && /draft/i.test(e.message)) { sending = false; toDrafts(); return; }
+    // (made a viewer meanwhile: it opens again, view only)
+    if (e instanceof ApiFail && e.status === 403) { sending = false; viewOnly(); return; }
     // (not taken, or not known: read again once it's back, and sent on top)
     flying.delete(b);
     needsRead = true;
@@ -302,12 +303,11 @@ function catchUp(d: CourseDoc) {
   return r;
 }
 
-/** The owner wants to OK changes first: what's ours goes into a draft, and the connection closes. */
-function toDrafts() {
-  const h = hooks, s = server;
-  const doc = getDoc();
+/** You may only look at the course now: it opens again, view only. */
+function viewOnly() {
+  const h = hooks;
   stopLive();
-  if (h && s) h.toDraft(s, doc);
+  h?.role();
 }
 
 // --- Where you are on the map, for the others (a few times a second at most)

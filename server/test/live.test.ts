@@ -62,10 +62,6 @@ test("live: changes go to everyone in the course as they're made, in order, and 
     const url = `/api/courses/${made.id}`;
     await admin.post(`${url}/members`, { username: "pat", role: "editor" });
 
-    // An editor works in a draft until they choose to change the course as they go
-    assert.equal((await pat.get(url)).body.live, false);
-    assert.equal((await pat.post(`${url}/live`, { live: true })).status, 200);
-    assert.equal((await pat.get(url)).body.live, true);
 
     const a = await connect(w, admin, made.id, "adminTab01");
     const p = await connect(w, pat, made.id, "patTab0001");
@@ -125,7 +121,6 @@ test("live: only those who may change it do; viewers watch; others and other sit
     const v = await connect(w, pat, made.id, "patTab0001");
     assert.equal(v.status, 200);
     assert.equal((await pat.post(`${url}/live/changes`, { client: "patTab0001", batch: 1, changes: [put({ id: "t9" })] })).status, 403);
-    assert.equal((await pat.post(`${url}/live`, { live: true })).status, 403);
 
     // Changes from a tab that isn't connected: it opens its connection again first
     const late = await admin.post(`${url}/live/changes`, { client: "adminTab02", batch: 1, changes: [put({ id: "t9" })] });
@@ -143,28 +138,6 @@ test("live: only those who may change it do; viewers watch; others and other sit
     assert.equal((await admin.del(`${url}/members/${patId}`)).status, 200);
     await ended;
     assert.equal((await connect(w, pat, made.id, "patTab0001")).status, 404);
-  } finally { await w.close(); }
-});
-
-test("live: when the owner wants to OK changes first, editors go back to drafts (told), and their changes are refused", async () => {
-  const w = await world();
-  try {
-    const { c: admin } = await adminSignedIn(w);
-    const { c: pat } = await memberSignedIn(w, admin, "pat");
-    const { body: made } = await admin.post("/api/courses", { doc: doc() });
-    const url = `/api/courses/${made.id}`;
-    await admin.post(`${url}/members`, { username: "pat", role: "editor" });
-    await pat.post(`${url}/live`, { live: true });
-    const p = await connect(w, pat, made.id, "patTab0001");
-    await p.next("hello");
-    assert.equal((await admin.post(`${url}/settings`, { approval: true })).status, 200);
-    await p.next("drafts");
-    const r = await pat.post(`${url}/live/changes`, { client: "patTab0001", batch: 1, changes: [put({ id: "t9" })] });
-    assert.equal(r.status, 409);
-    assert.equal(r.body.drafts, true);
-    assert.equal((await pat.get(url)).body.live, false);
-    assert.equal((await pat.post(`${url}/live`, { live: true })).status, 403);
-    p.close();
   } finally { await w.close(); }
 });
 
@@ -187,35 +160,6 @@ test("live: a whole-course save (an app opened before live editing) over newer l
     assert.equal((await admin.req("PUT", url, { doc: { ...now.doc, name: "Old tab" }, version: now.version })).status, 200);
     await a.next("reload", at);
     assert.equal((await admin.get(url)).body.doc.name, "Old tab");
-    a.close();
-  } finally { await w.close(); }
-});
-
-test("live: drafts aren't touched by live changes, and publishing one goes through what's open live", async () => {
-  const w = await world();
-  try {
-    const { c: admin } = await adminSignedIn(w);
-    const { c: pat } = await memberSignedIn(w, admin, "pat");
-    const { body: made } = await admin.post("/api/courses", { doc: doc() });
-    const url = `/api/courses/${made.id}`;
-    await admin.post(`${url}/members`, { username: "pat", role: "editor" });
-    // Pat's draft, from version 1
-    const draft = { ...doc(), name: "Pat's draft" };
-    await pat.req("PUT", `${url}/draft`, { doc: draft, base: { doc: doc(), version: 1 } });
-    const a = await connect(w, admin, made.id, "adminTab01");
-    await a.next("hello");
-    await admin.post(`${url}/live/changes`, { client: "adminTab01", batch: 1, changes: [put({ id: "t2" })] });
-    await a.next("saved");
-    const { body: d } = await pat.get(`${url}/draft`);
-    assert.equal(d.draft.doc.name, "Pat's draft");
-    assert.equal(d.draft.baseVersion, 1);
-    // Publishing from version 1 now: refused (the app merges again)
-    assert.equal((await pat.post(`${url}/publish`, { doc: draft, version: 1 })).status, 409);
-    const { body: c } = await pat.get(url);
-    const at = a.events.length;
-    assert.equal((await pat.post(`${url}/publish`, { doc: { ...c.doc, name: "Pat's draft" }, version: c.version })).status, 200);
-    await a.next("reload", at);
-    assert.equal((await admin.get(url)).body.doc.name, "Pat's draft");
     a.close();
   } finally { await w.close(); }
 });

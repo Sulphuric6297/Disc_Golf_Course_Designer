@@ -65,10 +65,9 @@ test("roles: viewers look, editors change, owners share and delete; others see n
     assert.equal((await pat.post(`${url}/members`, { username: "sam", role: "viewer" })).status, 403);
     assert.equal((await pat.del(url)).status, 403);
 
-    // An editor changes it through a draft, but can't share or delete it
+    // An editor changes it, but can't share or delete it
     await admin.post(`${url}/members`, { username: "pat", role: "editor" });
-    assert.equal((await pat.req("PUT", url, { doc: doc("Edited"), version: 1 })).status, 403);
-    assert.equal((await pat.post(`${url}/publish`, { doc: doc("Edited"), version: 1 })).status, 200);
+    assert.equal((await pat.req("PUT", url, { doc: doc("Edited"), version: 1 })).status, 200);
     assert.equal((await pat.post(`${url}/members`, { username: "sam", role: "editor" })).status, 403);
     assert.equal((await pat.del(url)).status, 403);
 
@@ -142,90 +141,6 @@ test("the course list's picture: editors send it, members see it, as an image", 
   } finally { await w.close(); }
 });
 
-test("drafts: an editor's own, published into the main version (as merged, from the version merged with)", async () => {
-  const w = await world();
-  try {
-    const { c: admin } = await adminSignedIn(w);
-    const { c: pat } = await memberSignedIn(w, admin, "pat");
-    const { c: sam } = await memberSignedIn(w, admin, "sam");
-    const { body: made } = await admin.post("/api/courses", { doc: doc() });
-    const url = `/api/courses/${made.id}`;
-    await admin.post(`${url}/members`, { username: "pat", role: "editor" });
-    await admin.post(`${url}/members`, { username: "sam", role: "viewer" });
-
-    assert.deepEqual((await pat.get(`${url}/draft`)).body, { draft: null });
-    // (the first save says what it started from)
-    assert.equal((await pat.req("PUT", `${url}/draft`, { doc: doc("Pat's draft") })).status, 409);
-    assert.equal((await pat.req("PUT", `${url}/draft`, { doc: doc("Pat's draft"), base: { doc: doc(), version: 1 } })).status, 200);
-    assert.equal((await pat.req("PUT", `${url}/draft`, { doc: doc("Pat's draft, more", 4) })).status, 200);
-    const { body: d } = await pat.get(`${url}/draft`);
-    assert.equal(d.draft.doc.name, "Pat's draft, more");
-    assert.equal(d.draft.baseDoc.name, "Springfield Park");
-    assert.equal(d.draft.baseVersion, 1);
-    // Nobody else sees it; the main version is as it was
-    assert.equal((await admin.get(url)).body.doc.name, "Springfield Park");
-    assert.equal((await sam.get(`${url}/draft`)).status, 403);
-    assert.equal((await admin.get("/api/courses")).body[0].hasDraft, false);
-    assert.equal((await pat.get("/api/courses")).body[0].hasDraft, true);
-
-    // The owner changes it meanwhile: publishing from the old version is refused (the app merges again)
-    await admin.req("PUT", url, { doc: doc("Owner's rename"), version: 1 });
-    const stale = await pat.post(`${url}/publish`, { doc: doc("Merged"), version: 1, note: "moved 7" });
-    assert.equal(stale.status, 409);
-    assert.equal(stale.body.version, 2);
-    const ok = await pat.post(`${url}/publish`, { doc: doc("Merged", 4), version: 2, note: "moved 7", photo: PNG });
-    assert.equal(ok.body.version, 3);
-    assert.equal((await admin.get(url)).body.doc.name, "Merged");
-    assert.equal((await admin.get(`${url}/background`)).body.data, PNG);
-    assert.deepEqual((await pat.get(`${url}/draft`)).body, { draft: null });
-    const hist = (await admin.get(`${url}/versions`)).body;
-    assert.deepEqual(hist.map((v: { kind: string; version: number }) => [v.kind, v.version]), [["publish", 3], ["autosave", 2], ["created", 1]]);
-    assert.equal(hist[0].note, "moved 7");
-    assert.equal(hist[0].by, "Pat");
-    assert.equal((await sam.get(`${url}/versions`)).status, 403);
-  } finally { await w.close(); }
-});
-
-test("approval on: editors submit, the owner accepts or declines; they can take one back", async () => {
-  const w = await world();
-  try {
-    const { c: admin } = await adminSignedIn(w);
-    const { c: pat } = await memberSignedIn(w, admin, "pat");
-    const { body: made } = await admin.post("/api/courses", { doc: doc() });
-    const url = `/api/courses/${made.id}`;
-    await admin.post(`${url}/members`, { username: "pat", role: "editor" });
-    assert.equal((await pat.post(`${url}/settings`, { approval: true })).status, 403);
-    await admin.post(`${url}/settings`, { approval: true });
-    assert.equal((await pat.get(url)).body.approval, true);
-
-    await pat.req("PUT", `${url}/draft`, { doc: doc("Pat's idea", 5), base: { doc: doc(), version: 1 } });
-    assert.equal((await pat.post(`${url}/publish`, { doc: doc("Pat's idea", 5), version: 1 })).status, 403);
-    const { body: sub } = await pat.post(`${url}/submissions`, { note: "two more holes" });
-    assert.deepEqual((await pat.get(`${url}/draft`)).body, { draft: null });
-    assert.equal((await admin.get("/api/courses")).body[0].toReview, 1);
-    const list = (await admin.get(`${url}/submissions`)).body;
-    assert.deepEqual(list.map((s: { note: string; by: string }) => [s.note, s.by]), [["two more holes", "Pat"]]);
-    assert.equal((await admin.get(`${url}/submissions/${sub.id}`)).body.doc.name, "Pat's idea");
-    assert.equal((await pat.post(`${url}/submissions/${sub.id}/accept`, { doc: doc(), version: 1 })).status, 403);
-    assert.equal((await admin.post(`${url}/submissions/${sub.id}/accept`, { doc: doc("Pat's idea", 5), version: 1 })).body.version, 2);
-    const top = (await admin.get(`${url}/versions`)).body[0];
-    assert.deepEqual([top.kind, top.by, top.approvedBy, top.note], ["publish", "Pat", "Admin", "two more holes"]);
-    assert.equal((await admin.get("/api/courses")).body[0].toReview, 0);
-
-    // Declined, and taken back
-    await pat.req("PUT", `${url}/draft`, { doc: doc("Again"), base: { doc: doc(), version: 2 } });
-    const { body: s2 } = await pat.post(`${url}/submissions`, {});
-    await admin.post(`${url}/submissions/${s2.id}/decline`, {});
-    assert.equal((await admin.get(`${url}/submissions`)).body.length, 0);
-    await pat.req("PUT", `${url}/draft`, { doc: doc("Once more"), base: { doc: doc(), version: 2 } });
-    const { body: s3 } = await pat.post(`${url}/submissions`, {});
-    assert.equal((await pat.post(`${url}/submissions/${s3.id}/decline`, {})).status, 200);
-    const log = (await admin.get("/api/admin/audit")).body.map((l: { action: string }) => l.action);
-    assert.ok(log.includes("course.declined") && log.includes("course.withdrawn") && log.includes("course.accepted"));
-    assert.equal((await admin.get(url)).body.doc.name, "Pat's idea");
-  } finally { await w.close(); }
-});
-
 test("history: restoring a version makes a new one (with its photo), nothing is lost", async () => {
   const w = await world();
   try {
@@ -235,7 +150,8 @@ test("history: restoring a version makes a new one (with its photo), nothing is 
     const url = `/api/courses/${made.id}`;
     await admin.req("PUT", `${url}/background`, { data: PNG });
     await admin.post(`${url}/members`, { username: "pat", role: "editor" });
-    await pat.post(`${url}/publish`, { doc: doc("Second", 2), version: 1, photo: null });
+    await pat.req("PUT", url, { doc: doc("Second", 2), version: 1 });
+    await pat.req("PUT", `${url}/background`, { data: null });
     assert.equal((await admin.get(`${url}/background`)).body.data, null);
     const hist = (await admin.get(`${url}/versions`)).body;
     const first = hist.find((v: { version: number }) => v.version === 1);
@@ -246,44 +162,10 @@ test("history: restoring a version makes a new one (with its photo), nothing is 
     assert.equal(r.body.version, 3);
     assert.equal((await admin.get(url)).body.doc.name, "First");
     const after = (await admin.get(`${url}/versions`)).body;
-    assert.deepEqual(after.slice(0, 2).map((v: { kind: string; note: string }) => [v.kind, v.note]), [["restore", "Restored version 1"], ["publish", ""]]);
+    assert.deepEqual(after.slice(0, 2).map((v: { kind: string; note: string }) => [v.kind, v.note]), [["restore", "Restored version 1"], ["autosave", ""]]);
     assert.equal((await admin.get(`${url}/versions/999999`)).status, 404);
-    // Approval on: only the owner restores
-    await admin.post(`${url}/settings`, { approval: true });
-    assert.equal((await pat.post(`${url}/versions/${first.id}/restore`, {})).status, 403);
-  } finally { await w.close(); }
-});
-
-test("how you edit: a course's maker publishes as they go; an owner can work in a draft instead (not with one waiting); an editor can publish as they go unless the owner OKs changes first", async () => {
-  const w = await world();
-  try {
-    const { c: admin } = await adminSignedIn(w);
-    const { c: pat } = await memberSignedIn(w, admin, "pat");
-    const { body: made } = await admin.post("/api/courses", { doc: doc() });
-    const url = `/api/courses/${made.id}`;
-    await admin.post(`${url}/members`, { username: "pat", role: "editor" });
-    assert.equal((await admin.get(url)).body.live, true);
-    // (an editor starts in a draft, and chooses)
-    assert.equal((await pat.get(url)).body.live, false);
-    assert.equal((await pat.post(`${url}/live`, { live: true })).status, 200);
-    assert.equal((await pat.get(url)).body.live, true);
-    assert.equal((await pat.post(`${url}/live`, { live: false })).status, 200);
-    await admin.post(`${url}/settings`, { approval: true });
-    assert.equal((await pat.post(`${url}/live`, { live: true })).status, 403);
-    await admin.post(`${url}/settings`, { approval: false });
-    await admin.post(`${url}/live`, { live: false });
-    assert.equal((await admin.get(url)).body.live, false);
-    // An owner's draft, publishing whatever the owner's OK switch says
-    await admin.post(`${url}/settings`, { approval: true });
-    const saved = await admin.req("PUT", `${url}/draft`, { doc: doc("Owner's draft", 3), base: { doc: doc(), version: 1 } });
-    assert.equal(saved.body.version, 1);
-    assert.equal((await admin.post(`${url}/live`, { live: true })).status, 409);
-    assert.equal((await admin.post(`${url}/publish`, { doc: doc("Owner's draft", 3), version: 1, note: "Holes: 1 added" })).body.version, 2);
-    // (a draft saved now says the course moved on)
-    await pat.req("PUT", `${url}/draft`, { doc: doc("Pat's"), base: { doc: doc(), version: 1 } });
-    assert.equal((await pat.req("PUT", `${url}/draft`, { doc: doc("Pat's, more") })).body.version, 2);
-    assert.equal((await admin.post(`${url}/live`, { live: true })).status, 200);
-    assert.equal((await admin.get(url)).body.live, true);
+    // (an editor can restore one too)
+    assert.equal((await pat.post(`${url}/versions/${first.id}/restore`, {})).status, 200);
   } finally { await w.close(); }
 });
 

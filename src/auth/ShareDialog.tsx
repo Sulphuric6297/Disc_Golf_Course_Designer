@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { inputCls, Section, Segmented, Tabs } from "../components/ui";
 import { changeDoc, useCourse } from "../state/course";
 import { api, useAuth } from "./api";
-import { saveNow, setApproval, useServerCourse, type Role } from "./courses";
+import { saveNow, useServerCourse, type Role } from "./courses";
 import { CopyButton, Dialog, Form, when } from "./parts";
 import { LINK_DEFAULT, LINK_PARTS, PART_LABELS, PARTS, VIEWER_DEFAULT, type Part, type Perms } from "./perms";
 import { publishSite } from "./site";
@@ -13,7 +13,7 @@ interface Member { userId: string; username: string; displayName: string; role: 
 const ROLES: { value: Role; label: string }[] = [{ value: "viewer", label: "Viewer" }, { value: "editor", label: "Editor" }, { value: "owner", label: "Owner" }];
 
 export function ShareDialog({ onClose }: { onClose: () => void }) {
-  const { id, role, approval } = useServerCourse();
+  const { id, role } = useServerCourse();
   const me = useAuth(s => s.session!.user!);
   const [members, setMembers] = useState<Member[]>([]);
   const [people, setPeople] = useState<{ username: string; displayName: string }[]>([]);
@@ -58,14 +58,6 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
               </div>
               <datalist id="share-people">{others.map(p => <option key={p.username} value={p.username}>{p.displayName}</option>)}</datalist>
             </Form>
-          </Section>
-        )}
-        {tab === "people" && owner && (
-          <Section title="Editors' changes">
-            <label className="flex items-center gap-2 text-sm text-zinc-200">
-              <input type="checkbox" checked={approval} onChange={e => void change(() => setApproval(e.target.checked))} data-testid="approval-toggle" />
-              Need my OK before they go in
-            </label>
           </Section>
         )}
         {tab === "people" && <Section title="Has it">

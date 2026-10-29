@@ -1,6 +1,6 @@
 // The first page after signing in: your courses and the ones shared with you, each with a small
-// map of its holes, to open with one click; a new course; search. Beside them: what's waiting on
-// you (drafts, changes to review), Getting started, the help topics that matter most, and a tip.
+// map of its holes, to open with one click; a new course; search. Beside them: Getting started,
+// the help topics that matter most, and a tip.
 import { create } from "zustand";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, BookOpen, Eye, FolderOpen, Lightbulb, Loader2, Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
@@ -205,12 +205,6 @@ function Card({ c, onOpen, onRemove, big, opening }: { c: ServerPlan; onOpen: ()
             {c.role !== "owner" && <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${r.cls}`}><r.icon size={11} />{r.label}</span>}
           </div>
           <p className="text-[13px] text-zinc-300 mt-0.5">{facts}{c.park ? <span className="text-zinc-500"> · {c.park}</span> : null}</p>
-          {(c.hasDraft || c.toReview > 0) && (
-            <div className="flex gap-1.5 mt-2">
-              {c.hasDraft && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-orange-500/15 text-orange-200" data-testid="has-draft">Your draft</span>}
-              {c.toReview > 0 && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/20 text-amber-200" data-testid="to-review">{c.toReview} to review</span>}
-            </div>
-          )}
           <p className="text-[11.5px] text-zinc-400 mt-1 flex flex-wrap items-center gap-x-1.5">
             {c.role !== "owner" && c.owner && <span>{c.owner}'s ·</span>}
             {c.members > 1 && <span className="inline-flex items-center gap-0.5" title={`${c.members} people have it`}><Users size={11} />{c.members} ·</span>}
@@ -262,8 +256,6 @@ export function Home() {
     try { await newServerCourse(); showHome(false); } finally { setOpening(null); }
   };
 
-  // What's waiting on you: changes sent for your OK, and drafts of your own not published yet
-  const waiting = (list ?? []).filter(c => c.toReview > 0 || c.hasDraft);
   const [help, setHelp] = useState<false | { topic?: string }>(false);
   const touch = useTouch();
   const start = useStart();
@@ -362,22 +354,6 @@ export function Home() {
         )}
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
         <div className="min-w-0">
-        {waiting.length > 0 && (
-          <section className="mb-6" data-testid="home-waiting">
-            <h2 className="text-[15px] font-semibold text-zinc-200 mb-2.5">Needs you</h2>
-            <ul className="flex flex-col gap-2">
-              {waiting.slice(0, 4).map(c => (
-                <li key={c.id}>
-                  <button className="glass w-full rounded-[16px] px-4 py-2.5 flex items-center gap-3 text-left hover:ring-1 hover:ring-white/20" onClick={() => void open(c.id)} disabled={!!opening}>
-                    <span className="flex-1 min-w-0"><span className="block text-[14px] font-semibold text-zinc-50 truncate">{c.name}</span>
-                      <span className="block text-[12.5px] text-zinc-400">{c.toReview > 0 ? `${c.toReview} change${c.toReview === 1 ? "" : "s"} sent for your OK` : "Your draft isn't published yet"}</span></span>
-                    {opening === c.id ? <Loader2 size={16} className="animate-spin text-zinc-400" /> : <span className="text-[13px] font-semibold text-orange-300">Open</span>}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
         {list === null ? <Loading label="Loading your courses…" className="h-40" /> : list.length === 0 && failed ? null : list.length === 0 ? (
           <div className="glass text-center py-20 rounded-[24px]">
             <Logo size={48} />

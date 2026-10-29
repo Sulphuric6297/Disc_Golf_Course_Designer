@@ -145,7 +145,7 @@ test("the admin, an invite, signing in again with a backup code", async ({ page,
   await other.close();
 });
 
-test("courses: a home page; shared as viewer (look only, or copy), then editor (a draft, published and merged); history; the owner's OK", async ({ browser }) => {
+test("courses: a home page; shared as viewer (look only, or copy), then editor (changing it live); history", async ({ browser }) => {
   test.setTimeout(240_000);
   const admin = await as(browser, "admin");
   await admin.getByTestId("new-course").click();
@@ -210,44 +210,23 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await pat.getByTestId("logo-home").click();
   await expect(pat.getByTestId("my-courses").getByTestId("course-card")).toContainText("2 holes");
 
-  // Now an editor of the original: Pat's changes go in a draft of Pat's own
+  // Now an editor of the original: Pat changes it live, and the owner sees it as it's made
   await admin.getByTestId("share-button").click();
   await admin.getByLabel("Role for pat").selectOption("editor");
   await admin.keyboard.press("Escape");
   await sharedCard.click();
   await expect.poll(async () => (await course(pat)).name).not.toMatch(/\(copy\)$/);
-  await expect(pat.getByTestId("publish-button")).toHaveCount(0);
+  await expect(pat.getByTestId("course-chip")).toHaveText("Live");
   await site(pat);
   await addHole(pat, { x: 100, y: 500 }, { x: 650, y: 500 });
-  await expect(pat.getByTestId("course-chip")).toHaveText(/^Draft · \d+ change/);
-  // The owner doesn't see it, and keeps changing the course meanwhile
-  await admin.reload();
-  await admin.getByTestId("my-courses").getByTestId("course-card").click();
-  await expect(admin.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(1);
-  await site(admin);
-  await addHole(admin, { x: 100, y: 800 }, { x: 650, y: 800 });
-  await expect(admin.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
-  // Pat's draft is kept across a reload, and published: both new holes are in the course
-  await pat.reload();
-  await pat.getByTestId("shared-courses").getByTestId("course-card").click();
-  await expect.poll(async () => (await course(pat)).holes.length).toBe(2);
-  await pat.getByTestId("publish-button").click();
-  await expect(pat.getByTestId("draft-changes")).toHaveText("Holes: 1 added");
-  await pat.getByTestId("publish-form").getByLabel(/^Name/).fill("a long hole by the creek");
-  await pat.getByTestId("publish-form").getByRole("button", { name: "Publish" }).click();
-  await expect(pat.getByTestId("publish-button")).toHaveCount(0);
-  await expect.poll(async () => (await course(pat)).holes.length).toBe(3);
-  await admin.reload();
-  await admin.getByTestId("my-courses").getByTestId("course-card").click();
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(3);
+  await expect(pat.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
+  await expect.poll(async () => (await course(admin)).holes.length).toBe(2);
 
-  // The history: Pat's publish, with its note; an earlier version looked at, and restored
+  // The history: Pat's change; an earlier version looked at, and restored
   await admin.getByTestId("course-chip").click();
   await admin.getByTestId("history-button").click();
   const versions = admin.getByTestId("versions").locator("li");
-  await expect(versions.first()).toContainText("Published by Pat");
-  await expect(versions.first()).toContainText("a long hole by the creek");
+  await expect(versions.first()).toContainText("Saved by Pat");
   await versions.filter({ hasText: "Created" }).getByRole("button", { name: "Look" }).click();
   await expect(admin.getByTestId("preview-bar")).toBeVisible();
   // (longer: on a machine without a graphics card the test's own recording of the 3D view can
@@ -255,113 +234,40 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(1);
   await expect(admin.getByTestId("viewer-panel")).toBeVisible();
   await admin.getByTestId("preview-back").click();
-  await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(3);
+  await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(2);
   await expect(admin.getByTestId("preview-bar")).toHaveCount(0);
 
-  // The owner's OK, turned on: Pat sends, the owner accepts
-  await admin.getByTestId("share-button").click();
-  await admin.getByTestId("approval-toggle").check();
-  await admin.keyboard.press("Escape");
-  await pat.reload();
-  await pat.getByTestId("shared-courses").getByTestId("course-card").click();
-  await expect.poll(async () => (await course(pat)).holes.length).toBe(3);
-  await site(pat);
-  await addHole(pat, { x: 900, y: 200 }, { x: 900, y: 700 });
-  await expect(pat.getByTestId("course-chip")).toHaveText(/^Draft · \d+ change/);
-  await pat.getByTestId("publish-button").click();
-  await pat.getByTestId("publish-form").getByRole("button", { name: "Send to the owner" }).click();
-  await expect(pat.getByTestId("publish-button")).toHaveCount(0);
-  await expect.poll(async () => (await course(pat)).holes.length).toBe(3);
-  await admin.reload();
-  await expect(admin.getByTestId("my-courses").getByTestId("to-review")).toHaveText("1 to review");
-  await admin.getByTestId("my-courses").getByTestId("course-card").click();
-  await admin.getByTestId("course-chip").click();
-  await admin.getByTestId("review-button").click();
-  await admin.getByTestId("submissions").getByRole("button", { name: "Look" }).click();
-  // (longer, as for the version above: the test's recording of the 3D view)
-  await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(4);
-  await admin.getByTestId("preview-bar").getByRole("button", { name: "Accept" }).click();
-  await expect(admin.getByTestId("preview-bar")).toHaveCount(0, { timeout: 40_000 });
-  await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(4);
-  await expect(admin.getByTestId("review-count")).toHaveCount(0);
-
-  // Restored: back to before Pat's holes; the history keeps everything
-  await admin.getByTestId("course-chip").click();
-  await admin.getByTestId("history-button").click();
+  // Restored (from the History panel, still open): back to before Pat's hole; the history keeps
+  // everything
+  await expect(admin.getByTestId("history-dialog")).toBeVisible();
   admin.once("dialog", d => void d.accept());
   await versions.filter({ hasText: "Created" }).getByRole("button", { name: "Restore" }).click();
   await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(1);
   await admin.getByTestId("course-chip").click();
   await admin.getByTestId("history-button").click();
   await expect(versions.first()).toContainText("Restored");
-  await expect(versions.filter({ hasText: "OK'd by Admin" })).toHaveCount(1);
+  // (and Pat, in it too, has it as restored)
+  await expect.poll(async () => (await course(pat)).holes.length, { timeout: 40_000 }).toBe(1);
 });
 
-test("owners: a draft too, published to the official layout; a draft behind the course updated, picking per part", async ({ browser }) => {
+test("an editor made a viewer while in the course: it opens again, view only", async ({ browser }) => {
   test.setTimeout(240_000);
   const admin = await as(browser, "admin");
   await admin.getByTestId("my-courses").getByTestId("course-card").click();
   await expect(admin.getByTestId("course-chip")).toHaveText("Live");
-  // (the editors' drafts publish straight away again)
-  await admin.getByTestId("share-button").click();
-  await admin.getByTestId("approval-toggle").uncheck();
-  await admin.keyboard.press("Escape");
-  const holes0 = (await course(admin)).holes.length;
-
-  // The owner works in a draft: the official layout stays as it is meanwhile
-  await admin.getByTestId("course-chip").click();
-  await admin.getByTestId("mode-draft").click();
-  await expect(admin.getByTestId("course-chip")).toHaveText("Draft");
-  await site(admin);
-  await addHole(admin, { x: 900, y: 300 }, { x: 900, y: 800 });
-  await expect(admin.getByTestId("course-chip")).toHaveAttribute("title", "Holes: 1 added");
-  await expect(admin.getByTestId("draft-dot")).toHaveCount(1);
-  await admin.getByRole("textbox", { name: "Course name" }).first().fill("Admin's name");
-  await admin.keyboard.press("Tab");
-  await expect(admin.getByTestId("course-chip")).toHaveAttribute("title", /Course settings changed/);
-
-  // Meanwhile Pat publishes a draft that renames the course too
   const pat = await as(browser, "pat");
   await pat.getByTestId("shared-courses").getByTestId("course-card").click();
-  await expect.poll(async () => (await course(pat)).holes.length).toBe(holes0);
-  await pat.getByRole("textbox", { name: "Course name" }).first().fill("Pat's name");
-  await pat.keyboard.press("Tab");
-  await expect(pat.getByTestId("course-chip")).toHaveText(/^Draft · \d+ change/);
-  await pat.getByTestId("publish-button").click();
-  await pat.getByTestId("publish-form").getByRole("button", { name: "Publish" }).click();
-  await expect(pat.getByTestId("publish-button")).toHaveCount(0);
-
-  // The owner's draft is behind: updated, keeping the course's name (Pat's)
-  await admin.reload();
-  await admin.getByTestId("my-courses").getByTestId("course-card").click();
-  await expect(admin.getByTestId("behind-bar")).toBeVisible();
-  await admin.getByTestId("update-draft").click();
-  await expect(admin.getByTestId("clash")).toHaveCount(1);
-  await expect(admin.getByTestId("clash")).toContainText("The course's name");
-  await admin.getByTestId("clash").getByRole("combobox").selectOption("theirs");
-  await admin.getByTestId("update-form").getByRole("button", { name: "Update draft" }).click();
-  await expect(admin.getByTestId("behind-bar")).toHaveCount(0);
-  await expect.poll(async () => (await course(admin)).name).toBe("Pat's name");
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(holes0 + 1);
-
-  // Published to the official layout, named from what changed
-  await admin.getByTestId("publish-button").click();
-  await expect(admin.getByTestId("draft-changes")).toHaveText("Holes: 1 added");
-  await expect(admin.getByTestId("clashes")).toHaveCount(0);
-  await admin.getByTestId("publish-form").getByRole("button", { name: "Publish" }).click();
-  await expect(admin.getByTestId("course-chip")).toHaveText("Draft");
-  await admin.getByTestId("course-chip").click();
-  await admin.getByTestId("history-button").click();
-  const top = admin.getByTestId("versions").locator("li").first();
-  await expect(top).toContainText("Published by Admin");
-  await expect(top).toContainText("Holes: 1 added");
+  await expect(pat.getByTestId("course-chip")).toHaveText("Live");
+  await expect.poll(async () => (await pat.evaluate(() => (window as any).__dgLive.state())).connected).toBe(true);
+  await admin.getByTestId("share-button").click();
+  await admin.getByLabel("Role for pat").selectOption("viewer");
   await admin.keyboard.press("Escape");
-
-  // Back to publishing as it goes
-  await admin.getByTestId("course-chip").click();
-  await admin.getByTestId("mode-live").click();
-  await expect(admin.getByTestId("course-chip")).toHaveText("Live");
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(holes0 + 1);
+  await expect(pat.getByTestId("view-only")).toBeVisible({ timeout: 30_000 });
+  await expect(pat.getByTestId("viewer-panel")).toBeVisible();
+  // (an editor again, for the tests after)
+  await admin.getByTestId("share-button").click();
+  await admin.getByLabel("Role for pat").selectOption("editor");
+  await admin.keyboard.press("Escape");
 });
 
 test("comments: pinned on a basket (moving with it), @mention, the bell, a reply, resolved", async ({ browser }) => {
@@ -478,7 +384,7 @@ test("a public link: the site with what it allows (pictures, numbers), 3D when a
   await anon.close();
 });
 
-test("live: two people in one course see each other's changes as they're made; undo takes back only your own; a change made offline goes in once back", async ({ browser }) => {
+test("live: two people in one course see each other's changes as they're made, and who's here; undo takes back only your own; a change made offline goes in once back", async ({ browser }) => {
   test.setTimeout(240_000);
   const live = (page: Page) => page.evaluate(() => (window as any).__dgLive.state());
   const holeIds = async (page: Page) => (await course(page)).holes.map((h: any) => h.id).sort();
@@ -497,13 +403,10 @@ test("live: two people in one course see each other's changes as they're made; u
   await expect(admin.getByTestId("members").locator("li")).toHaveCount(2);
   await admin.keyboard.press("Escape");
 
-  // Pat, an editor, starts in a draft and chooses to publish as they go
+  // Pat, an editor, opens it: live straight away
   const pat = await as(browser, "pat");
   await pat.evaluate(id => (window as any).__dgServer.open(id), id);
   await pat.getByTestId("back-to-course").click();
-  await expect(pat.getByTestId("course-chip")).toContainText("Draft");
-  await pat.getByTestId("course-chip").click();
-  await pat.getByTestId("mode-live").click();
   await expect(pat.getByTestId("course-chip")).toContainText("Live");
   await expect.poll(async () => (await live(pat)).connected).toBe(true);
   await expect.poll(async () => (await live(admin)).people).toBe(2);

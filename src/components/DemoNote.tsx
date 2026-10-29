@@ -13,7 +13,7 @@ export const REPO = "https://github.com/Sulphuric6297/Disc_Golf_Course_Designer#
 export const DEMO_ADDS = [
   "Accounts for the people you invite, with two-factor sign-in if you want it",
   "Courses kept on your server, shared with editors and viewers",
-  "Drafts, publishing, and a history you can go back to",
+  "Editing together, live, and a history you can go back to",
   "Comments pinned right on the map",
   "A public page for each course, showing what you pick",
   "Several courses on one park's map, warning you when holes get too close"
@@ -26,7 +26,7 @@ export const LOCKED = {
   notices: { title: "Notifications", icon: Bell, what: "The bell lets you know when someone comments, mentions you, or sends you changes to look over." },
   account: { title: "Accounts", icon: UserRound, what: "Accounts are invite-only. You add the people, they sign in (with two-factor if you want it), and your courses live on your server instead of in one browser." },
   courses: { title: "Courses", icon: UserRound, what: "Courses is the page with everything you've made and everything shared with you, each with a small map of its holes." },
-  history: { title: "Drafts and history", icon: History, what: "Editors work in a draft and publish when it's ready, or send it to you for an OK first. Every published version is kept, so you can go back to an older one." },
+  history: { title: "History", icon: History, what: "Everyone you make an editor changes the course with you, live. Its versions are kept as it changes, so you can go back to an older one." },
   site: { title: "Public course page", icon: Share2, what: "A public page for the course: the map, every hole, the flyovers and the files to download. You pick what it shows." },
   park: { title: "Other courses in the park", icon: Share2, what: "When a few courses share the same ground, each one shows up on the others' maps, and HyzerLab tells you when one of your holes crosses or crowds one of theirs." },
   demo: { title: "The public demo", icon: Lock, what: "You can design a full course here: bring in a park, lay out the holes, and make the maps and tee signs. It all saves in this browser. The parts that need other people have a lock on them." }

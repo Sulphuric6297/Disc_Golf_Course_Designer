@@ -8,7 +8,7 @@ import { AccountDialog } from "./AccountDialog";
 import { PeopleDialog } from "./PeopleDialog";
 import { Home, mapRests } from "./Home";
 import { getView, onLiveView } from "../state/view";
-import { HistoryDialog, PreviewBar, PublishDialog, ReviewDialog, UpdateDialog } from "./ChangesDialogs";
+import { HistoryDialog, PreviewBar } from "./ChangesDialogs";
 import { CommentLayer, CommentsPanel, loadComments, useCommentKeys, useComments } from "./Comments";
 import { PresenceLayer, useSendHere } from "./Presence";
 import { useServerCourse } from "./courses";
@@ -77,10 +77,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         {dialog === "account" && <AccountDialog onClose={() => open(null)} />}
         {dialog === "people" && session.user.isAdmin && <PeopleDialog onClose={() => open(null)} />}
         {dialog === "share" && <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center"><div className="glass-solid rounded-2xl px-5 py-4"><Loading label="Opening Share…" /></div></div>}><ShareDialog onClose={() => open(null)} /></Suspense>}
-        {dialog === "publish" && <PublishDialog onClose={() => open(null)} />}
-        {dialog === "update" && <UpdateDialog onClose={() => open(null)} />}
         {dialog === "history" && <HistoryDialog onClose={() => open(null)} />}
-        {dialog === "review" && <ReviewDialog onClose={() => open(null)} />}
         {!home && <PreviewBar />}
         {!home && <CourseComments />}
         {!home && <NearbyLayer />}
