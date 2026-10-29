@@ -65,8 +65,11 @@ export const parkingFromPhoto = async (photoUrl: string, width: number, height: 
     if (Number.isFinite(top) && top - m.ground[lc] > 9) continue;
     mask[k] = 1;
   }
-  // What the maps have already: roads (with a margin), buildings, water, fields, parking
+  // What the maps have already: roads (with a margin), buildings, water, fields, parking; and
+  // where a lot could reach a road from (25 ft past its edge: a lot is always reached by one)
+  const near = new Uint8Array(n);
   const clear = (x: number, y: number) => { const i = Math.floor(x / CELL), j = Math.floor(y / CELL); if (i >= 0 && j >= 0 && i < gw && j < gh) mask[j * gw + i] = 0; };
+  const reach = (x: number, y: number) => { const i = Math.floor(x / CELL), j = Math.floor(y / CELL); if (i >= 0 && j >= 0 && i < gw && j < gh) near[j * gw + i] = 1; };
   for (const it of mapped) {
     if (it.type === "line" && (it.kind === "road" || it.kind === "path" || it.kind === "walk")) {
       const half = ((it as LineItem).width ?? (it.kind === "road" ? 24 : 6)) / 2 + 4;
@@ -75,6 +78,8 @@ export const parkingFromPhoto = async (photoUrl: string, width: number, height: 
         for (let t = 0; t <= len; t += CELL / 2) {
           const cx = a.x + ((b.x - a.x) * t) / Math.max(len, 1e-6), cy = a.y + ((b.y - a.y) * t) / Math.max(len, 1e-6);
           for (let dy = -half; dy <= half; dy += CELL / 2) for (let dx = -half; dx <= half; dx += CELL / 2) if (dx * dx + dy * dy <= half * half) clear(cx + dx, cy + dy);
+          const far = half + 25;
+          for (let dy = -far; dy <= far; dy += CELL) for (let dx = -far; dx <= far; dx += CELL) if (dx * dx + dy * dy <= far * far) reach(cx + dx, cy + dy);
         }
       }
     } else if ((it.type === "structure" && it.points.length > 2) || (it.type === "area" && (it.kind === "water" || it.kind === "field" || it.kind === "parking" || it.kind === "building"))) {
@@ -85,6 +90,8 @@ export const parkingFromPhoto = async (photoUrl: string, width: number, height: 
   const solid = open(mask, gw, gh, 2);
   const out: AreaItem[] = [];
   for (const comp of components(solid, gw, gh, Math.ceil(2400 / (CELL * CELL)))) {
+    // (shaded ground in the woods, a roof's grey: no road reaches it)
+    if (!comp.some(k => near[k])) continue;
     const ring = traceOutline(gw, gh, comp).map(q => ({ x: q.x * CELL, y: q.y * CELL }));
     const pts: P[] = simplify(ring, CELL * 1.5);
     if (pts.length < 4) continue;
