@@ -8,7 +8,7 @@ import type { Measured } from "../lidar";
 import { boxOutline, orientedBox } from "../structures";
 import { createField } from "../fields";
 import type { AreaItem, CourseItem, LineItem, P } from "../../types";
-import { components, open, traceOutline } from "./detect";
+import { components, morph, open, traceOutline } from "./detect";
 
 /** Each cell of the grid looked over, ft. */
 const CELL = 3;
@@ -52,17 +52,31 @@ export const parkingFromPhoto = async (photoUrl: string, width: number, height: 
   g.drawImage(img, 0, 0, gw, gh);
   const px = g.getImageData(0, 0, gw, gh).data;
   const mask = new Uint8Array(n);
+  const V = new Float32Array(n);
+  for (let k = 0; k < n; k++) V[k] = (px[k * 4] + px[k * 4 + 1] + px[k * 4 + 2]) / 3;
+  // (how speckled the photo is round a spot: pavement is even; leaf litter and shade in the woods aren't)
+  const rough = (i: number, j: number) => {
+    let s = 0, s2 = 0, c = 0;
+    for (let b = Math.max(0, j - 1); b <= Math.min(gh - 1, j + 1); b++) for (let a = Math.max(0, i - 1); a <= Math.min(gw - 1, i + 1); a++) { const v = V[b * gw + a]; s += v; s2 += v * v; c++; }
+    return Math.sqrt(Math.max(0, s2 / c - (s / c) ** 2));
+  };
   for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
     const k = j * gw + i, r = px[k * 4], gg = px[k * 4 + 1], b = px[k * 4 + 2];
-    const hi = Math.max(r, gg, b), lo = Math.min(r, gg, b), v = (r + gg + b) / 3;
-    // (pavement: grey, from fresh asphalt to old concrete; grass and leaves are green)
-    if (hi - lo > 28 || v < 40 || v > 190 || (gg > r + 10 && gg > b + 6)) continue;
+    const hi = Math.max(r, gg, b), lo = Math.min(r, gg, b), v = V[k];
+    // (pavement: grey, from fresh asphalt to old concrete, not in deep shade; grass and leaves are green)
+    if (hi - lo > 28 || v < 55 || v > 190 || (gg > r + 10 && gg > b + 6) || rough(i, j) > 16) continue;
     // (at ground level by the survey: no tree over it, no roof, nothing taller than a truck)
     const x = (i + 0.5) * CELL, y = (j + 0.5) * CELL;
     const li = Math.min(m.nx - 1, Math.floor(x / m.cell)), lj = Math.min(m.ny - 1, Math.floor(y / m.cell)), lc = lj * m.nx + li;
     if (m.canopy[lc] > 0 || m.roofs[lc]) continue;
-    const top = m.surface[Math.min(m.sny - 1, lj >> 1) * m.snx + Math.min(m.snx - 1, li >> 1)];
-    if (Number.isFinite(top) && top - m.ground[lc] > 9) continue;
+    // (nothing over it or right round it taller than a truck: bare branches over shaded ground are)
+    let over = false;
+    for (let b = -1; b <= 1 && !over; b++) for (let a = -1; a <= 1 && !over; a++) {
+      const si = Math.min(m.snx - 1, Math.max(0, (li >> 1) + a)), sj = Math.min(m.sny - 1, Math.max(0, (lj >> 1) + b));
+      const top = m.surface[sj * m.snx + si];
+      if (Number.isFinite(top) && top - m.ground[lc] > 9) over = true;
+    }
+    if (over) continue;
     mask[k] = 1;
   }
   // What the maps have already: roads (with a margin), buildings, water, fields, parking; and
@@ -86,12 +100,11 @@ export const parkingFromPhoto = async (photoUrl: string, width: number, height: 
       unfill(mask, gw, gh, it.points);
     }
   }
-  // (strips under 12 ft across trimmed off: a sidewalk, a driveway, the edge of a road)
-  const solid = open(mask, gw, gh, 2);
+  // (the cars parked on it taken in: gaps up to about 18 ft across closed; then strips under 12 ft
+  // across trimmed off: a sidewalk, a driveway, the edge of a road)
+  const solid = open(morph(morph(mask, gw, gh, 3, "grow"), gw, gh, 3, "shrink"), gw, gh, 2);
   const out: AreaItem[] = [];
   for (const comp of components(solid, gw, gh, Math.ceil(2400 / (CELL * CELL)))) {
-    // (shaded ground in the woods, a roof's grey: no road reaches it)
-    if (!comp.some(k => near[k])) continue;
     const ring = traceOutline(gw, gh, comp).map(q => ({ x: q.x * CELL, y: q.y * CELL }));
     const pts: P[] = simplify(ring, CELL * 1.5);
     if (pts.length < 4) continue;

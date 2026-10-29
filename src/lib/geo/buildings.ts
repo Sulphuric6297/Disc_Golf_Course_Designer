@@ -426,3 +426,51 @@ export const withMeasuredHeights = (items: CourseItem[], m: Measured, sign: (i: 
     if (r.flat && !i.roof) out.roof = "flat";
     return sign(out);
   });
+
+/**
+ * The maps' buildings lined up with the survey, as 3D BAG and the research on it do, never reshaped:
+ * the survey's roofs (6 ft or more up, on a plane, or sorted as a building's), one shift for the
+ * whole site (up to 10 ft, 2 ft at a time) that lays all the outlines over them best, then each
+ * building nudged (up to 4 ft) where that clearly fits it better. Nothing moves unless the survey
+ * agrees by a clear margin. (Never to the photo: its roofs lean away from the camera.)
+ */
+export const alignedToSurvey = (items: CourseItem[], m: Measured) => {
+  const sc = m.cell * 2;
+  const roof = new Uint8Array(m.snx * m.sny);
+  for (let j = 0; j < m.sny; j++) for (let i = 0; i < m.snx; i++) {
+    const top = m.surface[j * m.snx + i], gi = Math.min(m.nx - 1, i * 2), gj = Math.min(m.ny - 1, j * 2), gr = m.ground[gj * m.nx + gi];
+    if (!Number.isFinite(top) || !Number.isFinite(gr) || top - gr < 6) continue;
+    if (m.bldg?.[gj * m.nx + gi] || roofLikeAt(m, i, j)) roof[j * m.snx + i] = 1;
+  }
+  const at = (x: number, y: number) => { const i = Math.floor(x / sc), j = Math.floor(y / sc); return i >= 0 && j >= 0 && i < m.snx && j < m.sny ? roof[j * m.snx + i] : 0; };
+  // Each building's spots (2 ft apart)
+  const mapped = items.map((i, k) => ({ i, k })).filter(({ i }) => i.type === "structure" && i.kind === "building" && (i.importSource === "osm" || i.importSource === "traced" || i.importSource === "fema")) as { i: StructureItem; k: number }[];
+  const spots = mapped.map(({ i }) => {
+    const b = boundsOf(i.points), out: P[] = [];
+    for (let y = Math.ceil(b.minY / 2) * 2 + 1; y < b.maxY; y += 2) for (let x = Math.ceil(b.minX / 2) * 2 + 1; x < b.maxX; x += 2) if (pointInPolygon({ x, y }, i.points)) out.push({ x, y });
+    return out;
+  });
+  const cover = (s: P[], dx: number, dy: number) => { let n = 0; for (const p of s) n += at(p.x + dx, p.y + dy); return s.length ? n / s.length : 0; };
+  // One shift for the site: all the outlines over the roofs at once
+  const total = (dx: number, dy: number) => { let n = 0, all = 0; for (const s of spots) { for (const p of s) n += at(p.x + dx, p.y + dy); all += s.length; } return all ? n / all : 0; };
+  const was = total(0, 0);
+  let site = { dx: 0, dy: 0, c: was };
+  for (let dy = -10; dy <= 10; dy += 2) for (let dx = -10; dx <= 10; dx += 2) { const c = total(dx, dy); if (c > site.c + 1e-9) site = { dx, dy, c }; }
+  if (site.c < was + 0.05) site = { dx: 0, dy: 0, c: was };
+  // Then each one nudged, where it clearly fits better
+  let moved = 0;
+  const out = items.slice();
+  mapped.forEach(({ i, k }, n) => {
+    const s = spots[n];
+    if (s.length < 6) return;
+    let best = { dx: site.dx, dy: site.dy, c: cover(s, site.dx, site.dy) };
+    for (let dy = -4; dy <= 4; dy += 2) for (let dx = -4; dx <= 4; dx += 2) {
+      const c = cover(s, site.dx + dx, site.dy + dy);
+      if (c > best.c + 0.1) best = { dx: site.dx + dx, dy: site.dy + dy, c };
+    }
+    if (!best.dx && !best.dy) return;
+    moved++;
+    out[k] = { ...i, x: i.x + best.dx, y: i.y + best.dy, points: i.points.map(p => ({ x: p.x + best.dx, y: p.y + best.dy })) };
+  });
+  return { items: out, moved, site: { dx: site.dx, dy: site.dy } };
+};

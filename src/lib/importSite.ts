@@ -20,7 +20,7 @@ import { fetchMapImagery, type MapImagerySource } from "./geo/imagery";
 import { natureFromPhoto } from "./geo/photoNature";
 import { mappedCourse, parkWords, type LatLon, type MappedCourse, type OsmBuilding, type OsmFeature } from "./geo/osm";
 import { fetchOsm } from "./geo/osmFetch";
-import { withoutSlabs, tracedBuildings, withMeasuredHeights, type TracedBuilding } from "./geo/buildings";
+import { alignedToSurvey, withoutSlabs, tracedBuildings, withMeasuredHeights, type TracedBuilding } from "./geo/buildings";
 import { createAmenity, createArea, createBasket, createLine, createStructure, createTee, createTree, newHole } from "./course";
 import { courtCount, createField, fieldKindOf, fieldWord } from "./fields";
 import { fieldOf } from "./geo/parkKinds";
@@ -895,8 +895,11 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
     let standing: number | undefined;
     if (lidar && measured) {
       // The buildings' heights the survey measured (where the maps have none)
-      // (a slab or a deck the maps took for a building, left out)
-      const set = withoutSlabs(all, measured.lidar.measured);
+      // (the maps' buildings lined up with their roofs in the survey, then a slab or a deck the maps
+      // took for a building left out)
+      const lined = alignedToSurvey(all, measured.lidar.measured);
+      if (lined.moved) notes.push(`${lined.moved} ${lined.moved === 1 ? "building" : "buildings"} lined up with the survey${lined.site.dx || lined.site.dy ? ` (the maps sit about ${Math.round(Math.hypot(lined.site.dx, lined.site.dy))} ft off here)` : ""}.`);
+      const set = withoutSlabs(lined.items, measured.lidar.measured);
       all = withMeasuredHeights(set.items, measured.lidar.measured, signed);
       if (set.dropped) notes.push(`${set.dropped} ${set.dropped === 1 ? "building" : "buildings"} on the maps left out: the survey shows flat ground there (a slab, a deck or a pool).`);
       // (the trees a bare survey couldn't pick out, from the summer photo's canopy: after the
