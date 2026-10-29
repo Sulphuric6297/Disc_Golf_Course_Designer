@@ -7,7 +7,7 @@ import * as THREE from "three";
 import type { FenceStyle, P, StructureItem } from "../types";
 import { pointInPolygon } from "../lib/geom";
 import {
-  boardwalkDeck, bridgeDeck, isLineKind, offsetPolygon, orientedBox, roofBreaks, roofOf, samplePath, stairSteps,
+  boardwalkDeck, bridgeDeck, isLineKind, offsetPolygon, orientedBox, roofBreaks, roofFor, samplePath, stairSteps,
   structureHeight, structurePath, structureRoof, structureWidth, type Roof
 } from "../lib/structures";
 
@@ -583,7 +583,7 @@ const building = (st: StructureItem, g: Ground, parts: Parts) => {
   const gs = [...alongEdges(outline, 6), orientedBox(outline).c].map(p => g(p.x, p.y));
   const gMin = Math.min(...gs), gMax = Math.max(...gs);
   const floor = gMax + 0.6, eave = floor + H;
-  const roof = roofOf(outline, structureRoof(st), 1.5);
+  const roof = roofFor(st, 1.5, 0.5, outline);
   const roofY = (p: P) => eave + roof.pitch * roof.run(p);
   const siding = (parts.siding ??= new Mesher()), stone = (parts.stone ??= new Mesher()), trim = (parts.trim ??= new Mesher());
   const glass = (parts.glass ??= new Mesher()), door = (parts.door ??= new Mesher());
@@ -643,7 +643,7 @@ const shelter = (st: StructureItem, g: Ground, parts: Parts) => {
   const inset = offsetPolygon(outline, -0.6);
   for (const p of alongEdges(inset, 10)) post(timber, p, floor, eave, 0.6);
   sweep(timber, inset, inset.map(() => eave - 1.05), inset.map(() => eave), 0, 0.3, true);
-  const roof = roofOf(outline, structureRoof(st), 2, 0.42);
+  const roof = roofFor(st, 2, 0.42, outline);
   roofFaces(roof, eave + 0.2, (parts.metal ??= new Mesher()), timber);
   // Picnic tables under it
   const box = orientedBox(outline);

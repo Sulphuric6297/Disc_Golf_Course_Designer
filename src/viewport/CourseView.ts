@@ -41,7 +41,7 @@ import { measuredStanding, setMeasuredStanding } from "../lib/standing";
 import { createFieldGround, createFieldProps, createHedge, createPowerLine } from "../three/parkProps";
 import { fieldInks, fieldPlan } from "../lib/fieldPlan";
 import { fieldKeepsTreesOut, fieldOutline } from "../lib/fields";
-import { isLineKind, orientedBox, roofOf, structureBounds, structureHeight, structurePath, structureRoof, structureWidth, turnShape } from "../lib/structures";
+import { isLineKind, orientedBox, roofFor, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
 import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
@@ -3624,7 +3624,7 @@ export class CourseView {
     for (const st of doc.course.items) {
       if (st.type !== "structure" || isLineKind(st.kind) || st.points.length < 3) continue;
       const tall = structureHeight(st), house = st.kind === "building" || st.kind === "shelter";
-      const roof = house ? roofOf(st.points, structureRoof(st), 1.5) : null;
+      const roof = house ? roofFor(st) : null;
       const shape = roof ? roof.eaves : st.points;
       const base = Math.max(...st.points.map(p => this.h(p.x, p.y)));
       const top = (p: { x: number; y: number }) => base + (roof ? tall + roof.pitch * roof.run(p) : tall + (st.kind === "deck" && tall > 2 ? 3 : 0));

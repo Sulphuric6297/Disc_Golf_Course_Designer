@@ -101,17 +101,18 @@ function CameIn() {
   const fromOsm = came(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm");
   const traced = came(i => i.type === "structure" && i.importSource === "traced");
   const stand = came(i => i.type === "area" && i.importSource === "lidar");
+  const fromGov = came(i => (i.type === "area" || i.type === "line" || i.type === "structure") && (i.importSource === "usgs" || i.importSource === "nwi" || i.importSource === "fema"));
   const count = (f: (i: Item) => boolean) => doc.items.filter(f).length;
   const photoTrees = count(i => i.type === "tree" && fromPhoto(i));
   const photoAreas = count(i => i.type === "area" && fromPhoto(i));
-  const stands = count(stand), osm = count(fromOsm), air = count(traced);
+  const stands = count(stand), osm = count(fromOsm), air = count(traced), gov = count(fromGov);
   const remove = (out: (i: Item) => boolean, said: string) => { changeDoc(d => ({ items: d.items.filter(i => !out(i)) })); toast(said, "info", true); };
   const lidar = doc.lidar;
   const site = doc.site;
   const measuring = lidarBusy !== null;
   const lidarRow = lidar || (placed && (site.noLidar || site.lidarFailed));
   const osmRow = placed || osm > 0;
-  if (!lidarRow && !stands && !photoTrees && !photoAreas && !site.tilesMissing && !osmRow && !air) return null;
+  if (!lidarRow && !stands && !photoTrees && !photoAreas && !site.tilesMissing && !osmRow && !air && !gov) return null;
   const warned = (!lidar && (site.noLidar || site.lidarFailed)) || site.tilesMissing || (site.osmFailed && !osm);
   return (
     <Fold testid="came-in" title={<span className="inline-flex items-center gap-1.5">What came in {warned && <AlertTriangle size={13} className="text-amber-400" aria-label="Something didn't come in" />}<HelpLink topic="brought-in" label="What came in" /></span>}>
@@ -148,6 +149,11 @@ function CameIn() {
         {air > 0 && (
           <CameRow testid="traced-found" text={`${many(air, "building", "buildings")} traced from the air`}>
             <Button small tone="danger" onClick={() => remove(traced, "Took out the buildings traced from the air.")}>Remove</Button>
+          </CameRow>
+        )}
+        {gov > 0 && (
+          <CameRow testid="gov-found" text={`${many(gov, "creek, wetland or building", "creeks, wetlands and buildings")} from the US maps`} sub="USGS, USFWS, FEMA">
+            <Button small tone="danger" onClick={() => remove(fromGov, "Took out what came from the US maps.")}>Remove</Button>
           </CameRow>
         )}
       </div>

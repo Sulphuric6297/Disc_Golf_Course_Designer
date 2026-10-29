@@ -177,7 +177,7 @@ export interface AreaItem extends BaseItem {
    * inside: 0 even everywhere, 1 almost none deep inside (unset: 0.6). */
   brushEdge?: number;
   /** Brought in from OpenStreetMap, or found on the satellite photo (replaced on re-import). */
-  importSource?: "osm" | "photo" | "lidar";
+  importSource?: "osm" | "photo" | "lidar" | "usgs" | "nwi";
   /** From OpenStreetMap: what it is there (a ball field, a playground), whatever kind it's drawn as. */
   park?: ParkDetail;
 }
@@ -228,7 +228,7 @@ export interface LineItem extends BaseItem {
    * start, 1 its end; unset: all of it). */
   obStretches?: [number, number][];
   /** Brought in from OpenStreetMap (replaced on re-import). */
-  importSource?: "osm";
+  importSource?: "osm" | "usgs";
   /** From OpenStreetMap: what it is there (a ball field's backstop), whatever kind it's drawn as. */
   park?: ParkDetail;
 }
@@ -252,12 +252,16 @@ export interface StructureItem extends BaseItem {
   height?: number;
   /** Buildings and shelters (unset: gable for a building, hip for a shelter). */
   roof?: RoofKind;
+  /** The roof's slope, rise over run, as measured from the air (unset: about 6 in 12). */
+  roofPitch?: number;
+  /** The ridge runs across the building, between its long sides (unset: along its length). */
+  ridgeAcross?: boolean;
   /** Its own colors (unset: the map's): the roof, and a building's walls. */
   roofColor?: string;
   wallColor?: string;
   /** Brought in from OpenStreetMap, or (a building nobody's mapped) traced from the air: looking
    * the maps up again replaces it. */
-  importSource?: "osm" | "traced";
+  importSource?: "osm" | "traced" | "fema";
   /** From OpenStreetMap: what it is there (a shed, a water tower), whatever kind it's drawn as. */
   park?: ParkDetail;
   holeId?: string;

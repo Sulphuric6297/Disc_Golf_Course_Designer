@@ -2,13 +2,14 @@
 // the park framed by its own outline, what this spot will bring (each a switch, with where it
 // comes from), then the map filling in as each part lands, with a checklist of how each went.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, Flag, Image as ImageIcon, Loader2, MapPin, Mountain, Pencil, Route, Search, Target, TreeDeciduous, Trees, X } from "lucide-react";
+import { Check, Droplets, Flag, Image as ImageIcon, Loader2, MapPin, Mountain, Pencil, Route, Search, Target, TreeDeciduous, Trees, X } from "lucide-react";
 import { SitePickerMap, type Arrived } from "./SitePickerMap";
 import { fetchPlaceSuggestions, resolveSiteLocation, type PlaceSuggestion } from "../lib/geo/geocode";
 import { SITE_MAX_WIDTH_FT, SITE_MIN_WIDTH_FT, getGeoBounds, isAbort, selectionFromBounds, type GeoBounds } from "../lib/geo/core";
 import type { MapImagerySource } from "../lib/geo/imagery";
 import { findSiteOutline, type SiteOutline } from "../lib/geo/parks";
 import { lidarCoverage } from "../lib/geo/lidarFetch";
+import { inUS } from "../lib/geo/usgov";
 import { photoChoices, photoDateText, photoFeetPerPx, type PhotoChoice } from "../lib/geo/photoSources";
 import { importSite, type ImportedSite, type ImportLayer, type SourceId, type SourceStatus } from "../lib/importSite";
 import { fmtArea, fmtDist } from "../lib/units";
@@ -58,7 +59,7 @@ const frameAround = (b: GeoBounds): GeoBounds => {
   return f;
 };
 
-const ROW_NAMES: Record<SourceId, string> = { photo: "Photo", elevation: "Ground", lidar: "Measured trees", osm: "Paths, roads and more", buildings: "Buildings from the air", photoTrees: "Trees from the photo" };
+const ROW_NAMES: Record<SourceId, string> = { photo: "Photo", elevation: "Ground", lidar: "Measured trees", osm: "Paths, roads and more", buildings: "Buildings from the air", photoTrees: "Trees from the photo", gov: "Creeks, wetlands and buildings" };
 const ORDER: SourceId[] = ["photo", "elevation", "lidar", "osm", "buildings", "photoTrees"];
 
 /** How each kind of thing that came in is drawn on the map while the rest is still coming. */
@@ -99,6 +100,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   // (with measured trees: the ones the survey missed, from the photo)
   const [fill, setFill] = useState(true);
   const [osm, setOsm] = useState(true);
+  const [gov, setGov] = useState(true);
   const [course, setCourse] = useState(true);
   // What this spot has (looked up as the frame settles)
   const [here, setHere] = useState<{ photo?: PhotoChoice; survey?: { year: number; covered: "full" | "partial" | "none" } } | null>(null);
@@ -259,7 +261,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     setArrived(null);
     setStatus({ state: "loading", text: "Starting…" });
     try {
-      const site = await importSite(selectionFromBounds(turnedBox(selection, angle), label), { imagery, trees, surveyed: !!survey, osm, lidar, summerFill: fill, signal: stop.signal, onLayer, onProgress: p => {
+      const site = await importSite(selectionFromBounds(turnedBox(selection, angle), label), { imagery, trees, surveyed: !!survey, osm, lidar, summerFill: fill, gov, signal: stop.signal, onLayer, onProgress: p => {
         (window as { __dgImportProgress?: unknown }).__dgImportProgress = p;
         if (!stop.signal.aborted) { setStatus({ state: "loading", text: p.text, progress: { fraction: p.fraction } }); setSources({ ...p.sources }); }
       } });
@@ -318,6 +320,8 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     // (and where one does: the trees it missed, filled in from the photo)
     survey && lidar && photo ? pill({ id: "photo-fill", icon: <TreeDeciduous size={15} />, label: "Trees from the photo", value: "where the survey missed them", on: fill, set: setFill }) : null,
     pill({ id: "osm", icon: <Route size={15} />, label: "Paths, roads and more", value: "OpenStreetMap", on: osm, set: setOsm }),
+    // (the US government's maps, only over the US)
+    selection && inUS(selection) ? pill({ id: "gov", icon: <Droplets size={15} />, label: "Creeks, wetlands and buildings", value: "USGS · USFWS · FEMA", on: gov, set: setGov }) : null,
     outline?.course?.holes ? pill({ id: "course", icon: <Flag size={15} />, label: "Holes", value: `${outline.course.holes} mapped`, on: course, set: setCourse }) : null
   ];
   const frameChoice = outline && (

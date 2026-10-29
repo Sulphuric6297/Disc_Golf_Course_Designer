@@ -6,6 +6,7 @@
 import { extrasSvg, keepsItsSize, keepsItsTurn, turned } from "./pieces";
 import { fitAttr } from "./fitText";
 import { SCRIPT_FONTS } from "./fontKinds";
+import { GOV_CREDITS } from "./geo/usgov";
 import { latitudeOf, sunFromOf } from "./mapLook";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FIELD_KINDS, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
@@ -391,7 +392,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     const order: StructureKind[] = ["wall", "stairs", "boardwalk", "deck", "bridge", "shelter", "building"];
     for (const st of [...structures].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))) {
       const shape = isLineKind(st.kind) ? structurePath(st) : st.points;
-      out.push(`<g opacity="${dim(st.holeId, st.alsoHoles)}">${structureSymbol(st.kind, shape, structureWidth(st), structureHeight(st), structureRoof(st), { ...draw, id: `${uid}-s${st.id}`, ink: st.roofColor ? { ...draw.ink, roof: st.roofColor, shelter: st.roofColor } : draw.ink })}</g>`);
+      out.push(`<g opacity="${dim(st.holeId, st.alsoHoles)}">${structureSymbol(st.kind, shape, structureWidth(st), structureHeight(st), structureRoof(st), { ...draw, id: `${uid}-s${st.id}`, ink: st.roofColor ? { ...draw.ink, roof: st.roofColor, shelter: st.roofColor } : draw.ink }, { pitch: st.roofPitch, across: st.ridgeAcross })}</g>`);
     }
   }
   // (the painted treetops over the buildings, and their shade on the roofs: crowns overhang roofs
@@ -1140,7 +1141,10 @@ export const mapTagline = (doc: CourseDoc) => (taglineFits(doc) ? taglineOf(doc.
 export const requiredCredit = (doc: CourseDoc) => [
   doc.site.imagerySource && doc.style.theme === "satellite" ? "Imagery © Esri" : "",
   doc.items.some(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm") ? "Map data © OpenStreetMap contributors" : "",
-  doc.items.some(i => i.type === "structure" && i.importSource === "traced") ? "Buildings © Overture Maps Foundation, Microsoft" : ""
+  doc.items.some(i => i.type === "structure" && i.importSource === "traced") ? "Buildings © Overture Maps Foundation, Microsoft" : "",
+  doc.items.some(i => (i.type === "line" || i.type === "area") && i.importSource === "usgs") ? GOV_CREDITS.usgs : "",
+  doc.items.some(i => i.type === "area" && i.importSource === "nwi") ? GOV_CREDITS.nwi : "",
+  doc.items.some(i => i.type === "structure" && i.importSource === "fema") ? GOV_CREDITS.fema : ""
 ].filter(Boolean).join(" · ");
 
 const posterPage = (doc: CourseDoc, opts: PosterOptions) => {

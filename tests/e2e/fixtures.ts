@@ -143,6 +143,8 @@ export async function stubNetwork(page: Page) {
   await page.route(/\/tilemap\//, route => route.fulfill(json({ adjusted: false, data: [0] })));
   // Statewide ortho and USGS: "unavailable", so the fallbacks run
   await page.route(/nconemap\.gov|gis\.nc\.gov|elevation\.nationalmap\.gov/, route => route.abort());
+  // (the US government's maps: nothing here, unless a test says otherwise)
+  await page.route(/hydro\.nationalmap\.gov|wetlandsmapservice|USA_Structures_View/, route => route.fulfill(json({ features: [] })));
   await page.route(/GeocodeServer\/suggest/, route =>
     route.fulfill(json({ suggestions: [{ text: `${SITE.label}, USA`, magicKey: "k1", isCollection: false }] }))
   );

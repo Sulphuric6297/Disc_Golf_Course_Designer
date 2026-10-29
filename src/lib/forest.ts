@@ -14,7 +14,7 @@ import { autoWalks, drawnAreas, fairwayShiftAt, fairwayWidthAt, linePath, teeLin
 import type { HoleStats } from "./holeStats";
 import { conifersOf, paintedPinesOf, tallGrassOf, treeMixOf } from "./landscapes";
 import { reliefExaggeration } from "./relief";
-import { isLineKind, offsetPolygon, roofOf, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
+import { isLineKind, offsetPolygon, roofFor, structureHeight, structurePath, structureWidth } from "./structures";
 import { latitudeOf, lookParts, paintLight, sunFromOf } from "./mapLook";
 import { STYLE_GREENS, drawMist, drawShadows, drawTrees, gradeLight, type PaintTree } from "./paintTrees";
 import { drawBrushedSteps, type Wait } from "./brushCrown";
@@ -918,7 +918,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       }
       continue;
     }
-    const roof = st.kind === "building" || st.kind === "shelter" ? roofOf(st.points, structureRoof(st), 1.5) : null;
+    const roof = st.kind === "building" || st.kind === "shelter" ? roofFor(st) : null;
     const shape = roof ? roof.eaves : st.points;
     const top = st.kind === "deck" ? tall + (tall > 2 ? 3 : 0) : tall;
     const b = boundsOf(shape.map(toScreen));

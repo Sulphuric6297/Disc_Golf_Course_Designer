@@ -4,9 +4,11 @@
 // the tile file's directory and the tiles themselves are small formats, read here.
 //
 // Data © OpenStreetMap contributors, Overture Maps Foundation, Microsoft, Esri, Google (ODbL).
-import type { CourseItem, StructureItem } from "../../types";
+import type { CourseItem, P, RoofKind, StructureItem } from "../../types";
 import type { GeoBounds } from "./core";
 import { roofHeights, type Measured } from "../lidar";
+import { boundsOf, nearestOnSegment, pointInPolygon } from "../geom";
+import { roofOf } from "../structures";
 
 export type TracedBuilding = {
   /** Its outline (the outer ring), lat/lon. */
@@ -278,6 +280,65 @@ const overtureBuildings = async (bounds: GeoBounds): Promise<TracedBuilding[]> =
   return out;
 };
 
+/** The roof the survey shows over a building's outline: the kind whose slopes fit its heights best
+ * (flat, a single slope, a gable or a hip, its ridge along the building or across it), its pitch
+ * (rise over run) and its eaves (ft over the ground). Each kind is fitted as eaves + pitch × how far
+ * in from the walls a spot is; a tree or a chimney over the roof (the highest tenth that misses the
+ * fit) left out. Null where the survey shows too little of the roof, or no kind fits it within 2 ft. */
+export const roofShape = (m: Pick<Measured, "nx" | "ny" | "cell" | "ground" | "surface" | "snx" | "sny">, outline: P[]) => {
+  if (outline.length < 3) return null;
+  const sc = m.cell * 2, b = boundsOf(outline), pts: P[] = [], hs: number[] = [];
+  for (let j = Math.max(0, Math.floor(b.minY / sc)); j <= Math.min(m.sny - 1, Math.floor(b.maxY / sc)); j++)
+    for (let i = Math.max(0, Math.floor(b.minX / sc)); i <= Math.min(m.snx - 1, Math.floor(b.maxX / sc)); i++) {
+      const p = { x: (i + 0.5) * sc, y: (j + 0.5) * sc };
+      if (!pointInPolygon(p, outline) || outline.some((q, k) => nearestOnSegment(p, q, outline[(k + 1) % outline.length]).distance < sc * 0.75)) continue;
+      const top = m.surface[j * m.snx + i], gi = Math.min(m.nx - 1, i * 2), gj = Math.min(m.ny - 1, j * 2);
+      if (Number.isFinite(top) && Number.isFinite(m.ground[gj * m.nx + gi])) { pts.push(p); hs.push(top - m.ground[gj * m.nx + gi]); }
+    }
+  // (a dozen spots at least, about 200 sq ft of roof)
+  if (hs.length < 12) return null;
+  const n = hs.length;
+  // h = e + k × run, least squares over the spots kept (k = 0: flat)
+  const fit = (runs: number[] | null, keep: boolean[]) => {
+    let sw = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (let q = 0; q < n; q++) if (keep[q]) { const x = runs ? runs[q] : 0; sw++; sx += x; sy += hs[q]; sxx += x * x; sxy += x * hs[q]; }
+    const den = sw * sxx - sx * sx;
+    const k = runs && Math.abs(den) > 1e-6 ? (sw * sxy - sx * sy) / den : 0;
+    const e = (sy - k * sx) / Math.max(1, sw);
+    let rss = 0;
+    for (let q = 0; q < n; q++) if (keep[q]) { const r = hs[q] - e - k * (runs ? runs[q] : 0); rss += r * r; }
+    return { e, k, rss, m: sw };
+  };
+  const kinds: { kind: RoofKind; across: boolean }[] = [
+    { kind: "flat", across: false }, { kind: "shed", across: false }, { kind: "gable", across: false },
+    { kind: "gable", across: true }, { kind: "hip", across: false }
+  ];
+  let best: { kind: RoofKind; across: boolean; e: number; k: number; rms: number; score: number } | null = null;
+  for (const c of kinds) {
+    const runs = c.kind === "flat" ? null : (() => { const r = roofOf(outline, c.kind, 0, 1, Infinity, c.across); return pts.map(p => r.run(p)); })();
+    let keep = hs.map(() => true);
+    let f = fit(runs, keep);
+    // (once more without the highest tenth above the fit: a tree's leaves, a chimney)
+    const res = hs.map((h, q) => h - f.e - f.k * (runs ? runs[q] : 0));
+    const cut = [...res].sort((x, y) => x - y)[Math.floor(n * 0.9)];
+    keep = res.map(r => r < cut || r <= 0.5);
+    f = fit(runs, keep);
+    // (a slope that falls inward, or one steeper than 18 in 12, isn't a roof)
+    if (runs && (f.k < 0.08 || f.k > 1.5)) continue;
+    const rms = Math.sqrt(f.rss / Math.max(1, f.m));
+    // (more slopes have to fit enough better to be worth it)
+    const score = f.m * Math.log(Math.max(1e-4, f.rss / Math.max(1, f.m))) + (runs ? 2 : 1) * Math.log(f.m) * 2;
+    if (!best || score < best.score) best = { kind: c.kind, across: c.across, e: f.e, k: f.k, rms, score };
+  }
+  if (!best || best.rms > 2 || best.e < 6) return null;
+  return {
+    kind: best.kind, across: best.across,
+    // (to the nearest inch in 12)
+    pitch: best.kind === "flat" ? undefined : Math.round(best.k * 12) / 12,
+    eaves: Math.min(80, best.e)
+  };
+};
+
 /**
  * The buildings that came in without a height (OpenStreetMap's and those traced from the air),
  * given the one the survey measured over their roofs: the walls up to the eaves, and a flat roof
@@ -286,7 +347,22 @@ const overtureBuildings = async (bounds: GeoBounds): Promise<TracedBuilding[]> =
  */
 export const withMeasuredHeights = (items: CourseItem[], m: Measured, sign: (i: StructureItem) => StructureItem = i => i): CourseItem[] =>
   items.map(i => {
-    if (i.type !== "structure" || i.kind !== "building" || i.height !== undefined || (i.importSource !== "osm" && i.importSource !== "traced")) return i;
+    if (i.type !== "structure" || i.kind !== "building" || (i.importSource !== "osm" && i.importSource !== "traced" && i.importSource !== "fema")) return i;
+    // The roof's own shape where the survey shows it clearly: its kind (unless the map names one, or
+    // it's been measured before), its pitch and the way its ridge runs, the walls up to its eaves
+    const shape = roofShape(m, i.points);
+    const reshape = shape && i.roofPitch === undefined && i.ridgeAcross === undefined && (!i.roof || i.importSource === "traced" || i.roof === shape.kind);
+    if (shape && (reshape || i.height === undefined)) {
+      const out: StructureItem = { ...i };
+      if (i.height === undefined) out.height = Math.round(shape.eaves * 2) / 2;
+      if (reshape) {
+        out.roof = shape.kind;
+        if (shape.pitch) out.roofPitch = shape.pitch;
+        if (shape.across) out.ridgeAcross = true;
+      }
+      return sign(out);
+    }
+    if (i.height !== undefined) return i;
     const r = roofHeights(m, i.points);
     if (!r) return i;
     const out: StructureItem = { ...i, height: Math.round(r.eaves * 2) / 2 };

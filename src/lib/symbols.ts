@@ -265,7 +265,7 @@ const LINE_KINDS_BUILT: StructureKind[] = ["bridge", "boardwalk", "stairs", "wal
  * lighter, a soft shadow); shelters as an open roof (dashed eaves); decks as planks. `pts` is the
  * line from end to end, or the outline; `width` and `height` are in feet.
  */
-export const structureSymbol = (kind: StructureKind, pts: P[], width: number, height: number, roofKind: RoofKind, d: StructureDraw): string => {
+export const structureSymbol = (kind: StructureKind, pts: P[], width: number, height: number, roofKind: RoofKind, d: StructureDraw, shape: { pitch?: number; across?: boolean } = {}): string => {
   if (pts.length < 2) return "";
   const { u, ft, ink } = d;
   const el = (Math.max(10, Math.min(85, d.sunHeight)) * Math.PI) / 180;
@@ -362,7 +362,7 @@ export const structureSymbol = (kind: StructureKind, pts: P[], width: number, he
   }
   // Roofs: each face shaded by how squarely it faces the sun
   const shelter = kind === "shelter";
-  const roof = roofOf(pts, roofKind, 1.5 * ft);
+  const roof = roofOf(pts, roofKind, 1.5 * ft, shape.pitch ?? 0.5, shape.pitch ? Infinity : 12, shape.across);
   const slope = Math.atan(roof.pitch);
   const sun3 = { x: d.sun.x * Math.cos(el), y: d.sun.y * Math.cos(el), z: Math.sin(el) };
   const base = shelter ? ink.shelter : ink.roof;

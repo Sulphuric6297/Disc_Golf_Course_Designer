@@ -8,6 +8,7 @@ import { clipPathToRect, clipPolygonToRect, pointInPolygon as inPoly, polygonAre
 import { boxFill, traceOutline, waterRegions, woodsRegions, type Canopy } from "../../src/lib/geo/detect";
 import { decodeMvt, joinLines, tileFeatures, withoutTwins } from "../../src/lib/geo/vectorTiles";
 import { courseFromMap, osmFeatureItems, parkSummary, reframeDesign, wallsFt } from "../../src/lib/importSite";
+import { requiredCredit } from "../../src/lib/mapSvg";
 
 /** A point given in meters east and north of the site's center, on the plan (ft from its north-west corner). */
 const planOf = (doc: any, e: number, n: number) => ({ x: doc.canvas.width / 2 + e * 3.28084, y: doc.canvas.height / 2 - n * 3.28084 });
@@ -147,6 +148,28 @@ test("rivers and lakes mapped as outlines in pieces come in, roads and rivers ar
   expect(club.height).toBe(19.5);
   expect(club.label).toBe("Clubhouse");
   expect(club.importSource).toBe("osm");
+});
+
+test("the US maps add what OpenStreetMap hasn't got: a creek, a marsh and a building; its own pond isn't doubled; each credited on the map", async ({ page }) => {
+  const ll = (e: number, n: number) => { const g = geoAt(e, n); return [g.lon, g.lat]; };
+  const ring = (e: number, n: number, r: number) => Array.from({ length: 13 }, (_, i) => ll(e + Math.cos((i / 12) * Math.PI * 2) * r, n + Math.sin((i / 12) * Math.PI * 2) * r));
+  const box = (e: number, n: number, w: number, h: number) => [ll(e, n), ll(e + w, n), ll(e + w, n + h), ll(e, n + h), ll(e, n)];
+  // USGS: a creek across the north of the site, and OpenStreetMap's own pond (Mill Pond) again
+  await page.route(/hydro\.nationalmap\.gov.*\/50\/query/, route => route.fulfill({ json: { features: [{ attributes: { featuretypelabel: "Channel Line", streamorder: 2, gnisidlabel: "Spring Creek" }, geometry: { paths: [[ll(-250, 100), ll(0, 110), ll(250, 120)]] } }] } }));
+  await page.route(/hydro\.nationalmap\.gov.*\/60\/query/, route => route.fulfill({ json: { features: [{ attributes: { featuretypelabel: "Lake/Pond" }, geometry: { rings: [ring(-150, -60, 34)] } }] } }));
+  // USFWS: a marsh east of the middle; FEMA: a building nobody has mapped
+  await page.route(/wetlandsmapservice/, route => route.fulfill({ json: { features: [{ attributes: { WETLAND_TYPE: "Freshwater Emergent Wetland", ATTRIBUTE: "PEM1C" }, geometry: { rings: [ring(150, 70, 30)] } }] } }));
+  await page.route(/USA_Structures_View/, route => route.fulfill({ json: { features: [{ attributes: { OCC_CLS: "Government", PRIM_OCC: "Public Restroom", HEIGHT: null }, geometry: { rings: [box(90, -40, 12, 9)] } }] } }));
+  const summary = await importSite(page);
+  expect(summary).toMatch(/From the US maps, not on OpenStreetMap: 1 creek, 1 wetland, 1 building/);
+  const items = (await course(page)).items;
+  const creek = items.find((i: any) => i.type === "line" && i.importSource === "usgs");
+  expect(creek).toMatchObject({ kind: "stream", label: "Spring Creek" });
+  expect(items.filter((i: any) => i.type === "area" && i.kind === "water")).toHaveLength(1);
+  expect(items.find((i: any) => i.type === "area" && i.importSource === "nwi")).toMatchObject({ kind: "rough", label: "Wetland" });
+  expect(items.find((i: any) => i.type === "structure" && i.importSource === "fema")).toMatchObject({ kind: "building" });
+  // Each credited on the printed map
+  expect(requiredCredit(await course(page))).toMatch(/3D Hydrography.*National Wetlands Inventory.*USA Structures/);
 });
 
 test("a busy OpenStreetMap server: the next one is asked", async ({ page }) => {
