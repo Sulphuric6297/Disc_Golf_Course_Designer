@@ -3,7 +3,7 @@
 // no tree over it, nothing taller than a truck on it). A grey roof looks the same as a parking lot
 // from above, so without a survey there's no telling them apart, and none are looked for.
 import { createArea } from "../course";
-import { pointInPolygon, polygonArea, simplify } from "../geom";
+import { polygonArea, simplify } from "../geom";
 import type { Measured } from "../lidar";
 import { orientedBox } from "../structures";
 import type { AreaItem, CourseItem, LineItem, P } from "../../types";
@@ -11,6 +11,30 @@ import { components, open, traceOutline } from "./detect";
 
 /** Each cell of the grid looked over, ft. */
 const CELL = 3;
+
+/** A shape's cells cleared from the mask, a row at a time: where each row's middle crosses the
+ * shape's edges, the cells between each pair (a lake's outline of many thousands of points is one
+ * pass over its edges a row, not a test of every point for every cell). */
+const unfill = (mask: Uint8Array, gw: number, gh: number, pts: P[]) => {
+  const n = pts.length;
+  if (n < 3) return;
+  let y0 = Infinity, y1 = -Infinity;
+  for (const p of pts) { y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+  const xs: number[] = [];
+  for (let j = Math.max(0, Math.floor(y0 / CELL)); j <= Math.min(gh - 1, Math.ceil(y1 / CELL)); j++) {
+    const y = (j + 0.5) * CELL;
+    xs.length = 0;
+    for (let k = 0, m = n - 1; k < n; m = k++) {
+      const a = pts[m], b = pts[k];
+      if ((a.y > y) !== (b.y > y)) xs.push(a.x + ((y - a.y) * (b.x - a.x)) / (b.y - a.y));
+    }
+    xs.sort((p, q) => p - q);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const i0 = Math.max(0, Math.ceil(xs[k] / CELL - 0.5)), i1 = Math.min(gw - 1, Math.floor(xs[k + 1] / CELL - 0.5));
+      for (let i = i0; i <= i1; i++) mask[j * gw + i] = 0;
+    }
+  }
+};
 
 /** The parking lots on a photo of a site `width` by `height` ft, where the survey measured it
  * (`m`), leaving out what the maps have already (`mapped`: its roads, buildings and areas). In
@@ -53,10 +77,7 @@ export const parkingFromPhoto = async (photoUrl: string, width: number, height: 
         }
       }
     } else if ((it.type === "structure" && it.points.length > 2) || (it.type === "area" && (it.kind === "water" || it.kind === "field" || it.kind === "parking" || it.kind === "building"))) {
-      const pts = it.points;
-      const x0 = Math.max(0, Math.floor(Math.min(...pts.map(p => p.x)) / CELL)), x1 = Math.min(gw - 1, Math.ceil(Math.max(...pts.map(p => p.x)) / CELL));
-      const y0 = Math.max(0, Math.floor(Math.min(...pts.map(p => p.y)) / CELL)), y1 = Math.min(gh - 1, Math.ceil(Math.max(...pts.map(p => p.y)) / CELL));
-      for (let j = y0; j <= y1; j++) for (let i = x0; i <= x1; i++) if (pointInPolygon({ x: (i + 0.5) * CELL, y: (j + 0.5) * CELL }, pts)) mask[j * gw + i] = 0;
+      unfill(mask, gw, gh, it.points);
     }
   }
   // (strips under 12 ft across trimmed off: a sidewalk, a driveway, the edge of a road)
