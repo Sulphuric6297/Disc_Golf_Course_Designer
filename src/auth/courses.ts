@@ -250,8 +250,9 @@ const display = (raw: CourseDoc, background: string | null, readOnly: boolean) =
   return doc;
 };
 
-/** Opens a course from the server: an editor's own draft of it, if they have one. */
-export async function openServerCourse(id: string, quiet = false) {
+/** Opens a course from the server: an editor's own draft of it, if they have one. True when it's
+ * shown, false when it couldn't be opened, null when something opened since took its place. */
+export async function openServerCourse(id: string, quiet = false): Promise<boolean | null> {
   // (only the last one asked for is shown: the course opened at start and one clicked on the
   // home page can be on their way at once, and a preview opened meanwhile stays)
   const mine = ++opening;
@@ -269,7 +270,7 @@ export async function openServerCourse(id: string, quiet = false) {
         if (d.hasPhoto) shown = (await api<{ data: string | null }>("GET", `courses/${id}/draft/photo`)).data;
       } else from = { doc: usable(c.doc), version: c.version, photo };
     }
-    if (mine !== opening) return false;
+    if (mine !== opening) return null;
     base = from;
     set({ id, version: c.version, role: c.role, approval: c.approval, live: c.live, perms: c.perms, park: c.park ?? "", behind: !!base && c.version > base.version, status: "saved", conflict: "", draft, preview: null, pending: 0 });
     thumbFor = null;
@@ -289,7 +290,7 @@ export async function openServerCourse(id: string, quiet = false) {
   }
 }
 
-const reopen = () => { const id = state().id; return id ? openServerCourse(id) : Promise.resolve(false); };
+const reopen = () => { const id = state().id; return id ? openServerCourse(id) : Promise.resolve(false as const); };
 /** Courses asked to open, counted (a newer ask, or a preview, makes an older one's answer stale). */
 let opening = 0;
 
@@ -360,7 +361,8 @@ export async function copyCourse() {
 export async function restoreServer() {
   let last: string | null = null;
   try { last = localStorage.getItem(lastKey()); } catch { /* private window */ }
-  if (last && (await openServerCourse(last, true))) return true;
+  // (opened, or something opened since in its place: nothing more to do)
+  if (last && (await openServerCourse(last, true)) !== false) return true;
   await newServerCourse();
   return false;
 }
