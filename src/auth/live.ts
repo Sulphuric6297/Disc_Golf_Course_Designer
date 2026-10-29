@@ -30,6 +30,8 @@ export interface LiveHooks {
   /** Whether this tab sends its changes (not view only, not looking back at a version). */
   canSend: () => boolean;
   status: (s: "saved" | "saving" | "error") => void;
+  /** The course's version in the database now (each write makes the next). */
+  version: (v: number) => void;
   /** Everything written (the course list's picture can be made). */
   written: () => void;
   /** Changes now go in a draft (the owner wants to OK them first): ours kept, in it. */
@@ -140,9 +142,10 @@ function connect() {
     else if (getDoc() !== sent) sendSoon();
   });
   on<{ seq: number; client: string; batch: number; changes: Change[] }>("changes", taken);
-  on<{ seq: number }>("saved", d => {
+  on<{ seq: number; version: number }>("saved", d => {
     saved = recent.find(r => r.seq === d.seq)?.doc ?? (d.seq === seq ? server : saved);
     savedSeq = d.seq;
+    hooks?.version(d.version);
     settle();
   });
   on("reload", () => void reread());

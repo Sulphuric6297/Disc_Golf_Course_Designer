@@ -306,6 +306,7 @@ const liveHooks = {
   summary: (doc: CourseDoc) => summaryOf(doc),
   canSend: () => editsLive() && !state().preview && !useCourse.getState().readOnly,
   status: (s: "saved" | "saving" | "error") => set({ status: s }),
+  version: (v: number) => set({ version: v }),
   written: () => thumbnailSoon(),
   toDraft: (server: CourseDoc, mine: CourseDoc) => {
     // (the owner wants to OK changes first: ours, from here on, in a draft of our own)
