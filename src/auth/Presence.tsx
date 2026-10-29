@@ -121,9 +121,9 @@ export function PresenceLayer() {
         const b = view.screenBox(id);
         if (!b) return null;
         const c = colorOf(p.userId);
-        const cx = rect.left + (b.minX + b.maxX) / 2, cy = rect.top + (b.minY + b.maxY) / 2;
+        const cx = rect.left + b.x + b.width / 2, cy = rect.top + b.y + b.height / 2;
         if (!inside(cx, cy)) return null;
-        const w = Math.max(34, b.maxX - b.minX + 12), h = Math.max(34, b.maxY - b.minY + 12);
+        const w = Math.max(34, b.width + 12), h = Math.max(34, b.height + 12);
         const round = w <= 40 && h <= 40;
         return (
           <div key={id} className="absolute" data-testid="live-ring" data-name={p.name}
