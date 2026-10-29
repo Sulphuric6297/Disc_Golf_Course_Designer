@@ -255,6 +255,11 @@ export function liveRooms(sql: Sql) {
       const r = rooms.get(courseId);
       if (r) await (r.writing = r.writing.then(() => reread(r)).catch(e => { console.error("Live course not read", courseId, e); }));
     },
+    /** Its comments changed: everyone reads them again. */
+    comments(courseId: string) {
+      const r = rooms.get(courseId);
+      if (r) everyone(r, "comments", {});
+    },
     /** Its photo changed: everyone fetches it again. */
     photo(courseId: string, except?: string) {
       const r = rooms.get(courseId);

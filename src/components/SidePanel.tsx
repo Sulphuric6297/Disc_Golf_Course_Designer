@@ -26,6 +26,7 @@ import { useLayout } from "./useLayout";
 import { LockedRow } from "./DemoNote";
 import { InspectorBody, PANEL_INSET, SelectionHeader, useSelection } from "./Inspector";
 import { SERVER } from "../auth/api";
+import { holeOf, useComments } from "../auth/Comments";
 import { NearbyCourses, NearbySafety } from "../auth/Nearby";
 
 export const STEPS: { id: Step; label: string; title: string }[] = [
@@ -405,11 +406,18 @@ function HoleRow({ s, check, slim = false, roomy = false }: { s: HoleStats; chec
   const what = s.complete ? `${fmtDist(s.length, u)} · Par ${s.par}` : s.teeId ? "Needs a basket" : "Needs a tee";
   const tees = holeTees(doc, s.holeId);
   const shared = holeBaskets(doc, s.holeId).some(b => b.holeId !== s.holeId || !!b.alsoHoles?.length);
+  // (its open comments, on a HyzerLab server: blue when one is new for you)
+  const threads = useComments(c => c.threads);
+  const talk = SERVER ? threads.filter(t => !t.resolvedAt && holeOf(t, doc) === s.holeId) : [];
+  const fresh = talk.some(t => t.unread);
   return (
     <button data-testid="hole-row" title={`${name}${slim ? ` · ${what}` : ""}${check ? ` · ${check.text}` : ""}`}
       onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
       className={`w-full flex items-center gap-2 rounded-[14px] text-left transition-colors ${FOCUS} ${roomy ? "px-2 py-1.5 touch:min-h-[44px]" : slim ? "py-1 justify-center px-1" : "py-1 pl-1 pr-2"} ${sel ? "bg-white/[0.16] text-zinc-50" : "text-zinc-300 hover:bg-white/[0.07]"}`}>
-      <span className="min-w-[24px] h-6 px-1 rounded-full flex items-center justify-center text-[11.5px] font-bold shrink-0 whitespace-nowrap" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink }} data-testid="hole-badge">{s.label}</span>
+      <span className="relative shrink-0">
+        <span className="min-w-[24px] h-6 px-1 rounded-full flex items-center justify-center text-[11.5px] font-bold whitespace-nowrap" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink }} data-testid="hole-badge">{s.label}</span>
+        {talk.length > 0 && <span className={`absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-[3px] rounded-full grid place-items-center text-[9.5px] font-extrabold ring-2 ring-[#161c15] ${fresh ? "bg-sky-400 text-sky-950" : "bg-amber-100 text-amber-950"}`} title={`${talk.length} open comment${talk.length === 1 ? "" : "s"}${fresh ? ", new for you" : ""}`} data-testid="hole-comments">{talk.length}</span>}
+      </span>
       <span className={slim ? "sr-only" : "flex-1 min-w-0"}>
         {roomy && hole.name && <span className="block text-sm text-zinc-100 truncate">{hole.name}</span>}
         <span className="block text-[12.5px] tabular-nums truncate">{what}</span>

@@ -265,6 +265,7 @@ const liveHooks = {
   status: (s: "saved" | "saving" | "error") => set({ status: s }),
   version: (v: number) => set({ version: v }),
   written: () => thumbnailSoon(),
+  comments: () => { void import("./Comments").then(m => m.loadComments()).catch(() => {}); },
   // (made a viewer: open again, view only)
   role: () => { toast("You can only look at this course now.", "info"); void reopen(); },
   photo: async () => {

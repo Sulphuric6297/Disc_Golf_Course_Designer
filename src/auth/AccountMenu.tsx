@@ -92,14 +92,17 @@ function SaveChip() {
   );
 }
 
-/** The comments panel, with how many are open. */
+/** The comments panel, with how many threads are new for you (else how many are open, quietly). */
 function CommentsButton() {
   const { threads, panel } = useComments();
   const open = threads.filter(t => !t.resolvedAt).length;
+  const fresh = threads.filter(t => !t.resolvedAt && t.unread).length;
   return (
-    <button className={`${BAR} ${panel ? "text-orange-300" : ""}`} aria-label={`Comments (${open})`} title="Comments" onClick={() => useComments.setState({ panel: !panel })} data-testid="comments-button">
+    <button className={`${BAR} ${panel ? "text-orange-300" : ""}`} aria-label={`Comments (${fresh ? `${fresh} new` : open})`} title="Comments (C to add one)" onClick={() => useComments.setState({ panel: !panel })} data-testid="comments-button">
       <MessageCircle size={18} />
-      {open > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-sky-500 text-white text-[10px] font-bold flex items-center justify-center">{open}</span>}
+      {fresh > 0
+        ? <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-sky-500 text-white text-[10px] font-bold flex items-center justify-center" data-testid="comments-new">{fresh}</span>
+        : open > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-zinc-600 text-zinc-100 text-[10px] font-bold flex items-center justify-center">{open}</span>}
     </button>
   );
 }

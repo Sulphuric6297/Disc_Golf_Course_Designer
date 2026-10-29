@@ -40,6 +40,8 @@ export interface LiveHooks {
   role: () => void;
   /** Someone changed the photo. */
   photo: () => void;
+  /** The course's comments changed (someone wrote, reacted, resolved…). */
+  comments?: () => void;
 }
 
 let course: string | null = null;
@@ -164,6 +166,7 @@ function connect() {
     });
   });
   on("photo", () => hooks?.photo());
+  on("comments", () => hooks?.comments?.());
   on("role", () => viewOnly());
   es.onerror = () => {
     if (source !== es) return;

@@ -296,7 +296,7 @@ test("comments: pinned on a basket (moving with it), @mention, the bell, a reply
   await admin.getByTestId("comment-composer").getByRole("button", { name: "Post" }).click();
   const thread = admin.getByTestId("thread");
   await expect(thread).toHaveCount(1);
-  await expect(thread).toContainText(/^1Basket of hole/);
+  await expect(thread).toContainText(/^Basket of hole/);
   await expect(admin.getByTestId("comment-pin")).toHaveCount(1);
 
   // Pat hears of it, and goes straight to it
@@ -317,11 +317,14 @@ test("comments: pinned on a basket (moving with it), @mention, the bell, a reply
   await admin.getByTestId("my-courses").getByTestId("course-card").click();
   await expect(admin.getByTestId("notice-count")).toHaveText("1");
   await admin.getByTestId("comments-button").click();
+  // (new for the admin: Pat replied)
+  await expect(admin.getByTestId("thread").locator(".bg-sky-400")).toHaveCount(1);
+  await admin.getByTestId("thread-focus").click();
   await expect(admin.getByTestId("thread")).toContainText("On it");
   await admin.getByTestId("thread").getByTestId("resolve").click();
   await expect(admin.getByTestId("threads")).toContainText("No open comments.");
   await expect(admin.getByTestId("comment-pin")).toHaveCount(0);
-  await admin.getByTestId("comments-panel").getByLabel("Resolved").check();
+  await admin.getByTestId("comments-resolved").click();
   await expect(admin.getByTestId("comment-pin")).toHaveCount(1);
 
   // The basket moved: its pin goes with it
@@ -340,6 +343,17 @@ test("comments: pinned on a basket (moving with it), @mention, the bell, a reply
   await admin.mouse.up();
   await expect.poll(async () => (await admin.evaluate(id => (window as any).__dgCourse().items.find((i: any) => i.id === id).x, b.id))).toBeGreaterThan(b.x + 5);
   await expect.poll(async () => (await admin.getByTestId("comment-pin").boundingBox())!.x).toBeGreaterThan(pin0.x + 10);
+
+  // Its thread, beside its pin (the panel closed), says the basket moved since; a reaction
+  await admin.getByTestId("comment-pin").click();
+  await expect(admin.getByTestId("comment-beside")).toBeVisible();
+  await expect(admin.getByTestId("comment-change")).toContainText(/basket was moved \d+ ft since this comment/);
+  await admin.getByTestId("comment-beside").getByTestId("comment-message").first().hover();
+  await admin.getByTestId("comment-beside").getByRole("button", { name: "React" }).first().click();
+  await admin.getByRole("button", { name: "React 👍" }).click();
+  await expect(admin.getByTestId("comment-beside").getByRole("button", { name: "👍 1" })).toBeVisible();
+  await admin.keyboard.press("Escape");
+  await expect(admin.getByTestId("comment-beside")).toHaveCount(0);
 
   // Not over the Map step's page (the map under it is put away); a comment opened from there goes
   // back to the map
