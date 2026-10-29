@@ -252,21 +252,25 @@ const display = (raw: CourseDoc, background: string | null, readOnly: boolean) =
 
 /** Opens a course from the server: an editor's own draft of it, if they have one. */
 export async function openServerCourse(id: string, quiet = false) {
+  // (only the last one asked for is shown: the course opened at start and one clicked on the
+  // home page can be on their way at once, and a preview opened meanwhile stays)
+  const mine = ++opening;
   if (state().id && state().id !== id) await saveNow();
   try {
     const c = await readCourse(id);
     const photo = await readPhoto(id, c.hasBackground);
-    let doc = c.doc, shown = photo, draft = false;
-    base = null;
-    if (c.role === "editor" || (c.role === "owner" && !c.live)) {
+    let doc = c.doc, shown = photo, draft = false, from: typeof base = null;
+    if (c.role !== "viewer" && !c.live) {
       const { draft: d } = await api<{ draft: { doc: CourseDoc; baseDoc: CourseDoc; baseVersion: number; hasPhoto: boolean } | null }>("GET", `courses/${id}/draft`);
       if (d) {
         doc = d.doc;
         draft = true;
-        base = { doc: usable(d.baseDoc), version: d.baseVersion, photo };
+        from = { doc: usable(d.baseDoc), version: d.baseVersion, photo };
         if (d.hasPhoto) shown = (await api<{ data: string | null }>("GET", `courses/${id}/draft/photo`)).data;
-      } else base = { doc: usable(c.doc), version: c.version, photo };
+      } else from = { doc: usable(c.doc), version: c.version, photo };
     }
+    if (mine !== opening) return false;
+    base = from;
     set({ id, version: c.version, role: c.role, approval: c.approval, live: c.live, perms: c.perms, park: c.park ?? "", behind: !!base && c.version > base.version, status: "saved", conflict: "", draft, preview: null, pending: 0 });
     thumbFor = null;
     thumbAt = 0;
@@ -286,6 +290,8 @@ export async function openServerCourse(id: string, quiet = false) {
 }
 
 const reopen = () => { const id = state().id; return id ? openServerCourse(id) : Promise.resolve(false); };
+/** Courses asked to open, counted (a newer ask, or a preview, makes an older one's answer stale). */
+let opening = 0;
 
 /** A course just made on the server: live from now on, keeping what's on the screen (`sent`:
  * what went to the server; anything changed since goes as live changes). */
@@ -330,6 +336,7 @@ const liveHooks = {
 /** A course not on the server yet: saved there (yours) once something is on it. */
 export async function startUnsaved(doc: CourseDoc) {
   if (state().id) await saveNow();
+  opening++;
   stopLive();
   set({ id: null, version: 0, role: "owner", status: "saved", conflict: "", draft: false, live: true, behind: false, approval: false, preview: null, pending: 0, perms: null, park: "" });
   sentBackground = null;
@@ -517,6 +524,7 @@ export const listSubmissions = () => api<SubmissionRow[]>("GET", `courses/${stat
 export async function previewVersion(v: VersionRow, label: string) {
   await saveNow();
   const r = await api<{ doc: CourseDoc; photo: string | null }>("GET", `courses/${state().id}/versions/${v.id}`);
+  opening++;
   stopLive();
   set({ preview: { kind: "version", id: v.id, label } });
   display(r.doc, r.photo, true);
@@ -550,6 +558,7 @@ export async function previewSubmission(s: SubmissionRow, label: string) {
   await saveNow();
   const r = await api<{ doc: CourseDoc; photo: string | null }>("GET", `courses/${state().id}/submissions/${s.id}`);
   const c = await readCourse(state().id!);
+  opening++;
   stopLive();
   set({ preview: { kind: "submission", id: s.id, label } });
   display(r.doc, r.photo ?? (await readPhoto(state().id!, c.hasBackground)), true);
