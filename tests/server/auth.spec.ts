@@ -371,6 +371,12 @@ test("a public link: the site with what it allows (pictures, numbers), 3D when a
   test.setTimeout(600_000);
   const admin = await as(browser, "admin");
   await admin.getByTestId("my-courses").getByTestId("course-card").click();
+  // (a second hole: the site's tee signs to step through)
+  await expect(admin.getByTestId("course-chip")).toHaveText("Live");
+  await site(admin);
+  await addHole(admin, { x: 900, y: 150 }, { x: 900, y: 650 });
+  await expect(admin.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
+  await admin.keyboard.press("Escape");
   await admin.getByTestId("share-button").click();
   await admin.getByTestId("share-tab-public").click();
   await admin.getByTestId("new-link").click();
@@ -397,6 +403,22 @@ test("a public link: the site with what it allows (pictures, numbers), 3D when a
   const holes = (await course(admin)).holes.length;
   await expect(page.getByTestId("public-holes").locator(":scope > li")).toHaveCount(holes);
   await expect(page.getByTestId("public-signs").locator("img")).toHaveCount(holes);
+  // (a sign big; with more, all of them in a grid, and stepping through them)
+  if (holes > 1) {
+    await page.getByTestId("public-signs-all").click();
+    await expect(page.getByTestId("public-signs-grid").locator("img")).toHaveCount(holes);
+    await page.getByTestId("public-signs-grid").locator("li button").nth(1).click();
+    await expect(page.getByTestId("zoomable-count")).toContainText(`2 of ${holes}`);
+    await page.getByTestId("zoomable-next").click();
+    await expect(page.getByTestId("zoomable-count")).toContainText(`${holes > 2 ? 3 : 1} of ${holes}`);
+    await page.keyboard.press("Escape");
+    await page.getByTestId("public-signs-grid").getByRole("button", { name: "Close" }).click();
+  } else {
+    await page.getByTestId("public-signs").locator("button").first().click();
+    await expect(page.getByTestId("zoomable")).toBeVisible();
+    await page.keyboard.press("Escape");
+  }
+  await expect(page.getByTestId("zoomable")).toHaveCount(0);
   await expect(page.getByRole("img", { name: /^Map of/ })).toBeVisible();
   await expect(page.getByTestId("explore")).toHaveCount(0);
 

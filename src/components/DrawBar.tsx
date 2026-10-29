@@ -54,7 +54,7 @@ export function useDrawBarShown() {
   const tool = useEditor(e => e.tool);
   const n = useEditor(e => e.drawPoints);
   const boxing = useEditor(e => e.dragSelect && e.tool === "select" && (e.step === "design" || e.step === "site"));
-  const teeView = useEditor(e => e.teeView);
+  const teeView = useEditor(e => !!e.teeView && (!e.teeEdit || e.flyover));
   const gpsOn = useGps(g => g.mode !== "off");
   return !teeView && (n > 0 || boxing || (gpsOn && (tool === "add-hole" || tool === "add-tee" || tool === "add-basket")));
 }
@@ -66,7 +66,7 @@ export function DrawBar({ bottom }: { bottom?: number }) {
   const structureKind = useEditor(e => e.structureKind);
   const shape = useEditor(e => e.drawShape);
   const boxing = useEditor(e => e.dragSelect && (e.step === "design" || e.step === "site"));
-  const teeView = useEditor(e => e.teeView);
+  const teeView = useEditor(e => !!e.teeView && (!e.teeEdit || e.flyover));
   const gpsOn = useGps(g => g.mode !== "off");
   const touch = useTouch();
   if (teeView) return null;

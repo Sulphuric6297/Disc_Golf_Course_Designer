@@ -222,6 +222,9 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { view?.setGrass(ed.grass, ed.wind); }, [view, ed.grass, ed.wind]);
   // Covered by the page on the Map and Export steps: the map view rests (a video records on its own)
   useEffect(() => { view?.setPaused((ed.step === "map" || ed.step === "export") && !ed.teeView); }, [view, ed.step, ed.teeView]);
+  // (tee view, editing: picking and dragging there, the map from above in a corner)
+  const readOnlyView = useCourse(s => s.readOnly);
+  useEffect(() => { view?.setTeeEdit(!!ed.teeView && !!ed.teeEdit && !ed.flyover && !readOnlyView, ed.teeMap === "off" ? null : ed.teeMap ?? "small"); }, [view, ed.teeView, ed.teeEdit, ed.teeMap, ed.flyover, readOnlyView]);
   // (the picked keyframe stands out on the map; another hole picked, none is)
   useEffect(() => { view?.setFlyKey(ed.flyKey); }, [view, ed.flyKey]);
   useEffect(() => { if (!useEditor.getState().flyCam) useEditor.getState().set({ flyKey: null }); }, [ed.selectedId]);

@@ -70,6 +70,9 @@ const MAX_TILT = 84 * DEG;
 /** The map's lens: narrow looking straight down (map-like), wider tilted (a real perspective). */
 const FOV_TOP = 30, FOV_TILT = 45;
 const SELECT = "#22d3ee";
+type Rect = { x: number; y: number; width: number; height: number };
+/** A picture on screen: the camera it's drawn with, and where (the container's pixels). */
+type Eye = { cam: THREE.PerspectiveCamera; rect: Rect };
 const LIFT = 0.45;
 
 type Drag = { move: (e: PointerEvent) => void; end: (e: PointerEvent) => void };
@@ -219,6 +222,17 @@ export class CourseView {
   /** The box being drawn to pick things with. */
   private marquee: HTMLDivElement | null = null;
   private hoverFx: THREE.Object3D | null = null;
+  /** Tee view, editing: a press on a thing picks or drags it as on the map; on open ground it
+   * looks around. With the map from above in a corner ("small", "big"), or none. */
+  private teeEdit = false;
+  private miniSize: "small" | "big" | null = null;
+  /** The corner map's place (the container's pixels; null: none shown) and its camera. */
+  private miniRect: Rect | null = null;
+  private miniCam = new THREE.PerspectiveCamera(40, 1, 1, 200000);
+  /** The picture a drag began in (its camera and place), kept until it's let go. */
+  private dragEye: Eye | null = null;
+  /** The picture being looked at by what's worked out now (a pick at a pointer). */
+  private eye: Eye | null = null;
   /** What others in the course have picked (their color; strong while they drag it), outlined. */
   private others: { id: string; color: string; strong: boolean }[] = [];
   private othersFx: THREE.Object3D | null = null;
@@ -1098,6 +1112,70 @@ export class CourseView {
     this.invalidate();
   }
 
+  /** Tee view, editing (a press on a thing picks or drags it; on open ground, looks around), with
+   * the map from above in a corner ("small", "big") or none. */
+  setTeeEdit(on: boolean, mini: "small" | "big" | null = "small") {
+    if (on === this.teeEdit && mini === this.miniSize) return;
+    this.teeEdit = on;
+    this.miniSize = on ? mini : null;
+    if (!on) this.setHover(null);
+    this.updateCursor();
+    this.invalidate();
+  }
+
+  /** The corner map's place now, and where on it the tee is and which way the view looks (for
+   * what's drawn over it); null when there's none. */
+  teeMini() {
+    const m = this.miniRect, pose = this.povHole ? this.povPose() : null;
+    if (!m || !pose) return null;
+    const was = this.eye;
+    this.eye = { cam: this.miniCam, rect: m };
+    try {
+      const tee = this.project(pose.eye.clone().setY(this.h(pose.eye.x, pose.eye.z)));
+      const dir = new THREE.Vector3();
+      this.povCam.getWorldDirection(dir);
+      const far = pose.eye.clone().addScaledVector(new THREE.Vector3(dir.x, 0, dir.z).normalize(), 60);
+      const ahead = this.project(far.setY(this.h(far.x, far.z)));
+      return { rect: { ...m }, tee, ahead, fov: this.povCam.fov * this.povCam.aspect };
+    } finally { this.eye = was; }
+  }
+
+  /** The corner map's place in the view (the container's pixels). */
+  private miniPlace(): Rect | null {
+    if (!this.teeEdit || !this.miniSize || !this.povHole || this.fly) return null;
+    const W = this.size.width, H = this.size.height;
+    if (W < 500 || H < 360) return null;
+    const big = this.miniSize === "big";
+    const w = Math.round(big ? Math.min(560, W * 0.42) : Math.min(260, W * 0.24)), h = Math.round(big ? Math.min(420, H * 0.5) : w * 0.72);
+    return { x: W - w - 12, y: 12, width: w, height: h };
+  }
+
+  /** The corner map's camera: straight down on the hole, its line pointing up the picture. */
+  private placeMini(m: Rect) {
+    const doc = this.doc, s = doc?.stats.find(x => x.holeId === this.povHole);
+    const pts = s && s.line.length > 1 ? s.line : null;
+    const pose = this.povPose();
+    if (!pts || !pose) return false;
+    const b = boundsOf(pts);
+    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
+    const a = pts[0], z = pts[pts.length - 1];
+    const len = Math.max(1, Math.hypot(z.x - a.x, z.y - a.y));
+    const cam = this.miniCam;
+    cam.aspect = m.width / Math.max(1, m.height);
+    // (the hole's length up the picture, with room round it)
+    const span = Math.max(len * 1.35, (Math.max(b.maxX - b.minX, b.maxY - b.minY) + 120) / Math.max(1, Math.min(cam.aspect, 1)), 160);
+    const height = span / 2 / Math.tan((cam.fov * DEG) / 2);
+    const ground = this.h(cx, cy);
+    cam.position.set(cx, ground + height, cy);
+    cam.up.set((z.x - a.x) / len, 0, (z.y - a.y) / len);
+    cam.lookAt(cx, ground, cy);
+    cam.near = Math.max(1, height * 0.05);
+    cam.far = height * 4;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    return true;
+  }
+
   /** Fly over a hole from behind the tee to the basket; `done` runs when it lands. */
   /** Flies over a hole just as a recording shows it: its title held a moment on the first
    * picture, the flight (the title fading), a moment at the basket. */
@@ -1428,7 +1506,8 @@ export class CourseView {
     this.updateForests(cam.position);
     waterUniforms.uTime.value = this.clock.elapsedTime;
     waterUniforms.uWind.value = this.wind ? 1 : 0.25;
-    this.fx.visible = false;
+    // (editing: what's picked and what's under the pointer outlined, as on the map)
+    this.fx.visible = this.teeEdit && !target && !this.fly;
     // (the hole's On screen switches: flying, and from the tee)
     const hidden = this.povHole ? this.hideForFlight() : [];
     this.ground.detailActive(true);
@@ -1887,6 +1966,17 @@ export class CourseView {
       this.renderer.setClearColor(0x000000, 1);
       this.renderer.clear();
       this.drawPov({ x: 0, y: 0, width: this.size.width, height: this.size.height });
+      // (editing: the map from above in a corner, drawn with its own camera)
+      const m = this.miniPlace();
+      this.miniRect = m && this.placeMini(m) ? m : null;
+      if (this.miniRect) {
+        const H = this.size.height;
+        this.renderer.setViewport(m!.x, H - m!.y - m!.height, m!.width, m!.height);
+        this.renderer.setScissor(m!.x, H - m!.y - m!.height, m!.width, m!.height);
+        this.renderer.setScissorTest(true);
+        this.renderer.render(this.scene, this.miniCam);
+        this.renderer.setScissorTest(false);
+      }
       this.renderer.setViewport(0, 0, this.size.width, this.size.height);
       return;
     }
@@ -2216,25 +2306,45 @@ export class CourseView {
 
   // ------------------------------------------------------------------ geometry helpers
 
+  /** The whole view's picture: the map, or the tee view's. */
+  private mainEye(): Eye {
+    return { cam: this.povHole ? this.povCam : this.camera, rect: { x: 0, y: 0, width: this.size.width, height: this.size.height } };
+  }
+
+  /** The picture a point on screen is in: the corner map in tee view, else the whole view's. */
+  private eyeAt(clientX: number, clientY: number): Eye {
+    const m = this.miniRect;
+    if (this.povHole && m) {
+      const r = this.container.getBoundingClientRect();
+      const x = clientX - r.left, y = clientY - r.top;
+      if (x >= m.x && x <= m.x + m.width && y >= m.y && y <= m.y + m.height) return { cam: this.miniCam, rect: m };
+    }
+    return this.mainEye();
+  }
+
   private project(v: THREE.Vector3) {
-    const p = v.clone().project(this.camera);
+    const { cam, rect } = this.eye ?? this.mainEye();
+    const p = v.clone().project(cam);
     if (p.z > 1 || p.z < -1) return null;
-    return { x: ((p.x + 1) / 2) * this.size.width, y: ((1 - p.y) / 2) * this.size.height };
+    return { x: rect.x + ((p.x + 1) / 2) * rect.width, y: rect.y + ((1 - p.y) / 2) * rect.height };
   }
 
   /** World units per screen pixel at a point. */
   private upp(v: THREE.Vector3) {
+    const { cam, rect } = this.eye ?? this.mainEye();
     const dir = new THREE.Vector3();
-    this.camera.getWorldDirection(dir);
-    const depth = Math.max(0.01, v.clone().sub(this.camera.position).dot(dir));
-    return (2 * depth * Math.tan((this.camera.fov * DEG) / 2)) / this.size.height;
+    cam.getWorldDirection(dir);
+    const depth = Math.max(0.01, v.clone().sub(cam.position).dot(dir));
+    return (2 * depth * Math.tan((cam.fov * DEG) / 2)) / rect.height;
   }
 
   private ray(clientX: number, clientY: number) {
+    // (through the picture it's in: the map's, the tee view's, or the corner map's; a drag stays in its own)
+    const { cam, rect } = this.dragEye ?? this.eyeAt(clientX, clientY);
     const r = this.container.getBoundingClientRect();
-    const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
-    this.camera.updateMatrixWorld();
-    this.raycaster.setFromCamera(ndc, this.camera);
+    const ndc = new THREE.Vector2(((clientX - r.left - rect.x) / rect.width) * 2 - 1, -((clientY - r.top - rect.y) / rect.height) * 2 + 1);
+    cam.updateMatrixWorld();
+    this.raycaster.setFromCamera(ndc, cam);
     return this.raycaster.ray;
   }
 
@@ -4423,6 +4533,12 @@ export class CourseView {
    * near the pointer.
    */
   private pick(clientX: number, clientY: number): string | null {
+    const was = this.eye;
+    this.eye = this.dragEye ?? this.eyeAt(clientX, clientY);
+    try { return this.pickIn(clientX, clientY); } finally { this.eye = was; }
+  }
+
+  private pickIn(clientX: number, clientY: number): string | null {
     const doc = this.doc;
     if (!doc) return null;
     const r = this.container.getBoundingClientRect();
@@ -4917,10 +5033,32 @@ export class CourseView {
     }
     if (this.povHole) {
       if (e.button !== 0 || target.closest?.("button,input,select,[data-pov-ui]")) return;
-      e.preventDefault();
-      e.stopPropagation();
-      this.povDrag(e);
-      return;
+      // (editing: a press on a thing, or with a tool that places one, goes on as on the map,
+      // through the picture it's in; on open ground it looks around; on the corner map's open
+      // ground, nothing)
+      if (this.teeEdit && !this.fly && !this.free && !this.readOnly) {
+        const eye = this.eyeAt(e.clientX, e.clientY);
+        const onThing = this.tool.mode !== "select" || !!this.pick(e.clientX, e.clientY);
+        if (onThing) {
+          this.dragEye = eye;
+          const done = () => { window.removeEventListener("pointerup", done, true); window.removeEventListener("pointercancel", done, true); setTimeout(() => { this.dragEye = null; }, 0); };
+          window.addEventListener("pointerup", done, true);
+          window.addEventListener("pointercancel", done, true);
+        } else if (eye.cam === this.miniCam) {
+          e.preventDefault();
+          return;
+        } else {
+          e.preventDefault();
+          e.stopPropagation();
+          this.povDrag(e);
+          return;
+        }
+      } else {
+        e.preventDefault();
+        e.stopPropagation();
+        this.povDrag(e);
+        return;
+      }
     }
     if (e.button === 2) {
       const x0 = e.clientX, y0 = e.clientY, id = e.pointerId;
@@ -6020,7 +6158,7 @@ export class CourseView {
   }
 
   private onHoverMove(e: PointerEvent) {
-    if (e.buttons || this.dragging || this.povHole) return;
+    if (e.buttons || this.dragging || (this.povHole && (!this.teeEdit || this.fly || this.free))) return;
     this.lastPointer = { x: e.clientX, y: e.clientY };
     if (this.hoverFrame) return;
     this.hoverFrame = requestAnimationFrame(() => {
@@ -6077,7 +6215,7 @@ export class CourseView {
   private updateCursor() {
     const t = this.tool;
     let c = t.dragSelect && t.mode === "select" ? "crosshair" : "grab";
-    if (this.povHole) c = "move";
+    if (this.povHole) c = this.teeEdit && this.hoverId ? "pointer" : this.teeEdit && t.mode !== "select" ? "crosshair" : "move";
     else if (this.obPick) c = "crosshair";
     else if (t.mode !== "select") c = "crosshair";
     else if (this.hoverId) {

@@ -185,6 +185,10 @@ type EditorStore = {
   teeView: string | null;
   /** The tee the tee view stands on (another skill level's), unset: the layout's. */
   teeViewTee?: string | null;
+  /** Tee view, editing: a press on a thing picks or drags it as on the map (else: looking). */
+  teeEdit?: boolean;
+  /** The map from above in the tee view's corner while editing. */
+  teeMap?: "small" | "big" | "off";
   /** The tee view's flyover settings open over it. */
   teeSettings?: boolean;
   flyover: boolean;

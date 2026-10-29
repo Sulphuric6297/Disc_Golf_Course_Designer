@@ -860,6 +860,8 @@ export function useSelection() {
   const doc = useCourse(s => s.doc);
   const selectedId = useEditor(e => e.selectedId);
   const teeView = useEditor(e => e.teeView);
+  // (tee view, editing: what's picked there has its panel too)
+  const teeEditing = useEditor(e => !!e.teeEdit && !e.flyover);
   const tool = useEditor(e => e.tool);
   const ids = useEditor(e => e.group);
   const hole = doc.holes.find(h => h.id === selectedId);
@@ -868,7 +870,7 @@ export function useSelection() {
     const set = new Set(ids);
     return set.size ? doc.items.filter(i => set.has(i.id)) : [];
   }, [doc.items, ids]);
-  return { hole, item, group, open: !!(hole || item || group.length) && !teeView && tool === "select" };
+  return { hole, item, group, open: !!(hole || item || group.length) && (!teeView || teeEditing) && tool === "select" };
 }
 
 /** What things picked together are, by kind ("Tree ×12"), whole holes first. */

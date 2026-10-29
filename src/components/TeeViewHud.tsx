@@ -1,6 +1,6 @@
 // What shows over the view from the tee or a flyover: the hole's numbers and the controls.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Clapperboard, Plane, Settings2, Square, Video, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clapperboard, Maximize2, Minimize2, Plane, Settings2, Square, Video, X } from "lucide-react";
 import { useAllowed } from "../auth/perms";
 import { TEE_LEVELS } from "../constants";
 import { activeLayout, holeLabel } from "../lib/course";
@@ -15,6 +15,9 @@ import { ElevationProfile } from "./ElevationProfile";
 import { SceneButton } from "./ScenePanel";
 import { cameraFrom, HoleFlight } from "./FlyoverSettings";
 import { HelpLink } from "./ui";
+import { getView } from "../state/view";
+import { useSelection } from "./Inspector";
+import { useToolbarRoom } from "./Toolbar";
 
 /** While a flyover waits for its pictures: the hole's name and numbers and a thin moving bar,
  * over the view (shown at once; it fades as the flight begins), and Cancel (it covers the bar
@@ -84,6 +87,9 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
     const t = window.setTimeout(() => setShowLoading(false), 320);
     return () => window.clearTimeout(t);
   }, [waiting]);
+  const editing = !!ed.teeEdit && !ed.flyover && !readOnly && !compact;
+  const panel = useSelection().open;
+  const toolbar = useToolbarRoom(r => r.height);
   if (!hole || !s) return null;
   const loading = (showLoading || waiting) && ed.flyover ? <FlyoverLoading on={waiting} stage={ed.flyLoading} onCancel={() => ed.set({ flyover: false })} title={`Hole ${s.label}${hole.name ? ` · ${hole.name}` : ""}`} facts={`${fmtDist(s.length, doc.units)} · Par ${s.par}${s.elevationChange ? ` · ${fmtElev(s.elevationChange, doc.units)}` : ""}`} /> : null;
   // (a video's progress: none while the map is painted or a hole sharpened)
@@ -147,7 +153,8 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
   return (
     <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui>
       {loading}
-      <div className={`absolute top-4 left-4 pointer-events-auto glass backdrop-blur rounded-2xl px-4 py-3 text-white shadow-2xl border border-white/10 w-[280px] ${ed.flyover ? "hidden" : ""}`} data-testid="tee-view-hud">
+      {/* (beside the side panel when something is picked there) */}
+      <div className={`absolute top-4 pointer-events-auto glass backdrop-blur rounded-2xl px-4 py-3 text-white shadow-2xl border border-white/10 w-[280px] ${ed.flyover ? "hidden" : ""} ${editing && panel ? "left-[388px]" : "left-4"}`} data-testid="tee-view-hud">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full flex items-center justify-center text-2xl font-bold" style={{ background: lvl.color, color: lvl.ink, fontFamily: "Oswald, Inter" }}>{s.label}</div>
           <div>
@@ -159,7 +166,17 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
         <div className="mt-2"><ElevationProfile doc={doc} line={s.line} height={70} teeColor={lvl.color} /></div>
         {hole.notes && <p className="text-xs text-zinc-200 mt-1">{hole.notes}</p>}
       </div>
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-2 glass backdrop-blur rounded-full px-2 py-1.5 border border-white/10 shadow-2xl">
+      {editing && <TeeMap big={ed.teeMap === "big"} off={ed.teeMap === "off"} />}
+      {/* (editing: above the toolbar) */}
+      <div className="absolute left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-2 glass backdrop-blur rounded-full px-2 py-1.5 border border-white/10 shadow-2xl" style={{ bottom: editing ? toolbar + 24 : 24 }}>
+        {!readOnly && !ed.flyover && (
+          <div className="flex rounded-full bg-white/[0.08] p-0.5 mr-1" role="radiogroup" aria-label="Look or edit" title="E switches">
+            {([["look", "Look"], ["edit", "Edit"]] as const).map(([k, label]) => {
+              const on = (k === "edit") === !!ed.teeEdit;
+              return <button key={k} role="radio" aria-checked={on} className={`px-3 py-1 rounded-full text-sm font-semibold ${on ? "bg-lime-400 text-lime-950" : "text-white hover:bg-white/10"}`} onClick={() => ed.set({ teeEdit: k === "edit" })} data-testid={`tee-${k}`}>{label}</button>;
+            })}
+          </div>
+        )}
         <button className="p-2 rounded-full hover:bg-white/10 text-white" aria-label="Previous hole" title="Previous hole (←)" onClick={() => go(-1)}><ChevronLeft size={18} /></button>
         <button className={`px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 ${ed.flyover ? "bg-orange-500 text-zinc-950" : "text-white hover:bg-white/10"}`} onClick={() => ed.set({ flyover: !ed.flyover })} data-testid="hud-flyover">{ed.flyover ? <><Square size={14} /> Stop</> : <><Plane size={15} /> Fly over</>}</button>
         <button className="p-2 rounded-full hover:bg-white/10 text-white" aria-label="Next hole" title="Next hole (→)" onClick={() => go(1)}><ChevronRight size={18} /></button>
@@ -182,7 +199,52 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
         </div>
       )}
       <div className="absolute top-4 right-4 pointer-events-auto"><SceneButton /></div>
-      {hint && <div className="absolute bottom-20 left-1/2 -translate-x-1/2 text-xs text-white/80 bg-black/40 rounded px-2 py-1">Drag to look around · scroll to zoom · ← → other holes · Esc back to the map</div>}
+      {hint && <div className="absolute left-1/2 -translate-x-1/2 text-xs text-white/80 bg-black/40 rounded px-2 py-1 whitespace-nowrap" style={{ bottom: (editing ? toolbar + 24 : 24) + 56 }}>
+        {editing ? "Click a tree or anything else to pick it · drag it along the ground · drag open ground to look around · E: Look" : "Drag to look around · scroll to zoom · ← → other holes · Esc back to the map"}
+      </div>}
+    </div>
+  );
+}
+
+/** Over the corner map while editing in tee view: what it is, bigger or smaller, and the view's
+ * direction from the tee (a cone). The map itself is drawn by the view. */
+function TeeMap({ big, off }: { big: boolean; off: boolean }) {
+  const set = useEditor(e => e.set);
+  const [m, setM] = useState<ReturnType<NonNullable<ReturnType<typeof getView>>["teeMini"]>>(null);
+  useEffect(() => {
+    let raf = 0;
+    // (each frame, but drawn again only when it changed)
+    let last = "";
+    const tick = () => {
+      const next = getView()?.teeMini() ?? null;
+      const key = JSON.stringify(next);
+      if (key !== last) { last = key; setM(next); }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  if (off) return <button className="absolute top-16 right-4 pointer-events-auto glass rounded-full px-3 py-1.5 text-xs font-semibold text-white border border-white/10" onClick={() => set({ teeMap: "small" })} data-testid="tee-map-show">Show the map from above</button>;
+  if (!m) return null;
+  const { rect: r, tee, ahead, fov } = m;
+  // (the cone: from the tee, the view's width either side of where it looks)
+  let cone = "";
+  if (tee && ahead) {
+    const a = Math.atan2(ahead.y - tee.y, ahead.x - tee.x), len = Math.max(r.width, r.height), half = Math.min(80, fov / 2) * Math.PI / 180;
+    const p = (t: number) => `${tee.x - r.x + Math.cos(a + t) * len},${tee.y - r.y + Math.sin(a + t) * len}`;
+    cone = `M${tee.x - r.x},${tee.y - r.y} L${p(-half)} L${p(half)} Z`;
+  }
+  return (
+    <div className="absolute pointer-events-none rounded-2xl ring-1 ring-white/20 shadow-2xl" style={{ left: r.x, top: r.y, width: r.width, height: r.height }} data-testid="tee-map">
+      <svg className="absolute inset-0 rounded-2xl" width={r.width} height={r.height}>
+        {cone && <path d={cone} fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.45)" strokeWidth={1} />}
+        {tee && <circle cx={tee.x - r.x} cy={tee.y - r.y} r={5} fill="#2563eb" stroke="#fff" strokeWidth={2} />}
+      </svg>
+      <div className="absolute left-2 top-2 flex items-center gap-1 pointer-events-auto">
+        <span className="px-2 py-0.5 rounded-lg bg-black/60 text-[11.5px] text-zinc-100">From above · drag here too</span>
+        <button className="p-1 rounded-lg bg-black/60 text-zinc-100 hover:bg-black/75" aria-label={big ? "Smaller" : "Bigger"} title={big ? "Smaller" : "Bigger"} onClick={() => set({ teeMap: big ? "small" : "big" })} data-testid="tee-map-size">{big ? <Minimize2 size={13} /> : <Maximize2 size={13} />}</button>
+        <button className="p-1 rounded-lg bg-black/60 text-zinc-100 hover:bg-black/75" aria-label="Hide the map from above" title="Hide" onClick={() => set({ teeMap: "off" })}><X size={13} /></button>
+      </div>
     </div>
   );
 }

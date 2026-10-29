@@ -447,7 +447,8 @@ export function Toolbar() {
     watch.current = new ResizeObserver(() => useToolbarRoom.setState({ height: el.offsetHeight }));
     watch.current.observe(el);
   }, []);
-  if (ed.teeView) return null;
+  // (tee view: only while editing there)
+  if (ed.teeView && (!ed.teeEdit || ed.flyover)) return null;
   const options = toolOptions(ed);
   const shapes = toolShapes(ed);
   const hint = toolHint(ed, touch);
