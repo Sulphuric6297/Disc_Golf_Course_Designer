@@ -2,6 +2,7 @@
 // landscape, basket band, sun and shadows. The rest of the light is the course map's, set with its
 // look on the Map step.
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronRight, Layers, X } from "lucide-react";
 import { FOCUS, HelpLink, POPOVER } from "./ui";
 import { useCourse, useEditor } from "../state/course";
@@ -11,6 +12,7 @@ import { LandscapePicker } from "./LandscapePicker";
 import { SunFromSlider } from "./MapLookPanel";
 import { SHOW_EVENT, showSetting } from "./showSetting";
 import { BAND_COLORS, BASKET_BAND } from "../three/courseModels";
+import { useLayout } from "./useLayout";
 
 /** The View button. `big`: a thumb's size, its panel opening to its left (beside it) rather than
  * below; `size` sets the button's size alone (44 px beside other 44 px buttons); `label`: a tile,
@@ -18,6 +20,9 @@ import { BAND_COLORS, BASKET_BAND } from "../three/courseModels";
 export function SceneButton({ className = "", big = false, size, label }: { className?: string; big?: boolean; size?: "small" | "big"; label?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // (on a phone it rises from the bottom over everything, as the phone's menus do: beside its
+  // button the bottom panel hid most of it)
+  const phone = useLayout() === "phone";
   // (opened by search: a setting in it asked for)
   useEffect(() => {
     const on = (e: Event) => { if ((e as CustomEvent).detail === "view") setOpen(true); };
@@ -26,7 +31,7 @@ export function SceneButton({ className = "", big = false, size, label }: { clas
   }, []);
   useEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node) && !(e.target as Element).closest?.("[data-scene-sheet]")) setOpen(false); };
     // (Esc closes just this, before the map hears it)
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
     window.addEventListener("pointerdown", close);
@@ -59,14 +64,20 @@ export function SceneButton({ className = "", big = false, size, label }: { clas
           <Layers size={large ? 20 : 16} />
         </button>
       )}
-      {open && <ScenePanel onClose={() => setOpen(false)} big={big || !!label} place={label ? "right-0 top-[52px]" : big ? "right-[52px] top-0" : "right-0 top-10"} />}
+      {open && phone && createPortal(
+        <div data-scene-sheet className="fixed inset-0 z-[60] flex items-end justify-center bg-black/45 animate-[dgfade_160ms_ease-out]" onClick={e => { if (e.target === e.currentTarget) setOpen(false); }}>
+          <ScenePanel onClose={() => setOpen(false)} big sheet place="" />
+        </div>,
+        document.body
+      )}
+      {open && !phone && <ScenePanel onClose={() => setOpen(false)} big={big || !!label} place={label ? "right-0 top-[52px]" : big ? "right-[52px] top-0" : "right-0 top-10"} />}
     </div>
   );
 }
 
 const HEAD = "text-[11px] font-semibold text-zinc-500 mb-1.5";
 
-function ScenePanel({ onClose, big, place }: { onClose: () => void; big?: boolean; place: string }) {
+function ScenePanel({ onClose, big, place, sheet }: { onClose: () => void; big?: boolean; place: string; sheet?: boolean }) {
   const s = useCourse(c => c.doc.style);
   const grass = useEditor(e => e.grass);
   const wind = useEditor(e => e.wind);
@@ -89,7 +100,7 @@ function ScenePanel({ onClose, big, place }: { onClose: () => void; big?: boolea
   // (the painted map on the ground repaints with the sun: changed when a slider is let go)
   const live = !(fromTee && ed.flyLook === "painted");
   return (
-    <div ref={box} className={`absolute ${place} overflow-y-auto dg-scroll overscroll-contain w-72 ${POPOVER} p-3 z-30 text-left`} style={room ? { maxHeight: room } : undefined} data-testid="scene-panel">
+    <div ref={box} className={sheet ? "relative w-full max-w-md max-h-[78dvh] overflow-y-auto dg-scroll overscroll-contain glass-solid rounded-t-[24px] ring-1 ring-white/10 shadow-2xl px-4 pt-3.5 pb-[max(16px,env(safe-area-inset-bottom))] text-left animate-[dgrise_220ms_cubic-bezier(0.2,0.9,0.3,1)]" : `absolute ${place} overflow-y-auto dg-scroll overscroll-contain w-72 ${POPOVER} p-3 z-30 text-left`} style={room && !sheet ? { maxHeight: room } : undefined} data-testid="scene-panel">
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-semibold text-zinc-100 flex items-center gap-1.5">View <HelpLink topic="view-panel" label="View" /></div>
         <button className={`text-zinc-400 hover:text-zinc-50 ${big ? "w-9 h-9 -m-2 flex items-center justify-center" : ""}`} title="Close" aria-label="Close" onClick={onClose}><X size={15} /></button>

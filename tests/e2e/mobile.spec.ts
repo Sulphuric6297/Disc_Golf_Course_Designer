@@ -167,6 +167,25 @@ test.describe("phone", () => {
     await above();
   });
 
+  test("the View list rises from the bottom over the panel and the step bar, every switch in it in reach", async ({ page }) => {
+    await oneHole(page);
+    await page.getByTestId("map-controls").getByTestId("scene-button").tap();
+    const list = page.getByTestId("scene-panel");
+    await expect(list).toBeVisible();
+    await settle(page);
+    const b = (await list.boundingBox())!, vh = page.viewportSize()!.height, vw = page.viewportSize()!.width;
+    expect(b.y + b.height).toBeLessThanOrEqual(vh + 1);
+    expect(b.width).toBeGreaterThan(vw * 0.9);
+    // (nothing over it: the spot in the middle of its bottom row is the list's own)
+    const own = await page.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest("[data-testid=scene-panel]"), [b.x + b.width / 2, b.y + b.height - 30]);
+    expect(own).toBe(true);
+    // A switch in it works and keeps it open; a tap above it closes it
+    await list.getByRole("checkbox").first().tap();
+    await expect(list).toBeVisible();
+    await page.mouse.click(vw / 2, 40);
+    await expect(list).toHaveCount(0);
+  });
+
   test("a selected hole's header steps to the next and previous hole", async ({ page }) => {
     await oneHole(page);
     await page.evaluate(() => (window as any).__dgActions.addHole({ x: 300, y: 700 }, { x: 600, y: 700 }, "blue"));
@@ -211,7 +230,7 @@ test.describe("phone", () => {
     await expect.poll(() => detent(page)).toBe("peek");
   });
 
-  test("finding the park on a phone: the search in the sheet, then the place on top, the map, and the button at the bottom", async ({ page }) => {
+  test("finding the park on a phone: the search in the sheet, then the place on top, the map, and the panel dragged down to give the map the screen, its button still there", async ({ page }) => {
     await page.getByTestId("welcome-find").tap();
     const dialog = page.getByRole("dialog", { name: "Find your park" });
     await page.getByLabel("Search address").fill("Springfield Park");
@@ -221,11 +240,19 @@ test.describe("phone", () => {
     await page.waitForTimeout(600);
     await expect(dialog.getByRole("button", { name: /Springfield Park/ })).toHaveCount(0);
     const place = (await page.getByRole("button", { name: "Search again" }).boundingBox())!;
-    const go = (await page.getByTestId("import-site").boundingBox())!;
     const vh = page.viewportSize()!.height;
     expect(place.y).toBeLessThan(vh * 0.15);
-    expect(go.y + go.height).toBeGreaterThan(vh * 0.85);
+    // The panel all the way down: the map has the screen, Import still in reach at the bottom
+    const panel = page.getByTestId("import-sheet");
+    await panel.getByTestId("sheet-handle").focus();
+    await page.keyboard.press("End");
+    await expect(panel).toHaveAttribute("data-detent", "peek");
+    await settle(page);
+    const go = (await page.getByTestId("import-site").boundingBox())!;
+    expect(go.y).toBeGreaterThan(vh * 0.7);
+    expect(go.y + go.height).toBeLessThanOrEqual(vh);
     await page.getByTestId("import-site").tap();
+    // (looking first: Bring it in in the panel's header, as Import was)
     await page.getByTestId("review-bring").tap({ timeout: 60_000 });
     await expect.poll(async () => (await course(page)).background, { timeout: 60_000 }).not.toBeNull();
     await expect.poll(async () => (await editorState(page)).step).toBe("design");

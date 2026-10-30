@@ -29,9 +29,12 @@ type Props = {
   label: string;
   /** Changes when the content is something else (a new selection, a new step): scrolls it to the top. */
   contentKey?: string;
+  /** Its stacking (over a full-screen map, higher) and its test id. */
+  className?: string;
+  testid?: string;
 };
 
-export function BottomSheet({ detent, onDetent, header, children, peekExtra = 0, topGap = 72, onHeight, label, contentKey }: Props) {
+export function BottomSheet({ detent, onDetent, header, children, peekExtra = 0, topGap = 72, onHeight, label, contentKey, className = "z-30", testid = "sheet" }: Props) {
   const sheet = useRef<HTMLDivElement>(null);
   const head = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -226,9 +229,9 @@ export function BottomSheet({ detent, onDetent, header, children, peekExtra = 0,
     <section
       ref={sheet}
       aria-label={label}
-      data-testid="sheet"
+      data-testid={testid}
       data-detent={detent}
-      className={`dg-sheet glass absolute left-0 right-0 bottom-0 z-30 flex flex-col rounded-t-[28px] will-change-transform ${dragging ? "" : "transition-transform duration-300 ease-[cubic-bezier(0.2,0.9,0.3,1)] motion-reduce:transition-none"}`}
+      className={`dg-sheet glass absolute left-0 right-0 bottom-0 ${className} flex flex-col rounded-t-[28px] will-change-transform ${dragging ? "" : "transition-transform duration-300 ease-[cubic-bezier(0.2,0.9,0.3,1)] motion-reduce:transition-none"}`}
       style={{ height: full, transform: offset(rest) }}
       onClickCapture={e => { if (swallowClick.current) { e.preventDefault(); e.stopPropagation(); } }}
     >

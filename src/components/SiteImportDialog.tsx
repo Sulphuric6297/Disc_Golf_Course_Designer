@@ -19,6 +19,7 @@ import { getDoc } from "../state/course";
 import type { CourseItem } from "../types";
 import { HelpLink } from "./ui";
 import { useLayout, useTouch } from "./useLayout";
+import { BottomSheet, type Detent } from "./mobile/BottomSheet";
 
 /** The map's first view: the site already brought in (its frame to grow, shrink or move; the
  * design goes along with it), or the whole country. */
@@ -311,6 +312,10 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
 
   const loading = status.state === "loading";
   const phone = layout === "phone";
+  // (a phone's panel: dragged down, the map has the screen; half height again at each new stage)
+  const [sheetAt, setSheetAt] = useState<Detent>("half");
+  const stage = loading ? "loading" : review ? "review" : selection ? "frame" : "search";
+  useEffect(() => { setSheetAt("half"); }, [stage]);
   const title = again ? "Change the area" : "Find your park";
   const photo = imagery === "satellite";
   const survey = here?.survey && here.survey.covered !== "none" ? here.survey : null;
@@ -482,6 +487,12 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
   const choices = (here?.photos ?? []).filter(c => c.id !== "esri" || (here?.photos ?? []).length < 3);
   const setOn = (k: SourceKey, v: boolean) => setReview(r => (r ? { ...r, on: { ...r.on, [k]: v } } : r));
   const bring = () => { if (review) onImported(reviewedSite(review.site, review.on, review.keep), { trees, osm, course: course && !!outline?.course?.holes, turn: angle }); };
+  const reviewButtons = (
+    <div className="flex gap-2">
+      <button className="h-12 px-4 rounded-[14px] bg-white/[0.08] hover:bg-white/[0.12] text-[14px] font-semibold text-zinc-200" onClick={() => { setReview(null); setArrived(null); }} data-testid="review-back">Back</button>
+      <button className="flex-1 h-12 rounded-[14px] bg-[#a2cf6a] hover:bg-[#b3db80] active:bg-[#93c05c] text-zinc-950 text-[15px] font-bold" onClick={bring} data-testid="review-bring">{again ? "Bring it in again" : "Bring it in"}</button>
+    </div>
+  );
   const reviewPanel = review && (
     <div className="flex flex-col gap-2" data-testid="import-review">
       <div className="rounded-xl px-3 py-2 bg-white/[0.07] text-[13px] text-zinc-200"><span className="font-semibold">Everything's in.</span> <span className="text-zinc-400">Switch off what you don't want, then bring it in.</span></div>
@@ -535,10 +546,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
           </div>
         );
       })}
-      <div className="flex gap-2">
-        <button className="h-12 px-4 rounded-[14px] bg-white/[0.08] hover:bg-white/[0.12] text-[14px] font-semibold text-zinc-200" onClick={() => { setReview(null); setArrived(null); }} data-testid="review-back">Back</button>
-        <button className="flex-1 h-12 rounded-[14px] bg-[#a2cf6a] hover:bg-[#b3db80] active:bg-[#93c05c] text-zinc-950 text-[15px] font-bold" onClick={bring} data-testid="review-bring">{again ? "Bring it in again" : "Bring it in"}</button>
-      </div>
+      {!phone && reviewButtons}
     </div>
   );
   const panel = loading ? <>{checklist}{stopEl}</> : review ? reviewPanel : framing ? (
@@ -551,7 +559,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
       <div className="flex flex-wrap gap-2" data-testid="import-what" data-here={here ? "ready" : "looking"}>{pills}</div>
       {errorEl}
       {againEl}
-      {goBtn}
+      {!phone && goBtn}
     </>
   ) : null;
   const closeBtn = <button className="glass w-11 h-11 rounded-full grid place-items-center text-zinc-300 hover:text-zinc-50" onClick={close} aria-label="Close" title="Close"><X size={20} /></button>;
@@ -564,19 +572,25 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
           <div className="flex-1 min-w-0">{placeChip}</div>
           {closeBtn}
         </div>
-        <div className="absolute left-0 right-0 bottom-0 z-[1100] glass rounded-t-[28px] px-4 pt-2.5 pb-[max(16px,env(safe-area-inset-bottom))] flex flex-col gap-2.5 max-h-[62vh] overflow-y-auto">
-          <div className="w-[38px] h-[5px] rounded-full bg-white/25 mx-auto mb-0.5" />
-          {framing || loading ? panel : (
-            <>
-              <div className="font-bold text-zinc-50 text-[17px]">{title}</div>
-              {searchBox}
-              {drawBtn}
-              {drawHint}
-              {errorEl}
-              {!suggestions.length && emptyEl}
-            </>
-          )}
-        </div>
+        <BottomSheet detent={sheetAt} onDetent={setSheetAt} label="Import" topGap={64} className="z-[1100]" testid="import-sheet" contentKey={stage}
+          header={
+            <div className="px-4 pb-3 flex flex-col gap-2">
+              <div className="font-bold text-zinc-50 text-[17px]">{loading ? "Bringing it in" : review ? "What comes in" : framing ? "The site" : title}</div>
+              {review ? reviewButtons : framing && !loading ? goBtn : null}
+            </div>
+          }>
+          <div className="px-4 pt-1 pb-[max(16px,env(safe-area-inset-bottom))] flex flex-col gap-2.5">
+            {framing || loading ? panel : (
+              <>
+                {searchBox}
+                {drawBtn}
+                {drawHint}
+                {errorEl}
+                {!suggestions.length && emptyEl}
+              </>
+            )}
+          </div>
+        </BottomSheet>
       </div>
     );
   }
