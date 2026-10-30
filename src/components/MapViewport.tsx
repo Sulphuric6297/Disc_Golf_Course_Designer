@@ -362,8 +362,8 @@ function TouchControls({ view, info, scale, phone, top, room, threeD, editing }:
   const b = "w-11 h-11 flex items-center justify-center text-zinc-100 active:bg-white/[0.13] focus:outline-none focus-visible:bg-white/[0.13]";
   const group = "pointer-events-auto flex flex-col glass rounded-2xl border border-white/10 shadow-[0_6px_20px_rgba(0,0,0,0.35)] overflow-hidden divide-y divide-white/5";
   // On a phone the compass only once the map is turned (as in map apps), and only what fits above
-  // the panel: zoom (88), the View button (always in 3D), then where you are, the whole course,
-  // box select and turning, each with its 8 px gap
+  // the panel: zoom (88), the View button (always in 3D), then where you are, the person (to
+  // stand somewhere), the whole course, box select and turning, each with its 8 px gap
   const heading = info?.heading ?? 0;
   const compass = !phone || Math.min(heading, 360 - heading) > 1;
   let used = 88 + (compass ? 52 : 0) + (threeD ? 52 : 0);
@@ -376,6 +376,7 @@ function TouchControls({ view, info, scale, phone, top, room, threeD, editing }:
   // it's what you look for on the course)
   const scene = threeD || fits(52);
   const locate = canShowLocation() && fits(52);
+  const stand = fits(52);
   const fit = fits(52);
   const box = editing && fits(52);
   const turn = fits(96);
@@ -418,7 +419,7 @@ function TouchControls({ view, info, scale, phone, top, room, threeD, editing }:
           </div>
         </div>
         {scene && <SceneButton big />}
-        <StandButton view={view} className={`${group} ${b}`} size={20} />
+        {stand && <StandButton view={view} className={`${group} ${b}`} size={20} />}
       </div>
     </>
   );
