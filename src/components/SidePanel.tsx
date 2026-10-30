@@ -21,6 +21,7 @@ import { getView } from "../state/view";
 import { Button, FOCUS, Facts, Field, Fold, HelpLink, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
 import { DesignPanel } from "./DesignPanel";
 import { CourseFileButton } from "./CourseFileDialog";
+import { OnSiteButton } from "./OnSite";
 import { useToolbarRoom } from "./Toolbar";
 import { ExportPanel } from "./ExportPanel";
 import { useLayout } from "./useLayout";
@@ -514,6 +515,7 @@ export function HolesStep({ course = false }: { course?: boolean }) {
             {stats.map(s => <li key={s.holeId}><HoleRow s={s} check={checks.get(s.holeId)} roomy /></li>)}
             <li><NewHoleRow roomy /></li>
             <li><CourseFileButton row /></li>
+            <li><OnSiteButton row /></li>
           </ol>
         )}
         <div className={course ? "" : "mt-3"}><CourseFacts doc={doc} stats={stats} /></div>

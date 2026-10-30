@@ -28,6 +28,8 @@ import { MapDesigner } from "../MapDesigner";
 import { ProblemsCount, ReviewStep, STEPS, STEP_ICONS, StepContent, touchWords } from "../SidePanel";
 import { SHOW_EVENT } from "../showSetting";
 import { TeeViewHud } from "../TeeViewHud";
+import { OnSite } from "../OnSite";
+import { useOnSite } from "../../state/onSite";
 import { CameraHud } from "../CameraHud";
 import { STEP_TOOLS, TOOLS, pickTool, toolHelp, toolHint, toolOf, toolOptions, toolShapes } from "../Toolbar";
 import { ExportProgressPill } from "../ExportProgress";
@@ -612,14 +614,16 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
   const main = useRef<HTMLDivElement>(null);
   const { menus, openApp, openMore } = useMenus(onHelp, onGoTo);
   const panel = usePanel({ onFindSite, onMore: openMore, phone: true });
-  const immersive = !!ed.teeView;
+  // (on site: the walk's own screen, over the 3D view or the map)
+  const onSite = useOnSite(s => !!s.on);
+  const immersive = !!ed.teeView || onSite;
   // (from a tee, a video recording's progress sits above the bottom bar, and the toasts above it)
   const exporting = useExportJob(s => !!s.job);
   // (No sheet under the welcome card: it is the first step's panel, with the same two choices;
   // and none on the Map step, where the page's settings are a row of tools under it)
   const pageTools = ed.step === "map" && !immersive && !readOnly;
   // (standing in 3D with a thing picked: its usual sheet, over the tee view's bar)
-  const pickedInTee = immersive && !readOnly && !ed.flyover && !ed.flyCam && !!ed.selectedId && getDoc().items.some(i => i.id === ed.selectedId);
+  const pickedInTee = immersive && !onSite && !readOnly && !ed.flyover && !ed.flyCam && !!ed.selectedId && getDoc().items.some(i => i.id === ed.selectedId);
   const sheet = (!immersive || pickedInTee) && !welcome && !pageTools;
   const sheetH = sheet ? restH : 0;
 
@@ -739,10 +743,10 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
         {!immersive && <PhoneTopBar onMenu={openApp} />}
         {!immersive && <GettingStarted phone />}
         {!immersive && <DrawBar bottom={sheetH + 12} />}
-        {ed.teeView && (ed.flyCam && !useCourse.getState().readOnly ? <CameraHud compact /> : <TeeViewHud compact />)}
+        {onSite ? <OnSite /> : ed.teeView && (ed.flyCam && !useCourse.getState().readOnly ? <CameraHud compact /> : <TeeViewHud compact />)}
         <ExportProgressPill top={immersive ? undefined : top + 4} bottom={immersive ? 96 : undefined} />
         {/* (above the drawing buttons when they're up) */}
-        {toasts(immersive ? (exporting ? 156 : 96) : pageTools ? 84 : sheetH + 12 + (drawBar ? 64 : 0))}
+        {toasts(onSite ? 340 : immersive ? (exporting ? 156 : 96) : pageTools ? 84 : sheetH + 12 + (drawBar ? 64 : 0))}
         {welcome && !immersive && (
           <div className="absolute inset-0 z-10 flex items-end justify-center px-3 pb-3 pointer-events-none" style={{ paddingTop: top }}>{welcome}</div>
         )}
@@ -788,7 +792,9 @@ function RailShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts 
   const drawBar = useDrawBarShown();
   const { menus, openApp, openMore } = useMenus(onHelp, onGoTo);
   const panel = usePanel({ onFindSite, onMore: openMore });
-  const immersive = !!ed.teeView;
+  // (on site: the walk's own screen, over the 3D view or the map)
+  const onSite = useOnSite(s => !!s.on);
+  const immersive = !!ed.teeView || onSite;
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => { body.current?.scrollTo({ top: 0 }); }, [panel.key]);
   useEffect(() => {
@@ -816,9 +822,9 @@ function RailShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts 
         {design && <div className="absolute inset-0 z-20"><MapDesigner compact topInset={0} preview={ed.step === "export"} /></div>}
         {!immersive && <GettingStarted rail />}
         {!immersive && <DrawBar bottom={12} />}
-        {ed.teeView && (ed.flyCam && !useCourse.getState().readOnly ? <CameraHud compact /> : <TeeViewHud compact />)}
+        {onSite ? <OnSite /> : ed.teeView && (ed.flyCam && !useCourse.getState().readOnly ? <CameraHud compact /> : <TeeViewHud compact />)}
         <ExportProgressPill />
-        {toasts(16 + (drawBar ? 64 : 0))}
+        {toasts(onSite ? 340 : 16 + (drawBar ? 64 : 0))}
         {welcome && !immersive && <div className="absolute inset-0 z-10 flex items-center justify-center px-3 pointer-events-none">{welcome}</div>}
       </main>
       {panel.announce}

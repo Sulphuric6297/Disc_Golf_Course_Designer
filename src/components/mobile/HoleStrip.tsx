@@ -18,12 +18,15 @@ import type { AmenityItem, AmenityKind, AreaItem, AreaKind, BasketItem, CourseIt
 import { BRUSH_LEVELS, FENCE_STYLES, FieldParts, GrowsPick, HoleTrees, InspectorBody, PLAY_OPTIONS, RULE_AREAS, StructureLook, SurfacePick, THICK, TurnButtons, densityFor, growsOf, growsText, hasParts, thickOf, useHoleTrees, amenityIcon, builtIcon, fieldKindOptions, fmtSize, fmtTurn, hasObChoice, heightLabel, homeText, obOptions } from "../Inspector";
 import { HoleChips } from "../ApplyToHoles";
 import { MoveHere } from "../PlaceByGps";
+import { OnSiteButton } from "../OnSite";
+import { useTouch } from "../useLayout";
+import { canShowLocation } from "../../state/gps";
 import { KindTiles, areaPicture, bigIcon, linePicture } from "./KindTiles";
 import { TREE_KINDS, speciesNow } from "../TreeSettings";
 import { SPECIES } from "../../three/ezShapes";
 import { ChipPick, ColorInput, Segmented, TextInput } from "../ui";
 
-type Chip = "par" | "fairway" | "tees" | "pins" | "ob" | "foliage" | "trees" | "name" | "all";
+type Chip = "par" | "fairway" | "tees" | "pins" | "ob" | "foliage" | "trees" | "name" | "all" | "onsite";
 // (the chip open stays open from hole to hole)
 let lastChip: Chip = "fairway";
 
@@ -87,7 +90,10 @@ export function HoleStrip({ hole }: { hole: Hole }) {
   const pins = holeBaskets(doc, hole.id);
   const holeTrees = useHoleTrees(hole, s.complete ? s.line : null);
   const set = (patch: Partial<Hole>, history = true) => updateHole(hole.id, patch, history);
+  // (on site, where it can be: walking the hole puts it on the map)
+  const onSite = useTouch() && !useCourse.getState().readOnly && canShowLocation();
   const chips: [Chip, ReactNode][] = [
+    ...(onSite ? [["onsite", <>On site</>] as [Chip, ReactNode]] : []),
     ["par", <>Par <span className="opacity-60">{hole.par ?? `${s.parAuto} · auto`}</span></>],
     ["fairway", <>Fairway <span className="opacity-60">{hole.fairway ? fmtDist(hole.fairwayWidth, u) : "off"}</span></>],
     ["tees", <>Tees <span className="opacity-60">{tees.length}</span></>],
@@ -137,6 +143,7 @@ export function HoleStrip({ hole }: { hole: Hole }) {
     </div>
   );
   else if (chip === "all") control = allSettings;
+  else if (chip === "onsite") control = <div className="flex gap-1.5"><OnSiteButton holeId={hole.id} className="flex-1" /><OnSiteButton className="flex-1 !bg-white/10" /></div>;
   else if (chip === "foliage") control = <Segmented label="Foliage" value={hole.foliage ?? "auto"} onChange={v => set({ foliage: v === "auto" ? undefined : (v as "light" | "heavy") })} options={[{ value: "auto", label: <span className="whitespace-nowrap">Auto · {s.foliage}</span> }, { value: "light", label: "Light" }, { value: "heavy", label: "Heavy" }]} />;
   return (
     <div className="px-3 pb-3" data-testid="hole-strip">

@@ -374,6 +374,13 @@ export const TOPICS: Topic[] = [
     where: { step: "design", find: "locate-me" }
   },
   {
+    id: "on-site", section: "phone", title: "On site: walk a hole onto the map",
+    body: "Standing on the course with a phone or tablet, On site re-creates a hole as you walk it. Pick a hole and tap On site, then Walk it on site; or tap On site: walk a new hole under the list of holes. It needs the site brought in, and your location on.\n\nIt goes in the order you'd walk it. Tees: stand at the front middle of the pad and tap Set tee here. Pins: walk to the basket, stand at the pole and tap Set pin A here; + Pin B adds another pin position, + Another tee another pad. Fairway: tap Start walking the line, walk where the disc should fly, then Stop; the bends you walk become the hole's doglegs, and Straight, skip leaves it tee to basket. Last, par, Walk an OB line (Start, walk it, Stop), and Mando here. Next goes on to the next hole.\n\nEach spot is the average of six GPS readings while you hold still, about three seconds; a ring fills as they come. The dot by the button says how sure your location is: green within 10 ft, amber within 25, red past that. Red never stops you: a spot set then is marked rough, to fix on the map later. For a better spot, step out from under trees and away from buildings.\n\nThe 3D view stands where you are and turns as you turn the phone (Turn with me; off, drag to look round). The map from above is in its corner, or tap Map for the whole screen; there you can drag any tee or basket to fine-tune it. Each spot is saved as it's set, so others see the hole appear. Start fresh takes the hole's tees and pins off first; Keep this hole's spots moves them one by one as you set each. The ✕ leaves; what's set stays.",
+    words: "on site walk hole gps outdoors phone tablet record re-create map course tee pin basket pin position fairway line doglegs ob mando par average hold still accuracy street view first person follow compass",
+    path: "Design › a hole › On site",
+    where: { step: "design" }
+  },
+  {
     id: "tee-here", section: "phone", title: "Tee and basket where you stand",
     body: "If you're out walking the course, you can drop tees and baskets right where you're standing. Turn on your location first (the locate button), then start a new hole.\n\nThe bar at the bottom says Tap the map, or Tee here. Stand on the tee spot and tap Tee here, then hold still a few seconds while it gets a good fix. Walk to the basket spot and tap Basket here. The Tee and Pin tools work the same way, with Tee here and Pin here. Tapping the map still works too.",
     words: "gps walk lay out stake new hole tee here basket here pin here standing location phone",

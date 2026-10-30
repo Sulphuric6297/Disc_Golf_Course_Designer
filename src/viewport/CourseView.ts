@@ -238,7 +238,7 @@ export class CourseView {
   private teeEdit = false;
   /** Standing, editing: what a tap does, walk there or pick the thing tapped (never both). */
   private standTap: "walk" | "edit" = "walk";
-  private miniSize: "small" | "big" | null = null;
+  private miniSize: "small" | "big" | "corner" | null = null;
   /** The corner map's place (the container's pixels; null: none shown) and its camera. */
   private miniRect: Rect | null = null;
   private miniCam = new THREE.PerspectiveCamera(40, 1, 1, 200000);
@@ -1401,7 +1401,7 @@ export class CourseView {
 
   /** Tee view, editing (a press on a thing picks or drags it; on open ground, looks around), with
    * the map from above in a corner ("small", "big") or none. */
-  setTeeEdit(on: boolean, mini: "small" | "big" | null = "small") {
+  setTeeEdit(on: boolean, mini: "small" | "big" | "corner" | null = "small") {
     if (on === this.teeEdit && mini === this.miniSize) return;
     this.teeEdit = on;
     this.miniSize = mini;
@@ -1431,6 +1431,8 @@ export class CourseView {
   private miniPlace(): Rect | null {
     if (!this.miniSize || !this.povHole || this.fly) return null;
     const W = this.size.width, H = this.size.height;
+    // (on site: a square under the top bar, on a phone too)
+    if (this.miniSize === "corner") { const w = Math.round(Math.min(150, W * 0.36)); return { x: W - w - 10, y: 118, width: w, height: w }; }
     if (W < 500 || H < 360) return null;
     const big = this.miniSize === "big";
     const w = Math.round(big ? Math.min(560, W * 0.42) : Math.min(260, W * 0.24)), h = Math.round(big ? Math.min(420, H * 0.5) : w * 0.72);
