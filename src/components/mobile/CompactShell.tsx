@@ -9,7 +9,7 @@
 // a thing opens its menu (the right-click), or on open ground what can start there.
 import { Woods } from "../Woods";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
-import { Axe, Compass, LayoutGrid, Menu, ChevronDown, ListChecks, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, PanelLeftClose, PanelLeftOpen, Redo2, Save, Search, Trash2, TreeDeciduous, Undo2, X } from "lucide-react";
+import { Axe, Compass, LayoutGrid, Menu, ChevronDown, ListChecks, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, LocateFixed, PanelLeftClose, PanelLeftOpen, Redo2, Save, Search, Trash2, TreeDeciduous, Undo2, X } from "lucide-react";
 import { holeLabel } from "../../lib/course";
 import { EXAMPLE_ID } from "../../lib/example";
 import { courseIssues, courseStats, courseTotals, holeStats, openIssues, playsOf } from "../../lib/holeStats";
@@ -676,14 +676,25 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
     v.topInset = immersive ? 0 : 64;
   }, [sheetH, immersive]);
   useEffect(() => () => { const v = getView(); if (v) { v.bottomInset = 0; v.topInset = 0; } }, []);
-  // (the thing picked kept in view, between the top bar and the panel, whenever the panel settles
-  // at another height or another thing is picked; not while the map is still on its way somewhere)
+  // (the thing picked framed between the top bar and the panel: as it's picked, zoomed in on if
+  // it's a speck; whenever the panel settles at another height, brought back into view; not while
+  // the map is still on its way somewhere)
+  const framed = useRef<string | null>(null);
   useEffect(() => {
     const id = ed.selectedId;
-    if (!id || immersive) return;
-    const t = window.setTimeout(() => { const v = getView(); if (v?.settled()) v.reveal(id); }, 80);
+    if (!id || immersive) { framed.current = null; return; }
+    const fresh = framed.current !== id;
+    const t = window.setTimeout(() => { const v = getView(); if (v?.settled()) { v.frame(id, fresh); framed.current = id; } }, 80);
     return () => window.clearTimeout(t);
   }, [sheetH, ed.selectedId, immersive]);
+  // (the map moved away from it: a button to go back to it)
+  const [away, setAway] = useState(false);
+  useEffect(() => {
+    const id = ed.selectedId;
+    if (!id || immersive) { setAway(false); return; }
+    const t = window.setInterval(() => { const v = getView(); setAway(!!v && v.settled() && !v.inView(id)); }, 400);
+    return () => window.clearInterval(t);
+  }, [ed.selectedId, immersive]);
 
   const toggle = useCallback(() => setDetent(d => (d === "peek" ? "half" : "peek")), []);
   const onStep = (s: Step) => goStep(s, setDetent, toggle);
@@ -728,9 +739,17 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
           <div className="absolute inset-0 z-10 flex items-end justify-center px-3 pb-3 pointer-events-none" style={{ paddingTop: top }}>{welcome}</div>
         )}
         {sheet && (
-          <BottomSheet detent={detent} onDetent={setDetent} header={panel.header} label={panel.mode === "selection" ? "Selection" : panel.mode === "tool" ? "Tool" : "Step panel"} topGap={top + 8} onHeight={setRestH} contentKey={panel.key}>
+          <>
+          {away && (
+            <button className="absolute left-1/2 -translate-x-1/2 z-30 h-11 px-4 rounded-full glass border border-white/10 shadow-2xl text-[14px] font-semibold text-zinc-50 flex items-center gap-2 active:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+              style={{ bottom: sheetH + 12 }} onClick={() => { const id = useEditor.getState().selectedId; if (id) getView()?.frame(id, true); }} data-testid="back-to-it">
+              <LocateFixed size={17} /> Back to it
+            </button>
+          )}
+          <BottomSheet detent={detent} onDetent={setDetent} header={panel.header} label={panel.mode === "selection" ? "Selection" : panel.mode === "tool" ? "Tool" : "Step panel"} topGap={top + 8} onHeight={setRestH} contentKey={panel.key} locked={panel.mode === "selection" && holePicked}>
             {panel.body}
           </BottomSheet>
+          </>
         )}
       </main>
       {!immersive && !readOnly && <BottomNav onStep={onStep} />}

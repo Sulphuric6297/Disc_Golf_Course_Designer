@@ -18,7 +18,7 @@ import { turnable } from "../lib/turn";
 import { conifersOf } from "../lib/landscapes";
 import { addHoleOb, deleteSelection, duplicateSelection, forgetNewLabel, isNewLabel, nextHomeCorner, obChoiceOf, pinsFull, setCourtCount, setFieldKind, setFieldLeague, setFieldPart, setFieldPlay, setLineKind, setObChoice, setPinPosition, startAnotherPin, startAnotherTee, startHoleToBasket, select, setTeeLevel, shareBasket, teesFull, type ObChoice } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
-import type { AmenityKind, AreaItem, CourseDoc, CourseItem, FenceStyle, FieldKind, FieldLeague, FieldPart, Hole, LabelItem, LineItem, LineKind, P, PathSurface, PinPosition, RoofKind, StructureKind, TeeLevel, TeeSurface } from "../types";
+import type { AmenityKind, AreaItem, CourseDoc, CourseItem, FenceStyle, FieldKind, FieldLeague, FieldPart, Hole, LabelItem, LineItem, LineKind, P, PathSurface, PinPosition, RoofKind, StructureItem, StructureKind, TeeLevel, TeeSurface } from "../types";
 import { fieldInks, fieldPlan, LEAGUE_ORDER, LEAGUES } from "../lib/fieldPlan";
 import { ElevationProfile } from "./ElevationProfile";
 import { TreeSettings } from "./TreeSettings";
@@ -329,7 +329,7 @@ function HoleInspector({ hole, part }: { hole: Hole; part?: CourseItem }) {
 }
 
 /** What a path or a walk is made of. */
-function SurfacePick({ value, onChange }: { value?: PathSurface; onChange: (v: PathSurface | undefined) => void }) {
+export function SurfacePick({ value, onChange }: { value?: PathSurface; onChange: (v: PathSurface | undefined) => void }) {
   return (
     <Field label="Surface">
       <ChipPick label="Surface" testid="path-surface" value={value ?? "dirt"} onChange={v => onChange(v === "dirt" ? undefined : v)} options={(Object.keys(PATH_SURFACES) as PathSurface[]).map(k => ({ value: k, label: PATH_SURFACES[k].label, color: PATH_SURFACES[k].color }))} />
@@ -461,7 +461,9 @@ const PART_LIST: Partial<Record<FieldKind, FieldPart[]>> = {
   pickleball: ["courts", "surround", "lines", "nets"],
   basketball: ["courts", "surround", "lines"]
 };
-function FieldParts({ item, kind, league }: { item: AreaItem; kind: FieldKind; league?: FieldLeague }) {
+/** Whether a field of this kind has parts to pick (its panel's Parts list). */
+export const hasParts = (k: FieldKind) => !!PART_LIST[k];
+export function FieldParts({ item, kind, league }: { item: AreaItem; kind: FieldKind; league?: FieldLeague }) {
   const picked = useEditor(e => e.fieldPart);
   const list = PART_LIST[kind];
   if (!list) return null;
@@ -536,7 +538,7 @@ function PartSettings({ item, part, ball, L, backH, back, fenceH }: { item: Area
 export const FENCE_STYLES: { value: FenceStyle; label: string }[] = [{ value: "rail", label: "Posts and rails" }, { value: "boards", label: "Boards" }, { value: "chain", label: "Chain link" }];
 
 /** Areas with play rules of their own (not OB): no choice of OB, but which holes they count for. */
-const RULE_AREAS = new Set<string>(["hazard", "casual", "nogo"]);
+export const RULE_AREAS = new Set<string>(["hazard", "casual", "nogo"]);
 
 /** Whether a shape gets a choice of OB in its panel: not one that's OB already (an OB area or
  * line), a next-tee route, a fairway or landing zone, or a rule area (unless it's been made OB before). */
@@ -633,7 +635,7 @@ function ObPick({ item }: { item: AreaItem | LineItem }) {
 
 /** Turn buttons: a drawn shape about its middle; a tee, a mando, a label or a bench where it
  * stands (a tee turned by hand stops facing down its hole). */
-function TurnButtons({ item }: { item: CourseItem }) {
+export function TurnButtons({ item }: { item: CourseItem }) {
   const doc = useCourse(s => s.doc);
   if (item.locked || !turnable(item)) return null;
   const turn = (deg: number) => {
@@ -650,6 +652,52 @@ function TurnButtons({ item }: { item: CourseItem }) {
         <button className={b} aria-label="Turn right 90°" onClick={() => turn(90)}><RotateCw size={13} /> 90°</button>
       </div>
     </Field>
+  );
+}
+
+/** How a building or a shelter looks: its look, a shelter's shape, the roof and its colors (its
+ * panel and a phone's strip). */
+export function StructureLook({ item }: { item: StructureItem }) {
+  const set = (patch: Record<string, unknown>, history = true) => updateItem(item.id, patch as Partial<CourseItem>, history);
+  const roofInk = item.kind === "shelter" ? STRUCTURE_INK.shelter : STRUCTURE_INK.roof;
+  return (
+    <>
+      {item.kind === "building" && (
+        <Field label="Looks like">
+          <div className="grid grid-cols-3 gap-1" role="radiogroup" aria-label="Looks like" data-testid="building-looks">
+            {BUILDING_LOOKS.map(l => {
+              const on = structureRoof(item) === l.roof && item.wallColor === l.wallColor && item.roofColor === l.roofColor;
+              return (
+                <button key={l.id} role="radio" aria-checked={on} data-testid={`building-look-${l.id}`} onClick={() => set({ roof: l.roof as RoofKind, wallColor: l.wallColor, roofColor: l.roofColor })} className={`rounded-md border px-1.5 py-1 flex items-center gap-1.5 text-[11px] font-semibold ${on ? "border-orange-500 bg-orange-500/10 text-zinc-100" : "border-white/[0.12] text-zinc-300 hover:border-zinc-500"}`}>
+                  <span className="w-3 h-3 rounded-sm" style={{ background: `linear-gradient(135deg, ${l.roofColor} 50%, ${l.wallColor} 50%)` }} />
+                  {l.label}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+      )}
+      {item.kind === "shelter" && (
+        <Field label="Shape">
+          {/* (its shape is its outline's: eight sides, a gazebo; whatever its roof) */}
+          <IconPick label="Shelter shape" value={item.points.length === 8 ? "gazebo" : "rectangle"} onChange={v => set(v === "gazebo" ? { points: gazeboOutline(item.points), roof: "pyramid" } : { points: boxOutline(item.points), roof: "hip" })} options={[{ value: "rectangle", label: "Pavilion" }, { value: "gazebo", label: "Gazebo" }]} />
+        </Field>
+      )}
+      {(item.kind === "building" || item.kind === "shelter") && (
+        <>
+          <Field label="Roof">
+            <IconPick label="Roof" value={structureRoof(item)} onChange={v => set({ roof: v as RoofKind })} options={[{ value: "gable", label: "Gable" }, { value: "hip", label: "Hip" }, { value: "pyramid", label: "Pyramid" }, { value: "shed", label: "Shed" }, { value: "flat", label: "Flat" }]} />
+          </Field>
+          <div className="grid grid-cols-2 gap-x-3">
+            <ColorInput label="Roof color" value={item.roofColor ?? roofInk} onChange={(v: string) => set({ roofColor: v }, false)} onDone={commit} />
+            {item.kind === "building" && <ColorInput label="Wall color" value={item.wallColor ?? "#6e5036"} onChange={(v: string) => set({ wallColor: v }, false)} onDone={commit} />}
+          </div>
+          {(item.roofColor !== undefined || item.wallColor !== undefined) && (
+            <div className="mb-2"><Button small tone="ghost" onClick={() => set({ roofColor: undefined, wallColor: undefined })} testid="structure-colors-reset" title="The usual colors for its kind again"><RotateCcw size={13} /> Reset the colors</Button></div>
+          )}
+        </>
+      )}
+    </>
   );
 }
 
@@ -848,7 +896,6 @@ function ItemInspector({ item, bare = false }: { item: CourseItem; bare?: boolea
       // (A line can only become another line, an outline another outline)
       const kinds = STRUCTURE_ORDER.filter(k => STRUCTURE_KINDS[k].shape === meta.shape);
       const width = structureWidth(item), height = structureHeight(item);
-      const roofInk = item.kind === "shelter" ? STRUCTURE_INK.shelter : STRUCTURE_INK.roof;
       body = (
         <>
           <Field label="Kind" help="build">
@@ -856,41 +903,7 @@ function ItemInspector({ item, bare = false }: { item: CourseItem; bare?: boolea
           </Field>
           {line && <Slider label={item.kind === "wall" ? "Thickness" : "Width"} min={meta.widths[0]} max={Math.max(meta.widths[1], width)} step={0.5} value={width} onChange={v => set({ width: v }, false)} onDone={commit} format={v => fmtSize(v, u)} />}
           {meta.heightLabel && <Slider label={meta.heightLabel} min={meta.heights[0]} max={Math.max(meta.heights[1], height)} step={0.5} value={height} onChange={v => set({ height: v }, false)} onDone={commit} format={v => fmtSize(v, u)} />}
-          {item.kind === "building" && (
-            <Field label="Looks like">
-              <div className="grid grid-cols-3 gap-1" role="radiogroup" aria-label="Looks like" data-testid="building-looks">
-                {BUILDING_LOOKS.map(l => {
-                  const on = structureRoof(item) === l.roof && item.wallColor === l.wallColor && item.roofColor === l.roofColor;
-                  return (
-                    <button key={l.id} role="radio" aria-checked={on} data-testid={`building-look-${l.id}`} onClick={() => set({ roof: l.roof as RoofKind, wallColor: l.wallColor, roofColor: l.roofColor })} className={`rounded-md border px-1.5 py-1 flex items-center gap-1.5 text-[11px] font-semibold ${on ? "border-orange-500 bg-orange-500/10 text-zinc-100" : "border-white/[0.12] text-zinc-300 hover:border-zinc-500"}`}>
-                      <span className="w-3 h-3 rounded-sm" style={{ background: `linear-gradient(135deg, ${l.roofColor} 50%, ${l.wallColor} 50%)` }} />
-                      {l.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </Field>
-          )}
-          {item.kind === "shelter" && (
-            <Field label="Shape">
-              {/* (its shape is its outline's: eight sides, a gazebo; whatever its roof) */}
-              <IconPick label="Shelter shape" value={item.points.length === 8 ? "gazebo" : "rectangle"} onChange={v => set(v === "gazebo" ? { points: gazeboOutline(item.points), roof: "pyramid" } : { points: boxOutline(item.points), roof: "hip" })} options={[{ value: "rectangle", label: "Pavilion" }, { value: "gazebo", label: "Gazebo" }]} />
-            </Field>
-          )}
-          {(item.kind === "building" || item.kind === "shelter") && (
-            <>
-              <Field label="Roof">
-                <IconPick label="Roof" value={structureRoof(item)} onChange={v => set({ roof: v as RoofKind })} options={[{ value: "gable", label: "Gable" }, { value: "hip", label: "Hip" }, { value: "pyramid", label: "Pyramid" }, { value: "shed", label: "Shed" }, { value: "flat", label: "Flat" }]} />
-              </Field>
-              <div className="grid grid-cols-2 gap-x-3">
-                <ColorInput label="Roof color" value={item.roofColor ?? roofInk} onChange={(v: string) => set({ roofColor: v }, false)} onDone={commit} />
-                {item.kind === "building" && <ColorInput label="Wall color" value={item.wallColor ?? "#6e5036"} onChange={(v: string) => set({ wallColor: v }, false)} onDone={commit} />}
-              </div>
-              {(item.roofColor !== undefined || item.wallColor !== undefined) && (
-                <div className="mb-2"><Button small tone="ghost" onClick={() => set({ roofColor: undefined, wallColor: undefined })} testid="structure-colors-reset" title="The usual colors for its kind again"><RotateCcw size={13} /> Reset the colors</Button></div>
-              )}
-            </>
-          )}
+          {(item.kind === "building" || item.kind === "shelter") && <StructureLook item={item} />}
           <Field label="Name on the map (optional)"><TextInput label="Structure name" value={item.label ?? ""} placeholder={item.kind === "building" ? "e.g. Clubhouse" : item.kind === "bridge" ? "e.g. Mill Creek Bridge" : ""} onChange={v => set({ label: v || undefined }, false)} onDone={commit} /></Field>
           {holePicker("Belongs to", "Whole course")}
           <TurnButtons item={item} />

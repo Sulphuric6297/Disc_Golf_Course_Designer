@@ -3,9 +3,9 @@
 // with what it's set to; the chip picked shows its control below: a dial for a length (dragged
 // sideways under a fixed needle, the map following live), or a few choices. The rest of the hole's
 // settings are further up the sheet, as before.
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Plus } from "lucide-react";
-import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, AREA_ORDER, FIELD_KINDS, LINE_KINDS, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, compassPoint } from "../../constants";
+import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, AREA_ORDER, FIELD_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES, compassPoint } from "../../constants";
 import { holeBaskets, holeTees, teeAim } from "../../lib/course";
 import { holeStats } from "../../lib/holeStats";
 import { MARKED_FIELDS, fieldKindOf, isBallField } from "../../lib/fields";
@@ -13,13 +13,15 @@ import { structureHeight, structureWidth } from "../../lib/structures";
 import { fmtDist } from "../../lib/units";
 import { addHoleOb, nextHomeCorner, obChoiceOf, pinsFull, select, setFieldKind, setFieldPlay, setLineKind, setObChoice, setPinPosition, setTeeLevel, startAnotherPin, startAnotherTee, startHoleToBasket, teesFull, type ObChoice } from "../../state/actions";
 import { updateHole, updateItem, useCourse, useEditor } from "../../state/course";
-import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FieldKind, Hole, LabelItem, LineItem, LineKind, MandoItem, StructureItem, StructureKind, TeeItem, TreeItem } from "../../types";
-import { BRUSH_LEVELS, FENCE_STYLES, GrowsPick, HoleTrees, PLAY_OPTIONS, THICK, densityFor, growsOf, growsText, thickOf, useHoleTrees, amenityIcon, builtIcon, fieldKindOptions, fmtSize, fmtTurn, hasObChoice, heightLabel, homeText, obOptions } from "../Inspector";
+import { getView } from "../../state/view";
+import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FieldKind, Hole, LabelItem, LineItem, LineKind, MandoItem, PathSurface, StructureItem, StructureKind, TeeItem, TeeSurface, TreeItem } from "../../types";
+import { BRUSH_LEVELS, FENCE_STYLES, FieldParts, GrowsPick, HoleTrees, InspectorBody, PLAY_OPTIONS, RULE_AREAS, StructureLook, SurfacePick, THICK, TurnButtons, densityFor, growsOf, growsText, hasParts, thickOf, useHoleTrees, amenityIcon, builtIcon, fieldKindOptions, fmtSize, fmtTurn, hasObChoice, heightLabel, homeText, obOptions } from "../Inspector";
+import { HoleChips } from "../ApplyToHoles";
 import { MoveHere } from "../PlaceByGps";
 import { TREE_KINDS } from "../TreeSettings";
-import { ChipPick, Segmented } from "../ui";
+import { ChipPick, ColorInput, Segmented, TextInput } from "../ui";
 
-type Chip = "par" | "fairway" | "tees" | "pins" | "ob" | "foliage" | "trees";
+type Chip = "par" | "fairway" | "tees" | "pins" | "ob" | "foliage" | "trees" | "name" | "all";
 // (the chip open stays open from hole to hole)
 let lastChip: Chip = "fairway";
 
@@ -67,6 +69,11 @@ export function Dial({ value, min, max, step, label, format, onChange, onDone }:
 
 const chipCls = (on: boolean) => `shrink-0 h-10 touch:h-11 px-3 rounded-full text-[13.5px] font-semibold whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${on ? "bg-zinc-100 text-zinc-900" : "bg-white/[0.08] text-zinc-200 active:bg-white/[0.14]"}`;
 const small = "h-11 px-3 rounded-xl text-[13.5px] font-semibold bg-white/[0.08] text-zinc-100 active:bg-white/[0.14] flex items-center gap-1.5 whitespace-nowrap";
+/** Under the chips, the open chip's control: never taller than a quarter of the screen (it
+ * scrolls), so the whole strip stays under half and the map keeps the rest. */
+const paneCls = "max-h-[24dvh] overflow-y-auto overflow-x-hidden dg-scroll -mx-3 px-3";
+/** The whole of the panel, for anything not in a chip of its own (it scrolls, as tall as a pane). */
+const allSettings = <div className="-mx-4 [&_section]:px-4 [&_section]:py-2" data-testid="strip-all-pane"><InspectorBody /></div>;
 
 export function HoleStrip({ hole }: { hole: Hole }) {
   const doc = useCourse(s => s.doc);
@@ -86,7 +93,9 @@ export function HoleStrip({ hole }: { hole: Hole }) {
     ["ob", <>Add OB</>],
     ["foliage", <>Foliage <span className="opacity-60">{hole.foliage === "light" ? "Light" : hole.foliage === "heavy" ? "Heavy" : "Auto"}</span></>],
     // (the measured trees it cut down: the way to bring them back)
-    ...(holeTrees.cut.length || holeTrees.kept.length || holeTrees.standing.length ? [["trees", <>Trees <span className="opacity-60">{holeTrees.cut.length ? `${holeTrees.cut.length} cut` : holeTrees.standing.length ? `${holeTrees.standing.length} in the way` : `${holeTrees.kept.length} kept`}</span></>] as [Chip, ReactNode]] : [])
+    ...(holeTrees.cut.length || holeTrees.kept.length || holeTrees.standing.length ? [["trees", <>Trees <span className="opacity-60">{holeTrees.cut.length ? `${holeTrees.cut.length} cut` : holeTrees.standing.length ? `${holeTrees.standing.length} in the way` : `${holeTrees.kept.length} kept`}</span></>] as [Chip, ReactNode]] : []),
+    ["name", <>{hole.name ? <>Name <span className="opacity-60">{hole.name}</span></> : hole.notes ? "Notes" : "Name and notes"}</>],
+    ["all", <>All settings</>]
   ];
   let control: ReactNode = null;
   if (chip === "par") control = <Segmented label="Par" value={hole.par ?? 0} onChange={v => set({ par: v === 0 ? undefined : v })} options={[{ value: 0, label: <span className="whitespace-nowrap">Auto {s.parAuto}</span> }, ...[2, 3, 4, 5, 6].map(p => ({ value: p, label: String(p) }))]} />;
@@ -119,13 +128,20 @@ export function HoleStrip({ hole }: { hole: Hole }) {
     </div>
   );
   else if (chip === "trees") control = s.complete ? <HoleTrees hole={hole} line={s.line} /> : null;
+  else if (chip === "name") control = (
+    <div className="grid gap-2">
+      <TextInput label="Hole name" value={hole.name ?? ""} placeholder="Name (optional)" onChange={v => set({ name: v || undefined }, false)} onDone={() => useCourse.getState().commit()} />
+      <TextInput area label="Hole notes" value={hole.notes ?? ""} placeholder="Notes and hole rules" onChange={v => set({ notes: v || undefined }, false)} onDone={() => useCourse.getState().commit()} />
+    </div>
+  );
+  else if (chip === "all") control = allSettings;
   else if (chip === "foliage") control = <Segmented label="Foliage" value={hole.foliage ?? "auto"} onChange={v => set({ foliage: v === "auto" ? undefined : (v as "light" | "heavy") })} options={[{ value: "auto", label: <span className="whitespace-nowrap">Auto · {s.foliage}</span> }, { value: "light", label: "Light" }, { value: "heavy", label: "Heavy" }]} />;
   return (
     <div className="px-3 pb-3" data-testid="hole-strip">
       <div className="flex gap-1.5 overflow-x-auto touch-pan-x dg-scroll -mx-3 px-3 pb-2" role="tablist" aria-label="Hole settings">
         {chips.map(([c, text]) => <button key={c} role="tab" aria-selected={chip === c} className={chipCls(chip === c)} onClick={() => pick(c)} data-testid={`strip-${c}`}>{text}</button>)}
       </div>
-      {control}
+      <div className={paneCls} data-testid="strip-pane">{control}</div>
     </div>
   );
 }
@@ -271,11 +287,67 @@ export function ItemStrip({ item }: { item: CourseItem }) {
       chips.push({ id: "width", label: <>{name} <span className="opacity-60">{fmtSize(w, u)}</span></>, control: <Dial label={name} value={w} min={meta.widths[0]} max={Math.max(meta.widths[1], w)} step={0.5} format={v => `${fmtSize(v, u)} ${s.kind === "wall" ? "thick" : "wide"}`} onChange={v => live({ width: v })} onDone={done} /> });
     }
   }
+  // The rest of its panel, each a chip of its own, so the panel never has to come up over the map
+  if (item.type === "tee") {
+    const t = item as TeeItem;
+    chips.push({ id: "surface", label: <>Surface <span className="opacity-60">{TEE_SURFACES[t.surface].label}</span></>, control: <ChipPick row label="Tee surface" value={t.surface} onChange={(v: TeeSurface) => set({ surface: v })} options={(Object.keys(TEE_SURFACES) as TeeSurface[]).map(k => ({ value: k, label: TEE_SURFACES[k].label, color: TEE_SURFACES[k].color }))} /> });
+    if (t.aimFixed) chips.push({ id: "aim", label: <>Face down the hole</>, run: () => set({ aimFixed: false }) });
+  }
+  if (item.type === "area" && item.kind === "field" && hasParts(fieldKindOf(item))) {
+    const parts = item as AreaItem;
+    chips.splice(1, 0, { id: "parts", label: <>Parts</>, control: <div className="[&>div]:mb-0"><FieldParts item={parts} kind={fieldKindOf(parts)} /></div> });
+  }
+  if (item.type === "line" && (item.kind === "path" || item.kind === "walk")) {
+    const l = item as LineItem;
+    chips.push({ id: "surface", label: <>Surface <span className="opacity-60">{PATH_SURFACES[l.surface ?? "dirt"].label}</span></>, control: <SurfacePick value={l.surface} onChange={(v: PathSurface | undefined) => set({ surface: v })} /> });
+  }
+  if (item.type === "structure" && (item.kind === "building" || item.kind === "shelter")) chips.push({ id: "look", label: <>Look</>, control: <StructureLook item={item as StructureItem} /> });
+  if ((item.type === "area" && item.kind !== "parking" && item.kind !== "building" && item.kind !== "field") || item.type === "line") {
+    const a = item as AreaItem | LineItem;
+    chips.push({ id: "curved", label: <>{a.straight ? "Straight" : "Curved"}</>, run: () => set({ straight: a.straight ? undefined : true }) });
+  }
+  if ((item.type === "area" || item.type === "line" || item.type === "structure") && !item.locked) chips.push({ id: "turnshape", label: <>Turn</>, control: <TurnButtons item={item} /> });
+  if (item.type === "line" && !item.locked) chips.push({ id: "cut", label: <>Remove a stretch</>, run: () => useEditor.getState().set({ obPick: item.id, pickCut: true, tool: "select" }) });
+  // (the holes it's for: belongs to, OB for, or counts for)
+  const role = item.type === "mando" || item.type === "dropzone" || item.type === "structure" ? { label: "Belongs to", all: "Whole course" }
+    : (item.type === "area" || item.type === "line") && item.kind === "ob" ? { label: "OB for", all: "All holes" }
+    : item.type === "area" && (RULE_AREAS.has(item.kind) || (item.kind === "field" && item.outOfPlay)) ? { label: "Counts for", all: "All holes" } : null;
+  if (role) {
+    const shared = item.type === "area" || item.type === "line" || item.type === "structure";
+    const own = "holeId" in item ? item.holeId : undefined;
+    const mine = own ? [own, ...((shared && (item as AreaItem).alsoHoles) || [])] : [];
+    chips.push({ id: "holes", label: <>{role.label} <span className="opacity-60">{mine.length ? `${mine.length} hole${mine.length > 1 ? "s" : ""}` : role.all.toLowerCase()}</span></>, control: (
+      <HoleChips label={`${role.label} ${shared ? "holes" : "hole"}`} testid="belongs-to" picked={mine.length ? mine : "all"} single={!shared} all={role.all}
+        onChange={v => { const ids = v === "all" ? [] : v; set(shared ? { holeId: ids[0], alsoHoles: ids.length > 1 ? ids.slice(1) : undefined } : { holeId: ids[0] }); }} />
+    ) });
+  }
+  // (its name on the map; a label's words and color)
+  if (item.type === "label") {
+    const l = item as LabelItem;
+    chips.unshift({ id: "text", label: <>Text</>, control: <TextInput label="Label text" testid="label-text" value={l.text} onChange={v => live({ text: v })} onDone={done} /> });
+    chips.push({ id: "color", label: <>Color <span className="inline-block w-2.5 h-2.5 rounded-full align-middle ring-1 ring-black/40 ml-0.5" style={{ background: l.color }} /></>, control: <ColorInput label="Color" value={l.color} onChange={(v: string) => live({ color: v })} onDone={done} /> });
+  }
+  if (item.type === "area" || item.type === "line" || item.type === "structure" || item.type === "amenity") {
+    const named = (item as { label?: string }).label;
+    chips.push({ id: "name", label: <>Name <span className="opacity-60">{named || "none"}</span></>, control: <TextInput label={`${item.type === "area" ? "Area" : item.type === "line" ? "Line" : item.type === "structure" ? "Structure" : "Amenity"} name`} value={named ?? ""} placeholder="Name on the map (optional)" onChange={v => live({ label: v || undefined })} onDone={done} /> });
+  }
+  chips.push({ id: "all", label: <>All settings</>, control: allSettings });
   // (a chip that acts at once is never the one left open)
   const panes = chips.filter(c => !c.run);
   const [open, setOpen] = useState<string>(() => lastItemChip[item.type] ?? panes[0]?.id ?? "");
   const pick = (c: string) => { lastItemChip[item.type] = c; setOpen(c); };
   const chip = panes.find(c => c.id === open) ?? panes[0];
+  // (a part of a field tapped on the map: its Parts open)
+  const part = useEditor(e => e.fieldPart);
+  useEffect(() => { if (part && panes.some(c => c.id === "parts")) setOpen("parts"); }, [part]);
+  // (a height being changed in 3D: the camera looks at it from the side, and back after)
+  const threeD = useEditor(e => e.view === "3d");
+  const sideOn = threeD && (chip?.id === "height" || chip?.id === "raised");
+  useEffect(() => {
+    if (!sideOn) return;
+    getView()?.lookAtHeight(item.id);
+    return () => getView()?.lookAtHeight(null);
+  }, [sideOn, item.id]);
   const placeable = item.type !== "area" && item.type !== "line" && item.type !== "structure";
   if (!chips.length && !placeable) return null;
   return (
@@ -286,7 +358,7 @@ export function ItemStrip({ item }: { item: CourseItem }) {
           ? <button key={c.id} className={chipCls(false)} onClick={c.run} data-testid={`strip-${c.id}`}>{c.label}</button>
           : <button key={c.id} role="tab" aria-selected={chip?.id === c.id} className={chipCls(chip?.id === c.id)} onClick={() => pick(c.id)} data-testid={`strip-${c.id}`}>{c.label}</button>)}
       </div>
-      {chip?.control}
+      <div className={paneCls} data-testid="strip-pane">{chip?.control}</div>
     </div>
   );
 }

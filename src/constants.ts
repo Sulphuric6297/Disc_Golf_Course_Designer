@@ -13,6 +13,10 @@ export const MAP_OVERLAY_OFFSET = 0.02;
 
 /** Eye height of a player on the tee, ft (tee views and flyovers). */
 export const EYE_HEIGHT_FT = 5.5;
+/** The tee view's "hole" when standing somewhere away from every hole (the person dropped there). */
+export const STAND_HERE = "here";
+/** How near a hole's line the person must land to stand on that hole (feet); farther, it stands on its own. */
+export const STAND_NEAR_FT = 150;
 /** The putting circle ("Circle 1"): 10 m around the basket. */
 export const CIRCLE_ONE_FT = 10 * FT_PER_M;
 /** Circle 2: 20 m. */

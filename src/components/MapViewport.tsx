@@ -2,7 +2,6 @@
 import { latitudeOf, paintLight, sunFromOf } from "../lib/mapLook";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BoxSelect, Compass, Maximize2, Minus, PersonStanding, Plus, RotateCcw, RotateCw } from "lucide-react";
-import { toast } from "../state/toast";
 import { FOCUS } from "./ui";
 import { ViewToggle } from "./ViewToggle";
 import { PlotPill } from "./DrawBar";
@@ -17,7 +16,7 @@ import { terrainStats, heightAt } from "../lib/terrainGrid";
 import { niceScaleBar } from "../lib/view";
 import { centroid } from "../lib/geom";
 import { fmtElev } from "../lib/units";
-import { FT_PER_M } from "../constants";
+import { FT_PER_M, STAND_HERE } from "../constants";
 import { spotlight } from "./showSetting";
 import { teeLevelFor, useMapInsets } from "./Toolbar";
 import { useTouch } from "./useLayout";
@@ -179,7 +178,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { view?.setDetailPainter((holeId, maxPx) => paintedDetail(doc, holeId, maxPx)); }, [view, doc]);
   // (the close-up doesn't need the whole map painted first: both at once, from the moment a tee
   // view or flyover opens)
-  useEffect(() => { if (paintedOn && ed.teeView) void paintedDetail(doc, ed.teeView, view?.detailPx() ?? 3072); }, [view, paintedOn, ed.teeView, doc]);
+  useEffect(() => { if (paintedOn && ed.teeView && ed.teeView !== STAND_HERE) void paintedDetail(doc, ed.teeView, view?.detailPx() ?? 3072); }, [view, paintedOn, ed.teeView, doc]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
   useMyLocation(view, stats);
   // (new tees in the color of the layout worked on, whatever changed it: a pick, undo, another course)
@@ -228,6 +227,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   // (tee view, editing: picking and dragging there, the map from above in a corner)
   const readOnlyView = useCourse(s => s.readOnly);
   // (standing in 3D: editors pick as they walk; anyone walks; the map from above in a corner)
+  useEffect(() => { view?.setStandTap(ed.standTap ?? "walk"); }, [view, ed.standTap]);
   useEffect(() => { view?.setTeeEdit(!!ed.teeView && !ed.flyover && !readOnlyView, ed.teeMap === "off" ? null : ed.teeMap ?? "small"); }, [view, ed.teeView, ed.teeMap, ed.flyover, readOnlyView]);
   // (the picked field's part outlined; redrawn as the field changes)
   const partItem = useCourse(s => (ed.fieldPart && ed.selectedId ? s.doc.items.find(i => i.id === ed.selectedId) : undefined));
@@ -237,7 +237,9 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   useEffect(() => { if (!useEditor.getState().flyCam) useEditor.getState().set({ flyKey: null }); }, [ed.selectedId]);
   useEffect(() => {
     if (!view) return;
-    if (ed.flyover && ed.teeView) view.flyover(ed.teeView, () => useEditor.getState().set({ flyover: false }));
+    // (standing on its own is only where the person is: without the spot, back to the map)
+    if (ed.teeView === STAND_HERE && !ed.teeStand) { useEditor.getState().set({ teeView: null, flyover: false }); return; }
+    if (ed.flyover && ed.teeView && ed.teeView !== STAND_HERE) view.flyover(ed.teeView, () => useEditor.getState().set({ flyover: false }));
     else { view.setTeeView(ed.teeView, ed.teeViewTee ?? null, ed.teeStand ?? null); useEditor.getState().set({ flyLoading: null, ...(ed.teeView ? {} : { teeViewTee: null, teeStand: null }) }); }
   }, [view, ed.teeView, ed.teeViewTee, ed.flyover, ed.teeStand]);
 
@@ -438,9 +440,9 @@ function StandButton({ view, className, size }: { view: CourseView | null; class
     setNote(null);
     setPlacing(false);
     if (!p || !view) return;
-    const hole = view.holeNear(p);
-    if (!hole) { toast("Standing needs a hole with a tee and a basket: make one first.", "info"); return; }
-    useEditor.getState().set({ teeView: hole, teeViewTee: null, teeStand: { x: p.x, y: p.y }, flyover: false });
+    // (by a hole: on it, looking down it; anywhere else, with or without holes: there, looking the
+    // way the map does)
+    useEditor.getState().set({ teeView: view.standOn(p), teeViewTee: null, teeStand: { x: p.x, y: p.y }, flyover: false });
   };
   // (clicked: the next click on the map picks the spot; Esc lets go)
   useEffect(() => {

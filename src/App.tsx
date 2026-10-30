@@ -36,6 +36,7 @@ import { osmFailedToast } from "./state/osm";
 import { restoreAutosave, startAutosave } from "./state/files";
 import { toast, useToasts } from "./state/toast";
 import { courseStats, holeStats } from "./lib/holeStats";
+import { STAND_HERE } from "./constants";
 import { freshOnly, fromMaps, isImported, reframeDesign, type ImportedSite } from "./lib/importSite";
 import { geoRefOf, reframe } from "./lib/geoRef";
 import { Woods } from "./components/Woods";
@@ -306,7 +307,7 @@ export default function App() {
         if (!(editing && mapKey)) {
         // (Esc stops a flight first, back at the tee; then leaves the tee view)
         if (e.key === "Escape") s.set(s.flyover ? { flyover: false } : { teeView: null, flyover: false });
-        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && s.teeView !== STAND_HERE) {
           const d = getDoc();
           const stats = courseStats(d);
           const done = d.holes.filter((_, k) => stats[k].complete);

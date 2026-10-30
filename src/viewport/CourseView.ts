@@ -14,7 +14,7 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
-import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
+import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STAND_HERE, STAND_NEAR_FT, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
 import { FAIRWAY_STATIONS, beyondSides, areaObEdges, areaRing, isRing, ringStretch, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, fairwayOutline, mergeStretches, obFor, obPicked, obRanges, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, centroid, dist, distanceToPath, inBounds, nearestAlong, offsetPath, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath, subPath } from "../lib/geom";
 import { isOutOfPlay, parForDistance } from "../lib/holeStats";
@@ -230,6 +230,8 @@ export class CourseView {
   /** Tee view, editing: a press on a thing picks or drags it as on the map; on open ground it
    * looks around. With the map from above in a corner ("small", "big"), or none. */
   private teeEdit = false;
+  /** Standing, editing: what a tap does, walk there or pick the thing tapped (never both). */
+  private standTap: "walk" | "edit" = "walk";
   private miniSize: "small" | "big" | null = null;
   /** The corner map's place (the container's pixels; null: none shown) and its camera. */
   private miniRect: Rect | null = null;
@@ -878,6 +880,67 @@ export class CourseView {
     this.invalidate();
   }
 
+  /** The part of the map between the panels (container pixels). */
+  private openMap() {
+    const top = clamp(this.topInset, 0, this.size.height * 0.3), bottom = this.size.height - clamp(this.bottomInset, 0, this.size.height * 0.6);
+    return { left: this.leftInset, top, right: this.size.width - this.rightInset, bottom };
+  }
+
+  /** Whether any of an item or hole shows on the open part of the map. */
+  inView(id: string) {
+    const box = this.screenBox(id), m = this.openMap();
+    return !!box && box.x + box.width > m.left && box.x < m.right && box.y + box.height > m.top && box.y < m.bottom;
+  }
+
+  /** A thing picked on a phone, framed on the open part of the map: brought out from under a
+   * panel or in from off screen, and (`zoom`, as it's picked) zoomed in on when it's a speck, or
+   * out when it doesn't fit. */
+  frame(id: string, zoom = false) {
+    const b = this.itemBounds(id);
+    if (!b) return;
+    const box = this.screenBox(id), m = this.openMap();
+    const w = m.right - m.left, h = m.bottom - m.top;
+    const speck = zoom && !!box && Math.max(box.width, box.height) < Math.min(w, h) * 0.12;
+    const big = !!box && (box.width > w * 0.95 || box.height > h * 0.95);
+    if (speck || big) {
+      if (this.doc?.course.holes.some(x => x.id === id)) return this.fitHole(id);
+      // (a small thing: a patch of ground round it, about 250 ft across)
+      this.fitBounds(b, speck ? { margin: 3, minSpan: 80 } : { margin: 1.3 });
+      return;
+    }
+    this.reveal(id);
+  }
+
+  /** The camera before a height was looked at from the side (to go back to). */
+  private sidePose: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
+  /** A thing's height being changed: the camera turns to look at it from the side, close, so the
+   * height shows (null: back to where it was). */
+  lookAtHeight(id: string | null) {
+    if (!id) {
+      const was = this.sidePose;
+      this.sidePose = null;
+      if (was) void this.controls.setLookAt(was.pos.x, was.pos.y, was.pos.z, was.target.x, was.target.y, was.target.z, true);
+      this.invalidate();
+      return;
+    }
+    const b = this.itemBounds(id), it = this.item(id);
+    if (!b || !it || this.povHole) return;
+    if (!this.sidePose) this.sidePose = { pos: this.controls.getPosition(new THREE.Vector3(), true), target: this.controls.getTarget(new THREE.Vector3(), true) };
+    const tall = it.type === "tree" ? it.height ?? it.radius * 2.6 : it.type === "structure" ? structureHeight(it) : it.type === "line" ? it.fenceHeight ?? LINE_KINDS[it.kind].height ?? 8 : it.type === "basket" ? (it.raised ?? 0) + 6 : 10;
+    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2, span = Math.max(b.maxX - b.minX, b.maxY - b.minY);
+    const d = clamp(Math.max(tall * 3.2, span * 1.4, 40), this.controls.minDistance, this.controls.maxDistance);
+    const polar = 76 * DEG, az = this.controls.azimuthAngle;
+    const ty = this.h(cx, cy) + tall * 0.45;
+    const off = new THREE.Vector3(Math.sin(polar) * Math.sin(az), Math.cos(polar), Math.sin(polar) * Math.cos(az)).multiplyScalar(d);
+    // (in the middle of the open map, above the panel)
+    const worldPerPx = (2 * d * Math.tan((this.camera.fov * DEG) / 2)) / Math.max(1, this.size.height);
+    const lift = ((clamp(this.bottomInset, 0, this.size.height * 0.6) - clamp(this.topInset, 0, this.size.height * 0.3)) / 2) * worldPerPx;
+    const target = new THREE.Vector3(cx, ty - lift * Math.sin(polar), cy).addScaledVector(new THREE.Vector3(Math.sin(az), 0, Math.cos(az)), lift * Math.cos(polar));
+    const pos = target.clone().add(off);
+    void this.controls.setLookAt(pos.x, pos.y, pos.z, target.x, target.y, target.z, true);
+    this.invalidate();
+  }
+
   /** Bounds of an item (or a hole's throw line) on the plan. */
   itemBounds(id: string) {
     const doc = this.doc;
@@ -1141,21 +1204,37 @@ export class CourseView {
   /** Which way to face from a spot on a hole: toward its basket (from close to it, back to its tee). */
   private faceDownHole(holeId: string, p: P) {
     const s = this.doc?.stats.find(x => x.holeId === holeId);
-    if (!s || s.line.length < 2) return 0;
+    if (!s || s.line.length < 2) return this.mapFacing();
     const a = s.line[0], z = s.line[s.line.length - 1];
     const to = dist(p, z) < 40 ? a : z;
     return Math.atan2(to.y - p.y, to.x - p.x);
   }
 
-  /** The hole whose line is nearest a spot (for standing there), if any is complete. */
-  holeNear(p: P): string | null {
+  /** The way the map looks, along the ground (the angle in plan): up the screen, tilted or not. */
+  private mapFacing() {
+    const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
+    const fwd = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 2).negate();
+    // (looking straight down: up the screen; tilted: where it looks)
+    const v = Math.hypot(fwd.x, fwd.z) > 0.2 ? fwd : up;
+    return Math.atan2(v.z, v.x);
+  }
+
+  /** The hole whose line is nearest a spot (for standing there), if any is complete; with `within`,
+   * only one that near (feet). */
+  holeNear(p: P, within = Infinity): string | null {
     let best: { id: string; d: number } | null = null;
     for (const s of this.doc?.stats ?? []) {
       if (!s.complete || s.line.length < 2) continue;
       const d = distanceToPath(p, s.line);
       if (!best || d < best.d) best = { id: s.holeId, d };
     }
-    return best?.id ?? null;
+    return best && best.d <= within ? best.id : null;
+  }
+
+  /** What standing at a spot stands on: the hole whose line is near it, or (none near, or none at
+   * all) the spot on its own. */
+  standOn(p: P): string {
+    return this.holeNear(p, STAND_NEAR_FT) ?? STAND_HERE;
   }
 
   /** Where the person would land dropped at a screen point (the map's ground there), with a ring
@@ -1237,11 +1316,12 @@ export class CourseView {
   /** Standing, the pointer over the view: a thing's outline and name (a click picks it), or a ring
    * where you'd step (a click walks there). */
   private povHover(p: { x: number; y: number }, g: THREE.Vector3 | null) {
-    const id = this.teeEdit && !this.readOnly ? this.pick(p.x, p.y) : null;
+    const edits = this.tapsEdit();
+    const id = edits ? this.pick(p.x, p.y) : null;
     this.setHover(id);
     if (id) { this.showStep(null); this.tip(`${this.nameOf(id)} · click to pick it`, p.x, p.y); return; }
     const eye = this.povPose()?.eye;
-    if (g && eye && this.eyeAt(p.x, p.y).cam === this.povCam) {
+    if (!edits && g && eye && this.eyeAt(p.x, p.y).cam === this.povCam) {
       this.showStep({ x: g.x, y: g.z });
       const far = Math.hypot(g.x - eye.x, g.z - eye.z);
       this.tip(`Click to walk here · ${Math.round(this.doc?.course.units === "m" ? far * 0.3048 : far)} ${this.doc?.course.units === "m" ? "m" : "ft"}`, p.x, p.y);
@@ -1265,6 +1345,22 @@ export class CourseView {
     const metric = this.doc?.course.units === "m";
     const n = (v: number) => `${Math.round(metric ? v * 0.3048 : v)} ${metric ? "m" : "ft"}`;
     this.tip(`${off < 1 ? "On the line" : `${n(off)} ${side} of the line`}${off < reach + 3 ? " · on the throw line" : ""}`, clientX, clientY);
+  }
+
+  /** Standing, editing: a tap walks there, or picks the thing tapped (a tool that places things
+   * places, either way). */
+  setStandTap(mode: "walk" | "edit") {
+    if (mode === this.standTap) return;
+    this.standTap = mode;
+    this.setHover(null);
+    this.showStep(null);
+    this.tip(null);
+    this.updateCursor();
+    this.invalidate();
+  }
+  /** Standing, whether a tap goes to things (picking, placing) rather than walking. */
+  private tapsEdit() {
+    return this.teeEdit && !this.readOnly && (this.standTap === "edit" || this.tool.mode !== "select");
   }
 
   /** Tee view, editing (a press on a thing picks or drags it; on open ground, looks around), with
@@ -1308,9 +1404,12 @@ export class CourseView {
   /** The corner map's camera: straight down on the hole, its line pointing up the picture. */
   private placeMini(m: Rect) {
     const doc = this.doc, s = doc?.stats.find(x => x.holeId === this.povHole);
-    const pts = s && s.line.length > 1 ? s.line : null;
     const pose = this.povPose();
-    if (!pts || !pose) return false;
+    if (!pose) return false;
+    // (standing on its own: 300 ft round the spot, the way you face up the picture)
+    const look = new THREE.Vector3().subVectors(pose.target, pose.eye);
+    const spot = { x: pose.eye.x, y: pose.eye.z }, ahead = Math.hypot(look.x, look.z) > 1e-6 ? { x: look.x / Math.hypot(look.x, look.z), y: look.z / Math.hypot(look.x, look.z) } : { x: 0, y: -1 };
+    const pts = s && s.line.length > 1 ? s.line : [{ x: spot.x - ahead.x * 100, y: spot.y - ahead.y * 100 }, { x: spot.x + ahead.x * 200, y: spot.y + ahead.y * 200 }];
     const b = boundsOf(pts);
     const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
     const a = pts[0], z = pts[pts.length - 1];
@@ -1609,11 +1708,13 @@ export class CourseView {
   private povPose(): { eye: THREE.Vector3; target: THREE.Vector3 } | null {
     const doc = this.doc;
     if (!doc || !this.povHole) return null;
-    const s = doc.stats.find(x => x.holeId === this.povHole);
-    if (!s || s.line.length < 2) return null;
+    const found = doc.stats.find(x => x.holeId === this.povHole);
+    const s = found && found.line.length >= 2 ? found : null;
+    // (standing on its own, away from every hole: only where the person stands)
+    if (!s && !this.povStand) return null;
     const own = this.povTee ? doc.course.items.find(i => i.id === this.povTee) : null;
     // (standing somewhere else: there, the way it faces; walking: on the way, eased)
-    let tee: P = own ? { x: own.x, y: own.y } : s.line[0];
+    let tee: P = own ? { x: own.x, y: own.y } : s ? s.line[0] : { x: this.povStand!.x, y: this.povStand!.y };
     let face: number | null = null;
     if (this.povStand) {
       tee = { x: this.povStand.x, y: this.povStand.y };
@@ -1625,7 +1726,7 @@ export class CourseView {
         if (k >= 1) { this.walk = null; this.cb.onStand?.({ x: w.to.x, y: w.to.y, face: this.povStand.face }); } else this.invalidate();
       }
     }
-    const next = face === null ? s.line[1] : { x: tee.x + Math.cos(face) * 60, y: tee.y + Math.sin(face) * 60 };
+    const next = face === null && s ? s.line[1] : { x: tee.x + Math.cos(face ?? 0) * 60, y: tee.y + Math.sin(face ?? 0) * 60 };
     const eye = new THREE.Vector3(tee.x, this.h(tee.x, tee.y) + EYE_HEIGHT_FT + 0.35, tee.y);
     const base = (face ?? Math.atan2(next.y - tee.y, next.x - tee.x)) + this.povLook.yaw;
     const d = Math.max(60, dist(tee, next));
@@ -1866,7 +1967,7 @@ export class CourseView {
     if (this.recordings > 0 && !forVideo) return;
     const ask = ++this.detailAsk;
     const look = this.paintedRecord !== undefined ? this.paintedRecord : this.paintedScreen;
-    if (!holeId || !look || !this.detailPainter) {
+    if (!holeId || holeId === STAND_HERE || !look || !this.detailPainter) {
       this.ground.setPaintedDetail(null);
       return;
     }
@@ -5040,6 +5141,15 @@ export class CourseView {
       if (patch) this.cb.onChange(this.pinchItem.id, patch);
       return;
     }
+    // (standing, or a flight: two fingers zoom the view in and out, as the wheel does)
+    if (this.povHole) {
+      this.pinch = { ...was, d, a, cx, cy };
+      if (!this.fly && Math.abs(d / was.d - 1) > 1e-3) {
+        this.povCam.fov = clamp(this.povCam.fov * (was.d / d), LENS.min, LENS.max);
+        this.invalidate();
+      }
+      return;
+    }
     // (what the fingers do, once they've moved a little: both sliding up or down side by side
     // tilts; anything else holds the ground)
     if (!was.mode) {
@@ -5135,7 +5245,7 @@ export class CourseView {
 
   private touchUp(e: PointerEvent) {
     this.fingerAt.delete(e.pointerId);
-    const mapPinch = !!this.pinch && !this.pinchItem && this.touchIds.size === 2;
+    const mapPinch = !this.povHole && !!this.pinch && !this.pinchItem && this.touchIds.size === 2;
     if (this.touchIds.delete(e.pointerId) && this.touchIds.size >= 1) this.pinchAt = performance.now();
     if (this.touchIds.size < 2) this.endPinch();
     else if (this.touchIds.size === 2 && !this.pinch) this.startPinch();
@@ -5340,7 +5450,8 @@ export class CourseView {
       // (editing: a press on a thing, or with a tool that places one, goes on as on the map,
       // through the picture it's in; on open ground it looks around; on the corner map's open
       // ground, nothing)
-      if (this.teeEdit && !this.fly && !this.free && !this.readOnly) {
+      // (Walk: a tap walks, on a thing or not; Edit: a tap picks, and open ground only looks)
+      if (this.tapsEdit() && !this.fly && !this.free) {
         const eye = this.eyeAt(e.clientX, e.clientY);
         const onThing = this.tool.mode !== "select" || !!this.pick(e.clientX, e.clientY);
         if (onThing) {
@@ -5354,7 +5465,7 @@ export class CourseView {
         } else {
           e.preventDefault();
           e.stopPropagation();
-          this.povDrag(e);
+          this.povDrag(e, true);
           return;
         }
       } else {
@@ -6449,17 +6560,24 @@ export class CourseView {
       };
       this.invalidate();
     };
-    const up = (ev: PointerEvent) => {
+    const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      this.endDragListeners = null;
+    };
+    const up = (ev: PointerEvent) => {
+      cleanup();
       // (a press that didn't move, on open ground in the view: a step there)
       if (!moved && !lookOnly && !this.fly && !free && this.tool.mode === "select" && this.eyeAt(ev.clientX, ev.clientY).cam === this.povCam) {
         const g = this.groundAt(ev.clientX, ev.clientY);
         if (g) this.walkTo({ x: g.x, y: g.z });
       }
     };
+    // (a second finger ends it: see secondFinger)
+    this.endDragListeners?.();
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    this.endDragListeners = cleanup;
   }
 
   /** Zoom keeping the ground point under the cursor fixed. */

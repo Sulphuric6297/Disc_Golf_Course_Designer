@@ -32,9 +32,12 @@ type Props = {
   /** Its stacking (over a full-screen map, higher) and its test id. */
   className?: string;
   testid?: string;
+  /** Only its header, at the header's own height (a thing being changed on a phone: every setting is
+   * in the header's strip): no dragging, and the keyboard lifts it rather than opening it. */
+  locked?: boolean;
 };
 
-export function BottomSheet({ detent, onDetent, header, children, peekExtra = 0, topGap = 72, onHeight, label, contentKey, className = "z-30", testid = "sheet" }: Props) {
+export function BottomSheet({ detent, onDetent, header, children, peekExtra = 0, topGap = 72, onHeight, label, contentKey, className = "z-30", testid = "sheet", locked = false }: Props) {
   const sheet = useRef<HTMLDivElement>(null);
   const head = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -58,11 +61,23 @@ export function BottomSheet({ detent, onDetent, header, children, peekExtra = 0,
     return () => ro.disconnect();
   }, []);
 
+  // Typing: the on-screen keyboard covers the bottom of the screen (the page doesn't resize), so
+  // the sheet goes to full height, the list gets room to scroll the field above the keyboard, and
+  // the field is brought into view
+  const [keyboard, setKeyboard] = useState(0);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => setKeyboard(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)));
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
   const full = Math.max(160, avail - topGap);
   const peek = Math.min(full, headH + peekExtra);
   const half = Math.min(full, Math.max(peek + 60, Math.round(avail * 0.52)));
   const heights: Record<Detent, number> = { peek, half, full };
-  const rest = heights[detent];
+  // (locked: the header alone, lifted over the keyboard while it's up)
+  const rest = locked ? Math.min(full, peek + keyboard) : heights[detent];
   /** Where the sheet's top is for a visible height (it slides down from full height). */
   const offset = (h: number) => `translate3d(0, ${Math.round(full - h)}px, 0)`;
 
@@ -77,17 +92,6 @@ export function BottomSheet({ detent, onDetent, header, children, peekExtra = 0,
   }, [rest]);
   useEffect(() => { body.current?.scrollTo({ top: 0 }); }, [contentKey]);
 
-  // Typing: the on-screen keyboard covers the bottom of the screen (the page doesn't resize), so
-  // the sheet goes to full height, the list gets room to scroll the field above the keyboard, and
-  // the field is brought into view
-  const [keyboard, setKeyboard] = useState(0);
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const onResize = () => setKeyboard(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)));
-    vv.addEventListener("resize", onResize);
-    return () => vv.removeEventListener("resize", onResize);
-  }, []);
   const onFocusIn = (e: React.FocusEvent) => {
     const el = e.target as HTMLElement;
     if (!el.matches("textarea, input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=color]):not([type=button])")) return;
@@ -132,7 +136,7 @@ export function BottomSheet({ detent, onDetent, header, children, peekExtra = 0,
 
   // Header and handle: pointer events (mouse, pen or finger)
   const onHeadDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || locked) return;
     const x0 = e.clientX, y0 = e.clientY, id = e.pointerId;
     let d: ReturnType<typeof dragFrom> | null = null;
     const move = (ev: PointerEvent) => {
@@ -230,14 +234,14 @@ export function BottomSheet({ detent, onDetent, header, children, peekExtra = 0,
       ref={sheet}
       aria-label={label}
       data-testid={testid}
-      data-detent={detent}
+      data-detent={locked ? "locked" : detent}
       className={`dg-sheet glass absolute left-0 right-0 bottom-0 ${className} flex flex-col rounded-t-[28px] will-change-transform ${dragging ? "" : "transition-transform duration-300 ease-[cubic-bezier(0.2,0.9,0.3,1)] motion-reduce:transition-none"}`}
       style={{ height: full, transform: offset(rest) }}
       onClickCapture={e => { if (swallowClick.current) { e.preventDefault(); e.stopPropagation(); } }}
     >
       {/* (Rows in the header that should drag the sheet are touch-none; a scrolling row is pan-x) */}
       <div ref={head} className="shrink-0 select-none" onPointerDown={onHeadDown}>
-        <button
+        {locked ? <div className="h-3" aria-hidden /> : <button
           type="button"
           className="w-full flex justify-center pt-2 pb-1.5 touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 rounded-t-[28px]"
           aria-label={`Panel: ${NAMES[detent]}. Show it ${next === "peek" ? NAMES[next] : `at ${NAMES[next]}`}`}
@@ -247,13 +251,13 @@ export function BottomSheet({ detent, onDetent, header, children, peekExtra = 0,
           onKeyDown={onKey}
         >
           <span className="block w-9 h-[5px] rounded-full bg-white/30" aria-hidden />
-        </button>
+        </button>}
         {header}
       </div>
       {/* The list is as tall as the part of the sheet on screen (so scrolling, and the focus,
           bring things into view above the screen's edge); while dragging, as tall as it can be */}
       <div ref={body} className="dg-scroll shrink-0 overflow-y-auto overflow-x-hidden" style={{ height: Math.max(0, (dragging ? full : bodyRest) - headH), paddingBottom: keyboard }} onFocus={onFocusIn} data-testid="sheet-body">
-        {children}
+        {!locked && children}
       </div>
     </section>
   );

@@ -1,8 +1,8 @@
 // What shows over the view from the tee or a flyover: the hole's numbers and the controls.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Clapperboard, Home, Maximize2, Minimize2, Plane, Settings2, Square, Video, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clapperboard, Footprints, Home, Maximize2, Minimize2, Pencil, Plane, Settings2, Square, Video, X } from "lucide-react";
 import { useAllowed } from "../auth/perms";
-import { TEE_LEVELS } from "../constants";
+import { STAND_HERE, TEE_LEVELS } from "../constants";
 import { activeLayout, holeLabel } from "../lib/course";
 import { courseStats, holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
@@ -90,6 +90,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
   const editing = !ed.flyover && !readOnly && !compact;
   const panel = useSelection().open;
   const toolbar = useToolbarRoom(r => r.height);
+  if (ed.teeView === STAND_HERE) return <StandHere compact={compact} editing={editing} toolbar={toolbar} />;
   if (!hole || !s) return null;
   const loading = (showLoading || waiting) && ed.flyover ? <FlyoverLoading on={waiting} stage={ed.flyLoading} onCancel={() => ed.set({ flyover: false })} title={`Hole ${s.label}${hole.name ? ` · ${hole.name}` : ""}`} facts={`${fmtDist(s.length, doc.units)} · Par ${s.par}${s.elevationChange ? ` · ${fmtElev(s.elevationChange, doc.units)}` : ""}`} /> : null;
   // (a video's progress: none while the map is painted or a hole sharpened)
@@ -137,7 +138,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
           {hole.notes && <p className="text-[13px] text-zinc-200 mt-1 line-clamp-2">{hole.notes}</p>}
         </div>
         {ed.flyover && <div className="absolute right-2 top-[max(8px,env(safe-area-inset-top))] pointer-events-auto glass rounded-2xl p-1.5 border border-white/10 shadow-2xl">{tiles}</div>}
-        {hint && !sheetUp && <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+92px)] left-1/2 -translate-x-1/2 text-[13px] text-white/90 bg-black/45 rounded-full px-3 py-1 whitespace-nowrap">Tap the ground to walk · drag to look around</div>}
+        {!sheetUp && !ed.flyover && <PhoneTapRow hint={hint} canEdit={!readOnly} />}
         {!sheetUp && <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto flex items-center gap-1 glass rounded-[22px] p-1.5 border border-white/10 shadow-2xl">
           {ed.teeStand && !ed.flyover && <button className={bar} onClick={() => ed.set({ teeStand: null })} data-testid="hud-to-tee"><Home size={20} /><span>Tee</span></button>}
           <button className={bar} onClick={() => go(-1)}><ChevronLeft size={22} /><span>Previous</span></button>
@@ -197,9 +198,77 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
         </div>
       )}
       <div className="absolute top-4 right-4 pointer-events-auto"><SceneButton /></div>
-      {hint && (!editing || ed.tool === "select") && <div className="absolute left-1/2 -translate-x-1/2 text-xs text-white/80 bg-black/40 rounded px-2 py-1 whitespace-nowrap" style={{ bottom: (editing ? toolbar + 24 : 24) + 56 }}>
-        {editing ? "Click a thing to pick it · click the ground to walk · drag to look around · Esc back to the map" : "Click the ground to walk · drag to look around · ← → other holes · Esc back to the map"}
-      </div>}
+      {hint && (!editing || ed.tool === "select") && <DeskTapRow editing={editing} bottom={(editing ? toolbar + 24 : 24) + 56} holes />}
+    </div>
+  );
+}
+
+/** Standing, for an editor: what a tap does, walk there or pick the thing tapped. Never both, so a
+ * tap meant to change something doesn't walk, and a step doesn't pick what's in the way. */
+function TapSwitch({ big = false }: { big?: boolean }) {
+  const set = useEditor(e => e.set);
+  const mode = useEditor(e => e.standTap ?? "walk");
+  const b = (on: boolean) => `${big ? "h-11 px-4 text-[14px]" : "h-8 px-3 text-sm"} rounded-full font-semibold flex items-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${on ? "bg-white text-zinc-950" : "text-white hover:bg-white/10 active:bg-white/15"}`;
+  return (
+    <div className="pointer-events-auto flex items-center gap-1 glass rounded-full p-1 border border-white/10 shadow-2xl" role="radiogroup" aria-label="What a tap does" data-testid="tap-switch">
+      <button role="radio" aria-checked={mode === "walk"} className={b(mode === "walk")} onClick={() => set({ standTap: "walk" })} title="A tap walks there" data-testid="tap-walk"><Footprints size={big ? 18 : 15} /> Walk</button>
+      <button role="radio" aria-checked={mode === "edit"} className={b(mode === "edit")} onClick={() => set({ standTap: "edit" })} title="A tap picks what's there, to change it" data-testid="tap-edit"><Pencil size={big ? 17 : 14} /> Edit</button>
+    </div>
+  );
+}
+
+/** A phone, standing: what a tap does (an editor's switch) and a line on how to move, above the bar. */
+function PhoneTapRow({ hint, canEdit }: { hint: boolean; canEdit: boolean }) {
+  const edits = useEditor(e => e.standTap === "edit") && canEdit;
+  return (
+    <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+80px)] left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5">
+      {hint && <div className="text-[13px] text-white/90 bg-black/45 rounded-full px-3 py-1 whitespace-nowrap">{edits ? "Tap a thing to change it · drag to look · pinch to zoom" : "Tap the ground to walk · drag to look · pinch to zoom"}</div>}
+      {canEdit && <TapSwitch big />}
+    </div>
+  );
+}
+
+/** A computer, standing: the editor's switch and a line on how to move. */
+function DeskTapRow({ editing, bottom, holes = false }: { editing: boolean; bottom: number; holes?: boolean }) {
+  const edits = useEditor(e => e.standTap === "edit") && editing;
+  const line = edits ? "Click a thing to pick it · drag to look around · Esc back to the map" : `Click the ground to walk · drag to look around${holes ? " · ← → other holes" : ""} · Esc back to the map`;
+  return (
+    <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 whitespace-nowrap" style={{ bottom }}>
+      {editing && <TapSwitch />}
+      <div className="text-xs text-white/80 bg-black/40 rounded px-2 py-1">{line}</div>
+    </div>
+  );
+}
+
+/** Standing somewhere away from every hole (the person dropped there): the View panel, back to the
+ * map, and the map from above while editing; no hole's card, flyover or other holes. */
+function StandHere({ compact, editing, toolbar }: { compact: boolean; editing: boolean; toolbar: number }) {
+  const ed = useEditor();
+  const doc = useCourse(c => c.doc);
+  const readOnly = useCourse(c => c.readOnly);
+  const back = () => ed.set({ teeView: null, teeStand: null, flyover: false });
+  if (compact) {
+    // (a thing picked: its sheet is up in the bar's place)
+    const sheetUp = !readOnly && !!ed.selectedId && doc.items.some(i => i.id === ed.selectedId);
+    return (
+      <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui>
+        <div className="absolute right-2 top-[max(8px,env(safe-area-inset-top))] pointer-events-auto glass rounded-2xl p-1.5 border border-white/10 shadow-2xl"><SceneButton label="View" /></div>
+        {!sheetUp && <PhoneTapRow hint canEdit={!readOnly} />}
+        {!sheetUp && <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto flex items-center gap-1 glass rounded-[22px] p-1.5 border border-white/10 shadow-2xl" data-testid="stand-here-bar">
+          <button className="flex-1 min-w-0 h-14 rounded-2xl flex items-center justify-center gap-2 text-[14px] font-semibold text-white active:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400" onClick={back} data-testid="hud-close"><X size={20} /> Back to the map</button>
+        </div>}
+      </div>
+    );
+  }
+  return (
+    <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui>
+      {editing && <TeeMap big={ed.teeMap === "big"} off={ed.teeMap === "off"} />}
+      <div className="absolute left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-2 whitespace-nowrap glass backdrop-blur rounded-full px-2 py-1.5 border border-white/10 shadow-2xl" style={{ bottom: editing ? toolbar + 24 : 24 }} data-testid="stand-here-bar">
+        <span className="pl-2 text-sm text-zinc-300">Standing here</span>
+        <button className="px-3 py-1.5 rounded-full text-sm font-semibold text-white hover:bg-white/10 flex items-center gap-1.5" onClick={back} data-testid="hud-close"><X size={15} /> Back to map</button>
+      </div>
+      <div className="absolute top-4 right-4 pointer-events-auto"><SceneButton /></div>
+      {(!editing || ed.tool === "select") && <DeskTapRow editing={editing} bottom={(editing ? toolbar + 24 : 24) + 56} />}
     </div>
   );
 }
