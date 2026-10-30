@@ -14,13 +14,13 @@ export const neighbourHole = (holeId: string | null, delta: number) => {
   return holes[(i + delta + holes.length) % holes.length];
 };
 
-/** Selects the previous (-1) or next (1) hole and brings it into view. */
+/** Selects the previous (-1) or next (1) hole and slides it into view (never a zoom). */
 export const stepHole = (delta: number) => {
   const ed = useEditor.getState();
   const next = neighbourHole(ed.activeHoleId ?? ed.selectedId, delta);
   if (!next) return;
   select(next.id);
-  requestAnimationFrame(() => getView()?.fitHole(next.id));
+  requestAnimationFrame(() => getView()?.reveal(next.id));
 };
 
 /** Previous and next hole buttons (`big`: 44 px, for fingers, as one pill). */

@@ -56,7 +56,7 @@ export function GoTo({ onClose, onHelp }: { onClose: () => void; onHelp: (topic?
       out.push({
         key: `hole:${h.id}`, text: `Hole ${label}${h.name ? ` · ${h.name}` : ""}`, find: `hole ${label} ${h.name ?? ""}`, sub: s.complete ? `${fmtDist(s.length, doc.units)} · Par ${s.par}` : undefined, icon: <Hash size={15} />,
         nums: label.split("/"),
-        run: () => { toMap(); select(h.id); requestAnimationFrame(() => getView()?.fitHole(h.id)); }
+        run: () => { toMap(); select(h.id); requestAnimationFrame(() => getView()?.reveal(h.id)); }
       });
     });
     STEPS.forEach((s, i) => {

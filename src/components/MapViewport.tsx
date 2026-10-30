@@ -23,7 +23,7 @@ import { teeLevelFor, useMapInsets } from "./Toolbar";
 import { useTouch } from "./useLayout";
 import type { P } from "../types";
 import { SceneButton } from "./ScenePanel";
-import { LocateButton, useMyLocation } from "./MyLocation";
+import { LocateButton, MyLocationDot } from "./MyLocation";
 import { canShowLocation } from "../state/gps";
 import { landscapeOf } from "../lib/landscapes";
 import { paintedDetail, usePaintedGround } from "../state/paintedGround";
@@ -129,7 +129,15 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     : { photo: ed.photo, contours: ed.contours, shading: ed.shading, painted: false };
   const terrain = useMemo(() => terrainStats(doc.terrainHeights), [doc.terrainHeights]);
   const contours = useMemo(() => (show.contours ? contoursOf(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height) : { segments: [], interval: 1 }), [show.contours, doc.terrainHeights, doc.gridSize, doc.canvas]);
-  const shadeUrl = useMemo(() => (show.shading && !show.painted && terrain.relief > 1 && (doc.style.reliefScale ?? 1) > 0 ? hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, undefined, doc.style.reliefScale ?? 1).toDataURL() : null), [show.shading, show.painted, terrain.relief, doc.terrainHeights, doc.gridSize, doc.canvas, doc.style.reliefScale]);
+  // (the hill shading: worked out just after the map's first picture, not in the way of it; a
+  // phone took seconds over it there)
+  const shadeOn = show.shading && !show.painted && terrain.relief > 1 && (doc.style.reliefScale ?? 1) > 0;
+  const [shadeUrl, setShadeUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!shadeOn) { setShadeUrl(null); return; }
+    const t = window.setTimeout(() => setShadeUrl(hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, undefined, doc.style.reliefScale ?? 1).toDataURL()), 60);
+    return () => window.clearTimeout(t);
+  }, [shadeOn, doc.terrainHeights, doc.gridSize, doc.canvas, doc.style.reliefScale]);
   const issues = useMemo(() => (ed.step === "design" ? openIssues(doc, courseIssues(doc)).open : null), [ed.step, doc]);
   // From a tee and in flyovers: the ground in the Design look (the painted map), not the photo
   // (from a tee: the editor's own pick, or for a viewer the course's look for viewers)
@@ -186,7 +194,6 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   // view or flyover opens)
   useEffect(() => { if (paintedOn && ed.teeView && ed.teeView !== STAND_HERE) void paintedDetail(doc, ed.teeView, view?.detailPx() ?? 3072); }, [view, paintedOn, ed.teeView, doc]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
-  useMyLocation(view, stats);
   // (new tees in the color of the layout worked on, whatever changed it: a pick, undo, another course)
   const layoutTee = activeLayout(doc)?.tee;
   useEffect(() => { if (layoutTee) useEditor.getState().set({ teeLevel: layoutTee }); }, [layoutTee]);
@@ -273,6 +280,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     return (
       <div className="absolute inset-0">
         <div ref={ref} data-testid="plan" className="absolute inset-0 overflow-hidden touch-none" />
+        <MyLocationDot view={view} stats={stats} />
         {plotBar}
         {obBar}
         {!ed.teeView && controlsRoom > 0 && <TouchControls view={view} info={info} scale={info && flat ? scaleBar(info.pxPerUnit, 72, doc.units) : null} phone={compact === "phone"} top={controlsTop} room={controlsRoom} threeD={ed.view === "3d"} editing={boxable} />}
@@ -283,6 +291,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   return (
     <div className="absolute inset-0">
       <div ref={ref} data-testid="plan" className="absolute inset-0 overflow-hidden touch-none" />
+      {/* (you on the map: its own small part, so each GPS reading and compass turn redraws only it) */}
+      <MyLocationDot view={view} stats={stats} />
       {plotBar}
       {obBar}
       {!ed.teeView && (

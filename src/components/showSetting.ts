@@ -117,7 +117,7 @@ export async function showSetting(where: Where) {
       return;
     }
     select(id);
-    requestAnimationFrame(() => (w.pick === "hole" ? getView()?.fitHole(id) : getView()?.reveal(id)));
+    requestAnimationFrame(() => getView()?.reveal(id));
   }
   if (w.open === "problems") ed.set({ problemsOpen: true });
   else if (w.open === "share-public" || w.open === "share-people") {

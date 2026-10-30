@@ -393,7 +393,7 @@ export default function App() {
       if (e.key === "+" || e.key === "=") { view?.zoomBy(1.4); return; }
       if (e.key === "-" || e.key === "_") { view?.zoomBy(1 / 1.4); return; }
       const k = e.key.toUpperCase();
-      if (k === "F") { if (s.selectedId) { const d = getDoc(); if (d.holes.some(h => h.id === s.selectedId)) view?.fitHole(s.selectedId); else view?.reveal(s.selectedId); } return; }
+      if (k === "F") { if (s.selectedId) { const d = getDoc(); if (d.holes.some(h => h.id === s.selectedId)) view?.fitHole(s.selectedId); else view?.zoomTo(s.selectedId); } return; }
       if (k === "Q") { view?.rotateBy(-30); return; }
       if (k === "E") { view?.rotateBy(30); return; }
       if (k === "N") { view?.resetNorth(); return; }

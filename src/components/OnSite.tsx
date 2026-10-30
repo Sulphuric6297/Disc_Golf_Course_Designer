@@ -30,7 +30,8 @@ const Ring = ({ n, of }: { n: number; of: number }) => (
 function Sure({ right }: { right?: string }) {
   const fix = useGps(g => g.fix);
   const units = useCourse(s => s.doc.units);
-  const stale = !fix || Date.now() - fix.time > 15_000;
+  // (a phone standing still may not send a reading for a while: one from the last minute counts)
+  const stale = !fix || Date.now() - fix.time > 60_000;
   const k = sureness(stale ? null : fix.acc);
   return (
     <div className="flex items-center gap-2 text-[13px] font-bold mb-2.5" data-testid="onsite-sure" data-sure={k}>

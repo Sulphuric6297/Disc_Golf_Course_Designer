@@ -27,6 +27,13 @@ const holeHere = (stats: HoleStats[], at: { x: number; y: number }, picked: stri
   return best;
 };
 
+/** The map's dot, kept in step with the GPS: a part of its own that draws nothing, so a reading
+ * or a turn of the compass (many a second) doesn't draw the whole map's controls again. */
+export function MyLocationDot({ view, stats }: { view: CourseView | null; stats: HoleStats[] }) {
+  useMyLocation(view, stats);
+  return null;
+}
+
 /** Keeps the map's dot in step with the GPS. */
 export function useMyLocation(view: CourseView | null, stats: HoleStats[]) {
   const gps = useGps();

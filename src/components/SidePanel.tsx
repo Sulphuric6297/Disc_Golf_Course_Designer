@@ -424,7 +424,7 @@ function HoleRow({ s, check, slim = false, roomy = false }: { s: HoleStats; chec
   const fresh = talk.some(t => t.unread);
   return (
     <button data-testid="hole-row" title={`${name}${slim ? ` · ${what}` : ""}${check ? ` · ${check.text}` : ""}`}
-      onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
+      onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.reveal(s.holeId)); }}
       className={`w-full flex items-center gap-2 rounded-[14px] text-left transition-colors ${FOCUS} ${roomy ? "px-2 py-1.5 touch:min-h-[44px]" : slim ? "py-1 justify-center px-1" : "py-1 pl-1 pr-2"} ${sel ? "bg-white/[0.16] text-zinc-50" : "text-zinc-300 hover:bg-white/[0.07]"}`}>
       <span className="relative shrink-0">
         <span className="min-w-[24px] h-6 px-1 rounded-full flex items-center justify-center text-[11.5px] font-bold whitespace-nowrap" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink }} data-testid="hole-badge">{s.label}</span>
@@ -472,7 +472,7 @@ function CourseFacts({ doc, stats }: { doc: CourseDoc; stats: HoleStats[] }) {
 /** The holes as a table: par, length, plays like, elevation; a row flies to its hole. */
 function HolesTable({ doc, stats }: { doc: CourseDoc; stats: HoleStats[] }) {
   const u = doc.units;
-  const go = (id: string) => { select(id); requestAnimationFrame(() => getView()?.fitHole(id)); };
+  const go = (id: string) => { select(id); requestAnimationFrame(() => getView()?.reveal(id)); };
   return (
     <table className="w-full text-xs text-zinc-300 tabular-nums" data-testid="review-table">
       <thead className="text-zinc-500 text-[10px] uppercase">

@@ -70,7 +70,7 @@ export function ViewerPanelBody() {
               const tees = holeTees(doc, s.holeId);
               return (
                 <li key={s.holeId}>
-                  <button data-testid="hole-row" onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
+                  <button data-testid="hole-row" onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.reveal(s.holeId)); }}
                     className={`w-full flex items-center gap-2 rounded-lg px-2 py-1.5 touch:py-2.5 text-left transition-colors ${sel ? "bg-orange-500/15 ring-1 ring-orange-400/60" : "hover:bg-white/[0.09]"}`}>
                     <span className="min-w-[1.5rem] h-6 px-1 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink }}>{s.label}</span>
                     <span className="flex-1 min-w-0">

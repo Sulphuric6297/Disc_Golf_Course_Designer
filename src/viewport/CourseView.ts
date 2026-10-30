@@ -321,6 +321,10 @@ export class CourseView {
   /** A flyover holds its first picture until the hole's detail and textures are in and a few
    * frames are drawn (so it looks right from the start), ten seconds at most. */
   private flyWait: { since: number; loaded: boolean; frames: number } | null = null;
+  /** Slow pieces (woods, underbrush, the measured trees) waiting to be made: a few each frame
+   * while the view is still, so opening a course or changing it never holds the page for the whole
+   * lot at once (on a phone that was half a minute); what was there stays until its new one's in. */
+  private slowQueue = new Map<string, { sig: string; make: () => THREE.Object3D | null; group: THREE.Group }>();
   private detailReady: Promise<unknown> = Promise.resolve();
   private fly: { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; t: number; dur: number; play: number; at: (t: number) => number; done?: () => void; title?: HoleTitle } | null = null;
   /** A hole whose line is being plotted by hand, and its turns so far (from the tee). */
@@ -881,26 +885,18 @@ export class CourseView {
     this.fitBounds({ minX: b.minX - pad, minY: b.minY - pad, maxX: b.maxX + pad, maxY: b.maxY + pad }, { margin: 1.15, minSpan: 160, animate });
   }
 
-  /** Brings an item or hole into view if it is off screen. */
-  reveal(id: string, rightInset = 0) {
-    const b = this.itemBounds(id);
-    if (!b) return;
-    const box = this.screenBox(id);
-    const m = 24;
-    const left = this.leftInset, visibleW = this.size.width - rightInset;
-    const top = this.topInset, visibleH = this.size.height - this.bottomInset;
-    if (box && box.x >= left + m && box.y >= top + m && box.x + box.width <= visibleW - m && box.y + box.height <= visibleH - m) return;
-    if (box && (box.width > visibleW - left - 2 * m || box.height > visibleH - top - 2 * m)) {
-      this.fitBounds(b, { margin: 1.3 });
-      return;
-    }
-    // (In the middle of the part of the map between the panels)
-    const shift = this.insetShift(this.controls.distance);
-    const cx = (b.minX + b.maxX) / 2 + shift.x;
-    const cy = (b.minY + b.maxY) / 2 + shift.y;
-    void this.controls.moveTo(cx, this.h(cx, cy), cy, true);
-    this.invalidate();
+  /** Brings a picked item or hole into view: the map slides, it never zooms (the owner's rule:
+   * picking, from the map, a list, Search or the arrows, keeps the zoom it's at). */
+  reveal(id: string) {
+    this.frame(id);
   }
+
+  /** Zooms to show the whole of an item, only when that's asked for (Zoom to it, F). */
+  zoomTo(id: string) {
+    const b = this.itemBounds(id);
+    if (b) this.fitBounds(b, { margin: 1.3, minSpan: 120 });
+  }
+
 
   /** The part of the map between the panels (container pixels). */
   private openMap() {
@@ -925,11 +921,25 @@ export class CourseView {
     if (box && box.x >= m.left && box.y >= m.top && box.x + box.width <= m.right && box.y + box.height <= m.bottom) return;
     const big = !!box && (box.width > m.right - m.left || box.height > m.bottom - m.top);
     if (big && this.inView(id)) return;
-    const shift = this.insetShift(this.controls.distance);
-    const cx = (b.minX + b.maxX) / 2 + shift.x, cy = (b.minY + b.maxY) / 2 + shift.y;
+    // (tilted, a thing partly showing above the panel stays put: sliding it up a tilted view sends
+    // it off toward the horizon, smaller, which looks like a zoom out)
+    if (this.controls.polarAngle > TILT_TOP && this.inView(id)) return;
+    const ix = (b.minX + b.maxX) / 2, iy = (b.minY + b.maxY) / 2;
+    const to = this.targetPutting({ x: ix, y: iy }, (m.left + m.right) / 2, (m.top + m.bottom) / 2);
     this.glide = null;
-    void this.controls.moveTo(cx, this.h(cx, cy), cy, true);
+    void this.controls.moveTo(to.x, this.h(to.x, to.y), to.y, true);
     this.invalidate();
+  }
+
+  /** Where the camera's target goes so a ground spot shows at a screen point (container pixels),
+   * the camera keeping its height, tilt and turn: exactly, from a ray through that point (on the
+   * target's own level), so it's slid no farther than it needs. */
+  private targetPutting(at: P, px: number, py: number) {
+    const t = this.controls.getTarget(new THREE.Vector3(), true);
+    const r = this.container.getBoundingClientRect();
+    const hit = this.ray(r.left + px, r.top + py).intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -t.y), new THREE.Vector3());
+    if (!hit) { const sh = this.insetShift(this.controls.distance); return { x: at.x + sh.x, y: at.y + sh.y }; }
+    return { x: at.x - (hit.x - t.x), y: at.y - (hit.z - t.z) };
   }
 
   /** The camera before a height was looked at from the side (to go back to). */
@@ -1034,6 +1044,7 @@ export class CourseView {
   /** A picture of the view as it is (`width` × `height`: at that size, in full detail, the same
    * framing widened or narrowed to fit; otherwise at the screen's size). */
   capture(width?: number, height?: number) {
+    this.finishBuilding();
     const map = !this.povHole;
     this.capturing = true;
     // (looking straight down: taken from the tilted pose, then put back)
@@ -1493,6 +1504,8 @@ export class CourseView {
       // still on their way: the photo, the trees' leaves)
       await new Promise(r => setTimeout(r, 150));
       while (this.paintedPending && left()) await pause();
+      // (and the woods and the rest still being made)
+      while (this.slowQueue.size && left()) await pause();
       if (this.flyWait === wait) this.cb.onFlyWait("detail");
       await this.detailReady;
       if (this.flyWait === wait) this.cb.onFlyWait("textures");
@@ -2110,6 +2123,7 @@ export class CourseView {
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop);
     const dt = this.clock.getDelta();
+    if (this.slowQueue.size && (this.flyWait || this.stillFor() > 150)) this.drainSlow();
     this.gliding = this.controls.update(dt);
     if (this.gliding) this.dirty = true;
     if (this.glide) { this.stepGlide(dt); this.dirty = true; }
@@ -2843,6 +2857,8 @@ export class CourseView {
       if (entry && entry.sig === sig) return;
       // (slow to make, such as woods: kept as they are while dragging, made again at its end)
       if (slow && entry && this.dragging) { this.afterDrag = true; return; }
+      // (and made a few at a time, over the frames after: see drainSlow)
+      if (slow) { this.slowQueue.set(key, { sig, make, group }); this.dirty = true; return; }
       if (entry) {
         entry.obj.parent?.remove(entry.obj);
         disposeObjectDeep(entry.obj);
@@ -3436,6 +3452,40 @@ export class CourseView {
       disposeObjectDeep(entry.obj);
       this.shapes.delete(key);
     }
+    // (a slow piece no longer wanted: not made)
+    for (const key of this.slowQueue.keys()) if (!seen.has(key)) this.slowQueue.delete(key);
+  }
+
+  /** Makes the slow pieces waiting, until `budget` ms have gone (Infinity: all of them). */
+  private drainSlow(budget = 8) {
+    const t0 = performance.now();
+    for (const [key, job] of this.slowQueue) {
+      this.slowQueue.delete(key);
+      const entry = this.shapes.get(key);
+      if (entry && entry.sig === job.sig) continue;
+      if (entry) {
+        entry.obj.parent?.remove(entry.obj);
+        disposeObjectDeep(entry.obj);
+        this.shapes.delete(key);
+      }
+      const obj = job.make();
+      if (obj) {
+        obj.traverse(o => { o.raycast = () => {}; });
+        if (!obj.name) obj.name = key;
+        job.group.add(obj);
+        this.shapes.set(key, { obj, sig: job.sig });
+      }
+      this.dirty = true;
+      if (performance.now() - t0 > budget) break;
+    }
+  }
+  /** Every slow piece made now (a flight, a picture: all of it in). */
+  finishBuilding() {
+    if (this.slowQueue.size) { this.drainSlow(Infinity); this.invalidate(); }
+  }
+  /** Whether slow pieces are still waiting to be made (for tests). */
+  building() {
+    return this.slowQueue.size > 0;
   }
 
   // ------------------------------------------------------------------ selection and hover

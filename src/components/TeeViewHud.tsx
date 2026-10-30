@@ -203,7 +203,8 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
         </div>
       )}
       <div className="absolute top-4 right-4 pointer-events-auto"><SceneButton /></div>
-      {hint && (!editing || ed.tool === "select") && <DeskTapRow editing={editing} bottom={(editing ? toolbar + 24 : 24) + 56} holes />}
+      {/* (whatever is painting in the background: the switch stays, so a tap always does what it says) */}
+      {!ed.flyover && !camera && (!editing || ed.tool === "select") && <DeskTapRow editing={editing} bottom={(editing ? toolbar + 24 : 24) + 56} holes />}
     </div>
   );
 }
