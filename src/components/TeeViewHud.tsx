@@ -1,6 +1,6 @@
 // What shows over the view from the tee or a flyover: the hole's numbers and the controls.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Clapperboard, Footprints, Home, Maximize2, Minimize2, Pencil, Plane, Settings2, Square, Video, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronUp, Clapperboard, Footprints, Home, Maximize2, Minimize2, Pencil, Plane, Settings2, Square, Video, X } from "lucide-react";
 import { useAllowed } from "../auth/perms";
 import { STAND_HERE, TEE_LEVELS } from "../constants";
 import { activeLayout, holeLabel } from "../lib/course";
@@ -124,7 +124,8 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
     return (
       <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui>
         {loading}
-        <div className={`absolute left-2 right-2 top-[max(8px,env(safe-area-inset-top))] pointer-events-auto glass rounded-2xl px-3 py-2.5 text-white shadow-2xl border border-white/10 max-w-[420px] ${ed.flyover ? "hidden" : ""}`} data-testid="tee-view-hud">
+        {ed.teeCardHidden && !ed.flyover && <CardChip label={s.label} color={lvl.color} ink={lvl.ink} big />}
+        <div className={`absolute left-2 right-2 top-[max(8px,env(safe-area-inset-top))] pointer-events-auto glass rounded-2xl px-3 py-2.5 text-white shadow-2xl border border-white/10 max-w-[420px] ${ed.flyover || ed.teeCardHidden ? "hidden" : ""}`} data-testid="tee-view-hud">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-[22px] font-bold" style={{ background: lvl.color, color: lvl.ink, fontFamily: "Oswald, Inter" }}>{s.label}</div>
             <div className="flex-1 min-w-0">
@@ -133,6 +134,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
               <div className="text-[13px] text-zinc-300">{fmtElev(s.elevationChange, doc.units)} · plays like {fmtDist(s.playsLike, doc.units)}</div>
             </div>
             {!ed.flyover && tiles}
+            <HideCard big />
           </div>
           <div className="mt-1.5"><ElevationProfile doc={doc} line={s.line} height={56} teeColor={lvl.color} /></div>
           {hole.notes && <p className="text-[13px] text-zinc-200 mt-1 line-clamp-2">{hole.notes}</p>}
@@ -160,8 +162,10 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
     <div className="absolute inset-0 pointer-events-none z-20" data-pov-ui>
       {loading}
       {/* (beside the side panel when something is picked there) */}
-      <div className={`absolute top-4 pointer-events-auto glass backdrop-blur rounded-2xl px-4 py-3 text-white shadow-2xl border border-white/10 w-[280px] ${ed.flyover ? "hidden" : ""} ${editing && panel ? "left-[388px]" : "left-4"}`} data-testid="tee-view-hud">
-        <div className="flex items-center gap-3">
+      {ed.teeCardHidden && !ed.flyover && <div className={`absolute top-4 ${editing && panel ? "left-[388px]" : "left-4"}`}><CardChip label={s.label} color={lvl.color} ink={lvl.ink} /></div>}
+      <div className={`absolute top-4 pointer-events-auto glass backdrop-blur rounded-2xl px-4 py-3 text-white shadow-2xl border border-white/10 w-[280px] ${ed.flyover || ed.teeCardHidden ? "hidden" : ""} ${editing && panel ? "left-[388px]" : "left-4"}`} data-testid="tee-view-hud">
+        <div className="relative flex items-center gap-3">
+          <div className="absolute -right-2 -top-1"><HideCard /></div>
           <div className="w-12 h-12 rounded-full flex items-center justify-center text-2xl font-bold" style={{ background: lvl.color, color: lvl.ink, fontFamily: "Oswald, Inter" }}>{s.label}</div>
           <div>
             <div className="text-xs uppercase tracking-wider text-zinc-300">{sub}</div>
@@ -200,6 +204,29 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
       <div className="absolute top-4 right-4 pointer-events-auto"><SceneButton /></div>
       {hint && (!editing || ed.tool === "select") && <DeskTapRow editing={editing} bottom={(editing ? toolbar + 24 : 24) + 56} holes />}
     </div>
+  );
+}
+
+/** Puts the hole's card away (standing, so it doesn't cover the view). */
+function HideCard({ big = false }: { big?: boolean }) {
+  const set = useEditor(e => e.set);
+  return (
+    <button className={`${big ? "w-11 h-11" : "w-7 h-7"} shrink-0 rounded-full flex items-center justify-center text-zinc-300 hover:text-white hover:bg-white/10 active:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400`}
+      onClick={() => set({ teeCardHidden: true })} aria-label="Hide the hole's card" title="Hide the hole's card" data-testid="hud-card-hide">
+      <ChevronUp size={big ? 20 : 15} />
+    </button>
+  );
+}
+
+/** The hole's card put away: its number in a small chip; a tap brings the card back. */
+function CardChip({ label, color, ink, big = false }: { label: string; color: string; ink: string; big?: boolean }) {
+  const set = useEditor(e => e.set);
+  return (
+    <button className={`${big ? "absolute left-2 top-[max(8px,env(safe-area-inset-top))] h-11" : "h-9"} pointer-events-auto glass rounded-full pl-1 pr-3 flex items-center gap-1.5 border border-white/10 shadow-2xl text-white text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400`}
+      onClick={() => set({ teeCardHidden: false })} aria-label="Show the hole's card" title="Show the hole's card" data-testid="hud-card-show">
+      <span className={`${big ? "w-9 h-9 text-lg" : "w-7 h-7 text-base"} rounded-full flex items-center justify-center font-bold`} style={{ background: color, color: ink, fontFamily: "Oswald, Inter" }}>{label}</span>
+      Hole
+    </button>
   );
 }
 

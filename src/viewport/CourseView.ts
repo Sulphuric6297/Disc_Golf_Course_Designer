@@ -1323,9 +1323,10 @@ export class CourseView {
     if (id) { this.showStep(null); this.tip(`${this.nameOf(id)} · click to pick it`, p.x, p.y); return; }
     const eye = this.povPose()?.eye;
     if (!edits && g && eye && this.eyeAt(p.x, p.y).cam === this.povCam) {
+      // (the ring alone: words following the pointer everywhere got in the way; the line along the
+      // bottom says a click walks)
       this.showStep({ x: g.x, y: g.z });
-      const far = Math.hypot(g.x - eye.x, g.z - eye.z);
-      this.tip(`Click to walk here · ${Math.round(this.doc?.course.units === "m" ? far * 0.3048 : far)} ${this.doc?.course.units === "m" ? "m" : "ft"}`, p.x, p.y);
+      this.tip(null);
     } else { this.showStep(null); this.tip(null); }
   }
 
@@ -2248,6 +2249,13 @@ export class CourseView {
         this.renderer.setScissorTest(false);
       }
       this.renderer.setViewport(0, 0, this.size.width, this.size.height);
+      // (what's placed over the view, comment pins and the like, follows it as it looks round and walks)
+      const c = this.povCam, key = `pov|${c.position.x.toFixed(2)}|${c.position.y.toFixed(2)}|${c.position.z.toFixed(2)}|${c.quaternion.x.toFixed(4)}|${c.quaternion.y.toFixed(4)}|${c.quaternion.z.toFixed(4)}|${c.fov.toFixed(2)}|${this.size.width}|${this.size.height}`;
+      if (key !== this.lastViewKey && !this.capturing) {
+        this.lastViewKey = key;
+        const info = this.viewInfo();
+        this.viewListeners.forEach(fn => fn(info));
+      }
       return;
     }
     // Tilting widens the lens; the camera moves in to keep the scale where it looks
@@ -5548,10 +5556,15 @@ export class CourseView {
       // (editing: a press on a thing, or with a tool that places one, goes on as on the map,
       // through the picture it's in; on open ground it looks around; on the corner map's open
       // ground, nothing)
-      // (Walk: a tap walks, on a thing or not; Edit: a tap picks, and open ground only looks)
+      // (Walk: a tap walks, on a thing or not. Edit: a drag looks around, as in Walk, unless it
+      // starts on the thing picked (a tree, a basket…: it moves) or a tool places things; a tap
+      // picks what's there. On the corner map, a press on a thing goes to it as on the map)
       if (this.tapsEdit() && !this.fly && !this.free) {
         const eye = this.eyeAt(e.clientX, e.clientY);
-        const onThing = this.tool.mode !== "select" || !!this.pick(e.clientX, e.clientY);
+        const hit = this.tool.mode === "select" ? this.pick(e.clientX, e.clientY) : null;
+        const it = hit ? this.item(hit) : null;
+        const movesPicked = !!it && hit === this.selectedId && it.type !== "area" && it.type !== "line" && it.type !== "structure";
+        const onThing = this.tool.mode !== "select" || movesPicked || (eye.cam === this.miniCam && !!hit);
         if (onThing) {
           this.dragEye = eye;
           const done = () => { window.removeEventListener("pointerup", done, true); window.removeEventListener("pointercancel", done, true); setTimeout(() => { this.dragEye = null; }, 0); };
@@ -5563,7 +5576,7 @@ export class CourseView {
         } else {
           e.preventDefault();
           e.stopPropagation();
-          this.povDrag(e, true);
+          this.povDrag(e, true, ev => this.povTapPick(ev));
           return;
         }
       } else {
@@ -6639,7 +6652,19 @@ export class CourseView {
   }
 
   /** Drag in the tee view to look around. */
-  private povDrag(e: PointerEvent, lookOnly = false) {
+  /** Standing, editing: a tap picks what's there, as a click on the map does (a tree standing over
+   * a big shape first: most trees stand in a wood); a tap on open ground lets go. */
+  private povTapPick(ev: PointerEvent) {
+    const hit = this.pick(ev.clientX, ev.clientY);
+    const it = hit ? this.item(hit) : null;
+    const big = !hit || (!!it && (it.type === "area" || it.type === "line" || it.type === "structure")) || (!it && !!this.hole(hit));
+    const tree = big && !this.readOnly ? this.treeAtScreen(ev.clientX, ev.clientY) : null;
+    if (tree) this.cb.onAdoptTree(tree, this.lookOf(tree));
+    else this.cb.onSelect(hit);
+  }
+
+  /** Standing: a drag looks around; a tap (`onTap`, or else) walks there, unless `lookOnly`. */
+  private povDrag(e: PointerEvent, lookOnly = false, onTap?: (ev: PointerEvent) => void) {
     if (this.fly) return;
     const x0 = e.clientX, y0 = e.clientY;
     let moved = false;
@@ -6669,6 +6694,7 @@ export class CourseView {
     };
     const up = (ev: PointerEvent) => {
       cleanup();
+      if (!moved && onTap) { onTap(ev); return; }
       // (a press that didn't move, on open ground in the view: a step there)
       if (!moved && !lookOnly && !this.fly && !free && this.tool.mode === "select" && this.eyeAt(ev.clientX, ev.clientY).cam === this.povCam) {
         const g = this.groundAt(ev.clientX, ev.clientY);

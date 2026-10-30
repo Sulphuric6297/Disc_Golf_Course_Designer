@@ -192,6 +192,8 @@ type EditorStore = {
   teeStand?: { x: number; y: number; face?: number } | null;
   /** The map from above in the tee view's corner while editing. */
   teeMap?: "small" | "big" | "off";
+  /** Standing: the hole's card at the top left put away (a small chip with its number instead). */
+  teeCardHidden?: boolean;
   /** Standing, an editor's tap: walks there, or picks the thing tapped (unset: walks). */
   standTap?: "walk" | "edit";
   /** A part of the picked field (its backstop, its fence…): outlined, its own settings shown. */

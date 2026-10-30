@@ -88,7 +88,12 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
       onPose: pose => useEditor.getState().set({ view: pose === "top" ? "2d" : "3d" }),
       onTeeView: id => useEditor.getState().set({ teeView: id }),
       onContextMenu: i => menuRef.current(i),
-      onStand: p => useEditor.getState().set({ teeStand: p }),
+      // (a walk ended near another hole: on that hole now, still looking the same way)
+      onStand: p => {
+        const ed = useEditor.getState(), near = getView()?.standOn(p);
+        if (near && near !== STAND_HERE && near !== ed.teeView && !ed.flyover) ed.set({ teeView: near, teeViewTee: null, teeStand: p });
+        else ed.set({ teeStand: p });
+      },
       onFieldPart: part => useEditor.getState().set({ fieldPart: part }),
       onDrawProgress: n => useEditor.getState().set({ drawPoints: n }),
       onPlotEnd: () => useEditor.getState().set({ plotLine: null }),

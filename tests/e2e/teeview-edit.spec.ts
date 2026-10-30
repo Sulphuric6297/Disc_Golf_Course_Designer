@@ -33,7 +33,9 @@ test("standing: the person dragged onto the map; Walk or Edit says what a click 
   const ahead = await screenOf(page, 420, 560, 0);
   await expect(page.getByTestId("tap-walk")).toHaveAttribute("aria-checked", "true");
   await page.mouse.move(ahead.x, ahead.y);
-  await expect(page.getByTestId("stand-tip")).toContainText("walk here");
+  // (the ring where a click would step; no words following the pointer)
+  await expect.poll(() => page.evaluate(() => !!(window as any).__dgView.stepRing)).toBe(true);
+  await expect(page.getByTestId("stand-tip")).toBeHidden();
   // Edit: over the tree, its name, and a click picks it (its panel opens)
   await page.getByTestId("tap-edit").click();
   await page.mouse.move(crown.x - 2, crown.y);
@@ -61,10 +63,18 @@ test("standing: the person dragged onto the map; Walk or Edit says what a click 
   await page.evaluate(() => (window as any).__dgActions.select(null));
   await expect(page.getByTestId("tee-view-hud")).toBeVisible();
 
-  // Edit: a click on open ground walks nowhere
+  // Edit: a click on open ground walks nowhere (it lets go); a drag there looks around, as in Walk
   const was = await stand(page);
   await page.mouse.click(ahead.x, ahead.y);
   await page.waitForTimeout(1200);
+  expect((await stand(page))?.x).toBeCloseTo(was.x, 0);
+  const yaw = () => page.evaluate(() => (window as any).__dgView.povLook.yaw);
+  const y0 = await yaw();
+  await page.mouse.move(ahead.x, ahead.y);
+  await page.mouse.down();
+  await page.mouse.move(ahead.x + 60, ahead.y, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.abs((await yaw()) - y0)).toBeGreaterThan(0.05);
   expect((await stand(page))?.x).toBeCloseTo(was.x, 0);
   // The basket far down the hole picks as itself
   const basket = (await course(page)).items.find((i: any) => i.type === "basket" && i.holeId === hole.id);
@@ -73,11 +83,11 @@ test("standing: the person dragged onto the map; Walk or Edit says what a click 
   await expect.poll(async () => (await editorState(page)).selectedId).toBe(basket.id);
   await page.evaluate(() => (window as any).__dgActions.select(null));
 
-  // Walk: over open ground, "walk here", and a click walks there
+  // Walk: over open ground, the ring where it would step, and a click walks there
   await page.getByTestId("tap-walk").click();
   await page.mouse.move(ahead.x - 2, ahead.y);
   await page.mouse.move(ahead.x, ahead.y);
-  await expect(page.getByTestId("stand-tip")).toContainText("walk here");
+  await expect.poll(() => page.evaluate(() => !!(window as any).__dgView.stepRing)).toBe(true);
   await page.mouse.click(ahead.x, ahead.y);
   await expect.poll(async () => (await stand(page))?.x, { timeout: 30_000 }).toBeGreaterThan(330);
 
@@ -190,4 +200,30 @@ test("standing with no hole at all, or far from every hole: right there, the way
   await drop(400, 340);
   await expect.poll(async () => (await editorState(page)).teeView).toBe(hole.id);
   await expect(page.getByTestId("tee-view-hud")).toBeVisible();
+});
+
+test("standing: walking near another hole puts you on it; the hole's card hides to a chip and comes back; what's over the view follows it as it turns", async ({ page }) => {
+  test.setTimeout(300_000);
+  await blankCourse(page);
+  const one = await addHole(page, { x: 200, y: 300 }, { x: 600, y: 300 });
+  const two = await addHole(page, { x: 200, y: 800 }, { x: 600, y: 800 });
+  await page.keyboard.press("Escape");
+  await page.evaluate(id => (window as any).__dgEditor().set({ teeView: id, teeStand: { x: 250, y: 320 }, flyover: false }), one.id);
+  await expect(page.getByTestId("tee-view-hud")).toBeVisible();
+  // (what's placed over the view hears of each move: comment pins follow it)
+  const heard = await page.evaluate(() => { const w = window as any; w.__heard = 0; w.__dgView.onView(() => { w.__heard++; }); return w.__heard; });
+  await page.mouse.move(700, 400);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(820, 400, { steps: 4 });
+  await page.mouse.up({ button: "right" });
+  await expect.poll(() => page.evaluate(() => (window as any).__heard)).toBeGreaterThan(heard + 1);
+  // The card put away: a chip with the hole's number; back again
+  await page.getByTestId("hud-card-hide").click();
+  await expect(page.getByTestId("tee-view-hud")).toBeHidden();
+  await page.getByTestId("hud-card-show").click();
+  await expect(page.getByTestId("tee-view-hud")).toBeVisible();
+  // A walk that ends by hole 2's line: on hole 2 now
+  await page.evaluate(() => (window as any).__dgView.walkTo({ x: 260, y: 780 }));
+  await expect.poll(async () => (await editorState(page)).teeView, { timeout: 30_000 }).toBe(two.id);
+  expect((await stand(page))?.y).toBeCloseTo(780, -1);
 });
