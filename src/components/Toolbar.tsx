@@ -16,6 +16,7 @@ import { HelpLink } from "./ui";
 import { PANEL_INSET, useSelection } from "./Inspector";
 import { DrawBar } from "./DrawBar";
 import { TREE_KINDS } from "./TreeSettings";
+import { SPECIES } from "../three/ezShapes";
 
 /** A built thing's map symbol, small (for the tool's chips and the Features list). */
 export const structureIcon = (kind: StructureKind, size: number, id: string) =>
@@ -276,6 +277,22 @@ export function toolOptions(ed: Editor): ReactNode[] | null {
   }
 }
 
+/** Which species the Trees tool plants, leafy or pine: any of the course's kinds, or one. */
+function TreeSpeciesPick({ ed }: { ed: Editor }) {
+  const kind = ed.treeKind;
+  const list = SPECIES[kind === "conifer" ? "conifer" : "broadleaf"];
+  const now = ed.treeSpecies[kind] ?? null;
+  const pick = (id: string | null) => ed.set({ treeSpecies: { ...ed.treeSpecies, [kind]: id ?? undefined } });
+  return (
+    <div className={`${GROUP} max-w-full overflow-x-auto dg-noscrollbar`} role="radiogroup" aria-label="Species" data-testid="tree-species">
+      <button role="radio" aria-checked={now === null} title="One of the course's kinds of trees, as the woods grow" onClick={() => pick(null)} className={radio(now === null)} data-testid="tree-species-any">Any kind</button>
+      {list.map(sp => (
+        <button key={sp.id} role="radio" aria-checked={now === sp.id} onClick={() => pick(sp.id)} className={`${radio(now === sp.id)} whitespace-nowrap`} data-testid={`tree-species-${sp.id}`}>{sp.label}</button>
+      ))}
+    </div>
+  );
+}
+
 /** How the active tool draws (point by point, or a rectangle, a circle, freehand, painted), with
  * the brush's size while painting: a row of its own under the kinds. Null when it draws one way. */
 export function toolShapes(ed: Editor): ReactNode[] | null {
@@ -292,7 +309,8 @@ export function toolShapes(ed: Editor): ReactNode[] | null {
           </button>
         ))}
       </div>,
-      ...(now === "paint" ? [<BrushSliders key="brush" ed={ed} strength={false} />] : [])
+      ...(now === "paint" ? [<BrushSliders key="brush" ed={ed} strength={false} />] : []),
+      ...(ed.treeKind === "bush" ? [] : [<TreeSpeciesPick key="species" ed={ed} />])
     ];
   }
   // (a field: at its usual size with one click, or by its corners, or as a rectangle)
@@ -339,8 +357,8 @@ export function toolShapes(ed: Editor): ReactNode[] | null {
 /** What a placed amenity is called in the hint ("Click where the bench goes"). */
 const amenityName = (k: AmenityKind) =>
   k === "here" ? "You are here mark" : k === "parking" ? "parking sign" : k === "kiosk" ? "map board" : k === "firstaid" ? "first aid sign" : AMENITY_KINDS[k].label.toLowerCase();
-const TREE_PLURAL: Partial<Record<TreeKind, string>> = { deciduous: "leafy trees", conifer: "pines", bush: "bushes" };
-const TREE_STAND: Partial<Record<TreeKind, string>> = { deciduous: "stand of leafy trees", conifer: "stand of pines", bush: "patch of bushes" };
+const TREE_PLURAL: Partial<Record<TreeKind, string>> = { deciduous: "leafy trees", conifer: "conifers", bush: "bushes" };
+const TREE_STAND: Partial<Record<TreeKind, string>> = { deciduous: "stand of leafy trees", conifer: "stand of conifers", bush: "patch of bushes" };
 
 /** What to do with the active tool, worded for a mouse and keys or for a touch screen. */
 export function toolHint(ed: Editor, touch = false): string | undefined {
@@ -378,7 +396,7 @@ export function toolHint(ed: Editor, touch = false): string | undefined {
   if (ed.tool === "add-amenity") return `${click} where the ${amenityName(ed.amenityKind)} goes`;
   if (ed.tool === "add-field") return `${click} where the ${fieldWord(ed.fieldKind)} goes`;
   if (ed.tool === "measure") return (ed.measureMode ?? "spot") === "path" ? `${click} along the path` : `${click} a start point`;
-  if (ed.tool === "sculpt") return touch ? "Paint the ground with one finger · two fingers move the map" : "Drag over the ground to paint it · Space+drag moves the map";
+  if (ed.tool === "sculpt") return touch ? "Paint the ground with one finger · two fingers move the map" : `Drag over the ground to paint it · Space+drag ${ed.teeView ? "looks around" : "moves the map"}`;
   const h = HINTS[ed.tool];
   return h && `${click} ${h}`;
 }
@@ -447,7 +465,8 @@ export function Toolbar() {
     watch.current = new ResizeObserver(() => useToolbarRoom.setState({ height: el.offsetHeight }));
     watch.current.observe(el);
   }, []);
-  if (ed.teeView) return null;
+  // (standing in 3D: there too, while not flying)
+  if (ed.teeView && ed.flyover) return null;
   const options = toolOptions(ed);
   const shapes = toolShapes(ed);
   const hint = toolHint(ed, touch);

@@ -16,6 +16,7 @@ import { courseRoutes } from "./routes/courses.js";
 import { versionRoutes } from "./routes/versions.js";
 import { commentRoutes } from "./routes/comments.js";
 import { publicRoutes } from "./routes/public.js";
+import { liveRooms, type Live } from "./live.js";
 
 declare module "fastify" {
   interface FastifyRequest { auth: Auth | null }
@@ -32,11 +33,17 @@ export interface Ctx {
   authLimit?: number;
 }
 
+/** What the routes get: the above, and the courses open live. */
+export type RouteCtx = Ctx & { live: Live };
+
 const SAFE = new Set(["GET", "HEAD", "OPTIONS"]);
 
-export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
-  const { sql, cfg } = ctx;
+export async function buildApp(base: Ctx, opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
+  const { sql, cfg } = base;
+  const ctx: RouteCtx = { ...base, live: liveRooms(sql) };
   const app = Fastify({ logger: opts.logger ?? false, trustProxy: cfg.trustProxy, bodyLimit: 1 << 20 });
+  // (stopping: the courses open live are written first, and their connections ended)
+  app.addHook("preClose", async () => { await ctx.live.closeAll(); });
 
   await app.register(helmet, {
     contentSecurityPolicy: {

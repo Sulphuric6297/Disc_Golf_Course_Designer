@@ -90,7 +90,7 @@ export interface TreeItem extends BaseItem {
   fullness?: number;
   /** Found on the imported aerial photo, or mapped on OpenStreetMap (one by one, in a row, or a
    * hedge's bushes): replaced on re-import. */
-  importSource?: "photo" | "osm";
+  importSource?: "photo" | "osm" | "lidar";
 }
 
 /** What a park's thing is on OpenStreetMap (a ball field, a playground, a pool…), kept with it
@@ -117,6 +117,15 @@ export interface LabelItem extends BaseItem {
 
 /** Areas drawn on the map. OB and hazards are what play cares about; the rest make the map read. */
 export type AreaKind = "ob" | "hazard" | "casual" | "water" | "fairway" | "green" | "woods" | "rough" | "nogo" | "parking" | "building" | "sand" | "field";
+/** A ball field's size, by who plays on it. */
+export type FieldLeague = "teeball" | "little" | "softball" | "high";
+/** The pieces a field or court is made of, each picked and set on its own. */
+export type FieldPart = "grass" | "infield" | "mound" | "lines" | "backstop" | "fence" | "dugouts" | "track" | "courts" | "surround" | "nets";
+/** A part's own settings: off; its height, distance and width (ft; what each is for depends on
+ * the part: a backstop's height and how far behind home, a dugout's length and how far out); a
+ * color by name; mown bands (0: none). */
+export type FieldPartSet = { off?: boolean; h?: number; d?: number; w?: number; c?: string; n?: number };
+export type CourtColors = "blue" | "green" | "red";
 /** What a park's field, court or play area is (an area of kind "field"). */
 export type FieldKind = "baseball" | "softball" | "soccer" | "football" | "multi" | "tennis" | "pickleball" | "basketball" | "volleyball"
   | "playground" | "pool" | "splash" | "dog" | "skate" | "track" | "garden";
@@ -139,6 +148,17 @@ export interface AreaItem extends BaseItem {
    * a ball field's home plate at corner `home` of its outline (unset: the corner nearest a right angle). */
   fieldTurn?: number;
   home?: number;
+  /** A ball field's home plate placed by hand: from corner `home`, this far along the corner's
+   * middle line (x) and across it (y) (ft); the field faces the middle of its outline from there
+   * (unset: just in from the corner). */
+  plate?: P;
+  /** A ball field's size, by who plays on it (unset: worked out from the outline). */
+  league?: FieldLeague;
+  /** Its parts' own settings: one switched off, a backstop's height and how far behind home it
+   * stands, a fence's height (by part). */
+  parts?: Partial<Record<FieldPart, FieldPartSet>>;
+  /** Courts' colors (unset: blue courts in green). */
+  courtColors?: CourtColors;
   /** Outline in plan coordinates (x, y of the item is its middle). */
   points: P[];
   /** For one hole only (unset: the whole course). */
@@ -163,6 +183,9 @@ export interface AreaItem extends BaseItem {
   /** Woods filled by the app: its mix (shares of pines and of bushes; the rest leafy), how thick
    * (1 = usual), and its trees' heights (ft). Unset: the landscape's. */
   pines?: number;
+  /** A stand's one species (lib/treeMix: oak, pear, spruce…), the Trees tool's or set in its panel;
+   * unset: the course's kinds of trees. */
+  species?: string;
   bushes?: number;
   density?: number;
   heights?: [number, number];
@@ -177,7 +200,7 @@ export interface AreaItem extends BaseItem {
    * inside: 0 even everywhere, 1 almost none deep inside (unset: 0.6). */
   brushEdge?: number;
   /** Brought in from OpenStreetMap, or found on the satellite photo (replaced on re-import). */
-  importSource?: "osm" | "photo" | "lidar";
+  importSource?: "osm" | "photo" | "lidar" | "usgs" | "nwi";
   /** From OpenStreetMap: what it is there (a ball field, a playground), whatever kind it's drawn as. */
   park?: ParkDetail;
 }
@@ -228,7 +251,7 @@ export interface LineItem extends BaseItem {
    * start, 1 its end; unset: all of it). */
   obStretches?: [number, number][];
   /** Brought in from OpenStreetMap (replaced on re-import). */
-  importSource?: "osm";
+  importSource?: "osm" | "usgs";
   /** From OpenStreetMap: what it is there (a ball field's backstop), whatever kind it's drawn as. */
   park?: ParkDetail;
 }
@@ -252,12 +275,16 @@ export interface StructureItem extends BaseItem {
   height?: number;
   /** Buildings and shelters (unset: gable for a building, hip for a shelter). */
   roof?: RoofKind;
+  /** The roof's slope, rise over run, as measured from the air (unset: about 6 in 12). */
+  roofPitch?: number;
+  /** The ridge runs across the building, between its long sides (unset: along its length). */
+  ridgeAcross?: boolean;
   /** Its own colors (unset: the map's): the roof, and a building's walls. */
   roofColor?: string;
   wallColor?: string;
   /** Brought in from OpenStreetMap, or (a building nobody's mapped) traced from the air: looking
    * the maps up again replaces it. */
-  importSource?: "osm" | "traced";
+  importSource?: "osm" | "traced" | "fema" | "lidar";
   /** From OpenStreetMap: what it is there (a shed, a water tower), whatever kind it's drawn as. */
   park?: ParkDetail;
   holeId?: string;
@@ -681,6 +708,9 @@ export interface MapStyle {
   colorStrength: number;
   /** Painted look: tones in crisp bands (1) or blended smoothly (0). */
   paint: number;
+  /** The kinds of trees the woods and measured trees grow (lib/treeMix: oak, maple, spruce…; unset:
+   * oak, ash and pine). */
+  treeKinds?: string[];
   /** Turn of the map on the page, degrees (0: north up). */
   rotation: number;
   /** How big labels are (1 = normal). */
@@ -717,6 +747,8 @@ export interface SiteInfo {
   lidarFailed?: boolean;
   /** OpenStreetMap couldn't be reached the last time it was asked. */
   osmFailed?: boolean;
+  /** Holes came in from the course mapped on OpenStreetMap (its credit goes on the map). */
+  holesFromOsm?: boolean;
   /** Some of the photo's map tiles were missing. */
   tilesMissing?: boolean;
 }

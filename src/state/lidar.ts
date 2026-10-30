@@ -6,7 +6,7 @@
 import { usgsDem } from "../lib/geo/elevation";
 import { withMeasuredHeights } from "../lib/geo/buildings";
 import { fetchLidar } from "../lib/geo/lidarFetch";
-import { groundOnGrid } from "../lib/lidar";
+import { findBushes, groundOnGrid } from "../lib/lidar";
 import { signed, withMeasuredTrees } from "../lib/importSite";
 import { natureFromPhoto } from "../lib/geo/photoNature";
 import { summerFills, treesFromSummer } from "../lib/summerTrees";
@@ -43,7 +43,7 @@ export const measureLidar = async () => {
         lidar: { source: got.source, trees, ...(summer.length ? { fromPhoto: summer.length } : {}) },
         terrainHeights: g.heights,
         terrainOriginal: undefined,
-        items: withMeasuredTrees(items, trees).items,
+        items: withMeasuredTrees(items, trees, findBushes(got.measured), p => !treeFree(items)(p)).items,
         site: { ...doc.site, baseElevationFt: Math.round(g.min * 10) / 10, elevationSource: got.source, noLidar: undefined, lidarFailed: undefined }
       };
     });

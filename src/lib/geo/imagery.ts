@@ -29,12 +29,15 @@ export const MAP_IMAGERY_SOURCES: Record<MapImagerySource, {
 // Statewide high-resolution orthoimagery (public ArcGIS ImageServers, no key): the state services
 // of photoSources, as the site picker draws them over Esri inside their states.
 export const STATE_ORTHO_SOURCES: {
+  id: string;
+  /** A map service (export), not an image service (exportImage). */
+  map: boolean;
   label: string;
   attribution: string;
   region: GeoBounds;
   feetPerPixel: number;
   services: string[];
-}[] = IMAGE_SERVICES.filter(s => s.id !== "naip").map(s => ({ label: s.label, attribution: s.credit, region: s.regions[0], feetPerPixel: s.metersPerPx * FEET_PER_METER, services: s.urls }));
+}[] = IMAGE_SERVICES.filter(s => s.id !== "naip").map(s => ({ id: s.id, map: !!s.map, label: s.label, attribution: s.credit, region: s.regions[0], feetPerPixel: s.metersPerPx * FEET_PER_METER, services: s.urls }));
 
 export const findStateOrtho = (lat: number, lon: number) =>
   STATE_ORTHO_SOURCES.find(src => lat >= src.region.south && lat <= src.region.north && lon >= src.region.west && lon <= src.region.east);
@@ -64,7 +67,7 @@ export const fetchArcgisExportImage = async (
   bounds: GeoBounds,
   widthPx: number,
   heightPx: number,
-  opts: { bands?: string; signal?: AbortSignal; onProgress?: (fraction: number) => void; maxPx?: number } = {}
+  opts: { bands?: string; signal?: AbortSignal; onProgress?: (fraction: number) => void; maxPx?: number; map?: boolean } = {}
 ) => {
   const out = document.createElement("canvas");
   out.width = widthPx;
@@ -85,7 +88,10 @@ export const fetchArcgisExportImage = async (
       const east = west + w * lonPerPx;
       const north = bounds.north - py * latPerPx;
       const south = north - h * latPerPx;
-      const params = new URLSearchParams({
+      // (a map service: its export, which takes no bands)
+      const params = new URLSearchParams(opts.map ? {
+        bbox: mercatorBbox({ west, east, north, south }), bboxSR: "3857", imageSR: "3857", size: `${w},${h}`, format: "jpg", transparent: "false", f: "image"
+      } : {
         bbox: mercatorBbox({ west, east, north, south }),
         bboxSR: "3857",
         imageSR: "3857",
@@ -97,7 +103,7 @@ export const fetchArcgisExportImage = async (
         f: "image"
       });
       jobs.push((async () => {
-        const res = await fetch(`${serviceUrl}/exportImage?${params.toString()}`, { signal: opts.signal });
+        const res = await fetch(`${serviceUrl}/${opts.map ? "export" : "exportImage"}?${params.toString()}`, { signal: opts.signal });
         if (!res.ok) throw new Error(`Imagery service ${res.status}`);
         const blob = await res.blob();
         if (!blob.type.startsWith("image/")) throw new Error("Imagery service returned no image");
@@ -197,7 +203,7 @@ const servicePhoto = async (s: ImageService, c: PhotoChoice, bounds: GeoBounds, 
       let a = 0, b = wantNir ? 0 : 1;
       const tell = () => onProgress?.((a + b) / 2);
       const [photo, nir] = await Promise.all([
-        fetchArcgisExportImage(url, bounds, widthPx, heightPx, { bands: s.rgbBands, signal: opts.signal, maxPx: s.maxPx, onProgress: f => { a = f; tell(); } }),
+        fetchArcgisExportImage(url, bounds, widthPx, heightPx, { bands: s.rgbBands, signal: opts.signal, maxPx: s.maxPx, map: s.map, onProgress: f => { a = f; tell(); } }),
         wantNir ? fetchArcgisExportImage(url, bounds, widthPx, heightPx, { bands: s.nirBand, signal: opts.signal, maxPx: s.maxPx, onProgress: f => { b = f; tell(); } }).catch(err => { if (opts.signal?.aborted) throw err; console.info(`${s.label}: no infrared band`, err); return null; }) : null
       ]);
       return { url: photo, partial: false, metersPerPx: (widthFt / FEET_PER_METER) / widthPx, nir };

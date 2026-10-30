@@ -1,6 +1,9 @@
 // The map's menu for a hole or a thing on it, and for open ground (a right-click on a computer, a
 // finger held on a phone): one list, so both menus offer the same rows in the same words.
-import { ClipboardPaste, Copy, Eye, Lock, Maximize2, Plane, Ruler, Trash2, Unlock, type LucideIcon } from "lucide-react";
+import { ClipboardPaste, Copy, Eye, Lock, Maximize2, MessageSquarePlus, Plane, Ruler, Trash2, Unlock, type LucideIcon } from "lucide-react";
+import { SERVER } from "../auth/api";
+import { startComment } from "../auth/Comments";
+import { useServerCourse } from "../auth/courses";
 import { AREA_KINDS, LINE_KINDS, STRUCTURE_KINDS } from "../constants";
 import { holeLabel } from "../lib/course";
 import { holeStats } from "../lib/holeStats";
@@ -13,6 +16,10 @@ import { itemTitle } from "./Inspector";
 
 /** One row of the menu (`icon`: on a phone's sheet). */
 export type ItemAction = { label: string; run: () => void; testid?: string; icon?: LucideIcon; danger?: boolean };
+
+/** A comment's row (on a HyzerLab server, a course saved there): on this spot, or on this thing. */
+const commentRow = (label: string, p: P | null, on?: { kind: "hole" | "item"; id: string; x?: number; y?: number }): ItemAction[] =>
+  SERVER && useServerCourse.getState().id && p ? [{ label, icon: MessageSquarePlus, run: () => startComment({ p, on }), testid: "menu-comment" }] : [];
 
 /** A thing named by its kind, for a menu row: "the bridge", "the woods", "the OB line". */
 export const kindName = (item: CourseItem) => {
@@ -54,6 +61,11 @@ export const itemActions = (itemId: string, ground: P | null, named = false): It
     a.push({ label: "Fly over the hole", icon: Plane, run: () => set({ teeView: holeId, flyover: true }) });
   }
   a.push({ label: hole ? "Zoom to this hole" : "Zoom to it", icon: Maximize2, run: () => (hole ? getView()?.fitHole(hole.id) : getView()?.reveal(itemId)), testid: "menu-zoom" });
+  // (a comment on it: a point thing's pin moves with it; on a hole, a shape or a line, on the spot)
+  const at = item && "x" in item && typeof item.x === "number" && typeof item.y === "number" ? { x: item.x, y: item.y } : null;
+  if (hole) a.push(...commentRow("Comment on this hole", ground, { kind: "hole", id: hole.id }));
+  else if (item && at) a.push(...commentRow(`Comment on this ${kindName(item)}`, at, { kind: "item", id: item.id, x: at.x, y: at.y }));
+  else a.push(...commentRow("Comment here", ground));
   // (view only: nothing that changes the course)
   if (readOnly) return a;
   if (hole && done && ground) a.push({ label: "Bend the hole here", run: () => bendHoleAt(hole.id, ground), testid: "menu-bend" });
@@ -95,7 +107,8 @@ export const itemActions = (itemId: string, ground: P | null, named = false): It
 export const groundActions = (ground: P, onOpenGround: boolean): { hole?: string; rows: ItemAction[] } => {
   const doc = getDoc();
   const ed = useEditor.getState();
-  if (useCourse.getState().readOnly) return { rows: [] };
+  const comment = commentRow("Comment here", ground);
+  if (useCourse.getState().readOnly) return { rows: comment };
   const rows: ItemAction[] = [];
   const here = onOpenGround && ed.step === "design";
   const working = here ? doc.holes.find(h => h.id === (ed.activeHoleId ?? ed.selectedId)) : undefined;
@@ -113,5 +126,6 @@ export const groundActions = (ground: P, onOpenGround: boolean): { hole?: string
     rows.push({ label: "Measure from here", icon: Ruler, run: toolThen("measure", p => getView()?.measureFrom(p)) });
   }
   if (canPaste()) rows.push({ label: "Paste here", icon: ClipboardPaste, run: () => pasteClipboard(ground) });
+  rows.push(...comment);
   return { hole: working ? `Hole ${holeLabel(doc, working.id)}` : undefined, rows };
 };

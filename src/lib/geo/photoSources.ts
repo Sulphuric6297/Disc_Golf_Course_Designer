@@ -5,7 +5,7 @@
 // website (CORS). Only quick metadata calls here; the photo itself is downloaded in imagery.ts.
 import { FEET_PER_METER, METERS_PER_DEG_LAT, mercatorBbox, type GeoBounds } from "./core";
 
-export type PhotoSourceId = "naip" | "ky" | "nc" | "esri";
+export type PhotoSourceId = "naip" | "ky" | "nc" | "in" | "oh" | "pa" | "va" | "tn" | "wi" | "ny" | "nj" | "ct" | "md" | "mo" | "esri";
 /** In leaf (late spring to early fall), bare (late fall to early spring), or between. */
 export type PhotoSeason = "leaf-on" | "leaf-off" | "mixed";
 
@@ -52,6 +52,10 @@ export type ImageService = {
   nirBand?: string;
   /** When the catalog doesn't say the season (only the year). */
   season?: PhotoSeason;
+  /** A map service (export, no catalog to ask): whether it has a picture here is seen on a small
+   * one of the frame, and its year is the flight's (`year`). */
+  map?: boolean;
+  year?: number;
   /** What the catalog says of the picture at a spot: its date, year, pixel size. */
   read: (a: Record<string, unknown>) => { date?: string; year?: number; metersPerPx?: number };
 };
@@ -114,8 +118,41 @@ export const IMAGE_SERVICES: ImageService[] = [
     // (flown in winter)
     season: "leaf-off",
     read: a => ({ date: dateInName(a.name) })
-  }
+  },
+  // More states' own photos, sharper than NAIP (3 to 12 in), all free with no key: image services
+  // (a catalog to ask; the year in each picture's name) and map services (a picture, the flight's
+  // year). Statewide mapping flights go in early spring, before the leaves (Wisconsin's and
+  // Pennsylvania's say so).
+  ...([
+    ["in", "Indiana aerial photo", "Imagery: Indiana Geographic Information Office", [37.77, 41.77, -88.1, -84.78], "https://di-ingov.img.arcgis.com/arcgis/rest/services/DynamicWebMercator/Indiana_Current_Imagery/ImageServer", 0.0762, 2025, "leaf-off", true],
+    ["oh", "Ohio aerial photo (OSIP)", "Imagery: Ohio Statewide Imagery Program", [38.4, 41.98, -84.82, -80.52], "https://maps.ohio.gov/image/rest/services/osip_most_current/ImageServer", 0.1524, 2024, "leaf-off", false],
+    ["wi", "Wisconsin aerial photo (WROC)", "Imagery: WisDOT, Wisconsin Regional Orthoimagery Consortium", [42.49, 47.31, -92.89, -86.25], "https://di-wisdot.img.arcgis.com/arcgis/rest/services/Statewide/WisconsinWROC/ImageServer", 0.3048, 2025, "leaf-off", true],
+    ["ct", "Connecticut aerial photo", "Imagery: CT ECO, 2023 Connecticut Orthophotography", [40.98, 42.05, -73.73, -71.79], "https://cteco.uconn.edu/ctraster/rest/services/images/Ortho_2023/ImageServer", 0.0762, 2023, "leaf-off", true],
+    ["md", "Maryland aerial photo", "Imagery: MD iMAP, Maryland DoIT", [37.91, 39.72, -79.49, -75.05], "https://mdgeodata.md.gov/imagery/rest/services/SixInch/SixInchImagery/ImageServer", 0.1524, 2024, "leaf-off", true],
+    ["mo", "Missouri aerial photo", "Imagery: Missouri Spatial Data Information Service (MSDIS)", [35.99, 40.61, -95.77, -89.1], "https://stateimagery.msdis.missouri.edu/arcgis/rest/services/Missouri_6inch_Statewide_2023_2024_Dynamic/ImageServer", 0.15, 2024, undefined, true]
+  ] as const).map(([id, label, credit, [south, north, west, east], url, mpp, year, season, nir]): ImageService => ({
+    id, label, credit, kind: "aerial", regions: [{ south, north, west, east }], urls: [url], metersPerPx: mpp, maxPx: 4000,
+    ...(nir ? { rgbBands: "0,1,2", nirBand: "3" } : {}), season, year,
+    // (the year in a picture's name, as "in2025_…" or "COLUMBUS_2025"; the flight's otherwise)
+    read: a => ({ year: yearInName(a.Name) ?? (typeof a.Image_Year === "number" ? a.Image_Year : year) })
+  })),
+  ...([
+    ["pa", "Pennsylvania aerial photo (PEMA)", "Imagery: PEMA, via PASDA", [39.72, 42.27, -80.52, -74.69], "https://imagery.pasda.psu.edu/arcgis/rest/services/pasda/PEMAImagery2018_2020/MapServer", 0.1524, 2019, "leaf-off"],
+    ["va", "Virginia aerial photo (VBMP)", "Imagery: VGIN, Virginia Base Mapping Program", [36.54, 39.47, -83.68, -75.24], "https://vginmaps.vdem.virginia.gov/arcgis/rest/services/VBMP_Imagery/MostRecentImagery_WGS/MapServer", 0.3048, 2023, "leaf-off"],
+    ["tn", "Tennessee aerial photo (TDOT)", "Imagery: TDOT Aerial Surveys", [34.98, 36.68, -90.31, -81.65], "https://tnmap.tn.gov/arcgis/rest/services/BASEMAPS/IMAGERY_WEB_MERCATOR/MapServer", 0.1524, undefined, "leaf-off"],
+    ["ny", "New York aerial photo", "Imagery: NYS ITS Geospatial Services", [40.5, 45.02, -79.76, -71.86], "https://orthos.its.ny.gov/arcgis/rest/services/wms/Latest/MapServer", 0.3048, 2023, "leaf-off"],
+    ["nj", "New Jersey aerial photo", "Imagery: NJ Office of GIS (NJOGIS)", [38.93, 41.36, -75.56, -73.89], "https://maps.nj.gov/arcgis/rest/services/Basemap/Orthos_Natural_2020_NJ_WM/MapServer", 0.3048, 2020, undefined]
+  ] as const).map(([id, label, credit, [south, north, west, east], url, mpp, year, season]): ImageService => ({
+    id, label, credit, kind: "aerial", regions: [{ south, north, west, east }], urls: [url], metersPerPx: mpp, maxPx: 2048, map: true, season, year,
+    read: () => ({})
+  }))
 ];
+
+/** A year written inside a name ("in2025_18871646_3in", "COLUMBUS_2025"). */
+function yearInName(v: unknown) {
+  const m = typeof v === "string" ? v.match(/(?:^|[^0-9])((?:19|20)\d\d)(?:[^0-9]|$)/) ?? v.match(/[a-z]((?:19|20)\d\d)_/i) : null;
+  return m ? +m[1] : undefined;
+}
 
 /** Esri World Imagery: map tiles everywhere, satellite in most places (aerial in some cities). */
 export const ESRI = {
@@ -193,6 +230,7 @@ const dateSpan = (dates: string[]) => {
 
 /** What an image service has over a frame (null: nothing there, or it didn't answer). */
 const serviceChoice = async (s: ImageService, b: GeoBounds, wantedMpp: number, timeoutMs: number, signal?: AbortSignal): Promise<PhotoChoice | null> => {
+  if (s.map) return mapChoice(s, b, wantedMpp, timeoutMs, signal);
   const geometry = JSON.stringify({ points: spotsOver(b), spatialReference: { wkid: 4326 } });
   const q = new URLSearchParams({ geometry, geometryType: "esriGeometryMultipoint", returnFirstValueOnly: "true", outFields: "*", f: "json" });
   for (const url of s.urls) {
@@ -215,6 +253,47 @@ const serviceChoice = async (s: ImageService, b: GeoBounds, wantedMpp: number, t
         year: years.length ? Math.max(...years) : undefined,
         season, metersPerPx: mpps.length ? Math.max(...mpps) : s.metersPerPx, nir: !!s.nirBand
       };
+      return { ...c, score: photoScore(c, wantedMpp) };
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      console.info(`${s.label}: no answer from ${url}`, err);
+    }
+  }
+  return null;
+};
+
+/** A map service's picture of a frame, small: whether it has one there (not blank, black or white). */
+const hasPicture = async (url: string, b: GeoBounds, timeoutMs: number, signal?: AbortSignal) => {
+  const ctrl = new AbortController();
+  const stop = () => ctrl.abort();
+  signal?.addEventListener("abort", stop, { once: true });
+  const timer = setTimeout(stop, timeoutMs);
+  try {
+    const q = new URLSearchParams({ bbox: mercatorBbox(b), bboxSR: "3857", imageSR: "3857", size: "64,64", format: "jpg", transparent: "false", f: "image" });
+    const res = await fetch(`${url}/export?${q}`, { signal: ctrl.signal });
+    const blob = res.ok ? await res.blob() : null;
+    if (!blob || !blob.type.startsWith("image/")) return false;
+    const img = await createImageBitmap(blob);
+    const c = document.createElement("canvas");
+    c.width = 64; c.height = 64;
+    const g = c.getContext("2d", { willReadFrequently: true })!;
+    g.drawImage(img, 0, 0, 64, 64);
+    const d = g.getImageData(0, 0, 64, 64).data;
+    let blank = 0;
+    for (let i = 0; i < d.length; i += 4) if ((d[i] < 6 && d[i + 1] < 6 && d[i + 2] < 6) || (d[i] > 249 && d[i + 1] > 249 && d[i + 2] > 249)) blank++;
+    return blank < 64 * 64 * 0.3;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", stop);
+  }
+};
+
+/** What a map service has over a frame: its picture, where it has one (null: none, or no answer). */
+const mapChoice = async (s: ImageService, b: GeoBounds, wantedMpp: number, timeoutMs: number, signal?: AbortSignal): Promise<PhotoChoice | null> => {
+  for (const url of s.urls) {
+    try {
+      if (!(await hasPicture(url, b, timeoutMs, signal))) return null;
+      const c = { id: s.id, label: s.label, credit: s.credit, kind: s.kind, date: s.year ? String(s.year) : undefined, year: s.year, season: s.season, metersPerPx: s.metersPerPx, nir: false };
       return { ...c, score: photoScore(c, wantedMpp) };
     } catch (err) {
       if (signal?.aborted) throw err;
@@ -309,6 +388,8 @@ export const photoPreview = (b: GeoBounds, source: PhotoSourceId, sizePx = 256) 
   const w = Math.max(1, Math.round(wM >= hM ? sizePx : (sizePx * wM) / hM)), h = Math.max(1, Math.round(hM >= wM ? sizePx : (sizePx * hM) / wM));
   const box = { bbox: mercatorBbox(b), bboxSR: "3857", imageSR: "3857", size: `${w},${h}`, format: "jpg", f: "image" };
   if (source === "esri") return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?${new URLSearchParams(box)}`;
+  const m = IMAGE_SERVICES.find(x => x.id === source);
+  if (m?.map) return `${m.urls[0]}/export?${new URLSearchParams(box)}`;
   const s = IMAGE_SERVICES.find(x => x.id === source)!;
   return `${s.urls[0]}/exportImage?${new URLSearchParams({ ...box, adjustAspectRatio: "false", ...(s.rgbBands ? { bandIds: s.rgbBands } : {}) })}`;
 };

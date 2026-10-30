@@ -3,7 +3,7 @@
 // scorecard, downloads, and the course to look round in 3D when allowed.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { create } from "zustand";
-import { Check, ChevronLeft, Download, Loader2, Lock, Map as MapIcon, Maximize2, Mountain, Play, Share, X, ZoomIn } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Download, Grid3x3, Loader2, Lock, Map as MapIcon, Maximize2, Mountain, Play, Share, X, ZoomIn } from "lucide-react";
 import { Loading, LoadingScreen } from "../components/ui";
 import { normalizeCourse } from "../lib/course";
 import { safeDoc } from "../lib/safeDoc";
@@ -70,6 +70,9 @@ export function PublicSite({ children }: { children: ReactNode }) {
   // (a file on its way down)
   const [fetching, setFetching] = useState("");
   const [big, setBig] = useState<string | null>(null);
+  // (a tee sign big, among all of them: stepped through; and all of them in a grid)
+  const [bigSign, setBigSign] = useState<number | null>(null);
+  const [allSigns, setAllSigns] = useState(false);
   const [openHole, setOpenHole] = useState<string | null>(null);
   const wide = useWide();
   // (the hole picked: its row brought into view in the list. On a phone, into the middle of the
@@ -204,6 +207,8 @@ export function PublicSite({ children }: { children: ReactNode }) {
   const cardName = shownPics.find(n => n.startsWith("scorecard."));
   const card = cardName ? files[cardName] : undefined;
   const holes = site.info.holes;
+  // (a tee sign's hole, by its label: "sign-3.webp" is the third hole's)
+  const signLabel = (n: string) => holes[parseInt(n.slice(5)) - 1]?.label ?? n.slice(5).split(".")[0];
   const showHoles = !!site.shown.stats && holes.length > 0;
   const downloads = site.files.filter(f => /\.(gpx|kml)$/.test(f));
   const download = async (name: string) => {
@@ -254,10 +259,10 @@ export function PublicSite({ children }: { children: ReactNode }) {
               {on && (
                 <div className="px-3 pb-3 pl-[46px]">
                   <div className="flex gap-2.5 items-center">
-                    {sign && files[sign] && <button className="shrink-0 rounded-[10px] overflow-hidden ring-1 ring-white/20" onClick={() => setBig(files[sign])} aria-label={`Tee sign, hole ${h.label}, bigger`}><img src={files[sign]} alt="" className="w-[104px] h-[70px] object-cover" /></button>}
+                    {sign && files[sign] && <button className="shrink-0 rounded-[10px] overflow-hidden ring-1 ring-white/20" onClick={() => setBigSign(signs.indexOf(sign))} aria-label={`Tee sign, hole ${h.label}, bigger`}><img src={files[sign]} alt="" className="w-[104px] h-[70px] object-cover" /></button>}
                     <div className="flex flex-col gap-1.5 flex-1 min-w-0">
                       {flies && h.id && <button className="inline-flex items-center justify-center gap-1 rounded-full px-3 py-1.5 text-[12.5px] font-semibold bg-[#a7d46f] hover:bg-[#b6dd83] text-[#14230d]" onClick={() => void open3d(h.id)} data-testid="fly-hole"><Play size={12} fill="currentColor" /> Fly over it</button>}
-                      {sign && files[sign] && <button className={`${PILL} !py-1.5 !text-[12.5px]`} onClick={() => setBig(files[sign])}>Tee sign</button>}
+                      {sign && files[sign] && <button className={`${PILL} !py-1.5 !text-[12.5px]`} onClick={() => setBigSign(signs.indexOf(sign))}>Tee sign</button>}
                     </div>
                   </div>
                   <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-2.5" data-testid="hole-facts">
@@ -275,11 +280,14 @@ export function PublicSite({ children }: { children: ReactNode }) {
   );
   const signRow = signs.length > 0 && (
     <section className="mt-4">
-      <h2 className="text-[12px] font-semibold text-zinc-400 mb-1.5 px-1">Tee signs</h2>
+      <div className="flex items-center mb-1.5 px-1">
+        <h2 className="text-[12px] font-semibold text-zinc-400 flex-1">Tee signs <span className="text-zinc-500 font-normal">· {signs.length}</span></h2>
+        {signs.length > 1 && <button className="inline-flex items-center gap-1 text-[12px] font-semibold text-zinc-200 hover:text-white" onClick={() => setAllSigns(true)} data-testid="public-signs-all"><Grid3x3 size={13} /> See all</button>}
+      </div>
       <ul className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 dg-scroll" data-testid="public-signs">
-        {signs.map(n => (
+        {signs.map((n, i) => (
           <li key={n} className="shrink-0">{files[n]
-            ? <button className="block rounded-[10px] overflow-hidden ring-1 ring-white/20 animate-[dgfade_0.3s_ease_both]" onClick={() => setBig(files[n])}><img src={files[n]} alt={`Tee sign, hole ${n.slice(5).split(".")[0]}`} className="h-[84px] w-auto" loading="lazy" /></button>
+            ? <button className="block rounded-[10px] overflow-hidden ring-1 ring-white/20 animate-[dgfade_0.3s_ease_both]" onClick={() => setBigSign(i)}><img src={files[n]} alt={`Tee sign, hole ${n.slice(5).split(".")[0]}`} className="h-[84px] w-auto" loading="lazy" /></button>
             : <div className="h-[84px] w-[126px] rounded-[10px] bg-white/[0.07] animate-pulse" role="img" aria-label={`Tee sign, hole ${n.slice(5).split(".")[0]}, loading`} />}</li>
         ))}
       </ul>
@@ -346,6 +354,28 @@ export function PublicSite({ children }: { children: ReactNode }) {
       )}
       {pickedAt >= 0 && <HoleKeys onStep={d => { const n = holes[(pickedAt + d + holes.length) % holes.length]; setOpenHole(n.id ?? n.label); }} onLetGo={() => setOpenHole(null)} off={!!big} />}
       {big && <Zoomable src={big} onClose={() => setBig(null)} />}
+      {allSigns && (
+        <div className="fixed inset-0 z-40 bg-black/90 overflow-y-auto" role="dialog" aria-label="All the tee signs" data-testid="public-signs-grid">
+          <div className="sticky top-0 flex items-center gap-2 px-4 py-3 bg-black/70 backdrop-blur">
+            <h2 className="flex-1 font-semibold text-zinc-100">Tee signs <span className="text-zinc-400 font-normal">· {signs.length}</span></h2>
+            <button className="rounded-full w-9 h-9 glass border border-white/[0.12] text-zinc-100 flex items-center justify-center" onClick={() => setAllSigns(false)} aria-label="Close"><X size={17} /></button>
+          </div>
+          <ul className="grid gap-3 p-4 grid-cols-[repeat(auto-fill,minmax(150px,1fr))]">
+            {signs.map((n, i) => (
+              <li key={n}>
+                <button className="w-full text-left" onClick={() => setBigSign(i)}>
+                  {files[n] ? <img src={files[n]} alt={`Tee sign, hole ${signLabel(n)}`} className="w-full rounded-[10px] ring-1 ring-white/20" loading="lazy" /> : <div className="aspect-[2/3] rounded-[10px] bg-white/[0.07] animate-pulse" />}
+                  <span className="block mt-1 text-[12px] text-zinc-400">Hole {signLabel(n)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {bigSign !== null && files[signs[bigSign]] && (
+        <Zoomable key={bigSign} src={files[signs[bigSign]]} onClose={() => setBigSign(null)}
+          step={{ at: bigSign, of: signs.length, label: `Hole ${signLabel(signs[bigSign])}`, go: i => setBigSign((i + signs.length) % signs.length) }} />
+      )}
       {opening && <Opening what={opening} />}
     </div>
   );
@@ -552,16 +582,22 @@ const Plain = ({ children }: { children: ReactNode }) => (
 );
 
 /** A picture full screen: pinch, wheel or double-tap to zoom, drag to look round, tap or Esc to close. */
-function Zoomable({ src, onClose }: { src: string; onClose: () => void }) {
+/** A picture, big: pinch, wheel or double-tap to zoom. `step`: one of a set (the tee signs), with
+ * ← → (buttons, keys, a swipe) to the others. */
+function Zoomable({ src, onClose, step }: { src: string; onClose: () => void; step?: { at: number; of: number; label: string; go: (i: number) => void } }) {
   const [v, setV] = useState({ k: 1, x: 0, y: 0 });
   const pts = useRef(new Map<number, { x: number; y: number }>());
   const start = useRef<{ k: number; x: number; y: number; d: number; cx: number; cy: number; moved: boolean } | null>(null);
   const lastTap = useRef(0);
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const k = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      else if (step && e.key === "ArrowRight") step.go(step.at + 1);
+      else if (step && e.key === "ArrowLeft") step.go(step.at - 1);
+    };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
-  }, [onClose]);
+  }, [onClose, step]);
   const clamp = (k: number) => Math.max(1, Math.min(8, k));
   const zoomAt = (k2: number, cx: number, cy: number) => setV(o => {
     const k = clamp(k2);
@@ -594,6 +630,8 @@ function Zoomable({ src, onClose }: { src: string; onClose: () => void }) {
         const s0 = start.current;
         if (pts.current.size) { const c = centre(); start.current = { ...v, d: c.d, cx: c.x, cy: c.y, moved: true }; return; }
         start.current = null;
+        // (not zoomed in: a swipe goes to the next or the one before)
+        if (s0?.moved && step && s0.k === 1 && Math.abs(e.clientX - s0.cx) > 60 && Math.abs(e.clientX - s0.cx) > Math.abs(e.clientY - s0.cy)) { step.go(step.at + (e.clientX < s0.cx ? 1 : -1)); return; }
         if (s0?.moved) return;
         // (a double tap zooms in there, or back out; a tap with nothing zoomed closes)
         const now = Date.now();
@@ -603,6 +641,13 @@ function Zoomable({ src, onClose }: { src: string; onClose: () => void }) {
       }}>
       <img src={src} alt="" draggable={false} className="absolute inset-0 m-auto max-w-full max-h-full object-contain will-change-transform" style={{ transform: `translate(${v.x}px, ${v.y}px) scale(${v.k})`, transformOrigin: "center" }} />
       <button className="absolute top-3 right-3 rounded-full w-10 h-10 glass border border-white/[0.12] text-zinc-100 flex items-center justify-center" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()} onClick={onClose} aria-label="Close"><X size={18} /></button>
+      {step && step.of > 1 && (
+        <>
+          <button className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full w-11 h-11 glass border border-white/[0.12] text-zinc-100 flex items-center justify-center" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()} onClick={() => step.go(step.at - 1)} aria-label="The one before"><ChevronLeft size={20} /></button>
+          <button className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full w-11 h-11 glass border border-white/[0.12] text-zinc-100 flex items-center justify-center" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()} onClick={() => step.go(step.at + 1)} aria-label="The next one" data-testid="zoomable-next"><ChevronRight size={20} /></button>
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full glass border border-white/[0.12] text-[13px] text-zinc-100 whitespace-nowrap" data-testid="zoomable-count">{step.label} · {step.at + 1} of {step.of}</div>
+        </>
+      )}
     </div>
   );
 }

@@ -14,12 +14,13 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
-import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
+import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STAND_HERE, STAND_NEAR_FT, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
 import { FAIRWAY_STATIONS, beyondSides, areaObEdges, areaRing, isRing, ringStretch, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, fairwayOutline, mergeStretches, obFor, obPicked, obRanges, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
 import { boundsOf, centroid, dist, distanceToPath, inBounds, nearestAlong, offsetPath, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath, subPath } from "../lib/geom";
 import { isOutOfPlay, parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
 import { conifersOf, treeMixOf } from "../lib/landscapes";
+import { LOOK_LABEL, sharesOf, standShares, type TreeLookId } from "../lib/treeMix";
 import { fmtArea, fmtDist, fmtElev } from "../lib/units";
 import { BASKET_BAND, createAmenity, createBasket, createDropZone, createMando, createTeePad, fitTeePad } from "../three/courseModels";
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
@@ -39,10 +40,10 @@ import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createFence, createStructure, onPartLoaded } from "../three/structures";
 import { measuredStanding, setMeasuredStanding } from "../lib/standing";
 import { createFieldGround, createFieldProps, createHedge, createPowerLine } from "../three/parkProps";
-import { fieldInks, fieldPlan } from "../lib/fieldPlan";
-import { fieldKeepsTreesOut, fieldOutline } from "../lib/fields";
-import { isLineKind, orientedBox, roofOf, structureBounds, structureHeight, structurePath, structureRoof, structureWidth, turnShape } from "../lib/structures";
-import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier } from "../types";
+import { LEAGUES, cornerFrame, fieldInks, fieldPartAt, fieldPartShape, fieldPlan } from "../lib/fieldPlan";
+import { fieldHome, fieldKeepsTreesOut, fieldKindOf, fieldOutline, isBallField } from "../lib/fields";
+import { isLineKind, orientedBox, roofFor, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
+import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier, FieldPart } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
 import type { FlightFrames, FlyoverVideo, FrameInfo, RecordOptions } from "./flyoverVideo";
@@ -57,19 +58,30 @@ const DEG = Math.PI / 180;
 // The light of ez-tree's demo (photographed leaves and bark read true under it): a strong sun, a
 // soft even sky, and Neutral tone mapping at twice the exposure
 const SUN_INTENSITY = 5;
+/** How far inside the map's edge standing stays, ft. */
+const STAND_EDGE_FT = 4;
 const HEMI_INTENSITY = 0.5;
 const EXPOSURE = 2;
+/** How much closer underbrush grows in tall grass than under trees (out in the sun, it fills in). */
+const TALL_GRASS_BRUSH = 1.8;
 const CLICK_PX = 4;
 /** A finger moves a little in a tap (more than a mouse in a click). */
 const TOUCH_SLOP = 10;
 /** Holding a finger this long on an item opens its menu (the touch right-click). */
 const LONG_PRESS_MS = 500;
+/** A fling's slowing, as on Google Maps: its speed falls to about a third every this many seconds. */
+const GLIDE_TAU = 0.32;
+/** How far two fingers twist before the map turns with them (a pinch to zoom stays as it was). */
+const TWIST = 12 * DEG;
 const TILT_TOP = 8 * DEG;
 const DEFAULT_TILT = 55 * DEG;
 const MAX_TILT = 84 * DEG;
 /** The map's lens: narrow looking straight down (map-like), wider tilted (a real perspective). */
 const FOV_TOP = 30, FOV_TILT = 45;
 const SELECT = "#22d3ee";
+type Rect = { x: number; y: number; width: number; height: number };
+/** A picture on screen: the camera it's drawn with, and where (the container's pixels). */
+type Eye = { cam: THREE.PerspectiveCamera; rect: Rect };
 const LIFT = 0.45;
 
 type Drag = { move: (e: PointerEvent) => void; end: (e: PointerEvent) => void };
@@ -110,12 +122,12 @@ const STYLE = `
 .dg-ptmenu:disabled{color:#a1a1aa}
 .dg-measure.total{background:#1c1917;color:#facc15}
 .dg-me{pointer-events:none;width:20px;height:20px;border-radius:50%;background:#0a84ff;border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.55);position:absolute}
-.dg-me::after{content:"";position:absolute;inset:-9px;border-radius:50%;background:rgba(10,132,255,.35);animation:dgme 2s ease-out infinite;z-index:-1}
+.dg-me::after{content:"";position:absolute;inset:-9px;border-radius:50%;background:rgba(10,132,255,.35);animation:dgme 2s ease-out 3;opacity:0;z-index:-1}
 .dg-me.dim{background:#8e8e93}.dg-me.dim::after{display:none}
 .dg-me i{position:absolute;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;background:conic-gradient(from -28deg,rgba(10,132,255,.55),rgba(10,132,255,0) 56deg,rgba(10,132,255,0) 304deg,rgba(10,132,255,.55));-webkit-mask:radial-gradient(circle,#000 30%,transparent 72%);mask:radial-gradient(circle,#000 30%,transparent 72%);z-index:-2}
 .dg-me.dim i{display:none}
 @keyframes dgme{0%{transform:scale(.6);opacity:1}100%{transform:scale(1.6);opacity:0}}
-.dg-me-tag{pointer-events:none;padding:3px 8px;border-radius:999px;background:rgba(15,23,20,.82);color:#f8fafc;font:700 11.5px Inter,system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.45);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.dg-me-tag{pointer-events:none;padding:3px 8px;border-radius:999px;background:rgba(15,23,20,.9);color:#f8fafc;font:700 11.5px Inter,system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.45)}
 .dg-measure.live{background:rgba(28,25,23,.72);color:#fde68a;box-shadow:none}
 .dg-mpt{pointer-events:none;width:12px;height:12px;border-radius:50%;background:#facc15;border:2.5px solid #1c1917;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .dg-mpt.live{background:#fff;opacity:.85}
@@ -139,6 +151,8 @@ const STYLE = `
 .dg-h[data-handle=linewidth]{width:12px;height:12px;border-radius:3px;background:#fff;border:2.5px solid #0284c7;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=widen]{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.85);border:1.5px solid #16a34a;cursor:copy;display:flex;align-items:center;justify-content:center;font:700 10px/1 Inter,sans-serif;color:#16a34a}.dg-h[data-handle=widen]::after{content:"+"}
 .dg-h[data-handle=rotate]{width:24px;height:24px;border-radius:50%;background:#fff;border:2.5px solid #2563eb;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;color:#2563eb;font:900 14px system-ui}
+.dg-h[data-handle=part]{width:18px;height:18px;cursor:grab;background:#fff;border:3px solid #22d3ee;transform:rotate(45deg);box-shadow:0 1px 3px rgba(0,0,0,.55)}
+.dg-h[data-handle=plate]{width:20px;height:20px;cursor:grab;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M3 3h14v8l-7 6.5L3 11z' fill='white' stroke='%230891b2' stroke-width='2.5' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
 .dg-h[data-handle=radius]{width:15px;height:15px;border-radius:50%;background:#16a34a;border:2.5px solid #fff;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=height]{width:16px;height:22px;border-radius:5px;background:#f59e0b;border:2.5px solid #fff;cursor:ns-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-marquee{position:absolute;left:0;top:0;pointer-events:none;border:1.5px dashed #f59e0b;background:rgba(245,158,11,.12);border-radius:2px;z-index:5}
@@ -219,6 +233,30 @@ export class CourseView {
   /** The box being drawn to pick things with. */
   private marquee: HTMLDivElement | null = null;
   private hoverFx: THREE.Object3D | null = null;
+  /** Tee view, editing: a press on a thing picks or drags it as on the map; on open ground it
+   * looks around. With the map from above in a corner ("small", "big"), or none. */
+  private teeEdit = false;
+  /** Standing, editing: what a tap does, walk there or pick the thing tapped (never both). */
+  private standTap: "walk" | "edit" = "walk";
+  private miniSize: "small" | "big" | null = null;
+  /** The corner map's place (the container's pixels; null: none shown) and its camera. */
+  private miniRect: Rect | null = null;
+  private miniCam = new THREE.PerspectiveCamera(40, 1, 1, 200000);
+  /** Standing somewhere other than the tee (and which way: radians on the plan), and a walk there. */
+  private povStand: { x: number; y: number; face: number } | null = null;
+  private walk: { from: P; to: P; t0: number } | null = null;
+  /** Standing: the ring where a click would step, the ring where the person would land (on the
+   * map), and the tip by the pointer saying what a click does. */
+  private stepRing: THREE.Object3D | null = null;
+  private dropRingFx: THREE.Object3D | null = null;
+  private povTip: HTMLDivElement | null = null;
+  /** The picture a drag began in (its camera and place), kept until it's let go. */
+  private dragEye: Eye | null = null;
+  /** The picture being looked at by what's worked out now (a pick at a pointer). */
+  private eye: Eye | null = null;
+  /** What others in the course have picked (their color; strong while they drag it), outlined. */
+  private others: { id: string; color: string; strong: boolean }[] = [];
+  private othersFx: THREE.Object3D | null = null;
   private ghost: THREE.Object3D | null = null;
   private ghostKey = "";
   private lastCorner: { id: string; index: number; time: number } | null = null;
@@ -441,7 +479,7 @@ export class CourseView {
     c.mouseButtons.middle = ACTION.ROTATE;
     c.mouseButtons.right = ACTION.ROTATE;
     c.mouseButtons.wheel = ACTION.NONE;
-    c.touches.one = ACTION.TOUCH_TRUCK;
+    c.touches.one = ACTION.NONE; // (one finger is handled here too: see panDrag)
     c.touches.two = ACTION.NONE; // (two fingers are handled here: see twoFingers)
     c.touches.three = ACTION.TOUCH_TRUCK;
     c.minPolarAngle = 0;
@@ -481,7 +519,7 @@ export class CourseView {
     on(container, "pointerdown", e => this.onPointerDown(e), { capture: true });
     on(container, "wheel", e => this.onWheel(e), { capture: true, passive: false });
     on(container, "pointermove", e => this.onHoverMove(e));
-    on(container, "pointerleave", () => { this.lastPointer = null; this.cb.onHover(null); this.setHover(null); this.updateGhost(null); this.invalidate(); });
+    on(container, "pointerleave", () => { this.lastPointer = null; this.cb.onHover(null); this.setHover(null); this.updateGhost(null); this.showStep(null); this.tip(null); this.invalidate(); });
     on(container, "dblclick", e => this.onDoubleClick(e));
     on(window, "pointerup", e => this.touchUp(e));
     on(window, "pointercancel", e => this.touchUp(e));
@@ -518,6 +556,7 @@ export class CourseView {
     this.syncItems();
     this.syncShapes();
     this.syncSelection();
+    this.syncOthers();
     this.syncOverlays();
     this.syncHandles();
     this.updateLimits();
@@ -707,6 +746,22 @@ export class CourseView {
     void this.controls.rotate(0, -deg * DEG, true);
   }
 
+  /** How far in the map is zoomed: 0 all the way out, 1 all the way in (even steps for even
+   * changes of scale). */
+  zoomLevel() {
+    const lo = this.controls.minDistance, hi = this.controls.maxDistance;
+    return clamp(Math.log(hi / this.controls.distance) / Math.log(hi / lo), 0, 1);
+  }
+
+  /** Zooms to a level (see zoomLevel), about the middle of the open map, at once (a slider). */
+  setZoomLevel(t: number) {
+    const lo = this.controls.minDistance, hi = this.controls.maxDistance;
+    const want = hi * Math.pow(lo / hi, clamp(t, 0, 1));
+    const m = this.openMap(), r = this.container.getBoundingClientRect();
+    this.userMoved();
+    this.zoomAt(r.left + (m.left + m.right) / 2, r.top + (m.top + m.bottom) / 2, want / this.controls.distance, false);
+  }
+
   zoomBy(factor: number) {
     const d = this.controls.distance / factor;
     void this.controls.dollyTo(clamp(d, this.controls.minDistance, this.controls.maxDistance), true);
@@ -759,6 +814,7 @@ export class CourseView {
     const doc = this.doc;
     if (!doc) return;
     this.autoFit = null;
+    this.glide = null;
     const margin = opts.margin ?? 1.2;
     const minSpan = opts.minSpan ?? 0;
     const w = Math.max(b.maxX - b.minX, minSpan, 1) * margin;
@@ -846,6 +902,66 @@ export class CourseView {
     this.invalidate();
   }
 
+  /** The part of the map between the panels (container pixels). */
+  private openMap() {
+    const top = clamp(this.topInset, 0, this.size.height * 0.3), bottom = this.size.height - clamp(this.bottomInset, 0, this.size.height * 0.6);
+    return { left: this.leftInset, top, right: this.size.width - this.rightInset, bottom };
+  }
+
+  /** Whether any of an item or hole shows on the open part of the map. */
+  inView(id: string) {
+    const box = this.screenBox(id), m = this.openMap();
+    return !!box && box.x + box.width > m.left && box.x < m.right && box.y + box.height > m.top && box.y < m.bottom;
+  }
+
+  /** A thing picked on a phone, brought onto the open part of the map at the zoom it's at: picking
+   * never zooms, in or out (the owner's rule: what you tapped stays the size it was). Out from under
+   * a panel or in from off screen, its middle to the open map's middle; a thing bigger than the open
+   * map that partly shows already stays put. */
+  frame(id: string) {
+    const b = this.itemBounds(id);
+    if (!b) return;
+    const box = this.screenBox(id), m = this.openMap();
+    if (box && box.x >= m.left && box.y >= m.top && box.x + box.width <= m.right && box.y + box.height <= m.bottom) return;
+    const big = !!box && (box.width > m.right - m.left || box.height > m.bottom - m.top);
+    if (big && this.inView(id)) return;
+    const shift = this.insetShift(this.controls.distance);
+    const cx = (b.minX + b.maxX) / 2 + shift.x, cy = (b.minY + b.maxY) / 2 + shift.y;
+    this.glide = null;
+    void this.controls.moveTo(cx, this.h(cx, cy), cy, true);
+    this.invalidate();
+  }
+
+  /** The camera before a height was looked at from the side (to go back to). */
+  private sidePose: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
+  /** A thing's height being changed: the camera turns to look at it from the side, close, so the
+   * height shows (null: back to where it was). */
+  lookAtHeight(id: string | null) {
+    if (!id) {
+      const was = this.sidePose;
+      this.sidePose = null;
+      if (was) void this.controls.setLookAt(was.pos.x, was.pos.y, was.pos.z, was.target.x, was.target.y, was.target.z, true);
+      this.invalidate();
+      return;
+    }
+    const b = this.itemBounds(id), it = this.item(id);
+    if (!b || !it || this.povHole) return;
+    if (!this.sidePose) this.sidePose = { pos: this.controls.getPosition(new THREE.Vector3(), true), target: this.controls.getTarget(new THREE.Vector3(), true) };
+    const tall = it.type === "tree" ? it.height ?? it.radius * 2.6 : it.type === "structure" ? structureHeight(it) : it.type === "line" ? it.fenceHeight ?? LINE_KINDS[it.kind].height ?? 8 : it.type === "basket" ? (it.raised ?? 0) + 6 : 10;
+    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2, span = Math.max(b.maxX - b.minX, b.maxY - b.minY);
+    const d = clamp(Math.max(tall * 3.2, span * 1.4, 40), this.controls.minDistance, this.controls.maxDistance);
+    const polar = 76 * DEG, az = this.controls.azimuthAngle;
+    const ty = this.h(cx, cy) + tall * 0.45;
+    const off = new THREE.Vector3(Math.sin(polar) * Math.sin(az), Math.cos(polar), Math.sin(polar) * Math.cos(az)).multiplyScalar(d);
+    // (in the middle of the open map, above the panel)
+    const worldPerPx = (2 * d * Math.tan((this.camera.fov * DEG) / 2)) / Math.max(1, this.size.height);
+    const lift = ((clamp(this.bottomInset, 0, this.size.height * 0.6) - clamp(this.topInset, 0, this.size.height * 0.3)) / 2) * worldPerPx;
+    const target = new THREE.Vector3(cx, ty - lift * Math.sin(polar), cy).addScaledVector(new THREE.Vector3(Math.sin(az), 0, Math.cos(az)), lift * Math.cos(polar));
+    const pos = target.clone().add(off);
+    void this.controls.setLookAt(pos.x, pos.y, pos.z, target.x, target.y, target.z, true);
+    this.invalidate();
+  }
+
   /** Bounds of an item (or a hole's throw line) on the plan. */
   itemBounds(id: string) {
     const doc = this.doc;
@@ -869,7 +985,7 @@ export class CourseView {
   private gliding = false;
   /** Whether the map has come to rest (for tests: a click lands where it was aimed). */
   settled() {
-    return this.paused || !this.gliding;
+    return this.paused || (!this.gliding && !this.glide && !this.lookGlide);
   }
   /** When the camera last moved (dragged, zoomed, gliding), ms on performance.now(). */
   private movedAt = 0;
@@ -1073,10 +1189,25 @@ export class CourseView {
 
   /** Look from a hole's tee down the hole (null: back to the map); `teeId`: from that tee of it
    * (another skill level's), not the one the layout plays. */
-  setTeeView(holeId: string | null, teeId: string | null = null) {
+  setTeeView(holeId: string | null, teeId: string | null = null, at: { x: number; y: number; face?: number } | null = null) {
     this.fly = null;
+    // (never past the map's edge)
+    const stand = at ? { ...at, ...this.inMap(at) } : null;
     const tee = teeId && holeId ? this.doc?.course.items.find(i => i.id === teeId && i.type === "tee" && i.holeId === holeId) : null;
     const nextTee = tee ? tee.id : null;
+    // (standing somewhere: facing down the hole, unless told otherwise; the same spot again: as it is)
+    const same = (a: typeof this.povStand, b: typeof stand) => (!a && !b) || (!!a && !!b && Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01);
+    if (holeId === this.povHole && nextTee === this.povTee && same(this.povStand, stand)) return;
+    if (holeId === this.povHole && nextTee === this.povTee && stand && !this.walk) {
+      this.povStand = { x: stand.x, y: stand.y, face: stand.face ?? this.faceDownHole(holeId!, stand) };
+      this.povLook = { yaw: 0, pitch: 0 };
+      this.invalidate();
+      return;
+    }
+    this.walk = null;
+    this.glide = null;
+    this.lookGlide = null;
+    this.povStand = holeId && stand ? { x: stand.x, y: stand.y, face: stand.face ?? this.faceDownHole(holeId, stand) } : null;
     if (holeId === this.povHole && nextTee === this.povTee) return;
     this.povTee = nextTee;
     if (holeId === this.povHole) { this.povLook = { yaw: 0, pitch: 0 }; this.invalidate(); return; }
@@ -1092,6 +1223,247 @@ export class CourseView {
     if (!holeId && this.flyCanvas) this.flyCanvas.style.display = "none";
     this.updateCursor();
     this.invalidate();
+  }
+
+  /** Which way to face from a spot on a hole: toward its basket (from close to it, back to its tee). */
+  private faceDownHole(holeId: string, p: P) {
+    const s = this.doc?.stats.find(x => x.holeId === holeId);
+    if (!s || s.line.length < 2) return this.mapFacing();
+    const a = s.line[0], z = s.line[s.line.length - 1];
+    const to = dist(p, z) < 40 ? a : z;
+    return Math.atan2(to.y - p.y, to.x - p.x);
+  }
+
+  /** The way the map looks, along the ground (the angle in plan): up the screen, tilted or not. */
+  private mapFacing() {
+    const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
+    const fwd = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 2).negate();
+    // (looking straight down: up the screen; tilted: where it looks)
+    const v = Math.hypot(fwd.x, fwd.z) > 0.2 ? fwd : up;
+    return Math.atan2(v.z, v.x);
+  }
+
+  /** The hole whose line is nearest a spot (for standing there), if any is complete; with `within`,
+   * only one that near (feet). */
+  holeNear(p: P, within = Infinity): string | null {
+    let best: { id: string; d: number } | null = null;
+    for (const s of this.doc?.stats ?? []) {
+      if (!s.complete || s.line.length < 2) continue;
+      const d = distanceToPath(p, s.line);
+      if (!best || d < best.d) best = { id: s.holeId, d };
+    }
+    return best && best.d <= within ? best.id : null;
+  }
+
+  /** What standing at a spot stands on: the hole whose line is near it, or (none near, or none at
+   * all) the spot on its own. */
+  standOn(p: P): string {
+    return this.holeNear(p, STAND_NEAR_FT) ?? STAND_HERE;
+  }
+
+  /** A spot to stand on kept on the map: past its edge (the open plane round it), the nearest
+   * spot a step inside. */
+  inMap(p: P): P {
+    const c = this.doc?.course.canvas;
+    if (!c) return p;
+    const m = Math.min(STAND_EDGE_FT, c.width / 4, c.height / 4);
+    return { x: Math.min(c.width - m, Math.max(m, p.x)), y: Math.min(c.height - m, Math.max(m, p.y)) };
+  }
+
+  /** Where the person would land dropped at a screen point (the map's ground there), with a ring
+   * there; null: none (the ring goes). */
+  dropPreview(clientX: number | null, clientY = 0): P | null {
+    if (this.dropRingFx) { this.fx.remove(this.dropRingFx); disposeObjectDeep(this.dropRingFx); this.dropRingFx = null; }
+    if (clientX === null || this.povHole) { this.invalidate(); return null; }
+    const g = this.groundAt(clientX, clientY);
+    if (!g) { this.invalidate(); return null; }
+    const p = this.inMap({ x: g.x, y: g.z });
+    // (6 ft across, or about 16 px when zoomed out: a ring to see)
+    const worldPerPx = (2 * this.controls.distance * Math.tan((this.camera.fov * DEG) / 2)) / Math.max(1, this.size.height);
+    this.dropRingFx = this.groundRing(p, Math.max(6, 16 * worldPerPx), SELECT, 0.95, 3);
+    this.fx.add(this.dropRingFx);
+    this.invalidate();
+    return p;
+  }
+
+  /** A ring lying on the ground (radius in feet). */
+  private groundRing(p: P, r: number, color: string, opacity: number, width: number) {
+    const ring: P[] = [];
+    for (let i = 0; i < 48; i++) ring.push({ x: p.x + Math.cos((i / 48) * Math.PI * 2) * r, y: p.y + Math.sin((i / 48) * Math.PI * 2) * r });
+    const g = new THREE.Group();
+    g.add(this.fatLine(this.drapeLine(ring, 0.4, true), "#000000", width + 2, { opacity: opacity * 0.4, order: 8 }));
+    g.add(this.fatLine(this.drapeLine(ring, 0.45, true), color, width, { opacity, order: 9 }));
+    return g;
+  }
+
+  /** Standing: walks to a spot (a glide there), still looking the way you were. */
+  private walkTo(to: P) {
+    const pose = this.povPose();
+    if (!pose || !this.povHole) return;
+    const p = this.inMap(to);
+    const dir = new THREE.Vector3().subVectors(pose.target, pose.eye);
+    const face = Math.atan2(dir.z, dir.x);
+    const from = { x: pose.eye.x, y: pose.eye.z };
+    this.povLook = { yaw: 0, pitch: this.povLook.pitch };
+    this.povStand = { x: p.x, y: p.y, face };
+    this.walk = { from, to: p, t0: performance.now() };
+    this.showStep(null);
+    this.invalidate();
+  }
+
+  /** The ring where a click would step (null: none). */
+  private showStep(p: P | null) {
+    if (this.stepRing) { this.fx.remove(this.stepRing); disposeObjectDeep(this.stepRing); this.stepRing = null; }
+    if (p) { this.stepRing = this.groundRing(p, 3, "#ffffff", 0.85, 2.5); this.fx.add(this.stepRing); }
+    this.invalidate();
+  }
+
+  /** The tip by the pointer, standing: what a click does, or where a dragged thing is. */
+  private tip(text: string | null, clientX = 0, clientY = 0) {
+    if (!text) { if (this.povTip) this.povTip.style.display = "none"; return; }
+    if (!this.povTip) {
+      const el = document.createElement("div");
+      el.dataset.testid = "stand-tip";
+      el.style.cssText = "position:absolute;z-index:6;pointer-events:none;padding:6px 11px;border-radius:9px;background:rgba(24,24,27,.92);color:#f4f4f5;font:500 13px Inter,system-ui,sans-serif;white-space:nowrap;box-shadow:0 6px 16px rgba(0,0,0,.4)";
+      this.container.appendChild(el);
+      this.povTip = el;
+    }
+    const r = this.container.getBoundingClientRect();
+    this.povTip.textContent = text;
+    this.povTip.style.display = "";
+    this.povTip.style.left = `${clientX - r.left + 16}px`;
+    this.povTip.style.top = `${clientY - r.top + 18}px`;
+  }
+
+  /** What a thing is called, for the tip. */
+  private nameOf(id: string) {
+    const it = this.item(id);
+    if (!it) return "It";
+    // (its species when it has one: a Bradford pear, a spruce)
+    if (it.type === "tree") return it.species && it.species in LOOK_LABEL ? LOOK_LABEL[it.species as TreeLookId] : it.treeType === "conifer" ? "Conifer" : it.treeType === "bush" ? "Bush" : "Tree";
+    if (it.type === "basket") return "Basket";
+    if (it.type === "tee") return "Tee";
+    if (it.type === "structure") return it.label || "Building";
+    if (it.type === "amenity") return it.label || "Amenity";
+    return it.type[0].toUpperCase() + it.type.slice(1);
+  }
+
+  /** Standing, the pointer over the view: a thing's outline and name (a click picks it), or a ring
+   * where you'd step (a click walks there). */
+  private povHover(p: { x: number; y: number }, g: THREE.Vector3 | null) {
+    const edits = this.tapsEdit();
+    const id = edits ? this.pick(p.x, p.y) : null;
+    this.setHover(id);
+    if (id) { this.showStep(null); this.tip(`${this.nameOf(id)} · click to pick it`, p.x, p.y); return; }
+    const eye = this.povPose()?.eye;
+    if (!edits && g && eye && this.eyeAt(p.x, p.y).cam === this.povCam) {
+      // (the ring alone: words following the pointer everywhere got in the way; the line along the
+      // bottom says a click walks)
+      this.showStep(this.inMap({ x: g.x, y: g.z }));
+      this.tip(null);
+    } else { this.showStep(null); this.tip(null); }
+  }
+
+  /** Standing, a thing dragged: how far off the hole's line it is, and whether it's on the throw line. */
+  private povDragTip(id: string, at: P, clientX: number, clientY: number) {
+    const s = this.doc?.stats.find(x => x.holeId === this.povHole);
+    const it = this.item(id);
+    if (!s || s.line.length < 2 || !it) return;
+    const off = distanceToPath(at, s.line);
+    // (which side: of the nearest leg, looking down the hole)
+    let side = "", best = Infinity;
+    for (let i = 1; i < s.line.length; i++) {
+      const a = s.line[i - 1], b = s.line[i];
+      const d = distanceToPath(at, [a, b]);
+      if (d < best) { best = d; side = (b.x - a.x) * (at.y - a.y) - (b.y - a.y) * (at.x - a.x) < 0 ? "left" : "right"; }
+    }
+    const reach = it.type === "tree" ? it.radius * (it.width ?? 1) : 2;
+    const metric = this.doc?.course.units === "m";
+    const n = (v: number) => `${Math.round(metric ? v * 0.3048 : v)} ${metric ? "m" : "ft"}`;
+    this.tip(`${off < 1 ? "On the line" : `${n(off)} ${side} of the line`}${off < reach + 3 ? " · on the throw line" : ""}`, clientX, clientY);
+  }
+
+  /** Standing, editing: a tap walks there, or picks the thing tapped (a tool that places things
+   * places, either way). */
+  setStandTap(mode: "walk" | "edit") {
+    if (mode === this.standTap) return;
+    this.standTap = mode;
+    this.setHover(null);
+    this.showStep(null);
+    this.tip(null);
+    this.updateCursor();
+    this.invalidate();
+  }
+  /** Standing, whether a tap goes to things (picking, placing) rather than walking. */
+  private tapsEdit() {
+    return this.teeEdit && !this.readOnly && (this.standTap === "edit" || this.tool.mode !== "select");
+  }
+
+  /** Tee view, editing (a press on a thing picks or drags it; on open ground, looks around), with
+   * the map from above in a corner ("small", "big") or none. */
+  setTeeEdit(on: boolean, mini: "small" | "big" | null = "small") {
+    if (on === this.teeEdit && mini === this.miniSize) return;
+    this.teeEdit = on;
+    this.miniSize = mini;
+    if (!on) this.setHover(null);
+    this.updateCursor();
+    this.invalidate();
+  }
+
+  /** The corner map's place now, and where on it the tee is and which way the view looks (for
+   * what's drawn over it); null when there's none. */
+  teeMini() {
+    const m = this.miniRect, pose = this.povHole ? this.povPose() : null;
+    if (!m || !pose) return null;
+    const was = this.eye;
+    this.eye = { cam: this.miniCam, rect: m };
+    try {
+      const tee = this.project(pose.eye.clone().setY(this.h(pose.eye.x, pose.eye.z)));
+      const dir = new THREE.Vector3();
+      this.povCam.getWorldDirection(dir);
+      const far = pose.eye.clone().addScaledVector(new THREE.Vector3(dir.x, 0, dir.z).normalize(), 60);
+      const ahead = this.project(far.setY(this.h(far.x, far.z)));
+      return { rect: { ...m }, tee, ahead, fov: this.povCam.fov * this.povCam.aspect };
+    } finally { this.eye = was; }
+  }
+
+  /** The corner map's place in the view (the container's pixels). */
+  private miniPlace(): Rect | null {
+    if (!this.miniSize || !this.povHole || this.fly) return null;
+    const W = this.size.width, H = this.size.height;
+    if (W < 500 || H < 360) return null;
+    const big = this.miniSize === "big";
+    const w = Math.round(big ? Math.min(560, W * 0.42) : Math.min(260, W * 0.24)), h = Math.round(big ? Math.min(420, H * 0.5) : w * 0.72);
+    return { x: W - w - 12, y: 12, width: w, height: h };
+  }
+
+  /** The corner map's camera: straight down on the hole, its line pointing up the picture. */
+  private placeMini(m: Rect) {
+    const doc = this.doc, s = doc?.stats.find(x => x.holeId === this.povHole);
+    const pose = this.povPose();
+    if (!pose) return false;
+    // (standing on its own: 300 ft round the spot, the way you face up the picture)
+    const look = new THREE.Vector3().subVectors(pose.target, pose.eye);
+    const spot = { x: pose.eye.x, y: pose.eye.z }, ahead = Math.hypot(look.x, look.z) > 1e-6 ? { x: look.x / Math.hypot(look.x, look.z), y: look.z / Math.hypot(look.x, look.z) } : { x: 0, y: -1 };
+    const pts = s && s.line.length > 1 ? s.line : [{ x: spot.x - ahead.x * 100, y: spot.y - ahead.y * 100 }, { x: spot.x + ahead.x * 200, y: spot.y + ahead.y * 200 }];
+    const b = boundsOf(pts);
+    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
+    const a = pts[0], z = pts[pts.length - 1];
+    const len = Math.max(1, Math.hypot(z.x - a.x, z.y - a.y));
+    const cam = this.miniCam;
+    cam.aspect = m.width / Math.max(1, m.height);
+    // (the hole's length up the picture, with room round it)
+    const span = Math.max(len * 1.35, (Math.max(b.maxX - b.minX, b.maxY - b.minY) + 120) / Math.max(1, Math.min(cam.aspect, 1)), 160);
+    const height = span / 2 / Math.tan((cam.fov * DEG) / 2);
+    const ground = this.h(cx, cy);
+    cam.position.set(cx, ground + height, cy);
+    cam.up.set((z.x - a.x) / len, 0, (z.y - a.y) / len);
+    cam.lookAt(cx, ground, cy);
+    cam.near = Math.max(1, height * 0.05);
+    cam.far = height * 4;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    return true;
   }
 
   /** Fly over a hole from behind the tee to the basket; `done` runs when it lands. */
@@ -1372,13 +1744,27 @@ export class CourseView {
   private povPose(): { eye: THREE.Vector3; target: THREE.Vector3 } | null {
     const doc = this.doc;
     if (!doc || !this.povHole) return null;
-    const s = doc.stats.find(x => x.holeId === this.povHole);
-    if (!s || s.line.length < 2) return null;
+    const found = doc.stats.find(x => x.holeId === this.povHole);
+    const s = found && found.line.length >= 2 ? found : null;
+    // (standing on its own, away from every hole: only where the person stands)
+    if (!s && !this.povStand) return null;
     const own = this.povTee ? doc.course.items.find(i => i.id === this.povTee) : null;
-    const tee = own ? { x: own.x, y: own.y } : s.line[0];
-    const next = s.line[1];
+    // (standing somewhere else: there, the way it faces; walking: on the way, eased)
+    let tee: P = own ? { x: own.x, y: own.y } : s ? s.line[0] : { x: this.povStand!.x, y: this.povStand!.y };
+    let face: number | null = null;
+    if (this.povStand) {
+      tee = { x: this.povStand.x, y: this.povStand.y };
+      face = this.povStand.face;
+      const w = this.walk;
+      if (w) {
+        const k = clamp((performance.now() - w.t0) / 550, 0, 1), e = k * k * (3 - 2 * k);
+        tee = { x: w.from.x + (w.to.x - w.from.x) * e, y: w.from.y + (w.to.y - w.from.y) * e };
+        if (k >= 1) { this.walk = null; this.cb.onStand?.({ x: w.to.x, y: w.to.y, face: this.povStand.face }); } else this.invalidate();
+      }
+    }
+    const next = face === null && s ? s.line[1] : { x: tee.x + Math.cos(face ?? 0) * 60, y: tee.y + Math.sin(face ?? 0) * 60 };
     const eye = new THREE.Vector3(tee.x, this.h(tee.x, tee.y) + EYE_HEIGHT_FT + 0.35, tee.y);
-    const base = Math.atan2(next.y - tee.y, next.x - tee.x) + this.povLook.yaw;
+    const base = (face ?? Math.atan2(next.y - tee.y, next.x - tee.x)) + this.povLook.yaw;
     const d = Math.max(60, dist(tee, next));
     const tx = tee.x + Math.cos(base) * d, ty = tee.y + Math.sin(base) * d;
     const ground = this.h(next.x, next.y) + 3;
@@ -1424,7 +1810,8 @@ export class CourseView {
     this.updateForests(cam.position);
     waterUniforms.uTime.value = this.clock.elapsedTime;
     waterUniforms.uWind.value = this.wind ? 1 : 0.25;
-    this.fx.visible = false;
+    // (editing: what's picked and what's under the pointer outlined, as on the map)
+    this.fx.visible = this.teeEdit && !target && !this.fly;
     // (the hole's On screen switches: flying, and from the tee)
     const hidden = this.povHole ? this.hideForFlight() : [];
     this.ground.detailActive(true);
@@ -1616,7 +2003,7 @@ export class CourseView {
     if (this.recordings > 0 && !forVideo) return;
     const ask = ++this.detailAsk;
     const look = this.paintedRecord !== undefined ? this.paintedRecord : this.paintedScreen;
-    if (!holeId || !look || !this.detailPainter) {
+    if (!holeId || holeId === STAND_HERE || !look || !this.detailPainter) {
       this.ground.setPaintedDetail(null);
       return;
     }
@@ -1723,6 +2110,8 @@ export class CourseView {
     const dt = this.clock.getDelta();
     this.gliding = this.controls.update(dt);
     if (this.gliding) this.dirty = true;
+    if (this.glide) { this.stepGlide(dt); this.dirty = true; }
+    if (this.lookGlide) { this.stepLookGlide(dt); this.dirty = true; }
     if (!this.fly && this.stepFree(dt)) this.dirty = true;
     if (this.fly) {
       // Held on its first picture until everything's in (a few frames drawn after), then at most
@@ -1883,7 +2272,25 @@ export class CourseView {
       this.renderer.setClearColor(0x000000, 1);
       this.renderer.clear();
       this.drawPov({ x: 0, y: 0, width: this.size.width, height: this.size.height });
+      // (editing: the map from above in a corner, drawn with its own camera)
+      const m = this.miniPlace();
+      this.miniRect = m && this.placeMini(m) ? m : null;
+      if (this.miniRect) {
+        const H = this.size.height;
+        this.renderer.setViewport(m!.x, H - m!.y - m!.height, m!.width, m!.height);
+        this.renderer.setScissor(m!.x, H - m!.y - m!.height, m!.width, m!.height);
+        this.renderer.setScissorTest(true);
+        this.renderer.render(this.scene, this.miniCam);
+        this.renderer.setScissorTest(false);
+      }
       this.renderer.setViewport(0, 0, this.size.width, this.size.height);
+      // (what's placed over the view, comment pins and the like, follows it as it looks round and walks)
+      const c = this.povCam, key = `pov|${c.position.x.toFixed(2)}|${c.position.y.toFixed(2)}|${c.position.z.toFixed(2)}|${c.quaternion.x.toFixed(4)}|${c.quaternion.y.toFixed(4)}|${c.quaternion.z.toFixed(4)}|${c.fov.toFixed(2)}|${this.size.width}|${this.size.height}`;
+      if (key !== this.lastViewKey && !this.capturing) {
+        this.lastViewKey = key;
+        const info = this.viewInfo();
+        this.viewListeners.forEach(fn => fn(info));
+      }
       return;
     }
     // Tilting widens the lens; the camera moves in to keep the scale where it looks
@@ -2212,25 +2619,45 @@ export class CourseView {
 
   // ------------------------------------------------------------------ geometry helpers
 
+  /** The whole view's picture: the map, or the tee view's. */
+  private mainEye(): Eye {
+    return { cam: this.povHole ? this.povCam : this.camera, rect: { x: 0, y: 0, width: this.size.width, height: this.size.height } };
+  }
+
+  /** The picture a point on screen is in: the corner map in tee view, else the whole view's. */
+  private eyeAt(clientX: number, clientY: number): Eye {
+    const m = this.miniRect;
+    if (this.povHole && m) {
+      const r = this.container.getBoundingClientRect();
+      const x = clientX - r.left, y = clientY - r.top;
+      if (x >= m.x && x <= m.x + m.width && y >= m.y && y <= m.y + m.height) return { cam: this.miniCam, rect: m };
+    }
+    return this.mainEye();
+  }
+
   private project(v: THREE.Vector3) {
-    const p = v.clone().project(this.camera);
+    const { cam, rect } = this.eye ?? this.mainEye();
+    const p = v.clone().project(cam);
     if (p.z > 1 || p.z < -1) return null;
-    return { x: ((p.x + 1) / 2) * this.size.width, y: ((1 - p.y) / 2) * this.size.height };
+    return { x: rect.x + ((p.x + 1) / 2) * rect.width, y: rect.y + ((1 - p.y) / 2) * rect.height };
   }
 
   /** World units per screen pixel at a point. */
   private upp(v: THREE.Vector3) {
+    const { cam, rect } = this.eye ?? this.mainEye();
     const dir = new THREE.Vector3();
-    this.camera.getWorldDirection(dir);
-    const depth = Math.max(0.01, v.clone().sub(this.camera.position).dot(dir));
-    return (2 * depth * Math.tan((this.camera.fov * DEG) / 2)) / this.size.height;
+    cam.getWorldDirection(dir);
+    const depth = Math.max(0.01, v.clone().sub(cam.position).dot(dir));
+    return (2 * depth * Math.tan((cam.fov * DEG) / 2)) / rect.height;
   }
 
   private ray(clientX: number, clientY: number) {
+    // (through the picture it's in: the map's, the tee view's, or the corner map's; a drag stays in its own)
+    const { cam, rect } = this.dragEye ?? this.eyeAt(clientX, clientY);
     const r = this.container.getBoundingClientRect();
-    const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
-    this.camera.updateMatrixWorld();
-    this.raycaster.setFromCamera(ndc, this.camera);
+    const ndc = new THREE.Vector2(((clientX - r.left - rect.x) / rect.width) * 2 - 1, -((clientY - r.top - rect.y) / rect.height) * 2 + 1);
+    cam.updateMatrixWorld();
+    this.raycaster.setFromCamera(ndc, cam);
     return this.raycaster.ray;
   }
 
@@ -2404,6 +2831,8 @@ export class CourseView {
     const doc = this.doc!;
     const course = doc.course;
     const st = course.style;
+    // (the course's kinds of trees: the woods' and the measured trees'; lib/treeMix)
+    const shares = sharesOf(st);
     const seen = new Set<string>();
     const hv = this.heightsVersion;
     const put = (key: string, sig: string, make: () => THREE.Object3D | null, group: THREE.Group = this.shapesGroup, slow = false) => {
@@ -2490,14 +2919,16 @@ export class CourseView {
     // and built things (as on the painted map)
     // (`play`: only what's cleared for play, fairways, tees and baskets: the trees measured from the
     // air are real, and a crown over a path or a road doesn't stand on it)
-    const clearingsFor = (play: boolean) => {
+    // (`tallGrass`: tall grass clears too, for the painted woods; a wood or underbrush drawn over
+    // it grows there all the same)
+    const clearingsFor = (play: boolean, tallGrass = true) => {
       const polys: P[][] = [], lines: { pts: P[]; half: number }[] = [], discs: { p: P; r: number }[] = [];
       for (const s of doc.stats) {
         const hole = course.holes.find(h => h.id === s.holeId);
         if (s.complete && hole) teeLines(course, hole, s.line, s.teeId).forEach((l, k) => polys.push(this.outline(hole, l, `tee${k}`, 8, hole.fairway ? 0 : -hole.fairwayWidth * 0.4, 6)));
       }
       for (const it of course.items) {
-        if (it.type === "area" && (play ? ["fairway", "green"] : ["fairway", "green", "water", "parking", "building", "sand", "rough", "nogo", "field"]).includes(it.kind)) polys.push(this.shapeOf(it).pts);
+        if (it.type === "area" && (play ? ["fairway", "green"] : ["fairway", "green", "water", "parking", "building", "sand", ...(tallGrass ? ["rough"] : []), "nogo", "field"]).includes(it.kind)) polys.push(this.shapeOf(it).pts);
         else if (it.type === "line" && !play && it.kind !== "ob" && it.kind !== "fence") lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 + 3 });
         else if (it.type === "tee") discs.push({ p: it, r: Math.max(12, it.padLength) });
         else if (it.type === "basket") discs.push({ p: it, r: CIRCLE_ONE_FT * 0.6 });
@@ -2543,6 +2974,9 @@ export class CourseView {
     // (worked out only when something asks: during a drag, nothing may)
     let clearingsMade: ReturnType<typeof clearingsFor> | null = null;
     const clearings = () => (clearingsMade ??= clearingsFor(false));
+    // (a drawn wood's trees and bushes, and underbrush: tall grass doesn't clear them)
+    let growMade: ReturnType<typeof clearingsFor> | null = null;
+    const growClearings = () => (growMade ??= clearingsFor(false, false));
     // Where no tree stands, whatever the survey found: in water, on roads, paths, creeks and walks,
     // on buildings, parking and built things (a trunk there is a bridge, a car, a wire or noise)
     const nowhereFor = () => {
@@ -2613,8 +3047,8 @@ export class CourseView {
       for (const k of state.stand) sig = (sig * 31 + k) % 2147483647;
       const standKey = `${state.stand.length}:${sig}:${lidar.growYears ?? 0}:${lidar.saplings === true}:${lidar.crownSize ?? 1}`;
       if (measuredStanding()?.key !== standKey) setMeasuredStanding({ key: standKey, trees: state.stand.map(k => lidar.trees[k]) });
-      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, lidar.saplings === true, lidar.crownSize ?? 1, state.cut, hv, st.trees, st.landscape, st.treeMix, st.conifers]), () => {
-        const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, treeMixOf(st));
+      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, lidar.saplings === true, lidar.crownSize ?? 1, state.cut, hv, st.trees, st.landscape, st.treeMix, st.conifers, shares]), () => {
+        const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, treeMixOf(st), shares);
         this.shadowsDirty = true;
         return woods;
       }, this.itemsGroup, true);
@@ -2638,7 +3072,7 @@ export class CourseView {
         // only looked at, too), the dashed edge of an out-of-play area or a red OB edge; and what
         // stands on it (goals, nets, hoops, fences, play structures)
         const out = isOutOfPlay(a);
-        const shape = [a.points, a.field, a.fieldTurn, a.home];
+        const shape = [a.points, a.field, a.fieldTurn, a.home, a.plate, a.league, a.parts, a.courtColors];
         put(`area:${a.id}`, JSON.stringify([...shape, hv, order, inks.grass, out, nogoColor, a.ob, a.obStretches, a.hazard]), () => {
           const g = new THREE.Group();
           const plan = fieldPlan(a);
@@ -2732,13 +3166,15 @@ export class CourseView {
       const fillsIn = measured && a.trees !== "drawn";
       const brushOnly = a.kind === "woods" && (a.bushes ?? 0) >= 1;
       if (a.kind === "woods" && a.trees !== "none" && !brushOnly && !held(`woods:${a.id}`)) {
-        const here = clearings().near(boundsOf(a.points));
-        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, cutKey, a.pines, a.bushes, a.density, a.heights, fillsIn && this.lidarKey]), () => {
+        const here = growClearings().near(boundsOf(a.points));
+        // (a stand of one species grows only it)
+        const own = standShares(a, shares);
+        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, cutKey, a.pines, a.bushes, a.density, a.heights, fillsIn && this.lidarKey, own]), () => {
           this.plantings++;
           const box = boundsOf(a.points), standing = this.lidarState?.stand ?? [], trees = lidar?.trees ?? [];
           const near = fillsIn ? standing.map(k => trees[k]).filter(t => t && t[0] >= box.minX - 40 && t[0] <= box.maxX + 40 && t[1] >= box.minY - 40 && t[1] <= box.maxY + 40) : [];
           const keepOut = (p: P, r: number) => here.test(p, r) || cutAt(p) || near.some(t => Math.hypot(t[0] - p.x, t[1] - p.y) < t[3] * 0.8 + 4);
-          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), keepOut, 22 / Math.sqrt(Math.max(0.2, a.density ?? 1)), { pines: a.pines, bushes: a.bushes, heights: a.heights });
+          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), keepOut, 22 / Math.sqrt(Math.max(0.2, a.density ?? 1)), { pines: a.pines, bushes: a.bushes, heights: a.heights }, own);
           woods.traverse(o => { o.userData.itemId = a.id; });
           this.shadowsDirty = true;
           return woods;
@@ -2750,17 +3186,19 @@ export class CourseView {
       const brushLevel = brushOnly ? (["light", "medium", "heavy"] as const)[["sparse", "usual", "thick"].indexOf((a.density ?? 1) < 0.75 ? "sparse" : (a.density ?? 1) > 1.4 ? "thick" : "usual")] : a.underbrush;
       if (((a.kind === "woods" && a.trees !== "none") || a.kind === "rough") && (brushLevel || a.brush?.some(b => b.level !== "none"))) {
         let hereMade: ReturnType<ReturnType<typeof clearingsFor>["near"]> | null = null;
-        const here = () => (hereMade ??= clearings().near(boundsOf(a.points)));
+        const here = () => (hereMade ??= growClearings().near(boundsOf(a.points)));
         const sections = (a.brush ?? []).filter(b => b.points.length >= 3);
         const inSection = (p: P) => sections.some(b => pointInPolygon(p, b.points));
-        const edge = brushOnly ? 0 : Math.min(1, Math.max(0, a.brushEdge ?? 0.6));
+        // (tall grass is all in the sun: as thick through the middle as at its edge, and closer set)
+        const grass = a.kind === "rough";
+        const edge = brushOnly || grass ? 0 : Math.min(1, Math.max(0, a.brushEdge ?? 0.6));
         // (`over`: the sections drawn after this one, which have their say where they overlap it)
         const plant = (key: string, outline: P[], level: "light" | "medium" | "heavy", kind: BrushKind, outside: boolean, over: P[][] = []) =>
           held(key) || put(key, JSON.stringify([outline, level, kind, hv, st.trees, st.landscape, st.treeMix, st.conifers, here().key, cutKey, outside ? sections.map(b => b.points) : over, edge, a.points]), () => {
             this.plantings++;
             // (the wood's own level stays out of its sections; a section keeps to the wood)
             const keepOut = (p: P, r: number) => here().test(p, r) || cutAt(p) || (outside ? inSection(p) : !pointInPolygon(p, a.points) || over.some(o => pointInPolygon(p, o)));
-            const brush = createUnderbrush(outline, (x, y) => this.h(x, y), st.trees, treeMixOf(st), keepOut, level, edge, a.points, kind);
+            const brush = createUnderbrush(outline, (x, y) => this.h(x, y), st.trees, treeMixOf(st), keepOut, level, edge, a.points, kind, grass ? TALL_GRASS_BRUSH : 1);
             brush.traverse(o => { o.userData.itemId = a.id; });
             this.shadowsDirty = true;
             return brush;
@@ -2794,13 +3232,13 @@ export class CourseView {
     // The painted map's own woods: trees standing on it
     const pw = painted && !measured ? this.paintedWoods : null;
     if (pw) {
-      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, st.treeMix, st.conifers, clearings().key, cutKey]), () => {
+      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, st.treeMix, st.conifers, clearings().key, cutKey, shares]), () => {
         const inside = (p: P) => {
           const c = Math.floor((p.x - pw.x0) / pw.ftPerCell), r = Math.floor((p.y - pw.y0) / pw.ftPerCell);
           return c >= 0 && r >= 0 && c < pw.cols && r < pw.rows && pw.data[r * pw.cols + c] === 1;
         };
         // (as thick as the painting's tree cover)
-        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), (p, r) => clearings().test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.15, pw.cover)));
+        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), (p, r) => clearings().test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.15, pw.cover)), {}, shares);
         this.shadowsDirty = true;
         return woods;
       }, this.itemsGroup, true);
@@ -3022,7 +3460,7 @@ export class CourseView {
     }
   }
 
-  private outlineFor(id: string | null, color: string, opacity: number): THREE.Object3D | null {
+  private outlineFor(id: string | null, color: string, opacity: number, grow = 0, order = 9): THREE.Object3D | null {
     const doc = this.doc;
     if (!doc || !id) return null;
     const g = new THREE.Group();
@@ -3031,7 +3469,7 @@ export class CourseView {
       const s = doc.stats.find(x => x.holeId === hole.id);
       if (!s || s.line.length < 2) return null;
       const line = smoothPath(s.line, 10);
-      g.add(this.fatLine(this.drapeLine(fairwayOutline(hole, line, 0, 12), 0.5, true), color, 2, { opacity: opacity * 0.9, dashed: 5, order: 9 }));
+      g.add(this.fatLine(this.drapeLine(fairwayOutline(hole, line, 0, 12), 0.5, true), color, 2 + grow, { opacity: opacity * 0.9, dashed: 5, order }));
       return g;
     }
     const item = this.item(id);
@@ -3045,18 +3483,52 @@ export class CourseView {
         return { x: p.x - ((b.y - a.y) / l) * off, y: p.y + ((b.x - a.x) / l) * off };
       });
       const rings = w ? [[...edge(w), ...edge(-w).reverse()]] : [pts];
-      for (const r of rings) g.add(this.fatLine(this.drapeLine(r, LIFT + 0.3, true), color, 3, { opacity, order: 9, depthTest: false }));
+      for (const r of rings) g.add(this.fatLine(this.drapeLine(r, LIFT + 0.3, true), color, 3 + grow, { opacity, order, depthTest: false }));
     } else if (item.type === "area") {
-      g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2, true), color, 3.5, { opacity, order: 9 }));
+      g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2, true), color, 3.5 + grow, { opacity, order }));
     }
-    else if (item.type === "line") g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2), color, 5, { opacity: opacity * 0.6, order: 9 }));
+    else if (item.type === "line") g.add(this.fatLine(this.drapeLine(item.points, LIFT + 0.2), color, 5 + grow, { opacity: opacity * 0.6, order }));
     else {
       const r = item.type === "tree" ? item.radius * (item.width ?? 1) * 1.05 : item.type === "tee" ? item.padLength * 0.62 : item.type === "basket" ? 3 : 3.5;
       const ring: P[] = [];
       for (let i = 0; i < 48; i++) ring.push({ x: item.x + Math.cos((i / 48) * Math.PI * 2) * r, y: item.y + Math.sin((i / 48) * Math.PI * 2) * r });
-      g.add(this.fatLine(this.drapeLine(ring, 0.4, true), color, 2.5, { opacity, order: 9 }));
+      g.add(this.fatLine(this.drapeLine(ring, 0.4, true), color, 2.5 + grow, { opacity, order }));
     }
     return g;
+  }
+
+  /** What the others in the course have picked: each outlined as your own pick is, thin, in their
+   * color, over a faint dark edge so it reads on the photo (stronger while they drag it). */
+  setOthersPicked(picks: { id: string; color: string; strong: boolean }[]) {
+    if (JSON.stringify(picks) === JSON.stringify(this.others)) return;
+    this.others = picks;
+    this.syncOthers();
+    this.invalidate();
+  }
+
+  /** (for tests: the ids others have picked, as outlined) */
+  othersPicked() { return this.othersFx ? this.others.map(p => p.id) : []; }
+
+  /** Whether something is being dragged on the map now. */
+  isDragging() { return this.dragging; }
+
+  private syncOthers() {
+    if (this.othersFx) {
+      this.fx.remove(this.othersFx);
+      disposeObjectDeep(this.othersFx);
+      this.othersFx = null;
+    }
+    if (!this.others.length) return;
+    const g = new THREE.Group();
+    for (const p of this.others) {
+      const under = this.outlineFor(p.id, "#000000", 0.35, 2, 8);
+      const line = this.outlineFor(p.id, p.color, p.strong ? 0.95 : 0.75, -0.5, 9);
+      if (under) g.add(under);
+      if (line) g.add(line);
+    }
+    if (!g.children.length) return;
+    this.othersFx = g;
+    this.fx.add(g);
   }
 
   private setHover(id: string | null) {
@@ -3316,7 +3788,7 @@ export class CourseView {
     for (const st of doc.course.items) {
       if (st.type !== "structure" || isLineKind(st.kind) || st.points.length < 3) continue;
       const tall = structureHeight(st), house = st.kind === "building" || st.kind === "shelter";
-      const roof = house ? roofOf(st.points, structureRoof(st), 1.5) : null;
+      const roof = house ? roofFor(st) : null;
       const shape = roof ? roof.eaves : st.points;
       const base = Math.max(...st.points.map(p => this.h(p.x, p.y)));
       const top = (p: { x: number; y: number }) => base + (roof ? tall + roof.pitch * roof.run(p) : tall + (st.kind === "deck" && tall > 2 ? 3 : 0));
@@ -3500,8 +3972,8 @@ export class CourseView {
     const holeId = editing ? (this.hole(this.selectedId)?.id ?? doc.activeHoleId) : null;
     const hole = this.hole(holeId);
     const drawing = this.drawn() ? this.drawPts.length : -1;
-    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.kind}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
-    const obKey = `${sel?.type === "line" || sel?.type === "area" ? `${sel.ob}:${sel.obStretches?.length ?? 0}` : ""}|${this.obPick ? `${this.obPick.id}:${this.obPick.from}:${this.obPick.cut}` : ""}`;
+    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.kind}${sel.type === "area" ? (sel.field ?? "") : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
+    const obKey = `${sel?.type === "line" || sel?.type === "area" ? `${sel.ob}:${sel.obStretches?.length ?? 0}` : ""}|${this.obPick ? `${this.obPick.id}:${this.obPick.from}:${this.obPick.cut}` : ""}|${this.partPick ? `${this.partPick.id}:${this.partPick.part}` : ""}`;
     if (`${this.readOnly}${key}${obKey}` === this.handleKey) return;
     this.handleKey = `${this.readOnly}${key}${obKey}`;
     this.handles.forEach(h => h.el.remove());
@@ -3548,6 +4020,11 @@ export class CourseView {
       this.pointHandles(sel.id, add);
       if (turnable(sel)) this.turnHandle(sel.id, add);
     }
+    if (sel.type === "area" && sel.kind === "field" && isBallField(fieldKindOf(sel))) {
+      this.plateHandle(sel.id, add);
+      if (this.partPick?.id === sel.id && !sel.locked) this.partHandle(sel.id, this.partPick.part, add);
+    }
+    if (!sel.locked) this.heightHandle(sel, add);
     if (sel.type === "line" && sel.kind === "stream") this.lineWidthHandles(sel.id, add);
     if ((sel.type === "line" || sel.type === "area") && sel.ob === true && sel.obStretches?.length && !sel.locked) this.obStretchHandles(sel.id, add);
     if (sel.type === "structure" && !isLineKind(sel.kind)) this.outlineHandles(sel.id, add);
@@ -3578,6 +4055,116 @@ export class CourseView {
         return it.type === "tee" ? { rotation: deg, aimFixed: true } : { rotation: deg };
       }), { title: sel.type === "mando" ? "Drag to turn the arrow · Shift snaps to 15°" : "Drag to turn it · Shift snaps to 15°" });
     }
+  }
+
+  /** A ball field's home plate: dragged to where it really is, the field turning to face the middle
+   * of its outline from there. */
+  private plateHandle(id: string, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
+    // (laid out again only when the field changes, not every frame)
+    let seen: AreaItem | null = null, at: P | null = null;
+    add("plate", () => {
+      const a = this.item(id) as AreaItem | null;
+      if (!a || a.type !== "area") return null;
+      if (a !== seen) { seen = a; at = fieldPlan(a)?.home ?? null; }
+      return at ? new THREE.Vector3(at.x, this.h(at.x, at.y) + 0.3, at.y) : null;
+    }, e => this.planeDrag(e, id, (p, it) => {
+      const a = it as AreaItem, hi = fieldHome(a), { corner, f, right } = cornerFrame(a.points, hi);
+      const dx = p.x - corner.x, dy = p.y - corner.y;
+      return { home: hi, plate: { x: Math.round((dx * f.x + dy * f.y) * 10) / 10, y: Math.round((dx * right.x + dy * right.y) * 10) / 10 } };
+    }), { title: "Drag home plate to where it is · the field turns to follow" });
+  }
+
+  /** A ball field's part picked, dragged where it really is along the field's middle line: the mound
+   * (home to the rubber), the infield's edge (its reach from the rubber), second base (the bases
+   * apart), and the backstop (behind home) once home plate is placed by hand (till then home sits
+   * in from the corner by the backstop's distance: the backstop would stay and home move); a tip
+   * says the distance. */
+  private partHandle(id: string, part: FieldPart, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
+    // (from home along the way it faces: `base` + d × `k` ft, behind home for the backstop)
+    const spec = (a: AreaItem) => {
+      const plan = fieldPlan(a), L = plan?.league ? LEAGUES[plan.league] : null;
+      if (!plan?.home || !plan.facing || !L) return null;
+      const d = (p: FieldPart, dflt: number) => a.parts?.[p]?.d ?? dflt;
+      const pitch = d("mound", L.pitch);
+      const s = part === "mound" ? { d: pitch, base: 0, k: 1, min: 30, max: 61, say: (v: number) => `${v} ft from home to the rubber` }
+        : part === "backstop" && a.plate ? { d: d("backstop", L.backstop), base: 0, k: -1, min: 15, max: 70, say: (v: number) => `${v} ft behind home` }
+        : part === "infield" ? { d: d("infield", L.arc), base: pitch, k: 1, min: 30, max: 130, say: (v: number) => `${v} ft from the rubber` }
+        : part === "lines" ? { d: d("lines", L.bases), base: 0, k: Math.SQRT2, min: 40, max: 90, say: (v: number) => `Bases ${v} ft apart` }
+        : null;
+      return s ? { ...s, H: plan.home, f: plan.facing } : null;
+    };
+    let seen: AreaItem | null = null, at: P | null = null;
+    add("part", () => {
+      const a = this.item(id) as AreaItem | null;
+      if (!a || a.type !== "area") return null;
+      if (a !== seen) { seen = a; const s = spec(a); at = s ? { x: s.H.x + s.f.x * (s.base + s.d * s.k), y: s.H.y + s.f.y * (s.base + s.d * s.k) } : null; }
+      return at ? new THREE.Vector3(at.x, this.h(at.x, at.y) + 0.4, at.y) : null;
+    }, e => {
+      // (measured from where home was as the drag began: a ball field's plate sits in from its
+      // corner by the backstop's distance, so it moves as the backstop does)
+      const a0 = this.item(id) as AreaItem | null, s = a0 ? spec(a0) : null;
+      if (!s) return null;
+      const drag = this.planeDrag(e, id, (p, it, ev) => {
+        const a = it as AreaItem;
+        const along = (p.x - s.H.x) * s.f.x + (p.y - s.H.y) * s.f.y;
+        const v = clamp(Math.round(((along - s.base) / s.k) * 2) / 2, s.min, s.max);
+        this.tip(s.say(v), ev.clientX, ev.clientY);
+        return { parts: { ...a.parts, [part]: { ...a.parts?.[part], d: v } } };
+      });
+      return drag && { move: drag.move, end: ev => { this.tip(null); drag.end(ev); } };
+    }, { title: "Drag it to where it really is" });
+  }
+
+  /** In 3D, a handle at the top of a tree, a fence, a hedge, a power line's wires or a wall: dragged
+   * up or down, it sets the height (a tip says it). Buildings, shelters and decks have their own
+   * (see outlineHandles), the same to look at. */
+  private heightHandle(sel: CourseItem, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
+    const spec = (it: CourseItem | null) => {
+      if (!it) return null;
+      if (it.type === "tree") {
+        const h = it.height ?? it.radius * 2.6;
+        return { at: { x: it.x, y: it.y }, h, min: 2, max: Math.max(120, Math.round(h)), patch: (v: number) => ({ height: v, radius: Math.max(1, Math.min(45, Math.round(it.radius * (v / h) * 10) / 10)) }) };
+      }
+      if (it.type === "structure" && isLineKind(it.kind) && STRUCTURE_KINDS[it.kind].heightLabel) {
+        const meta = STRUCTURE_KINDS[it.kind], h = structureHeight(it), c = centroid(it.points);
+        return { at: c, h, min: meta.heights[0], max: Math.max(meta.heights[1], h), patch: (v: number) => ({ height: v }) };
+      }
+      if (it.type === "line" && LINE_KINDS[it.kind].heights) {
+        const meta = LINE_KINDS[it.kind], h = it.fenceHeight ?? meta.height!, pts = linePath(it);
+        return { at: pts[Math.floor(pts.length / 2)] ?? it.points[0], h, min: meta.heights![0], max: meta.heights![1], patch: (v: number) => ({ fenceHeight: v }) };
+      }
+      return null;
+    };
+    if (!spec(sel)) return;
+    const itemId = sel.id;
+    add("height", () => {
+      // (only in 3D: from straight above, a height has no up or down to drag)
+      if (this.controls.polarAngle < 25 * DEG) return null;
+      const s = spec(this.item(itemId));
+      return s ? new THREE.Vector3(s.at.x, this.h(s.at.x, s.at.y) + s.h, s.at.y) : null;
+    }, () => {
+      const s0 = spec(this.item(itemId));
+      if (!s0) return null;
+      const base = this.h(s0.at.x, s0.at.y);
+      const metric = this.doc?.course.units === "m";
+      return {
+        move: ev => {
+          // (on an upright plane through it, facing the camera)
+          const dir = new THREE.Vector3();
+          this.camera.getWorldDirection(dir);
+          dir.y = 0;
+          if (dir.lengthSq() < 1e-6) return;
+          const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(dir.normalize(), new THREE.Vector3(s0.at.x, base, s0.at.y));
+          const hit = this.ray(ev.clientX, ev.clientY).intersectPlane(plane, new THREE.Vector3());
+          const s = spec(this.item(itemId));
+          if (!hit || !s) return;
+          const v = clamp(Math.round((hit.y - base) * 2) / 2, s.min, s.max);
+          this.cb.onChange(itemId, s.patch(v));
+          this.tip(`${metric ? Math.round(v * 0.3048 * 10) / 10 : v} ${metric ? "m" : "ft"} tall`, ev.clientX, ev.clientY);
+        },
+        end: () => { this.tip(null); this.cb.onCommit(); }
+      };
+    }, { title: "Drag up or down to change its height" });
   }
 
   /** A hole's doglegs: drag a dot to move a turn, pull a mid dot to add one, double-click to remove one; and a square for the fairway width. */
@@ -4385,6 +4972,12 @@ export class CourseView {
    * near the pointer.
    */
   private pick(clientX: number, clientY: number): string | null {
+    const was = this.eye;
+    this.eye = this.dragEye ?? this.eyeAt(clientX, clientY);
+    try { return this.pickIn(clientX, clientY); } finally { this.eye = was; }
+  }
+
+  private pickIn(clientX: number, clientY: number): string | null {
     const doc = this.doc;
     if (!doc) return null;
     const r = this.container.getBoundingClientRect();
@@ -4401,14 +4994,19 @@ export class CourseView {
     const seen = leaves?.drawn && !(roof && roof.t < leaves.t) ? leaves : roof;
     // (leaves only near the pointer, none drawn right there: only when nothing is on the ground there)
     const guessed = leaves && !leaves.drawn && !roof ? leaves : null;
+    // (from the tee view: the camera stands on a pad, close enough to fill the view; that pad isn't
+    // what a click means, and nothing near the eye gets a target bigger than a thumb)
+    const eye = this.eye ?? this.mainEye();
+    const pov = eye.cam === this.povCam;
     for (const item of doc.course.items) {
       if (item.type === "area" || item.type === "line" || item.type === "label" || item.type === "structure" || item.type === "tree") continue;
       const a = new THREE.Vector3(item.x, this.h(item.x, item.y) + 1, item.y);
+      if (pov && Math.hypot(a.x - eye.cam.position.x, a.z - eye.cam.position.z) < 15) continue;
       const s = this.project(a);
       if (!s) continue;
       const upp = this.upp(a);
       const real = item.type === "tee" ? item.padLength / 2 : item.type === "amenity" ? 4 : 2;
-      const radius = Math.max(13 * reach, real / upp);
+      const radius = pov ? Math.min(40 * reach, Math.max(16 * reach, real / upp)) : Math.max(13 * reach, real / upp);
       const d = Math.hypot(s.x - sx, s.y - sy);
       // (a mark hidden behind leaves or a roof isn't what the pointer is on)
       if (d <= radius && !(seen && seen.t < a.distanceTo(ray.origin) - 3)) {
@@ -4416,8 +5014,11 @@ export class CourseView {
         if (!best || score < best.score) best = { id: item.id, score };
       }
     }
+    // (from the tee: a tree or roof right under the pointer comes before a mark beside it)
+    if (pov && seen && (!best || best.score > 0.45)) return seen.id;
     if (best) return best.id;
     if (seen) return seen.id;
+    if (pov) return guessed?.id ?? null;
     const g = this.groundAt(clientX, clientY);
     if (!g) return guessed?.id ?? null;
     const p = { x: g.x, y: g.z };
@@ -4539,19 +5140,93 @@ export class CourseView {
     this.updateCursor();
   }
 
-  /** Map-style pan: the ground point under the cursor stays under the cursor. */
-  private panDrag(e: PointerEvent): Drag | null {
+  /** Map-style pan, with a mouse or a finger: the ground point under it stays under it; let go
+   * while it's still moving and the map slides on, slowing, as on Google Maps. */
+  private panDrag(e: { clientX: number; clientY: number; timeStamp?: number }): Drag | null {
     const g0 = this.groundAt(e.clientX, e.clientY);
     if (!g0) return null;
+    this.userMoved();
     this.container.style.cursor = "grabbing";
+    // (where the map was over the last moments: the fling's speed)
+    // (by when each move happened, not when it was handled: a busy frame doesn't skew it)
+    const trail: { t: number; x: number; z: number }[] = [];
+    const mark = (t: number) => {
+      const g = this.controls.getTarget(new THREE.Vector3(), false);
+      trail.push({ t, x: g.x, z: g.z });
+      if (trail.length > 8) trail.shift();
+    };
+    mark(e.timeStamp ?? performance.now());
     return {
       move: ev => {
         const g1 = this.planeAt(ev.clientX, ev.clientY, g0.y);
         if (!g1) return;
         this.shift(g0.x - g1.x, g0.z - g1.z);
+        mark(ev.timeStamp);
       },
-      end: () => this.updateCursor()
+      // (not when a second finger took over, or the press was cancelled)
+      end: ev => {
+        this.updateCursor();
+        if (ev.type === "pointerup" && this.touchIds.size === 0) this.fling(trail, ev.timeStamp);
+      }
     };
+  }
+
+  /** The map moved by hand: it stops following you and keeps its place when the window changes
+   * size; a fling under way stops. */
+  private userMoved() {
+    this.glide = null;
+    this.posePinned = false;
+    this.autoFit = null;
+    this.onUserMove?.();
+  }
+
+  /** The map sliding on after a pan let go of while moving (plan ft a second). */
+  private glide: { vx: number; vz: number } | null = null;
+  /** A fling, at the speed the map moved over the last tenth of a second (none if it was held
+   * still before letting go, or moved slowly). */
+  private fling(trail: { t: number; x: number; z: number }[], at: number) {
+    const last = trail[trail.length - 1];
+    if (!last || at - last.t > 60) return;
+    const first = trail.find(s => last.t - s.t <= 100);
+    if (!first || last.t - first.t < 16) return;
+    const sec = (last.t - first.t) / 1000;
+    let vx = (last.x - first.x) / sec, vz = (last.z - first.z) / sec;
+    const px = Math.hypot(vx, vz) / this.worldPerPx();
+    if (px < 250) return;
+    if (px > 4000) { vx *= 4000 / px; vz *= 4000 / px; }
+    this.glide = { vx, vz };
+    this.invalidate();
+  }
+  private stepGlide(dt: number) {
+    const g = this.glide!;
+    const k = Math.exp(-Math.min(dt, 0.1) / GLIDE_TAU);
+    this.shift(g.vx * GLIDE_TAU * (1 - k), g.vz * GLIDE_TAU * (1 - k));
+    g.vx *= k;
+    g.vz *= k;
+    if (Math.hypot(g.vx, g.vz) / this.worldPerPx() < 20) this.glide = null;
+  }
+  /** Plan ft per screen pixel at the point looked at. */
+  private worldPerPx() {
+    return (2 * this.controls.distance * Math.tan((this.camera.fov * DEG) / 2)) / Math.max(1, this.size.height);
+  }
+
+  /** The finger left on the map when the other of two lifts: it goes on moving the map. */
+  private followFinger(id: number, x: number, y: number) {
+    const drag = this.panDrag({ clientX: x, clientY: y });
+    if (!drag) return;
+    const move = (ev: PointerEvent) => { if (ev.pointerId === id) { drag.move(ev); this.invalidate(); } };
+    const up = (ev: PointerEvent) => { if (ev.pointerId === id) { cleanup(); drag.end(ev); } };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      this.endDragListeners = null;
+    };
+    this.endDragListeners?.();
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    this.endDragListeners = cleanup;
   }
 
   private shift(dx: number, dz: number) {
@@ -4581,8 +5256,9 @@ export class CourseView {
         } else {
           this.cb.onChange(id, { x: hit.x + off.x, y: hit.z + off.y });
         }
+        if (this.povHole) this.povDragTip(id, { x: hit.x + off.x, y: hit.z + off.y }, ev.clientX, ev.clientY);
       },
-      end: () => this.cb.onCommit()
+      end: () => { this.tip(null); this.cb.onCommit(); }
     };
   }
 
@@ -4596,9 +5272,10 @@ export class CourseView {
 
   /** Where each finger is now (screen px). */
   private fingerAt = new Map<number, { x: number; y: number }>();
-  /** Two fingers on the map, as on Google Earth: a pinch zooms around the point between them, a
-   * twist turns the map around it (it stays under the fingers), a slide up or down tilts. */
-  private pinch: { d: number; a: number; cy: number } | null = null;
+  /** Two fingers on the map, as on Google Maps: they hold the ground between them, so sliding them
+   * moves the map, spreading them zooms and twisting them turns it (once twisted a little: a pinch
+   * doesn't turn the map by accident); both sliding up or down together, side by side, tilt it. */
+  private pinch: { d: number; a: number; cx: number; cy: number; p0: P; q0: P; d0: number; a0: number; mode: "" | "tilt" | "map"; turning: boolean } | null = null;
   /** Two fingers that came down on the thing picked: they size and turn it, not the map. */
   private pinchItem: { id: string; base: CourseItem; d0: number; a0: number; aim: number } | null = null;
   private readonly twoFingers = (e: PointerEvent) => {
@@ -4610,15 +5287,47 @@ export class CourseView {
     if (!p || !q) return;
     const d = Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a = Math.atan2(q.y - p.y, q.x - p.x), cx = (p.x + q.x) / 2, cy = (p.y + q.y) / 2;
     const was = this.pinch;
-    this.pinch = { d, a, cy };
     if (this.pinchItem) {
+      this.pinch = { ...was, d, a, cx, cy };
       const patch = this.pinchedPatch(this.pinchItem, d / this.pinchItem.d0, ((a - this.pinchItem.a0) * 180) / Math.PI);
       if (patch) this.cb.onChange(this.pinchItem.id, patch);
       return;
     }
+    // (standing, or a flight: two fingers zoom the view in and out, as the wheel does)
+    if (this.povHole) {
+      this.pinch = { ...was, d, a, cx, cy };
+      if (!this.fly && Math.abs(d / was.d - 1) > 1e-3) {
+        this.povCam.fov = clamp(this.povCam.fov * (was.d / d), LENS.min, LENS.max);
+        this.invalidate();
+      }
+      return;
+    }
+    // (what the fingers do, once they've moved a little: both sliding up or down side by side
+    // tilts; anything else holds the ground)
+    if (!was.mode) {
+      const dp = { x: p.x - was.p0.x, y: p.y - was.p0.y }, dq = { x: q.x - was.q0.x, y: q.y - was.q0.y };
+      if (Math.max(Math.hypot(dp.x, dp.y), Math.hypot(dq.x, dq.y)) < TOUCH_SLOP) return;
+      const sideBySide = Math.abs(Math.sin(was.a0)) < 0.6;
+      const slides = (v: P) => Math.abs(v.y) > 2 * Math.abs(v.x);
+      was.mode = sideBySide && slides(dp) && slides(dq) && Math.sign(dp.y) === Math.sign(dq.y) && Math.abs(d / was.d0 - 1) < 0.15 ? "tilt" : "map";
+      this.userMoved();
+    }
+    const now = (this.pinch = { ...was, d, a, cx, cy });
+    if (was.mode === "tilt") {
+      if (Math.abs(was.cy - cy) > 0.5) void this.controls.rotate(0, (was.cy - cy) * (MAX_TILT / Math.max(300, this.size.height * 0.6)), false);
+      this.invalidate();
+      return;
+    }
+    // (the ground that was between the fingers, back between them)
+    const g0 = this.groundAt(was.cx, was.cy), g1 = g0 && this.planeAt(cx, cy, g0.y);
+    if (g0 && g1) this.shift(g0.x - g1.x, g0.z - g1.z);
+    const wrap = (r: number) => (r > Math.PI ? r - 2 * Math.PI : r < -Math.PI ? r + 2 * Math.PI : r);
+    let da = wrap(a - was.a);
+    if (!now.turning) {
+      now.turning = Math.abs(wrap(a - was.a0)) > TWIST;
+      da = 0;
+    }
     // (the map turns with the fingers and stays under them: around the ground between them)
-    let da = a - was.a;
-    if (da > Math.PI) da -= 2 * Math.PI; else if (da < -Math.PI) da += 2 * Math.PI;
     if (Math.abs(da) > 1e-4) {
       const under = this.groundAt(cx, cy);
       if (under) {
@@ -4629,14 +5338,15 @@ export class CourseView {
         void this.controls.setLookAt(np.x, np.y, np.z, nt.x, nt.y, nt.z, false);
       } else void this.controls.rotate(da, 0, false);
     }
-    if (Math.abs(was.cy - cy) > 0.5) void this.controls.rotate(0, (was.cy - cy) * (MAX_TILT / Math.max(300, this.size.height * 0.6)), false);
     if (Math.abs(d / was.d - 1) > 1e-3) this.zoomAt(cx, cy, was.d / d, false);
     this.invalidate();
   };
   private startPinch() {
     const [p, q] = [...this.touchIds].map(id => this.fingerAt.get(id)!);
     if (!p || !q) return;
-    this.pinch = { d: Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a: Math.atan2(q.y - p.y, q.x - p.x), cy: (p.y + q.y) / 2 };
+    const d = Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a = Math.atan2(q.y - p.y, q.x - p.x);
+    this.glide = null;
+    this.pinch = { d, a, cx: (p.x + q.x) / 2, cy: (p.y + q.y) / 2, p0: { ...p }, q0: { ...q }, d0: d, a0: a, mode: "", turning: false };
     // (both fingers on or right by the thing picked: it's the thing they size and turn; only a
     // thing that turns, or a tree, and a shape well inside the view: on a wood, a pond or a road
     // that fills it, two fingers move the map)
@@ -4685,12 +5395,43 @@ export class CourseView {
     this.snapNorth();
   }
 
+  /** The last quick tap of one finger (a second, soon after and close by, is a double tap). */
+  private lastTap: { t: number; x: number; y: number } | null = null;
+  /** The finger down now, if it's one finger alone (to tell a tap). */
+  private tapDown: { id: number; t: number; x: number; y: number } | null = null;
+
+  /** A double tap with a finger, as on Google Maps: the map zooms in twice over where it lands (the
+   * view's lens, standing). Whatever the first tap did stands; the second does nothing else. */
+  private doubleTap(e: PointerEvent) {
+    this.lastTap = null;
+    this.tapDown = null;
+    this.cancelLongPress();
+    this.userMoved();
+    if (this.povHole) {
+      if (!this.fly) this.povCam.fov = clamp(this.povCam.fov * 0.6, LENS.min, LENS.max);
+    } else this.zoomAt(e.clientX, e.clientY, 0.5);
+    this.invalidate();
+  }
+
   private touchUp(e: PointerEvent) {
+    // (a quick tap of one finger that hardly moved: remembered, for a double tap)
+    const d = this.tapDown;
+    if (d && d.id === e.pointerId) {
+      this.tapDown = null;
+      const quick = e.type === "pointerup" && e.timeStamp - d.t < 300 && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 12 && this.touchIds.size === 1;
+      this.lastTap = quick ? { t: e.timeStamp, x: e.clientX, y: e.clientY } : null;
+    }
     this.fingerAt.delete(e.pointerId);
+    const mapPinch = !this.povHole && !!this.pinch && !this.pinchItem && this.touchIds.size === 2;
     if (this.touchIds.delete(e.pointerId) && this.touchIds.size >= 1) this.pinchAt = performance.now();
     if (this.touchIds.size < 2) this.endPinch();
     else if (this.touchIds.size === 2 && !this.pinch) this.startPinch();
     if (this.touchIds.size === 0) window.removeEventListener("pointermove", this.twoFingers);
+    // (one of two fingers lifted: the other goes on moving the map, as on Google Maps)
+    if (mapPinch && this.touchIds.size === 1 && e.type === "pointerup") {
+      const id = [...this.touchIds][0], f = this.fingerAt.get(id);
+      if (f) this.followFinger(id, f.x, f.y);
+    }
     const lp = this.longPress;
     if (lp?.id !== e.pointerId) return;
     // (Held long enough, even if a busy page ran the timer late: still the long-press)
@@ -4860,29 +5601,73 @@ export class CourseView {
   private onPointerDown(e: PointerEvent) {
     const target = e.target as HTMLElement;
     if (!this.doc) return;
+    this.glide = null;
+    this.lookGlide = null;
     this.fingers = e.pointerType === "touch";
     if (this.fingers) {
       this.touchIds.add(e.pointerId);
       this.fingerAt.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.touchIds.size === 1) window.addEventListener("pointermove", this.twoFingers);
       if (this.touchIds.size > 1) {
+        this.lastTap = null;
+        this.tapDown = null;
         this.pinchAt = performance.now();
         this.secondFinger();
         if (this.touchIds.size === 2) this.startPinch();
         else this.endPinch();
         return;
       }
+      // (a second quick tap close by: a double tap, which zooms; not on the buttons over the view)
+      const last = this.lastTap;
+      if (last && e.timeStamp - last.t < 320 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 40 && !target.closest?.("button,input,select,textarea,a,[data-pov-ui],[role=dialog]")) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.doubleTap(e);
+        return;
+      }
+      this.tapDown = { id: e.pointerId, t: e.timeStamp, x: e.clientX, y: e.clientY };
       // (Not on a handle that moves something: holding one still before dragging it slowly is no
       // menu; a line's middle dot is fine, it is where a finger lands to hold a hole)
       const handle = (target.closest?.("[data-handle]") as HTMLElement | null)?.dataset.handle;
       if (!this.povHole && this.tool.mode === "select" && e.button === 0 && (!handle || handle === "mid")) this.startLongPress(e, target);
     }
     if (this.povHole) {
-      if (e.button !== 0 || target.closest?.("button,input,select,[data-pov-ui]")) return;
-      e.preventDefault();
-      e.stopPropagation();
-      this.povDrag(e);
-      return;
+      if (target.closest?.("button,input,select,[data-pov-ui]")) return;
+      // (the right button, or Space held: looking around, whatever the tool)
+      if ((e.button === 2 || this.spaceDown) && !this.fly) { e.preventDefault(); e.stopPropagation(); this.povDrag(e, true); return; }
+      if (e.button !== 0) return;
+      // (editing: a press on a thing, or with a tool that places one, goes on as on the map,
+      // through the picture it's in; on open ground it looks around; on the corner map's open
+      // ground, nothing)
+      // (Walk: a tap walks, on a thing or not. Edit: a drag looks around, as in Walk, unless it
+      // starts on the thing picked (a tree, a basket…: it moves) or a tool places things; a tap
+      // picks what's there. On the corner map, a press on a thing goes to it as on the map)
+      if (this.tapsEdit() && !this.fly && !this.free) {
+        const eye = this.eyeAt(e.clientX, e.clientY);
+        const hit = this.tool.mode === "select" ? this.pick(e.clientX, e.clientY) : null;
+        const it = hit ? this.item(hit) : null;
+        const movesPicked = !!it && hit === this.selectedId && it.type !== "area" && it.type !== "line" && it.type !== "structure";
+        const onThing = this.tool.mode !== "select" || movesPicked || (eye.cam === this.miniCam && !!hit);
+        if (onThing) {
+          this.dragEye = eye;
+          const done = () => { window.removeEventListener("pointerup", done, true); window.removeEventListener("pointercancel", done, true); setTimeout(() => { this.dragEye = null; }, 0); };
+          window.addEventListener("pointerup", done, true);
+          window.addEventListener("pointercancel", done, true);
+        } else if (eye.cam === this.miniCam) {
+          e.preventDefault();
+          return;
+        } else {
+          e.preventDefault();
+          e.stopPropagation();
+          this.povDrag(e, true, ev => this.povTapPick(ev));
+          return;
+        }
+      } else {
+        e.preventDefault();
+        e.stopPropagation();
+        this.povDrag(e);
+        return;
+      }
     }
     if (e.button === 2) {
       const x0 = e.clientX, y0 = e.clientY, id = e.pointerId;
@@ -4924,7 +5709,7 @@ export class CourseView {
         // the map, not the hole; nothing moves by accident while panning or pinching)
         const owner = this.selectedId ?? this.doc?.activeHoleId ?? null;
         if (owner !== this.selectedId) {
-          this.gesture(e, { click: () => { if (owner) this.cb.onSelect(owner); } });
+          this.gesture(e, { click: () => { if (owner) this.cb.onSelect(owner); }, drag: s => this.panDrag(s) });
           return;
         }
         e.stopPropagation();
@@ -4979,7 +5764,6 @@ export class CourseView {
       return;
     }
     const stop = () => { if (!touch) e.stopPropagation(); };
-    const panOrNothing = (s: PointerEvent) => (touch ? null : this.panDrag(s));
     const tool = this.tool;
     const groundClick = (fn: (p: P, ev: PointerEvent) => void) => (ev: PointerEvent) => {
       const g = this.groundAt(ev.clientX, ev.clientY);
@@ -4987,12 +5771,12 @@ export class CourseView {
     };
     if (tool.mode === "measure") {
       stop();
-      this.gesture(e, { click: ev => { const g = this.groundAt(ev.clientX, ev.clientY); if (g) this.addMeasurePoint(g, ev.shiftKey); }, drag: panOrNothing });
+      this.gesture(e, { click: ev => { const g = this.groundAt(ev.clientX, ev.clientY); if (g) this.addMeasurePoint(g, ev.shiftKey); }, drag: s => this.panDrag(s) });
       return;
     }
     if (this.obPick) {
       stop();
-      this.gesture(e, { click: groundClick(p => this.obPickClick(p)), drag: panOrNothing });
+      this.gesture(e, { click: groundClick(p => this.obPickClick(p)), drag: s => this.panDrag(s) });
       return;
     }
     if (this.plotHole) {
@@ -5026,7 +5810,7 @@ export class CourseView {
             this.cb.onHole(start, p);
           }
         }),
-        drag: panOrNothing
+        drag: s => this.panDrag(s)
       });
       return;
     }
@@ -5044,7 +5828,7 @@ export class CourseView {
       if (shaped) e.stopPropagation();
       else stop();
       this.gesture(e, {
-        drag: shaped ? s => this.shapeDrag(s, shape) : panOrNothing,
+        drag: shaped ? s => this.shapeDrag(s, shape) : s => this.panDrag(s),
         click: groundClick(p0 => {
           // (painting: a tap paints a round spot)
           if (shape === "paint") {
@@ -5092,7 +5876,7 @@ export class CourseView {
           this.updateGhost(null);
           this.cb.onPlace(tool.mode, p);
         }),
-        drag: panOrNothing
+        drag: s => this.panDrag(s)
       });
       return;
     }
@@ -5112,7 +5896,7 @@ export class CourseView {
         this.gesture(e, {
           // (picked like any tree: the same panel, moved once picked, deleted with Del)
           click: () => this.cb.onAdoptTree(tree, this.lookOf(tree)),
-          drag: moves ? s => this.itemDrag(s, hit!) : panOrNothing
+          drag: moves ? s => this.itemDrag(s, hit!) : s => this.panDrag(s)
         });
         return;
       }
@@ -5130,7 +5914,7 @@ export class CourseView {
       stop();
       this.gesture(e, {
         click: () => this.cb.onSelect(null),
-        drag: panOrNothing
+        drag: s => this.panDrag(s)
       });
       return;
     }
@@ -5161,13 +5945,40 @@ export class CourseView {
     if ((big && hit !== this.selectedId) || !item || item.locked) {
       if (boxing) e.stopPropagation();
       else stop();
-      this.gesture(e, { click: () => this.cb.onSelect(hit), drag: boxing ? s => this.boxDrag(s, false) : panOrNothing });
+      this.gesture(e, { click: () => this.cb.onSelect(hit), drag: boxing ? s => this.boxDrag(s, false) : s => this.panDrag(s) });
       return;
     }
     e.stopPropagation();
-    if (hit !== this.selectedId) this.cb.onSelect(hit);
-    this.gesture(e, { drag: s => this.itemDrag(s, hit) });
+    const picked = hit === this.selectedId;
+    if (!picked) this.cb.onSelect(hit);
+    // (the field already picked: a click picks the part of it there)
+    const field = picked && item.type === "area" && item.kind === "field" ? item : null;
+    this.gesture(e, {
+      drag: s => this.itemDrag(s, hit),
+      ...(field ? { click: (ev: PointerEvent) => { const g = this.groundAt(ev.clientX, ev.clientY); this.cb.onFieldPart?.(g ? fieldPartAt(field, { x: g.x, y: g.z }) : null); } } : {})
+    });
   }
+
+  /** The picked field's part outlined, as a pick is (none: null). */
+  setFieldPart(id: string | null, part: FieldPart | null) {
+    if (this.partFx) { this.fx.remove(this.partFx); disposeObjectDeep(this.partFx); this.partFx = null; }
+    const pick = id && part ? { id, part } : null;
+    if (pick?.id !== this.partPick?.id || pick?.part !== this.partPick?.part) { this.partPick = pick; this.syncHandles(); }
+    const a = id && part ? this.doc?.course.items.find(i => i.id === id) : null;
+    if (a && a.type === "area" && a.kind === "field" && part) {
+      const g = new THREE.Group();
+      for (const s of fieldPartShape(a, part)) {
+        g.add(this.fatLine(this.drapeLine(s.pts, 0.5, s.closed), "#000000", 5, { opacity: 0.35, order: 9 }));
+        g.add(this.fatLine(this.drapeLine(s.pts, 0.55, s.closed), SELECT, 3, { order: 10 }));
+      }
+      this.partFx = g;
+      this.fx.add(g);
+    }
+    this.invalidate();
+  }
+  private partFx: THREE.Group | null = null;
+  /** The field part picked (its handle on the map). */
+  private partPick: { id: string; part: FieldPart } | null = null;
 
   /** Draws a box on the screen; what lies inside it when let go is picked (a shape when all of it
    * is inside, so a big area under everything doesn't come along). */
@@ -5674,6 +6485,8 @@ export class CourseView {
 
   private onWheel(e: WheelEvent) {
     e.preventDefault();
+    this.glide = null;
+    this.lookGlide = null;
     e.stopPropagation();
     if (this.povHole) {
       const delta = (e.deltaMode !== 0 ? e.deltaY * 33 : e.deltaY) * 0.0015;
@@ -5709,6 +6522,9 @@ export class CourseView {
   }
   private me: { mark: LocationMark; dot: HTMLDivElement; cone: HTMLElement; tag: HTMLDivElement; at: THREE.Vector3; ring: THREE.Object3D | null } | null = null;
 
+  /** Whether you're shown on the map. */
+  hasLocation() { return !!this.me; }
+
   /** You on the map (null: not shown); `follow`: the map keeps you in the middle of what's visible. */
   setLocation(mark: LocationMark | null, follow = false) {
     if (!mark) {
@@ -5740,8 +6556,13 @@ export class CourseView {
     me.dot.classList.toggle("dim", mark.dim);
     me.tag.textContent = mark.tag;
     me.tag.style.visibility = mark.tag ? "" : "hidden";
-    // The circle of how sure it is, and the dashed line on to the basket
-    const moved = !me.ring || was.acc !== mark.acc || was.at.x !== mark.at.x || was.at.y !== mark.at.y || was.to?.x !== mark.to?.x || was.to?.y !== mark.to?.y || was.dim !== mark.dim;
+    // The circle of how sure it is, and the dashed line on to the basket: made again only when
+    // either really changed (each reading moves them a hair, and the scene drawn again for that
+    // kept a phone's screen busy the whole time the GPS was on)
+    const near = (a: P | null | undefined, b: P | null | undefined, d = 1) => (!a && !b) || (!!a && !!b && Math.hypot(a.x - b.x, a.y - b.y) < d);
+    // (a change worth it: a fair share of the circle's own size, at least 2 ft)
+    const worth = Math.max(2, mark.acc * 0.25);
+    const moved = !me.ring || Math.abs(was.acc - mark.acc) > worth || !near(was.at, mark.at, worth) || !near(was.to, mark.to, worth) || was.dim !== mark.dim;
     if (moved) {
       if (me.ring) { this.fx.remove(me.ring); disposeObjectDeep(me.ring); }
       const g = new THREE.Group();
@@ -5762,7 +6583,10 @@ export class CourseView {
       const cx = mark.at.x + shift.x, cy = mark.at.y + shift.y;
       void this.controls.moveTo(cx, this.h(cx, cy), cy, true);
     }
-    this.invalidate();
+    // (only the circle or the map moving needs the scene drawn; the dot, its cone and its words lie
+    // over it on the page)
+    if (moved || follow) this.invalidate();
+    else if (this.size.width > 1) this.layout();
   }
 
   /** A spot for the tool in hand, as if tapped there (where you stand, from the GPS): a new hole's
@@ -5923,33 +6747,107 @@ export class CourseView {
   }
 
   /** Drag in the tee view to look around. */
-  private povDrag(e: PointerEvent) {
+  /** Standing, editing: a tap picks what's there, as a click on the map does (a tree standing over
+   * a big shape first: most trees stand in a wood); a tap on open ground lets go. */
+  private povTapPick(ev: PointerEvent) {
+    const hit = this.pick(ev.clientX, ev.clientY);
+    const it = hit ? this.item(hit) : null;
+    const big = !hit || (!!it && (it.type === "area" || it.type === "line" || it.type === "structure")) || (!it && !!this.hole(hit));
+    const tree = big && !this.readOnly ? this.treeAtScreen(ev.clientX, ev.clientY) : null;
+    if (tree) this.cb.onAdoptTree(tree, this.lookOf(tree));
+    else this.cb.onSelect(hit);
+  }
+
+  /** Standing: a drag looks around; a tap (`onTap`, or else) walks there, unless `lookOnly`. */
+  private povDrag(e: PointerEvent, lookOnly = false, onTap?: (ev: PointerEvent) => void) {
     if (this.fly) return;
     const x0 = e.clientX, y0 = e.clientY;
+    let moved = false;
     const start = { ...this.povLook };
     const degPerPx = this.povCam.fov / Math.max(1, this.size.height);
     const free = this.free, from = free ? { yaw: free.yaw, pitch: free.pitch } : null;
+    // (where the look was over the last moments, by when each move happened: the flick's speed)
+    const trail: { t: number; yaw: number; pitch: number }[] = [{ t: e.timeStamp, yaw: free ? free.yaw : start.yaw, pitch: free ? free.pitch : start.pitch }];
     const move = (ev: PointerEvent) => {
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 5) moved = true;
       // (by hand: the camera turns the same way the view from a tee does)
       if (free && from) {
         if (this.free !== free) return;
         free.yaw = from.yaw - (ev.clientX - x0) * degPerPx * DEG;
         free.pitch = clamp(from.pitch + (ev.clientY - y0) * degPerPx * DEG, -85 * DEG, 85 * DEG);
-        this.invalidate();
-        return;
+        trail.push({ t: ev.timeStamp, yaw: free.yaw, pitch: free.pitch });
+      } else {
+        this.povLook = {
+          yaw: start.yaw - (ev.clientX - x0) * degPerPx * DEG,
+          pitch: clamp(start.pitch + (ev.clientY - y0) * degPerPx * DEG, -70 * DEG, 50 * DEG)
+        };
+        trail.push({ t: ev.timeStamp, ...this.povLook });
       }
-      this.povLook = {
-        yaw: start.yaw - (ev.clientX - x0) * degPerPx * DEG,
-        pitch: clamp(start.pitch + (ev.clientY - y0) * degPerPx * DEG, -70 * DEG, 50 * DEG)
-      };
+      if (trail.length > 8) trail.shift();
       this.invalidate();
     };
-    const up = () => {
+    const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      this.endDragListeners = null;
     };
+    const up = (ev: PointerEvent) => {
+      cleanup();
+      // (let go while turning, one finger lifted last: the view turns on, slowing, as the map does)
+      if (moved && ev.type === "pointerup" && this.touchIds.size === 0) this.lookFling(trail, ev.timeStamp, degPerPx * DEG);
+      if (!moved && onTap) { onTap(ev); return; }
+      // (a press that didn't move, on open ground in the view: a step there)
+      if (!moved && !lookOnly && !this.fly && !free && this.tool.mode === "select" && this.eyeAt(ev.clientX, ev.clientY).cam === this.povCam) {
+        const g = this.groundAt(ev.clientX, ev.clientY);
+        if (g) this.walkTo({ x: g.x, y: g.z });
+      }
+    };
+    // (a second finger ends it: see secondFinger)
+    this.endDragListeners?.();
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    this.endDragListeners = cleanup;
+  }
+
+  /** Standing (or the free camera), the view still turning after a look let go of while turning
+   * (radians a second). */
+  private lookGlide: { yaw: number; pitch: number } | null = null;
+  /** A flick of the look: its speed over the last tenth of a second (none if held still before
+   * letting go, or turning slowly); `radPerPx`, how far a pixel turns it. */
+  private lookFling(trail: { t: number; yaw: number; pitch: number }[], at: number, radPerPx: number) {
+    const last = trail[trail.length - 1];
+    if (!last || at - last.t > 60) return;
+    const first = trail.find(s => last.t - s.t <= 100);
+    if (!first || last.t - first.t < 16) return;
+    const sec = (last.t - first.t) / 1000;
+    let yaw = (last.yaw - first.yaw) / sec, pitch = (last.pitch - first.pitch) / sec;
+    const px = Math.hypot(yaw, pitch) / radPerPx;
+    if (px < 250) return;
+    if (px > 4000) { yaw *= 4000 / px; pitch *= 4000 / px; }
+    this.lookGlide = { yaw, pitch };
+    this.invalidate();
+  }
+  private stepLookGlide(dt: number) {
+    const g = this.lookGlide!;
+    const k = Math.exp(-Math.min(dt, 0.1) / GLIDE_TAU), f = GLIDE_TAU * (1 - k);
+    const free = this.free;
+    if (free) {
+      free.yaw += g.yaw * f;
+      const p = clamp(free.pitch + g.pitch * f, -85 * DEG, 85 * DEG);
+      if (p !== free.pitch + g.pitch * f) g.pitch = 0;
+      free.pitch = p;
+    } else if (this.povHole) {
+      const p = clamp(this.povLook.pitch + g.pitch * f, -70 * DEG, 50 * DEG);
+      // (at the top or bottom of the look: no more up or down, still turning)
+      if (p !== this.povLook.pitch + g.pitch * f) g.pitch = 0;
+      this.povLook = { yaw: this.povLook.yaw + g.yaw * f, pitch: p };
+    } else { this.lookGlide = null; return; }
+    g.yaw *= k;
+    g.pitch *= k;
+    const radPerPx = (this.povCam.fov * DEG) / Math.max(1, this.size.height);
+    if (Math.hypot(g.yaw, g.pitch) / radPerPx < 20) this.lookGlide = null;
   }
 
   /** Zoom keeping the ground point under the cursor fixed. */
@@ -5982,7 +6880,7 @@ export class CourseView {
   }
 
   private onHoverMove(e: PointerEvent) {
-    if (e.buttons || this.dragging || this.povHole) return;
+    if (e.buttons || this.dragging || (this.povHole && (this.fly || this.free))) return;
     this.lastPointer = { x: e.clientX, y: e.clientY };
     if (this.hoverFrame) return;
     this.hoverFrame = requestAnimationFrame(() => {
@@ -5992,6 +6890,9 @@ export class CourseView {
       const g = this.groundAt(p.x, p.y);
       this.cb.onHover(g ? { x: g.x, y: g.z } : null);
       if (this.obPick && g) { this.obPickHover({ x: g.x, y: g.z }); return; }
+      // (standing, picking or walking: the pointer says which)
+      if (this.povHole && this.tool.mode === "select") { this.povHover(p, g); return; }
+      if (this.povHole) { this.showStep(null); this.tip(null); }
       // (the brush's circle where it would paint)
       const painting = this.tool.mode === "sculpt" || (this.tool.mode === "draw-area" && this.tool.shape === "paint");
       if (painting) this.showBrush(g ? { x: g.x, y: g.z } : null, this.tool.brush?.size ?? 20);
@@ -6039,7 +6940,7 @@ export class CourseView {
   private updateCursor() {
     const t = this.tool;
     let c = t.dragSelect && t.mode === "select" ? "crosshair" : "grab";
-    if (this.povHole) c = "move";
+    if (this.povHole) c = this.teeEdit && this.hoverId ? "pointer" : this.teeEdit && t.mode !== "select" ? "crosshair" : "move";
     else if (this.obPick) c = "crosshair";
     else if (t.mode !== "select") c = "crosshair";
     else if (this.hoverId) {

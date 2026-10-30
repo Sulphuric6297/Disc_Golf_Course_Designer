@@ -47,6 +47,15 @@ export async function loadAuth(sql: Sql, req: FastifyRequest): Promise<Auth | nu
   };
 }
 
+/** Whether the session that opened a long-lived connection is still good (signed in, not
+ * disabled), without counting the connection as activity: an open tab doesn't keep you signed in. */
+export async function stillSignedIn(sql: Sql, sessionId: string) {
+  const [row] = await sql`
+    select 1 from sessions s join users u on u.id = s.user_id
+    where s.id = ${sessionId} and s.stage = 'full' and s.expires_at > now() and not u.disabled`;
+  return !!row;
+}
+
 /** A new session (and cookie) for the user; any session this request had ends. */
 export async function startSession(sql: Sql, cfg: Config, req: FastifyRequest, reply: FastifyReply, userId: string, stage: Stage) {
   const old = tokenOf(req);

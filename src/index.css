@@ -328,6 +328,10 @@ select option:disabled {
     line-height: 44px;
   }
 }
+/* (a phone: below the place's name and Close along the top, which covered them) */
+.dg-compact .leaflet-top {
+  top: calc(max(10px, env(safe-area-inset-top)) + 46px);
+}
 /* A switch that's always on (shown, not changed) */
 .switch:disabled {
   cursor: default;

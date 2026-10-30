@@ -98,3 +98,31 @@ test("a link's own name: opens it like its address; unique; cleared", async () =
     assert.equal((await anon.req("GET", `/api/public/${l.token}`, undefined, {})).status, 200);
   } finally { await w.close(); }
 });
+
+test("links for everyone on the course: all see them; editors make them once the owner allows it", async () => {
+  const w = await world();
+  try {
+    const { c: admin } = await adminSignedIn(w);
+    const { c: pat } = await memberSignedIn(w, admin, "pat");
+    const { c: sam } = await memberSignedIn(w, admin, "sam");
+    const { body: made } = await admin.post("/api/courses", { doc: doc() });
+    const url = `/api/courses/${made.id}`;
+    await admin.post(`${url}/members`, { username: "pat", role: "editor" });
+    await admin.post(`${url}/members`, { username: "sam", role: "viewer" });
+    await admin.post(`${url}/links`, { label: "Club website", perms: { printedMap: true } });
+    // (everyone on it sees the links, and what the site shows)
+    assert.equal((await sam.get(`${url}/links`)).body[0].label, "Club website");
+    assert.equal((await sam.get(`${url}/site`)).status, 200);
+    assert.equal((await pat.get(`${url}/links`)).body.length, 1);
+    // An editor makes them only once the owner allows it; a viewer never; only the owner switches it
+    assert.equal((await pat.post(`${url}/links`, { perms: {} })).status, 403);
+    assert.equal((await pat.post(`${url}/settings`, { editorsLinks: true })).status, 403);
+    await admin.post(`${url}/settings`, { editorsLinks: true });
+    assert.equal((await pat.get(url)).body.editorsLinks, true);
+    assert.equal((await pat.post(`${url}/links`, { label: "Pat's", perms: { stats: true } })).status, 200);
+    assert.equal((await sam.post(`${url}/links`, { perms: {} })).status, 403);
+    assert.equal((await sam.req("DELETE", `${url}/site`)).status, 403);
+    await admin.post(`${url}/settings`, { editorsLinks: false });
+    assert.equal((await pat.post(`${url}/links`, { perms: {} })).status, 403);
+  } finally { await w.close(); }
+});

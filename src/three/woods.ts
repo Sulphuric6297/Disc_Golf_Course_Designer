@@ -6,6 +6,11 @@ import { BRUSH_VARIANTS } from "./ezShapes";
 import { nearestOnSegment, pointInPolygon } from "../lib/geom";
 import { Forest, VARIANTS, type TreeSpot } from "./treeKit";
 import { foliageTint } from "./trees";
+import { LOOK_TINT, conifersWith, drawOf, lookFor, shapeWith, variantOf, type TreeLookId, type TreeShares } from "../lib/treeMix";
+
+/** A tree's variant and leaf color as its look has them (none: as drawn). */
+const asLook = (look: TreeLookId | null, variant: number, u: number) => (look ? variantOf(look, u) : variant);
+const tintAs = <T extends { offsetHSL: (h: number, s: number, l: number) => T }>(look: TreeLookId | null, c: T) => (look ? c.offsetHSL(...LOOK_TINT[look]) : c);
 
 const MAX_TREES = 6000;
 
@@ -22,15 +27,18 @@ const spotDraw = (p: P, salt: number) => {
 };
 
 /** Trees about every `spacing` feet inside the outline, standing on the ground. */
-export const createWoods = (outline: P[], groundAt: (x: number, y: number) => number, color: string, conifers = 0.22, mix: string[] = [], keepOut: (p: P, reach: number) => boolean = () => false, spacing = 22, fill: WoodsFill = {}) => {
+export const createWoods = (outline: P[], groundAt: (x: number, y: number) => number, color: string, conifers = 0.22, mix: string[] = [], keepOut: (p: P, reach: number) => boolean = () => false, spacing = 22, fill: WoodsFill = {}, shares: TreeShares | null = null) => {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of outline) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
-  return createWoodsWhere(outline.length >= 3 ? { minX, minY, maxX, maxY } : null, p => pointInPolygon(p, outline), groundAt, color, fill.pines ?? conifers, mix, keepOut, spacing, fill);
+  return createWoodsWhere(outline.length >= 3 ? { minX, minY, maxX, maxY } : null, p => pointInPolygon(p, outline), groundAt, color, fill.pines ?? conifers, mix, keepOut, spacing, fill, shares);
 };
 
-/** Trees about every `spacing` feet wherever `inside` says, within the bounds, standing on the ground. */
-export const createWoodsWhere = (bounds: { minX: number; minY: number; maxX: number; maxY: number } | null, inside: (p: P) => boolean, groundAt: (x: number, y: number) => number, color: string, conifers = 0.22, mix: string[] = [], keepOut: (p: P, reach: number) => boolean = () => false, spacing = 22, fill: WoodsFill = {}) => {
+/** Trees about every `spacing` feet wherever `inside` says, within the bounds, standing on the ground;
+ * with the course's kinds of trees (`shares`, lib/treeMix), each tree one of them (none of a shape
+ * allowed: none of it). */
+export const createWoodsWhere = (bounds: { minX: number; minY: number; maxX: number; maxY: number } | null, inside: (p: P) => boolean, groundAt: (x: number, y: number) => number, color: string, conifers = 0.22, mix: string[] = [], keepOut: (p: P, reach: number) => boolean = () => false, spacing = 22, fill: WoodsFill = {}, shares: TreeShares | null = null) => {
   const spots: TreeSpot[] = [];
+  conifers = conifersWith(shares, conifers);
   if (bounds) {
     const { minX, minY, maxX, maxY } = bounds;
     const area = (maxX - minX) * (maxY - minY);
@@ -52,15 +60,17 @@ export const createWoodsWhere = (bounds: { minX: number; minY: number; maxX: num
         if (fill.heights && !bush) { const [lo, hi] = fill.heights, t = Math.min(1, Math.max(0, (height - 16) / 64)); height = lo + (hi - lo) * t; }
         if (bush) height = 3 + spotDraw(p, 2) * 6;
         const width = bush ? height * (1.2 + spotDraw(p, 3) * 0.6) : (shape === "conifer" ? height * 0.42 : Math.max(step * 1.25, height * 0.62)) * (0.8 + rnd() * 0.4) * (small ? 0.7 : 1);
+        // (its kind among the course's, by its spot: the woods' own draws stay as they were)
+        const look = lookFor(shape, spotDraw(p, 7), shares);
         const tree: TreeSpot = {
           ...p,
           ground: 0,
           height,
           width,
           shape,
-          variant: Math.floor(rnd() * VARIANTS[shape]),
+          variant: asLook(look, Math.floor(rnd() * VARIANTS[shape]), spotDraw(p, 8)),
           // (conifers darker and bluer than the broadleaf trees)
-          tint: shape === "conifer" ? foliageTint(color, rnd).offsetHSL(0.03, -0.06, -0.08) : foliageTint(mix.length ? mix[Math.floor(rnd() * mix.length)] : color, rnd),
+          tint: tintAs(look, shape === "conifer" ? foliageTint(color, rnd).offsetHSL(0.03, -0.06, -0.08) : foliageTint(mix.length ? mix[Math.floor(rnd() * mix.length)] : color, rnd)),
           turn: rnd() * Math.PI * 2,
           lean: (rnd() - 0.5) * 0.06
         };
@@ -80,21 +90,24 @@ export const createWoodsWhere = (bounds: { minX: number; minY: number; maxX: num
   return forest.group;
 };
 
-/** Trees measured from the air, each where it stands, as tall and as wide as measured. */
-export const createMeasuredWoods = (trees: { tree: LidarTree; index: number }[], groundAt: (x: number, y: number) => number, color: string, mix: string[] = []) => {
+/** Trees measured from the air, each where it stands, as tall and as wide as measured; with the
+ * course's kinds (`shares`), each one of them (the painted map picks the same), a needle tree leafy
+ * where no needle kind is allowed (and the other way round). */
+export const createMeasuredWoods = (trees: { tree: LidarTree; index: number }[], groundAt: (x: number, y: number) => number, color: string, mix: string[] = [], shares: TreeShares | null = null) => {
   const spots: TreeSpot[] = trees.map(({ tree: [x, y, height, radius, conifer], index }) => {
     // (each its own look, the same every time it's drawn)
     let seed = (index * 7919 + 13) % 2147483646 + 1;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const shape = conifer ? "conifer" : "broadleaf";
+    const shape = shapeWith(shares, conifer ? "conifer" : "broadleaf");
+    const look = lookFor(shape, drawOf(index, 7), shares);
     return {
       x, y,
       ground: groundAt(x, y),
       height,
       width: radius * 2,
       shape,
-      variant: Math.floor(rnd() * VARIANTS[shape]),
-      tint: conifer ? foliageTint(color, rnd).offsetHSL(0.03, -0.06, -0.08) : foliageTint(mix.length ? mix[Math.floor(rnd() * mix.length)] : color, rnd),
+      variant: asLook(look, Math.floor(rnd() * VARIANTS[shape]), drawOf(index, 8)),
+      tint: tintAs(look, shape === "conifer" ? foliageTint(color, rnd).offsetHSL(0.03, -0.06, -0.08) : foliageTint(mix.length ? mix[Math.floor(rnd() * mix.length)] : color, rnd)),
       turn: rnd() * Math.PI * 2,
       lean: (rnd() - 0.5) * 0.06
     };
@@ -144,15 +157,15 @@ const edgeDistance = (p: P, poly: P[]) => {
 /** How deep into a wood the light reaches for underbrush, ft (past it, the edge's extra fades out). */
 const EDGE_DEPTH = 45;
 
-/** Underbrush in a wood, about every `spacing` feet (closer the heavier), kept off what `keepOut`
- * says: bushes, thicket shrubs, briars and weeds as its kind has them (weeds and briars out
- * where the light reaches, along the edge), and now and then a young tree. */
-export const createUnderbrush = (outline: P[], groundAt: (x: number, y: number) => number, color: string, mix: string[], keepOut: (p: P, reach: number) => boolean, level: BrushLevel, edge = 0.6, wood: P[] = outline, kind: BrushKind = "mixed") => {
+/** Underbrush in a wood, about every `spacing` feet (closer the heavier, and `closer` times closer
+ * still), kept off what `keepOut` says: bushes, thicket shrubs, briars and weeds as its kind has
+ * them (weeds and briars out where the light reaches, along the edge), and now and then a young tree. */
+export const createUnderbrush = (outline: P[], groundAt: (x: number, y: number) => number, color: string, mix: string[], keepOut: (p: P, reach: number) => boolean, level: BrushLevel, edge = 0.6, wood: P[] = outline, kind: BrushKind = "mixed", closer = 1) => {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of outline) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
   const spots: TreeSpot[] = [];
   const b = BRUSH[level];
-  const step = Math.max(b.spacing, Math.sqrt(((maxX - minX) * (maxY - minY)) / MAX_TREES));
+  const step = Math.max(b.spacing / closer, Math.sqrt(((maxX - minX) * (maxY - minY)) / MAX_TREES));
   const range = (d: number, [lo, hi]: readonly [number, number]) => lo + d * (hi - lo);
   if (outline.length >= 3) {
     for (let y = minY; y <= maxY; y += step * 0.87) {

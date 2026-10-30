@@ -1,9 +1,14 @@
 // The open course (the saved document) with undo and redo, and the editor's own state.
 import { create } from "zustand";
-import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, DrawShape, StructureKind, FieldKind } from "../types";
+import type { CourseDoc, CourseItem, Hole, TeeLevel, ToolMode, AreaKind, LineKind, AmenityKind, TreeKind, DrawShape, StructureKind, FieldKind, FieldPart } from "../types";
 import { byNumber, createEmptyCourse, holeNumber, holeNumbers } from "../lib/course";
 
 const HISTORY = 120;
+
+/** Brings a document from the undo history up to date before it's put back (editing live: what
+ * others changed since stays, so only your own changes are undone). */
+let catchUp: (doc: CourseDoc) => CourseDoc = d => d;
+export const setCatchUp = (f: (doc: CourseDoc) => CourseDoc) => { catchUp = f; };
 
 type CourseStore = {
   doc: CourseDoc;
@@ -46,15 +51,15 @@ export const useCourse = create<CourseStore>()((set, get) => ({
     const { past, future, doc, gestureStart, readOnly } = get();
     if (readOnly) return;
     // (a gesture not ended yet, a color picker still open: back to where it started, one step)
-    if (gestureStart && gestureStart !== doc) { set({ doc: gestureStart, future: [doc, ...future], gestureStart: null }); return; }
+    if (gestureStart && gestureStart !== doc) { set({ doc: catchUp(gestureStart), future: [doc, ...future], gestureStart: null }); return; }
     if (!past.length) return;
-    set({ doc: past[past.length - 1], past: past.slice(0, -1), future: [doc, ...future], gestureStart: null });
+    set({ doc: catchUp(past[past.length - 1]), past: past.slice(0, -1), future: [doc, ...future], gestureStart: null });
   },
   redo: () => {
     const { past, future, doc, readOnly } = get();
     if (readOnly) return;
     if (!future.length) return;
-    set({ doc: future[0], future: future.slice(1), past: [...past, doc], gestureStart: null });
+    set({ doc: catchUp(future[0]), future: future.slice(1), past: [...past, doc], gestureStart: null });
   },
   load: doc => set({ doc, past: [], future: [], gestureStart: null })
 }));
@@ -173,6 +178,8 @@ type EditorStore = {
   /** What the Park tool puts down: a ball field, a court, a playground… */
   fieldKind: FieldKind;
   treeKind: TreeKind;
+  /** The species the Trees tool plants, for each kind (unset: the course's kinds of trees). */
+  treeSpecies: Partial<Record<TreeKind, string>>;
   /** The Trees tool drawing a stand of one kind (woods that grow only it, around the trees
    * measured there); null: a tree at a time, or the Woods choice's own mix. */
   standOf: TreeKind | null;
@@ -180,6 +187,19 @@ type EditorStore = {
   teeView: string | null;
   /** The tee the tee view stands on (another skill level's), unset: the layout's. */
   teeViewTee?: string | null;
+  /** Tee view, editing: a press on a thing picks or drags it as on the map (else: looking). */
+  teeEdit?: boolean;
+  /** Standing somewhere other than the tee (the person dropped there, or walked to), on `teeView`'s
+   * hole; and which way, radians on the plan (unset: down the hole). */
+  teeStand?: { x: number; y: number; face?: number } | null;
+  /** The map from above in the tee view's corner while editing. */
+  teeMap?: "small" | "big" | "off";
+  /** Standing: the hole's card at the top left put away (a small chip with its number instead). */
+  teeCardHidden?: boolean;
+  /** Standing, an editor's tap: walks there, or picks the thing tapped (unset: walks). */
+  standTap?: "walk" | "edit";
+  /** A part of the picked field (its backstop, its fence…): outlined, its own settings shown. */
+  fieldPart?: FieldPart | null;
   /** The tee view's flyover settings open over it. */
   teeSettings?: boolean;
   flyover: boolean;
@@ -251,6 +271,7 @@ export const useEditor = create<EditorStore>()(set => ({
   amenityKind: "bench",
   fieldKind: "baseball",
   treeKind: "deciduous",
+  treeSpecies: {},
   standOf: null,
   teeView: null,
   flyover: false,
@@ -285,3 +306,8 @@ if (typeof window !== "undefined") {
   (window as any).__dgEditor = () => useEditor.getState();
   (window as any).__dgHistory = () => ({ past: useCourse.getState().past.length, future: useCourse.getState().future.length });
 }
+
+// (another hole, or back to the map: standing on its tee again, unless a spot came with it)
+useEditor.subscribe((s, p) => { if (s.teeView !== p.teeView && s.teeStand && s.teeStand === p.teeStand) s.set({ teeStand: null }); });
+// (another thing picked: no part of the last one)
+useEditor.subscribe((s, p) => { if (s.selectedId !== p.selectedId && s.fieldPart) s.set({ fieldPart: null }); });

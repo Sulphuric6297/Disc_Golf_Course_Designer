@@ -20,13 +20,14 @@ import { saplings, yearsSince } from "../lib/lidar";
 import { getView } from "../state/view";
 import { Button, FOCUS, Facts, Field, Fold, HelpLink, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
 import { DesignPanel } from "./DesignPanel";
+import { CourseFileButton } from "./CourseFileDialog";
 import { useToolbarRoom } from "./Toolbar";
 import { ExportPanel } from "./ExportPanel";
 import { useLayout } from "./useLayout";
 import { LockedRow } from "./DemoNote";
 import { InspectorBody, PANEL_INSET, SelectionHeader, useSelection } from "./Inspector";
 import { SERVER } from "../auth/api";
-import { draftHoles } from "../auth/courses";
+import { holeOf, useComments } from "../auth/Comments";
 import { NearbyCourses, NearbySafety } from "../auth/Nearby";
 
 export const STEPS: { id: Step; label: string; title: string }[] = [
@@ -101,17 +102,18 @@ function CameIn() {
   const fromOsm = came(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm");
   const traced = came(i => i.type === "structure" && i.importSource === "traced");
   const stand = came(i => i.type === "area" && i.importSource === "lidar");
+  const fromGov = came(i => (i.type === "area" || i.type === "line" || i.type === "structure") && (i.importSource === "usgs" || i.importSource === "nwi" || i.importSource === "fema"));
   const count = (f: (i: Item) => boolean) => doc.items.filter(f).length;
   const photoTrees = count(i => i.type === "tree" && fromPhoto(i));
   const photoAreas = count(i => i.type === "area" && fromPhoto(i));
-  const stands = count(stand), osm = count(fromOsm), air = count(traced);
+  const stands = count(stand), osm = count(fromOsm), air = count(traced), gov = count(fromGov);
   const remove = (out: (i: Item) => boolean, said: string) => { changeDoc(d => ({ items: d.items.filter(i => !out(i)) })); toast(said, "info", true); };
   const lidar = doc.lidar;
   const site = doc.site;
   const measuring = lidarBusy !== null;
   const lidarRow = lidar || (placed && (site.noLidar || site.lidarFailed));
   const osmRow = placed || osm > 0;
-  if (!lidarRow && !stands && !photoTrees && !photoAreas && !site.tilesMissing && !osmRow && !air) return null;
+  if (!lidarRow && !stands && !photoTrees && !photoAreas && !site.tilesMissing && !osmRow && !air && !gov) return null;
   const warned = (!lidar && (site.noLidar || site.lidarFailed)) || site.tilesMissing || (site.osmFailed && !osm);
   return (
     <Fold testid="came-in" title={<span className="inline-flex items-center gap-1.5">What came in {warned && <AlertTriangle size={13} className="text-amber-400" aria-label="Something didn't come in" />}<HelpLink topic="brought-in" label="What came in" /></span>}>
@@ -121,7 +123,7 @@ function CameIn() {
             text={lidar ? many(lidar.trees.length, "measured tree", "measured trees") : site.noLidar ? "No aerial survey covers this spot" : "Couldn't read the aerial survey"}
             sub={lidar ? lidar.source : undefined} warn={!lidar}>
             {!measuring && placed && <Button small onClick={() => void measureLidar()} testid="measure-lidar">{lidar ? "Measure again" : site.noLidar ? "Check again" : "Try again"}</Button>}
-            {!measuring && lidar && <Button small tone="danger" onClick={() => { changeDoc(d => ({ lidar: undefined, site: { ...d.site, noLidar: undefined, lidarFailed: undefined } })); toast("Took out the measured trees.", "info", true); }} testid="remove-lidar">Remove</Button>}
+            {!measuring && lidar && <Button small tone="danger" onClick={() => { changeDoc(d => ({ lidar: undefined, items: d.items.filter(i => !(i.type === "tree" && i.importSource === "lidar" && asItCame(i))), site: { ...d.site, noLidar: undefined, lidarFailed: undefined } })); toast("Took out the measured trees and bushes.", "info", true); }} testid="remove-lidar">Remove</Button>}
           </CameRow>
         )}
         {measuring && lidarRow && <div data-testid="lidar-busy" className="pb-1.5"><ProgressBar fraction={lidarBusy} label="Measuring trees and ground" /></div>}
@@ -148,6 +150,11 @@ function CameIn() {
         {air > 0 && (
           <CameRow testid="traced-found" text={`${many(air, "building", "buildings")} traced from the air`}>
             <Button small tone="danger" onClick={() => remove(traced, "Took out the buildings traced from the air.")}>Remove</Button>
+          </CameRow>
+        )}
+        {gov > 0 && (
+          <CameRow testid="gov-found" text={`${many(gov, "creek, wetland or building", "creeks, wetlands and buildings")} from the US maps`} sub="USGS, USFWS, FEMA">
+            <Button small tone="danger" onClick={() => remove(fromGov, "Took out what came from the US maps.")}>Remove</Button>
           </CameRow>
         )}
       </div>
@@ -254,9 +261,12 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
             <Button small onClick={ownCourse} testid="find-site"><MapPinned size={14} /> Find your park</Button>
           </div>
         </Section>
-      ) : !placed && !compact && !empty && (
+      ) : !placed && (
         <Section>
-          <Button tone="primary" full onClick={onFindSite} testid="find-site"><MapPinned size={16} /> Find your park</Button>
+          <div className="flex flex-col items-start gap-1.5">
+            {!compact && !empty && <Button tone="primary" full onClick={onFindSite} testid="find-site"><MapPinned size={16} /> Find your park</Button>}
+            <CourseFileButton />
+          </div>
         </Section>
       )}
       {facts && (
@@ -279,8 +289,9 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
             </div>
           )}
           {placed && (
-            <div className="mt-2">
+            <div className="mt-2 flex flex-wrap gap-1.5">
               <Button small onClick={onFindSite} testid="resize-site">Change the area</Button>
+              {!example && <CourseFileButton />}
             </div>
           )}
           {offerLidar && (
@@ -393,10 +404,10 @@ function LayoutEditor({ open, setOpen, picker = true }: { open: boolean; setOpen
 
 /** A hole in a list (the computer's column, a phone's or a tablet's panel): its number in its tee
  * color, then its length and par once it has a tee and a basket (or what it needs), its worst
- * check, a draft's change, a dot for each tee color and a link when its basket is shared. `slim`:
+ * check, a dot for each tee color and a link when its basket is shared. `slim`:
  * just the number (the rest for the tooltip and screen readers); `roomy`: its name too, when it
  * has one. */
-function HoleRow({ s, check, draft, slim = false, roomy = false }: { s: HoleStats; check?: SafetyIssue; draft?: boolean; slim?: boolean; roomy?: boolean }) {
+function HoleRow({ s, check, slim = false, roomy = false }: { s: HoleStats; check?: SafetyIssue; slim?: boolean; roomy?: boolean }) {
   const doc = useCourse(st => st.doc);
   const sel = useEditor(e => e.selectedId === s.holeId || e.activeHoleId === s.holeId);
   const hole = doc.holes.find(h => h.id === s.holeId);
@@ -406,17 +417,23 @@ function HoleRow({ s, check, draft, slim = false, roomy = false }: { s: HoleStat
   const what = s.complete ? `${fmtDist(s.length, u)} · Par ${s.par}` : s.teeId ? "Needs a basket" : "Needs a tee";
   const tees = holeTees(doc, s.holeId);
   const shared = holeBaskets(doc, s.holeId).some(b => b.holeId !== s.holeId || !!b.alsoHoles?.length);
+  // (its open comments, on a HyzerLab server: blue when one is new for you)
+  const threads = useComments(c => c.threads);
+  const talk = SERVER ? threads.filter(t => !t.resolvedAt && holeOf(t, doc) === s.holeId) : [];
+  const fresh = talk.some(t => t.unread);
   return (
     <button data-testid="hole-row" title={`${name}${slim ? ` · ${what}` : ""}${check ? ` · ${check.text}` : ""}`}
       onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
       className={`w-full flex items-center gap-2 rounded-[14px] text-left transition-colors ${FOCUS} ${roomy ? "px-2 py-1.5 touch:min-h-[44px]" : slim ? "py-1 justify-center px-1" : "py-1 pl-1 pr-2"} ${sel ? "bg-white/[0.16] text-zinc-50" : "text-zinc-300 hover:bg-white/[0.07]"}`}>
-      <span className="min-w-[24px] h-6 px-1 rounded-full flex items-center justify-center text-[11.5px] font-bold shrink-0 whitespace-nowrap" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink }} data-testid="hole-badge">{s.label}</span>
+      <span className="relative shrink-0">
+        <span className="min-w-[24px] h-6 px-1 rounded-full flex items-center justify-center text-[11.5px] font-bold whitespace-nowrap" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink }} data-testid="hole-badge">{s.label}</span>
+        {talk.length > 0 && <span className={`absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-[3px] rounded-full grid place-items-center text-[9.5px] font-extrabold ring-2 ring-[#161c15] ${fresh ? "bg-sky-400 text-sky-950" : "bg-amber-100 text-amber-950"}`} title={`${talk.length} open comment${talk.length === 1 ? "" : "s"}${fresh ? ", new for you" : ""}`} data-testid="hole-comments">{talk.length}</span>}
+      </span>
       <span className={slim ? "sr-only" : "flex-1 min-w-0"}>
         {roomy && hole.name && <span className="block text-sm text-zinc-100 truncate">{hole.name}</span>}
         <span className="block text-[12.5px] tabular-nums truncate">{what}</span>
       </span>
       {!slim && <CheckDot check={check} />}
-      {!slim && draft && <span className="w-2 h-2 rounded-full bg-orange-400 shrink-0" title="Changed in your draft" data-testid="draft-dot" />}
       {!slim && (tees.length > 1 || shared) && (
         <span className="flex items-center gap-0.5 shrink-0" data-testid="hole-row-marks">
           {tees.length > 1 && tees.map(t => <span key={t.id} className="w-1.5 h-1.5 rounded-full ring-1 ring-black/40" style={{ background: TEE_LEVELS[t.level].color }} title={`${TEE_LEVELS[t.level].label} tee`} />)}
@@ -480,8 +497,6 @@ function HolesTable({ doc, stats }: { doc: CourseDoc; stats: HoleStats[] }) {
  * computer's totals card; its column has the list). */
 export function HolesStep({ course = false }: { course?: boolean }) {
   const doc = useCourse(s => s.doc);
-  // (in a draft on a HyzerLab server: the holes it changes)
-  const changed = useMemo(() => (SERVER ? draftHoles(doc) : new Set<string>()), [doc]);
   const stats = useMemo(() => courseStats(doc), [doc]);
   // (a hole with two numbers counts twice, as on the scorecard)
   const played = doc.holes.reduce((n, h) => n + playsOf(doc, h.id), 0);
@@ -496,8 +511,9 @@ export function HolesStep({ course = false }: { course?: boolean }) {
       <Section title={`${played} hole${played === 1 ? "" : "s"}`} testid={course ? "course-holes" : "hole-list"} right={oneLayout ? <button className="text-xs text-orange-300 hover:text-orange-200 touch:min-h-[44px]" onClick={() => setLayoutsOpen(true)}>Edit layouts</button> : undefined}>
         {!course && (
           <ol className="space-y-0.5">
-            {stats.map(s => <li key={s.holeId}><HoleRow s={s} check={checks.get(s.holeId)} draft={changed.has(s.holeId)} roomy /></li>)}
+            {stats.map(s => <li key={s.holeId}><HoleRow s={s} check={checks.get(s.holeId)} roomy /></li>)}
             <li><NewHoleRow roomy /></li>
+            <li><CourseFileButton row /></li>
           </ol>
         )}
         <div className={course ? "" : "mt-3"}><CourseFacts doc={doc} stats={stats} /></div>
@@ -677,7 +693,6 @@ export function HolesColumn() {
   const slim = useSelection().open;
   const stats = useMemo(() => courseStats(doc), [doc]);
   const totals = useMemo(() => courseTotals(doc, stats), [doc, stats]);
-  const changed = useMemo(() => (SERVER ? draftHoles(doc) : new Set<string>()), [doc]);
   const [more, setMore] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
   const checks = useHoleChecks();
@@ -714,9 +729,10 @@ export function HolesColumn() {
       <div className={`glass pointer-events-auto rounded-[22px] p-1.5 flex flex-col gap-0.5 max-h-full min-h-0 ${slim ? "w-[52px]" : "w-[172px]"}`} data-testid="hole-list">
         {doc.layouts.length > 1 && <div className="pb-1 mb-0.5 border-b border-white/10"><LayoutPicker compact slim={slim} /></div>}
         <div className="overflow-y-auto min-h-0 flex flex-col gap-0.5">
-          {stats.map(s => <HoleRow key={s.holeId} s={s} check={checks.get(s.holeId)} draft={changed.has(s.holeId)} slim={slim} />)}
+          {stats.map(s => <HoleRow key={s.holeId} s={s} check={checks.get(s.holeId)} slim={slim} />)}
         </div>
         <NewHoleRow slim={slim} />
+        {!slim && <CourseFileButton row short />}
       </div>
       {/* (no holes yet: no totals to open) */}
       {doc.holes.length > 0 && <div className="glass pointer-events-auto rounded-[18px] mt-auto relative" ref={moreRef}>

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { inputCls, Section, Segmented, Tabs } from "../components/ui";
 import { changeDoc, useCourse } from "../state/course";
 import { api, useAuth } from "./api";
-import { saveNow, setApproval, useServerCourse, type Role } from "./courses";
+import { managesLinks, saveNow, setEditorsLinks, useServerCourse, type Role } from "./courses";
 import { CopyButton, Dialog, Form, when } from "./parts";
 import { LINK_DEFAULT, LINK_PARTS, PART_LABELS, PARTS, VIEWER_DEFAULT, type Part, type Perms } from "./perms";
 import { publishSite } from "./site";
@@ -13,7 +13,7 @@ interface Member { userId: string; username: string; displayName: string; role: 
 const ROLES: { value: Role; label: string }[] = [{ value: "viewer", label: "Viewer" }, { value: "editor", label: "Editor" }, { value: "owner", label: "Owner" }];
 
 export function ShareDialog({ onClose }: { onClose: () => void }) {
-  const { id, role, approval } = useServerCourse();
+  const { id, role } = useServerCourse();
   const me = useAuth(s => s.session!.user!);
   const [members, setMembers] = useState<Member[]>([]);
   const [people, setPeople] = useState<{ username: string; displayName: string }[]>([]);
@@ -38,7 +38,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
   const others = people.filter(p => !members.some(m => m.username === p.username));
   return (
     <Dialog title="Share" onClose={onClose} testid="share-dialog">
-      {owner && <div className="-mt-2 mb-2"><Tabs label="Share" value={tab} onChange={setTab} tabs={[{ value: "people", label: "People", testid: "share-tab-people" }, { value: "public", label: "Public link and site", testid: "share-tab-public" }]} /></div>}
+      <div className="-mt-2 mb-2"><Tabs label="Share" value={tab} onChange={setTab} tabs={[{ value: "people", label: "People", testid: "share-tab-people" }, { value: "public", label: "Public link and site", testid: "share-tab-public" }]} /></div>
       <div className="-mx-4">
         {tab === "people" && owner && (
           <Section title="Add someone">
@@ -58,14 +58,6 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
               </div>
               <datalist id="share-people">{others.map(p => <option key={p.username} value={p.username}>{p.displayName}</option>)}</datalist>
             </Form>
-          </Section>
-        )}
-        {tab === "people" && owner && (
-          <Section title="Editors' changes">
-            <label className="flex items-center gap-2 text-sm text-zinc-200">
-              <input type="checkbox" checked={approval} onChange={e => void change(() => setApproval(e.target.checked))} data-testid="approval-toggle" />
-              Need my OK before they go in
-            </label>
           </Section>
         )}
         {tab === "people" && <Section title="Has it">
@@ -105,7 +97,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
           </ul>
           {error && <p role="alert" className="mt-2 text-sm text-red-300">{error}</p>}
         </Section>}
-        {tab === "public" && owner && <PublicSection id={id} />}
+        {tab === "public" && <PublicSection id={id} />}
       </div>
     </Dialog>
   );
@@ -147,6 +139,9 @@ const partsOf = (p: Perms) => LINK_PARTS.filter(k => p[k]).map(k => PART_LABELS[
 
 /** Public links (each with what it shows, a password, an end), and the public site they show. */
 function PublicSection({ id }: { id: string }) {
+  const s = useServerCourse();
+  // (owners, and editors when the owner allows it, make the links; everyone sees and copies them)
+  const manage = managesLinks(s);
   const [links, setLinks] = useState<Link[]>([]);
   const [site, setSite] = useState<{ version: number; publishedAt: string } | null>(null);
   const [editing, setEditing] = useState<string | "new" | null>(null);
@@ -181,28 +176,36 @@ function PublicSection({ id }: { id: string }) {
           <span className="flex-1 text-zinc-300" data-testid="site-state">
             {site ? <>Shows version {site.version} · {when(site.publishedAt)}{site.version < version ? <span className="text-amber-300"> · the course changed since</span> : null}</> : "Not published yet"}
           </span>
-          <button className="rounded-lg px-3 py-1.5 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" disabled={!!busy} onClick={() => void update()} data-testid="update-site">
-            {busy ? busy + "…" : site ? "Update site" : "Publish site"}
-          </button>
+          {manage && (
+            <button className="rounded-lg px-3 py-1.5 text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" disabled={!!busy} onClick={() => void update()} data-testid="update-site">
+              {busy ? busy + "…" : site ? "Update site" : "Publish site"}
+            </button>
+          )}
         </div>
-        <div className="mt-3"><ViewerLook /></div>
+        {s.role !== "viewer" && <div className="mt-3"><ViewerLook /></div>}
+        {s.role === "owner" && (
+          <label className="mt-3 flex items-center gap-2 text-sm text-zinc-200">
+            <input type="checkbox" checked={s.editorsLinks} onChange={e => void act(() => setEditorsLinks(e.target.checked))} data-testid="editors-links" />
+            Editors can make public links and update the site
+          </label>
+        )}
       </Section>
       <Section title="Public links" testid="public-links" help="public-links">
         <ul className="space-y-2">
-          {links.map(l => (
+          {links.filter(l => manage || !l.revoked).map(l => (
             <li key={l.id} className={`rounded-lg bg-white/[0.07] p-2.5 text-sm ${l.revoked ? "opacity-60" : ""}`} data-testid="link">
               <div className="flex items-center gap-2">
                 <span className="flex-1 min-w-0 truncate text-zinc-100 font-medium">{l.label || "Public link"}{l.revoked ? " · off" : ""}{l.hasPassword ? " · password" : ""}{l.expiresAt ? ` · until ${new Date(l.expiresAt).toLocaleDateString()}` : ""}</span>
                 {!l.revoked && <CopyButton text={linkUrl(l)} label="Copy link" />}
               </div>
               <div className="text-[12px] text-zinc-500 mt-1">{l.slug ? <span className="text-zinc-300">/{l.slug} · </span> : null}{partsOf(l.perms)}</div>
-              <div className="flex gap-3 mt-1.5 text-xs">
+              {manage && <div className="flex gap-3 mt-1.5 text-xs">
                 <button className="text-zinc-300 hover:text-zinc-50" onClick={() => { setEditing(l.id); setForm({ label: l.label, slug: l.slug ?? "", perms: l.perms, password: "", expires: l.expiresAt ? l.expiresAt.slice(0, 10) : "" }); }}>Change</button>
                 <button className="text-zinc-300 hover:text-zinc-50" onClick={() => void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { revoked: !l.revoked }))}>{l.revoked ? "Turn on" : "Turn off"}</button>
                 <button className="text-zinc-300 hover:text-zinc-50" onClick={() => { if (confirm("Give it a new address? The old one stops working.")) void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { newToken: true })); }}>New address</button>
                 {l.hasPassword && <button className="text-zinc-300 hover:text-zinc-50" onClick={() => void act(() => api("PATCH", `courses/${id}/links/${l.id}`, { password: null }))}>No password</button>}
                 <button className="text-red-300 hover:text-red-200" onClick={() => { if (confirm("Delete this link?")) void act(() => api("DELETE", `courses/${id}/links/${l.id}`)); }}>Delete</button>
-              </div>
+              </div>}
             </li>
           ))}
         </ul>
@@ -224,6 +227,8 @@ function PublicSection({ id }: { id: string }) {
               <button className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-orange-500 hover:bg-orange-400 text-zinc-950 disabled:opacity-50" disabled={!!busy} onClick={() => void save()} data-testid="save-link">{busy ? busy + "…" : editing === "new" ? "Make link" : "Save"}</button>
             </div>
           </div>
+        ) : !manage ? (
+          links.some(l => !l.revoked) ? null : <p className="text-sm text-zinc-400" data-testid="no-links">No public links yet. {s.role === "editor" ? "The owner can make one, or let editors make them." : "The owner makes them."}</p>
         ) : (
           <button className="mt-3 text-sm text-orange-300 hover:text-orange-200" onClick={() => { setEditing("new"); setForm({ label: "", slug: "", perms: LINK_DEFAULT, password: "", expires: "" }); }} data-testid="new-link">+ New public link</button>
         )}

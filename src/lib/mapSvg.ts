@@ -6,6 +6,7 @@
 import { extrasSvg, keepsItsSize, keepsItsTurn, turned } from "./pieces";
 import { fitAttr } from "./fitText";
 import { SCRIPT_FONTS } from "./fontKinds";
+import { GOV_CREDITS } from "./geo/usgov";
 import { latitudeOf, sunFromOf } from "./mapLook";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, FIELD_KINDS, FT_PER_M, LINE_KINDS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER } from "../constants";
 import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelItem, LineItem, MandoItem, MapStyle, MapTheme, P, PageElementId, PageElementStyle, PaperSize, StructureItem, StructureKind, TeeItem, TreeItem } from "../types";
@@ -391,7 +392,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
     const order: StructureKind[] = ["wall", "stairs", "boardwalk", "deck", "bridge", "shelter", "building"];
     for (const st of [...structures].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))) {
       const shape = isLineKind(st.kind) ? structurePath(st) : st.points;
-      out.push(`<g opacity="${dim(st.holeId, st.alsoHoles)}">${structureSymbol(st.kind, shape, structureWidth(st), structureHeight(st), structureRoof(st), { ...draw, id: `${uid}-s${st.id}`, ink: st.roofColor ? { ...draw.ink, roof: st.roofColor, shelter: st.roofColor } : draw.ink })}</g>`);
+      out.push(`<g opacity="${dim(st.holeId, st.alsoHoles)}">${structureSymbol(st.kind, shape, structureWidth(st), structureHeight(st), structureRoof(st), { ...draw, id: `${uid}-s${st.id}`, ink: st.roofColor ? { ...draw.ink, roof: st.roofColor, shelter: st.roofColor } : draw.ink }, { pitch: st.roofPitch, across: st.ridgeAcross })}</g>`);
     }
   }
   // (the painted treetops over the buildings, and their shade on the roofs: crowns overhang roofs
@@ -732,15 +733,25 @@ let printDensity: number | null = null;
 let printJobs: (() => Promise<void>)[] | null = null;
 /** How a print's paintings wait between slices (unset: between frames, as fast as they go). */
 let printPace: (() => Promise<number>) | null = null;
+/** Prints take turns (they share the settings above): the one painting now, and how many wait. */
+let printTurn: Promise<void> = Promise.resolve();
+let printsWaiting = 0;
 
 /**
  * Draws a page for print: a first drawing notes the paintings it needs, they are painted at
  * `dpi` (a slice at a time, so the page never freezes; at most 250 dpi, plenty for the painted
- * texture, and no bigger than a browser holds), then the page is drawn with them.
+ * texture, and no bigger than a browser holds), then the page is drawn with them. One at a time:
+ * `pace` (painting in spare moments) is told to hurry while another waits its turn.
  */
-export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), draw: () => T, pace?: () => Promise<number>): Promise<T> => {
+export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), draw: () => T, pace?: (hurry: () => boolean) => Promise<number>): Promise<T> => {
+  const before = printTurn;
+  let done = () => {};
+  printTurn = new Promise<void>(res => { done = res; });
+  printsWaiting++;
+  await before;
+  printsWaiting--;
   const was = printDensity;
-  printPace = pace ?? null;
+  printPace = pace ? () => pace(() => printsWaiting > 0) : null;
   try {
     // (a resolution that depends on the page: measured by a drawing that paints nothing)
     if (typeof dpi === "function") {
@@ -759,6 +770,7 @@ export const paintedForPrint = async <T>(dpi: number | ((page: T) => number), dr
     printDensity = was;
     printJobs = null;
     printPace = null;
+    done();
   }
 };
 
@@ -1128,8 +1140,12 @@ export const mapTagline = (doc: CourseDoc) => (taglineFits(doc) ? taglineOf(doc.
  * whatever the credit line's own words are, even with them hidden. */
 export const requiredCredit = (doc: CourseDoc) => [
   doc.site.imagerySource && doc.style.theme === "satellite" ? "Imagery © Esri" : "",
-  doc.items.some(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm") ? "Map data © OpenStreetMap contributors" : "",
-  doc.items.some(i => i.type === "structure" && i.importSource === "traced") ? "Buildings © Overture Maps Foundation, Microsoft" : ""
+  // (anything from OpenStreetMap: its areas, lines, buildings, benches, trees, or the holes of a course mapped there)
+  doc.site.holesFromOsm || doc.items.some(i => "importSource" in i && i.importSource === "osm") ? "Map data © OpenStreetMap contributors" : "",
+  doc.items.some(i => i.type === "structure" && i.importSource === "traced") ? "Buildings © Overture Maps Foundation, Microsoft" : "",
+  doc.items.some(i => (i.type === "line" || i.type === "area") && i.importSource === "usgs") ? GOV_CREDITS.usgs : "",
+  doc.items.some(i => i.type === "area" && i.importSource === "nwi") ? GOV_CREDITS.nwi : "",
+  doc.items.some(i => i.type === "structure" && i.importSource === "fema") ? GOV_CREDITS.fema : ""
 ].filter(Boolean).join(" · ");
 
 const posterPage = (doc: CourseDoc, opts: PosterOptions) => {

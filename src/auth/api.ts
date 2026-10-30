@@ -24,7 +24,7 @@ export type Stage = "mfa" | "mfa-setup" | "full";
 export interface User { id: string; username: string; displayName: string; isAdmin: boolean; totpEnabled: boolean; mfaRequired?: boolean }
 export interface Session { needsSetup: boolean; stage: Stage | null; user: User | null }
 
-type Dialog = null | "account" | "people" | "share" | "publish" | "history" | "review" | "update";
+type Dialog = null | "account" | "people" | "share" | "history";
 
 export const useAuth = create<{
   session: Session | null;

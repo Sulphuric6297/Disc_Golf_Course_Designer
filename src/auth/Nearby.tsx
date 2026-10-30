@@ -92,22 +92,16 @@ function useConcerns() {
 
 // --- One ground for the park: this course's terrain (and measured trees) copied to others
 
-/** This course's ground into the others picked: straight in for an owner publishing as they go,
- * else into their draft. */
+/** This course's ground into the others picked (those you can change). */
 async function shareGround(ids: string[], trees: GroundShare) {
   const from = getDoc();
   let done = 0;
   for (const id of ids) {
-    const c = await api<{ version: number; role: string; live: boolean; doc: CourseDoc }>("GET", `courses/${id}`);
+    const c = await api<{ version: number; role: string; doc: CourseDoc }>("GET", `courses/${id}`);
     if (c.role === "viewer") continue;
     const to = withGround(normalizeCourse(safeDoc({ ...c.doc, background: null })), from, trees);
     const doc = { ...to, background: null };
-    if (c.role === "owner" && c.live) await api("PUT", `courses/${id}`, { doc, version: c.version });
-    else {
-      const d = await api<{ draft: { doc: CourseDoc } | null }>("GET", `courses/${id}/draft`);
-      const draft = d.draft ? { ...withGround(normalizeCourse(safeDoc({ ...d.draft.doc, background: null })), from, trees), background: null } : doc;
-      await api("PUT", `courses/${id}/draft`, { doc: draft, base: d.draft ? undefined : { doc: { ...c.doc, background: null }, version: c.version } });
-    }
+    await api("PUT", `courses/${id}`, { doc, version: c.version });
     done++;
   }
   toast(done ? `This ground is in ${done} other course${done === 1 ? "" : "s"} now.` : "Nothing changed.", done ? "success" : "info");

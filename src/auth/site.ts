@@ -1,4 +1,4 @@
-// Publishing a course's public site: the official layout (never a draft), with the parts its
+// Publishing a course's public site: the course as it is, with the parts its
 // links allow made here in the owner's browser (pictures, GPS files, the numbers) and sent to the
 // server; the course itself only when a link shows its map or 3D view.
 import { normalizeCourse } from "../lib/course";

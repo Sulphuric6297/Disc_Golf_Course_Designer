@@ -9,8 +9,6 @@ type Tx = postgres.Sql | postgres.TransactionSql;
  * the automatic ones (autosaves, drafts' checkpoints) are thinned to one a day. */
 const AUTOSAVES_KEPT = 100;
 const THIN_AFTER = "30 days";
-/** A draft's checkpoint at most this often. */
-export const DRAFT_EVERY = 10 * 60_000;
 
 /** Old automatic versions thinned to the last of each day (published, restored: kept). */
 const thin = (tx: Tx, courseId: string) => tx`
@@ -19,30 +17,12 @@ const thin = (tx: Tx, courseId: string) => tx`
     and v.id <> (select max(w.id) from course_versions w where w.course_id = v.course_id and w.kind = v.kind
       and coalesce(w.by_user::text, '') = coalesce(v.by_user::text, '') and date_trunc('day', w.created_at) = date_trunc('day', v.created_at))`;
 
-/** A checkpoint of someone's draft (theirs alone to see), at most every ten minutes. */
-export async function draftCheckpoint(tx: Tx, courseId: string, userId: string) {
-  const [last] = await tx`select created_at from course_versions where course_id = ${courseId} and kind = 'draft' and by_user = ${userId} order by id desc limit 1`;
-  if (last && Date.now() - last.created_at.getTime() < DRAFT_EVERY) return;
-  const [d] = await tx`select doc, base_version, summary from course_drafts where course_id = ${courseId} and user_id = ${userId}`;
-  if (!d) return;
-  await tx`insert into course_versions (course_id, version, doc, summary, kind, by_user) values (${courseId}, ${d.base_version}, ${tx.json(d.doc)}, ${tx.json(d.summary)}, 'draft', ${userId})`;
-  await thin(tx, courseId);
-}
-
 /** The main version into the history, if it isn't there yet (before something replaces it: the
  * owner's latest changes are never lost to a publish or a restore). */
 export async function keepCurrent(tx: Tx, courseId: string) {
   const [c] = await tx`select version, updated_by from courses where id = ${courseId}`;
   const [v] = await tx`select version from course_versions where course_id = ${courseId} order by id desc limit 1`;
   if (!v || v.version !== c.version) await snapshot(tx, courseId, "autosave", "", c.updated_by);
-}
-
-/** Someone's draft saved by hand, named (theirs alone to see, kept like the others). */
-export async function saveDraft(tx: Tx, courseId: string, userId: string, note: string) {
-  const [d] = await tx`select doc, base_version, summary from course_drafts where course_id = ${courseId} and user_id = ${userId}`;
-  if (!d) return false;
-  await tx`insert into course_versions (course_id, version, doc, summary, kind, note, by_user) values (${courseId}, ${d.base_version}, ${tx.json(d.doc)}, ${tx.json(d.summary)}, 'draft', ${note}, ${userId})`;
-  return true;
 }
 
 /** The main version as it is now, into the history. */

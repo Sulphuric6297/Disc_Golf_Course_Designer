@@ -19,6 +19,7 @@ const LOCATE_SVG = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" 
 // Under the zoom buttons, one that goes to where you are (`onLocate`).
 export function SitePickerMap({
   imagery,
+  photoIds,
   view,
   selection,
   drawing,
@@ -35,6 +36,8 @@ export function SitePickerMap({
   onAngle
 }: {
   imagery: MapImagerySource;
+  /** The photos the frame was found to have (its states' own drawn over Esri's). */
+  photoIds?: string[];
   view: { lat: number; lon: number; zoom: number; key: number };
   selection: GeoBounds | null;
   drawing: boolean;
@@ -191,14 +194,16 @@ export function SitePickerMap({
     const attribution = MAP_IMAGERY_SOURCES[imagery].attribution;
     const base = L.tileLayer(config.url, { maxZoom: 21, maxNativeZoom: config.maxNativeZoom, attribution });
     // Statewide 6-inch orthoimagery drawn over Esri inside its region (ImageServer exportImage per web-mercator tile).
+    // (only the states' photos the frame was found to have: their rough boxes overlap at the borders)
+    const shown = STATE_ORTHO_SOURCES.filter(src => photoIds?.includes(src.id));
     const stateLayers = imagery === "satellite"
-      ? STATE_ORTHO_SOURCES.map(src => {
+      ? shown.map(src => {
         const OrthoLayer = L.TileLayer.extend({
           getTileUrl(this: L.TileLayer, coords: L.Coords) {
             const size = 256;
             const nw = L.CRS.EPSG3857.project(map.unproject(L.point(coords.x * size, coords.y * size), coords.z));
             const se = L.CRS.EPSG3857.project(map.unproject(L.point((coords.x + 1) * size, (coords.y + 1) * size), coords.z));
-            return `${src.services[0]}/exportImage?bbox=${nw.x},${se.y},${se.x},${nw.y}&bboxSR=3857&imageSR=3857&size=${size},${size}&format=png&transparent=true&f=image`;
+            return `${src.services[0]}/${src.map ? "export" : "exportImage"}?bbox=${nw.x},${se.y},${se.x},${nw.y}&bboxSR=3857&imageSR=3857&size=${size},${size}&format=png&transparent=true&f=image`;
           }
         });
         return new (OrthoLayer as any)("", {
@@ -214,7 +219,7 @@ export function SitePickerMap({
     layersRef.current = [base, ...stateLayers, ...overlays];
     [base, ...overlays].forEach(layer => layer.addTo(map));
     // (a state's own photos only on the map, and in its credit, while the map is over that state)
-    const regions = STATE_ORTHO_SOURCES.map(src => L.latLngBounds([src.region.south, src.region.west], [src.region.north, src.region.east]));
+    const regions = shown.map(src => L.latLngBounds([src.region.south, src.region.west], [src.region.north, src.region.east]));
     const sync = () => {
       const seen = map.getBounds();
       stateLayers.forEach((layer, k) => {
@@ -226,7 +231,7 @@ export function SitePickerMap({
     sync();
     map.on("moveend", sync);
     return () => { map.off("moveend", sync); };
-  }, [imagery]);
+  }, [imagery, (photoIds ?? []).join()]);
 
   // The frame: its corners (resize, the opposite corner staying put), the middle of its top edge
   // (move), and a round handle past it (turn: which way is up on the course; north stays north)
@@ -351,9 +356,12 @@ export function SitePickerMap({
     const canvas = L.canvas({ padding: 0.2 });
     const drawn: L.Layer[] = [];
     if (arrived.photo) drawn.push(L.imageOverlay(arrived.photo, [[b.south, b.west], [b.north, b.east]], { opacity: 1, interactive: false }).addTo(map));
-    for (const a of arrived.areas) drawn.push(L.polygon(a.points.map(p => at(p.x, p.y)), { renderer: canvas, stroke: false, fillColor: a.color, fillOpacity: a.opacity ?? 0.55, interactive: false }).addTo(map));
-    for (const l of arrived.lines) drawn.push(L.polyline(l.points.map(p => at(p.x, p.y)), { renderer: canvas, color: l.color, weight: l.weight ?? 3, opacity: 0.95, interactive: false }).addTo(map));
-    for (const t of arrived.trees) drawn.push(L.circle(at(t.x, t.y), { renderer: canvas, radius: Math.max(1.5, t.r * 0.3048), stroke: true, weight: 0.6, color: "#d9f2b8", fillColor: "#2f5d34", fillOpacity: 0.7, interactive: false }).addTo(map));
+    // (looking before it comes in: each shape's edge in its source's color, and where it came from
+    // on hover)
+    const tip = (layer: L.Path, text?: string) => { if (text) layer.bindTooltip(text, { sticky: true, direction: "top", offset: [0, -8] }); return layer; };
+    for (const a of arrived.areas) drawn.push(tip(L.polygon(a.points.map(p => at(p.x, p.y)), { renderer: canvas, stroke: !!a.stroke, color: a.stroke, weight: 2, fillColor: a.color, fillOpacity: a.opacity ?? 0.55, interactive: !!a.tip }), a.tip).addTo(map));
+    for (const l of arrived.lines) drawn.push(tip(L.polyline(l.points.map(p => at(p.x, p.y)), { renderer: canvas, color: l.color, weight: l.weight ?? 3, opacity: 0.95, interactive: !!l.tip }), l.tip).addTo(map));
+    for (const t of arrived.trees) drawn.push(L.circle(at(t.x, t.y), { renderer: canvas, radius: Math.max(1.5, t.r * 0.3048), stroke: true, weight: t.color ? 1.4 : 0.6, color: t.color ?? "#d9f2b8", fillColor: t.color ? t.color : "#2f5d34", fillOpacity: t.color ? 0.12 : 0.7, interactive: false }).addTo(map));
     return () => { drawn.forEach(d => d.remove()); };
   }, [arrived]);
 
@@ -366,7 +374,7 @@ export type Arrived = {
   width: number;
   height: number;
   photo?: string;
-  areas: { points: { x: number; y: number }[]; color: string; opacity?: number }[];
-  lines: { points: { x: number; y: number }[]; color: string; weight?: number }[];
-  trees: { x: number; y: number; r: number }[];
+  areas: { points: { x: number; y: number }[]; color: string; opacity?: number; stroke?: string; tip?: string }[];
+  lines: { points: { x: number; y: number }[]; color: string; weight?: number; tip?: string }[];
+  trees: { x: number; y: number; r: number; color?: string }[];
 };

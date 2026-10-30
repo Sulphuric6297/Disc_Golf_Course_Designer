@@ -1,7 +1,7 @@
 // Phones and tablets: the step bar, the bottom sheet (peek, half, full), tools by tap with Undo,
 // Cancel and Done, the selection in the sheet, long-press menus, the Design preview fitted to the
 // screen, the tee view, a phone on its side, a tablet, and the desktop layout left as it was.
-import { test, expect, classicLook, course, editorState, tapPlan, longPress, touchDrag, touches, pinch, screenOf } from "./fixtures";
+import { test, expect, classicLook, course, editorState, tapPlan, longPress, touchDrag, touches, pinch, screenOf, planAt } from "./fixtures";
 import { devices, type Page } from "@playwright/test";
 import { writeFileSync } from "fs";
 import { createBasket, createEmptyCourse, createTee, newHole } from "../../src/lib/course";
@@ -46,7 +46,7 @@ test.describe("phone", () => {
     await page.evaluate(id => (window as any).__dgActions.select(id), hole.id);
     await expect(page.getByTestId("hole-strip")).toBeVisible();
     await settle(page);
-    expect(await detent(page)).toBe("peek");
+    expect(await detent(page)).toBe("locked");
     // (the tools make way for it)
     await expect(page.getByTestId("tool-strip")).toHaveCount(0);
     // The hole in the map above the sheet
@@ -167,6 +167,25 @@ test.describe("phone", () => {
     await above();
   });
 
+  test("the View list rises from the bottom over the panel and the step bar, every switch in it in reach", async ({ page }) => {
+    await oneHole(page);
+    await page.getByTestId("map-controls").getByTestId("scene-button").tap();
+    const list = page.getByTestId("scene-panel");
+    await expect(list).toBeVisible();
+    await settle(page);
+    const b = (await list.boundingBox())!, vh = page.viewportSize()!.height, vw = page.viewportSize()!.width;
+    expect(b.y + b.height).toBeLessThanOrEqual(vh + 1);
+    expect(b.width).toBeGreaterThan(vw * 0.9);
+    // (nothing over it: the spot in the middle of its bottom row is the list's own)
+    const own = await page.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest("[data-testid=scene-panel]"), [b.x + b.width / 2, b.y + b.height - 30]);
+    expect(own).toBe(true);
+    // A switch in it works and keeps it open; a tap above it closes it
+    await list.getByRole("checkbox").first().tap();
+    await expect(list).toBeVisible();
+    await page.mouse.click(vw / 2, 40);
+    await expect(list).toHaveCount(0);
+  });
+
   test("a selected hole's header steps to the next and previous hole", async ({ page }) => {
     await oneHole(page);
     await page.evaluate(() => (window as any).__dgActions.addHole({ x: 300, y: 700 }, { x: 600, y: 700 }, "blue"));
@@ -211,7 +230,7 @@ test.describe("phone", () => {
     await expect.poll(() => detent(page)).toBe("peek");
   });
 
-  test("finding the park on a phone: the search in the sheet, then the place on top, the map, and the button at the bottom", async ({ page }) => {
+  test("finding the park on a phone: the search in the sheet, then the place on top, the map, and the panel dragged down to give the map the screen, its button still there", async ({ page }) => {
     await page.getByTestId("welcome-find").tap();
     const dialog = page.getByRole("dialog", { name: "Find your park" });
     await page.getByLabel("Search address").fill("Springfield Park");
@@ -221,11 +240,20 @@ test.describe("phone", () => {
     await page.waitForTimeout(600);
     await expect(dialog.getByRole("button", { name: /Springfield Park/ })).toHaveCount(0);
     const place = (await page.getByRole("button", { name: "Search again" }).boundingBox())!;
-    const go = (await page.getByTestId("import-site").boundingBox())!;
     const vh = page.viewportSize()!.height;
     expect(place.y).toBeLessThan(vh * 0.15);
-    expect(go.y + go.height).toBeGreaterThan(vh * 0.85);
+    // The panel all the way down: the map has the screen, Import still in reach at the bottom
+    const panel = page.getByTestId("import-sheet");
+    await panel.getByTestId("sheet-handle").focus();
+    await page.keyboard.press("End");
+    await expect(panel).toHaveAttribute("data-detent", "peek");
+    await settle(page);
+    const go = (await page.getByTestId("import-site").boundingBox())!;
+    expect(go.y).toBeGreaterThan(vh * 0.7);
+    expect(go.y + go.height).toBeLessThanOrEqual(vh);
     await page.getByTestId("import-site").tap();
+    // (looking first: Bring it in in the panel's header, as Import was)
+    await page.getByTestId("review-bring").tap({ timeout: 60_000 });
     await expect.poll(async () => (await course(page)).background, { timeout: 60_000 }).not.toBeNull();
     await expect.poll(async () => (await editorState(page)).step).toBe("design");
     // (the pointer first: a look round before the first hole)
@@ -360,18 +388,17 @@ test.describe("phone", () => {
     await expect(nav(page)).toBeInViewport({ ratio: 1 });
   });
 
-  test("tapping a hole puts its inspector in the sheet; Close returns to the step", async ({ page }) => {
+  test("tapping a hole puts its strip in the sheet; Close returns to the step", async ({ page }) => {
     await oneHole(page);
     await tapPlan(page, 450, 500);
-    await expect(page.getByTestId("inspector")).toBeVisible();
+    await expect(page.getByTestId("hole-strip")).toBeVisible();
     await expect(page.getByTestId("sheet-title")).toHaveText("Hole 1");
     await expect(page.getByTestId("selection-header")).toContainText("Par 3");
     // (Screen readers hear it: the panel changes without the focus moving)
     await expect(page.getByTestId("announce")).toHaveText("Hole 1 selected");
-    // More of it when the sheet is pulled up: par, fairway, notes
-    await page.getByTestId("sheet-handle").tap();
-    await settle(page);
-    await expect(page.getByRole("radiogroup", { name: "Par" })).toBeVisible();
+    // The rest of it in All settings, in the strip: par, fairway, notes
+    await page.getByTestId("strip-all").tap();
+    await expect(page.getByTestId("strip-pane").getByRole("radiogroup", { name: "Par" })).toBeVisible();
     await page.getByRole("radiogroup", { name: "Par" }).getByRole("radio", { name: "4" }).tap();
     await expect.poll(async () => (await course(page)).holes[0].par).toBe(4);
     // (a hole has an X at the header's right end, no back arrow)
@@ -462,6 +489,196 @@ test.describe("phone", () => {
     const now = await scale();
     await page.getByRole("button", { name: "Zoom out" }).tap();
     await expect.poll(scale).toBeLessThan(now * 0.85);
+  });
+
+  test("a finger holds the ground as it moves the map, flat and tilted; let go while moving and it slides on, slowing; two fingers slide it too", async ({ page }) => {
+    await oneHole(page);
+    const box = (await page.getByTestId("plan").boundingBox())!;
+    const at = { x: box.x + box.width / 2, y: box.y + box.height * 0.3 };
+    // (the ground under a point on screen, and where it is on screen now, moving or not)
+    const ground = async () => (await planAt(page, at.x, at.y))!;
+    const now = (g: { x: number; y: number }) => page.evaluate(([x, y]) => (window as any).__dgView.toClient(x, y, 0), [g.x, g.y] as const) as Promise<{ x: number; y: number }>;
+    const still = async () => { await page.waitForTimeout(200); };
+    for (const view of ["2d", "3d"]) {
+      await page.evaluate(v => (window as any).__dgEditor().set({ view: v }), view);
+      await page.waitForTimeout(300);
+      await expect.poll(() => page.evaluate(() => (window as any).__dgView.settled()), { timeout: 15000 }).toBe(true);
+      // (from the whole course: well inside the site's edge, past which the map doesn't go)
+      await page.evaluate(() => (window as any).__dgView.fitCourse(false));
+      // A slow drag, held still before lifting: the ground under the finger stayed under it
+      const g = await ground();
+      await touches(page, async send => {
+        await send("touchStart", [at]);
+        for (let i = 1; i <= 12; i++) await send("touchMove", [{ x: at.x + 5 * i, y: at.y + 6 * i }]);
+        await still();
+        await send("touchEnd", []);
+      });
+      await page.waitForTimeout(300);
+      const end = await now(g);
+      expect(Math.abs(end.x - (at.x + 60)), view).toBeLessThan(3);
+      expect(Math.abs(end.y - (at.y + 72)), view).toBeLessThan(3);
+      // A quick flick: the map goes on sliding the same way after the finger lifts, then stops.
+      // (Sent within the page at a finger's pace, 10 ms a move: touches sent from outside wait on
+      // each picture, and a test machine with no graphics chip draws too slowly for a flick)
+      const f = await ground();
+      await page.evaluate(([x, y]) => {
+        const el = document.elementFromPoint(x, y)!;
+        const fire = (type: string, px: number) => el.dispatchEvent(new PointerEvent(type, { pointerId: 77, pointerType: "touch", isPrimary: true, clientX: px, clientY: y, button: 0, buttons: type === "pointerup" ? 0 : 1, bubbles: true, cancelable: true }));
+        const pause = (ms: number) => { const t = performance.now(); while (performance.now() - t < ms) { /* a finger's pace */ } };
+        fire("pointerdown", x);
+        for (let i = 1; i <= 6; i++) { pause(10); fire("pointermove", x + 14 * i); }
+        pause(8);
+        fire("pointerup", x + 84);
+      }, [at.x, at.y] as const);
+      const lifted = await now(f);
+      await page.waitForTimeout(1500);
+      expect((await now(f)).x - lifted.x, view).toBeGreaterThan(15);
+      // (then comes to rest)
+      await expect.poll(() => page.evaluate(() => (window as any).__dgView.settled()), { timeout: 15000 }).toBe(true);
+    }
+    // Two fingers side by side, slid together: the ground between them moves with them (and the
+    // map isn't turned)
+    const heading = () => page.evaluate(() => (window as any).__dgView.viewInfo().heading);
+    await page.evaluate(() => (window as any).__dgView.fitCourse(false));
+    const h0 = await heading(), g2 = await ground();
+    await touches(page, async send => {
+      const two = (dx: number) => [{ x: at.x - 60 + dx, y: at.y }, { x: at.x + 60 + dx, y: at.y }];
+      await send("touchStart", two(0));
+      for (let i = 1; i <= 10; i++) await send("touchMove", two(8 * i));
+      await still();
+      await send("touchEnd", []);
+    });
+    await page.waitForTimeout(400);
+    expect(Math.abs((await now(g2)).x - (at.x + 80))).toBeLessThan(4);
+    expect(Math.abs((await heading()) - h0)).toBeLessThan(1);
+  });
+
+  test("the thing picked is framed above the strip: picked just above it, the map moves it clear of the strip and its control", async ({ page }) => {
+    await oneHole(page);
+    // (a tree low on the map, just above the panel's strip, where the panel at half height
+    // would cover it)
+    const strip = (await sheet(page).boundingBox())!.y;
+    const box = (await page.getByTestId("plan").boundingBox())!;
+    const g = (await planAt(page, box.x + box.width / 2, strip - 40))!;
+    await page.evaluate(p => (window as any).__dgActions.placeAt("add-tree", p), g);
+    const id = (await course(page)).items.find((i: any) => i.type === "tree").id;
+    await tapPlan(page, g.x, g.y);
+    await expect.poll(async () => (await editorState(page)).selectedId).toBe(id);
+    await expect(sheet(page)).toHaveAttribute("data-detent", "locked");
+    await settle(page);
+    const top = (await sheet(page).boundingBox())!.y;
+    await expect.poll(async () => (await screenOf(page, g.x, g.y)).y, { timeout: 8000 }).toBeLessThan(top - 20);
+    expect((await screenOf(page, g.x, g.y)).y).toBeGreaterThan(64);
+  });
+
+  test("a thing picked: the panel stays its strip (every setting a chip, All settings too, a keyboard lifting it), the thing framed above it; panned away, Back to it", async ({ page }) => {
+    await oneHole(page);
+    const box = (await page.getByTestId("plan").boundingBox())!;
+    const g = (await planAt(page, box.x + box.width / 2, box.y + box.height * 0.4))!;
+    const id = await page.evaluate(p => {
+      const a = (window as any).__dgActions;
+      (window as any).__dgEditor().set({ areaKind: "woods" });
+      a.addDrawn("area", [{ x: p.x - 40, y: p.y - 30 }, { x: p.x + 40, y: p.y - 30 }, { x: p.x + 40, y: p.y + 30 }, { x: p.x - 40, y: p.y + 30 }]);
+      const d = (window as any).__dgCourse();
+      return d.items[d.items.length - 1].id;
+    }, g);
+    await page.evaluate(i => (window as any).__dgActions.select(i), id);
+    await expect(sheet(page)).toHaveAttribute("data-detent", "locked");
+    await expect(page.getByTestId("item-strip")).toBeVisible();
+    await expect(page.getByTestId("sheet-handle")).toHaveCount(0);
+    const vh = page.viewportSize()!.height;
+    const top = async () => (await sheet(page).boundingBox())!.y;
+    // (the map keeps more than half the screen; the woods show above the panel)
+    expect(await top()).toBeGreaterThan(vh * 0.45);
+    const inView = () => page.evaluate(i => (window as any).__dgView.inView(i), id);
+    await expect.poll(inView).toBe(true);
+    // Its name, a chip of its own; typing keeps the panel a strip
+    await page.getByTestId("strip-name").tap();
+    await page.getByRole("textbox", { name: "Area name" }).tap();
+    await page.keyboard.type("Big woods");
+    await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === id).label).toBe("Big woods");
+    await expect(sheet(page)).toHaveAttribute("data-detent", "locked");
+    // Kind: a picture of each; a tap changes it at once, the panel still a strip
+    await page.getByTestId("strip-kind").tap();
+    await expect(page.getByTestId("kind-tiles").getByRole("radio", { name: "Woods" })).toHaveAttribute("aria-checked", "true");
+    await page.getByTestId("kind-water").tap();
+    await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === id).kind).toBe("water");
+    await expect(sheet(page)).toHaveAttribute("data-detent", "locked");
+    // All settings: the whole panel, in a box no taller than a quarter of the screen
+    await page.getByTestId("strip-all").tap();
+    const pane = page.getByTestId("strip-pane");
+    await expect(pane.getByRole("group", { name: "Kind" })).toBeVisible();
+    expect((await pane.boundingBox())!.height).toBeLessThanOrEqual(vh * 0.24 + 1);
+    expect(await top()).toBeGreaterThan(vh * 0.4);
+    // Panned well away (once the panel has settled): Back to it brings it back
+    await settle(page);
+    await expect.poll(() => page.evaluate(() => (window as any).__dgView.settled())).toBe(true);
+    await page.evaluate(() => (window as any).__dgView.fitBounds({ minX: 1450, minY: 1000, maxX: 1550, maxY: 1080 }, { animate: false }));
+    await expect.poll(inView).toBe(false);
+    await expect(page.getByTestId("back-to-it")).toBeVisible();
+    await page.getByTestId("back-to-it").tap();
+    await expect.poll(inView).toBe(true);
+    await expect(page.getByTestId("back-to-it")).toHaveCount(0);
+  });
+
+  test("picking never zooms: a small tree or woods bigger than the screen picked, the map's scale stays as it was", async ({ page }) => {
+    await oneHole(page);
+    const scale = () => page.evaluate(() => (window as any).__dgView.viewInfo().pxPerUnit);
+    const s0 = await scale();
+    await page.evaluate(() => (window as any).__dgActions.placeAt("add-tree", { x: 450, y: 540 }));
+    const tree = (await course(page)).items.find((i: any) => i.type === "tree").id;
+    await page.evaluate(id => (window as any).__dgActions.select(id), tree);
+    await page.waitForTimeout(1500);
+    expect(Math.abs((await scale()) / s0 - 1)).toBeLessThan(0.01);
+    await page.evaluate(() => {
+      (window as any).__dgEditor().set({ areaKind: "woods" });
+      (window as any).__dgActions.addDrawn("area", [{ x: -2000, y: -2000 }, { x: 4000, y: -2000 }, { x: 4000, y: 4000 }, { x: -2000, y: 4000 }]);
+      const d = (window as any).__dgCourse();
+      (window as any).__dgActions.select(d.items[d.items.length - 1].id);
+    });
+    await page.waitForTimeout(1500);
+    expect(Math.abs((await scale()) / s0 - 1)).toBeLessThan(0.01);
+  });
+
+  test("a double tap zooms in where it lands; the zoom slider zooms as it slides", async ({ page }) => {
+    await oneHole(page);
+    await page.evaluate(() => (window as any).__dgView.fitCourse(false));
+    const scale = () => page.evaluate(() => (window as any).__dgView.viewInfo().pxPerUnit);
+    const box = (await page.getByTestId("plan").boundingBox())!;
+    const at = { x: box.x + box.width * 0.4, y: box.y + box.height * 0.35 };
+    const s0 = await scale();
+    // (two taps sent within the page, a finger's pace apart: from outside, each waits on a picture)
+    await page.evaluate(([x, y]) => {
+      const el = document.elementFromPoint(x, y)!;
+      const fire = (type: string, id: number) => el.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: "touch", isPrimary: true, clientX: x, clientY: y, button: 0, buttons: type === "pointerup" ? 0 : 1, bubbles: true, cancelable: true }));
+      const pause = (ms: number) => { const t = performance.now(); while (performance.now() - t < ms) { /* a finger's pace */ } };
+      fire("pointerdown", 41); pause(60); fire("pointerup", 41); pause(120); fire("pointerdown", 42); pause(60); fire("pointerup", 42);
+    }, [at.x, at.y] as const);
+    await expect.poll(scale).toBeGreaterThan(s0 * 1.6);
+    // The slider: slid up, closer; a tap low on its track, far out
+    const slider = page.getByTestId("zoom-slider");
+    await expect(slider).toBeVisible();
+    const s1 = await scale(), sb = (await slider.boundingBox())!;
+    await touchDrag(page, { x: sb.x + sb.width / 2, y: sb.y + sb.height * 0.6 }, { x: sb.x + sb.width / 2, y: sb.y + sb.height * 0.2 }, 6);
+    await expect.poll(scale).toBeGreaterThan(s1 * 1.3);
+    await page.touchscreen.tap(sb.x + sb.width / 2, sb.y + sb.height - 12);
+    await expect.poll(scale).toBeLessThan(s0 * 0.6);
+  });
+
+  test("a tree's height changed in 3D: the camera looks at it from the side, and goes back after", async ({ page }) => {
+    await oneHole(page);
+    await page.evaluate(() => (window as any).__dgActions.placeAt("add-tree", { x: 450, y: 540 }));
+    const id = (await course(page)).items.find((i: any) => i.type === "tree").id;
+    await page.evaluate(() => (window as any).__dgEditor().set({ view: "3d" }));
+    await page.waitForTimeout(300);
+    await expect.poll(() => page.evaluate(() => (window as any).__dgView.settled()), { timeout: 15000 }).toBe(true);
+    const tilt = () => page.evaluate(() => (window as any).__dgView.viewInfo().tiltDeg);
+    const t0 = await tilt();
+    await page.evaluate(i => (window as any).__dgActions.select(i), id);
+    await page.getByTestId("strip-height").tap();
+    await expect.poll(tilt, { timeout: 15000 }).toBeGreaterThan(70);
+    await page.getByTestId("strip-spread").tap();
+    await expect.poll(tilt, { timeout: 15000 }).toBeLessThan(t0 + 3);
   });
 
   test("the Map step's preview fits the phone's width (its five tabs too, whole); pinch and the buttons zoom it", async ({ page }) => {

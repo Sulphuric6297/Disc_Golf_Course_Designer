@@ -9,7 +9,9 @@ import {
 } from "../lib/course";
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { courseStats, holeStats } from "../lib/holeStats";
-import type { AreaItem, BasketItem, CourseDoc, CourseItem, FieldKind, Hole, LineItem, LineKind, P, PinPosition, TeeLevel, ToolMode, TreeItem, TreeKind } from "../types";
+import type { AreaItem, BasketItem, CourseDoc, CourseItem, FieldKind, FieldLeague, FieldPart, FieldPartSet, Hole, LineItem, LineKind, P, PinPosition, TeeLevel, ToolMode, TreeItem, TreeKind } from "../types";
+import { LEAGUES, fieldPlan } from "../lib/fieldPlan";
+import { orientedBox } from "../lib/structures";
 import { changeDoc, editor, getDoc, removeHole, removeItems, updateItem, useEditor, useCourse } from "./course";
 import { toast } from "./toast";
 import { keepsTreesOut, treeFree } from "../lib/treeFree";
@@ -233,8 +235,10 @@ export const placeAt = (mode: ToolMode, p: P) => {
   }
   else if (mode === "add-dropzone") item = createDropZone(p, hole?.id);
   else if (mode === "add-tree") {
-    const kind = ed.treeKind;
+    const kind = ed.treeKind, species = kind === "bush" ? undefined : ed.treeSpecies[kind];
     item = createTree(p, kind === "conifer" ? { treeType: kind, radius: 10, height: 50, color: "#2f5d34" } : kind === "bush" ? { treeType: kind, radius: 5, height: 6 } : { treeType: kind });
+    // (the species picked in the tool bar)
+    if (species) item = { ...item, species } as CourseItem;
   } else if (mode === "add-amenity") item = createAmenity(p, ed.amenityKind);
   else if (mode === "add-label") item = createLabel(p, "Label");
   else if (mode === "add-field") {
@@ -279,7 +283,8 @@ export const addDrawn = (kind: "area" | "line" | "structure", points: P[], opts:
   if (kind === "area" && ed.areaKind === "field") return addField(createField(ed.fieldKind, points));
   const made = kind === "area" ? createArea(ed.areaKind, points) : kind === "structure" ? createStructure(ed.structureKind, points) : createLine(ed.lineKind, points);
   const drawn = opts.straight && made.type !== "structure" ? { ...made, straight: true } : made;
-  const item = drawn.type === "area" && drawn.kind === "woods" && ed.standOf ? { ...drawn, ...standOf(ed.standOf) } : drawn;
+  const sp = ed.standOf && ed.standOf !== "bush" ? ed.treeSpecies[ed.standOf] : undefined;
+  const item = drawn.type === "area" && drawn.kind === "woods" && ed.standOf ? { ...drawn, ...standOf(ed.standOf), ...(sp ? { species: sp } : {}) } : drawn;
   // (a building, road, parking or water drawn over trees: those standing in it go, the same step)
   const under = keepsTreesOut(item) ? new Set(getDoc().items.filter(i => i.type === "tree" && !i.locked && treeFree([item])(i)).map(i => i.id)) : new Set<string>();
   changeDoc(d => ({ items: [...d.items.filter(i => !under.has(i.id)), item] }));
@@ -576,16 +581,58 @@ export const setFieldKind = (id: string, kind: FieldKind) => {
   updateItem(id, {
     field: kind,
     outOfPlay: usual ? (FIELD_KINDS[kind].outOfPlay ? true : undefined) : a.outOfPlay,
-    ...(isBallField(kind) ? {} : { home: undefined }),
+    ...(isBallField(kind) ? {} : { home: undefined, plate: undefined }),
     ...(MARKED_FIELDS.includes(kind) ? {} : { fieldTurn: undefined })
   } as Partial<CourseItem>);
 };
 
-/** A ball field's home plate moved on to its outline's next corner. */
+/** A ball field set to a league's size: its outline grown or shrunk about home plate so the fence
+ * stands as far out as that league's (and the backstop behind home has room). */
+export const setFieldLeague = (id: string, league: FieldLeague) => {
+  const a = getDoc().items.find(i => i.id === id);
+  if (!a || a.type !== "area" || a.kind !== "field" || !isBallField(fieldKindOf(a))) return;
+  // (about the plate where it was placed by hand, which stays put)
+  const home = (a.plate && fieldPlan(a)?.home) || a.points[fieldHome(a)];
+  const reach = Math.max(...a.points.map(p => Math.hypot(p.x - home.x, p.y - home.y)));
+  const L = LEAGUES[league];
+  const k = (L.fence + L.backstop + 2) / Math.max(1, reach);
+  const points = a.points.map(p => ({ x: home.x + (p.x - home.x) * k, y: home.y + (p.y - home.y) * k }));
+  const c = centroid(points);
+  updateItem(id, { league, points, x: c.x, y: c.y, ...(a.plate ? { plate: { x: a.plate.x * k, y: a.plate.y * k } } : {}) } as Partial<CourseItem>);
+};
+
+/** Courts in a row, `n` of them: the outline made that many courts (with their run-off) side by
+ * side, round its middle, the courts' length kept the way it runs. */
+export const setCourtCount = (id: string, n: number) => {
+  const a = getDoc().items.find(i => i.id === id);
+  if (!a || a.type !== "area" || a.kind !== "field") return;
+  const [cl, cw] = FIELD_KINDS[fieldKindOf(a)].size;
+  const box = orientedBox(a.points);
+  // (the courts' length: along the outline's long side when one court is longer than the row is wide)
+  const lenDir = box.a * 2 >= cl * 0.8 && box.b * 2 < cl * 0.8 ? box.u : box.v;
+  const side = { x: -lenDir.y, y: lenDir.x }, hl = cl / 2, hw = (n * cw) / 2;
+  const at = (s: number, t: number) => ({ x: box.c.x + lenDir.x * s + side.x * t, y: box.c.y + lenDir.y * s + side.y * t });
+  const points = [at(-hl, -hw), at(hl, -hw), at(hl, hw), at(-hl, hw)];
+  updateItem(id, { points, x: box.c.x, y: box.c.y, fieldTurn: undefined } as Partial<CourseItem>);
+};
+
+/** One part of a field set: switched off or on, its height, how far it stands. */
+export const setFieldPart = (id: string, part: FieldPart, patch: FieldPartSet, history = true) => {
+  const a = getDoc().items.find(i => i.id === id);
+  if (!a || a.type !== "area" || a.kind !== "field") return;
+  const now = { ...a.parts?.[part], ...patch };
+  for (const k of Object.keys(now) as (keyof FieldPartSet)[]) if (now[k] === undefined || now[k] === false) delete now[k];
+  const parts = { ...a.parts, [part]: now };
+  if (!Object.keys(now).length) delete parts[part];
+  updateItem(id, { parts: Object.keys(parts).length ? parts : undefined } as Partial<CourseItem>, history);
+};
+
+/** A ball field's home plate moved on to its outline's next corner (one placed by hand: back to
+ * its own corner first). */
 export const nextHomeCorner = (id: string) => {
   const a = getDoc().items.find(i => i.id === id);
   if (!a || a.type !== "area" || a.points.length < 3) return;
-  updateItem(id, { home: (fieldHome(a) + 1) % a.points.length } as Partial<CourseItem>);
+  updateItem(id, { home: a.plate ? fieldHome(a) : (fieldHome(a) + 1) % a.points.length, plate: undefined } as Partial<CourseItem>);
 };
 
 /** A turn put in a hole's line at a spot (between the turns either side of where it's nearest). */

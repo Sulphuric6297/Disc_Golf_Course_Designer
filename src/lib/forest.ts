@@ -14,10 +14,11 @@ import { autoWalks, drawnAreas, fairwayShiftAt, fairwayWidthAt, linePath, teeLin
 import type { HoleStats } from "./holeStats";
 import { conifersOf, paintedPinesOf, tallGrassOf, treeMixOf } from "./landscapes";
 import { reliefExaggeration } from "./relief";
-import { isLineKind, offsetPolygon, roofOf, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
+import { isLineKind, offsetPolygon, roofFor, structureHeight, structurePath, structureWidth } from "./structures";
 import { latitudeOf, lookParts, paintLight, sunFromOf } from "./mapLook";
 import { STYLE_GREENS, drawMist, drawShadows, drawTrees, gradeLight, type PaintTree } from "./paintTrees";
 import { drawBrushedSteps, type Wait } from "./brushCrown";
+import { LOOK_TINT, LOOK_VARIANTS, conifersWith, drawOf, lookFor, shapeWith, sharesOf, standShares, type TreeLookId } from "./treeMix";
 
 /** Where the photo shows trees, on a grid over the site (1 = canopy). */
 export type CanopyGrid = { cols: number; rows: number; ftPerCell: number; data: Uint8Array };
@@ -807,7 +808,27 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const vR = (u: number) => Math.max(crownR * 0.75, (VSIZE[vstyle][0] + u * (VSIZE[vstyle][1] - VSIZE[vstyle][0])) * look.trees.size * k);
   const stepPx = vector ? vStep : natural ? Math.max(crownR * 1.15, realStep) : crownR * 1.15;
   const pineShare = natural ? conifersOf(s) : pines;
-  const vPines = paintedPinesOf(s, look.trees.pines);
+  // (the course's kinds of trees: pines only if a needle kind is allowed, all pines if only
+  // they are; each treetop one of the kinds, its leaves' color moved as in 3D)
+  const shares = sharesOf(s);
+  const vPines = conifersWith(shares, paintedPinesOf(s, look.trees.pines));
+  // (a stand of one species, drawn: the treetops in it all of it, as in 3D)
+  const oneSpecies = vector ? (doc.items.filter(i => i.type === "area" && i.kind === "woods") as AreaItem[]).flatMap(a => {
+    const own = standShares(a, null);
+    if (!own) return [];
+    const pts = drawnAreas([a])[0].points;
+    return [{ pts, box: boundsOf(pts), look: Object.keys(own)[0] as TreeLookId }];
+  }) : [];
+  const standAt = (x: number, y: number) => {
+    if (!oneSpecies.length) return null;
+    const p = toPlan(x, y);
+    return oneSpecies.find(st => p.x >= st.box.minX && p.x <= st.box.maxX && p.y >= st.box.minY && p.y <= st.box.maxY && pointInPolygon(p, st.pts))?.look ?? null;
+  };
+  const asKind = (c: RGB, kind: TreeLookId | null | undefined): RGB => {
+    if (!kind) return c;
+    const [h, sl, l] = rgbToHsl(c), [dh, ds, dl] = LOOK_TINT[kind];
+    return hslToRgb(h + dh * 360, Math.max(0, Math.min(1, sl + ds)), Math.max(0.03, Math.min(0.95, l + dl)));
+  };
   const grow = 1 + (1 - cover) * 0.7;
   for (let gy = -stepPx; gy < H + stepPx && !opts.under; gy += stepPx) {
     yield 0.15 + 0.35 * ((gy + stepPx) / (H + 2 * stepPx));
@@ -828,7 +849,10 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
           // (a crown that would reach over a fairway, path or water nearby: smaller, so the clearing stays clear)
           const clearAt = (dx: number, dy: number) => { const cx = Math.min(mw - 1, Math.max(0, Math.floor((x + dx) / cell))), cy = Math.min(mh - 1, Math.max(0, Math.floor((y + dy) / cell))); return a[(cy * mw + cx) * 4 + 1] > 90; };
           for (let tries = 0; tries < 2; tries++) { const q = r * 0.75; if (clearAt(q, 0) || clearAt(-q, 0) || clearAt(0, q) || clearAt(0, -q)) r *= 0.72; else break; }
-          vtrees.push({ x, y, r, h: r * (1.6 + rnd() * 0.8), pine: rnd() < vPines, col: treeColor(rnd()), seed: rnd() });
+          const h = r * (1.6 + rnd() * 0.8), drawnPine = rnd() < vPines, col = treeColor(rnd()), seed = rnd();
+          const own = standAt(x, y), pine = own ? LOOK_VARIANTS[own].shape === "conifer" : drawnPine;
+          const kind = own ?? lookFor(pine ? "conifer" : "broadleaf", drawOf(Math.round(seed * 1e6), 7), shares);
+          vtrees.push({ x, y, r, h, pine, col: asKind(col, kind), seed, look: kind });
           continue;
         }
         if (natural) {
@@ -852,7 +876,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     if (sp.x < -r || sp.y < -r || sp.x > W + r || sp.y > H + r) return;
     const top = Math.max(r * 1.2, h0 * k);
     const tone = 1 + (idx % 6);
-    if (vector) { const tr = seeded(idx * 7919 + 13); vtrees.push({ x: sp.x, y: sp.y, r, h: top, pine: !!conifer, col: treeColor(tr()), seed: tr() }); return; }
+    // (its kind by its index, as the 3D view picks it, lib/treeMix; a needle tree leafy where no needle kind is allowed)
+    if (vector) { const tr = seeded(idx * 7919 + 13), shape = shapeWith(shares, conifer ? "conifer" : "broadleaf"), kind = lookFor(shape, drawOf(idx, 7), shares); vtrees.push({ x: sp.x, y: sp.y, r, h: top, pine: shape === "conifer", col: asKind(treeColor(tr()), kind), seed: tr(), look: kind }); return; }
     if (conifer) tufted(sp.x, sp.y, r, top, tone);
     else if (natural) leafy(sp.x, sp.y, r, top, tone);
     else if (r > crownR * 1.4) clumpTree(sp.x, sp.y, r, tone, top);
@@ -868,7 +893,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     const tone = 1 + (idSeed(t.id) % 6);
     if (vector) {
       const tr = seeded(idSeed(t.id));
-      vtrees.push({ x: sp.x, y: sp.y, r: t.treeType === "bush" ? r * 0.9 : r, h: t.treeType === "bush" ? r * 1.1 : top, pine: t.treeType === "conifer", col: treeColor(tr()), seed: tr() });
+      const kind = t.species && t.species in LOOK_TINT ? (t.species as TreeLookId) : null;
+      vtrees.push({ x: sp.x, y: sp.y, r: t.treeType === "bush" ? r * 0.9 : r, h: t.treeType === "bush" ? r * 1.1 : top, pine: t.treeType === "conifer", col: asKind(treeColor(tr()), kind), seed: tr(), look: kind });
       continue;
     }
     if (t.treeType === "conifer") tufted(sp.x, sp.y, r, top, tone);
@@ -918,7 +944,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       }
       continue;
     }
-    const roof = st.kind === "building" || st.kind === "shelter" ? roofOf(st.points, structureRoof(st), 1.5) : null;
+    const roof = st.kind === "building" || st.kind === "shelter" ? roofFor(st) : null;
     const shape = roof ? roof.eaves : st.points;
     const top = st.kind === "deck" ? tall + (tall > 2 ? 3 : 0) : tall;
     const b = boundsOf(shape.map(toScreen));
@@ -1500,7 +1526,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         return STYLE_GREENS.brushed.map(c => { const [h, sl, l] = rgbToHsl(hexRgb(c)); const g = hslToRgb(h + (h1 - h0), Math.max(0, Math.min(1, sl * (s1 / Math.max(0.05, s0)))), Math.max(0.05, Math.min(0.9, l * (l1 / Math.max(0.05, l0))))); return [g[0] * 0.86, g[1] * 0.94, g[2] * 0.96] as RGB; });
       })();
       const painted = vtrees.filter(t => t.r >= 1.5);
-      yield* drawBrushedSteps(ctx, painted.map(t => ({ x: t.x, y: t.y, r: t.r, seed: t.seed, pine: t.pine, col: t.pine ? pineGreens[Math.floor(t.seed * 997) % pineGreens.length] : t.col })), [Lx, Ly], k);
+      yield* drawBrushedSteps(ctx, painted.map(t => ({ x: t.x, y: t.y, r: t.r, seed: t.seed, pine: t.pine, col: t.pine ? asKind(pineGreens[Math.floor(t.seed * 997) % pineGreens.length], t.look) : t.col })), [Lx, Ly], k);
       drawTrees(ctx, vtrees.filter(t => t.r < 1.5), "cluster", Lx, Ly, pl);
     } else drawTrees(ctx, vtrees, vstyle, Lx, Ly, pl);
   }
@@ -1560,6 +1586,46 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // The treetops over the buildings, and the trees' shade on the roofs: a picture of its own (clear
   // elsewhere), laid over the buildings, which are drawn over the painting
   {
+    // (the newer looks draw their crowns as shapes, not into the height field: their tops stamped
+    // here, a low dome each, for which roofs they cover and shade)
+    let tops = height, topMost = tallest;
+    if (vector && vtrees.length) {
+      tops = new Float32Array(height);
+      for (const t of vtrees) {
+        const r = t.r, r2 = r * r;
+        for (let y = Math.max(0, Math.floor(t.y - r)); y <= Math.min(H - 1, Math.ceil(t.y + r)); y++) {
+          for (let x = Math.max(0, Math.floor(t.x - r)); x <= Math.min(W - 1, Math.ceil(t.x + r)); x++) {
+            const d2 = ((x + 0.5 - t.x) ** 2 + (y + 0.5 - t.y) ** 2) / r2;
+            if (d2 > 1) continue;
+            const h = t.h * (0.75 + 0.25 * Math.sqrt(1 - d2)), i = y * W + x;
+            if (h > tops[i]) tops[i] = h;
+            if (h > topMost) topMost = h;
+          }
+        }
+      }
+    }
+    // (the shade on a roof, from whatever stands between it and the sun: the treetops as stamped)
+    const tdx: number[] = [], tdy: number[] = [], tup: number[] = [];
+    for (let d = 1.5; d < topMost / rise + 2 && d < 400; d *= 1.3) {
+      const dx = Math.round(sunX * d), dy = Math.round(sunY * d);
+      if (tdx.length && dx === tdx[tdx.length - 1] && dy === tdy[tdy.length - 1]) continue;
+      tdx.push(dx); tdy.push(dy); tup.push(d * rise);
+    }
+    const roofSun = (x: number, y: number, h0: number) => {
+      let shade = 0;
+      for (let j = 0; j < tdx.length; j++) {
+        const up = h0 + tup[j];
+        if (up >= topMost) break;
+        const sx = x + tdx[j], sy = y + tdy[j];
+        if (sx < 0 || sy < 0 || sx >= W || sy >= H) break;
+        const over = Math.max(tops[sy * W + sx], built[sy * W + sx]) - up;
+        if (over > 0) {
+          shade = Math.max(shade, over / soft);
+          if (shade >= 1) return 0;
+        }
+      }
+      return 1 - shade;
+    };
     const near = new Uint8Array(W * H);
     let any = false;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -1578,11 +1644,11 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       for (let i = 0; i < W * H; i++) {
         if (!near[i]) continue;
         const o4 = i * 4;
-        if (height[i] > built[i]) {
+        if (tops[i] > built[i]) {
           od[o4] = fin[o4]; od[o4 + 1] = fin[o4 + 1]; od[o4 + 2] = fin[o4 + 2]; od[o4 + 3] = 255;
         } else if (built[i] > 0) {
           const x = i % W, y = (i / W) | 0;
-          const shade = shadowK * 0.75 * (1 - sunlit(x, y, built[i]));
+          const shade = shadowK * 0.75 * (1 - roofSun(x, y, built[i]));
           if (shade > 0.01) { od[o4 + 3] = Math.round(shade * 255); }
         }
       }
@@ -1595,7 +1661,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         const o = roofOwner[i];
         if (!o) continue;
         roofPx[o]++;
-        if (height[i] > built[i]) leafPx[o]++;
+        if (tops[i] > built[i]) leafPx[o]++;
       }
       const hidden = new Set(roofIds.filter((_, j) => roofPx[j + 1] > 0 && leafPx[j + 1] > roofPx[j + 1] * 0.5));
       overGrids.set(canvas, { picture: oc, hidden });
@@ -1725,10 +1791,12 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
  * while it paints, even on a phone. Stops (rejects) when `signal` is aborted.
  */
 /** Everything of the course the painting is made from (for knowing when to paint it again):
- * every thing on the map in full but its name and lock (labels and mandos aren't painted), and
- * the holes, in order, but their names, par, notes, flyovers and tee sign settings. */
+ * every thing on the map in full but its name and lock (labels and mandos aren't painted), the
+ * course's kinds of trees, and the holes, in order, but their names, par, notes, flyovers and tee sign settings. */
 export const paintedFrom = (doc: CourseDoc) => [
   doc.lidar?.trees.length ? measuredStanding()?.key ?? "" : "",
+  // (the course's kinds of trees: the treetops')
+  doc.style.treeKinds ?? null,
   doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => ({ ...i, label: undefined, locked: undefined })),
   doc.holes.map(h => ({ ...h, name: undefined, par: undefined, notes: undefined, flyKeys: undefined, flyover: undefined, sign: undefined }))
 ];

@@ -10,6 +10,8 @@ import { fetchTileFeatures } from "./vectorTiles";
 
 /** How long Overpass is waited for once the tiles are in, ms (unless the rest is still coming). */
 export const OVERPASS_HEAD_START_MS = 8000;
+/** The longest OpenStreetMap is waited for, ms. */
+export const OSM_MOST_MS = 60000;
 
 export type OsmAnswer = { features: OsmFeature[]; from: "overpass" | "tiles" };
 
@@ -41,6 +43,7 @@ const race = (bounds: GeoBounds, opts: { signal?: AbortSignal; settle?: Promise<
       if (done) return;
       done = true;
       clearTimeout(timer);
+      clearTimeout(cap);
       if (a instanceof Error) reject(a);
       else resolve(a);
     };
@@ -50,6 +53,11 @@ const race = (bounds: GeoBounds, opts: { signal?: AbortSignal; settle?: Promise<
       else if (overpassFailed && tilesOver) finish(overpassFailed instanceof Error ? overpassFailed : new Error("OpenStreetMap lookup failed."));
     };
     const timer = setTimeout(() => { headStart = true; decide(); }, opts.headStartMs ?? OVERPASS_HEAD_START_MS);
+    // (a minute at most, whatever the servers do: the tiles' answer then, or none)
+    const cap = setTimeout(() => {
+      if (tiles) finish({ features: tiles, from: "tiles" });
+      else finish(overpassFailed instanceof Error ? overpassFailed : new Error("OpenStreetMap didn't answer in time."));
+    }, OSM_MOST_MS);
     opts.settle?.then(() => { restIn = true; decide(); }, () => { restIn = true; decide(); });
     opts.signal?.addEventListener("abort", () => finish(abortError()), { once: true });
     fetchOsmFeatures(bounds, undefined, opts.onBusy, opts.signal).then(

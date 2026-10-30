@@ -143,6 +143,8 @@ export async function stubNetwork(page: Page) {
   await page.route(/\/tilemap\//, route => route.fulfill(json({ adjusted: false, data: [0] })));
   // Statewide ortho and USGS: "unavailable", so the fallbacks run
   await page.route(/nconemap\.gov|gis\.nc\.gov|elevation\.nationalmap\.gov/, route => route.abort());
+  // (the US government's maps: nothing here, unless a test says otherwise)
+  await page.route(/hydro\.nationalmap\.gov|wetlandsmapservice|USA_Structures_View/, route => route.fulfill(json({ features: [] })));
   await page.route(/GeocodeServer\/suggest/, route =>
     route.fulfill(json({ suggestions: [{ text: `${SITE.label}, USA`, magicKey: "k1", isCollection: false }] }))
   );
@@ -336,7 +338,7 @@ export async function addHole(page: Page, tee: { x: number; y: number }, basket:
 
 /** Runs the whole site import against the stubs; returns "Site brought in." and what the import
  * said it brought in (the site's notes, listed on the Site step under What came in). */
-export async function importSite(page: Page, opts: { trees?: boolean; osm?: boolean } = {}) {
+export async function importSite(page: Page, opts: { trees?: boolean; osm?: boolean; review?: (page: Page) => Promise<void> } = {}) {
   // (an import is slow on a machine drawing without a graphics card: time for it and what follows)
   test.setTimeout(Math.max(test.info().timeout, 240_000));
   const welcome = page.getByTestId("welcome-find");
@@ -360,6 +362,10 @@ export async function importSite(page: Page, opts: { trees?: boolean; osm?: bool
   if (opts.trees === false && await photoTrees.isVisible()) await photoTrees.click();
   if (opts.osm === false) await page.getByTestId("bring-osm").click();
   await page.getByTestId("import-site").click();
+  // Looked at first: each source on the map, switched on or off; then brought in
+  await expect(page.getByTestId("import-review")).toBeVisible({ timeout: 120_000 });
+  if (opts.review) await opts.review(page);
+  await page.getByTestId("review-bring").click();
   // The card that says what came in (the same in a sentence, its label), then on to designing
   const ready = page.getByTestId("site-ready");
   await expect(ready).toBeVisible({ timeout: 60_000 });

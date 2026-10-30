@@ -13,6 +13,11 @@ export const structureWidth = (s: Pick<StructureItem, "kind" | "width">) => s.wi
 export const structureHeight = (s: Pick<StructureItem, "kind" | "height">) => s.height ?? STRUCTURE_KINDS[s.kind].height;
 export const structureRoof = (s: Pick<StructureItem, "kind" | "roof">): RoofKind => s.roof ?? STRUCTURE_KINDS[s.kind].roof ?? "gable";
 
+/** A building's (or a shelter's) roof as it's set: its kind, its pitch where it was measured, and
+ * which way its ridge runs. */
+export const roofFor = (st: Pick<StructureItem, "kind" | "roof" | "points" | "roofPitch" | "ridgeAcross">, overhang = 1.5, pitch0 = 0.5, outline: P[] = st.points) =>
+  roofOf(outline, structureRoof(st), overhang, st.roofPitch ?? pitch0, st.roofPitch ? 40 : 12, st.ridgeAcross);
+
 /** The line a bridge, boardwalk or stairs follows: a smooth curve through the clicks (walls keep
  * their corners). */
 export const structurePath = (s: Pick<StructureItem, "kind" | "points">): P[] =>
@@ -260,8 +265,10 @@ type Side = { run: (p: P) => number; out: P };
  * - pyramid: every side of the outline itself, meeting in the middle (a gazebo's roof);
  * - flat: no slope at all.
  */
-export const roofOf = (outline: P[], kind: RoofKind, overhang = 1.5, pitch0 = 0.5, maxRise = 12): Roof => {
-  const box = orientedBox(outline);
+export const roofOf = (outline: P[], kind: RoofKind, overhang = 1.5, pitch0 = 0.5, maxRise = 12, across = false): Roof => {
+  // (the ridge across: the box turned a quarter, its short sides taken as its length)
+  const long = orientedBox(outline);
+  const box = across ? { c: long.c, u: long.v, v: { x: -long.u.x, y: -long.u.y }, a: long.b, b: long.a } : long;
   const { c, u, v, a, b } = box;
   const local = (p: P) => { const dx = p.x - c.x, dy = p.y - c.y; return { s: dx * u.x + dy * u.y, t: dx * v.x + dy * v.y }; };
   const boxSide = (k: number, al: number, be: number, out: P): Side => ({ run: p => { const l = local(p); return k + al * l.s + be * l.t; }, out });

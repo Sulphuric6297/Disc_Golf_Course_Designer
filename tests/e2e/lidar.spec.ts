@@ -4,7 +4,7 @@ import { createLazPerf } from "laz-perf";
 import { test, expect, addHole, blankCourse, importSite, course, editorState, screenOf, withLidar, SITE } from "./fixtures";
 import { createEmptyCourse, newHole } from "../../src/lib/course";
 import { getGeoBounds } from "../../src/lib/geo/core";
-import { claim, flownOn, gather, gatherer, grownTree, grownTrees, leafOnAt, roofHeights, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesFor, tilesOver, depthFor, type LazReader, type TilePoints } from "../../src/lib/lidar";
+import { claim, flownOn, gather, gatherer, grownTree, grownTrees, leafOnAt, roofHeights, saplings, fairwayTrees, findTrees, groundOnGrid, measureSite, readTile, siteBox, standingTrees, surveyYear, tilesFor, tilesOver, depthFor, withoutWires, type LazReader, type TilePoints } from "../../src/lib/lidar";
 import { canopyStands } from "../../src/lib/canopy";
 import { summerFills, treesFromSummer } from "../../src/lib/summerTrees";
 import type { LidarTree } from "../../src/types";
@@ -563,4 +563,31 @@ plain("woods from the canopy: crowns close together one wood, a clearing 40 ft a
   plainExpect(pointInPolygon({ x: 200, y: 60 }, west.outline)).toBe(true);
   plainExpect(pointInPolygon({ x: 230, y: 100 }, west.outline)).toBe(false);
   plainExpect(inStand).toEqual([1, 1, 1, 1, 1, 1, 0]);
+});
+
+plain("a light pole is no tree: a lamp head the laser came back from once, hit here and there, left out; a small tree beside it kept (pure logic)", () => {
+  const nx = 40, ny = 20, cell = 2, n = nx * ny;
+  const canopy = new Float32Array(n), nUp = new Uint8Array(n), nMulti = new Uint8Array(n), nGround = new Uint8Array(n);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const c = j * nx + i, x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+    const dp = Math.hypot(x - 15, y - 20), dt = Math.hypot(x - 55, y - 20);
+    // A lamp 25 ft up, its head 8 ft across: solid, one return a pulse, a point in every other cell
+    if (dp <= 4) { canopy[c] = 25 - dp * 0.2; nUp[c] = (i + j) % 2; nMulti[c] = 0; }
+    // A small tree 25 ft up, 14 ft across: hit all over, its pulses going on through
+    else if (dt <= 7) { canopy[c] = 25 - 2 * (dt / 7) ** 2 * 5; nUp[c] = 3; nMulti[c] = 2; nGround[c] = 1; }
+  }
+  const trees = findTrees({ nx, ny, cell, canopy, nUp, nMulti, nGround, leafOn: true });
+  plainExpect(trees.length).toBe(1);
+  plainExpect(trees[0][0]).toBeGreaterThan(45);
+});
+
+plain("a power line is no row of trees: small crowns in a dead straight row, as high, thinly hit, left out; a row of trees along a road, hit all over, kept (pure logic)", () => {
+  const wire: LidarTree[] = [0, 1, 2, 3, 4, 5].map(i => [100 + i * 40, 100 + i * 12, 28, 6, 0]);
+  const row: LidarTree[] = [0, 1, 2, 3, 4].map(i => [100 + i * 30, 300, 30 + (i % 2) * 3, 8, 0]);
+  const other: LidarTree[] = [[400, 400, 60, 25, 0]];
+  const all = [...wire, ...row, ...other];
+  const density = [...wire.map(() => 0.4), ...row.map(() => 2.2), 2.5];
+  const kept = withoutWires(all, density);
+  plainExpect(kept).toHaveLength(row.length + other.length);
+  plainExpect(kept.every(t => t[1] !== 100 && !wire.includes(t))).toBe(true);
 });

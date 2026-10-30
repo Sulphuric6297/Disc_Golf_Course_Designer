@@ -4,6 +4,7 @@
 // outline and answers when Overpass is busy. Both are asked at once.
 import { fetchJson, type GeoBounds } from "./core";
 import { askOverpass, outerRings, type LatLon } from "./osm";
+import { inUS, padusOutline } from "./usgov";
 
 export type SiteOutline = {
   /** What it is: a disc golf course mapped as one, or a park (a recreation ground, a nature reserve). */
@@ -15,7 +16,7 @@ export type SiteOutline = {
   /** A disc golf course mapped there (its own outline, or one inside the park): its name and how
    * many holes are mapped (0: only its outline). */
   course?: { name?: string; holes: number };
-  from: "overpass" | "nominatim";
+  from: "overpass" | "nominatim" | "padus";
 };
 
 /** How long Overpass is waited for before Nominatim's outline is used, ms. */
@@ -131,6 +132,12 @@ export const findSiteOutline = async (place: { lat: number; lon: number; osmId?:
   if (timely) return timely;
   const n = await nominatim;
   if (n) return n;
-  // (Nominatim had nothing either: Overpass to the end, where it still might)
-  return timely === null ? null : overpass.catch(() => null);
+  // (Nominatim had nothing either: Overpass to the end, where it still might; then, in the US,
+  // the public land the spot is on, as the USGS has it)
+  const late = timely === null ? null : await overpass.catch(() => null);
+  if (late) return late;
+  const box = { south: at.lat, north: at.lat, west: at.lon, east: at.lon };
+  if (!inUS(box)) return null;
+  const p = await padusOutline(at, signal).catch(err => { console.info("PAD-US outline unavailable", err); return null; });
+  return p ? { kind: "park", name: p.name, outline: p.outline, bounds: boxOf(p.outline), from: "padus" } : null;
 };

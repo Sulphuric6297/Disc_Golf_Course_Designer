@@ -9,7 +9,7 @@
 // a thing opens its menu (the right-click), or on open ground what can start there.
 import { Woods } from "../Woods";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
-import { Axe, Compass, LayoutGrid, Menu, ChevronDown, ListChecks, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, PanelLeftClose, PanelLeftOpen, Redo2, Save, Search, Trash2, TreeDeciduous, Undo2, X } from "lucide-react";
+import { Axe, Compass, LayoutGrid, Menu, ChevronDown, ListChecks, ChevronLeft, Copy, Ellipsis, Eye, FilePlus, FolderOpen, HelpCircle, LocateFixed, PanelLeftClose, PanelLeftOpen, Redo2, Save, Search, Trash2, TreeDeciduous, Undo2, X } from "lucide-react";
 import { holeLabel } from "../../lib/course";
 import { EXAMPLE_ID } from "../../lib/example";
 import { courseIssues, courseStats, courseTotals, holeStats, openIssues, playsOf } from "../../lib/holeStats";
@@ -305,8 +305,10 @@ function ToolHeader() {
   // no room beside the rest)
   const all = [...(toolOptions(ed) ?? []), ...(toolShapes(ed) ?? [])];
   const isBrush = (o: ReactNode) => (o as { key?: string } | null)?.key === "brush";
+  const isSpecies = (o: ReactNode) => (o as { key?: string } | null)?.key === "species";
   const kinds = (toolOptions(ed) ?? []).filter(o => !isBrush(o));
-  const shapes = (toolShapes(ed) ?? []).filter(o => !isBrush(o));
+  const shapes = (toolShapes(ed) ?? []).filter(o => !isBrush(o) && !isSpecies(o));
+  const species = (toolShapes(ed) ?? []).filter(isSpecies);
   const brush = all.find(isBrush);
   return (
     <div className="pb-3" data-testid="tool-header">
@@ -319,6 +321,7 @@ function ToolHeader() {
       </div>
       {kinds.length > 0 && <ChipRow testid="tool-options">{kinds}</ChipRow>}
       {shapes.length > 0 && <ChipRow testid="tool-shapes">{shapes}</ChipRow>}
+      {species.length > 0 && <ChipRow testid="tool-species">{species}</ChipRow>}
       {brush && <div className="mt-2 px-4 flex">{brush}</div>}
     </div>
   );
@@ -615,7 +618,9 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
   // (No sheet under the welcome card: it is the first step's panel, with the same two choices;
   // and none on the Map step, where the page's settings are a row of tools under it)
   const pageTools = ed.step === "map" && !immersive && !readOnly;
-  const sheet = !immersive && !welcome && !pageTools;
+  // (standing in 3D with a thing picked: its usual sheet, over the tee view's bar)
+  const pickedInTee = immersive && !readOnly && !ed.flyover && !ed.flyCam && !!ed.selectedId && getDoc().items.some(i => i.id === ed.selectedId);
+  const sheet = (!immersive || pickedInTee) && !welcome && !pageTools;
   const sheetH = sheet ? restH : 0;
 
   useEffect(() => {
@@ -674,6 +679,30 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
     v.topInset = immersive ? 0 : 64;
   }, [sheetH, immersive]);
   useEffect(() => () => { const v = getView(); if (v) { v.bottomInset = 0; v.topInset = 0; } }, []);
+  // (the thing picked brought between the top bar and the panel, as it's picked and whenever the
+  // panel settles at another height; the map slides, it never zooms; not while it's still on its
+  // way somewhere)
+  useEffect(() => {
+    const id = ed.selectedId;
+    if (!id || immersive) return;
+    // (waits for the map to come to rest, a few seconds at most: picked as the view turns into 3D, say)
+    let tries = 0;
+    const t = window.setInterval(() => {
+      const v = getView();
+      if (!v || (!v.settled() && ++tries < 25)) return;
+      window.clearInterval(t);
+      v.frame(id);
+    }, 120);
+    return () => window.clearInterval(t);
+  }, [sheetH, ed.selectedId, immersive]);
+  // (the map moved away from it: a button to go back to it)
+  const [away, setAway] = useState(false);
+  useEffect(() => {
+    const id = ed.selectedId;
+    if (!id || immersive) { setAway(false); return; }
+    const t = window.setInterval(() => { const v = getView(); setAway(!!v && v.settled() && !v.inView(id)); }, 400);
+    return () => window.clearInterval(t);
+  }, [ed.selectedId, immersive]);
 
   const toggle = useCallback(() => setDetent(d => (d === "peek" ? "half" : "peek")), []);
   const onStep = (s: Step) => goStep(s, setDetent, toggle);
@@ -718,9 +747,17 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
           <div className="absolute inset-0 z-10 flex items-end justify-center px-3 pb-3 pointer-events-none" style={{ paddingTop: top }}>{welcome}</div>
         )}
         {sheet && (
-          <BottomSheet detent={detent} onDetent={setDetent} header={panel.header} label={panel.mode === "selection" ? "Selection" : panel.mode === "tool" ? "Tool" : "Step panel"} topGap={top + 8} onHeight={setRestH} contentKey={panel.key}>
+          <>
+          {away && (
+            <button className="absolute left-1/2 -translate-x-1/2 z-30 h-11 px-4 rounded-full glass border border-white/10 shadow-2xl text-[14px] font-semibold text-zinc-50 flex items-center gap-2 active:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+              style={{ bottom: sheetH + 12 }} onClick={() => { const id = useEditor.getState().selectedId; if (id) getView()?.frame(id); }} data-testid="back-to-it">
+              <LocateFixed size={17} /> Back to it
+            </button>
+          )}
+          <BottomSheet detent={detent} onDetent={setDetent} header={panel.header} label={panel.mode === "selection" ? "Selection" : panel.mode === "tool" ? "Tool" : "Step panel"} topGap={top + 8} onHeight={setRestH} contentKey={panel.key} locked={panel.mode === "selection" && holePicked}>
             {panel.body}
           </BottomSheet>
+          </>
         )}
       </main>
       {!immersive && !readOnly && <BottomNav onStep={onStep} />}

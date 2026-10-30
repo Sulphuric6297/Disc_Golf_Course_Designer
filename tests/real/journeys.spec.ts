@@ -183,7 +183,7 @@ test("the Trees tool has leafy trees, pines, bushes, woods and hedges; a wood dr
   await page.keyboard.press("Escape");
 });
 
-test("a stand of pines: Pine, then Rectangle, dragged out; a wood that grows only pines round the measured trees, its mix in its panel", async () => {
+test("a stand of conifers: Conifer, then Rectangle, dragged out; a wood that grows only conifers round the measured trees, its mix in its panel", async () => {
   await page.evaluate(() => (window as any).__dgEditor().set({ step: "design", tool: "select" }));
   await page.keyboard.press("r");
   await page.getByTestId("tree-kind-conifer").click();

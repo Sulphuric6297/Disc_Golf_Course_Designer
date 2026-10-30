@@ -1,5 +1,6 @@
 // Trees: real-looking trees from the shared tree kit (three/treeKit: a branching skeleton and
 // leaf-spray cards). (From the Security Camera Planner.)
+import { LOOK_TINT, type TreeLookId } from "../lib/treeMix";
 import * as THREE from "three";
 import { presetFor, specOf, speciesOfPreset, type TreeSpec } from "./ezShapes";
 import { clamp } from "../constants";
@@ -68,6 +69,7 @@ export const create3dTree = (item: TreeItem, look?: TreeLook): THREE.Group => {
     const leaf = look ? (look.mix.length && shape !== "conifer" ? look.mix[Math.floor(next() * look.mix.length)] : look.color) : item.color;
     tint = foliageTint(leaf, next);
     if (shape === "conifer") tint.offsetHSL(0.03, -0.06, -0.08);
+    if (item.species && item.species in LOOK_TINT) tint.offsetHSL(...LOOK_TINT[item.species as TreeLookId]);
   }
   // (close, middle and far versions, as the woods have, by distance from the camera)
   const variant = item.variant ?? variantOf(item.id, shape), w = item.radius * 2 * widthMultiplier;

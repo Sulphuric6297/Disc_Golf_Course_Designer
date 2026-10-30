@@ -1,10 +1,6 @@
-// Putting a draft into a course that changed meanwhile (three ways: what the draft started from,
-// the course as it is now, and the draft). Holes, features and layouts are matched one by one by
-// their id; each other part of the course (its style, terrain, rules…) as a whole. What only one
-// side changed is kept; what both changed is a clash: the draft's is taken unless the person
-// picks the course's (`keepTheirs`).
-import type { CourseDoc } from "../types";
-
+// What changed between two versions of a course (History's Compare): holes, features and layouts
+// matched one by one by their id; each other part of the course (its style, terrain, rules…) as a
+// whole.
 type Doc = Record<string, unknown>;
 type Entity = { id: string } & Record<string, unknown>;
 
@@ -19,88 +15,10 @@ const text = (v: unknown) => {
 };
 const same = (a: unknown, b: unknown) => a === b || text(a) === text(b);
 
-/** The parts matched one by one. */
-const LISTS = ["holes", "items", "layouts"] as const;
-type List = (typeof LISTS)[number];
-/** Never merged: the photo goes its own way. */
+/** Never compared: the photo goes its own way. */
 const SKIP = new Set(["background"]);
 
-/** A part both sides changed: what it is called, and both of its versions (undefined: removed). */
-export interface Clash { list: List | null; id: string; label: string; mine: unknown; theirs: unknown }
-
-const holeName = (e: Entity | undefined, doc: Doc) => {
-  if (e && typeof e.name === "string" && e.name) return e.name;
-  const i = ((doc.holes ?? []) as Entity[]).findIndex(h => h.id === e?.id);
-  return i >= 0 ? `Hole ${i + 1}` : "A hole";
-};
-const KIND: Record<string, string> = { tee: "A tee", basket: "A basket", area: "An area", line: "A line", tree: "A tree", amenity: "An amenity", label: "A label", mando: "A mando", dropzone: "A drop zone", structure: "A structure" };
-const keyName = (k: string) => (k === "style" ? "The map's style" : k === "name" ? "The course's name" : k === "terrainHeights" ? "The ground" : `The course's ${k}`);
-
-function mergeList(list: List, base: Entity[] = [], theirs: Entity[] = [], mine: Entity[] = [], clashes: Clash[], label: (e: Entity) => string) {
-  const b = new Map(base.map(e => [e.id, e]));
-  const t = new Map(theirs.map(e => [e.id, e]));
-  const m = new Map(mine.map(e => [e.id, e]));
-  const pick = (id: string): Entity | undefined => {
-    const [x, y, z] = [b.get(id), t.get(id), m.get(id)];
-    if (same(y, z)) return y;
-    if (same(x, z)) return y; // only theirs changed (or removed it)
-    if (same(x, y)) return z; // only mine changed (or removed it)
-    clashes.push({ list, id, label: label((z ?? y)!), mine: z, theirs: y });
-    return z;
-  };
-  // In the draft's order; what only the course has now goes where it is there
-  const out: Entity[] = [];
-  const seen = new Set<string>();
-  for (const e of mine) { seen.add(e.id); const k = pick(e.id); if (k) out.push(k); }
-  theirs.forEach((e, i) => {
-    if (seen.has(e.id)) return;
-    seen.add(e.id);
-    const k = pick(e.id);
-    if (k) out.splice(Math.min(i, out.length), 0, k);
-  });
-  for (const e of base) if (!seen.has(e.id)) pick(e.id); // (gone on both sides: stays gone)
-  return out;
-}
-
-export interface Merged { doc: CourseDoc; clashes: Clash[] }
-
-export function mergeCourse(base: Doc, theirs: Doc, mine: Doc): Merged {
-  const clashes: Clash[] = [];
-  const out: Doc = {};
-  for (const key of new Set([...Object.keys(base), ...Object.keys(theirs), ...Object.keys(mine)])) {
-    if (SKIP.has(key)) { out[key] = mine[key] ?? theirs[key]; continue; }
-    if ((LISTS as readonly string[]).includes(key)) {
-      const list = key as List;
-      out[key] = mergeList(list, base[key] as Entity[], theirs[key] as Entity[], mine[key] as Entity[], clashes,
-        e => (list === "holes" ? holeName(e, mine.holes ? mine : theirs) : list === "layouts" ? `A layout${typeof e.name === "string" ? ` (${e.name})` : ""}` : KIND[String(e.type)] ?? "A feature"));
-      continue;
-    }
-    const [x, y, z] = [base[key], theirs[key], mine[key]];
-    if (same(y, z) || same(x, z)) out[key] = y;
-    else if (same(x, y)) out[key] = z;
-    else { out[key] = z; clashes.push({ list: null, id: key, label: keyName(key), mine: z, theirs: y }); }
-  }
-  return { doc: out as unknown as CourseDoc, clashes };
-}
-
-/** The merged course with the course's version kept for the clashes picked (by index). */
-export function keepTheirs(m: Merged, picked: Set<number>): CourseDoc {
-  if (!picked.size) return m.doc;
-  const out = { ...(m.doc as unknown as Doc) };
-  m.clashes.forEach((c, i) => {
-    if (!picked.has(i)) return;
-    if (!c.list) { out[c.id] = c.theirs; return; }
-    const list = [...((out[c.list] ?? []) as Entity[])];
-    const at = list.findIndex(e => e.id === c.id);
-    if (c.theirs === undefined) { if (at >= 0) list.splice(at, 1); }
-    else if (at >= 0) list[at] = c.theirs as Entity;
-    else list.push(c.theirs as Entity);
-    out[c.list] = list;
-  });
-  return out as unknown as CourseDoc;
-}
-
-/** What a draft changes, counted. */
+/** What changed, counted. */
 export function changesBetween(before: Doc, after: Doc) {
   // (tees and baskets are their holes': counted with them, not as features)
   const holePart = (e: Entity) => e.type === "tee" || e.type === "basket";
@@ -115,7 +33,13 @@ export function changesBetween(before: Doc, after: Doc) {
   };
   const other = [...new Set([...Object.keys(before), ...Object.keys(after)])]
     .filter(k => !SKIP.has(k) && k !== "holes" && k !== "items" && !same(before[k], after[k]));
-  return { holes: count("holes"), items: count("items"), other };
+  // (a hole whose tee or basket moved, came or went changed too, though the hole itself didn't:
+  // counted once, and only for a hole on both sides)
+  const holes = count("holes");
+  const was = new Map(((before.holes ?? []) as Entity[]).map(h => [h.id, h]));
+  const touched = new Set([...holesChanged(before, after), ...holesChanged(after, before)]);
+  for (const h of (after.holes ?? []) as Entity[]) if (touched.has(h.id) && was.has(h.id) && same(was.get(h.id), h)) holes.changed++;
+  return { holes, items: count("items"), other };
 }
 
 /** "Holes: 1 added, 2 changed · On the map: 3 changed" (a version's name, when none is given) */
@@ -128,20 +52,7 @@ export function describeChanges(before: object, after: object) {
   return [part(c.holes, "Holes"), part(c.items, "On the map"), c.other.length ? "Course settings changed" : ""].filter(Boolean).join(" · ") || "No changes";
 }
 
-/** The merged course with the course's version kept for the holes picked (their tees and baskets
- * too): an owner leaving holes out of a draft they accept. */
-export function keepCourseHoles(doc: CourseDoc, course: CourseDoc, holeIds: Set<string>): CourseDoc {
-  if (!holeIds.size) return doc;
-  const out = doc as unknown as Doc, theirs = course as unknown as Doc;
-  const mine = (holeId: unknown) => typeof holeId === "string" && holeIds.has(holeId);
-  const holes = ((out.holes ?? []) as Entity[]).filter(h => !holeIds.has(h.id));
-  for (const h of (theirs.holes ?? []) as Entity[]) if (holeIds.has(h.id)) holes.push(h);
-  const items = ((out.items ?? []) as Entity[]).filter(i => !mine(i.holeId) || (i.type !== "tee" && i.type !== "basket"));
-  for (const i of (theirs.items ?? []) as Entity[]) if (mine(i.holeId) && (i.type === "tee" || i.type === "basket")) items.push(i);
-  return { ...out, holes, items } as unknown as CourseDoc;
-}
-
-/** The holes a draft changes (their ids; a hole whose tee or basket moved counts). */
+/** The holes that changed (their ids; a hole whose tee or basket moved counts). */
 export function holesChanged(before: Doc, after: Doc) {
   const out = new Set<string>();
   const a = new Map(((before.holes ?? []) as Entity[]).map(e => [e.id, e]));

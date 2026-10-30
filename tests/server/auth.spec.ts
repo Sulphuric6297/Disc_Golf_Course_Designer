@@ -9,9 +9,16 @@ test.describe.configure({ mode: "serial" });
 // The browser stays offline but for the app and its server
 const offline = (c: BrowserContext) => c.route(url => !/^http:\/\/localhost:4175\//.test(url.href), r => r.abort());
 test.beforeEach(async ({ context }) => { await offline(context); });
+// (each test's own windows closed when it ends: left open, every one in a course redraws each live
+// change, and a machine without a graphics card crawls)
+test.afterEach(async ({ browser }) => { for (const c of browser.contexts()) await c.close().catch(() => {}); });
 
-/** The whole site in view, at once (a hole picked earlier leaves the map zoomed to it). */
-const site = (page: Page) => page.evaluate(() => (window as any).__dgView.fitSite(false));
+/** The whole site in view, at once (a hole picked earlier leaves the map zoomed to it), once the
+ *  map is there (a course's parts can arrive a moment before its map does). */
+const site = async (page: Page) => {
+  await page.waitForFunction(() => (window as any).__dgView, null, { timeout: 30_000 });
+  await page.evaluate(() => (window as any).__dgView.fitSite(false));
+};
 
 /** Signed in, as saved at the end of the first test. */
 const signedIn: Record<string, Awaited<ReturnType<BrowserContext["storageState"]>>> = {};
@@ -141,7 +148,7 @@ test("the admin, an invite, signing in again with a backup code", async ({ page,
   await other.close();
 });
 
-test("courses: a home page; shared as viewer (look only, or copy), then editor (a draft, published and merged); history; the owner's OK", async ({ browser }) => {
+test("courses: a home page; shared as viewer (look only, or copy), then editor (changing it live); history", async ({ browser }) => {
   test.setTimeout(240_000);
   const admin = await as(browser, "admin");
   await admin.getByTestId("new-course").click();
@@ -180,7 +187,14 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await expect(pat.getByTestId("view-only")).toBeVisible();
   await expect(pat.getByRole("navigation", { name: "Steps" })).toHaveCount(0);
   await expect(pat.getByRole("textbox", { name: "Course name" })).toHaveCount(0);
-  await expect(pat.getByTestId("share-button")).toHaveCount(0);
+  // (Share: who has it, and the links to copy; nothing to change)
+  await pat.getByTestId("share-button").click();
+  await expect(pat.getByTestId("share-add")).toHaveCount(0);
+  await pat.getByTestId("share-tab-public").click();
+  await expect(pat.getByTestId("no-links")).toBeVisible();
+  await expect(pat.getByTestId("new-link")).toHaveCount(0);
+  await expect(pat.getByTestId("update-site")).toHaveCount(0);
+  await pat.keyboard.press("Escape");
   expect((await course(pat)).holes.length).toBe(1);
   await pat.getByTestId("hole-row").click();
   await expect(pat.getByTestId("viewer-hole")).toContainText("550 ft");
@@ -206,155 +220,64 @@ test("courses: a home page; shared as viewer (look only, or copy), then editor (
   await pat.getByTestId("logo-home").click();
   await expect(pat.getByTestId("my-courses").getByTestId("course-card")).toContainText("2 holes");
 
-  // Now an editor of the original: Pat's changes go in a draft of Pat's own
+  // Now an editor of the original: Pat changes it live, and the owner sees it as it's made
   await admin.getByTestId("share-button").click();
   await admin.getByLabel("Role for pat").selectOption("editor");
   await admin.keyboard.press("Escape");
   await sharedCard.click();
   await expect.poll(async () => (await course(pat)).name).not.toMatch(/\(copy\)$/);
-  await expect(pat.getByTestId("publish-button")).toHaveCount(0);
+  await expect(pat.getByTestId("course-chip")).toHaveText("Live");
   await site(pat);
   await addHole(pat, { x: 100, y: 500 }, { x: 650, y: 500 });
-  await expect(pat.getByTestId("course-chip")).toHaveText(/^Draft · \d+ change/);
-  // The owner doesn't see it, and keeps changing the course meanwhile
-  await admin.reload();
-  await admin.getByTestId("my-courses").getByTestId("course-card").click();
-  await expect(admin.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(1);
-  await site(admin);
-  await addHole(admin, { x: 100, y: 800 }, { x: 650, y: 800 });
-  await expect(admin.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
-  // Pat's draft is kept across a reload, and published: both new holes are in the course
-  await pat.reload();
-  await pat.getByTestId("shared-courses").getByTestId("course-card").click();
-  await expect.poll(async () => (await course(pat)).holes.length).toBe(2);
-  await pat.getByTestId("publish-button").click();
-  await expect(pat.getByTestId("draft-changes")).toHaveText("Holes: 1 added");
-  await pat.getByTestId("publish-form").getByLabel(/^Name/).fill("a long hole by the creek");
-  await pat.getByTestId("publish-form").getByRole("button", { name: "Publish" }).click();
-  await expect(pat.getByTestId("publish-button")).toHaveCount(0);
-  await expect.poll(async () => (await course(pat)).holes.length).toBe(3);
-  await admin.reload();
-  await admin.getByTestId("my-courses").getByTestId("course-card").click();
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(3);
+  await expect(pat.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
+  await expect.poll(async () => (await course(admin)).holes.length).toBe(2);
 
-  // The history: Pat's publish, with its note; an earlier version looked at, and restored
+  // The history: Pat's change; an earlier version looked at, and restored
   await admin.getByTestId("course-chip").click();
   await admin.getByTestId("history-button").click();
   const versions = admin.getByTestId("versions").locator("li");
-  await expect(versions.first()).toContainText("Published by Pat");
-  await expect(versions.first()).toContainText("a long hole by the creek");
+  await expect(versions.first()).toContainText("Saved by Pat");
   await versions.filter({ hasText: "Created" }).getByRole("button", { name: "Look" }).click();
-  await expect(admin.getByTestId("preview-bar")).toBeVisible();
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(1);
+  await expect(admin.getByTestId("preview-bar")).toBeVisible({ timeout: 40_000 });
+  // (longer: on a machine without a graphics card the test's own recording of the 3D view can
+  // hold the page for many seconds here)
+  await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(1);
   await expect(admin.getByTestId("viewer-panel")).toBeVisible();
   await admin.getByTestId("preview-back").click();
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(3);
+  await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(2);
   await expect(admin.getByTestId("preview-bar")).toHaveCount(0);
 
-  // The owner's OK, turned on: Pat sends, the owner accepts
-  await admin.getByTestId("share-button").click();
-  await admin.getByTestId("approval-toggle").check();
-  await admin.keyboard.press("Escape");
-  await pat.reload();
-  await pat.getByTestId("shared-courses").getByTestId("course-card").click();
-  await expect.poll(async () => (await course(pat)).holes.length).toBe(3);
-  await site(pat);
-  await addHole(pat, { x: 900, y: 200 }, { x: 900, y: 700 });
-  await expect(pat.getByTestId("course-chip")).toHaveText(/^Draft · \d+ change/);
-  await pat.getByTestId("publish-button").click();
-  await pat.getByTestId("publish-form").getByRole("button", { name: "Send to the owner" }).click();
-  await expect(pat.getByTestId("publish-button")).toHaveCount(0);
-  await expect.poll(async () => (await course(pat)).holes.length).toBe(3);
-  await admin.reload();
-  await expect(admin.getByTestId("my-courses").getByTestId("to-review")).toHaveText("1 to review");
-  await admin.getByTestId("my-courses").getByTestId("course-card").click();
-  await admin.getByTestId("course-chip").click();
-  await admin.getByTestId("review-button").click();
-  await admin.getByTestId("submissions").getByRole("button", { name: "Look" }).click();
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(4);
-  await admin.getByTestId("preview-bar").getByRole("button", { name: "Accept" }).click();
-  await expect(admin.getByTestId("preview-bar")).toHaveCount(0);
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(4);
-  await expect(admin.getByTestId("review-count")).toHaveCount(0);
-
-  // Restored: back to before Pat's holes; the history keeps everything
-  await admin.getByTestId("course-chip").click();
-  await admin.getByTestId("history-button").click();
+  // Restored (from the History panel, still open): back to before Pat's hole; the history keeps
+  // everything
+  await expect(admin.getByTestId("history-dialog")).toBeVisible();
   admin.once("dialog", d => void d.accept());
   await versions.filter({ hasText: "Created" }).getByRole("button", { name: "Restore" }).click();
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(1);
+  await expect.poll(async () => (await course(admin)).holes.length, { timeout: 40_000 }).toBe(1);
   await admin.getByTestId("course-chip").click();
   await admin.getByTestId("history-button").click();
   await expect(versions.first()).toContainText("Restored");
-  await expect(versions.filter({ hasText: "OK'd by Admin" })).toHaveCount(1);
+  // (and Pat, in it too, has it as restored)
+  await expect.poll(async () => (await course(pat)).holes.length, { timeout: 40_000 }).toBe(1);
 });
 
-test("owners: a draft too, published to the official layout; a draft behind the course updated, picking per part", async ({ browser }) => {
+test("an editor made a viewer while in the course: it opens again, view only", async ({ browser }) => {
   test.setTimeout(240_000);
   const admin = await as(browser, "admin");
   await admin.getByTestId("my-courses").getByTestId("course-card").click();
   await expect(admin.getByTestId("course-chip")).toHaveText("Live");
-  // (the editors' drafts publish straight away again)
-  await admin.getByTestId("share-button").click();
-  await admin.getByTestId("approval-toggle").uncheck();
-  await admin.keyboard.press("Escape");
-  const holes0 = (await course(admin)).holes.length;
-
-  // The owner works in a draft: the official layout stays as it is meanwhile
-  await admin.getByTestId("course-chip").click();
-  await admin.getByTestId("mode-draft").click();
-  await expect(admin.getByTestId("course-chip")).toHaveText("Draft");
-  await site(admin);
-  await addHole(admin, { x: 900, y: 300 }, { x: 900, y: 800 });
-  await expect(admin.getByTestId("course-chip")).toHaveAttribute("title", "Holes: 1 added");
-  await expect(admin.getByTestId("draft-dot")).toHaveCount(1);
-  await admin.getByRole("textbox", { name: "Course name" }).first().fill("Admin's name");
-  await admin.keyboard.press("Tab");
-  await expect(admin.getByTestId("course-chip")).toHaveAttribute("title", /Course settings changed/);
-
-  // Meanwhile Pat publishes a draft that renames the course too
   const pat = await as(browser, "pat");
   await pat.getByTestId("shared-courses").getByTestId("course-card").click();
-  await expect.poll(async () => (await course(pat)).holes.length).toBe(holes0);
-  await pat.getByRole("textbox", { name: "Course name" }).first().fill("Pat's name");
-  await pat.keyboard.press("Tab");
-  await expect(pat.getByTestId("course-chip")).toHaveText(/^Draft · \d+ change/);
-  await pat.getByTestId("publish-button").click();
-  await pat.getByTestId("publish-form").getByRole("button", { name: "Publish" }).click();
-  await expect(pat.getByTestId("publish-button")).toHaveCount(0);
-
-  // The owner's draft is behind: updated, keeping the course's name (Pat's)
-  await admin.reload();
-  await admin.getByTestId("my-courses").getByTestId("course-card").click();
-  await expect(admin.getByTestId("behind-bar")).toBeVisible();
-  await admin.getByTestId("update-draft").click();
-  await expect(admin.getByTestId("clash")).toHaveCount(1);
-  await expect(admin.getByTestId("clash")).toContainText("The course's name");
-  await admin.getByTestId("clash").getByRole("combobox").selectOption("theirs");
-  await admin.getByTestId("update-form").getByRole("button", { name: "Update draft" }).click();
-  await expect(admin.getByTestId("behind-bar")).toHaveCount(0);
-  await expect.poll(async () => (await course(admin)).name).toBe("Pat's name");
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(holes0 + 1);
-
-  // Published to the official layout, named from what changed
-  await admin.getByTestId("publish-button").click();
-  await expect(admin.getByTestId("draft-changes")).toHaveText("Holes: 1 added");
-  await expect(admin.getByTestId("clashes")).toHaveCount(0);
-  await admin.getByTestId("publish-form").getByRole("button", { name: "Publish" }).click();
-  await expect(admin.getByTestId("course-chip")).toHaveText("Draft");
-  await admin.getByTestId("course-chip").click();
-  await admin.getByTestId("history-button").click();
-  const top = admin.getByTestId("versions").locator("li").first();
-  await expect(top).toContainText("Published by Admin");
-  await expect(top).toContainText("Holes: 1 added");
+  await expect(pat.getByTestId("course-chip")).toHaveText("Live");
+  await expect.poll(async () => (await pat.evaluate(() => (window as any).__dgLive.state())).connected).toBe(true);
+  await admin.getByTestId("share-button").click();
+  await admin.getByLabel("Role for pat").selectOption("viewer");
   await admin.keyboard.press("Escape");
-
-  // Back to publishing as it goes
-  await admin.getByTestId("course-chip").click();
-  await admin.getByTestId("mode-live").click();
-  await expect(admin.getByTestId("course-chip")).toHaveText("Live");
-  await expect.poll(async () => (await course(admin)).holes.length).toBe(holes0 + 1);
+  await expect(pat.getByTestId("view-only")).toBeVisible({ timeout: 30_000 });
+  await expect(pat.getByTestId("viewer-panel")).toBeVisible();
+  // (an editor again, for the tests after)
+  await admin.getByTestId("share-button").click();
+  await admin.getByLabel("Role for pat").selectOption("editor");
+  await admin.keyboard.press("Escape");
 });
 
 test("comments: pinned on a basket (moving with it), @mention, the bell, a reply, resolved", async ({ browser }) => {
@@ -373,7 +296,7 @@ test("comments: pinned on a basket (moving with it), @mention, the bell, a reply
   await admin.getByTestId("comment-composer").getByRole("button", { name: "Post" }).click();
   const thread = admin.getByTestId("thread");
   await expect(thread).toHaveCount(1);
-  await expect(thread).toContainText(/^1Basket of hole/);
+  await expect(thread).toContainText(/^Basket of hole/);
   await expect(admin.getByTestId("comment-pin")).toHaveCount(1);
 
   // Pat hears of it, and goes straight to it
@@ -394,37 +317,73 @@ test("comments: pinned on a basket (moving with it), @mention, the bell, a reply
   await admin.getByTestId("my-courses").getByTestId("course-card").click();
   await expect(admin.getByTestId("notice-count")).toHaveText("1");
   await admin.getByTestId("comments-button").click();
+  // (new for the admin: Pat replied)
+  await expect(admin.getByTestId("thread").locator(".bg-sky-400")).toHaveCount(1);
+  await admin.getByTestId("thread-focus").click();
   await expect(admin.getByTestId("thread")).toContainText("On it");
   await admin.getByTestId("thread").getByTestId("resolve").click();
   await expect(admin.getByTestId("threads")).toContainText("No open comments.");
   await expect(admin.getByTestId("comment-pin")).toHaveCount(0);
-  await admin.getByTestId("comments-panel").getByLabel("Resolved").check();
+  await admin.getByTestId("comments-resolved").click();
   await expect(admin.getByTestId("comment-pin")).toHaveCount(1);
 
   // The basket moved: its pin goes with it
-  const pin0 = (await admin.getByTestId("comment-pin").boundingBox())!;
   await admin.getByTestId("comments-panel").getByRole("button", { name: "Close" }).click();
   await site(admin);
+  // (where the pin is with the whole site in view, before the basket moves: pins follow the map on
+  // its next frame, which can be a while here without a graphics card, so once it's by the basket)
+  await expect(admin.getByTestId("comment-pin")).toHaveCount(1);
   const from = await screenOf(admin, b.x, b.y);
+  const pinX = async () => { const p = (await admin.getByTestId("comment-pin").boundingBox())!; return p.x + p.width / 2; };
+  await expect.poll(async () => Math.abs(await pinX() - from.x - 8), { timeout: 20_000 }).toBeLessThan(6);
+  const pin0 = (await admin.getByTestId("comment-pin").boundingBox())!;
   await admin.mouse.move(from.x, from.y);
   await admin.mouse.down();
   await admin.mouse.move(from.x + 40, from.y + 30, { steps: 6 });
   await admin.mouse.up();
   await expect.poll(async () => (await admin.evaluate(id => (window as any).__dgCourse().items.find((i: any) => i.id === id).x, b.id))).toBeGreaterThan(b.x + 5);
   await expect.poll(async () => (await admin.getByTestId("comment-pin").boundingBox())!.x).toBeGreaterThan(pin0.x + 10);
+
+  // Its thread, beside its pin (the panel closed), says the basket moved since; a reaction
+  await admin.getByTestId("comment-pin").click();
+  await expect(admin.getByTestId("comment-beside")).toBeVisible();
+  await expect(admin.getByTestId("comment-change")).toContainText(/basket was moved \d+ ft since this comment/);
+  await admin.getByTestId("comment-beside").getByTestId("comment-message").first().hover();
+  await admin.getByTestId("comment-beside").getByRole("button", { name: "React" }).first().click();
+  await admin.getByRole("button", { name: "React 👍" }).click();
+  await expect(admin.getByTestId("comment-beside").getByRole("button", { name: "👍 1" })).toBeVisible();
+  await admin.keyboard.press("Escape");
+  await expect(admin.getByTestId("comment-beside")).toHaveCount(0);
+
+  // Not over the Map step's page (the map under it is put away); a comment opened from there goes
+  // back to the map
+  await admin.getByRole("navigation", { name: "Steps" }).getByRole("button", { name: /Map/ }).click();
+  await expect(admin.getByTestId("design-page")).toBeVisible();
+  await expect(admin.getByTestId("comment-pin")).toHaveCount(0);
+  await admin.getByTestId("comments-button").click();
+  await admin.getByTestId("thread-focus").first().click();
+  await expect(admin.getByTestId("comment-pin")).toHaveCount(1);
+  await expect(admin.getByTestId("design-page")).toHaveCount(0);
 });
 
 test("a public link: the site with what it allows (pictures, numbers), 3D when allowed; no account", async ({ browser }) => {
-  test.setTimeout(240_000);
+  // (its printed map and tee signs painted here without a graphics card: two minutes and more)
+  test.setTimeout(600_000);
   const admin = await as(browser, "admin");
   await admin.getByTestId("my-courses").getByTestId("course-card").click();
+  // (a second hole: the site's tee signs to step through)
+  await expect(admin.getByTestId("course-chip")).toHaveText("Live");
+  await site(admin);
+  await addHole(admin, { x: 900, y: 150 }, { x: 900, y: 650 });
+  await expect(admin.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
+  await admin.keyboard.press("Escape");
   await admin.getByTestId("share-button").click();
   await admin.getByTestId("share-tab-public").click();
   await admin.getByTestId("new-link").click();
   await admin.getByTestId("link-form").getByLabel("Label").fill("Club website");
   await admin.getByTestId("save-link").click();
-  await expect(admin.getByTestId("link")).toHaveCount(1, { timeout: 120_000 });
-  await expect(admin.getByTestId("site-state")).toContainText("Shows version", { timeout: 120_000 });
+  await expect(admin.getByTestId("link")).toHaveCount(1, { timeout: 360_000 });
+  await expect(admin.getByTestId("site-state")).toContainText("Shows version", { timeout: 60_000 });
   const token = await admin.evaluate(async () => {
     const id = JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith("hyzerlab:last:"))!) ?? "null") ?? localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith("hyzerlab:last:"))!);
     const links = await (await fetch(`./api/courses/${id}/links`)).json();
@@ -444,6 +403,22 @@ test("a public link: the site with what it allows (pictures, numbers), 3D when a
   const holes = (await course(admin)).holes.length;
   await expect(page.getByTestId("public-holes").locator(":scope > li")).toHaveCount(holes);
   await expect(page.getByTestId("public-signs").locator("img")).toHaveCount(holes);
+  // (a sign big; with more, all of them in a grid, and stepping through them)
+  if (holes > 1) {
+    await page.getByTestId("public-signs-all").click();
+    await expect(page.getByTestId("public-signs-grid").locator("img")).toHaveCount(holes);
+    await page.getByTestId("public-signs-grid").locator("li button").nth(1).click();
+    await expect(page.getByTestId("zoomable-count")).toContainText(`2 of ${holes}`);
+    await page.getByTestId("zoomable-next").click();
+    await expect(page.getByTestId("zoomable-count")).toContainText(`${holes > 2 ? 3 : 1} of ${holes}`);
+    await page.keyboard.press("Escape");
+    await page.getByTestId("public-signs-grid").getByRole("button", { name: "Close" }).click();
+  } else {
+    await page.getByTestId("public-signs").locator("button").first().click();
+    await expect(page.getByTestId("zoomable")).toBeVisible();
+    await page.keyboard.press("Escape");
+  }
+  await expect(page.getByTestId("zoomable")).toHaveCount(0);
   await expect(page.getByRole("img", { name: /^Map of/ })).toBeVisible();
   await expect(page.getByTestId("explore")).toHaveCount(0);
 
@@ -451,7 +426,7 @@ test("a public link: the site with what it allows (pictures, numbers), 3D when a
   await admin.getByTestId("link").getByRole("button", { name: "Change" }).click();
   await admin.getByTestId("link-form").getByTestId("part-view3d").check();
   await admin.getByTestId("save-link").click();
-  await expect(admin.getByTestId("link")).toContainText("3D", { timeout: 120_000 });
+  await expect(admin.getByTestId("link")).toContainText("3D", { timeout: 360_000 });
   await expect(admin.getByTestId("update-site")).toHaveText(/Update site/, { timeout: 120_000 });
   await page.reload();
   await page.getByTestId("explore").click();
@@ -463,4 +438,96 @@ test("a public link: the site with what it allows (pictures, numbers), 3D when a
   await expect(page.getByTestId("copy-course")).toHaveCount(0);
   await expect.poll(async () => (await course(page)).holes.length).toBe(holes);
   await anon.close();
+});
+
+test("live: two people in one course see each other's changes as they're made, and who's here; undo takes back only your own; a change made offline goes in once back", async ({ browser }) => {
+  test.setTimeout(240_000);
+  const live = (page: Page) => page.evaluate(() => (window as any).__dgLive.state());
+  const holeIds = async (page: Page) => (await course(page)).holes.map((h: any) => h.id).sort();
+  const admin = await as(browser, "admin");
+  await admin.getByTestId("new-course").click();
+  await blankCourse(admin);
+  const first = await addHole(admin, { x: 100, y: 200 }, { x: 650, y: 200 });
+  await expect(admin.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
+  // (the course just made: changed live from now on)
+  await expect.poll(async () => (await live(admin)).connected).toBe(true);
+  const id = await admin.evaluate(() => (window as any).__dgServer.state().id);
+  await admin.getByTestId("share-button").click();
+  await admin.getByTestId("share-add").getByLabel("Username").fill("pat");
+  await admin.getByTestId("share-add").getByLabel("Role").selectOption("editor");
+  await admin.getByTestId("share-add").getByRole("button", { name: "Share" }).click();
+  await expect(admin.getByTestId("members").locator("li")).toHaveCount(2);
+  await admin.keyboard.press("Escape");
+
+  // Pat, an editor, opens it: live straight away
+  const pat = await as(browser, "pat");
+  await pat.evaluate(id => (window as any).__dgServer.open(id), id);
+  await pat.getByTestId("back-to-course").click();
+  await expect(pat.getByTestId("course-chip")).toContainText("Live");
+  await expect.poll(async () => (await live(pat)).connected).toBe(true);
+  await expect.poll(async () => (await live(admin)).people).toBe(2);
+
+  // Each sees the other's hole as it's made (the whole site in view for both)
+  await site(admin);
+  await site(pat);
+  const second = await addHole(admin, { x: 100, y: 350 }, { x: 650, y: 350 });
+  await expect.poll(() => holeIds(pat)).toEqual([first.id, second.id].sort());
+  const third = await addHole(pat, { x: 100, y: 500 }, { x: 650, y: 500 });
+  await expect.poll(() => holeIds(admin)).toEqual([first.id, second.id, third.id].sort());
+
+  // Admin's undo takes back Admin's own hole; Pat's stays, for both
+  await admin.keyboard.press("Escape");
+  await admin.keyboard.press("Control+z");
+  await expect.poll(() => holeIds(admin)).toEqual([first.id, third.id].sort());
+  await expect.poll(() => holeIds(pat)).toEqual([first.id, third.id].sort());
+
+  // Who's here: each sees the other's face; Pat sees Admin's pointer, and the basket Admin picks
+  // outlined, and the list says which hole Admin is on; Pat can hide the pointers
+  await expect(pat.getByTestId("live-faces")).toBeVisible();
+  await expect(admin.getByTestId("live-faces")).toBeVisible();
+  const basket = (await course(admin)).items.find((i: any) => i.type === "basket" && i.holeId === first.id);
+  const spot = await screenOf(admin, 400, 300);
+  await admin.mouse.move(spot.x, spot.y);
+  await admin.mouse.move(spot.x + 20, spot.y + 10, { steps: 3 });
+  await expect(pat.getByTestId("live-pointer")).toHaveCount(1);
+  const on = await screenOf(admin, basket.x, basket.y);
+  await admin.mouse.click(on.x, on.y);
+  await expect.poll(() => admin.evaluate(() => (window as any).__dgEditor().selectedId)).toBe(basket.id);
+  // (outlined on Pat's map as Pat's own pick would be, in Admin's color)
+  await expect.poll(() => pat.evaluate(() => (window as any).__dgView.othersPicked())).toEqual([basket.id]);
+  await pat.getByTestId("live-faces").click();
+  await expect(pat.getByTestId("live-person")).toContainText("Hole 1");
+  await pat.getByTestId("live-people").getByText("Show their pointers").click();
+  await expect(pat.getByTestId("live-pointer")).toHaveCount(0);
+  await pat.getByTestId("live-people").getByText("Show their pointers").click();
+  await pat.keyboard.press("Escape");
+  await admin.keyboard.press("Escape");
+
+  // Pat offline: the change can't be sent, waits, and goes in once Pat is back (the connection
+  // open already isn't cut by the test's offline: the change failing to go is what tells)
+  await pat.context().setOffline(true);
+  const fourth = await addHole(pat, { x: 100, y: 650 }, { x: 650, y: 650 });
+  await expect.poll(async () => (await live(pat)).connected).toBe(false);
+  expect(await holeIds(admin)).not.toContain(fourth.id);
+  await pat.context().setOffline(false);
+  await expect.poll(() => holeIds(admin), { timeout: 30_000 }).toEqual([first.id, third.id, fourth.id].sort());
+  await expect(pat.getByTestId("save-status")).toHaveAttribute("data-state", "saved", { timeout: 30_000 });
+
+  // Written: opened again, it's all there
+  await admin.reload();
+  await expect(admin.getByTestId("home")).toBeVisible();
+  await admin.evaluate(id => (window as any).__dgServer.open(id), id);
+  await admin.getByTestId("back-to-course").click();
+  await expect.poll(() => holeIds(admin)).toEqual([first.id, third.id, fourth.id].sort());
+
+  // On the Map step, the drawn map takes the others' changes too
+  await pat.getByRole("navigation", { name: "Steps" }).getByRole("button", { name: /Map/ }).click();
+  const drawn = pat.getByTestId("design-page");
+  await expect(drawn).toBeVisible();
+  await pat.waitForTimeout(1500);
+  const before = await drawn.innerHTML();
+  await site(admin);
+  const fifth = await addHole(admin, { x: 900, y: 150 }, { x: 900, y: 650 });
+  await expect.poll(() => holeIds(pat), { timeout: 30_000 }).toContain(fifth.id);
+  await expect.poll(() => drawn.innerHTML(), { timeout: 30_000 }).not.toBe(before);
 });

@@ -7,6 +7,7 @@ import { STRUCTURE_ORDER } from "../../src/constants";
 import { createArea, createBasket, createEmptyCourse, createStructure, createTee, newHole, normalizeCourse, createAmenity } from "../../src/lib/course";
 import { THEMES, renderPoster } from "../../src/lib/mapSvg";
 import { boardwalkDeck, bridgeDeck, gazeboOutline, roofOf, stairSteps } from "../../src/lib/structures";
+import { roofShape } from "../../src/lib/geo/buildings";
 import type { MapTheme, StructureKind } from "../../src/types";
 
 const structures = async (page: import("@playwright/test").Page) => (await course(page)).items.filter((i: any) => i.type === "structure");
@@ -420,4 +421,32 @@ plain("older courses still load and draw: the building area, the bridge and shel
   plainExpect(svg).toContain('data-symbol="bridge"');
   plainExpect(svg).toContain('data-symbol="shelter"');
   plainExpect(svg).toContain('data-structure="bridge"');
+});
+
+plain("a building's roof read from the survey: a gable along it and one across, a hip, a flat roof, with its pitch and eaves; a tree over a corner left out", () => {
+  // (a 120 x 80 ft site on 1 ft cells, its roof heights on 2 ft ones; the ground at 0)
+  const W = 120, H = 80, snx = W / 2, sny = H / 2;
+  const survey = (z: (p: { x: number; y: number }) => number) => {
+    const surface = new Float32Array(snx * sny);
+    for (let j = 0; j < sny; j++) for (let i = 0; i < snx; i++) surface[j * snx + i] = z({ x: (i + 0.5) * 2, y: (j + 0.5) * 2 });
+    return { nx: W, ny: H, cell: 1, ground: new Float32Array(W * H), surface, snx, sny };
+  };
+  // A house 60 ft long (east-west), 30 ft deep
+  const house = [{ x: 20, y: 20 }, { x: 80, y: 20 }, { x: 80, y: 50 }, { x: 20, y: 50 }];
+  const inside = (p: { x: number; y: number }) => p.x > 20 && p.x < 80 && p.y > 20 && p.y < 50;
+  const along = roofShape(survey(p => (inside(p) ? 10 + 0.5 * Math.min(p.y - 20, 50 - p.y) : 0)), house);
+  plainExpect(along).toMatchObject({ kind: "gable", across: false, pitch: 0.5 });
+  plainExpect(along!.eaves).toBeCloseTo(10, 0);
+  const across = roofShape(survey(p => (inside(p) ? 11 + 0.75 * Math.min(p.x - 20, 80 - p.x) : 0)), house);
+  plainExpect(across).toMatchObject({ kind: "gable", across: true, pitch: 0.75 });
+  const hip = roofShape(survey(p => (inside(p) ? 9 + (5 / 12) * Math.min(p.y - 20, 50 - p.y, p.x - 20, 80 - p.x) : 0)), house);
+  plainExpect(hip).toMatchObject({ kind: "hip", pitch: 5 / 12 });
+  const flat = roofShape(survey(p => (inside(p) ? 14 : 0)), house);
+  plainExpect(flat).toMatchObject({ kind: "flat", pitch: undefined });
+  plainExpect(flat!.eaves).toBeCloseTo(14, 0);
+  // A tree's crown over one corner of the gable: still the gable, as steep
+  const tree = roofShape(survey(p => (!inside(p) ? 0 : Math.hypot(p.x - 25, p.y - 25) < 6 ? 35 : 10 + 0.5 * Math.min(p.y - 20, 50 - p.y))), house);
+  plainExpect(tree).toMatchObject({ kind: "gable", across: false, pitch: 0.5 });
+  // Too little roof to tell: none
+  plainExpect(roofShape(survey(() => 10), [{ x: 20, y: 20 }, { x: 26, y: 20 }, { x: 26, y: 26 }, { x: 20, y: 26 }])).toBeNull();
 });

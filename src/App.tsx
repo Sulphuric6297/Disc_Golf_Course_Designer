@@ -2,7 +2,7 @@
 // inspector for the selection, and the dialogs.
 import { usePageToasts } from "./auth/Home";
 import { SHOW_EVENT } from "./components/showSetting";
-import { inDraft, saveDraftAs, saveNow, useServerCourse } from "./auth/courses";
+import { saveNow, useServerCourse } from "./auth/courses";
 import { SERVER } from "./auth/api";
 import { HelpGuide } from "./components/help/HelpGuide";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -19,6 +19,8 @@ import { Inspector } from "./components/Inspector";
 import { stepHole } from "./components/HoleSteps";
 import { GoTo } from "./components/GoTo";
 import { SiteImportDialog } from "./components/SiteImportDialog";
+import { CourseFileDialog, FIND_PARK_EVENT, useCourseFile, type FindParkNear } from "./components/CourseFileDialog";
+import type { GeoBounds } from "./lib/geo/core";
 import { SiteReady, readyFacts, type ReadyFact } from "./components/SiteReady";
 import { TeeViewHud } from "./components/TeeViewHud";
 import { CameraHud } from "./components/CameraHud";
@@ -36,6 +38,7 @@ import { osmFailedToast } from "./state/osm";
 import { restoreAutosave, startAutosave } from "./state/files";
 import { toast, useToasts } from "./state/toast";
 import { courseStats, holeStats } from "./lib/holeStats";
+import { STAND_HERE } from "./constants";
 import { freshOnly, fromMaps, isImported, reframeDesign, type ImportedSite } from "./lib/importSite";
 import { geoRefOf, reframe } from "./lib/geoRef";
 import { Woods } from "./components/Woods";
@@ -75,17 +78,18 @@ function ContextMenu({ info, onClose }: { info: { clientX: number; clientY: numb
   const doc = getDoc();
   const hole = doc.holes.find(h => h.id === info.itemId);
   const item = doc.items.find(i => i.id === info.itemId);
-  useEffect(() => {
-    const close = () => onClose();
-    // (Esc closes the menu, and only the menu: the tool and the selection stay)
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
-    window.addEventListener("pointerdown", close);
-    window.addEventListener("keydown", esc, true);
-    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc, true); };
-  }, [onClose]);
   // Where it opens: down and right of the pointer, or up or left of it where there's no room
   // (measured once drawn; a screen too short for it scrolls it)
   const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // (a press anywhere outside it closes it, the map too: heard before the map takes it)
+    const close = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) onClose(); };
+    // (Esc closes the menu, and only the menu: the tool and the selection stay)
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    window.addEventListener("pointerdown", close, true);
+    window.addEventListener("keydown", esc, true);
+    return () => { window.removeEventListener("pointerdown", close, true); window.removeEventListener("keydown", esc, true); };
+  }, [onClose]);
   const [at, setAt] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
     const el = box.current;
@@ -156,13 +160,12 @@ function cameIn(site: ImportedSite) {
   return `: ${parts.slice(0, -1).join(", ")}${and}${parts[parts.length - 1]}`;
 }
 
-/** Ctrl+S: saved now (a draft into its history too), and said so. */
+/** Ctrl+S: saved now, and said so. */
 function saveByHand() {
   if (!SERVER) { toast("Saved in this browser.", "success"); return; }
   if (useCourse.getState().readOnly) { toast("This course is view only.", "info"); return; }
-  const draft = inDraft();
-  void (draft ? saveDraftAs("") : saveNow()).then(
-    () => { if (useServerCourse.getState().status === "saved") toast(draft ? "Saved to your draft." : "Saved.", "success"); else toast("Not saved yet: see the save status in the top bar.", "error"); },
+  void saveNow().then(
+    () => { if (useServerCourse.getState().status === "saved") toast("Saved.", "success"); else toast("Not saved yet: see the save status in the top bar.", "error"); },
     e => toast(`Couldn't save: ${e instanceof Error ? e.message : "try again"}.`, "error")
   );
 }
@@ -183,6 +186,19 @@ export default function App() {
   const layout = useLayout();
   const doc = useCourse(s => s.doc);
   const [findSite, setFindSite] = useState(false);
+  // (the site import framed on a GPS file's holes, for a course with no site yet)
+  const [findNear, setFindNear] = useState<GeoBounds | undefined>();
+  useEffect(() => {
+    const on = (e: Event) => { setFindNear((e as CustomEvent<FindParkNear>).detail.bounds); setFindSite(true); };
+    window.addEventListener(FIND_PARK_EVENT, on);
+    return () => window.removeEventListener(FIND_PARK_EVENT, on);
+  }, []);
+  const closeFindSite = () => {
+    setFindSite(false);
+    setFindNear(undefined);
+    // (closed with no site: the GPS file's holes shown again, still waiting for one)
+    if (useCourseFile.getState().waiting) useCourseFile.setState({ waiting: false });
+  };
   // The site just brought in: what came, over the 3D view of it
   const [siteReady, setSiteReady] = useState<{ name: string; facts: ReadyFact[]; said: string } | null>(null);
   useEffect(() => {
@@ -235,7 +251,7 @@ export default function App() {
       terrainHeights: site.terrainHeights,
       terrainOriginal: undefined,
       background: site.background,
-      site: site.site,
+      site: mappedCourse ? { ...site.site, holesFromOsm: true } : site.site,
       groundPaint: {},
       // (named for the park only when one was found by name)
       name: d.name === "New Disc Golf Course" && site.site.location?.label ? `${site.site.location.label.split(",")[0]} Disc Golf Course` : d.name,
@@ -248,6 +264,7 @@ export default function App() {
       ...(opts?.turn !== undefined ? { style: { ...d.style, rotation: opts.turn } } : {})
     }));
     setFindSite(false);
+    setFindNear(undefined);
     useEditor.getState().set({ step: "design", tool: "select" });
     setTimeout(() => getView()?.fitSite(), 50);
     const outside = carried.outside ? ` ${carried.outside} ${carried.outside === 1 ? "thing you drew is" : "things you drew are"} now past the site's edges.` : "";
@@ -286,21 +303,29 @@ export default function App() {
       // (while drawing, the last point first, as Backspace does)
       if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) useCourse.getState().redo(); else if (!view?.undoPoint()) useCourse.getState().undo(); return; }
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); useCourse.getState().redo(); return; }
-      // (Ctrl+S: your draft saved now, into the history; out of a draft, saved now)
+      // (Ctrl+S: saved now)
       if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); saveByHand(); return; }
       if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (s.step !== "map") duplicateSelection(); return; }
-      if (mod && e.key.toLowerCase() === "c" && !s.teeView && s.step !== "map") { if (copySelection()) { e.preventDefault(); toast("Copied."); } return; }
-      if (mod && e.key.toLowerCase() === "x" && !s.teeView && s.step !== "map") { e.preventDefault(); cutSelection(); return; }
+      if (mod && e.key.toLowerCase() === "c" && !s.flyover && s.step !== "map") { if (copySelection()) { e.preventDefault(); toast("Copied."); } return; }
+      if (mod && e.key.toLowerCase() === "x" && !s.flyover && s.step !== "map") { e.preventDefault(); cutSelection(); return; }
       // (where the pointer is over the map; off it, next to where it was copied from)
-      if (mod && e.key.toLowerCase() === "v" && !s.teeView && s.step !== "map") { e.preventDefault(); s.set({ tool: "select" }); pasteClipboard(view?.pointerGround()); return; }
-      if (mod && e.key.toLowerCase() === "a" && !s.teeView && s.step !== "map") { e.preventDefault(); s.set({ tool: "select" }); selectAll(); return; }
+      if (mod && e.key.toLowerCase() === "v" && !s.flyover && s.step !== "map") { e.preventDefault(); s.set({ tool: "select" }); pasteClipboard(view?.pointerGround()); return; }
+      if (mod && e.key.toLowerCase() === "a" && !s.flyover && s.step !== "map") { e.preventDefault(); s.set({ tool: "select" }); selectAll(); return; }
       if (mod) return;
       // (AltGr types characters: only the [ and ] it types go on to the shortcuts)
       if (((e.ctrlKey && e.altKey) || e.getModifierState?.("AltGraph")) && e.key !== "[" && e.key !== "]") return;
       if (s.teeView) {
+        // (standing there: the map's keys go on to what's picked, Delete, the tools; Esc lets go of
+        // what's picked first)
+        const editing = !viewOnly && !s.flyover;
+        // (a thing picked there; not the hole, picked on the map before: the arrows still go to the
+        // other holes, and Esc back to the map)
+        const picked = (!!s.selectedId && !getDoc().holes.some(h => h.id === s.selectedId)) || s.group.length > 0;
+        const mapKey = e.key === "Escape" ? picked || s.tool !== "select" : !e.key.startsWith("Arrow") || picked;
+        if (!(editing && mapKey)) {
         // (Esc stops a flight first, back at the tee; then leaves the tee view)
         if (e.key === "Escape") s.set(s.flyover ? { flyover: false } : { teeView: null, flyover: false });
-        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && s.teeView !== STAND_HERE) {
           const d = getDoc();
           const stats = courseStats(d);
           const done = d.holes.filter((_, k) => stats[k].complete);
@@ -309,6 +334,7 @@ export default function App() {
           if (next) s.set({ teeView: next.id });
         }
         return;
+        }
       }
       if (viewOnly && !VIEW_KEYS.includes(e.key.toUpperCase())) return;
       // (Esc, a step at a time: the drawing, the tool, the selection, box select, the checks)
@@ -398,7 +424,8 @@ export default function App() {
   );
   const dialogs = (
     <>
-      {findSite && <SiteImportDialog onClose={() => setFindSite(false)} onImported={onImported} />}
+      {findSite && <SiteImportDialog near={findNear} onClose={closeFindSite} onImported={onImported} />}
+      <CourseFileDialog />
       {siteReady && <SiteReady {...siteReady} onLook={() => { setSiteReady(null); useEditor.getState().set({ view: "3d" }); setTimeout(() => faceTheSite(), 50); }} onStart={() => { setSiteReady(null); setTimeout(() => faceTheSite(), 50); }} />}
       {help && <HelpGuide onClose={() => setHelp(false)} topic={help.topic} touch={touchUi} />}
       {goTo && <GoTo onClose={() => setGoTo(false)} onHelp={topic => setHelp({ topic })} />}

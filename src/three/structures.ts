@@ -7,7 +7,7 @@ import * as THREE from "three";
 import type { FenceStyle, P, StructureItem } from "../types";
 import { pointInPolygon } from "../lib/geom";
 import {
-  boardwalkDeck, bridgeDeck, isLineKind, offsetPolygon, orientedBox, roofBreaks, roofOf, samplePath, stairSteps,
+  boardwalkDeck, bridgeDeck, isLineKind, offsetPolygon, orientedBox, roofBreaks, roofFor, samplePath, stairSteps,
   structureHeight, structurePath, structureRoof, structureWidth, type Roof
 } from "../lib/structures";
 
@@ -583,7 +583,7 @@ const building = (st: StructureItem, g: Ground, parts: Parts) => {
   const gs = [...alongEdges(outline, 6), orientedBox(outline).c].map(p => g(p.x, p.y));
   const gMin = Math.min(...gs), gMax = Math.max(...gs);
   const floor = gMax + 0.6, eave = floor + H;
-  const roof = roofOf(outline, structureRoof(st), 1.5);
+  const roof = roofFor(st, 1.5, 0.5, outline);
   const roofY = (p: P) => eave + roof.pitch * roof.run(p);
   const siding = (parts.siding ??= new Mesher()), stone = (parts.stone ??= new Mesher()), trim = (parts.trim ??= new Mesher());
   const glass = (parts.glass ??= new Mesher()), door = (parts.door ??= new Mesher());
@@ -643,7 +643,7 @@ const shelter = (st: StructureItem, g: Ground, parts: Parts) => {
   const inset = offsetPolygon(outline, -0.6);
   for (const p of alongEdges(inset, 10)) post(timber, p, floor, eave, 0.6);
   sweep(timber, inset, inset.map(() => eave - 1.05), inset.map(() => eave), 0, 0.3, true);
-  const roof = roofOf(outline, structureRoof(st), 2, 0.42);
+  const roof = roofFor(st, 2, 0.42, outline);
   roofFaces(roof, eave + 0.2, (parts.metal ??= new Mesher()), timber);
   // Picnic tables under it
   const box = orientedBox(outline);
@@ -787,12 +787,12 @@ const alongAt = (samples: ReturnType<typeof samplePath>, at: number) => {
  * round galvanized posts, end and corner posts and line posts no more than 10 ft apart, with a top
  * rail. Its meshes cast and catch shadows.
  */
-export const createFence = (points: P[], groundAt: Ground, height = 4, style: FenceStyle = "rail") => {
+export const createFence = (points: P[], groundAt: Ground, height = 4, style: FenceStyle = "rail", cap?: string) => {
   const group = new THREE.Group();
   group.name = "fence";
   const samples = samplePath(points, 2);
   if (samples.length < 2) return group;
-  const H = Math.max(1.5, Math.min(16, height));
+  const H = Math.max(1.5, Math.min(30, height));
   const ground = samples.map(p => groundAt(p.x, p.y));
   const total = samples[samples.length - 1].s;
   if (style === "chain") {
@@ -838,6 +838,14 @@ export const createFence = (points: P[], groundAt: Ground, height = 4, style: Fe
     // (drawn after the paint on the ground: seen through it, never hiding it)
     sheet.renderOrder = 7;
     group.add(posts, sheet);
+    // (a colored cap along the top: a ball field's yellow, a court's green)
+    if (cap) {
+      const top = new Mesher();
+      tube(top, samples.map((p, i) => w3(p, ground[i] + H + 0.08)), TOP_RAIL + 0.08);
+      const capMesh = new THREE.Mesh(top.geometry(), new THREE.MeshStandardMaterial({ color: cap, roughness: 0.6 }));
+      capMesh.name = "cap";
+      group.add(capMesh);
+    }
     return group;
   }
   const parts: Parts = {};
@@ -883,7 +891,7 @@ const chainLink = () => {
   const c = document.createElement("canvas");
   c.width = c.height = 64;
   const g = c.getContext("2d")!;
-  g.strokeStyle = "rgba(200,206,208,0.95)";
+  g.strokeStyle = "rgba(170,176,180,0.95)";
   g.lineWidth = 3;
   g.beginPath(); g.moveTo(0, 32); g.lineTo(32, 0); g.lineTo(64, 32); g.lineTo(32, 64); g.closePath(); g.stroke();
   const drawn = new THREE.CanvasTexture(c);
@@ -895,7 +903,7 @@ const chainLink = () => {
     tex.userData.shared = true;
     return tex;
   };
-  const mat = (chainMat = new THREE.MeshStandardMaterial({ map: tile(drawn, DIAMOND), color: "#c4c8ca", transparent: true, opacity: 1.5, alphaTest: 0.02, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.45 }));
+  const mat = (chainMat = new THREE.MeshStandardMaterial({ map: tile(drawn, DIAMOND), color: "#9aa1a5", transparent: true, opacity: 1.1, alphaTest: 0.02, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.45 }));
   const shadow = (chainShadow = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: drawn, alphaTest: 0.5, side: THREE.DoubleSide }));
   mat.userData.shared = shadow.userData.shared = true;
   // (opacity over 1: the wire a little stronger, so a far fence still reads as one. And read a

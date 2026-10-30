@@ -60,3 +60,36 @@ test("comments: pinned threads, replies, resolve, @mentions and assignments with
     assert.equal((await new Client(w.app).get("/api/notifications")).status, 401);
   } finally { await w.close(); }
 });
+
+test("comments: new for you until you read them (your own never); all read at once; reactions on and off, one of each per person", async () => {
+  const w = await world();
+  try {
+    const { c: admin } = await adminSignedIn(w);
+    const { c: pat } = await memberSignedIn(w, admin, "pat");
+    const { body: made } = await admin.post("/api/courses", { doc: doc() });
+    const url = `/api/courses/${made.id}/comments`;
+    await admin.post(`/api/courses/${made.id}/members`, { username: "pat", role: "editor" });
+    const { body: t } = await pat.post(url, { body: "Turn this tee", anchor: { x: 1, y: 2 } });
+    const { body: t2 } = await pat.post(url, { body: "And this one", anchor: { x: 3, y: 4 } });
+    // New for the admin, not for Pat who wrote them
+    assert.deepEqual((await admin.get(url)).body.map((x: any) => x.unread), [true, true]);
+    assert.deepEqual((await pat.get(url)).body.map((x: any) => x.unread), [false, false]);
+    await admin.post(`${url}/${t.id}/read`, {});
+    assert.deepEqual((await admin.get(url)).body.map((x: any) => x.unread), [false, true]);
+    // The admin's reply: new for Pat, still read for the admin
+    await admin.post(url, { body: "Done", parentId: t.id });
+    assert.equal((await pat.get(url)).body[0].unread, true);
+    assert.equal((await admin.get(url)).body[0].unread, false);
+    await admin.post(`${url}/read`, {});
+    assert.deepEqual((await admin.get(url)).body.map((x: any) => x.unread), [false, false]);
+    // Reactions: on, counted, yours marked; off again; only the few there are
+    assert.equal((await pat.post(`${url}/${t2.id}/react`, { emoji: "👍" })).body.on, true);
+    await admin.post(`${url}/${t2.id}/react`, { emoji: "👍" });
+    let r = (await admin.get(url)).body[1].reactions;
+    assert.deepEqual(r, [{ emoji: "👍", count: 2, mine: true }]);
+    assert.equal((await admin.post(`${url}/${t2.id}/react`, { emoji: "👍" })).body.on, false);
+    r = (await pat.get(url)).body[1].reactions;
+    assert.deepEqual(r, [{ emoji: "👍", count: 1, mine: true }]);
+    assert.equal((await pat.post(`${url}/${t2.id}/react`, { emoji: "🔥" })).status, 400);
+  } finally { await w.close(); }
+});

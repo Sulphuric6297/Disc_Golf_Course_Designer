@@ -1,4 +1,4 @@
-import type { FieldKind, AreaKind, CourseDoc, LineKind, P, ToolMode, DrawShape, StructureKind, TreeKind } from "../types";
+import type { FieldKind, AreaKind, CourseDoc, LineKind, P, ToolMode, DrawShape, StructureKind, TreeKind, FieldPart } from "../types";
 import type { HoleStats, SafetyIssue } from "../lib/holeStats";
 
 export type { P };
@@ -97,6 +97,10 @@ export type ViewCallbacks = {
   onHoleChange: (holeId: string, patch: Record<string, unknown>) => void;
   onCommit: () => void;
   onHover: (p: P | null) => void;
+  /** Standing in the 3D view, a walk ended there (and faces this way: radians on the plan). */
+  onStand?: (p: { x: number; y: number; face: number }) => void;
+  /** A click on the picked field: the part of it there (null: none, the field as a whole). */
+  onFieldPart?: (part: FieldPart | null) => void;
   onPose: (pose: "top" | "tilt") => void;
   /** Tee view: moved to another hole with the arrow keys, or closed. */
   onTeeView: (holeId: string | null) => void;

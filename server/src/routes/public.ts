@@ -1,8 +1,9 @@
-// What a course shows beyond its members: public links and the public site. The owner publishes
-// the site (the parts chosen, made in the owner's browser: pictures, GPS files, the course's
+// What a course shows beyond its members: public links and the public site. Everyone on the course
+// sees its links; owners make them and publish the site (and editors, when the owner allows it):
+// the parts chosen, made in the publisher's browser (pictures, GPS files, the course's
 // numbers, and the course itself only if its map or 3D view is a part); each link shows the
 // parts of it the link allows, with an optional password and expiry. Anyone with a link and no
-// account reads only that: never a draft, never the course as it's being changed.
+// account reads only that: never the course as it's being changed.
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { hash, verify } from "@node-rs/argon2";
 import { z } from "zod";
@@ -29,11 +30,19 @@ type TokFile = { Params: { token: string; name: string } };
 export async function publicRoutes(app: FastifyInstance, { sql }: Ctx) {
   const role = roleOn(sql);
   const limited = { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } };
+  /** Owners make the links and publish the site; editors too, when the owner allows it. */
+  const manage = async (req: FastifyRequest, id: string) => {
+    const r = await role(req, id, "editor");
+    if (r.role === "owner") return r;
+    const [c] = await sql`select editors_links from courses where id = ${id}`;
+    if (!c?.editors_links) throw new ApiError(403, "Only an owner can do that");
+    return r;
+  };
 
-  // --- The owner's: links
+  // --- Links: everyone on the course sees them
   app.get<Id>("/api/courses/:id/links", async req => {
     const { id } = parse(ids, req.params);
-    await role(req, id, "owner");
+    await role(req, id, "viewer");
     const rows = await sql`select id, token, slug, label, perms, password_hash is not null as has_password, expires_at, created_at, revoked_at from course_links where course_id = ${id} order by created_at desc`;
     return rows.map(l => ({ id: l.id, token: l.token, slug: l.slug, label: l.label, perms: l.perms, hasPassword: l.has_password, expiresAt: l.expires_at, createdAt: l.created_at, revoked: !!l.revoked_at }));
   });
@@ -50,7 +59,7 @@ export async function publicRoutes(app: FastifyInstance, { sql }: Ctx) {
 
   app.post<Id>("/api/courses/:id/links", async req => {
     const { id } = parse(ids, req.params);
-    const { a } = await role(req, id, "owner");
+    const { a } = await manage(req, id);
     const b = parse(linkBody, req.body);
     const token = newToken();
     const [l] = await sql`
@@ -62,7 +71,7 @@ export async function publicRoutes(app: FastifyInstance, { sql }: Ctx) {
 
   app.patch<Lk>("/api/courses/:id/links/:lid", async req => {
     const { id, lid } = parse(z.object({ id: z.uuid("Not found"), lid: z.uuid("Not found") }), req.params);
-    await role(req, id, "owner");
+    await manage(req, id);
     const b = parse(linkBody.partial().extend({ revoked: z.boolean().optional(), newToken: z.boolean().optional() }), req.body);
     const [l] = await sql`select id from course_links where id = ${lid} and course_id = ${id}`;
     if (!l) throw new ApiError(404, "Not found");
@@ -81,22 +90,22 @@ export async function publicRoutes(app: FastifyInstance, { sql }: Ctx) {
 
   app.delete<Lk>("/api/courses/:id/links/:lid", async req => {
     const { id, lid } = parse(z.object({ id: z.uuid("Not found"), lid: z.uuid("Not found") }), req.params);
-    await role(req, id, "owner");
+    await manage(req, id);
     await sql`delete from course_links where id = ${lid} and course_id = ${id}`;
     return { ok: true };
   });
 
-  // --- The owner's: the site
+  // --- The site: everyone on the course sees what it shows
   app.get<Id>("/api/courses/:id/site", async req => {
     const { id } = parse(ids, req.params);
-    await role(req, id, "owner");
+    await role(req, id, "viewer");
     const [s] = await sql`select version, parts, published_at from course_sites where course_id = ${id}`;
     return { site: s ? { version: s.version, parts: s.parts, publishedAt: s.published_at } : null };
   });
 
   app.post<Id>("/api/courses/:id/site", BIG, async req => {
     const { id } = parse(ids, req.params);
-    const { a } = await role(req, id, "owner");
+    const { a } = await manage(req, id);
     const b = parse(z.object({
       parts: perms,
       info: z.looseObject({ name: z.string().max(200), holes: z.array(z.unknown()).max(500) }),
@@ -124,7 +133,7 @@ export async function publicRoutes(app: FastifyInstance, { sql }: Ctx) {
 
   app.delete<Id>("/api/courses/:id/site", async req => {
     const { id } = parse(ids, req.params);
-    await role(req, id, "owner");
+    await manage(req, id);
     await sql`delete from course_sites where course_id = ${id}`;
     await sql`delete from course_site_files where course_id = ${id}`;
     return { ok: true };

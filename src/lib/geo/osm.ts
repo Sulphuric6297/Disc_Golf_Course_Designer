@@ -44,6 +44,8 @@ export type OsmFeature = (
   | { geom: "point"; kind: "shelter"; points: [LatLon]; name?: string; small?: boolean }
   /** A disc golf tee or basket (`golf`: mapped as a golf tee or pin, so only inside a disc golf course). */
   | { geom: "point"; kind: "dgTee" | "dgBasket"; points: [LatLon]; ref?: string; name?: string; golf?: boolean }
+  /** A spot marked as a disc golf course ("Disc golf hole 3"): a hole somewhere near, with no tee or basket said. */
+  | { geom: "point"; kind: "dgHint"; points: [LatLon]; name?: string }
 ) & { tags?: Record<string, string> };
 
 /** What OpenStreetMap says about a building's shape: its height to the top of the roof and the
@@ -164,6 +166,8 @@ export const classifyOsm = (tags: Record<string, string>, closed: boolean): { ge
   if (tags.disc_golf === "hole") return { geom: "line", kind: "dgHole" };
   if (tags.golf === "hole") return { geom: "line", kind: "dgHole" };
   if (tags.highway && notOnTheGround(tags)) return null;
+  // (a pool is a pool, whatever water it's also tagged as)
+  if (closed && (tags.leisure === "swimming_pool" || tags.amenity === "swimming_pool" || tags.water === "pool") && fieldKindOfTags(tags)) return { geom: "area", kind: "field" };
   if (closed && (tags.natural === "water" || tags.landuse === "reservoir" || tags.landuse === "basin" || tags.water || tags.waterway === "riverbank")) return { geom: "area", kind: "water" };
   if (closed && tags.amenity === "parking") return { geom: "area", kind: "parking" };
   // (a picnic shelter is often mapped as a roof: a shelter, open at the sides)
@@ -200,6 +204,7 @@ export const classifyOsmNode = (tags: Record<string, string>, at: LatLon): OsmFe
   const name = tags.name;
   if (tags.disc_golf === "tee" || tags.golf === "tee") return { geom: "point", kind: "dgTee", points: [at], ref: tags.ref, name, ...(tags.disc_golf !== "tee" ? { golf: true } : {}) };
   if (tags.disc_golf === "basket" || tags.golf === "pin") return { geom: "point", kind: "dgBasket", points: [at], ref: tags.ref, name, ...(tags.disc_golf !== "basket" ? { golf: true } : {}) };
+  if (tags.leisure === "disc_golf_course") return { geom: "point", kind: "dgHint", points: [at], name };
   if (tags.natural === "tree") return { geom: "point", kind: "tree", points: [at], tree: osmTree(tags) };
   if (tags.amenity === "shelter") return { geom: "point", kind: "shelter", points: [at], name, small: tags.shelter_type === "public_transport" || tags.shelter_type === "lean_to" };
   // (the older amenities, then the newer: grills, fitness stations, flagpoles, lights, poles, bike racks, fountains, gates)
@@ -285,7 +290,7 @@ export const osmFeaturesFrom = (json: { elements?: any[] }): OsmFeature[] => {
 export const overpassQuery = (bounds: GeoBounds) => {
   const box = `(${bounds.south},${bounds.west},${bounds.north},${bounds.east});`;
   const parks = "playground|pitch|swimming_pool|garden|dog_park|sports_centre|track|skatepark|splash_pad|water_park";
-  const nodes = ['node["amenity"~"^(bench|picnic_table|toilets|drinking_water|waste_basket|parking|shelter|fountain|bbq|bicycle_parking)$"]', `node["leisure"~"^(picnic_table|bench|goal|fitness_station|firepit|${parks})$"]`, 'node["man_made"~"^(drinking_fountain|flagpole|water_tower|goal|backstop|utility_pole|street_lamp)$"]', 'node["highway"="street_lamp"]', 'node["power"="pole"]', 'node["barrier"~"^(gate|lift_gate|swing_gate|kissing_gate)$"]', 'node["natural"="tree"]', 'node["disc_golf"]', 'node["golf"~"^(tee|pin)$"]'];
+  const nodes = ['node["amenity"~"^(bench|picnic_table|toilets|drinking_water|waste_basket|parking|shelter|fountain|bbq|bicycle_parking)$"]', `node["leisure"~"^(picnic_table|bench|goal|fitness_station|firepit|${parks})$"]`, 'node["man_made"~"^(drinking_fountain|flagpole|water_tower|goal|backstop|utility_pole|street_lamp)$"]', 'node["highway"="street_lamp"]', 'node["power"="pole"]', 'node["barrier"~"^(gate|lift_gate|swing_gate|kissing_gate)$"]', 'node["natural"="tree"]', 'node["disc_golf"]', 'node["golf"~"^(tee|pin)$"]', 'node["leisure"="disc_golf_course"]'];
   const ways = ['way["highway"]', 'way["waterway"]', 'way["natural"~"^(water|wood|sand|beach|grassland|scrub|heath|wetland|tree_row)$"]', 'way["landuse"~"^(reservoir|basin|forest|meadow|grass|village_green)$"]', 'way["amenity"~"^(parking|shelter|fountain|swimming_pool)$"]', 'way["building"]', 'way["man_made"~"^(water_tower|backstop)$"]', `way["leisure"~"^(${parks}|disc_golf_course)$"]`, 'way["barrier"~"^(fence|wall|hedge|backstop)$"]', 'way["power"~"^(line|minor_line)$"]', 'way["disc_golf"]', 'way["golf"="hole"]'];
   const mp = 'relation["type"="multipolygon"]';
   const relations = [`${mp}["natural"~"^(water|wood|sand|beach|grassland|scrub|heath|wetland)$"]`, `${mp}["landuse"~"^(reservoir|basin|forest|meadow|grass)$"]`, `${mp}["waterway"="riverbank"]`, `${mp}["amenity"="parking"]`, `${mp}["leisure"~"^(${parks})$"]`, 'relation["leisure"="disc_golf_course"]'];
@@ -337,9 +342,17 @@ export const fetchOsmFeatures = async (bounds: GeoBounds, timeoutMs = OVERPASS_T
 
 // ---------------------------------------------------------------- a disc golf course mapped there
 
+/** Spots marked as a disc golf course and named for a hole ("Disc golf hole 3"): some courses are
+ * mapped only like this. They can't say which end is the tee, so they make no holes; the import
+ * says how many there are. */
+export const holeHints = (features: OsmFeature[]) =>
+  features.filter(f => f.kind === "dgHint" && /\bhole\s*#?\s*\d{1,2}\b/i.test(f.name ?? "")).length;
+
 /** A hole of a disc golf course as mapped: its number (from its `ref`), par, tee, basket and the
- * bends between them. */
-export type MappedHole = { ref?: string; number?: number; par?: number; tee: LatLon; basket: LatLon; doglegs: LatLon[] };
+ * bends between them; and every tee and pin position it has, the first of each being `tee` and
+ * `basket` (`tag`: what tells it from the others, a letter, "long" or "short", a tee color). */
+export type MappedHole = { ref?: string; number?: number; par?: number; tee: LatLon; basket: LatLon; doglegs: LatLon[]; tees?: MappedSpot[]; baskets?: MappedSpot[] };
+export type MappedSpot = { at: LatLon; tag?: string };
 export type MappedCourse = { name?: string; outline?: LatLon[]; holes: MappedHole[] };
 type DgPoint = Extract<OsmFeature, { geom: "point"; kind: "dgTee" | "dgBasket" }>;
 
@@ -369,6 +382,9 @@ export const mappedCourse = (features: OsmFeature[]): MappedCourse | null => {
   const tees = features.filter((f): f is DgPoint => f.kind === "dgTee" && (!f.golf || inCourse(f.points[0])));
   const baskets = features.filter((f): f is DgPoint => f.kind === "dgBasket" && (!f.golf || inCourse(f.points[0])));
   const num = (ref?: string) => { const n = parseInt(ref ?? "", 10); return n > 0 && n < 100 ? n : undefined; };
+  // (what tells a pin or a tee from the hole's others: 5A's letter, or long or short in its name)
+  const tagOf = (f?: DgPoint) => f?.ref?.match(/^\s*\d{1,2}\s*([a-d])\s*$/i)?.[1].toUpperCase() ?? f?.name?.match(/\b(long|short|gold|blue|white|red|green|purple)\b/i)?.[1].toLowerCase();
+  const spot = (f: DgPoint | null | undefined, at: LatLon): MappedSpot => ({ at, ...(tagOf(f ?? undefined) ? { tag: tagOf(f ?? undefined) } : {}) });
   const holes: MappedHole[] = [];
   const used = new Set<OsmFeature>();
   // The nearest mapped tee or basket to a hole way's end (within 15 m): the way may stop short
@@ -383,16 +399,30 @@ export const mappedCourse = (features: OsmFeature[]): MappedCourse | null => {
     if (t) used.add(t);
     if (b) used.add(b);
     const ref = w.ref ?? t?.ref ?? b?.ref;
-    holes.push({ ref, number: num(ref), par: w.par, tee: t?.points[0] ?? w.points[0], basket: b?.points[0] ?? w.points[w.points.length - 1], doglegs: w.points.slice(1, -1) });
+    const tee = t?.points[0] ?? w.points[0], basket = b?.points[0] ?? w.points[w.points.length - 1];
+    holes.push({ ref, number: num(ref), par: w.par, tee, basket, doglegs: w.points.slice(1, -1), tees: [spot(t, tee)], baskets: [spot(b, basket)] });
   }
-  // Tees and baskets with no hole way: paired by number
+  // Tees and baskets with no hole way: paired by number (a tee 5 with a basket 5 or 5A)
   for (const t of tees) {
-    if (used.has(t) || !t.ref) continue;
-    const b = baskets.find(x => !used.has(x) && x.ref === t.ref);
+    const n = num(t.ref);
+    if (used.has(t) || n === undefined || holes.some(h => h.number === n)) continue;
+    const b = baskets.find(x => !used.has(x) && num(x.ref) === n);
     if (!b) continue;
     used.add(t);
     used.add(b);
-    holes.push({ ref: t.ref, number: num(t.ref), tee: t.points[0], basket: b.points[0], doglegs: [] });
+    holes.push({ ref: t.ref, number: n, tee: t.points[0], basket: b.points[0], doglegs: [], tees: [spot(t, t.points[0])], baskets: [spot(b, b.points[0])] });
+  }
+  // A hole's other pin positions and tees: more baskets or tees with its number (5A and 5B, or
+  // two baskets numbered 5)
+  for (const h of holes) {
+    if (h.number === undefined) continue;
+    for (const [list, into] of [[baskets, h.baskets!], [tees, h.tees!]] as const) {
+      for (const f of list) {
+        if (used.has(f) || num(f.ref) !== h.number) continue;
+        used.add(f);
+        into.push(spot(f, f.points[0]));
+      }
+    }
   }
   // (a golf course's holes only make a disc golf course when one is mapped there)
   if (!holes.length && !outlines.length) return null;
