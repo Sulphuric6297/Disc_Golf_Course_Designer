@@ -62,6 +62,8 @@ export function useMyLocation(view: CourseView | null, stats: HoleStats[]) {
   useEffect(() => {
     if (!view) return;
     if (gps.mode === "off" || !fix) { view.setLocation(null); lastFollow.current = null; return; }
+    // (holding still for a sure spot: the map left as it is, so nothing else holds the phone up)
+    if (gps.settling && view.hasLocation()) return;
     const weak = fix.raw > WEAK_FT;
     const sure = `± ${fmtDist(fix.acc, units)}`;
     const tag = old ? "Looking for you…" : weak ? `Weak signal · ${sure}` : hole && basket ? `${fmtDist(Math.hypot(basket.x - fix.at.x, basket.y - fix.at.y), units)} to the basket · ${hole.label}` : sure;

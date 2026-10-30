@@ -122,12 +122,12 @@ const STYLE = `
 .dg-ptmenu:disabled{color:#a1a1aa}
 .dg-measure.total{background:#1c1917;color:#facc15}
 .dg-me{pointer-events:none;width:20px;height:20px;border-radius:50%;background:#0a84ff;border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.55);position:absolute}
-.dg-me::after{content:"";position:absolute;inset:-9px;border-radius:50%;background:rgba(10,132,255,.35);animation:dgme 2s ease-out infinite;z-index:-1}
+.dg-me::after{content:"";position:absolute;inset:-9px;border-radius:50%;background:rgba(10,132,255,.35);animation:dgme 2s ease-out 3;opacity:0;z-index:-1}
 .dg-me.dim{background:#8e8e93}.dg-me.dim::after{display:none}
 .dg-me i{position:absolute;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;background:conic-gradient(from -28deg,rgba(10,132,255,.55),rgba(10,132,255,0) 56deg,rgba(10,132,255,0) 304deg,rgba(10,132,255,.55));-webkit-mask:radial-gradient(circle,#000 30%,transparent 72%);mask:radial-gradient(circle,#000 30%,transparent 72%);z-index:-2}
 .dg-me.dim i{display:none}
 @keyframes dgme{0%{transform:scale(.6);opacity:1}100%{transform:scale(1.6);opacity:0}}
-.dg-me-tag{pointer-events:none;padding:3px 8px;border-radius:999px;background:rgba(15,23,20,.82);color:#f8fafc;font:700 11.5px Inter,system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.45);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.dg-me-tag{pointer-events:none;padding:3px 8px;border-radius:999px;background:rgba(15,23,20,.9);color:#f8fafc;font:700 11.5px Inter,system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.45)}
 .dg-measure.live{background:rgba(28,25,23,.72);color:#fde68a;box-shadow:none}
 .dg-mpt{pointer-events:none;width:12px;height:12px;border-radius:50%;background:#facc15;border:2.5px solid #1c1917;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .dg-mpt.live{background:#fff;opacity:.85}
@@ -6522,6 +6522,9 @@ export class CourseView {
   }
   private me: { mark: LocationMark; dot: HTMLDivElement; cone: HTMLElement; tag: HTMLDivElement; at: THREE.Vector3; ring: THREE.Object3D | null } | null = null;
 
+  /** Whether you're shown on the map. */
+  hasLocation() { return !!this.me; }
+
   /** You on the map (null: not shown); `follow`: the map keeps you in the middle of what's visible. */
   setLocation(mark: LocationMark | null, follow = false) {
     if (!mark) {
@@ -6553,8 +6556,13 @@ export class CourseView {
     me.dot.classList.toggle("dim", mark.dim);
     me.tag.textContent = mark.tag;
     me.tag.style.visibility = mark.tag ? "" : "hidden";
-    // The circle of how sure it is, and the dashed line on to the basket
-    const moved = !me.ring || was.acc !== mark.acc || was.at.x !== mark.at.x || was.at.y !== mark.at.y || was.to?.x !== mark.to?.x || was.to?.y !== mark.to?.y || was.dim !== mark.dim;
+    // The circle of how sure it is, and the dashed line on to the basket: made again only when
+    // either really changed (each reading moves them a hair, and the scene drawn again for that
+    // kept a phone's screen busy the whole time the GPS was on)
+    const near = (a: P | null | undefined, b: P | null | undefined, d = 1) => (!a && !b) || (!!a && !!b && Math.hypot(a.x - b.x, a.y - b.y) < d);
+    // (a change worth it: a fair share of the circle's own size, at least 2 ft)
+    const worth = Math.max(2, mark.acc * 0.25);
+    const moved = !me.ring || Math.abs(was.acc - mark.acc) > worth || !near(was.at, mark.at, worth) || !near(was.to, mark.to, worth) || was.dim !== mark.dim;
     if (moved) {
       if (me.ring) { this.fx.remove(me.ring); disposeObjectDeep(me.ring); }
       const g = new THREE.Group();
@@ -6575,7 +6583,10 @@ export class CourseView {
       const cx = mark.at.x + shift.x, cy = mark.at.y + shift.y;
       void this.controls.moveTo(cx, this.h(cx, cy), cy, true);
     }
-    this.invalidate();
+    // (only the circle or the map moving needs the scene drawn; the dot, its cone and its words lie
+    // over it on the page)
+    if (moved || follow) this.invalidate();
+    else if (this.size.width > 1) this.layout();
   }
 
   /** A spot for the tool in hand, as if tapped there (where you stand, from the GPS): a new hole's
