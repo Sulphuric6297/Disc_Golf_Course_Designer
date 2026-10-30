@@ -302,7 +302,9 @@ export default function App() {
         // (standing there: the map's keys go on to what's picked, Delete, the tools; Esc lets go of
         // what's picked first)
         const editing = !viewOnly && !s.flyover;
-        const picked = !!s.selectedId || s.group.length > 0;
+        // (a thing picked there; not the hole, picked on the map before: the arrows still go to the
+        // other holes, and Esc back to the map)
+        const picked = (!!s.selectedId && !getDoc().holes.some(h => h.id === s.selectedId)) || s.group.length > 0;
         const mapKey = e.key === "Escape" ? picked || s.tool !== "select" : !e.key.startsWith("Arrow") || picked;
         if (!(editing && mapKey)) {
         // (Esc stops a flight first, back at the tee; then leaves the tee view)
