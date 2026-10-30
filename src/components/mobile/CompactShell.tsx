@@ -676,22 +676,19 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
     v.topInset = immersive ? 0 : 64;
   }, [sheetH, immersive]);
   useEffect(() => () => { const v = getView(); if (v) { v.bottomInset = 0; v.topInset = 0; } }, []);
-  // (the thing picked framed between the top bar and the panel: as it's picked, zoomed in on if
-  // it's a speck; whenever the panel settles at another height, brought back into view; not while
-  // the map is still on its way somewhere)
-  const framed = useRef<string | null>(null);
+  // (the thing picked brought between the top bar and the panel, as it's picked and whenever the
+  // panel settles at another height; the map slides, it never zooms; not while it's still on its
+  // way somewhere)
   useEffect(() => {
     const id = ed.selectedId;
-    if (!id || immersive) { framed.current = null; return; }
-    const fresh = framed.current !== id;
+    if (!id || immersive) return;
     // (waits for the map to come to rest, a few seconds at most: picked as the view turns into 3D, say)
     let tries = 0;
     const t = window.setInterval(() => {
       const v = getView();
       if (!v || (!v.settled() && ++tries < 25)) return;
       window.clearInterval(t);
-      v.frame(id, fresh);
-      framed.current = id;
+      v.frame(id);
     }, 120);
     return () => window.clearInterval(t);
   }, [sheetH, ed.selectedId, immersive]);
@@ -750,7 +747,7 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
           <>
           {away && (
             <button className="absolute left-1/2 -translate-x-1/2 z-30 h-11 px-4 rounded-full glass border border-white/10 shadow-2xl text-[14px] font-semibold text-zinc-50 flex items-center gap-2 active:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-              style={{ bottom: sheetH + 12 }} onClick={() => { const id = useEditor.getState().selectedId; if (id) getView()?.frame(id, true); }} data-testid="back-to-it">
+              style={{ bottom: sheetH + 12 }} onClick={() => { const id = useEditor.getState().selectedId; if (id) getView()?.frame(id); }} data-testid="back-to-it">
               <LocateFixed size={17} /> Back to it
             </button>
           )}

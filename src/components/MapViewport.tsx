@@ -304,6 +304,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
               </div>
               <div className={`${pad} flex flex-col overflow-hidden`}>
                 <button className={btn} title="Zoom in (+)" onClick={() => view?.zoomBy(1.4)}><Plus size={16} /></button>
+                <ZoomSlider view={view} height={96} narrow />
                 <button className={btn} title="Zoom out (−)" onClick={() => view?.zoomBy(1 / 1.4)}><Minus size={16} /></button>
                 <button className={btn} title="Show the whole course (0)" onClick={() => view?.fitCourse()}><Maximize2 size={15} /></button>
                 <LocateButton className={btn} size={15} />
@@ -370,7 +371,8 @@ function TouchControls({ view, info, scale, phone, top, room, threeD, editing }:
   const group = "pointer-events-auto flex flex-col glass rounded-2xl border border-white/10 shadow-[0_6px_20px_rgba(0,0,0,0.35)] overflow-hidden divide-y divide-white/5";
   // On a phone the compass only once the map is turned (as in map apps), and only what fits above
   // the panel: zoom (88), the View button (always in 3D), then where you are, the person (to
-  // stand somewhere), the whole course, box select and turning, each with its 8 px gap
+  // stand somewhere), the zoom slider (in the zoom buttons' group), the whole course, box select
+  // and turning, each with its 8 px gap
   const heading = info?.heading ?? 0;
   const compass = !phone || Math.min(heading, 360 - heading) > 1;
   let used = 88 + (compass ? 52 : 0) + (threeD ? 52 : 0);
@@ -384,6 +386,8 @@ function TouchControls({ view, info, scale, phone, top, room, threeD, editing }:
   const scene = threeD || fits(52);
   const locate = canShowLocation() && fits(52);
   const stand = fits(52);
+  // (the zoom slider between + and −, where there's room above the panel)
+  const slider = fits(112);
   const fit = fits(52);
   const box = editing && fits(52);
   const turn = fits(96);
@@ -406,6 +410,7 @@ function TouchControls({ view, info, scale, phone, top, room, threeD, editing }:
             )}
             <div className={group}>
               <button className={b} aria-label="Zoom in" onClick={() => view?.zoomBy(1.4)}><Plus size={20} /></button>
+              {slider && <ZoomSlider view={view} height={112} />}
               <button className={b} aria-label="Zoom out" onClick={() => view?.zoomBy(1 / 1.4)}><Minus size={20} /></button>
             </div>
             {locate && <div className={group}><LocateButton className={b} size={20} /></div>}
@@ -429,6 +434,39 @@ function TouchControls({ view, info, scale, phone, top, room, threeD, editing }:
         {stand && <StandButton view={view} className={`${group} ${b}`} size={20} />}
       </div>
     </>
+  );
+}
+
+/** Between + and −: slide up to zoom in, down to zoom out; where its knob sits says how far in.
+ * A tap on its track zooms to there. (`narrow`: the computer's slimmer buttons.) */
+function ZoomSlider({ view, height, narrow = false }: { view: CourseView | null; height: number; narrow?: boolean }) {
+  const [t, setT] = useState(0.5);
+  useEffect(() => {
+    const off = view?.onView(() => setT(view.zoomLevel()));
+    return () => { off?.(); };
+  }, [view]);
+  const track = useRef<HTMLDivElement>(null);
+  const at = (y: number) => {
+    const r = track.current!.getBoundingClientRect();
+    return Math.min(1, Math.max(0, 1 - (y - r.top - 11) / Math.max(1, r.height - 22)));
+  };
+  return (
+    <div ref={track} role="slider" tabIndex={0} aria-label="Zoom" aria-orientation="vertical" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(t * 100)}
+      className={`relative ${narrow ? "w-9" : "w-11"} shrink-0 touch-none cursor-ns-resize focus:outline-none focus-visible:bg-white/[0.13]`} style={{ height }}
+      onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); view?.setZoomLevel(at(e.clientY)); }}
+      onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) view?.setZoomLevel(at(e.clientY)); }}
+      onKeyDown={e => {
+        const by = e.key === "ArrowUp" ? 0.05 : e.key === "ArrowDown" ? -0.05 : 0;
+        if (!by) return;
+        e.preventDefault();
+        e.stopPropagation();
+        view?.setZoomLevel(t + by);
+      }}
+      data-testid="zoom-slider">
+      <span className="absolute left-1/2 -translate-x-1/2 top-[11px] bottom-[11px] w-1 rounded-full bg-white/20" aria-hidden />
+      <span className="absolute left-1/2 -translate-x-1/2 w-1 rounded-full bg-white/60" style={{ top: 11 + (1 - t) * (height - 22), bottom: 11 }} aria-hidden />
+      <span className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-[18px] h-[18px] rounded-full bg-white shadow-[0_1px_4px_rgba(0,0,0,0.5)]" style={{ top: 11 + (1 - t) * (height - 22) }} aria-hidden />
+    </div>
   );
 }
 

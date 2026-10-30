@@ -621,6 +621,50 @@ test.describe("phone", () => {
     await expect(page.getByTestId("back-to-it")).toHaveCount(0);
   });
 
+  test("picking never zooms: a small tree or woods bigger than the screen picked, the map's scale stays as it was", async ({ page }) => {
+    await oneHole(page);
+    const scale = () => page.evaluate(() => (window as any).__dgView.viewInfo().pxPerUnit);
+    const s0 = await scale();
+    await page.evaluate(() => (window as any).__dgActions.placeAt("add-tree", { x: 450, y: 540 }));
+    const tree = (await course(page)).items.find((i: any) => i.type === "tree").id;
+    await page.evaluate(id => (window as any).__dgActions.select(id), tree);
+    await page.waitForTimeout(1500);
+    expect(Math.abs((await scale()) / s0 - 1)).toBeLessThan(0.01);
+    await page.evaluate(() => {
+      (window as any).__dgEditor().set({ areaKind: "woods" });
+      (window as any).__dgActions.addDrawn("area", [{ x: -2000, y: -2000 }, { x: 4000, y: -2000 }, { x: 4000, y: 4000 }, { x: -2000, y: 4000 }]);
+      const d = (window as any).__dgCourse();
+      (window as any).__dgActions.select(d.items[d.items.length - 1].id);
+    });
+    await page.waitForTimeout(1500);
+    expect(Math.abs((await scale()) / s0 - 1)).toBeLessThan(0.01);
+  });
+
+  test("a double tap zooms in where it lands; the zoom slider zooms as it slides", async ({ page }) => {
+    await oneHole(page);
+    await page.evaluate(() => (window as any).__dgView.fitCourse(false));
+    const scale = () => page.evaluate(() => (window as any).__dgView.viewInfo().pxPerUnit);
+    const box = (await page.getByTestId("plan").boundingBox())!;
+    const at = { x: box.x + box.width * 0.4, y: box.y + box.height * 0.35 };
+    const s0 = await scale();
+    // (two taps sent within the page, a finger's pace apart: from outside, each waits on a picture)
+    await page.evaluate(([x, y]) => {
+      const el = document.elementFromPoint(x, y)!;
+      const fire = (type: string, id: number) => el.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: "touch", isPrimary: true, clientX: x, clientY: y, button: 0, buttons: type === "pointerup" ? 0 : 1, bubbles: true, cancelable: true }));
+      const pause = (ms: number) => { const t = performance.now(); while (performance.now() - t < ms) { /* a finger's pace */ } };
+      fire("pointerdown", 41); pause(60); fire("pointerup", 41); pause(120); fire("pointerdown", 42); pause(60); fire("pointerup", 42);
+    }, [at.x, at.y] as const);
+    await expect.poll(scale).toBeGreaterThan(s0 * 1.6);
+    // The slider: slid up, closer; a tap low on its track, far out
+    const slider = page.getByTestId("zoom-slider");
+    await expect(slider).toBeVisible();
+    const s1 = await scale(), sb = (await slider.boundingBox())!;
+    await touchDrag(page, { x: sb.x + sb.width / 2, y: sb.y + sb.height * 0.6 }, { x: sb.x + sb.width / 2, y: sb.y + sb.height * 0.2 }, 6);
+    await expect.poll(scale).toBeGreaterThan(s1 * 1.3);
+    await page.touchscreen.tap(sb.x + sb.width / 2, sb.y + sb.height - 12);
+    await expect.poll(scale).toBeLessThan(s0 * 0.6);
+  });
+
   test("a tree's height changed in 3D: the camera looks at it from the side, and goes back after", async ({ page }) => {
     await oneHole(page);
     await page.evaluate(() => (window as any).__dgActions.placeAt("add-tree", { x: 450, y: 540 }));

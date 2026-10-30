@@ -142,15 +142,39 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       setPinchScale(null);
       start = null;
     };
+    // A double tap where nothing is picked (the first tap let go of any piece): twice as close, the
+    // spot tapped staying put. (On a piece, the first tap picks it and the second types its words)
+    let down: { t: number; x: number; y: number } | null = null, tap: { t: number; x: number; y: number } | null = null;
+    const onTapStart = (e: TouchEvent) => { const t = e.touches[0]; down = e.touches.length === 1 && t ? { t: e.timeStamp, x: t.clientX, y: t.clientY } : null; if (e.touches.length > 1) tap = null; };
+    const onTapEnd = (e: TouchEvent) => {
+      const t = e.changedTouches[0];
+      if (!down || !t || e.touches.length) return;
+      const quick = e.timeStamp - down.t < 300 && Math.hypot(t.clientX - down.x, t.clientY - down.y) < 12;
+      down = null;
+      if (!quick) { tap = null; return; }
+      if (tap && e.timeStamp - tap.t < 320 && Math.hypot(t.clientX - tap.x, t.clientY - tap.y) < 40 && !useEditor.getState().designSel && pageEl.current) {
+        const r = el.getBoundingClientRect(), pr = pageEl.current.getBoundingClientRect();
+        anchor.current = { fx: (t.clientX - pr.left) / pr.width, fy: (t.clientY - pr.top) / pr.height, vx: t.clientX - r.left, vy: t.clientY - r.top };
+        setZoom(Math.min(6, kRef.current * 2));
+        tap = null;
+        e.preventDefault();
+        return;
+      }
+      tap = { t: e.timeStamp, x: t.clientX, y: t.clientY };
+    };
     el.addEventListener("touchstart", onStart, { passive: true });
     el.addEventListener("touchmove", onMove, { passive: false });
     el.addEventListener("touchend", onEnd);
     el.addEventListener("touchcancel", onEnd);
+    el.addEventListener("touchstart", onTapStart, { passive: true });
+    el.addEventListener("touchend", onTapEnd, { passive: false });
     return () => {
       el.removeEventListener("touchstart", onStart);
       el.removeEventListener("touchmove", onMove);
       el.removeEventListener("touchend", onEnd);
       el.removeEventListener("touchcancel", onEnd);
+      el.removeEventListener("touchstart", onTapStart);
+      el.removeEventListener("touchend", onTapEnd);
     };
   }, [compact]);
   // As in a design app: Ctrl (or ⌘) and the wheel, or a trackpad's pinch, zooms about the pointer,

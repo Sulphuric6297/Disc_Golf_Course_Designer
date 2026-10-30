@@ -741,6 +741,22 @@ export class CourseView {
     void this.controls.rotate(0, -deg * DEG, true);
   }
 
+  /** How far in the map is zoomed: 0 all the way out, 1 all the way in (even steps for even
+   * changes of scale). */
+  zoomLevel() {
+    const lo = this.controls.minDistance, hi = this.controls.maxDistance;
+    return clamp(Math.log(hi / this.controls.distance) / Math.log(hi / lo), 0, 1);
+  }
+
+  /** Zooms to a level (see zoomLevel), about the middle of the open map, at once (a slider). */
+  setZoomLevel(t: number) {
+    const lo = this.controls.minDistance, hi = this.controls.maxDistance;
+    const want = hi * Math.pow(lo / hi, clamp(t, 0, 1));
+    const m = this.openMap(), r = this.container.getBoundingClientRect();
+    this.userMoved();
+    this.zoomAt(r.left + (m.left + m.right) / 2, r.top + (m.top + m.bottom) / 2, want / this.controls.distance, false);
+  }
+
   zoomBy(factor: number) {
     const d = this.controls.distance / factor;
     void this.controls.dollyTo(clamp(d, this.controls.minDistance, this.controls.maxDistance), true);
@@ -893,23 +909,22 @@ export class CourseView {
     return !!box && box.x + box.width > m.left && box.x < m.right && box.y + box.height > m.top && box.y < m.bottom;
   }
 
-  /** A thing picked on a phone, framed on the open part of the map: brought out from under a
-   * panel or in from off screen, and (`zoom`, as it's picked) zoomed in on when it's a speck, or
-   * out when it doesn't fit. */
-  frame(id: string, zoom = false) {
+  /** A thing picked on a phone, brought onto the open part of the map at the zoom it's at: picking
+   * never zooms, in or out (the owner's rule: what you tapped stays the size it was). Out from under
+   * a panel or in from off screen, its middle to the open map's middle; a thing bigger than the open
+   * map that partly shows already stays put. */
+  frame(id: string) {
     const b = this.itemBounds(id);
     if (!b) return;
     const box = this.screenBox(id), m = this.openMap();
-    const w = m.right - m.left, h = m.bottom - m.top;
-    const speck = zoom && !!box && Math.max(box.width, box.height) < Math.min(w, h) * 0.12;
-    const big = !!box && (box.width > w * 0.95 || box.height > h * 0.95);
-    if (speck || big) {
-      if (this.doc?.course.holes.some(x => x.id === id)) return this.fitHole(id);
-      // (a small thing: a patch of ground round it, about 250 ft across)
-      this.fitBounds(b, speck ? { margin: 3, minSpan: 80 } : { margin: 1.3 });
-      return;
-    }
-    this.reveal(id);
+    if (box && box.x >= m.left && box.y >= m.top && box.x + box.width <= m.right && box.y + box.height <= m.bottom) return;
+    const big = !!box && (box.width > m.right - m.left || box.height > m.bottom - m.top);
+    if (big && this.inView(id)) return;
+    const shift = this.insetShift(this.controls.distance);
+    const cx = (b.minX + b.maxX) / 2 + shift.x, cy = (b.minY + b.maxY) / 2 + shift.y;
+    this.glide = null;
+    void this.controls.moveTo(cx, this.h(cx, cy), cy, true);
+    this.invalidate();
   }
 
   /** The camera before a height was looked at from the side (to go back to). */
@@ -5349,7 +5364,32 @@ export class CourseView {
     this.snapNorth();
   }
 
+  /** The last quick tap of one finger (a second, soon after and close by, is a double tap). */
+  private lastTap: { t: number; x: number; y: number } | null = null;
+  /** The finger down now, if it's one finger alone (to tell a tap). */
+  private tapDown: { id: number; t: number; x: number; y: number } | null = null;
+
+  /** A double tap with a finger, as on Google Maps: the map zooms in twice over where it lands (the
+   * view's lens, standing). Whatever the first tap did stands; the second does nothing else. */
+  private doubleTap(e: PointerEvent) {
+    this.lastTap = null;
+    this.tapDown = null;
+    this.cancelLongPress();
+    this.userMoved();
+    if (this.povHole) {
+      if (!this.fly) this.povCam.fov = clamp(this.povCam.fov * 0.6, LENS.min, LENS.max);
+    } else this.zoomAt(e.clientX, e.clientY, 0.5);
+    this.invalidate();
+  }
+
   private touchUp(e: PointerEvent) {
+    // (a quick tap of one finger that hardly moved: remembered, for a double tap)
+    const d = this.tapDown;
+    if (d && d.id === e.pointerId) {
+      this.tapDown = null;
+      const quick = e.type === "pointerup" && e.timeStamp - d.t < 300 && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 12 && this.touchIds.size === 1;
+      this.lastTap = quick ? { t: e.timeStamp, x: e.clientX, y: e.clientY } : null;
+    }
     this.fingerAt.delete(e.pointerId);
     const mapPinch = !this.povHole && !!this.pinch && !this.pinchItem && this.touchIds.size === 2;
     if (this.touchIds.delete(e.pointerId) && this.touchIds.size >= 1) this.pinchAt = performance.now();
@@ -5537,12 +5577,23 @@ export class CourseView {
       this.fingerAt.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.touchIds.size === 1) window.addEventListener("pointermove", this.twoFingers);
       if (this.touchIds.size > 1) {
+        this.lastTap = null;
+        this.tapDown = null;
         this.pinchAt = performance.now();
         this.secondFinger();
         if (this.touchIds.size === 2) this.startPinch();
         else this.endPinch();
         return;
       }
+      // (a second quick tap close by: a double tap, which zooms; not on the buttons over the view)
+      const last = this.lastTap;
+      if (last && e.timeStamp - last.t < 320 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 40 && !target.closest?.("button,input,select,textarea,a,[data-pov-ui],[role=dialog]")) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.doubleTap(e);
+        return;
+      }
+      this.tapDown = { id: e.pointerId, t: e.timeStamp, x: e.clientX, y: e.clientY };
       // (Not on a handle that moves something: holding one still before dragging it slowly is no
       // menu; a line's middle dot is fine, it is where a finger lands to hold a hole)
       const handle = (target.closest?.("[data-handle]") as HTMLElement | null)?.dataset.handle;
