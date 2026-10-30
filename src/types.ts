@@ -148,6 +148,10 @@ export interface AreaItem extends BaseItem {
    * a ball field's home plate at corner `home` of its outline (unset: the corner nearest a right angle). */
   fieldTurn?: number;
   home?: number;
+  /** A ball field's home plate placed by hand: from corner `home`, this far along the corner's
+   * middle line (x) and across it (y) (ft); the field faces the middle of its outline from there
+   * (unset: just in from the corner). */
+  plate?: P;
   /** A ball field's size, by who plays on it (unset: worked out from the outline). */
   league?: FieldLeague;
   /** Its parts' own settings: one switched off, a backstop's height and how far behind home it

@@ -35,11 +35,11 @@ test("a ball field: Little League size, a part picked in the panel and on the ma
   // A click on the infield on the map picks the infield; its clay set to tan
   const f = await field(page);
   const plan = fieldPlan(f)!;
-  // (the dirt round home plate, 7 ft out toward the mound: past the batter's boxes, short of the grass)
-  const mound = plan.marks.find(m => m.part === "mound" && m.k === "disc") as any;
-  const plate = plan.marks.find(m => m.part === "infield" && m.k === "disc") as any;
-  const dx = mound.c.x - plate.c.x, dy = mound.c.y - plate.c.y, l = Math.hypot(dx, dy);
-  const spot = { x: plate.c.x + (dx / l) * 7, y: plate.c.y + (dy / l) * 7 };
+  // (the dirt just past second base, clear of home plate's handle)
+  const plate = plan.home!;
+  const second = (plan.marks.filter(m => m.part === "infield" && m.k === "disc") as any[]).reduce((a, m) => (Math.hypot(m.c.x - plate.x, m.c.y - plate.y) > Math.hypot(a.c.x - plate.x, a.c.y - plate.y) ? m : a)).c;
+  const dx = second.x - plate.x, dy = second.y - plate.y, l = Math.hypot(dx, dy);
+  const spot = { x: second.x + (dx / l) * 3.5, y: second.y + (dy / l) * 3.5 };
   expect(fieldPartAt(f, spot)).toBe("infield");
   const s = await screenOf(page, spot.x, spot.y);
   await page.mouse.click(s.x, s.y);
@@ -51,6 +51,44 @@ test("a ball field: Little League size, a part picked in the panel and on the ma
   await page.evaluate(() => (window as any).__dgActions.select(null));
   await expect.poll(() => part(page)).toBeNull();
   expect((await course(page)).items.length).toBe(1);
+});
+
+test("a ball field's home plate dragged to where it really is: the field turns to follow; Next corner puts it back", async ({ page }) => {
+  await blankCourse(page);
+  await page.evaluate(() => { const E = (window as any).__dgEditor(); E.set({ fieldKind: "baseball" }); (window as any).__dgActions.placeAt("add-field", { x: 500, y: 450 }); });
+  const f0 = await field(page);
+  await page.evaluate(id => (window as any).__dgActions.select(id), f0.id);
+  await expect(page.getByTestId("field-home")).toContainText("Corner");
+  // Home plate's handle, on the plate
+  const H0 = fieldPlan(f0)!.home!;
+  const handle = page.getByTestId("handle-plate");
+  await expect(handle).toBeVisible();
+  const at = await screenOf(page, H0.x, H0.y), box = (await handle.boundingBox())!;
+  expect(Math.hypot(box.x + box.width / 2 - at.x, box.y + box.height / 2 - at.y)).toBeLessThan(6);
+  // Dragged 40 ft into the field and 25 ft to one side
+  const mid = { x: f0.points.reduce((s: number, p: any) => s + p.x, 0) / f0.points.length, y: f0.points.reduce((s: number, p: any) => s + p.y, 0) / f0.points.length };
+  const dx = mid.x - H0.x, dy = mid.y - H0.y, l = Math.hypot(dx, dy);
+  const to = { x: H0.x + (dx / l) * 40 - (dy / l) * 25, y: H0.y + (dy / l) * 40 + (dx / l) * 25 };
+  const s1 = await screenOf(page, to.x, to.y);
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move((at.x + s1.x) / 2, (at.y + s1.y) / 2, { steps: 3 });
+  await page.mouse.move(s1.x, s1.y, { steps: 3 });
+  await page.mouse.up();
+  await expect.poll(async () => !!(await field(page)).plate).toBe(true);
+  const f1 = await field(page);
+  const plan = fieldPlan(f1)!;
+  expect(Math.hypot(plan.home!.x - to.x, plan.home!.y - to.y)).toBeLessThan(3);
+  // (the field faces the middle of its outline from there: the mound on that line)
+  const mound = plan.marks.find(m => m.part === "mound" && m.k === "disc") as any;
+  const ax = mound.c.x - plan.home!.x, ay = mound.c.y - plan.home!.y, bx = mid.x - plan.home!.x, by = mid.y - plan.home!.y;
+  expect(Math.abs(ax * by - ay * bx) / (Math.hypot(ax, ay) * Math.hypot(bx, by))).toBeLessThan(0.02);
+  expect(f1.points).toEqual(f0.points);
+  await expect(page.getByTestId("field-home")).toContainText("Placed by hand");
+  // Next corner: back at a corner
+  await page.getByTestId("field-home-next").click();
+  await expect.poll(async () => (await field(page)).plate).toBeUndefined();
+  await expect(page.getByTestId("field-home")).toContainText("Corner");
 });
 
 test("tennis courts: two in a row, all green, their fence's height", async ({ page }) => {

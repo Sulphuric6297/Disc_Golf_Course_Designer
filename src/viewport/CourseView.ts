@@ -39,8 +39,8 @@ import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createFence, createStructure, onPartLoaded } from "../three/structures";
 import { measuredStanding, setMeasuredStanding } from "../lib/standing";
 import { createFieldGround, createFieldProps, createHedge, createPowerLine } from "../three/parkProps";
-import { fieldInks, fieldPartAt, fieldPartShape, fieldPlan } from "../lib/fieldPlan";
-import { fieldKeepsTreesOut, fieldOutline } from "../lib/fields";
+import { cornerFrame, fieldInks, fieldPartAt, fieldPartShape, fieldPlan } from "../lib/fieldPlan";
+import { fieldHome, fieldKeepsTreesOut, fieldKindOf, fieldOutline, isBallField } from "../lib/fields";
 import { isLineKind, orientedBox, roofFor, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
 import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier, FieldPart } from "../types";
 import { Ground } from "./ground";
@@ -142,6 +142,7 @@ const STYLE = `
 .dg-h[data-handle=linewidth]{width:12px;height:12px;border-radius:3px;background:#fff;border:2.5px solid #0284c7;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=widen]{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.85);border:1.5px solid #16a34a;cursor:copy;display:flex;align-items:center;justify-content:center;font:700 10px/1 Inter,sans-serif;color:#16a34a}.dg-h[data-handle=widen]::after{content:"+"}
 .dg-h[data-handle=rotate]{width:24px;height:24px;border-radius:50%;background:#fff;border:2.5px solid #2563eb;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;color:#2563eb;font:900 14px system-ui}
+.dg-h[data-handle=plate]{width:20px;height:20px;cursor:grab;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M3 3h14v8l-7 6.5L3 11z' fill='white' stroke='%230891b2' stroke-width='2.5' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
 .dg-h[data-handle=radius]{width:15px;height:15px;border-radius:50%;background:#16a34a;border:2.5px solid #fff;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=height]{width:16px;height:22px;border-radius:5px;background:#f59e0b;border:2.5px solid #fff;cursor:ns-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-marquee{position:absolute;left:0;top:0;pointer-events:none;border:1.5px dashed #f59e0b;background:rgba(245,158,11,.12);border-radius:2px;z-index:5}
@@ -2912,7 +2913,7 @@ export class CourseView {
         // only looked at, too), the dashed edge of an out-of-play area or a red OB edge; and what
         // stands on it (goals, nets, hoops, fences, play structures)
         const out = isOutOfPlay(a);
-        const shape = [a.points, a.field, a.fieldTurn, a.home, a.league, a.parts, a.courtColors];
+        const shape = [a.points, a.field, a.fieldTurn, a.home, a.plate, a.league, a.parts, a.courtColors];
         put(`area:${a.id}`, JSON.stringify([...shape, hv, order, inks.grass, out, nogoColor, a.ob, a.obStretches, a.hazard]), () => {
           const g = new THREE.Group();
           const plan = fieldPlan(a);
@@ -3808,7 +3809,7 @@ export class CourseView {
     const holeId = editing ? (this.hole(this.selectedId)?.id ?? doc.activeHoleId) : null;
     const hole = this.hole(holeId);
     const drawing = this.drawn() ? this.drawPts.length : -1;
-    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.kind}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
+    const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.kind}${sel.type === "area" ? (sel.field ?? "") : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
     const obKey = `${sel?.type === "line" || sel?.type === "area" ? `${sel.ob}:${sel.obStretches?.length ?? 0}` : ""}|${this.obPick ? `${this.obPick.id}:${this.obPick.from}:${this.obPick.cut}` : ""}`;
     if (`${this.readOnly}${key}${obKey}` === this.handleKey) return;
     this.handleKey = `${this.readOnly}${key}${obKey}`;
@@ -3856,6 +3857,7 @@ export class CourseView {
       this.pointHandles(sel.id, add);
       if (turnable(sel)) this.turnHandle(sel.id, add);
     }
+    if (sel.type === "area" && sel.kind === "field" && isBallField(fieldKindOf(sel))) this.plateHandle(sel.id, add);
     if (sel.type === "line" && sel.kind === "stream") this.lineWidthHandles(sel.id, add);
     if ((sel.type === "line" || sel.type === "area") && sel.ob === true && sel.obStretches?.length && !sel.locked) this.obStretchHandles(sel.id, add);
     if (sel.type === "structure" && !isLineKind(sel.kind)) this.outlineHandles(sel.id, add);
@@ -3886,6 +3888,23 @@ export class CourseView {
         return it.type === "tee" ? { rotation: deg, aimFixed: true } : { rotation: deg };
       }), { title: sel.type === "mando" ? "Drag to turn the arrow · Shift snaps to 15°" : "Drag to turn it · Shift snaps to 15°" });
     }
+  }
+
+  /** A ball field's home plate: dragged to where it really is, the field turning to face the middle
+   * of its outline from there. */
+  private plateHandle(id: string, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
+    // (laid out again only when the field changes, not every frame)
+    let seen: AreaItem | null = null, at: P | null = null;
+    add("plate", () => {
+      const a = this.item(id) as AreaItem | null;
+      if (!a || a.type !== "area") return null;
+      if (a !== seen) { seen = a; at = fieldPlan(a)?.home ?? null; }
+      return at ? new THREE.Vector3(at.x, this.h(at.x, at.y) + 0.3, at.y) : null;
+    }, e => this.planeDrag(e, id, (p, it) => {
+      const a = it as AreaItem, hi = fieldHome(a), { corner, f, right } = cornerFrame(a.points, hi);
+      const dx = p.x - corner.x, dy = p.y - corner.y;
+      return { home: hi, plate: { x: Math.round((dx * f.x + dy * f.y) * 10) / 10, y: Math.round((dx * right.x + dy * right.y) * 10) / 10 } };
+    }), { title: "Drag home plate to where it is · the field turns to follow" });
   }
 
   /** A hole's doglegs: drag a dot to move a turn, pull a mid dot to add one, double-click to remove one; and a square for the fairway width. */

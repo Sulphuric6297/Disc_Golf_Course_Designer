@@ -109,6 +109,8 @@ export type FieldPlan = {
   props: FieldPropOf[];
   /** How far past the outline the marks reach (ft). */
   reach: number;
+  /** A ball field's home plate. */
+  home?: P;
 };
 
 /** A frame lined up with the outline's long side (turned `turn` degrees): its middle `c`, its
@@ -186,7 +188,7 @@ const seeded = (seed: number) => () => ((seed = (seed * 16807) % 2147483647) / 2
 // ------------------------------------------------------------------ the layouts
 
 /** A field's layout, or null for an outline too small to hold one. */
-export const fieldPlan = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "home" | "id" | "league" | "parts" | "courtColors">): FieldPlan | null => {
+export const fieldPlan = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "home" | "plate" | "id" | "league" | "parts" | "courtColors">): FieldPlan | null => {
   const plan = layOut(a);
   if (!plan) return null;
   // (a part switched off: none of it, on the ground or standing)
@@ -198,7 +200,7 @@ export const fieldPlan = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "
   return plan;
 };
 
-const layOut = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "home" | "id" | "league" | "parts" | "courtColors">): FieldPlan | null => {
+const layOut = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "home" | "plate" | "id" | "league" | "parts" | "courtColors">): FieldPlan | null => {
   const outline = a.points;
   if (outline.length < 3) return null;
   const kind = fieldKindOf(a);
@@ -222,7 +224,7 @@ const layOut = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "home" | "i
   switch (kind) {
     case "baseball":
     case "softball":
-      ballField(plan, fieldHome(a), kind === "softball", a.league, a.parts ?? {});
+      ballField(plan, fieldHome(a), kind === "softball", a.league, a.parts ?? {}, a.plate);
       break;
 
     case "soccer": {
@@ -420,15 +422,16 @@ export const leagueOf = (soft: boolean, set: FieldLeague | undefined, reach: num
  * baseline. Smaller all round if the outline is too small for the league. Each mark and prop says
  * which part it is.
  */
-const ballField = (plan: FieldPlan, hi: number, soft: boolean, set: FieldLeague | undefined, parts: Partial<Record<FieldPart, FieldPartSet>>) => {
+const ballField = (plan: FieldPlan, hi: number, soft: boolean, set: FieldLeague | undefined, parts: Partial<Record<FieldPart, FieldPartSet>>, plate?: P) => {
   const { outline, marks, props } = plan;
   const fill = (pts: P[], ink: FieldInk, part: FieldPart) => marks.push({ k: "fill", pts, ink, part });
   const line = (pts: P[], w: number, part: FieldPart, ink: FieldInk = "chalk", closed = false) => marks.push({ k: "line", pts, w, ink, closed, part });
-  const corner = outline[hi];
-  const prev = outline[(hi + outline.length - 1) % outline.length], next = outline[(hi + 1) % outline.length];
-  let f = unit({ x: unit({ x: prev.x - corner.x, y: prev.y - corner.y }).x + unit({ x: next.x - corner.x, y: next.y - corner.y }).x, y: unit({ x: prev.x - corner.x, y: prev.y - corner.y }).y + unit({ x: next.x - corner.x, y: next.y - corner.y }).y });
-  if (!Number.isFinite(f.x) || len(f) < 0.5) f = unit({ x: polyCentroid(outline).x - corner.x, y: polyCentroid(outline).y - corner.y });
-  const D0 = rayOut(outline, corner, f).t;
+  const { corner, f: f0, right: r0 } = cornerFrame(outline, hi);
+  // (placed by hand: the plate where it was put, facing the middle of the outline from there)
+  const P0 = plate ? { x: corner.x + f0.x * plate.x + r0.x * plate.y, y: corner.y + f0.y * plate.x + r0.y * plate.y } : corner;
+  const middle = polyCentroid(outline);
+  const f = plate && Math.hypot(middle.x - P0.x, middle.y - P0.y) > 1 ? unit({ x: middle.x - P0.x, y: middle.y - P0.y }) : f0;
+  const D0 = rayOut(outline, P0, f).t;
   if (!Number.isFinite(D0) || D0 < 30) return;
   const league = leagueOf(soft, set, D0);
   plan.league = league;
@@ -438,7 +441,8 @@ const ballField = (plan: FieldPlan, hi: number, soft: boolean, set: FieldLeague 
   const clay: FieldInk = parts.infield?.c === "tan" ? "dirtTan" : parts.infield?.c === "brown" ? "dirtBrown" : "dirt";
   const behind = (parts.backstop?.d ?? L.backstop) * sc;
   fill(outline, "grass", "grass");
-  const H = add(corner, f, Math.min(behind + 2, D0 * 0.2));
+  const H = plate ? P0 : add(corner, f, Math.min(behind + 2, D0 * 0.2));
+  plan.home = H;
   const right = { x: -f.y, y: f.x };
   const at = (x: number, y: number): P => ({ x: H.x + f.x * x + right.x * y, y: H.y + f.y * x + right.y * y });
   // The outfield mown in bands across the line to center field, the mower's width apart
@@ -515,6 +519,16 @@ const ballField = (plan: FieldPlan, hi: number, soft: boolean, set: FieldLeague 
     marks.push({ k: "fill", pts: [add(add(c, along, -hu), out, -hd), add(add(c, along, hu), out, -hd), add(add(c, along, hu), out, hd), add(add(c, along, -hu), out, hd)], ink: "block", part: "dugouts", out: true });
   }
   plan.reach = dout + 8;
+};
+
+/** A ball field's home corner `hi`: the corner, the line into the field halfway between its two
+ * sides (`f`), and across it (`right`). */
+export const cornerFrame = (outline: P[], hi: number) => {
+  const corner = outline[hi];
+  const prev = outline[(hi + outline.length - 1) % outline.length], next = outline[(hi + 1) % outline.length];
+  let f = unit({ x: unit({ x: prev.x - corner.x, y: prev.y - corner.y }).x + unit({ x: next.x - corner.x, y: next.y - corner.y }).x, y: unit({ x: prev.x - corner.x, y: prev.y - corner.y }).y + unit({ x: next.x - corner.x, y: next.y - corner.y }).y });
+  if (!Number.isFinite(f.x) || len(f) < 0.5) f = unit({ x: polyCentroid(outline).x - corner.x, y: polyCentroid(outline).y - corner.y });
+  return { corner, f, right: { x: -f.y, y: f.x } };
 };
 
 const polyCentroid = (pts: P[]) => ({ x: pts.reduce((s, p) => s + p.x, 0) / pts.length, y: pts.reduce((s, p) => s + p.y, 0) / pts.length });
@@ -853,7 +867,7 @@ const dugoutBox = (q: Extract<FieldProp, { k: "dugout" }>) => {
 
 /** The part of a field under a spot on the ground: what stands there first (a fence or the
  * backstop within 3 ft, a dugout, a net, a base), then the topmost of what's painted there. */
-export const fieldPartAt = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "home" | "id" | "league" | "parts" | "courtColors">, p: P): FieldPart | null => {
+export const fieldPartAt = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "home" | "plate" | "id" | "league" | "parts" | "courtColors">, p: P): FieldPart | null => {
   const plan = fieldPlan(a);
   if (!plan) return null;
   for (const q of plan.props) {
@@ -875,7 +889,7 @@ export const fieldPartAt = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" |
 
 /** A part's shape on the ground, to draw round it when it's picked: its painted shapes' edges,
  * its lines, a fence's run, a dugout's footprint (closed ones flagged). Grass: the outline only. */
-export const fieldPartShape = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "home" | "id" | "league" | "parts" | "courtColors">, part: FieldPart): { pts: P[]; closed: boolean }[] => {
+export const fieldPartShape = (a: Pick<AreaItem, "points" | "field" | "fieldTurn" | "home" | "plate" | "id" | "league" | "parts" | "courtColors">, part: FieldPart): { pts: P[]; closed: boolean }[] => {
   const plan = fieldPlan(a);
   if (!plan) return [];
   if (part === "grass" || part === "surround") return [{ pts: plan.outline, closed: true }];

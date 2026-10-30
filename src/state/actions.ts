@@ -10,7 +10,7 @@ import {
 import { centroid, nearestOnSegment, pathLength, pointAlong, simplify, smoothPath } from "../lib/geom";
 import { courseStats, holeStats } from "../lib/holeStats";
 import type { AreaItem, BasketItem, CourseDoc, CourseItem, FieldKind, FieldLeague, FieldPart, FieldPartSet, Hole, LineItem, LineKind, P, PinPosition, TeeLevel, ToolMode, TreeItem, TreeKind } from "../types";
-import { LEAGUES } from "../lib/fieldPlan";
+import { LEAGUES, fieldPlan } from "../lib/fieldPlan";
 import { orientedBox } from "../lib/structures";
 import { changeDoc, editor, getDoc, removeHole, removeItems, updateItem, useEditor, useCourse } from "./course";
 import { toast } from "./toast";
@@ -578,7 +578,7 @@ export const setFieldKind = (id: string, kind: FieldKind) => {
   updateItem(id, {
     field: kind,
     outOfPlay: usual ? (FIELD_KINDS[kind].outOfPlay ? true : undefined) : a.outOfPlay,
-    ...(isBallField(kind) ? {} : { home: undefined }),
+    ...(isBallField(kind) ? {} : { home: undefined, plate: undefined }),
     ...(MARKED_FIELDS.includes(kind) ? {} : { fieldTurn: undefined })
   } as Partial<CourseItem>);
 };
@@ -588,13 +588,14 @@ export const setFieldKind = (id: string, kind: FieldKind) => {
 export const setFieldLeague = (id: string, league: FieldLeague) => {
   const a = getDoc().items.find(i => i.id === id);
   if (!a || a.type !== "area" || a.kind !== "field" || !isBallField(fieldKindOf(a))) return;
-  const home = a.points[fieldHome(a)];
+  // (about the plate where it was placed by hand, which stays put)
+  const home = (a.plate && fieldPlan(a)?.home) || a.points[fieldHome(a)];
   const reach = Math.max(...a.points.map(p => Math.hypot(p.x - home.x, p.y - home.y)));
   const L = LEAGUES[league];
   const k = (L.fence + L.backstop + 2) / Math.max(1, reach);
   const points = a.points.map(p => ({ x: home.x + (p.x - home.x) * k, y: home.y + (p.y - home.y) * k }));
   const c = centroid(points);
-  updateItem(id, { league, points, x: c.x, y: c.y } as Partial<CourseItem>);
+  updateItem(id, { league, points, x: c.x, y: c.y, ...(a.plate ? { plate: { x: a.plate.x * k, y: a.plate.y * k } } : {}) } as Partial<CourseItem>);
 };
 
 /** Courts in a row, `n` of them: the outline made that many courts (with their run-off) side by
@@ -623,11 +624,12 @@ export const setFieldPart = (id: string, part: FieldPart, patch: FieldPartSet, h
   updateItem(id, { parts: Object.keys(parts).length ? parts : undefined } as Partial<CourseItem>, history);
 };
 
-/** A ball field's home plate moved on to its outline's next corner. */
+/** A ball field's home plate moved on to its outline's next corner (one placed by hand: back to
+ * its own corner first). */
 export const nextHomeCorner = (id: string) => {
   const a = getDoc().items.find(i => i.id === id);
   if (!a || a.type !== "area" || a.points.length < 3) return;
-  updateItem(id, { home: (fieldHome(a) + 1) % a.points.length } as Partial<CourseItem>);
+  updateItem(id, { home: a.plate ? fieldHome(a) : (fieldHome(a) + 1) % a.points.length, plate: undefined } as Partial<CourseItem>);
 };
 
 /** A turn put in a hole's line at a spot (between the turns either side of where it's nearest). */

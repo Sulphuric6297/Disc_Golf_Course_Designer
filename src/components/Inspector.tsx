@@ -408,7 +408,7 @@ export const PLAY_OPTIONS = [{ value: "in", label: "In play" }, { value: "out", 
 /** A field's markings turned, in words: "Lined up", "15°". */
 export const fmtTurn = (v: number) => (v ? `${v > 0 ? "" : "−"}${Math.abs(v)}°` : "Lined up");
 /** A ball field's home plate corner, in words: "Corner 1 of 8". */
-export const homeText = (a: AreaItem) => `Corner ${fieldHome(a) + 1} of ${a.points.length}`;
+export const homeText = (a: AreaItem) => (a.plate ? "Placed by hand" : `Corner ${fieldHome(a) + 1} of ${a.points.length}`);
 /** A line's height, named for what it is (its panel and a phone's strip). */
 export const heightLabel = (k: LineKind) => (k === "power" ? "Wire height" : "Height");
 
@@ -441,7 +441,7 @@ function FieldSettings({ item, kind }: { item: AreaItem; kind: FieldKind }) {
       </Field>
       {MARKED_FIELDS.includes(kind) && <Slider label="Markings turn" min={-90} max={90} step={1} value={item.fieldTurn ?? 0} onChange={v => set({ fieldTurn: v || undefined }, false)} onDone={commit} format={fmtTurn} />}
       {isBallField(kind) && (
-        <Field label="Home plate">
+        <Field label="Home plate" help="park">
           <div className="flex items-center justify-between gap-2" data-testid="field-home">
             <span className="text-sm text-zinc-200 tabular-nums">{homeText(item)}</span>
             {!item.locked && <Button small onClick={() => nextHomeCorner(item.id)} testid="field-home-next">Next corner</Button>}
