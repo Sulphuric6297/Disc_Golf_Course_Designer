@@ -183,6 +183,9 @@ export interface AreaItem extends BaseItem {
   /** Woods filled by the app: its mix (shares of pines and of bushes; the rest leafy), how thick
    * (1 = usual), and its trees' heights (ft). Unset: the landscape's. */
   pines?: number;
+  /** A stand's one species (lib/treeMix: oak, pear, spruce…), the Trees tool's or set in its panel;
+   * unset: the course's kinds of trees. */
+  species?: string;
   bushes?: number;
   density?: number;
   heights?: [number, number];

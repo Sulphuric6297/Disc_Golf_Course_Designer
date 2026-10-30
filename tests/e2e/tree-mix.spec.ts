@@ -72,6 +72,38 @@ test("outside the US: the kinds to pick, no region's", async ({ page }) => {
   await expect(page.getByTestId("tree-kinds-region")).toHaveCount(0);
 });
 
+test("the Trees tool plants one species: a Bradford pear, then a stand of them, which grows only pears and says so in its panel", async ({ page }) => {
+  await blankCourse(page);
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => (window as any).__dgEditor().set({ tool: "add-tree", treeKind: "deciduous", standOf: null }));
+  const row = page.getByTestId("tree-species");
+  await expect(row.getByRole("radio", { name: "Any kind" })).toHaveAttribute("aria-checked", "true");
+  await expect(row.getByRole("radio", { name: "Spruce" })).toHaveCount(0);
+  await row.getByRole("radio", { name: "Bradford pear" }).click();
+  await page.evaluate(() => (window as any).__dgActions.placeAt("add-tree", { x: 900, y: 300 }));
+  expect((await course(page)).items.find((i: any) => i.type === "tree").species).toBe("pear");
+  // A stand of them: a wood of only pears
+  await page.getByTestId("draw-shape-box").click();
+  const id = await page.evaluate(() => {
+    (window as any).__dgActions.addDrawn("area", [{ x: 200, y: 400 }, { x: 700, y: 400 }, { x: 700, y: 750 }, { x: 200, y: 750 }]);
+    const d = (window as any).__dgCourse();
+    return d.items[d.items.length - 1].id;
+  });
+  const wood = (await course(page)).items.find((i: any) => i.id === id);
+  expect([wood.kind, wood.pines, wood.species]).toEqual(["woods", 0, "pear"]);
+  await expect.poll(async () => { const t = await woodsTrees(page); return t.length > 20 && t.every(s => s.shape === "broadleaf" && (s.variant === 13 || s.variant === 14)); }, { timeout: 20_000 }).toBe(true);
+  // Its panel: Species, the pear picked; Any kind gives it the course's kinds again
+  await page.evaluate(i => { (window as any).__dgEditor().set({ tool: "select" }); (window as any).__dgActions.select(i); }, id);
+  const sp = page.getByTestId("stand-species");
+  await expect(sp.getByRole("radio", { name: "Bradford pear" })).toHaveAttribute("aria-checked", "true");
+  await sp.getByRole("radio", { name: "Any kind" }).click();
+  await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === id).species).toBeUndefined();
+  // The kind is called Conifer now; its species: pine, tall pine, spruce, cedar
+  await page.evaluate(() => (window as any).__dgEditor().set({ tool: "add-tree", treeKind: "conifer", standOf: null }));
+  await expect(page.getByTestId("tree-kind-conifer")).toContainText("Conifer");
+  await expect(page.getByTestId("tree-species").getByRole("radio", { name: "Tall pine" })).toBeVisible();
+});
+
 test.describe("phone", () => {
   const { defaultBrowserType: _b, ...phone } = devices["iPhone 13"];
   test.use(phone);

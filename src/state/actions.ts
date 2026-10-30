@@ -235,8 +235,10 @@ export const placeAt = (mode: ToolMode, p: P) => {
   }
   else if (mode === "add-dropzone") item = createDropZone(p, hole?.id);
   else if (mode === "add-tree") {
-    const kind = ed.treeKind;
+    const kind = ed.treeKind, species = kind === "bush" ? undefined : ed.treeSpecies[kind];
     item = createTree(p, kind === "conifer" ? { treeType: kind, radius: 10, height: 50, color: "#2f5d34" } : kind === "bush" ? { treeType: kind, radius: 5, height: 6 } : { treeType: kind });
+    // (the species picked in the tool bar)
+    if (species) item = { ...item, species } as CourseItem;
   } else if (mode === "add-amenity") item = createAmenity(p, ed.amenityKind);
   else if (mode === "add-label") item = createLabel(p, "Label");
   else if (mode === "add-field") {
@@ -281,7 +283,8 @@ export const addDrawn = (kind: "area" | "line" | "structure", points: P[], opts:
   if (kind === "area" && ed.areaKind === "field") return addField(createField(ed.fieldKind, points));
   const made = kind === "area" ? createArea(ed.areaKind, points) : kind === "structure" ? createStructure(ed.structureKind, points) : createLine(ed.lineKind, points);
   const drawn = opts.straight && made.type !== "structure" ? { ...made, straight: true } : made;
-  const item = drawn.type === "area" && drawn.kind === "woods" && ed.standOf ? { ...drawn, ...standOf(ed.standOf) } : drawn;
+  const sp = ed.standOf && ed.standOf !== "bush" ? ed.treeSpecies[ed.standOf] : undefined;
+  const item = drawn.type === "area" && drawn.kind === "woods" && ed.standOf ? { ...drawn, ...standOf(ed.standOf), ...(sp ? { species: sp } : {}) } : drawn;
   // (a building, road, parking or water drawn over trees: those standing in it go, the same step)
   const under = keepsTreesOut(item) ? new Set(getDoc().items.filter(i => i.type === "tree" && !i.locked && treeFree([item])(i)).map(i => i.id)) : new Set<string>();
   changeDoc(d => ({ items: [...d.items.filter(i => !under.has(i.id)), item] }));

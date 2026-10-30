@@ -781,14 +781,37 @@ test("tall grass has no underbrush until you pick some; then it grows there in 3
   const insp = page.getByTestId("inspector");
   const brush = insp.getByRole("radiogroup", { name: "Underbrush", exact: true });
   await expect(brush.getByRole("radio", { name: "None" })).toHaveAttribute("aria-checked", "true");
-  const grows = () => page.evaluate(id => (window as any).__dgView.shapes.has(`woods:${id}:under`), id);
-  expect(await grows()).toBe(false);
+  // (how many bushes grow in it: the tall grass never cleared its own underbrush away)
+  const grows = () => page.evaluate(id => (window as any).__dgView.shapes.get(`woods:${id}:under`)?.obj.userData.spots?.length ?? 0, id);
+  expect(await grows()).toBe(0);
   await brush.getByRole("radio", { name: "Light" }).click();
   await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === id).underbrush).toBe("light");
-  await expect.poll(grows, { timeout: 30_000 }).toBe(true);
+  await expect.poll(grows, { timeout: 30_000 }).toBeGreaterThan(100);
+  const light = await grows();
+  // Heavy: closer still
+  await brush.getByRole("radio", { name: "Heavy" }).click();
+  await expect.poll(grows, { timeout: 30_000 }).toBeGreaterThan(light * 3);
   // Back to none: gone again
   await brush.getByRole("radio", { name: "None" }).click();
-  await expect.poll(grows, { timeout: 30_000 }).toBe(false);
+  await expect.poll(grows, { timeout: 30_000 }).toBe(0);
+});
+
+test("a wood of bushes drawn over tall grass: its bushes grow there", async ({ page }) => {
+  await blankCourse(page);
+  const id = await page.evaluate(() => {
+    const a = (window as any).__dgActions, e = (window as any).__dgEditor();
+    e.set({ areaKind: "rough", tool: "select" });
+    a.addDrawn("area", [{ x: 250, y: 350 }, { x: 750, y: 350 }, { x: 750, y: 750 }, { x: 250, y: 750 }]);
+    (window as any).__dgEditor().set({ areaKind: "woods", tool: "select" });
+    a.addDrawn("area", [{ x: 300, y: 400 }, { x: 700, y: 400 }, { x: 700, y: 700 }, { x: 300, y: 700 }]);
+    const d = (window as any).__dgCourse();
+    const w = d.items[d.items.length - 1];
+    a.updateItem(w.id, { bushes: 1, pines: undefined });
+    a.select(null);
+    return w.id;
+  });
+  const bushes = () => page.evaluate(id => (window as any).__dgView.shapes.get(`woods:${id}:under`)?.obj.userData.spots?.length ?? 0, id);
+  await expect.poll(bushes, { timeout: 30_000 }).toBeGreaterThan(100);
 });
 
 test("the ? in the hint over the tool bar opens its tip on the screen, above the hint", async ({ page }) => {

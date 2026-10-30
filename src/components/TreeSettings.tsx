@@ -16,7 +16,7 @@ const shapeOf = (k: TreeKind | undefined): TreeShape => (k === "conifer" ? "coni
 /** The kinds of tree, as the tool bar names them (its icons too): a tree's panel and a phone's strip. */
 export const TREE_KINDS: { value: TreeKind; label: string; icon: JSX.Element }[] = [
   { value: "deciduous", label: "Leafy tree", icon: <TreeDeciduous size={14} /> },
-  { value: "conifer", label: "Pine", icon: <TreePine size={14} /> },
+  { value: "conifer", label: "Conifer", icon: <TreePine size={14} /> },
   { value: "bush", label: "Bush", icon: <Shrub size={14} /> }
 ];
 /** The settings that make a tree its own shape (cleared by Reset, which keeps its species). */

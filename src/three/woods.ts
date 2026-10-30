@@ -157,15 +157,15 @@ const edgeDistance = (p: P, poly: P[]) => {
 /** How deep into a wood the light reaches for underbrush, ft (past it, the edge's extra fades out). */
 const EDGE_DEPTH = 45;
 
-/** Underbrush in a wood, about every `spacing` feet (closer the heavier), kept off what `keepOut`
- * says: bushes, thicket shrubs, briars and weeds as its kind has them (weeds and briars out
- * where the light reaches, along the edge), and now and then a young tree. */
-export const createUnderbrush = (outline: P[], groundAt: (x: number, y: number) => number, color: string, mix: string[], keepOut: (p: P, reach: number) => boolean, level: BrushLevel, edge = 0.6, wood: P[] = outline, kind: BrushKind = "mixed") => {
+/** Underbrush in a wood, about every `spacing` feet (closer the heavier, and `closer` times closer
+ * still), kept off what `keepOut` says: bushes, thicket shrubs, briars and weeds as its kind has
+ * them (weeds and briars out where the light reaches, along the edge), and now and then a young tree. */
+export const createUnderbrush = (outline: P[], groundAt: (x: number, y: number) => number, color: string, mix: string[], keepOut: (p: P, reach: number) => boolean, level: BrushLevel, edge = 0.6, wood: P[] = outline, kind: BrushKind = "mixed", closer = 1) => {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of outline) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
   const spots: TreeSpot[] = [];
   const b = BRUSH[level];
-  const step = Math.max(b.spacing, Math.sqrt(((maxX - minX) * (maxY - minY)) / MAX_TREES));
+  const step = Math.max(b.spacing / closer, Math.sqrt(((maxX - minX) * (maxY - minY)) / MAX_TREES));
   const range = (d: number, [lo, hi]: readonly [number, number]) => lo + d * (hi - lo);
   if (outline.length >= 3) {
     for (let y = minY; y <= maxY; y += step * 0.87) {

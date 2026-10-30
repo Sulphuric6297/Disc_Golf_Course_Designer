@@ -18,7 +18,7 @@ import { isLineKind, offsetPolygon, roofFor, structureHeight, structurePath, str
 import { latitudeOf, lookParts, paintLight, sunFromOf } from "./mapLook";
 import { STYLE_GREENS, drawMist, drawShadows, drawTrees, gradeLight, type PaintTree } from "./paintTrees";
 import { drawBrushedSteps, type Wait } from "./brushCrown";
-import { LOOK_TINT, conifersWith, drawOf, lookFor, shapeWith, sharesOf, type TreeLookId } from "./treeMix";
+import { LOOK_TINT, LOOK_VARIANTS, conifersWith, drawOf, lookFor, shapeWith, sharesOf, standShares, type TreeLookId } from "./treeMix";
 
 /** Where the photo shows trees, on a grid over the site (1 = canopy). */
 export type CanopyGrid = { cols: number; rows: number; ftPerCell: number; data: Uint8Array };
@@ -812,6 +812,18 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // they are; each treetop one of the kinds, its leaves' color moved as in 3D)
   const shares = sharesOf(s);
   const vPines = conifersWith(shares, paintedPinesOf(s, look.trees.pines));
+  // (a stand of one species, drawn: the treetops in it all of it, as in 3D)
+  const oneSpecies = vector ? (doc.items.filter(i => i.type === "area" && i.kind === "woods") as AreaItem[]).flatMap(a => {
+    const own = standShares(a, null);
+    if (!own) return [];
+    const pts = drawnAreas([a])[0].points;
+    return [{ pts, box: boundsOf(pts), look: Object.keys(own)[0] as TreeLookId }];
+  }) : [];
+  const standAt = (x: number, y: number) => {
+    if (!oneSpecies.length) return null;
+    const p = toPlan(x, y);
+    return oneSpecies.find(st => p.x >= st.box.minX && p.x <= st.box.maxX && p.y >= st.box.minY && p.y <= st.box.maxY && pointInPolygon(p, st.pts))?.look ?? null;
+  };
   const asKind = (c: RGB, kind: TreeLookId | null | undefined): RGB => {
     if (!kind) return c;
     const [h, sl, l] = rgbToHsl(c), [dh, ds, dl] = LOOK_TINT[kind];
@@ -837,8 +849,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
           // (a crown that would reach over a fairway, path or water nearby: smaller, so the clearing stays clear)
           const clearAt = (dx: number, dy: number) => { const cx = Math.min(mw - 1, Math.max(0, Math.floor((x + dx) / cell))), cy = Math.min(mh - 1, Math.max(0, Math.floor((y + dy) / cell))); return a[(cy * mw + cx) * 4 + 1] > 90; };
           for (let tries = 0; tries < 2; tries++) { const q = r * 0.75; if (clearAt(q, 0) || clearAt(-q, 0) || clearAt(0, q) || clearAt(0, -q)) r *= 0.72; else break; }
-          const h = r * (1.6 + rnd() * 0.8), pine = rnd() < vPines, col = treeColor(rnd()), seed = rnd();
-          const kind = lookFor(pine ? "conifer" : "broadleaf", drawOf(Math.round(seed * 1e6), 7), shares);
+          const h = r * (1.6 + rnd() * 0.8), drawnPine = rnd() < vPines, col = treeColor(rnd()), seed = rnd();
+          const own = standAt(x, y), pine = own ? LOOK_VARIANTS[own].shape === "conifer" : drawnPine;
+          const kind = own ?? lookFor(pine ? "conifer" : "broadleaf", drawOf(Math.round(seed * 1e6), 7), shares);
           vtrees.push({ x, y, r, h, pine, col: asKind(col, kind), seed, look: kind });
           continue;
         }

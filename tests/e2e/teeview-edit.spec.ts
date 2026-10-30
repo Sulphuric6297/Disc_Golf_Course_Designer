@@ -235,6 +235,28 @@ test("standing with no hole at all, or far from every hole: right there, the way
   await expect(page.getByTestId("tee-view-hud")).toBeVisible();
 });
 
+test("standing never goes past the map's edge: a spot asked for past it, or a step out past it, stays just inside", async ({ page }) => {
+  await blankCourse(page);
+  const one = await addHole(page, { x: 200, y: 300 }, { x: 600, y: 300 });
+  await page.keyboard.press("Escape");
+  const c = (await course(page)).canvas;
+  // (the view's own spot, where the eye is)
+  const at = () => page.evaluate(() => (window as any).__dgView.povStand);
+  await page.evaluate(id => (window as any).__dgEditor().set({ teeView: id, teeStand: { x: -400, y: -300 }, flyover: false }), one.id);
+  await expect(page.getByTestId("tee-view-hud")).toBeVisible();
+  await expect.poll(async () => (await at())?.x ?? -1).toBeGreaterThan(0);
+  const p = await at();
+  expect(p.x).toBeLessThan(10);
+  expect(p.y).toBeGreaterThan(0);
+  // A step far out past the far corner: it stops just inside, and that's where the person stands
+  await page.evaluate(() => (window as any).__dgView.walkTo({ x: 100000, y: 100000 }));
+  await expect.poll(async () => (await stand(page))?.x ?? 0, { timeout: 20_000 }).toBeGreaterThan(c.width - 10);
+  const s = await stand(page);
+  expect(s.x).toBeLessThan(c.width);
+  expect(s.y).toBeLessThan(c.height);
+  expect(s.y).toBeGreaterThan(c.height - 10);
+});
+
 test("standing: walking near another hole puts you on it; the hole's card hides to a chip and comes back; what's over the view follows it as it turns", async ({ page }) => {
   test.setTimeout(300_000);
   await blankCourse(page);

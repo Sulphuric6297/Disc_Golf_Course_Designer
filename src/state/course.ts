@@ -178,6 +178,8 @@ type EditorStore = {
   /** What the Park tool puts down: a ball field, a court, a playground… */
   fieldKind: FieldKind;
   treeKind: TreeKind;
+  /** The species the Trees tool plants, for each kind (unset: the course's kinds of trees). */
+  treeSpecies: Partial<Record<TreeKind, string>>;
   /** The Trees tool drawing a stand of one kind (woods that grow only it, around the trees
    * measured there); null: a tree at a time, or the Woods choice's own mix. */
   standOf: TreeKind | null;
@@ -269,6 +271,7 @@ export const useEditor = create<EditorStore>()(set => ({
   amenityKind: "bench",
   fieldKind: "baseball",
   treeKind: "deciduous",
+  treeSpecies: {},
   standOf: null,
   teeView: null,
   flyover: false,

@@ -20,7 +20,7 @@ import { boundsOf, centroid, dist, distanceToPath, inBounds, nearestAlong, offse
 import { isOutOfPlay, parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
 import { conifersOf, treeMixOf } from "../lib/landscapes";
-import { sharesOf } from "../lib/treeMix";
+import { LOOK_LABEL, sharesOf, standShares, type TreeLookId } from "../lib/treeMix";
 import { fmtArea, fmtDist, fmtElev } from "../lib/units";
 import { BASKET_BAND, createAmenity, createBasket, createDropZone, createMando, createTeePad, fitTeePad } from "../three/courseModels";
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
@@ -58,8 +58,12 @@ const DEG = Math.PI / 180;
 // The light of ez-tree's demo (photographed leaves and bark read true under it): a strong sun, a
 // soft even sky, and Neutral tone mapping at twice the exposure
 const SUN_INTENSITY = 5;
+/** How far inside the map's edge standing stays, ft. */
+const STAND_EDGE_FT = 4;
 const HEMI_INTENSITY = 0.5;
 const EXPOSURE = 2;
+/** How much closer underbrush grows in tall grass than under trees (out in the sun, it fills in). */
+const TALL_GRASS_BRUSH = 1.8;
 const CLICK_PX = 4;
 /** A finger moves a little in a tap (more than a mouse in a click). */
 const TOUCH_SLOP = 10;
@@ -1185,8 +1189,10 @@ export class CourseView {
 
   /** Look from a hole's tee down the hole (null: back to the map); `teeId`: from that tee of it
    * (another skill level's), not the one the layout plays. */
-  setTeeView(holeId: string | null, teeId: string | null = null, stand: { x: number; y: number; face?: number } | null = null) {
+  setTeeView(holeId: string | null, teeId: string | null = null, at: { x: number; y: number; face?: number } | null = null) {
     this.fly = null;
+    // (never past the map's edge)
+    const stand = at ? { ...at, ...this.inMap(at) } : null;
     const tee = teeId && holeId ? this.doc?.course.items.find(i => i.id === teeId && i.type === "tee" && i.holeId === holeId) : null;
     const nextTee = tee ? tee.id : null;
     // (standing somewhere: facing down the hole, unless told otherwise; the same spot again: as it is)
@@ -1255,6 +1261,15 @@ export class CourseView {
     return this.holeNear(p, STAND_NEAR_FT) ?? STAND_HERE;
   }
 
+  /** A spot to stand on kept on the map: past its edge (the open plane round it), the nearest
+   * spot a step inside. */
+  inMap(p: P): P {
+    const c = this.doc?.course.canvas;
+    if (!c) return p;
+    const m = Math.min(STAND_EDGE_FT, c.width / 4, c.height / 4);
+    return { x: Math.min(c.width - m, Math.max(m, p.x)), y: Math.min(c.height - m, Math.max(m, p.y)) };
+  }
+
   /** Where the person would land dropped at a screen point (the map's ground there), with a ring
    * there; null: none (the ring goes). */
   dropPreview(clientX: number | null, clientY = 0): P | null {
@@ -1262,7 +1277,7 @@ export class CourseView {
     if (clientX === null || this.povHole) { this.invalidate(); return null; }
     const g = this.groundAt(clientX, clientY);
     if (!g) { this.invalidate(); return null; }
-    const p = { x: g.x, y: g.z };
+    const p = this.inMap({ x: g.x, y: g.z });
     // (6 ft across, or about 16 px when zoomed out: a ring to see)
     const worldPerPx = (2 * this.controls.distance * Math.tan((this.camera.fov * DEG) / 2)) / Math.max(1, this.size.height);
     this.dropRingFx = this.groundRing(p, Math.max(6, 16 * worldPerPx), SELECT, 0.95, 3);
@@ -1282,9 +1297,10 @@ export class CourseView {
   }
 
   /** Standing: walks to a spot (a glide there), still looking the way you were. */
-  private walkTo(p: P) {
+  private walkTo(to: P) {
     const pose = this.povPose();
     if (!pose || !this.povHole) return;
+    const p = this.inMap(to);
     const dir = new THREE.Vector3().subVectors(pose.target, pose.eye);
     const face = Math.atan2(dir.z, dir.x);
     const from = { x: pose.eye.x, y: pose.eye.z };
@@ -1323,7 +1339,8 @@ export class CourseView {
   private nameOf(id: string) {
     const it = this.item(id);
     if (!it) return "It";
-    if (it.type === "tree") return it.treeType === "conifer" ? "Pine" : it.treeType === "bush" ? "Bush" : "Tree";
+    // (its species when it has one: a Bradford pear, a spruce)
+    if (it.type === "tree") return it.species && it.species in LOOK_LABEL ? LOOK_LABEL[it.species as TreeLookId] : it.treeType === "conifer" ? "Conifer" : it.treeType === "bush" ? "Bush" : "Tree";
     if (it.type === "basket") return "Basket";
     if (it.type === "tee") return "Tee";
     if (it.type === "structure") return it.label || "Building";
@@ -1342,7 +1359,7 @@ export class CourseView {
     if (!edits && g && eye && this.eyeAt(p.x, p.y).cam === this.povCam) {
       // (the ring alone: words following the pointer everywhere got in the way; the line along the
       // bottom says a click walks)
-      this.showStep({ x: g.x, y: g.z });
+      this.showStep(this.inMap({ x: g.x, y: g.z }));
       this.tip(null);
     } else { this.showStep(null); this.tip(null); }
   }
@@ -2902,14 +2919,16 @@ export class CourseView {
     // and built things (as on the painted map)
     // (`play`: only what's cleared for play, fairways, tees and baskets: the trees measured from the
     // air are real, and a crown over a path or a road doesn't stand on it)
-    const clearingsFor = (play: boolean) => {
+    // (`tallGrass`: tall grass clears too, for the painted woods; a wood or underbrush drawn over
+    // it grows there all the same)
+    const clearingsFor = (play: boolean, tallGrass = true) => {
       const polys: P[][] = [], lines: { pts: P[]; half: number }[] = [], discs: { p: P; r: number }[] = [];
       for (const s of doc.stats) {
         const hole = course.holes.find(h => h.id === s.holeId);
         if (s.complete && hole) teeLines(course, hole, s.line, s.teeId).forEach((l, k) => polys.push(this.outline(hole, l, `tee${k}`, 8, hole.fairway ? 0 : -hole.fairwayWidth * 0.4, 6)));
       }
       for (const it of course.items) {
-        if (it.type === "area" && (play ? ["fairway", "green"] : ["fairway", "green", "water", "parking", "building", "sand", "rough", "nogo", "field"]).includes(it.kind)) polys.push(this.shapeOf(it).pts);
+        if (it.type === "area" && (play ? ["fairway", "green"] : ["fairway", "green", "water", "parking", "building", "sand", ...(tallGrass ? ["rough"] : []), "nogo", "field"]).includes(it.kind)) polys.push(this.shapeOf(it).pts);
         else if (it.type === "line" && !play && it.kind !== "ob" && it.kind !== "fence") lines.push({ pts: this.shapeOf(it).pts, half: ((it.width ?? LINE_KINDS[it.kind].width) * Math.max(...widthFactors(it))) / 2 + 3 });
         else if (it.type === "tee") discs.push({ p: it, r: Math.max(12, it.padLength) });
         else if (it.type === "basket") discs.push({ p: it, r: CIRCLE_ONE_FT * 0.6 });
@@ -2955,6 +2974,9 @@ export class CourseView {
     // (worked out only when something asks: during a drag, nothing may)
     let clearingsMade: ReturnType<typeof clearingsFor> | null = null;
     const clearings = () => (clearingsMade ??= clearingsFor(false));
+    // (a drawn wood's trees and bushes, and underbrush: tall grass doesn't clear them)
+    let growMade: ReturnType<typeof clearingsFor> | null = null;
+    const growClearings = () => (growMade ??= clearingsFor(false, false));
     // Where no tree stands, whatever the survey found: in water, on roads, paths, creeks and walks,
     // on buildings, parking and built things (a trunk there is a bridge, a car, a wire or noise)
     const nowhereFor = () => {
@@ -3144,13 +3166,15 @@ export class CourseView {
       const fillsIn = measured && a.trees !== "drawn";
       const brushOnly = a.kind === "woods" && (a.bushes ?? 0) >= 1;
       if (a.kind === "woods" && a.trees !== "none" && !brushOnly && !held(`woods:${a.id}`)) {
-        const here = clearings().near(boundsOf(a.points));
-        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, cutKey, a.pines, a.bushes, a.density, a.heights, fillsIn && this.lidarKey, shares]), () => {
+        const here = growClearings().near(boundsOf(a.points));
+        // (a stand of one species grows only it)
+        const own = standShares(a, shares);
+        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, cutKey, a.pines, a.bushes, a.density, a.heights, fillsIn && this.lidarKey, own]), () => {
           this.plantings++;
           const box = boundsOf(a.points), standing = this.lidarState?.stand ?? [], trees = lidar?.trees ?? [];
           const near = fillsIn ? standing.map(k => trees[k]).filter(t => t && t[0] >= box.minX - 40 && t[0] <= box.maxX + 40 && t[1] >= box.minY - 40 && t[1] <= box.maxY + 40) : [];
           const keepOut = (p: P, r: number) => here.test(p, r) || cutAt(p) || near.some(t => Math.hypot(t[0] - p.x, t[1] - p.y) < t[3] * 0.8 + 4);
-          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), keepOut, 22 / Math.sqrt(Math.max(0.2, a.density ?? 1)), { pines: a.pines, bushes: a.bushes, heights: a.heights }, shares);
+          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), keepOut, 22 / Math.sqrt(Math.max(0.2, a.density ?? 1)), { pines: a.pines, bushes: a.bushes, heights: a.heights }, own);
           woods.traverse(o => { o.userData.itemId = a.id; });
           this.shadowsDirty = true;
           return woods;
@@ -3162,17 +3186,19 @@ export class CourseView {
       const brushLevel = brushOnly ? (["light", "medium", "heavy"] as const)[["sparse", "usual", "thick"].indexOf((a.density ?? 1) < 0.75 ? "sparse" : (a.density ?? 1) > 1.4 ? "thick" : "usual")] : a.underbrush;
       if (((a.kind === "woods" && a.trees !== "none") || a.kind === "rough") && (brushLevel || a.brush?.some(b => b.level !== "none"))) {
         let hereMade: ReturnType<ReturnType<typeof clearingsFor>["near"]> | null = null;
-        const here = () => (hereMade ??= clearings().near(boundsOf(a.points)));
+        const here = () => (hereMade ??= growClearings().near(boundsOf(a.points)));
         const sections = (a.brush ?? []).filter(b => b.points.length >= 3);
         const inSection = (p: P) => sections.some(b => pointInPolygon(p, b.points));
-        const edge = brushOnly ? 0 : Math.min(1, Math.max(0, a.brushEdge ?? 0.6));
+        // (tall grass is all in the sun: as thick through the middle as at its edge, and closer set)
+        const grass = a.kind === "rough";
+        const edge = brushOnly || grass ? 0 : Math.min(1, Math.max(0, a.brushEdge ?? 0.6));
         // (`over`: the sections drawn after this one, which have their say where they overlap it)
         const plant = (key: string, outline: P[], level: "light" | "medium" | "heavy", kind: BrushKind, outside: boolean, over: P[][] = []) =>
           held(key) || put(key, JSON.stringify([outline, level, kind, hv, st.trees, st.landscape, st.treeMix, st.conifers, here().key, cutKey, outside ? sections.map(b => b.points) : over, edge, a.points]), () => {
             this.plantings++;
             // (the wood's own level stays out of its sections; a section keeps to the wood)
             const keepOut = (p: P, r: number) => here().test(p, r) || cutAt(p) || (outside ? inSection(p) : !pointInPolygon(p, a.points) || over.some(o => pointInPolygon(p, o)));
-            const brush = createUnderbrush(outline, (x, y) => this.h(x, y), st.trees, treeMixOf(st), keepOut, level, edge, a.points, kind);
+            const brush = createUnderbrush(outline, (x, y) => this.h(x, y), st.trees, treeMixOf(st), keepOut, level, edge, a.points, kind, grass ? TALL_GRASS_BRUSH : 1);
             brush.traverse(o => { o.userData.itemId = a.id; });
             this.shadowsDirty = true;
             return brush;

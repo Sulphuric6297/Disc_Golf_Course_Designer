@@ -47,6 +47,14 @@ export const sharesOf = (s: { treeKinds?: string[] }): TreeShares | null => {
   return Object.fromEntries(kinds.map(k => [k, 1])) as TreeShares;
 };
 const hasShape = (shares: TreeShares, shape: "broadleaf" | "conifer") => (Object.keys(shares) as TreeLookId[]).some(l => LOOK_VARIANTS[l].shape === shape && (shares[l] ?? 0) > 0);
+/** The shape a wood grows when it grows one (all pines, or none and no bushes), else null. */
+export const standShape = (a: { pines?: number; bushes?: number }): "broadleaf" | "conifer" | null =>
+  (a.bushes ?? 0) >= 1 ? null : a.pines === 1 ? "conifer" : a.pines === 0 ? "broadleaf" : null;
+/** A wood's own kinds: its one species, where it grows only that species' shape (a stand of the
+ * Trees tool's, or set in its panel); else the course's (`course`). */
+export const standShares = (a: { species?: string; pines?: number; bushes?: number }, course: TreeShares | null): TreeShares | null =>
+  a.species && a.species in LOOK_VARIANTS && LOOK_VARIANTS[a.species as TreeLookId].shape === standShape(a) ? ({ [a.species]: 1 } as TreeShares) : course;
+
 /** The share of needle trees in woods: none when no needle kind is allowed, all when no leafy one
  * is, else `usual` (the wood's or the style's). */
 export const conifersWith = (shares: TreeShares | null, usual: number) => (!shares ? usual : !hasShape(shares, "conifer") ? 0 : !hasShape(shares, "broadleaf") ? 1 : usual);

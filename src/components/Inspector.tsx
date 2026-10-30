@@ -18,6 +18,8 @@ import { turnable } from "../lib/turn";
 import { conifersOf } from "../lib/landscapes";
 import { addHoleOb, deleteSelection, duplicateSelection, forgetNewLabel, isNewLabel, nextHomeCorner, obChoiceOf, pinsFull, setCourtCount, setFieldKind, setFieldLeague, setFieldPart, setFieldPlay, setLineKind, setObChoice, setPinPosition, startAnotherPin, startAnotherTee, startHoleToBasket, select, setTeeLevel, shareBasket, teesFull, type ObChoice } from "../state/actions";
 import { changeDoc, setHoleNumber, updateHole, updateItem, useCourse, useEditor } from "../state/course";
+import { standShape } from "../lib/treeMix";
+import { SPECIES } from "../three/ezShapes";
 import type { AmenityKind, AreaItem, CourseDoc, CourseItem, FenceStyle, FieldKind, FieldLeague, FieldPart, Hole, LabelItem, LineItem, LineKind, P, PathSurface, PinPosition, RoofKind, StructureItem, StructureKind, TeeLevel, TeeSurface } from "../types";
 import { fieldInks, fieldPlan, LEAGUE_ORDER, LEAGUES } from "../lib/fieldPlan";
 import { ElevationProfile } from "./ElevationProfile";
@@ -355,7 +357,7 @@ export const growsPatch = (g: Grows): Partial<AreaItem> => {
   const trees = +g.leafy + +g.pine, n = trees + +g.bush;
   return { bushes: g.bush ? (trees ? Math.round((1 / n) * 100) / 100 : 1) : undefined, pines: trees ? (g.pine ? (g.leafy ? 0.5 : 1) : 0) : undefined };
 };
-const GROWS: { key: keyof Grows; label: string }[] = [{ key: "leafy", label: "Leafy trees" }, { key: "pine", label: "Pines" }, { key: "bush", label: "Bushes" }];
+const GROWS: { key: keyof Grows; label: string }[] = [{ key: "leafy", label: "Leafy trees" }, { key: "pine", label: "Conifers" }, { key: "bush", label: "Bushes" }];
 export const growsText = (g: Grows) => GROWS.filter(x => g[x.key]).map((x, i) => (i ? x.label.toLowerCase() : x.label)).join(", ");
 
 /** What a wood grows, as chips that each turn on or off (one stays on). */
@@ -374,6 +376,20 @@ export function GrowsPick({ item, row = false }: { item: AreaItem; row?: boolean
   );
 }
 
+/** A stand's species, when it grows only leafy trees or only pines: any of the course's kinds, or one. */
+function StandSpecies({ item }: { item: AreaItem }) {
+  const shape = standShape(item);
+  if (!shape) return null;
+  const list = SPECIES[shape];
+  const now = item.species && list.some(s => s.id === item.species) ? item.species : "any";
+  return (
+    <Field label="Species" help="trees">
+      <ChipPick label="Species" testid="stand-species" value={now} onChange={v => updateItem(item.id, { species: v === "any" ? undefined : v } as Partial<CourseItem>)}
+        options={[{ value: "any", label: "Any kind", title: "The course's kinds of trees, as the woods grow" }, ...list.map(s => ({ value: s.id, label: s.label }))]} />
+    </Field>
+  );
+}
+
 /** A wood's settings: what grows, how thick, its underbrush, and (with measured trees) whether
  * those inside stay. Tall grass has the underbrush only. */
 function WoodsSettings({ item }: { item: AreaItem }) {
@@ -386,6 +402,7 @@ function WoodsSettings({ item }: { item: AreaItem }) {
       {woods && (
         <>
           <Field label="What grows" help="woods"><GrowsPick item={item} /></Field>
+          <StandSpecies item={item} />
           <Field label="How thick"><Segmented label="How thick" value={thickOf(item)} onChange={v => set({ density: densityFor(v) })} options={[...THICK]} /></Field>
         </>
       )}

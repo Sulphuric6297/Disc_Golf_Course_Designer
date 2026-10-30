@@ -305,8 +305,10 @@ function ToolHeader() {
   // no room beside the rest)
   const all = [...(toolOptions(ed) ?? []), ...(toolShapes(ed) ?? [])];
   const isBrush = (o: ReactNode) => (o as { key?: string } | null)?.key === "brush";
+  const isSpecies = (o: ReactNode) => (o as { key?: string } | null)?.key === "species";
   const kinds = (toolOptions(ed) ?? []).filter(o => !isBrush(o));
-  const shapes = (toolShapes(ed) ?? []).filter(o => !isBrush(o));
+  const shapes = (toolShapes(ed) ?? []).filter(o => !isBrush(o) && !isSpecies(o));
+  const species = (toolShapes(ed) ?? []).filter(isSpecies);
   const brush = all.find(isBrush);
   return (
     <div className="pb-3" data-testid="tool-header">
@@ -319,6 +321,7 @@ function ToolHeader() {
       </div>
       {kinds.length > 0 && <ChipRow testid="tool-options">{kinds}</ChipRow>}
       {shapes.length > 0 && <ChipRow testid="tool-shapes">{shapes}</ChipRow>}
+      {species.length > 0 && <ChipRow testid="tool-species">{species}</ChipRow>}
       {brush && <div className="mt-2 px-4 flex">{brush}</div>}
     </div>
   );
