@@ -386,10 +386,11 @@ function TouchControls({ view, info, scale, phone, top, room, threeD, editing }:
   const scene = threeD || fits(52);
   const locate = canShowLocation() && fits(52);
   const stand = fits(52);
-  // (the zoom slider between + and −, where there's room above the panel)
-  const slider = fits(112);
   const fit = fits(52);
   const box = editing && fits(52);
+  // (the zoom slider between + and −, where there's room above the panel once the buttons with no
+  // other way to them are in: shorter where it's tight, as pinching and a double tap zoom too)
+  const slider = fits(112) ? 112 : fits(72) ? 72 : 0;
   const turn = fits(96);
   return (
     <>
@@ -410,7 +411,7 @@ function TouchControls({ view, info, scale, phone, top, room, threeD, editing }:
             )}
             <div className={group}>
               <button className={b} aria-label="Zoom in" onClick={() => view?.zoomBy(1.4)}><Plus size={20} /></button>
-              {slider && <ZoomSlider view={view} height={112} />}
+              {slider > 0 && <ZoomSlider view={view} height={slider} />}
               <button className={b} aria-label="Zoom out" onClick={() => view?.zoomBy(1 / 1.4)}><Minus size={20} /></button>
             </div>
             {locate && <div className={group}><LocateButton className={b} size={20} /></div>}
