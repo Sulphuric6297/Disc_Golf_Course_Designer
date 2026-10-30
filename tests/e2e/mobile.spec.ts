@@ -1,7 +1,7 @@
 // Phones and tablets: the step bar, the bottom sheet (peek, half, full), tools by tap with Undo,
 // Cancel and Done, the selection in the sheet, long-press menus, the Design preview fitted to the
 // screen, the tee view, a phone on its side, a tablet, and the desktop layout left as it was.
-import { test, expect, classicLook, course, editorState, tapPlan, longPress, touchDrag, touches, pinch, screenOf } from "./fixtures";
+import { test, expect, classicLook, course, editorState, tapPlan, longPress, touchDrag, touches, pinch, screenOf, planAt } from "./fixtures";
 import { devices, type Page } from "@playwright/test";
 import { writeFileSync } from "fs";
 import { createBasket, createEmptyCourse, createTee, newHole } from "../../src/lib/course";
@@ -490,6 +490,88 @@ test.describe("phone", () => {
     const now = await scale();
     await page.getByRole("button", { name: "Zoom out" }).tap();
     await expect.poll(scale).toBeLessThan(now * 0.85);
+  });
+
+  test("a finger holds the ground as it moves the map, flat and tilted; let go while moving and it slides on, slowing; two fingers slide it too", async ({ page }) => {
+    await oneHole(page);
+    const box = (await page.getByTestId("plan").boundingBox())!;
+    const at = { x: box.x + box.width / 2, y: box.y + box.height * 0.3 };
+    // (the ground under a point on screen, and where it is on screen now, moving or not)
+    const ground = async () => (await planAt(page, at.x, at.y))!;
+    const now = (g: { x: number; y: number }) => page.evaluate(([x, y]) => (window as any).__dgView.toClient(x, y, 0), [g.x, g.y] as const) as Promise<{ x: number; y: number }>;
+    const still = async () => { await page.waitForTimeout(200); };
+    for (const view of ["2d", "3d"]) {
+      await page.evaluate(v => (window as any).__dgEditor().set({ view: v }), view);
+      await page.waitForTimeout(300);
+      await expect.poll(() => page.evaluate(() => (window as any).__dgView.settled()), { timeout: 15000 }).toBe(true);
+      // (from the whole course: well inside the site's edge, past which the map doesn't go)
+      await page.evaluate(() => (window as any).__dgView.fitCourse(false));
+      // A slow drag, held still before lifting: the ground under the finger stayed under it
+      const g = await ground();
+      await touches(page, async send => {
+        await send("touchStart", [at]);
+        for (let i = 1; i <= 12; i++) await send("touchMove", [{ x: at.x + 5 * i, y: at.y + 6 * i }]);
+        await still();
+        await send("touchEnd", []);
+      });
+      await page.waitForTimeout(300);
+      const end = await now(g);
+      expect(Math.abs(end.x - (at.x + 60)), view).toBeLessThan(3);
+      expect(Math.abs(end.y - (at.y + 72)), view).toBeLessThan(3);
+      // A quick flick: the map goes on sliding the same way after the finger lifts, then stops.
+      // (Sent within the page at a finger's pace, 10 ms a move: touches sent from outside wait on
+      // each picture, and a test machine with no graphics chip draws too slowly for a flick)
+      const f = await ground();
+      await page.evaluate(([x, y]) => {
+        const el = document.elementFromPoint(x, y)!;
+        const fire = (type: string, px: number) => el.dispatchEvent(new PointerEvent(type, { pointerId: 77, pointerType: "touch", isPrimary: true, clientX: px, clientY: y, button: 0, buttons: type === "pointerup" ? 0 : 1, bubbles: true, cancelable: true }));
+        const pause = (ms: number) => { const t = performance.now(); while (performance.now() - t < ms) { /* a finger's pace */ } };
+        fire("pointerdown", x);
+        for (let i = 1; i <= 6; i++) { pause(10); fire("pointermove", x + 14 * i); }
+        pause(8);
+        fire("pointerup", x + 84);
+      }, [at.x, at.y] as const);
+      const lifted = await now(f);
+      await page.waitForTimeout(1500);
+      expect((await now(f)).x - lifted.x, view).toBeGreaterThan(15);
+      // (then comes to rest)
+      await expect.poll(() => page.evaluate(() => (window as any).__dgView.settled()), { timeout: 15000 }).toBe(true);
+    }
+    // Two fingers side by side, slid together: the ground between them moves with them (and the
+    // map isn't turned)
+    const heading = () => page.evaluate(() => (window as any).__dgView.viewInfo().heading);
+    await page.evaluate(() => (window as any).__dgView.fitCourse(false));
+    const h0 = await heading(), g2 = await ground();
+    await touches(page, async send => {
+      const two = (dx: number) => [{ x: at.x - 60 + dx, y: at.y }, { x: at.x + 60 + dx, y: at.y }];
+      await send("touchStart", two(0));
+      for (let i = 1; i <= 10; i++) await send("touchMove", two(8 * i));
+      await still();
+      await send("touchEnd", []);
+    });
+    await page.waitForTimeout(400);
+    expect(Math.abs((await now(g2)).x - (at.x + 80))).toBeLessThan(4);
+    expect(Math.abs((await heading()) - h0)).toBeLessThan(1);
+  });
+
+  test("the thing picked stays in view: raised to half height, the panel brings the map along so the thing shows above it", async ({ page }) => {
+    await oneHole(page);
+    // (a tree low on the map, just above the panel's strip, where the panel at half height
+    // would cover it)
+    const strip = (await sheet(page).boundingBox())!.y;
+    const box = (await page.getByTestId("plan").boundingBox())!;
+    const g = (await planAt(page, box.x + box.width / 2, strip - 40))!;
+    await page.evaluate(p => (window as any).__dgActions.placeAt("add-tree", p), g);
+    const id = (await course(page)).items.find((i: any) => i.type === "tree").id;
+    await tapPlan(page, g.x, g.y);
+    await expect.poll(async () => (await editorState(page)).selectedId).toBe(id);
+    await settle(page);
+    await page.getByTestId("sheet-handle").tap();
+    await expect(sheet(page)).toHaveAttribute("data-detent", "half");
+    await settle(page);
+    const top = (await sheet(page).boundingBox())!.y;
+    await expect.poll(async () => (await screenOf(page, g.x, g.y)).y, { timeout: 8000 }).toBeLessThan(top - 20);
+    expect((await screenOf(page, g.x, g.y)).y).toBeGreaterThan(64);
   });
 
   test("the Map step's preview fits the phone's width (its five tabs too, whole); pinch and the buttons zoom it", async ({ page }) => {

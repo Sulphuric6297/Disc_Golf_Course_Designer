@@ -64,6 +64,10 @@ const CLICK_PX = 4;
 const TOUCH_SLOP = 10;
 /** Holding a finger this long on an item opens its menu (the touch right-click). */
 const LONG_PRESS_MS = 500;
+/** A fling's slowing, as on Google Maps: its speed falls to about a third every this many seconds. */
+const GLIDE_TAU = 0.32;
+/** How far two fingers twist before the map turns with them (a pinch to zoom stays as it was). */
+const TWIST = 12 * DEG;
 const TILT_TOP = 8 * DEG;
 const DEFAULT_TILT = 55 * DEG;
 const MAX_TILT = 84 * DEG;
@@ -467,7 +471,7 @@ export class CourseView {
     c.mouseButtons.middle = ACTION.ROTATE;
     c.mouseButtons.right = ACTION.ROTATE;
     c.mouseButtons.wheel = ACTION.NONE;
-    c.touches.one = ACTION.TOUCH_TRUCK;
+    c.touches.one = ACTION.NONE; // (one finger is handled here too: see panDrag)
     c.touches.two = ACTION.NONE; // (two fingers are handled here: see twoFingers)
     c.touches.three = ACTION.TOUCH_TRUCK;
     c.minPolarAngle = 0;
@@ -786,6 +790,7 @@ export class CourseView {
     const doc = this.doc;
     if (!doc) return;
     this.autoFit = null;
+    this.glide = null;
     const margin = opts.margin ?? 1.2;
     const minSpan = opts.minSpan ?? 0;
     const w = Math.max(b.maxX - b.minX, minSpan, 1) * margin;
@@ -896,7 +901,7 @@ export class CourseView {
   private gliding = false;
   /** Whether the map has come to rest (for tests: a click lands where it was aimed). */
   settled() {
-    return this.paused || !this.gliding;
+    return this.paused || (!this.gliding && !this.glide);
   }
   /** When the camera last moved (dragged, zoomed, gliding), ms on performance.now(). */
   private movedAt = 0;
@@ -1114,6 +1119,7 @@ export class CourseView {
       return;
     }
     this.walk = null;
+    this.glide = null;
     this.povStand = holeId && stand ? { x: stand.x, y: stand.y, face: stand.face ?? this.faceDownHole(holeId, stand) } : null;
     if (holeId === this.povHole && nextTee === this.povTee) return;
     this.povTee = nextTee;
@@ -1967,6 +1973,7 @@ export class CourseView {
     const dt = this.clock.getDelta();
     this.gliding = this.controls.update(dt);
     if (this.gliding) this.dirty = true;
+    if (this.glide) { this.stepGlide(dt); this.dirty = true; }
     if (!this.fly && this.stepFree(dt)) this.dirty = true;
     if (this.fly) {
       // Held on its first picture until everything's in (a few frames drawn after), then at most
@@ -4880,19 +4887,93 @@ export class CourseView {
     this.updateCursor();
   }
 
-  /** Map-style pan: the ground point under the cursor stays under the cursor. */
-  private panDrag(e: PointerEvent): Drag | null {
+  /** Map-style pan, with a mouse or a finger: the ground point under it stays under it; let go
+   * while it's still moving and the map slides on, slowing, as on Google Maps. */
+  private panDrag(e: { clientX: number; clientY: number; timeStamp?: number }): Drag | null {
     const g0 = this.groundAt(e.clientX, e.clientY);
     if (!g0) return null;
+    this.userMoved();
     this.container.style.cursor = "grabbing";
+    // (where the map was over the last moments: the fling's speed)
+    // (by when each move happened, not when it was handled: a busy frame doesn't skew it)
+    const trail: { t: number; x: number; z: number }[] = [];
+    const mark = (t: number) => {
+      const g = this.controls.getTarget(new THREE.Vector3(), false);
+      trail.push({ t, x: g.x, z: g.z });
+      if (trail.length > 8) trail.shift();
+    };
+    mark(e.timeStamp ?? performance.now());
     return {
       move: ev => {
         const g1 = this.planeAt(ev.clientX, ev.clientY, g0.y);
         if (!g1) return;
         this.shift(g0.x - g1.x, g0.z - g1.z);
+        mark(ev.timeStamp);
       },
-      end: () => this.updateCursor()
+      // (not when a second finger took over, or the press was cancelled)
+      end: ev => {
+        this.updateCursor();
+        if (ev.type === "pointerup" && this.touchIds.size === 0) this.fling(trail, ev.timeStamp);
+      }
     };
+  }
+
+  /** The map moved by hand: it stops following you and keeps its place when the window changes
+   * size; a fling under way stops. */
+  private userMoved() {
+    this.glide = null;
+    this.posePinned = false;
+    this.autoFit = null;
+    this.onUserMove?.();
+  }
+
+  /** The map sliding on after a pan let go of while moving (plan ft a second). */
+  private glide: { vx: number; vz: number } | null = null;
+  /** A fling, at the speed the map moved over the last tenth of a second (none if it was held
+   * still before letting go, or moved slowly). */
+  private fling(trail: { t: number; x: number; z: number }[], at: number) {
+    const last = trail[trail.length - 1];
+    if (!last || at - last.t > 60) return;
+    const first = trail.find(s => last.t - s.t <= 100);
+    if (!first || last.t - first.t < 16) return;
+    const sec = (last.t - first.t) / 1000;
+    let vx = (last.x - first.x) / sec, vz = (last.z - first.z) / sec;
+    const px = Math.hypot(vx, vz) / this.worldPerPx();
+    if (px < 250) return;
+    if (px > 4000) { vx *= 4000 / px; vz *= 4000 / px; }
+    this.glide = { vx, vz };
+    this.invalidate();
+  }
+  private stepGlide(dt: number) {
+    const g = this.glide!;
+    const k = Math.exp(-Math.min(dt, 0.1) / GLIDE_TAU);
+    this.shift(g.vx * GLIDE_TAU * (1 - k), g.vz * GLIDE_TAU * (1 - k));
+    g.vx *= k;
+    g.vz *= k;
+    if (Math.hypot(g.vx, g.vz) / this.worldPerPx() < 20) this.glide = null;
+  }
+  /** Plan ft per screen pixel at the point looked at. */
+  private worldPerPx() {
+    return (2 * this.controls.distance * Math.tan((this.camera.fov * DEG) / 2)) / Math.max(1, this.size.height);
+  }
+
+  /** The finger left on the map when the other of two lifts: it goes on moving the map. */
+  private followFinger(id: number, x: number, y: number) {
+    const drag = this.panDrag({ clientX: x, clientY: y });
+    if (!drag) return;
+    const move = (ev: PointerEvent) => { if (ev.pointerId === id) { drag.move(ev); this.invalidate(); } };
+    const up = (ev: PointerEvent) => { if (ev.pointerId === id) { cleanup(); drag.end(ev); } };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      this.endDragListeners = null;
+    };
+    this.endDragListeners?.();
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    this.endDragListeners = cleanup;
   }
 
   private shift(dx: number, dz: number) {
@@ -4938,9 +5019,10 @@ export class CourseView {
 
   /** Where each finger is now (screen px). */
   private fingerAt = new Map<number, { x: number; y: number }>();
-  /** Two fingers on the map, as on Google Earth: a pinch zooms around the point between them, a
-   * twist turns the map around it (it stays under the fingers), a slide up or down tilts. */
-  private pinch: { d: number; a: number; cy: number } | null = null;
+  /** Two fingers on the map, as on Google Maps: they hold the ground between them, so sliding them
+   * moves the map, spreading them zooms and twisting them turns it (once twisted a little: a pinch
+   * doesn't turn the map by accident); both sliding up or down together, side by side, tilt it. */
+  private pinch: { d: number; a: number; cx: number; cy: number; p0: P; q0: P; d0: number; a0: number; mode: "" | "tilt" | "map"; turning: boolean } | null = null;
   /** Two fingers that came down on the thing picked: they size and turn it, not the map. */
   private pinchItem: { id: string; base: CourseItem; d0: number; a0: number; aim: number } | null = null;
   private readonly twoFingers = (e: PointerEvent) => {
@@ -4952,15 +5034,38 @@ export class CourseView {
     if (!p || !q) return;
     const d = Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a = Math.atan2(q.y - p.y, q.x - p.x), cx = (p.x + q.x) / 2, cy = (p.y + q.y) / 2;
     const was = this.pinch;
-    this.pinch = { d, a, cy };
     if (this.pinchItem) {
+      this.pinch = { ...was, d, a, cx, cy };
       const patch = this.pinchedPatch(this.pinchItem, d / this.pinchItem.d0, ((a - this.pinchItem.a0) * 180) / Math.PI);
       if (patch) this.cb.onChange(this.pinchItem.id, patch);
       return;
     }
+    // (what the fingers do, once they've moved a little: both sliding up or down side by side
+    // tilts; anything else holds the ground)
+    if (!was.mode) {
+      const dp = { x: p.x - was.p0.x, y: p.y - was.p0.y }, dq = { x: q.x - was.q0.x, y: q.y - was.q0.y };
+      if (Math.max(Math.hypot(dp.x, dp.y), Math.hypot(dq.x, dq.y)) < TOUCH_SLOP) return;
+      const sideBySide = Math.abs(Math.sin(was.a0)) < 0.6;
+      const slides = (v: P) => Math.abs(v.y) > 2 * Math.abs(v.x);
+      was.mode = sideBySide && slides(dp) && slides(dq) && Math.sign(dp.y) === Math.sign(dq.y) && Math.abs(d / was.d0 - 1) < 0.15 ? "tilt" : "map";
+      this.userMoved();
+    }
+    const now = (this.pinch = { ...was, d, a, cx, cy });
+    if (was.mode === "tilt") {
+      if (Math.abs(was.cy - cy) > 0.5) void this.controls.rotate(0, (was.cy - cy) * (MAX_TILT / Math.max(300, this.size.height * 0.6)), false);
+      this.invalidate();
+      return;
+    }
+    // (the ground that was between the fingers, back between them)
+    const g0 = this.groundAt(was.cx, was.cy), g1 = g0 && this.planeAt(cx, cy, g0.y);
+    if (g0 && g1) this.shift(g0.x - g1.x, g0.z - g1.z);
+    const wrap = (r: number) => (r > Math.PI ? r - 2 * Math.PI : r < -Math.PI ? r + 2 * Math.PI : r);
+    let da = wrap(a - was.a);
+    if (!now.turning) {
+      now.turning = Math.abs(wrap(a - was.a0)) > TWIST;
+      da = 0;
+    }
     // (the map turns with the fingers and stays under them: around the ground between them)
-    let da = a - was.a;
-    if (da > Math.PI) da -= 2 * Math.PI; else if (da < -Math.PI) da += 2 * Math.PI;
     if (Math.abs(da) > 1e-4) {
       const under = this.groundAt(cx, cy);
       if (under) {
@@ -4971,14 +5076,15 @@ export class CourseView {
         void this.controls.setLookAt(np.x, np.y, np.z, nt.x, nt.y, nt.z, false);
       } else void this.controls.rotate(da, 0, false);
     }
-    if (Math.abs(was.cy - cy) > 0.5) void this.controls.rotate(0, (was.cy - cy) * (MAX_TILT / Math.max(300, this.size.height * 0.6)), false);
     if (Math.abs(d / was.d - 1) > 1e-3) this.zoomAt(cx, cy, was.d / d, false);
     this.invalidate();
   };
   private startPinch() {
     const [p, q] = [...this.touchIds].map(id => this.fingerAt.get(id)!);
     if (!p || !q) return;
-    this.pinch = { d: Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a: Math.atan2(q.y - p.y, q.x - p.x), cy: (p.y + q.y) / 2 };
+    const d = Math.max(1, Math.hypot(q.x - p.x, q.y - p.y)), a = Math.atan2(q.y - p.y, q.x - p.x);
+    this.glide = null;
+    this.pinch = { d, a, cx: (p.x + q.x) / 2, cy: (p.y + q.y) / 2, p0: { ...p }, q0: { ...q }, d0: d, a0: a, mode: "", turning: false };
     // (both fingers on or right by the thing picked: it's the thing they size and turn; only a
     // thing that turns, or a tree, and a shape well inside the view: on a wood, a pond or a road
     // that fills it, two fingers move the map)
@@ -5029,10 +5135,16 @@ export class CourseView {
 
   private touchUp(e: PointerEvent) {
     this.fingerAt.delete(e.pointerId);
+    const mapPinch = !!this.pinch && !this.pinchItem && this.touchIds.size === 2;
     if (this.touchIds.delete(e.pointerId) && this.touchIds.size >= 1) this.pinchAt = performance.now();
     if (this.touchIds.size < 2) this.endPinch();
     else if (this.touchIds.size === 2 && !this.pinch) this.startPinch();
     if (this.touchIds.size === 0) window.removeEventListener("pointermove", this.twoFingers);
+    // (one of two fingers lifted: the other goes on moving the map, as on Google Maps)
+    if (mapPinch && this.touchIds.size === 1 && e.type === "pointerup") {
+      const id = [...this.touchIds][0], f = this.fingerAt.get(id);
+      if (f) this.followFinger(id, f.x, f.y);
+    }
     const lp = this.longPress;
     if (lp?.id !== e.pointerId) return;
     // (Held long enough, even if a busy page ran the timer late: still the long-press)
@@ -5202,6 +5314,7 @@ export class CourseView {
   private onPointerDown(e: PointerEvent) {
     const target = e.target as HTMLElement;
     if (!this.doc) return;
+    this.glide = null;
     this.fingers = e.pointerType === "touch";
     if (this.fingers) {
       this.touchIds.add(e.pointerId);
@@ -5291,7 +5404,7 @@ export class CourseView {
         // the map, not the hole; nothing moves by accident while panning or pinching)
         const owner = this.selectedId ?? this.doc?.activeHoleId ?? null;
         if (owner !== this.selectedId) {
-          this.gesture(e, { click: () => { if (owner) this.cb.onSelect(owner); } });
+          this.gesture(e, { click: () => { if (owner) this.cb.onSelect(owner); }, drag: s => this.panDrag(s) });
           return;
         }
         e.stopPropagation();
@@ -5346,7 +5459,6 @@ export class CourseView {
       return;
     }
     const stop = () => { if (!touch) e.stopPropagation(); };
-    const panOrNothing = (s: PointerEvent) => (touch ? null : this.panDrag(s));
     const tool = this.tool;
     const groundClick = (fn: (p: P, ev: PointerEvent) => void) => (ev: PointerEvent) => {
       const g = this.groundAt(ev.clientX, ev.clientY);
@@ -5354,12 +5466,12 @@ export class CourseView {
     };
     if (tool.mode === "measure") {
       stop();
-      this.gesture(e, { click: ev => { const g = this.groundAt(ev.clientX, ev.clientY); if (g) this.addMeasurePoint(g, ev.shiftKey); }, drag: panOrNothing });
+      this.gesture(e, { click: ev => { const g = this.groundAt(ev.clientX, ev.clientY); if (g) this.addMeasurePoint(g, ev.shiftKey); }, drag: s => this.panDrag(s) });
       return;
     }
     if (this.obPick) {
       stop();
-      this.gesture(e, { click: groundClick(p => this.obPickClick(p)), drag: panOrNothing });
+      this.gesture(e, { click: groundClick(p => this.obPickClick(p)), drag: s => this.panDrag(s) });
       return;
     }
     if (this.plotHole) {
@@ -5393,7 +5505,7 @@ export class CourseView {
             this.cb.onHole(start, p);
           }
         }),
-        drag: panOrNothing
+        drag: s => this.panDrag(s)
       });
       return;
     }
@@ -5411,7 +5523,7 @@ export class CourseView {
       if (shaped) e.stopPropagation();
       else stop();
       this.gesture(e, {
-        drag: shaped ? s => this.shapeDrag(s, shape) : panOrNothing,
+        drag: shaped ? s => this.shapeDrag(s, shape) : s => this.panDrag(s),
         click: groundClick(p0 => {
           // (painting: a tap paints a round spot)
           if (shape === "paint") {
@@ -5459,7 +5571,7 @@ export class CourseView {
           this.updateGhost(null);
           this.cb.onPlace(tool.mode, p);
         }),
-        drag: panOrNothing
+        drag: s => this.panDrag(s)
       });
       return;
     }
@@ -5479,7 +5591,7 @@ export class CourseView {
         this.gesture(e, {
           // (picked like any tree: the same panel, moved once picked, deleted with Del)
           click: () => this.cb.onAdoptTree(tree, this.lookOf(tree)),
-          drag: moves ? s => this.itemDrag(s, hit!) : panOrNothing
+          drag: moves ? s => this.itemDrag(s, hit!) : s => this.panDrag(s)
         });
         return;
       }
@@ -5497,7 +5609,7 @@ export class CourseView {
       stop();
       this.gesture(e, {
         click: () => this.cb.onSelect(null),
-        drag: panOrNothing
+        drag: s => this.panDrag(s)
       });
       return;
     }
@@ -5528,7 +5640,7 @@ export class CourseView {
     if ((big && hit !== this.selectedId) || !item || item.locked) {
       if (boxing) e.stopPropagation();
       else stop();
-      this.gesture(e, { click: () => this.cb.onSelect(hit), drag: boxing ? s => this.boxDrag(s, false) : panOrNothing });
+      this.gesture(e, { click: () => this.cb.onSelect(hit), drag: boxing ? s => this.boxDrag(s, false) : s => this.panDrag(s) });
       return;
     }
     e.stopPropagation();
@@ -6064,6 +6176,7 @@ export class CourseView {
 
   private onWheel(e: WheelEvent) {
     e.preventDefault();
+    this.glide = null;
     e.stopPropagation();
     if (this.povHole) {
       const delta = (e.deltaMode !== 0 ? e.deltaY * 33 : e.deltaY) * 0.0015;

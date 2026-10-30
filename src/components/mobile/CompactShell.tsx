@@ -676,6 +676,14 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
     v.topInset = immersive ? 0 : 64;
   }, [sheetH, immersive]);
   useEffect(() => () => { const v = getView(); if (v) { v.bottomInset = 0; v.topInset = 0; } }, []);
+  // (the thing picked kept in view, between the top bar and the panel, whenever the panel settles
+  // at another height or another thing is picked; not while the map is still on its way somewhere)
+  useEffect(() => {
+    const id = ed.selectedId;
+    if (!id || immersive) return;
+    const t = window.setTimeout(() => { const v = getView(); if (v?.settled()) v.reveal(id); }, 80);
+    return () => window.clearTimeout(t);
+  }, [sheetH, ed.selectedId, immersive]);
 
   const toggle = useCallback(() => setDetent(d => (d === "peek" ? "half" : "peek")), []);
   const onStep = (s: Step) => goStep(s, setDetent, toggle);
