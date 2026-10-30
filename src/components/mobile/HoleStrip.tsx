@@ -14,10 +14,11 @@ import { fmtDist } from "../../lib/units";
 import { addHoleOb, nextHomeCorner, obChoiceOf, pinsFull, select, setFieldKind, setFieldPlay, setLineKind, setObChoice, setPinPosition, setTeeLevel, startAnotherPin, startAnotherTee, startHoleToBasket, teesFull, type ObChoice } from "../../state/actions";
 import { updateHole, updateItem, useCourse, useEditor } from "../../state/course";
 import { getView } from "../../state/view";
-import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FieldKind, Hole, LabelItem, LineItem, LineKind, MandoItem, PathSurface, StructureItem, StructureKind, TeeItem, TeeSurface, TreeItem } from "../../types";
+import type { AmenityItem, AmenityKind, AreaItem, AreaKind, BasketItem, CourseItem, FieldKind, Hole, LabelItem, LineItem, LineKind, MandoItem, PathSurface, StructureItem, StructureKind, TeeItem, TeeSurface, TreeItem } from "../../types";
 import { BRUSH_LEVELS, FENCE_STYLES, FieldParts, GrowsPick, HoleTrees, InspectorBody, PLAY_OPTIONS, RULE_AREAS, StructureLook, SurfacePick, THICK, TurnButtons, densityFor, growsOf, growsText, hasParts, thickOf, useHoleTrees, amenityIcon, builtIcon, fieldKindOptions, fmtSize, fmtTurn, hasObChoice, heightLabel, homeText, obOptions } from "../Inspector";
 import { HoleChips } from "../ApplyToHoles";
 import { MoveHere } from "../PlaceByGps";
+import { KindTiles, areaPicture, bigIcon, linePicture } from "./KindTiles";
 import { TREE_KINDS } from "../TreeSettings";
 import { ChipPick, ColorInput, Segmented, TextInput } from "../ui";
 
@@ -169,7 +170,7 @@ export function ItemStrip({ item }: { item: CourseItem }) {
       // (as far as the panel's sliders go: a survey's tree taller than that keeps its size)
       { id: "height", label: <>Height <span className="opacity-60">{fmtDist(height, u)}</span></>, control: <Dial label="Tree height" value={Math.round(height)} min={2} max={Math.max(120, Math.round(height))} step={1} format={v => `${fmtDist(v, u)} tall`} onChange={v => live({ height: v, radius: Math.max(1, Math.min(45, Math.round(t.radius * (v / height) * 10) / 10)) })} onDone={done} /> },
       { id: "spread", label: <>Spread <span className="opacity-60">{fmtDist(t.radius * 2, u)}</span></>, control: <Dial label="Crown spread" value={Math.round(t.radius * 2)} min={2} max={Math.max(90, Math.round(t.radius * 2))} step={1} format={v => `${fmtDist(v, u)} across`} onChange={v => live({ radius: v / 2 })} onDone={done} /> },
-      { id: "kind", label: <>Kind <span className="opacity-60">{TREE_KINDS.find(k => k.value === (t.treeType ?? "deciduous"))?.label}</span></>, control: <ChipPick row label="Tree kind" value={t.treeType ?? "deciduous"} onChange={v => set({ treeType: v, species: undefined, variant: undefined, leaf: undefined })} options={TREE_KINDS} /> },
+      { id: "kind", label: <>Kind <span className="opacity-60">{TREE_KINDS.find(k => k.value === (t.treeType ?? "deciduous"))?.label}</span></>, control: <KindTiles label="Tree kind" value={t.treeType ?? "deciduous"} onChange={v => set({ treeType: v, species: undefined, variant: undefined, leaf: undefined })} options={TREE_KINDS.map(k => ({ value: k.value, label: k.label, picture: bigIcon(k.icon) }))} /> },
       { id: "lean", label: <>Lean <span className="opacity-60">{t.lean ? `${t.lean}°` : "none"}</span></>, control: <Dial label="Lean" value={Math.round(t.lean ?? 0)} min={0} max={30} step={1} format={v => (v ? `Leans ${v}°` : "Upright")} onChange={v => live({ lean: v || undefined })} onDone={done} /> }
     );
     if (t.lean) chips.push({ id: "leanDir", label: <>Leans toward</>, control: <Dial label="Leaning toward" value={Math.round(t.leanDir ?? 0)} min={0} max={345} step={15} format={v => `Toward ${compassPoint(v)}`} onChange={v => live({ leanDir: v })} onDone={done} /> });
@@ -201,7 +202,7 @@ export function ItemStrip({ item }: { item: CourseItem }) {
       const a = item as AmenityItem;
       const kinds = AMENITY_KINDS[a.kind].retired ? [...AMENITY_ORDER, a.kind] : AMENITY_ORDER;
       const name = (k: AmenityKind) => AMENITY_KINDS[k].pick ?? AMENITY_KINDS[k].label;
-      chips.unshift({ id: "kind", label: <>Kind <span className="opacity-60">{name(a.kind)}</span></>, control: <ChipPick row label="Amenity kind" value={a.kind} onChange={v => set({ kind: v })} options={kinds.map(k => ({ value: k, label: name(k), icon: amenityIcon(k) }))} /> });
+      chips.unshift({ id: "kind", label: <>Kind <span className="opacity-60">{name(a.kind)}</span></>, control: <KindTiles label="Amenity kind" value={a.kind} onChange={v => set({ kind: v })} options={kinds.map(k => ({ value: k, label: name(k), picture: bigIcon(amenityIcon(k)) }))} /> });
     }
     if (item.type === "label") {
       const l = item as LabelItem;
@@ -219,7 +220,7 @@ export function ItemStrip({ item }: { item: CourseItem }) {
     const fk = item.type === "area" && item.kind === "field" ? fieldKindOf(item) : null;
     if (fk && item.type === "area") {
       chips.push(
-        { id: "kind", label: <>Kind <span className="opacity-60">{FIELD_KINDS[fk].label}</span></>, control: <ChipPick row label="Field kind" value={fk} onChange={(v: FieldKind) => setFieldKind(item.id, v)} options={fieldKindOptions()} /> },
+        { id: "kind", label: <>Kind <span className="opacity-60">{FIELD_KINDS[fk].label}</span></>, control: <KindTiles label="Field kind" value={fk} onChange={(v: FieldKind) => setFieldKind(item.id, v)} options={fieldKindOptions().map(o => ({ value: o.value, label: o.label, picture: bigIcon(o.icon) }))} /> },
         { id: "play", label: <>{item.outOfPlay ? "Out of play" : "In play"}</>, control: <Segmented label="Play" value={item.outOfPlay ? "out" : "in"} onChange={v => setFieldPlay(item.id, v === "out")} options={[...PLAY_OPTIONS]} /> }
       );
       if (MARKED_FIELDS.includes(fk)) chips.push({ id: "markings", label: <>Markings <span className="opacity-60">{fmtTurn(item.fieldTurn ?? 0)}</span></>, control: <Dial label="Markings turn" value={item.fieldTurn ?? 0} min={-90} max={90} step={1} format={fmtTurn} onChange={v => live({ fieldTurn: v || undefined })} onDone={done} /> });
@@ -230,7 +231,7 @@ export function ItemStrip({ item }: { item: CourseItem }) {
         </div>
       ) });
     } else chips.push({ id: "kind", label: <>Kind <span className="opacity-60">{kindLabel}</span></>, control: (
-      <ChipPick row label={item.type === "area" ? "Area kind" : "Line kind"} value={item.kind as string} onChange={k => (item.type === "line" ? setLineKind(item.id, k as LineKind) : set({ kind: k }))} options={kinds} />
+      <KindTiles label={item.type === "area" ? "Area kind" : "Line kind"} value={item.kind as string} onChange={k => (item.type === "line" ? setLineKind(item.id, k as LineKind) : set({ kind: k }))} options={kinds.map(o => ({ value: o.value, label: o.label, picture: item.type === "area" ? areaPicture(o.value as AreaKind) : linePicture(o.value as LineKind) }))} />
     ) });
     // (a next-tee route can have none: a dashed line)
     if (item.type === "line" && (LINE_KINDS[item.kind].width > 0 || item.kind === "walk")) {
@@ -276,7 +277,7 @@ export function ItemStrip({ item }: { item: CourseItem }) {
     const meta = STRUCTURE_KINDS[s.kind];
     // (a line can only become another line, an outline another outline)
     const kinds = STRUCTURE_ORDER.filter(k => STRUCTURE_KINDS[k].shape === meta.shape);
-    chips.push({ id: "kind", label: <>Kind <span className="opacity-60">{meta.label}</span></>, control: <ChipPick row label="Structure kind" value={s.kind} onChange={(v: StructureKind) => set({ kind: v })} options={kinds.map(k => ({ value: k, label: STRUCTURE_KINDS[k].label, icon: builtIcon(k) }))} /> });
+    chips.push({ id: "kind", label: <>Kind <span className="opacity-60">{meta.label}</span></>, control: <KindTiles label="Structure kind" value={s.kind} onChange={(v: StructureKind) => set({ kind: v })} options={kinds.map(k => ({ value: k, label: STRUCTURE_KINDS[k].label, picture: bigIcon(builtIcon(k)) }))} /> });
     if (meta.heightLabel) {
       const h = structureHeight(s);
       chips.push({ id: "height", label: <>{meta.heightLabel.split(" ")[0]} <span className="opacity-60">{fmtSize(h, u)}</span></>, control: <Dial label={meta.heightLabel} value={h} min={meta.heights[0]} max={Math.max(meta.heights[1], h)} step={0.5} format={v => fmtSize(v, u)} onChange={v => live({ height: v })} onDone={done} /> });
@@ -335,14 +336,17 @@ export function ItemStrip({ item }: { item: CourseItem }) {
   // (a chip that acts at once is never the one left open)
   const panes = chips.filter(c => !c.run);
   const [open, setOpen] = useState<string>(() => lastItemChip[item.type] ?? panes[0]?.id ?? "");
-  const pick = (c: string) => { lastItemChip[item.type] = c; setOpen(c); };
+  // (a chip tapped, not just open as the thing is picked: only then does the camera move for it)
+  const [tapped, setTapped] = useState(false);
+  const pick = (c: string) => { lastItemChip[item.type] = c; setOpen(c); setTapped(true); };
   const chip = panes.find(c => c.id === open) ?? panes[0];
   // (a part of a field tapped on the map: its Parts open)
   const part = useEditor(e => e.fieldPart);
   useEffect(() => { if (part && panes.some(c => c.id === "parts")) setOpen("parts"); }, [part]);
-  // (a height being changed in 3D: the camera looks at it from the side, and back after)
+  // (a height chip tapped in 3D: the camera looks at it from the side, and back after; not as the
+  // thing is picked, when its first chip is a height: a tap on a tree mustn't swing the camera)
   const threeD = useEditor(e => e.view === "3d");
-  const sideOn = threeD && (chip?.id === "height" || chip?.id === "raised");
+  const sideOn = threeD && tapped && (chip?.id === "height" || chip?.id === "raised");
   useEffect(() => {
     if (!sideOn) return;
     getView()?.lookAtHeight(item.id);

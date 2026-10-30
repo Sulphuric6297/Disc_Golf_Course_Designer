@@ -91,6 +91,79 @@ test("a ball field's home plate dragged to where it really is: the field turns t
   await expect(page.getByTestId("field-home")).toContainText("Corner");
 });
 
+test("a ball field's mound and backstop dragged on the map to where they really are, a tip saying how far", async ({ page }) => {
+  await blankCourse(page);
+  await page.evaluate(() => { const E = (window as any).__dgEditor(); E.set({ fieldKind: "baseball" }); (window as any).__dgActions.placeAt("add-field", { x: 500, y: 450 }); });
+  const f0 = await field(page);
+  await page.evaluate(id => (window as any).__dgActions.select(id), f0.id);
+  const plan = fieldPlan(f0)!, L = LEAGUES[plan.league!];
+  let H = plan.home!, f = plan.facing!;
+  const drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    const a = await screenOf(page, from.x, from.y), b = await screenOf(page, to.x, to.y);
+    await page.mouse.move(a.x, a.y);
+    await page.mouse.down();
+    await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 3 });
+    await page.mouse.move(b.x, b.y, { steps: 3 });
+    await expect(page.getByTestId("stand-tip")).toBeVisible();
+    const said = await page.getByTestId("stand-tip").textContent();
+    await page.mouse.up();
+    return said;
+  };
+  // The mound picked: its handle on the rubber; dragged 5 ft nearer home
+  await page.evaluate(() => (window as any).__dgEditor().set({ fieldPart: "mound" }));
+  const handle = page.getByTestId("handle-part");
+  await expect(handle).toBeVisible();
+  const rubber = { x: H.x + f.x * L.pitch, y: H.y + f.y * L.pitch };
+  const at = await screenOf(page, rubber.x, rubber.y), box = (await handle.boundingBox())!;
+  expect(Math.hypot(box.x + box.width / 2 - at.x, box.y + box.height / 2 - at.y)).toBeLessThan(6);
+  const said = await drag(rubber, { x: H.x + f.x * (L.pitch - 5), y: H.y + f.y * (L.pitch - 5) });
+  expect(said).toContain("from home to the rubber");
+  await expect.poll(async () => (await field(page)).parts?.mound?.d).toBeCloseTo(L.pitch - 5, 0);
+  // The backstop: no handle while home plate sits by the corner; placed by hand, behind home, dragged
+  // 10 ft farther back (home staying put)
+  await page.evaluate(() => (window as any).__dgEditor().set({ fieldPart: "backstop" }));
+  await expect(handle).toBeHidden();
+  await page.evaluate(id => (window as any).__dgActions.updateItem(id, { plate: { x: 70, y: 0 } }), f0.id);
+  const placed = fieldPlan(await field(page))!;
+  H = placed.home!;
+  f = placed.facing!;
+  const back = { x: H.x - f.x * L.backstop, y: H.y - f.y * L.backstop };
+  await expect.poll(async () => { const b = (await handle.boundingBox())!, s = await screenOf(page, back.x, back.y); return Math.hypot(b.x + b.width / 2 - s.x, b.y + b.height / 2 - s.y); }).toBeLessThan(6);
+  expect(await drag(back, { x: H.x - f.x * (L.backstop + 10), y: H.y - f.y * (L.backstop + 10) })).toBe(`${L.backstop + 10} ft behind home`);
+  await expect.poll(async () => (await field(page)).parts?.backstop?.d).toBeCloseTo(L.backstop + 10, 0);
+  // (one undo step a drag)
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await field(page)).parts?.backstop?.d ?? L.backstop).toBeCloseTo(L.backstop, 0);
+});
+
+test("in 3D, a picked tree's top dragged up makes it taller (none in 2D)", async ({ page }) => {
+  await blankCourse(page);
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => (window as any).__dgActions.placeAt("add-tree", { x: 500, y: 450 }));
+  const tree = () => page.evaluate(() => (window as any).__dgCourse().items.find((i: any) => i.type === "tree"));
+  const t0 = await tree();
+  await page.evaluate(id => (window as any).__dgActions.select(id), t0.id);
+  // (2D: no handle for up and down)
+  await expect(page.getByTestId("handle-height")).toBeHidden();
+  await page.evaluate(() => (window as any).__dgEditor().set({ view: "3d" }));
+  await page.waitForTimeout(300);
+  await expect.poll(() => page.evaluate(() => (window as any).__dgView.settled()), { timeout: 15000 }).toBe(true);
+  await page.evaluate(id => (window as any).__dgView.reveal(id), t0.id);
+  await expect.poll(() => page.evaluate(() => (window as any).__dgView.settled()), { timeout: 15000 }).toBe(true);
+  const handle = page.getByTestId("handle-height");
+  await expect(handle).toBeVisible();
+  const h0 = t0.height ?? t0.radius * 2.6;
+  const b = (await handle.boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2, b.y - 20, { steps: 3 });
+  await page.mouse.move(b.x + b.width / 2, b.y - 60, { steps: 3 });
+  await expect(page.getByTestId("stand-tip")).toContainText("tall");
+  await page.mouse.up();
+  await expect.poll(async () => (await tree()).height ?? 0).toBeGreaterThan(h0 + 3);
+  await expect(page.getByTestId("stand-tip")).toBeHidden();
+});
+
 test("tennis courts: two in a row, all green, their fence's height", async ({ page }) => {
   await blankCourse(page);
   await page.evaluate(() => { const E = (window as any).__dgEditor(); E.set({ fieldKind: "tennis" }); (window as any).__dgActions.placeAt("add-field", { x: 500, y: 450 }); });

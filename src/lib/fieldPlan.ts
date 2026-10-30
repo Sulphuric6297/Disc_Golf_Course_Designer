@@ -111,6 +111,8 @@ export type FieldPlan = {
   reach: number;
   /** A ball field's home plate. */
   home?: P;
+  /** The way a ball field faces from home plate (a unit vector on the plan). */
+  facing?: P;
 };
 
 /** A frame lined up with the outline's long side (turned `turn` degrees): its middle `c`, its
@@ -443,6 +445,7 @@ const ballField = (plan: FieldPlan, hi: number, soft: boolean, set: FieldLeague 
   fill(outline, "grass", "grass");
   const H = plate ? P0 : add(corner, f, Math.min(behind + 2, D0 * 0.2));
   plan.home = H;
+  plan.facing = f;
   const right = { x: -f.y, y: f.x };
   const at = (x: number, y: number): P => ({ x: H.x + f.x * x + right.x * y, y: H.y + f.y * x + right.y * y });
   // The outfield mown in bands across the line to center field, the mower's width apart

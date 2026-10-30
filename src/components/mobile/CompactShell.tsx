@@ -684,8 +684,16 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
     const id = ed.selectedId;
     if (!id || immersive) { framed.current = null; return; }
     const fresh = framed.current !== id;
-    const t = window.setTimeout(() => { const v = getView(); if (v?.settled()) { v.frame(id, fresh); framed.current = id; } }, 80);
-    return () => window.clearTimeout(t);
+    // (waits for the map to come to rest, a few seconds at most: picked as the view turns into 3D, say)
+    let tries = 0;
+    const t = window.setInterval(() => {
+      const v = getView();
+      if (!v || (!v.settled() && ++tries < 25)) return;
+      window.clearInterval(t);
+      v.frame(id, fresh);
+      framed.current = id;
+    }, 120);
+    return () => window.clearInterval(t);
   }, [sheetH, ed.selectedId, immersive]);
   // (the map moved away from it: a button to go back to it)
   const [away, setAway] = useState(false);

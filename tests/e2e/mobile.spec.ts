@@ -598,7 +598,12 @@ test.describe("phone", () => {
     await page.keyboard.type("Big woods");
     await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === id).label).toBe("Big woods");
     await expect(sheet(page)).toHaveAttribute("data-detent", "locked");
-    await page.getByTestId("item-strip").getByRole("tab").first().tap();
+    // Kind: a picture of each; a tap changes it at once, the panel still a strip
+    await page.getByTestId("strip-kind").tap();
+    await expect(page.getByTestId("kind-tiles").getByRole("radio", { name: "Woods" })).toHaveAttribute("aria-checked", "true");
+    await page.getByTestId("kind-water").tap();
+    await expect.poll(async () => (await course(page)).items.find((i: any) => i.id === id).kind).toBe("water");
+    await expect(sheet(page)).toHaveAttribute("data-detent", "locked");
     // All settings: the whole panel, in a box no taller than a quarter of the screen
     await page.getByTestId("strip-all").tap();
     const pane = page.getByTestId("strip-pane");

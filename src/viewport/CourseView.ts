@@ -39,7 +39,7 @@ import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { createFence, createStructure, onPartLoaded } from "../three/structures";
 import { measuredStanding, setMeasuredStanding } from "../lib/standing";
 import { createFieldGround, createFieldProps, createHedge, createPowerLine } from "../three/parkProps";
-import { cornerFrame, fieldInks, fieldPartAt, fieldPartShape, fieldPlan } from "../lib/fieldPlan";
+import { LEAGUES, cornerFrame, fieldInks, fieldPartAt, fieldPartShape, fieldPlan } from "../lib/fieldPlan";
 import { fieldHome, fieldKeepsTreesOut, fieldKindOf, fieldOutline, isBallField } from "../lib/fields";
 import { isLineKind, orientedBox, roofFor, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
 import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier, FieldPart } from "../types";
@@ -146,6 +146,7 @@ const STYLE = `
 .dg-h[data-handle=linewidth]{width:12px;height:12px;border-radius:3px;background:#fff;border:2.5px solid #0284c7;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=widen]{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.85);border:1.5px solid #16a34a;cursor:copy;display:flex;align-items:center;justify-content:center;font:700 10px/1 Inter,sans-serif;color:#16a34a}.dg-h[data-handle=widen]::after{content:"+"}
 .dg-h[data-handle=rotate]{width:24px;height:24px;border-radius:50%;background:#fff;border:2.5px solid #2563eb;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;color:#2563eb;font:900 14px system-ui}
+.dg-h[data-handle=part]{width:18px;height:18px;cursor:grab;background:#fff;border:3px solid #22d3ee;transform:rotate(45deg);box-shadow:0 1px 3px rgba(0,0,0,.55)}
 .dg-h[data-handle=plate]{width:20px;height:20px;cursor:grab;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M3 3h14v8l-7 6.5L3 11z' fill='white' stroke='%230891b2' stroke-width='2.5' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
 .dg-h[data-handle=radius]{width:15px;height:15px;border-radius:50%;background:#16a34a;border:2.5px solid #fff;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .dg-h[data-handle=height]{width:16px;height:22px;border-radius:5px;background:#f59e0b;border:2.5px solid #fff;cursor:ns-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
@@ -3918,7 +3919,7 @@ export class CourseView {
     const hole = this.hole(holeId);
     const drawing = this.drawn() ? this.drawPts.length : -1;
     const key = `${sel?.id ?? ""}|${sel?.locked ?? ""}|${sel && (sel.type === "area" || sel.type === "line" || sel.type === "structure") ? `${sel.points.length}${sel.kind}${sel.type === "area" ? (sel.field ?? "") : ""}` : ""}|${hole ? `${hole.id}:${hole.doglegs.length}:${doc.stats.find(s => s.holeId === hole.id)?.complete}:${hole.flyKeys?.length ?? 0}:${hole.fairwayStations?.length ?? 0}:${this.selectedId === hole.id}:${doc.course.holes.length}:${doc.course.style.nextTee}` : ""}|${drawing}`;
-    const obKey = `${sel?.type === "line" || sel?.type === "area" ? `${sel.ob}:${sel.obStretches?.length ?? 0}` : ""}|${this.obPick ? `${this.obPick.id}:${this.obPick.from}:${this.obPick.cut}` : ""}`;
+    const obKey = `${sel?.type === "line" || sel?.type === "area" ? `${sel.ob}:${sel.obStretches?.length ?? 0}` : ""}|${this.obPick ? `${this.obPick.id}:${this.obPick.from}:${this.obPick.cut}` : ""}|${this.partPick ? `${this.partPick.id}:${this.partPick.part}` : ""}`;
     if (`${this.readOnly}${key}${obKey}` === this.handleKey) return;
     this.handleKey = `${this.readOnly}${key}${obKey}`;
     this.handles.forEach(h => h.el.remove());
@@ -3965,7 +3966,11 @@ export class CourseView {
       this.pointHandles(sel.id, add);
       if (turnable(sel)) this.turnHandle(sel.id, add);
     }
-    if (sel.type === "area" && sel.kind === "field" && isBallField(fieldKindOf(sel))) this.plateHandle(sel.id, add);
+    if (sel.type === "area" && sel.kind === "field" && isBallField(fieldKindOf(sel))) {
+      this.plateHandle(sel.id, add);
+      if (this.partPick?.id === sel.id && !sel.locked) this.partHandle(sel.id, this.partPick.part, add);
+    }
+    if (!sel.locked) this.heightHandle(sel, add);
     if (sel.type === "line" && sel.kind === "stream") this.lineWidthHandles(sel.id, add);
     if ((sel.type === "line" || sel.type === "area") && sel.ob === true && sel.obStretches?.length && !sel.locked) this.obStretchHandles(sel.id, add);
     if (sel.type === "structure" && !isLineKind(sel.kind)) this.outlineHandles(sel.id, add);
@@ -4013,6 +4018,99 @@ export class CourseView {
       const dx = p.x - corner.x, dy = p.y - corner.y;
       return { home: hi, plate: { x: Math.round((dx * f.x + dy * f.y) * 10) / 10, y: Math.round((dx * right.x + dy * right.y) * 10) / 10 } };
     }), { title: "Drag home plate to where it is · the field turns to follow" });
+  }
+
+  /** A ball field's part picked, dragged where it really is along the field's middle line: the mound
+   * (home to the rubber), the infield's edge (its reach from the rubber), second base (the bases
+   * apart), and the backstop (behind home) once home plate is placed by hand (till then home sits
+   * in from the corner by the backstop's distance: the backstop would stay and home move); a tip
+   * says the distance. */
+  private partHandle(id: string, part: FieldPart, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
+    // (from home along the way it faces: `base` + d × `k` ft, behind home for the backstop)
+    const spec = (a: AreaItem) => {
+      const plan = fieldPlan(a), L = plan?.league ? LEAGUES[plan.league] : null;
+      if (!plan?.home || !plan.facing || !L) return null;
+      const d = (p: FieldPart, dflt: number) => a.parts?.[p]?.d ?? dflt;
+      const pitch = d("mound", L.pitch);
+      const s = part === "mound" ? { d: pitch, base: 0, k: 1, min: 30, max: 61, say: (v: number) => `${v} ft from home to the rubber` }
+        : part === "backstop" && a.plate ? { d: d("backstop", L.backstop), base: 0, k: -1, min: 15, max: 70, say: (v: number) => `${v} ft behind home` }
+        : part === "infield" ? { d: d("infield", L.arc), base: pitch, k: 1, min: 30, max: 130, say: (v: number) => `${v} ft from the rubber` }
+        : part === "lines" ? { d: d("lines", L.bases), base: 0, k: Math.SQRT2, min: 40, max: 90, say: (v: number) => `Bases ${v} ft apart` }
+        : null;
+      return s ? { ...s, H: plan.home, f: plan.facing } : null;
+    };
+    let seen: AreaItem | null = null, at: P | null = null;
+    add("part", () => {
+      const a = this.item(id) as AreaItem | null;
+      if (!a || a.type !== "area") return null;
+      if (a !== seen) { seen = a; const s = spec(a); at = s ? { x: s.H.x + s.f.x * (s.base + s.d * s.k), y: s.H.y + s.f.y * (s.base + s.d * s.k) } : null; }
+      return at ? new THREE.Vector3(at.x, this.h(at.x, at.y) + 0.4, at.y) : null;
+    }, e => {
+      // (measured from where home was as the drag began: a ball field's plate sits in from its
+      // corner by the backstop's distance, so it moves as the backstop does)
+      const a0 = this.item(id) as AreaItem | null, s = a0 ? spec(a0) : null;
+      if (!s) return null;
+      const drag = this.planeDrag(e, id, (p, it, ev) => {
+        const a = it as AreaItem;
+        const along = (p.x - s.H.x) * s.f.x + (p.y - s.H.y) * s.f.y;
+        const v = clamp(Math.round(((along - s.base) / s.k) * 2) / 2, s.min, s.max);
+        this.tip(s.say(v), ev.clientX, ev.clientY);
+        return { parts: { ...a.parts, [part]: { ...a.parts?.[part], d: v } } };
+      });
+      return drag && { move: drag.move, end: ev => { this.tip(null); drag.end(ev); } };
+    }, { title: "Drag it to where it really is" });
+  }
+
+  /** In 3D, a handle at the top of a tree, a fence, a hedge, a power line's wires or a wall: dragged
+   * up or down, it sets the height (a tip says it). Buildings, shelters and decks have their own
+   * (see outlineHandles), the same to look at. */
+  private heightHandle(sel: CourseItem, add: (kind: string, world: () => THREE.Vector3 | null, start: Handle["start"], opts?: any) => void) {
+    const spec = (it: CourseItem | null) => {
+      if (!it) return null;
+      if (it.type === "tree") {
+        const h = it.height ?? it.radius * 2.6;
+        return { at: { x: it.x, y: it.y }, h, min: 2, max: Math.max(120, Math.round(h)), patch: (v: number) => ({ height: v, radius: Math.max(1, Math.min(45, Math.round(it.radius * (v / h) * 10) / 10)) }) };
+      }
+      if (it.type === "structure" && isLineKind(it.kind) && STRUCTURE_KINDS[it.kind].heightLabel) {
+        const meta = STRUCTURE_KINDS[it.kind], h = structureHeight(it), c = centroid(it.points);
+        return { at: c, h, min: meta.heights[0], max: Math.max(meta.heights[1], h), patch: (v: number) => ({ height: v }) };
+      }
+      if (it.type === "line" && LINE_KINDS[it.kind].heights) {
+        const meta = LINE_KINDS[it.kind], h = it.fenceHeight ?? meta.height!, pts = linePath(it);
+        return { at: pts[Math.floor(pts.length / 2)] ?? it.points[0], h, min: meta.heights![0], max: meta.heights![1], patch: (v: number) => ({ fenceHeight: v }) };
+      }
+      return null;
+    };
+    if (!spec(sel)) return;
+    const itemId = sel.id;
+    add("height", () => {
+      // (only in 3D: from straight above, a height has no up or down to drag)
+      if (this.controls.polarAngle < 25 * DEG) return null;
+      const s = spec(this.item(itemId));
+      return s ? new THREE.Vector3(s.at.x, this.h(s.at.x, s.at.y) + s.h, s.at.y) : null;
+    }, () => {
+      const s0 = spec(this.item(itemId));
+      if (!s0) return null;
+      const base = this.h(s0.at.x, s0.at.y);
+      const metric = this.doc?.course.units === "m";
+      return {
+        move: ev => {
+          // (on an upright plane through it, facing the camera)
+          const dir = new THREE.Vector3();
+          this.camera.getWorldDirection(dir);
+          dir.y = 0;
+          if (dir.lengthSq() < 1e-6) return;
+          const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(dir.normalize(), new THREE.Vector3(s0.at.x, base, s0.at.y));
+          const hit = this.ray(ev.clientX, ev.clientY).intersectPlane(plane, new THREE.Vector3());
+          const s = spec(this.item(itemId));
+          if (!hit || !s) return;
+          const v = clamp(Math.round((hit.y - base) * 2) / 2, s.min, s.max);
+          this.cb.onChange(itemId, s.patch(v));
+          this.tip(`${metric ? Math.round(v * 0.3048 * 10) / 10 : v} ${metric ? "m" : "ft"} tall`, ev.clientX, ev.clientY);
+        },
+        end: () => { this.tip(null); this.cb.onCommit(); }
+      };
+    }, { title: "Drag up or down to change its height" });
   }
 
   /** A hole's doglegs: drag a dot to move a turn, pull a mid dot to add one, double-click to remove one; and a square for the fairway width. */
@@ -5768,6 +5866,8 @@ export class CourseView {
   /** The picked field's part outlined, as a pick is (none: null). */
   setFieldPart(id: string | null, part: FieldPart | null) {
     if (this.partFx) { this.fx.remove(this.partFx); disposeObjectDeep(this.partFx); this.partFx = null; }
+    const pick = id && part ? { id, part } : null;
+    if (pick?.id !== this.partPick?.id || pick?.part !== this.partPick?.part) { this.partPick = pick; this.syncHandles(); }
     const a = id && part ? this.doc?.course.items.find(i => i.id === id) : null;
     if (a && a.type === "area" && a.kind === "field" && part) {
       const g = new THREE.Group();
@@ -5781,6 +5881,8 @@ export class CourseView {
     this.invalidate();
   }
   private partFx: THREE.Group | null = null;
+  /** The field part picked (its handle on the map). */
+  private partPick: { id: string; part: FieldPart } | null = null;
 
   /** Draws a box on the screen; what lies inside it when let go is picked (a shape when all of it
    * is inside, so a big area under everything doesn't come along). */
