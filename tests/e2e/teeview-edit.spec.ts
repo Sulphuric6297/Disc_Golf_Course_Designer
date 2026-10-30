@@ -149,6 +149,39 @@ test.describe("phone", () => {
     await expect(page.getByTestId("tee-view-hud")).toBeVisible();
   });
 
+  test("standing on a phone, a flick of the look keeps the view turning after the finger lifts, slowing to a stop", async ({ page }) => {
+    test.setTimeout(300_000);
+    await page.getByTestId("welcome-blank").click();
+    await page.evaluate(() => {
+      const a = (window as any).__dgActions;
+      a.addHole({ x: 300, y: 500 }, { x: 900, y: 500 }, "blue");
+      a.select(null);
+      const E = (window as any).__dgEditor();
+      E.set({ tool: "select" });
+      E.set({ teeView: (window as any).__dgCourse().holes[0].id, flyover: false });
+    });
+    await expect(page.getByTestId("tee-view-hud")).toBeVisible();
+    await page.waitForTimeout(1500);
+    const yaw = () => page.evaluate(() => (window as any).__dgView.povLook.yaw);
+    const box = (await page.getByTestId("plan").boundingBox())!;
+    const at = { x: box.x + box.width * 0.3, y: box.y + box.height * 0.5 };
+    // (sent within the page at a finger's pace: from outside, each touch waits on a picture)
+    await page.evaluate(([x, y]) => {
+      const el = document.elementFromPoint(x, y)!;
+      const fire = (type: string, px: number) => el.dispatchEvent(new PointerEvent(type, { pointerId: 51, pointerType: "touch", isPrimary: true, clientX: px, clientY: y, button: 0, buttons: type === "pointerup" ? 0 : 1, bubbles: true, cancelable: true }));
+      const pause = (ms: number) => { const t = performance.now(); while (performance.now() - t < ms) { /* a finger's pace */ } };
+      fire("pointerdown", x);
+      for (let i = 1; i <= 6; i++) { pause(10); fire("pointermove", x + 14 * i); }
+      pause(8);
+      fire("pointerup", x + 84);
+    }, [at.x, at.y] as const);
+    const lifted = await yaw();
+    await page.waitForTimeout(1500);
+    // (dragged right: the view turns left, its yaw falling, and goes on falling after the lift)
+    expect(lifted - (await yaw())).toBeGreaterThan(0.05);
+    await expect.poll(() => page.evaluate(() => (window as any).__dgView.settled()), { timeout: 20000 }).toBe(true);
+  });
+
   test("standing on a phone where there's no hole: the bar has Back to the map", async ({ page }) => {
     test.setTimeout(300_000);
     await page.getByTestId("welcome-blank").click();

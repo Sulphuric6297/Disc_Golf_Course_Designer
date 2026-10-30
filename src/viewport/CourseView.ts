@@ -980,7 +980,7 @@ export class CourseView {
   private gliding = false;
   /** Whether the map has come to rest (for tests: a click lands where it was aimed). */
   settled() {
-    return this.paused || (!this.gliding && !this.glide);
+    return this.paused || (!this.gliding && !this.glide && !this.lookGlide);
   }
   /** When the camera last moved (dragged, zoomed, gliding), ms on performance.now(). */
   private movedAt = 0;
@@ -1199,6 +1199,7 @@ export class CourseView {
     }
     this.walk = null;
     this.glide = null;
+    this.lookGlide = null;
     this.povStand = holeId && stand ? { x: stand.x, y: stand.y, face: stand.face ?? this.faceDownHole(holeId, stand) } : null;
     if (holeId === this.povHole && nextTee === this.povTee) return;
     this.povTee = nextTee;
@@ -2092,6 +2093,7 @@ export class CourseView {
     this.gliding = this.controls.update(dt);
     if (this.gliding) this.dirty = true;
     if (this.glide) { this.stepGlide(dt); this.dirty = true; }
+    if (this.lookGlide) { this.stepLookGlide(dt); this.dirty = true; }
     if (!this.fly && this.stepFree(dt)) this.dirty = true;
     if (this.fly) {
       // Held on its first picture until everything's in (a few frames drawn after), then at most
@@ -5571,6 +5573,7 @@ export class CourseView {
     const target = e.target as HTMLElement;
     if (!this.doc) return;
     this.glide = null;
+    this.lookGlide = null;
     this.fingers = e.pointerType === "touch";
     if (this.fingers) {
       this.touchIds.add(e.pointerId);
@@ -6454,6 +6457,7 @@ export class CourseView {
   private onWheel(e: WheelEvent) {
     e.preventDefault();
     this.glide = null;
+    this.lookGlide = null;
     e.stopPropagation();
     if (this.povHole) {
       const delta = (e.deltaMode !== 0 ? e.deltaY * 33 : e.deltaY) * 0.0015;
@@ -6722,6 +6726,8 @@ export class CourseView {
     const start = { ...this.povLook };
     const degPerPx = this.povCam.fov / Math.max(1, this.size.height);
     const free = this.free, from = free ? { yaw: free.yaw, pitch: free.pitch } : null;
+    // (where the look was over the last moments, by when each move happened: the flick's speed)
+    const trail: { t: number; yaw: number; pitch: number }[] = [{ t: e.timeStamp, yaw: free ? free.yaw : start.yaw, pitch: free ? free.pitch : start.pitch }];
     const move = (ev: PointerEvent) => {
       if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 5) moved = true;
       // (by hand: the camera turns the same way the view from a tee does)
@@ -6729,22 +6735,27 @@ export class CourseView {
         if (this.free !== free) return;
         free.yaw = from.yaw - (ev.clientX - x0) * degPerPx * DEG;
         free.pitch = clamp(from.pitch + (ev.clientY - y0) * degPerPx * DEG, -85 * DEG, 85 * DEG);
-        this.invalidate();
-        return;
+        trail.push({ t: ev.timeStamp, yaw: free.yaw, pitch: free.pitch });
+      } else {
+        this.povLook = {
+          yaw: start.yaw - (ev.clientX - x0) * degPerPx * DEG,
+          pitch: clamp(start.pitch + (ev.clientY - y0) * degPerPx * DEG, -70 * DEG, 50 * DEG)
+        };
+        trail.push({ t: ev.timeStamp, ...this.povLook });
       }
-      this.povLook = {
-        yaw: start.yaw - (ev.clientX - x0) * degPerPx * DEG,
-        pitch: clamp(start.pitch + (ev.clientY - y0) * degPerPx * DEG, -70 * DEG, 50 * DEG)
-      };
+      if (trail.length > 8) trail.shift();
       this.invalidate();
     };
     const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       this.endDragListeners = null;
     };
     const up = (ev: PointerEvent) => {
       cleanup();
+      // (let go while turning, one finger lifted last: the view turns on, slowing, as the map does)
+      if (moved && ev.type === "pointerup" && this.touchIds.size === 0) this.lookFling(trail, ev.timeStamp, degPerPx * DEG);
       if (!moved && onTap) { onTap(ev); return; }
       // (a press that didn't move, on open ground in the view: a step there)
       if (!moved && !lookOnly && !this.fly && !free && this.tool.mode === "select" && this.eyeAt(ev.clientX, ev.clientY).cam === this.povCam) {
@@ -6756,7 +6767,47 @@ export class CourseView {
     this.endDragListeners?.();
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
     this.endDragListeners = cleanup;
+  }
+
+  /** Standing (or the free camera), the view still turning after a look let go of while turning
+   * (radians a second). */
+  private lookGlide: { yaw: number; pitch: number } | null = null;
+  /** A flick of the look: its speed over the last tenth of a second (none if held still before
+   * letting go, or turning slowly); `radPerPx`, how far a pixel turns it. */
+  private lookFling(trail: { t: number; yaw: number; pitch: number }[], at: number, radPerPx: number) {
+    const last = trail[trail.length - 1];
+    if (!last || at - last.t > 60) return;
+    const first = trail.find(s => last.t - s.t <= 100);
+    if (!first || last.t - first.t < 16) return;
+    const sec = (last.t - first.t) / 1000;
+    let yaw = (last.yaw - first.yaw) / sec, pitch = (last.pitch - first.pitch) / sec;
+    const px = Math.hypot(yaw, pitch) / radPerPx;
+    if (px < 250) return;
+    if (px > 4000) { yaw *= 4000 / px; pitch *= 4000 / px; }
+    this.lookGlide = { yaw, pitch };
+    this.invalidate();
+  }
+  private stepLookGlide(dt: number) {
+    const g = this.lookGlide!;
+    const k = Math.exp(-Math.min(dt, 0.1) / GLIDE_TAU), f = GLIDE_TAU * (1 - k);
+    const free = this.free;
+    if (free) {
+      free.yaw += g.yaw * f;
+      const p = clamp(free.pitch + g.pitch * f, -85 * DEG, 85 * DEG);
+      if (p !== free.pitch + g.pitch * f) g.pitch = 0;
+      free.pitch = p;
+    } else if (this.povHole) {
+      const p = clamp(this.povLook.pitch + g.pitch * f, -70 * DEG, 50 * DEG);
+      // (at the top or bottom of the look: no more up or down, still turning)
+      if (p !== this.povLook.pitch + g.pitch * f) g.pitch = 0;
+      this.povLook = { yaw: this.povLook.yaw + g.yaw * f, pitch: p };
+    } else { this.lookGlide = null; return; }
+    g.yaw *= k;
+    g.pitch *= k;
+    const radPerPx = (this.povCam.fov * DEG) / Math.max(1, this.size.height);
+    if (Math.hypot(g.yaw, g.pitch) / radPerPx < 20) this.lookGlide = null;
   }
 
   /** Zoom keeping the ground point under the cursor fixed. */
