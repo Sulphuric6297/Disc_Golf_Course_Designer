@@ -20,8 +20,11 @@ export const ezLoaded = () => Tree !== null;
 
 /** ez-tree's presets behind each kind's variants (a variant picks one, and its seed). */
 const PRESETS: Record<TreeShape, string[]> = {
-  broadleaf: ["Oak Medium", "Ash Medium", "Oak Large", "Ash Large", "Oak Small", "Ash Small"],
-  conifer: ["Pine Medium", "Pine Large", "Pine Small", "Pine Large"],
+  // (after the first six: the region's species, picked by the county's mix: lib/treeMix's LOOK_VARIANTS
+  // names these by place, so a new one goes at the end)
+  broadleaf: ["Oak Medium", "Ash Medium", "Oak Large", "Ash Large", "Oak Small", "Ash Small",
+    "Aspen Medium", "Aspen Large", "Birch Medium", "Birch Large", "Maple Medium", "Maple Large", "Willow Medium", "Bradford pear Medium", "Bradford pear Small"],
+  conifer: ["Pine Medium", "Pine Large", "Pine Small", "Pine Large", "Spruce Medium", "Spruce Large", "Cedar Medium", "Cedar Small"],
   // (the first six: bushes; then the underbrush's own: briars, weeds, thicket shrubs, two each)
   bush: ["Bush 1", "Bush 3", "Bush 1", "Bush 3", "Bush 2", "Bush 2", "Briars", "Briars", "Weeds", "Ferns", "Thicket", "Thicket"]
 };
@@ -130,6 +133,83 @@ const CUSTOM: Record<string, Custom> = {
     }
   }
 };
+// The region's species (lib/treeMix), each grown from one of ez-tree's trees reshaped, in its sizes
+// (`Name Small`, `Name Medium`, `Name Large`), as tried in the species mockup
+const regional = (name: string, bases: Record<"Small" | "Medium" | "Large", string>, shape: (o: Options) => void) => {
+  for (const size of ["Small", "Medium", "Large"] as const) CUSTOM[`${name} ${size}`] = { base: bases[size], shape };
+};
+// Birch: the aspen slimmer and upright, white bark, light leaves
+regional("Birch", { Small: "Aspen Small", Medium: "Aspen Medium", Large: "Aspen Large" }, o => {
+  const b = o.branch;
+  o.bark.type = "birch";
+  o.bark.tint = 0xffffff;
+  b.angle[1] = Math.max(25, b.angle[1] * 0.75);
+  b.radius[0] *= 0.75;
+  b.length[1] *= 0.85;
+  o.leaves.type = "aspen";
+  o.leaves.count = Math.round(o.leaves.count * 1.15);
+});
+// Maple: the oak rounder and fuller, smoother limbs
+regional("Maple", { Small: "Oak Small", Medium: "Oak Medium", Large: "Oak Large" }, o => {
+  const b = o.branch;
+  b.angle[1] = 50;
+  b.gnarliness[1] *= 0.6;
+  b.gnarliness[2] *= 0.6;
+  b.length[1] *= 0.9;
+  b.children[1] = Math.round(b.children[1] * 1.15);
+  o.leaves.type = "oak";
+  o.leaves.count = Math.round(o.leaves.count * 1.35);
+  o.leaves.size *= 1.1;
+});
+// Weeping willow: the ash with willow bark, long thin branches pulled down
+regional("Willow", { Small: "Ash Small", Medium: "Ash Medium", Large: "Ash Large" }, o => {
+  const b = o.branch;
+  o.bark.type = "willow";
+  b.force = { direction: { x: 0, y: -1, z: 0 }, strength: 0.06 };
+  b.length[2] *= 1.7;
+  b.length[3] *= 1.6;
+  b.gnarliness[2] *= 0.4;
+  b.gnarliness[3] *= 0.4;
+  b.children[2] = Math.round(b.children[2] * 1.2);
+  o.leaves.type = "ash";
+  o.leaves.count = Math.round(o.leaves.count * 1.5);
+  o.leaves.size *= 0.8;
+});
+// Bradford pear (callery pear): an upright, tight oval of many steep limbs, small glossy leaves
+// packed to the outside
+regional("Bradford pear", { Small: "Oak Small", Medium: "Oak Medium", Large: "Oak Large" }, o => {
+  const b = o.branch;
+  b.angle[1] = 24;
+  b.angle[2] = 30;
+  b.children[0] = Math.round(b.children[0] * 1.5);
+  b.length[1] *= 0.7;
+  b.length[2] *= 0.75;
+  b.start[1] = 0.22;
+  b.gnarliness[1] *= 0.4;
+  b.gnarliness[2] *= 0.5;
+  b.radius[1] *= 0.8;
+  o.leaves.type = "oak";
+  o.leaves.count = Math.round(o.leaves.count * 1.6);
+  o.leaves.size *= 0.75;
+});
+// Spruce (and fir, hemlock): the pine's branches short and swept down, narrowing to a point
+regional("Spruce", { Small: "Pine Small", Medium: "Pine Medium", Large: "Pine Large" }, o => {
+  const b = o.branch;
+  b.angle[1] = Math.min(115, b.angle[1] + 20);
+  b.length[1] *= 0.7;
+  b.start[1] = 0.12;
+  o.leaves.count = Math.round(o.leaves.count * 1.3);
+});
+// Cedar (eastern red cedar, juniper): narrow, branched near the ground, small dense needles
+regional("Cedar", { Small: "Pine Small", Medium: "Pine Medium", Large: "Pine Large" }, o => {
+  const b = o.branch;
+  b.length[1] *= 0.45;
+  b.start[1] = 0.04;
+  b.children[0] = Math.round(b.children[0] * 1.3);
+  o.leaves.size *= 0.7;
+  o.leaves.count = Math.round(o.leaves.count * 1.4);
+});
+
 /** Loads a preset (ez-tree's, or one of ours) into a tree's options. */
 const loadInto = (t: EzTree, preset: string) => {
   const own = CUSTOM[preset];
@@ -141,9 +221,18 @@ const loadInto = (t: EzTree, preset: string) => {
 export const SPECIES: Record<TreeShape, { id: string; label: string; presets: [string, string, string] }[]> = {
   broadleaf: [
     { id: "oak", label: "Oak", presets: ["Oak Small", "Oak Medium", "Oak Large"] },
-    { id: "ash", label: "Ash", presets: ["Ash Small", "Ash Medium", "Ash Large"] }
+    { id: "ash", label: "Ash", presets: ["Ash Small", "Ash Medium", "Ash Large"] },
+    { id: "maple", label: "Maple", presets: ["Maple Small", "Maple Medium", "Maple Large"] },
+    { id: "aspen", label: "Aspen", presets: ["Aspen Small", "Aspen Medium", "Aspen Large"] },
+    { id: "birch", label: "Birch", presets: ["Birch Small", "Birch Medium", "Birch Large"] },
+    { id: "willow", label: "Weeping willow", presets: ["Willow Small", "Willow Medium", "Willow Large"] },
+    { id: "pear", label: "Bradford pear", presets: ["Bradford pear Small", "Bradford pear Medium", "Bradford pear Large"] }
   ],
-  conifer: [{ id: "pine", label: "Pine", presets: ["Pine Small", "Pine Medium", "Pine Large"] }],
+  conifer: [
+    { id: "pine", label: "Pine", presets: ["Pine Small", "Pine Medium", "Pine Large"] },
+    { id: "spruce", label: "Spruce", presets: ["Spruce Small", "Spruce Medium", "Spruce Large"] },
+    { id: "cedar", label: "Cedar", presets: ["Cedar Small", "Cedar Medium", "Cedar Large"] }
+  ],
   bush: [
     { id: "round", label: "Round", presets: ["Bush 1", "Bush 1", "Bush 1"] },
     { id: "dense", label: "Dense", presets: ["Bush 3", "Bush 3", "Bush 3"] },

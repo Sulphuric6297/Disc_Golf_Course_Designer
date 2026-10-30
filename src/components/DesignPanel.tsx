@@ -10,7 +10,8 @@ import { RESTRICTED } from "../lib/symbols";
 import { MapLookPanel } from "./MapLookPanel";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { MapStyle, ReliefLook, SignLook, SignSettings, SignSpot } from "../types";
-import { Button, ChipPick, Field, Fold, HelpLink, OnlyGroup, Section, Segmented, Slider, TextInput, Toggle, WholePanelOnly } from "./ui";
+import { Button, ChipPick, chipCls, Field, Fold, HelpLink, OnlyGroup, Section, Segmented, Slider, TextInput, Toggle, WholePanelOnly } from "./ui";
+import { LOOK_LABEL, TREE_LOOKS, kindsOf, regionAt, sharesOf, type TreeLookId } from "../lib/treeMix";
 import { ChangeScope, HolePageLook, OwnHoles, PrintPanel, ScorecardSettings, Sponsors } from "./PrintPanel";
 import { boardSize } from "./printouts";
 import { FontPicker } from "./FontPicker";
@@ -64,6 +65,54 @@ export function WoodsOptions({ s, measured = false }: { s: MapStyle; measured?: 
         <Segmented label="Woods" value={value} onChange={pick} options={[{ value: "photo", label: "From the photo" }, { value: "everywhere", label: "Everywhere" }, { value: "woods", label: "Drawn only" }]} />
       </Field>
       {(!measured || value !== "woods") && <TreeCover value={s.treeCover ?? 1} />}
+    </div>
+  );
+}
+
+/** "a, b and c". */
+const andList = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
+/** The kinds of trees the woods and measured trees grow (lib/treeMix), at least one; with the kinds
+ * the Forest Service counts most in the course's region, to use in one tap. */
+export function TreeKinds({ s }: { s: MapStyle }) {
+  const place = useCourse(c => c.doc.site?.location ?? null);
+  const [region, setRegion] = useState<Awaited<ReturnType<typeof regionAt>>>(null);
+  useEffect(() => {
+    let live = true;
+    setRegion(null);
+    if (place) regionAt(place.lat, place.lon).then(r => { if (live) setRegion(r); }, () => {});
+    return () => { live = false; };
+  }, [place?.lat, place?.lon]);
+  const kinds = kindsOf(s);
+  // (the usual three: kept unset, so the woods stay exactly as before there was a choice)
+  const save = (next: TreeLookId[]) => setStyle({ treeKinds: sharesOf({ treeKinds: next }) ? TREE_LOOKS.filter(k => next.includes(k)) : undefined });
+  const toggle = (k: TreeLookId) => {
+    const on = kinds.includes(k);
+    if (on && kinds.length === 1) return;
+    save(on ? kinds.filter(x => x !== k) : [...kinds, k]);
+  };
+  const rec = region?.recommended ?? [];
+  const using = rec.length === kinds.length && rec.every(k => kinds.includes(k));
+  return (
+    <div className="mt-3" data-testid="tree-kinds">
+      <Field label="Kinds of trees" help="map-trees">
+        <div className="flex flex-wrap gap-1.5">
+          {TREE_LOOKS.map(k => {
+            const on = kinds.includes(k), last = on && kinds.length === 1;
+            return (
+              <button key={k} type="button" className={`${chipCls(on)} ${last ? "cursor-default" : ""}`} aria-pressed={on} title={last ? "At least one kind stays on" : undefined} onClick={() => toggle(k)}>
+                {LOOK_LABEL[k]}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
+      {region && rec.length > 0 && (
+        <div className="mt-1.5 text-xs text-zinc-400 leading-relaxed" data-testid="tree-kinds-region">
+          Most common in {region.name}: {andList(rec.map(k => LOOK_LABEL[k].toLowerCase()))}.{" "}
+          {using ? <span className="text-zinc-300">In use.</span> : <button type="button" className="text-orange-300 hover:text-orange-200 font-semibold touch:py-2" onClick={() => save(rec)}>Use these</button>}
+        </div>
+      )}
     </div>
   );
 }

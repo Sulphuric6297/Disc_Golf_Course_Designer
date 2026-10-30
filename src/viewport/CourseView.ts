@@ -20,6 +20,7 @@ import { boundsOf, centroid, dist, distanceToPath, inBounds, nearestAlong, offse
 import { isOutOfPlay, parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
 import { conifersOf, treeMixOf } from "../lib/landscapes";
+import { sharesOf } from "../lib/treeMix";
 import { fmtArea, fmtDist, fmtElev } from "../lib/units";
 import { BASKET_BAND, createAmenity, createBasket, createDropZone, createMando, createTeePad, fitTeePad } from "../three/courseModels";
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
@@ -2813,6 +2814,8 @@ export class CourseView {
     const doc = this.doc!;
     const course = doc.course;
     const st = course.style;
+    // (the course's kinds of trees: the woods' and the measured trees'; lib/treeMix)
+    const shares = sharesOf(st);
     const seen = new Set<string>();
     const hv = this.heightsVersion;
     const put = (key: string, sig: string, make: () => THREE.Object3D | null, group: THREE.Group = this.shapesGroup, slow = false) => {
@@ -3022,8 +3025,8 @@ export class CourseView {
       for (const k of state.stand) sig = (sig * 31 + k) % 2147483647;
       const standKey = `${state.stand.length}:${sig}:${lidar.growYears ?? 0}:${lidar.saplings === true}:${lidar.crownSize ?? 1}`;
       if (measuredStanding()?.key !== standKey) setMeasuredStanding({ key: standKey, trees: state.stand.map(k => lidar.trees[k]) });
-      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, lidar.saplings === true, lidar.crownSize ?? 1, state.cut, hv, st.trees, st.landscape, st.treeMix, st.conifers]), () => {
-        const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, treeMixOf(st));
+      put("woods:lidar", JSON.stringify([idOfGrid(lidar.trees), lidar.growYears ?? 0, lidar.saplings === true, lidar.crownSize ?? 1, state.cut, hv, st.trees, st.landscape, st.treeMix, st.conifers, shares]), () => {
+        const woods = createMeasuredWoods(state.stand.map(k => ({ tree: lidar.trees[k], index: k })), (x, y) => this.h(x, y), st.trees, treeMixOf(st), shares);
         this.shadowsDirty = true;
         return woods;
       }, this.itemsGroup, true);
@@ -3142,12 +3145,12 @@ export class CourseView {
       const brushOnly = a.kind === "woods" && (a.bushes ?? 0) >= 1;
       if (a.kind === "woods" && a.trees !== "none" && !brushOnly && !held(`woods:${a.id}`)) {
         const here = clearings().near(boundsOf(a.points));
-        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, cutKey, a.pines, a.bushes, a.density, a.heights, fillsIn && this.lidarKey]), () => {
+        put(`woods:${a.id}`, JSON.stringify([a.points, hv, st.trees, st.landscape, st.treeMix, st.conifers, here.key, cutKey, a.pines, a.bushes, a.density, a.heights, fillsIn && this.lidarKey, shares]), () => {
           this.plantings++;
           const box = boundsOf(a.points), standing = this.lidarState?.stand ?? [], trees = lidar?.trees ?? [];
           const near = fillsIn ? standing.map(k => trees[k]).filter(t => t && t[0] >= box.minX - 40 && t[0] <= box.maxX + 40 && t[1] >= box.minY - 40 && t[1] <= box.maxY + 40) : [];
           const keepOut = (p: P, r: number) => here.test(p, r) || cutAt(p) || near.some(t => Math.hypot(t[0] - p.x, t[1] - p.y) < t[3] * 0.8 + 4);
-          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), keepOut, 22 / Math.sqrt(Math.max(0.2, a.density ?? 1)), { pines: a.pines, bushes: a.bushes, heights: a.heights });
+          const woods = createWoods(a.points, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), keepOut, 22 / Math.sqrt(Math.max(0.2, a.density ?? 1)), { pines: a.pines, bushes: a.bushes, heights: a.heights }, shares);
           woods.traverse(o => { o.userData.itemId = a.id; });
           this.shadowsDirty = true;
           return woods;
@@ -3203,13 +3206,13 @@ export class CourseView {
     // The painted map's own woods: trees standing on it
     const pw = painted && !measured ? this.paintedWoods : null;
     if (pw) {
-      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, st.treeMix, st.conifers, clearings().key, cutKey]), () => {
+      put("painted-woods", JSON.stringify([idOfGrid(pw), hv, st.trees, st.landscape, st.treeMix, st.conifers, clearings().key, cutKey, shares]), () => {
         const inside = (p: P) => {
           const c = Math.floor((p.x - pw.x0) / pw.ftPerCell), r = Math.floor((p.y - pw.y0) / pw.ftPerCell);
           return c >= 0 && r >= 0 && c < pw.cols && r < pw.rows && pw.data[r * pw.cols + c] === 1;
         };
         // (as thick as the painting's tree cover)
-        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), (p, r) => clearings().test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.15, pw.cover)));
+        const woods = createWoodsWhere({ minX: 0, minY: 0, maxX: doc.canvas.width, maxY: doc.canvas.height }, inside, (x, y) => this.h(x, y), st.trees, conifersOf(st), treeMixOf(st), (p, r) => clearings().test(p, r) || cutAt(p), 22 / Math.sqrt(Math.max(0.15, pw.cover)), {}, shares);
         this.shadowsDirty = true;
         return woods;
       }, this.itemsGroup, true);

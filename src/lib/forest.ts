@@ -18,6 +18,7 @@ import { isLineKind, offsetPolygon, roofFor, structureHeight, structurePath, str
 import { latitudeOf, lookParts, paintLight, sunFromOf } from "./mapLook";
 import { STYLE_GREENS, drawMist, drawShadows, drawTrees, gradeLight, type PaintTree } from "./paintTrees";
 import { drawBrushedSteps, type Wait } from "./brushCrown";
+import { LOOK_TINT, conifersWith, drawOf, lookFor, shapeWith, sharesOf, type TreeLookId } from "./treeMix";
 
 /** Where the photo shows trees, on a grid over the site (1 = canopy). */
 export type CanopyGrid = { cols: number; rows: number; ftPerCell: number; data: Uint8Array };
@@ -807,7 +808,15 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const vR = (u: number) => Math.max(crownR * 0.75, (VSIZE[vstyle][0] + u * (VSIZE[vstyle][1] - VSIZE[vstyle][0])) * look.trees.size * k);
   const stepPx = vector ? vStep : natural ? Math.max(crownR * 1.15, realStep) : crownR * 1.15;
   const pineShare = natural ? conifersOf(s) : pines;
-  const vPines = paintedPinesOf(s, look.trees.pines);
+  // (the course's kinds of trees: pines only if a needle kind is allowed, all pines if only
+  // they are; each treetop one of the kinds, its leaves' color moved as in 3D)
+  const shares = sharesOf(s);
+  const vPines = conifersWith(shares, paintedPinesOf(s, look.trees.pines));
+  const asKind = (c: RGB, kind: TreeLookId | null | undefined): RGB => {
+    if (!kind) return c;
+    const [h, sl, l] = rgbToHsl(c), [dh, ds, dl] = LOOK_TINT[kind];
+    return hslToRgb(h + dh * 360, Math.max(0, Math.min(1, sl + ds)), Math.max(0.03, Math.min(0.95, l + dl)));
+  };
   const grow = 1 + (1 - cover) * 0.7;
   for (let gy = -stepPx; gy < H + stepPx && !opts.under; gy += stepPx) {
     yield 0.15 + 0.35 * ((gy + stepPx) / (H + 2 * stepPx));
@@ -828,7 +837,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
           // (a crown that would reach over a fairway, path or water nearby: smaller, so the clearing stays clear)
           const clearAt = (dx: number, dy: number) => { const cx = Math.min(mw - 1, Math.max(0, Math.floor((x + dx) / cell))), cy = Math.min(mh - 1, Math.max(0, Math.floor((y + dy) / cell))); return a[(cy * mw + cx) * 4 + 1] > 90; };
           for (let tries = 0; tries < 2; tries++) { const q = r * 0.75; if (clearAt(q, 0) || clearAt(-q, 0) || clearAt(0, q) || clearAt(0, -q)) r *= 0.72; else break; }
-          vtrees.push({ x, y, r, h: r * (1.6 + rnd() * 0.8), pine: rnd() < vPines, col: treeColor(rnd()), seed: rnd() });
+          const h = r * (1.6 + rnd() * 0.8), pine = rnd() < vPines, col = treeColor(rnd()), seed = rnd();
+          const kind = lookFor(pine ? "conifer" : "broadleaf", drawOf(Math.round(seed * 1e6), 7), shares);
+          vtrees.push({ x, y, r, h, pine, col: asKind(col, kind), seed, look: kind });
           continue;
         }
         if (natural) {
@@ -852,7 +863,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     if (sp.x < -r || sp.y < -r || sp.x > W + r || sp.y > H + r) return;
     const top = Math.max(r * 1.2, h0 * k);
     const tone = 1 + (idx % 6);
-    if (vector) { const tr = seeded(idx * 7919 + 13); vtrees.push({ x: sp.x, y: sp.y, r, h: top, pine: !!conifer, col: treeColor(tr()), seed: tr() }); return; }
+    // (its kind by its index, as the 3D view picks it, lib/treeMix; a needle tree leafy where no needle kind is allowed)
+    if (vector) { const tr = seeded(idx * 7919 + 13), shape = shapeWith(shares, conifer ? "conifer" : "broadleaf"), kind = lookFor(shape, drawOf(idx, 7), shares); vtrees.push({ x: sp.x, y: sp.y, r, h: top, pine: shape === "conifer", col: asKind(treeColor(tr()), kind), seed: tr(), look: kind }); return; }
     if (conifer) tufted(sp.x, sp.y, r, top, tone);
     else if (natural) leafy(sp.x, sp.y, r, top, tone);
     else if (r > crownR * 1.4) clumpTree(sp.x, sp.y, r, tone, top);
@@ -868,7 +880,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     const tone = 1 + (idSeed(t.id) % 6);
     if (vector) {
       const tr = seeded(idSeed(t.id));
-      vtrees.push({ x: sp.x, y: sp.y, r: t.treeType === "bush" ? r * 0.9 : r, h: t.treeType === "bush" ? r * 1.1 : top, pine: t.treeType === "conifer", col: treeColor(tr()), seed: tr() });
+      const kind = t.species && t.species in LOOK_TINT ? (t.species as TreeLookId) : null;
+      vtrees.push({ x: sp.x, y: sp.y, r: t.treeType === "bush" ? r * 0.9 : r, h: t.treeType === "bush" ? r * 1.1 : top, pine: t.treeType === "conifer", col: asKind(treeColor(tr()), kind), seed: tr(), look: kind });
       continue;
     }
     if (t.treeType === "conifer") tufted(sp.x, sp.y, r, top, tone);
@@ -1500,7 +1513,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         return STYLE_GREENS.brushed.map(c => { const [h, sl, l] = rgbToHsl(hexRgb(c)); const g = hslToRgb(h + (h1 - h0), Math.max(0, Math.min(1, sl * (s1 / Math.max(0.05, s0)))), Math.max(0.05, Math.min(0.9, l * (l1 / Math.max(0.05, l0))))); return [g[0] * 0.86, g[1] * 0.94, g[2] * 0.96] as RGB; });
       })();
       const painted = vtrees.filter(t => t.r >= 1.5);
-      yield* drawBrushedSteps(ctx, painted.map(t => ({ x: t.x, y: t.y, r: t.r, seed: t.seed, pine: t.pine, col: t.pine ? pineGreens[Math.floor(t.seed * 997) % pineGreens.length] : t.col })), [Lx, Ly], k);
+      yield* drawBrushedSteps(ctx, painted.map(t => ({ x: t.x, y: t.y, r: t.r, seed: t.seed, pine: t.pine, col: t.pine ? asKind(pineGreens[Math.floor(t.seed * 997) % pineGreens.length], t.look) : t.col })), [Lx, Ly], k);
       drawTrees(ctx, vtrees.filter(t => t.r < 1.5), "cluster", Lx, Ly, pl);
     } else drawTrees(ctx, vtrees, vstyle, Lx, Ly, pl);
   }
@@ -1765,10 +1778,12 @@ export const forestCanvas = (doc: CourseDoc, view: ForestView, stats: HoleStats[
  * while it paints, even on a phone. Stops (rejects) when `signal` is aborted.
  */
 /** Everything of the course the painting is made from (for knowing when to paint it again):
- * every thing on the map in full but its name and lock (labels and mandos aren't painted), and
- * the holes, in order, but their names, par, notes, flyovers and tee sign settings. */
+ * every thing on the map in full but its name and lock (labels and mandos aren't painted), the
+ * course's kinds of trees, and the holes, in order, but their names, par, notes, flyovers and tee sign settings. */
 export const paintedFrom = (doc: CourseDoc) => [
   doc.lidar?.trees.length ? measuredStanding()?.key ?? "" : "",
+  // (the course's kinds of trees: the treetops')
+  doc.style.treeKinds ?? null,
   doc.items.filter(i => i.type !== "label" && i.type !== "mando").map(i => ({ ...i, label: undefined, locked: undefined })),
   doc.holes.map(h => ({ ...h, name: undefined, par: undefined, notes: undefined, flyKeys: undefined, flyover: undefined, sign: undefined }))
 ];

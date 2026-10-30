@@ -705,6 +705,9 @@ export interface MapStyle {
   colorStrength: number;
   /** Painted look: tones in crisp bands (1) or blended smoothly (0). */
   paint: number;
+  /** The kinds of trees the woods and measured trees grow (lib/treeMix: oak, maple, spruce…; unset:
+   * oak, ash and pine). */
+  treeKinds?: string[];
   /** Turn of the map on the page, degrees (0: north up). */
   rotation: number;
   /** How big labels are (1 = normal). */

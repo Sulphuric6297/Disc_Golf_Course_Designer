@@ -22,6 +22,13 @@ export const TREE_KINDS: { value: TreeKind; label: string; icon: JSX.Element }[]
 /** The settings that make a tree its own shape (cleared by Reset, which keeps its species). */
 const OWN = { seed: undefined, crownBase: undefined, lean: undefined, leanDir: undefined, limbs: undefined, trunk: undefined, fullness: undefined };
 
+/** A tree's kind of shape and its species now (its own, or its variant's). */
+export const speciesNow = (item: TreeItem) => {
+  const shape = shapeOf(item.treeType ?? "deciduous");
+  const pool = specOf(shape, item.variant ?? variantOf(item.id, shape));
+  return { shape, species: item.species ?? speciesOfPreset(shape, pool.preset) };
+};
+
 export function TreeSettings({ item, set }: { item: TreeItem; set: (patch: Partial<TreeItem>, history?: boolean) => void }) {
   const u = useCourse(s => s.doc.units);
   const done = () => useCourse.getState().commit();

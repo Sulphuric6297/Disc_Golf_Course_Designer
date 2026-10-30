@@ -3,10 +3,12 @@
 // Gouache (flat painted layers) and Hollow (dry-brushed leaf dabs, bright where the sun catches the
 // edge); Brushed's are lib/brushCrown's. Their pines: tufted. Their shadows lie soft on the
 // grass before them; mist, the color grade and night are laid over the whole picture after.
+import type { TreeLookId } from "./treeMix";
 import type { TreeStyle, paintLight } from "./mapLook";
 
 type RGB = [number, number, number];
-export type PaintTree = { x: number; y: number; r: number; h: number; pine: boolean; col: RGB; seed: number };
+/** A treetop to paint; `look`, the kind it is where the county's trees are known (lib/treeMix). */
+export type PaintTree = { x: number; y: number; r: number; h: number; pine: boolean; col: RGB; seed: number; look?: TreeLookId | null };
 
 const clamp = (v: number, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const mix = (a: RGB, b: number[], t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];

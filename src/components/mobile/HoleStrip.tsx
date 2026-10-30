@@ -19,7 +19,8 @@ import { BRUSH_LEVELS, FENCE_STYLES, FieldParts, GrowsPick, HoleTrees, Inspector
 import { HoleChips } from "../ApplyToHoles";
 import { MoveHere } from "../PlaceByGps";
 import { KindTiles, areaPicture, bigIcon, linePicture } from "./KindTiles";
-import { TREE_KINDS } from "../TreeSettings";
+import { TREE_KINDS, speciesNow } from "../TreeSettings";
+import { SPECIES } from "../../three/ezShapes";
 import { ChipPick, ColorInput, Segmented, TextInput } from "../ui";
 
 type Chip = "par" | "fairway" | "tees" | "pins" | "ob" | "foliage" | "trees" | "name" | "all";
@@ -170,6 +171,12 @@ export function ItemStrip({ item }: { item: CourseItem }) {
       // (as far as the panel's sliders go: a survey's tree taller than that keeps its size)
       { id: "height", label: <>Height <span className="opacity-60">{fmtDist(height, u)}</span></>, control: <Dial label="Tree height" value={Math.round(height)} min={2} max={Math.max(120, Math.round(height))} step={1} format={v => `${fmtDist(v, u)} tall`} onChange={v => live({ height: v, radius: Math.max(1, Math.min(45, Math.round(t.radius * (v / height) * 10) / 10)) })} onDone={done} /> },
       { id: "spread", label: <>Spread <span className="opacity-60">{fmtDist(t.radius * 2, u)}</span></>, control: <Dial label="Crown spread" value={Math.round(t.radius * 2)} min={2} max={Math.max(90, Math.round(t.radius * 2))} step={1} format={v => `${fmtDist(v, u)} across`} onChange={v => live({ radius: v / 2 })} onDone={done} /> },
+      ...(() => {
+        // (its species among its kind's: oak, maple, birch… or pine, spruce, cedar)
+        const { shape, species } = speciesNow(t);
+        const list = SPECIES[shape];
+        return list.length > 1 ? [{ id: "species", label: <>Species <span className="opacity-60">{list.find(s => s.id === species)?.label}</span></>, control: <ChipPick row label="Species" value={species} onChange={v => set({ species: v, leaf: undefined })} options={list.map(s => ({ value: s.id, label: s.label }))} /> }] : [];
+      })(),
       { id: "kind", label: <>Kind <span className="opacity-60">{TREE_KINDS.find(k => k.value === (t.treeType ?? "deciduous"))?.label}</span></>, control: <KindTiles label="Tree kind" value={t.treeType ?? "deciduous"} onChange={v => set({ treeType: v, species: undefined, variant: undefined, leaf: undefined })} options={TREE_KINDS.map(k => ({ value: k.value, label: k.label, picture: bigIcon(k.icon) }))} /> },
       { id: "lean", label: <>Lean <span className="opacity-60">{t.lean ? `${t.lean}°` : "none"}</span></>, control: <Dial label="Lean" value={Math.round(t.lean ?? 0)} min={0} max={30} step={1} format={v => (v ? `Leans ${v}°` : "Upright")} onChange={v => live({ lean: v || undefined })} onDone={done} /> }
     );
