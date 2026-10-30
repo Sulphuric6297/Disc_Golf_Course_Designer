@@ -20,6 +20,7 @@ import { saplings, yearsSince } from "../lib/lidar";
 import { getView } from "../state/view";
 import { Button, FOCUS, Facts, Field, Fold, HelpLink, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
 import { DesignPanel } from "./DesignPanel";
+import { CourseFileButton } from "./CourseFileDialog";
 import { useToolbarRoom } from "./Toolbar";
 import { ExportPanel } from "./ExportPanel";
 import { useLayout } from "./useLayout";
@@ -260,9 +261,12 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
             <Button small onClick={ownCourse} testid="find-site"><MapPinned size={14} /> Find your park</Button>
           </div>
         </Section>
-      ) : !placed && !compact && !empty && (
+      ) : !placed && (
         <Section>
-          <Button tone="primary" full onClick={onFindSite} testid="find-site"><MapPinned size={16} /> Find your park</Button>
+          <div className="flex flex-col items-start gap-1.5">
+            {!compact && !empty && <Button tone="primary" full onClick={onFindSite} testid="find-site"><MapPinned size={16} /> Find your park</Button>}
+            <CourseFileButton />
+          </div>
         </Section>
       )}
       {facts && (
@@ -285,8 +289,9 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
             </div>
           )}
           {placed && (
-            <div className="mt-2">
+            <div className="mt-2 flex flex-wrap gap-1.5">
               <Button small onClick={onFindSite} testid="resize-site">Change the area</Button>
+              {!example && <CourseFileButton />}
             </div>
           )}
           {offerLidar && (
@@ -508,6 +513,7 @@ export function HolesStep({ course = false }: { course?: boolean }) {
           <ol className="space-y-0.5">
             {stats.map(s => <li key={s.holeId}><HoleRow s={s} check={checks.get(s.holeId)} roomy /></li>)}
             <li><NewHoleRow roomy /></li>
+            <li><CourseFileButton row /></li>
           </ol>
         )}
         <div className={course ? "" : "mt-3"}><CourseFacts doc={doc} stats={stats} /></div>
@@ -726,6 +732,7 @@ export function HolesColumn() {
           {stats.map(s => <HoleRow key={s.holeId} s={s} check={checks.get(s.holeId)} slim={slim} />)}
         </div>
         <NewHoleRow slim={slim} />
+        {!slim && <CourseFileButton row short />}
       </div>
       {/* (no holes yet: no totals to open) */}
       {doc.holes.length > 0 && <div className="glass pointer-events-auto rounded-[18px] mt-auto relative" ref={moreRef}>

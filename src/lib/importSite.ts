@@ -8,8 +8,8 @@
 // keeps what it was like when it came (`importSig`), so one changed by hand is never replaced. What
 // went wrong is kept with the site, for the Site step to say. Everything comes from free services
 // with no keys, as in the Security Camera Planner.
-import { STRUCTURE_KINDS, LINE_KINDS, clamp, generateId } from "../constants";
-import type { AmenityItem, AreaItem, CourseDoc, CourseItem, Hole, LidarTree, LineItem, P, ParkDetail, RoofKind, SiteInfo, StructureItem, TreeItem } from "../types";
+import { PIN_POSITIONS, STRUCTURE_KINDS, LINE_KINDS, TEE_ORDER, clamp, generateId } from "../constants";
+import type { AmenityItem, AreaItem, CourseDoc, CourseItem, Hole, LidarTree, LineItem, P, ParkDetail, PinPosition, RoofKind, SiteInfo, StructureItem, TeeLevel, TreeItem } from "../types";
 import { FEET_PER_METER, getGeoBounds, throwIfAborted, untilAborted, type GeoBounds, type SiteSelection } from "./geo/core";
 import { boundsKey, cached } from "./geo/cache";
 import { fetchBestElevationGrid, usgsGroundLabel } from "./geo/elevation";
@@ -18,7 +18,7 @@ import { findBushes, groundOnGrid, standingTrees, surveyYear, type LidarBush } f
 import { summerFills, treesFromSummer } from "./summerTrees";
 import { fetchMapImagery, type MapImagerySource } from "./geo/imagery";
 import { natureFromPhoto } from "./geo/photoNature";
-import { mappedCourse, parkWords, type LatLon, type MappedCourse, type OsmBuilding, type OsmFeature } from "./geo/osm";
+import { holeHints, mappedCourse, parkWords, type LatLon, type MappedCourse, type MappedSpot, type OsmBuilding, type OsmFeature } from "./geo/osm";
 import { fetchOsm } from "./geo/osmFetch";
 import { withoutSlabs, tracedBuildings, withMeasuredHeights, type TracedBuilding } from "./geo/buildings";
 import { createAmenity, createArea, createBasket, createLine, createStructure, createTee, createTree, newHole } from "./course";
@@ -312,7 +312,7 @@ export const osmFeatureItems = (features: OsmFeature[], ref: GeoBounds & { width
     return { ...createTree(at, { radius: Math.round(radius * 2) / 2, height: Math.round(t?.heightM ? clamp(t.heightM * FEET_PER_METER, 8, 150) : fallback.height), treeType: t?.conifer ? "conifer" : "deciduous" }), importSource: "osm" as const } as TreeItem;
   };
   for (const f of features) {
-    if (f.kind === "dgCourse" || f.kind === "dgHole" || f.kind === "dgTee" || f.kind === "dgBasket") continue;
+    if (f.kind === "dgCourse" || f.kind === "dgHole" || f.kind === "dgTee" || f.kind === "dgBasket" || f.kind === "dgHint") continue;
     if (f.geom === "point") {
       const at = plan(f.points[0]);
       if (!onPlan(at)) continue;
@@ -426,25 +426,64 @@ const osmSummary = (counts: OsmCounts, traced: number, parks: ParkCounts = {}) =
     .filter(Boolean)
     .join(", ");
 
-/** A disc golf course mapped on OpenStreetMap, as holes on the plan: each hole's tee, basket and
- * bends, numbered and with a par where mapped; only holes whose tee and basket are on the site. */
-export const courseFromMap = (course: MappedCourse, ref: GeoBounds & { width: number; height: number }) => {
+/** How long a tee or pin word says it plays: 0 short, 1 in between or unsaid, 2 long. */
+const lengthRank = (tag?: string) =>
+  !tag ? 1 : /^(short|front|am|amateur|rec|recreational|novice)$/.test(tag) ? 0 : /^(long|back|pro|championship)$/.test(tag) ? 2 : 1;
+
+/** A hole's pin positions: a letter said keeps it, the rest take the letters left, short before
+ * long, else in their order (null: past D, the last there is). */
+export const pinPositions = (tags: (string | undefined)[]): (PinPosition | null)[] => {
+  const out: (PinPosition | null)[] = tags.map(() => null);
+  const free = new Set<PinPosition>(PIN_POSITIONS);
+  tags.forEach((t, i) => { const l = t?.toUpperCase() as PinPosition; if (t && free.has(l) && /^[A-D]$/.test(t.toUpperCase())) { out[i] = l; free.delete(l); } });
+  const rest = tags.map((t, i) => ({ t, i })).filter(x => out[x.i] === null).sort((a, b) => lengthRank(a.t) - lengthRank(b.t) || a.i - b.i);
+  for (const r of rest) { const l = PIN_POSITIONS.find(p => free.has(p)); if (!l) break; out[r.i] = l; free.delete(l); }
+  return out;
+};
+
+/** A hole's tee colors: a color said keeps it; the rest, longest first (a long tee, else the
+ * farthest from the basket), take the colors usually used, in order from the back (one tee: blue;
+ * two: blue and red; three: gold, blue and red). Null: no color left. */
+export const teeLevels = (tees: { tag?: string; far: number }[]): (TeeLevel | null)[] => {
+  const out: (TeeLevel | null)[] = tees.map(() => null);
+  const free = new Set<TeeLevel>(TEE_ORDER);
+  tees.forEach((t, i) => { const c = t.tag as TeeLevel; if (c && free.has(c)) { out[i] = c; free.delete(c); } });
+  const rest = tees.map((t, i) => ({ ...t, i })).filter(x => out[x.i] === null).sort((a, b) => lengthRank(b.tag) - lengthRank(a.tag) || b.far - a.far);
+  const usual = (rest.length === 1 ? ["blue"] : rest.length === 2 ? ["blue", "red"] : rest.length === 3 ? ["gold", "blue", "red"] : ["gold", "blue", "white", "red", "green", "purple"]) as TeeLevel[];
+  const picks = [...usual.filter(l => free.has(l)), ...TEE_ORDER.filter(l => free.has(l) && !usual.includes(l))].slice(0, rest.length).sort((a, b) => TEE_ORDER.indexOf(a) - TEE_ORDER.indexOf(b));
+  rest.forEach((r, k) => { if (picks[k]) out[r.i] = picks[k]; });
+  return out;
+};
+
+/** A disc golf course mapped on OpenStreetMap or read from a GPS file, as holes on the plan: each
+ * hole's tees, pin positions and bends, numbered and with a par where mapped; only holes whose tee
+ * and basket are on the site (`outside` says how many weren't). `taken`: numbers in use already
+ * (a hole with one of those plays as the next free one). `dropped`: tees and pins past the six
+ * colors and four letters there are. */
+export const courseFromMap = (course: MappedCourse, ref: GeoBounds & { width: number; height: number }, taken = new Set<number>()) => {
   const plan = (ll: LatLon) => toPlanXY(ref, ll.lat, ll.lon);
   const on = (p: P) => p.x >= 0 && p.y >= 0 && p.x <= ref.width && p.y <= ref.height;
   const holes: Hole[] = [];
   const items: CourseItem[] = [];
-  const taken = new Set<number>();
+  taken = new Set(taken);
+  let outside = 0, dropped = 0;
   for (const m of course.holes) {
     const tee = plan(m.tee), basket = plan(m.basket);
-    if (!on(tee) || !on(basket)) continue;
+    if (!on(tee) || !on(basket)) { outside++; continue; }
     // (a number used twice: the second plays as the next free one)
     const number = m.number && !taken.has(m.number) ? m.number : undefined;
     if (number) taken.add(number);
     const hole = newHole({ doglegs: m.doglegs.map(plan), ...(number ? { number } : {}), ...(m.par ? { par: m.par } : {}) });
     holes.push(hole);
-    items.push(createTee(hole.id, tee), createBasket(hole.id, basket));
+    // (every tee and pin it has; one past the site's edge stays out)
+    const tees = (m.tees ?? [{ at: m.tee }]).map(t => ({ ...t, p: plan(t.at) })).filter((t, i) => i === 0 || on(t.p));
+    const pins = (m.baskets ?? [{ at: m.basket }]).map(b => ({ ...b, p: plan(b.at) })).filter((b, i) => i === 0 || on(b.p));
+    const levels = teeLevels(tees.map(t => ({ tag: t.tag, far: Math.hypot(t.p.x - basket.x, t.p.y - basket.y) })));
+    const positions = pinPositions(pins.map((b: MappedSpot & { p: P }) => b.tag));
+    tees.forEach((t, i) => { const l = levels[i]; if (l) items.push(createTee(hole.id, t.p, l)); else dropped++; });
+    pins.forEach((b, i) => { const l = positions[i]; if (l) items.push(createBasket(hole.id, b.p, l)); else dropped++; });
   }
-  return { name: course.name, holes, items };
+  return { name: course.name, holes, items, outside, dropped };
 };
 
 /**
@@ -859,6 +898,9 @@ export const importSite = async (selection: SiteSelection, opts: ImportOptions):
       if (added.length) notes.push(govSummary(added));
       const mc = mappedCourse(osm.answer.features);
       if (mc) course = courseFromMap(mc, ref);
+      // (a course mapped only as spots named for its holes: said, as they can't make holes)
+      const hints = mc?.holes.length ? 0 : holeHints(osm.answer.features);
+      if (hints) notes.push(`OpenStreetMap marks ${hints} disc golf ${hints === 1 ? "hole" : "holes"} here as single points, without saying which is the tee and which is the basket, so no holes were made from them. To bring the holes in, open a GPS file of the course (Holes from a GPS file) or walk it with Tee here and Pin here.`);
       progress.set("buildings", traced ? { state: more.length ? "done" : "not-here", count: more.length, source: "Overture Maps", cached: traced.hit } : {});
       if (more.length) layer({ source: "buildings", items: more });
     } else if (traced) {

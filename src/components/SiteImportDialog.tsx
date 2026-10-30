@@ -23,9 +23,10 @@ import { BottomSheet, type Detent } from "./mobile/BottomSheet";
 
 /** The map's first view: the site already brought in (its frame to grow, shrink or move; the
  * design goes along with it), or the whole country. */
-const startFrom = () => {
+const startFrom = (near?: GeoBounds) => {
   const site = getDoc().site;
-  const b = site.bounds;
+  // (no site yet: framed round what's asked for, a GPS file's tees and baskets)
+  const b = site.bounds ?? (near ? frameAround(near) : null);
   if (!b) return { view: { lat: 39.5, lon: -98.35, zoom: 4, key: 0 }, selection: null, label: "" };
   const lat = (b.north + b.south) / 2, lon = (b.east + b.west) / 2;
   // Zoomed so the frame takes about half of a 1,000 px map
@@ -73,7 +74,7 @@ const drawnAs = (i: CourseItem): { area?: string; line?: string; weight?: number
   return {};
 };
 
-export function SiteImportDialog({ onClose, onImported }: { onClose: () => void; onImported: (site: ImportedSite, opts: { trees: boolean; osm: boolean; course?: boolean; turn?: number }) => void }) {
+export function SiteImportDialog({ onClose, onImported, near }: { near?: GeoBounds; onClose: () => void; onImported: (site: ImportedSite, opts: { trees: boolean; osm: boolean; course?: boolean; turn?: number }) => void }) {
   // (open again each time it mounts: React mounts it twice in development, and a flag only ever
   // set to closed left every import there unapplied, stuck short of the end)
   const open = useRef(true);
@@ -83,7 +84,7 @@ export function SiteImportDialog({ onClose, onImported }: { onClose: () => void;
     open.current = true;
     return () => { open.current = false; stopper.current?.abort(); };
   }, []);
-  const [start] = useState(startFrom);
+  const [start] = useState(() => startFrom(near));
   // (a site in already: bringing it in again replaces what came last time)
   const [again] = useState(() => !!getDoc().site.bounds);
   const [units] = useState(() => getDoc().units);

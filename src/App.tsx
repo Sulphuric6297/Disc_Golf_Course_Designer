@@ -19,6 +19,8 @@ import { Inspector } from "./components/Inspector";
 import { stepHole } from "./components/HoleSteps";
 import { GoTo } from "./components/GoTo";
 import { SiteImportDialog } from "./components/SiteImportDialog";
+import { CourseFileDialog, FIND_PARK_EVENT, useCourseFile, type FindParkNear } from "./components/CourseFileDialog";
+import type { GeoBounds } from "./lib/geo/core";
 import { SiteReady, readyFacts, type ReadyFact } from "./components/SiteReady";
 import { TeeViewHud } from "./components/TeeViewHud";
 import { CameraHud } from "./components/CameraHud";
@@ -184,6 +186,19 @@ export default function App() {
   const layout = useLayout();
   const doc = useCourse(s => s.doc);
   const [findSite, setFindSite] = useState(false);
+  // (the site import framed on a GPS file's holes, for a course with no site yet)
+  const [findNear, setFindNear] = useState<GeoBounds | undefined>();
+  useEffect(() => {
+    const on = (e: Event) => { setFindNear((e as CustomEvent<FindParkNear>).detail.bounds); setFindSite(true); };
+    window.addEventListener(FIND_PARK_EVENT, on);
+    return () => window.removeEventListener(FIND_PARK_EVENT, on);
+  }, []);
+  const closeFindSite = () => {
+    setFindSite(false);
+    setFindNear(undefined);
+    // (closed with no site: the GPS file's holes shown again, still waiting for one)
+    if (useCourseFile.getState().waiting) useCourseFile.setState({ waiting: false });
+  };
   // The site just brought in: what came, over the 3D view of it
   const [siteReady, setSiteReady] = useState<{ name: string; facts: ReadyFact[]; said: string } | null>(null);
   useEffect(() => {
@@ -249,6 +264,7 @@ export default function App() {
       ...(opts?.turn !== undefined ? { style: { ...d.style, rotation: opts.turn } } : {})
     }));
     setFindSite(false);
+    setFindNear(undefined);
     useEditor.getState().set({ step: "design", tool: "select" });
     setTimeout(() => getView()?.fitSite(), 50);
     const outside = carried.outside ? ` ${carried.outside} ${carried.outside === 1 ? "thing you drew is" : "things you drew are"} now past the site's edges.` : "";
@@ -408,7 +424,8 @@ export default function App() {
   );
   const dialogs = (
     <>
-      {findSite && <SiteImportDialog onClose={() => setFindSite(false)} onImported={onImported} />}
+      {findSite && <SiteImportDialog near={findNear} onClose={closeFindSite} onImported={onImported} />}
+      <CourseFileDialog />
       {siteReady && <SiteReady {...siteReady} onLook={() => { setSiteReady(null); useEditor.getState().set({ view: "3d" }); setTimeout(() => faceTheSite(), 50); }} onStart={() => { setSiteReady(null); setTimeout(() => faceTheSite(), 50); }} />}
       {help && <HelpGuide onClose={() => setHelp(false)} topic={help.topic} touch={touchUi} />}
       {goTo && <GoTo onClose={() => setGoTo(false)} onHelp={topic => setHelp({ topic })} />}
