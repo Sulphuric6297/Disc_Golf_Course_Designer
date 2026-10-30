@@ -85,11 +85,15 @@ export const conifersOf = (s: Pick<MapStyle, "landscape" | "conifers">) => s.con
  * where the landscape is mostly pines. */
 export const paintedPinesOf = (s: Pick<MapStyle, "landscape" | "conifers">, own: number) => s.conifers ?? Math.max(own, Math.max(0, (landscapeOf(s).conifers - 0.3) / 0.7) * 0.9);
 
+/** Early fall's leaves: mostly still green, a few trees turning yellow and orange. */
+const EARLY_FALL = ["#3d5529", "#465f2c", "#35492a", "#56662c", "#4b5e2a", "#7a7a30", "#8f7f2a", "#a5782a", "#b0682c"];
+
 /** Colors to pick for each part of the map (Design > Parts of the map), each with its picture
  * (public/parts/<part>-color-<id>.jpg). The trees' autumn: leaves in several colors. */
 export const COLOR_PICKS = {
   trees: [
     { id: "summer", label: "Summer", color: "#354a2c" }, { id: "deep", label: "Deep green", color: "#2a3d2e" },
+    { id: "early", label: "Early fall", color: "#3d5529", mix: EARLY_FALL },
     { id: "autumn", label: "Autumn", color: "#7a4b26", mix: LANDSCAPES.autumn.mix }, { id: "late", label: "Late summer", color: "#47532f" }
   ],
   grass: [{ id: "green", label: "Green", color: "#4d6a3c" }, { id: "lush", label: "Lush", color: "#668845" }, { id: "dry", label: "Dry", color: "#a39561" }, { id: "sand", label: "Sand", color: "#b9a682" }],

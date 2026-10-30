@@ -26,8 +26,12 @@ test("the Design step shows the printed map; its styles are the painted map in e
   await expect(pageSvg).toContainText(/PAR 6 \| 700 FT/);
   await expect(pageSvg.locator("image").first()).toBeVisible();
   // The painted Forest map; the trees' part open, its leaf colors as pictures (autumn: several colors)
-  await expect(page.getByTestId("colors-trees").getByRole("radio")).toHaveCount(4);
+  await expect(page.getByTestId("colors-trees").getByRole("radio")).toHaveCount(5);
   await expect(page.getByTestId("theme-illustrated")).toHaveCount(0);
+  // (early fall: still mostly green, a few trees turning)
+  await page.getByTestId("colors-trees-early").click();
+  await expect.poll(async () => (await course(page)).style.treeMix?.length).toBe(9);
+  await expect(page.getByTestId("colors-trees-early")).toHaveAttribute("aria-checked", "true");
   await page.getByTestId("colors-trees-autumn").click();
   await expect.poll(async () => (await course(page)).style.trees).toBe("#7a4b26");
   const autumn = await course(page);
