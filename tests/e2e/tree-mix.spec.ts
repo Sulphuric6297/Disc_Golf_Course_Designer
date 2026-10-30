@@ -40,14 +40,14 @@ test("a course near Seattle: the region's kinds offered and used; the woods grow
   const region = page.getByTestId("tree-kinds-region");
   await expect(region).toContainText("the Pacific Northwest: spruce, pine");
   await region.getByRole("button", { name: "Use these" }).click();
-  await expect.poll(async () => (await course(page)).style.treeKinds).toEqual(["oak", "pine", "spruce", "cedar"]);
+  await expect.poll(async () => (await course(page)).style.treeKinds).toEqual(["oak", "pine", "tallpine", "spruce", "cedar"]);
   await expect(region).toContainText("In use.");
-  // The woods grown again: spruces and cedars among the needle trees (variants 4 to 7), every
+  // The woods grown again: spruces, cedars and tall pines among the needle trees (variants 4 to 9), every
   // leafy one an oak (0, 2, 4)
   await expect.poll(async () => (await woodsTrees(page)).some(s => s.shape === "conifer" && s.variant >= 4), { timeout: 20_000 }).toBe(true);
   expect((await woodsTrees(page)).filter(s => s.shape === "broadleaf").every(s => [0, 2, 4].includes(s.variant))).toBe(true);
   // No needle kinds on: no needle trees
-  for (const k of ["Pine", "Spruce", "Cedar"]) await chip(kinds, k).click();
+  for (const k of ["Pine", "Tall pine", "Spruce", "Cedar"]) await chip(kinds, k).click();
   await expect.poll(async () => (await course(page)).style.treeKinds).toEqual(["oak"]);
   await expect.poll(async () => { const t = await woodsTrees(page); return t.length > 50 && t.every(s => s.shape === "broadleaf"); }, { timeout: 20_000 }).toBe(true);
   // The last kind stays on
@@ -58,6 +58,11 @@ test("a course near Seattle: the region's kinds offered and used; the woods grow
   await chip(kinds, "Ash").click();
   await chip(kinds, "Pine").click();
   await expect.poll(async () => (await course(page)).style.treeKinds).toBeUndefined();
+});
+
+test("a course in the Carolina sandhills: the South's tall pines recommended", async ({ page }) => {
+  await woodsAndTrees(page, { lat: 35.19, lon: -79.47, label: "Pinehurst" });
+  await expect(page.getByTestId("tree-kinds-region")).toContainText("the Southeast: maple, oak, tall pine");
 });
 
 test("outside the US: the kinds to pick, no region's", async ({ page }) => {

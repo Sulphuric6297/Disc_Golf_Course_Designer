@@ -9,7 +9,7 @@ import io, json, re, sys, time, urllib.parse, urllib.request, zipfile
 OUT = sys.argv[1] if len(sys.argv) > 1 else "."
 API = "https://apps.fs.usda.gov/fiadb-api"
 SNUM = "Number of live trees (at least 1 inch d.b.h./d.r.c.), in trees, on forest land"
-LOOKS = ["oak", "ash", "maple", "aspen", "birch", "willow", "pear", "pine", "spruce", "cedar"]
+LOOKS = ["oak", "ash", "maple", "aspen", "birch", "willow", "pear", "pine", "tallpine", "spruce", "cedar"]
 # Each genus to the look nearest it (what HyzerLab's tree engine can grow)
 GENUS = {
     # broadleaf
@@ -30,6 +30,11 @@ GENUS = {
     "Picea": "spruce", "Abies": "spruce", "Tsuga": "spruce", "Pseudotsuga": "spruce", "Larix": "spruce", "Sequoia": "spruce", "Sequoiadendron": "spruce", "Taxus": "spruce",
     "Juniperus": "cedar", "Thuja": "cedar", "Chamaecyparis": "cedar", "Calocedrus": "cedar", "Taxodium": "cedar", "Cupressus": "cedar", "Hesperocyparis": "cedar",
 }
+# The pines with a tall bare trunk and a small crown on top: the South's yellow pines (loblolly,
+# longleaf, slash, shortleaf, pond, spruce pine), the West's ponderosa and Jeffrey, the Great Lakes'
+# red pine; the other pines (white, Virginia, pitch, jack, lodgepole, pinyon…) are the usual pine
+TALL_PINES = {"taeda", "palustris", "elliottii", "echinata", "serotina", "glabra", "ponderosa", "jeffreyi", "resinosa"}
+
 STATES = ["01", "02", "04", "05", "06", "08", "09", "10", "11", "12", "13", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30",
           "31", "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "44", "45", "46", "47", "48", "49", "50", "51", "53", "54", "55", "56"]
 
@@ -52,6 +57,8 @@ for ev in re.findall(r"<td>(\d{5,6})</td>", wc_html):
 def look_of(spcd, name):
     m = re.search(r"\(([A-Z][a-z]+)", name)
     genus = m.group(1) if m else ""
+    sp = re.search(r"\(Pinus ([a-z]+)", name)
+    if sp and sp.group(1) in TALL_PINES: return "tallpine"
     if genus in GENUS: return GENUS[genus]
     # (FIA species codes under 300 are softwoods: a needle tree; the rest broadleaf)
     return "spruce" if spcd < 300 else "oak"

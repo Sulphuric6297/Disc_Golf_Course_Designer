@@ -24,7 +24,7 @@ const PRESETS: Record<TreeShape, string[]> = {
   // names these by place, so a new one goes at the end)
   broadleaf: ["Oak Medium", "Ash Medium", "Oak Large", "Ash Large", "Oak Small", "Ash Small",
     "Aspen Medium", "Aspen Large", "Birch Medium", "Birch Large", "Maple Medium", "Maple Large", "Willow Medium", "Bradford pear Medium", "Bradford pear Small"],
-  conifer: ["Pine Medium", "Pine Large", "Pine Small", "Pine Large", "Spruce Medium", "Spruce Large", "Cedar Medium", "Cedar Small"],
+  conifer: ["Pine Medium", "Pine Large", "Pine Small", "Pine Large", "Spruce Medium", "Spruce Large", "Cedar Medium", "Cedar Small", "Tall pine Medium", "Tall pine Large"],
   // (the first six: bushes; then the underbrush's own: briars, weeds, thicket shrubs, two each)
   bush: ["Bush 1", "Bush 3", "Bush 1", "Bush 3", "Bush 2", "Bush 2", "Briars", "Briars", "Weeds", "Ferns", "Thicket", "Thicket"]
 };
@@ -34,6 +34,9 @@ export const EZ_VARIANTS: Record<TreeShape, number> = { broadleaf: 6, conifer: 4
 export const BRUSH_VARIANTS = { briars: [6, 7], weeds: [8, 9], thicket: [10, 11] } as const;
 
 type Options = {
+  /** "deciduous": each limb ends in a leader of the next level; "evergreen": one leader to a point,
+   * the lower limbs longest. */
+  type: string;
   branch: Record<"angle" | "children" | "gnarliness" | "length" | "radius" | "sections" | "segments" | "start" | "taper" | "twist", Record<number, number>> & { levels: number; force: { direction: { x: number; y: number; z: number }; strength: number } };
   bark: { type: string; tint: number; textureScale: { x: number; y: number } };
   leaves: { type: string; count: number; size: number; sizeVariance: number; angle: number; start: number; billboard: string };
@@ -175,23 +178,114 @@ regional("Willow", { Small: "Ash Small", Medium: "Ash Medium", Large: "Ash Large
   o.leaves.count = Math.round(o.leaves.count * 1.5);
   o.leaves.size *= 0.8;
 });
-// Bradford pear (callery pear): an upright, tight oval of many steep limbs, small glossy leaves
-// packed to the outside
-regional("Bradford pear", { Small: "Oak Small", Medium: "Oak Medium", Large: "Oak Large" }, o => {
-  const b = o.branch;
-  b.angle[1] = 24;
-  b.angle[2] = 30;
-  b.children[0] = Math.round(b.children[0] * 1.5);
-  b.length[1] *= 0.7;
-  b.length[2] *= 0.75;
-  b.start[1] = 0.22;
-  b.gnarliness[1] *= 0.4;
-  b.gnarliness[2] *= 0.5;
-  b.radius[1] *= 0.8;
+// Bradford pear (callery pear): a slim trunk and small glossy leaves packed to the outside, no
+// gaps. Young (Small): one straight leader to a point, the lower limbs longest, a narrow cone;
+// grown (Medium, Large): a short trunk splitting into many steep limbs, a broad upright egg
+const pearLeaves = (o: Options, count: number, size: number) => {
   o.leaves.type = "oak";
-  o.leaves.count = Math.round(o.leaves.count * 1.6);
-  o.leaves.size *= 0.75;
-});
+  o.leaves.count = count;
+  o.leaves.size = size;
+  o.leaves.sizeVariance = 0.3;
+  o.leaves.start = 0;
+  o.leaves.angle = 50;
+};
+CUSTOM["Bradford pear Small"] = {
+  base: "Oak Small",
+  shape: o => {
+    const b = o.branch;
+    o.type = "evergreen";
+    b.levels = 3;
+    b.length[0] = 30;
+    b.radius[0] = 0.38;
+    b.sections[0] = 16;
+    b.start[1] = 0.12;
+    b.children[0] = 36;
+    b.angle[1] = 45;
+    b.length[1] = 14;
+    b.radius[1] = 0.6;
+    b.gnarliness[0] = 0.02;
+    b.gnarliness[1] = 0.04;
+    b.twist[0] = 0;
+    b.force = { direction: { x: 0, y: 1, z: 0 }, strength: 0.02 };
+    b.children[1] = 4;
+    b.angle[2] = 45;
+    b.length[2] = 3.5;
+    b.start[2] = 0.1;
+    b.children[2] = 3;
+    b.angle[3] = 40;
+    b.length[3] = 2;
+    b.start[3] = 0;
+    pearLeaves(o, 9, 2.4);
+  }
+};
+for (const [size, base, scale] of [["Medium", "Oak Medium", 1], ["Large", "Oak Large", 1.25]] as const) {
+  CUSTOM[`Bradford pear ${size}`] = {
+    base,
+    shape: o => {
+      const b = o.branch;
+      o.type = "evergreen";
+      b.levels = 3;
+      b.length[0] = 24 * scale;
+      b.radius[0] = 0.55 * scale;
+      b.sections[0] = 16;
+      b.start[1] = 0.08;
+      b.children[0] = 44;
+      b.angle[1] = 46;
+      b.length[1] = 22 * scale;
+      b.radius[1] = 0.6;
+      b.gnarliness[0] = 0.02;
+      b.gnarliness[1] = 0.03;
+      b.gnarliness[2] = 0.08;
+      b.twist[0] = 0;
+      b.force = { direction: { x: 0, y: 1, z: 0 }, strength: 0.04 };
+      b.children[1] = 6;
+      b.angle[2] = 45;
+      b.length[2] = 4.5 * scale;
+      b.start[2] = 0.1;
+      b.children[2] = 3;
+      b.angle[3] = 40;
+      b.length[3] = 2 * scale;
+      b.start[3] = 0;
+      pearLeaves(o, 7, 2.6 * scale);
+    }
+  };
+}
+// Tall pine (the South's loblolly, longleaf, slash and shortleaf; ponderosa; red pine): a tall,
+// slim, bare trunk, and up top a short, open, crooked crown of upswept limbs with tufts of long
+// needles at their ends
+for (const [size, base, scale] of [["Small", "Pine Medium", 0.6], ["Medium", "Pine Large", 1], ["Large", "Pine Large", 1.3]] as const) {
+  CUSTOM[`Tall pine ${size}`] = {
+    base,
+    shape: o => {
+      const b = o.branch;
+      o.type = "evergreen";
+      b.levels = 2;
+      b.length[0] = 70 * scale;
+      b.radius[0] = 0.7 * scale;
+      b.sections[0] = 14;
+      b.gnarliness[0] = 0.03;
+      b.start[1] = size === "Small" ? 0.45 : 0.6;
+      b.children[0] = 24;
+      b.angle[1] = 80;
+      b.length[1] = 40 * scale;
+      b.radius[1] = 0.5;
+      b.gnarliness[1] = 0.22;
+      b.sections[1] = 8;
+      b.force = { direction: { x: 0, y: 1, z: 0 }, strength: 0.025 };
+      b.children[1] = 5;
+      b.angle[2] = 42;
+      b.length[2] = 8 * scale;
+      b.start[2] = 0.35;
+      b.radius[2] = 0.6;
+      b.gnarliness[2] = 0.1;
+      o.leaves.type = "pine";
+      o.leaves.count = 14;
+      o.leaves.size = 3.4 * scale;
+      o.leaves.start = 0.35;
+      o.leaves.angle = 30;
+    }
+  };
+}
 // Spruce (and fir, hemlock): the pine's branches short and swept down, narrowing to a point
 regional("Spruce", { Small: "Pine Small", Medium: "Pine Medium", Large: "Pine Large" }, o => {
   const b = o.branch;
@@ -230,6 +324,7 @@ export const SPECIES: Record<TreeShape, { id: string; label: string; presets: [s
   ],
   conifer: [
     { id: "pine", label: "Pine", presets: ["Pine Small", "Pine Medium", "Pine Large"] },
+    { id: "tallpine", label: "Tall pine", presets: ["Tall pine Small", "Tall pine Medium", "Tall pine Large"] },
     { id: "spruce", label: "Spruce", presets: ["Spruce Small", "Spruce Medium", "Spruce Large"] },
     { id: "cedar", label: "Cedar", presets: ["Cedar Small", "Cedar Medium", "Cedar Large"] }
   ],

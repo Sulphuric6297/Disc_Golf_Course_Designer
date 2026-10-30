@@ -15,7 +15,7 @@ export const LOOK_VARIANTS = {
   maple: { shape: "broadleaf", variants: [10, 11] }, aspen: { shape: "broadleaf", variants: [6, 7] },
   birch: { shape: "broadleaf", variants: [8, 9] }, willow: { shape: "broadleaf", variants: [12] },
   pear: { shape: "broadleaf", variants: [13, 14] },
-  pine: { shape: "conifer", variants: [0, 1, 2, 3] }, spruce: { shape: "conifer", variants: [4, 5] }, cedar: { shape: "conifer", variants: [6, 7] }
+  pine: { shape: "conifer", variants: [0, 1, 2, 3] }, tallpine: { shape: "conifer", variants: [8, 9] }, spruce: { shape: "conifer", variants: [4, 5] }, cedar: { shape: "conifer", variants: [6, 7] }
 } as const;
 export type TreeLookId = keyof typeof LOOK_VARIANTS;
 export const TREE_LOOKS = Object.keys(LOOK_VARIANTS) as TreeLookId[];
@@ -25,14 +25,14 @@ export type TreeShares = Partial<Record<TreeLookId, number>>;
 /** Each look's name (the setting's chips; the survey's trees grouped into it, said in the help). */
 export const LOOK_LABEL: Record<TreeLookId, string> = {
   oak: "Oak", ash: "Ash", maple: "Maple", aspen: "Aspen", birch: "Birch",
-  willow: "Weeping willow", pear: "Bradford pear", pine: "Pine", spruce: "Spruce", cedar: "Cedar"
+  willow: "Weeping willow", pear: "Bradford pear", pine: "Pine", tallpine: "Tall pine", spruce: "Spruce", cedar: "Cedar"
 };
 
 /** Each look's leaves against the course's tree color: hue, saturation and lightness moved a little
  * (a birch's and a willow's lighter, a spruce's bluer and darker). */
 export const LOOK_TINT: Record<TreeLookId, [number, number, number]> = {
   oak: [0, 0, 0], ash: [0.01, 0, 0.02], maple: [-0.01, 0.04, 0], aspen: [0.02, 0.02, 0.05], birch: [0.02, -0.02, 0.07],
-  willow: [0.03, 0.03, 0.07], pear: [-0.01, 0.05, -0.02], pine: [0, 0, 0], spruce: [0.04, -0.06, -0.04], cedar: [-0.01, -0.03, -0.02]
+  willow: [0.03, 0.03, 0.07], pear: [-0.005, 0.06, 0.05], pine: [0, 0, 0], tallpine: [0.01, 0.02, 0.03], spruce: [0.04, -0.06, -0.04], cedar: [-0.01, -0.03, -0.02]
 };
 
 /** The kinds a course grows when none are picked: as before there was a choice. */

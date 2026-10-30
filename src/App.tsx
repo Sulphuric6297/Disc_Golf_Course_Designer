@@ -236,7 +236,7 @@ export default function App() {
       terrainHeights: site.terrainHeights,
       terrainOriginal: undefined,
       background: site.background,
-      site: site.site,
+      site: mappedCourse ? { ...site.site, holesFromOsm: true } : site.site,
       groundPaint: {},
       // (named for the park only when one was found by name)
       name: d.name === "New Disc Golf Course" && site.site.location?.label ? `${site.site.location.label.split(",")[0]} Disc Golf Course` : d.name,

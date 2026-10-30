@@ -1140,7 +1140,8 @@ export const mapTagline = (doc: CourseDoc) => (taglineFits(doc) ? taglineOf(doc.
  * whatever the credit line's own words are, even with them hidden. */
 export const requiredCredit = (doc: CourseDoc) => [
   doc.site.imagerySource && doc.style.theme === "satellite" ? "Imagery © Esri" : "",
-  doc.items.some(i => (i.type === "area" || i.type === "line" || i.type === "structure") && i.importSource === "osm") ? "Map data © OpenStreetMap contributors" : "",
+  // (anything from OpenStreetMap: its areas, lines, buildings, benches, trees, or the holes of a course mapped there)
+  doc.site.holesFromOsm || doc.items.some(i => "importSource" in i && i.importSource === "osm") ? "Map data © OpenStreetMap contributors" : "",
   doc.items.some(i => i.type === "structure" && i.importSource === "traced") ? "Buildings © Overture Maps Foundation, Microsoft" : "",
   doc.items.some(i => (i.type === "line" || i.type === "area") && i.importSource === "usgs") ? GOV_CREDITS.usgs : "",
   doc.items.some(i => i.type === "area" && i.importSource === "nwi") ? GOV_CREDITS.nwi : "",

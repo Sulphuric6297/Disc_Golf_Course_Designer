@@ -630,6 +630,14 @@ plain("a disc golf course mapped on OpenStreetMap: its holes from hole ways, or 
   plainExpect(mappedCourse(osmFeaturesFrom({ elements: [wayAt({ golf: "hole", ref: "1" }, [[0, 0], [50, 50]])] }))).toBeNull();
 });
 
+plain("OpenStreetMap credited on the map for anything from it: holes of a course mapped there, benches, trees (pure logic)", () => {
+  const doc = (site: object, items: object[]) => ({ site, items, style: { theme: "forest" } }) as any;
+  plainExpect(requiredCredit(doc({}, []))).toBe("");
+  plainExpect(requiredCredit(doc({ holesFromOsm: true }, []))).toContain("© OpenStreetMap contributors");
+  plainExpect(requiredCredit(doc({}, [{ type: "amenity", kind: "bench", importSource: "osm" }]))).toContain("© OpenStreetMap contributors");
+  plainExpect(requiredCredit(doc({}, [{ type: "tree", importSource: "lidar" }]))).toBe("");
+});
+
 plain("the park or course at a spot: its outline, and the course mapped in it with how many holes (pure logic)", () => {
   const ring = (e: number, n: number, r: number) => square(e, n, r).map(([x, y]) => geoAt(x, y));
   const json = {

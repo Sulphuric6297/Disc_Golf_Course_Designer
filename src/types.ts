@@ -744,6 +744,8 @@ export interface SiteInfo {
   lidarFailed?: boolean;
   /** OpenStreetMap couldn't be reached the last time it was asked. */
   osmFailed?: boolean;
+  /** Holes came in from the course mapped on OpenStreetMap (its credit goes on the map). */
+  holesFromOsm?: boolean;
   /** Some of the photo's map tiles were missing. */
   tilesMissing?: boolean;
 }
