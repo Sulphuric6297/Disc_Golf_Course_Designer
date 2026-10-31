@@ -819,10 +819,6 @@ export class CourseView {
     this.controls.update(0);
     this.camera.updateMatrixWorld();
     this.invalidate();
-    // (the panel of a thing just picked, heard of only now on a slow device: if that thing is under
-    // it still, brought out, as picking does; already clear, it stays)
-    const r = this.revealed;
-    if (r && performance.now() - r.at < 1500) this.frame(r.id);
   }
   /** Pixels at the bottom and top covered by panels (a phone's bottom sheet; its top bar). */
   bottomInset = 0;
@@ -915,12 +911,8 @@ export class CourseView {
   /** Brings a picked item or hole into view: the map slides, it never zooms (the owner's rule:
    * picking, from the map, a list, Search or the arrows, keeps the zoom it's at). */
   reveal(id: string) {
-    // (at once, and again when the map hears how wide its panel is: picking it opens the panel,
-    // and on a slow device the map hears of it only later; see setLeftInset)
-    this.revealed = { id, at: performance.now() };
     this.frame(id);
   }
-  private revealed: { id: string; at: number } | null = null;
 
   /** Zooms to show the whole of an item, only when that's asked for (Zoom to it, F). */
   zoomTo(id: string) {
