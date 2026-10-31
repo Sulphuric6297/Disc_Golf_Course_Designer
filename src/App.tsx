@@ -19,6 +19,7 @@ import { Inspector } from "./components/Inspector";
 import { stepHole } from "./components/HoleSteps";
 import { GoTo } from "./components/GoTo";
 import { SiteImportDialog } from "./components/SiteImportDialog";
+import { PerfPanel } from "./components/PerfPanel";
 import { CourseFileDialog, FIND_PARK_EVENT, useCourseFile, type FindParkNear } from "./components/CourseFileDialog";
 import type { GeoBounds } from "./lib/geo/core";
 import { SiteReady, readyFacts, type ReadyFact } from "./components/SiteReady";
@@ -393,7 +394,7 @@ export default function App() {
       if (e.key === "+" || e.key === "=") { view?.zoomBy(1.4); return; }
       if (e.key === "-" || e.key === "_") { view?.zoomBy(1 / 1.4); return; }
       const k = e.key.toUpperCase();
-      if (k === "F") { if (s.selectedId) { const d = getDoc(); if (d.holes.some(h => h.id === s.selectedId)) view?.fitHole(s.selectedId); else view?.reveal(s.selectedId); } return; }
+      if (k === "F") { if (s.selectedId) { const d = getDoc(); if (d.holes.some(h => h.id === s.selectedId)) view?.fitHole(s.selectedId); else view?.zoomTo(s.selectedId); } return; }
       if (k === "Q") { view?.rotateBy(-30); return; }
       if (k === "E") { view?.rotateBy(30); return; }
       if (k === "N") { view?.resetNorth(); return; }
@@ -426,6 +427,7 @@ export default function App() {
     <>
       {findSite && <SiteImportDialog near={findNear} onClose={closeFindSite} onImported={onImported} />}
       <CourseFileDialog />
+      <PerfPanel />
       {siteReady && <SiteReady {...siteReady} onLook={() => { setSiteReady(null); useEditor.getState().set({ view: "3d" }); setTimeout(() => faceTheSite(), 50); }} onStart={() => { setSiteReady(null); setTimeout(() => faceTheSite(), 50); }} />}
       {help && <HelpGuide onClose={() => setHelp(false)} topic={help.topic} touch={touchUi} />}
       {goTo && <GoTo onClose={() => setGoTo(false)} onHelp={topic => setHelp({ topic })} />}

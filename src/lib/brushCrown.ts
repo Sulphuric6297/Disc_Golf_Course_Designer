@@ -10,7 +10,7 @@
 type RGB = [number, number, number];
 type Ctx = CanvasRenderingContext2D;
 type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
-export type BrushTree = { x: number; y: number; r: number; col: RGB; seed: number; pine?: boolean };
+export type BrushTree = { x: number; y: number; r: number; col: RGB; seed: number; pine?: boolean; h?: number };
 
 import { OP, beginMap, endMap, gpuPainter, paintBatch } from "./brushGpu";
 
@@ -427,7 +427,12 @@ export type Wait = { wait: Promise<unknown> };
 let pxPerFt = 0;
 export function* drawBrushedSteps(g: Ctx, trees: BrushTree[], sun: number[], scale = 0): Generator<void | Wait, void, unknown> {
   pxPerFt = scale;
-  const sorted = [...trees].sort((p, q) => p.x * sun[0] + p.y * sun[1] - (q.x * sun[0] + q.y * sun[1]));
+  // (the shorter trees first, in four bands of height, so a tall crown lies over the short ones
+  // round it, as seen from above; within a band, from the sun's side)
+  const hs = trees.map(t => t.h ?? 0).sort((a, b) => a - b);
+  const cuts = [0.25, 0.5, 0.75].map(f => hs[Math.floor(f * (hs.length - 1))] ?? 0);
+  const band = (t: BrushTree) => (t.h === undefined ? 0 : cuts.filter(c => t.h! > c).length);
+  const sorted = [...trees].sort((p, q) => band(p) - band(q) || p.x * sun[0] + p.y * sun[1] - (q.x * sun[0] + q.y * sun[1]));
   const t0 = performance.now();
   let listing = 0, painting = 0, strokes = 0;
   // The graphics chip, where there is one: the trees' strokes listed a slice at a time, painted a

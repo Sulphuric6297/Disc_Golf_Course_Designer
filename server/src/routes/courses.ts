@@ -218,13 +218,14 @@ export async function courseRoutes(app: FastifyInstance, { sql, live }: RouteCtx
     const mine = me?.b as B | null;
     if (!mine) return [];
     const rows = await sql`
-      select c.id, c.name, c.park, c.summary, c.doc->'site'->'bounds' as b, m.role
+      select c.id, c.name, c.park, c.summary, c.doc->'site'->'bounds' as b, c.doc->'canvas' as canvas, m.role
       from course_members m join courses c on c.id = m.course_id where m.user_id = ${a.user.id} and c.id <> ${id}`;
     const meets = (x: B) => x.west < mine.east && x.east > mine.west && x.south < mine.north && x.north > mine.south;
     // (in the same park, or on the same ground)
     const samePark = (p: string) => !!me.park && p.toLowerCase() === String(me.park).toLowerCase();
-    return rows.filter(r => r.b && (samePark(r.park) || meets(r.b as B)) && r.summary?.lines?.length).map(r => ({
-      id: r.id, name: r.name, park: r.park, samePark: samePark(r.park), role: r.role, bounds: r.b, canvas: r.summary.canvas, lines: r.summary.lines
+    // (a course with no holes yet too: its ground can still be shared into, or from it)
+    return rows.filter(r => r.b && (samePark(r.park) || meets(r.b as B))).map(r => ({
+      id: r.id, name: r.name, park: r.park, samePark: samePark(r.park), role: r.role, bounds: r.b, canvas: r.summary?.canvas ?? r.canvas, lines: r.summary?.lines ?? []
     }));
   });
 

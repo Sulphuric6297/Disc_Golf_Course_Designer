@@ -154,7 +154,7 @@ export const sizeDesignEl = (sel: string, f: number, to: { x: number; y: number 
 };
 
 /** A text size that reads well on the paper picked (points). */
-const textSize = (s: MapStyle) => {
+export const textSize = (s: MapStyle) => {
   const p = PAPER[s.paper];
   return Math.round(Math.min(p.w, p.h) * 72 * 0.04);
 };

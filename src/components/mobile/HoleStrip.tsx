@@ -4,7 +4,7 @@
 // sideways under a fixed needle, the map following live), or a few choices. The rest of the hole's
 // settings are further up the sheet, as before.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Plus } from "lucide-react";
+import { Eye, Plane, Plus } from "lucide-react";
 import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, AREA_ORDER, FIELD_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES, compassPoint } from "../../constants";
 import { holeBaskets, holeTees, teeAim } from "../../lib/course";
 import { holeStats } from "../../lib/holeStats";
@@ -17,13 +17,16 @@ import { getView } from "../../state/view";
 import type { AmenityItem, AmenityKind, AreaItem, AreaKind, BasketItem, CourseItem, FieldKind, Hole, LabelItem, LineItem, LineKind, MandoItem, PathSurface, StructureItem, StructureKind, TeeItem, TeeSurface, TreeItem } from "../../types";
 import { BRUSH_LEVELS, FENCE_STYLES, FieldParts, GrowsPick, HoleTrees, InspectorBody, PLAY_OPTIONS, RULE_AREAS, StructureLook, SurfacePick, THICK, TurnButtons, densityFor, growsOf, growsText, hasParts, thickOf, useHoleTrees, amenityIcon, builtIcon, fieldKindOptions, fmtSize, fmtTurn, hasObChoice, heightLabel, homeText, obOptions } from "../Inspector";
 import { HoleChips } from "../ApplyToHoles";
-import { MoveHere } from "../PlaceByGps";
+import { MoveCornerHere, MoveHere } from "../PlaceByGps";
+import { OnSiteButton } from "../OnSite";
+import { useTouch } from "../useLayout";
+import { canShowLocation } from "../../state/gps";
 import { KindTiles, areaPicture, bigIcon, linePicture } from "./KindTiles";
 import { TREE_KINDS, speciesNow } from "../TreeSettings";
 import { SPECIES } from "../../three/ezShapes";
 import { ChipPick, ColorInput, Segmented, TextInput } from "../ui";
 
-type Chip = "par" | "fairway" | "tees" | "pins" | "ob" | "foliage" | "trees" | "name" | "all";
+type Chip = "par" | "fairway" | "tees" | "pins" | "ob" | "foliage" | "trees" | "name" | "all" | "onsite";
 // (the chip open stays open from hole to hole)
 let lastChip: Chip = "fairway";
 
@@ -87,7 +90,10 @@ export function HoleStrip({ hole }: { hole: Hole }) {
   const pins = holeBaskets(doc, hole.id);
   const holeTrees = useHoleTrees(hole, s.complete ? s.line : null);
   const set = (patch: Partial<Hole>, history = true) => updateHole(hole.id, patch, history);
+  // (on site, where it can be: walking the hole puts it on the map)
+  const onSite = useTouch() && !useCourse.getState().readOnly && canShowLocation();
   const chips: [Chip, ReactNode][] = [
+    ...(onSite ? [["onsite", <>On site</>] as [Chip, ReactNode]] : []),
     ["par", <>Par <span className="opacity-60">{hole.par ?? `${s.parAuto} · auto`}</span></>],
     ["fairway", <>Fairway <span className="opacity-60">{hole.fairway ? fmtDist(hole.fairwayWidth, u) : "off"}</span></>],
     ["tees", <>Tees <span className="opacity-60">{tees.length}</span></>],
@@ -137,10 +143,16 @@ export function HoleStrip({ hole }: { hole: Hole }) {
     </div>
   );
   else if (chip === "all") control = allSettings;
+  else if (chip === "onsite") control = <div className="flex gap-1.5"><OnSiteButton holeId={hole.id} className="flex-1" /><OnSiteButton className="flex-1 !bg-white/10" /></div>;
   else if (chip === "foliage") control = <Segmented label="Foliage" value={hole.foliage ?? "auto"} onChange={v => set({ foliage: v === "auto" ? undefined : (v as "light" | "heavy") })} options={[{ value: "auto", label: <span className="whitespace-nowrap">Auto · {s.foliage}</span> }, { value: "light", label: "Light" }, { value: "heavy", label: "Heavy" }]} />;
   return (
     <div className="px-3 pb-3" data-testid="hole-strip">
       <div className="flex gap-1.5 overflow-x-auto touch-pan-x dg-scroll -mx-3 px-3 pb-2" role="tablist" aria-label="Hole settings">
+        {/* (first: the hole as a player sees it, from its tee or flown over, as a computer's panel has them) */}
+        {s.complete && <>
+          <button className={`${chipCls(false)} !bg-sky-500/90 !text-white active:!bg-sky-600 flex items-center gap-1.5`} onClick={() => useEditor.getState().set({ teeView: hole.id, teeViewTee: null, flyover: false })} data-testid="strip-teeview"><Eye size={15} /> Tee view</button>
+          <button className={`${chipCls(false)} flex items-center gap-1.5`} onClick={() => useEditor.getState().set({ teeView: hole.id, teeViewTee: null, flyover: true })} data-testid="strip-flyover"><Plane size={15} /> Fly over</button>
+        </>}
         {chips.map(([c, text]) => <button key={c} role="tab" aria-selected={chip === c} className={chipCls(chip === c)} onClick={() => pick(c)} data-testid={`strip-${c}`}>{text}</button>)}
       </div>
       <div className={paneCls} data-testid="strip-pane">{control}</div>
@@ -187,7 +199,6 @@ export function ItemStrip({ item }: { item: CourseItem }) {
     const aim = Math.round(teeAim(doc, t)) + 90;
     const bearing = (v: number) => `${compassPoint(v)} · ${deg(v)}`;
     chips.push(
-      { id: "view", label: <>View from this tee</>, run: () => useEditor.getState().set({ teeView: t.holeId, teeViewTee: t.id, flyover: false }) },
       { id: "color", label: <>Color <span className="inline-block w-2.5 h-2.5 rounded-full align-middle ring-1 ring-black/40 ml-0.5" style={{ background: TEE_LEVELS[t.level].color }} /></>, control: (
         <ChipPick row label="Tee color" value={t.level} onChange={v => setTeeLevel(t.id, v)} options={TEE_ORDER.map(l => ({ value: l, label: TEE_LEVELS[l].label, color: TEE_LEVELS[l].color }))} />
       ) },
@@ -365,6 +376,7 @@ export function ItemStrip({ item }: { item: CourseItem }) {
     <div className="px-3 pb-3" data-testid="item-strip">
       <div className="flex gap-1.5 overflow-x-auto touch-pan-x dg-scroll -mx-3 px-3 pb-2" role="tablist" aria-label="Settings">
         {placeable && <MoveHere item={item} />}
+        {(item.type === "area" || item.type === "line") && <MoveCornerHere item={item} />}
         {chips.map(c => c.run
           ? <button key={c.id} className={chipCls(false)} onClick={c.run} data-testid={`strip-${c.id}`}>{c.label}</button>
           : <button key={c.id} role="tab" aria-selected={chip?.id === c.id} className={chipCls(chip?.id === c.id)} onClick={() => pick(c.id)} data-testid={`strip-${c.id}`}>{c.label}</button>)}

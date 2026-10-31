@@ -1,7 +1,10 @@
 // Water in 3D: a surface that reflects the sky (the same sky the view shows, so a pond at sunset
 // takes the sunset's colors), more mirror-like toward the horizon as real water is, rippled by two
 // layers of small waves drifting in the wind, its own color showing through where you look down
-// into it. Ponds lie level; creeks follow the ground downhill.
+// into it. Ponds lie level; creeks follow the ground downhill. A pond also mirrors its own banks and
+// the trees on them (a picture of all round it, taken from its middle while the view is still: see
+// CourseView's water pictures), shelves from a clear, shallow edge where its bottom shows to deep
+// water in the middle, and glitters where the ripples catch the sun.
 import * as THREE from "three";
 
 let ripples: THREE.Texture | null = null;
@@ -23,15 +26,19 @@ const rippleTexture = () => {
     if (!kx && !ky) continue;
     waves.push({ kx, ky, a: 1 / Math.hypot(kx, ky), p: rnd() * Math.PI * 2 });
   }
-  const h = (x: number, y: number) => waves.reduce((s, w) => s + w.a * Math.sin(((w.kx * x + w.ky * y) / S) * Math.PI * 2 + w.p), 0);
+  // (the heights worked out once for each pixel, the waves wrapping round the tile, then the
+  // slopes from the neighbours: the same picture as from the waves at every neighbour, a quarter
+  // of the work)
+  const H = new Float32Array(S * S);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) H[y * S + x] = waves.reduce((s, w) => s + w.a * Math.sin(((w.kx * x + w.ky * y) / S) * Math.PI * 2 + w.p), 0);
+  const h = (x: number, y: number) => H[((y + S) % S) * S + ((x + S) % S)];
   for (let y = 0; y < S; y++) {
     for (let x = 0; x < S; x++) {
-      const dx = h(x + 1, y) - h(x - 1, y), dy = h(x, y + 1) - h(x, y - 1);
-      const n = new THREE.Vector3(-dx * 3, -dy * 3, 1).normalize();
+      const nx = -(h(x + 1, y) - h(x - 1, y)) * 3, ny = -(h(x, y + 1) - h(x, y - 1)) * 3, len = Math.hypot(nx, ny, 1);
       const k = (y * S + x) * 4;
-      img.data[k] = (n.x * 0.5 + 0.5) * 255;
-      img.data[k + 1] = (n.y * 0.5 + 0.5) * 255;
-      img.data[k + 2] = (n.z * 0.5 + 0.5) * 255;
+      img.data[k] = (nx / len * 0.5 + 0.5) * 255;
+      img.data[k + 1] = (ny / len * 0.5 + 0.5) * 255;
+      img.data[k + 2] = (1 / len * 0.5 + 0.5) * 255;
       img.data[k + 3] = 255;
     }
   }
@@ -43,9 +50,9 @@ const rippleTexture = () => {
   return (ripples = t);
 };
 
-export type WaterUniforms = { uTime: { value: number }; uWind: { value: number } };
-/** One clock and wind for all water (CourseView moves them along). */
-export const waterUniforms: WaterUniforms = { uTime: { value: 0 }, uWind: { value: 1 } };
+export type WaterUniforms = { uTime: { value: number }; uWind: { value: number }; uSunDir: { value: THREE.Vector3 }; uSunColor: { value: THREE.Color } };
+/** One clock, wind and sun for all water (CourseView moves them along). */
+export const waterUniforms: WaterUniforms = { uTime: { value: 0 }, uWind: { value: 1 }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunColor: { value: new THREE.Color(1, 0.97, 0.9) } };
 
 const materials = new Map<string, THREE.MeshStandardMaterial>();
 let skyEnv: THREE.Texture | null = null;
@@ -63,17 +70,19 @@ export const setWaterSky = (env: THREE.Texture | null) => {
  * Water of a color (shared per kind of water). Round it, `shore` is what stands on the banks
  * (trees, or open grass) and `rise` how high it reaches as seen from the water (the sine of the
  * angle: about 0.3 for a pond in the woods, 0.05 in an open field): the water mirrors that band
- * dark and the sky above it.
+ * dark and the sky above it. `bottom`: a pond's floor, showing in its shallows (its geometry then
+ * has each point's depth, `aDepth`, in feet). `mirror`: the picture of all round it, taken from the
+ * pond (banks, trees, sky): mirrored as it is, the band no longer needed; that water is its own.
  */
-export const waterMaterial = (color: string, shore = "#2a3a24", rise = 0.08) => {
-  const key = `${color}|${shore}|${rise.toFixed(2)}`;
-  let m = materials.get(key);
+export const waterMaterial = (color: string, shore = "#2a3a24", rise = 0.08, opts: { bottom?: string; mirror?: THREE.Texture | null } = {}) => {
+  const key = `${color}|${shore}|${rise.toFixed(2)}|${opts.bottom ?? ""}`;
+  let m = opts.mirror ? undefined : materials.get(key);
   if (m) return m;
   m = new THREE.MeshStandardMaterial({
     color: new THREE.Color(color).multiplyScalar(0.55),
     roughness: 0.06,
     metalness: 0,
-    envMap: skyEnv,
+    envMap: opts.mirror ?? skyEnv,
     // (the sky's reflection is added by hand below, with the Fresnel; not twice)
     envMapIntensity: 0,
     polygonOffset: true,
@@ -81,13 +90,22 @@ export const waterMaterial = (color: string, shore = "#2a3a24", rise = 0.08) => 
     polygonOffsetUnits: -8
   });
   const tex = rippleTexture();
+  if (opts.bottom) m.defines = { ...m.defines, DG_DEPTH: "" };
+  if (opts.mirror) m.defines = { ...m.defines, DG_MIRROR: "" };
+  // (a pond's floor at its very edge: the water's own color a little darker, a touch of the bank's)
+  const bottom = new THREE.Color(opts.bottom ?? "#5a5238").multiplyScalar(0.62);
   m.onBeforeCompile = shader => {
-    Object.assign(shader.uniforms, waterUniforms, { uRipples: { value: tex }, uReflect: { value: 0.9 }, uShore: { value: new THREE.Color(shore).multiplyScalar(0.55) }, uRise: { value: rise } });
+    Object.assign(shader.uniforms, waterUniforms, { uRipples: { value: tex }, uReflect: { value: 0.9 }, uShore: { value: new THREE.Color(shore).multiplyScalar(0.55) }, uRise: { value: rise }, uBottom: { value: bottom } });
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec2 vWaterXZ;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWaterXZ = (modelMatrix * vec4(transformed, 1.0)).xz;");
+      .replace("#include <common>", "#include <common>\nvarying vec2 vWaterXZ;\n#ifdef DG_DEPTH\nattribute float aDepth;\nvarying float vDepth;\n#endif")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWaterXZ = (modelMatrix * vec4(transformed, 1.0)).xz;\n#ifdef DG_DEPTH\nvDepth = aDepth;\n#endif");
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec2 vWaterXZ;\nuniform sampler2D uRipples;\nuniform float uTime;\nuniform float uWind;\nuniform float uReflect;\nuniform vec3 uShore;\nuniform float uRise;")
+      .replace("#include <common>", "#include <common>\nvarying vec2 vWaterXZ;\nuniform sampler2D uRipples;\nuniform float uTime;\nuniform float uWind;\nuniform float uReflect;\nuniform vec3 uShore;\nuniform float uRise;\nuniform vec3 uSunDir;\nuniform vec3 uSunColor;\nuniform vec3 uBottom;\n#ifdef DG_DEPTH\nvarying float vDepth;\n#endif")
+      // The shallows: a thin band at the bank, the water's own color everywhere past it
+      .replace("#include <color_fragment>", `#include <color_fragment>
+        #ifdef DG_DEPTH
+          diffuseColor.rgb = mix( uBottom, diffuseColor.rgb, smoothstep( 0.1, 2.0, vDepth ) );
+        #endif`)
       // Two layers of ripples at different sizes, drifting different ways, tilting the surface
       .replace("#include <normal_fragment_maps>", `
         {
@@ -107,16 +125,28 @@ export const waterMaterial = (color: string, shore = "#2a3a24", rise = 0.08) => 
           vec3 R = inverseTransformDirection( reflect( -V, normal ), viewMatrix );
           R.y = abs( R.y );
           vec3 sky = textureCubeUV( envMap, R, 0.03 ).rgb * uReflect;
-          // The banks and the trees on them, mirrored low in the water
+          #ifndef DG_MIRROR
+          // The banks and the trees on them, mirrored low in the water (in the pond's own picture
+          // they're there as they stand)
           sky = mix( sky, uShore, 1.0 - smoothstep( uRise * 0.55, uRise * 1.25, R.y ) );
+          #endif
           float cosV = clamp( dot( normal, V ), 0.0, 1.0 );
           float fres = 0.02 + 0.98 * pow( 1.0 - cosV, 5.0 );
+          #ifdef DG_DEPTH
+          // (at the very edge, a few inches deep, the bottom shows through more than the sky)
+          fres *= mix( 0.4, 1.0, smoothstep( 0.1, 1.2, vDepth ) );
+          #endif
           outgoingLight = mix( outgoingLight, sky, clamp( fres, 0.0, 0.85 ) );
+          // The sun's glitter: where a ripple tilts the sun's mirror image right at the eye
+          float glint = pow( max( dot( R, normalize( uSunDir ) ), 0.0 ), 900.0 );
+          outgoingLight += uSunColor * glint * 7.0 * smoothstep( 0.0, 0.08, uSunDir.y );
         }
         #endif
         #include <opaque_fragment>`);
   };
-  m.customProgramCacheKey = () => "dg-water";
+  m.customProgramCacheKey = () => `dg-water${opts.bottom ? "-d" : ""}${opts.mirror ? "-m" : ""}`;
+  // (a pond's own, with its picture: let go with the pond; the rest shared)
+  if (opts.mirror) return m;
   m.userData.shared = true;
   materials.set(key, m);
   return m;

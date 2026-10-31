@@ -528,6 +528,10 @@ export type TreeSpot = { x: number; y: number; ground: number; height: number; w
  * of underbrush in its closest version however far off (a video recording: nothing changes as
  * the camera comes up to it). */
 export const forestDetail = { nearFt: 260, version: 0, all: false };
+// (what a forest's camera sees: worked out in these, kept to save making them every time)
+const seeDir = new THREE.Vector3(), seeMatrix = new THREE.Matrix4(), seeFrustum = new THREE.Frustum(), seeBall = new THREE.Sphere();
+/** How far the camera turns before the trees it sees are worked out again (6 degrees). */
+const TURN_COS = Math.cos((6 * Math.PI) / 180);
 export const midOf = (nearFt: number) => nearFt * 3;
 
 /**
@@ -536,8 +540,10 @@ export const midOf = (nearFt: number) => nearFt * 3;
  */
 export class Forest {
   readonly group = new THREE.Group();
-  private sets: { spots: TreeSpot[]; near: THREE.InstancedMesh[]; mid: THREE.InstancedMesh[]; far: THREE.InstancedMesh[]; tint: (s: TreeSpot) => THREE.Color }[] = [];
+  private sets: { spots: TreeSpot[]; near: THREE.InstancedMesh[]; mid: THREE.InstancedMesh[]; far: THREE.InstancedMesh[]; tints: THREE.Color[] }[] = [];
   private last = new THREE.Vector3(Infinity, 0, 0);
+  private lastDir = new THREE.Vector3();
+  private lastFov = 0;
   private version = -1;
   private matrices: THREE.Matrix4[][] = [];
 
@@ -582,18 +588,31 @@ export class Forest {
       for (const mesh of [nearMeshes[0], midMeshes[0], farMeshes[0]]) {
         for (let i = 0; i < list.length; i++) mesh.setColorAt(i, new THREE.Color(1, 1, 1));
       }
-      this.sets.push({ spots: list, near: nearMeshes, mid: midMeshes, far: farMeshes, tint: tintOf });
+      // (each tree's leaf color worked out once, not at every move of the camera)
+      this.sets.push({ spots: list, near: nearMeshes, mid: midMeshes, far: farMeshes, tints: list.map(tintOf) });
       this.matrices.push(mats);
     }
     this.update(new THREE.Vector3(Infinity, 0, Infinity));
   }
 
-  /** Close trees in full detail, the rest lighter (only redone when the camera moved a fair way). */
-  update(eye: THREE.Vector3) {
+  /** Close trees in full detail, the rest lighter; with the camera, only the trees in and round
+   * what it sees (redone when the camera moved a fair way or turned a little). */
+  update(eye: THREE.Vector3, cam?: THREE.PerspectiveCamera) {
     // (and again when the reach of full detail changed)
-    if (this.last.distanceToSquared(eye) < 30 * 30 && Number.isFinite(this.last.x) && this.version === forestDetail.version) return;
+    const dir = cam ? cam.getWorldDirection(seeDir) : null;
+    const turned = !!dir && (this.lastDir.dot(dir) < TURN_COS || Math.abs(cam!.fov - this.lastFov) > 1);
+    if (!turned && this.last.distanceToSquared(eye) < 30 * 30 && Number.isFinite(this.last.x) && this.version === forestDetail.version) return;
     this.version = forestDetail.version;
     this.last.copy(eye);
+    if (dir) { this.lastDir.copy(dir); this.lastFov = cam!.fov; }
+    // (what the camera sees, the trees round its edges kept: well past them, for the shadows
+    // trees just out of sight throw into it, and for turning before the next time round)
+    let see: THREE.Frustum | null = null;
+    if (cam && !forestDetail.all) {
+      cam.updateMatrixWorld();
+      seeMatrix.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+      see = seeFrustum.setFromProjectionMatrix(seeMatrix);
+    }
     const nearFt = this.ladder.nearFt ?? forestDetail.nearFt, midFt = this.ladder.midFt ?? midOf(forestDetail.nearFt);
     const r2 = nearFt * nearFt, m2 = midFt * midFt, all = forestDetail.all;
     this.sets.forEach((set, si) => {
@@ -603,15 +622,33 @@ export class Forest {
         const dx = s.x - eye.x, dz = s.y - eye.z, dy = s.ground + s.height * 0.5 - eye.y;
         const d2 = dx * dx + dz * dz + dy * dy;
         if (!all && d2 > this.maxFt * this.maxFt) return;
+        if (see) {
+          seeBall.center.set(s.x, s.ground + s.height * 0.5, s.y);
+          seeBall.radius = s.height + 150 + Math.sqrt(d2) * 0.12;
+          if (!see.intersectsSphere(seeBall)) return;
+        }
         const l = all || d2 < r2 ? 0 : d2 < m2 ? 1 : 2;
         const mat = this.matrices[si][i];
         levels[l][0].setMatrixAt(n[l], mat);
         levels[l][1].setMatrixAt(n[l], mat);
-        levels[l][1].setColorAt(n[l], set.tint(s));
+        levels[l][1].setColorAt(n[l], set.tints[i]);
         n[l]++;
       });
+      // (only the part in use sent to the graphics card: the bark's colors never change)
       levels.forEach((meshes, l) => {
-        for (const mesh of meshes) { mesh.count = n[l]; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; mesh.visible = n[l] > 0; }
+        meshes.forEach((mesh, k) => {
+          mesh.count = n[l];
+          mesh.visible = n[l] > 0;
+          if (!n[l]) return;
+          mesh.instanceMatrix.clearUpdateRanges();
+          mesh.instanceMatrix.addUpdateRange(0, n[l] * 16);
+          mesh.instanceMatrix.needsUpdate = true;
+          if (k === 1 && mesh.instanceColor) {
+            mesh.instanceColor.clearUpdateRanges();
+            mesh.instanceColor.addUpdateRange(0, n[l] * 3);
+            mesh.instanceColor.needsUpdate = true;
+          }
+        });
       });
     });
   }

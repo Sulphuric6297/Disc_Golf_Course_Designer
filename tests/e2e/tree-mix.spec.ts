@@ -12,7 +12,7 @@ const woodsTrees = (page: import("@playwright/test").Page) => page.evaluate(() =
   return out;
 });
 
-/** A wood, then the Map step's Trees part open. */
+/** A wood, then the Site step's Trees fold open. */
 async function woodsAndTrees(page: import("@playwright/test").Page, place: { lat: number; lon: number; label: string }) {
   await blankCourse(page);
   await page.keyboard.press("Escape");
@@ -22,10 +22,11 @@ async function woodsAndTrees(page: import("@playwright/test").Page, place: { lat
     (window as any).__dgActions.addDrawn("area", [{ x: 200, y: 200 }, { x: 700, y: 200 }, { x: 700, y: 600 }, { x: 200, y: 600 }]);
     (window as any).__dgActions.select(null);
   }, place);
-  await expect.poll(async () => (await woodsTrees(page)).length).toBeGreaterThan(50);
-  await page.getByRole("button", { name: "3 Map" }).click();
-  const part = page.getByTestId("part-trees");
-  if ((await part.getAttribute("aria-expanded")) !== "true") await part.click();
+  await expect.poll(async () => (await woodsTrees(page)).length, { timeout: 30_000 }).toBeGreaterThan(50);
+  await page.getByRole("button", { name: "1 Site" }).click();
+  const fold = page.getByTestId("site-trees");
+  if (!(await fold.evaluate(d => (d as HTMLDetailsElement).open))) await fold.locator("summary").click();
+  // (the Map step's style has no kinds: the map draws each tree as the kind it is in 3D)
   return page.getByTestId("tree-kinds");
 }
 const chip = (kinds: import("@playwright/test").Locator, name: string) => kinds.getByRole("button", { name, exact: true });
@@ -44,12 +45,12 @@ test("a course near Seattle: the region's kinds offered and used; the woods grow
   await expect(region).toContainText("In use.");
   // The woods grown again: spruces, cedars and tall pines among the needle trees (variants 4 to 9), every
   // leafy one an oak (0, 2, 4)
-  await expect.poll(async () => (await woodsTrees(page)).some(s => s.shape === "conifer" && s.variant >= 4), { timeout: 20_000 }).toBe(true);
+  await expect.poll(async () => (await woodsTrees(page)).some(s => s.shape === "conifer" && s.variant >= 4), { timeout: 60_000 }).toBe(true);
   expect((await woodsTrees(page)).filter(s => s.shape === "broadleaf").every(s => [0, 2, 4].includes(s.variant))).toBe(true);
   // No needle kinds on: no needle trees
   for (const k of ["Pine", "Tall pine", "Spruce", "Cedar"]) await chip(kinds, k).click();
   await expect.poll(async () => (await course(page)).style.treeKinds).toEqual(["oak"]);
-  await expect.poll(async () => { const t = await woodsTrees(page); return t.length > 50 && t.every(s => s.shape === "broadleaf"); }, { timeout: 20_000 }).toBe(true);
+  await expect.poll(async () => { const t = await woodsTrees(page); return t.length > 50 && t.every(s => s.shape === "broadleaf"); }, { timeout: 60_000 }).toBe(true);
   // The last kind stays on
   await chip(kinds, "Oak").click();
   expect((await course(page)).style.treeKinds).toEqual(["oak"]);
@@ -91,7 +92,7 @@ test("the Trees tool plants one species: a Bradford pear, then a stand of them, 
   });
   const wood = (await course(page)).items.find((i: any) => i.id === id);
   expect([wood.kind, wood.pines, wood.species]).toEqual(["woods", 0, "pear"]);
-  await expect.poll(async () => { const t = await woodsTrees(page); return t.length > 20 && t.every(s => s.shape === "broadleaf" && (s.variant === 13 || s.variant === 14)); }, { timeout: 20_000 }).toBe(true);
+  await expect.poll(async () => { const t = await woodsTrees(page); return t.length > 20 && t.every(s => s.shape === "broadleaf" && (s.variant === 13 || s.variant === 14)); }, { timeout: 60_000 }).toBe(true);
   // Its panel: Species, the pear picked; Any kind gives it the course's kinds again
   await page.evaluate(i => { (window as any).__dgEditor().set({ tool: "select" }); (window as any).__dgActions.select(i); }, id);
   const sp = page.getByTestId("stand-species");

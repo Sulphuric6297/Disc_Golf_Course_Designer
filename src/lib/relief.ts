@@ -5,7 +5,19 @@ import { heightAt, terrainStats } from "./terrainGrid";
 export type Contours = { segments: { x1: number; y1: number; x2: number; y2: number; level: number }[]; interval: number };
 
 /** Contour lines at a round interval (1, 2, 5, 10... ft) giving about 10 lines across the relief. */
-export const contoursOf = (heights: Record<string, number>, grid: number, width: number, height: number, interval?: number): Contours => {
+// (the map, the printed map and the course list's picture all ask for the same terrain's: worked
+// out once per terrain and settings, a second or more on a phone each time)
+const reliefCache = new WeakMap<Record<string, number>, Map<string, unknown>>();
+const cached = <T,>(heights: Record<string, number>, key: string, make: () => T): T => {
+  let m = reliefCache.get(heights);
+  if (!m) reliefCache.set(heights, (m = new Map()));
+  if (!m.has(key)) m.set(key, make());
+  return m.get(key) as T;
+};
+
+export const contoursOf = (heights: Record<string, number>, grid: number, width: number, height: number, interval?: number): Contours =>
+  cached(heights, `c|${grid}|${width}|${height}|${interval ?? ""}`, () => contoursMade(heights, grid, width, height, interval));
+const contoursMade = (heights: Record<string, number>, grid: number, width: number, height: number, interval?: number): Contours => {
   const t = terrainStats(heights);
   if (t.relief < 0.5) return { segments: [], interval: 1 };
   const step = interval ?? Math.max(1, getContourInterval(t.relief));
@@ -60,6 +72,10 @@ export const chainContours = (segments: Contours["segments"]) => {
  * about 20 degrees), never so much that a steep one goes black.
  */
 export const reliefExaggeration = (p90: number) => Math.max(1.5, Math.min(14, 0.36 / Math.max(1e-6, p90)));
+
+/** The hill shading as a picture's URL (a PNG), worked out once per terrain and settings. */
+export const hillshadeUrl = (heights: Record<string, number>, grid: number, width: number, height: number, scale = 1) =>
+  cached(heights, `h|${grid}|${width}|${height}|${scale}`, () => hillshadeCanvas(heights, grid, width, height, undefined, scale).toDataURL("image/png"));
 
 export const hillshadeCanvas = (heights: Record<string, number>, grid: number, width: number, height: number, exaggerate?: number, scale = 1) => {
   const ftPerPx = Math.max(2, Math.max(width, height) / 1200);

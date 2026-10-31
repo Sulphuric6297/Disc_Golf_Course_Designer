@@ -4,6 +4,7 @@
 // and worn dirt at the tees; creeks and ponds in clear blue with dark banks; soft gray roads and
 // mown grass. It is one picture for the whole map, laid into the SVG under the symbols (built
 // things are drawn there too; the painting clears the trees from them and casts their shadows).
+import { timed } from "./perfLog";
 import { measuredStanding } from "./standing";
 import { CIRCLE_ONE_FT, LINE_KINDS, PATH_SURFACES } from "../constants";
 import type { AreaItem, CourseDoc, LineItem, MapStyle, P, PathSurface, ReliefLook, StructureItem, TreeItem } from "../types";
@@ -635,7 +636,13 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const planted = new Uint8Array(mw * mh);
   if (!measured) planted.fill(1);
   if (measured) {
-    const drawn = (doc.items.filter(i => i.type === "area" && i.kind === "woods" && (i as AreaItem).trees !== "none") as AreaItem[]).map(a => { const pts = drawnAreas([a])[0].points; return { pts, box: boundsOf(pts) }; });
+    // (the drawn woods painted on a mask of their own, as the other masks are: a cell in them when
+    // its middle is, as near as makes no difference; testing each cell against each wood's
+    // outline took seconds on a phone, in one go, the view stuck meanwhile)
+    const inDrawn = mask();
+    const DRAWN = ch(inDrawn, 0);
+    for (const a of doc.items.filter(i => i.type === "area" && i.kind === "woods" && (i as AreaItem).trees !== "none") as AreaItem[]) poly(DRAWN, drawnAreas([a])[0].points);
+    const drawn = inDrawn.g.getImageData(0, 0, mw, mh).data;
     // (more woods asked for, from the photo or everywhere: never under a measured crown, no woods
     // floor round the measured trees)
     const crowns = new Uint8Array(mode === "woods" ? 0 : mw * mh);
@@ -649,8 +656,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
       const m = y * mw + x;
       if (!wooded[m]) continue;
-      const p = toPlan(x * cell + cell / 2, y * cell + cell / 2);
-      if (drawn.some(d => p.x >= d.box.minX && p.x <= d.box.maxX && p.y >= d.box.minY && p.y <= d.box.maxY && pointInPolygon(p, d.pts))) planted[m] = 1;
+      if (drawn[m * 4] >= 128) planted[m] = 1;
       else if (mode !== "woods" && !crowns[m]) planted[m] = 1;
       else wooded[m] = 0;
     }
@@ -1068,8 +1074,10 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const mixPals = treeMixOf(s).map(c => palette(c, woodsFactors, 6, 0.9));
   // (pines keep their needles: deep blue-green whatever the season)
   const pinePal = palette("#2c4636", woodsFactors, 0, 0.9);
-  const fair = palette(s.fairway, [0.56, 0.7, 0.84, 1, 1.14, 1.28], 4);
-  const lawn = palette(s.rough, [0.6, 0.76, 0.9, 1.04, 1.18], 3);
+  // (under the 3D view, a little darker: its sun is brighter than the printed map's paper)
+  const dim = (f: number[]) => (opts.under ? f.map(v => v * 0.88) : f);
+  const fair = palette(s.fairway, dim([0.56, 0.7, 0.84, 1, 1.14, 1.28]), 4);
+  const lawn = palette(s.rough, dim([0.6, 0.76, 0.9, 1.04, 1.18]), 3);
   // Tall grass: lighter and straw yellow
   const tallPal = palette(tallGrassOf(s), [0.62, 0.78, 0.92, 1.06, 1.2, 1.34], 6, 0.9);
   // (shaded green, never black: the gaps between treetops are where it shows)
@@ -1078,7 +1086,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const water = palette(s.water, [0.42, 0.58, 0.76, 0.94, 1.12, 1.34, 1.62], -14);
   // Worn dirt: an olive tan, lighter than the shade around it (it reads as open ground)
   const dirtPal = palette(s.path, [0.86, 1.03, 1.19, 1.35, 1.54], -8, 0.85);
-  const road = palette("#969a9d", [0.66, 0.8, 0.92, 1.02, 1.1], 0);
+  // (under the 3D view, the 3D look's roads and parking)
+  const road = palette(opts.under ? s.look3d?.paving ?? "#969a9d" : "#969a9d", [0.66, 0.8, 0.92, 1.02, 1.1], 0);
   // (concrete: lighter and warmer than the asphalt roads, so a walkway reads apart from a road)
   const walkPal = palette("#dcdad4", [0.8, 0.9, 0.97, 1.02, 1.06], 0, 0.6);
   const TIERS = ["dirt", "gravel", "walkway", "road"] as const;
@@ -1258,8 +1267,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
           cr = g0[0] * kk; cg = g0[1] * kk; cb = g0[2] * kk;
         }
         // Cliffs and steep banks: bare rock in ledges across the slope (the layers of a canyon
-        // wall), broken up at its edge, lit like the ground round it
-        if (rh && reliefLook === "shaded" && rh.rock > 0.02) {
+        // wall), broken up at its edge, lit like the ground round it (on the map only: the 3D
+        // ground keeps its own colors on a slope, its shape showing it's steep)
+        if (rh && reliefLook === "shaded" && rh.rock > 0.02 && !opts.under) {
           const ledge = rh.elev / 11 + (fbm(x / pt * 0.03 + 70, y / pt * 0.03) - 0.5) * 2.2 + (noise(x / pt * 0.4, y / pt * 0.4) - 0.5) * 0.25;
           const fr = ledge - Math.floor(ledge);
           const band = 0.88 + 0.18 * smooth(0.1, 0.5, fr) - 0.16 * smooth(0.86, 1, fr);
@@ -1513,6 +1523,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   ctx.putImageData(img, 0, 0);
   yield;
   const lxy = Math.hypot(sunX, sunY) || 1, Lx = sunX / lxy, Ly = sunY / lxy;
+  if (vector) roomBetween(vtrees);
   if (vector) {
     const strength = 0.6 + shadowK * 0.8;
     drawShadows(ctx, vtrees, Lx, Ly, pl, strength, vstyle === "drybrush" ? 1 : vstyle === "cloud" ? 0.3 : 0.6);
@@ -1526,7 +1537,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         return STYLE_GREENS.brushed.map(c => { const [h, sl, l] = rgbToHsl(hexRgb(c)); const g = hslToRgb(h + (h1 - h0), Math.max(0, Math.min(1, sl * (s1 / Math.max(0.05, s0)))), Math.max(0.05, Math.min(0.9, l * (l1 / Math.max(0.05, l0))))); return [g[0] * 0.86, g[1] * 0.94, g[2] * 0.96] as RGB; });
       })();
       const painted = vtrees.filter(t => t.r >= 1.5);
-      yield* drawBrushedSteps(ctx, painted.map(t => ({ x: t.x, y: t.y, r: t.r, seed: t.seed, pine: t.pine, col: t.pine ? asKind(pineGreens[Math.floor(t.seed * 997) % pineGreens.length], t.look) : t.col })), [Lx, Ly], k);
+      yield* drawBrushedSteps(ctx, painted.map(t => ({ x: t.x, y: t.y, r: t.r, h: t.h, seed: t.seed, pine: t.pine, col: t.pine ? asKind(pineGreens[Math.floor(t.seed * 997) % pineGreens.length], t.look) : t.col })), [Lx, Ly], k);
       drawTrees(ctx, vtrees.filter(t => t.r < 1.5), "cluster", Lx, Ly, pl);
     } else drawTrees(ctx, vtrees, vstyle, Lx, Ly, pl);
   }
@@ -1809,7 +1820,7 @@ export const forestCanvasAsync = async (doc: CourseDoc, view: ForestView, stats:
   let start = performance.now(), told = -1, budget = 8, back: unknown;
   for (;;) {
     if (signal?.aborted) throw new DOMException("Painting stopped", "AbortError");
-    const r = steps.next(back);
+    const r = timed("a step of painting the ground", () => steps.next(back));
     back = undefined;
     if (r.done) return r.value;
     if (r.value && typeof r.value === "object" && "wait" in r.value) { back = await r.value.wait; start = performance.now(); continue; }
@@ -1883,6 +1894,29 @@ const terrainGrid = (doc: CourseDoc) => {
   return value;
 };
 
+/**
+ * Every tree read as its own in dense woods, never a merged mass: a crown pressed into others
+ * (more than a tenth of their reach overlapping) is drawn at 0.88 of its reach, so a sliver of
+ * shade shows between it and the next, as plan drawings and painted maps show trees; and each
+ * crown a touch lighter or darker than the next (within 8%), so woods don't read as an orchard.
+ */
+const roomBetween = (trees: PaintTree[]) => {
+  const CELL = 64, grid = new Map<string, PaintTree[]>();
+  const key = (x: number, y: number) => `${Math.floor(x / CELL)},${Math.floor(y / CELL)}`;
+  for (const t of trees) { const k = key(t.x, t.y); (grid.get(k) ?? grid.set(k, []).get(k)!).push(t); }
+  const pressed = trees.map(t => {
+    const reach = Math.ceil((t.r * 2) / CELL), cx = Math.floor(t.x / CELL), cy = Math.floor(t.y / CELL);
+    for (let gy = cy - reach; gy <= cy + reach; gy++) for (let gx = cx - reach; gx <= cx + reach; gx++)
+      for (const o of grid.get(`${gx},${gy}`) ?? []) if (o !== t && Math.hypot(t.x - o.x, t.y - o.y) < (t.r + o.r) * 0.9) return true;
+    return false;
+  });
+  trees.forEach((t, i) => {
+    if (pressed[i]) t.r *= 0.88;
+    const v = 0.92 + 0.16 * ((Math.sin(t.seed * 9301.7) * 43758.5453) % 1 + 1) % 1;
+    t.col = [t.col[0] * v, t.col[1] * v, t.col[2] * v];
+  });
+};
+
 /** Hill shading for the painting, as a function of the pixel (null when the ground is flat). */
 /** A tidy contour interval for a site's relief: about a dozen lines from lowest to highest. */
 export const contourInterval = (range: number) => {
@@ -1899,7 +1933,8 @@ export const contourInterval = (range: number) => {
  * steep it is (cliffs and steep banks drawn as bare rock). Plan direction `dir` points at the sun.
  */
 const terrainLights = new WeakMap<object, { key: string; v: { cols: number; rows: number; grid: number; cast: Float32Array; sky: Float32Array; rock: Float32Array; wall: Float32Array; cv: Float32Array } }>();
-const terrainLight = (doc: CourseDoc, dir: P, tanEl: number, hills: number) => {
+// (a few rows at a time, between frames: the whole site at once was most of a second on a phone)
+function* terrainLight(doc: CourseDoc, dir: P, tanEl: number, hills: number) {
   const key = `${dir.x.toFixed(3)},${dir.y.toFixed(3)},${tanEl.toFixed(3)},${hills}`;
   const hit = terrainLights.get(doc.terrainHeights);
   if (hit && hit.key === key) return hit.v;
@@ -1921,6 +1956,7 @@ const terrainLight = (doc: CourseDoc, dir: P, tanEl: number, hills: number) => {
   const far = Math.min(2000, Math.max(tg.cols, tg.rows) * tg.grid);
   const skyR = 400, dirs = Array.from({ length: 8 }, (_, k) => ({ x: Math.cos((k * Math.PI) / 4), y: Math.sin((k * Math.PI) / 4) }));
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    if (c === 0 && (r & 7) === 7) yield;
     const x = c * G, y = r * G, h0 = z(x, y), j = r * cols + c;
     // (the highest the ground toward the sun rises above the level here, as an angle)
     let best = -1;
@@ -1953,7 +1989,7 @@ const terrainLight = (doc: CourseDoc, dir: P, tanEl: number, hills: number) => {
   const v = { cols, rows, grid: G, cast, sky, rock, wall, cv };
   terrainLights.set(doc.terrainHeights, { key, v });
   return v;
-};
+}
 
 /**
  * The ground's shape as the painting sees it, on a coarse grid of screen pixels (looked up
@@ -2008,7 +2044,7 @@ function* reliefGridSteps(doc: CourseDoc, on: boolean, W: number, H: number, toP
   const c0 = toPlan(W / 2, H / 2), cr0 = toPlan(W / 2 + 1, H / 2), cd0 = toPlan(W / 2, H / 2 + 1);
   const ldx = L.x * (cr0.x - c0.x) + L.y * (cd0.x - c0.x), ldy = L.x * (cr0.y - c0.y) + L.y * (cd0.y - c0.y), ldl = Math.hypot(ldx, ldy) || 1;
   yield;
-  const tl = terrainLight(doc, { x: ldx / ldl, y: ldy / ldl }, L.z / Math.max(0.05, Math.hypot(L.x, L.y)), hills);
+  const tl = yield* terrainLight(doc, { x: ldx / ldl, y: ldy / ldl }, L.z / Math.max(0.05, Math.hypot(L.x, L.y)), hills);
   yield;
   const fromTl = (f: Float32Array, p: P) => {
     const fx = Math.max(0, Math.min(tl.cols - 1.001, p.x / tl.grid)), fy = Math.max(0, Math.min(tl.rows - 1.001, p.y / tl.grid));

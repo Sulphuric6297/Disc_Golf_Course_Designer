@@ -8,6 +8,7 @@ import { managesLinks, saveNow, setEditorsLinks, useServerCourse, type Role } fr
 import { CopyButton, Dialog, Form, when } from "./parts";
 import { LINK_DEFAULT, LINK_PARTS, PART_LABELS, PARTS, VIEWER_DEFAULT, type Part, type Perms } from "./perms";
 import { publishSite } from "./site";
+import { Visitors } from "./Visitors";
 
 interface Member { userId: string; username: string; displayName: string; role: Role; perms: Perms | null }
 const ROLES: { value: Role; label: string }[] = [{ value: "viewer", label: "Viewer" }, { value: "editor", label: "Editor" }, { value: "owner", label: "Owner" }];
@@ -21,7 +22,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
   const [newRole, setNewRole] = useState<Role>("editor");
   const [error, setError] = useState("");
   const [seeing, setSeeing] = useState<string | null>(null);
-  const [tab, setTab] = useState<"people" | "public">(() => useAuth.getState().shareTab);
+  const [tab, setTab] = useState<"people" | "public" | "visitors">(() => useAuth.getState().shareTab);
   const owner = role === "owner";
 
   const refresh = async () => { if (id) setMembers(await api<Member[]>("GET", `courses/${id}/members`)); };
@@ -38,7 +39,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
   const others = people.filter(p => !members.some(m => m.username === p.username));
   return (
     <Dialog title="Share" onClose={onClose} testid="share-dialog">
-      <div className="-mt-2 mb-2"><Tabs label="Share" value={tab} onChange={setTab} tabs={[{ value: "people", label: "People", testid: "share-tab-people" }, { value: "public", label: "Public link and site", testid: "share-tab-public" }]} /></div>
+      <div className="-mt-2 mb-2"><Tabs label="Share" value={tab} onChange={setTab} tabs={[{ value: "people", label: "People", testid: "share-tab-people" }, { value: "public", label: "Public link and site", testid: "share-tab-public" }, ...(role === "owner" || role === "editor" ? [{ value: "visitors" as const, label: "Visitors", testid: "share-tab-visitors" }] : [])]} /></div>
       <div className="-mx-4">
         {tab === "people" && owner && (
           <Section title="Add someone">
@@ -98,6 +99,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
           {error && <p role="alert" className="mt-2 text-sm text-red-300">{error}</p>}
         </Section>}
         {tab === "public" && <PublicSection id={id} />}
+        {tab === "visitors" && <Visitors id={id} />}
       </div>
     </Dialog>
   );

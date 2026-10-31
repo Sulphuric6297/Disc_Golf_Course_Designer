@@ -95,7 +95,7 @@ export function TreeKinds({ s }: { s: MapStyle }) {
   const using = rec.length === kinds.length && rec.every(k => kinds.includes(k));
   return (
     <div className="mt-3" data-testid="tree-kinds">
-      <Field label="Kinds of trees" help="map-trees">
+      <Field label="Kinds of trees" help="site-trees">
         <div className="flex flex-wrap gap-1.5">
           {TREE_LOOKS.map(k => {
             const on = kinds.includes(k), last = on && kinds.length === 1;

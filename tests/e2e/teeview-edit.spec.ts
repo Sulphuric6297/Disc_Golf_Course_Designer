@@ -8,7 +8,8 @@ import { test, expect, addHole, blankCourse, course, editorState, pinch, screenO
 const stand = (page: import("@playwright/test").Page) => page.evaluate(() => (window as any).__dgEditor().teeStand ?? null);
 
 test("standing: the person dragged onto the map; Walk or Edit says what a click does; a tree picked and moved (where it is against the line); a click on the ground walks; the far basket picks as itself; back to the tee", async ({ page }) => {
-  test.setTimeout(300_000);
+  // (a long walk round: on a slow machine without a graphics card, most of 10 minutes)
+  test.setTimeout(600_000);
   await blankCourse(page);
   const hole = await addHole(page, { x: 200, y: 600 }, { x: 900, y: 600 });
   await page.keyboard.press("Escape");
@@ -132,7 +133,10 @@ test.describe("phone", () => {
     await page.screenshot({ path: test.info().outputPath("phone-picked.png") });
     await page.evaluate(() => (window as any).__dgActions.select(null));
     await expect(page.getByTestId("sheet")).toHaveCount(0);
+    // (back to the tee: under More, on a phone's bar)
+    await page.getByTestId("hud-more").tap();
     await expect(page.getByTestId("hud-to-tee")).toBeVisible();
+    await page.getByTestId("hud-more").tap();
     // Walk: a tap on the ground walks there
     await page.getByTestId("tap-walk").tap();
     const ahead = await screenOf(page, 520, 500, 0);

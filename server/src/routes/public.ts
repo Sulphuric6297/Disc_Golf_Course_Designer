@@ -4,6 +4,7 @@
 // numbers, and the course itself only if its map or 3D view is a part); each link shows the
 // parts of it the link allows, with an optional password and expiry. Anyone with a link and no
 // account reads only that: never the course as it's being changed.
+import { createHash, randomBytes } from "crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { hash, verify } from "@node-rs/argon2";
 import { z } from "zod";
@@ -181,5 +182,103 @@ export async function publicRoutes(app: FastifyInstance, { sql }: Ctx) {
     const [f] = await sql`select mime, data from course_site_files where course_id = ${l.course_id} and name = ${name}`;
     if (!f) throw new ApiError(404, "Not found");
     return reply.header("cache-control", "private, max-age=300").type(f.mime).send(f.data);
+  });
+
+  // --- Visitors to the public page: counted without cookies, nothing personal kept
+  // (migrations/015_visitors.sql). A visitor is a hash of their address and browser with the day's
+  // salt, thrown away after a day: once a day, never followed from one day to the next.
+  const utcDay = (d = new Date()) => d.toISOString().slice(0, 10);
+  const saltFor = async (day: string) => {
+    const [s] = await sql`select salt from site_salts where day = ${day}`;
+    if (s) return s.salt as Buffer;
+    await sql`delete from site_salts where day < ${day}::date - 1`;
+    const [n] = await sql`insert into site_salts (day, salt) values (${day}, ${randomBytes(32)}) on conflict (day) do update set day = excluded.day returning salt`;
+    return n.salt as Buffer;
+  };
+  const SEARCH = /(^|\.)(google|bing|duckduckgo|yahoo|ecosia|baidu|yandex|search\.brave|startpage|qwant)\./;
+  const dayStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+  // (the visitor's own day, when it's within a day of the server's: their evening is still their day)
+  const ownDay = (day: string) => (Math.abs(Date.parse(day) - Date.parse(utcDay())) <= 86_400_000 ? day : utcDay());
+
+  app.post<Tok>("/api/public/:token/visit", limited, async req => {
+    const { l } = await open(req, req.params.token);
+    const b = parse(z.object({
+      from: z.string().max(40).optional(), ref: z.string().max(500).optional(), phone: z.boolean(),
+      day: dayStr, dow: z.number().int().min(0).max(6), hour: z.number().int().min(0).max(23)
+    }), req.body);
+    const day = ownDay(b.day);
+    const salt = await saltFor(utcDay());
+    const visitor = createHash("sha256").update(salt).update(req.ip).update(String(req.headers["user-agent"] ?? "")).update(String(l.course_id)).digest().subarray(0, 16);
+    // Where it came from: a tee sign's QR code, then a public link with a name, then the website
+    // before (a search engine, or another), or none (typed in, or an app)
+    const [link] = await sql`select label, slug from course_links where id = ${l.id}`;
+    const sign = /^sign-([0-9A-Za-z]{1,4})$/.exec(b.from ?? "")?.[1];
+    let host = "";
+    try { host = b.ref ? new URL(b.ref).hostname.replace(/^www\./, "") : ""; } catch { host = ""; }
+    if (host && host === String(req.headers.host ?? "").replace(/:\d+$/, "").replace(/^www\./, "")) host = "";
+    const named = !!(link?.label || link?.slug);
+    const [source, key] = sign ? ["sign", sign] : named ? ["link", null] : host && SEARCH.test(host) ? ["search", host] : host ? ["web", host] : ["direct", null];
+    await sql`
+      insert into site_visits (course_id, day, visitor, link_id, source, source_key, phone, dow, hour)
+      values (${l.course_id}, ${day}, ${visitor}, ${l.id}, ${source}, ${key}, ${b.phone}, ${b.dow}, ${b.hour})
+      on conflict (course_id, day, visitor) do update set last_at = now()`;
+    return { v: visitor.toString("base64url"), day };
+  });
+
+  // (while the page is open, about once a minute, and as it closes: how long so far, and a hole or
+  // flyover looked at. Only for a visit already counted; nothing to read back)
+  app.post<Tok>("/api/public/:token/ping", limited, async req => {
+    const b = parse(z.object({
+      v: z.string().regex(/^[A-Za-z0-9_-]{20,24}$/), day: dayStr, seconds: z.number().int().min(0).max(14_400).optional(),
+      hole: z.string().max(8).optional(), flyover: z.string().max(8).optional()
+    }), req.body);
+    const token = req.params.token;
+    const [l] = await sql`select course_id from course_links where (token_hash = ${sha256(token)} or slug = ${token.toLowerCase()}) and revoked_at is null`;
+    if (!l) throw new ApiError(404, "Not found");
+    const visitor = Buffer.from(b.v, "base64url");
+    const [v] = await sql`
+      update site_visits set last_at = now(), seconds = greatest(seconds, ${b.seconds ?? 0})
+      where course_id = ${l.course_id} and day = ${b.day} and visitor = ${visitor} returning 1`;
+    if (!v) return { ok: false };
+    for (const [kind, key] of [["hole", b.hole], ["flyover", b.flyover]] as const) {
+      if (key) await sql`
+        insert into site_counts (course_id, day, kind, key, n) values (${l.course_id}, ${b.day}, ${kind}, ${key}, 1)
+        on conflict (course_id, day, kind, key) do update set n = site_counts.n + 1`;
+    }
+    return { ok: true };
+  });
+
+  // The course's visitors (its owners and editors): over the last `days` days (0: since the first)
+  app.get<Id & { Querystring: { days?: string } }>("/api/courses/:id/visitors", async req => {
+    const { id } = parse(ids, req.params);
+    await role(req, id, "editor");
+    const days = Math.max(0, Math.min(3650, Number(req.query.days ?? 30) || 0));
+    const today = utcDay();
+    const [first] = await sql`select min(day)::text as day from site_visits where course_id = ${id}`;
+    const from = days ? utcDay(new Date(Date.now() - (days - 1) * 86_400_000)) : first?.day ?? today;
+    const span = Math.max(1, Math.round((Date.parse(today) - Date.parse(from)) / 86_400_000) + 1);
+    const before = utcDay(new Date(Date.parse(from) - span * 86_400_000));
+    const [perDay, [prev], [now], [typical], sources, counts, heat, devices] = await Promise.all([
+      sql`select day::text as day, count(*)::int as n from site_visits where course_id = ${id} and day >= ${from} group by day order by day`,
+      sql`select count(*)::int as n from site_visits where course_id = ${id} and day >= ${before} and day < ${from}`,
+      sql`select count(*)::int as n from site_visits where course_id = ${id} and last_at > now() - interval '2 minutes'`,
+      sql`select coalesce(percentile_cont(0.5) within group (order by seconds), 0)::int as s from site_visits where course_id = ${id} and day >= ${from} and seconds >= 5`,
+      sql`
+        select v.source, v.source_key as key, coalesce(nullif(l.label, ''), l.slug) as label, count(*)::int as n
+        from site_visits v left join course_links l on l.id = v.link_id
+        where v.course_id = ${id} and v.day >= ${from} group by 1, 2, 3 order by n desc`,
+      sql`select kind, key, sum(n)::int as n from site_counts where course_id = ${id} and day >= ${from} group by kind, key order by n desc`,
+      sql`select dow, hour, count(*)::int as n from site_visits where course_id = ${id} and day >= ${from} group by dow, hour`,
+      sql`select phone, count(*)::int as n from site_visits where course_id = ${id} and day >= ${from} group by phone`
+    ]);
+    return {
+      from, to: today, days: perDay.map(d => ({ day: d.day as string, n: d.n as number })), total: perDay.reduce((a, d) => a + (d.n as number), 0),
+      before: days ? (prev.n as number) : null, now: now.n as number, typicalSeconds: typical.s as number,
+      sources: sources.map(r => ({ source: r.source as string, key: r.key as string | null, label: r.label as string | null, n: r.n as number })),
+      holes: counts.filter(c => c.kind === "hole").map(c => ({ hole: c.key as string, n: c.n as number })),
+      flyovers: counts.filter(c => c.kind === "flyover").map(c => ({ hole: c.key as string, n: c.n as number })),
+      heat: heat.map(h => ({ dow: h.dow as number, hour: h.hour as number, n: h.n as number })),
+      phone: (devices.find(d => d.phone)?.n as number | undefined) ?? 0, computer: (devices.find(d => !d.phone)?.n as number | undefined) ?? 0
+    };
   });
 }

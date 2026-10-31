@@ -1,6 +1,7 @@
 // The panel for what is selected: a hole (par, fairway, OB, tees and baskets, profile, notes,
 // flyover) or one item.
 import { PlaceByGps } from "./PlaceByGps";
+import { OnSiteButton } from "./OnSite";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronLeft, Copy, Eye, EyeOff, Lock, Maximize2, Plane, RotateCcw, RotateCw, Trash2, TreeDeciduous, Unlock, X, Plus } from "lucide-react";
 import { AMENITY_KINDS, AMENITY_ORDER, AREA_KINDS, AREA_ORDER, CIRCLE_ONE_FT, FIELD_KINDS, LINE_KINDS, PATH_SURFACES, PIN_POSITIONS, STRUCTURE_KINDS, STRUCTURE_ORDER, TEE_LEVELS, TEE_ORDER, TEE_SURFACES } from "../constants";
@@ -220,6 +221,7 @@ function HoleInspector({ hole, part }: { hole: Hole; part?: CourseItem }) {
           {s.complete && <Button small full onClick={() => useEditor.getState().set({ teeView: hole.id, flyover: false })} testid="tee-view"><Eye size={14} /> Tee view</Button>}
           {s.complete && <Button small full onClick={() => useEditor.getState().set({ teeView: hole.id, flyover: true })} testid="flyover"><Plane size={14} /> Fly over</Button>}
           <Button small full onClick={() => getView()?.fitHole(hole.id)} testid="zoom-hole"><Maximize2 size={14} /> Zoom to it</Button>
+          <OnSiteButton holeId={hole.id} className="col-span-3 w-full" />
         </div>
         {doc.lidar && s.complete && <HoleTrees hole={hole} line={s.line} />}
       </Section>

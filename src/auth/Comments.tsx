@@ -5,6 +5,7 @@
 // the feature it's on moved or went since; messages take a few reactions. Everyone on the course
 // comments, viewers too, and everyone in it sees changes to the comments as they're made.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { create } from "zustand";
 import { Check, MoreHorizontal, RotateCcw, SmilePlus, X } from "lucide-react";
 import { holeLabel } from "../lib/course";
@@ -237,7 +238,10 @@ export function CommentLayer() {
   }
   const quiet = held || !!view.isDragging?.();
   const open = !panel && selected ? spots.find(s => s.t.id === selected) : null;
-  return (
+  // (the pins in a layer of their own just over the map: under the panels, sheets and menus over
+  // it, as the rest of the map is; MapViewport's map-pins)
+  const plan = document.querySelector("[data-testid=map-pins]");
+  const pins = (
     <>
       {!hidden && groups.map(g => {
         if (g.spots.length > 1) {
@@ -245,7 +249,7 @@ export function CommentLayer() {
           const unread = g.spots.some(s => s.t.unread);
           return (
             <button key={g.spots[0].t.id} data-testid="comment-cluster" aria-label={`${g.spots.length} comments here: zoom in`}
-              className={`fixed z-20 -translate-x-1/2 -translate-y-1/2 rounded-full ${PIN} ${unread ? "bg-sky-400 text-sky-950" : "bg-amber-100 text-amber-950"}`}
+              className={`fixed z-20 pointer-events-auto -translate-x-1/2 -translate-y-1/2 rounded-full ${PIN} ${unread ? "bg-sky-400 text-sky-950" : "bg-amber-100 text-amber-950"}`}
               style={{ left: g.x, top: g.y }}
               onClick={() => {
                 const ps = g.spots.map(s => pinAt(s.t, doc)!);
@@ -262,7 +266,7 @@ export function CommentLayer() {
           <div key={t.id}>
             {stem && <div className="fixed z-20 w-[2px] -translate-x-1/2 bg-gradient-to-b from-amber-100 to-amber-100/60 pointer-events-none" style={{ left: q.x, top: q.y, height: foot.y - q.y }} />}
             <button data-testid="comment-pin" aria-label={`Comment by ${t.author ?? "someone"}${t.unread ? ", new" : ""}`}
-              className={`fixed z-20 ${stem ? "-translate-x-1/2 rounded-[13px]" : "-translate-x-[6px] rounded-[13px_13px_13px_3px]"} -translate-y-full ${PIN} ${pinTone(t)} ${sel ? "outline outline-[2.5px] outline-white outline-offset-2 scale-110 origin-bottom-left" : ""} transition-transform`}
+              className={`fixed z-20 pointer-events-auto ${stem ? "-translate-x-1/2 rounded-[13px]" : "-translate-x-[6px] rounded-[13px_13px_13px_3px]"} -translate-y-full ${PIN} ${pinTone(t)} ${sel ? "outline outline-[2.5px] outline-white outline-offset-2 scale-110 origin-bottom-left" : ""} transition-transform`}
               style={{ left: q.x, top: q.y }}
               onPointerEnter={() => setHover(t.id)} onPointerLeave={() => setHover(h => (h === t.id ? null : h))}
               onClick={() => { setHover(null); useComments.setState({ selected: sel ? null : t.id }); if (!sel) markRead(t); }}>
@@ -273,7 +277,7 @@ export function CommentLayer() {
         );
       })}
       {placing && (
-        <div className="fixed z-20 cursor-crosshair bg-black/25" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} data-testid="comment-placing"
+        <div className="fixed z-20 pointer-events-auto cursor-crosshair bg-black/25" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} data-testid="comment-placing"
           onContextMenu={e => { e.preventDefault(); useComments.setState({ placing: false }); }}
           onClick={e => {
             const p = view.toPlan(e.clientX, e.clientY) as P | null;
@@ -283,6 +287,11 @@ export function CommentLayer() {
           <div className="absolute left-1/2 -translate-x-1/2 top-3 px-3 py-1.5 rounded-lg glass-solid border border-white/[0.12] text-sm text-zinc-100 pointer-events-none">Click where the comment goes · Esc or right-click to stop</div>
         </div>
       )}
+    </>
+  );
+  return (
+    <>
+      {plan ? createPortal(pins, plan) : pins}
       {/* (its spot out of sight while you type: the box stays, in the middle of the map) */}
       {draftAt && <Composer at={at(draftAt.p) ?? { x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2 }} />}
       {open && <Beside t={open.t} at={open.q} doc={doc} me={me ?? undefined} />}

@@ -173,7 +173,7 @@ export function GettingStarted({ phone = false, rail = false }: { phone?: boolea
     void showSetting({ ...i.where, say: i.say });
     // (after: going to the step puts its Select tool back first)
     i.before?.();
-    if (i.where.pick === "hole") requestAnimationFrame(() => { const h = getDoc().holes[0]; if (h && !useEditor.getState().selectedId) { select(h.id); getView()?.fitHole(h.id); } });
+    if (i.where.pick === "hole") requestAnimationFrame(() => { const h = getDoc().holes[0]; if (h && !useEditor.getState().selectedId) { select(h.id); getView()?.reveal(h.id); } });
     // (a phone: folded out of the way of what it points at)
     if (phone) st.set({ folded: true });
   };

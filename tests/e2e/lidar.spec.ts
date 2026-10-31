@@ -117,9 +117,10 @@ test("trees measured from the air on import: left standing on a fairway, cleared
   await expect(page.getByTestId("fairway-trees")).toContainText("5 trees in the way");
   await expect(page.locator("[data-stump]")).toHaveCount(0);
   await page.getByTestId("trees-clear").click();
+  // (the message first: on a slow machine the checks after it outlast it)
+  await expect(page.getByText(/^Cut down 5 trees on hole 1/)).toBeVisible();
   await expect.poll(async () => (await course(page)).lidar.removed).toEqual([...row].sort((a, b) => a - b));
   await expect(page.getByTestId("fairway-trees")).toContainText("5 trees cut down");
-  await expect(page.getByText(/^Cut down 5 trees on hole 1/)).toBeVisible();
   await page.getByTestId("trees-back").click();
   await expect.poll(async () => (await course(page)).lidar.removed).toBeUndefined();
   await expect(page.getByTestId("fairway-trees")).toContainText("5 trees in the way");
@@ -172,6 +173,8 @@ test("trees measured from the air on import: left standing on a fairway, cleared
   await page.locator(`[data-stump="${lone}"]`).click();
   await expect.poll(async () => (await course(page)).lidar.removed).toBeUndefined();
   // Flyovers keep clear of the trees standing: one measured tree's crown, as tall as it is
+  // (once the view has stood it up again)
+  await expect.poll(() => page.evaluate(p => !!(window as any).__dgView.canopyAt(p, 4), here), { timeout: 30_000 }).toBe(true);
   const crown = await page.evaluate(p => (window as any).__dgView.canopyAt(p, 4), here);
   expect(crown.top - (await page.evaluate(p => (window as any).__dgView.h(p.x, p.y), here))).toBeGreaterThan(55);
   expect((await editorState(page)).step).toBe("design");

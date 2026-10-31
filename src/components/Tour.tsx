@@ -19,7 +19,7 @@ type Stop = { title: string | (() => string); say: (touch: boolean) => string; g
 const firstHole = () => getDoc().holes[0]?.id ?? null;
 const editor = (p: Parameters<ReturnType<typeof useEditor.getState>["set"]>[0]) => useEditor.getState().set({ tool: "select", teeView: null, flyover: false, problemsOpen: false, ...p });
 const fit = () => requestAnimationFrame(() => getView()?.fitCourse());
-const holeView = () => { const id = firstHole(); if (!id) return; select(id); requestAnimationFrame(() => getView()?.fitHole(id)); };
+const holeView = () => { const id = firstHole(); if (!id) return; select(id); requestAnimationFrame(() => getView()?.reveal(id)); };
 
 const STOPS: Stop[] = [
   {

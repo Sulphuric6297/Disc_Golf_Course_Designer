@@ -19,8 +19,9 @@ import { newCourse } from "../state/files";
 import { saplings, yearsSince } from "../lib/lidar";
 import { getView } from "../state/view";
 import { Button, FOCUS, Facts, Field, Fold, HelpLink, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
-import { DesignPanel } from "./DesignPanel";
+import { DesignPanel, TreeKinds } from "./DesignPanel";
 import { CourseFileButton } from "./CourseFileDialog";
+import { OnSiteButton } from "./OnSite";
 import { useToolbarRoom } from "./Toolbar";
 import { ExportPanel } from "./ExportPanel";
 import { useLayout } from "./useLayout";
@@ -162,6 +163,20 @@ function CameIn() {
   );
 }
 
+/** The course's trees, on the Site step (what grows here belongs to the place): the kinds the woods
+ * and measured trees grow, in 3D and on the map alike, then the measured trees' own settings. */
+function SiteTrees() {
+  const doc = useCourse(s => s.doc);
+  const any = !!doc.lidar?.trees.length || !!doc.site.bounds || doc.items.some(i => i.type === "tree" || (i.type === "area" && i.kind === "woods"));
+  if (!any) return null;
+  return (
+    <Fold testid="site-trees" title={<span className="inline-flex items-center gap-1.5">Trees <HelpLink topic="site-trees" label="Trees" /></span>}>
+      <div className="-mt-3"><TreeKinds s={doc.style} /></div>
+      <MeasuredSettings />
+    </Fold>
+  );
+}
+
 /** The measured trees' own settings: which are left out, growth since the survey, the ones cut
  * down by hand, the fairways cleared. */
 function MeasuredSettings() {
@@ -174,7 +189,8 @@ function MeasuredSettings() {
   const m = lidar.minHeight ?? 0;
   const keptN = m ? lidar.trees.filter(t => t[2] >= m).length : lidar.trees.length;
   return (
-    <Fold testid="lidar-settings" title="Measured tree settings">
+    <div className="mt-4" data-testid="lidar-settings">
+      <div className="text-[13px] font-semibold text-zinc-200 mb-1.5 flex items-center gap-1.5">Measured trees <HelpLink topic="lidar-settings" label="Measured trees" /></div>
       <div data-testid="lidar-min">
         <Slider label="Leave out trees shorter than" min={0} max={60} step={1} value={m}
           format={v => (v ? fmtElev(v, u).replace(/^[+−-]/, "") : "None")}
@@ -224,7 +240,7 @@ function MeasuredSettings() {
             toast(v ? "Trees on the fairways, tees and baskets are cut down. Each hole's panel brings them back." : "Trees on the fairways are standing again.", "info", true);
           }} />
       </div>
-    </Fold>
+    </div>
   );
 }
 
@@ -305,7 +321,7 @@ function SiteStep({ onFindSite }: { onFindSite: () => void }) {
         </Section>
       )}
       <CameIn />
-      <MeasuredSettings />
+      <SiteTrees />
       <Section title="Course">
         <Field label="Course name"><TextInput label="Course name" value={doc.name} onChange={v => set({ name: v }, false)} onDone={typed} /></Field>
         <Field label="Designer"><TextInput label="Designer" value={doc.designer} placeholder="Your name or club" onChange={v => set({ designer: v }, false)} onDone={typed} /></Field>
@@ -423,7 +439,7 @@ function HoleRow({ s, check, slim = false, roomy = false }: { s: HoleStats; chec
   const fresh = talk.some(t => t.unread);
   return (
     <button data-testid="hole-row" title={`${name}${slim ? ` · ${what}` : ""}${check ? ` · ${check.text}` : ""}`}
-      onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.fitHole(s.holeId)); }}
+      onClick={() => { select(s.holeId); requestAnimationFrame(() => getView()?.reveal(s.holeId)); }}
       className={`w-full flex items-center gap-2 rounded-[14px] text-left transition-colors ${FOCUS} ${roomy ? "px-2 py-1.5 touch:min-h-[44px]" : slim ? "py-1 justify-center px-1" : "py-1 pl-1 pr-2"} ${sel ? "bg-white/[0.16] text-zinc-50" : "text-zinc-300 hover:bg-white/[0.07]"}`}>
       <span className="relative shrink-0">
         <span className="min-w-[24px] h-6 px-1 rounded-full flex items-center justify-center text-[11.5px] font-bold whitespace-nowrap" style={{ background: TEE_LEVELS[s.level].color, color: TEE_LEVELS[s.level].ink }} data-testid="hole-badge">{s.label}</span>
@@ -471,7 +487,7 @@ function CourseFacts({ doc, stats }: { doc: CourseDoc; stats: HoleStats[] }) {
 /** The holes as a table: par, length, plays like, elevation; a row flies to its hole. */
 function HolesTable({ doc, stats }: { doc: CourseDoc; stats: HoleStats[] }) {
   const u = doc.units;
-  const go = (id: string) => { select(id); requestAnimationFrame(() => getView()?.fitHole(id)); };
+  const go = (id: string) => { select(id); requestAnimationFrame(() => getView()?.reveal(id)); };
   return (
     <table className="w-full text-xs text-zinc-300 tabular-nums" data-testid="review-table">
       <thead className="text-zinc-500 text-[10px] uppercase">
@@ -514,6 +530,7 @@ export function HolesStep({ course = false }: { course?: boolean }) {
             {stats.map(s => <li key={s.holeId}><HoleRow s={s} check={checks.get(s.holeId)} roomy /></li>)}
             <li><NewHoleRow roomy /></li>
             <li><CourseFileButton row /></li>
+            <li><OnSiteButton row /></li>
           </ol>
         )}
         <div className={course ? "" : "mt-3"}><CourseFacts doc={doc} stats={stats} /></div>

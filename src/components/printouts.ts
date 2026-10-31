@@ -459,6 +459,14 @@ export const movePicked = (t: TargetKey, id: string, dx: number, dy: number, box
 };
 
 /** Sized `f` times about the page point `a` (which stays put); `box`: where it was. */
+/** The size buttons on a QR code: its words only (its corners size the code and words together). */
+export const sizeWordsPicked = (t: TargetKey, id: string, f: number) => {
+  const ex = extraOf(getDoc(), t, id);
+  if (!ex || ex.kind !== "qr") return false;
+  patchExtra(t, ex.id, { size: Math.round(Math.max(4, Math.min(400, (ex.size ?? 12) * f)) * 10) / 10 });
+  return true;
+};
+
 export const sizePicked = (t: TargetKey, id: string, f: number, a: { x: number; y: number }, box: Box, W: number, H: number) => {
   const doc = getDoc(), ex = extraOf(doc, t, id);
   if (pickedOf(doc, t, id)?.has.size === false) return;

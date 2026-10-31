@@ -1001,7 +1001,37 @@ export const standingTrees = (lidar: NonNullable<CourseDoc["lidar"]>, cleared: (
     else if (!kept.has(k) && (cleared(p, t[3] * 0.3) || nowhere(p) || t[2] < (lidar.minHeight ?? 0))) cut.push(k);
     else stand.push(k);
   });
-  return { stand, cut };
+  return { stand: withoutTwins(lidar.trees, stand, kept), cut };
+};
+
+/** Standing trees less any that are one tree found twice: one standing closer to a taller one than
+ * the survey can tell two treetops apart (half its search window for that height, 0.07 H + 3 m,
+ * as lidR has it), or well inside its crown at about its height. Not cut (no stump): the taller is
+ * the tree, in 3D and on the map alike. A tree kept by hand always stands. */
+const withoutTwins = (trees: LidarTree[], stand: number[], kept: Set<number>) => {
+  const CELL = 40, grid = new Map<string, number[]>();
+  const at = (x: number, y: number) => `${Math.floor(x / CELL)},${Math.floor(y / CELL)}`;
+  const tallest = [...stand].sort((a, b) => trees[b][2] - trees[a][2]);
+  const out = new Set<number>();
+  for (const k of tallest) {
+    const [x, y, h, r] = trees[k];
+    let twin = false;
+    if (!kept.has(k)) {
+      const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
+      for (let gy = cy - 1; gy <= cy + 1 && !twin; gy++) for (let gx = cx - 1; gx <= cx + 1 && !twin; gx++) {
+        for (const j of grid.get(`${gx},${gy}`) ?? []) {
+          const [x2, y2, h2, r2] = trees[j], d = Math.hypot(x - x2, y - y2);
+          const window = ((0.07 * (h2 / 3.28084) + 3) / 2) * 3.28084;
+          if (d < window || (d < 0.5 * Math.max(r, r2) && h2 - h < 0.25 * h2)) { twin = true; break; }
+        }
+      }
+    }
+    if (twin) continue;
+    out.add(k);
+    const key = at(x, y);
+    (grid.get(key) ?? grid.set(key, []).get(key)!).push(k);
+  }
+  return stand.filter(k => out.has(k));
 };
 
 /** The measured trees on a hole's fairway (its line as played): those cut down (taken out, or

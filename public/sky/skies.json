@@ -1,0 +1,20 @@
+{
+ "midday": {
+  "sunU": 0.6006,
+  "sunV": 0.5664,
+  "average": "#9097a3",
+  "source": "farm_field_puresky"
+ },
+ "afternoon": {
+  "sunU": 0.5967,
+  "sunV": 0.1914,
+  "average": "#7b95a9",
+  "source": "evening_road_01_puresky"
+ },
+ "sunset": {
+  "sunU": 0.6299,
+  "sunV": 0.0898,
+  "average": "#9494ad",
+  "source": "belfast_sunset_puresky"
+ }
+}

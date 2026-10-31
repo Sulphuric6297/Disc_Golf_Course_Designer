@@ -123,9 +123,14 @@ const onOrient = (e: DeviceOrientationEvent & { webkitCompassHeading?: number })
   else if (e.absolute && e.alpha != null) h = (360 - e.alpha + (screen.orientation?.angle ?? 0)) % 360;
   if (h === null) return;
   const was = useGps.getState().facing;
-  // (only a change worth drawing)
-  if (was === null || Math.abs(((h - was + 540) % 360) - 180) > 2) useGps.setState({ facing: h });
+  // (only a change worth drawing, a few times a second at most: a phone's compass sends dozens a
+  // second, each a degree or two apart)
+  const now = performance.now();
+  if (was !== null && (now - lastTurn < 120 || Math.abs(((h - was + 540) % 360) - 180) < 4)) return;
+  lastTurn = now;
+  useGps.setState({ facing: h });
 };
+let lastTurn = 0;
 
 const keepAwake = async () => {
   try {

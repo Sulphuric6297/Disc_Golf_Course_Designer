@@ -8,13 +8,15 @@
 import * as THREE from "three";
 import type { Tree as EzTree } from "@dgreenheck/ez-tree";
 import type { Detail, TreeProto, TreeShape } from "./treeKit";
+import { timed } from "../lib/perfLog";
 
 // ez-tree, loaded in the browser before the app starts (it loads its textures as soon as it is
 // imported: tests outside a browser, and anything else without a page, never load it)
 let Tree: (new () => EzTree) | null = null;
+let PRESETS_EZ: Record<string, unknown> = {};
 export const ezReady: Promise<void> = typeof document === "undefined"
   ? Promise.resolve()
-  : import("@dgreenheck/ez-tree").then(m => { Tree = m.Tree as unknown as new () => EzTree; });
+  : Promise.all([import("@dgreenheck/ez-tree").then(m => { Tree = m.Tree as unknown as new () => EzTree; PRESETS_EZ = m.TreePreset as Record<string, unknown>; }), Promise.resolve().then(() => loadKept())]).then(() => undefined);
 /** Whether ez-tree is there to grow trees (else the hand-built shapes stand in). */
 export const ezLoaded = () => Tree !== null;
 
@@ -307,7 +309,11 @@ regional("Cedar", { Small: "Pine Small", Medium: "Pine Medium", Large: "Pine Lar
 /** Loads a preset (ez-tree's, or one of ours) into a tree's options. */
 const loadInto = (t: EzTree, preset: string) => {
   const own = CUSTOM[preset];
-  t.loadPreset(own ? own.base : preset);
+  // (the preset's settings alone: ez-tree's own loadPreset grows the tree as well, a whole tree's
+  // work thrown away, as it's grown again once its settings are all in)
+  const json = PRESETS_EZ[own ? own.base : preset];
+  if (json) (t.options as unknown as { copy: (o: unknown) => void }).copy(structuredClone(json));
+  else t.loadPreset(own ? own.base : preset);
   if (own) own.shape(t.options as unknown as Options);
 };
 
@@ -374,11 +380,46 @@ export const presetDefaults = (preset: string) => {
 };
 
 const mats = new Map<string, THREE.Material>();
+/**
+ * How near the camera trees fade out (feet; 0: never): from a standing or flying eye, the leaves and
+ * branches right in front of it melt away (a fine dither, from this far in to half of it), so a
+ * flight through the treetops or a walk under them shows the hole, not a wall of leaves (as games
+ * do). CourseView sets it for each picture.
+ */
+export const treeNearFade = { value: 0 };
+/** The fade on a tree material (with whatever else its shader has). */
+const withNearFade = (m: THREE.Material) => {
+  const own = m.onBeforeCompile.bind(m);
+  m.onBeforeCompile = (shader, r) => {
+    own(shader, r);
+    shader.uniforms.uNearFade = treeNearFade;
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vTreeW;")
+      .replace("#include <project_vertex>", `#include <project_vertex>
+        {
+          vec4 tw = vec4( transformed, 1.0 );
+          #ifdef USE_INSTANCING
+            tw = instanceMatrix * tw;
+          #endif
+          vTreeW = ( modelMatrix * tw ).xyz;
+        }`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vTreeW;\nuniform float uNearFade;")
+      .replace("#include <clipping_planes_fragment>", `#include <clipping_planes_fragment>
+        if ( uNearFade > 0.0 ) {
+          float keep = smoothstep( uNearFade * 0.45, uNearFade, distance( vTreeW, cameraPosition ) );
+          float n = fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) );
+          if ( keep < n ) discard;
+        }`);
+  };
+};
+
 /** One material per bark and leaf texture, shared; instancing-friendly (each tree's tint comes in
  * as its instance color, so it multiplies the photographed leaves gently). */
-const materialFor = (kind: "bark" | "leaves", from: THREE.MeshPhongMaterial, key: string, tint?: number) => {
+const materialFor = (kind: "bark" | "leaves", fromOf: () => THREE.MeshPhongMaterial, key: string, tint?: number) => {
   let m = mats.get(`${kind}|${key}`);
   if (m) return m;
+  const from = fromOf();
   m = kind === "leaves"
     ? new THREE.MeshPhongMaterial({ name: `ez-leaves-${key}`, map: from.map, side: THREE.DoubleSide, alphaTest: from.alphaTest || 0.5, dithering: true, shininess: 4 })
     : new THREE.MeshPhongMaterial({ name: `ez-bark-${key}`, map: from.map, normalMap: from.normalMap, aoMap: from.aoMap, shininess: 2, color: tint ?? 0xffffff });
@@ -408,13 +449,14 @@ const materialFor = (kind: "bark" | "leaves", from: THREE.MeshPhongMaterial, key
     };
     m.customProgramCacheKey = () => "ez-leaves";
   }
+  withNearFade(m);
   m.userData.shared = true;
   mats.set(`${kind}|${key}`, m);
   return m;
 };
 
-/** Grows the tree, noting which bark indices belong to which branch level (for the lighter versions). */
-const grow = (spec: TreeSpec) => {
+/** A tree with its settings set, not grown yet. */
+const prepare = (spec: TreeSpec) => {
   const t = new Tree!();
   loadInto(t, spec.preset);
   const o = t.options;
@@ -428,6 +470,11 @@ const grow = (spec: TreeSpec) => {
     o.leaves.count = Math.max(1, Math.round(o.leaves.count * spec.fullness));
     o.leaves.size *= 0.85 + 0.15 * Math.min(1.6, spec.fullness);
   }
+  return t;
+};
+
+/** Grows a prepared tree, noting which bark indices belong to which branch level (for the lighter versions). */
+const grow = (t: EzTree) => {
   const levels: { level: number; from: number; to: number }[] = [];
   const self = t as unknown as { generateBranch: (b: { level: number }) => void; branches: { indices: number[] } };
   const orig = self.generateBranch.bind(t);
@@ -478,18 +525,135 @@ const barkUpTo = (g: THREE.BufferGeometry, levels: { level: number; from: number
 type Grown = Record<Detail, TreeProto>;
 const grown = new Map<string, Grown>();
 
+// ---------------------------------------------------------------- trees grown before, kept
+// Growing a tree is the slowest part of opening a course on a phone (a second or more each, and
+// a course needs a few dozen); what it grows depends only on its settings, so each is kept in the
+// browser (IndexedDB) under a fingerprint of them, and the next visit takes it from there: the
+// very same tree. A new version of the tree engine (KEEP_V) grows them all again.
+const KEEP_V = "1|ez-tree 1.1.0";
+type Geo = { attrs: { name: string; size: number; data: ArrayBuffer }[]; index: ArrayBuffer; wide: boolean };
+type Kept = { k: string; at: number; bark: Geo; leaves: Geo; levels: { level: number; from: number; to: number }[]; box: number[]; barkType: string; leafType: string };
+const kept = new Map<string, Kept>();
+const KEEP_MAX = 300;
+let dbOpen: Promise<IDBDatabase | null> | null = null;
+const keptDb = () => (dbOpen ??= new Promise<IDBDatabase | null>(res => {
+  try {
+    const r = indexedDB.open("hyzerlab-trees", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("trees", { keyPath: "k" });
+    r.onsuccess = () => res(r.result);
+    r.onerror = r.onblocked = () => res(null);
+  } catch { res(null); }
+}));
+/** The kept trees, read before the app starts (a few seconds at most: without them, they grow). */
+function loadKept() {
+  return new Promise<void>(res => {
+    const t = setTimeout(res, 4000);
+    const done = () => { clearTimeout(t); res(); };
+    void keptDb().then(db => {
+      if (!db) return done();
+      try {
+        const q = db.transaction("trees").objectStore("trees").getAll();
+        q.onsuccess = () => {
+          const all = (q.result as Kept[]).sort((a, b) => b.at - a.at);
+          all.slice(0, KEEP_MAX).forEach(x => kept.set(x.k, x));
+          // (the oldest past the most kept: let go)
+          if (all.length > KEEP_MAX) { const st = db.transaction("trees", "readwrite").objectStore("trees"); all.slice(KEEP_MAX).forEach(x => st.delete(x.k)); }
+          done();
+        };
+        q.onerror = done;
+      } catch { done(); }
+    });
+  });
+}
+// (written when the page is idle, one at a time: copying a megabyte or two into the browser's
+// store, a few dozen times over, isn't done while the course is still being made)
+const toKeep: Kept[] = [];
+// (the course's own saving goes first: the trees' writes start well after the page opens, one at
+// most every 1.5 s, in the browser's cheaper write mode; a tree lost to a closed page grows again)
+const opened = typeof performance !== "undefined" ? performance.now() : 0;
+const idle = (fn: () => void) => {
+  const wait = Math.max(1500, 10_000 - (performance.now() - opened));
+  setTimeout(() => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 20_000 }) : fn()), wait);
+};
+const keepNext = () => {
+  const x = toKeep.shift();
+  if (!x) return;
+  void keptDb().then(db => {
+    try {
+      if (!db) return;
+      const tx = db.transaction("trees", "readwrite", { durability: "relaxed" });
+      tx.objectStore("trees").put(x);
+      tx.oncomplete = tx.onerror = () => { if (toKeep.length) idle(keepNext); };
+    } catch { /* (full, or not allowed: grown next time) */ }
+  });
+};
+const keepTree = (x: Kept) => { toKeep.push(x); if (toKeep.length === 1) idle(keepNext); };
+/** A geometry as plain buffers, to keep (null: not one that can be). */
+const toGeo = (g: THREE.BufferGeometry): Geo | null => {
+  const idx = g.getIndex();
+  if (!idx) return null;
+  const attrs: Geo["attrs"] = [];
+  for (const [name, a] of Object.entries(g.attributes)) {
+    if (!(a.array instanceof Float32Array) || "isInterleavedBufferAttribute" in a) return null;
+    attrs.push({ name, size: a.itemSize, data: a.array.slice().buffer });
+  }
+  return { attrs, index: (idx.array as Uint16Array | Uint32Array).slice().buffer, wide: idx.array instanceof Uint32Array };
+};
+const fromGeo = (x: Geo) => {
+  const g = new THREE.BufferGeometry();
+  for (const a of x.attrs) g.setAttribute(a.name, new THREE.BufferAttribute(new Float32Array(a.data), a.size));
+  g.setIndex(new THREE.BufferAttribute(x.wide ? new Uint32Array(x.index) : new Uint16Array(x.index), 1));
+  return g;
+};
+/** A fingerprint of everything a tree grows from. */
+const fingerprint = (o: unknown) => {
+  const text = `${KEEP_V}|${JSON.stringify(o)}`;
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  for (let i = 0; i < text.length; i++) { const c = text.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619); h2 = Math.imul(h2 ^ c, 2246822519); }
+  return `${(h1 >>> 0).toString(36)}${(h2 >>> 0).toString(36)}${text.length.toString(36)}`;
+};
+/** A bark's and a leaf's materials, from a tree with one bare stem (for a kept tree, not grown). */
+const templateOf = (barkType: string, leafType: string) => {
+  const t = new Tree!();
+  const o = t.options as unknown as Options;
+  o.bark.type = barkType;
+  o.leaves.type = leafType;
+  o.branch.levels = 0;
+  o.leaves.count = 1;
+  t.generate();
+  return t;
+};
+
 /** A tree's three versions, at height 1 standing on the origin (grown once per spec). */
 export const ezTree = (shape: TreeShape, spec: TreeSpec, detail: Detail): TreeProto => {
   const key = keyOf(spec);
   let g = grown.get(key);
   if (!g) {
-    const { t, levels } = grow(spec);
-    const bark0 = t.branchesMesh.geometry as THREE.BufferGeometry, leaves0 = t.leavesMesh.geometry as THREE.BufferGeometry;
+    const t = prepare(spec);
+    // (grown before, the same settings: kept in the browser; else grown now, and kept)
+    const fp = fingerprint(t.options);
+    const hit = kept.get(fp);
+    let bark0: THREE.BufferGeometry, leaves0: THREE.BufferGeometry, levels: Kept["levels"], box: THREE.Box3;
+    let made: EzTree | null = null;
+    const madeOrTemplate = () => (made ??= templateOf(t.options.bark.type, t.options.leaves.type));
+    if (hit) {
+      bark0 = fromGeo(hit.bark);
+      leaves0 = fromGeo(hit.leaves);
+      levels = hit.levels;
+      box = new THREE.Box3(new THREE.Vector3(hit.box[0], hit.box[1], hit.box[2]), new THREE.Vector3(hit.box[3], hit.box[4], hit.box[5]));
+    } else {
+      levels = timed("a tree model grown", () => grow(t)).levels;
+      made = t;
+      bark0 = t.branchesMesh.geometry as THREE.BufferGeometry;
+      leaves0 = t.leavesMesh.geometry as THREE.BufferGeometry;
+      box = new THREE.Box3().setFromObject(t);
+      const bk = toGeo(bark0), lv = toGeo(leaves0);
+      if (bk && lv) { const k: Kept = { k: fp, at: Date.now(), bark: bk, leaves: lv, levels, box: [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z], barkType: t.options.bark.type, leafType: t.options.leaves.type }; kept.set(fp, k); keepTree(k); }
+    }
     // (bark keeps ez-tree's own colors on our growths only: its presets' tints are near white)
     const ownBark = CUSTOM[spec.preset] ? t.options.bark.tint : undefined;
-    const barkMat = materialFor("bark", t.branchesMesh.material as THREE.MeshPhongMaterial, `${t.options.bark.type}${ownBark ?? ""}`, ownBark);
-    const leafMat = materialFor("leaves", t.leavesMesh.material as THREE.MeshPhongMaterial, t.options.leaves.type);
-    const box = new THREE.Box3().setFromObject(t);
+    const barkMat = materialFor("bark", () => madeOrTemplate().branchesMesh.material as THREE.MeshPhongMaterial, `${t.options.bark.type}${ownBark ?? ""}`, ownBark);
+    const leafMat = materialFor("leaves", () => madeOrTemplate().leavesMesh.material as THREE.MeshPhongMaterial, t.options.leaves.type);
     const h = Math.max(0.01, box.max.y - box.min.y), w = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
     const bush = shape === "bush", pine = shape === "conifer";
     const thin = CUSTOM[spec.preset]?.thin;

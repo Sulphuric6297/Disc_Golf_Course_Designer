@@ -27,13 +27,15 @@ test("3D: a sky when tilted (none looking straight down), lit by the course's su
   expect(sun0.y).toBeGreaterThan(0.5);
   await page.keyboard.press("3");
   await expect.poll(async () => (await scene(page)).sky).toBe(true);
-  // The light is the course map's: the View panel has the sun's direction and the shadows, and goes
-  // there for the rest (no second Sun height)
+  // The 3D view's own light, in the View panel: the sun's direction, its height, the shadows
   await page.getByTestId("scene-button").click();
   await expect(page.getByTestId("view-light").getByLabel("Shadows")).toBeVisible();
-  await expect(page.getByTestId("scene-panel").getByLabel("Sun height")).toHaveCount(0);
-  await page.getByTestId("light-link").click();
-  await expect.poll(async () => (await editorState(page)).step).toBe("map");
+  await expect(page.getByTestId("view-light").getByLabel("Sun height")).toBeVisible();
+  await page.getByTestId("scene-button").click();
+  // Until it's set there, the 3D view starts from the course map's light: changed on the map, it follows
+  await page.getByRole("button", { name: "3 Map" }).click();
+  const part = page.getByTestId("part-light");
+  if ((await part.getAttribute("aria-expanded")) !== "true") await part.click();
   const panel = page.getByTestId("look-part-light");
   const set = async (label: string, value: string) => {
     const slider = panel.getByLabel(label);
@@ -158,7 +160,7 @@ test("3D woods: real trees, the ones near the camera in full detail and the rest
   await expect.poll(async () => (await info()).near, { timeout: 40_000 }).toBe(0);
 });
 
-test("landscape: pine forest makes the 3D woods pines, as many trees as before; the painted map takes its colors; one undo step", async ({ page }) => {
+test("landscape: pine forest makes the 3D woods pines, as many trees as before; the map keeps its own colors; one undo step", async ({ page }) => {
   await blankCourse(page);
   await page.evaluate(() => {
     const a = (window as any).__dgActions;
@@ -172,16 +174,17 @@ test("landscape: pine forest makes the 3D woods pines, as many trees as before; 
   const cover = (await course(page)).style.treeCover, count = (await info()).trees;
   await page.getByTestId("scene-button").click();
   await page.getByTestId("landscape-pines").click();
-  await expect.poll(async () => (await course(page)).style.landscape).toBe("pines");
+  await expect.poll(async () => (await course(page)).style.look3d?.landscape).toBe("pines");
   await expect.poll(async () => { const i = await info(); return i.conifers / i.trees; }).toBeGreaterThan(0.7);
-  // The default Forest style paints in the landscape's colors
+  // (the 3D view's own: the map's colors and landscape stay as they were)
   const s = (await course(page)).style;
-  expect(s.trees).toBe("#2a3d2e");
+  expect(s.trees).toBe("#354a2c");
+  expect(s.landscape ?? "woods").toBe("woods");
   // (a look only: never how many trees there are)
   expect(s.treeCover).toBe(cover);
   expect((await info()).trees).toBe(count);
   await page.keyboard.press("Control+z");
-  await expect.poll(async () => (await course(page)).style.landscape ?? "woods").toBe("woods");
+  await expect.poll(async () => (await course(page)).style.look3d?.landscape ?? "woods").toBe("woods");
   expect((await course(page)).style.trees).toBe("#354a2c");
 });
 
@@ -355,7 +358,7 @@ test("3D water: a pond on sloping ground lies level but never under the ground, 
     const v = (window as any).__dgView;
     let ponds = 0, below = 0, vertices = 0;
     v.scene.traverse((o: any) => {
-      if (!o.isMesh || o.material?.customProgramCacheKey?.() !== "dg-water") return;
+      if (!o.isMesh || !String(o.material?.customProgramCacheKey?.()).startsWith("dg-water")) return;
       ponds++;
       const pos = o.geometry.getAttribute("position");
       for (let i = 0; i < pos.count; i++) {

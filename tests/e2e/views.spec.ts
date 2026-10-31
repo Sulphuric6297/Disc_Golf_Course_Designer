@@ -622,21 +622,26 @@ test("the camera flown by hand: the keys move it, a drag turns it, and each keyf
   await expect(page.getByTestId("cam-update")).toBeEnabled();
   await page.keyboard.press("u");
   await expect.poll(async () => (await keys())[0].alt).toBeLessThan(k0.alt - 2);
-  // Played, stopped, and Esc back to the map with the hole still picked
+  // Played, stopped; Esc puts the camera away (standing on the tee), and again goes back to the map
+  // with the hole still picked
   await page.getByTestId("cam-play").click();
   await expect(page.getByTestId("cam-stop")).toBeVisible();
   await page.getByTestId("cam-stop").click();
   await expect(page.getByTestId("cam-add")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("camera-hud")).toHaveCount(0);
-  expect((await editorState(page)).teeView).toBeNull();
+  await expect(page.getByTestId("tee-view-hud")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await editorState(page)).teeView).toBeNull();
   expect((await editorState(page)).selectedId).toBe(hole.id);
   // Double-clicking a camera on the map looks through it
   await page.locator('[data-handle="flykey"][data-index="1"]').dblclick();
   await expect(page.getByTestId("camera-hud")).toBeVisible();
   await expect(page.getByTestId("cam-status")).toContainText("Keyframe 2 of 2");
+  // (Done: the camera put away, standing on the tee again)
   await page.getByTestId("cam-done").click();
   await expect(page.getByTestId("camera-hud")).toHaveCount(0);
+  await expect(page.getByTestId("tee-view-hud")).toBeVisible();
 });
 
 plain("the flight by itself: a low glide from behind the tee, under a crown over the line, round its trunk, over a bush, never bobbing (pure logic)", () => {

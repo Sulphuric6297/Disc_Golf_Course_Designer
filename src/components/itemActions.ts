@@ -60,7 +60,7 @@ export const itemActions = (itemId: string, ground: P | null, named = false): It
     a.push({ label: tee ? "View from this tee" : "View from the tee", icon: Eye, run: () => set({ teeView: holeId, teeViewTee: tee ? item.id : null, flyover: false }), testid: "menu-tee-view" });
     a.push({ label: "Fly over the hole", icon: Plane, run: () => set({ teeView: holeId, flyover: true }) });
   }
-  a.push({ label: hole ? "Zoom to this hole" : "Zoom to it", icon: Maximize2, run: () => (hole ? getView()?.fitHole(hole.id) : getView()?.reveal(itemId)), testid: "menu-zoom" });
+  a.push({ label: hole ? "Zoom to this hole" : "Zoom to it", icon: Maximize2, run: () => (hole ? getView()?.fitHole(hole.id) : getView()?.zoomTo(itemId)), testid: "menu-zoom" });
   // (a comment on it: a point thing's pin moves with it; on a hole, a shape or a line, on the spot)
   const at = item && "x" in item && typeof item.x === "number" && typeof item.y === "number" ? { x: item.x, y: item.y } : null;
   if (hole) a.push(...commentRow("Comment on this hole", ground, { kind: "hole", id: hole.id }));

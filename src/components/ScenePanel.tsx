@@ -1,16 +1,18 @@
-// The view: what this device shows while working (the photo, lines, grass), and the course's own
-// landscape, basket band, sun and shadows. The rest of the light is the course map's, set with its
-// look on the Map step.
+// The view: what this device shows while working (the photo, lines, grass), and the 3D view's own
+// look: its landscape, colors, sun, shadows and basket band. The printed map has its own (Map style).
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, Layers, X } from "lucide-react";
-import { FOCUS, HelpLink, POPOVER } from "./ui";
+import { Layers, X } from "lucide-react";
+import { FOCUS, HelpLink, POPOVER, Slider } from "./ui";
+import { COLOR_PICKS, landscape3dOf, treeMixOf } from "../lib/landscapes";
+import { paintLight } from "../lib/mapLook";
+import type { MapStyle } from "../types";
 import { useCourse, useEditor } from "../state/course";
-import { setStyle, StyleSlider } from "./DesignPanel";
+import { setStyle } from "./DesignPanel";
 import { Segmented, Toggle } from "./ui";
 import { LandscapePicker } from "./LandscapePicker";
 import { SunFromSlider } from "./MapLookPanel";
-import { SHOW_EVENT, showSetting } from "./showSetting";
+import { SHOW_EVENT } from "./showSetting";
 import { BAND_COLORS, BASKET_BAND } from "../three/courseModels";
 import { useLayout } from "./useLayout";
 
@@ -77,6 +79,50 @@ export function SceneButton({ className = "", big = false, size, label }: { clas
 
 const HEAD = "text-[11px] font-semibold text-zinc-500 mb-1.5";
 
+/** Design's own colors, sun and shadows, from above and in 3D (MapStyle.look3d): changed here, the illustrated map
+ * keeps its own; unset, each starts from the 3D landscape's (the colors) or the map's (the sun). */
+function Look3d({ s }: { s: MapStyle }) {
+  const l3 = s.look3d ?? {};
+  const put = (patch: NonNullable<MapStyle["look3d"]>, history = true) => setStyle({ look3d: { ...useCourse.getState().doc.style.look3d, ...patch } }, history);
+  const land = landscape3dOf(s), nature = land.colors;
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  const chip = (on: boolean) => `flex items-center gap-1.5 rounded-full px-2.5 py-1 touch:py-2 text-xs touch:text-[13px] font-semibold ${FOCUS} ${on ? "bg-zinc-100 text-zinc-900" : "bg-white/[0.07] text-zinc-300 hover:bg-white/[0.12]"}`;
+  const dot = (c: string) => <span className="w-3 h-3 rounded-full ring-1 ring-black/30" style={{ background: c }} />;
+  // (the leaves: a color and its autumn mix; the 3D landscape's own mix until one is picked)
+  const mix = l3.treeMix ?? treeMixOf({ landscape: l3.landscape ?? s.landscape, treeMix: l3.landscape ? undefined : s.treeMix });
+  const row = (label: string, testid: string, picks: { id: string; label: string; color: string; mix?: string[] }[], on: (c: { color: string; mix?: string[] }) => boolean, pickIt: (c: { color: string; mix?: string[] }) => void) => (
+    <>
+      <div className="text-xs text-zinc-400 mt-2 mb-1">{label}</div>
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={`${label} in 3D`} data-testid={testid}>
+        {picks.map(c => <button key={c.id} role="radio" aria-checked={on(c)} className={chip(on(c))} onClick={() => pickIt(c)}>{dot(c.color)}{c.label}</button>)}
+      </div>
+    </>
+  );
+  const color = (k: "fairway" | "rough" | "path" | "water", fallback: string) => ({ on: (c: { color: string }) => same(l3[k] ?? fallback, c.color), pick: (c: { color: string }) => put({ [k]: c.color }) });
+  const fair = color("fairway", nature.fairway), grass = color("rough", nature.rough), path = color("path", nature.path), water = color("water", nature.water);
+  return (
+    <div data-testid="view-light">
+      {row("Leaf colors", "leaves-3d", COLOR_PICKS.trees, c => same(l3.trees ?? nature.trees, c.color) && mix.join() === (c.mix ?? []).join(), c => put({ trees: c.color, treeMix: c.mix ?? [] }))}
+      {row("Fairways", "fairways-3d", COLOR_PICKS.fairway, fair.on, fair.pick)}
+      {row("Grass", "grass-3d", COLOR_PICKS.grass, grass.on, grass.pick)}
+      {row("Paths", "paths-3d", COLOR_PICKS.paths, path.on, path.pick)}
+      {row("Roads and parking", "paving-3d", COLOR_PICKS.paving, c => same(l3.paving ?? COLOR_PICKS.paving[0].color, c.color), c => put({ paving: c.color }))}
+      {row("Water", "water-3d", COLOR_PICKS.water, water.on, water.pick)}
+      <div className="h-1" />
+      <SunFromSlider s={s} live value={l3.sunFrom} put={(b, h) => put({ sunFrom: b }, h)} />
+      <Look3dSlider label="Sun height" value={l3.sunHeight ?? paintLight(s).height} min={8} max={80} step={2} format={x => `${Math.round(x)}°`} put={(x, h) => put({ sunHeight: x }, h)} />
+      <Look3dSlider label="Shadows" value={l3.shadows ?? s.shadows ?? 0.65} min={0} max={1} step={0.05} format={x => `${Math.round(x * 100)}%`} put={(x, h) => put({ shadows: x }, h)} />
+    </div>
+  );
+}
+
+/** One of the 3D view's own sliders: live while dragged, one undo step when let go. */
+function Look3dSlider({ label, value, min, max, step, format, put }: { label: string; value: number; min: number; max: number; step: number; format: (v: number) => string; put: (v: number, history: boolean) => void }) {
+  const [v, setV] = useState(value);
+  useEffect(() => { setV(value); }, [value]);
+  return <Slider label={label} min={min} max={max} step={step} value={v} onChange={x => { setV(x); put(x, false); }} onDone={() => useCourse.getState().commit()} format={format} />;
+}
+
 function ScenePanel({ onClose, big, place, sheet }: { onClose: () => void; big?: boolean; place: string; sheet?: boolean }) {
   const s = useCourse(c => c.doc.style);
   const grass = useEditor(e => e.grass);
@@ -97,8 +143,6 @@ function ScenePanel({ onClose, big, place, sheet }: { onClose: () => void; big?:
   }, []);
   // (from a tee or in a flyover, the ground there: painted or the photo)
   const fromTee = !!ed.teeView;
-  // (the painted map on the ground repaints with the sun: changed when a slider is let go)
-  const live = !(fromTee && ed.flyLook === "painted");
   return (
     <div ref={box} className={sheet ? "relative w-full max-w-md max-h-[78dvh] overflow-y-auto dg-scroll overscroll-contain glass-solid rounded-t-[24px] ring-1 ring-white/10 shadow-2xl px-4 pt-3.5 pb-[max(16px,env(safe-area-inset-bottom))] text-left animate-[dgrise_220ms_cubic-bezier(0.2,0.9,0.3,1)]" : `absolute ${place} overflow-y-auto dg-scroll overscroll-contain w-72 ${POPOVER} p-3 z-30 text-left`} style={room && !sheet ? { maxHeight: room } : undefined} data-testid="scene-panel">
       <div className="flex items-center justify-between mb-2">
@@ -135,16 +179,16 @@ function ScenePanel({ onClose, big, place, sheet }: { onClose: () => void; big?:
           { value: 3, label: "High" }
         ]}
       />
-      <Toggle label="Grass sways in the wind" checked={wind} onChange={v => set({ wind: v })} />
+      {grass !== 0 && <Toggle label="Grass sways in the wind" checked={wind} onChange={v => set({ wind: v })} />}
       {measured && <Toggle label="Stumps where trees were cut" checked={stumps} onChange={v => set({ stumps: v })} />}
-      {/* The course's own look (everyone sees it, on the printed map too) */}
+      {/* The 3D view's own look (everyone sees it in 3D; the 2D and printed map keep their own) */}
       {editing && (
         <div className="mt-3 pt-3 border-t border-white/[0.07]" data-testid="course-look">
-          <div className={HEAD}>Course look</div>
+          <div className={HEAD}>3D look</div>
           <div className="text-xs text-zinc-400 mb-1">Landscape</div>
           <LandscapePicker />
-          <div className="h-2" />
-          <div className="text-xs text-zinc-400 mb-1">Basket band</div>
+          <Look3d s={s} />
+          <div className="text-xs text-zinc-400 mt-2 mb-1">Basket band</div>
           {/* (a finger's 44 px round each swatch: six to the row, touching) */}
           <div className="flex gap-1.5 touch:gap-0" role="radiogroup" aria-label="Basket band" data-testid="basket-band">
             {BAND_COLORS.map(([c, name]) => {
@@ -157,18 +201,6 @@ function ScenePanel({ onClose, big, place, sheet }: { onClose: () => void; big?:
               );
             })}
           </div>
-          <div className="h-2" />
-          <div data-testid="view-light">
-            <SunFromSlider s={s} live={live} />
-            <StyleSlider k="shadows" value={s.shadows ?? 0.65} label="Shadows" min={0} max={1} step={0.05} format={x => `${Math.round(x * 100)}%`} live={live} />
-          </div>
-          {/* (the rest of the light is the course map's: set there, with the rest of its look; on a
-              phone the Map step's Style tool opens to it, as search's Show me does) */}
-          <button className="mt-2 w-full flex items-center justify-between rounded-[12px] bg-white/[0.06] px-3 py-2 touch:py-2.5 text-left text-[13px] text-zinc-200" data-testid="light-link"
-            onClick={() => { onClose(); void showSetting({ step: "map", tab: "map", look: "light", find: "look-part-light" }); }}>
-            <span>Light and shadow</span>
-            <ChevronRight size={15} className="text-zinc-500" />
-          </button>
         </div>
       )}
     </div>

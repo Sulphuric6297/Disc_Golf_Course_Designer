@@ -27,6 +27,13 @@ const holeHere = (stats: HoleStats[], at: { x: number; y: number }, picked: stri
   return best;
 };
 
+/** The map's dot, kept in step with the GPS: a part of its own that draws nothing, so a reading
+ * or a turn of the compass (many a second) doesn't draw the whole map's controls again. */
+export function MyLocationDot({ view, stats }: { view: CourseView | null; stats: HoleStats[] }) {
+  useMyLocation(view, stats);
+  return null;
+}
+
 /** Keeps the map's dot in step with the GPS. */
 export function useMyLocation(view: CourseView | null, stats: HoleStats[]) {
   const gps = useGps();
@@ -79,7 +86,7 @@ export function useMyLocation(view: CourseView | null, stats: HoleStats[]) {
 
 /** On the phone's hole tools, once you've shown where you are: the tee, basket or pin put where
  * you're standing (a few seconds still, for a sure spot). */
-export function HereButton({ what, className }: { what: "tee" | "basket" | "pin"; className: string }) {
+export function HereButton({ what, className, label, testid = "here-button" }: { what: "tee" | "basket" | "pin" | "one" | "point"; className: string; label?: string; testid?: string }) {
   const mode = useGps(g => g.mode);
   const settling = useGps(g => g.settling);
   const acc = useGps(g => g.fix?.acc ?? null);
@@ -89,12 +96,12 @@ export function HereButton({ what, className }: { what: "tee" | "basket" | "pin"
   const go = async () => {
     const f = await spotHere();
     if (!f) { toast("Couldn't get a sure spot. Try again in the open, or tap the map.", "info"); return; }
-    if (!getView()?.toolPoint(f.at)) toast(`That's right by the tee. Walk to where the ${what} goes, then tap again.`, "info");
+    if (!getView()?.toolPoint(f.at)) toast(what === "point" ? "That's where the last point is. Walk to the next corner, then tap again." : `That's right by the tee. Walk to where the ${what} goes, then tap again.`, "info");
   };
   return (
-    <button className={className} onClick={() => void go()} disabled={settling} aria-busy={settling || undefined} data-testid="here-button">
+    <button className={className} onClick={() => void go()} disabled={settling} aria-busy={settling || undefined} data-testid={testid}>
       <Navigation size={16} fill="currentColor" className={settling ? "animate-pulse" : ""} />
-      {settling ? <span className="tabular-nums">Hold still{acc !== null ? ` · ± ${fmtDist(acc, units)}` : "…"}</span> : `${what[0].toUpperCase()}${what.slice(1)} here`}
+      {settling ? <span className="tabular-nums">Hold still{acc !== null ? ` · ± ${fmtDist(acc, units)}` : "…"}</span> : label ?? `${what[0].toUpperCase()}${what.slice(1)} here`}
     </button>
   );
 }

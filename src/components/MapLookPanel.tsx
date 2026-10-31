@@ -9,7 +9,7 @@ import { COLOR_PICKS, tallGrassOf, treeMixOf } from "../lib/landscapes";
 import { LIGHT_MODES, LOOK_THEMES, PART_CHOICES, compassName, latitudeOf, lightOf, lookParts, partChanged, sunArc, sunFromOf, themeOf, type LookPart, type LookParts } from "../lib/mapLook";
 import { useCourse } from "../state/course";
 import type { MapStyle, PathTier } from "../types";
-import { ELEVATION_LOOKS, FineTuning, setStyle, TreeKinds, WoodsOptions } from "./DesignPanel";
+import { ELEVATION_LOOKS, FineTuning, setStyle, WoodsOptions } from "./DesignPanel";
 import { ColorInput, Slider, Toggle, useKeepInPlace } from "./ui";
 import { SHOW_EVENT } from "./showSetting";
 
@@ -24,19 +24,22 @@ const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 /** Where the sun shines from, by the compass: only along the sun's real path at the course's
  * latitude (never from the north, north of the tropics). */
-export function SunFromSlider({ s, live }: { s: MapStyle; live?: boolean }) {
+/** Where the sun shines from: the map's (`sunFrom`), or with `value` and `put`, another's (the 3D
+ * view's own, in the View panel). */
+export function SunFromSlider({ s, live, value, put }: { s: MapStyle; live?: boolean; value?: number; put?: (bearing: number, history: boolean) => void }) {
   const site = useCourse(c => c.doc.site);
   const lat = latitudeOf(site);
   const { mid, half } = sunArc(lat);
-  const bearing = sunFromOf(s, lat);
+  const bearing = value ?? sunFromOf(s, lat);
+  const set = (b: number, history = true) => (put ? put(b, history) : setStyle({ sunFrom: b }, history));
   const off = ((bearing - mid + 540) % 360) - 180;
   const [v, setV] = useState(off);
   useEffect(() => { setV(off); }, [off]);
   const toBearing = (o: number) => Math.round((mid + o + 360) % 360);
   return (
     <Slider label="Sun from the" min={-half} max={half} step={5} value={v}
-      onChange={x => { setV(x); if (live) setStyle({ sunFrom: toBearing(x) }, false); }}
-      onDone={() => { if (live) useCourse.getState().commit(); else if (toBearing(v) !== bearing) setStyle({ sunFrom: toBearing(v) }); }}
+      onChange={x => { setV(x); if (live) set(toBearing(x), false); }}
+      onDone={() => { if (live) useCourse.getState().commit(); else if (toBearing(v) !== bearing) set(toBearing(v)); }}
       format={x => compassName(toBearing(x))} />
   );
 }
@@ -220,7 +223,6 @@ export function MapLookPanel() {
                         {treeMixOf(s).length > 0 && <LookSlider value={s.autumnVivid ?? 1} label="Autumn colors" min={0.4} max={1.6} step={0.05} format={x => (x < 0.95 ? "Softer" : x > 1.05 ? "More vivid" : "As they are")} onDone={v => setStyle({ autumnVivid: Math.abs(v - 1) < 0.01 ? undefined : v })} />}
                         {/* (measured trees: the woods are those trees, as wide as Crown size makes them in 3D,
                         and the woods drawn; more painted only when asked) */}
-                        <TreeKinds s={s} />
                         <WoodsOptions s={s} measured={measured} />
                         {painted && (
                           <>

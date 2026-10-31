@@ -126,3 +126,40 @@ test("links for everyone on the course: all see them; editors make them once the
     assert.equal((await pat.post(`${url}/links`, { perms: {} })).status, 403);
   } finally { await w.close(); }
 });
+
+test("visitors to the public page: once a day each, where they came from, holes and flyovers, for the course's editors only", async () => {
+  const w = await world();
+  try {
+    const { c: admin } = await adminSignedIn(w);
+    const { c: sam } = await memberSignedIn(w, admin, "sam");
+    const { body: made } = await admin.post("/api/courses", { doc: doc() });
+    const url = `/api/courses/${made.id}`;
+    await admin.post(`${url}/members`, { username: "sam", role: "viewer" });
+    const { body: link } = await admin.post(`${url}/links`, { label: "", perms: { printedMap: true } });
+    await admin.post(`${url}/site`, { parts: { printedMap: true }, info: { name: "Springfield Park", holes: [{ label: "1", par: 3 }] }, doc: null, files: [{ name: "map.png", data: PNG }] });
+    const today = new Date().toISOString().slice(0, 10);
+    const visit = (ua: string, body: object) => new Client(w.app).req("POST", `/api/public/${link.token}/visit`, { phone: true, day: today, dow: 6, hour: 9, ...body }, { "user-agent": ua });
+    // A tee sign's QR code, twice from the same phone (once a day), and a search engine from another
+    const { body: v1 } = await visit("phone-a", { from: "sign-3" });
+    await visit("phone-a", { from: "sign-3" });
+    await visit("laptop-b", { ref: "https://www.google.com/", phone: false, hour: 20 });
+    assert.match(v1.v, /^[A-Za-z0-9_-]{20,24}$/);
+    // Holes looked at and flyovers played, and how long; nothing for a visit never counted
+    const ping = (body: object) => new Client(w.app).req("POST", `/api/public/${link.token}/ping`, { ...v1, ...body });
+    assert.equal((await ping({ seconds: 95, hole: "2" })).body.ok, true);
+    assert.equal((await ping({ flyover: "2" })).body.ok, true);
+    assert.equal((await new Client(w.app).req("POST", `/api/public/${link.token}/ping`, { v: "A".repeat(22), day: today, hole: "1" })).body.ok, false);
+    // The course's visitors: its owners and editors, not its viewers
+    assert.equal((await sam.get(`${url}/visitors`)).status, 403);
+    const { body: s } = await admin.get(`${url}/visitors?days=7`);
+    assert.equal(s.total, 2);
+    assert.equal(s.now, 2);
+    assert.equal(s.phone, 1);
+    assert.equal(s.computer, 1);
+    assert.deepEqual(s.sources.map((x: { source: string; key: string | null }) => `${x.source}:${x.key}`).sort(), ["search:google.com", "sign:3"]);
+    assert.deepEqual(s.holes, [{ hole: "2", n: 1 }]);
+    assert.deepEqual(s.flyovers, [{ hole: "2", n: 1 }]);
+    assert.equal(s.typicalSeconds, 95);
+    assert.deepEqual(s.heat.map((h: { hour: number }) => h.hour).sort(), [20, 9]);
+  } finally { await w.close(); }
+});

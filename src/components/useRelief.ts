@@ -1,7 +1,7 @@
 // Contours and hill shading for the printed map, worked out once per terrain.
 import { useEffect, useMemo, useState } from "react";
 import { canopyFor, paintsFromPhoto, type CanopyGrid } from "../lib/forest";
-import { contoursOf, hillshadeCanvas, type Contours } from "../lib/relief";
+import { contoursOf, hillshadeUrl, type Contours } from "../lib/relief";
 import { terrainStats } from "../lib/terrainGrid";
 import type { CourseDoc } from "../types";
 
@@ -15,7 +15,7 @@ export const reliefOf = (doc: CourseDoc) => {
   const t = terrainStats(doc.terrainHeights);
   const value = {
     contours: contoursOf(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height),
-    hillshade: t.relief > 1 && hills > 0 && typeof document !== "undefined" ? hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, undefined, hills).toDataURL("image/png") : null
+    hillshade: t.relief > 1 && hills > 0 && typeof document !== "undefined" ? hillshadeUrl(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, hills) : null
   };
   if (!cache.has(doc.terrainHeights)) cache.set(doc.terrainHeights, new Map());
   cache.get(doc.terrainHeights)!.set(hills, value);

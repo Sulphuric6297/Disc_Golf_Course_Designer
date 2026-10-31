@@ -1,4 +1,5 @@
 // The map view (2D and 3D are one view): the CourseView engine, fed from the course store.
+import { useOnSite } from "../state/onSite";
 import { latitudeOf, paintLight, sunFromOf } from "../lib/mapLook";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BoxSelect, Compass, Maximize2, Minus, PersonStanding, Plus, RotateCcw, RotateCw } from "lucide-react";
@@ -11,7 +12,7 @@ import { changeDoc, useCourse, useEditor, updateItem, updateHole, useCourse as c
 import { addBrushSection, addDrawn, addPatch, adoptTree, addHole, boxSelect, cutStretch, moveGroup, placeAt, select } from "../state/actions";
 import { courseIssues, courseStats, openIssues } from "../lib/holeStats";
 import { activeLayout, holeLabel } from "../lib/course";
-import { contoursOf, hillshadeCanvas } from "../lib/relief";
+import { contoursOf, hillshadeUrl } from "../lib/relief";
 import { terrainStats, heightAt } from "../lib/terrainGrid";
 import { niceScaleBar } from "../lib/view";
 import { centroid } from "../lib/geom";
@@ -20,11 +21,11 @@ import { FT_PER_M, STAND_HERE } from "../constants";
 import { spotlight } from "./showSetting";
 import { teeLevelFor, useMapInsets } from "./Toolbar";
 import { useTouch } from "./useLayout";
-import type { P } from "../types";
+import type { MapStyle, P } from "../types";
 import { SceneButton } from "./ScenePanel";
-import { LocateButton, useMyLocation } from "./MyLocation";
+import { LocateButton, MyLocationDot } from "./MyLocation";
 import { canShowLocation } from "../state/gps";
-import { landscapeOf } from "../lib/landscapes";
+import { landscape3dOf, style3dOf } from "../lib/landscapes";
 import { paintedDetail, usePaintedGround } from "../state/paintedGround";
 import { getView, setLiveView } from "../state/view";
 import { cameraFrom } from "./FlyoverSettings";
@@ -128,7 +129,15 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     : { photo: ed.photo, contours: ed.contours, shading: ed.shading, painted: false };
   const terrain = useMemo(() => terrainStats(doc.terrainHeights), [doc.terrainHeights]);
   const contours = useMemo(() => (show.contours ? contoursOf(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height) : { segments: [], interval: 1 }), [show.contours, doc.terrainHeights, doc.gridSize, doc.canvas]);
-  const shadeUrl = useMemo(() => (show.shading && !show.painted && terrain.relief > 1 && (doc.style.reliefScale ?? 1) > 0 ? hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, undefined, doc.style.reliefScale ?? 1).toDataURL() : null), [show.shading, show.painted, terrain.relief, doc.terrainHeights, doc.gridSize, doc.canvas, doc.style.reliefScale]);
+  // (the hill shading: worked out just after the map's first picture, not in the way of it; a
+  // phone took seconds over it there)
+  const shadeOn = show.shading && !show.painted && terrain.relief > 1 && (doc.style.reliefScale ?? 1) > 0;
+  const [shadeUrl, setShadeUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!shadeOn) { setShadeUrl(null); return; }
+    const t = window.setTimeout(() => setShadeUrl(hillshadeUrl(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, doc.style.reliefScale ?? 1)), 60);
+    return () => window.clearTimeout(t);
+  }, [shadeOn, doc.terrainHeights, doc.gridSize, doc.canvas, doc.style.reliefScale]);
   const issues = useMemo(() => (ed.step === "design" ? openIssues(doc, courseIssues(doc)).open : null), [ed.step, doc]);
   // From a tee and in flyovers: the ground in the Design look (the painted map), not the photo
   // (from a tee: the editor's own pick, or for a viewer the course's look for viewers)
@@ -148,17 +157,21 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     return () => window.clearTimeout(id);
   }, [warm, warmHole, painted, doc]);
 
-  // The 3D view shows the course in its landscape's natural colors (whatever the map's style)
-  const natural = landscapeOf(doc.style);
-  const naturalStyle = useMemo(() => ({ ...doc.style, ...natural.colors }), [doc.style, natural]);
+  // The course in the 3D look (View panel), tilted or straight down (2D) alike: its landscape's
+  // natural colors, any of its own colors picked there, its sun and shadows. Only the Map step's
+  // illustrated map (printed and exported) keeps the map's own style. (The painted ground, from a
+  // tee and in flyovers, is painted in the 3D look's colors too: state/paintedGround.)
+  const l3 = doc.style.look3d;
+  const natural = landscape3dOf(doc.style);
+  const viewStyle = useMemo((): MapStyle => style3dOf(doc.style), [doc.style]);
   const viewDoc: ViewDoc = useMemo(() => ({
-    // (the painted map in its own colors, and what stands on it too)
-    course: { ...doc, style: paintedOn ? doc.style : naturalStyle },
+    course: { ...doc, style: viewStyle },
     stats,
     activeHoleId: ed.activeHoleId,
     issues,
     // (the sun where it really is: by the compass, at the height the map's light gives it)
-    sun: { azimuth: sunFromOf(doc.style, latitudeOf(doc.site)), altitude: paintLight(doc.style).height, shadows: doc.style.shadows ?? 0.65, light: doc.style.light ?? 0 },
+    // (the 3D view's own sun when set, apart from the map's)
+    sun: { azimuth: l3?.sunFrom ?? sunFromOf(doc.style, latitudeOf(doc.site)), altitude: l3?.sunHeight ?? paintLight(doc.style).height, shadows: l3?.shadows ?? doc.style.shadows ?? 0.65, light: doc.style.light ?? 0 },
     canvas: doc.canvas,
     unitsPerFoot: 1,
     gridSize: doc.gridSize,
@@ -172,8 +185,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     shadeUrl,
     groundDetail: ed.groundDetail,
     groundPaint: doc.groundPaint,
-    groundColor: natural.colors.rough
-  }), [doc, stats, ed.activeHoleId, issues, terrain, show.photo, shadeUrl, contours, ed.groundDetail, natural, naturalStyle, paintedOn]);
+    groundColor: l3?.rough ?? natural.colors.rough
+  }), [doc, stats, ed.activeHoleId, issues, terrain, show.photo, shadeUrl, contours, ed.groundDetail, natural, viewStyle, paintedOn, l3]);
 
   useEffect(() => { view?.setDoc(viewDoc); }, [view, viewDoc]);
   useEffect(() => { void view?.setPaintedGround(paintedOn ? painted : null); }, [view, paintedOn, painted]);
@@ -185,7 +198,6 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   // view or flyover opens)
   useEffect(() => { if (paintedOn && ed.teeView && ed.teeView !== STAND_HERE) void paintedDetail(doc, ed.teeView, view?.detailPx() ?? 3072); }, [view, paintedOn, ed.teeView, doc]);
   useEffect(() => { view?.setSelection(ed.selectedId); }, [view, ed.selectedId]);
-  useMyLocation(view, stats);
   // (new tees in the color of the layout worked on, whatever changed it: a pick, undo, another course)
   const layoutTee = activeLayout(doc)?.tee;
   useEffect(() => { if (layoutTee) useEditor.getState().set({ teeLevel: layoutTee }); }, [layoutTee]);
@@ -233,7 +245,9 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const readOnlyView = useCourse(s => s.readOnly);
   // (standing in 3D: editors pick as they walk; anyone walks; the map from above in a corner)
   useEffect(() => { view?.setStandTap(ed.standTap ?? "walk"); }, [view, ed.standTap]);
-  useEffect(() => { view?.setTeeEdit(!!ed.teeView && !ed.flyover && !readOnlyView, ed.teeMap === "off" ? null : ed.teeMap ?? "small"); }, [view, ed.teeView, ed.teeMap, ed.flyover, readOnlyView]);
+  // (on site: looking round only, the map from above in its corner)
+  const onSite = useOnSite(s => !!s.on);
+  useEffect(() => { view?.setTeeEdit(!!ed.teeView && !ed.flyover && !readOnlyView && !onSite, onSite ? "corner" : ed.teeMap === "off" ? null : ed.teeMap ?? "small"); }, [view, ed.teeView, ed.teeMap, ed.flyover, readOnlyView, onSite]);
   // (the picked field's part outlined; redrawn as the field changes)
   const partItem = useCourse(s => (ed.fieldPart && ed.selectedId ? s.doc.items.find(i => i.id === ed.selectedId) : undefined));
   useEffect(() => { view?.setFieldPart(partItem ? partItem.id : null, ed.fieldPart ?? null); }, [view, partItem, ed.fieldPart]);
@@ -270,6 +284,9 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     return (
       <div className="absolute inset-0">
         <div ref={ref} data-testid="plan" className="absolute inset-0 overflow-hidden touch-none" />
+        {/* (the comments' pins: on the map, under everything over it; auth/Comments) */}
+        <div data-testid="map-pins" className="absolute inset-0 pointer-events-none isolate overflow-hidden" />
+        <MyLocationDot view={view} stats={stats} />
         {plotBar}
         {obBar}
         {!ed.teeView && controlsRoom > 0 && <TouchControls view={view} info={info} scale={info && flat ? scaleBar(info.pxPerUnit, 72, doc.units) : null} phone={compact === "phone"} top={controlsTop} room={controlsRoom} threeD={ed.view === "3d"} editing={boxable} />}
@@ -280,6 +297,10 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   return (
     <div className="absolute inset-0">
       <div ref={ref} data-testid="plan" className="absolute inset-0 overflow-hidden touch-none" />
+        {/* (the comments' pins: on the map, under everything over it; auth/Comments) */}
+        <div data-testid="map-pins" className="absolute inset-0 pointer-events-none isolate overflow-hidden" />
+      {/* (you on the map: its own small part, so each GPS reading and compass turn redraws only it) */}
+      <MyLocationDot view={view} stats={stats} />
       {plotBar}
       {obBar}
       {!ed.teeView && (

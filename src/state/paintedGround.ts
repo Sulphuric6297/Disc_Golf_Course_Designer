@@ -7,7 +7,8 @@ import { canopyFor, detailArea, forestCanvasAsync, paintedFrom, paintsFromPhoto,
 import { courseStats, holeStats } from "../lib/holeStats";
 import type { CourseDoc } from "../types";
 import { useCourse } from "./course";
-import { idbDelete, idbGet, idbSet } from "../lib/storage";
+import { style3dOf } from "../lib/landscapes";
+import { cacheDelete, cacheGet, cacheSet, idbDelete, idbGet } from "../lib/storage";
 import { spareMoment } from "./pace";
 
 /** The paintings wanted now (a tee view, a flyover, a video, a viewer's look), by key. The rest are
@@ -21,19 +22,30 @@ const gently = (key: string, stop: AbortController) => () => {
 };
 
 // Paintings kept on this device, by what they depend on: the next session skips the painting
-// (the slowest part of a flyover's wait). A short list; the oldest go.
+// (the slowest part of a flyover's wait). A short list; the oldest go. (The number in the key: the
+// way they're painted; a new one paints them again.)
 const KEPT_KEY = "paint:index", KEEP = 16;
 const hashOf = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
-const savedPaint = async <T,>(key: string): Promise<T | null> => { try { return ((await idbGet(key)) as T | undefined) ?? null; } catch { return null; } };
+const savedPaint = async <T,>(key: string): Promise<T | null> => { try { return ((await cacheGet(key)) as T | undefined) ?? null; } catch { return null; } };
 const savePaint = async (key: string, value: unknown) => {
   try {
-    await idbSet(key, value);
-    const index = ((await idbGet(KEPT_KEY)) as string[] | undefined ?? []).filter(k => k !== key);
+    await cacheSet(key, value);
+    const index = ((await cacheGet(KEPT_KEY)) as string[] | undefined ?? []).filter(k => k !== key);
     index.push(key);
-    while (index.length > KEEP) await idbDelete(index.shift()!);
-    await idbSet(KEPT_KEY, index);
+    while (index.length > KEEP) await cacheDelete(index.shift()!);
+    await cacheSet(KEPT_KEY, index);
   } catch { /* no room, or no store: painted again next time */ }
 };
+// (paintings kept before they had a database of their own: let go of from the course's, once)
+const oldPaintings = async () => {
+  try {
+    const index = (await idbGet(KEPT_KEY)) as string[] | undefined;
+    if (!index) return;
+    for (const k of index) await idbDelete(k);
+    await idbDelete(KEPT_KEY);
+  } catch { /* nothing kept, or no store */ }
+};
+if (typeof window !== "undefined") window.setTimeout(() => void oldPaintings(), 20_000);
 const toBlob = (canvas: HTMLCanvasElement, type: string, quality?: number) => new Promise<Blob | null>(res => canvas.toBlob(res, type, quality));
 /** A kept picture back on a canvas (what the view draws from). */
 const canvasOf = async (blob: Blob) => {
@@ -83,6 +95,16 @@ const keyOf = (doc: CourseDoc) =>
     paintedFrom(doc)
   ]);
 
+/** The course with its 3D look's colors (the painted ground is for the 3D view only), the same
+ * copy each time for the same course. */
+const docs3d = new WeakMap<CourseDoc, CourseDoc>(), made3d = new WeakSet<CourseDoc>();
+const as3d = (doc: CourseDoc): CourseDoc => {
+  if (made3d.has(doc)) return doc;
+  let d = docs3d.get(doc);
+  if (!d) { d = { ...doc, style: style3dOf(doc.style) }; docs3d.set(doc, d); made3d.add(d); }
+  return d;
+};
+
 const made = new Map<string, Promise<PaintedGround | null>>();
 /** The latest paintings (blob URLs), oldest first; older ones are let go. */
 const kept: { key: string; url: string }[] = [];
@@ -90,7 +112,8 @@ let under: { key: string; stop: AbortController } | null = null;
 
 /** The painted ground of a course, or null when it can't be painted; `ahead`: not wanted yet,
  * painted gently (one wanted later speeds up). */
-export const paintedGround = (doc: CourseDoc, ahead = false): Promise<PaintedGround | null> => {
+export const paintedGround = (course: CourseDoc, ahead = false): Promise<PaintedGround | null> => {
+  const doc = as3d(course);
   const key = paintKey(doc);
   if (!ahead) wanted.add(key);
   const hit = made.get(key);
@@ -103,7 +126,7 @@ export const paintedGround = (doc: CourseDoc, ahead = false): Promise<PaintedGro
   const k = Math.min(4, MAX_PX / Math.max(width, height, 1));
   const view = { cx: width / 2, cy: height / 2, rotation: 0, scale: k, width: width * k, height: height * k };
   const work = (async () => {
-    const diskKey = `paint:map:${hashOf(key)}`;
+    const diskKey = `paint:map:2:${hashOf(key)}`;
     const saved = await savedPaint<{ blob: Blob; wooded: WoodedGrid | null }>(diskKey);
     let blob: Blob | null, wooded: WoodedGrid | null;
     if (saved) ({ blob, wooded } = saved);
@@ -149,7 +172,8 @@ let detailUnder: { key: string; stop: AbortController } | null = null;
 
 /** The sharp painting round a hole (`maxPx` its longest side), or null when the whole site's
  * painting is already about as sharp there. Painted once per version of the course. */
-export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Promise<PaintedDetail | null> => {
+export const paintedDetail = (course: CourseDoc, holeId: string, maxPx = 3072): Promise<PaintedDetail | null> => {
+  const doc = as3d(course);
   const hole = doc.holes.find(h => h.id === holeId);
   if (!hole) return Promise.resolve(null);
   const st = holeStats(doc, hole);
@@ -166,7 +190,7 @@ export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Pro
   detailUnder = job;
   const view = { cx: rect.x + rect.width / 2, cy: rect.y + rect.height / 2, rotation: 0, scale: k, width: rect.width * k, height: rect.height * k };
   const work = (async () => {
-    const diskKey = `paint:detail:${hashOf(key)}`;
+    const diskKey = `paint:detail:2:${hashOf(key)}`;
     const saved = await savedPaint<{ blob: Blob }>(diskKey);
     if (saved) return { canvas: await canvasOf(saved.blob), rect };
     if (job.stop.signal.aborted) throw new Error("stopped");
@@ -209,7 +233,7 @@ export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Pro
  * whether it is of the course as it is now (the last painting stands in while the newest
  * version paints: a flyover waits for the new one). */
 export const usePaintedGround = (active: boolean, ahead = false): [PaintedGround | null, boolean] => {
-  const doc = useCourse(s => s.doc);
+  const doc = as3d(useCourse(s => s.doc));
   const [got, setGot] = useState<{ key: string; p: PaintedGround } | null>(null);
   const [trees, bump] = useState(0);
   useEffect(() => onStanding(() => bump(n => n + 1)), []);

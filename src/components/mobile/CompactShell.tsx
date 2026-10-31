@@ -13,7 +13,6 @@ import { Axe, Compass, LayoutGrid, Menu, ChevronDown, ListChecks, ChevronLeft, C
 import { holeLabel } from "../../lib/course";
 import { EXAMPLE_ID } from "../../lib/example";
 import { courseIssues, courseStats, courseTotals, holeStats, openIssues, playsOf } from "../../lib/holeStats";
-import { landscapeOf } from "../../lib/landscapes";
 import { fmtArea, fmtDist, fmtElev } from "../../lib/units";
 import { deleteSelection, duplicateSelection, select } from "../../state/actions";
 import { getDoc, useCourse, useEditor, type Step } from "../../state/course";
@@ -28,6 +27,8 @@ import { MapDesigner } from "../MapDesigner";
 import { ProblemsCount, ReviewStep, STEPS, STEP_ICONS, StepContent, touchWords } from "../SidePanel";
 import { SHOW_EVENT } from "../showSetting";
 import { TeeViewHud } from "../TeeViewHud";
+import { OnSite } from "../OnSite";
+import { useOnSite } from "../../state/onSite";
 import { CameraHud } from "../CameraHud";
 import { STEP_TOOLS, TOOLS, pickTool, toolHelp, toolHint, toolOf, toolOptions, toolShapes } from "../Toolbar";
 import { ExportProgressPill } from "../ExportProgress";
@@ -203,7 +204,6 @@ function StepHeader({ onFindSite }: { onFindSite: () => void }) {
   const step = useEditor(e => e.step);
   const site = useCourse(s => s.doc.site);
   const canvas = useCourse(s => s.doc.canvas);
-  const look = useCourse(s => landscapeOf(s.doc.style).label);
   const sum = useSummary();
   const i = STEPS.findIndex(s => s.id === step);
   const meta = STEPS[i];
@@ -216,7 +216,6 @@ function StepHeader({ onFindSite }: { onFindSite: () => void }) {
     step === "site" ? (site.bounds || (example && ground) ? area : example ? null : <button className="shrink-0 h-11 px-4 rounded-full bg-orange-500 text-zinc-950 text-[14px] font-bold active:bg-orange-600" onClick={onFindSite} data-testid="find-site">Find your park</button>)
     // (the holes and par are on the top bar: the checks here, as a computer has them under the holes)
     : step === "design" ? (sum.holes ? <ProblemsCount /> : null)
-    : step === "map" ? chip(look)
     : null;
   return (
     <div className="touch-none flex items-center gap-3 px-4 pb-3" data-testid="sheet-header">
@@ -286,7 +285,20 @@ function Tools() {
           </button>
         )}
       </div>
-      {more && <ActionSheet title="More tools" actions={rest.map(t => ({ label: t.short, icon: t.icon, run: () => pick(t), testid: `tool-${t.id}` }))} onClose={() => setMore(false)} testid="more-tools-menu" />}
+      {/* (the rest as tiles, as the strip shows its own: all of them in sight at once, no scrolling) */}
+      {more && (
+        <ActionSheet title="More tools" actions={[]} onClose={() => setMore(false)} testid="more-tools-menu">
+          <div className="grid grid-cols-4 gap-1.5 p-2" role="menu">
+            {rest.map(t => (
+              <button key={t.id} role="menuitem" data-testid={`tool-${t.id}`} aria-label={touchWords(t.label)} onClick={() => { pick(t); setMore(false); }}
+                className="min-h-[64px] px-1 rounded-xl flex flex-col items-center justify-center gap-1.5 text-zinc-200 bg-white/[0.07] active:bg-white/[0.13] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+                {t.icon}
+                <span className="text-[11.5px] leading-tight font-semibold text-center">{t.short}</span>
+              </button>
+            ))}
+          </div>
+        </ActionSheet>
+      )}
     </div>
   );
 }
@@ -336,6 +348,12 @@ function SelectionHeader({ onMore }: { onMore: () => void }) {
   const s = useMemo(() => (hole ? holeStats(doc, hole) : null), [doc, hole]);
   const u = doc.units;
   const holeId = hole?.id ?? (item && "holeId" in item ? item.holeId : undefined);
+  // (a tee of a hole that's whole: it can be stood on)
+  const teeOf = useMemo(() => {
+    if (item?.type !== "tee") return null;
+    const h = doc.holes.find(x => x.id === item.holeId);
+    return h && holeStats(doc, h).complete ? item : null;
+  }, [doc, item]);
   const title = hole ? `Hole ${holeLabel(doc, hole.id)}${hole.name ? ` · ${hole.name}` : ""}` : item ? itemTitle(item) : group.length ? `${group.length} selected` : "";
   const sub = hole
     ? s?.complete ? `${fmtDist(s.length, u)} · Par ${s.par} · ${fmtElev(s.elevationChange, u)}` : s?.teeId ? "Needs a basket" : "Needs a tee"
@@ -355,6 +373,8 @@ function SelectionHeader({ onMore }: { onMore: () => void }) {
       </div>
       {hole && <HoleSteps holeId={hole.id} big />}
       {hole && s?.complete && <button className={iconBtn} aria-label="View from the tee" title="View from the tee" onClick={() => useEditor.getState().set({ teeView: hole.id, teeViewTee: null, flyover: false })}><Eye size={20} /></button>}
+      {/* (a tee: the same eye, standing on that tee) */}
+      {teeOf && <button className={iconBtn} aria-label="View from this tee" title="View from this tee" onClick={() => useEditor.getState().set({ teeView: teeOf.holeId, teeViewTee: teeOf.id, flyover: false })} data-testid="selection-tee-view"><Eye size={20} /></button>}
       {group.length > 0 && <button className={iconBtn} aria-label="Duplicate" title="Duplicate" onClick={duplicateSelection}><Copy size={19} /></button>}
       <button className={`${iconBtn} hover:text-red-400`} aria-label="Delete" title="Delete" onClick={deleteSelection} data-testid="selection-delete"><Trash2 size={19} /></button>
       <button className={iconBtn} aria-label="More actions" title="More actions" onClick={onMore} data-testid="selection-more"><Ellipsis size={22} /></button>
@@ -612,14 +632,16 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
   const main = useRef<HTMLDivElement>(null);
   const { menus, openApp, openMore } = useMenus(onHelp, onGoTo);
   const panel = usePanel({ onFindSite, onMore: openMore, phone: true });
-  const immersive = !!ed.teeView;
+  // (on site: the walk's own screen, over the 3D view or the map)
+  const onSite = useOnSite(s => !!s.on);
+  const immersive = !!ed.teeView || onSite;
   // (from a tee, a video recording's progress sits above the bottom bar, and the toasts above it)
   const exporting = useExportJob(s => !!s.job);
   // (No sheet under the welcome card: it is the first step's panel, with the same two choices;
   // and none on the Map step, where the page's settings are a row of tools under it)
   const pageTools = ed.step === "map" && !immersive && !readOnly;
   // (standing in 3D with a thing picked: its usual sheet, over the tee view's bar)
-  const pickedInTee = immersive && !readOnly && !ed.flyover && !ed.flyCam && !!ed.selectedId && getDoc().items.some(i => i.id === ed.selectedId);
+  const pickedInTee = immersive && !onSite && !readOnly && !ed.flyover && !ed.flyCam && !!ed.selectedId && getDoc().items.some(i => i.id === ed.selectedId);
   const sheet = (!immersive || pickedInTee) && !welcome && !pageTools;
   const sheetH = sheet ? restH : 0;
 
@@ -739,10 +761,10 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
         {!immersive && <PhoneTopBar onMenu={openApp} />}
         {!immersive && <GettingStarted phone />}
         {!immersive && <DrawBar bottom={sheetH + 12} />}
-        {ed.teeView && (ed.flyCam && !useCourse.getState().readOnly ? <CameraHud compact /> : <TeeViewHud compact />)}
+        {onSite ? <OnSite /> : ed.teeView && (ed.flyCam && !useCourse.getState().readOnly ? <CameraHud compact /> : <TeeViewHud compact />)}
         <ExportProgressPill top={immersive ? undefined : top + 4} bottom={immersive ? 96 : undefined} />
         {/* (above the drawing buttons when they're up) */}
-        {toasts(immersive ? (exporting ? 156 : 96) : pageTools ? 84 : sheetH + 12 + (drawBar ? 64 : 0))}
+        {toasts(onSite ? 340 : immersive ? (exporting ? 156 : 96) : pageTools ? 84 : sheetH + 12 + (drawBar ? 64 : 0))}
         {welcome && !immersive && (
           <div className="absolute inset-0 z-10 flex items-end justify-center px-3 pb-3 pointer-events-none" style={{ paddingTop: top }}>{welcome}</div>
         )}
@@ -788,7 +810,9 @@ function RailShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts 
   const drawBar = useDrawBarShown();
   const { menus, openApp, openMore } = useMenus(onHelp, onGoTo);
   const panel = usePanel({ onFindSite, onMore: openMore });
-  const immersive = !!ed.teeView;
+  // (on site: the walk's own screen, over the 3D view or the map)
+  const onSite = useOnSite(s => !!s.on);
+  const immersive = !!ed.teeView || onSite;
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => { body.current?.scrollTo({ top: 0 }); }, [panel.key]);
   useEffect(() => {
@@ -816,9 +840,9 @@ function RailShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts 
         {design && <div className="absolute inset-0 z-20"><MapDesigner compact topInset={0} preview={ed.step === "export"} /></div>}
         {!immersive && <GettingStarted rail />}
         {!immersive && <DrawBar bottom={12} />}
-        {ed.teeView && (ed.flyCam && !useCourse.getState().readOnly ? <CameraHud compact /> : <TeeViewHud compact />)}
+        {onSite ? <OnSite /> : ed.teeView && (ed.flyCam && !useCourse.getState().readOnly ? <CameraHud compact /> : <TeeViewHud compact />)}
         <ExportProgressPill />
-        {toasts(16 + (drawBar ? 64 : 0))}
+        {toasts(onSite ? 340 : 16 + (drawBar ? 64 : 0))}
         {welcome && !immersive && <div className="absolute inset-0 z-10 flex items-center justify-center px-3 pointer-events-none">{welcome}</div>}
       </main>
       {panel.announce}
