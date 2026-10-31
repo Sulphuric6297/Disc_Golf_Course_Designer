@@ -80,7 +80,7 @@ export function SceneButton({ className = "", big = false, size, label }: { clas
 const HEAD = "text-[11px] font-semibold text-zinc-500 mb-1.5";
 
 /** Design's own colors, sun and shadows, from above and in 3D (MapStyle.look3d): changed here, the illustrated map
- * keep their own; unset, each starts from the 3D landscape's (the colors) or the map's (the sun). */
+ * keeps its own; unset, each starts from the 3D landscape's (the colors) or the map's (the sun). */
 function Look3d({ s }: { s: MapStyle }) {
   const l3 = s.look3d ?? {};
   const put = (patch: NonNullable<MapStyle["look3d"]>, history = true) => setStyle({ look3d: { ...useCourse.getState().doc.style.look3d, ...patch } }, history);
