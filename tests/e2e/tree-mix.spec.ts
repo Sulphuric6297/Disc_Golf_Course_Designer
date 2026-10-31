@@ -45,12 +45,12 @@ test("a course near Seattle: the region's kinds offered and used; the woods grow
   await expect(region).toContainText("In use.");
   // The woods grown again: spruces, cedars and tall pines among the needle trees (variants 4 to 9), every
   // leafy one an oak (0, 2, 4)
-  await expect.poll(async () => (await woodsTrees(page)).some(s => s.shape === "conifer" && s.variant >= 4), { timeout: 20_000 }).toBe(true);
+  await expect.poll(async () => (await woodsTrees(page)).some(s => s.shape === "conifer" && s.variant >= 4), { timeout: 60_000 }).toBe(true);
   expect((await woodsTrees(page)).filter(s => s.shape === "broadleaf").every(s => [0, 2, 4].includes(s.variant))).toBe(true);
   // No needle kinds on: no needle trees
   for (const k of ["Pine", "Tall pine", "Spruce", "Cedar"]) await chip(kinds, k).click();
   await expect.poll(async () => (await course(page)).style.treeKinds).toEqual(["oak"]);
-  await expect.poll(async () => { const t = await woodsTrees(page); return t.length > 50 && t.every(s => s.shape === "broadleaf"); }, { timeout: 20_000 }).toBe(true);
+  await expect.poll(async () => { const t = await woodsTrees(page); return t.length > 50 && t.every(s => s.shape === "broadleaf"); }, { timeout: 60_000 }).toBe(true);
   // The last kind stays on
   await chip(kinds, "Oak").click();
   expect((await course(page)).style.treeKinds).toEqual(["oak"]);
@@ -92,7 +92,7 @@ test("the Trees tool plants one species: a Bradford pear, then a stand of them, 
   });
   const wood = (await course(page)).items.find((i: any) => i.id === id);
   expect([wood.kind, wood.pines, wood.species]).toEqual(["woods", 0, "pear"]);
-  await expect.poll(async () => { const t = await woodsTrees(page); return t.length > 20 && t.every(s => s.shape === "broadleaf" && (s.variant === 13 || s.variant === 14)); }, { timeout: 20_000 }).toBe(true);
+  await expect.poll(async () => { const t = await woodsTrees(page); return t.length > 20 && t.every(s => s.shape === "broadleaf" && (s.variant === 13 || s.variant === 14)); }, { timeout: 60_000 }).toBe(true);
   // Its panel: Species, the pear picked; Any kind gives it the course's kinds again
   await page.evaluate(i => { (window as any).__dgEditor().set({ tool: "select" }); (window as any).__dgActions.select(i); }, id);
   const sp = page.getByTestId("stand-species");

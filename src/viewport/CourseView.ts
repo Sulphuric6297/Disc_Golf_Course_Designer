@@ -2527,6 +2527,8 @@ export class CourseView {
    * picture comes once (a phone's smaller), then stays.
    */
   private photoSkyFor(dir: THREE.Vector3) {
+    // (without a graphics card the sky model stays: decoding and drawing the photo is the processor's work)
+    if (this.software) return;
     if (!this.skyPhotos) {
       if (this.skyAsked) return;
       this.skyAsked = true;
