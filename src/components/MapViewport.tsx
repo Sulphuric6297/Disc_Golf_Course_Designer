@@ -21,11 +21,11 @@ import { FT_PER_M, STAND_HERE } from "../constants";
 import { spotlight } from "./showSetting";
 import { teeLevelFor, useMapInsets } from "./Toolbar";
 import { useTouch } from "./useLayout";
-import type { P } from "../types";
+import type { MapStyle, P } from "../types";
 import { SceneButton } from "./ScenePanel";
 import { LocateButton, MyLocationDot } from "./MyLocation";
 import { canShowLocation } from "../state/gps";
-import { landscapeOf } from "../lib/landscapes";
+import { COLOR_PICKS, conifersOf, landscape3dOf, landscapeOf } from "../lib/landscapes";
 import { paintedDetail, usePaintedGround } from "../state/paintedGround";
 import { getView, setLiveView } from "../state/view";
 import { cameraFrom } from "./FlyoverSettings";
@@ -157,14 +157,29 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     return () => window.clearTimeout(id);
   }, [warm, warmHole, painted, doc]);
 
-  // The 3D view shows the course in its landscape's natural colors (whatever the map's style)
-  const natural = landscapeOf(doc.style);
-  // (and the 3D view's own leaves and water, when set: View panel, Course look)
-  const l3 = doc.style.look3d;
-  const naturalStyle = useMemo(() => ({ ...doc.style, ...natural.colors, ...(l3?.trees ? { trees: l3.trees } : {}), ...(l3?.treeMix ? { treeMix: l3.treeMix } : {}), ...(l3?.water ? { water: l3.water } : {}) }), [doc.style, natural, l3]);
+  // Tilted (3D), the course in the 3D view's own look (View panel, 3D look): its landscape's natural
+  // colors, any of its own colors picked there, its sun and shadows. Looking straight down (2D), the
+  // map's own, nothing of the 3D look in it.
+  const topDown = ed.view === "2d";
+  const l3 = topDown ? undefined : doc.style.look3d;
+  const natural = topDown ? landscapeOf(doc.style) : landscape3dOf(doc.style);
+  const viewStyle = useMemo((): MapStyle => {
+    // (the trees' kinds, pines or leafy, as in 3D all the same: only their colors are the map's)
+    if (topDown) return { ...doc.style, look3d: undefined, conifers: conifersOf({ landscape: doc.style.look3d?.landscape ?? doc.style.landscape, conifers: doc.style.look3d?.landscape ? undefined : doc.style.conifers }) };
+    const leaves = { ...(l3?.trees ? { trees: l3.trees } : {}), ...(l3?.treeMix ? { treeMix: l3.treeMix } : {}) };
+    // (the painted map in its own colors, and the 3D view's trees on it)
+    if (paintedOn) return { ...doc.style, ...leaves };
+    const own = Object.fromEntries((["fairway", "rough", "path", "water"] as const).filter(k => l3?.[k]).map(k => [k, l3![k]]));
+    return {
+      ...doc.style,
+      // (its own landscape: that landscape's leaf mix and pines, not the map's)
+      ...(l3?.landscape ? { landscape: l3.landscape, treeMix: undefined, conifers: undefined } : {}),
+      ...natural.colors, ...leaves, ...own,
+      look3d: { ...l3, paving: l3?.paving ?? COLOR_PICKS.paving[0].color }
+    };
+  }, [topDown, doc.style, l3, natural, paintedOn]);
   const viewDoc: ViewDoc = useMemo(() => ({
-    // (the painted map in its own colors, and what stands on it too)
-    course: { ...doc, style: paintedOn ? { ...doc.style, ...(l3?.trees ? { trees: l3.trees } : {}), ...(l3?.treeMix ? { treeMix: l3.treeMix } : {}) } : naturalStyle },
+    course: { ...doc, style: viewStyle },
     stats,
     activeHoleId: ed.activeHoleId,
     issues,
@@ -184,8 +199,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     shadeUrl,
     groundDetail: ed.groundDetail,
     groundPaint: doc.groundPaint,
-    groundColor: natural.colors.rough
-  }), [doc, stats, ed.activeHoleId, issues, terrain, show.photo, shadeUrl, contours, ed.groundDetail, natural, naturalStyle, paintedOn]);
+    groundColor: topDown ? doc.style.rough ?? natural.colors.rough : l3?.rough ?? natural.colors.rough
+  }), [doc, stats, ed.activeHoleId, issues, terrain, show.photo, shadeUrl, contours, ed.groundDetail, natural, viewStyle, paintedOn, topDown, l3]);
 
   useEffect(() => { view?.setDoc(viewDoc); }, [view, viewDoc]);
   useEffect(() => { void view?.setPaintedGround(paintedOn ? painted : null); }, [view, paintedOn, painted]);

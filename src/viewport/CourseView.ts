@@ -3066,7 +3066,7 @@ export class CourseView {
       return true;
     };
     const pdga = st.markings === "pdga";
-    const color = (kind: string) => (kind === "ob" ? (pdga ? "#ffffff" : st.ob) : kind === "nogo" && pdga ? RESTRICTED : kind === "hazard" ? st.hazard : kind === "water" ? st.water : kind === "fairway" ? st.fairway : kind === "woods" ? st.trees : null);
+    const color = (kind: string) => (kind === "ob" ? (pdga ? "#ffffff" : st.ob) : kind === "nogo" && pdga ? RESTRICTED : kind === "hazard" ? st.hazard : kind === "water" ? st.water : kind === "fairway" ? st.fairway : kind === "woods" ? st.trees : kind === "parking" ? st.look3d?.paving ?? null : null);
     const photo = !!doc.background.url && doc.background.opacity > 0.3;
     // The painted map on the ground (flyovers, the tee view): it has the fairways, grass, woods,
     // paths and roads painted already; the rules (OB, hazards), water and what stands up stay
@@ -3099,25 +3099,27 @@ export class CourseView {
         // (each spot drawn once, however many fairways cover it)
         Object.assign(mat, { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc, stencilZPass: THREE.ReplaceStencilOp });
         // (up close, mown grass; a copy keeps no shader of its own, so each gets it)
-        const mown = (m: THREE.MeshLambertMaterial) => { addSurfaceDetail(m, this.ground.detail, layerOf("grass"), 0.9, true); return m; };
+        // (its edge soft, fading into the grass over about 8 ft as a mown fairway does)
+        const mown = (m: THREE.MeshLambertMaterial) => { addSurfaceDetail(m, this.ground.detail, layerOf("grass"), 0.9, true, 8); return m; };
         mown(mat);
         polys.forEach((poly, k) => {
-          const mesh = new THREE.Mesh(drapedPolygon(poly, (x, y) => this.h(x, y), doc.gridSize, 0.12), k ? mown(mat.clone()) : mat);
-          mesh.renderOrder = 1;
-          mesh.receiveShadow = true;
-          g.add(mesh);
           // Its edge, but where it runs inside another fairway
           const others = [...polys.filter((_, j) => j !== k), ...near.map(o => o.p)];
+          const runs: P[][] = [];
           let run: P[] = [];
-          const flush = () => {
-            if (run.length >= 2) g.add(this.fatLine(this.drapeLine(run, 0.2), st.fairway, 1.5, { opacity: photo ? 0.8 : 0.5, order: 2 }));
-            run = [];
-          };
+          const flush = () => { if (run.length >= 2) runs.push(run); run = []; };
           for (const p of [...poly, poly[0]]) {
             if (others.some(o => pointInPolygon(p, o))) flush();
             else run.push(p);
           }
           flush();
+          const mesh = new THREE.Mesh(drapedPolygon(poly, (x, y) => this.h(x, y), doc.gridSize, 0.12, runs), k ? mown(mat.clone()) : mat);
+          mesh.renderOrder = 1;
+          mesh.receiveShadow = true;
+          g.add(mesh);
+          // (a line along it over the photo only, where the fill is faint: on the ground's own
+          // colors the soft edge shows it)
+          if (photo) for (const r of runs) g.add(this.fatLine(this.drapeLine(r, 0.2), st.fairway, 1.5, { opacity: 0.8, order: 2 }));
         });
         return g;
       });
@@ -3417,19 +3419,23 @@ export class CourseView {
         // (A woods' floor goes under the fairways and paths through it, and under its ponds)
         const floor = a.kind === "woods";
         if (!bare) {
-          const geo = drapedPolygon(a.points, (x, y) => this.h(x, y), doc.gridSize, floor ? 0.08 : 0.15 + order * 0.01);
+          // (grass, sand and dirt fade into the ground around them; paving keeps a crisp edge)
+          const soft = photo ? 0 : a.kind === "fairway" ? 8 : a.kind === "rough" ? 10 : a.kind === "green" ? 4 : a.kind === "sand" ? 3 : 0;
+          const geo = drapedPolygon(a.points, (x, y) => this.h(x, y), doc.gridSize, floor ? 0.08 : 0.15 + order * 0.01, soft ? [[...a.points, a.points[0]]] : undefined);
           const mat = new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: floor ? Math.min(fill, 0.45) : fill, depthWrite: false, polygonOffset: true, polygonOffsetFactor: floor ? -1 : -4, polygonOffsetUnits: floor ? -2 : -8 });
           // (up close, what it's made of: a fairway's mown grass, a parking lot's asphalt, a woods' floor)
           const scan: [SurfaceLayer, number] | null = a.kind === "fairway" || a.kind === "green" ? ["grass", 0.9] : a.kind === "rough" ? ["grass", 1] : a.kind === "sand" ? ["sand", 1]
             : a.kind === "parking" ? ["asphalt", 1] : null;
-          if (scan) addSurfaceDetail(mat, this.ground.detail, layerOf(scan[0]), scan[1], a.kind === "fairway" || a.kind === "green");
+          if (scan) addSurfaceDetail(mat, this.ground.detail, layerOf(scan[0]), scan[1], a.kind === "fairway" || a.kind === "green", soft);
           const mesh = new THREE.Mesh(geo, mat);
           mesh.renderOrder = floor ? 0.5 : a.kind === "parking" ? tierOrder("road") : 2 + order * 0.001;
           mesh.receiveShadow = true;
           g.add(mesh);
         }
         const w = a.kind === "ob" || a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo" ? 3 : 1.5;
-        if (w === 3 || !clean) g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, w, { order: 4, dashed: a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo" ? 6 : undefined }));
+        // (grass and sand with a soft edge: no hard line round them, unless over the photo)
+        const softKind = !photo && (a.kind === "fairway" || a.kind === "rough" || a.kind === "green" || a.kind === "sand");
+        if (w === 3 || (!clean && !softKind)) g.add(this.fatLine(this.drapeLine(a.points, LIFT, true), c, w, { order: 4, dashed: a.kind === "hazard" || a.kind === "casual" || a.kind === "nogo" ? 6 : undefined }));
         // Marked OB (water, say): its red OB edge; a hazard, its dashed hazard edge
         if (a.ob === true && a.kind !== "ob") obEdge(a, g);
         hazardEdge(a, g);
@@ -3524,7 +3530,7 @@ export class CourseView {
       const meta = LINE_KINDS[l.kind];
       // (paths and walks in their surface's color; dirt in the map's path color)
       const surfaced = (l.kind === "path" || l.kind === "walk") && l.surface && l.surface !== "dirt" ? PATH_SURFACES[l.surface].color : null;
-      const c = l.kind === "ob" ? color("ob")! : surfaced ?? (l.kind === "path" || (l.kind === "walk" && l.width) ? st.path : l.kind === "stream" ? st.water : l.kind === "power" ? "#3b3733" : l.kind === "hedge" ? "#2f4f28" : meta.color);
+      const c = l.kind === "ob" ? color("ob")! : surfaced ?? (l.kind === "path" || (l.kind === "walk" && l.width) ? st.path : l.kind === "stream" ? st.water : l.kind === "power" ? "#3b3733" : l.kind === "hedge" ? "#2f4f28" : l.kind === "road" ? st.look3d?.paving ?? meta.color : meta.color);
       const width = l.width ?? meta.width;
       // Marked OB: along all of it or its stretches; OB "and beyond" from its edge on the holes' side
       const obParts = l.ob === true && l.kind !== "ob" && l.points.length >= 2 ? obRanges(l).map(([a, b]) => {

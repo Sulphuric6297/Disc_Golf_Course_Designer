@@ -194,6 +194,21 @@ const SCAN_GLSL = /* glsl */ `
     col = max( vec3( 0.15 ), 1.0 + ( col - 1.0 ) * DG_GRAIN[ int( layer ) ] );
     nrm = ( textureGrad( detailNormal, vec3( u1, layer ), dx, dy ).xyz * w.x + textureGrad( detailNormal, vec3( u2, layer ), dx, dy ).xyz * w.y + textureGrad( detailNormal, vec3( u3, layer ), dx, dy ).xyz * w.z ) * 2.0 - 1.0;
   }
+  float dgNoise( vec2 p ) {
+    vec2 i = floor( p ), u = fract( p ); u = u * u * ( 3.0 - 2.0 * u );
+    return mix( mix( dgHash( i ).x, dgHash( i + vec2( 1.0, 0.0 ) ).x, u.x ), mix( dgHash( i + vec2( 0.0, 1.0 ) ).x, dgHash( i + vec2( 1.0, 1.0 ) ).x, u.x ), u.y );
+  }
+  // Patches all over the ground, seen from any way off as real ground has them: lighter and darker
+  // (as the ground rises and dips and the grass grows thicker or thinner), and the grass drier in
+  // places (yellower) and lusher in others
+  vec3 dgMacro( vec3 c, vec2 f, float amount ) {
+    if ( amount <= 0.0 ) return c;
+    float n = dgNoise( f / 85.0 ) * 0.55 + dgNoise( f / 26.0 + 17.0 ) * 0.3 + dgNoise( f / 8.0 + 5.0 ) * 0.15;
+    float dry = smoothstep( 0.35, 0.8, dgNoise( f / 150.0 + 41.0 ) );
+    float green = smoothstep( 0.0, 0.05, c.g - max( c.r, c.b ) );
+    c *= 1.0 + ( n - 0.5 ) * 0.34 * amount;
+    return mix( c, c * vec3( 1.1, 1.02, 0.78 ), dry * 0.4 * green * amount );
+  }
   vec3 dgNrm = vec3( 0.0, 0.0, 1.0 );
   float dgFade = 0.0;
   // A layer's real color near the eye: its scan's own average, as bright as the ground there is
@@ -292,6 +307,8 @@ export const addGroundDetail = (m: THREE.Material, u: GroundDetailUniforms) => {
               }
             }
           }
+          // (the photo has its own patches; a painted ground and a plain one get them)
+          diffuseColor.rgb = dgMacro( diffuseColor.rgb, f, max( coverFromColor, paintOn ) );
           if ( groundDetail > 0.0 ) {
             // The woods' floor where the cover is green (under the trees, the photo shows their tops)
             vec2 fl = vec2( 0.0 );
@@ -316,14 +333,26 @@ export const addGroundDetail = (m: THREE.Material, u: GroundDetailUniforms) => {
 
 /** One scan over the whole of a thing on the ground (a path's surface, a road, a fairway), its own
  * color kept: `layer` (see LAYERS), `amount` how much of the scan (a fairway's mown grass less than
- * a gravel path's stones). */
-export const addSurfaceDetail = (m: THREE.Material, u: GroundDetailUniforms, layer: number, amount = 1, mown = false) => {
+ * a gravel path's stones). With `soft` (feet), its edge fades out over about that far, ragged as
+ * grass meets grass (its geometry's `aEdge`: drape's drapedPolygon with edges). */
+export const addSurfaceDetail = (m: THREE.Material, u: GroundDetailUniforms, layer: number, amount = 1, mown = false, soft = 0) => {
+  const softly = soft > 0 ? `#define DG_SOFT ${soft.toFixed(1)}\n` : "";
   m.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, u, { dgLayer: { value: layer }, dgAmount: { value: amount }, dgMown: { value: mown ? 1 : 0 } });
-    shader.vertexShader = worldVertex(shader.vertexShader);
-    shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", `#include <common>\n${SCAN_GLSL}\nuniform float dgLayer; uniform float dgAmount; uniform float dgMown;`)
+    shader.vertexShader = softly + worldVertex(shader.vertexShader)
+      .replace("#include <common>", "#include <common>\n#ifdef DG_SOFT\nattribute float aEdge; varying float vEdge;\n#endif")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\n#ifdef DG_SOFT\nvEdge = aEdge;\n#endif");
+    shader.fragmentShader = softly + shader.fragmentShader
+      .replace("#include <common>", `#include <common>\n${SCAN_GLSL}\nuniform float dgLayer; uniform float dgAmount; uniform float dgMown;\n#ifdef DG_SOFT\nvarying float vEdge;\n#endif`)
       .replace("#include <color_fragment>", `#include <color_fragment>
+        diffuseColor.rgb = dgMacro( diffuseColor.rgb, vGroundW.xz * groundFeet, dgLayer == 0.0 ? 1.0 : 0.45 );
+        #ifdef DG_SOFT
+        {
+          float e = vEdge + ( dgNoise( vGroundW.xz * groundFeet / 4.0 ) - 0.5 ) * DG_SOFT * 0.7;
+          diffuseColor.a *= smoothstep( 0.0, DG_SOFT, e );
+          if ( diffuseColor.a < 0.004 ) discard;
+        }
+        #endif
         if ( groundDetail > 0.0 ) {
           // (a mown fairway keeps more of its own green, so it reads apart from the rough)
           diffuseColor.rgb = dgLay( diffuseColor.rgb, dgLayer, 1.0, 0.0, 0.0, dgAmount, dgMown > 0.0 ? 0.45 : 0.25 );
@@ -332,5 +361,5 @@ export const addSurfaceDetail = (m: THREE.Material, u: GroundDetailUniforms, lay
         }`)
       .replace("#include <normal_fragment_maps>", BUMPS_GLSL);
   };
-  m.customProgramCacheKey = () => "dg-surface-scan";
+  m.customProgramCacheKey = () => `dg-surface-scan${soft > 0 ? `-soft${soft}` : ""}`;
 };

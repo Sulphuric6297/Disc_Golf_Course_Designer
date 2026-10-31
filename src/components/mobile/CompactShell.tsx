@@ -13,7 +13,6 @@ import { Axe, Compass, LayoutGrid, Menu, ChevronDown, ListChecks, ChevronLeft, C
 import { holeLabel } from "../../lib/course";
 import { EXAMPLE_ID } from "../../lib/example";
 import { courseIssues, courseStats, courseTotals, holeStats, openIssues, playsOf } from "../../lib/holeStats";
-import { landscapeOf } from "../../lib/landscapes";
 import { fmtArea, fmtDist, fmtElev } from "../../lib/units";
 import { deleteSelection, duplicateSelection, select } from "../../state/actions";
 import { getDoc, useCourse, useEditor, type Step } from "../../state/course";
@@ -205,7 +204,6 @@ function StepHeader({ onFindSite }: { onFindSite: () => void }) {
   const step = useEditor(e => e.step);
   const site = useCourse(s => s.doc.site);
   const canvas = useCourse(s => s.doc.canvas);
-  const look = useCourse(s => landscapeOf(s.doc.style).label);
   const sum = useSummary();
   const i = STEPS.findIndex(s => s.id === step);
   const meta = STEPS[i];
@@ -218,7 +216,6 @@ function StepHeader({ onFindSite }: { onFindSite: () => void }) {
     step === "site" ? (site.bounds || (example && ground) ? area : example ? null : <button className="shrink-0 h-11 px-4 rounded-full bg-orange-500 text-zinc-950 text-[14px] font-bold active:bg-orange-600" onClick={onFindSite} data-testid="find-site">Find your park</button>)
     // (the holes and par are on the top bar: the checks here, as a computer has them under the holes)
     : step === "design" ? (sum.holes ? <ProblemsCount /> : null)
-    : step === "map" ? chip(look)
     : null;
   return (
     <div className="touch-none flex items-center gap-3 px-4 pb-3" data-testid="sheet-header">

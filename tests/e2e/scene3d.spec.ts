@@ -160,7 +160,7 @@ test("3D woods: real trees, the ones near the camera in full detail and the rest
   await expect.poll(async () => (await info()).near, { timeout: 40_000 }).toBe(0);
 });
 
-test("landscape: pine forest makes the 3D woods pines, as many trees as before; the painted map takes its colors; one undo step", async ({ page }) => {
+test("landscape: pine forest makes the 3D woods pines, as many trees as before; the map keeps its own colors; one undo step", async ({ page }) => {
   await blankCourse(page);
   await page.evaluate(() => {
     const a = (window as any).__dgActions;
@@ -174,16 +174,17 @@ test("landscape: pine forest makes the 3D woods pines, as many trees as before; 
   const cover = (await course(page)).style.treeCover, count = (await info()).trees;
   await page.getByTestId("scene-button").click();
   await page.getByTestId("landscape-pines").click();
-  await expect.poll(async () => (await course(page)).style.landscape).toBe("pines");
+  await expect.poll(async () => (await course(page)).style.look3d?.landscape).toBe("pines");
   await expect.poll(async () => { const i = await info(); return i.conifers / i.trees; }).toBeGreaterThan(0.7);
-  // The default Forest style paints in the landscape's colors
+  // (the 3D view's own: the map's colors and landscape stay as they were)
   const s = (await course(page)).style;
-  expect(s.trees).toBe("#2a3d2e");
+  expect(s.trees).toBe("#354a2c");
+  expect(s.landscape ?? "woods").toBe("woods");
   // (a look only: never how many trees there are)
   expect(s.treeCover).toBe(cover);
   expect((await info()).trees).toBe(count);
   await page.keyboard.press("Control+z");
-  await expect.poll(async () => (await course(page)).style.landscape ?? "woods").toBe("woods");
+  await expect.poll(async () => (await course(page)).style.look3d?.landscape ?? "woods").toBe("woods");
   expect((await course(page)).style.trees).toBe("#354a2c");
 });
 

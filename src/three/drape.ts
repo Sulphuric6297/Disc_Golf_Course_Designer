@@ -31,8 +31,10 @@ const area2 = (pts: P[]) => pts.reduce((s, p, i) => { const q = pts[(i + 1) % pt
 /**
  * A polygon lying on the ground: its outline cut along the terrain grid, every corner at the
  * ground's height plus `lift`. Simple polygons only (self-crossing outlines are filled as best can).
+ * With `edges` (lines along its edge), each corner's distance to the nearest of them as `aEdge`
+ * (up to 64), for a soft edge (groundDetail's addSurfaceDetail).
  */
-export const drapedPolygon = (outline: P[], groundAt: (x: number, y: number) => number, grid: number, lift: number) => {
+export const drapedPolygon = (outline: P[], groundAt: (x: number, y: number) => number, grid: number, lift: number, edges?: P[][]) => {
   const pos: number[] = [];
   if (outline.length >= 3) {
     let poly = outline;
@@ -63,8 +65,34 @@ export const drapedPolygon = (outline: P[], groundAt: (x: number, y: number) => 
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  if (edges) geo.setAttribute("aEdge", new THREE.Float32BufferAttribute(edgeDistances(pos, edges, 64), 1));
   geo.computeVertexNormals();
   return geo;
+};
+
+/** Each corner's (x, z) plan distance to the nearest of `lines`, up to `max` (each spot worked out
+ * once, however many triangles share it). */
+const edgeDistances = (pos: number[], lines: P[][], max: number) => {
+  const segs: number[] = [];
+  for (const l of lines) for (let i = 0; i + 1 < l.length; i++) segs.push(l[i].x, l[i].y, l[i + 1].x, l[i + 1].y);
+  const out = new Float32Array(pos.length / 3), seen = new Map<string, number>();
+  for (let v = 0; v < out.length; v++) {
+    const x = pos[v * 3], y = pos[v * 3 + 2], key = `${x},${y}`;
+    let d = seen.get(key);
+    if (d === undefined) {
+      d = max;
+      for (let s = 0; s < segs.length; s += 4) {
+        const ax = segs[s], ay = segs[s + 1], bx = segs[s + 2], by = segs[s + 3];
+        if (x < Math.min(ax, bx) - d || x > Math.max(ax, bx) + d || y < Math.min(ay, by) - d || y > Math.max(ay, by) + d) continue;
+        const dx = bx - ax, dy = by - ay, len = dx * dx + dy * dy;
+        const t = len > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len)) : 0;
+        d = Math.min(d, Math.hypot(x - ax - t * dx, y - ay - t * dy));
+      }
+      seen.set(key, d);
+    }
+    out[v] = d;
+  }
+  return out;
 };
 
 /** Points along a polyline every `step` feet, on the ground (plus `lift`), as world positions. */

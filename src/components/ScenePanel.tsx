@@ -1,11 +1,10 @@
-// The view: what this device shows while working (the photo, lines, grass), and the course's own
-// landscape, basket band, sun and shadows. The rest of the light is the course map's, set with its
-// look on the Map step.
+// The view: what this device shows while working (the photo, lines, grass), and the 3D view's own
+// look: its landscape, colors, sun, shadows and basket band. The printed map has its own (Map style).
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Layers, X } from "lucide-react";
 import { FOCUS, HelpLink, POPOVER, Slider } from "./ui";
-import { COLOR_PICKS, landscapeOf } from "../lib/landscapes";
+import { COLOR_PICKS, landscape3dOf, treeMixOf } from "../lib/landscapes";
 import { paintLight } from "../lib/mapLook";
 import type { MapStyle } from "../types";
 import { useCourse, useEditor } from "../state/course";
@@ -80,34 +79,39 @@ export function SceneButton({ className = "", big = false, size, label }: { clas
 
 const HEAD = "text-[11px] font-semibold text-zinc-500 mb-1.5";
 
-/** The 3D view's own sun, shadows, leaves and water (MapStyle.look3d): changed here, the printed map
- * keeps its own; unset, each starts from the map's (the sun) or the landscape's (the colors). */
+/** The 3D view's own colors, sun and shadows (MapStyle.look3d): changed here, the 2D and printed map
+ * keep their own; unset, each starts from the 3D landscape's (the colors) or the map's (the sun). */
 function Look3d({ s }: { s: MapStyle }) {
   const l3 = s.look3d ?? {};
   const put = (patch: NonNullable<MapStyle["look3d"]>, history = true) => setStyle({ look3d: { ...useCourse.getState().doc.style.look3d, ...patch } }, history);
-  const nature = landscapeOf(s).colors;
-  const leaves = l3.trees ?? nature.trees, water = l3.water ?? nature.water;
+  const land = landscape3dOf(s), nature = land.colors;
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
   const chip = (on: boolean) => `flex items-center gap-1.5 rounded-full px-2.5 py-1 touch:py-2 text-xs touch:text-[13px] font-semibold ${FOCUS} ${on ? "bg-zinc-100 text-zinc-900" : "bg-white/[0.07] text-zinc-300 hover:bg-white/[0.12]"}`;
   const dot = (c: string) => <span className="w-3 h-3 rounded-full ring-1 ring-black/30" style={{ background: c }} />;
+  // (the leaves: a color and its autumn mix; the 3D landscape's own mix until one is picked)
+  const mix = l3.treeMix ?? treeMixOf({ landscape: l3.landscape ?? s.landscape, treeMix: l3.landscape ? undefined : s.treeMix });
+  const row = (label: string, testid: string, picks: { id: string; label: string; color: string; mix?: string[] }[], on: (c: { color: string; mix?: string[] }) => boolean, pickIt: (c: { color: string; mix?: string[] }) => void) => (
+    <>
+      <div className="text-xs text-zinc-400 mt-2 mb-1">{label}</div>
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={`${label} in 3D`} data-testid={testid}>
+        {picks.map(c => <button key={c.id} role="radio" aria-checked={on(c)} className={chip(on(c))} onClick={() => pickIt(c)}>{dot(c.color)}{c.label}</button>)}
+      </div>
+    </>
+  );
+  const color = (k: "fairway" | "rough" | "path" | "water", fallback: string) => ({ on: (c: { color: string }) => same(l3[k] ?? fallback, c.color), pick: (c: { color: string }) => put({ [k]: c.color }) });
+  const fair = color("fairway", nature.fairway), grass = color("rough", nature.rough), path = color("path", nature.path), water = color("water", nature.water);
   return (
     <div data-testid="view-light">
+      {row("Leaf colors", "leaves-3d", COLOR_PICKS.trees, c => same(l3.trees ?? nature.trees, c.color) && mix.join() === (c.mix ?? []).join(), c => put({ trees: c.color, treeMix: c.mix ?? [] }))}
+      {row("Fairways", "fairways-3d", COLOR_PICKS.fairway, fair.on, fair.pick)}
+      {row("Grass", "grass-3d", COLOR_PICKS.grass, grass.on, grass.pick)}
+      {row("Paths", "paths-3d", COLOR_PICKS.paths, path.on, path.pick)}
+      {row("Roads and parking", "paving-3d", COLOR_PICKS.paving, c => same(l3.paving ?? COLOR_PICKS.paving[0].color, c.color), c => put({ paving: c.color }))}
+      {row("Water", "water-3d", COLOR_PICKS.water, water.on, water.pick)}
+      <div className="h-1" />
       <SunFromSlider s={s} live value={l3.sunFrom} put={(b, h) => put({ sunFrom: b }, h)} />
       <Look3dSlider label="Sun height" value={l3.sunHeight ?? paintLight(s).height} min={8} max={80} step={2} format={x => `${Math.round(x)}°`} put={(x, h) => put({ sunHeight: x }, h)} />
       <Look3dSlider label="Shadows" value={l3.shadows ?? s.shadows ?? 0.65} min={0} max={1} step={0.05} format={x => `${Math.round(x * 100)}%`} put={(x, h) => put({ shadows: x }, h)} />
-      <div className="text-xs text-zinc-400 mt-2 mb-1">Leaf colors</div>
-      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Leaf colors in 3D" data-testid="leaves-3d">
-        {COLOR_PICKS.trees.map(c => {
-          const on = leaves.toLowerCase() === c.color.toLowerCase() && (l3.treeMix ?? s.treeMix ?? []).join() === ((c as { mix?: string[] }).mix ?? []).join();
-          return <button key={c.id} role="radio" aria-checked={on} className={chip(on)} onClick={() => put({ trees: c.color, treeMix: (c as { mix?: string[] }).mix ?? [] })}>{dot(c.color)}{c.label}</button>;
-        })}
-      </div>
-      <div className="text-xs text-zinc-400 mt-2 mb-1">Water</div>
-      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Water in 3D" data-testid="water-3d">
-        {COLOR_PICKS.water.map(c => {
-          const on = water.toLowerCase() === c.color.toLowerCase();
-          return <button key={c.id} role="radio" aria-checked={on} className={chip(on)} onClick={() => put({ water: c.color })}>{dot(c.color)}{c.label}</button>;
-        })}
-      </div>
     </div>
   );
 }
@@ -175,16 +179,16 @@ function ScenePanel({ onClose, big, place, sheet }: { onClose: () => void; big?:
           { value: 3, label: "High" }
         ]}
       />
-      <Toggle label="Grass sways in the wind" checked={wind} onChange={v => set({ wind: v })} />
+      {grass !== 0 && <Toggle label="Grass sways in the wind" checked={wind} onChange={v => set({ wind: v })} />}
       {measured && <Toggle label="Stumps where trees were cut" checked={stumps} onChange={v => set({ stumps: v })} />}
-      {/* The course's own look (everyone sees it, on the printed map too) */}
+      {/* The 3D view's own look (everyone sees it in 3D; the 2D and printed map keep their own) */}
       {editing && (
         <div className="mt-3 pt-3 border-t border-white/[0.07]" data-testid="course-look">
-          <div className={HEAD}>Course look</div>
+          <div className={HEAD}>3D look</div>
           <div className="text-xs text-zinc-400 mb-1">Landscape</div>
           <LandscapePicker />
-          <div className="h-2" />
-          <div className="text-xs text-zinc-400 mb-1">Basket band</div>
+          <Look3d s={s} />
+          <div className="text-xs text-zinc-400 mt-2 mb-1">Basket band</div>
           {/* (a finger's 44 px round each swatch: six to the row, touching) */}
           <div className="flex gap-1.5 touch:gap-0" role="radiogroup" aria-label="Basket band" data-testid="basket-band">
             {BAND_COLORS.map(([c, name]) => {
@@ -197,9 +201,6 @@ function ScenePanel({ onClose, big, place, sheet }: { onClose: () => void; big?:
               );
             })}
           </div>
-          <div className="h-2" />
-          {/* (the 3D view's own sun, shadows, leaves and water: the printed map keeps its own) */}
-          <Look3d s={s} />
         </div>
       )}
     </div>
