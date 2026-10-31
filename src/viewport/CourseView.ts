@@ -2192,6 +2192,9 @@ export class CourseView {
     // phone when nothing else moves: the battery matters more than the breeze; and still while a
     // video records, whose frames would otherwise wait on the screen's)
     const breeze = !!this.povHole && this.wind && this.recordings === 0;
+    // (standing on the course, not flying: always the full render, whatever the device)
+    const street = !!this.povHole && !this.fly && !this.software;
+    if (street !== this.streetDetail) this.setStreetDetail(street);
     if (breeze && !(this.mobile && !this.dirty && performance.now() - this.lastRender < 33)) this.dirty = true;
     // (While a video records, the screen at most 8 times a second: on a slow device its pictures
     // would take the recording's time, and the recording is what is being waited for)
@@ -2219,7 +2222,7 @@ export class CourseView {
    * room again. Software rendering (no graphics card) keeps its own fixed, lower settings.
    */
   perfSample(ms: number) {
-    if (this.software && !this.adaptiveForced) return;
+    if ((this.software && !this.adaptiveForced) || this.streetDetail) return;
     const s = this.perfSamples;
     s.push(ms);
     // A window of 24 frames, or a second and a half on a slow device (24 frames at 5 a second
@@ -2241,24 +2244,38 @@ export class CourseView {
     } else this.fastWindows = 0;
   }
 
+  /**
+   * Standing on the course (street view, from a tee or anywhere): always the full render, as a
+   * computer draws it, on a phone too: the sharpest picture, a computer's grass, shadows and trees
+   * in full detail, and nothing stepped down when frames run slow (standing, the view is drawn
+   * only when it moves). Back to what keeps this device smooth once it's left.
+   */
+  private streetDetail = false;
+  private setStreetDetail(on: boolean) {
+    this.streetDetail = on;
+    this.fastWindows = 0;
+    this.perfSamples.length = 0;
+    this.setTier(on ? 0 : this.tier);
+  }
+
   /** A quality level: 0 full .. 4 the lightest. */
   setTier(tier: number) {
     this.tier = Math.max(0, Math.min(4, tier));
-    const ratio = Math.max(0.75, this.maxRatio * [1, 0.85, 0.72, 0.6, 0.5][this.tier]);
+    const ratio = this.streetDetail ? Math.min(window.devicePixelRatio || 1, 2) : Math.max(0.75, this.maxRatio * [1, 0.85, 0.72, 0.6, 0.5][this.tier]);
     if (Math.abs(this.renderer.getPixelRatio() - ratio) > 0.01) {
       this.renderer.setPixelRatio(ratio);
       this.renderer.setSize(this.size.width, this.size.height, false);
     }
     // (a video records with its own: see setVideoDetail)
     if (this.videoDetail) return this.invalidate();
-    const shadow = this.tier >= 3 ? 512 : this.mobile || this.tier >= 2 ? 1024 : 2048;
+    const shadow = this.streetDetail ? 2048 : this.tier >= 3 ? 512 : this.mobile || this.tier >= 2 ? 1024 : 2048;
     if (this.sun.shadow.mapSize.x !== shadow) {
       this.sun.shadow.mapSize.set(shadow, shadow);
       this.sun.shadow.map?.dispose();
       this.sun.shadow.map = null;
       this.shadowsDirty = true;
     }
-    forestDetail.nearFt = (this.software ? 70 : this.mobile ? 150 : 260) * (this.tier >= 3 ? 0.6 : 1);
+    forestDetail.nearFt = this.streetDetail ? 260 : (this.software ? 70 : this.mobile ? 150 : 260) * (this.tier >= 3 ? 0.6 : 1);
     forestDetail.all = false;
     forestDetail.version++;
     retuneTrees(this.itemsGroup);
@@ -2657,6 +2674,8 @@ export class CourseView {
     if (this.videoDetail && !this.software && this.grassSetting !== 0) return 3;
     if (this.grassSetting !== "auto") return this.grassSetting;
     // Automatic: off without a graphics card, low on a phone, and less while frames run slow
+    // (standing: a computer's, on a phone too)
+    if (this.streetDetail) return 2;
     const base = this.software ? 0 : this.mobile ? 1 : 2;
     return Math.max(0, base - (this.tier >= 4 ? 2 : this.tier >= 2 ? 1 : 0)) as GrassQuality;
   }
@@ -3838,10 +3857,11 @@ export class CourseView {
         while (o.parent) o = o.parent;
         if (o !== this.scene) { p.env?.dispose(); this.ponds.delete(m); }
       }
-      const most = this.mobile ? 3 : 6;
+      const lean = this.mobile && !this.streetDetail;
+      const most = lean ? 3 : 6;
       const next = [...this.ponds].sort((a, b) => b[1].size - a[1].size).slice(0, most).find(([, p]) => !p.done);
       if (!next) { this.pondsDirty = false; return; }
-      const size = this.mobile ? 128 : 256;
+      const size = lean ? 128 : 256;
       const rt = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType, generateMipmaps: false });
       const cube = new THREE.CubeCamera(1, 3000, rt);
       cube.position.copy(next[1].at);

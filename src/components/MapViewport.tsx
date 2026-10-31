@@ -25,7 +25,7 @@ import type { MapStyle, P } from "../types";
 import { SceneButton } from "./ScenePanel";
 import { LocateButton, MyLocationDot } from "./MyLocation";
 import { canShowLocation } from "../state/gps";
-import { conifersOf, landscape3dOf, landscapeOf, style3dOf } from "../lib/landscapes";
+import { landscape3dOf, style3dOf } from "../lib/landscapes";
 import { paintedDetail, usePaintedGround } from "../state/paintedGround";
 import { getView, setLiveView } from "../state/view";
 import { cameraFrom } from "./FlyoverSettings";
@@ -157,18 +157,13 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     return () => window.clearTimeout(id);
   }, [warm, warmHole, painted, doc]);
 
-  // Tilted (3D), the course in the 3D view's own look (View panel, 3D look): its landscape's natural
-  // colors, any of its own colors picked there, its sun and shadows. Looking straight down (2D), the
-  // map's own, nothing of the 3D look in it.
-  const topDown = ed.view === "2d";
-  const l3 = topDown ? undefined : doc.style.look3d;
-  const natural = topDown ? landscapeOf(doc.style) : landscape3dOf(doc.style);
-  const viewStyle = useMemo((): MapStyle => {
-    // (the trees' kinds, pines or leafy, as in 3D all the same: only their colors are the map's)
-    if (topDown) return { ...doc.style, look3d: undefined, conifers: conifersOf(style3dOf(doc.style)) };
-    // (the painted ground, from a tee and in flyovers, is painted in the 3D look's colors too)
-    return style3dOf(doc.style);
-  }, [topDown, doc.style]);
+  // The course in the 3D look (View panel), tilted or straight down (2D) alike: its landscape's
+  // natural colors, any of its own colors picked there, its sun and shadows. Only the Map step's
+  // illustrated map (printed and exported) keeps the map's own style. (The painted ground, from a
+  // tee and in flyovers, is painted in the 3D look's colors too: state/paintedGround.)
+  const l3 = doc.style.look3d;
+  const natural = landscape3dOf(doc.style);
+  const viewStyle = useMemo((): MapStyle => style3dOf(doc.style), [doc.style]);
   const viewDoc: ViewDoc = useMemo(() => ({
     course: { ...doc, style: viewStyle },
     stats,
@@ -190,8 +185,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     shadeUrl,
     groundDetail: ed.groundDetail,
     groundPaint: doc.groundPaint,
-    groundColor: topDown ? doc.style.rough ?? natural.colors.rough : l3?.rough ?? natural.colors.rough
-  }), [doc, stats, ed.activeHoleId, issues, terrain, show.photo, shadeUrl, contours, ed.groundDetail, natural, viewStyle, paintedOn, topDown, l3]);
+    groundColor: l3?.rough ?? natural.colors.rough
+  }), [doc, stats, ed.activeHoleId, issues, terrain, show.photo, shadeUrl, contours, ed.groundDetail, natural, viewStyle, paintedOn, l3]);
 
   useEffect(() => { view?.setDoc(viewDoc); }, [view, viewDoc]);
   useEffect(() => { void view?.setPaintedGround(paintedOn ? painted : null); }, [view, paintedOn, painted]);
