@@ -848,6 +848,8 @@ test.describe("phone", () => {
   });
 
   test("the tee view's Flyover tile opens its settings on a phone, before and while it flies", async ({ page }) => {
+    // (a flight's loading screen takes a while on a slow machine)
+    test.setTimeout(180_000);
     await oneHole(page);
     await tapPlan(page, 450, 500);
     await page.getByTestId("selection-header").getByRole("button", { name: "View from the tee" }).tap();

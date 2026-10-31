@@ -193,17 +193,26 @@ export const openCourseFile = async (file: File): Promise<boolean> => {
 // --- Autosave ---
 
 let saveTimer = 0;
-export const startAutosave = () =>
-  SERVER ? startServerAutosave() : useCourse.subscribe((state, prev) => {
+const saveLocal = () => {
+  saveTimer = 0;
+  const doc = getDoc();
+  void idbSet(AUTOSAVE_KEY, doc.id ? doc : { ...doc, id: generateId() }).catch(err => console.warn("Autosave failed", err));
+};
+export const startAutosave = () => {
+  if (SERVER) return startServerAutosave();
+  // (a change still waiting to be kept when the page is closed or reloaded: kept now, not lost)
+  const now = () => { if (saveTimer) { window.clearTimeout(saveTimer); saveLocal(); } };
+  window.addEventListener("pagehide", now);
+  window.addEventListener("beforeunload", now);
+  const stop = useCourse.subscribe((state, prev) => {
     // (a change to the example, as an undo step: it's someone's own copy now)
     if (state.past !== prev.past && state.past.length && state.doc.id === EXAMPLE_ID && prev.doc.id === EXAMPLE_ID) markExample(true);
     if (state.doc === prev.doc) return;
     window.clearTimeout(saveTimer);
-    saveTimer = window.setTimeout(() => {
-      const doc = getDoc();
-      void idbSet(AUTOSAVE_KEY, doc.id ? doc : { ...doc, id: generateId() }).catch(err => console.warn("Autosave failed", err));
-    }, 600);
+    saveTimer = window.setTimeout(saveLocal, 600);
   });
+  return () => { stop(); window.removeEventListener("pagehide", now); window.removeEventListener("beforeunload", now); };
+};
 
 export const restoreAutosave = async () => {
   // (a public course page: the course it shows is open already)
