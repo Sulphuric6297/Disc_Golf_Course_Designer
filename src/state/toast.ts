@@ -16,5 +16,11 @@ export const useToasts = create<ToastStore>()(set => ({
   dismiss: id => set(s => ({ toasts: s.toasts.filter(x => x.id !== id) }))
 }));
 
+// (for tests: every message said, in order, whether or not it's still on screen)
+if (typeof window !== "undefined") {
+  const said: string[] = ((window as any).__dgSaid = []);
+  useToasts.subscribe((s, p) => { for (const t of s.toasts) if (!p.toasts.includes(t)) said.push(t.text); });
+}
+
 export const toast = (text: string, tone: Toast["tone"] = "info", undo = false, action?: Toast["action"], ms = 6000) =>
   useToasts.getState().push({ text, tone, undo, action }, ms);
