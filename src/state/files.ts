@@ -192,16 +192,32 @@ export const openCourseFile = async (file: File): Promise<boolean> => {
 
 // --- Autosave ---
 
-let saveTimer = 0;
+let saveTimer = 0, saving = 0;
+// The last change, kept at once as the page closes when it isn't kept yet: a save to IndexedDB
+// takes a moment, and a page closing or reloading cuts it off (on a busy device the save's own
+// timer may not even have run). Read back first next time, then let go of.
+const RESCUE_KEY = "hyzerlab-autosave-rescue";
 const saveLocal = () => {
   saveTimer = 0;
   const doc = getDoc();
-  void idbSet(AUTOSAVE_KEY, doc.id ? doc : { ...doc, id: generateId() }).catch(err => console.warn("Autosave failed", err));
+  saving++;
+  void idbSet(AUTOSAVE_KEY, doc.id ? doc : { ...doc, id: generateId() })
+    .then(() => { if (!saveTimer && saving === 1) try { localStorage.removeItem(RESCUE_KEY); } catch { /* no storage */ } })
+    .catch(err => console.warn("Autosave failed", err))
+    .finally(() => { saving--; });
+};
+const rescue = () => {
+  if (!saveTimer && !saving) return;
+  window.clearTimeout(saveTimer);
+  saveTimer = 0;
+  const doc = getDoc();
+  try { localStorage.setItem(RESCUE_KEY, JSON.stringify(doc.id ? doc : { ...doc, id: generateId() })); } catch { /* too big for it: the save under way is all there is */ }
+  saveLocal();
 };
 export const startAutosave = () => {
   if (SERVER) return startServerAutosave();
   // (a change still waiting to be kept when the page is closed or reloaded: kept now, not lost)
-  const now = () => { if (saveTimer) { window.clearTimeout(saveTimer); saveLocal(); } };
+  const now = rescue;
   window.addEventListener("pagehide", now);
   window.addEventListener("beforeunload", now);
   const stop = useCourse.subscribe((state, prev) => {
@@ -218,6 +234,19 @@ export const restoreAutosave = async () => {
   // (a public course page: the course it shows is open already)
   if (SERVER && SITE_TOKEN) return true;
   if (SERVER) return restoreServer();
+  // (the last change, kept as the page closed: newer than what IndexedDB has)
+  try {
+    const kept = localStorage.getItem(RESCUE_KEY);
+    if (kept) {
+      const data = JSON.parse(kept);
+      localStorage.removeItem(RESCUE_KEY);
+      if (data && Array.isArray(data.holes)) {
+        await idbSet(AUTOSAVE_KEY, data).catch(() => {});
+        show(normalizeCourse(data));
+        return true;
+      }
+    }
+  } catch { /* none, or not readable: the save in IndexedDB */ }
   try {
     const data = await idbGet(AUTOSAVE_KEY);
     if (data && Array.isArray(data.holes)) {
