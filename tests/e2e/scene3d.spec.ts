@@ -355,7 +355,7 @@ test("3D water: a pond on sloping ground lies level but never under the ground, 
     const v = (window as any).__dgView;
     let ponds = 0, below = 0, vertices = 0;
     v.scene.traverse((o: any) => {
-      if (!o.isMesh || o.material?.customProgramCacheKey?.() !== "dg-water") return;
+      if (!o.isMesh || !String(o.material?.customProgramCacheKey?.()).startsWith("dg-water")) return;
       ponds++;
       const pos = o.geometry.getAttribute("position");
       for (let i = 0; i < pos.count; i++) {

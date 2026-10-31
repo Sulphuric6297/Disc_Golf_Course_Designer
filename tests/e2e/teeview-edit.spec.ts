@@ -132,7 +132,10 @@ test.describe("phone", () => {
     await page.screenshot({ path: test.info().outputPath("phone-picked.png") });
     await page.evaluate(() => (window as any).__dgActions.select(null));
     await expect(page.getByTestId("sheet")).toHaveCount(0);
+    // (back to the tee: under More, on a phone's bar)
+    await page.getByTestId("hud-more").tap();
     await expect(page.getByTestId("hud-to-tee")).toBeVisible();
+    await page.getByTestId("hud-more").tap();
     // Walk: a tap on the ground walks there
     await page.getByTestId("tap-walk").tap();
     const ahead = await screenOf(page, 520, 500, 0);
