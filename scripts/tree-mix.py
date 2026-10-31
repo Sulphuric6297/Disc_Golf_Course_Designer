@@ -1,6 +1,6 @@
-"""The trees each US region grows, for HyzerLab's recommended kinds of trees: the USDA Forest
+"""The trees each US region grows, for GlideLine Studio's recommended kinds of trees: the USDA Forest
 Service's Forest Inventory and Analysis (FIA) survey, live trees (1 inch and up) on forest land by
-species in each state's latest survey, added up by region and grouped into the tree looks HyzerLab
+species in each state's latest survey, added up by region and grouped into the tree looks GlideLine Studio
 can draw. With each county's center and state (Census Gazetteer), so the app finds a course's state,
 and so its region, offline. Public data (US government). Writes tree-regions.json.
 python3 scripts/tree-mix.py src/data (a few minutes: every state, one request each)"""
@@ -10,7 +10,7 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else "."
 API = "https://apps.fs.usda.gov/fiadb-api"
 SNUM = "Number of live trees (at least 1 inch d.b.h./d.r.c.), in trees, on forest land"
 LOOKS = ["oak", "ash", "maple", "aspen", "birch", "willow", "pear", "pine", "tallpine", "spruce", "cedar"]
-# Each genus to the look nearest it (what HyzerLab's tree engine can grow)
+# Each genus to the look nearest it (what GlideLine Studio's tree engine can grow)
 GENUS = {
     # broadleaf
     "Quercus": "oak", "Fagus": "oak", "Castanea": "oak", "Lithocarpus": "oak", "Notholithocarpus": "oak", "Ulmus": "oak",
@@ -41,7 +41,7 @@ STATES = ["01", "02", "04", "05", "06", "08", "09", "10", "11", "12", "13", "15"
 def get(url, tries=4):
     for k in range(tries):
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "HyzerLab tree-mix builder"}), timeout=180) as r:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "GlideLine Studio tree-mix builder"}), timeout=180) as r:
                 return r.read()
         except Exception as e:  # (the API is slow now and then: try again)
             if k == tries - 1: raise

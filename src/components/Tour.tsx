@@ -25,7 +25,7 @@ const STOPS: Stop[] = [
   {
     // (named as the example's own file names it)
     title: () => `This is ${getDoc().name || "the example"}`,
-    say: t => { const n = getDoc().holes.length; return `An example course, made in HyzerLab: ${n} hole${n === 1 ? "" : "s"} laid out on real ground, with its woods, water, paths and buildings. Every hole is drawn on the map: the tee, the basket and the line of play between them, with OB in red. ${t ? "Drag to move around and pinch to zoom." : "Drag to move around and scroll to zoom."}`; },
+    say: t => { const n = getDoc().holes.length; return `An example course, made in GlideLine Studio: ${n} hole${n === 1 ? "" : "s"} laid out on real ground, with its woods, water, paths and buildings. Every hole is drawn on the map: the tee, the basket and the line of play between them, with OB in red. ${t ? "Drag to move around and pinch to zoom." : "Drag to move around and scroll to zoom."}`; },
     go: () => { editor({ step: "design", view: "2d", selectedId: null }); fit(); }
   },
   {

@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // The real-course checks (tests/real): the demo course, as big as a real one (18 holes, measured
-// trees, buildings, woods, the photo), saved to a real HyzerLab server on an emptied test
+// trees, buildings, woods, the photo), saved to a real GlideLine Studio server on an emptied test
 // database, and used the way a person uses it: picked, dragged, drawn on, painted, flown over and
 // saved. Each check has a speed limit, and the key screens are compared with approved pictures.
 // One browser and one course for the whole run: a few minutes, not three quarters of an hour.

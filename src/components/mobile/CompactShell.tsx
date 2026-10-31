@@ -461,7 +461,7 @@ function AppMenu({ onClose, onHelp, onGoTo, onOpenFile }: { onClose: () => void;
   ];
   return (
     <>
-      <ActionSheet title={name} subtitle="HyzerLab" actions={actions} onClose={onClose} testid="app-menu">
+      <ActionSheet title={name} subtitle="GlideLine Studio" actions={actions} onClose={onClose} testid="app-menu">
         {recent.length > 0 && (
           <div className="border-b border-white/5">
             <div className="px-4 pt-2.5 pb-1 text-[12px] uppercase tracking-wider font-bold text-zinc-500">{SERVER ? "Courses" : "Recent courses"}</div>
@@ -507,7 +507,7 @@ function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
   // (the page covers the map on Map and Export: 2D and 3D would do nothing there)
   const onMap = useEditor(e => e.step === "design" || e.step === "site");
   const sum = useSummary();
-  const sub = sum.complete ? `${sum.complete} hole${sum.complete === 1 ? "" : "s"} · Par ${sum.par} · ${fmtDist(sum.length, sum.units)}` : "HyzerLab";
+  const sub = sum.complete ? `${sum.complete} hole${sum.complete === 1 ? "" : "s"} · Par ${sum.par} · ${fmtDist(sum.length, sum.units)}` : "GlideLine Studio";
   return (
     <div className="absolute left-0 right-0 top-0 z-30 px-2 pt-[max(8px,env(safe-area-inset-top))] pointer-events-none" data-testid="top-bar">
       <div className="glass pointer-events-auto flex items-center gap-1 h-[56px] pl-1 pr-1 rounded-[22px]">

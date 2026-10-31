@@ -1,4 +1,4 @@
-// Courses kept on the HyzerLab server. Owners and editors change a course live, with everyone else
+// Courses kept on the GlideLine Studio server. Owners and editors change a course live, with everyone else
 // who has it open (live.ts); viewers watch. Earlier versions can be looked at (view only) before
 // restoring one. The File menu and the home page list the courses shared with you.
 import { create } from "zustand";

@@ -157,7 +157,7 @@ export const toGPX = (doc: CourseDoc) => {
     const g = toLatLon(ref, p);
     return `<wpt lat="${r6(g.lat)}" lon="${r6(g.lon)}"><ele>${r1(elevationFt(doc, p) / FT_PER_M)}</ele><name>${xml(name)}</name>${desc ? `<desc>${xml(desc)}</desc>` : ""}<sym>${sym}</sym></wpt>`;
   };
-  const out: string[] = [`<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="HyzerLab" xmlns="http://www.topografix.com/GPX/1/1"><metadata><name>${xml(doc.name)}</name></metadata>`];
+  const out: string[] = [`<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GlideLine Studio" xmlns="http://www.topografix.com/GPX/1/1"><metadata><name>${xml(doc.name)}</name></metadata>`];
   for (const hole of doc.holes) {
     const num = holeNumber(doc, hole.id);
     for (const t of holeTees(doc, hole.id)) out.push(wpt(t, `H${num} ${TEE_LEVELS[t.level].label} tee`, "Flag, Blue", `Pad ${t.padWidth} x ${t.padLength} ft, ${TEE_SURFACES[t.surface].label}`));

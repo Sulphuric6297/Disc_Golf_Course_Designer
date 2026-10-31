@@ -1,13 +1,13 @@
 // The public demo (the browser-only build, on GitHub Pages): the app as it really is, with the
 // parts that need a server (accounts, sharing, comments, history, public course pages, courses
 // sharing a park) shown where they'd be but locked. Each one, picked, says what it does and that
-// hosting HyzerLab yourself turns it on. (The one explainer in the app, at the owner's request.)
+// hosting GlideLine Studio yourself turns it on. (The one explainer in the app, at the owner's request.)
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Bell, ExternalLink, History, Lock, MessageCircle, Share2, UserRound, X } from "lucide-react";
 import { create } from "zustand";
 
-export const REPO = "https://github.com/Sulphuric6297/Disc_Golf_Course_Designer#your-own-server-hyzerlab";
+export const REPO = "https://github.com/Sulphuric6297/Disc_Golf_Course_Designer#hosting-it-yourself";
 
 /** What hosting it yourself adds, in the demo's note. */
 export const DEMO_ADDS = [
@@ -28,7 +28,7 @@ export const LOCKED = {
   courses: { title: "Courses", icon: UserRound, what: "Courses is the page with everything you've made and everything shared with you, each with a small map of its holes." },
   history: { title: "History", icon: History, what: "Everyone you make an editor changes the course with you, live. Its versions are kept as it changes, so you can go back to an older one." },
   site: { title: "Public course page", icon: Share2, what: "A public page for the course: the map, every hole, the flyovers and the files to download. You pick what it shows." },
-  park: { title: "Other courses in the park", icon: Share2, what: "When a few courses share the same ground, each one shows up on the others' maps, and HyzerLab tells you when one of your holes crosses or crowds one of theirs." },
+  park: { title: "Other courses in the park", icon: Share2, what: "When a few courses share the same ground, each one shows up on the others' maps, and GlideLine Studio tells you when one of your holes crosses or crowds one of theirs." },
   demo: { title: "The public demo", icon: Lock, what: "You can design a full course here: bring in a park, lay out the holes, and make the maps and tee signs. It all saves in this browser. The parts that need other people have a lock on them." }
 } as const;
 export type LockedId = keyof typeof LOCKED;
@@ -63,13 +63,13 @@ export function LockedNote() {
         {open === "demo" ? (
           // (the demo itself: what hosting it adds, as the top bar's Demo note says)
           <>
-            <p className="mt-3 text-[13.5px] leading-snug text-zinc-300">There's no server behind the demo to keep accounts or share anything. Host HyzerLab yourself and you also get:</p>
+            <p className="mt-3 text-[13.5px] leading-snug text-zinc-300">There's no server behind the demo to keep accounts or share anything. Host GlideLine Studio yourself and you also get:</p>
             <ul className="mt-1.5 space-y-1 text-[13.5px] leading-snug text-zinc-300 list-disc pl-5">{DEMO_ADDS.map(a => <li key={a}>{a}</li>)}</ul>
           </>
         ) : (
           <>
             <p className="mt-3 text-[13.5px] leading-snug text-zinc-300">This is the public demo. It all runs in your browser, which is fine for trying it out, but there's no server behind it to hold accounts or share anything with anyone.</p>
-            <p className="mt-2 text-[13.5px] leading-snug text-zinc-300">Run HyzerLab on your own server and this works. It's free and open source, and the README walks you through the setup.</p>
+            <p className="mt-2 text-[13.5px] leading-snug text-zinc-300">Run GlideLine Studio on your own server and this works. It's free and open source, and the README walks you through the setup.</p>
           </>
         )}
         <div className="mt-4 flex gap-2 justify-end">
@@ -128,7 +128,7 @@ export function DemoNote() {
         <div className="absolute right-0 top-full mt-1 w-[340px] glass-solid rounded-xl shadow-xl shadow-black/40 ring-1 ring-white/10 p-4 z-50 text-sm" role="dialog" aria-label="The demo">
           <p className="text-zinc-100 font-semibold">This is the public demo</p>
           <p className="text-zinc-300 mt-1">You can design a full course here: bring in a park, lay out the holes, and make the maps and tee signs. It all saves in this browser.</p>
-          <p className="text-zinc-300 mt-2">The parts that need other people have a lock on them. There's no server behind the demo to keep accounts or share anything. Host HyzerLab yourself and you also get:</p>
+          <p className="text-zinc-300 mt-2">The parts that need other people have a lock on them. There's no server behind the demo to keep accounts or share anything. Host GlideLine Studio yourself and you also get:</p>
           <ul className="mt-1.5 space-y-1 text-zinc-300 list-disc pl-5">{DEMO_ADDS.map(a => <li key={a}>{a}</li>)}</ul>
           <a className="mt-3 inline-flex items-center gap-1.5 text-orange-300 hover:text-orange-200" href={REPO} target="_blank" rel="noreferrer">How to host it <ExternalLink size={13} /></a>
         </div>

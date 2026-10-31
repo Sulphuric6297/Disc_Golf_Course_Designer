@@ -311,7 +311,7 @@ export function PublicSite({ children }: { children: ReactNode }) {
       </div>
     </section>
   );
-  const footer = <footer className="mt-6 mb-1 flex items-center gap-2 text-[11.5px] text-zinc-500"><Logo size={16} /> Made with HyzerLab · {new Date(site.publishedAt).toLocaleDateString()}</footer>;
+  const footer = <footer className="mt-6 mb-1 flex items-center gap-2 text-[11.5px] text-zinc-500"><Logo size={16} /> Made with GlideLine Studio · {new Date(site.publishedAt).toLocaleDateString()}</footer>;
   const head = (
     <div className="flex items-start gap-2.5">
       <div className="flex-1 min-w-0">
@@ -583,7 +583,7 @@ const Plain = ({ children }: { children: ReactNode }) => (
   <div className="relative min-h-[100dvh] bg-zinc-950 flex items-center justify-center p-4 isolate">
     <Woods />
     <div className="w-full max-w-sm glass rounded-[24px] p-6">
-      <div className="flex items-center gap-2 mb-4"><Logo size={28} /><span className="font-bold text-zinc-50">HyzerLab</span></div>
+      <div className="flex items-center gap-2 mb-4"><Logo size={28} /><span className="font-bold text-zinc-50">GlideLine Studio</span></div>
       {children}
     </div>
   </div>

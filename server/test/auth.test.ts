@@ -18,7 +18,7 @@ test("first run: the setup code and a password; 2FA is each person's choice", as
     // (signed in already; two-factor sign-in turned on when they want it)
     assert.equal((await c.get("/api/admin/users")).status, 200);
     const { body: e } = await c.post("/api/mfa/enroll");
-    assert.match(e.uri, /^otpauth:\/\/totp\/HyzerLab:admin\?secret=/);
+    assert.match(e.uri, /^otpauth:\/\/totp\/GlideLine%20Studio:admin\?secret=/);
     assert.match(e.qr, /^<svg/);
     assert.equal((await c.post("/api/mfa/enroll/confirm", { code: "000000" })).status, 400);
     const done = await c.post("/api/mfa/enroll/confirm", { code: codeFor(e.secret) });

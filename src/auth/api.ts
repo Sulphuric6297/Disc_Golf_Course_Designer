@@ -1,4 +1,4 @@
-// Talking to the HyzerLab server, when the app is built for one (VITE_SERVER=1). Without it the
+// Talking to the GlideLine Studio server, when the app is built for one (VITE_SERVER=1). Without it the
 // app is the browser-only demo and none of this runs.
 import { create } from "zustand";
 

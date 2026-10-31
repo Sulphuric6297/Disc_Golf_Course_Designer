@@ -1,4 +1,4 @@
-// A course from someone else (on a HyzerLab server) is cleaned before it's shown, because parts
+// A course from someone else (on a GlideLine Studio server) is cleaned before it's shown, because parts
 // of the map are drawn from markup built out of the course's values: pictures must be images
 // (data URLs), and only free text (names, labels, notes) may hold < > " or `.
 

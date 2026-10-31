@@ -64,7 +64,7 @@ export function checkTotp(secret: Buffer, code: string, lastStep: number, now = 
   return null;
 }
 
-export const totpUri = (secret: Buffer, account: string, issuer = "HyzerLab") =>
+export const totpUri = (secret: Buffer, account: string, issuer = "GlideLine Studio") =>
   `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${base32(secret)}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=${TOTP_STEP}`;
 
 // --- Backup codes: ten of them, 10 characters each (50 bits), shown as xxxxx-xxxxx

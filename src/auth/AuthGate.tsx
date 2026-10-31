@@ -1,4 +1,4 @@
-// In front of the app on a HyzerLab server: first-run setup, invite and reset links, signing in,
+// In front of the app on a GlideLine Studio server: first-run setup, invite and reset links, signing in,
 // and 2FA (set up, or a code) before anything else. Signed in, the app and the account dialogs.
 import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 import { api, useAuth } from "./api";

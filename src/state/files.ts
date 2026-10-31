@@ -1,5 +1,5 @@
 // Keeping courses: the autosave, the library of earlier courses, and course files. On a
-// HyzerLab server (SERVER) the courses are kept there instead (src/auth/courses.ts).
+// GlideLine Studio server (SERVER) the courses are kept there instead (src/auth/courses.ts).
 import { generateId } from "../constants";
 import { SERVER } from "../auth/api";
 import { SITE_TOKEN } from "../auth/PublicSite";

@@ -543,6 +543,9 @@ export class CourseView {
       this.software = !asIf && /swiftshader|llvmpipe|software|basic render/i.test(name);
       // Without a graphics card, or on a phone, fewer trees in full detail
       if (this.software) forestDetail.nearFt = 70;
+      // (and without one, shadows filtered as before: blurring the shadow picture in software after
+      // every change slowed everything else down)
+      if (this.software) this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       else if (this.mobile) forestDetail.nearFt = 150;
     }
 

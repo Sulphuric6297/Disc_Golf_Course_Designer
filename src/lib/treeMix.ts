@@ -4,7 +4,7 @@
 // alike. And a recommendation for the course's region: the trees the USDA Forest Service's forest
 // survey (Forest Inventory and Analysis: live trees an inch thick and up on forest land, each
 // state's latest survey) counts there, added up by region, every species grouped into the looks
-// HyzerLab's tree engine can grow (hickory and walnut as ash, fir and hemlock as spruce, juniper as
+// GlideLine Studio's tree engine can grow (hickory and walnut as ash, fir and hemlock as spruce, juniper as
 // cedar…). The table (data/tree-regions.json) is built once from the survey's own web service and
 // the Census Bureau's county centers (scripts/tree-mix.py); a course finds its state, and so its
 // region, by the nearest county center, offline.

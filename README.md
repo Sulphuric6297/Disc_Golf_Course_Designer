@@ -1,6 +1,8 @@
-# HyzerLab
+# GlideLine Studio
 
-HyzerLab is a disc golf course designer. It runs in your browser, and it was built 100% using AI. I'm not a coder. I'm an IT provider nerd. I wanted this to exist, and AI let me make it happen. I'm pretty happy about that.
+GlideLine Studio is a disc golf course designer. It runs in your browser, and it was built 100% using AI. I'm not a coder. I'm an IT provider nerd. I wanted this to exist, and AI let me make it happen. I'm pretty happy about that.
+
+Try the demo at [demo.glidelinestudio.com](https://demo.glidelinestudio.com). It needs no account, and your courses stay in your browser.
 
 It's the old trope. I had a problem, couldn't find software that fit the need, so I built it myself. Apparently everyone has this origin story now. This one is also mine.
 

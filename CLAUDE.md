@@ -1,10 +1,10 @@
-# HyzerLab: working rules
+# GlideLine Studio: working rules
 
 A React + Vite + TypeScript app in two builds from one codebase:
 
 - **The demo** (the default build), a static site on GitHub Pages: no accounts, no server and no
   API keys; courses are kept in the browser.
-- **For a HyzerLab server** (`VITE_SERVER=1`): the same app behind sign-in, served by the
+- **For a GlideLine Studio server** (`VITE_SERVER=1`): the same app behind sign-in, served by the
   self-hosted server in `server/` (accounts, invites, 2FA, courses kept on the server and shared with roles).
 
 It is built on the map engine of the Security Camera Planner: the same site import (satellite
