@@ -53,7 +53,7 @@ function TopicCard({ t, onShow, lit }: { t: Topic; onShow: (t: Topic) => void; l
       <h3 className="text-[15px] font-semibold text-zinc-50">{t.title}</h3>
       {t.server && !SERVER && (
         <p className="mt-1.5 flex items-start gap-1.5 rounded-[12px] bg-sky-500/10 px-2.5 py-1.5 text-[12.5px] leading-snug text-sky-100" data-testid="help-locked">
-          <Lock size={13} className="mt-0.5 shrink-0" />This one's locked in the public demo. Host HyzerLab yourself and it works.
+          <Lock size={13} className="mt-0.5 shrink-0" />This one's locked in the public demo. Host GlideLine Studio yourself and it works.
         </p>
       )}
       {t.body.split("\n\n").map((p, i) => <p key={i} className="text-[13.5px] leading-relaxed text-zinc-300 mt-1.5">{p}</p>)}

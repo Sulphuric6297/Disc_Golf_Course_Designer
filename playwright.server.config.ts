@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// The app built for a HyzerLab server (VITE_SERVER=1) with the server itself, on an emptied test
+// The app built for a GlideLine Studio server (VITE_SERVER=1) with the server itself, on an emptied test
 // database: sign-in, 2FA, invites and the account dialogs. Needs Postgres (server/compose.dev.yml,
 // or the CI service) with a database named hyzerlab_e2e.
 const db = process.env.E2E_DATABASE_URL ?? "postgres://hyzerlab:hyzerlab@127.0.0.1:5432/hyzerlab_e2e";

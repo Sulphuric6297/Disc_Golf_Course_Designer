@@ -49,7 +49,7 @@ export const Screen = ({ title, children }: { title: string; children: ReactNode
       <div className="flex items-center gap-3 mb-5">
         <Logo />
         <div>
-          <div className="text-zinc-50 font-bold text-lg leading-tight">HyzerLab</div>
+          <div className="text-zinc-50 font-bold text-lg leading-tight">GlideLine Studio</div>
           <h1 className="text-zinc-400 text-sm">{title}</h1>
         </div>
       </div>
@@ -88,8 +88,8 @@ export function BackupCodes({ codes }: { codes: string[] }) {
   const text = codes.join("\n");
   const download = () => {
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([`HyzerLab backup codes\n\n${text}\n`], { type: "text/plain" }));
-    a.download = "hyzerlab-backup-codes.txt";
+    a.href = URL.createObjectURL(new Blob([`GlideLine Studio backup codes\n\n${text}\n`], { type: "text/plain" }));
+    a.download = "glideline-studio-backup-codes.txt";
     a.click();
     URL.revokeObjectURL(a.href);
   };

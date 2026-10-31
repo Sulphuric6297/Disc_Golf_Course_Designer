@@ -231,14 +231,14 @@ Later requests (in the order asked)
 - [ ] **A stretch of a road (or any line) can be taken out**, marked with two clicks like an OB
   stretch.
 
-## Your own server (HyzerLab)
+## Your own server (GlideLine Studio)
 
 The owner's requests for the self-hosted version, in the order they came. Checked once seen
 working in the browser.
 
 **Open source, and hosted**
 - [x] **Stays open source, with no personal details in it** (AGPL-3.0).
-- [x] **Named HyzerLab.**
+- [x] **Named GlideLine Studio** (first GlideLine Studio).
 - [ ] **Runs on the owner's own server, not only GitHub Pages**: a ready-to-run container
   (app and server together), `docker compose`, versioned images, backups, a production address.
   (A development server runs now.)

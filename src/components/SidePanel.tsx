@@ -433,7 +433,7 @@ function HoleRow({ s, check, slim = false, roomy = false }: { s: HoleStats; chec
   const what = s.complete ? `${fmtDist(s.length, u)} · Par ${s.par}` : s.teeId ? "Needs a basket" : "Needs a tee";
   const tees = holeTees(doc, s.holeId);
   const shared = holeBaskets(doc, s.holeId).some(b => b.holeId !== s.holeId || !!b.alsoHoles?.length);
-  // (its open comments, on a HyzerLab server: blue when one is new for you)
+  // (its open comments, on a GlideLine Studio server: blue when one is new for you)
   const threads = useComments(c => c.threads);
   const talk = SERVER ? threads.filter(t => !t.resolvedAt && holeOf(t, doc) === s.holeId) : [];
   const fresh = talk.some(t => t.unread);

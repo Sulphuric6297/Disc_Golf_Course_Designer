@@ -305,7 +305,7 @@ export function Home() {
       <header className="glass sticky top-2.5 z-10 mx-2.5 rounded-[22px]">
         <div className="max-w-6xl mx-auto h-[52px] px-3 flex items-center gap-3">
           <Logo size={30} />
-          <span className="font-bold text-zinc-50 text-[17px] hidden sm:inline">HyzerLab</span>
+          <span className="font-bold text-zinc-50 text-[17px] hidden sm:inline">GlideLine Studio</span>
           <div className="flex-1" />
           {openId && (
             <button className="inline-flex items-center gap-1.5 px-3 py-1.5 touch:min-h-[44px] rounded-full text-sm text-zinc-200 hover:bg-white/[0.08] max-w-[260px] min-w-0" onClick={() => showHome(false)} aria-label={`Back to ${openName}`} data-testid="back-to-course">

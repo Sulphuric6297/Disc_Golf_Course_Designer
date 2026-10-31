@@ -22,7 +22,7 @@ const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element not found");
 
 // (the editor's code still coming: said so, not a blank page)
-const app = <Suspense fallback={<LoadingScreen label="Opening HyzerLab…" />}><App /></Suspense>;
+const app = <Suspense fallback={<LoadingScreen label="Opening GlideLine Studio…" />}><App /></Suspense>;
 createRoot(rootElement).render(
   <React.StrictMode>
     <ErrorBoundary>

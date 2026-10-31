@@ -17,7 +17,7 @@ import { itemTitle } from "./Inspector";
 /** One row of the menu (`icon`: on a phone's sheet). */
 export type ItemAction = { label: string; run: () => void; testid?: string; icon?: LucideIcon; danger?: boolean };
 
-/** A comment's row (on a HyzerLab server, a course saved there): on this spot, or on this thing. */
+/** A comment's row (on a GlideLine Studio server, a course saved there): on this spot, or on this thing. */
 const commentRow = (label: string, p: P | null, on?: { kind: "hole" | "item"; id: string; x?: number; y?: number }): ItemAction[] =>
   SERVER && useServerCourse.getState().id && p ? [{ label, icon: MessageSquarePlus, run: () => startComment({ p, on }), testid: "menu-comment" }] : [];
 

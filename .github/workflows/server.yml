@@ -1,6 +1,6 @@
 name: Server
 
-# The HyzerLab server's tests, and signing in through the app built for it. Runs once per push
+# The GlideLine Studio server's tests, and signing in through the app built for it. Runs once per push
 # that touches them (a pull request shows that run; one from a fork runs its own).
 on:
   push:

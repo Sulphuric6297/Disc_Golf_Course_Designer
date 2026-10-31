@@ -1,4 +1,4 @@
-# HyzerLab: the app built for a server (sign-in) and the server, in one image.
+# GlideLine Studio: the app built for a server (sign-in) and the server, in one image.
 #   docker compose up -d   (see docker-compose.yml and .env.example)
 
 FROM node:22-bookworm-slim AS web

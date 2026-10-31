@@ -1,6 +1,6 @@
 // A disc golf course's tees and baskets from a GPS file: GPX (waypoints, routes and tracks), KML or
 // KMZ (placemarks in folders), GeoJSON (OpenStreetMap's disc_golf tags, as Overpass Turbo exports,
-// or HyzerLab's own) and CSV (a spreadsheet's lat and lon columns). Each point is worked out as a
+// or GlideLine Studio's own) and CSV (a spreadsheet's lat and lon columns). Each point is worked out as a
 // tee or a basket of a hole from its name, tags or folder ("Hole 3 Tee", "3T", "T3", "Basket 3",
 // "3A", "Pin 3 long"...), a hole line's ends are its tee and basket, and every pin position and tee
 // a hole has is kept.
@@ -92,7 +92,7 @@ export const readTags = (props: Record<string, unknown>): ReturnType<typeof read
   else if (dg === "hole") out.line = true;
   const ref = first("ref", "ref_hole");
   if (ref) { const r = readName(ref); if (r.hole !== undefined) out.hole = r.hole; if (r.tag) out.tag = r.tag; }
-  // A spreadsheet's or HyzerLab's own columns
+  // A spreadsheet's or GlideLine Studio's own columns
   const kind = first("kind", "type", "role", "feature", "feature_type", "point_type", "category", "what", "object", "target_type", "item");
   if (kind && !dg) {
     const k = readName(kind);
@@ -302,7 +302,7 @@ export const readCourseFile = async (file: { name: string; text: () => Promise<s
     else if (ext === "kml" || /<kml[\s>]/i.test(t.slice(0, 500))) out = readKml(text);
     else if (ext === "geojson" || ext === "json" || t.startsWith("{")) out = readGeoJson(text);
     else if (ext === "csv" || ext === "txt" || ext === "tsv") out = readCsv(text);
-    else throw new Error("HyzerLab reads GPX, KML, KMZ, GeoJSON and CSV files.");
+    else throw new Error("GlideLine Studio reads GPX, KML, KMZ, GeoJSON and CSV files.");
   }
   if (!out.points.length && !out.lines.length) throw new Error("No points or lines in this file.");
   return settle(out);

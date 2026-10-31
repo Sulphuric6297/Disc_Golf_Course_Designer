@@ -1,4 +1,4 @@
-// The top bar's right side on a HyzerLab server (nothing in the browser-only demo): one chip for
+// The top bar's right side on a GlideLine Studio server (nothing in the browser-only demo): one chip for
 // the open course (Live, View only, Not saved) whose menu holds its history, with the others in it
 // beside it; then comments, share, notices and your account. The same choices for the phone's app
 // menu.

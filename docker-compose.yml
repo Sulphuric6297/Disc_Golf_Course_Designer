@@ -1,4 +1,4 @@
-# HyzerLab on your own server: the app, its database, and a backup of the database every night.
+# GlideLine Studio on your own server: the app, its database, and a backup of the database every night.
 #   cp .env.example .env    # then fill it in
 #   docker compose up -d
 #   docker compose logs app # the setup code for the first account (the admin)

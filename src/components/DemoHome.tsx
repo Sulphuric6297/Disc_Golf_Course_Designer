@@ -1,4 +1,4 @@
-// The public demo's first page, as a HyzerLab server's Courses page is: the courses kept in this
+// The public demo's first page, as a GlideLine Studio server's Courses page is: the courses kept in this
 // browser to open with one click (the example course first, for anyone new), Open a course file
 // and New course, and beside them a walk around the example, Getting started, the help topics that
 // matter most and a tip. The editor loads behind it. The logo (or Courses in a phone's menu) comes
@@ -228,7 +228,7 @@ export function DemoHome() {
       <header className="glass sticky top-2.5 z-10 mx-2.5 rounded-[22px]">
         <div className="max-w-6xl mx-auto h-[52px] px-3 flex items-center gap-3">
           <Logo size={30} />
-          <span className="font-bold text-zinc-50 text-[17px]">HyzerLab</span>
+          <span className="font-bold text-zinc-50 text-[17px]">GlideLine Studio</span>
           <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold bg-sky-500/15 text-sky-200 border border-sky-500/30">Demo</span>
           <div className="flex-1" />
           <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm text-zinc-200 hover:bg-white/[0.08] max-w-[260px]" onClick={close} data-testid="demo-home-back">
@@ -312,7 +312,7 @@ export function DemoHome() {
             <TipCard tip={tip} onMore={topic => setHelp({ topic })} />
             <div className="glass rounded-[22px] p-4" data-testid="home-about">
               <div className="text-[13px] font-bold text-zinc-50">This is the public demo</div>
-              <p className="text-[12.5px] text-zinc-400 mt-1.5 leading-snug">Hosting HyzerLab yourself adds:</p>
+              <p className="text-[12.5px] text-zinc-400 mt-1.5 leading-snug">Hosting GlideLine Studio yourself adds:</p>
               <ul className="mt-1 space-y-0.5 text-[12.5px] text-zinc-300 list-disc pl-4">{DEMO_ADDS.map(a => <li key={a}>{a}</li>)}</ul>
               <a className="mt-2 inline-block text-[12.5px] font-semibold text-orange-300 hover:text-orange-200" href={REPO} target="_blank" rel="noreferrer">How to host it ›</a>
             </div>
