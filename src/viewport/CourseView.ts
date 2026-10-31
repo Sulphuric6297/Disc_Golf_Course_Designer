@@ -4155,7 +4155,7 @@ export class CourseView {
       let mid = [0.5, 0.35, 0.65, 0.25, 0.75].map(f => pointAlong(s.line, s.length * f).point).find(q => marks.every(m => dist(m.p, q) > m.r));
       // (no room on the line, zoomed out: halfway, beside the fairway, clear of its squares)
       if (!mid && picked) {
-        const half = pointAlong(s.line, s.length / 2), off = (picked.fairway ? picked.fairwayWidth / 2 : 0) + chipR * 0.45;
+        const half = pointAlong(s.line, s.length / 2), off = (picked.fairway ? picked.fairwayWidth / 2 : 0) + chipR * 0.9;
         mid = { x: half.point.x - Math.sin(half.angle) * off, y: half.point.y + Math.cos(half.angle) * off };
       }
       mid ??= pointAlong(s.line, s.length / 2).point;
