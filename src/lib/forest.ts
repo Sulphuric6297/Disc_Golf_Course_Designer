@@ -1074,8 +1074,10 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const mixPals = treeMixOf(s).map(c => palette(c, woodsFactors, 6, 0.9));
   // (pines keep their needles: deep blue-green whatever the season)
   const pinePal = palette("#2c4636", woodsFactors, 0, 0.9);
-  const fair = palette(s.fairway, [0.56, 0.7, 0.84, 1, 1.14, 1.28], 4);
-  const lawn = palette(s.rough, [0.6, 0.76, 0.9, 1.04, 1.18], 3);
+  // (under the 3D view, a little darker: its sun is brighter than the printed map's paper)
+  const dim = (f: number[]) => (opts.under ? f.map(v => v * 0.88) : f);
+  const fair = palette(s.fairway, dim([0.56, 0.7, 0.84, 1, 1.14, 1.28]), 4);
+  const lawn = palette(s.rough, dim([0.6, 0.76, 0.9, 1.04, 1.18]), 3);
   // Tall grass: lighter and straw yellow
   const tallPal = palette(tallGrassOf(s), [0.62, 0.78, 0.92, 1.06, 1.2, 1.34], 6, 0.9);
   // (shaded green, never black: the gaps between treetops are where it shows)
@@ -1084,7 +1086,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const water = palette(s.water, [0.42, 0.58, 0.76, 0.94, 1.12, 1.34, 1.62], -14);
   // Worn dirt: an olive tan, lighter than the shade around it (it reads as open ground)
   const dirtPal = palette(s.path, [0.86, 1.03, 1.19, 1.35, 1.54], -8, 0.85);
-  const road = palette("#969a9d", [0.66, 0.8, 0.92, 1.02, 1.1], 0);
+  // (under the 3D view, the 3D look's roads and parking)
+  const road = palette(opts.under ? s.look3d?.paving ?? "#969a9d" : "#969a9d", [0.66, 0.8, 0.92, 1.02, 1.1], 0);
   // (concrete: lighter and warmer than the asphalt roads, so a walkway reads apart from a road)
   const walkPal = palette("#dcdad4", [0.8, 0.9, 0.97, 1.02, 1.06], 0, 0.6);
   const TIERS = ["dirt", "gravel", "walkway", "road"] as const;

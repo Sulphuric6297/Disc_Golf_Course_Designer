@@ -25,7 +25,7 @@ import type { MapStyle, P } from "../types";
 import { SceneButton } from "./ScenePanel";
 import { LocateButton, MyLocationDot } from "./MyLocation";
 import { canShowLocation } from "../state/gps";
-import { COLOR_PICKS, conifersOf, landscape3dOf, landscapeOf } from "../lib/landscapes";
+import { conifersOf, landscape3dOf, landscapeOf, style3dOf } from "../lib/landscapes";
 import { paintedDetail, usePaintedGround } from "../state/paintedGround";
 import { getView, setLiveView } from "../state/view";
 import { cameraFrom } from "./FlyoverSettings";
@@ -165,19 +165,10 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const natural = topDown ? landscapeOf(doc.style) : landscape3dOf(doc.style);
   const viewStyle = useMemo((): MapStyle => {
     // (the trees' kinds, pines or leafy, as in 3D all the same: only their colors are the map's)
-    if (topDown) return { ...doc.style, look3d: undefined, conifers: conifersOf({ landscape: doc.style.look3d?.landscape ?? doc.style.landscape, conifers: doc.style.look3d?.landscape ? undefined : doc.style.conifers }) };
-    const leaves = { ...(l3?.trees ? { trees: l3.trees } : {}), ...(l3?.treeMix ? { treeMix: l3.treeMix } : {}) };
-    // (the painted map in its own colors, and the 3D view's trees on it)
-    if (paintedOn) return { ...doc.style, ...leaves };
-    const own = Object.fromEntries((["fairway", "rough", "path", "water"] as const).filter(k => l3?.[k]).map(k => [k, l3![k]]));
-    return {
-      ...doc.style,
-      // (its own landscape: that landscape's leaf mix and pines, not the map's)
-      ...(l3?.landscape ? { landscape: l3.landscape, treeMix: undefined, conifers: undefined } : {}),
-      ...natural.colors, ...leaves, ...own,
-      look3d: { ...l3, paving: l3?.paving ?? COLOR_PICKS.paving[0].color }
-    };
-  }, [topDown, doc.style, l3, natural, paintedOn]);
+    if (topDown) return { ...doc.style, look3d: undefined, conifers: conifersOf(style3dOf(doc.style)) };
+    // (the painted ground, from a tee and in flyovers, is painted in the 3D look's colors too)
+    return style3dOf(doc.style);
+  }, [topDown, doc.style]);
   const viewDoc: ViewDoc = useMemo(() => ({
     course: { ...doc, style: viewStyle },
     stats,

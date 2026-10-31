@@ -106,6 +106,21 @@ export const COLOR_PICKS = {
 /** The 3D view's landscape: its own (View panel, 3D look), or to start, the course's. */
 export const landscape3dOf = (s: Pick<MapStyle, "landscape" | "look3d">): Landscape => landscapeOf({ landscape: s.look3d?.landscape ?? s.landscape });
 
+/** The course's style as the 3D view shows it (and paints its ground, from a tee and in flyovers):
+ * the 3D landscape's natural colors, any picked in the 3D look over them, that landscape's own leaf
+ * mix and pines when it has its own, and the roads' and parking's color (darker asphalt to start). */
+export const style3dOf = (s: MapStyle): MapStyle => {
+  const l3 = s.look3d;
+  const own = Object.fromEntries((["fairway", "rough", "path", "water", "trees", "treeMix"] as const).filter(k => l3?.[k] !== undefined).map(k => [k, l3![k]]));
+  return {
+    ...s,
+    ...(l3?.landscape ? { landscape: l3.landscape, treeMix: undefined, conifers: undefined } : {}),
+    ...landscape3dOf(s).colors,
+    ...own,
+    look3d: { ...l3, paving: l3?.paving ?? COLOR_PICKS.paving[0].color }
+  };
+};
+
 /** The color of tall grass on the map: as set, or the grass's own, lighter and straw yellow. */
 export const tallGrassOf = (s: Pick<MapStyle, "rough" | "tallGrass">) => {
   if (s.tallGrass) return s.tallGrass;

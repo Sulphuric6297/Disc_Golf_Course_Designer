@@ -7,6 +7,7 @@ import { canopyFor, detailArea, forestCanvasAsync, paintedFrom, paintsFromPhoto,
 import { courseStats, holeStats } from "../lib/holeStats";
 import type { CourseDoc } from "../types";
 import { useCourse } from "./course";
+import { style3dOf } from "../lib/landscapes";
 import { idbDelete, idbGet, idbSet } from "../lib/storage";
 import { spareMoment } from "./pace";
 
@@ -84,6 +85,16 @@ const keyOf = (doc: CourseDoc) =>
     paintedFrom(doc)
   ]);
 
+/** The course with its 3D look's colors (the painted ground is for the 3D view only), the same
+ * copy each time for the same course. */
+const docs3d = new WeakMap<CourseDoc, CourseDoc>(), made3d = new WeakSet<CourseDoc>();
+const as3d = (doc: CourseDoc): CourseDoc => {
+  if (made3d.has(doc)) return doc;
+  let d = docs3d.get(doc);
+  if (!d) { d = { ...doc, style: style3dOf(doc.style) }; docs3d.set(doc, d); made3d.add(d); }
+  return d;
+};
+
 const made = new Map<string, Promise<PaintedGround | null>>();
 /** The latest paintings (blob URLs), oldest first; older ones are let go. */
 const kept: { key: string; url: string }[] = [];
@@ -91,7 +102,8 @@ let under: { key: string; stop: AbortController } | null = null;
 
 /** The painted ground of a course, or null when it can't be painted; `ahead`: not wanted yet,
  * painted gently (one wanted later speeds up). */
-export const paintedGround = (doc: CourseDoc, ahead = false): Promise<PaintedGround | null> => {
+export const paintedGround = (course: CourseDoc, ahead = false): Promise<PaintedGround | null> => {
+  const doc = as3d(course);
   const key = paintKey(doc);
   if (!ahead) wanted.add(key);
   const hit = made.get(key);
@@ -150,7 +162,8 @@ let detailUnder: { key: string; stop: AbortController } | null = null;
 
 /** The sharp painting round a hole (`maxPx` its longest side), or null when the whole site's
  * painting is already about as sharp there. Painted once per version of the course. */
-export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Promise<PaintedDetail | null> => {
+export const paintedDetail = (course: CourseDoc, holeId: string, maxPx = 3072): Promise<PaintedDetail | null> => {
+  const doc = as3d(course);
   const hole = doc.holes.find(h => h.id === holeId);
   if (!hole) return Promise.resolve(null);
   const st = holeStats(doc, hole);
@@ -210,7 +223,7 @@ export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Pro
  * whether it is of the course as it is now (the last painting stands in while the newest
  * version paints: a flyover waits for the new one). */
 export const usePaintedGround = (active: boolean, ahead = false): [PaintedGround | null, boolean] => {
-  const doc = useCourse(s => s.doc);
+  const doc = as3d(useCourse(s => s.doc));
   const [got, setGot] = useState<{ key: string; p: PaintedGround } | null>(null);
   const [trees, bump] = useState(0);
   useEffect(() => onStanding(() => bump(n => n + 1)), []);
