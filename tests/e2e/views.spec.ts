@@ -635,8 +635,10 @@ test("the camera flown by hand: the keys move it, a drag turns it, and each keyf
   await page.locator('[data-handle="flykey"][data-index="1"]').dblclick();
   await expect(page.getByTestId("camera-hud")).toBeVisible();
   await expect(page.getByTestId("cam-status")).toContainText("Keyframe 2 of 2");
+  // (Done: the camera put away, standing on the tee again)
   await page.getByTestId("cam-done").click();
   await expect(page.getByTestId("camera-hud")).toHaveCount(0);
+  await expect(page.getByTestId("tee-view-hud")).toBeVisible();
 });
 
 plain("the flight by itself: a low glide from behind the tee, under a crown over the line, round its trunk, over a bush, never bobbing (pure logic)", () => {

@@ -935,8 +935,12 @@ test.describe("phone", () => {
     expect(add.height).toBeGreaterThanOrEqual(44);
     await page.getByTestId("cam-add").tap();
     await expect.poll(async () => ((await course(page)).holes[0].flyKeys ?? []).length).toBe(1);
+    // (Done puts the camera away, standing on the tee again; Back goes to the map)
     await page.getByTestId("cam-done").tap();
     await expect(page.getByTestId("camera-hud")).toHaveCount(0);
+    await expect(page.getByTestId("tee-view-hud")).toBeVisible();
+    expect((await editorState(page)).teeView).not.toBeNull();
+    await page.getByTestId("hud-close").tap();
     await expect(page.getByTestId("bottom-nav")).toBeVisible();
   });
 

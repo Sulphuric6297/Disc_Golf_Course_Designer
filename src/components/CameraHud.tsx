@@ -225,7 +225,7 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
       const k = e.key.toLowerCase();
       fast = e.shiftKey;
       const busy = useEditor.getState().flyover;
-      if (k === "escape") { e.preventDefault(); e.stopPropagation(); if (busy) useEditor.getState().set({ flyover: false }); else useEditor.getState().set({ teeView: null, flyCam: false, flyover: false }); return; }
+      if (k === "escape") { e.preventDefault(); e.stopPropagation(); if (busy) useEditor.getState().set({ flyover: false }); else useEditor.getState().set({ flyCam: false, flyover: false }); return; }
       if (busy) return;
       if (MOVES[k]) { held.add(k); apply(); e.preventDefault(); e.stopPropagation(); return; }
       if (k === "shift") { apply(); return; }
@@ -253,7 +253,8 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
   }, []);
   if (!hole) return null;
   const u = doc.units;
-  const done = () => ed.set({ teeView: null, flyCam: false, flyover: false });
+  // (the camera put away, standing on the hole's tee again: Back from there goes to the map)
+  const done = () => ed.set({ flyCam: false, flyover: false, teeStand: null });
   const play = () => ed.set({ flyover: true });
   const setLensTo = (v: number) => setLens(getView()?.freeLens(v) ?? v);
   const go = (i: number) => { getView()?.freeGo(keys[i]); ed.set({ flyKey: i }); scrubbed = null; };
@@ -352,7 +353,7 @@ export function CameraHud({ compact = false }: { compact?: boolean }) {
       <div className="absolute top-4 left-4 pointer-events-auto glass rounded-full pl-4 pr-1.5 py-1.5 text-white shadow-2xl border border-white/10 flex items-center gap-3">
         <div className="text-[14px] font-semibold flex items-center gap-1.5">{title}</div>
         <div className="text-[12.5px] text-zinc-300 tabular-nums" data-testid="cam-readout">{readout}</div>
-        <button className={pill} onClick={done} title="Back to the map (Esc)" data-testid="cam-done"><X size={15} /> Done</button>
+        <button className={pill} onClick={done} title="Back to the tee view (Esc)" data-testid="cam-done"><X size={15} /> Done</button>
       </div>
       <div className={`absolute ${flight ? "bottom-[176px]" : "bottom-[136px]"} left-1/2 -translate-x-1/2 text-[12px] text-white/85 bg-black/45 rounded-lg px-2.5 py-1 whitespace-nowrap`}>W A S D or the arrows to move · Space or E up, Q down · Shift for faster · drag to look · scroll for the lens</div>
       <div className="absolute bottom-5 left-1/2 -translate-x-1/2 w-[min(760px,calc(100%-32px))] pointer-events-auto glass rounded-[24px] p-2 border border-white/10 shadow-2xl">
