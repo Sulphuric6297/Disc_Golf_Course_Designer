@@ -568,14 +568,20 @@ function loadKept() {
 // (written when the page is idle, one at a time: copying a megabyte or two into the browser's
 // store, a few dozen times over, isn't done while the course is still being made)
 const toKeep: Kept[] = [];
-const idle = (fn: () => void) => typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 20_000 }) : setTimeout(fn, 2000);
+// (the course's own saving goes first: the trees' writes start well after the page opens, one at
+// most every 1.5 s, in the browser's cheaper write mode; a tree lost to a closed page grows again)
+const opened = typeof performance !== "undefined" ? performance.now() : 0;
+const idle = (fn: () => void) => {
+  const wait = Math.max(1500, 10_000 - (performance.now() - opened));
+  setTimeout(() => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 20_000 }) : fn()), wait);
+};
 const keepNext = () => {
   const x = toKeep.shift();
   if (!x) return;
   void keptDb().then(db => {
     try {
       if (!db) return;
-      const tx = db.transaction("trees", "readwrite");
+      const tx = db.transaction("trees", "readwrite", { durability: "relaxed" });
       tx.objectStore("trees").put(x);
       tx.oncomplete = tx.onerror = () => { if (toKeep.length) idle(keepNext); };
     } catch { /* (full, or not allowed: grown next time) */ }

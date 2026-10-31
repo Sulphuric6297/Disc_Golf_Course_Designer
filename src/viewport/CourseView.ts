@@ -3774,9 +3774,10 @@ export class CourseView {
     u.floorMap.value?.dispose();
     u.floorMap.value = null;
     u.floorOn.value = 0;
-    if (!woods.length && !standing.length) return;
+    // (only where the ground's scans can show: without a graphics card they don't)
+    if ((!woods.length && !standing.length) || this.software) return;
     const { width, height } = doc.canvas;
-    const k = Math.min(0.5 * (doc.unitsPerFoot ? 1 / doc.unitsPerFoot : 1), 2048 / Math.max(width, height, 1));
+    const k = Math.min(0.5 * (doc.unitsPerFoot ? 1 / doc.unitsPerFoot : 1), 1024 / Math.max(width, height, 1));
     const W = Math.max(1, Math.round(width * k)), H = Math.max(1, Math.round(height * k));
     const c = document.createElement("canvas");
     c.width = W; c.height = H;
@@ -3797,13 +3798,8 @@ export class CourseView {
       g.arc(t[0], t[1], Math.max(3, t[3] * 0.9), 0, Math.PI * 2);
       g.fill();
     }
-    // (soft at the edges, as litter thins out from under a crown)
-    const soft = document.createElement("canvas");
-    soft.width = W; soft.height = H;
-    const sg = soft.getContext("2d")!;
-    sg.filter = "blur(2px)";
-    sg.drawImage(c, 0, 0);
-    const tex = new THREE.CanvasTexture(soft);
+    // (soft at the edges, as litter thins out from under a crown: the texture's own smoothing)
+    const tex = new THREE.CanvasTexture(c);
     tex.flipY = false;
     tex.colorSpace = THREE.NoColorSpace;
     tex.generateMipmaps = false;

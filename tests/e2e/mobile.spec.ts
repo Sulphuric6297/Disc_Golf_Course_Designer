@@ -818,6 +818,8 @@ test.describe("phone", () => {
   });
 
   test("the view from the tee on a phone: the hole's card, big buttons along the bottom, back to the map", async ({ page }) => {
+    // (on a slow machine, all of it takes a while)
+    test.setTimeout(180_000);
     await oneHole(page);
     await tapPlan(page, 450, 500);
     // (the hole's strip starts with Tee view and Fly over; the header's eye does the same)

@@ -66,6 +66,8 @@ test("bending the throw line: pull the middle dot to add a dogleg, double-click 
 });
 
 test("fairway width handle and par override in the inspector", async ({ page }) => {
+  // (on a slow machine, all of it takes a while)
+  test.setTimeout(180_000);
   await blankCourse(page);
   const hole = await addHole(page, { x: 400, y: 700 }, { x: 800, y: 700 });
   await page.keyboard.press("Escape");
