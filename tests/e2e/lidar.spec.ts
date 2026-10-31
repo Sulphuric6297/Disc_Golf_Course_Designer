@@ -117,8 +117,8 @@ test("trees measured from the air on import: left standing on a fairway, cleared
   await expect(page.getByTestId("fairway-trees")).toContainText("5 trees in the way");
   await expect(page.locator("[data-stump]")).toHaveCount(0);
   await page.getByTestId("trees-clear").click();
-  // (the message first: on a slow machine the checks after it outlast it)
-  await expect(page.getByText(/^Cut down 5 trees on hole 1/)).toBeVisible();
+  // (said: on a slow machine other messages can take its place on screen before it's looked for)
+  await expect.poll(() => page.evaluate(() => ((window as any).__dgSaid as string[]).some(t => /^Cut down 5 trees on hole 1/.test(t)))).toBe(true);
   await expect.poll(async () => (await course(page)).lidar.removed).toEqual([...row].sort((a, b) => a - b));
   await expect(page.getByTestId("fairway-trees")).toContainText("5 trees cut down");
   await page.getByTestId("trees-back").click();
