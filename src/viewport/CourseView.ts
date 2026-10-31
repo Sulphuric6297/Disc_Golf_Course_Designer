@@ -384,6 +384,7 @@ export class CourseView {
   private pondsDirty = false;
   /** A pond's picture being taken: a side at a time, while the view is still. */
   private picturing: { mesh: THREE.Mesh; cube: THREE.CubeCamera; rt: THREE.WebGLCubeRenderTarget; face: number } | null = null;
+  private pictureAt = 0;
   private grassBuilt = 0;
   private grassTimer = 0;
   private lastSky = false;
@@ -1861,7 +1862,7 @@ export class CourseView {
     // (the hole's On screen switches: flying, and from the tee)
     const hidden = this.povHole ? this.hideForFlight() : [];
     // (the ground's scans: not without a graphics card, where every pixel's work is the processor's)
-    this.ground.detailActive(!this.software);
+    this.ground.detailActive(!this.software && this.tier < 3);
     // (the leaves right in front of the eye melt away: a flight through the treetops shows the
     // hole, and standing under a tree, its leaves overhead stay but none fill the view)
     treeNearFade.value = this.fly ? 45 : 20;
@@ -2382,7 +2383,7 @@ export class CourseView {
       this.lastLook.copy(this.camera.quaternion);
     }
     const tilted = this.controls.polarAngle > TILT_TOP;
-    this.ground.detailActive(dist < 250 && !this.software);
+    this.ground.detailActive(dist < 250 && !this.software && this.tier < 3);
     // Tilted, the course is a place: sky, haze, land to the horizon and grass up close
     this.lastSky = false;
     const restore = tilted ? this.atmosphere(this.camera, false) : null;
@@ -3842,6 +3843,11 @@ export class CourseView {
     // (without a graphics card each side would hold the page up for seconds: the sky and a band
     // for the banks, as before)
     if (this.software) { this.pondsDirty = false; this.picturing = null; return; }
+    // (a side at most every 0.7 s, never two frames running; none on a phone already running slow)
+    if (this.mobile && this.tier >= 2) return;
+    const now = performance.now();
+    if (now - this.pictureAt < 700) return;
+    this.pictureAt = now;
     if (!this.picturing) {
       // (ponds no longer standing: their pictures let go)
       for (const [m, p] of this.ponds) {
