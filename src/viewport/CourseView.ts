@@ -807,10 +807,6 @@ export class CourseView {
     const delta = px - this.leftInset;
     this.leftInset = px;
     if (!delta || !this.fitted || this.size.height < 2) return;
-    // (the panel of a thing just picked: that thing brought out from under it, as picking does,
-    // not slid by half the panel, which could take it back out of sight)
-    const r = this.revealed;
-    if (r && performance.now() - r.at < 1500) { this.frame(r.id); return; }
     // (still as fitted, untouched: fitted again, around the panel)
     if (this.autoFit) return this.autoFit();
     const worldPerPx = (2 * this.controls.distance * Math.tan((this.camera.fov * DEG) / 2)) / this.size.height;
@@ -823,6 +819,10 @@ export class CourseView {
     this.controls.update(0);
     this.camera.updateMatrixWorld();
     this.invalidate();
+    // (the panel of a thing just picked, heard of only now on a slow device: if that thing is under
+    // it still, brought out, as picking does; already clear, it stays)
+    const r = this.revealed;
+    if (r && performance.now() - r.at < 1500) this.frame(r.id);
   }
   /** Pixels at the bottom and top covered by panels (a phone's bottom sheet; its top bar). */
   bottomInset = 0;

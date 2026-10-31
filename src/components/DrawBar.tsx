@@ -22,7 +22,8 @@ const WORDS = "pl-3 pr-1 text-sm touch:text-[15px] text-zinc-100 font-semibold";
 
 /** The pill: in the flow (a computer's tools), or over the map `bottom` px up. */
 function Pill({ bottom, label, testid, wrap, children }: { bottom?: number; label: string; testid: string; wrap?: boolean; children: ReactNode }) {
-  return <div className={`${PILL} ${bottom !== undefined ? PILL_AT : ""} ${wrap ? "rounded-[24px]" : ""}`} style={bottom !== undefined ? { bottom } : undefined} role="toolbar" aria-label={label} data-testid={testid}>{children}</div>;
+  // (wrapped: onto a second row where a phone is too narrow for all its buttons)
+  return <div className={`${PILL} ${bottom !== undefined ? PILL_AT : ""} ${wrap ? "rounded-[24px] flex-wrap justify-center" : ""}`} style={bottom !== undefined ? { bottom } : undefined} role="toolbar" aria-label={label} data-testid={testid}>{children}</div>;
 }
 
 /** Undo, Cancel and Done; `n`/`need`: the points so far and how many it takes (none: Done any time). */
