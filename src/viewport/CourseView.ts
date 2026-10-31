@@ -8,7 +8,6 @@
 // Plan (x, y) is world (x, z) with Y up; plan units are feet.
 import * as THREE from "three";
 import CameraControls from "camera-controls";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
@@ -63,7 +62,11 @@ const DEG = Math.PI / 180;
 const SUN_INTENSITY = 5;
 /** How far inside the map's edge standing stays, ft. */
 const STAND_EDGE_FT = 4;
-const HEMI_INTENSITY = 0.5;
+const HEMI_INTENSITY = 0.7;
+/** How much the sky itself lights things (its picture as the environment: blue from above, the
+ * ground's color from below), with Shadows at 65%. A studio's even light made every side as bright,
+ * washing the shade out of the ground and the tee pads. */
+const SKY_FILL = 0.5;
 /** Told when a corner of a line or an area is pressed (its id and which corner). */
 export const CORNER_EVENT = "dg-corner";
 const EXPOSURE = 2;
@@ -289,7 +292,6 @@ export class CourseView {
   private lastViewKey = "";
   private fitted = false;
   private ro: ResizeObserver;
-  private env: THREE.Texture;
   private hoverFrame = 0;
   private lastPointer: { x: number; y: number } | null = null;
   private disposers: (() => void)[] = [];
@@ -481,10 +483,8 @@ export class CourseView {
       this.skyBox.frustumCulled = false;
       this.skyBox.raycast = () => {};
     }
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.env = pmrem.fromScene(new RoomEnvironment()).texture;
-    pmrem.dispose();
-    this.scene.environment = this.env;
+    // (the sky's own light once it's pictured, updateSkyEnv; none before)
+    this.scene.environment = null;
     this.scene.add(this.hemi);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(this.mobile ? 1024 : 2048, this.mobile ? 1024 : 2048);
@@ -1215,7 +1215,6 @@ export class CourseView {
     this.controls.dispose();
     this.ground.dispose();
     disposeObjectDeep(this.scene);
-    this.env.dispose();
     this.sky.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
@@ -2636,6 +2635,7 @@ export class CourseView {
     sky.geometry.dispose();
     this.skyEnv?.dispose();
     this.skyEnv = rt;
+    this.scene.environment = rt.texture;
     setWaterSky(rt.texture);
     waterUniforms.uSunDir.value.copy(dir).normalize();
     waterUniforms.uSunColor.value.copy(this.sun.color).multiplyScalar(Math.min(1.3, this.sun.intensity / SUN_INTENSITY));
@@ -2731,6 +2731,7 @@ export class CourseView {
     const shadows = clamp(doc.sun?.shadows ?? 0.65, 0, 1);
     this.sun.intensity = SUN_INTENSITY * strength;
     this.hemi.intensity = HEMI_INTENSITY * (0.45 + 0.55 * Math.min(1, strength * 1.2)) * (1.55 - 0.85 * shadows);
+    this.scene.environmentIntensity = SKY_FILL * Math.min(1, strength * 1.2) * (1.55 - 0.85 * shadows);
     this.renderer.toneMappingExposure = EXPOSURE * Math.pow(2, (doc.sun?.light ?? 0) * 1.6);
     // The sky's sun, and its haze: blue-grey at midday, warmer when the sun is low
     {
