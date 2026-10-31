@@ -15,6 +15,7 @@ import type { CourseDoc, Units } from "../types";
 import { Logo } from "./parts";
 import { Woods } from "../components/Woods";
 import { holeFacts, type HoleNumbers } from "./holeFacts";
+import { countHole, countVisit } from "./visits";
 import { useServerCourse } from "./courses";
 
 // (a link's random address or the name its owner gave it: …/springfield-park, or …#site=…)
@@ -100,6 +101,8 @@ export function PublicSite({ children }: { children: ReactNode }) {
     if (!res.ok) { setError(data.error ?? "This link doesn't work"); return; }
     setNeedsPassword(false);
     setSite(data);
+    // (this visit counted: no cookies, nothing kept here; auth/visits)
+    void countVisit(SITE_TOKEN!, pw);
     // Pictures through the link (the password goes with each), each shown as it comes: the map
     // first, then the rest a few at a time
     const one = async (name: string) => {
@@ -120,6 +123,11 @@ export function PublicSite({ children }: { children: ReactNode }) {
     try { await load(pw); } catch { setError("This course page couldn't be loaded. Check the connection and reload"); } finally { setChecking(false); }
   };
   useEffect(() => { void tryLoad(""); }, []);
+  // (a hole opened on the page: counted for the course's visitor stats)
+  useEffect(() => {
+    const h = openHole ? site?.info.holes.find(x => (x.id ?? x.label) === openHole) : null;
+    if (h) countHole(h.label);
+  }, [openHole]);
 
   /** The course to look round (and a hole's flyover, when one is asked for). */
   const open3d = async (flyHole?: string) => {

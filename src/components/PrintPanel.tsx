@@ -11,7 +11,7 @@ import { byNumber, holeLabel } from "../lib/course";
 import { changeDoc, useCourse, useEditor } from "../state/course";
 import type { Sponsor } from "../types";
 import { ApplyToHoles, HoleChips } from "./ApplyToHoles";
-import { addImage, addText, pictureFrom } from "./PageEditor";
+import { addImage, addText, pictureFrom, textSize } from "./PageEditor";
 import { addExtra, askTyping, drawnNow, holesWithOwn, layersOf, onDrawn, putBack, removeSponsor, setLayerShown, type Layer, type TargetKey } from "./printouts";
 import { Button, Field, Section, Segmented, Slider, TextInput } from "./ui";
 
@@ -30,7 +30,7 @@ function AddPieces({ t }: { t: TargetKey }) {
       <div className={`grid ${perHole && sponsors.length ? "grid-cols-4" : "grid-cols-3"} gap-1.5`}>
         <button className={b} onClick={text} data-testid="add-text"><Type size={18} className="text-orange-300" /> Text</button>
         <button className={b} onClick={() => file.current?.click()} data-testid="add-picture"><ImagePlus size={18} className="text-orange-300" /> Picture</button>
-        <button className={b} onClick={() => addExtra({ kind: "qr", url: "", w: t === "card" ? 0.08 : 0.12, text: "Scan for the course", size: 11 })} data-testid="add-qr"><QrCode size={18} className="text-orange-300" /> QR code</button>
+        <button className={b} onClick={() => addExtra({ kind: "qr", url: "", w: t === "card" ? 0.08 : 0.12, text: "Scan for the course", size: t === "map" ? Math.round(textSize(doc.style) * 0.45) : 11 })} data-testid="add-qr"><QrCode size={18} className="text-orange-300" /> QR code</button>
         {/* (one piece for whoever sponsors each hole: the same place on every sign, each its own sponsors) */}
         {perHole && sponsors.length > 0 && <button className={b} onClick={() => addExtra({ kind: "sponsors", w: 0.3, size: 14 })} data-testid="add-hole-sponsor"><Handshake size={18} className="text-orange-300" /> Hole sponsor</button>}
       </div>

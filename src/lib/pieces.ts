@@ -105,6 +105,18 @@ const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 export type HoleFacts = { hole: string; par: string; length: string; course: string; name: string };
 export const fillIn = (text: string, f: HoleFacts) => text.replace(/\{(hole|par|length|course|name)\}/gi, (_, k: string) => f[k.toLowerCase() as keyof HoleFacts] ?? "");
 
+/** A QR code on a hole's sign or page that opens this course's public page: it says which hole's
+ * sign it's on (?from=sign-7), for the course's visitor stats. Any other link stays as typed. */
+export const fromSign = (url: string, hole: string) => {
+  if (!hole || typeof location === "undefined") return url;
+  try {
+    const u = new URL(url);
+    if (u.origin !== location.origin || u.searchParams.has("from")) return url;
+    u.searchParams.set("from", `sign-${hole}`);
+    return u.toString();
+  } catch { return url; }
+};
+
 /** A QR code as squares of a path, `size` across, a quiet margin of light round it. */
 export const qrSvg = (url: string, x: number, y: number, size: number) => {
   const q = qrcode(0, "M");
@@ -153,7 +165,7 @@ export const extrasSvg = (extras: PrintExtra[] | undefined, sponsors: Sponsor[] 
       if (line) parts.push(`<text${fitAttr(w)} x="${n(X + w / 2)}" y="${n(y + size * 0.9)}" text-anchor="middle" font-family="${pieceFont(e.font || font)}" font-weight="700" font-size="${n(size)}" fill="${e.color ?? ink}">${esc(line)}</text>`);
       body = parts.join("");
     } else if (e.kind === "qr") {
-      body = qrSvg(e.url ?? "", X, Y, w);
+      body = qrSvg(fromSign(e.url ?? "", holeId ? facts.hole : ""), X, Y, w);
       if (e.text) body += `<text${fitAttr(w * 1.6)} x="${n(X + w / 2)}" y="${n(Y + w + (e.size ?? 12) * 1.2)}" text-anchor="middle" font-family="${pieceFont(e.font || font)}" font-weight="600" font-size="${n(e.size ?? 12)}" fill="${e.color ?? ink}">${esc(fillIn(e.text, facts))}</text>`;
     } else if (e.kind === "sponsors") {
       // (this hole's sponsors side by side under a small heading: each its logo, its line of text, or both)

@@ -8,6 +8,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AlignCenter, AlignLeft, AlignRight, Blend, Bold, BringToFront, Check, Copy, EyeOff, Flag, Italic, Link2, Minus, MoreHorizontal, Pencil, Plus, SendToBack, Trash2, Undo2 } from "lucide-react";
 import { fontsIn } from "../lib/fontLoad";
 import { useCourse } from "../state/course";
+import { api, SERVER } from "../auth/api";
+import { useServerCourse } from "../auth/courses";
 import { ColorSwatches } from "./ColorSwatches";
 import { FontPicker } from "./FontPicker";
 import { HolePicker } from "./PrintPanel";
@@ -63,7 +65,8 @@ export function PieceToolbar({ t, id, onGrow, onPreviewFont, onEditText, onDone,
   // (a pop-up: under its button; docked, in the short panel over the toolbar instead, see below)
   const float = (el: ReactNode) => (docked ? null : el);
   const popAt = (w: string) => `absolute left-0 top-full mt-2 ${w} z-[80] glass ring-1 ring-white/15 rounded-[14px]`;
-  const linkBody = <input ref={linkRef} aria-label="Link" placeholder="https://" className="w-full rounded-[10px] bg-white/[0.1] px-2.5 py-2 text-sm touch:text-base text-zinc-50 placeholder:text-zinc-500 focus:outline-none" value={p.url ?? ""} onChange={e => patchPicked(t, id, { url: e.target.value }, false)} onBlur={commit} onKeyDown={e => { if (e.key === "Enter") { commit(); setPop(null); } }} />;
+  const linkInput = <input ref={linkRef} aria-label="Link" placeholder="https://" className="w-full rounded-[10px] bg-white/[0.1] px-2.5 py-2 text-sm touch:text-base text-zinc-50 placeholder:text-zinc-500 focus:outline-none" value={p.url ?? ""} onChange={e => patchPicked(t, id, { url: e.target.value }, false)} onBlur={commit} onKeyDown={e => { if (e.key === "Enter") { commit(); setPop(null); } }} />;
+  const linkBody = <>{linkInput}<PublicLinks onPick={url => { patchPicked(t, id, { url }); setPop(null); }} /></>;
   const opacityBody = (
     <>
       <div className="flex justify-between text-[12px] text-zinc-300 mb-1"><span>{docked ? "" : "How solid it is"}</span><span className="tabular-nums">{Math.round((p.opacity ?? 1) * 100)}%</span></div>
@@ -202,6 +205,30 @@ export function PieceToolbar({ t, id, onGrow, onPreviewFont, onEditText, onDone,
   return (
     <div className="glass ring-1 ring-white/15 shadow-xl flex items-center gap-0.5 rounded-full px-1.5 py-1" data-page-bar data-testid="piece-toolbar" role="toolbar" aria-label={`${p.label} settings`} onPointerDown={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
       {tools}
+    </div>
+  );
+}
+
+/** The course's public page links, to put in a QR code at a tap (on a hole's sign it then says
+ * which sign was scanned, for the course's visitor stats). */
+function PublicLinks({ onPick }: { onPick: (url: string) => void }) {
+  const id = useServerCourse(s => s.id);
+  const [links, setLinks] = useState<{ token: string; slug?: string | null; label: string; revoked: boolean }[]>([]);
+  useEffect(() => {
+    if (!SERVER || !id) return;
+    void api<typeof links>("GET", `courses/${id}/links`).then(l => setLinks(l.filter(x => !x.revoked))).catch(() => {});
+  }, [id]);
+  if (!links.length) return null;
+  return (
+    <div className="mt-2" data-testid="qr-public-links">
+      <div className="text-[11px] text-zinc-400 mb-1">This course's public page</div>
+      <div className="flex flex-wrap gap-1.5">
+        {links.map(l => (
+          <button key={l.token} className="rounded-full bg-white/[0.08] hover:bg-white/[0.14] px-2.5 py-1 touch:py-2 text-[12px] touch:text-[13px] font-semibold text-zinc-100" onClick={() => onPick(`${location.origin}/${l.slug || l.token}`)}>
+            {l.label || l.slug || "Public link"}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

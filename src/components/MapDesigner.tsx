@@ -10,7 +10,7 @@ import { changeDoc, useCourse, useEditor, getDoc } from "../state/course";
 import { byNumber, holeLabel } from "../lib/course";
 import { useCanopy, useRelief } from "./useRelief";
 import { moveLabel } from "./PageEditor";
-import { duplicatePicked, extrasOf, movePicked, noteOf, onAskTyping, patchPicked, pickedOf, rememberBoard, removePicked, setDrawn, sizePicked, takeTyping, type TargetKey } from "./printouts";
+import { duplicatePicked, extrasOf, movePicked, noteOf, onAskTyping, patchPicked, pickedOf, rememberBoard, removePicked, setDrawn, sizePicked, sizeWordsPicked, takeTyping, type TargetKey } from "./printouts";
 import { useToolOpen } from "./pageToolState";
 
 /** A size's short name, for a phone's row over the page. */
@@ -611,6 +611,8 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const grow = (f: number) => {
     const el = designSel ? elOf(designSel) : null;
     if (!el || !designSel) return;
+    // (a QR code's size buttons size its words, the number they show; its corners size it all)
+    if (sizeWordsPicked(t, designSel, f)) return;
     const b = boxOf(el), { W, H } = dims();
     sizePicked(t, designSel, f, { x: b.x + b.w / 2, y: b.y + b.h / 2 }, placedBox(el), W, H);
   };
