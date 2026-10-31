@@ -1860,7 +1860,7 @@ export class CourseView {
     this.ground.detailActive(!this.software && this.tier < 4);
     // (standing under a tree, the leaves right in front of the eye melt away, those overhead stay;
     // a flyover never fades anything: it's for seeing what's really there)
-    treeNearFade.value = this.fly ? 0 : 20;
+    treeNearFade.value = this.fly ? 0 : 8;
     if (this.shadowsDirty) {
       this.placeSun();
       this.renderer.shadowMap.needsUpdate = true;
