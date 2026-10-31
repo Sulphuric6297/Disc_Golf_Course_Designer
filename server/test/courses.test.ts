@@ -182,6 +182,12 @@ test("other courses on the same ground: those you're on whose site overlaps, wit
     assert.deepEqual(near.map((n: { name: string }) => n.name), ["Blue course"]);
     assert.equal(near[0].id, b);
     assert.deepEqual(near[0].lines, sum.lines);
+    // A course with no holes yet on the same ground shows too (its ground can be shared into), with
+    // no lines to draw
+    const c = (await admin.post("/api/courses", { doc: { ...doc("Green course"), site: site(-88.998) }, summary: { ...sum, lines: [] } })).body.id;
+    const now = (await admin.get(`/api/courses/${a}/nearby`)).body;
+    assert.deepEqual(now.map((n: { name: string }) => n.name).sort(), ["Blue course", "Green course"]);
+    assert.deepEqual(now.find((n: { id: string }) => n.id === c).lines, []);
   } finally { await w.close(); }
 });
 
