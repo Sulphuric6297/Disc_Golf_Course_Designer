@@ -71,6 +71,9 @@ test("fairway width handle and par override in the inspector", async ({ page }) 
   await page.keyboard.press("Escape");
   await page.getByTestId("hole-row").click();
   await expect(page.getByTestId("inspector-title")).toHaveText("Hole 1");
+  // (zoomed to it, as a fairway is shaped: its squares and +s far enough apart to show)
+  await page.getByTestId("zoom-hole").click();
+  await page.waitForTimeout(1500);
   // Width squares on both edges at four points along the fairway; the first (just off the tee, on the south side)
   // widens it there only, and only on its own side: the north edge stays 15 ft off the line
   await expect(page.locator('[data-handle="width"]')).toHaveCount(8);
