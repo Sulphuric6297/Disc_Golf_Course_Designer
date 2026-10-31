@@ -3396,12 +3396,12 @@ export class CourseView {
             return Math.max(this.h(i, j), this.h(i + cell, j), this.h(i, j + cell), this.h(i + cell, j + cell));
           };
           const surface = (x: number, y: number) => Math.max(bankLevel(x, y) + 0.2, cellTop(x, y) + 0.3);
-          // (its depth: shelving from the bank, about a foot every 8 ft out, to 9 ft; the survey
+          // (its depth: shelving from the bank, a foot every 2 ft out, to 9 ft; the survey
           // can't see under water, so the ground there is only the water's own level)
           const geo = drapedPolygon(a.points, surface, cell / 2, 0), pa = geo.attributes.position, depth = new Float32Array(pa.count);
-          for (let i = 0; i < pa.count; i++) depth[i] = Math.min(9, distanceToPolygon({ x: pa.getX(i), y: pa.getZ(i) }, a.points) * 0.12);
+          for (let i = 0; i < pa.count; i++) depth[i] = Math.min(9, distanceToPolygon({ x: pa.getX(i), y: pa.getZ(i) }, a.points) * 0.5);
           geo.setAttribute("aDepth", new THREE.BufferAttribute(depth, 1));
-          const shore = this.waterShore(a.points), bottom = `#${new THREE.Color(doc.groundColor).lerp(new THREE.Color("#6a5a3c"), 0.6).getHexString()}`;
+          const shore = this.waterShore(a.points), bottom = `#${new THREE.Color(c).multiplyScalar(0.8).lerp(new THREE.Color(doc.groundColor), 0.2).getHexString()}`;
           const pond = new THREE.Mesh(geo, waterMaterial(c, ...shore, { bottom }));
           pond.userData.water = true;
           const mid = centroid(a.points);

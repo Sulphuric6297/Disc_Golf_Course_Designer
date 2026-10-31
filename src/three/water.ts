@@ -92,7 +92,7 @@ export const waterMaterial = (color: string, shore = "#2a3a24", rise = 0.08, opt
   const tex = rippleTexture();
   if (opts.bottom) m.defines = { ...m.defines, DG_DEPTH: "" };
   if (opts.mirror) m.defines = { ...m.defines, DG_MIRROR: "" };
-  // (a pond's floor: its own color a little darker and warmer, as it shows through water)
+  // (a pond's floor at its very edge: the water's own color a little darker, a touch of the bank's)
   const bottom = new THREE.Color(opts.bottom ?? "#5a5238").multiplyScalar(0.62);
   m.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, waterUniforms, { uRipples: { value: tex }, uReflect: { value: 0.9 }, uShore: { value: new THREE.Color(shore).multiplyScalar(0.55) }, uRise: { value: rise }, uBottom: { value: bottom } });
@@ -101,11 +101,10 @@ export const waterMaterial = (color: string, shore = "#2a3a24", rise = 0.08, opt
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWaterXZ = (modelMatrix * vec4(transformed, 1.0)).xz;\n#ifdef DG_DEPTH\nvDepth = aDepth;\n#endif");
     shader.fragmentShader = shader.fragmentShader
       .replace("#include <common>", "#include <common>\nvarying vec2 vWaterXZ;\nuniform sampler2D uRipples;\nuniform float uTime;\nuniform float uWind;\nuniform float uReflect;\nuniform vec3 uShore;\nuniform float uRise;\nuniform vec3 uSunDir;\nuniform vec3 uSunColor;\nuniform vec3 uBottom;\n#ifdef DG_DEPTH\nvarying float vDepth;\n#endif")
-      // The shallows: the bottom showing through, clear at the very edge, the water's own color
-      // taking over as it deepens (about 6 ft out)
+      // The shallows: a thin band at the bank, the water's own color everywhere past it
       .replace("#include <color_fragment>", `#include <color_fragment>
         #ifdef DG_DEPTH
-          diffuseColor.rgb = mix( uBottom, diffuseColor.rgb, smoothstep( 0.15, 6.0, vDepth ) );
+          diffuseColor.rgb = mix( uBottom, diffuseColor.rgb, smoothstep( 0.1, 2.0, vDepth ) );
         #endif`)
       // Two layers of ripples at different sizes, drifting different ways, tilting the surface
       .replace("#include <normal_fragment_maps>", `
