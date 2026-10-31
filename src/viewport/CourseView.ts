@@ -20,7 +20,7 @@ import { boundsOf, centroid, dist, distanceToPath, distanceToPolygon, inBounds, 
 import { isOutOfPlay, parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
 import { conifersOf, treeMixOf } from "../lib/landscapes";
-import { LOOK_LABEL, sharesOf, standShape, standShares, type TreeLookId } from "../lib/treeMix";
+import { LOOK_LABEL, sharesOf, standShares, type TreeLookId } from "../lib/treeMix";
 import { fmtArea, fmtDist, fmtElev } from "../lib/units";
 import { BASKET_BAND, createAmenity, createBasket, createDropZone, createMando, createTeePad, fitTeePad } from "../three/courseModels";
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
@@ -45,7 +45,7 @@ import { createFieldGround, createFieldProps, createHedge, createPowerLine } fro
 import { LEAGUES, cornerFrame, fieldInks, fieldPartAt, fieldPartShape, fieldPlan } from "../lib/fieldPlan";
 import { fieldHome, fieldKeepsTreesOut, fieldKindOf, fieldOutline, isBallField } from "../lib/fields";
 import { isLineKind, orientedBox, roofFor, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
-import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier, FieldPart, CourseDoc, LidarTree } from "../types";
+import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier, FieldPart } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
 import type { FlightFrames, FlyoverVideo, FrameInfo, RecordOptions } from "./flyoverVideo";
@@ -533,7 +533,10 @@ export class CourseView {
       const gl = this.renderer.getContext();
       const info = gl.getExtension("WEBGL_debug_renderer_info");
       const name = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
-      this.software = /swiftshader|llvmpipe|software|basic render/i.test(name);
+      // (hyzerlab-gpu=1 in the browser: drawn as with a graphics card anyway, for a picture of it on a test machine)
+      let asIf = false;
+      try { asIf = localStorage.getItem("hyzerlab-gpu") === "1"; } catch { /* no storage */ }
+      this.software = !asIf && /swiftshader|llvmpipe|software|basic render/i.test(name);
       // Without a graphics card, or on a phone, fewer trees in full detail
       if (this.software) forestDetail.nearFt = 70;
       else if (this.mobile) forestDetail.nearFt = 150;
@@ -1854,7 +1857,7 @@ export class CourseView {
     // (the hole's On screen switches: flying, and from the tee)
     const hidden = this.povHole ? this.hideForFlight() : [];
     // (the ground's scans: not without a graphics card, where every pixel's work is the processor's)
-    this.ground.detailActive(!this.software && this.tier < 3);
+    this.ground.detailActive(!this.software && this.tier < 4);
     // (the leaves right in front of the eye melt away: a flight through the treetops shows the
     // hole, and standing under a tree, its leaves overhead stay but none fill the view)
     treeNearFade.value = this.fly ? 45 : 20;
@@ -2375,7 +2378,7 @@ export class CourseView {
       this.lastLook.copy(this.camera.quaternion);
     }
     const tilted = this.controls.polarAngle > TILT_TOP;
-    this.ground.detailActive(dist < 250 && !this.software && this.tier < 3);
+    this.ground.detailActive(dist < 250 && !this.software && this.tier < 4);
     // Tilted, the course is a place: sky, haze, land to the horizon and grass up close
     this.lastSky = false;
     const restore = tilted ? this.atmosphere(this.camera, false) : null;
@@ -3275,9 +3278,6 @@ export class CourseView {
         return woods;
       }, this.itemsGroup, true);
     }
-    // The woods' floor, for the ground's scans up close: leaf litter under leafy trees, needles
-    // under conifers (the measured ones standing, and the woods drawn)
-    this.updateFloor(course, lidar && this.lidarState ? this.lidarState.stand.map(k => lidar.trees[k]) : []);
     // Areas: fill plus outline (and a red OB edge, all round or along its stretches)
     const obEdge = (a: AreaItem, g: THREE.Group) => {
       for (const piece of areaObEdges({ ...a, straight: true })) g.add(this.fatLine(this.drapeLine(piece, LIFT + 0.05), color("ob")!, 3, { order: 5 }));
@@ -3383,7 +3383,7 @@ export class CourseView {
           const mat = new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: floor ? Math.min(fill, 0.45) : fill, depthWrite: false, polygonOffset: true, polygonOffsetFactor: floor ? -1 : -4, polygonOffsetUnits: floor ? -2 : -8 });
           // (up close, what it's made of: a fairway's mown grass, a parking lot's asphalt, a woods' floor)
           const scan: [SurfaceLayer, number] | null = a.kind === "fairway" || a.kind === "green" ? ["grass", 0.9] : a.kind === "rough" ? ["grass", 1] : a.kind === "sand" ? ["sand", 1]
-            : a.kind === "parking" ? ["asphalt", 1] : floor ? [standShape(a) === "conifer" ? "needles" : "leaves", 1] : null;
+            : a.kind === "parking" ? ["asphalt", 1] : null;
           if (scan) addSurfaceDetail(mat, this.ground.detail, layerOf(scan[0]), scan[1], a.kind === "fairway" || a.kind === "green");
           const mesh = new THREE.Mesh(geo, mat);
           mesh.renderOrder = floor ? 0.5 : a.kind === "parking" ? tierOrder("road") : 2 + order * 0.001;
@@ -3755,58 +3755,6 @@ export class CourseView {
       for (const w of was) { w.m.layers.disable(WARM); w.m.visible = w.visible; if (w.count >= 0) (w.m as THREE.InstancedMesh).count = w.count; this.warmed.add(w.m); }
       this.dirty = true;
     }
-  }
-
-  private floorKey = "";
-  /**
-   * The woods' floor as a picture over the site (leaf litter in red, pine needles in green, about
-   * 2 ft a pixel): every measured crown standing, of its kind, and every wood drawn, of its own (a
-   * stand of conifers, needles). The ground lays the scans of them under the trees up close.
-   */
-  private updateFloor(course: CourseDoc, standing: LidarTree[]) {
-    const doc = this.doc;
-    if (!doc) return;
-    const woods = course.items.filter((i): i is AreaItem => i.type === "area" && i.kind === "woods" && i.points.length >= 3);
-    const key = JSON.stringify([measuredStanding()?.key ?? standing.length, woods.map(w => [w.points, standShape(w)]), doc.canvas]);
-    if (key === this.floorKey) return;
-    this.floorKey = key;
-    const u = this.ground.detail;
-    u.floorMap.value?.dispose();
-    u.floorMap.value = null;
-    u.floorOn.value = 0;
-    // (only where the ground's scans can show: without a graphics card they don't)
-    if ((!woods.length && !standing.length) || this.software) return;
-    const { width, height } = doc.canvas;
-    const k = Math.min(0.5 * (doc.unitsPerFoot ? 1 / doc.unitsPerFoot : 1), 1024 / Math.max(width, height, 1));
-    const W = Math.max(1, Math.round(width * k)), H = Math.max(1, Math.round(height * k));
-    const c = document.createElement("canvas");
-    c.width = W; c.height = H;
-    const g = c.getContext("2d")!;
-    g.fillStyle = "#000"; g.fillRect(0, 0, W, H);
-    g.globalCompositeOperation = "lighter";
-    g.setTransform(k, 0, 0, k, 0, 0);
-    for (const w of woods) {
-      g.fillStyle = standShape(w) === "conifer" ? "rgb(0,255,0)" : "rgb(255,0,0)";
-      g.beginPath();
-      w.points.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)));
-      g.closePath();
-      g.fill();
-    }
-    for (const t of standing) {
-      g.fillStyle = t[4] ? "rgb(0,255,0)" : "rgb(255,0,0)";
-      g.beginPath();
-      g.arc(t[0], t[1], Math.max(3, t[3] * 0.9), 0, Math.PI * 2);
-      g.fill();
-    }
-    // (soft at the edges, as litter thins out from under a crown: the texture's own smoothing)
-    const tex = new THREE.CanvasTexture(c);
-    tex.flipY = false;
-    tex.colorSpace = THREE.NoColorSpace;
-    tex.generateMipmaps = false;
-    tex.minFilter = THREE.LinearFilter;
-    u.floorMap.value = tex;
-    u.floorRect.value.set(0, 0, width, height);
-    u.floorOn.value = 1;
   }
 
   /** A path's or road's material: its color, and up close the scan of what it's made of. */

@@ -19,7 +19,10 @@ export const layerOf = (l: SurfaceLayer) => LAYERS.indexOf(l);
 const TILE_FT = [5, 8, 8, 7, 6, 6, 7, 7, 7];
 /** How strongly each scan's light and dark shows (grass most: a lawn's grain is fine, and the
  * ground's colors are bright, where the picture's tone curve flattens it). */
-const GRAIN = [2.2, 1.4, 1.5, 1.6, 1.5, 1.5, 1.5, 1.5, 1.4];
+const GRAIN = [1.6, 1.3, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.3];
+/** Each scan's own average color (sRGB, scripts/ground-scans.py's "means"): up close the ground
+ * takes it, real grass and dirt, not the map's flat paint. */
+const MEAN = [[96, 109, 48], [127, 116, 102], [89, 80, 70], [121, 100, 60], [146, 131, 104], [80, 56, 27], [142, 112, 58], [157, 128, 101], [141, 108, 84]];
 const S = 512;
 
 let scans: Promise<{ color: THREE.DataArrayTexture; normal: THREE.DataArrayTexture } | null> | null = null;
@@ -181,6 +184,7 @@ const SCAN_GLSL = /* glsl */ `
   }
   const float DG_TILE[9] = float[9]( ${TILE_FT.map(t => t.toFixed(1)).join(", ")} );
   const float DG_GRAIN[9] = float[9]( ${GRAIN.map(t => t.toFixed(2)).join(", ")} );
+  const vec3 DG_MEAN[9] = vec3[9]( ${MEAN.map(c => `vec3( ${c.map(v => Math.pow(v / 255, 2.2).toFixed(4)).join(", ")} )`).join(", ")} );
   // A layer's color variation (1: its average) and bumps, at feet f
   void dgScan( float layer, vec2 f, out vec3 col, out vec3 nrm ) {
     vec2 uv = f / DG_TILE[ int( layer ) ];
@@ -192,21 +196,31 @@ const SCAN_GLSL = /* glsl */ `
   }
   vec3 dgNrm = vec3( 0.0, 0.0, 1.0 );
   float dgFade = 0.0;
-  // Two layers laid together (weights w1, w2), how much of them (amount): what the color is
-  // multiplied by (the scans' variation), the bumps kept for the light
-  vec3 dgLay( float l1, float w1, float l2, float w2, float amount ) {
+  // A layer's real color near the eye: its scan's own average, as bright as the ground there is
+  // (about), a little of the ground's own hue kept so a fairway still reads as one
+  vec3 dgReal( float layer, vec3 base, float keep ) {
+    vec3 m = DG_MEAN[ int( layer ) ];
+    float lb = dot( base, vec3( 0.2126, 0.7152, 0.0722 ) ), lm = dot( m, vec3( 0.2126, 0.7152, 0.0722 ) );
+    vec3 real = m * clamp( pow( lb / max( lm, 1e-4 ), 0.5 ), 0.6, 1.8 );
+    return mix( real, base, keep );
+  }
+  // Two layers laid together (weights w1, w2), how much of them (amount) on a ground of color
+  // base: the ground's color then (the scans' real color and grain near the eye, the ground's
+  // own farther off), the bumps kept for the light
+  vec3 dgLay( vec3 base, float l1, float w1, float l2, float w2, float amount, float keep ) {
     vec2 f = vGroundW.xz * groundFeet;
     float d = distance( cameraPosition, vGroundW ) * groundFeet;
     dgFade = groundDetail * ( 1.0 - smoothstep( 110.0, 260.0, d ) ) * amount;
-    if ( dgFade < 0.002 || w1 + w2 < 0.004 ) { dgFade = 0.0; return vec3( 1.0 ); }
+    if ( dgFade < 0.002 || w1 + w2 < 0.004 ) { dgFade = 0.0; return base; }
     vec3 c1, n1, c2 = vec3( 1.0 ), n2 = vec3( 0.0, 0.0, 1.0 );
     dgScan( l1, f, c1, n1 );
     if ( w2 > 0.004 ) dgScan( l2, f, c2, n2 );
     float sum = w1 + w2;
-    vec3 col = ( c1 * w1 + c2 * w2 ) / sum, nrm = ( n1 * w1 + n2 * w2 ) / sum;
+    vec3 nrm = ( n1 * w1 + n2 * w2 ) / sum;
+    vec3 real = ( dgReal( l1, base, keep ) * c1 * w1 + ( w2 > 0.004 ? dgReal( l2, base, keep ) * c2 * w2 : vec3( 0.0 ) ) ) / sum;
     dgFade *= clamp( sum, 0.0, 1.0 );
     dgNrm = normalize( mix( vec3( 0.0, 0.0, 1.0 ), nrm, dgFade ) );
-    return mix( vec3( 1.0 ), col, dgFade );
+    return mix( base, real, dgFade );
   }
 `;
 /** The scan's bumps turning the surface for the light (it lies about level: its own plan axes). */
@@ -285,20 +299,13 @@ export const addGroundDetail = (m: THREE.Material, u: GroundDetailUniforms) => {
               if ( fuv.x >= 0.0 && fuv.x <= 1.0 && fuv.y >= 0.0 && fuv.y <= 1.0 ) fl = texture2D( floorMap, fuv ).rg;
             }
             float under = min( 1.0, fl.x + fl.y );
-            // (the photo under the trees shows their tops, sunlit, not the floor: there, the floor's
-            // own color, leaf litter's brown or needles' darker brown, its grain from the scan below;
-            // the painted map keeps its colors)
-            if ( coverFromColor < 0.5 && under > 0.0 ) {
-              vec3 floorCol = mix( vec3( 0.16, 0.11, 0.055 ), vec3( 0.11, 0.075, 0.04 ), fl.y / max( under, 1e-3 ) );
-              diffuseColor.rgb = mix( diffuseColor.rgb, floorCol, under * 0.8 * groundDetail );
-            }
             // grass, concrete, asphalt, dirt; leaves, needles: the two that most cover this spot
             float w[6] = float[6]( cover.r * ( 1.0 - under ), cover.g, cover.b, cover.a, cover.r * fl.x, cover.r * fl.y );
             const float L[6] = float[6]( 0.0, 1.0, 2.0, 3.0, 6.0, 7.0 );
             int a1 = 0, a2 = -1;
             for ( int i = 1; i < 6; i++ ) if ( w[ i ] > w[ a1 ] ) a1 = i;
             for ( int i = 0; i < 6; i++ ) if ( i != a1 && ( a2 < 0 || w[ i ] > w[ a2 ] ) ) a2 = i;
-            diffuseColor.rgb *= dgLay( L[ a1 ], w[ a1 ], L[ a2 ], w[ a2 ], 1.0 );
+            diffuseColor.rgb = dgLay( diffuseColor.rgb, L[ a1 ], w[ a1 ], L[ a2 ], w[ a2 ], 1.0, 0.25 );
           }
         }`)
       .replace("#include <normal_fragment_maps>", BUMPS_GLSL);
@@ -317,7 +324,8 @@ export const addSurfaceDetail = (m: THREE.Material, u: GroundDetailUniforms, lay
       .replace("#include <common>", `#include <common>\n${SCAN_GLSL}\nuniform float dgLayer; uniform float dgAmount; uniform float dgMown;`)
       .replace("#include <color_fragment>", `#include <color_fragment>
         if ( groundDetail > 0.0 ) {
-          diffuseColor.rgb *= dgLay( dgLayer, 1.0, 0.0, 0.0, dgAmount );
+          // (a mown fairway keeps more of its own green, so it reads apart from the rough)
+          diffuseColor.rgb = dgLay( diffuseColor.rgb, dgLayer, 1.0, 0.0, 0.0, dgAmount, dgMown > 0.0 ? 0.45 : 0.25 );
           // (mown: light and dark bands as a mower leaves them, softened over a few inches)
           if ( dgMown > 0.0 ) { vec2 f = vGroundW.xz * groundFeet; diffuseColor.rgb *= 1.0 + 0.07 * dgFade * smoothstep( -0.15, 0.15, sin( ( f.y + f.x * 0.2 ) / 4.5 ) ) - 0.035 * dgFade; }
         }`)
