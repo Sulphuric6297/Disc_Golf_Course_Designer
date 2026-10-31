@@ -333,9 +333,9 @@ export class Grass implements GrassUniformSource {
         shader.fragmentShader = shader.fragmentShader
           .replace("#include <common>", "#include <common>\nvarying vec3 vGrass;\nvarying float vTip;")
           // (shaded toward the root, not black: the turf reads as one dense green)
-          .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb *= vGrass * mix( 0.6, 1.1, vTip );")
+          .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb *= vGrass * mix( 0.5, 0.95, vTip );")
           // Tips catch the light
-          .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGrass * vTip * vTip * 0.12;")
+          .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGrass * vTip * vTip * 0.06;")
           // Lit like the ground under it from both sides (no dark backs)
           .replace("#include <normal_fragment_begin>", "float faceDirection = 1.0;\nvec3 normal = normalize( vNormal );\nvec3 nonPerturbedNormal = normal;");
       };
