@@ -120,9 +120,9 @@ export async function showSetting(where: Where) {
     requestAnimationFrame(() => getView()?.reveal(id));
   }
   if (w.open === "problems") ed.set({ problemsOpen: true });
-  else if (w.open === "share-public" || w.open === "share-people") {
+  else if (w.open === "share-public" || w.open === "share-people" || w.open === "share-visitors") {
     if (!SERVER) { showLocked("share"); return; }
-    useAuth.getState().share(w.open === "share-public" ? "public" : "people");
+    useAuth.getState().share(w.open === "share-public" ? "public" : w.open === "share-visitors" ? "visitors" : "people");
   } else if (w.open) askOpen(w.open);
   if (!w.find) { if (w.say) toast(w.say, "info", false, undefined, 9000); return; }
   // (the Map step on a phone, and the course map's tab on a computer: the page's settings are a row of tools, each opening its part of them)

@@ -39,10 +39,10 @@ export const useAuth = create<{
   signOut: () => Promise<void>;
   open: (d: Dialog) => void;
   /** The share dialog's tab to open on (people, or the public link). */
-  shareTab: "people" | "public";
+  shareTab: "people" | "public" | "visitors";
   /** The course list has been drawn (the editor may load behind it now). */
   listShown: boolean;
-  share: (tab: "people" | "public") => void;
+  share: (tab: "people" | "public" | "visitors") => void;
 }>((set, get) => ({
   session: null,
   dialog: null,

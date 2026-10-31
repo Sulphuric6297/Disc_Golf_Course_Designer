@@ -12,7 +12,7 @@ const start = Date.now();
 const seen = new Set<string>();
 
 const send = (path: string, body: unknown, keepalive = false) =>
-  fetch(`${base}${path}`, { method: "POST", keepalive, headers: { "content-type": "application/json", ...(password ? { "x-link-password": password } : {}) }, body: JSON.stringify(body) });
+  fetch(`${base}${path}`, { method: "POST", keepalive, headers: { "content-type": "application/json", "x-hyzerlab": "1", ...(password ? { "x-link-password": password } : {}) }, body: JSON.stringify(body) });
 
 const ping = (extra: { hole?: string; flyover?: string } = {}, closing = false) => {
   if (!visit) return;
