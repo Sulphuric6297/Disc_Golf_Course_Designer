@@ -1866,6 +1866,7 @@ export class CourseView {
       this.renderer.shadowMap.needsUpdate = true;
       this.shadowsDirty = false;
     }
+    this.nearShadows(cam);
     if (target) {
       this.renderer.setRenderTarget(target);
       this.renderer.clear();
@@ -2366,7 +2367,7 @@ export class CourseView {
       this.camera.far = far;
       this.camera.updateProjectionMatrix();
     }
-    if (this.shadowsDirty) {
+    if (this.shadowsDirty || this.nearShadowAt) {
       this.placeSun();
       this.renderer.shadowMap.needsUpdate = true;
       this.shadowsDirty = false;
@@ -2740,6 +2741,9 @@ export class CourseView {
       if (this.photoSky && this.skyHorizon) (sm.uniforms.uHaze.value as THREE.Color).lerp(this.skyHorizon, 0.85);
       this.updateSkyEnv(dir);
     }
+    this.sunDir.copy(dir);
+    // (the shadows of the whole site again; standing or flying, they're redone round the eye)
+    this.nearShadowAt = null;
     this.sun.position.copy(center).add(dir.multiplyScalar(span * 1.5));
     this.sun.target.position.copy(center);
     const cam = this.sun.shadow.camera;
@@ -2753,6 +2757,39 @@ export class CourseView {
     const texel = (span * 1.6) / this.sun.shadow.mapSize.x;
     this.sun.shadow.normalBias = Math.max(0.6, texel * 2.5);
     this.sun.shadow.bias = -0.001;
+  }
+
+  /** The sun's direction (toward it), as placeSun last set it. */
+  private sunDir = new THREE.Vector3(-0.45, 1, 0.55).normalize();
+  /** Where the shadows round the eye were last drawn (null: the whole site's are). */
+  private nearShadowAt: THREE.Vector3 | null = null;
+  /**
+   * Standing or flying, the sun's shadows only round the eye and ahead of it (about 500 ft across,
+   * 700 flying), so the same shadow picture gives each tree and trunk a crisp shadow, half a foot a
+   * pixel on a phone, where the whole site's would smear them to blobs. Drawn again only once the
+   * eye has moved on a fair way (30 ft, 70 flying), never every frame.
+   */
+  private nearShadows(cam: THREE.PerspectiveCamera) {
+    const R = this.fly ? 360 : 260;
+    const fwd = cam.getWorldDirection(new THREE.Vector3());
+    fwd.y = 0;
+    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+    fwd.normalize();
+    const c = cam.position.clone().addScaledVector(fwd, R * 0.5);
+    c.y = this.h(c.x, c.z);
+    if (this.nearShadowAt && this.nearShadowAt.distanceTo(c) < (this.fly ? 70 : 30)) return;
+    this.nearShadowAt = c;
+    this.sun.position.copy(c).addScaledVector(this.sunDir, R * 3);
+    this.sun.target.position.copy(c);
+    this.sun.target.updateMatrixWorld();
+    const sc = this.sun.shadow.camera;
+    sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R;
+    sc.near = 1; sc.far = R * 6;
+    sc.updateProjectionMatrix();
+    const texel = (2 * R) / this.sun.shadow.mapSize.x;
+    this.sun.shadow.normalBias = Math.max(0.25, texel * 1.5);
+    this.sun.shadow.bias = -0.0005;
+    this.renderer.shadowMap.needsUpdate = true;
   }
 
   private updateLimits() {
