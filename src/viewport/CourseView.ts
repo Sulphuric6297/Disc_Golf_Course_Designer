@@ -37,6 +37,7 @@ import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { Tufts } from "../three/tufts";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
 import { addSurfaceDetail, layerOf, type SurfaceLayer } from "../three/groundDetail";
+import { softenShadows } from "../three/softShadows";
 import { treeNearFade } from "../three/ezShapes";
 import { createFence, createStructure, onPartLoaded } from "../three/structures";
 import { measuredStanding, setMeasuredStanding } from "../lib/standing";
@@ -63,6 +64,8 @@ const SUN_INTENSITY = 5;
 /** How far inside the map's edge standing stays, ft. */
 const STAND_EDGE_FT = 4;
 const HEMI_INTENSITY = 0.7;
+/** How wide shadows' soft edges are, in texels of the shadow picture (three/softShadows). */
+const SHADOW_SOFT = 3;
 /** How much the sky itself lights things (its picture as the environment: blue from above, the
  * ground's color from below), with Shadows at 65%. A studio's even light made every side as bright,
  * washing the shade out of the ground and the tee pads. */
@@ -428,8 +431,8 @@ export class CourseView {
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = EXPOSURE;
     this.renderer.shadowMap.enabled = true;
-    // (PCF soft. VSM, the shadow picture blurred as it's made, put a phone's whole ground in shade
-    // on the live demo, and in software it slowed everything)
+    // (PCF soft, widened with a graphics card: three/softShadows, below. VSM, the shadow picture
+    // blurred as it's made, put a phone's whole ground in shade on the live demo)
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
     const canvas = this.renderer.domElement;
@@ -489,6 +492,8 @@ export class CourseView {
     this.scene.environment = null;
     this.scene.add(this.hemi);
     this.sun.castShadow = true;
+    // (how wide the soft edge is, in texels of the shadow picture: three/softShadows)
+    this.sun.shadow.radius = SHADOW_SOFT;
     this.sun.shadow.mapSize.set(this.mobile ? 1024 : 2048, this.mobile ? 1024 : 2048);
     this.scene.add(this.sun, this.sun.target);
     // Two lines no one sees, kept for good: three.js drops a shader once nothing uses it, and a
@@ -541,6 +546,8 @@ export class CourseView {
       this.software = !asIf && /swiftshader|llvmpipe|software|basic render/i.test(name);
       // Without a graphics card, or on a phone, fewer trees in full detail
       if (this.software) forestDetail.nearFt = 70;
+      // (soft shadow edges: 32 looks a pixel, too many to do in software every frame)
+      if (!this.software) softenShadows();
       else if (this.mobile) forestDetail.nearFt = 150;
     }
 
