@@ -428,7 +428,9 @@ export class CourseView {
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = EXPOSURE;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // (soft shadows: the shadow picture blurred as it's made, so their edges are soft and never
+    // stepped, however coarse the picture; it's made again only when the sun or the eye moves on)
+    this.renderer.shadowMap.type = THREE.VSMShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
     const canvas = this.renderer.domElement;
     canvas.style.position = "absolute";
@@ -487,6 +489,8 @@ export class CourseView {
     this.scene.environment = null;
     this.scene.add(this.hemi);
     this.sun.castShadow = true;
+    this.sun.shadow.radius = 8;
+    this.sun.shadow.blurSamples = 12;
     this.sun.shadow.mapSize.set(this.mobile ? 1024 : 2048, this.mobile ? 1024 : 2048);
     this.scene.add(this.sun, this.sun.target);
     // Two lines no one sees, kept for good: three.js drops a shader once nothing uses it, and a
