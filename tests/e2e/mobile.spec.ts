@@ -867,6 +867,18 @@ test.describe("phone", () => {
     await tile.tap();
     await expect.poll(open).toBe(false);
     await expect(page.getByTestId("flyover-settings")).toHaveCount(0);
+    // One panel at the bottom at a time: a thing picked, its sheet in the settings' place; the
+    // tile brings them back, letting the thing go
+    await tile.tap();
+    await page.evaluate(() => { const c = (window as any).__dgCourse(); (window as any).__dgActions.select(c.items.find((i: any) => i.type === "tee").id); });
+    await expect(page.getByTestId("selection-header")).toBeVisible();
+    await expect(page.getByTestId("flyover-settings")).toHaveCount(0);
+    await expect(tile).toHaveAttribute("aria-pressed", "false");
+    await tile.tap();
+    await expect(page.getByTestId("flyover-settings")).toBeVisible();
+    await expect.poll(async () => (await editorState(page)).selectedId ?? null).toBeNull();
+    await tile.tap();
+    await expect.poll(open).toBe(false);
     // Flying: the card hides, the tile stays in reach at the top right
     await page.getByTestId("hud-flyover").tap();
     await expect(page.getByTestId("hud-flyover")).toHaveText(/Stop/);
