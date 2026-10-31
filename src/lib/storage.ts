@@ -51,6 +51,36 @@ export const idbDelete = async (key: string) => {
   });
 };
 
+// --- A cache of big pictures (the painted ground), in a database of its own ---
+// (apart from the course: writing a picture of several MB in the course's store held the course's
+// own save up behind it, and a reload then lost the last change)
+let cacheConnection: Promise<IDBDatabase> | null = null;
+const openCache = () =>
+  (cacheConnection ??= new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open("hyzerlab-cache", 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("kv");
+    req.onsuccess = () => {
+      const db = req.result;
+      db.onversionchange = () => { db.close(); cacheConnection = null; };
+      db.onclose = () => { cacheConnection = null; };
+      resolve(db);
+    };
+    req.onerror = () => { cacheConnection = null; reject(req.error); };
+  }));
+const cacheTx = async <T,>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest | void): Promise<T> => {
+  const db = await openCache();
+  return new Promise<T>((resolve, reject) => {
+    // (a cache: kept when the browser gets to it, never holding anything up)
+    const tx = db.transaction("kv", mode, { durability: "relaxed" });
+    const req = run(tx.objectStore("kv"));
+    tx.oncomplete = () => resolve((req ? req.result : undefined) as T);
+    tx.onerror = () => reject(tx.error);
+  });
+};
+export const cacheGet = (key: string) => cacheTx<unknown>("readonly", s => s.get(key));
+export const cacheSet = (key: string, value: unknown) => cacheTx<void>("readwrite", s => { s.put(value, key); });
+export const cacheDelete = (key: string) => cacheTx<void>("readwrite", s => { s.delete(key); });
+
 // --- Course library: earlier courses, kept when you start a new one or open another ---
 // The open course lives under AUTOSAVE_KEY; the others under "plan:<id>", listed (newest first) in PLANS_KEY.
 

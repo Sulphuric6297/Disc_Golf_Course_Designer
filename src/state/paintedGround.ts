@@ -8,7 +8,7 @@ import { courseStats, holeStats } from "../lib/holeStats";
 import type { CourseDoc } from "../types";
 import { useCourse } from "./course";
 import { style3dOf } from "../lib/landscapes";
-import { idbDelete, idbGet, idbSet } from "../lib/storage";
+import { cacheDelete, cacheGet, cacheSet, idbDelete, idbGet } from "../lib/storage";
 import { spareMoment } from "./pace";
 
 /** The paintings wanted now (a tee view, a flyover, a video, a viewer's look), by key. The rest are
@@ -26,16 +26,26 @@ const gently = (key: string, stop: AbortController) => () => {
 // way they're painted; a new one paints them again.)
 const KEPT_KEY = "paint:index", KEEP = 16;
 const hashOf = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
-const savedPaint = async <T,>(key: string): Promise<T | null> => { try { return ((await idbGet(key)) as T | undefined) ?? null; } catch { return null; } };
+const savedPaint = async <T,>(key: string): Promise<T | null> => { try { return ((await cacheGet(key)) as T | undefined) ?? null; } catch { return null; } };
 const savePaint = async (key: string, value: unknown) => {
   try {
-    await idbSet(key, value);
-    const index = ((await idbGet(KEPT_KEY)) as string[] | undefined ?? []).filter(k => k !== key);
+    await cacheSet(key, value);
+    const index = ((await cacheGet(KEPT_KEY)) as string[] | undefined ?? []).filter(k => k !== key);
     index.push(key);
-    while (index.length > KEEP) await idbDelete(index.shift()!);
-    await idbSet(KEPT_KEY, index);
+    while (index.length > KEEP) await cacheDelete(index.shift()!);
+    await cacheSet(KEPT_KEY, index);
   } catch { /* no room, or no store: painted again next time */ }
 };
+// (paintings kept before they had a database of their own: let go of from the course's, once)
+const oldPaintings = async () => {
+  try {
+    const index = (await idbGet(KEPT_KEY)) as string[] | undefined;
+    if (!index) return;
+    for (const k of index) await idbDelete(k);
+    await idbDelete(KEPT_KEY);
+  } catch { /* nothing kept, or no store */ }
+};
+if (typeof window !== "undefined") window.setTimeout(() => void oldPaintings(), 20_000);
 const toBlob = (canvas: HTMLCanvasElement, type: string, quality?: number) => new Promise<Blob | null>(res => canvas.toBlob(res, type, quality));
 /** A kept picture back on a canvas (what the view draws from). */
 const canvasOf = async (blob: Blob) => {
