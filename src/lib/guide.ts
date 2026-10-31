@@ -674,7 +674,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "parks", section: "share", title: "Parks and nearby courses",
-    body: "Name the park a course is in, and other courses there show up on the map, with any close calls between their holes. The ground (and the measured trees) can be shared between them, so you only measure it once. Sharing the ground leaves each course's holes, OB and drawings as they are, and a tree cut down on one course stays on the others.",
+    body: "Name the park a course is in, and other courses there show up on the map, with any close calls between their holes. The ground (and the measured trees) can be shared between them, either way, so you only measure it once: open the course whose ground you want to keep, then Share this ground. A course with no holes yet is listed too. Sharing the ground leaves each course's holes, OB and drawings as they are, and a tree cut down on one course stays on the others.",
     words: "park nearby courses other courses share ground",
     path: "Site › Park", server: true
   },
