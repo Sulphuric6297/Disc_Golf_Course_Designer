@@ -1858,9 +1858,9 @@ export class CourseView {
     const hidden = this.povHole ? this.hideForFlight() : [];
     // (the ground's scans: not without a graphics card, where every pixel's work is the processor's)
     this.ground.detailActive(!this.software && this.tier < 4);
-    // (the leaves right in front of the eye melt away: a flight through the treetops shows the
-    // hole, and standing under a tree, its leaves overhead stay but none fill the view)
-    treeNearFade.value = this.fly ? 45 : 20;
+    // (standing under a tree, the leaves right in front of the eye melt away, those overhead stay;
+    // a flyover never fades anything: it's for seeing what's really there)
+    treeNearFade.value = this.fly ? 0 : 20;
     if (this.shadowsDirty) {
       this.placeSun();
       this.renderer.shadowMap.needsUpdate = true;
