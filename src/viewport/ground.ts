@@ -6,7 +6,7 @@ import { heightAt } from "../lib/terrainGrid";
 import { elevationColor } from "../lib/terrain";
 import { disposeObjectDeep } from "../three/dispose";
 import { GROUND_MATERIALS, PAINT_CELL_FT } from "../lib/groundPaint";
-import { addGroundDetail, coverTexture, groundDetailTexture, groundDetailUniforms } from "../three/groundDetail";
+import { addGroundDetail, coverTexture, groundDetailUniforms, groundScans } from "../three/groundDetail";
 import type { GroundDoc as ViewDoc } from "./types";
 
 const noRaycast = (o: THREE.Object3D) => { o.raycast = () => {}; return o; };
@@ -36,7 +36,7 @@ export class Ground {
   private key = "";
   private heightsRef: Record<string, number> | null = null;
   private overlayKey = "";
-  /** Real-scale grass, concrete, asphalt and soil texture over the photo, and painted ground (see three/groundDetail). */
+  /** Real-scale ground from scans (grass, paving, dirt, the woods' floor) over the photo or the painted map, and painted ground (see three/groundDetail). */
   readonly detail = groundDetailUniforms();
   private photoFt = 0;
   private wantDetail = true;
@@ -66,6 +66,7 @@ export class Ground {
       changed = true;
     }
     this.photoFt = bg.rect.width / (doc.unitsPerFoot || 1);
+    this.detail.coverRect.value.set(bg.rect.x, bg.rect.y, bg.rect.width, bg.rect.height);
     this.detail.groundFeet.value = 1 / (doc.unitsPerFoot || 1);
     if (this.wantDetail !== doc.groundDetail) {
       this.wantDetail = doc.groundDetail;
@@ -210,7 +211,8 @@ export class Ground {
   private setCover(cover: THREE.DataTexture | null) {
     this.detail.coverMap.value?.dispose();
     this.detail.coverMap.value = cover;
-    if (cover) this.loadDetail();
+    this.detail.coverOn.value = cover ? 1 : 0;
+    this.detailActive(this.close);
   }
 
   /**
@@ -219,15 +221,20 @@ export class Ground {
    */
   detailActive(close: boolean) {
     this.close = close;
-    this.detail.groundDetail.value = close && this.wantDetail && !this.painted && this.detail.detailMap.value ? 1 : 0;
+    // (on the photo and on the painted map alike: each takes the scans of what it shows)
+    if (close && this.wantDetail) this.loadDetail();
+    // (the painted map's colors say what each spot is; the photo's cover mask says it for the photo)
+    this.detail.coverFromColor.value = this.painted || !this.detail.coverMap.value ? 1 : 0;
+    this.detail.groundDetail.value = close && this.wantDetail && this.detail.detailMap.value ? 1 : 0;
   }
 
-  /** The texture patterns, once there is a photo's cover or painted ground to use them. */
+  /** The scans, the first time the view comes close (a couple of megabytes, then kept). */
   private loadDetail() {
     if (this.detail.detailMap.value) return;
-    void groundDetailTexture().then(tex => {
-      if (!tex || this.detail.detailMap.value) return;
-      this.detail.detailMap.value = tex;
+    void groundScans().then(sc => {
+      if (!sc || this.detail.detailMap.value) return;
+      this.detail.detailMap.value = sc.color;
+      this.detail.detailNormal.value = sc.normal;
       this.detailActive(this.close);
       this.onChanged();
     });

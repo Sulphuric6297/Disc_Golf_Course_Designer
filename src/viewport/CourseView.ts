@@ -16,11 +16,11 @@ import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { INK, MANDO, RESTRICTED, amenitySymbol, dropZoneSymbol, symbolSvg } from "../lib/symbols";
 import { AMENITY_KINDS, AREA_KINDS, CIRCLE_ONE_FT, EYE_HEIGHT_FT, LINE_KINDS, OBJECT_ELEVATION_OFFSET, PATH_SURFACES, STAND_HERE, STAND_NEAR_FT, STRUCTURE_KINDS, TEE_LEVELS, clamp } from "../constants";
 import { FAIRWAY_STATIONS, beyondSides, areaObEdges, areaRing, isRing, ringStretch, sharedWalks, teeLines, walkRoutes, autoWalks, areaCurves, areaPath, basketFor, basketHoles, curves, fairwayOutline, mergeStretches, obFor, obPicked, obRanges, widthAlong, widthFactors, widthsWithEnd, widthsWithPoint, widthsWithout, widthVaries, holeLabel, fairwayShiftAt, fairwayWidthAt, linePath, stationsOf, withStation, withoutStation, holeBaskets, holeNumber, holeTees, teeAim, throwLine } from "../lib/course";
-import { boundsOf, centroid, dist, distanceToPath, inBounds, nearestAlong, offsetPath, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath, subPath } from "../lib/geom";
+import { boundsOf, centroid, dist, distanceToPath, distanceToPolygon, inBounds, nearestAlong, offsetPath, pathLength, pointAlong, pointBoundsGap, pointInPolygon, polygonArea, simplify, smoothPath, subPath } from "../lib/geom";
 import { isOutOfPlay, parForDistance } from "../lib/holeStats";
 import { heightAt } from "../lib/terrainGrid";
 import { conifersOf, treeMixOf } from "../lib/landscapes";
-import { LOOK_LABEL, sharesOf, standShares, type TreeLookId } from "../lib/treeMix";
+import { LOOK_LABEL, sharesOf, standShape, standShares, type TreeLookId } from "../lib/treeMix";
 import { fmtArea, fmtDist, fmtElev } from "../lib/units";
 import { BASKET_BAND, createAmenity, createBasket, createDropZone, createMando, createTeePad, fitTeePad } from "../three/courseModels";
 import { drapedPoints, drapedPolygon, drapedRibbon } from "../three/drape";
@@ -37,19 +37,22 @@ import { forestDetail, type Forest, type TreeSpot, woodsCrownWidth } from "../th
 import { GRASS, Grass, type GrassQuality } from "../three/grass";
 import { Tufts } from "../three/tufts";
 import { setWaterSky, waterMaterial, waterUniforms } from "../three/water";
+import { addSurfaceDetail, layerOf, type SurfaceLayer } from "../three/groundDetail";
+import { treeNearFade } from "../three/ezShapes";
 import { createFence, createStructure, onPartLoaded } from "../three/structures";
 import { measuredStanding, setMeasuredStanding } from "../lib/standing";
 import { createFieldGround, createFieldProps, createHedge, createPowerLine } from "../three/parkProps";
 import { LEAGUES, cornerFrame, fieldInks, fieldPartAt, fieldPartShape, fieldPlan } from "../lib/fieldPlan";
 import { fieldHome, fieldKeepsTreesOut, fieldKindOf, fieldOutline, isBallField } from "../lib/fields";
 import { isLineKind, orientedBox, roofFor, structureBounds, structureHeight, structurePath, structureWidth, turnShape } from "../lib/structures";
-import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier, FieldPart } from "../types";
+import type { AmenityItem, AmenityKind, AreaItem, BasketItem, CourseItem, FlyKey, Hole, LabelItem, LineItem, MandoItem, StructureItem, TeeItem, TeeLevel, TreeItem, BrushKind, PathTier, FieldPart, CourseDoc, LidarTree } from "../types";
 import { Ground } from "./ground";
 import { grassMaps, grassTerrain } from "./grassMaps";
 import type { FlightFrames, FlyoverVideo, FrameInfo, RecordOptions } from "./flyoverVideo";
 import type { LocationMark, P, ViewCallbacks, ViewDoc, ViewInfo, ViewTool } from "./types";
 import { toast } from "../state/toast";
 import { turnable } from "../lib/turn";
+import { timed } from "../lib/perfLog";
 
 CameraControls.install({ THREE });
 const { ACTION } = CameraControls;
@@ -61,6 +64,8 @@ const SUN_INTENSITY = 5;
 /** How far inside the map's edge standing stays, ft. */
 const STAND_EDGE_FT = 4;
 const HEMI_INTENSITY = 0.5;
+/** Told when a corner of a line or an area is pressed (its id and which corner). */
+export const CORNER_EVENT = "dg-corner";
 const EXPOSURE = 2;
 /** How much closer underbrush grows in tall grass than under trees (out in the sun, it fills in). */
 const TALL_GRASS_BRUSH = 1.8;
@@ -325,6 +330,9 @@ export class CourseView {
    * while the view is still, so opening a course or changing it never holds the page for the whole
    * lot at once (on a phone that was half a minute); what was there stays until its new one's in. */
   private slowQueue = new Map<string, { sig: string; make: () => THREE.Object3D | null; group: THREE.Group }>();
+  /** Something new made, not yet drawn once with every level of detail showing (see warmUp). */
+  private needWarm = true;
+  private warmed = new WeakSet<THREE.Object3D>();
   private detailReady: Promise<unknown> = Promise.resolve();
   private fly: { pts: THREE.Vector3[]; look: THREE.Vector3[]; fov: number[]; t: number; dur: number; play: number; at: (t: number) => number; done?: () => void; title?: HoleTitle } | null = null;
   /** A hole whose line is being plotted by hand, and its turns so far (from the tee). */
@@ -354,6 +362,15 @@ export class CourseView {
   /** The tee view's field of view, kept while a flight sets its own. */
   private povFov = 62;
   private skyBox: Sky;
+  /** The photographed sky (public/sky), in place of the sky model while the sun is up: the one
+   * whose own sun is nearest the course's in height, turned so its sun is where the light comes
+   * from (see photoSkyFor). Null until its picture has come. */
+  private photoSky: THREE.Mesh | null = null;
+  private photoSkyName = "";
+  private skyAsked = false;
+  /** The photo sky's own color at the horizon: the haze takes it, so the land far off fades into it. */
+  private skyHorizon: THREE.Color | null = null;
+  private skyPhotos: Record<string, { sunU: number; sunV: number; average: string }> | null = null;
   /** Grass blades near the camera, in 3D (see three/grass). */
   readonly grass = new Grass();
   /** Tufts of grass and wildflowers (ez-tree's demo's) among the blades. */
@@ -362,6 +379,11 @@ export class CourseView {
   /** The sky as an environment for water to reflect (made again when the sun moves). */
   private skyEnv: THREE.WebGLRenderTarget | null = null;
   private skyEnvKey = "";
+  /** Ponds, for the pictures of all round them they mirror (see pictureStep), the biggest first. */
+  private ponds = new Map<THREE.Mesh, { color: string; shore: [string, number]; bottom: string; at: THREE.Vector3; size: number; done: boolean; env?: THREE.WebGLRenderTarget }>();
+  private pondsDirty = false;
+  /** A pond's picture being taken: a side at a time, while the view is still. */
+  private picturing: { mesh: THREE.Mesh; cube: THREE.CubeCamera; rt: THREE.WebGLCubeRenderTarget; face: number } | null = null;
   private grassBuilt = 0;
   private grassTimer = 0;
   private lastSky = false;
@@ -784,6 +806,10 @@ export class CourseView {
     const delta = px - this.leftInset;
     this.leftInset = px;
     if (!delta || !this.fitted || this.size.height < 2) return;
+    // (the panel of a thing just picked: that thing brought out from under it, as picking does,
+    // not slid by half the panel, which could take it back out of sight)
+    const r = this.revealed;
+    if (r && performance.now() - r.at < 1500) { this.frame(r.id); return; }
     // (still as fitted, untouched: fitted again, around the panel)
     if (this.autoFit) return this.autoFit();
     const worldPerPx = (2 * this.controls.distance * Math.tan((this.camera.fov * DEG) / 2)) / this.size.height;
@@ -888,8 +914,12 @@ export class CourseView {
   /** Brings a picked item or hole into view: the map slides, it never zooms (the owner's rule:
    * picking, from the map, a list, Search or the arrows, keeps the zoom it's at). */
   reveal(id: string) {
+    // (at once, and again when the map hears how wide its panel is: picking it opens the panel,
+    // and on a slow device the map hears of it only later; see setLeftInset)
+    this.revealed = { id, at: performance.now() };
     this.frame(id);
   }
+  private revealed: { id: string; at: number } | null = null;
 
   /** Zooms to show the whole of an item, only when that's asked for (Zoom to it, F). */
   zoomTo(id: string) {
@@ -1822,7 +1852,8 @@ export class CourseView {
     const restore = this.atmosphere(cam, true);
     this.ground.extras.visible = false;
     this.updateGrass(cam, true);
-    this.updateForests(cam.position);
+    // (the corner map from above draws the same trees: all of them, then)
+    this.updateForests(cam.position, this.miniSize ? undefined : cam);
     waterUniforms.uTime.value = this.clock.elapsedTime;
     waterUniforms.uWind.value = this.wind ? 1 : 0.25;
     // (editing: what's picked and what's under the pointer outlined, as on the map)
@@ -1830,6 +1861,9 @@ export class CourseView {
     // (the hole's On screen switches: flying, and from the tee)
     const hidden = this.povHole ? this.hideForFlight() : [];
     this.ground.detailActive(true);
+    // (the leaves right in front of the eye melt away: a flight through the treetops shows the
+    // hole, and standing under a tree, its leaves overhead stay but none fill the view)
+    treeNearFade.value = this.fly ? 45 : 20;
     if (this.shadowsDirty) {
       this.placeSun();
       this.renderer.shadowMap.needsUpdate = true;
@@ -1848,6 +1882,7 @@ export class CourseView {
       this.renderer.setScissorTest(false);
     }
     restore();
+    treeNearFade.value = 0;
     for (const o of hidden) o.visible = true;
     this.ground.extras.visible = true;
     this.fx.visible = true;
@@ -2124,6 +2159,8 @@ export class CourseView {
     this.raf = requestAnimationFrame(this.loop);
     const dt = this.clock.getDelta();
     if (this.slowQueue.size && (this.flyWait || this.stillFor() > 150)) this.drainSlow();
+    else if (this.needWarm && !this.slowQueue.size && !this.capturing && this.stillFor() > 300) { this.needWarm = false; this.warmUp(); }
+    else if ((this.pondsDirty || this.picturing) && !this.slowQueue.size && !this.needWarm && !this.warming && !this.capturing && !this.fly && this.stillFor() > 600) this.pictureStep();
     this.gliding = this.controls.update(dt);
     if (this.gliding) this.dirty = true;
     if (this.glide) { this.stepGlide(dt); this.dirty = true; }
@@ -2284,6 +2321,9 @@ export class CourseView {
   }
 
   private render() {
+    timed("3D frame drawn", () => this.renderFrame());
+  }
+  private renderFrame() {
     if (this.povHole) {
       this.renderer.setClearColor(0x000000, 1);
       this.renderer.clear();
@@ -2346,7 +2386,7 @@ export class CourseView {
     this.lastSky = false;
     const restore = tilted ? this.atmosphere(this.camera, false) : null;
     this.updateGrass(this.camera, tilted);
-    this.updateForests(this.camera.position);
+    this.updateForests(this.camera.position, this.camera);
     if (this.treesHidden || this.treesShownAt !== this.treesHidden) { this.showTrees(); this.treesShownAt = this.treesHidden; }
     waterUniforms.uTime.value = this.clock.elapsedTime;
     this.renderer.render(this.scene, this.camera);
@@ -2397,7 +2437,18 @@ export class CourseView {
     const sm = this.skyBox.material as THREE.ShaderMaterial;
     this.skyBox.scale.setScalar(cam.far * 1.05);
     this.skyBox.position.copy(cam.position);
-    this.skyBox.visible = true;
+    const photo = this.photoSky;
+    if (photo) {
+      photo.scale.setScalar(cam.far * 0.9);
+      photo.position.copy(cam.position);
+      photo.visible = true;
+      photo.updateMatrixWorld();
+      // (as bright as the rest of the picture is set to be)
+      const light = (photo.material as THREE.Material).userData.light as { value: number } | undefined;
+      if (light) light.value = clamp(this.renderer.toneMappingExposure / EXPOSURE, 0.6, 1.5);
+    }
+    // (the model only where there's no photo: at night, or before the photo has come)
+    this.skyBox.visible = !photo;
     this.lastSky = true;
     this.skyBox.updateMatrixWorld();
     this.ground.landscape(true);
@@ -2417,6 +2468,7 @@ export class CourseView {
       this.scene.fog = prevFog;
       this.scene.background = prevBg;
       this.skyBox.visible = false;
+      if (this.photoSky) this.photoSky.visible = false;
       this.ground.landscape(false);
     };
   }
@@ -2474,9 +2526,89 @@ export class CourseView {
     return wooded || st.forest === "everywhere" ? [st.trees, 0.26] : [doc.groundColor, 0.06];
   }
 
+  /**
+   * The photographed sky for a sun (its direction): midday's for a high sun, the late afternoon's,
+   * or the sunset's for a low one (by the height of each photo's own sun); none at night, where
+   * the sky model's dark sky stays. Turned so the photo's sun is where the course's sun is. Its
+   * picture comes once (a phone's smaller), then stays.
+   */
+  private photoSkyFor(dir: THREE.Vector3) {
+    if (!this.skyPhotos) {
+      if (this.skyAsked) return;
+      this.skyAsked = true;
+      void fetch(`${import.meta.env.BASE_URL}sky/skies.json`).then(r => r.json()).then(j => { if (this.disposed) return; this.skyPhotos = j; this.photoSkyFor(dir); }).catch(() => {});
+      return;
+    }
+    const alt = Math.asin(clamp(dir.y, -1, 1)) / DEG;
+    const name = alt <= 1 ? "" : alt >= 34 ? "midday" : alt >= 12 ? "afternoon" : "sunset";
+    const info = name ? this.skyPhotos[name] : null;
+    if (!info) {
+      if (this.photoSky) { this.scene.remove(this.photoSky); this.photoSky = null; this.photoSkyName = ""; this.skyEnvKey = ""; }
+      return;
+    }
+    const turn = () => {
+      // (the photo's sun, as three.js lays out a photo of all round: its angle round from +x; the
+      // sky turned by the difference to the course's)
+      const a = (info.sunU - 0.5) * Math.PI * 2, want = Math.atan2(dir.z, dir.x);
+      if (this.photoSky) this.photoSky.rotation.y = a - want;
+    };
+    if (this.photoSkyName === name) { turn(); return; }
+    this.photoSkyName = name;
+    new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}sky/${name}-${this.mobile ? "2k" : "4k"}.jpg`, tex => {
+      if (this.disposed || this.photoSkyName !== name) { tex.dispose(); return; }
+      tex.colorSpace = THREE.SRGBColorSpace;
+      // (its color just over the horizon, all the way round: the haze's)
+      try {
+        const img = tex.image as HTMLImageElement, c = document.createElement("canvas");
+        c.width = 64; c.height = 2;
+        const g = c.getContext("2d", { willReadFrequently: true })!;
+        g.drawImage(img, 0, img.height * 0.9, img.width, img.height * 0.08, 0, 0, 64, 2);
+        const px = g.getImageData(0, 0, 64, 2).data;
+        let r = 0, gg = 0, b = 0;
+        for (let i = 0; i < px.length; i += 4) { r += px[i]; gg += px[i + 1]; b += px[i + 2]; }
+        const n = px.length / 4;
+        this.skyHorizon = new THREE.Color().setRGB(r / n / 255, gg / n / 255, b / n / 255, THREE.SRGBColorSpace);
+      } catch { this.skyHorizon = null; }
+      // (the picture is the upper half, horizon to overhead; three.js's sphere runs the other way round)
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.repeat.set(-1, 2);
+      tex.offset.set(1, -1);
+      tex.anisotropy = 4;
+      const sm = this.skyBox.material as THREE.ShaderMaterial;
+      const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, depthWrite: false, fog: false, toneMapped: false });
+      mat.onBeforeCompile = shader => {
+        shader.uniforms.uHaze = sm.uniforms.uHaze;
+        shader.uniforms.uSkyLight = { value: 1 };
+        mat.userData.light = shader.uniforms.uSkyLight;
+        // (pinned to the far limit, as three.js's own sky is: never cut away by it, whatever its size)
+        shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vSkyDir;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvSkyDir = position;").replace("#include <project_vertex>", "#include <project_vertex>\ngl_Position.z = gl_Position.w;");
+        // (melting into the haze at the horizon, as the land does; under it, the haze)
+        shader.fragmentShader = shader.fragmentShader
+          .replace("#include <common>", "#include <common>\nvarying vec3 vSkyDir;\nuniform vec3 uHaze;\nuniform float uSkyLight;")
+          .replace("#include <map_fragment>", "#include <map_fragment>\ndiffuseColor.rgb = mix( uHaze, diffuseColor.rgb * uSkyLight, smoothstep( -0.01, 0.1, normalize( vSkyDir ).y ) );");
+      };
+      mat.customProgramCacheKey = () => "dg-photo-sky";
+      const old = this.photoSky;
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32), mat);
+      mesh.renderOrder = -9;
+      mesh.frustumCulled = false;
+      mesh.visible = false;
+      mesh.raycast = () => {};
+      this.photoSky = mesh;
+      turn();
+      this.scene.add(mesh);
+      if (old) { this.scene.remove(old); (old.material as THREE.MeshBasicMaterial).map?.dispose(); (old.material as THREE.Material).dispose(); old.geometry.dispose(); }
+      // (the light from the sky takes a little of its color; the water mirrors it)
+      this.hemi.color.set(0xeef4ff).lerp(new THREE.Color(info.average), 0.3);
+      this.skyEnvKey = "";
+      this.placeSun();
+      this.invalidate();
+    }, undefined, () => { if (this.photoSkyName === name) this.photoSkyName = ""; });
+  }
+
   /** The sky as an environment map, for water to reflect (only when the sun has moved). */
   private updateSkyEnv(dir: THREE.Vector3) {
-    const key = `${dir.x.toFixed(3)},${dir.y.toFixed(3)},${dir.z.toFixed(3)}`;
+    const key = `${dir.x.toFixed(3)},${dir.y.toFixed(3)},${dir.z.toFixed(3)},${this.photoSky ? this.photoSkyName : ""}`;
     if (key === this.skyEnvKey) return;
     this.skyEnvKey = key;
     const sky = new Sky();
@@ -2490,6 +2622,12 @@ export class CourseView {
     sky.scale.setScalar(1000);
     const scene = new THREE.Scene();
     scene.add(sky);
+    if (this.photoSky) {
+      const photo = new THREE.Mesh(this.photoSky.geometry, this.photoSky.material);
+      photo.rotation.copy(this.photoSky.rotation);
+      photo.scale.setScalar(900);
+      scene.add(photo);
+    }
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     const rt = pmrem.fromScene(scene, 0, 1, 3000);
     pmrem.dispose();
@@ -2498,14 +2636,17 @@ export class CourseView {
     this.skyEnv?.dispose();
     this.skyEnv = rt;
     setWaterSky(rt.texture);
+    waterUniforms.uSunDir.value.copy(dir).normalize();
+    waterUniforms.uSunColor.value.copy(this.sun.color).multiplyScalar(Math.min(1.3, this.sun.intensity / SUN_INTENSITY));
+    this.pondsAgain();
   }
 
   /** Woods: the trees near the camera in full detail. */
-  private updateForests(eye: THREE.Vector3) {
+  private updateForests(eye: THREE.Vector3, cam?: THREE.PerspectiveCamera) {
     for (const o of this.itemsGroup.children) {
-      (o.userData.forest as Forest | undefined)?.update(eye);
+      (o.userData.forest as Forest | undefined)?.update(eye, cam);
       // (a hedge's bushes, inside its line's group)
-      for (const c of o.children) (c.userData.forest as Forest | undefined)?.update(eye);
+      for (const c of o.children) (c.userData.forest as Forest | undefined)?.update(eye, cam);
     }
   }
 
@@ -2596,6 +2737,8 @@ export class CourseView {
       (sm.uniforms.sunPosition.value as THREE.Vector3).copy(dir);
       const low = 1 - clamp((Math.asin(clamp(dir.y, -1, 1)) / DEG - 8) / 40, 0, 1);
       (sm.uniforms.uHaze.value as THREE.Color).set("#c4d0d9").lerp(new THREE.Color("#dcc8ae"), low * 0.65);
+      this.photoSkyFor(dir);
+      if (this.photoSky && this.skyHorizon) (sm.uniforms.uHaze.value as THREE.Color).lerp(this.skyHorizon, 0.85);
       this.updateSkyEnv(dir);
     }
     this.sun.position.copy(center).add(dir.multiplyScalar(span * 1.5));
@@ -2801,6 +2944,9 @@ export class CourseView {
   }
 
   private syncItems() {
+    timed("3D things made again", () => this.syncItemsAll());
+  }
+  private syncItemsAll() {
     const doc = this.doc!;
     const seen = new Set<string>();
     for (const item of doc.course.items) {
@@ -2844,6 +2990,9 @@ export class CourseView {
    * depends on changes.
    */
   private syncShapes() {
+    timed("3D shapes made again", () => this.syncShapesAll());
+  }
+  private syncShapesAll() {
     const doc = this.doc!;
     const course = doc.course;
     const st = course.style;
@@ -2912,8 +3061,11 @@ export class CourseView {
         const mat = new THREE.MeshLambertMaterial({ color: st.fairway, transparent: true, opacity: photo ? 0.22 : 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
         // (each spot drawn once, however many fairways cover it)
         Object.assign(mat, { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc, stencilZPass: THREE.ReplaceStencilOp });
+        // (up close, mown grass; a copy keeps no shader of its own, so each gets it)
+        const mown = (m: THREE.MeshLambertMaterial) => { addSurfaceDetail(m, this.ground.detail, layerOf("grass"), 0.9, true); return m; };
+        mown(mat);
         polys.forEach((poly, k) => {
-          const mesh = new THREE.Mesh(drapedPolygon(poly, (x, y) => this.h(x, y), doc.gridSize, 0.12), k ? mat.clone() : mat);
+          const mesh = new THREE.Mesh(drapedPolygon(poly, (x, y) => this.h(x, y), doc.gridSize, 0.12), k ? mown(mat.clone()) : mat);
           mesh.renderOrder = 1;
           mesh.receiveShadow = true;
           g.add(mesh);
@@ -2969,7 +3121,7 @@ export class CourseView {
         const ss = box ? shapes.filter(x => meets(x.box, box, M)) : shapes;
         const ls = box ? paths.filter(x => meets(x.box, box, x.half + M)) : paths;
         const ds = box ? discs.filter(d => d.p.x > box.minX - d.r - M && d.p.x < box.maxX + d.r + M && d.p.y > box.minY - d.r - M && d.p.y < box.maxY + d.r + M) : discs;
-        const test = (p: P, reach: number) => {
+        const every = (p: P, reach: number) => {
           for (const x of ss) {
             const b = x.box;
             if (p.x < b.minX - reach || p.x > b.maxX + reach || p.y < b.minY - reach || p.y > b.maxY + reach) continue;
@@ -2981,6 +3133,62 @@ export class CourseView {
             if (distanceToPath(p, l.pts) < m) return true;
           }
           for (const d of ds) if (Math.hypot(p.x - d.p.x, p.y - d.p.y) < d.r + reach) return true;
+          return false;
+        };
+        // The same answer, from a grid of what's near each 32 ft square (made at the first spot
+        // asked about): a spot looks only at the outlines' edges, lines' pieces and discs round
+        // its own square, not every outline's whole length (a wood asks thousands of times, and
+        // an imported road can have hundreds of points). Reaches past the grid's margin ask
+        // `every` instead.
+        const CELL = 32, RMAX = 32;
+        type Seg = { ax: number; ay: number; bx: number; by: number; m: number };
+        let grid: { x0: number; y0: number; nx: number; ny: number; segs: Seg[][]; polys: number[][]; discs: number[][] } | null = null;
+        const makeGrid = () => {
+          let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+          const grow = (bx: Box, m: number) => { x0 = Math.min(x0, bx.minX - m); y0 = Math.min(y0, bx.minY - m); x1 = Math.max(x1, bx.maxX + m); y1 = Math.max(y1, bx.maxY + m); };
+          ss.forEach(x => grow(x.box, RMAX));
+          ls.forEach(l => grow(l.box, l.half + RMAX));
+          ds.forEach(d => grow({ minX: d.p.x, minY: d.p.y, maxX: d.p.x, maxY: d.p.y }, d.r + RMAX));
+          const nx = Math.max(1, Math.ceil((x1 - x0) / CELL)), ny = Math.max(1, Math.ceil((y1 - y0) / CELL));
+          if (!Number.isFinite(x0) || nx * ny > 400_000) return null;
+          const g = { x0, y0, nx, ny, segs: [] as Seg[][], polys: [] as number[][], discs: [] as number[][] };
+          const each = (minX: number, minY: number, maxX: number, maxY: number, fn: (k: number) => void) => {
+            const i0 = Math.max(0, Math.floor((minX - x0) / CELL)), i1 = Math.min(nx - 1, Math.floor((maxX - x0) / CELL));
+            const j0 = Math.max(0, Math.floor((minY - y0) / CELL)), j1 = Math.min(ny - 1, Math.floor((maxY - y0) / CELL));
+            for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) fn(j * nx + i);
+          };
+          const seg = (a: P, b: P, m: number) => {
+            const s: Seg = { ax: a.x, ay: a.y, bx: b.x, by: b.y, m };
+            each(Math.min(a.x, b.x) - m - RMAX, Math.min(a.y, b.y) - m - RMAX, Math.max(a.x, b.x) + m + RMAX, Math.max(a.y, b.y) + m + RMAX, k => (g.segs[k] ??= []).push(s));
+          };
+          ss.forEach((x, n) => {
+            each(x.box.minX - RMAX, x.box.minY - RMAX, x.box.maxX + RMAX, x.box.maxY + RMAX, k => (g.polys[k] ??= []).push(n));
+            for (let i = 0; i + 1 < x.closed.length; i++) seg(x.closed[i], x.closed[i + 1], 0);
+          });
+          ls.forEach(l => { for (let i = 0; i + 1 < l.pts.length; i++) seg(l.pts[i], l.pts[i + 1], l.half); });
+          ds.forEach((d, n) => each(d.p.x - d.r - RMAX, d.p.y - d.r - RMAX, d.p.x + d.r + RMAX, d.p.y + d.r + RMAX, k => (g.discs[k] ??= []).push(n)));
+          return g;
+        };
+        let tried = false;
+        const test = (p: P, reach: number) => {
+          if (reach > RMAX || ss.length + ls.length + ds.length < 6) return every(p, reach);
+          if (!tried) { tried = true; grid = makeGrid(); }
+          const g = grid;
+          if (!g) return every(p, reach);
+          const i = Math.floor((p.x - g.x0) / CELL), j = Math.floor((p.y - g.y0) / CELL);
+          if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) return false;
+          const k = j * g.nx + i;
+          for (const n of g.polys[k] ?? []) if (pointInPolygon(p, ss[n].pts)) return true;
+          for (const s of g.segs[k] ?? []) {
+            const m = s.m + reach;
+            if (m <= 0) continue;
+            // (the distance to the piece, squared, against the reach)
+            const dx = s.bx - s.ax, dy = s.by - s.ay, len = dx * dx + dy * dy;
+            const t = len > 0 ? Math.max(0, Math.min(1, ((p.x - s.ax) * dx + (p.y - s.ay) * dy) / len)) : 0;
+            const ex = s.ax + t * dx - p.x, ey = s.ay + t * dy - p.y;
+            if (ex * ex + ey * ey < m * m) return true;
+          }
+          for (const n of g.discs[k] ?? []) { const d = ds[n]; if (Math.hypot(p.x - d.p.x, p.y - d.p.y) < d.r + reach) return true; }
           return false;
         };
         let key: string | null = null;
@@ -3071,6 +3279,9 @@ export class CourseView {
         return woods;
       }, this.itemsGroup, true);
     }
+    // The woods' floor, for the ground's scans up close: leaf litter under leafy trees, needles
+    // under conifers (the measured ones standing, and the woods drawn)
+    this.updateFloor(course, lidar && this.lidarState ? this.lidarState.stand.map(k => lidar.trees[k]) : []);
     // Areas: fill plus outline (and a red OB edge, all round or along its stretches)
     const obEdge = (a: AreaItem, g: THREE.Group) => {
       for (const piece of areaObEdges({ ...a, straight: true })) g.add(this.fatLine(this.drapeLine(piece, LIFT + 0.05), color("ob")!, 3, { order: 5 }));
@@ -3152,7 +3363,17 @@ export class CourseView {
             return Math.max(this.h(i, j), this.h(i + cell, j), this.h(i, j + cell), this.h(i + cell, j + cell));
           };
           const surface = (x: number, y: number) => Math.max(bankLevel(x, y) + 0.2, cellTop(x, y) + 0.3);
-          const pond = new THREE.Mesh(drapedPolygon(a.points, surface, cell / 2, 0), waterMaterial(c, ...this.waterShore(a.points)));
+          // (its depth: shelving from the bank, about a foot every 8 ft out, to 9 ft; the survey
+          // can't see under water, so the ground there is only the water's own level)
+          const geo = drapedPolygon(a.points, surface, cell / 2, 0), pa = geo.attributes.position, depth = new Float32Array(pa.count);
+          for (let i = 0; i < pa.count; i++) depth[i] = Math.min(9, distanceToPolygon({ x: pa.getX(i), y: pa.getZ(i) }, a.points) * 0.12);
+          geo.setAttribute("aDepth", new THREE.BufferAttribute(depth, 1));
+          const shore = this.waterShore(a.points), bottom = `#${new THREE.Color(doc.groundColor).lerp(new THREE.Color("#6a5a3c"), 0.6).getHexString()}`;
+          const pond = new THREE.Mesh(geo, waterMaterial(c, ...shore, { bottom }));
+          pond.userData.water = true;
+          const mid = centroid(a.points);
+          this.ponds.set(pond, { color: c, shore, bottom, at: new THREE.Vector3(mid.x, surface(mid.x, mid.y) + 2.5, mid.y), size: Math.abs(polygonArea(a.points)), done: false });
+          this.pondsDirty = true;
           pond.renderOrder = 2;
           pond.receiveShadow = true;
           g.add(pond);
@@ -3163,10 +3384,12 @@ export class CourseView {
         const floor = a.kind === "woods";
         if (!bare) {
           const geo = drapedPolygon(a.points, (x, y) => this.h(x, y), doc.gridSize, floor ? 0.08 : 0.15 + order * 0.01);
-          const mesh = new THREE.Mesh(
-            geo,
-            new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: floor ? Math.min(fill, 0.45) : fill, depthWrite: false, polygonOffset: true, polygonOffsetFactor: floor ? -1 : -4, polygonOffsetUnits: floor ? -2 : -8 })
-          );
+          const mat = new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: floor ? Math.min(fill, 0.45) : fill, depthWrite: false, polygonOffset: true, polygonOffsetFactor: floor ? -1 : -4, polygonOffsetUnits: floor ? -2 : -8 });
+          // (up close, what it's made of: a fairway's mown grass, a parking lot's asphalt, a woods' floor)
+          const scan: [SurfaceLayer, number] | null = a.kind === "fairway" || a.kind === "green" ? ["grass", 0.9] : a.kind === "rough" ? ["grass", 1] : a.kind === "sand" ? ["sand", 1]
+            : a.kind === "parking" ? ["asphalt", 1] : floor ? [standShape(a) === "conifer" ? "needles" : "leaves", 1] : null;
+          if (scan) addSurfaceDetail(mat, this.ground.detail, layerOf(scan[0]), scan[1], a.kind === "fairway" || a.kind === "green");
+          const mesh = new THREE.Mesh(geo, mat);
           mesh.renderOrder = floor ? 0.5 : a.kind === "parking" ? tierOrder("road") : 2 + order * 0.001;
           mesh.receiveShadow = true;
           g.add(mesh);
@@ -3305,11 +3528,12 @@ export class CourseView {
         if (width > 0 && l.points.length >= 2) {
           const ribbon = new THREE.Mesh(
             drapedRibbon(pts, along, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.18),
-            l.kind === "stream" ? waterMaterial(c, ...this.waterShore(l.points)) : new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 1, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
+            l.kind === "stream" ? waterMaterial(c, ...this.waterShore(l.points)) : this.surfaceMaterial(c, l.kind === "road" ? "asphalt" : l.kind === "path" || l.kind === "walk" ? ({ gravel: "gravel", woodchips: "chips", paved: "concrete", grass: "grass" } as Record<string, SurfaceLayer>)[l.surface ?? ""] ?? "dirt" : null)
           );
           // (walks to the next hole over every other path)
           // (a walk to the next hole over the paths of its own kind it crosses)
           ribbon.renderOrder = l.kind === "stream" ? 2 : tierOrder(tierOf(l.kind, l.surface)) + (l.kind === "walk" ? 0.07 : 0);
+          if (l.kind === "stream") ribbon.userData.water = true;
           ribbon.receiveShadow = true;
           g.add(ribbon);
         } else {
@@ -3382,7 +3606,11 @@ export class CourseView {
           if (!painted) {
             const mesh = new THREE.Mesh(
               drapedRibbon([from, to], wide ?? 6, (x, y) => this.h(x, y), Math.max(3, doc.gridSize / 2), 0.17),
-              new THREE.MeshLambertMaterial({ color: surface && surface !== "dirt" ? PATH_SURFACES[surface].color : st.path, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 })
+              (() => {
+                const m = new THREE.MeshLambertMaterial({ color: surface && surface !== "dirt" ? PATH_SURFACES[surface].color : st.path, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
+                addSurfaceDetail(m, this.ground.detail, layerOf(({ gravel: "gravel", woodchips: "chips", paved: "concrete", grass: "grass" } as Record<string, SurfaceLayer>)[surface ?? ""] ?? "dirt"));
+                return m;
+              })()
             );
             // (walks to the next hole over the paths of their own kind they cross, under the kinds above)
             mesh.renderOrder = tierOrder(tierOf("walk", surface)) + 0.07;
@@ -3468,7 +3696,9 @@ export class CourseView {
         disposeObjectDeep(entry.obj);
         this.shapes.delete(key);
       }
-      const obj = job.make();
+      const obj = timed(`3D ${key.split(":")[0]} made`, job.make);
+      this.needWarm = true;
+      this.pondsAgain();
       if (obj) {
         obj.traverse(o => { o.raycast = () => {}; });
         if (!obj.name) obj.name = key;
@@ -3479,6 +3709,198 @@ export class CourseView {
       if (performance.now() - t0 > budget) break;
     }
   }
+  /** Everything new drawn once, out of sight, with every level of detail showing: its shaders
+   * compiled and its shapes sent to the graphics card while the view is still, not the first time
+   * a tree comes close or goes far while moving round (a hitch then, a second or more on a phone). */
+  private warmUp() {
+    // (their shaders first, compiled by the graphics driver in the background where it can: the page
+    // isn't held up waiting for each; then the drawing, which only sends their shapes)
+    if (this.warming) return;
+    this.warming = true;
+    const done = () => { this.warming = false; if (!this.disposed) this.warmDraw(); };
+    // (three's own compileAsync trips over a material let go while it waits, as when the course is
+    // made again meanwhile: the same wait here, the ones let go passed over)
+    let waiting: Set<THREE.Material>;
+    try { waiting = this.renderer.compile(this.scene, this.camera) as Set<THREE.Material>; } catch { done(); return; }
+    const parallel = this.renderer.extensions.has("KHR_parallel_shader_compile");
+    const check = () => {
+      if (this.disposed) { this.warming = false; return; }
+      for (const m of waiting) {
+        const p = (this.renderer.properties.get(m) as { currentProgram?: { isReady: () => boolean } }).currentProgram;
+        if (!p || p.isReady()) waiting.delete(m);
+      }
+      if (waiting.size) window.setTimeout(check, 10);
+      else done();
+    };
+    if (parallel) check();
+    else window.setTimeout(check, 10);
+  }
+  private warming = false;
+  private warmDraw() {
+    const meshes: THREE.Mesh[] = [];
+    this.scene.traverse(o => { if ((o as THREE.Mesh).isMesh && !this.warmed.has(o)) meshes.push(o as THREE.Mesh); });
+    if (!meshes.length) return;
+    const was = meshes.map(m => ({ m, visible: m.visible, count: (m as THREE.InstancedMesh).isInstancedMesh ? (m as THREE.InstancedMesh).count : -1 }));
+    for (const { m } of was) { m.visible = true; if ((m as THREE.InstancedMesh).isInstancedMesh && (m as THREE.InstancedMesh).count === 0) (m as THREE.InstancedMesh).count = 1; }
+    const target = new THREE.WebGLRenderTarget(4, 4);
+    // (only the new ones drawn: on a layer of their own for the moment, the camera seeing only it)
+    const WARM = 31, mask = this.camera.layers.mask;
+    for (const { m } of was) m.layers.enable(WARM);
+    try {
+      timed("3D warmed up", () => {
+        this.camera.layers.set(WARM);
+        this.renderer.setRenderTarget(target);
+        this.renderer.render(this.scene, this.camera);
+      });
+    } finally {
+      this.camera.layers.mask = mask;
+      this.renderer.setRenderTarget(null);
+      target.dispose();
+      for (const w of was) { w.m.layers.disable(WARM); w.m.visible = w.visible; if (w.count >= 0) (w.m as THREE.InstancedMesh).count = w.count; this.warmed.add(w.m); }
+      this.dirty = true;
+    }
+  }
+
+  private floorKey = "";
+  /**
+   * The woods' floor as a picture over the site (leaf litter in red, pine needles in green, about
+   * 2 ft a pixel): every measured crown standing, of its kind, and every wood drawn, of its own (a
+   * stand of conifers, needles). The ground lays the scans of them under the trees up close.
+   */
+  private updateFloor(course: CourseDoc, standing: LidarTree[]) {
+    const doc = this.doc;
+    if (!doc) return;
+    const woods = course.items.filter((i): i is AreaItem => i.type === "area" && i.kind === "woods" && i.points.length >= 3);
+    const key = JSON.stringify([measuredStanding()?.key ?? standing.length, woods.map(w => [w.points, standShape(w)]), doc.canvas]);
+    if (key === this.floorKey) return;
+    this.floorKey = key;
+    const u = this.ground.detail;
+    u.floorMap.value?.dispose();
+    u.floorMap.value = null;
+    u.floorOn.value = 0;
+    if (!woods.length && !standing.length) return;
+    const { width, height } = doc.canvas;
+    const k = Math.min(0.5 * (doc.unitsPerFoot ? 1 / doc.unitsPerFoot : 1), 2048 / Math.max(width, height, 1));
+    const W = Math.max(1, Math.round(width * k)), H = Math.max(1, Math.round(height * k));
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const g = c.getContext("2d")!;
+    g.fillStyle = "#000"; g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = "lighter";
+    g.setTransform(k, 0, 0, k, 0, 0);
+    for (const w of woods) {
+      g.fillStyle = standShape(w) === "conifer" ? "rgb(0,255,0)" : "rgb(255,0,0)";
+      g.beginPath();
+      w.points.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)));
+      g.closePath();
+      g.fill();
+    }
+    for (const t of standing) {
+      g.fillStyle = t[4] ? "rgb(0,255,0)" : "rgb(255,0,0)";
+      g.beginPath();
+      g.arc(t[0], t[1], Math.max(3, t[3] * 0.9), 0, Math.PI * 2);
+      g.fill();
+    }
+    // (soft at the edges, as litter thins out from under a crown)
+    const soft = document.createElement("canvas");
+    soft.width = W; soft.height = H;
+    const sg = soft.getContext("2d")!;
+    sg.filter = "blur(2px)";
+    sg.drawImage(c, 0, 0);
+    const tex = new THREE.CanvasTexture(soft);
+    tex.flipY = false;
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearFilter;
+    u.floorMap.value = tex;
+    u.floorRect.value.set(0, 0, width, height);
+    u.floorOn.value = 1;
+  }
+
+  /** A path's or road's material: its color, and up close the scan of what it's made of. */
+  private surfaceMaterial(color: string, scan: SurfaceLayer | null) {
+    const m = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 1, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
+    if (scan) addSurfaceDetail(m, this.ground.detail, layerOf(scan), scan === "grass" ? 0.7 : 1);
+    return m;
+  }
+
+  /** Every pond pictured again, in the next still moments (what stands round them, or the sky, changed). */
+  private pondsAgain() {
+    if (!this.ponds.size) return;
+    for (const p of this.ponds.values()) p.done = false;
+    this.pondsDirty = true;
+  }
+  /**
+   * A pond's picture of all round it (its banks, the trees on them, the sky), taken from just over
+   * its middle, which its water then mirrors: a side of it each still moment (the side looking down
+   * isn't needed: water mirrors what's above it), so it never holds the view up. The biggest ponds
+   * first, six of them (three on a phone); the rest mirror the sky and a band for their banks.
+   */
+  private pictureStep() {
+    const r = this.renderer;
+    if (!this.picturing) {
+      // (ponds no longer standing: their pictures let go)
+      for (const [m, p] of this.ponds) {
+        let o: THREE.Object3D = m;
+        while (o.parent) o = o.parent;
+        if (o !== this.scene) { p.env?.dispose(); this.ponds.delete(m); }
+      }
+      const most = this.mobile ? 3 : 6;
+      const next = [...this.ponds].sort((a, b) => b[1].size - a[1].size).slice(0, most).find(([, p]) => !p.done);
+      if (!next) { this.pondsDirty = false; return; }
+      const size = this.mobile ? 128 : 256;
+      const rt = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType, generateMipmaps: false });
+      const cube = new THREE.CubeCamera(1, 3000, rt);
+      cube.position.copy(next[1].at);
+      cube.updateMatrixWorld(true);
+      if (cube.coordinateSystem !== r.coordinateSystem) { cube.coordinateSystem = r.coordinateSystem; cube.updateCoordinateSystem(); }
+      this.picturing = { mesh: next[0], cube, rt, face: 0 };
+    }
+    const job = this.picturing, pond = this.ponds.get(job.mesh);
+    if (!pond) { job.rt.dispose(); this.picturing = null; return; }
+    // (the water itself, the grass and anything shown over the view: out of the picture)
+    const hidden: THREE.Object3D[] = [];
+    this.itemsGroup.traverse(o => { if (o.userData.water && o.visible) { o.visible = false; hidden.push(o); } });
+    for (const o of [this.grass.group, this.tufts.group, this.fx]) if (o.visible) { o.visible = false; hidden.push(o); }
+    const was = r.getRenderTarget(), wasClear = r.getClearColor(new THREE.Color()), wasAlpha = r.getClearAlpha();
+    // (the sky, haze and land round it as seen from the ground, whatever the view is now)
+    const eye = new THREE.PerspectiveCamera(90, 1, 1, 3000);
+    eye.position.copy(pond.at);
+    const back = this.atmosphere(eye, true);
+    try {
+      timed("a pond pictured", () => {
+        if (job.face === 3) {
+          // (looking down: never seen in the water, filled with its banks' color)
+          r.setRenderTarget(job.rt, 3);
+          r.setClearColor(new THREE.Color(pond.shore[0]), 1);
+          r.clear();
+        } else {
+          r.setRenderTarget(job.rt, job.face);
+          r.render(this.scene, job.cube.children[job.face] as THREE.Camera);
+        }
+      });
+    } finally {
+      r.setRenderTarget(was);
+      r.setClearColor(wasClear, wasAlpha);
+      back();
+      for (const o of hidden) o.visible = true;
+    }
+    if (++job.face < 6) return;
+    // All six sides: blurred as the water needs (its ripples), and mirrored
+    this.picturing = null;
+    const pm = new THREE.PMREMGenerator(r);
+    const env = pm.fromCubemap(job.rt.texture);
+    pm.dispose();
+    job.rt.dispose();
+    pond.env?.dispose();
+    pond.env = env;
+    pond.done = true;
+    const old = job.mesh.material as THREE.Material;
+    job.mesh.material = waterMaterial(pond.color, ...pond.shore, { bottom: pond.bottom, mirror: env.texture });
+    if (!old.userData.shared) old.dispose();
+    this.dirty = true;
+  }
+
   /** Every slow piece made now (a flight, a picture: all of it in). */
   finishBuilding() {
     if (this.slowQueue.size) { this.drainSlow(Infinity); this.invalidate(); }
@@ -4570,6 +4992,8 @@ export class CourseView {
         const now = performance.now();
         const last = this.lastCorner;
         this.lastCorner = { id, index: i, time: now };
+        // (the corner picked: where you stand can take it, Move this corner here)
+        window.dispatchEvent(new CustomEvent(CORNER_EVENT, { detail: { id, index: i } }));
         if (e.altKey || (last && last.id === id && last.index === i && now - last.time < 400)) {
           this.lastCorner = null;
           if (cur.points.length > min) {
@@ -6662,7 +7086,37 @@ export class CourseView {
       return true;
     }
     if (mode === "add-tee" || mode === "add-basket") { this.cb.onPlace(mode, p); return true; }
+    // (a line or an area drawn point by point: the next corner; a rectangle, circle or freehand
+    // shape is drawn on the map, not walked)
+    if (this.drawn()) {
+      if (this.tool.shape && this.tool.shape !== "points") return false;
+      const last = this.drawPts[this.drawPts.length - 1];
+      if (last && dist(last, p) < 1) return false;
+      this.drawPts.push(p);
+      this.draftNote = "";
+      this.cursor = p;
+      this.drawDraft();
+      this.cb.onDrawProgress(this.drawPts.length);
+      this.handleKey = "";
+      this.syncHandles();
+      this.invalidate();
+      return true;
+    }
+    // (any other tool that puts a thing down where it's tapped: a bench, a sign, a mando, a tree)
+    if (mode !== "select" && mode !== "sculpt" && mode !== "measure") {
+      this.updateGhost(null);
+      this.cb.onPlace(mode, p);
+      return true;
+    }
     return false;
+  }
+
+  /** The tool in hand: whether it puts something down from a spot (where you stand, say), and how:
+   * one thing, or the next corner of a line or area drawn point by point. */
+  toolTakesPoint(): "place" | "corner" | null {
+    const mode = this.tool.mode;
+    if (this.drawn()) return !this.tool.shape || this.tool.shape === "points" ? "corner" : null;
+    return mode !== "select" && mode !== "sculpt" && mode !== "measure" && mode !== "add-hole" ? "place" : null;
   }
 
   /** The measure tool started at a spot (from the map's menu): the next tap measures from there. */

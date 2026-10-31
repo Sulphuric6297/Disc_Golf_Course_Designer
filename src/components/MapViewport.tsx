@@ -12,7 +12,7 @@ import { changeDoc, useCourse, useEditor, updateItem, updateHole, useCourse as c
 import { addBrushSection, addDrawn, addPatch, adoptTree, addHole, boxSelect, cutStretch, moveGroup, placeAt, select } from "../state/actions";
 import { courseIssues, courseStats, openIssues } from "../lib/holeStats";
 import { activeLayout, holeLabel } from "../lib/course";
-import { contoursOf, hillshadeCanvas } from "../lib/relief";
+import { contoursOf, hillshadeUrl } from "../lib/relief";
 import { terrainStats, heightAt } from "../lib/terrainGrid";
 import { niceScaleBar } from "../lib/view";
 import { centroid } from "../lib/geom";
@@ -135,7 +135,7 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   const [shadeUrl, setShadeUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!shadeOn) { setShadeUrl(null); return; }
-    const t = window.setTimeout(() => setShadeUrl(hillshadeCanvas(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, undefined, doc.style.reliefScale ?? 1).toDataURL()), 60);
+    const t = window.setTimeout(() => setShadeUrl(hillshadeUrl(doc.terrainHeights, doc.gridSize, doc.canvas.width, doc.canvas.height, doc.style.reliefScale ?? 1)), 60);
     return () => window.clearTimeout(t);
   }, [shadeOn, doc.terrainHeights, doc.gridSize, doc.canvas, doc.style.reliefScale]);
   const issues = useMemo(() => (ed.step === "design" ? openIssues(doc, courseIssues(doc)).open : null), [ed.step, doc]);

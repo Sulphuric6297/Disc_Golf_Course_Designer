@@ -1,4 +1,4 @@
-// The kinds of trees a course grows: the ones allowed in its map style (Map step › Trees › Kinds of
+// The kinds of trees a course grows: the ones allowed in its style (Site step › Trees › Kinds of
 // trees; unset: oak, ash and pine, as before there was a choice), each tree of the woods and the
 // measured trees taking one of them, the same every time it's drawn, in 3D and on the painted map
 // alike. And a recommendation for the course's region: the trees the USDA Forest Service's forest

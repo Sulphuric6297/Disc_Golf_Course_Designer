@@ -9,7 +9,7 @@ import { COLOR_PICKS, tallGrassOf, treeMixOf } from "../lib/landscapes";
 import { LIGHT_MODES, LOOK_THEMES, PART_CHOICES, compassName, latitudeOf, lightOf, lookParts, partChanged, sunArc, sunFromOf, themeOf, type LookPart, type LookParts } from "../lib/mapLook";
 import { useCourse } from "../state/course";
 import type { MapStyle, PathTier } from "../types";
-import { ELEVATION_LOOKS, FineTuning, setStyle, TreeKinds, WoodsOptions } from "./DesignPanel";
+import { ELEVATION_LOOKS, FineTuning, setStyle, WoodsOptions } from "./DesignPanel";
 import { ColorInput, Slider, Toggle, useKeepInPlace } from "./ui";
 import { SHOW_EVENT } from "./showSetting";
 
@@ -220,7 +220,6 @@ export function MapLookPanel() {
                         {treeMixOf(s).length > 0 && <LookSlider value={s.autumnVivid ?? 1} label="Autumn colors" min={0.4} max={1.6} step={0.05} format={x => (x < 0.95 ? "Softer" : x > 1.05 ? "More vivid" : "As they are")} onDone={v => setStyle({ autumnVivid: Math.abs(v - 1) < 0.01 ? undefined : v })} />}
                         {/* (measured trees: the woods are those trees, as wide as Crown size makes them in 3D,
                         and the woods drawn; more painted only when asked) */}
-                        <TreeKinds s={s} />
                         <WoodsOptions s={s} measured={measured} />
                         {painted && (
                           <>

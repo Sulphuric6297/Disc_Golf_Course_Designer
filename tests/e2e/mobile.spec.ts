@@ -124,6 +124,57 @@ test.describe("phone", () => {
     await expect(page.getByTestId("here-bar")).toHaveCount(0);
   });
 
+  test("where you stand, for everything: a bench put there, an OB line corner by corner, a wood walked round, and Move here says how far first", async ({ page, context }) => {
+    await openGround(page);
+    const bounds = { north: 40, south: 39.99, west: -90, east: -89.99 };
+    await page.evaluate(b => (window as any).__dgActions.site({ bounds: b }), bounds);
+    const { width, height } = (await course(page)).canvas;
+    const geo = (x: number, y: number) => ({ latitude: bounds.north - (y / height) * (bounds.north - bounds.south), longitude: bounds.west + (x / width) * (bounds.east - bounds.west), accuracy: 2 });
+    const dotAt = async (x: number, y: number) => expect.poll(async () => {
+      const d = (await page.getByTestId("my-location").boundingBox())!, s = await screenOf(page, x, y);
+      return Math.hypot(d.x + d.width / 2 - s.x, d.y + d.height / 2 - s.y);
+    }).toBeLessThan(20);
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation(geo(300, 400));
+    await page.getByTestId("locate-me").tap();
+    await expect(page.getByTestId("my-location")).toBeVisible();
+    // Any tool that puts a thing down: Put one here
+    await page.evaluate(() => (window as any).__dgEditor().set({ tool: "add-amenity", amenityKind: "bench" }));
+    await page.getByTestId("put-here").tap();
+    await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "amenity").length).toBe(1);
+    const bench = (await course(page)).items.find((i: any) => i.type === "amenity");
+    expect(Math.hypot(bench.x - 300, bench.y - 400)).toBeLessThan(6);
+    // A line, a corner where you stand at each
+    await page.evaluate(() => (window as any).__dgEditor().set({ tool: "draw-line", lineKind: "ob", drawShape: "points" }));
+    await page.getByTestId("point-here").tap();
+    await expect.poll(() => page.evaluate(() => (window as any).__dgEditor().drawPoints)).toBe(1);
+    await context.setGeolocation(geo(500, 400));
+    await dotAt(500, 400);
+    await page.getByTestId("point-here").tap();
+    await expect.poll(() => page.evaluate(() => (window as any).__dgEditor().drawPoints)).toBe(2);
+    await page.getByTestId("draw-done").tap();
+    await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "line" && i.kind === "ob").length).toBe(1);
+    const ob = (await course(page)).items.find((i: any) => i.type === "line" && i.kind === "ob");
+    expect(Math.hypot(ob.points[1].x - 500, ob.points[1].y - 400)).toBeLessThan(6);
+    // A wood walked round: a corner every 10 ft or so, none while standing still
+    await page.evaluate(() => (window as any).__dgEditor().set({ tool: "draw-area", areaKind: "woods", drawShape: "points" }));
+    await page.getByTestId("walk-it").tap();
+    for (const [x, y] of [[500, 400], [500, 470], [560, 470], [560, 400]]) {
+      await context.setGeolocation(geo(x, y));
+      await dotAt(x, y);
+    }
+    await expect.poll(() => page.evaluate(() => (window as any).__dgEditor().drawPoints)).toBeGreaterThanOrEqual(4);
+    await page.getByTestId("draw-done").tap();
+    await expect.poll(async () => (await course(page)).items.filter((i: any) => i.type === "area" && i.kind === "woods").length).toBe(1);
+    // Move here: where it goes and how far, then Move it
+    await page.evaluate(() => (window as any).__dgEditor().set({ tool: "select" }));
+    await page.evaluate(id => (window as any).__dgActions.select(id), bench.id);
+    await page.getByTestId("move-here").tap();
+    await expect(page.getByTestId("move-here-check")).toContainText("moves");
+    await page.getByTestId("move-here-go").tap();
+    await expect.poll(async () => { const b = (await course(page)).items.find((i: any) => i.id === bench.id); return Math.hypot(b.x - 560, b.y - 400); }).toBeLessThan(8);
+  });
+
   test("a course file opens from the menu (which closes while the file is picked)", async ({ page }) => {
     await openGround(page);
     const doc = createEmptyCourse();
@@ -769,10 +820,23 @@ test.describe("phone", () => {
   test("the view from the tee on a phone: the hole's card, big buttons along the bottom, back to the map", async ({ page }) => {
     await oneHole(page);
     await tapPlan(page, 450, 500);
-    // (the header's eye: the hole's panel under it has a View from the tee button too)
+    // (the hole's strip starts with Tee view and Fly over; the header's eye does the same)
+    await expect(page.getByTestId("strip-teeview")).toBeVisible();
+    await expect(page.getByTestId("strip-flyover")).toBeVisible();
     await page.getByTestId("selection-header").getByRole("button", { name: "View from the tee" }).tap();
     await expect(page.getByTestId("tee-view-hud")).toBeVisible();
     await expect(page.getByTestId("tee-view-hud")).toContainText("Par 3");
+    // The card slim at first: a tap opens the hole's profile, another closes it
+    await expect(page.getByTestId("tee-view-hud").locator("svg").first()).toBeVisible();
+    await page.getByTestId("hud-card-open").tap();
+    await expect(page.getByTestId("hud-card-open")).toHaveAttribute("aria-expanded", "true");
+    await page.getByTestId("hud-card-open").tap();
+    // Along the bottom: the flight big, the rarer ones under More
+    await expect(page.getByTestId("hud-flyover")).toBeVisible();
+    await expect(page.getByTestId("hud-freecam")).toHaveCount(0);
+    await page.getByTestId("hud-more").tap();
+    await expect(page.getByTestId("hud-freecam")).toBeVisible();
+    await page.getByTestId("hud-more").tap();
     // Immersive: no step bar or sheet
     await expect(page.getByTestId("bottom-nav")).toHaveCount(0);
     await expect(sheet(page)).toHaveCount(0);
@@ -817,6 +881,7 @@ test.describe("phone", () => {
     await tapPlan(page, 450, 500);
     // (the header's eye: the hole's panel under it has a View from the tee button too)
     await page.getByTestId("selection-header").getByRole("button", { name: "View from the tee" }).tap();
+    await page.getByTestId("hud-more").tap();
     await page.getByTestId("hud-freecam").tap();
     await expect(page.getByTestId("camera-hud")).toBeVisible();
     await expect(page.getByTestId("bottom-nav")).toHaveCount(0);

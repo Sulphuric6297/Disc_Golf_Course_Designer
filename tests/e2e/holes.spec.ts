@@ -74,6 +74,9 @@ test("fairway width handle and par override in the inspector", async ({ page }) 
   // Width squares on both edges at four points along the fairway; the first (just off the tee, on the south side)
   // widens it there only, and only on its own side: the north edge stays 15 ft off the line
   await expect(page.locator('[data-handle="width"]')).toHaveCount(8);
+  // (the map slides the hole out from under its panel a moment after it's picked: grabbed once still)
+  let was = "";
+  await expect.poll(async () => { const h = await handleCenter(page, "width", 0), c = `${Math.round(h.x)},${Math.round(h.y)}`; const still = c === was; was = c; return still; }, { intervals: [150] }).toBe(true);
   const w = await handleCenter(page, "width", 0);
   const to = await screenOf(page, 460, 700 + 40);
   await drag(page, w, to);

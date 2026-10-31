@@ -2,13 +2,16 @@
 // Backspace, Esc or Enter); for a rectangle or a circle clicked out, what the next click does; while
 // a phone's box select is on, how it works and Done; and the same buttons while a hole's line is
 // plotted by hand.
-import type { ReactNode } from "react";
-import { Check, Undo2, X } from "lucide-react";
+import { useEffect, type ReactNode } from "react";
+import { create } from "zustand";
+import { Check, Footprints, Pause, Undo2, X } from "lucide-react";
 import { STRUCTURE_KINDS } from "../constants";
 import { useEditor } from "../state/course";
 import { useGps } from "../state/gps";
 import { getView } from "../state/view";
 import { HereButton } from "./MyLocation";
+import { dist } from "../lib/geom";
+import type { P } from "../types";
 import { useTouch } from "./useLayout";
 
 const PILL = "pointer-events-auto w-max max-w-[calc(100%-16px)] flex items-center gap-1 p-1.5 rounded-full glass border border-white/10 shadow-2xl";
@@ -49,6 +52,31 @@ export function PlotPill({ hole }: { hole: string }) {
   );
 }
 
+/** Walk it: a line or an area traced where you walk, a corner every 10 ft (sure readings only:
+ * one off by more than 30 ft is passed over, and standing still adds none). */
+export const useWalkIt = create<{ on: boolean; last: P | null }>(() => ({ on: false, last: null }));
+const WALK_STEP = 10;
+function WalkIt() {
+  const on = useWalkIt(w => w.on);
+  const fix = useGps(g => g.fix);
+  useEffect(() => {
+    if (!on || !fix || fix.raw > 30) return;
+    const last = useWalkIt.getState().last;
+    if (last && dist(last, fix.at) < WALK_STEP) return;
+    if (getView()?.toolPoint(fix.at)) useWalkIt.setState({ last: fix.at });
+  }, [on, fix]);
+  // (the drawing done or dropped, or the tool put down: the walk ends)
+  useEffect(() => () => useWalkIt.setState({ on: false, last: null }), []);
+  const none = useEditor(e => e.drawPoints === 0);
+  useEffect(() => { if (none) useWalkIt.setState({ on: false, last: null }); }, [none]);
+  const btn = `${BTN} ${on ? "bg-red-500 text-white active:bg-red-600" : "text-zinc-200 hover:bg-white/[0.09] active:bg-white/[0.13]"}`;
+  return (
+    <button className={btn} onClick={() => useWalkIt.setState({ on: !on, last: null })} aria-pressed={on} data-testid="walk-it">
+      {on ? <><Pause size={16} /> Pause</> : <><Footprints size={16} /> Walk it</>}
+    </button>
+  );
+}
+
 /** Whether the drawing buttons (or a phone's box select's) are over the map: the toasts go above them. */
 export function useDrawBarShown() {
   const tool = useEditor(e => e.tool);
@@ -56,7 +84,7 @@ export function useDrawBarShown() {
   const boxing = useEditor(e => e.dragSelect && e.tool === "select" && (e.step === "design" || e.step === "site"));
   const teeView = useEditor(e => !!e.teeView && e.flyover);
   const gpsOn = useGps(g => g.mode !== "off");
-  return !teeView && (n > 0 || boxing || (gpsOn && (tool === "add-hole" || tool === "add-tee" || tool === "add-basket")));
+  return !teeView && (n > 0 || boxing || (gpsOn && (tool.startsWith("add-") || tool === "draw-area" || tool === "draw-line" || tool === "draw-structure")));
 }
 
 /** The drawing's bar: over a phone's map at `bottom` (with box select's), or in a computer's tools. */
@@ -86,6 +114,18 @@ export function DrawBar({ bottom }: { bottom?: number }) {
       </Pill>
     );
   }
+  // (a line or an area where you walk: a corner where you stand, or traced as you walk)
+  const here = `${BTN} bg-sky-500/90 text-white active:bg-sky-600 disabled:opacity-90`;
+  if (kind && gpsOn && (!shape || shape === "points")) {
+    return (
+      <Pill bottom={bottom} label="Drawing where you walk" testid="draw-bar" wrap>
+        {n === 0 && <span className={WORDS}>{touch ? "Tap" : "Click"} the map, or</span>}
+        <HereButton what="point" label="+ Point here" className={here} testid="point-here" />
+        <WalkIt />
+        {n > 0 && <DrawButtons n={n} need={kind === "area" ? 3 : 2} onUndo={() => getView()?.undoPoint()} onCancel={() => getView()?.cancelDrawing()} onDone={() => getView()?.finishDrawing()} />}
+      </Pill>
+    );
+  }
   if (kind && n > 0) {
     return (
       <Pill bottom={bottom} label="Drawing" testid="draw-bar">
@@ -94,7 +134,6 @@ export function DrawBar({ bottom }: { bottom?: number }) {
     );
   }
   // (where you stand, once you've shown it on the map: a button beside the words)
-  const here = `${BTN} bg-sky-500/90 text-white active:bg-sky-600 disabled:opacity-90`;
   if (tool === "add-hole" && n === 1) {
     return (
       <Pill bottom={bottom} label="New hole" testid="draw-bar">
@@ -109,6 +148,15 @@ export function DrawBar({ bottom }: { bottom?: number }) {
       <Pill bottom={bottom} label="Where you stand" testid="here-bar">
         <span className={WORDS}>{touch ? "Tap" : "Click"} the map, or</span>
         <HereButton what={tool === "add-basket" ? "pin" : "tee"} className={here} />
+      </Pill>
+    );
+  }
+  // (any other tool that puts a thing down: a bench, a sign, a mando, a tree, where you stand)
+  if (gpsOn && tool.startsWith("add-")) {
+    return (
+      <Pill bottom={bottom} label="Where you stand" testid="here-bar">
+        <span className={WORDS}>{touch ? "Tap" : "Click"} the map, or</span>
+        <HereButton what="one" label="Put one here" className={here} testid="put-here" />
       </Pill>
     );
   }

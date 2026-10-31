@@ -12,7 +12,7 @@ const woodsTrees = (page: import("@playwright/test").Page) => page.evaluate(() =
   return out;
 });
 
-/** A wood, then the Map step's Trees part open. */
+/** A wood, then the Site step's Trees fold open. */
 async function woodsAndTrees(page: import("@playwright/test").Page, place: { lat: number; lon: number; label: string }) {
   await blankCourse(page);
   await page.keyboard.press("Escape");
@@ -23,9 +23,10 @@ async function woodsAndTrees(page: import("@playwright/test").Page, place: { lat
     (window as any).__dgActions.select(null);
   }, place);
   await expect.poll(async () => (await woodsTrees(page)).length).toBeGreaterThan(50);
-  await page.getByRole("button", { name: "3 Map" }).click();
-  const part = page.getByTestId("part-trees");
-  if ((await part.getAttribute("aria-expanded")) !== "true") await part.click();
+  await page.getByRole("button", { name: "1 Site" }).click();
+  const fold = page.getByTestId("site-trees");
+  if (!(await fold.evaluate(d => (d as HTMLDetailsElement).open))) await fold.locator("summary").click();
+  // (the Map step's style has no kinds: the map draws each tree as the kind it is in 3D)
   return page.getByTestId("tree-kinds");
 }
 const chip = (kinds: import("@playwright/test").Locator, name: string) => kinds.getByRole("button", { name, exact: true });

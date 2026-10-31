@@ -1,6 +1,6 @@
 // What shows over the view from the tee or a flyover: the hole's numbers and the controls.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, ChevronUp, Clapperboard, Footprints, Home, Maximize2, Minimize2, Pencil, Plane, Settings2, Square, Video, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clapperboard, Footprints, Home, Maximize2, Minimize2, MoreHorizontal, Pencil, Plane, Settings2, Square, Video, X } from "lucide-react";
 import { useAllowed } from "../auth/perms";
 import { STAND_HERE, TEE_LEVELS } from "../constants";
 import { activeLayout, holeLabel } from "../lib/course";
@@ -90,6 +90,9 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
   const editing = !ed.flyover && !readOnly && !compact;
   const panel = useSelection().open;
   const toolbar = useToolbarRoom(r => r.height);
+  // (a phone: the card slim until tapped, its profile and notes then; the rarer buttons under More)
+  const [cardOpen, setCardOpen] = useState(false);
+  const [more, setMore] = useState(false);
   if (ed.teeView === STAND_HERE) return <StandHere compact={compact} editing={editing} toolbar={toolbar} />;
   if (!hole || !s) return null;
   const loading = (showLoading || waiting) && ed.flyover ? <FlyoverLoading on={waiting} stage={ed.flyLoading} onCancel={() => ed.set({ flyover: false })} title={`Hole ${s.label}${hole.name ? ` · ${hole.name}` : ""}`} facts={`${fmtDist(s.length, doc.units)} · Par ${s.par}${s.elevationChange ? ` · ${fmtElev(s.elevationChange, doc.units)}` : ""}`} /> : null;
@@ -127,29 +130,39 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
         {ed.teeCardHidden && !ed.flyover && <CardChip label={s.label} color={lvl.color} ink={lvl.ink} big />}
         <div className={`absolute left-2 right-2 top-[max(8px,env(safe-area-inset-top))] pointer-events-auto glass rounded-2xl px-3 py-2.5 text-white shadow-2xl border border-white/10 max-w-[420px] ${ed.flyover || ed.teeCardHidden ? "hidden" : ""}`} data-testid="tee-view-hud">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-[22px] font-bold" style={{ background: lvl.color, color: lvl.ink, fontFamily: "Oswald, Inter" }}>{s.label}</div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[12px] uppercase tracking-wider text-zinc-300 truncate">{sub}</div>
-              <div className="text-[22px] font-bold leading-tight" style={{ fontFamily: "Oswald, Inter" }}>Par {s.par} · {fmtDist(s.length, doc.units)}</div>
-              <div className="text-[13px] text-zinc-300">{fmtElev(s.elevationChange, doc.units)} · plays like {fmtDist(s.playsLike, doc.units)}</div>
-            </div>
+            {/* (a tap on the hole's number and numbers opens its profile and notes; again, closes them) */}
+            <button className="flex-1 min-w-0 flex items-center gap-3 text-left focus:outline-none" onClick={() => setCardOpen(o => !o)} aria-expanded={cardOpen} data-testid="hud-card-open">
+              <div className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-[22px] font-bold" style={{ background: lvl.color, color: lvl.ink, fontFamily: "Oswald, Inter" }}>{s.label}</div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[12px] uppercase tracking-wider text-zinc-300 truncate">{sub}</div>
+                <div className="text-[20px] font-bold leading-tight" style={{ fontFamily: "Oswald, Inter" }}>Par {s.par} · {fmtDist(s.length, doc.units)}</div>
+                <div className="text-[13px] text-zinc-300 flex items-center gap-1">{fmtElev(s.elevationChange, doc.units)} · plays like {fmtDist(s.playsLike, doc.units)} <ChevronDown size={14} className={`transition-transform ${cardOpen ? "rotate-180" : ""}`} /></div>
+              </div>
+            </button>
             {!ed.flyover && tiles}
             <HideCard big />
           </div>
-          <div className="mt-1.5"><ElevationProfile doc={doc} line={s.line} height={56} teeColor={lvl.color} /></div>
-          {hole.notes && <p className="text-[13px] text-zinc-200 mt-1 line-clamp-2">{hole.notes}</p>}
+          {cardOpen && <div className="mt-1.5"><ElevationProfile doc={doc} line={s.line} height={56} teeColor={lvl.color} /></div>}
+          {cardOpen && hole.notes && <p className="text-[13px] text-zinc-200 mt-1 line-clamp-3">{hole.notes}</p>}
         </div>
         {ed.flyover && <div className="absolute right-2 top-[max(8px,env(safe-area-inset-top))] pointer-events-auto glass rounded-2xl p-1.5 border border-white/10 shadow-2xl">{tiles}</div>}
         {!sheetUp && !ed.flyover && <PhoneTapRow hint={hint} canEdit={!readOnly} />}
+        {/* Along the bottom, in thumb's reach: the holes either side, the flight (the big one), More
+        and Back; the rarer ones (back to the tee, a video, the camera) under More */}
         {!sheetUp && <div className="absolute left-2 right-2 bottom-[max(8px,env(safe-area-inset-bottom))] pointer-events-auto flex items-center gap-1 glass rounded-[22px] p-1.5 border border-white/10 shadow-2xl">
-          {ed.teeStand && !ed.flyover && <button className={bar} onClick={() => ed.set({ teeStand: null })} data-testid="hud-to-tee"><Home size={20} /><span>Tee</span></button>}
-          <button className={bar} onClick={() => go(-1)}><ChevronLeft size={22} /><span>Previous</span></button>
-          <button className={`${bar} ${ed.flyover ? "bg-orange-500" : ""}`} onClick={() => ed.set({ flyover: !ed.flyover })} data-testid="hud-flyover">{ed.flyover ? <Square size={18} /> : <Plane size={20} />}<span>{ed.flyover ? "Stop" : "Fly over"}</span></button>
-          <button className={bar} onClick={() => go(1)}><ChevronRight size={22} /><span>Next</span></button>
-          {mayRecord && <button className={bar} onClick={() => void recordVideo([hole.id])} disabled={!!job} data-testid="hud-record"><Clapperboard size={20} /><span>{job?.kind === "video" ? recPct ?? "…" : "Record"}</span></button>}
-          {!readOnly && <button className={bar} onClick={() => cameraFrom(hole.id, null)} data-testid="hud-freecam"><Video size={20} /><span>Camera</span></button>}
+          <button className={`${bar} !flex-none w-12`} onClick={() => go(-1)} aria-label="Previous hole" data-testid="hud-prev"><ChevronLeft size={24} /></button>
+          <button className={`${bar} !flex-[1.6] !flex-row !gap-2 !text-[15px] ${ed.flyover ? "bg-orange-500" : "bg-white/[0.12]"}`} onClick={() => { setMore(false); ed.set({ flyover: !ed.flyover }); }} data-testid="hud-flyover">{ed.flyover ? <Square size={18} /> : <Plane size={20} />}<span>{ed.flyover ? "Stop" : "Fly over"}</span></button>
+          <button className={`${bar} !flex-none w-12`} onClick={() => go(1)} aria-label="Next hole" data-testid="hud-next"><ChevronRight size={24} /></button>
+          {(mayRecord || !readOnly || (ed.teeStand && !ed.flyover)) && <button className={`${bar} ${more ? "bg-white/15" : ""}`} onClick={() => setMore(m => !m)} aria-expanded={more} data-testid="hud-more"><MoreHorizontal size={22} /><span>{recPct ?? "More"}</span></button>}
           <button className={bar} onClick={() => ed.set({ teeView: null, flyover: false })} data-testid="hud-close"><X size={20} /><span>Back</span></button>
         </div>}
+        {more && !sheetUp && (
+          <div className="absolute right-2 bottom-[calc(max(8px,env(safe-area-inset-bottom))+80px)] pointer-events-auto glass rounded-2xl p-1.5 border border-white/10 shadow-2xl flex flex-col min-w-[200px]" data-testid="hud-more-menu">
+            {ed.teeStand && !ed.flyover && <button className={MENU_ITEM} onClick={() => { setMore(false); ed.set({ teeStand: null }); }} data-testid="hud-to-tee"><Home size={18} /> Back to the tee</button>}
+            {mayRecord && <button className={MENU_ITEM} onClick={() => { setMore(false); void recordVideo([hole.id]); }} disabled={!!job} data-testid="hud-record"><Clapperboard size={18} /> {job?.kind === "video" ? `Recording ${recPct ?? "…"}` : "Record a video"}</button>}
+            {!readOnly && <button className={MENU_ITEM} onClick={() => { setMore(false); cameraFrom(hole.id, null); }} data-testid="hud-freecam"><Video size={18} /> Camera: set its flight</button>}
+          </div>
+        )}
         {camera && (
           <div className="absolute left-2 right-2 bottom-[calc(max(8px,env(safe-area-inset-bottom))+80px)] pointer-events-auto glass rounded-2xl p-3 border border-white/10 shadow-2xl max-h-[45vh] overflow-y-auto dg-scroll">
             <SettingsBox key={hole.id} hole={hole} />
@@ -208,6 +221,9 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
     </div>
   );
 }
+
+/** A row of a phone's More menu. */
+const MENU_ITEM = "h-12 px-3 rounded-xl flex items-center gap-2.5 text-[15px] font-semibold text-white text-left active:bg-white/15 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
 
 /** Puts the hole's card away (standing, so it doesn't cover the view). */
 function HideCard({ big = false }: { big?: boolean }) {
