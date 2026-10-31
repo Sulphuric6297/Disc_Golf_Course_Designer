@@ -348,6 +348,12 @@ function SelectionHeader({ onMore }: { onMore: () => void }) {
   const s = useMemo(() => (hole ? holeStats(doc, hole) : null), [doc, hole]);
   const u = doc.units;
   const holeId = hole?.id ?? (item && "holeId" in item ? item.holeId : undefined);
+  // (a tee of a hole that's whole: it can be stood on)
+  const teeOf = useMemo(() => {
+    if (item?.type !== "tee") return null;
+    const h = doc.holes.find(x => x.id === item.holeId);
+    return h && holeStats(doc, h).complete ? item : null;
+  }, [doc, item]);
   const title = hole ? `Hole ${holeLabel(doc, hole.id)}${hole.name ? ` · ${hole.name}` : ""}` : item ? itemTitle(item) : group.length ? `${group.length} selected` : "";
   const sub = hole
     ? s?.complete ? `${fmtDist(s.length, u)} · Par ${s.par} · ${fmtElev(s.elevationChange, u)}` : s?.teeId ? "Needs a basket" : "Needs a tee"
@@ -367,6 +373,8 @@ function SelectionHeader({ onMore }: { onMore: () => void }) {
       </div>
       {hole && <HoleSteps holeId={hole.id} big />}
       {hole && s?.complete && <button className={iconBtn} aria-label="View from the tee" title="View from the tee" onClick={() => useEditor.getState().set({ teeView: hole.id, teeViewTee: null, flyover: false })}><Eye size={20} /></button>}
+      {/* (a tee: the same eye, standing on that tee) */}
+      {teeOf && <button className={iconBtn} aria-label="View from this tee" title="View from this tee" onClick={() => useEditor.getState().set({ teeView: teeOf.holeId, teeViewTee: teeOf.id, flyover: false })} data-testid="selection-tee-view"><Eye size={20} /></button>}
       {group.length > 0 && <button className={iconBtn} aria-label="Duplicate" title="Duplicate" onClick={duplicateSelection}><Copy size={19} /></button>}
       <button className={`${iconBtn} hover:text-red-400`} aria-label="Delete" title="Delete" onClick={deleteSelection} data-testid="selection-delete"><Trash2 size={19} /></button>
       <button className={iconBtn} aria-label="More actions" title="More actions" onClick={onMore} data-testid="selection-more"><Ellipsis size={22} /></button>

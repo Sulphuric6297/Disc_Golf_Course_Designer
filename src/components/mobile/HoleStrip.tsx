@@ -199,7 +199,6 @@ export function ItemStrip({ item }: { item: CourseItem }) {
     const aim = Math.round(teeAim(doc, t)) + 90;
     const bearing = (v: number) => `${compassPoint(v)} · ${deg(v)}`;
     chips.push(
-      { id: "view", label: <>View from this tee</>, run: () => useEditor.getState().set({ teeView: t.holeId, teeViewTee: t.id, flyover: false }) },
       { id: "color", label: <>Color <span className="inline-block w-2.5 h-2.5 rounded-full align-middle ring-1 ring-black/40 ml-0.5" style={{ background: TEE_LEVELS[t.level].color }} /></>, control: (
         <ChipPick row label="Tee color" value={t.level} onChange={v => setTeeLevel(t.id, v)} options={TEE_ORDER.map(l => ({ value: l, label: TEE_LEVELS[l].label, color: TEE_LEVELS[l].color }))} />
       ) },
