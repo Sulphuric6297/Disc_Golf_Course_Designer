@@ -622,14 +622,17 @@ test("the camera flown by hand: the keys move it, a drag turns it, and each keyf
   await expect(page.getByTestId("cam-update")).toBeEnabled();
   await page.keyboard.press("u");
   await expect.poll(async () => (await keys())[0].alt).toBeLessThan(k0.alt - 2);
-  // Played, stopped, and Esc back to the map with the hole still picked
+  // Played, stopped; Esc puts the camera away (standing on the tee), and again goes back to the map
+  // with the hole still picked
   await page.getByTestId("cam-play").click();
   await expect(page.getByTestId("cam-stop")).toBeVisible();
   await page.getByTestId("cam-stop").click();
   await expect(page.getByTestId("cam-add")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("camera-hud")).toHaveCount(0);
-  expect((await editorState(page)).teeView).toBeNull();
+  await expect(page.getByTestId("tee-view-hud")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await editorState(page)).teeView).toBeNull();
   expect((await editorState(page)).selectedId).toBe(hole.id);
   // Double-clicking a camera on the map looks through it
   await page.locator('[data-handle="flykey"][data-index="1"]').dblclick();

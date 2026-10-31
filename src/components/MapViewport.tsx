@@ -284,6 +284,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
     return (
       <div className="absolute inset-0">
         <div ref={ref} data-testid="plan" className="absolute inset-0 overflow-hidden touch-none" />
+        {/* (the comments' pins: on the map, under everything over it; auth/Comments) */}
+        <div data-testid="map-pins" className="absolute inset-0 pointer-events-none isolate overflow-hidden" />
         <MyLocationDot view={view} stats={stats} />
         {plotBar}
         {obBar}
@@ -295,6 +297,8 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
   return (
     <div className="absolute inset-0">
       <div ref={ref} data-testid="plan" className="absolute inset-0 overflow-hidden touch-none" />
+        {/* (the comments' pins: on the map, under everything over it; auth/Comments) */}
+        <div data-testid="map-pins" className="absolute inset-0 pointer-events-none isolate overflow-hidden" />
       {/* (you on the map: its own small part, so each GPS reading and compass turn redraws only it) */}
       <MyLocationDot view={view} stats={stats} />
       {plotBar}
