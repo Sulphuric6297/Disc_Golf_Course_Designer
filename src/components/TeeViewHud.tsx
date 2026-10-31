@@ -7,6 +7,7 @@ import { activeLayout, holeLabel } from "../lib/course";
 import { courseStats, holeStats } from "../lib/holeStats";
 import { fmtDist, fmtElev } from "../lib/units";
 import { useCourse, useEditor } from "../state/course";
+import { select } from "../state/actions";
 import { useExportJob } from "../state/exportJob";
 import { recordVideo, useVideoSettings } from "../state/video";
 import { VIDEO_SIZES } from "../lib/video";
@@ -120,7 +121,7 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
     // card, or by themselves at the top right while it flies, the card hidden)
     const tiles = (
       <div className="flex items-center gap-1.5 shrink-0">
-        {!readOnly && <button className={`w-14 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 text-[12px] font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${camera ? "bg-white/15" : "bg-white/[0.07] active:bg-white/15"}`} onClick={() => setCamera(c => !c)} aria-pressed={camera} data-testid="hud-settings"><Settings2 size={17} /><span className="leading-none">Flyover</span></button>}
+        {!readOnly && <button className={`w-14 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 text-[12px] font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${camera && !sheetUp ? "bg-white/15" : "bg-white/[0.07] active:bg-white/15"}`} onClick={() => { if (sheetUp) { select(null); setCamera(() => true); } else setCamera(c => !c); }} aria-pressed={camera && !sheetUp} data-testid="hud-settings"><Settings2 size={17} /><span className="leading-none">Flyover</span></button>}
         <SceneButton label="View" />
       </div>
     );
@@ -163,7 +164,9 @@ export function TeeViewHud({ compact = false }: { compact?: boolean }) {
             {!readOnly && <button className={MENU_ITEM} onClick={() => { setMore(false); cameraFrom(hole.id, null); }} data-testid="hud-freecam"><Video size={18} /> Camera: set its flight</button>}
           </div>
         )}
-        {camera && (
+        {/* (one panel at the bottom at a time: a thing picked, its sheet in the flyover's place; the
+            flyover's back when it's closed, or with the Flyover button, which lets the thing go) */}
+        {camera && !sheetUp && (
           <div className="absolute left-2 right-2 bottom-[calc(max(8px,env(safe-area-inset-bottom))+80px)] pointer-events-auto glass rounded-2xl p-3 border border-white/10 shadow-2xl max-h-[45vh] overflow-y-auto dg-scroll">
             <SettingsBox key={hole.id} hole={hole} />
           </div>
