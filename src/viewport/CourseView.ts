@@ -1905,7 +1905,8 @@ export class CourseView {
       // (whose it is: the flown hole's, or another's)
       const own = (holes: (string | undefined)[]) => holes.includes(holeId);
       let show = true;
-      if (kind === "throw") show = f.playLine && (!!it && it.type === "tee" && (own([it.holeId]) || f.otherHoles));
+      // (a course's public page flies over the hole as it is: no line of play drawn down it)
+      if (kind === "throw") show = !(this.readOnly && this.fly) && f.playLine && (!!it && it.type === "tee" && (own([it.holeId]) || f.otherHoles));
       else if (kind === "circle") show = f.circle && (!!it && it.type === "basket" && (own(basketHoles(it)) || f.otherHoles));
       else if (kind === "walk") show = f.walks;
       else if ((kind === "line" || kind === "area") && it && (it.type === "line" || it.type === "area")) {
@@ -3510,8 +3511,9 @@ export class CourseView {
       }
     });
     // A hand-made flyover of the selected hole: its path over the ground, and where each keyframe looks
+    // (for its editors: a course's public page never shows it)
     const flyHole = this.hole(this.selectedId);
-    if (flyHole?.flyKeys && flyHole.flyKeys.length >= 2 && !this.povHole) {
+    if (flyHole?.flyKeys && flyHole.flyKeys.length >= 2 && !this.povHole && !this.readOnly) {
       const keys = flyHole.flyKeys;
       put(`flykeys:${flyHole.id}`, JSON.stringify([keys, hv, course.flyover, flyHole.flyover]), () => {
         const g = new THREE.Group();
