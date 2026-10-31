@@ -201,7 +201,7 @@ const SCAN_GLSL = /* glsl */ `
   vec3 dgReal( float layer, vec3 base, float keep ) {
     vec3 m = DG_MEAN[ int( layer ) ];
     float lb = dot( base, vec3( 0.2126, 0.7152, 0.0722 ) ), lm = dot( m, vec3( 0.2126, 0.7152, 0.0722 ) );
-    vec3 real = m * clamp( pow( lb / max( lm, 1e-4 ), 0.5 ), 0.6, 1.8 );
+    vec3 real = m * clamp( pow( lb / max( lm, 1e-4 ), 0.5 ), 0.7, 1.3 );
     return mix( real, base, keep );
   }
   // Two layers laid together (weights w1, w2), how much of them (amount) on a ground of color
@@ -254,15 +254,16 @@ export const addGroundDetail = (m: THREE.Material, u: GroundDetailUniforms) => {
           vec4 cover = vec4( 0.0 );
           vec2 f = vGroundW.xz * groundFeet;
           if ( groundDetail > 0.0 && coverFromColor > 0.0 ) {
-            // (by its color: green is grass; grey is paving, light concrete and dark asphalt; a
-            // warm brown is dirt)
+            // (by its color: only a true grey, no hue in it, is paving (light concrete, dark asphalt);
+            // tan and brown, red over green over blue, are dirt; the rest is grass, a pale or yellow
+            // green fairway too)
             vec3 c = diffuseColor.rgb;
             float mx = max( c.r, max( c.g, c.b ) ), mn = min( c.r, min( c.g, c.b ) ), sat = ( mx - mn ) / max( mx, 1e-3 );
             float lum = dot( c, vec3( 0.3, 0.59, 0.11 ) );
-            float green = smoothstep( 0.0, 0.04, c.g - max( c.r, c.b ) );
-            float grey = ( 1.0 - green ) * ( 1.0 - smoothstep( 0.1, 0.22, sat ) );
-            float brown = ( 1.0 - green ) * ( 1.0 - grey ) * smoothstep( 0.0, 0.03, c.r - c.b );
-            cover = vec4( max( green, 1.0 - grey - brown - green > 0.5 ? 1.0 : 0.0 ), grey * smoothstep( 0.06, 0.16, lum ), grey * ( 1.0 - smoothstep( 0.06, 0.16, lum ) ), brown );
+            float grey = 1.0 - smoothstep( 0.05, 0.12, sat );
+            float brown = ( 1.0 - grey ) * step( c.g * 1.04, c.r ) * step( c.b * 1.1, c.g );
+            float grass = max( 0.0, 1.0 - grey - brown );
+            cover = vec4( grass, grey * smoothstep( 0.06, 0.16, lum ), grey * ( 1.0 - smoothstep( 0.06, 0.16, lum ) ), brown );
           } else if ( groundDetail > 0.0 && coverOn > 0.0 ) {
             // (the photo's rows run bottom-up, as its texture's)
             vec2 cuv = vec2( ( vGroundW.x - coverRect.x ) / coverRect.z, 1.0 - ( vGroundW.z - coverRect.y ) / coverRect.w );
