@@ -4149,7 +4149,16 @@ export class CourseView {
       // (a dot's clearance at least the chip's half width on screen, zoomed out too)
       const chipR = (60 * 2 * this.controls.distance * Math.tan((this.camera.fov * DEG) / 2)) / Math.max(1, this.size.height);
       if (s.holeId === this.selectedId) for (let i = 1; i < s.line.length; i++) marks.push({ p: { x: (s.line[i - 1].x + s.line[i].x) / 2, y: (s.line[i - 1].y + s.line[i].y) / 2 }, r: Math.max(28, s.length * 0.1, chipR) });
-      const mid = [0.5, 0.35, 0.65, 0.25, 0.75].map(f => pointAlong(s.line, s.length * f).point).find(q => marks.every(m => dist(m.p, q) > m.r)) ?? pointAlong(s.line, s.length / 2).point;
+      // (the selected hole's width squares too: the chip never on one)
+      const picked = s.holeId === this.selectedId ? course.holes.find(h => h.id === s.holeId) : undefined;
+      if (picked?.fairway) for (const t of stationsOf(picked)) marks.push({ p: pointAlong(s.line, s.length * t).point, r: chipR * 0.6 });
+      let mid = [0.5, 0.35, 0.65, 0.25, 0.75].map(f => pointAlong(s.line, s.length * f).point).find(q => marks.every(m => dist(m.p, q) > m.r));
+      // (no room on the line, zoomed out: halfway, beside the fairway, clear of its squares)
+      if (!mid && picked) {
+        const half = pointAlong(s.line, s.length / 2), off = (picked.fairway ? picked.fairwayWidth / 2 : 0) + chipR * 0.45;
+        mid = { x: half.point.x - Math.sin(half.angle) * off, y: half.point.y + Math.cos(half.angle) * off };
+      }
+      mid ??= pointAlong(s.line, s.length / 2).point;
       const text = `${fmtDist(s.length, course.units)}`;
       const extra = `P${s.par}${Math.abs(s.elevationChange) >= 3 ? ` · ${fmtElev(s.elevationChange, course.units)}` : ""}`;
       put(`dist:${s.holeId}`, `${text}|${extra}`, 3, () => {

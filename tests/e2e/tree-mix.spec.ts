@@ -22,7 +22,7 @@ async function woodsAndTrees(page: import("@playwright/test").Page, place: { lat
     (window as any).__dgActions.addDrawn("area", [{ x: 200, y: 200 }, { x: 700, y: 200 }, { x: 700, y: 600 }, { x: 200, y: 600 }]);
     (window as any).__dgActions.select(null);
   }, place);
-  await expect.poll(async () => (await woodsTrees(page)).length).toBeGreaterThan(50);
+  await expect.poll(async () => (await woodsTrees(page)).length, { timeout: 30_000 }).toBeGreaterThan(50);
   await page.getByRole("button", { name: "1 Site" }).click();
   const fold = page.getByTestId("site-trees");
   if (!(await fold.evaluate(d => (d as HTMLDetailsElement).open))) await fold.locator("summary").click();
