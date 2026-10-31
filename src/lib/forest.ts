@@ -1264,8 +1264,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
           cr = g0[0] * kk; cg = g0[1] * kk; cb = g0[2] * kk;
         }
         // Cliffs and steep banks: bare rock in ledges across the slope (the layers of a canyon
-        // wall), broken up at its edge, lit like the ground round it
-        if (rh && reliefLook === "shaded" && rh.rock > 0.02) {
+        // wall), broken up at its edge, lit like the ground round it (on the map only: the 3D
+        // ground keeps its own colors on a slope, its shape showing it's steep)
+        if (rh && reliefLook === "shaded" && rh.rock > 0.02 && !opts.under) {
           const ledge = rh.elev / 11 + (fbm(x / pt * 0.03 + 70, y / pt * 0.03) - 0.5) * 2.2 + (noise(x / pt * 0.4, y / pt * 0.4) - 0.5) * 0.25;
           const fr = ledge - Math.floor(ledge);
           const band = 0.88 + 0.18 * smooth(0.1, 0.5, fr) - 0.16 * smooth(0.86, 1, fr);

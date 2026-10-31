@@ -24,19 +24,22 @@ const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 /** Where the sun shines from, by the compass: only along the sun's real path at the course's
  * latitude (never from the north, north of the tropics). */
-export function SunFromSlider({ s, live }: { s: MapStyle; live?: boolean }) {
+/** Where the sun shines from: the map's (`sunFrom`), or with `value` and `put`, another's (the 3D
+ * view's own, in the View panel). */
+export function SunFromSlider({ s, live, value, put }: { s: MapStyle; live?: boolean; value?: number; put?: (bearing: number, history: boolean) => void }) {
   const site = useCourse(c => c.doc.site);
   const lat = latitudeOf(site);
   const { mid, half } = sunArc(lat);
-  const bearing = sunFromOf(s, lat);
+  const bearing = value ?? sunFromOf(s, lat);
+  const set = (b: number, history = true) => (put ? put(b, history) : setStyle({ sunFrom: b }, history));
   const off = ((bearing - mid + 540) % 360) - 180;
   const [v, setV] = useState(off);
   useEffect(() => { setV(off); }, [off]);
   const toBearing = (o: number) => Math.round((mid + o + 360) % 360);
   return (
     <Slider label="Sun from the" min={-half} max={half} step={5} value={v}
-      onChange={x => { setV(x); if (live) setStyle({ sunFrom: toBearing(x) }, false); }}
-      onDone={() => { if (live) useCourse.getState().commit(); else if (toBearing(v) !== bearing) setStyle({ sunFrom: toBearing(v) }); }}
+      onChange={x => { setV(x); if (live) set(toBearing(x), false); }}
+      onDone={() => { if (live) useCourse.getState().commit(); else if (toBearing(v) !== bearing) set(toBearing(v)); }}
       format={x => compassName(toBearing(x))} />
   );
 }

@@ -27,13 +27,15 @@ test("3D: a sky when tilted (none looking straight down), lit by the course's su
   expect(sun0.y).toBeGreaterThan(0.5);
   await page.keyboard.press("3");
   await expect.poll(async () => (await scene(page)).sky).toBe(true);
-  // The light is the course map's: the View panel has the sun's direction and the shadows, and goes
-  // there for the rest (no second Sun height)
+  // The 3D view's own light, in the View panel: the sun's direction, its height, the shadows
   await page.getByTestId("scene-button").click();
   await expect(page.getByTestId("view-light").getByLabel("Shadows")).toBeVisible();
-  await expect(page.getByTestId("scene-panel").getByLabel("Sun height")).toHaveCount(0);
-  await page.getByTestId("light-link").click();
-  await expect.poll(async () => (await editorState(page)).step).toBe("map");
+  await expect(page.getByTestId("view-light").getByLabel("Sun height")).toBeVisible();
+  await page.getByTestId("scene-button").click();
+  // Until it's set there, the 3D view starts from the course map's light: changed on the map, it follows
+  await page.getByRole("button", { name: "3 Map" }).click();
+  const part = page.getByTestId("part-light");
+  if ((await part.getAttribute("aria-expanded")) !== "true") await part.click();
   const panel = page.getByTestId("look-part-light");
   const set = async (label: string, value: string) => {
     const slider = panel.getByLabel(label);

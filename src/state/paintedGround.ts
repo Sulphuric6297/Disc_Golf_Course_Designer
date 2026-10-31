@@ -21,7 +21,8 @@ const gently = (key: string, stop: AbortController) => () => {
 };
 
 // Paintings kept on this device, by what they depend on: the next session skips the painting
-// (the slowest part of a flyover's wait). A short list; the oldest go.
+// (the slowest part of a flyover's wait). A short list; the oldest go. (The number in the key: the
+// way they're painted; a new one paints them again.)
 const KEPT_KEY = "paint:index", KEEP = 16;
 const hashOf = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
 const savedPaint = async <T,>(key: string): Promise<T | null> => { try { return ((await idbGet(key)) as T | undefined) ?? null; } catch { return null; } };
@@ -103,7 +104,7 @@ export const paintedGround = (doc: CourseDoc, ahead = false): Promise<PaintedGro
   const k = Math.min(4, MAX_PX / Math.max(width, height, 1));
   const view = { cx: width / 2, cy: height / 2, rotation: 0, scale: k, width: width * k, height: height * k };
   const work = (async () => {
-    const diskKey = `paint:map:${hashOf(key)}`;
+    const diskKey = `paint:map:2:${hashOf(key)}`;
     const saved = await savedPaint<{ blob: Blob; wooded: WoodedGrid | null }>(diskKey);
     let blob: Blob | null, wooded: WoodedGrid | null;
     if (saved) ({ blob, wooded } = saved);
@@ -166,7 +167,7 @@ export const paintedDetail = (doc: CourseDoc, holeId: string, maxPx = 3072): Pro
   detailUnder = job;
   const view = { cx: rect.x + rect.width / 2, cy: rect.y + rect.height / 2, rotation: 0, scale: k, width: rect.width * k, height: rect.height * k };
   const work = (async () => {
-    const diskKey = `paint:detail:${hashOf(key)}`;
+    const diskKey = `paint:detail:2:${hashOf(key)}`;
     const saved = await savedPaint<{ blob: Blob }>(diskKey);
     if (saved) return { canvas: await canvasOf(saved.blob), rect };
     if (job.stop.signal.aborted) throw new Error("stopped");

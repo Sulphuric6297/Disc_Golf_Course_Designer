@@ -159,15 +159,18 @@ export function MapViewport({ onContextMenu, compact, controlsTop = 0, controlsR
 
   // The 3D view shows the course in its landscape's natural colors (whatever the map's style)
   const natural = landscapeOf(doc.style);
-  const naturalStyle = useMemo(() => ({ ...doc.style, ...natural.colors }), [doc.style, natural]);
+  // (and the 3D view's own leaves and water, when set: View panel, Course look)
+  const l3 = doc.style.look3d;
+  const naturalStyle = useMemo(() => ({ ...doc.style, ...natural.colors, ...(l3?.trees ? { trees: l3.trees } : {}), ...(l3?.treeMix ? { treeMix: l3.treeMix } : {}), ...(l3?.water ? { water: l3.water } : {}) }), [doc.style, natural, l3]);
   const viewDoc: ViewDoc = useMemo(() => ({
     // (the painted map in its own colors, and what stands on it too)
-    course: { ...doc, style: paintedOn ? doc.style : naturalStyle },
+    course: { ...doc, style: paintedOn ? { ...doc.style, ...(l3?.trees ? { trees: l3.trees } : {}), ...(l3?.treeMix ? { treeMix: l3.treeMix } : {}) } : naturalStyle },
     stats,
     activeHoleId: ed.activeHoleId,
     issues,
     // (the sun where it really is: by the compass, at the height the map's light gives it)
-    sun: { azimuth: sunFromOf(doc.style, latitudeOf(doc.site)), altitude: paintLight(doc.style).height, shadows: doc.style.shadows ?? 0.65, light: doc.style.light ?? 0 },
+    // (the 3D view's own sun when set, apart from the map's)
+    sun: { azimuth: l3?.sunFrom ?? sunFromOf(doc.style, latitudeOf(doc.site)), altitude: l3?.sunHeight ?? paintLight(doc.style).height, shadows: l3?.shadows ?? doc.style.shadows ?? 0.65, light: doc.style.light ?? 0 },
     canvas: doc.canvas,
     unitsPerFoot: 1,
     gridSize: doc.gridSize,

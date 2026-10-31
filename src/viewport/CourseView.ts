@@ -1849,7 +1849,8 @@ export class CourseView {
     this.ground.extras.visible = false;
     this.updateGrass(cam, true);
     // (the corner map from above draws the same trees: all of them, then)
-    this.updateForests(cam.position, this.miniSize ? undefined : cam);
+    // (every tree, in view or not: each casts its shadow, and the shadows are drawn only now and then)
+    this.updateForests(cam.position);
     waterUniforms.uTime.value = this.clock.elapsedTime;
     waterUniforms.uWind.value = this.wind ? 1 : 0.25;
     // (editing: what's picked and what's under the pointer outlined, as on the map)
@@ -2384,7 +2385,7 @@ export class CourseView {
     this.lastSky = false;
     const restore = tilted ? this.atmosphere(this.camera, false) : null;
     this.updateGrass(this.camera, tilted);
-    this.updateForests(this.camera.position, this.camera);
+    this.updateForests(this.camera.position);
     if (this.treesHidden || this.treesShownAt !== this.treesHidden) { this.showTrees(); this.treesShownAt = this.treesHidden; }
     waterUniforms.uTime.value = this.clock.elapsedTime;
     this.renderer.render(this.scene, this.camera);

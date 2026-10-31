@@ -664,6 +664,11 @@ export interface MapStyle {
   lightMode?: import("./lib/mapLook").LightMode;
   goldenSun?: number;
   sunFrom?: number;
+  /** The 3D view's own look, apart from the printed map's (each unset: as the map has it, or for
+   * the colors, the landscape's): where the sun shines from (compass degrees) and how high, how
+   * dark the shadows, the leaves' color and autumn mix, the water's color. Set in the View panel's
+   * Course look; the map's Light, Leaf colors and Water never move it, nor it them. */
+  look3d?: { sunFrom?: number; sunHeight?: number; shadows?: number; trees?: string; treeMix?: string[]; water?: string };
   /** How paths and roads stack where they cross, bottom first (unset: dirt, gravel and wood
    * chips, paved walkways, roads and parking): on the painted map and in 3D. */
   pathOrder?: PathTier[];
