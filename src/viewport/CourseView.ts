@@ -3133,7 +3133,7 @@ export class CourseView {
             else run.push(p);
           }
           flush();
-          const mesh = new THREE.Mesh(drapedPolygon(poly, (x, y) => this.h(x, y), doc.gridSize, 0.12, runs), k ? mown(mat.clone()) : mat);
+          const mesh = new THREE.Mesh(drapedPolygon(poly, (x, y) => this.h(x, y), doc.gridSize, 0.12, runs, 8), k ? mown(mat.clone()) : mat);
           mesh.renderOrder = 1;
           mesh.receiveShadow = true;
           g.add(mesh);
@@ -3441,7 +3441,7 @@ export class CourseView {
         if (!bare) {
           // (grass, sand and dirt fade into the ground around them; paving keeps a crisp edge)
           const soft = photo ? 0 : a.kind === "fairway" ? 8 : a.kind === "rough" ? 10 : a.kind === "green" ? 4 : a.kind === "sand" ? 3 : 0;
-          const geo = drapedPolygon(a.points, (x, y) => this.h(x, y), doc.gridSize, floor ? 0.08 : 0.15 + order * 0.01, soft ? [[...a.points, a.points[0]]] : undefined);
+          const geo = drapedPolygon(a.points, (x, y) => this.h(x, y), doc.gridSize, floor ? 0.08 : 0.15 + order * 0.01, soft ? [[...a.points, a.points[0]]] : undefined, soft);
           const mat = new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: floor ? Math.min(fill, 0.45) : fill, depthWrite: false, polygonOffset: true, polygonOffsetFactor: floor ? -1 : -4, polygonOffsetUnits: floor ? -2 : -8 });
           // (up close, what it's made of: a fairway's mown grass, a parking lot's asphalt, a woods' floor)
           const scan: [SurfaceLayer, number] | null = a.kind === "fairway" || a.kind === "green" ? ["grass", 0.9] : a.kind === "rough" ? ["grass", 1] : a.kind === "sand" ? ["sand", 1]
