@@ -428,9 +428,9 @@ export class CourseView {
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = EXPOSURE;
     this.renderer.shadowMap.enabled = true;
-    // (soft shadows: the shadow picture blurred as it's made, so their edges are soft and never
-    // stepped, however coarse the picture; it's made again only when the sun or the eye moves on)
-    this.renderer.shadowMap.type = THREE.VSMShadowMap;
+    // (PCF soft. VSM, the shadow picture blurred as it's made, put a phone's whole ground in shade
+    // on the live demo, and in software it slowed everything)
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
     const canvas = this.renderer.domElement;
     canvas.style.position = "absolute";
@@ -489,8 +489,6 @@ export class CourseView {
     this.scene.environment = null;
     this.scene.add(this.hemi);
     this.sun.castShadow = true;
-    this.sun.shadow.radius = 8;
-    this.sun.shadow.blurSamples = 12;
     this.sun.shadow.mapSize.set(this.mobile ? 1024 : 2048, this.mobile ? 1024 : 2048);
     this.scene.add(this.sun, this.sun.target);
     // Two lines no one sees, kept for good: three.js drops a shader once nothing uses it, and a
@@ -543,9 +541,6 @@ export class CourseView {
       this.software = !asIf && /swiftshader|llvmpipe|software|basic render/i.test(name);
       // Without a graphics card, or on a phone, fewer trees in full detail
       if (this.software) forestDetail.nearFt = 70;
-      // (and without one, shadows filtered as before: blurring the shadow picture in software after
-      // every change slowed everything else down)
-      if (this.software) this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       else if (this.mobile) forestDetail.nearFt = 150;
     }
 
