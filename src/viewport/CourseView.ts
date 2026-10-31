@@ -1860,7 +1860,8 @@ export class CourseView {
     this.fx.visible = this.teeEdit && !target && !this.fly;
     // (the hole's On screen switches: flying, and from the tee)
     const hidden = this.povHole ? this.hideForFlight() : [];
-    this.ground.detailActive(true);
+    // (the ground's scans: not without a graphics card, where every pixel's work is the processor's)
+    this.ground.detailActive(!this.software);
     // (the leaves right in front of the eye melt away: a flight through the treetops shows the
     // hole, and standing under a tree, its leaves overhead stay but none fill the view)
     treeNearFade.value = this.fly ? 45 : 20;
@@ -2381,7 +2382,7 @@ export class CourseView {
       this.lastLook.copy(this.camera.quaternion);
     }
     const tilted = this.controls.polarAngle > TILT_TOP;
-    this.ground.detailActive(dist < 250);
+    this.ground.detailActive(dist < 250 && !this.software);
     // Tilted, the course is a place: sky, haze, land to the horizon and grass up close
     this.lastSky = false;
     const restore = tilted ? this.atmosphere(this.camera, false) : null;
@@ -3838,6 +3839,9 @@ export class CourseView {
    */
   private pictureStep() {
     const r = this.renderer;
+    // (without a graphics card each side would hold the page up for seconds: the sky and a band
+    // for the banks, as before)
+    if (this.software) { this.pondsDirty = false; this.picturing = null; return; }
     if (!this.picturing) {
       // (ponds no longer standing: their pictures let go)
       for (const [m, p] of this.ponds) {
