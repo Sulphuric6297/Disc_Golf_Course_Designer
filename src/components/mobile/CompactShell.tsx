@@ -288,7 +288,20 @@ function Tools() {
           </button>
         )}
       </div>
-      {more && <ActionSheet title="More tools" actions={rest.map(t => ({ label: t.short, icon: t.icon, run: () => pick(t), testid: `tool-${t.id}` }))} onClose={() => setMore(false)} testid="more-tools-menu" />}
+      {/* (the rest as tiles, as the strip shows its own: all of them in sight at once, no scrolling) */}
+      {more && (
+        <ActionSheet title="More tools" actions={[]} onClose={() => setMore(false)} testid="more-tools-menu">
+          <div className="grid grid-cols-4 gap-1.5 p-2" role="menu">
+            {rest.map(t => (
+              <button key={t.id} role="menuitem" data-testid={`tool-${t.id}`} aria-label={touchWords(t.label)} onClick={() => { pick(t); setMore(false); }}
+                className="min-h-[64px] px-1 rounded-xl flex flex-col items-center justify-center gap-1.5 text-zinc-200 bg-white/[0.07] active:bg-white/[0.13] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+                {t.icon}
+                <span className="text-[11.5px] leading-tight font-semibold text-center">{t.short}</span>
+              </button>
+            ))}
+          </div>
+        </ActionSheet>
+      )}
     </div>
   );
 }
