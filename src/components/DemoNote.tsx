@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 import { Bell, ExternalLink, History, Lock, MessageCircle, Share2, UserRound, X } from "lucide-react";
 import { create } from "zustand";
 
-export const REPO = "https://github.com/Sulphuric6297/Disc_Golf_Course_Designer#hosting-it-yourself";
+export const REPO = "https://github.com/Sulphuric6297/GlideLine#hosting-it-yourself";
 
 /** What hosting it yourself adds, in the demo's note. */
 export const DEMO_ADDS = [
