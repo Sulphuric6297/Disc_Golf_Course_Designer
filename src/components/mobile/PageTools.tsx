@@ -54,6 +54,13 @@ function SizeOf({ tool }: { tool: string }) {
 export function PageTools() {
   const tab = useEditor(e => e.designTab);
   const [open, setOpen] = useState<string | null>(null);
+  // (closing: the sheet sinks away, then the tools rise back in its place)
+  const [closing, setClosing] = useState(false);
+  const close = () => {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { setOpen(null); return; }
+    setClosing(true);
+    window.setTimeout(() => { setOpen(null); setClosing(false); }, 160);
+  };
   const tools = TOOLS[tab];
   // (another printout: its own tools, none open)
   useEffect(() => setOpen(null), [tab]);
@@ -75,10 +82,10 @@ export function PageTools() {
     <div className="shrink-0 relative z-30 px-2 pb-1.5" data-testid="page-tools">
       {/* (low: half the screen at most, the page in sight above it) */}
       {tool && (
-        <div className="glass ring-1 ring-white/15 rounded-[24px] max-h-[min(340px,46dvh)] flex flex-col overflow-hidden animate-[dgrise_200ms_cubic-bezier(0.2,0.9,0.3,1)]" data-testid="page-tool-panel" role="region" aria-label={tool.label}>
+        <div className={`glass ring-1 ring-white/15 rounded-[24px] max-h-[min(340px,46dvh)] flex flex-col overflow-hidden ${closing ? "animate-[dgsink_160ms_ease-in_forwards]" : "animate-[dgrise_200ms_cubic-bezier(0.2,0.9,0.3,1)]"}`} data-testid="page-tool-panel" role="region" aria-label={tool.label}>
           <div className="flex items-center gap-2 pl-4 pr-1.5 pt-1.5 shrink-0">
             <span className="flex-1 text-[16px] font-bold text-zinc-50">{tool.label}</span>
-            <button className="w-11 h-11 shrink-0 flex items-center justify-center rounded-full bg-white/[0.1] text-zinc-100 active:bg-white/[0.18] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400" onClick={() => setOpen(null)} aria-label="Close" title="Close" data-testid="page-tool-done"><X size={19} /></button>
+            <button className="w-11 h-11 shrink-0 flex items-center justify-center rounded-full bg-white/[0.1] text-zinc-100 active:bg-white/[0.18] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400" onClick={close} aria-label="Close" title="Close" data-testid="page-tool-done"><X size={19} /></button>
           </div>
           <div className="overflow-y-auto dg-scroll min-h-0 -mt-1 pb-1">
             <SizeOf tool={tool.id} />
@@ -86,7 +93,7 @@ export function PageTools() {
           </div>
         </div>
       )}
-      {!tool && <div role="toolbar" aria-label="Page settings" className="glass ring-1 ring-white/15 rounded-[22px] flex gap-1 p-1 overflow-x-auto dg-noscrollbar touch-pan-x">
+      {!tool && <div role="toolbar" aria-label="Page settings" className="glass ring-1 ring-white/15 rounded-[22px] flex gap-1 p-1 overflow-x-auto dg-noscrollbar touch-pan-x animate-[dgrise_200ms_cubic-bezier(0.2,0.9,0.3,1)]">
         {tools.map(t => {
           const on = open === t.id;
           return (

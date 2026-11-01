@@ -809,6 +809,8 @@ export function MapDesigner({ compact = false, topInset = 0, bottomInset = 0, pr
   const BAR = 84; // (the tool bar along the bottom, the same room kept whatever's open)
   const room = { top: topInset + 6, bottom: BAR + 52 + 6 };
   const visW = size.w - 20, visH = Math.max(80, size.h - room.top - room.bottom);
+  // (filling: down to the screen's foot, under the buttons and tools as the 3D map is)
+  const fillH = Math.max(80, size.h - room.top);
   // (as it first shows, or Fit and Fill: the page's middle in the middle of the room)
   const view = `${tabId}|${whole}|${page?.width}|${page?.height}|${size.w}|${size.h}|${zoom === null}`;
   useLayoutEffect(() => {
@@ -816,9 +818,17 @@ export function MapDesigner({ compact = false, topInset = 0, bottomInset = 0, pr
     if (!phonePage || zoom !== null || !el || !pg) return;
     const r = el.getBoundingClientRect(), pr = pg.getBoundingClientRect();
     el.scrollLeft += pr.left + pr.width / 2 - (r.left + r.width / 2);
-    el.scrollTop += pr.top + pr.height / 2 - (r.top + room.top + visH / 2);
+    // (taller than the room between the bars: its top under the top bar, the rest under the tools)
+    el.scrollTop += pr.height > visH + 2 ? pr.top - (r.top + room.top) : pr.top + pr.height / 2 - (r.top + room.top + visH / 2);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
+  // (another printout or hole: the new page fades in, not swapped in at once)
+  const shown = `${tabId}|${preview === "map" ? "" : holeId}`;
+  useLayoutEffect(() => {
+    const pg = pageEl.current;
+    if (!pg || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    pg.animate([{ opacity: 0.2 }, { opacity: 1 }], { duration: 240, easing: "ease-out" });
+  }, [shown]);
   // A button's zoom (− and +, Fit and Fill) glides there, about the spot it keeps, instead of
   // jumping: the page drawn at its new size at once, scaled from the old and let go
   const glide = useRef<{ k: number; fx: number; fy: number } | null>(null);
@@ -864,7 +874,7 @@ export function MapDesigner({ compact = false, topInset = 0, bottomInset = 0, pr
   const pill = compact && !designSel && !toolOpen;
   const fit = phonePage ? Math.min(visW / page.width, visH / page.height) : Math.min((size.w - margin) / page.width, (size.h - margin - (compact && designSel ? dockH : pill ? 52 : 0)) / page.height);
   // (filling the room: as wide and as tall as it, the rest a slide away)
-  const fill = phonePage ? Math.min(fit * 3, Math.max(visW / page.width, visH / page.height)) : fit;
+  const fill = phonePage ? Math.min(fit * 3, Math.max(visW / page.width, fillH / page.height)) : fit;
   const k = zoom ?? (phonePage && !whole ? fill : fit);
   kRef.current = k;
   kNow.current = k;

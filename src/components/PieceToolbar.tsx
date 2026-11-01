@@ -75,6 +75,7 @@ export function PieceToolbar({ t, id, onGrow, onGrowLive, onPreviewFont, onEditT
 }) {
   const doc = useCourse(c => c.doc);
   const p = pickedOf(doc, t, id);
+  const [sinking, setSinking] = useState(false);
   const [pop, setPop] = useState<"link" | "opacity" | "more" | "order" | "holes" | "color" | "fill" | "font" | "size" | "arrange" | null>(null);
   const linkRef = useRef<HTMLInputElement>(null);
   useEffect(() => { onPanel?.(docked && !!pop); }, [docked, pop, onPanel]);
@@ -249,8 +250,14 @@ export function PieceToolbar({ t, id, onGrow, onGrowLive, onPreviewFont, onEditT
       </>]
     };
     const open = pop ? panels[pop] : null;
+    // (closing: the sheet sinks away; another tool's sheet takes its place at once)
+    const closePop = () => {
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) { setPop(null); return; }
+      setSinking(true);
+      window.setTimeout(() => { setPop(null); setSinking(false); }, 160);
+    };
     const tool = (key: string, label: string, icon: ReactNode, onClick?: () => void) => (
-      <button key={key} onClick={onClick ?? (() => { setPop(pop === key ? null : (key as typeof pop)); if (key === "link") setTimeout(() => linkRef.current?.focus(), 0); })} aria-pressed={onClick ? undefined : pop === key} data-testid={`piece-tool-${key}`}
+      <button key={key} onClick={onClick ?? (() => { if (pop === key) { closePop(); return; } setSinking(false); setPop(key as typeof pop); if (key === "link") setTimeout(() => linkRef.current?.focus(), 0); })} aria-pressed={onClick ? undefined : pop === key} data-testid={`piece-tool-${key}`}
         className={`flex-1 min-w-[48px] h-[52px] px-1 rounded-[16px] flex flex-col items-center justify-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${pop === key ? "bg-white/[0.16] text-zinc-50" : "text-zinc-200 active:bg-white/[0.12]"}`}>
         {icon}<span className="text-[11px] leading-none font-semibold whitespace-nowrap">{label}</span>
       </button>
@@ -258,15 +265,15 @@ export function PieceToolbar({ t, id, onGrow, onGrowLive, onPreviewFont, onEditT
     return (
       <div className="w-full flex flex-col items-stretch gap-1.5" onPointerDown={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
         {open && (
-          <div className="glass ring-1 ring-white/15 shadow-xl rounded-[24px] max-h-[min(340px,46dvh)] flex flex-col overflow-hidden animate-[dgrise_200ms_cubic-bezier(0.2,0.9,0.3,1)]" data-page-bar data-testid="piece-panel" role="region" aria-label={open[0]}>
+          <div className={`glass ring-1 ring-white/15 shadow-xl rounded-[24px] max-h-[min(340px,46dvh)] flex flex-col overflow-hidden ${sinking ? "animate-[dgsink_160ms_ease-in_forwards]" : "animate-[dgrise_200ms_cubic-bezier(0.2,0.9,0.3,1)]"}`} data-page-bar data-testid="piece-panel" role="region" aria-label={open[0]}>
             <div className="flex items-center gap-2 pl-4 pr-1.5 pt-1.5 shrink-0">
               <span className="flex-1 text-[16px] font-bold text-zinc-50">{open[0]}</span>
-              <button className="w-11 h-11 shrink-0 flex items-center justify-center rounded-full bg-white/[0.1] text-zinc-100 active:bg-white/[0.18]" onClick={() => setPop(null)} aria-label="Close" title="Close" data-testid="piece-panel-done"><X size={19} /></button>
+              <button className="w-11 h-11 shrink-0 flex items-center justify-center rounded-full bg-white/[0.1] text-zinc-100 active:bg-white/[0.18]" onClick={closePop} aria-label="Close" title="Close" data-testid="piece-panel-done"><X size={19} /></button>
             </div>
             <div className="px-3 pt-1 pb-3 overflow-y-auto dg-scroll min-h-0">{open[1]}</div>
           </div>
         )}
-        <div className="glass ring-1 ring-white/15 shadow-xl flex items-center gap-0.5 rounded-[22px] p-1" data-page-bar data-testid="piece-toolbar" role="toolbar" aria-label={`${p.label} settings`}>
+        <div className="glass ring-1 ring-white/15 shadow-xl flex items-center gap-0.5 rounded-[22px] p-1 animate-[dgrise_200ms_cubic-bezier(0.2,0.9,0.3,1)]" data-page-bar data-testid="piece-toolbar" role="toolbar" aria-label={`${p.label} settings`}>
           <button className="shrink-0 min-w-[60px] h-[52px] px-2 rounded-[16px] flex flex-col items-center justify-center gap-1 bg-orange-500 text-zinc-950 active:bg-orange-600" onClick={onDone} aria-label="Done" data-testid="piece-done"><Check size={19} strokeWidth={2.6} /><span className="text-[11px] leading-none font-bold">Done</span></button>
           {has.text && tool("words", "Words", <Pencil size={19} />, onEditText)}
           {has.url && tool("link", "Link", <Link2 size={19} />)}
