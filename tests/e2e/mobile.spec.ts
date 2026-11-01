@@ -883,6 +883,8 @@ test.describe("phone", () => {
     await page.getByTestId("hud-flyover").tap();
     await expect(page.getByTestId("hud-flyover")).toHaveText(/Stop/);
     await expect(page.getByTestId("tee-view-hud")).toBeHidden();
+    // (the flight's ready: its loading screen, over everything while it gets ready, out of the way)
+    await expect.poll(() => page.evaluate(() => { const el = document.querySelector('[data-testid="flyover-loading"]'); return !el || getComputedStyle(el).pointerEvents === "none"; }), { timeout: 120_000 }).toBe(true);
     await tile.tap();
     await expect.poll(open).toBe(true);
     await expect(page.getByTestId("flyover-settings")).toBeVisible();
