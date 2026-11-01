@@ -1101,16 +1101,22 @@ const coveredBy = (outline: P[], x0: number, y0: number, x1: number, y1: number)
  * measured ground, which has no heights, measured trees or photo. `box` is the course with its
  * room round it, in the frame turned by `rotation`; the map is `w` by `h` points at `scale`.
  */
-const leastOffSite = (doc: CourseDoc, box: { minX: number; minY: number; maxX: number; maxY: number }, rotation: number, scale: number, w: number, h: number, margin: number) => {
+const leastOffSite = (doc: CourseDoc, box: { minX: number; minY: number; maxX: number; maxY: number }, rotation: number, scale: number, w: number, h: number, margin: number, clear?: { pts: P[]; boxes: { x: number; y: number; w: number; h: number }[]; near: number }) => {
   const mid = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
   const hw = w / 2 / scale, hh = h / 2 / scale, mm = margin / scale;
   // (how far it can go each way)
   const sx = Math.max(0, hw - mm - (box.maxX - box.minX) / 2), sy = Math.max(0, hh - mm - (box.maxY - box.minY) / 2);
   const measured = !!doc.background || Object.keys(doc.terrainHeights).length > 3;
-  if (!measured || (sx < 1 && sy < 1)) return rotatePoint(mid, rotation);
+  // (and, given `clear`, never with one of its points, in the turned frame, under one of its boxes
+  // on the page: none such, null)
+  const blocked = (c: P) => !!clear && clear.pts.some(q => {
+    const x = w / 2 + (q.x - c.x) * scale, y = h / 2 + (q.y - c.y) * scale;
+    return clear.boxes.some(b => x > b.x - clear.near && x < b.x + b.w + clear.near && y > b.y - clear.near && y < b.y + b.h + clear.near);
+  });
+  if (!clear && (!measured || (sx < 1 && sy < 1))) return rotatePoint(mid, rotation);
   const site = [{ x: 0, y: 0 }, { x: doc.canvas.width, y: 0 }, { x: doc.canvas.width, y: doc.canvas.height }, { x: 0, y: doc.canvas.height }].map(q => rotatePoint(q, -rotation));
   // (past the ground, in square feet; among places as good, the one nearest the middle)
-  const off = (c: P) => 4 * hw * hh - coveredBy(site, c.x - hw, c.y - hh, c.x + hw, c.y + hh) + ((c.x - mid.x) ** 2 + (c.y - mid.y) ** 2) * 1e-3;
+  const off = (c: P) => (blocked(c) ? Infinity : (measured ? 4 * hw * hh - coveredBy(site, c.x - hw, c.y - hh, c.x + hw, c.y + hh) : 0) + ((c.x - mid.x) ** 2 + (c.y - mid.y) ** 2) * 1e-3);
   let best = mid, bestOff = off(mid), rx = sx, ry = sy;
   // (a grid over where it can go, then finer round the best)
   for (let round = 0; round < 5; round++) {
@@ -1122,7 +1128,7 @@ const leastOffSite = (doc: CourseDoc, box: { minX: number; minY: number; maxX: n
     }
     rx /= 4; ry /= 4;
   }
-  return rotatePoint(best, rotation);
+  return bestOff < Infinity ? rotatePoint(best, rotation) : null;
 };
 
 /**
@@ -1254,12 +1260,14 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
     // in as the course allows, the page's pieces laid out over it; a tee, basket or amenity under
     // one of them (the title, the legend, the north arrow...), it's tried a little farther out,
     // until none is. Only the last is drawn: the tries need only where the course falls
-    const base = parts.length;
+    const base = parts.length, turnedPts = pts.map(q => rotatePoint(q, -rotation)), near = 8 * ts;
+    // (the pieces the last try had a point under: kept clear of, sliding the course first)
+    let clearOf: { x: number; y: number; w: number; h: number }[] | null = null, slid = false;
     for (let out = 0, last = false; ; ) {
       parts.length = base;
       pieces.length = 0;
       const scale = Math.min((W - 2 * (m + room)) / bw, (H - 2 * (m + room)) / bh) / (1 + out);
-      const center = leastOffSite(doc, box, rotation, scale, W, H, m + room);
+      const center = (clearOf && leastOffSite(doc, box, rotation, scale, W, H, m + room, { pts: turnedPts, boxes: clearOf, near })) || leastOffSite(doc, box, rotation, scale, W, H, m + room)!;
       const view: MapView = { cx: center.x, cy: center.y, rotation, scale, width: W, height: H };
       const onPage = (q: P) => { const r = rotatePoint({ x: q.x - center.x, y: q.y - center.y }, -rotation); return { x: W / 2 + r.x * scale, y: H / 2 + r.y * scale }; };
       const map = last ? renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy, labelAt: s.labelAt ?? {} }, "pm") : { svg: "", toScreen: onPage };
@@ -1403,9 +1411,12 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
       parts.push(extrasSvg(s.mapExtras, s.sponsors, "", { hole: "", par: "", length: "", course: title, name: "" }, W, H, s.font, (id, c) => `<g data-el="${id}">${c}</g>`));
       if (last) return { svg: wrapSvg(W, H, parts.join(""), opts.dpi), width: W, height: H, page, holeLines: holeLinesOf(stats, map.toScreen) };
       // (a little room round each: its hole number, its label)
-      const near = 8 * ts;
       if (out >= 0.6 || !shown.some(q => pieces.some(b => q.x > b.x - near && q.x < b.x + b.w + near && q.y > b.y - near && q.y < b.y + b.h + near))) last = true;
-      else out += 0.05;
+      else {
+        clearOf = pieces.slice();
+        if (slid) out += 0.05;
+        slid = true;
+      }
     }
   }
 
@@ -1415,7 +1426,7 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
   const bottomH = showSide && !landscape ? Math.min(H * 0.3, 150 * ts) : 0;
   const map = { x: m, y: m + titleH, w: W - 2 * m - (sideW ? sideW + m * 0.6 : 0), h: H - 2 * m - titleH - (bottomH ? bottomH + m * 0.5 : 0) - 14 * ts };
   const scale = Math.min((map.w - 2 * room) / bw, (map.h - 2 * room) / bh);
-  const center = leastOffSite(doc, box, rotation, scale, map.w, map.h, room);
+  const center = leastOffSite(doc, box, rotation, scale, map.w, map.h, room)!;
   const view: MapView = { cx: center.x, cy: center.y, rotation, scale, width: map.w, height: map.h };
   const { svg, toScreen } = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy }, "pm");
   if (title) parts.push(`<text x="${n(m)}" y="${n(m + 30 * ts)}" font-family="${titleStack((s.page?.title?.font || titleFontOf(s)))}" font-weight="700" font-size="${n(30 * ts)}" fill="${pal.ink}" letter-spacing="${n(keepsCase((s.page?.title?.font || titleFontOf(s))) ? 0 : 0.5 * ts)}">${esc(keepsCase((s.page?.title?.font || titleFontOf(s))) ? title : title.toUpperCase())}</text>`);

@@ -328,8 +328,8 @@ test("the course map comes in close: every tee, basket and amenity on the page a
     expect(f.under, `${f.rotation}° on ${f.paper}: under ${f.under.join(", ")}`).toEqual([]);
     expect(f.nearest, `${f.rotation}° on ${f.paper}`).toBeGreaterThan(0);
   }
-  // (north up, the demo's site holds the whole poster)
-  expect(fits.find(f => f.rotation === 0 && f.paper === "36x48")!.offSite).toBeLessThan(0.02);
+  // (north up, the site holds nearly all the poster)
+  expect(fits.find(f => f.rotation === 0 && f.paper === "36x48")!.offSite).toBeLessThan(0.05);
 });
 
 test("Hand painted: the demo (made before) stays Classic, a new course starts in Hand painted, and its map paints in time", async () => {
