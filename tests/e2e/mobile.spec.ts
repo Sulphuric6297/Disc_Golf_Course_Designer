@@ -960,7 +960,8 @@ test.describe("phone", () => {
     await expect.poll(() => page.evaluate(() => { const ed = (window as any).__dgEditor(), el = document.querySelector('[data-testid="flyover-loading"]'); return ed.flyover && ed.flyLoading === null && (!el || getComputedStyle(el).pointerEvents === "none"); }), { timeout: 120_000 }).toBe(true);
     await page.waitForTimeout(400);
     const flight = () => page.evaluate(() => { const e = (window as any).__dgEditor(); return JSON.stringify({ teeView: e.teeView, flyover: e.flyover, flyLoading: e.flyLoading, teeSettings: e.teeSettings, tiles: document.querySelectorAll('[data-testid="hud-settings"]').length }); });
-    await expect(async () => { await tile.tap({ timeout: 4000 }); await expect.poll(open, { timeout: 3000, message: await flight() }).toBe(true); }).toPass({ timeout: 20_000 });
+    // (drawn in software, a flight's frames take seconds each: a tap waits its turn)
+    await expect(async () => { await tile.tap({ timeout: 20_000 }); await expect.poll(open, { timeout: 10_000, message: await flight() }).toBe(true); }).toPass({ timeout: 90_000 });
     await expect(page.getByTestId("flyover-settings")).toBeVisible();
     await page.getByTestId("hud-close").tap();
     await expect.poll(async () => (await editorState(page)).teeView).toBeNull();
