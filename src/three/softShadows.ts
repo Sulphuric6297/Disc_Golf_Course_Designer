@@ -23,6 +23,10 @@ const SOFT = /* glsl */ `#elif defined( SHADOWMAP_TYPE_PCF_SOFT )
 					f.y );
 			}
 			shadow /= 8.0;
+			// (faded out over the picture's outer edge: where it ends, no line, and when it moves on
+			// with the eye, no patch of ground suddenly lit or shaded)
+			vec2 dgEdge = abs( shadowCoord.xy - 0.5 ) * 2.0;
+			shadow = mix( shadow, 1.0, smoothstep( 0.75, 0.98, max( dgEdge.x, dgEdge.y ) ) );
 
 		#elif defined( SHADOWMAP_TYPE_VSM )`;
 

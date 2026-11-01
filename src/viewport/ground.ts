@@ -149,6 +149,17 @@ export class Ground {
     noRaycast(plane);
     this.detailPlane = plane;
     this.group.add(plane);
+    // (faded in over a second, not swapped: the ground sharpening, never suddenly changing)
+    const mat = plane.material as THREE.MeshLambertMaterial;
+    mat.opacity = 0;
+    const from = performance.now();
+    const step = () => {
+      if (this.detailPlane !== plane) return;
+      mat.opacity = Math.min(1, (performance.now() - from) / 1000);
+      this.onChanged();
+      if (mat.opacity < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
 
   /** The painted map draped over the ground in place of the photo (null: the photo again).

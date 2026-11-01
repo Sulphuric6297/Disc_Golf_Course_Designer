@@ -2801,14 +2801,21 @@ export class CourseView {
    * eye has moved on a fair way (30 ft, 70 flying), never every frame.
    */
   private nearShadows(cam: THREE.PerspectiveCamera) {
-    const R = this.fly ? 360 : 260;
+    // (big enough that its edge is well off, and moved on only after a fair walk: each move redraws
+    // the shadows. Its edge fades out, three/softShadows, so a move shows no line)
+    const R = this.fly ? 360 : 400;
     const fwd = cam.getWorldDirection(new THREE.Vector3());
     fwd.y = 0;
     if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
     fwd.normalize();
-    const c = cam.position.clone().addScaledVector(fwd, R * 0.5);
-    c.y = this.h(c.x, c.z);
-    if (this.nearShadowAt && this.nearShadowAt.distanceTo(c) < (this.fly ? 70 : 30)) return;
+    const c = cam.position.clone().addScaledVector(fwd, R * 0.4);
+    if (this.nearShadowAt && this.nearShadowAt.distanceTo(c) < (this.fly ? 70 : 60)) return;
+    // Held to the shadow picture's own grid (whole texels across the sun's view), so moving on never
+    // shifts a shadow's edge by part of a texel: the shadows stay put, not crawling
+    const texel = (2 * R) / this.sun.shadow.mapSize.x;
+    const right = new THREE.Vector3(0, 1, 0).cross(this.sunDir).normalize(), up = this.sunDir.clone().cross(right).normalize();
+    const a = c.dot(right), b = c.dot(up);
+    c.addScaledVector(right, Math.round(a / texel) * texel - a).addScaledVector(up, Math.round(b / texel) * texel - b);
     this.nearShadowAt = c;
     this.sun.position.copy(c).addScaledVector(this.sunDir, R * 3);
     this.sun.target.position.copy(c);
@@ -2817,7 +2824,6 @@ export class CourseView {
     sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R;
     sc.near = 1; sc.far = R * 6;
     sc.updateProjectionMatrix();
-    const texel = (2 * R) / this.sun.shadow.mapSize.x;
     this.sun.shadow.normalBias = Math.max(0.25, texel * 1.5);
     this.sun.shadow.bias = -0.0005;
     this.renderer.shadowMap.needsUpdate = true;
