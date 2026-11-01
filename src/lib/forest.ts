@@ -13,7 +13,7 @@ import { canopyMask } from "./geo/detect";
 import { boundsOf, corridor, dist, pathLength, pointInPolygon, smoothPath } from "./geom";
 import { autoWalks, drawnAreas, fairwayShiftAt, fairwayWidthAt, linePath, teeLines, widthAlong, widthFactors, widthVaries } from "./course";
 import type { HoleStats } from "./holeStats";
-import { paintedPinesOf, tallGrassOf, treeMixOf } from "./landscapes";
+import { conifersOf, style3dOf, tallGrassOf, treeMixOf } from "./landscapes";
 import { reliefExaggeration } from "./relief";
 import { isLineKind, offsetPolygon, roofFor, structureHeight, structurePath, structureWidth } from "./structures";
 import { latitudeOf, lookParts, paintLight, sunFromOf } from "./mapLook";
@@ -816,7 +816,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // (the course's kinds of trees: pines only if a needle kind is allowed, all pines if only
   // they are; each treetop one of the kinds, its leaves' color moved as in 3D)
   const shares = sharesOf(s);
-  const vPines = conifersWith(shares, paintedPinesOf(s, look.trees.pines));
+  // (as many pines as the 3D map grows: its landscape's, or as set there)
+  const vPines = conifersWith(shares, conifersOf(style3dOf(s)));
   // (one share of pines for every look: a pine share set means the same on any of them)
   const pineShare = vPines;
   // (a stand of one species, drawn: the treetops in it all of it, as in 3D)

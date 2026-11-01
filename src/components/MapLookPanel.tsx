@@ -9,7 +9,7 @@ import { COLOR_PICKS, tallGrassOf, treeMixOf } from "../lib/landscapes";
 import { LIGHT_MODES, LOOK_THEMES, PART_CHOICES, compassName, latitudeOf, lightOf, lookParts, partChanged, sunArc, sunFromOf, themeOf, type LookPart, type LookParts } from "../lib/mapLook";
 import { useCourse } from "../state/course";
 import type { MapStyle, PathTier } from "../types";
-import { ELEVATION_LOOKS, FineTuning, setStyle, WoodsOptions } from "./DesignPanel";
+import { ELEVATION_LOOKS, FineTuning, setStyle } from "./DesignPanel";
 import { ColorInput, Slider, Toggle, useKeepInPlace } from "./ui";
 import { SHOW_EVENT } from "./showSetting";
 
@@ -160,7 +160,6 @@ export function MapLookPanel() {
   const mixed = PARTS.some(changed);
   const base = import.meta.env.BASE_URL;
   const painted = parts.trees.style !== "classic";
-  const measured = useCourse(c => !!c.doc.lidar?.trees.length);
 
   return (
     <div data-testid="map-look">
@@ -221,14 +220,11 @@ export function MapLookPanel() {
                       <>
                         {/* (autumn's colours: how vivid, only while the leaves are autumn's) */}
                         {treeMixOf(s).length > 0 && <LookSlider value={s.autumnVivid ?? 1} label="Autumn colors" min={0.4} max={1.6} step={0.05} format={x => (x < 0.95 ? "Softer" : x > 1.05 ? "More vivid" : "As they are")} onDone={v => setStyle({ autumnVivid: Math.abs(v - 1) < 0.01 ? undefined : v })} />}
-                        {/* (measured trees: the woods are those trees, as wide as Crown size makes them in 3D,
-                        and the woods drawn; more painted only when asked) */}
-                        <WoodsOptions s={s} measured={measured} />
+                        {/* (the trees themselves, their kinds, where they stand and how close, are the 3D
+                        map's: Site, Trees. Here only how big the map draws them) */}
                         {painted && (
                           <>
-                            {!measured && <LookSlider value={parts.trees.density} label="Tree spacing" min={0.4} max={1.6} step={0.05} format={x => `${x < 0.95 ? "Wider" : x > 1.05 ? "Closer" : "Usual"} · ${pct(x)}`} onDone={v => setPart("trees", { density: v })} />}
                             <LookSlider value={parts.trees.size} label="Size" min={0.6} max={1.5} step={0.05} format={pct} onDone={v => setPart("trees", { size: v })} />
-                            <LookSlider value={parts.trees.variety} label="Color variety" min={0} max={1} step={0.05} format={pct} onDone={v => setPart("trees", { variety: v })} />
                           </>
                         )}
                       </>
