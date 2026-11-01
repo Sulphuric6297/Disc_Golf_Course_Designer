@@ -547,7 +547,7 @@ export class CourseView {
       // Without a graphics card, or on a phone, fewer trees in full detail
       if (this.software) forestDetail.nearFt = 70;
       // (soft shadow edges: 32 looks a pixel, too many to do in software every frame)
-      if (!this.software) softenShadows();
+      if (!this.software) softenShadows(this.mobile);
       else if (this.mobile) forestDetail.nearFt = 150;
     }
 

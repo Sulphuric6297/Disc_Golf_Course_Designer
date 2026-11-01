@@ -5,15 +5,15 @@
 // shadow picture, and no float textures (VSM put a phone's whole ground in shade).
 import * as THREE from "three";
 
-const SOFT = /* glsl */ `#elif defined( SHADOWMAP_TYPE_PCF_SOFT )
+const soft = (spots: number) => /* glsl */ `#elif defined( SHADOWMAP_TYPE_PCF_SOFT )
 
 			vec2 texelSize = vec2( 1.0 ) / shadowMapSize;
 			// (a turn of its own at each pixel: interleaved gradient noise)
 			float dgTurn = 6.2831853 * fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) );
 			shadow = 0.0;
-			for ( int i = 0; i < 8; i ++ ) {
-				// (a Vogel spiral: 8 spots spread evenly over the disc)
-				float r = sqrt( ( float( i ) + 0.5 ) / 8.0 ), t = float( i ) * 2.3999632 + dgTurn;
+			for ( int i = 0; i < ${spots}; i ++ ) {
+				// (a Vogel spiral: the spots spread evenly over the disc)
+				float r = sqrt( ( float( i ) + 0.5 ) / ${spots}.0 ), t = float( i ) * 2.3999632 + dgTurn;
 				vec2 uv = shadowCoord.xy + vec2( cos( t ), sin( t ) ) * r * shadowRadius * texelSize;
 				vec2 f = fract( uv * shadowMapSize + 0.5 );
 				uv -= f * texelSize;
@@ -22,7 +22,7 @@ const SOFT = /* glsl */ `#elif defined( SHADOWMAP_TYPE_PCF_SOFT )
 					mix( texture2DCompare( shadowMap, uv + vec2( 0.0, texelSize.y ), shadowCoord.z ), texture2DCompare( shadowMap, uv + texelSize, shadowCoord.z ), f.x ),
 					f.y );
 			}
-			shadow /= 8.0;
+			shadow /= ${spots}.0;
 			// (faded out over the picture's outer edge: where it ends, no line, and when it moves on
 			// with the eye, no patch of ground suddenly lit or shaded)
 			vec2 dgEdge = abs( shadowCoord.xy - 0.5 ) * 2.0;
@@ -31,13 +31,14 @@ const SOFT = /* glsl */ `#elif defined( SHADOWMAP_TYPE_PCF_SOFT )
 		#elif defined( SHADOWMAP_TYPE_VSM )`;
 
 let done = false;
-/** Puts the wider soft filter in place of three's own (once, before any shadow is drawn). */
-export const softenShadows = () => {
+/** Puts the wider soft filter in place of three's own (once, before any shadow is drawn): 8 spots,
+ * or 5 on a phone (as many texture reads as three's own soft filter: quick enough every frame). */
+export const softenShadows = (phone = false) => {
   if (done) return;
   done = true;
   const chunk = THREE.ShaderChunk.shadowmap_pars_fragment;
   // (the directional and spot lights' getShadow: the first PCF soft branch, up to its VSM one)
   const a = chunk.indexOf("#elif defined( SHADOWMAP_TYPE_PCF_SOFT )"), b = chunk.indexOf("#elif defined( SHADOWMAP_TYPE_VSM )", a);
   if (a < 0 || b < 0) return;
-  (THREE.ShaderChunk as Record<string, string>).shadowmap_pars_fragment = chunk.slice(0, a) + SOFT + chunk.slice(b + "#elif defined( SHADOWMAP_TYPE_VSM )".length);
+  (THREE.ShaderChunk as Record<string, string>).shadowmap_pars_fragment = chunk.slice(0, a) + soft(phone ? 5 : 8) + chunk.slice(b + "#elif defined( SHADOWMAP_TYPE_VSM )".length);
 };

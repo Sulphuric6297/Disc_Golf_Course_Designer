@@ -142,6 +142,9 @@ export class Ground {
       this.draped(doc, d.rect.x, d.rect.y, d.rect.width, d.rect.height, MAP_OVERLAY_OFFSET * 1.5),
       new THREE.MeshLambertMaterial({ color: 0xffffff, map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -5 })
     );
+    // (the same ground as the painted map under it: its textures up close, its patches and real
+    // colors; without them the sharper painting came in dull and flat over the sunlit ground)
+    addGroundDetail(plane.material as THREE.Material, this.detail);
     plane.name = "terrain-detail-plane";
     plane.renderOrder = -0.5;
     plane.receiveShadow = true;
