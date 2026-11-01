@@ -1,5 +1,6 @@
 // What the real-course checks share: signing up on the test server, the demo course opened and
 // saved there, the map's own hooks, and the speed probes.
+import { readFileSync } from "fs";
 import { expect, type Page } from "@playwright/test";
 import { SETUP_CODE } from "../../playwright.real.config";
 
@@ -15,7 +16,8 @@ export async function openDemo(page: Page, change: (doc: W) => void = () => {}) 
   expect(r.ok(), await r.text()).toBe(true);
   await page.goto("/");
   await expect(page.getByTestId("home")).toBeVisible();
-  const doc = await (await page.request.get("/example/course.json")).json();
+  // (the course these checks were made on, kept as it was: the demo's example can change)
+  const doc = JSON.parse(readFileSync("tests/real/fixtures/course.json", "utf8"));
   change(doc);
   await page.evaluate(d => (window as W).__dgServer.start(d), doc);
   await page.waitForFunction(() => !!(window as W).__dgView && (window as W).__dgCourse?.()?.holes?.length > 0, null, { timeout: 60_000 });
