@@ -1238,160 +1238,175 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
     const pageEls = s.page ?? {};
     const el = (id: PageElementId): PageElementStyle => pageEls[id] ?? {};
     type Box = { x: number; y: number; w: number; h: number };
+    const pieces: Box[] = [];
     const placed = (id: string, o: { x?: number; y?: number; scale?: number; hidden?: boolean; rot?: number; opacity?: number }, box: Box, content: string) => {
       if (o.hidden) return;
       const k = keepsItsSize(id) ? 1 : o.scale ?? 1;
       // (kept at least partly on the page)
       const X = o.x !== undefined ? Math.max(10 - box.w * k, Math.min(W - 10, o.x * W)) : box.x;
       const Y = o.y !== undefined ? Math.max(10 - box.h * k, Math.min(H - 10, o.y * H)) : box.y;
+      pieces.push({ x: X, y: Y, w: box.w * k, h: box.h * k });
       // (with a box to pick it by on the Design page, never drawn)
       parts.push(`<g data-el="${id}" data-box="${n(X)} ${n(Y)} ${n(box.w * k)} ${n(box.h * k)}" transform="translate(${n(X)} ${n(Y)}) scale(${n(k)}) translate(${n(-box.x)} ${n(-box.y)})"><rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.w)}" height="${n(box.h)}" fill="none" pointer-events="all"/>${turned(content, keepsItsTurn(id) ? undefined : o.rot, o.opacity)}</g>`);
     };
     // The map fills the page; the course fits inside a margin. Its labels can be dragged on the
-    // Design page (the map's scale and turn say how far that is on the ground)
-    const scale = Math.min((W - 2 * (m + room)) / bw, (H - 2 * (m + room)) / bh);
-    const center = leastOffSite(doc, box, rotation, scale, W, H, m + room);
-    const view: MapView = { cx: center.x, cy: center.y, rotation, scale, width: W, height: H };
-    const map = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy, labelAt: s.labelAt ?? {} }, "pm");
-    parts.push(`<g data-el="map" data-box="0 0 ${n(W)} ${n(H)}" data-k="${scale}" data-rot="${rotation}">${map.svg}</g>`);
-    // The emptiest corner for the title
-    const shown = pts.map(map.toScreen);
-    const bw2 = W * 0.42, bh2 = H * 0.4;
-    const spots = [{ x: 0, y: 0 }, { x: W - bw2, y: 0 }, { x: 0, y: H - bh2 }, { x: W - bw2, y: H - bh2 }];
-    const busy = (c: P) => shown.filter(p => p.x >= c.x && p.x <= c.x + bw2 && p.y >= c.y && p.y <= c.y + bh2).length;
-    const spot = spots.reduce((a, c) => (busy(c) < busy(a) ? c : a));
-    const left = spot.x === 0, top = spot.y === 0;
-    {
-      const te = el("title");
-      const ink = te.ink ?? "#ffffff";
-      const out: string[] = [];
-      const tx = left ? m : W - m, anchor = left ? "start" : "end";
-      const ty0 = top ? m + 6 * ts : H - bh2 + m;
-      let ty = ty0;
-      const shadow = `filter="url(#title-shadow)"`;
-      // "The" small, the name big, "DISC GOLF COURSE" spaced out
-      let name = title.trim();
-      const the = /^the\s+/i.test(name);
-      if (the) name = name.replace(/^the\s+/i, "");
-      const course = /\s+disc\s+golf(\s+course)?$/i.test(name);
-      if (course) name = name.replace(/\s+disc\s+golf(\s+course)?$/i, "");
-      // (in the title's own font, else the course name font)
-      const tf = te.font || titleFontOf(s);
-      const big = Math.min(54 * ts, ((W * 0.4) / Math.max(4, name.length)) * (keepsCase(tf) ? 2.1 : 1.9));
-      let tw = name.length * big * (keepsCase(tf) ? 0.48 : 0.6);
-      if (the) { out.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="${font}" font-weight="700" font-style="italic" font-size="${n(13 * ts)}" fill="${ink}" ${shadow}>THE</text>`); ty += 10 * ts; }
-      out.push(`<text${fitAttr(W * 0.42)} x="${n(tx)}" y="${n(ty + big * 0.95)}" text-anchor="${anchor}" font-family="${titleStack(tf)}" font-weight="700" font-size="${n(big)}" fill="${ink}" ${shadow}>${esc(keepsCase(tf) ? name : name.toUpperCase())}</text>`);
-      ty += big * 1.15;
-      const golf = mapTagline(doc);
-      out.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="${n(12 * ts)}" letter-spacing="${n(3.2 * ts)}" fill="${ink}" ${shadow}>${esc(golf)}</text>`);
-      tw = Math.max(tw, golf.length * (12 * 0.66 + 3.2) * ts);
-      ty += 20 * ts;
-      if (sub) {
-        out.push(`<text x="${n(tx)}" y="${n(ty + 6 * ts)}" text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-weight="600" font-size="${n(6.5 * ts)}" letter-spacing="${n(1 * ts)}" fill="${te.ink ?? "#e7f0e2"}" ${shadow}>${esc(sub.toUpperCase())}</text>`);
-        tw = Math.max(tw, sub.length * (6.5 * 0.66 + 1) * ts);
-        ty += 14 * ts;
-      }
-      // Layout chips: name with a rule in the tee color (when there's more than one), then
-      // PAR | LENGTH on black; none once the title's Par and length is switched off
-      const chips = te.parLength === false ? [] : doc.layouts.slice(0, 3).map(l => {
-        const ls = doc.holes.map(h => holeStats(doc, h, l)).filter(x => x.complete);
-        // (a hole played as two numbers counts twice)
-        return { l, par: ls.reduce((t, x) => t + x.par * playsOf(doc, x.holeId), 0), len: ls.reduce((t, x) => t + x.length * playsOf(doc, x.holeId), 0) };
-      }).filter(c => c.par > 0);
-      const cw = 104 * ts, chH = 20 * ts, named = doc.layouts.length > 1, cy0 = named ? 12 * ts : 2 * ts;
-      chips.forEach((c, i) => {
-        const x0 = left ? tx + i * (cw + 8 * ts) : tx - (chips.length - i) * (cw + 8 * ts) + 8 * ts;
-        const col = TEE_LEVELS[c.l.tee].color;
-        if (named) {
-          out.push(`<text${fitAttr(50 * ts)} x="${n(x0)}" y="${n(ty + 8 * ts)}" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(7 * ts)}" fill="${col}" ${shadow}>${esc(`${c.l.name} layout`.toUpperCase())}</text>`);
-          out.push(`<rect x="${n(x0 + 52 * ts)}" y="${n(ty + 5.5 * ts)}" width="${n(cw - 52 * ts)}" height="${n(1.4 * ts)}" fill="${col}"/>`);
+    // Design page (the map's scale and turn say how far that is on the ground). Tried first as close
+    // in as the course allows, the page's pieces laid out over it; a tee, basket or amenity under
+    // one of them (the title, the legend, the north arrow...), it's tried a little farther out,
+    // until none is. Only the last is drawn: the tries need only where the course falls
+    const base = parts.length;
+    for (let out = 0, last = false; ; ) {
+      parts.length = base;
+      pieces.length = 0;
+      const scale = Math.min((W - 2 * (m + room)) / bw, (H - 2 * (m + room)) / bh) / (1 + out);
+      const center = leastOffSite(doc, box, rotation, scale, W, H, m + room);
+      const view: MapView = { cx: center.x, cy: center.y, rotation, scale, width: W, height: H };
+      const onPage = (q: P) => { const r = rotatePoint({ x: q.x - center.x, y: q.y - center.y }, -rotation); return { x: W / 2 + r.x * scale, y: H / 2 + r.y * scale }; };
+      const map = last ? renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy, labelAt: s.labelAt ?? {} }, "pm") : { svg: "", toScreen: onPage };
+      parts.push(`<g data-el="map" data-box="0 0 ${n(W)} ${n(H)}" data-k="${scale}" data-rot="${rotation}">${map.svg}</g>`);
+      // The emptiest corner for the title
+      const shown = pts.map(map.toScreen);
+      const bw2 = W * 0.42, bh2 = H * 0.4;
+      const spots = [{ x: 0, y: 0 }, { x: W - bw2, y: 0 }, { x: 0, y: H - bh2 }, { x: W - bw2, y: H - bh2 }];
+      const busy = (c: P) => shown.filter(p => p.x >= c.x && p.x <= c.x + bw2 && p.y >= c.y && p.y <= c.y + bh2).length;
+      const spot = spots.reduce((a, c) => (busy(c) < busy(a) ? c : a));
+      const left = spot.x === 0, top = spot.y === 0;
+      {
+        const te = el("title");
+        const ink = te.ink ?? "#ffffff";
+        const out: string[] = [];
+        const tx = left ? m : W - m, anchor = left ? "start" : "end";
+        const ty0 = top ? m + 6 * ts : H - bh2 + m;
+        let ty = ty0;
+        const shadow = `filter="url(#title-shadow)"`;
+        // "The" small, the name big, "DISC GOLF COURSE" spaced out
+        let name = title.trim();
+        const the = /^the\s+/i.test(name);
+        if (the) name = name.replace(/^the\s+/i, "");
+        const course = /\s+disc\s+golf(\s+course)?$/i.test(name);
+        if (course) name = name.replace(/\s+disc\s+golf(\s+course)?$/i, "");
+        // (in the title's own font, else the course name font)
+        const tf = te.font || titleFontOf(s);
+        const big = Math.min(54 * ts, ((W * 0.4) / Math.max(4, name.length)) * (keepsCase(tf) ? 2.1 : 1.9));
+        let tw = name.length * big * (keepsCase(tf) ? 0.48 : 0.6);
+        if (the) { out.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="${font}" font-weight="700" font-style="italic" font-size="${n(13 * ts)}" fill="${ink}" ${shadow}>THE</text>`); ty += 10 * ts; }
+        out.push(`<text${fitAttr(W * 0.42)} x="${n(tx)}" y="${n(ty + big * 0.95)}" text-anchor="${anchor}" font-family="${titleStack(tf)}" font-weight="700" font-size="${n(big)}" fill="${ink}" ${shadow}>${esc(keepsCase(tf) ? name : name.toUpperCase())}</text>`);
+        ty += big * 1.15;
+        const golf = mapTagline(doc);
+        out.push(`<text x="${n(tx)}" y="${n(ty + 12 * ts)}" text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="${n(12 * ts)}" letter-spacing="${n(3.2 * ts)}" fill="${ink}" ${shadow}>${esc(golf)}</text>`);
+        tw = Math.max(tw, golf.length * (12 * 0.66 + 3.2) * ts);
+        ty += 20 * ts;
+        if (sub) {
+          out.push(`<text x="${n(tx)}" y="${n(ty + 6 * ts)}" text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-weight="600" font-size="${n(6.5 * ts)}" letter-spacing="${n(1 * ts)}" fill="${te.ink ?? "#e7f0e2"}" ${shadow}>${esc(sub.toUpperCase())}</text>`);
+          tw = Math.max(tw, sub.length * (6.5 * 0.66 + 1) * ts);
+          ty += 14 * ts;
         }
-        out.push(`<rect x="${n(x0)}" y="${n(ty + cy0)}" width="${n(cw)}" height="${n(chH)}" fill="#0b0f0a" fill-opacity="0.88"/>`);
-        out.push(`<text${fitAttr(cw - 8 * ts)} x="${n(x0 + cw / 2)}" y="${n(ty + cy0 + chH / 2)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(11 * ts)}" fill="${col === "#f8fafc" ? "#ffffff" : col}">PAR ${c.par} <tspan fill="#ffffff" fill-opacity="0.6">|</tspan> ${esc(fmtDist(c.len, doc.units).toUpperCase())}</text>`);
-      });
-      if (chips.length) { tw = Math.max(tw, chips.length * (cw + 8 * ts)); ty += cy0 + chH; }
-      const box = { x: left ? tx : tx - tw, y: ty0, w: tw, h: ty - ty0 + 4 * ts };
-      // A soft dark glow behind it (its strength: the panel's solidness)
-      const glow = te.bgOpacity ?? 0.55;
-      parts.push(`<defs><filter id="title-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="${n(1.5 * ts)}" stdDeviation="${n(2.5 * ts)}" flood-color="#000" flood-opacity="0.65"/></filter><radialGradient id="title-glow"><stop offset="0" stop-color="${te.bg ?? "#050b04"}" stop-opacity="${n(glow)}"/><stop offset="1" stop-color="${te.bg ?? "#050b04"}" stop-opacity="0"/></radialGradient></defs>`);
-      if (glow > 0) out.unshift(`<ellipse pointer-events="none" cx="${n(box.x + box.w / 2)}" cy="${n(box.y + box.h / 2)}" rx="${n(box.w * 0.85 + 40 * ts)}" ry="${n(box.h * 0.95 + 30 * ts)}" fill="url(#title-glow)"/>`);
-      if (title || sub) placed("title", te, box, out.join(""));
+        // Layout chips: name with a rule in the tee color (when there's more than one), then
+        // PAR | LENGTH on black; none once the title's Par and length is switched off
+        const chips = te.parLength === false ? [] : doc.layouts.slice(0, 3).map(l => {
+          const ls = doc.holes.map(h => holeStats(doc, h, l)).filter(x => x.complete);
+          // (a hole played as two numbers counts twice)
+          return { l, par: ls.reduce((t, x) => t + x.par * playsOf(doc, x.holeId), 0), len: ls.reduce((t, x) => t + x.length * playsOf(doc, x.holeId), 0) };
+        }).filter(c => c.par > 0);
+        const cw = 104 * ts, chH = 20 * ts, named = doc.layouts.length > 1, cy0 = named ? 12 * ts : 2 * ts;
+        chips.forEach((c, i) => {
+          const x0 = left ? tx + i * (cw + 8 * ts) : tx - (chips.length - i) * (cw + 8 * ts) + 8 * ts;
+          const col = TEE_LEVELS[c.l.tee].color;
+          if (named) {
+            out.push(`<text${fitAttr(50 * ts)} x="${n(x0)}" y="${n(ty + 8 * ts)}" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(7 * ts)}" fill="${col}" ${shadow}>${esc(`${c.l.name} layout`.toUpperCase())}</text>`);
+            out.push(`<rect x="${n(x0 + 52 * ts)}" y="${n(ty + 5.5 * ts)}" width="${n(cw - 52 * ts)}" height="${n(1.4 * ts)}" fill="${col}"/>`);
+          }
+          out.push(`<rect x="${n(x0)}" y="${n(ty + cy0)}" width="${n(cw)}" height="${n(chH)}" fill="#0b0f0a" fill-opacity="0.88"/>`);
+          out.push(`<text${fitAttr(cw - 8 * ts)} x="${n(x0 + cw / 2)}" y="${n(ty + cy0 + chH / 2)}" text-anchor="middle" dominant-baseline="central" font-family="Oswald, Arial, sans-serif" font-weight="600" font-size="${n(11 * ts)}" fill="${col === "#f8fafc" ? "#ffffff" : col}">PAR ${c.par} <tspan fill="#ffffff" fill-opacity="0.6">|</tspan> ${esc(fmtDist(c.len, doc.units).toUpperCase())}</text>`);
+        });
+        if (chips.length) { tw = Math.max(tw, chips.length * (cw + 8 * ts)); ty += cy0 + chH; }
+        const box = { x: left ? tx : tx - tw, y: ty0, w: tw, h: ty - ty0 + 4 * ts };
+        // A soft dark glow behind it (its strength: the panel's solidness)
+        const glow = te.bgOpacity ?? 0.55;
+        parts.push(`<defs><filter id="title-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="${n(1.5 * ts)}" stdDeviation="${n(2.5 * ts)}" flood-color="#000" flood-opacity="0.65"/></filter><radialGradient id="title-glow"><stop offset="0" stop-color="${te.bg ?? "#050b04"}" stop-opacity="${n(glow)}"/><stop offset="1" stop-color="${te.bg ?? "#050b04"}" stop-opacity="0"/></radialGradient></defs>`);
+        if (glow > 0) out.unshift(`<ellipse pointer-events="none" cx="${n(box.x + box.w / 2)}" cy="${n(box.y + box.h / 2)}" rx="${n(box.w * 0.85 + 40 * ts)}" ry="${n(box.h * 0.95 + 30 * ts)}" fill="url(#title-glow)"/>`);
+        if (title || sub) placed("title", te, box, out.join(""));
+      }
+      // North arrow, scale bar, hole guide and legend in the other corners
+      const other = spots.filter(c => c !== spot).sort((a, b) => busy(a) - busy(b));
+      if (s.north) {
+        const c = other[0];
+        const nx = c.x === 0 ? m + 16 * ts : W - m - 16 * ts, ny = c.y === 0 ? m + 20 * ts : H - m - 30 * ts;
+        placed("north", el("north"), { x: nx - 18 * ts, y: ny - 24 * ts, w: 36 * ts, h: 46 * ts }, `<g transform="translate(${n(nx)} ${n(ny)}) rotate(${n(-rotation)})">${northArrow(0, 0, 15 * ts, pal)}</g>`);
+      }
+      if (s.scale) {
+        const sx = left && !top ? W - m - 150 * ts : m, sy = H - m * 0.9;
+        const sw = scaleBarWidth(scale, ts, doc.units);
+        placed("scale", el("scale"), { x: sx - 4 * ts, y: sy - 18 * ts, w: sw + 30 * ts, h: 18 * ts }, scaleBar(sx, sy, scale, ts, { ...pal, panel: "rgba(8,14,7,.7)", ink: "#ffffff" }, doc.units));
+      }
+      const c = other[1] ?? other[0];
+      const pw = 190 * ts;
+      const px = c.x === 0 ? m : W - m - pw;
+      /** A panel's colors: its own where set. */
+      const panelOf = (e: PageElementStyle) => ({ fill: e.bg ?? PAGE_PANEL.bg, opacity: e.bgOpacity ?? PAGE_PANEL.opacity, pal: { ...pal, panelInk: e.ink ?? PAGE_PANEL.ink } });
+      // The hole guide
+      let holesBox: Box | null = null, holesSvg = "";
+      if (s.holeTable) {
+        const he = el("holes"), pc = panelOf(he);
+        const head = he.heading?.trim();
+        const y0 = 0;
+        const t = holeTable(doc, stats, px + 10 * ts, y0 + (head ? 30 : 14) * ts, pw - 20 * ts, ts * 0.9, pc.pal, font, "vertical", H * 0.6, he.columns);
+        const h = t.bottom - y0 + 6 * ts;
+        holesBox = { x: px, y: y0, w: pw, h };
+        holesSvg = `<rect x="${n(px)}" y="${n(y0)}" width="${n(pw)}" height="${n(h)}" rx="${n(6 * ts)}" fill="${pc.fill}" fill-opacity="${n(pc.opacity)}"/>${head ? `<text x="${n(px + 10 * ts)}" y="${n(y0 + 14 * ts)}" font-family="${font}" font-weight="700" font-size="${n(10 * ts)}" fill="${pc.pal.panelInk}">${esc(head.toUpperCase())}</text>` : ""}${t.svg}`;
+      }
+      // The legend
+      let legendBox: Box | null = null, legendSvg = "";
+      if (s.legend) {
+        const le = el("legend"), pc = panelOf(le);
+        const lg = legend(doc, px + 10 * ts, 14 * ts, pw - 20 * ts, ts * 0.9, pc.pal, font, le.heading);
+        const h = lg.bottom + 6 * ts;
+        legendBox = { x: px, y: 0, w: pw, h };
+        legendSvg = `<rect x="${n(px)}" y="0" width="${n(pw)}" height="${n(h)}" rx="${n(6 * ts)}" fill="${pc.fill}" fill-opacity="${n(pc.opacity)}"/>${lg.svg}`;
+      }
+      // Stacked in their corner (top down, or bottom up), the legend after the guide
+      const gap = 8 * ts;
+      const stack = [holesBox && { id: "holes", box: holesBox, svg: holesSvg }, legendBox && { id: "legend", box: legendBox, svg: legendSvg }].filter(Boolean) as { id: "holes" | "legend"; box: Box; svg: string }[];
+      let yy = c.y === 0 ? m : H - m - 14 * ts - stack.reduce((t, e) => t + e.box.h, 0) - gap * Math.max(0, stack.length - 1);
+      for (const e of stack) {
+        const natural = { ...e.box, y: yy };
+        const o = el(e.id);
+        // (an older course's legend position)
+        const legacy = e.id === "legend" || (e.id === "holes" && !s.legend) ? s.legendAt : undefined;
+        placed(e.id, o.x === undefined && legacy ? { ...o, x: legacy.x, y: legacy.y } : o, natural, `<g transform="translate(0 ${n(yy)})">${e.svg}</g>`);
+        yy += e.box.h + gap;
+      }
+      // The credit line
+      if (credit) {
+        const ce = el("credit");
+        const cx = W - m * 0.6, cy = H - m * 0.35, cwid = credit.length * 6 * ts * 0.55;
+        placed("credit", { ...ce, hidden: undefined }, { x: cx - cwid, y: cy - 7 * ts, w: cwid, h: 9 * ts }, `<text x="${n(cx)}" y="${n(cy)}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="${n(6 * ts)}" fill="${ce.ink ?? "#ffffff"}" fill-opacity="0.75">${esc(credit)}</text>`);
+      }
+      // Pictures and text put on the page
+      for (const im of s.images ?? []) {
+        if (im.hidden) continue;
+        const w = im.w * W, h = w * im.aspect, X = im.x * W, Y = im.y * H;
+        parts.push(`<g data-el="image:${im.id}" data-box="${n(X)} ${n(Y)} ${n(w)} ${n(h)}">${turned(`<image href="${im.src}" x="${n(X)}" y="${n(Y)}" width="${n(w)}" height="${n(h)}" preserveAspectRatio="xMidYMid meet" opacity="${n(im.opacity ?? 1)}"/>`, im.rot)}</g>`);
+      }
+      for (const t of s.texts ?? []) {
+        if (t.hidden || !t.text.trim()) continue;
+        const lines = t.text.split("\n");
+        const tw = Math.max(...lines.map(l => l.length)) * t.size * (t.bold ? 0.6 : 0.55), th = lines.length * t.size * 1.25;
+        const X = t.x * W, Y = t.y * H;
+        const ax = t.align === "middle" ? X + tw / 2 : t.align === "end" ? X + tw : X;
+        const pad = t.size * 0.4;
+        const bgRect = t.bg && (t.bgOpacity ?? 1) > 0 ? `<rect x="${n(X - pad)}" y="${n(Y - pad)}" width="${n(tw + pad * 2)}" height="${n(th + pad * 2)}" rx="${n(pad)}" fill="${t.bg}" fill-opacity="${n(t.bgOpacity ?? 1)}"/>` : "";
+        const body = lines.map((l, i) => `<text x="${n(ax)}" y="${n(Y + t.size * (0.95 + i * 1.25))}" text-anchor="${t.align ?? "start"}" font-family="${titleStack(t.font || s.font)}" font-weight="${t.bold ? 700 : 400}"${t.italic ? ` font-style="italic"` : ""} font-size="${n(t.size)}" fill="${t.color}">${esc(l)}</text>`).join("");
+        parts.push(`<g data-el="text:${t.id}" data-box="${n(X)} ${n(Y)} ${n(tw)} ${n(th)}"><rect x="${n(X)}" y="${n(Y)}" width="${n(tw)}" height="${n(th)}" fill="none" pointer-events="all"/>${turned(bgRect + body, t.rot, t.opacity)}</g>`);
+      }
+      // Pictures, QR codes and sponsors added to the map (the course's own name filled in)
+      parts.push(extrasSvg(s.mapExtras, s.sponsors, "", { hole: "", par: "", length: "", course: title, name: "" }, W, H, s.font, (id, c) => `<g data-el="${id}">${c}</g>`));
+      if (last) return { svg: wrapSvg(W, H, parts.join(""), opts.dpi), width: W, height: H, page, holeLines: holeLinesOf(stats, map.toScreen) };
+      // (a little room round each: its hole number, its label)
+      const near = 8 * ts;
+      if (out >= 0.6 || !shown.some(q => pieces.some(b => q.x > b.x - near && q.x < b.x + b.w + near && q.y > b.y - near && q.y < b.y + b.h + near))) last = true;
+      else out += 0.05;
     }
-    // North arrow, scale bar, hole guide and legend in the other corners
-    const other = spots.filter(c => c !== spot).sort((a, b) => busy(a) - busy(b));
-    if (s.north) {
-      const c = other[0];
-      const nx = c.x === 0 ? m + 16 * ts : W - m - 16 * ts, ny = c.y === 0 ? m + 20 * ts : H - m - 30 * ts;
-      placed("north", el("north"), { x: nx - 18 * ts, y: ny - 24 * ts, w: 36 * ts, h: 46 * ts }, `<g transform="translate(${n(nx)} ${n(ny)}) rotate(${n(-rotation)})">${northArrow(0, 0, 15 * ts, pal)}</g>`);
-    }
-    if (s.scale) {
-      const sx = left && !top ? W - m - 150 * ts : m, sy = H - m * 0.9;
-      const sw = scaleBarWidth(scale, ts, doc.units);
-      placed("scale", el("scale"), { x: sx - 4 * ts, y: sy - 18 * ts, w: sw + 30 * ts, h: 18 * ts }, scaleBar(sx, sy, scale, ts, { ...pal, panel: "rgba(8,14,7,.7)", ink: "#ffffff" }, doc.units));
-    }
-    const c = other[1] ?? other[0];
-    const pw = 190 * ts;
-    const px = c.x === 0 ? m : W - m - pw;
-    /** A panel's colors: its own where set. */
-    const panelOf = (e: PageElementStyle) => ({ fill: e.bg ?? PAGE_PANEL.bg, opacity: e.bgOpacity ?? PAGE_PANEL.opacity, pal: { ...pal, panelInk: e.ink ?? PAGE_PANEL.ink } });
-    // The hole guide
-    let holesBox: Box | null = null, holesSvg = "";
-    if (s.holeTable) {
-      const he = el("holes"), pc = panelOf(he);
-      const head = he.heading?.trim();
-      const y0 = 0;
-      const t = holeTable(doc, stats, px + 10 * ts, y0 + (head ? 30 : 14) * ts, pw - 20 * ts, ts * 0.9, pc.pal, font, "vertical", H * 0.6, he.columns);
-      const h = t.bottom - y0 + 6 * ts;
-      holesBox = { x: px, y: y0, w: pw, h };
-      holesSvg = `<rect x="${n(px)}" y="${n(y0)}" width="${n(pw)}" height="${n(h)}" rx="${n(6 * ts)}" fill="${pc.fill}" fill-opacity="${n(pc.opacity)}"/>${head ? `<text x="${n(px + 10 * ts)}" y="${n(y0 + 14 * ts)}" font-family="${font}" font-weight="700" font-size="${n(10 * ts)}" fill="${pc.pal.panelInk}">${esc(head.toUpperCase())}</text>` : ""}${t.svg}`;
-    }
-    // The legend
-    let legendBox: Box | null = null, legendSvg = "";
-    if (s.legend) {
-      const le = el("legend"), pc = panelOf(le);
-      const lg = legend(doc, px + 10 * ts, 14 * ts, pw - 20 * ts, ts * 0.9, pc.pal, font, le.heading);
-      const h = lg.bottom + 6 * ts;
-      legendBox = { x: px, y: 0, w: pw, h };
-      legendSvg = `<rect x="${n(px)}" y="0" width="${n(pw)}" height="${n(h)}" rx="${n(6 * ts)}" fill="${pc.fill}" fill-opacity="${n(pc.opacity)}"/>${lg.svg}`;
-    }
-    // Stacked in their corner (top down, or bottom up), the legend after the guide
-    const gap = 8 * ts;
-    const stack = [holesBox && { id: "holes", box: holesBox, svg: holesSvg }, legendBox && { id: "legend", box: legendBox, svg: legendSvg }].filter(Boolean) as { id: "holes" | "legend"; box: Box; svg: string }[];
-    let yy = c.y === 0 ? m : H - m - 14 * ts - stack.reduce((t, e) => t + e.box.h, 0) - gap * Math.max(0, stack.length - 1);
-    for (const e of stack) {
-      const natural = { ...e.box, y: yy };
-      const o = el(e.id);
-      // (an older course's legend position)
-      const legacy = e.id === "legend" || (e.id === "holes" && !s.legend) ? s.legendAt : undefined;
-      placed(e.id, o.x === undefined && legacy ? { ...o, x: legacy.x, y: legacy.y } : o, natural, `<g transform="translate(0 ${n(yy)})">${e.svg}</g>`);
-      yy += e.box.h + gap;
-    }
-    // The credit line
-    if (credit) {
-      const ce = el("credit");
-      const cx = W - m * 0.6, cy = H - m * 0.35, cwid = credit.length * 6 * ts * 0.55;
-      placed("credit", { ...ce, hidden: undefined }, { x: cx - cwid, y: cy - 7 * ts, w: cwid, h: 9 * ts }, `<text x="${n(cx)}" y="${n(cy)}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="${n(6 * ts)}" fill="${ce.ink ?? "#ffffff"}" fill-opacity="0.75">${esc(credit)}</text>`);
-    }
-    // Pictures and text put on the page
-    for (const im of s.images ?? []) {
-      if (im.hidden) continue;
-      const w = im.w * W, h = w * im.aspect, X = im.x * W, Y = im.y * H;
-      parts.push(`<g data-el="image:${im.id}" data-box="${n(X)} ${n(Y)} ${n(w)} ${n(h)}">${turned(`<image href="${im.src}" x="${n(X)}" y="${n(Y)}" width="${n(w)}" height="${n(h)}" preserveAspectRatio="xMidYMid meet" opacity="${n(im.opacity ?? 1)}"/>`, im.rot)}</g>`);
-    }
-    for (const t of s.texts ?? []) {
-      if (t.hidden || !t.text.trim()) continue;
-      const lines = t.text.split("\n");
-      const tw = Math.max(...lines.map(l => l.length)) * t.size * (t.bold ? 0.6 : 0.55), th = lines.length * t.size * 1.25;
-      const X = t.x * W, Y = t.y * H;
-      const ax = t.align === "middle" ? X + tw / 2 : t.align === "end" ? X + tw : X;
-      const pad = t.size * 0.4;
-      const bgRect = t.bg && (t.bgOpacity ?? 1) > 0 ? `<rect x="${n(X - pad)}" y="${n(Y - pad)}" width="${n(tw + pad * 2)}" height="${n(th + pad * 2)}" rx="${n(pad)}" fill="${t.bg}" fill-opacity="${n(t.bgOpacity ?? 1)}"/>` : "";
-      const body = lines.map((l, i) => `<text x="${n(ax)}" y="${n(Y + t.size * (0.95 + i * 1.25))}" text-anchor="${t.align ?? "start"}" font-family="${titleStack(t.font || s.font)}" font-weight="${t.bold ? 700 : 400}"${t.italic ? ` font-style="italic"` : ""} font-size="${n(t.size)}" fill="${t.color}">${esc(l)}</text>`).join("");
-      parts.push(`<g data-el="text:${t.id}" data-box="${n(X)} ${n(Y)} ${n(tw)} ${n(th)}"><rect x="${n(X)}" y="${n(Y)}" width="${n(tw)}" height="${n(th)}" fill="none" pointer-events="all"/>${turned(bgRect + body, t.rot, t.opacity)}</g>`);
-    }
-    // Pictures, QR codes and sponsors added to the map (the course's own name filled in)
-    parts.push(extrasSvg(s.mapExtras, s.sponsors, "", { hole: "", par: "", length: "", course: title, name: "" }, W, H, s.font, (id, c) => `<g data-el="${id}">${c}</g>`));
-    return { svg: wrapSvg(W, H, parts.join(""), opts.dpi), width: W, height: H, page, holeLines: holeLinesOf(stats, map.toScreen) };
   }
 
   const titleH = (title ? 46 : 0) * ts + (sub ? 14 * ts : 0);
