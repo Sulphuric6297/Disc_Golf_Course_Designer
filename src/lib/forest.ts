@@ -275,6 +275,10 @@ export type ForestOpts = {
   under?: boolean;
   /** Kept, to be painted again quickly after a change of only its colors or tone (the live one). */
   keep?: boolean;
+  /** Its pixel pass shared out among workers, where that helps (painted a step at a time). */
+  parallel?: boolean;
+  /** Only these rows' pixel pass (a worker's band). */
+  rows?: [number, number];
 };
 
 // ---------------------------------------------------------------- painted again
@@ -286,6 +290,63 @@ export type ForestOpts = {
 const RECOLORS = ["water", "path", "fairway", "rough", "tallGrass", "light", "contrast", "colorStrength", "paint"] as const;
 const MIX = { grass: 1, fairway: 2, water: 4, path: 8, tall: 16 }, ALL = 255;
 type Steps = Generator<number | void | Wait, HTMLCanvasElement, unknown>;
+/** A canvas, on the page or in a worker (where there's no page: an offscreen one, used alike). */
+const newCanvas = () => (typeof document === "undefined" ? new OffscreenCanvas(1, 1) : document.createElement("canvas")) as HTMLCanvasElement;
+
+// ---------------------------------------------------------------- painted in bands
+// A whole new painting's pixel pass (most of its time) shared out in bands of rows among workers,
+// each working out the masks, treetops and light as the page does, then its rows, the very same
+// pixels; the page lays them in and draws the trees and the rest over them. Only where it's
+// sure to help and to fit: a computer with cores and memory to spare (a phone, a tablet, an
+// older or smaller machine, or a browser without workers that draw: all on the page, as before).
+type Band = { o: Uint8ClampedArray; pre: Float32Array; bits: Uint8Array };
+let bandOut: Band | null = null;
+const bandWorkers = () => {
+  if (typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined" || typeof document === "undefined") return 0;
+  const cores = navigator.hardwareConcurrency || 2, memory = (navigator as { deviceMemory?: number }).deviceMemory;
+  if (matchMedia("(pointer: coarse)").matches || cores < 6 || (memory !== undefined && memory < 8)) return 0;
+  return Math.min(4, cores - 2);
+};
+let pool: Worker[] = [], poolBusy = false, jobNo = 0, laidIn = 0;
+const terrainIds = new WeakMap<object, number>(), sentTerrain = new WeakMap<Worker, number>();
+let terrainNo = 0;
+/** (for the tests: how many paintings had their bands painted by workers) */
+export const bandsLaidIn = () => laidIn;
+/** The pixel pass for rows y0 to y1 only (in a worker): those rows' pixels, colors before the tone and marks. */
+export const forestBand = (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts): Band | null => {
+  bandOut = null;
+  forestCanvas(doc, view, stats, opts);
+  return bandOut;
+};
+/** The bands, painted by the workers (null: done on the page instead). */
+const paintBands = (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts, H: number): Promise<Band[] | null> | null => {
+  const n = bandWorkers();
+  if (n < 2) return null;
+  // (a painting asked for while the last is still out: the workers it's waiting on let go, fresh ones taken)
+  if (poolBusy) { pool.forEach(w => w.terminate()); pool = []; }
+  try {
+    while (pool.length < n) pool.push(new Worker(new URL("./forest.worker.ts", import.meta.url), { type: "module" }));
+  } catch {
+    return null;
+  }
+  poolBusy = true;
+  const id = ++jobNo, workers = pool, standing = measuredStanding();
+  // (the ground's heights sent to a worker once and kept there, so what it works out from them
+  // is kept too, as the page keeps it; the photo not at all: the painting doesn't read it)
+  const terrainId = terrainIds.get(doc.terrainHeights) ?? terrainIds.set(doc.terrainHeights, ++terrainNo).get(doc.terrainHeights)!;
+  const plain = { ...doc, terrainHeights: {}, background: undefined };
+  const job = Promise.all(workers.map((w, j) => new Promise<Band | null>(done => {
+    const rows: [number, number] = [Math.round((H * j) / n), Math.round((H * (j + 1)) / n)];
+    const fail = () => done(null);
+    w.onmessage = (e: MessageEvent<{ id: number } & Partial<Band>>) => { if (e.data.id === id) done(e.data.o && e.data.pre && e.data.bits ? (e.data as Band) : null); };
+    w.onerror = fail;
+    const terrain = sentTerrain.get(w) === terrainId ? null : doc.terrainHeights;
+    sentTerrain.set(w, terrainId);
+    w.postMessage({ id, doc: plain, terrainId, terrain, view, stats, opts: { ...opts, keep: false, parallel: false, rows }, standing });
+  }))).then(bands => (bands.every(Boolean) ? (bands as Band[]) : null)).catch(() => null);
+  void job.finally(() => { if (jobNo === id) poolBusy = false; });
+  return job;
+};
 let kept: { key: string; canopy: unknown; terrain: unknown; rerun: (s: MapStyle) => Steps } | null = null;
 /** Everything a painting is made from but those colors and tone. */
 const keptKey = (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts) => {
@@ -319,7 +380,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const again = kept && keptFor(doc, view, stats, opts);
   if (again) return yield* again.rerun(s);
   const W = Math.max(1, Math.round(view.width * density)), H = Math.max(1, Math.round(view.height * density));
-  const canvas = document.createElement("canvas");
+  const bands = opts.parallel && !opts.rows && W * H >= 1e6 ? paintBands(doc, view, stats, opts, H) : null;
+  const canvas = newCanvas();
   canvas.width = W;
   canvas.height = H;
   const ctx = canvas.getContext("2d");
@@ -345,7 +407,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const mw = Math.ceil(W / cell), mh = Math.ceil(H / cell);
   const mk = k / cell;
   const mask = () => {
-    const c = document.createElement("canvas");
+    const c = newCanvas();
     c.width = mw;
     c.height = mh;
     const g = c.getContext("2d", { willReadFrequently: true })!;
@@ -534,7 +596,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     return out;
   };
   const readNow = (c: HTMLCanvasElement, blur: number) => {
-    const o = document.createElement("canvas");
+    const o = newCanvas();
     o.width = mw;
     o.height = mh;
     const g = o.getContext("2d", { willReadFrequently: true })!;
@@ -1058,7 +1120,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   };
   // The ground darkens near the woods, all round (the light under the trees' edges)
   const near = (() => {
-    const cov = document.createElement("canvas");
+    const cov = newCanvas();
     cov.width = mw;
     cov.height = mh;
     const g = cov.getContext("2d", { willReadFrequently: true })!;
@@ -1066,7 +1128,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (height[y * W + x] > 0) id.data[((y >> 1) * mw + (x >> 1)) * 4] = 255;
     for (let m = 3; m < id.data.length; m += 4) id.data[m] = 255;
     g.putImageData(id, 0, 0);
-    const o2 = document.createElement("canvas");
+    const o2 = newCanvas();
     o2.width = mw;
     o2.height = mh;
     const g2 = o2.getContext("2d", { willReadFrequently: true })!;
@@ -1079,7 +1141,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // inside them and fades into the grass at their edges (the woods' outline is coarse; hard
   // edged, its gaps beside the treetops read as dark specks)
   const inWoods = (() => {
-    const cov = document.createElement("canvas");
+    const cov = newCanvas();
     cov.width = mw;
     cov.height = mh;
     const g = cov.getContext("2d", { willReadFrequently: true })!;
@@ -1087,7 +1149,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     for (let m = 0; m < wooded.length; m++) if (wooded[m]) id.data[m * 4] = 255;
     for (let m = 3; m < id.data.length; m += 4) id.data[m] = 255;
     g.putImageData(id, 0, 0);
-    const o2 = document.createElement("canvas");
+    const o2 = newCanvas();
     o2.width = mw;
     o2.height = mh;
     const g2 = o2.getContext("2d", { willReadFrequently: true })!;
@@ -1122,7 +1184,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // `prev`, the last one's pixels: those the change doesn't reach only have their tone again)
   function* finish(s: MapStyle, prev: typeof last): Steps {
     const look = lookParts(s);
-    const canvas = document.createElement("canvas");
+    const canvas = newCanvas();
     canvas.width = W;
     canvas.height = H;
     const ctx = canvas.getContext("2d")!;
@@ -1284,7 +1346,18 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       o[o4 + 3] = 255;
     };
     const S = (arr: ArrayLike<number>, k: number) => arr[q00 + k] * w00 + arr[q10 + k] * w10 + arr[q01 + k] * w01 + arr[q11 + k] * w11;
-    for (let y = 0; y < H; y++) {
+    const rows = opts.rows ?? [0, H];
+    // (the bands from the workers, when they're painting it: laid in, the pass done)
+    const got = !prev && bands ? ((yield { wait: bands }) as Band[] | null) : null;
+    if (got) {
+      laidIn++;
+      let y = 0;
+      for (const b of got) {
+        o.set(b.o, y * W * 4); pre.set(b.pre, y * W * 3); bits.set(b.bits, y * W);
+        y += b.bits.length / W;
+      }
+    }
+    for (let y = got ? H : rows[0]; y < rows[1]; y++) {
       if ((y & 7) === 0) yield 0.7 + 0.3 * (y / H);
       const my = Math.min(mh - 1, y >> 1) * mw;
       // (the masks read smoothly between their cells: edges blend over a pixel, never in steps)
@@ -1605,6 +1678,11 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         put(o4, i3);
       }
     }
+    if (opts.rows) {
+      const [y0, y1] = opts.rows;
+      bandOut = { o: o.slice(y0 * W * 4, y1 * W * 4), pre: pre.slice(y0 * W * 3, y1 * W * 3), bits: bits.slice(y0 * W, y1 * W) };
+      return canvas;
+    }
     last = { style: s, bits, pre };
     yield;
     // (the open ground everywhere: its tone bands' steps; treetops and roofs only at their outline,
@@ -1648,7 +1726,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
     const covered = (doc.items.filter(i => i.type === "line" && (i.kind === "path" || i.kind === "walk")) as LineItem[]).filter(l => !trailed(l)).map(l => paintedLine(l, view.scale).points).filter(p => p.length >= 2);
     if (covered.length && !opts.under) {
       // (where the leaves are: the treetops painted in, and the crowns drawn over the painting)
-      const cover = document.createElement("canvas");
+      const cover = newCanvas();
       cover.width = W; cover.height = H;
       const cg = cover.getContext("2d")!;
       const mask = cg.createImageData(W, H), md = mask.data;
@@ -1658,7 +1736,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       for (const t of vtrees) { cg.moveTo(t.x + t.r, t.y); cg.arc(t.x, t.y, t.r, 0, Math.PI * 2); }
       cg.fill();
       // (the lines, then only what's under the leaves kept)
-      const lines = document.createElement("canvas");
+      const lines = newCanvas();
       lines.width = W; lines.height = H;
       const lg = lines.getContext("2d")!;
       lg.lineCap = "round"; lg.lineJoin = "round";
@@ -1768,7 +1846,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
             if (shade > 0.01) { od[o4 + 3] = Math.round(shade * 255); }
           }
         }
-        const oc = document.createElement("canvas");
+        const oc = newCanvas();
         oc.width = W; oc.height = H;
         oc.getContext("2d")!.putImageData(ov, 0, 0);
         // The buildings mostly hidden by leaves (over half the roof): their outline shows through
@@ -1924,7 +2002,7 @@ export const paintedFrom = (doc: CourseDoc) => [
 ];
 
 export const forestCanvasAsync = async (doc: CourseDoc, view: ForestView, stats: HoleStats[], opts: ForestOpts, signal?: AbortSignal, onProgress?: (fraction: number) => void, pace?: () => Promise<number>) => {
-  const steps = forestSteps(doc, view, stats, opts);
+  const steps = forestSteps(doc, view, stats, { parallel: true, ...opts });
   // (a slice at a time, 8 ms of painting between frames; or as `pace` says: it waits for its moment
   // and says how long the next slice may run; and what the steps wait for, waited for, the page
   // free meanwhile: Hand painted's trees, painted by workers)

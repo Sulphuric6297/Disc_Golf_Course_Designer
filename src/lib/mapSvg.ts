@@ -209,7 +209,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   out.push(`<g transform="${g}">`);
   // Ground: the photo, the painted land (Forest), or the drawn grass
   let treesOver: { url: string; hidden: Set<string> } | null = null;
-  let at = { x: 0, y: 0, w: view.width, h: view.height };
+  let at = { x: 0, y: 0, w: view.width, h: view.height }, before: { url: string; at: Placed } | null = null;
   if (forest && typeof document !== "undefined") {
     // (while the first painting of a live preview is under way: the grass color alone)
     const painted = forestPicture(doc, view, layers);
@@ -220,7 +220,10 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
       const c = Math.cos(-rot), sn = Math.sin(-rot), dx = v0.cx - view.cx, dy = v0.cy - view.cy;
       at = { x: view.width / 2 + (dx * c - dy * sn) * k - (v0.width / 2) * r, y: view.height / 2 + (dx * sn + dy * c) * k - (v0.height / 2) * r, w: v0.width * r, h: v0.height * r };
     }
-    out.push(painted ? `</g><image href="${painted.url}" x="${n(at.x)}" y="${n(at.y)}" width="${n(at.w)}" height="${n(at.h)}" preserveAspectRatio="none"/><g transform="${g}">` : `</g><rect width="${n(view.width)}" height="${n(view.height)}" fill="${shade(s.rough, -0.25)}"/><g transform="${g}">`);
+    // (live, a new painting fading in over the one it takes over from)
+    before = painted && paintLive ? fadeFrom(JSON.stringify([doc.id, view.cx, view.cy, view.scale, view.rotation, view.width, view.height]), painted.url, at) : null;
+    const picture = (url: string, p: Placed, fade: boolean) => `<image href="${url}" x="${n(p.x)}" y="${n(p.y)}" width="${n(p.w)}" height="${n(p.h)}" preserveAspectRatio="none"${fade ? ` class="dg-paintfade"` : ""}/>`;
+    out.push(painted ? `</g>${before ? picture(before.url, before.at, false) : ""}${picture(painted.url, at, !!before)}<g transform="${g}">` : `</g><rect width="${n(view.width)}" height="${n(view.height)}" fill="${shade(s.rough, -0.25)}"/><g transform="${g}">`);
   } else if (photo) {
     out.push(`<image href="${doc.background}" x="0" y="0" width="${doc.canvas.width}" height="${doc.canvas.height}" preserveAspectRatio="none" opacity="${n(s.photo)}"/>`);
   } else {
@@ -399,7 +402,7 @@ export const renderMapLayers = (doc: CourseDoc, view: MapView, layers: MapLayers
   }
   // (the painted treetops over the buildings, and their shade on the roofs: crowns overhang roofs
   // as they do from the air)
-  if (treesOver) out.push(`</g><image href="${treesOver.url}" x="${n(at.x)}" y="${n(at.y)}" width="${n(at.w)}" height="${n(at.h)}" preserveAspectRatio="none"/><g transform="${g}">`);
+  if (treesOver) out.push(`</g><image href="${treesOver.url}" x="${n(at.x)}" y="${n(at.y)}" width="${n(at.w)}" height="${n(at.h)}" preserveAspectRatio="none"${before ? ` class="dg-paintfade"` : ""}/><g transform="${g}">`);
   // (and the outlines of the buildings mostly under leaves, faint and dashed: still there under them)
   if (treesOver) {
     const under = structures.filter(st => (st.kind === "building" || st.kind === "shelter") && st.points.length >= 3 && treesOver!.hidden.has(st.id));
@@ -839,6 +842,20 @@ const keepOver = (url: string, over: { url: string; hidden: Set<string> } | null
     overOf.delete(k0);
     if (v0.url.startsWith("blob:")) URL.revokeObjectURL(v0.url);
   }
+};
+/** The live painting last shown in each place, and for a moment the one it took over from: a new
+ * painting fades in over the last (0.4 s) instead of taking its place at once. */
+type Placed = { x: number; y: number; w: number; h: number };
+const shownIn = new Map<string, { url: string; at: Placed; before: { url: string; at: Placed } | null; since: number }>();
+const fadeFrom = (place: string, url: string, at: Placed) => {
+  const now = performance.now(), was = shownIn.get(place);
+  if (!was || was.url !== url) {
+    shownIn.delete(place);
+    shownIn.set(place, { url, at, before: was ? { url: was.url, at: was.at } : null, since: now });
+    if (shownIn.size > 24) shownIn.delete(shownIn.keys().next().value!);
+  }
+  const now2 = shownIn.get(place)!;
+  return now2.before && now - now2.since < 400 ? now2.before : null;
 };
 /** The quick drafts shown while the sharp pictures paint (freed when no longer shown). */
 const draftUrls: string[] = [];

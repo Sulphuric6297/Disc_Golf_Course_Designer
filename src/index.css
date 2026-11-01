@@ -373,6 +373,9 @@ select option:disabled {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+/* A new painting of the map fading in over the last one */
+.dg-paintfade { animation: dgfade 0.4s ease both; }
+@media (prefers-reduced-motion: reduce) { .dg-paintfade { animation: none; } }
 @keyframes dgrise {
   from { transform: translateY(24px); opacity: 0; }
   to { transform: none; opacity: 1; }

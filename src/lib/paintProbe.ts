@@ -1,7 +1,7 @@
 // For the tests: how much a change of style changes a stretch of the illustrated map (the mean
 // difference of its pixels, 0 to 255, the treetops over the buildings laid on), so a test can tell
 // a setting that does nothing in some look from one that works in all of them.
-import { canopyFor, forestCanvas, forgetKept, treesOverOf, type ForestView } from "./forest";
+import { bandsLaidIn, canopyFor, forestCanvas, forestCanvasAsync, forgetKept, treesOverOf, type ForestView } from "./forest";
 import { courseStats } from "./holeStats";
 import { coursePoints, renderPoster } from "./mapSvg";
 import { rotatePoint } from "./geom";
@@ -101,5 +101,28 @@ if (typeof window !== "undefined") {
     let differ = 0;
     for (let i = 0; i < fast.length; i += 4) if (fast[i] !== whole[i] || fast[i + 1] !== whole[i + 1] || fast[i + 2] !== whole[i + 2]) differ++;
     return { differ, fastMs: Math.round(fastMs), wholeMs: Math.round(wholeMs) };
+  };
+}
+
+// For the tests: a painting with its pixel pass shared out among workers, and the same painted on
+// the page alone; how many pixels differ (none), whether workers painted it, and how long each took.
+if (typeof window !== "undefined") {
+  (window as unknown as { __dgPaintBands: unknown }).__dgPaintBands = async (doc: CourseDoc, view: ForestView) => {
+    const canopy = await canopyFor(doc).catch(() => null), stats = courseStats(doc), s = doc.style;
+    const opts = { mode: s.forest ?? "everywhere", canopy, style: s, density: 1 };
+    forgetKept();
+    const before = bandsLaidIn();
+    let t = performance.now();
+    const banded = await forestCanvasAsync(doc, view, stats, { ...opts, parallel: true }, undefined, undefined, async () => 1e9);
+    const bandMs = performance.now() - t;
+    const used = bandsLaidIn() > before;
+    forgetKept();
+    t = performance.now();
+    const page = forestCanvas(doc, view, stats, opts);
+    const pageMs = performance.now() - t;
+    const a = banded.getContext("2d")!.getImageData(0, 0, banded.width, banded.height).data, b = page.getContext("2d")!.getImageData(0, 0, page.width, page.height).data;
+    let differ = 0;
+    for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) differ++;
+    return { differ, used, bandMs: Math.round(bandMs), pageMs: Math.round(pageMs) };
   };
 }

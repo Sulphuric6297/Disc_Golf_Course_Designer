@@ -347,6 +347,16 @@ test("a new color or tone is painted again only where it reaches: the same pixel
   for (const name of ["water", "path", "light"]) expect(runs[name].fastMs, `${name}: ${runs[name].fastMs} ms against ${runs[name].wholeMs}`).toBeLessThan(runs[name].wholeMs * 0.6);
 });
 
+test("a whole new painting shared out among workers on a computer: the same pixels as painted on the page alone", async () => {
+  await page.waitForFunction(() => typeof (window as any).__dgPaintBands === "function", null, { timeout: 60_000 });
+  const r = await page.evaluate(async () => {
+    const w = window as any, doc = w.__dgCourse();
+    return w.__dgPaintBands(doc, { cx: doc.canvas.width / 2, cy: doc.canvas.height / 2, rotation: 30, scale: 0.9, width: 1600, height: 1200 });
+  });
+  console.log("painted in bands:", JSON.stringify(r));
+  expect(r.differ, "pixels unlike the page's own painting").toBe(0);
+});
+
 test("Hand painted: the demo (made before) stays Classic, a new course starts in Hand painted, and its map paints in time", async () => {
   expect((await course(page)).style.mapLook).toBeUndefined();
   expect(createEmptyCourse().style.mapLook).toBe("handpainted");
