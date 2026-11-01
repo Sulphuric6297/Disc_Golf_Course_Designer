@@ -10,10 +10,14 @@ import { renderHolePage } from "../../src/lib/holePage";
 import { tallGrassOf } from "../../src/lib/landscapes";
 
 /** Where the woods are painted, in Site, Trees (the 3D map's, the illustrated map drawing the same), and back to the Map step. */
-const woodsAt = async (page: import("@playwright/test").Page, where: "From the photo" | "Everywhere" | "Drawn only") => {
+/** Site, its Trees open: where the woods and their cover are set, for the 3D map and the illustrated one. */
+const siteTrees = async (page: import("@playwright/test").Page) => {
   await page.getByRole("button", { name: /^1\s*Site$/ }).click();
   const fold = page.getByTestId("site-trees");
   if (!(await fold.evaluate(d => (d as HTMLDetailsElement).open))) await fold.locator("summary").click();
+};
+const woodsAt = async (page: import("@playwright/test").Page, where: "From the photo" | "Everywhere" | "Drawn only") => {
+  await siteTrees(page);
   await page.getByTestId("forest-options").getByRole("radio", { name: where }).click();
   await page.getByRole("button", { name: /^3\s*Map$/ }).click();
 };
@@ -121,7 +125,7 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
   const share = (l: number[]) => l.filter(v => v > light).length / l.length;
   const before = await painting.getAttribute("href");
   // (Tree cover is the 3D map's, in Site, Trees: the illustrated map draws the same)
-  await page.getByRole("button", { name: /^1\s*Site$/ }).click();
+  await siteTrees(page);
   const slider = page.getByLabel("Tree cover");
   await expect(page.getByTestId("forest-options")).toContainText("Dense");
   await slider.fill("0.2");
@@ -814,9 +818,8 @@ test("the page never freezes while the map paints: it paints between frames, the
     };
     requestAnimationFrame(tick);
   });
-  const slider = page.getByLabel("Tree cover");
-  await slider.fill("0.55");
-  await slider.dispatchEvent("pointerup");
+  // (a change that paints the map again: Tree cover, set in Site's Trees)
+  await page.evaluate(() => (window as any).__dgActions.style({ treeCover: 0.55 }));
   // The old picture stays up while the new one paints
   await expect.poll(() => page.evaluate(() => (window as any).__dgPainting())).toBe(true);
   expect(await painting.getAttribute("href")).toBe(before);
