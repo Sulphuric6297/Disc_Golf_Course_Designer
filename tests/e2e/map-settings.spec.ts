@@ -72,5 +72,5 @@ test(`every map setting changes the map in the ${theme} style`, async ({ page })
     }
     return found;
   }, theme);
-  expect(dead).toEqual([]);
+  expect(dead, `settings that change nothing: ${dead.join("; ")}`).toEqual([]);
 });
