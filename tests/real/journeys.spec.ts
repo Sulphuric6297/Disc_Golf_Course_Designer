@@ -332,6 +332,21 @@ test("the course map comes in close: every tee, basket and amenity on the page a
   expect(fits.find(f => f.rotation === 0 && f.paper === "36x48")!.offSite).toBeLessThan(0.05);
 });
 
+test("a new color or tone is painted again only where it reaches: the same pixels as a whole new painting, and quicker", async () => {
+  await page.waitForFunction(() => typeof (window as any).__dgPaintAgain === "function", null, { timeout: 60_000 });
+  const runs = await page.evaluate(async () => {
+    const w = window as any, doc = w.__dgCourse(), s = doc.style;
+    const view = { cx: doc.canvas.width / 2, cy: doc.canvas.height / 2, rotation: 0, scale: 0.6, width: 1200, height: 1000 };
+    const out: Record<string, { differ: number; fastMs: number; wholeMs: number }> = {};
+    for (const [name, patch] of [["water", { water: "#7a2a8a" }], ["fairway", { fairway: "#d9f07a" }], ["path", { path: "#d23c3c" }], ["grass", { rough: "#9a7a3a" }], ["light", { light: 0.12 }], ["contrast and water", { contrast: 0.2, water: "#2a6a9a" }], ["brushwork", { paint: 0.3 }]] as const)
+      out[name] = await w.__dgPaintAgain(doc, s, { ...s, ...patch }, view);
+    return out;
+  });
+  console.log("painted again:", JSON.stringify(runs));
+  for (const [name, r] of Object.entries(runs)) expect(r.differ, `${name}: pixels unlike a whole new painting`).toBe(0);
+  for (const name of ["water", "path", "light"]) expect(runs[name].fastMs, `${name}: ${runs[name].fastMs} ms against ${runs[name].wholeMs}`).toBeLessThan(runs[name].wholeMs * 0.6);
+});
+
 test("Hand painted: the demo (made before) stays Classic, a new course starts in Hand painted, and its map paints in time", async () => {
   expect((await course(page)).style.mapLook).toBeUndefined();
   expect(createEmptyCourse().style.mapLook).toBe("handpainted");

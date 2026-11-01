@@ -1,7 +1,7 @@
 // For the tests: how much a change of style changes a stretch of the illustrated map (the mean
 // difference of its pixels, 0 to 255, the treetops over the buildings laid on), so a test can tell
 // a setting that does nothing in some look from one that works in all of them.
-import { canopyFor, forestCanvas, treesOverOf, type ForestView } from "./forest";
+import { canopyFor, forestCanvas, forgetKept, treesOverOf, type ForestView } from "./forest";
 import { courseStats } from "./holeStats";
 import { coursePoints, renderPoster } from "./mapSvg";
 import { rotatePoint } from "./geom";
@@ -71,5 +71,35 @@ if (typeof window !== "undefined") {
       for (const { id, b } of pieces) if (s.x >= b[0] && s.x <= b[0] + b[2] && s.y >= b[1] && s.y <= b[1] + b[3]) under.add(id);
     }
     return { offSite: off / all, nearest, under: [...under] };
+  };
+}
+
+// For the tests: a change of style painted from the last painting kept, and as a whole new
+// painting; how many pixels differ (none, or it isn't the same painting), and how long each took.
+if (typeof window !== "undefined") {
+  (window as unknown as { __dgPaintAgain: unknown }).__dgPaintAgain = async (doc: CourseDoc, a: MapStyle, b: MapStyle, view: ForestView) => {
+    const canopy = await canopyFor(doc).catch(() => null), stats = courseStats(doc);
+    const opts = (style: MapStyle, keep: boolean) => ({ mode: style.forest ?? "everywhere", canopy, style, density: 1, keep });
+    const picture = (c: HTMLCanvasElement) => {
+      const out = document.createElement("canvas");
+      out.width = c.width; out.height = c.height;
+      const g = out.getContext("2d")!;
+      g.drawImage(c, 0, 0);
+      const over = treesOverOf(c);
+      if (over) g.drawImage(over.picture, 0, 0, c.width, c.height);
+      return g.getImageData(0, 0, c.width, c.height).data;
+    };
+    forgetKept();
+    forestCanvas({ ...doc, style: a }, view, stats, opts(a, true));
+    let t = performance.now();
+    const fast = picture(forestCanvas({ ...doc, style: b }, view, stats, opts(b, false)));
+    const fastMs = performance.now() - t;
+    forgetKept();
+    t = performance.now();
+    const whole = picture(forestCanvas({ ...doc, style: b }, view, stats, opts(b, false)));
+    const wholeMs = performance.now() - t;
+    let differ = 0;
+    for (let i = 0; i < fast.length; i += 4) if (fast[i] !== whole[i] || fast[i + 1] !== whole[i + 1] || fast[i + 2] !== whole[i + 2]) differ++;
+    return { differ, fastMs: Math.round(fastMs), wholeMs: Math.round(wholeMs) };
   };
 }

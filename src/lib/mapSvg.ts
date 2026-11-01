@@ -13,7 +13,7 @@ import type { AmenityItem, AreaItem, BasketItem, CourseDoc, DropZoneItem, LabelI
 import { activeLayout, areaObEdges, beyondSides, drawnAreas, fairwayOutline, holeBaskets, linePath, obFor, obPicked, obRanges, sharedWalks, teeAim, walkRoutes, taglineOf, titleFontOf } from "./course";
 import { boundsOf, dist, offsetPath, pathLength, pointAlong, pointInPolygon, polygonArea, rectCorners, rotatePoint, smoothPath, subPath } from "./geom";
 import { courseTotals, holeStats, isOb, isOutOfPlay, playsOf, type HoleStats } from "./holeStats";
-import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, paintsFromPhoto, treesOverOf, type CanopyGrid } from "./forest";
+import { forestCanvas, forestCanvasAsync, paintedFrom, paintedLine, paintsAgain, paintsFromPhoto, treesOverOf, type CanopyGrid } from "./forest";
 import { BASKET_MARKS, RESTRICTED, STRUCTURE_INK, amenitySymbol, basketMark, dropZoneSymbol, gateSymbol, mandoSymbol, structureLegend, structureSymbol, type StructureDraw, type StructureInk } from "./symbols";
 import { isLineKind, structureHeight, structurePath, structureRoof, structureWidth } from "./structures";
 import { chainContours, type Contours } from "./relief";
@@ -914,7 +914,8 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
     };
     const tieOver = async (url: string) => { const hidden = overHidden, b = await overBlob; if (b) keepOver(url, { url: URL.createObjectURL(b), hidden }); };
     const draftDensity = density * 0.32;
-    const draft = draftDensity * Math.max(view.width, view.height) >= 500
+    // (no draft when only colors or tone changed: the last painting, kept, makes the sharp one as quickly)
+    const draft = !paintsAgain(doc, view, layers.stats, opts) && draftDensity * Math.max(view.width, view.height) >= 500
       ? forestCanvasAsync(doc, view, layers.stats, { ...opts, density: draftDensity }, job.stop.signal, f => { if (livePaint === job) { liveProgress = f * 0.3; tellProgress(); } })
         .then(withOver)
         .then(toBlob)
@@ -930,7 +931,7 @@ const forestPicture = (doc: CourseDoc, view: MapView, layers: MapLayers) => {
         })
       : Promise.resolve();
     void draft
-      .then(() => forestCanvasAsync(doc, view, layers.stats, opts, job.stop.signal, f => {
+      .then(() => forestCanvasAsync(doc, view, layers.stats, { ...opts, keep: true }, job.stop.signal, f => {
         if (livePaint !== job) return;
         liveProgress = 0.3 + f * 0.7;
         tellProgress();
