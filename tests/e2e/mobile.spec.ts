@@ -732,7 +732,7 @@ test.describe("phone", () => {
     await expect.poll(tilt, { timeout: 15000 }).toBeLessThan(t0 + 3);
   });
 
-  test("the Map step's preview fits the phone's width (its five tabs too, whole); pinch and the buttons zoom it", async ({ page }) => {
+  test("the Map step's page fills the phone's screen, as the 3D map does (its five tabs whole); Fit shows it whole, pinch and the buttons zoom it", async ({ page }) => {
     await oneHole(page);
     await nav(page).getByRole("button", { name: /Map/ }).tap();
     const pageBox = async () => (await page.getByTestId("design-page").boundingBox())!;
@@ -746,18 +746,27 @@ test.describe("phone", () => {
       expect(t.x + t.width).toBeLessThanOrEqual(vw);
       expect(await tabs.nth(i).evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     }
+    // (filling the room between the bars: the page at least as wide as the screen, its middle in sight)
     const b = await pageBox();
-    expect(b.width).toBeGreaterThan(vw - 40);
-    expect(b.width).toBeLessThanOrEqual(vw);
-    expect(b.x).toBeGreaterThanOrEqual(0);
+    expect(b.width).toBeGreaterThanOrEqual(vw - 24);
+    expect(b.x + b.width / 2).toBeGreaterThan(vw / 2 - 30);
+    expect(b.x + b.width / 2).toBeLessThan(vw / 2 + 30);
     const zoom = async () => parseInt((await page.getByTestId("design-zoom").textContent()) ?? "0", 10);
+    const fill = await zoom();
+    await page.getByRole("button", { name: "Fit the page" }).tap();
+    await expect.poll(zoom).toBeLessThanOrEqual(fill);
     const fit = await zoom();
-    await pinch(page, { x: b.x + b.width / 2, y: b.y + b.height / 2 }, 60, 180);
+    const w = await pageBox();
+    expect(w.x).toBeGreaterThanOrEqual(0);
+    expect(w.x + w.width).toBeLessThanOrEqual(vw);
+    await pinch(page, { x: w.x + w.width / 2, y: w.y + w.height / 2 }, 60, 180);
     await expect.poll(zoom).toBeGreaterThan(fit * 1.8);
     await page.getByRole("button", { name: "Fit the page" }).tap();
     await expect.poll(zoom).toBe(fit);
+    await page.getByRole("button", { name: "Fill the screen" }).tap();
+    await expect.poll(zoom).toBe(fill);
     await page.getByRole("button", { name: "Zoom in" }).tap();
-    await expect.poll(zoom).toBeGreaterThan(fit);
+    await expect.poll(zoom).toBeGreaterThan(fill);
   });
 
   test("the Map step is the page's: its printouts are chips on the top bar, a tool opens a low sheet in the tools' place, and a picked piece has its own bar", async ({ page }) => {
@@ -772,16 +781,16 @@ test.describe("phone", () => {
     await expect.poll(() => page.evaluate(() => (window as any).__dgEditor().designTab)).toBe("sign");
     await expect(page.getByTestId("hole-step")).toBeVisible();
     await chips.filter({ hasText: "Map" }).tap();
+    // (the page under the sheet as it was: it floats over it, nothing zooms)
+    const before = (await page.getByTestId("design-page").boundingBox())!;
     // (the paper's name at the page's foot opens the Paper tool, its size first)
     await page.getByTestId("paper-chip").tap();
     const sheet = page.getByTestId("page-tool-panel");
     await expect(sheet).toBeVisible();
+    expect((await page.getByTestId("design-page").boundingBox())!.width).toBeCloseTo(before.width, 0);
     await sheet.getByLabel("Paper size").selectOption("letter");
     await expect.poll(async () => (await page.evaluate(() => (window as any).__dgCourse().style.paper))).toBe("letter");
     await expect(page.getByRole("toolbar", { name: "Page settings" })).toHaveCount(0);
-    // (the page whole above the sheet)
-    const pg = (await page.getByTestId("design-page").boundingBox())!, sb = (await sheet.boundingBox())!;
-    expect(pg.y + pg.height).toBeLessThanOrEqual(sb.y + 1);
     await page.getByTestId("page-tool-done").tap();
     await expect(page.getByRole("toolbar", { name: "Page settings" })).toBeVisible();
     // A piece picked: Done first, then its tools, each opening the low sheet over the bar
@@ -925,9 +934,10 @@ test.describe("phone", () => {
     await expect(page.getByTestId("hud-flyover")).toHaveText(/Stop/);
     await expect(page.getByTestId("tee-view-hud")).toBeHidden();
     // (the flight's ready: its loading screen, over everything while it gets ready, out of the way)
-    await expect.poll(() => page.evaluate(() => { const el = document.querySelector('[data-testid="flyover-loading"]'); return !el || getComputedStyle(el).pointerEvents === "none"; }), { timeout: 120_000 }).toBe(true);
-    await tile.tap();
-    await expect.poll(open).toBe(true);
+    // (the loading screen comes a moment after Fly over is tapped: waited for as done, not as not yet there)
+    await expect.poll(() => page.evaluate(() => { const ed = (window as any).__dgEditor(), el = document.querySelector('[data-testid="flyover-loading"]'); return ed.flyover && ed.flyLoading === null && (!el || getComputedStyle(el).pointerEvents === "none"); }), { timeout: 120_000 }).toBe(true);
+    await page.waitForTimeout(400);
+    await expect(async () => { await tile.tap(); await expect.poll(open, { timeout: 3000 }).toBe(true); }).toPass({ timeout: 20_000 });
     await expect(page.getByTestId("flyover-settings")).toBeVisible();
     await page.getByTestId("hud-close").tap();
     await expect.poll(async () => (await editorState(page)).teeView).toBeNull();

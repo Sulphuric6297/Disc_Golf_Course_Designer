@@ -1,7 +1,7 @@
 // A phone's Map step, the way a design app works on a phone: the page has the screen, and its
 // settings are a row of tools along the bottom instead of a sheet pulled up over it. A tool opens
-// just that setting in a low sheet in the row's place, an X to close it, and the page shrinks to
-// stay whole above it: every change shows on the page as it's made. With a piece picked, the
+// just that setting in a low sheet in the row's place, an X to close it, floating over the page as
+// the 3D map's sheet does: every change shows on the page as it's made. With a piece picked, the
 // piece's own tools take the row's place (PieceToolbar).
 import { SHOW_EVENT } from "../showSetting";
 import { FileText, Flag, Handshake, ListTree, Palette, PenLine, Plus, Signpost, Table2, Type, BookOpen, type LucideIcon } from "lucide-react";
@@ -73,7 +73,7 @@ export function PageTools() {
   const tool = tools.find(t => t.id === open);
   return (
     <div className="shrink-0 relative z-30 px-2 pb-1.5" data-testid="page-tools">
-      {/* (low: half the screen at most, the page whole above it) */}
+      {/* (low: half the screen at most, the page in sight above it) */}
       {tool && (
         <div className="glass ring-1 ring-white/15 rounded-[24px] max-h-[min(340px,46dvh)] flex flex-col overflow-hidden animate-[dgrise_200ms_cubic-bezier(0.2,0.9,0.3,1)]" data-testid="page-tool-panel" role="region" aria-label={tool.label}>
           <div className="flex items-center gap-2 pl-4 pr-1.5 pt-1.5 shrink-0">

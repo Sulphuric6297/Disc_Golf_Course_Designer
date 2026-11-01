@@ -384,9 +384,8 @@ test("the map view rests while the Design step's page covers it, and draws the c
   await expect.poll(async () => (await info()).paused).toBe(true);
   const before = (await info()).frames;
   // Changes to the course while it rests: nothing drawn
-  const slider = page.getByLabel("Tree cover");
-  await slider.fill("0.5");
-  await slider.dispatchEvent("pointerup");
+  // (Tree cover: set in Site's Trees, not on this step)
+  await page.evaluate(() => (window as any).__dgActions.style({ treeCover: 0.5 }));
   await expect.poll(async () => (await course(page)).style.treeCover).toBe(0.5);
   await page.waitForTimeout(500);
   expect((await info()).frames).toBe(before);
