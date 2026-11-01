@@ -303,6 +303,18 @@ test("the painted map: Where to paint the woods is there with measured trees, an
   await expect(page.getByTestId("design-page").first()).toHaveScreenshot("painted-map.png");
 });
 
+test("the painted map past the measured ground: level, never the edge's hills drawn on outward in stripes", async () => {
+  await page.waitForFunction(() => typeof (window as any).__dgMapDiff === "function", null, { timeout: 60_000 });
+  const d = await page.evaluate(async () => {
+    const w = window as any, doc = w.__dgCourse();
+    // (stretches well past the site's east and west edges: the Hills setting changes nothing there)
+    const out: number[] = [];
+    for (const cx of [doc.canvas.width + 700, -700]) out.push(await w.__dgMapDiff(doc, { ...doc.style, reliefScale: 1 }, { ...doc.style, reliefScale: 2.5 }, { cx, cy: doc.canvas.height / 2, rotation: 0, scale: 0.5, width: 240, height: 400 }));
+    return out;
+  });
+  expect(Math.max(...d)).toBeLessThan(0.2);
+});
+
 test("Hand painted: the demo (made before) stays Classic, a new course starts in Hand painted, and its map paints in time", async () => {
   expect((await course(page)).style.mapLook).toBeUndefined();
   expect(createEmptyCourse().style.mapLook).toBe("handpainted");

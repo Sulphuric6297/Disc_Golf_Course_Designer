@@ -1231,7 +1231,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       let rf = rh && s.hillshade ? rh.shade : 1;
       // (terraces: each shelf flat and lit alike, a little lighter the higher it is, under the
       // shadow of higher ground; the inked looks: the light a little softer, the lines carry it)
-      if (stepIv) rf = (0.8 + 0.34 * ((Math.floor((seaFt + rh!.elev) / stepIv) * stepIv - seaFt - relief!.lo) / (relief!.hi - relief!.lo))) * rh!.amb;
+      if (stepIv) rf = 1 + ((0.8 + 0.34 * ((Math.floor((seaFt + rh!.elev) / stepIv) * stepIv - seaFt - relief!.lo) / (relief!.hi - relief!.lo))) * rh!.amb - 1) * rh!.inside;
       else if (reliefLook === "contours") rf = 1 + (rf - 1) * 0.7;
       const h = height[i];
       if (h > 0) {
@@ -1523,7 +1523,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
           cr += (28 - cr) * k * 0.62; cg += (38 - cg) * k * 0.58; cb += (58 - cb) * k * 0.55;
         }
         // (and high ground a touch lighter than low, so which way is down reads too)
-        const lift = ((rh!.elev - relief.lo) / (relief.hi - relief.lo) - 0.5) * 0.16;
+        const lift = ((rh!.elev - relief.lo) / (relief.hi - relief.lo) - 0.5) * 0.16 * rh!.inside;
         cr *= 1 + lift; cg *= 1 + lift; cb *= 1 + lift * 0.7;
       }
       // The whole picture: brightness, contrast and color strength
@@ -1736,7 +1736,7 @@ const contourLabels = (ctx: CanvasRenderingContext2D, relief: Relief, W: number,
   const rnd = seeded(91);
   for (let y = size * 2; y < H - size * 2; y += sp) for (let x = size * 3; x < W - size * 3; x += sp) {
     const t = relief.at(x + (rnd() - 0.5) * sp, y + (rnd() - 0.5) * sp, true, true);
-    if (t.rise < 0.06 || t.rise > 0.9) continue;
+    if (t.rise < 0.06 || t.rise > 0.9 || t.inside < 0.99) continue;
     const abs = seaFt + t.elev, n0 = Math.round(abs / major), off = abs - n0 * major;
     const g2 = t.sx * t.sx + t.sy * t.sy;
     // (onto the line: a step against the slope)
@@ -1925,8 +1925,24 @@ const terrainGrid = (doc: CourseDoc) => {
   }
   cols = Math.max(2, cols);
   rows = Math.max(2, rows);
-  const data = new Float32Array(cols * rows);
-  for (const [c, r, v] of cells) data[r * cols + c] = v;
+  const data = new Float32Array(cols * rows), known = new Uint8Array(cols * rows);
+  for (const [c, r, v] of cells) { data[r * cols + c] = v; known[r * cols + c] = 1; }
+  // (a point never measured inside it: its measured neighbours' height, spreading in from them,
+  // never a pit at 0)
+  for (let gap = cells.length < cols * rows, pass = 0; gap && pass < 64; pass++) {
+    gap = false;
+    const was = known.slice();
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const j = r * cols + c;
+      if (was[j]) continue;
+      let sum = 0, n = 0;
+      if (c > 0 && was[j - 1]) { sum += data[j - 1]; n++; }
+      if (c < cols - 1 && was[j + 1]) { sum += data[j + 1]; n++; }
+      if (r > 0 && was[j - cols]) { sum += data[j - cols]; n++; }
+      if (r < rows - 1 && was[j + cols]) { sum += data[j + cols]; n++; }
+      if (n) { data[j] = sum / n; known[j] = 1; } else gap = true;
+    }
+  }
   const value = { cols, rows, grid, data };
   terrainGrids.set(doc.terrainHeights, value);
   return value;
@@ -2045,8 +2061,13 @@ function* reliefGridSteps(doc: CourseDoc, on: boolean, W: number, H: number, toP
   const elev = new Float32Array(gw * gh), sx = new Float32Array(gw * gh), sy = new Float32Array(gw * gh), shade = new Float32Array(gw * gh);
   const castS = new Float32Array(gw * gh), skyS = new Float32Array(gw * gh), rockS = new Float32Array(gw * gh);
   const ambS = new Float32Array(gw * gh), wallS = new Float32Array(gw * gh), cvS = new Float32Array(gw * gh), wgx = new Float32Array(gw * gh), wgy = new Float32Array(gw * gh);
+  const ins = new Float32Array(gw * gh);
   const e = Math.max(2, doc.gridSize / 2);
-  // Beyond the measured ground the edge heights carry on (no cliff at the site's edge)
+  // Past the measured ground nothing is known of its shape: the edge's heights carry on (no cliff
+  // at the site's edge), and its slopes, light and lines ease away to level ground over a little
+  // way (carried on unchanged they drew the edge out across the page in stripes)
+  const endX = (tg.cols - 1) * tg.grid, endY = (tg.rows - 1) * tg.grid, ease = Math.max(150, tg.grid * 8);
+  const inside = (p: P) => 1 - smooth(0, ease, Math.hypot(Math.max(0, -p.x, p.x - endX), Math.max(0, -p.y, p.y - endY)));
   const at = (p: P) => {
     const fx = Math.max(0, Math.min(tg.cols - 1.001, p.x / tg.grid)), fy = Math.max(0, Math.min(tg.rows - 1.001, p.y / tg.grid));
     const ix = fx | 0, iy = fy | 0, tx = fx - ix, ty = fy - iy, j = iy * tg.cols + ix, d = tg.data;
@@ -2069,9 +2090,12 @@ function* reliefGridSteps(doc: CourseDoc, on: boolean, W: number, H: number, toP
       elev[j] = h;
       sx[j] = (at({ x: p.x + ux.x * e, y: p.y + ux.y * e }) - at({ x: p.x - ux.x * e, y: p.y - ux.y * e })) / (2 * e);
       sy[j] = (at({ x: p.x + uy.x * e, y: p.y + uy.y * e }) - at({ x: p.x - uy.x * e, y: p.y - uy.y * e })) / (2 * e);
+      const w = (ins[j] = inside(p));
+      sx[j] *= w; sy[j] *= w;
       lo = Math.min(lo, h);
       hi = Math.max(hi, h);
-      if ((gx & 3) === 0 && (gy & 3) === 0) slopes.push(Math.hypot(sx[j], sy[j]));
+      // (how steep the course is: its measured ground's)
+      if ((gx & 3) === 0 && (gy & 3) === 0 && w > 0.99) slopes.push(Math.hypot(sx[j], sy[j]));
     }
   }
   slopes.sort((a, b) => a - b);
@@ -2094,8 +2118,9 @@ function* reliefGridSteps(doc: CourseDoc, on: boolean, W: number, H: number, toP
     if ((gy & 31) === 0) yield;
     for (let gx = 0; gx < gw; gx++) {
     const p = toPlan(gx * step, gy * step), j = gy * gw + gx;
-    castS[j] = fromTl(tl.cast, p); skyS[j] = fromTl(tl.sky, p); rockS[j] = fromTl(tl.rock, p);
-    wallS[j] = fromTl(tl.wall, p); cvS[j] = fromTl(tl.cv, p);
+    const w = ins[j];
+    castS[j] = fromTl(tl.cast, p) * w; skyS[j] = 1 - (1 - fromTl(tl.sky, p)) * w; rockS[j] = fromTl(tl.rock, p) * w;
+    wallS[j] = fromTl(tl.wall, p) * w; cvS[j] = fromTl(tl.cv, p) * w;
     }
   }
   // (how fast the walls start, per screen pixel: to draw their rim a set width)
@@ -2132,12 +2157,12 @@ function* reliefGridSteps(doc: CourseDoc, on: boolean, W: number, H: number, toP
     return j;
   };
   const look = (f: Float32Array, j: number) => f[j] * k00 + f[j + 1] * k10 + f[j + gw] * k01 + f[j + gw + 1] * k11;
-  const here = { shade: 1, elev: 0, sx: 0, sy: 0, rock: 0, amb: 1, wall: 0, wgx: 0, wgy: 0, cv: 0, rise: 0 };
+  const here = { shade: 1, elev: 0, sx: 0, sy: 0, rock: 0, amb: 1, wall: 0, wgx: 0, wgy: 0, cv: 0, rise: 0, inside: 1 };
   return {
     /** Everything at a pixel at once (one lookup of its cell): light, height, slope (per pixel). */
     at: (x: number, y: number, withSlope: boolean, inked = false) => {
       const j = cell(x, y);
-      here.shade = look(shade, j); here.elev = look(elev, j); here.rock = look(rockS, j);
+      here.shade = look(shade, j); here.elev = look(elev, j); here.rock = look(rockS, j); here.inside = look(ins, j);
       if (withSlope || inked) { here.sx = look(sx, j) * ftPerPx; here.sy = look(sy, j) * ftPerPx; }
       if (inked) {
         here.amb = look(ambS, j); here.wall = look(wallS, j); here.wgx = look(wgx, j); here.wgy = look(wgy, j); here.cv = look(cvS, j);
