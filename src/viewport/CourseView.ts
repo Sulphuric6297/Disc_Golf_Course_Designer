@@ -6126,9 +6126,11 @@ export class CourseView {
         else this.endPinch();
         return;
       }
-      // (a second quick tap close by: a double tap, which zooms; not on the buttons over the view)
+      // (a second quick tap close by: a double tap, which zooms; not on the buttons over the view,
+      // and never on a thing on the map or its handles: two taps on a thing are two picks, a tap
+      // taking it out of a group again, and picking never zooms)
       const last = this.lastTap;
-      if (last && e.timeStamp - last.t < 320 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 40 && !target.closest?.("button,input,select,textarea,a,[data-pov-ui],[role=dialog]")) {
+      if (last && e.timeStamp - last.t < 320 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 40 && !target.closest?.("button,input,select,textarea,a,[data-pov-ui],[role=dialog],[data-item-id],[data-handle]")) {
         e.preventDefault();
         e.stopPropagation();
         this.doubleTap(e);
