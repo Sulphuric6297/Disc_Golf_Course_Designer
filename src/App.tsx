@@ -3,7 +3,9 @@
 import { usePageToasts } from "./auth/Home";
 import { SHOW_EVENT } from "./components/showSetting";
 import { saveNow, useServerCourse } from "./auth/courses";
-import { SERVER } from "./auth/api";
+import { SERVER, useAuth } from "./auth/api";
+import { useDemoHome } from "./components/DemoHome";
+import { keepPlace, placeBefore } from "./state/tabPlace";
 import { HelpGuide } from "./components/help/HelpGuide";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MapPinned, Route, X } from "lucide-react";
@@ -223,10 +225,25 @@ export default function App() {
     const stop = startAutosave();
     void (async () => {
       await restoreAutosave();
+      // (a tab refreshed in a course: on the step and printout it was on)
+      if (placeBefore && !(SERVER ? useAuth.getState().home : useDemoHome.getState().open)) useEditor.getState().set({ step: placeBefore.step, designTab: placeBefore.tab, tool: "select" });
       setReady(true);
     })();
     return stop;
   }, []);
+  // Where the tab is, kept as it changes, for a refresh to come back to
+  useEffect(() => {
+    if (!ready) return;
+    const keep = () => {
+      const listed = SERVER ? useAuth.getState().home : useDemoHome.getState().open;
+      const id = SERVER ? useServerCourse.getState().id : getDoc().id;
+      const e = useEditor.getState();
+      keepPlace(listed || !id ? null : { course: id, step: e.step, tab: e.designTab });
+    };
+    keep();
+    const stops = [useAuth.subscribe(keep), useServerCourse.subscribe(keep), useDemoHome.subscribe(keep), useEditor.subscribe(keep), useCourse.subscribe(keep)];
+    return () => stops.forEach(f => f());
+  }, [ready]);
 
   // (the whole site in view, its top up: the way its frame was turned)
   const faceTheSite = () => {

@@ -357,6 +357,25 @@ test("a whole new painting shared out among workers on a computer: the same pixe
   expect(r.differ, "pixels unlike the page's own painting").toBe(0);
 });
 
+test("a refresh in a course comes back to it, on its step and printout; on the course list, to the list", async () => {
+  await page.evaluate(() => (window as any).__dgEditor().set({ step: "map", designTab: "sign", tool: "select" }));
+  await page.waitForTimeout(400);
+  const id = await page.evaluate(() => (window as any).__dgServer.state().id);
+  await page.reload();
+  await page.waitForFunction(() => (window as any).__dgCourse?.()?.holes?.length > 0 && !!(window as any).__dgServer?.state().id, null, { timeout: 60_000 });
+  await expect(page.getByTestId("home")).toBeHidden();
+  expect(await page.evaluate(() => [(window as any).__dgServer.state().id, (window as any).__dgEditor().step, (window as any).__dgEditor().designTab])).toEqual([id, "map", "sign"]);
+  // (on the list, refreshed: the list)
+  await page.getByTestId("logo-home").click();
+  await expect(page.getByTestId("home")).toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId("home")).toBeVisible({ timeout: 30_000 });
+  // (back in the course for the checks after)
+  await page.getByTestId("back-to-course").click();
+  await expect(page.getByTestId("home")).toBeHidden();
+  await page.evaluate(() => (window as any).__dgEditor().set({ step: "design", tool: "select" }));
+});
+
 test("Hand painted's trees on the graphics chip: two paintings at once, and one stopped part way, each whole, as if painted alone", async () => {
   test.setTimeout(300_000);
   // (a browser of its own with an emulated graphics chip, as the check below has: the trees are
