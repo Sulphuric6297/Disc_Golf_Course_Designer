@@ -6,7 +6,6 @@
 import { SHOW_EVENT } from "../showSetting";
 import { FileText, Flag, Handshake, ListTree, Palette, PenLine, Plus, Signpost, Table2, Type, BookOpen, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
 import { changeDoc, useCourse, useEditor } from "../../state/course";
 import { PAPER } from "../../lib/mapSvg";
 import { SIGN_SIZES, type SignSize } from "../../lib/teeSign";
@@ -15,6 +14,7 @@ import { rememberBoard } from "../printouts";
 import type { PaperSize } from "../../types";
 import { DesignPanel } from "../DesignPanel";
 import { InToolSheet, setToolOpen } from "../pageToolState";
+import { SHEET, SheetFold, tileCls, useUnfold } from "./SheetFold";
 import { Field, OnlyGroup, Select } from "../ui";
 
 type Tool = { id: string; label: string; icon: LucideIcon };
@@ -54,13 +54,7 @@ function SizeOf({ tool }: { tool: string }) {
 export function PageTools() {
   const tab = useEditor(e => e.designTab);
   const [open, setOpen] = useState<string | null>(null);
-  // (closing: the sheet sinks away, then the tools rise back in its place)
-  const [closing, setClosing] = useState(false);
-  const close = () => {
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { setOpen(null); return; }
-    setClosing(true);
-    window.setTimeout(() => { setOpen(null); setClosing(false); }, 160);
-  };
+  const close = () => setOpen(null);
   const tools = TOOLS[tab];
   // (another printout: its own tools, none open)
   useEffect(() => setOpen(null), [tab]);
@@ -77,39 +71,29 @@ export function PageTools() {
     window.addEventListener(SHOW_EVENT, on);
     return () => window.removeEventListener(SHOW_EVENT, on);
   }, []);
-  const tool = tools.find(t => t.id === open);
+  // (what's unfolded under the tools, kept while it folds away)
+  const [shownId, unfolded] = useUnfold(open);
+  const tool = tools.find(t => t.id === shownId);
   return (
-    <div className="shrink-0 relative z-30 px-2 pb-1.5" data-testid="page-tools">
-      {/* (low: half the screen at most, the page in sight above it) */}
-      {tool && (
-        <div className={`glass ring-1 ring-white/15 rounded-[24px] max-h-[min(340px,46dvh)] flex flex-col overflow-hidden ${closing ? "animate-[dgsink_160ms_ease-in_forwards]" : "animate-[dgrise_200ms_cubic-bezier(0.2,0.9,0.3,1)]"}`} data-testid="page-tool-panel" role="region" aria-label={tool.label}>
-          <div className="flex items-center gap-2 pl-4 pr-1.5 pt-1.5 shrink-0">
-            <span className="flex-1 text-[16px] font-bold text-zinc-50">{tool.label}</span>
-            <button className="w-11 h-11 shrink-0 flex items-center justify-center rounded-full bg-white/[0.1] text-zinc-100 active:bg-white/[0.18] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400" onClick={close} aria-label="Close" title="Close" data-testid="page-tool-done"><X size={19} /></button>
-          </div>
-          <div className="overflow-y-auto dg-scroll min-h-0 -mt-1 pb-1">
-            <SizeOf tool={tool.id} />
-            <InToolSheet.Provider value={true}><OnlyGroup.Provider value={tool.id}><DesignPanel /></OnlyGroup.Provider></InToolSheet.Provider>
-          </div>
-        </div>
-      )}
-      {!tool && <div role="toolbar" aria-label="Page settings" className="glass ring-1 ring-white/15 rounded-[22px] flex gap-1 p-1 overflow-x-auto dg-noscrollbar touch-pan-x animate-[dgrise_200ms_cubic-bezier(0.2,0.9,0.3,1)]">
+    <div className={`relative z-30 ${SHEET}`} data-testid="page-tools">
+      <div role="toolbar" aria-label="Page settings" className="flex gap-1 px-2 pt-2.5 pb-2 overflow-x-auto dg-noscrollbar touch-pan-x">
         {tools.map(t => {
           const on = open === t.id;
           return (
-            <button
-              key={t.id}
-              onClick={() => setOpen(on ? null : t.id)}
-              aria-pressed={on}
-              data-testid={`page-tool-${t.id}`}
-              className={`shrink-0 flex-1 min-w-[56px] h-[52px] px-1.5 rounded-[16px] flex flex-col items-center justify-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${on ? "bg-orange-500 text-zinc-950" : "text-zinc-300 active:bg-white/[0.13]"}`}
-            >
-              <t.icon size={19} />
+            <button key={t.id} onClick={() => setOpen(on ? null : t.id)} aria-pressed={on} data-testid={`page-tool-${t.id}`} className={tileCls(on)}>
+              <t.icon size={20} />
               <span className="text-[11px] leading-none font-semibold whitespace-nowrap">{t.label}</span>
             </button>
           );
         })}
-      </div>}
+      </div>
+      {/* (unfolding under the tools, as the 3D map's panel does: the page in sight above) */}
+      {tool && (
+        <SheetFold unfolded={unfolded && open === tool.id} title={tool.label} onClose={close} testid="page-tool-panel" closeTestid="page-tool-done">
+          <SizeOf tool={tool.id} />
+          <InToolSheet.Provider value={true}><OnlyGroup.Provider value={tool.id}><DesignPanel /></OnlyGroup.Provider></InToolSheet.Provider>
+        </SheetFold>
+      )}
     </div>
   );
 }

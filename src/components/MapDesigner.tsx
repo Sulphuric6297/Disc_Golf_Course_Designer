@@ -2,7 +2,7 @@
 // exactly as it will print, updating as the style changes, and laid out by hand right on it.
 import { Woods } from "./Woods";
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Maximize2, Minus, Plus, RotateCw, Scan } from "lucide-react";
+import { ChevronLeft, ChevronRight, Expand, Maximize2, Minus, Plus, RotateCw, Scan } from "lucide-react";
 import { PAPER, onPaintProgress, onPainted, renderPoster, withLivePaint } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
 import { HOLE_PAGES, renderHolePage, type HolePageSize } from "../lib/holePage";
@@ -453,7 +453,9 @@ export function MapDesigner({ compact = false, topInset = 0, bottomInset = 0, pr
     const top = hr.top + selBox.y * k, bottom = top + selBox.h * k, left = hr.left + selBox.x * k, right = left + selBox.w * k;
     // (and its turning handle under it in sight too)
     const under = pickedOf(getDoc(), t, designSel)?.has.turn && !designSel.startsWith("label:") ? 56 : 12;
-    const room = { top: r.top + (only ? 0 : topInset) + 12, bottom: r.bottom - dockH - under, left: r.left + 12, right: r.right - 12 };
+    // (clear of the zoom buttons down the right, where it's narrow enough to be)
+    const clear = !only && selBox.w * k < r.width - 80 ? 64 : 12;
+    const room = { top: r.top + (only ? 0 : topInset) + 12, bottom: r.bottom - dockH - under, left: r.left + 12, right: r.right - clear };
     const dy = bottom > room.bottom ? Math.min(bottom - room.bottom, top - room.top) : top < room.top ? top - room.top : 0;
     const dx = right > room.right ? Math.min(right - room.right, left - room.left) : left < room.left ? left - room.left : 0;
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) el.scrollBy({ left: dx, top: dy, behavior: "smooth" });
@@ -806,11 +808,11 @@ export function MapDesigner({ compact = false, topInset = 0, bottomInset = 0, pr
   // top bar, PageChips), at first filling the room between them, a finger sliding it about and a
   // pinch zooming it; Fit shows it whole. What opens over it floats over it: nothing zooms
   const phonePage = compact && !only;
-  const BAR = 84; // (the tool bar along the bottom, the same room kept whatever's open)
-  const room = { top: topInset + 6, bottom: BAR + 52 + 6 };
+  const BAR = 76; // (the tools' sheet along the bottom, the same room kept whatever's open)
+  const room = { top: topInset + 6, bottom: BAR + 8 };
   const visW = size.w - 20, visH = Math.max(80, size.h - room.top - room.bottom);
-  // (filling: down to the screen's foot, under the buttons and tools as the 3D map is)
-  const fillH = Math.max(80, size.h - room.top);
+  // (filling: top to foot, under the bars and the tools as the 3D map is)
+  const fillH = Math.max(80, size.h);
   // (as it first shows, or Fit and Fill: the page's middle in the middle of the room)
   const view = `${tabId}|${whole}|${page?.width}|${page?.height}|${size.w}|${size.h}|${zoom === null}`;
   useLayoutEffect(() => {
@@ -818,8 +820,9 @@ export function MapDesigner({ compact = false, topInset = 0, bottomInset = 0, pr
     if (!phonePage || zoom !== null || !el || !pg) return;
     const r = el.getBoundingClientRect(), pr = pg.getBoundingClientRect();
     el.scrollLeft += pr.left + pr.width / 2 - (r.left + r.width / 2);
-    // (taller than the room between the bars: its top under the top bar, the rest under the tools)
-    el.scrollTop += pr.height > visH + 2 ? pr.top - (r.top + room.top) : pr.top + pr.height / 2 - (r.top + room.top + visH / 2);
+    // (filling the screen top to foot, under the bars as the 3D map is; smaller, in the middle of
+    // the room between them)
+    el.scrollTop += pr.height > visH + 2 ? pr.top + pr.height / 2 - (r.top + r.height / 2) : pr.top + pr.height / 2 - (r.top + room.top + visH / 2);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
   // (another printout or hole: the new page fades in, not swapped in at once)
@@ -833,6 +836,8 @@ export function MapDesigner({ compact = false, topInset = 0, bottomInset = 0, pr
   // jumping: the page drawn at its new size at once, scaled from the old and let go
   const glide = useRef<{ k: number; fx: number; fy: number } | null>(null);
   const glideEnd = useRef(0);
+  // (the zoom slider held: where it started, the page scaled as it slides and drawn once let go)
+  const slideFrom = useRef<{ k: number; m: { fx: number; fy: number; vx: number; vy: number } } | null>(null);
   useLayoutEffect(() => {
     const g = glide.current, pg = pageEl.current;
     glide.current = null;
@@ -913,12 +918,48 @@ export function MapDesigner({ compact = false, topInset = 0, bottomInset = 0, pr
     </div>
   ) : null;
   // (a phone's Map step, at the page's foot: the hole, or the paper, which opens the Paper tool)
-  const corner = !phonePage ? null : holeStep ? <div className="glass rounded-[22px] p-0.5 pointer-events-auto min-w-0">{holeStep}</div>
+  const corner = !phonePage ? null : holeStep ? <div className="pointer-events-auto glass rounded-2xl border border-white/10 shadow-[0_6px_20px_rgba(0,0,0,0.35)] p-0.5 min-w-0">{holeStep}</div>
     : preview === "map" && editing ? (
-      <button className="glass pointer-events-auto h-11 min-w-0 truncate rounded-full px-4 text-[13.5px] font-semibold text-zinc-100 active:bg-white/[0.14] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400" onClick={() => askOpen("page-tool:fold-paper")} aria-label={`Paper: ${PAPER[paper].label}`} data-testid="paper-chip">
+      <button className="pointer-events-auto glass rounded-2xl border border-white/10 shadow-[0_6px_20px_rgba(0,0,0,0.35)] h-11 min-w-0 truncate px-3.5 text-[13px] font-semibold text-zinc-100 active:bg-white/[0.14] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400" onClick={() => askOpen("page-tool:fold-paper")} aria-label={`Paper: ${PAPER[paper].label}`} data-testid="paper-chip">
         {PAPER[paper].label}
       </button>
     ) : null;
+  // (a phone's Map step: zoom down the right, as the 3D map's: + and −, the slider between them
+  // where there's room, and the whole page or the screen filled)
+  const kMin = fit, kMax = Math.max(fit * 8, fill * 3);
+  const tOf = (kk: number) => Math.min(1, Math.max(0, Math.log(kk / kMin) / Math.log(kMax / kMin)));
+  const kOf = (t: number) => kMin * Math.pow(kMax / kMin, Math.min(1, Math.max(0, t)));
+  const slide = (t: number) => {
+    if (!slideFrom.current) { const m = seenMiddle(); if (!m) return; slideFrom.current = { k, m }; }
+    const s = slideFrom.current;
+    setPinchScale({ s: kOf(t) / s.k, ox: s.m.fx * page.width * s.k, oy: s.m.fy * page.height * s.k });
+  };
+  const slid = (t: number) => {
+    const s = slideFrom.current;
+    slideFrom.current = null;
+    setPinchScale(null);
+    if (!s) return;
+    anchor.current = s.m;
+    setZoom(kOf(t));
+  };
+  const cb = "w-11 h-11 flex items-center justify-center text-zinc-100 active:bg-white/[0.13] focus:outline-none focus-visible:bg-white/[0.13]";
+  const cg = "pointer-events-auto glass rounded-2xl border border-white/10 shadow-[0_6px_20px_rgba(0,0,0,0.35)] flex flex-col overflow-hidden divide-y divide-white/5";
+  const roomH = size.h - topInset - (designSel ? dockH : bottomInset) - 16;
+  const sliderH = roomH >= 44 * 3 + 8 + 112 ? 112 : roomH >= 44 * 3 + 8 + 72 ? 72 : 0;
+  const shownK = pinchScale && slideFrom.current ? slideFrom.current.k * pinchScale.s : k;
+  const phoneControls = phonePage && (
+    <div className="absolute right-2 z-20 flex flex-col gap-2 items-end pointer-events-none" style={{ top: topInset + 2 }} data-testid="page-controls">
+      <div className={cg}>
+        <button className={cb} aria-label="Zoom in" onClick={() => zoomTo(Math.min(6, k * 1.4))}><Plus size={20} /></button>
+        {sliderH > 0 && <PageZoomSlider t={tOf(shownK)} height={sliderH} onSlide={slide} onDone={slid} onStep={d => zoomTo(kOf(tOf(k) + d))} />}
+        <button className={cb} aria-label="Zoom out" onClick={() => zoomTo(Math.max(0.1, k / 1.4))}><Minus size={20} /></button>
+        <span className="sr-only" data-testid="design-zoom">{Math.round(k * 100)}%</span>
+      </div>
+      {zoom !== null || !whole
+        ? <button className={`${cg} ${cb}`} aria-label="Fit the page" title="The whole page" onClick={() => zoomTo(null, { whole: true })}><Maximize2 size={18} /></button>
+        : <button className={`${cg} ${cb}`} aria-label="Fill the screen" title="Fill the screen" onClick={() => zoomTo(null, { whole: false })}><Expand size={18} /></button>}
+    </div>
+  );
   const toolbar = editing && designSel && selBox && !typing ? (
     <PieceToolbar t={t} id={designSel} onGrow={grow} onGrowLive={growLive} onPreviewFont={previewFont} onEditText={() => startTyping(designSel)} onDone={() => setEd({ designSel: null })} onPanel={setPanelOpen} docked={compact} drawn={drawn} />
   ) : null;
@@ -956,21 +997,24 @@ export function MapDesigner({ compact = false, topInset = 0, bottomInset = 0, pr
       </div>}
       {/* (A phone: the zoom buttons float over the page, in the thumb's reach, out of the way of a
           tool that's open; the picked piece's toolbar takes their place along the bottom) */}
-      {pill && (
-        <div className="absolute inset-x-2 bottom-2 z-10 flex items-end gap-2 pointer-events-none" style={phonePage ? { bottom: bottomInset + 6 } : undefined}>
-          {corner}
+      {pill && !phonePage && (
+        <div className="absolute inset-x-2 bottom-2 z-10 flex items-end gap-2 pointer-events-none">
           <div className="glass ml-auto shrink-0 rounded-[22px] p-0.5 pointer-events-auto">{zoomGroup}</div>
         </div>
       )}
+      {/* (a phone's Map step, as the 3D map has them: the paper or the hole at the top left where
+          the map's scale is, zoom down the right) */}
+      {phonePage && corner && !designSel && <div className="absolute left-2 z-20 max-w-[calc(100%-76px)] flex" style={{ top: topInset + 2 }}>{corner}</div>}
+      {phoneControls}
       {compact && toolbar && (
-        <div ref={dock} className="absolute inset-x-2 bottom-2 z-30 flex flex-col items-center gap-1">
+        <div ref={dock} className={phonePage ? "absolute inset-x-0 bottom-0 z-30 flex flex-col items-center gap-1.5" : "absolute inset-x-2 bottom-2 z-30 flex flex-col items-center gap-1"}>
           {!panelOpen && (note || hint) && <div className="pointer-events-none rounded-full bg-black/55 px-2.5 py-0.5 text-[11.5px] text-zinc-200 text-center" data-testid="phone-hint">{note ?? hint}</div>}
           {toolbar}
         </div>
       )}
       <div ref={box} className={`flex-1 overflow-auto ${phonePage ? "dg-noscrollbar" : compact ? "dg-scroll" : ""} cursor-grab`} data-testid="design-scroll" onPointerDown={onBoxDown} onPointerMove={onBoxMove} onPointerUp={onBoxUp} onPointerCancel={onBoxUp}>
         {/* (as wide as the page when zoomed in past the window, so all of it scrolls into view) */}
-        <div className={`w-max min-w-full min-h-full flex items-center justify-center ${compact ? "p-2.5" : "p-6"}`} style={phonePage ? { paddingTop: room.top, paddingBottom: Math.max(room.bottom, (designSel ? dockH : bottomInset) + 8) } : compact && designSel ? { paddingBottom: dockH + 8 } : undefined}>
+        <div className={`w-max min-w-full min-h-full flex items-center justify-center ${compact ? "p-2.5" : "p-6"}`} style={phonePage ? { paddingTop: room.top, paddingBottom: Math.max(room.bottom, (designSel ? dockH : bottomInset) + 8), paddingRight: 64 } : compact && designSel ? { paddingBottom: dockH + 8 } : undefined}>
           <div
             ref={pageEl}
             className="relative shrink-0"
@@ -1066,7 +1110,7 @@ export function MapDesigner({ compact = false, topInset = 0, bottomInset = 0, pr
       </div>
       {painting !== null && (
         // (just under the controls over the page, however many rows they take: never over them)
-        <div className="absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none flex items-center gap-2.5 rounded-full glass shadow-lg px-3.5 py-1.5" style={{ top: (phonePage ? topInset : controlsH || (compact ? topInset + 104 : 48)) + 8 }} role="progressbar" aria-label="Painting the map" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(painting * 100)} data-testid="paint-progress">
+        <div className="absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none flex items-center gap-2.5 rounded-full glass shadow-lg px-3.5 py-1.5" style={phonePage ? { bottom: (designSel ? dockH : bottomInset) + 10 } : { top: (controlsH || (compact ? topInset + 104 : 48)) + 8 }} role="progressbar" aria-label="Painting the map" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(painting * 100)} data-testid="paint-progress">
           <span className="text-xs font-semibold text-zinc-200 whitespace-nowrap">Painting the map</span>
           <span className="w-32 h-1.5 rounded-full bg-white/[0.14] overflow-hidden"><span className="block h-full bg-orange-500 transition-[width] duration-200" style={{ width: `${Math.max(3, Math.round(painting * 100))}%` }} /></span>
           <span className="text-xs tabular-nums text-zinc-300 w-8 text-right">{Math.round(painting * 100)}%</span>
@@ -1098,13 +1142,43 @@ export function PageChips() {
   useEffect(() => { row.current?.querySelector<HTMLElement>("[aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [tabId, edge.r]);
   const mask = edge.l || edge.r ? `linear-gradient(to right, ${edge.l ? "transparent, #000 18px" : "#000"}, ${edge.r ? "#000 calc(100% - 18px), transparent" : "#000"})` : undefined;
   return (
-    <div ref={row} role="tablist" aria-label="Printouts" className="flex-1 min-w-0 flex gap-0.5 overflow-x-auto dg-noscrollbar touch-pan-x" style={{ maskImage: mask, WebkitMaskImage: mask }} data-testid="page-chips">
+    <div ref={row} role="tablist" aria-label="Printouts" className="flex-1 min-w-0 flex bg-white/[0.07] rounded-xl p-0.5 overflow-x-auto dg-noscrollbar touch-pan-x" style={{ maskImage: mask, WebkitMaskImage: mask }} data-testid="page-chips">
       {tabs.map(([id, label]) => (
         <button key={id} role="tab" aria-selected={tabId === id} onClick={() => useEditor.getState().set({ designTab: id })}
-          className={`flex-auto shrink-0 min-w-[44px] h-11 px-1.5 rounded-full text-[13.5px] font-semibold whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${tabId === id ? "bg-white/[0.16] text-zinc-50" : "text-zinc-300 active:bg-white/[0.09]"}`}>
+          className={`flex-auto shrink-0 min-w-[44px] h-11 px-1.5 rounded-[10px] text-[13.5px] font-bold whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${tabId === id ? "bg-zinc-100 text-zinc-900" : "text-zinc-300 active:bg-white/[0.09]"}`}>
           {label}
         </button>
       ))}
+    </div>
+  );
+}
+
+/** A phone's page zoom, as the 3D map's slider between + and −: up to zoom in, down to zoom out, its
+ * knob saying how far in; the page follows as it slides and is drawn sharp once let go. */
+function PageZoomSlider({ t, height, onSlide, onDone, onStep }: { t: number; height: number; onSlide: (t: number) => void; onDone: (t: number) => void; onStep: (d: number) => void }) {
+  const track = useRef<HTMLDivElement>(null);
+  const at = (y: number) => {
+    const r = track.current!.getBoundingClientRect();
+    return Math.min(1, Math.max(0, 1 - (y - r.top - 11) / Math.max(1, r.height - 22)));
+  };
+  return (
+    <div ref={track} role="slider" tabIndex={0} aria-label="Zoom" aria-orientation="vertical" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(t * 100)}
+      className="relative w-11 shrink-0 touch-none cursor-ns-resize focus:outline-none focus-visible:bg-white/[0.13]" style={{ height }}
+      onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); onSlide(at(e.clientY)); }}
+      onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) onSlide(at(e.clientY)); }}
+      onPointerUp={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) onDone(at(e.clientY)); }}
+      onPointerCancel={e => onDone(at(e.clientY))}
+      onKeyDown={e => {
+        const by = e.key === "ArrowUp" ? 0.08 : e.key === "ArrowDown" ? -0.08 : 0;
+        if (!by) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onStep(by);
+      }}
+      data-testid="zoom-slider">
+      <span className="absolute left-1/2 -translate-x-1/2 top-[11px] bottom-[11px] w-1 rounded-full bg-white/20" aria-hidden />
+      <span className="absolute left-1/2 -translate-x-1/2 w-1 rounded-full bg-white/60" style={{ top: 11 + (1 - t) * (height - 22), bottom: 11 }} aria-hidden />
+      <span className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-[18px] h-[18px] rounded-full bg-white shadow-[0_1px_4px_rgba(0,0,0,0.5)]" style={{ top: 11 + (1 - t) * (height - 22) }} aria-hidden />
     </div>
   );
 }

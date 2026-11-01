@@ -783,17 +783,19 @@ test.describe("phone", () => {
     await chips.filter({ hasText: "Map" }).tap();
     // (the page under the sheet as it was: it floats over it, nothing zooms)
     const before = (await page.getByTestId("design-page").boundingBox())!;
-    // (the paper's name at the page's foot opens the Paper tool, its size first)
+    // (the paper's name at the page's top left opens the Paper tool, its size first)
     await page.getByTestId("paper-chip").tap();
     const sheet = page.getByTestId("page-tool-panel");
     await expect(sheet).toBeVisible();
     expect((await page.getByTestId("design-page").boundingBox())!.width).toBeCloseTo(before.width, 0);
     await sheet.getByLabel("Paper size").selectOption("letter");
     await expect.poll(async () => (await page.evaluate(() => (window as any).__dgCourse().style.paper))).toBe("letter");
-    await expect(page.getByRole("toolbar", { name: "Page settings" })).toHaveCount(0);
+    // (unfolded under the tools, as the 3D map's panel: the Paper tool lit)
+    await expect(page.getByTestId("page-tool-fold-paper")).toHaveAttribute("aria-pressed", "true");
     await page.getByTestId("page-tool-done").tap();
+    await expect(sheet).toHaveCount(0);
     await expect(page.getByRole("toolbar", { name: "Page settings" })).toBeVisible();
-    // A piece picked: Done first, then its tools, each opening the low sheet over the bar
+    // A piece picked: Done first, then its tools, each unfolding its settings under them
     await page.evaluate(() => (window as any).__dgEditor().set({ designSel: "title" }));
     const bar = page.getByTestId("piece-toolbar");
     await expect(bar).toBeVisible();
@@ -801,7 +803,7 @@ test.describe("phone", () => {
     await bar.getByTestId("piece-tool-font").tap();
     await expect(page.getByTestId("piece-panel")).toBeVisible();
     await expect(page.getByTestId("piece-panel").getByTestId("piece-size")).toBeVisible();
-    const sel = (await page.getByTestId("page-selection").boundingBox())!, panel = (await page.getByTestId("piece-panel").boundingBox())!;
+    const sel = (await page.getByTestId("page-selection").boundingBox())!, panel = (await page.getByTestId("piece-sheet").boundingBox())!;
     expect(sel.y + sel.height).toBeLessThanOrEqual(panel.y);
     await page.getByTestId("piece-panel").getByRole("button", { name: "Bigger" }).tap();
     await page.getByTestId("piece-panel-done").tap();
