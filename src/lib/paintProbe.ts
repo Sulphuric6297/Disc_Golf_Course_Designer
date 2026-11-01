@@ -126,3 +126,27 @@ if (typeof window !== "undefined") {
     return { differ, used, bandMs: Math.round(bandMs), pageMs: Math.round(pageMs) };
   };
 }
+
+// For the tests: two paintings at once (Hand painted's trees on the graphics chip, where there is
+// one), and one stopped part way, against each painted alone: the share of pixels that differ.
+if (typeof window !== "undefined") {
+  (window as unknown as { __dgPaintTogether: unknown }).__dgPaintTogether = async (doc: CourseDoc, a: ForestView, b: ForestView) => {
+    const canopy = await canopyFor(doc).catch(() => null), stats = courseStats(doc), s = doc.style;
+    const opts = { mode: s.forest ?? "everywhere", canopy, style: s, density: 1, parallel: false };
+    const px = (c: HTMLCanvasElement) => c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+    const share = (p: Uint8ClampedArray, q: Uint8ClampedArray) => {
+      let n = 0;
+      for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > 6) n++;
+      return n / (p.length / 4);
+    };
+    forgetKept();
+    const soloA = px(await forestCanvasAsync(doc, a, stats, opts)), soloB = px(await forestCanvasAsync(doc, b, stats, opts));
+    const [ca, cb] = await Promise.all([forestCanvasAsync(doc, a, stats, opts), forestCanvasAsync(doc, b, stats, opts)]);
+    const stop = new AbortController();
+    const stopped = forestCanvasAsync(doc, a, stats, opts, stop.signal).catch(() => null);
+    setTimeout(() => stop.abort(), 400);
+    await stopped;
+    const after = px(await forestCanvasAsync(doc, b, stats, opts));
+    return { a: share(px(ca), soloA), b: share(px(cb), soloB), afterStopped: share(after, soloB) };
+  };
+}

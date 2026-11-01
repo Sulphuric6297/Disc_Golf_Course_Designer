@@ -357,6 +357,31 @@ test("a whole new painting shared out among workers on a computer: the same pixe
   expect(r.differ, "pixels unlike the page's own painting").toBe(0);
 });
 
+test("Hand painted's trees on the graphics chip: two paintings at once, and one stopped part way, each whole, as if painted alone", async () => {
+  test.setTimeout(240_000);
+  // (a browser of its own with an emulated graphics chip, as the check below has: the trees are
+  // painted on the chip only where there is one)
+  const b = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
+  const ctx = await b.newContext({ baseURL: "http://localhost:4176", viewport: { width: 1280, height: 820 }, storageState: await page.context().storageState() });
+  const p2 = await ctx.newPage();
+  try {
+    await p2.goto("/");
+    const demo = await (await p2.request.get("/example/course.json")).json();
+    await p2.evaluate(d => (window as any).__dgServer.start(d), demo);
+    await p2.waitForFunction(() => (window as any).__dgCourse?.()?.holes?.length > 0 && typeof (window as any).__dgPaintTogether === "function", null, { timeout: 60_000 });
+    const r = await p2.evaluate(async () => {
+      const w = window as any, doc = w.__dgCourse();
+      const s = { ...doc.style, mapLook: "handpainted", lookParts: { ...doc.style.lookParts, trees: { ...doc.style.lookParts?.trees, style: "brushed" } } };
+      const mid = { cx: doc.canvas.width / 2, cy: doc.canvas.height / 2, rotation: 0 };
+      return w.__dgPaintTogether({ ...doc, style: s }, { ...mid, scale: 0.4, width: 520, height: 420 }, { ...mid, scale: 0.55, width: 420, height: 520 });
+    });
+    console.log("painted together:", JSON.stringify(r));
+    expect(r.a, "the first of two at once").toBe(0);
+    expect(r.b, "the second of two at once").toBe(0);
+    expect(r.afterStopped, "after one stopped part way").toBe(0);
+  } finally { await b.close(); }
+});
+
 test("Hand painted: the demo (made before) stays Classic, a new course starts in Hand painted, and its map paints in time", async () => {
   expect((await course(page)).style.mapLook).toBeUndefined();
   expect(createEmptyCourse().style.mapLook).toBe("handpainted");

@@ -2007,18 +2007,25 @@ export const forestCanvasAsync = async (doc: CourseDoc, view: ForestView, stats:
   // and says how long the next slice may run; and what the steps wait for, waited for, the page
   // free meanwhile: Hand painted's trees, painted by workers)
   let start = performance.now(), told = -1, budget = 8, back: unknown;
-  for (;;) {
-    if (signal?.aborted) throw new DOMException("Painting stopped", "AbortError");
-    const r = timed("a step of painting the ground", () => steps.next(back));
-    back = undefined;
-    if (r.done) return r.value;
-    if (r.value && typeof r.value === "object" && "wait" in r.value) { back = await r.value.wait; start = performance.now(); continue; }
-    if (onProgress && typeof r.value === "number" && r.value - told >= 0.01) onProgress((told = r.value));
-    if (performance.now() - start > budget) {
-      if (pace) budget = await pace();
-      else await new Promise<void>(res => setTimeout(res, 0));
-      start = performance.now();
+  // (stopped, or failed, part way: the steps closed, so what they hold is let go, the graphics
+  // chip's trees among it)
+  let done = false;
+  try {
+    for (;;) {
+      if (signal?.aborted) throw new DOMException("Painting stopped", "AbortError");
+      const r = timed("a step of painting the ground", () => steps.next(back));
+      back = undefined;
+      if (r.done) { done = true; return r.value; }
+      if (r.value && typeof r.value === "object" && "wait" in r.value) { back = await r.value.wait; start = performance.now(); continue; }
+      if (onProgress && typeof r.value === "number" && r.value - told >= 0.01) onProgress((told = r.value));
+      if (performance.now() - start > budget) {
+        if (pace) budget = await pace();
+        else await new Promise<void>(res => setTimeout(res, 0));
+        start = performance.now();
+      }
     }
+  } finally {
+    if (!done) try { steps.return(undefined as never); } catch { /* already stopped */ }
   }
 };
 
