@@ -1,14 +1,21 @@
 // A phone's Map step, the way a design app works on a phone: the page has the screen, and its
 // settings are a row of tools along the bottom instead of a sheet pulled up over it. A tool opens
-// just that setting in a short panel over the row, and the page shrinks to stay whole above it.
-// With a piece picked, the piece's own tools take the row's place (PieceToolbar).
+// just that setting in a low sheet in the row's place, an X to close it, and the page shrinks to
+// stay whole above it: every change shows on the page as it's made. With a piece picked, the
+// piece's own tools take the row's place (PieceToolbar).
 import { SHOW_EVENT } from "../showSetting";
-import { Check, FileText, Flag, Handshake, ListTree, Palette, PenLine, Plus, Signpost, Table2, Type, BookOpen, type LucideIcon } from "lucide-react";
+import { FileText, Flag, Handshake, ListTree, Palette, PenLine, Plus, Signpost, Table2, Type, BookOpen, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useEditor } from "../../state/course";
+import { X } from "lucide-react";
+import { changeDoc, useCourse, useEditor } from "../../state/course";
+import { PAPER } from "../../lib/mapSvg";
+import { SIGN_SIZES, type SignSize } from "../../lib/teeSign";
+import { HOLE_PAGES, type HolePageSize } from "../../lib/holePage";
+import { rememberBoard } from "../printouts";
+import type { PaperSize } from "../../types";
 import { DesignPanel } from "../DesignPanel";
-import { setToolOpen } from "../pageToolState";
-import { OnlyGroup } from "../ui";
+import { InToolSheet, setToolOpen } from "../pageToolState";
+import { Field, OnlyGroup, Select } from "../ui";
 
 type Tool = { id: string; label: string; icon: LucideIcon };
 type Tab = "general" | "map" | "sign" | "page" | "scorecard";
@@ -29,6 +36,20 @@ const TOOLS: Record<Tab, Tool[]> = {
 
 /** Settings that live inside a tool's panel: the tool they're in. */
 const PART_OF: Record<string, string> = { "light-shadow": "map-style", "map-look": "map-style" };
+
+/** The printout's size, first in the tool its other settings are in (the computer has it over the
+ * page). */
+function SizeOf({ tool }: { tool: string }) {
+  const style = useCourse(c => c.doc.style);
+  const holes = useCourse(c => c.doc.holes.length);
+  const field = (label: string, value: string, options: [string, string][], set: (v: string) => void) => (
+    <div className="px-4 pt-2 -mb-1"><Field label="Size"><Select label={label} value={value} onChange={set}>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></Field></div>
+  );
+  if (tool === "fold-paper") return field("Paper size", style.paper, Object.entries(PAPER).map(([k, p]) => [k, p.label]), v => changeDoc(d => ({ style: { ...d.style, paper: v as PaperSize } })));
+  if (tool === "sign-settings" && holes) return field("Tee sign size", style.signSize ?? "18x12", Object.entries(SIGN_SIZES).map(([k, p]) => [k, p.label]), v => { rememberBoard(v as SignSize); changeDoc(d => ({ style: { ...d.style, signSize: v as SignSize } })); });
+  if (tool === "page-settings") return field("Hole page size", style.holePageSize ?? "letter", Object.entries(HOLE_PAGES).map(([k, p]) => [k, p.label]), v => changeDoc(d => ({ style: { ...d.style, holePageSize: v as HolePageSize } })));
+  return null;
+}
 
 export function PageTools() {
   const tab = useEditor(e => e.designTab);
@@ -52,18 +73,20 @@ export function PageTools() {
   const tool = tools.find(t => t.id === open);
   return (
     <div className="shrink-0 relative z-30 px-2 pb-1.5" data-testid="page-tools">
+      {/* (low: half the screen at most, the page whole above it) */}
       {tool && (
-        <div className="glass ring-1 ring-white/15 rounded-[22px] mb-1.5 max-h-[38vh] flex flex-col overflow-hidden" data-testid="page-tool-panel" role="region" aria-label={tool.label}>
+        <div className="glass ring-1 ring-white/15 rounded-[24px] max-h-[min(340px,46dvh)] flex flex-col overflow-hidden animate-[dgrise_200ms_cubic-bezier(0.2,0.9,0.3,1)]" data-testid="page-tool-panel" role="region" aria-label={tool.label}>
           <div className="flex items-center gap-2 pl-4 pr-1.5 pt-1.5 shrink-0">
-            <span className="flex-1 text-[15px] font-bold text-zinc-50 flex items-center gap-2"><tool.icon size={17} className="text-orange-300" />{tool.label}</span>
-            <button className="h-11 shrink-0 flex items-center gap-1 rounded-full px-3.5 bg-orange-500 text-zinc-950 text-[13.5px] font-bold" onClick={() => setOpen(null)} aria-label="Done" data-testid="page-tool-done"><Check size={16} /> Done</button>
+            <span className="flex-1 text-[16px] font-bold text-zinc-50">{tool.label}</span>
+            <button className="w-11 h-11 shrink-0 flex items-center justify-center rounded-full bg-white/[0.1] text-zinc-100 active:bg-white/[0.18] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400" onClick={() => setOpen(null)} aria-label="Close" title="Close" data-testid="page-tool-done"><X size={19} /></button>
           </div>
-          <div className="overflow-y-auto dg-scroll min-h-0 -mt-1">
-            <OnlyGroup.Provider value={tool.id}><DesignPanel /></OnlyGroup.Provider>
+          <div className="overflow-y-auto dg-scroll min-h-0 -mt-1 pb-1">
+            <SizeOf tool={tool.id} />
+            <InToolSheet.Provider value={true}><OnlyGroup.Provider value={tool.id}><DesignPanel /></OnlyGroup.Provider></InToolSheet.Provider>
           </div>
         </div>
       )}
-      <div role="toolbar" aria-label="Page settings" className="glass ring-1 ring-white/15 rounded-[22px] flex gap-1 p-1 overflow-x-auto dg-noscrollbar touch-pan-x">
+      {!tool && <div role="toolbar" aria-label="Page settings" className="glass ring-1 ring-white/15 rounded-[22px] flex gap-1 p-1 overflow-x-auto dg-noscrollbar touch-pan-x">
         {tools.map(t => {
           const on = open === t.id;
           return (
@@ -79,7 +102,7 @@ export function PageTools() {
             </button>
           );
         })}
-      </div>
+      </div>}
     </div>
   );
 }

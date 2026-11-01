@@ -1,7 +1,7 @@
 // The Design step's page: the printed course map (or a tee sign, a hole page, or the scorecard)
 // exactly as it will print, updating as the style changes, and laid out by hand right on it.
 import { Woods } from "./Woods";
-import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Minus, Plus, RotateCw, Scan } from "lucide-react";
 import { PAPER, onPaintProgress, onPainted, renderPoster, withLivePaint } from "../lib/mapSvg";
 import { SIGN_SIZES, renderScorecard, renderTeeSign, type SignSize } from "../lib/teeSign";
@@ -12,6 +12,7 @@ import { useCanopy, useRelief } from "./useRelief";
 import { moveLabel } from "./PageEditor";
 import { duplicatePicked, extrasOf, movePicked, noteOf, onAskTyping, patchPicked, pickedOf, rememberBoard, removePicked, setDrawn, sizePicked, sizeWordsPicked, takeTyping, type TargetKey } from "./printouts";
 import { useToolOpen } from "./pageToolState";
+import { askOpen } from "./showSetting";
 
 /** A size's short name, for a phone's row over the page. */
 const SHORT: Record<string, string> = { "18x12": "18 × 12", "12x18": "12 × 18", "18x24": "18 × 24", letter: "Letter", a4: "A4", card: "4 × 6", square: "Square" };
@@ -62,6 +63,8 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const setPageSize = (v: HolePageSize) => changeDoc(d => ({ style: { ...d.style, holePageSize: v } }));
   const setPaper = (v: PaperSize) => changeDoc(d => ({ style: { ...d.style, paper: v } }));
   const [zoom, setZoom] = useState<number | null>(null);
+  // (another printout or size: the whole page again)
+  useEffect(() => setZoom(null), [tabId, signSize, pageSize, paper]);
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const activeHole = useEditor(e => e.activeHoleId);
@@ -426,16 +429,34 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const [turning, setTurning] = useState<number | null>(null);
   // (a phone: how tall the picked piece's toolbar is, with the setting it has open over it, so
   // the page fits the room above them)
-  const dock = useRef<HTMLDivElement>(null);
   const [dockH, setDockH] = useState(64);
   const [panelOpen, setPanelOpen] = useState(false);
-  useLayoutEffect(() => {
-    const el = dock.current;
+  // (watched from when it's drawn, a moment after the piece is picked)
+  const dockSeen = useRef<ResizeObserver | null>(null);
+  const dock = useCallback((el: HTMLDivElement | null) => {
+    dockSeen.current?.disconnect();
+    dockSeen.current = null;
     if (!el) return;
     const ro = new ResizeObserver(() => setDockH(Math.round(el.getBoundingClientRect().height) + 8));
     ro.observe(el);
-    return () => ro.disconnect();
-  }, [designSel, compact]);
+    dockSeen.current = ro;
+  }, []);
+  // (a phone, zoomed in: the picked piece slid into the room above its bar and whatever that has
+  // open, as it's picked and as the sheet opens; slid, never zoomed)
+  const hasBox = !!selBox;
+  useEffect(() => {
+    const el = box.current, host = svgHost.current;
+    if (!compact || !designSel || !selBox || !el || !host || drag.current) return;
+    const hr = host.getBoundingClientRect(), r = el.getBoundingClientRect(), k = kRef.current;
+    const top = hr.top + selBox.y * k, bottom = top + selBox.h * k, left = hr.left + selBox.x * k, right = left + selBox.w * k;
+    // (and its turning handle under it in sight too)
+    const under = pickedOf(getDoc(), t, designSel)?.has.turn && !designSel.startsWith("label:") ? 56 : 12;
+    const room = { top: r.top + 12, bottom: r.bottom - dockH - under, left: r.left + 12, right: r.right - 12 };
+    const dy = bottom > room.bottom ? Math.min(bottom - room.bottom, top - room.top) : top < room.top ? top - room.top : 0;
+    const dx = right > room.right ? Math.min(right - room.right, left - room.left) : left < room.left ? left - room.left : 0;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) el.scrollBy({ left: dx, top: dy, behavior: "smooth" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [designSel, dockH, hasBox]);
   const tapOut = useRef<{ pid: number; x: number; y: number } | null>(null);
   // (a finger picks a piece with a tap, when it lifts without moving: a drag across a piece not
   // picked scrolls the page, as on any phone)
@@ -616,6 +637,17 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
     const b = boxOf(el), { W, H } = dims();
     sizePicked(t, designSel, f, { x: b.x + b.w / 2, y: b.y + b.h / 2 }, placedBox(el), W, H);
   };
+  // (a phone's Size slider held: the piece scaled about its middle as it moves, as a pinch does)
+  const growing = useRef<{ g: SVGGElement; orig: string; box: Box } | null>(null);
+  const growLive = (f: number | null) => {
+    const g = designSel ? (elOf(designSel) as SVGGElement | null) : null;
+    if (!g) return;
+    const s = (growing.current ??= { g, orig: g.getAttribute("transform") ?? "", box: boxOf(g) });
+    if (f === null) { s.g.setAttribute("transform", s.orig); growing.current = null; return; }
+    const A = { x: s.box.x + s.box.w / 2, y: s.box.y + s.box.h / 2 };
+    s.g.setAttribute("transform", `translate(${A.x} ${A.y}) scale(${f}) translate(${-A.x} ${-A.y}) ${s.orig}`);
+    setSelBox({ x: A.x + (s.box.x - A.x) * f, y: A.y + (s.box.y - A.y) * f, w: s.box.w * f, h: s.box.h * f });
+  };
   /** A font shown on the picked piece while it's pointed at in the list (not kept). */
   const previewFont = (f: string | null) => {
     const el = designSel ? elOf(designSel) : null;
@@ -669,8 +701,12 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       if (!g || !host) return;
       const b = boxOf(g), hr = host.getBoundingClientRect(), k = kRef.current;
       const mx = ((ev.touches[0].clientX + ev.touches[1].clientX) / 2 - hr.left) / k, my = ((ev.touches[0].clientY + ev.touches[1].clientY) / 2 - hr.top) / k;
-      const near = 50 / k;
-      if (mx < b.x - near || mx > b.x + b.w + near || my < b.y - near || my > b.y + b.h + near) return;
+      // (both fingers on it, and it big enough on the screen for two: a small label or QR code
+      // sizes by its corners and Size, and two fingers there move the page as anywhere else)
+      if (Math.min(b.w, b.h) * k < 96) return;
+      const near = 12 / k, on = (x: number, y: number) => x >= b.x - near && x <= b.x + b.w + near && y >= b.y - near && y <= b.y + b.h + near;
+      const at = (i: number) => [(ev.touches[i].clientX - hr.left) / k, (ev.touches[i].clientY - hr.top) / k] as const;
+      if (!on(...at(0)) || !on(...at(1)) || !on(mx, my)) return;
       ev.stopImmediatePropagation();
       // (not a tap off it or on another piece, and not a drag by the first finger)
       tapOut.current = null;
@@ -768,6 +804,9 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   const margin = compact ? 20 : 48;
   // (a phone: the page fitted clear of the picked piece's toolbar, or of the zoom buttons)
   const pill = compact && !designSel && !toolOpen;
+  // (a phone's Map step: the printouts are chips on the top bar, PageChips, and nothing else over
+  // the page but what's at its foot)
+  const phonePage = compact && !only;
   const fit = Math.min((size.w - margin) / page.width, (size.h - margin - (compact && designSel ? dockH : pill ? 52 : 0)) / page.height);
   const k = zoom ?? fit;
   kRef.current = k;
@@ -780,7 +819,8 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       <button className={zb} aria-label="Zoom out" onClick={() => setZoom(Math.max(0.1, k / 1.25))}><Minus size={compact ? 19 : 16} /></button>
       <span className={`${compact ? "text-[13px] w-11" : "text-xs w-12"} text-center tabular-nums`} data-testid="design-zoom">{Math.round(k * 100)}%</span>
       <button className={zb} aria-label="Zoom in" onClick={() => setZoom(Math.min(6, k * 1.25))}><Plus size={compact ? 19 : 16} /></button>
-      <button className={zb} aria-label="Fit the page" onClick={() => setZoom(null)}><Scan size={compact ? 19 : 16} /></button>
+      {/* (a phone: only when it isn't whole already) */}
+      {(!compact || zoom !== null) && <button className={zb} aria-label="Fit the page" onClick={() => setZoom(null)}><Scan size={compact ? 19 : 16} /></button>}
     </div>
   );
   // (on a phone each tab as wide as its label, short ones: all five across the screen)
@@ -793,29 +833,37 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
   // (the holes in the order they're played, a step either way beside the list)
   const ordered = byNumber(doc.holes), at = ordered.findIndex(h => h.id === holeId);
   const step = compact ? "w-11 h-11 flex items-center justify-center rounded-full text-zinc-200 bg-white/[0.08] active:bg-white/[0.14] disabled:opacity-35" : "p-1 rounded-full text-zinc-300 hover:bg-white/[0.09] disabled:opacity-35";
+  const holeStep = (preview === "sign" || preview === "page") && doc.holes.length > 0 ? (
+    <div className="flex items-center gap-0.5 min-w-0" data-testid="hole-step">
+      <button className={step} aria-label="Hole before" title="Hole before" disabled={at <= 0} onClick={() => setHole(ordered[at - 1].id)}><ChevronLeft size={compact ? 18 : 15} /></button>
+      <select aria-label={preview === "sign" ? "Hole for the tee sign" : "Hole for the hole page"} className={sel("")} value={holeId ?? ""} onChange={e => setHole(e.target.value)}>
+        {ordered.map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}</option>)}
+      </select>
+      <button className={step} aria-label="Next hole" title="Next hole" disabled={at < 0 || at >= ordered.length - 1} onClick={() => setHole(ordered[at + 1].id)}><ChevronRight size={compact ? 18 : 15} /></button>
+    </div>
+  ) : null;
+  // (a phone's Map step, at the page's foot: the hole, or the paper, which opens the Paper tool)
+  const corner = !phonePage ? null : holeStep ? <div className="glass rounded-[22px] p-0.5 pointer-events-auto min-w-0">{holeStep}</div>
+    : preview === "map" && editing ? (
+      <button className="glass pointer-events-auto h-11 min-w-0 truncate rounded-full px-4 text-[13.5px] font-semibold text-zinc-100 active:bg-white/[0.14] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400" onClick={() => askOpen("page-tool:fold-paper")} aria-label={`Paper: ${PAPER[paper].label}`} data-testid="paper-chip">
+        {PAPER[paper].label}
+      </button>
+    ) : null;
   const toolbar = editing && designSel && selBox && !typing ? (
-    <PieceToolbar t={t} id={designSel} onGrow={grow} onPreviewFont={previewFont} onEditText={() => startTyping(designSel)} onDone={() => setEd({ designSel: null })} onPanel={setPanelOpen} docked={compact} drawn={drawn} />
+    <PieceToolbar t={t} id={designSel} onGrow={grow} onGrowLive={growLive} onPreviewFont={previewFont} onEditText={() => startTyping(designSel)} onDone={() => setEd({ designSel: null })} onPanel={setPanelOpen} docked={compact} drawn={drawn} />
   ) : null;
   const picked = editing && designSel ? pickedOf(live, t, designSel) : null;
   const note = editing && designSel ? noteOf(live, t, designSel) : null;
   // (a phone: what a finger does with the piece picked, as far as it goes)
-  const hint = picked ? ["Drag it to move", picked.has.size && "pinch it to size", picked.has.text && "tap it again to type"].filter(Boolean).join(" · ") : "";
+  const hint = picked ? ["Drag it to move", picked.has.size && "a corner to size it", picked.has.text && "tap it again to type"].filter(Boolean).join(" · ") : "";
   return (
-    <div className="absolute inset-0 z-20 bg-zinc-950 flex flex-col isolate overflow-hidden" style={compact ? { paddingTop: topInset } : undefined} data-testid="map-designer">
+    <div className="absolute inset-0 z-20 bg-zinc-950 flex flex-col isolate overflow-clip" style={compact ? { paddingTop: topInset } : undefined} data-testid="map-designer">
       <Woods inset />
-      <div ref={controls} className={compact ? "flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2 py-2" : "flex items-center gap-2 px-3 py-2.5 flex-wrap"}>
+      {!phonePage && <div ref={controls} className={compact ? "flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2 py-2" : "flex items-center gap-2 px-3 py-2.5 flex-wrap"}>
         <div role="tablist" className={compact ? "w-full flex gap-1" : "flex gap-1"}>{[...(only ? [] : [tab("general", "General")]), tab("map", "Course map", "Map"), tab("sign", "Tee sign", "Sign"), tab("page", "Hole page", "Page"), tab("scorecard", "Scorecard", "Card")]}</div>
         {/* (a phone: the hole and the size on one row, the size by its short name) */}
         <div className={compact ? "w-full flex items-center gap-2 min-w-0 empty:hidden" : "contents"}>
-        {(preview === "sign" || preview === "page") && doc.holes.length > 0 && (
-          <div className="flex items-center gap-0.5 min-w-0">
-            <button className={step} aria-label="Hole before" title="Hole before" disabled={at <= 0} onClick={() => setHole(ordered[at - 1].id)}><ChevronLeft size={compact ? 18 : 15} /></button>
-            <select aria-label={preview === "sign" ? "Hole for the tee sign" : "Hole for the hole page"} className={sel("")} value={holeId ?? ""} onChange={e => setHole(e.target.value)}>
-              {ordered.map(h => <option key={h.id} value={h.id}>Hole {holeLabel(doc, h.id)}</option>)}
-            </select>
-            <button className={step} aria-label="Next hole" title="Next hole" disabled={at < 0 || at >= ordered.length - 1} onClick={() => setHole(ordered[at + 1].id)}><ChevronRight size={compact ? 18 : 15} /></button>
-          </div>
-        )}
+        {holeStep}
         {/* (Export shows the sizes in its own panel) */}
         {preview === "sign" && !general && !only && (
           <select aria-label="Tee sign size" className={sel("")} value={signSize} onChange={e => { setSignSize(e.target.value as SignSize); setZoom(null); }}>
@@ -835,10 +883,15 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
         </div>
         {/* ("Changes go to" is at the top of the sign's and page's panel) */}
         {!compact && zoomGroup}
-      </div>
+      </div>}
       {/* (A phone: the zoom buttons float over the page, in the thumb's reach, out of the way of a
           tool that's open; the picked piece's toolbar takes their place along the bottom) */}
-      {pill && <div className="glass absolute right-2 bottom-2 z-10 rounded-[22px] p-0.5">{zoomGroup}</div>}
+      {pill && (
+        <div className="absolute inset-x-2 bottom-2 z-10 flex items-end gap-2 pointer-events-none">
+          {corner}
+          <div className="glass ml-auto shrink-0 rounded-[22px] p-0.5 pointer-events-auto">{zoomGroup}</div>
+        </div>
+      )}
       {compact && toolbar && (
         <div ref={dock} className="absolute inset-x-2 bottom-2 z-30 flex flex-col items-center gap-1">
           {!panelOpen && (note || hint) && <div className="pointer-events-none rounded-full bg-black/55 px-2.5 py-0.5 text-[11.5px] text-zinc-200 text-center" data-testid="phone-hint">{note ?? hint}</div>}
@@ -943,7 +996,7 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       </div>
       {painting !== null && (
         // (just under the controls over the page, however many rows they take: never over them)
-        <div className="absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none flex items-center gap-2.5 rounded-full glass shadow-lg px-3.5 py-1.5" style={{ top: (controlsH || (compact ? topInset + 104 : 48)) + 8 }} role="progressbar" aria-label="Painting the map" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(painting * 100)} data-testid="paint-progress">
+        <div className="absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none flex items-center gap-2.5 rounded-full glass shadow-lg px-3.5 py-1.5" style={{ top: (phonePage ? topInset : controlsH || (compact ? topInset + 104 : 48)) + 8 }} role="progressbar" aria-label="Painting the map" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(painting * 100)} data-testid="paint-progress">
           <span className="text-xs font-semibold text-zinc-200 whitespace-nowrap">Painting the map</span>
           <span className="w-32 h-1.5 rounded-full bg-white/[0.14] overflow-hidden"><span className="block h-full bg-orange-500 transition-[width] duration-200" style={{ width: `${Math.max(3, Math.round(painting * 100))}%` }} /></span>
           <span className="text-xs tabular-nums text-zinc-300 w-8 text-right">{Math.round(painting * 100)}%</span>
@@ -951,6 +1004,37 @@ export function MapDesigner({ compact = false, topInset = 0, preview: only = fal
       )}
       {/* (a map is a map without holes: only the pages made for a hole say there's none yet) */}
       {doc.holes.length === 0 && (preview === "sign" || preview === "page") && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="glass rounded-[18px] px-4 py-3 text-sm text-zinc-200">No holes yet: tee signs and hole pages show once there's a hole.</div></div>}
+    </div>
+  );
+}
+
+/** A phone's Map step: the printouts as chips on the top bar, each as wide as its short name. */
+export function PageChips() {
+  const tabId = useEditor(e => e.designTab);
+  const tabs: [Preview | "general", string][] = [["general", "General"], ["map", "Map"], ["sign", "Sign"], ["page", "Page"], ["scorecard", "Card"]];
+  // (short of room, Redo beside them or a narrow phone: they scroll, faded at the edge where more
+  // are, the one picked kept in view)
+  const row = useRef<HTMLDivElement>(null);
+  const [edge, setEdge] = useState({ l: false, r: false });
+  useLayoutEffect(() => {
+    const el = row.current;
+    if (!el) return;
+    const look = () => setEdge({ l: el.scrollLeft > 2, r: el.scrollLeft + el.clientWidth < el.scrollWidth - 2 });
+    const ro = new ResizeObserver(look);
+    ro.observe(el);
+    el.addEventListener("scroll", look, { passive: true });
+    return () => { ro.disconnect(); el.removeEventListener("scroll", look); };
+  }, []);
+  useEffect(() => { row.current?.querySelector<HTMLElement>("[aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [tabId, edge.r]);
+  const mask = edge.l || edge.r ? `linear-gradient(to right, ${edge.l ? "transparent, #000 18px" : "#000"}, ${edge.r ? "#000 calc(100% - 18px), transparent" : "#000"})` : undefined;
+  return (
+    <div ref={row} role="tablist" aria-label="Printouts" className="flex-1 min-w-0 flex gap-0.5 overflow-x-auto dg-noscrollbar touch-pan-x" style={{ maskImage: mask, WebkitMaskImage: mask }} data-testid="page-chips">
+      {tabs.map(([id, label]) => (
+        <button key={id} role="tab" aria-selected={tabId === id} onClick={() => useEditor.getState().set({ designTab: id })}
+          className={`flex-auto shrink-0 min-w-[44px] h-11 px-1.5 rounded-full text-[13.5px] font-semibold whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${tabId === id ? "bg-white/[0.16] text-zinc-50" : "text-zinc-300 active:bg-white/[0.09]"}`}>
+          {label}
+        </button>
+      ))}
     </div>
   );
 }

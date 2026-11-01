@@ -282,7 +282,7 @@ export function DesignPanel() {
         </Field>
         <StyleSlider k="labelScale" value={s.labelScale} label="Label size" min={0.7} max={1.6} step={0.05} format={v => `${Math.round(v * 100)}%`} />
       </Fold>
-      {/* (the paper's size is over the page, beside the tabs) */}
+      {/* (the paper's size is over the page, beside the tabs; a phone's Paper tool has it first) */}
       <Fold title={<span className="flex items-center gap-1.5">Paper <HelpLink topic="paper" label="Paper" /></span>} testid="fold-paper">
         <Field label="Frame">
           <Segmented label="Frame" value={s.frame ?? "none"} onChange={v => setStyle({ frame: v === "none" ? undefined : v })} options={[{ value: "none", label: "None" }, { value: "mat", label: "Mat" }, { value: "line", label: "Fine line" }, { value: "band", label: "Band" }]} />

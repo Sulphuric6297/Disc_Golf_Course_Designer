@@ -2,7 +2,7 @@
 // (its trees, grass, fairways, paths and roads, water and light), each choice shown as a picture.
 // A part changed shows a dot, and the style card says "Changed"; each part goes back to its style's
 // own in one click. Each part's colors are the course's own: kept when the style changes.
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight, RotateCcw } from "lucide-react";
 import { defaultStyle } from "../lib/course";
 import { COLOR_PICKS, tallGrassOf, treeMixOf } from "../lib/landscapes";
@@ -12,6 +12,7 @@ import type { MapStyle, PathTier } from "../types";
 import { ELEVATION_LOOKS, FineTuning, setStyle } from "./DesignPanel";
 import { ColorInput, Slider, Toggle, useKeepInPlace } from "./ui";
 import { SHOW_EVENT } from "./showSetting";
+import { InToolSheet } from "./pageToolState";
 
 /** A slider that changes the map when let go (painting takes a moment). */
 function LookSlider({ value, label, min, max, step, format, onDone }: { value: number; label: string; min: number; max: number; step: number; format: (v: number) => string; onDone: (v: number) => void }) {
@@ -88,12 +89,17 @@ const COLOR_LABEL: Record<LookPart, string> = { trees: "Trees", grass: "Grass", 
 const commit = () => useCourse.getState().commit();
 
 type Thumb = { id: string; label: string; img: string; on: boolean; pick: () => void };
+/** Pictures to pick from: two to a row, or in a phone's tool sheet one row to swipe. */
+const pickRow = (row: boolean, grid: string) => (row ? "flex gap-2 overflow-x-auto dg-noscrollbar touch-pan-x snap-x -mx-3 px-3 pb-1" : grid);
+const pickItem = (row: boolean) => (row ? "shrink-0 w-[118px] snap-start" : "");
+
 /** Choices as pictures (each a small painting of the map with it), two to a row. */
 function Thumbs({ label, items, testid }: { label: string; items: Thumb[]; testid?: string }) {
+  const row = useContext(InToolSheet);
   return (
-    <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 mb-2.5" role="radiogroup" aria-label={label} data-testid={testid}>
+    <div className={`${pickRow(row, "grid grid-cols-2 gap-x-2 gap-y-2.5")} mb-2.5`} role="radiogroup" aria-label={label} data-testid={testid}>
       {items.map(c => (
-        <button key={c.id} role="radio" aria-checked={c.on} onClick={c.pick} data-testid={testid && `${testid}-${c.id}`} className="group text-center rounded-[12px]">
+        <button key={c.id} role="radio" aria-checked={c.on} onClick={c.pick} data-testid={testid && `${testid}-${c.id}`} className={`group text-center rounded-[12px] ${pickItem(row)}`}>
           <img src={c.img} alt="" loading="lazy" className={`block w-full aspect-[3/2] object-cover rounded-[12px] transition ${c.on ? "ring-[2.5px] ring-orange-400" : "ring-1 ring-white/15 group-hover:ring-white/35"}`} draggable={false} />
           <span className={`block px-1 pt-1 text-[11px] leading-tight ${c.on ? "text-zinc-50 font-semibold" : "text-zinc-400"}`}>{c.label}</span>
         </button>
@@ -160,14 +166,15 @@ export function MapLookPanel() {
   const mixed = PARTS.some(changed);
   const base = import.meta.env.BASE_URL;
   const painted = parts.trees.style !== "classic";
+  const row = useContext(InToolSheet);
 
   return (
     <div data-testid="map-look">
-      <div className="grid grid-cols-2 gap-x-2.5 gap-y-3" role="radiogroup" aria-label="Map style" data-testid="map-styles">
+      <div className={pickRow(row, "grid grid-cols-2 gap-x-2.5 gap-y-3")} role="radiogroup" aria-label="Map style" data-testid="map-styles">
         {LOOK_THEMES.map(t => {
           const on = theme.id === t.id;
           return (
-            <button key={t.id} role="radio" aria-checked={on} onClick={() => pickTheme(t.id)} title={t.hint} data-testid={`map-style-${t.id}`} className="group relative text-center rounded-[14px]">
+            <button key={t.id} role="radio" aria-checked={on} onClick={() => pickTheme(t.id)} title={t.hint} data-testid={`map-style-${t.id}`} className={`group relative text-center rounded-[14px] ${pickItem(row)}`}>
               <img src={`${base}looks/${t.id}.jpg`} alt="" className={`block w-full aspect-[3/2] object-cover rounded-[14px] transition ${on ? "ring-[2.5px] ring-orange-400" : "ring-1 ring-white/15 group-hover:ring-white/35"}`} draggable={false} />
               <span className={`block pt-1.5 text-xs ${on ? "text-zinc-50 font-semibold" : "text-zinc-400"}`}>{t.label}</span>
               {on && mixed && <span className="absolute top-1.5 right-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-black/55 backdrop-blur text-orange-200">Changed</span>}
