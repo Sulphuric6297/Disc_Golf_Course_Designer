@@ -464,7 +464,8 @@ function TouchControls({ view, info, scale, phone, top, room, threeD, editing }:
 function ZoomSlider({ view, height, narrow = false }: { view: CourseView | null; height: number; narrow?: boolean }) {
   const [t, setT] = useState(0.5);
   useEffect(() => {
-    const off = view?.onView(() => setT(view.zoomLevel()));
+    // (none while the view rests under a page: the knob stays where it was)
+    const off = view?.onView(() => { const z = view.zoomLevel(); if (Number.isFinite(z)) setT(z); });
     return () => { off?.(); };
   }, [view]);
   const track = useRef<HTMLDivElement>(null);
