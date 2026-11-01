@@ -16,7 +16,7 @@ import type { HoleStats } from "./holeStats";
 import { conifersOf, style3dOf, tallGrassOf, treeMixOf } from "./landscapes";
 import { reliefExaggeration } from "./relief";
 import { isLineKind, offsetPolygon, roofFor, structureHeight, structurePath, structureWidth } from "./structures";
-import { latitudeOf, lookParts, paintLight, sunFromOf } from "./mapLook";
+import { latitudeOf, lookParts, paintLight, sunFromOf, themeOf } from "./mapLook";
 import { STYLE_GREENS, drawMist, drawShadows, drawTrees, gradeLight, type PaintTree } from "./paintTrees";
 import { drawBrushedSteps, type Wait } from "./brushCrown";
 import { LOOK_TINT, LOOK_VARIANTS, conifersWith, drawOf, lookFor, shapeWith, sharesOf, standShares, type TreeLookId } from "./treeMix";
@@ -166,6 +166,14 @@ type RGB = [number, number, number];
 const hexRgb = (hex: string): RGB => {
   const v = parseInt(hex.replace("#", ""), 16);
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+};
+/** One of autumn's leaf colors, as vivid as asked (`k`, Autumn colors); the greens among them as they are. */
+const vividLeaf = (hex: string, k: number) => {
+  if (k === 1) return hex;
+  const [h, sl, l] = rgbToHsl(hexRgb(hex));
+  if (h > 70 && h < 170) return hex;
+  const c = hslToRgb(h, Math.max(0, Math.min(1, sl * k)), Math.max(0.05, Math.min(0.85, l * (0.9 + 0.1 * k))));
+  return `#${c.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("")}`;
 };
 
 /**
@@ -751,6 +759,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // the ends of its limbs, the middle highest and gaps between them where the floor shows; a
   // pine is tiers of boughs, each a star a little smaller and higher than the one below it
   const look = lookParts(s), pl = paintLight(s);
+  // (Size, the one thing about the trees that's the map's: every tree in every look, the woods',
+  // the measured and the placed, as big as its look draws it times this; 1 until it's moved)
+  const treeScale = look.trees.size / (themeOf(s).parts.trees.size || 1);
   // (the newer looks: trees drawn as shapes after the ground, not stamped into the height field)
   const vector = look.trees.style !== "classic" && !opts.under;
   const vstyle = look.trees.style as Exclude<typeof look.trees.style, "classic">;
@@ -868,15 +879,15 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
           continue;
         }
         if (natural) {
-          const r = clear(realR(u) * grow);
-          if (rnd() < pineShare) tufted(x, y, r * 0.8, Math.max(realTop(r) * 1.15, ftTop), t);
-          else leafy(x, y, r, Math.max(realTop(r), ftTop), t);
+          const r = clear(realR(u) * grow * treeScale);
+          if (rnd() < pineShare) tufted(x, y, r * 0.8, Math.max(realTop(r) * 1.15, ftTop * treeScale), t);
+          else leafy(x, y, r, Math.max(realTop(r), ftTop * treeScale), t);
           continue;
         }
-        const r = clear(crownR * (0.45 + u * u * 1.35) * grow);
-        if (rnd() < pineShare) tufted(x, y, r * 0.95, Math.max(r * (2.2 + rnd() * 0.9), ftTop), t);
-        else if (cover < 0.75 && rnd() < (0.75 - cover) * 0.8) clumpTree(x, y, r * 1.5, t, Math.max(r * 1.95, ftTop));
-        else stamp(x, y, r, Math.max(r * (1.9 + rnd() * 0.9), ftTop), t);
+        const r = clear(crownR * (0.45 + u * u * 1.35) * grow * treeScale);
+        if (rnd() < pineShare) tufted(x, y, r * 0.95, Math.max(r * (2.2 + rnd() * 0.9), ftTop * treeScale), t);
+        else if (cover < 0.75 && rnd() < (0.75 - cover) * 0.8) clumpTree(x, y, r * 1.5, t, Math.max(r * 1.95, ftTop * treeScale));
+        else stamp(x, y, r, Math.max(r * (1.9 + rnd() * 0.9), ftTop * treeScale), t);
       }
     }
   }
@@ -884,9 +895,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // own kind, as a tree placed by hand is (crowns that touch are the woods' canopy)
   if (measured && !opts.under) measured.trees.forEach(([x0, y0, h0, radius, conifer], idx) => {
     const sp = toScreen({ x: x0, y: y0 });
-    const r = Math.max(2.2 * pt, radius * k);
+    const r = Math.max(2.2 * pt, radius * k * treeScale);
     if (sp.x < -r || sp.y < -r || sp.x > W + r || sp.y > H + r) return;
-    const top = Math.max(r * 1.2, h0 * k);
+    const top = Math.max(r * 1.2, h0 * k * treeScale);
     const tone = 1 + (idx % 6);
     // (its kind by its index, as the 3D view picks it, lib/treeMix; a needle tree leafy where no needle kind is allowed)
     if (vector) { const tr = seeded(idx * 7919 + 13), shape = shapeWith(shares, conifer ? "conifer" : "broadleaf"), kind = lookFor(shape, drawOf(idx, 7), shares); vtrees.push({ x: sp.x, y: sp.y, r, h: top, pine: shape === "conifer", col: asKind(treeColor(tr()), kind), seed: tr(), look: kind }); return; }
@@ -899,9 +910,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // height and of its own kind, wherever it is (on a fairway too), apart from the woods
   for (const t of opts.under ? [] : (doc.items.filter(i => i.type === "tree") as TreeItem[])) {
     const sp = toScreen(t);
-    const r = Math.max(2.2 * pt, t.radius * (t.width ?? 1) * k);
+    const r = Math.max(2.2 * pt, t.radius * (t.width ?? 1) * k * treeScale);
     if (sp.x < -r || sp.y < -r || sp.x > W + r || sp.y > H + r) continue;
-    const top = Math.max(r * 1.2, (t.height ?? t.radius * 2.6) * k);
+    const top = Math.max(r * 1.2, (t.height ?? t.radius * 2.6) * k * treeScale);
     const tone = 1 + (idSeed(t.id) % 6);
     if (vector) {
       const tr = seeded(idSeed(t.id));
@@ -1077,7 +1088,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const woodsFactors = [0.54, 0.69, 0.86, 1.02, 1.2, 1.46, 1.86, 2.4];
   const woods = palette(s.trees, woodsFactors, 6, 0.82);
   // Treetops in several colors where the landscape has them (autumn), one color per tree
-  const mixPals = treeMixOf(s).map(c => palette(c, woodsFactors, 6, 0.9));
+  // (as vivid as Autumn colors asks, as in every look)
+  const mixPals = treeMixOf(s).map(c => palette(vividLeaf(c, s.autumnVivid ?? 1), woodsFactors, 6, 0.9));
   // (pines keep their needles: deep blue-green whatever the season)
   const pinePal = palette("#2c4636", woodsFactors, 0, 0.9);
   // (under the 3D view, a little darker: its sun is brighter than the printed map's paper)
@@ -1189,7 +1201,8 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       const pp = f1, q = f2;
       const c0 = blend(blend(G.storybook[0], G.storybook[1], smooth(0.4, 0.6, pp)), G.storybook[2], smooth(0.62, 0.72, q) * 0.6);
       const fx = ((X % 7) + 7) % 7 - 3.5, fy = ((Y % 7) + 7) % 7 - 3.5, dd2 = Math.hypot(fx, fy), aa = 0.7 / k;
-      const kk = tex > 0.1 ? 1 - 0.05 * smooth(1.25 + aa, 1.25 - aa, dd2) : 1;
+      // (Texture: the dots deeper or fainter, as the style has them at its own 0.8)
+      const kk = 1 - Math.min(0.15, 0.05 * (tex / 0.8)) * smooth(1.25 + aa, 1.25 - aa, dd2);
       return [c0[0] * kk, c0[1] * kk, c0[2] * kk];
     }
     // mown: stripes as a mower leaves them, blended over a pixel
@@ -1260,8 +1273,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         const mott = at(mottle, x, y);
         const grain = GRAIN[tr | (x & 511)];
         if (look.grass.style === "painted") {
-          // (brighter than the tones go: the whole lawn lighter)
-          tone(lawn, (0.5 + mott * 0.5 + grain * 0.18) * Math.min(1, look.grass.bright) * lit);
+          // (brighter than the tones go: the whole lawn lighter; Texture, its mottle stronger or
+          // calmer about the same middle, as every grass look has it)
+          tone(lawn, (0.84 + (mott * 0.5 + grain * 0.18 - 0.34) * look.grass.texture) * Math.min(1, look.grass.bright) * lit);
           const lift = Math.max(1, look.grass.bright);
           cr = tr0 * lift; cg = tg0 * lift; cb = tb0 * lift;
         }
@@ -1402,7 +1416,11 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
             }
             if (look.water.style === "painterly") {
               // (foam streaks along the current, on the creeks; a pale rim at the shore)
-              const foam = smooth(0.62, 0.7, fbm(x / pt * 0.12 + 40, y / pt * 0.5)) * (1 - open) * 0.38 + (1 - smooth(0.3 * pt, 1.4 * pt, d)) * 0.18;
+              // (and on open water, soft long brush strokes across it, lighter and darker: painted, not deep)
+              const foam = smooth(0.62, 0.7, fbm(x / pt * 0.12 + 40, y / pt * 0.5)) * (1 - open) * 0.38 + (1 - smooth(0.3 * pt, 1.4 * pt, d)) * 0.18
+                + smooth(0.52, 0.72, fbm(x / pt * 0.035 + 11, y / pt * 0.16)) * open * 0.16;
+              const dab = smooth(0.55, 0.75, fbm(x / pt * 0.03 + 90, y / pt * 0.14)) * open * 0.12 * smooth(0.4, 0.46, w);
+              cr *= 1 - dab; cg *= 1 - dab * 0.7; cb *= 1 - dab * 0.4;
               const fa2 = foam * smooth(0.4, 0.46, w);
               cr += (240 - cr) * fa2; cg += (250 - cg) * fa2; cb += (250 - cb) * fa2;
             } else if (look.water.style === "glinting") {
@@ -1619,7 +1637,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   if (look.paths.style === "trail") {
     // dirt and gravel paths as dashed trail lines (walkways and roads stay painted)
     ctx.save();
-    ctx.strokeStyle = pl.mode === "night" ? "rgba(220,228,255,.85)" : "rgba(255,255,255,.9)";
+    // (a light tint of the paths' color, so a color picked for them shows here too)
+    const tint = hexRgb(s.path ?? "#c8b48a"), up = (c: number, w: number) => Math.round(c + (w - c) * 0.6);
+    ctx.strokeStyle = pl.mode === "night" ? `rgba(${up(tint[0], 220)},${up(tint[1], 228)},${up(tint[2], 255)},.85)` : `rgba(${up(tint[0], 255)},${up(tint[1], 255)},${up(tint[2], 255)},.9)`;
     ctx.lineCap = "round"; ctx.setLineDash([4 * pt, 3.2 * pt]);
     // (each as wide as its path, a third of it, never thinner than reads; the walks between holes
     // along the same winding line they're painted on)

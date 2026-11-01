@@ -20,6 +20,8 @@ import { chainContours, type Contours } from "./relief";
 import { fmtDist } from "./units";
 import { tallGrassOf } from "./landscapes";
 import { fieldInks, fieldLegend, fieldPlan, fieldSvg } from "./fieldPlan";
+// (the tests' measure of what a style change changes: loaded with the map's painter)
+import "./paintProbe";
 import { FIELD_ORDER, fieldKindOf } from "./fields";
 
 export const PAPER: Record<PaperSize, { label: string; w: number; h: number }> = {

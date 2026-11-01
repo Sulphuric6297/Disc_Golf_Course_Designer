@@ -756,6 +756,8 @@ test.describe("phone", () => {
     await page.getByRole("button", { name: "Fit the page" }).tap();
     await expect.poll(zoom).toBeLessThanOrEqual(fill);
     const fit = await zoom();
+    // (once its glide there has ended)
+    await expect.poll(async () => (await pageBox()).x).toBeGreaterThanOrEqual(0);
     const w = await pageBox();
     expect(w.x).toBeGreaterThanOrEqual(0);
     expect(w.x + w.width).toBeLessThanOrEqual(vw);
@@ -957,7 +959,8 @@ test.describe("phone", () => {
     // (the loading screen comes a moment after Fly over is tapped: waited for as done, not as not yet there)
     await expect.poll(() => page.evaluate(() => { const ed = (window as any).__dgEditor(), el = document.querySelector('[data-testid="flyover-loading"]'); return ed.flyover && ed.flyLoading === null && (!el || getComputedStyle(el).pointerEvents === "none"); }), { timeout: 120_000 }).toBe(true);
     await page.waitForTimeout(400);
-    await expect(async () => { await tile.tap(); await expect.poll(open, { timeout: 3000 }).toBe(true); }).toPass({ timeout: 20_000 });
+    const flight = () => page.evaluate(() => { const e = (window as any).__dgEditor(); return JSON.stringify({ teeView: e.teeView, flyover: e.flyover, flyLoading: e.flyLoading, teeSettings: e.teeSettings, tiles: document.querySelectorAll('[data-testid="hud-settings"]').length }); });
+    await expect(async () => { await tile.tap({ timeout: 4000 }); await expect.poll(open, { timeout: 3000, message: await flight() }).toBe(true); }).toPass({ timeout: 20_000 });
     await expect(page.getByTestId("flyover-settings")).toBeVisible();
     await page.getByTestId("hud-close").tap();
     await expect.poll(async () => (await editorState(page)).teeView).toBeNull();

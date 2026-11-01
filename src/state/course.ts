@@ -229,13 +229,23 @@ type EditorStore = {
   set: (patch: Partial<Omit<EditorStore, "set">>) => void;
 };
 
-const DISPLAY_KEY = "dg.display";
+// The View panel's This screen settings: each course's own (on this device), so a course looks
+// as it was left, whatever another course was set to; a course not set yet starts from these
 const DISPLAY = ["photo", "contours", "shading", "groundDetail", "grass", "wind", "flyLook"] as const;
-const savedDisplay = (): Partial<Pick<EditorStore, (typeof DISPLAY)[number]>> => {
+type Display = Pick<EditorStore, (typeof DISPLAY)[number]>;
+const DISPLAY_DEFAULTS: Display = { photo: true, contours: true, shading: true, groundDetail: true, grass: "auto", wind: true, flyLook: "painted" };
+const displayKey = (id: string | undefined) => `dg.display:${id ?? "new"}`;
+/** (one key for every course, before each had its own: the first course opened keeps it) */
+const OLD_DISPLAY_KEY = "dg.display";
+const savedDisplay = (id: string | undefined): Display => {
   try {
-    return JSON.parse(localStorage.getItem(DISPLAY_KEY) ?? "{}");
+    const own = localStorage.getItem(displayKey(id));
+    const old = own === null ? localStorage.getItem(OLD_DISPLAY_KEY) : null;
+    if (old !== null) { localStorage.setItem(displayKey(id), old); localStorage.removeItem(OLD_DISPLAY_KEY); }
+    const kept = JSON.parse(own ?? old ?? "{}") as Partial<Display>;
+    return { ...DISPLAY_DEFAULTS, ...Object.fromEntries(DISPLAY.filter(k => k in kept).map(k => [k, kept[k]])) };
   } catch {
-    return {};
+    return { ...DISPLAY_DEFAULTS };
   }
 };
 
@@ -279,24 +289,25 @@ export const useEditor = create<EditorStore>()(set => ({
   flyCam: false,
   flyLoading: null,
   drawPoints: 0,
-  photo: true,
-  contours: true,
-  shading: true,
-  groundDetail: true,
-  grass: "auto",
-  wind: true,
+  ...DISPLAY_DEFAULTS,
   stumps: false,
   hideTrees: false,
-  flyLook: "painted",
-  ...(typeof localStorage !== "undefined" ? savedDisplay() : {}),
   set: patch => {
     set(patch);
     if (DISPLAY.some(k => k in patch)) {
       const s = useEditor.getState();
-      try { localStorage.setItem(DISPLAY_KEY, JSON.stringify(Object.fromEntries(DISPLAY.map(k => [k, s[k]])))); } catch { /* private mode */ }
+      try { localStorage.setItem(displayKey(useCourse.getState().doc.id), JSON.stringify(Object.fromEntries(DISPLAY.map(k => [k, s[k]])))); } catch { /* private mode */ }
     }
   }
 }));
+
+// (a course opened: its own This screen settings, and every tree shown again)
+if (typeof localStorage !== "undefined") {
+  let shown: string | null = null;
+  const take = (id: string | undefined) => { if ((id ?? null) === shown) return; shown = id ?? null; useEditor.setState({ ...savedDisplay(id), hideTrees: false }); };
+  take(useCourse.getState().doc.id);
+  useCourse.subscribe(s => take(s.doc.id));
+}
 
 export const editor = () => useEditor.getState();
 

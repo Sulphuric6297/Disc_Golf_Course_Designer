@@ -65,7 +65,7 @@ test("3D grass: blades near the ground when tilted, none from straight above; th
   await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
   await page.keyboard.press("Escape");
   await page.keyboard.press("3");
-  // A setting of this device (not of the course): kept for next time
+  // A setting of this course on this device (not shared with others in it): kept for next time
   await page.getByTestId("scene-button").click();
   await page.getByTestId("scene-panel").getByRole("radio", { name: "Medium" }).click();
   await expect.poll(() => grassSetting(page)).toBe(2);
