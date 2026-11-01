@@ -11,9 +11,13 @@ const soft = (spots: number) => /* glsl */ `#elif defined( SHADOWMAP_TYPE_PCF_SO
 			// (a turn of its own at each pixel: interleaved gradient noise)
 			float dgTurn = 6.2831853 * fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) );
 			shadow = 0.0;
+			// (one look, the nearest texels blended, when the device is short of time: a radius under
+			// 1.5 says so; CourseView.setTier)
+			int dgSpots = shadowRadius < 1.5 ? 1 : ${spots};
 			for ( int i = 0; i < ${spots}; i ++ ) {
+				if ( i >= dgSpots ) break;
 				// (a Vogel spiral: the spots spread evenly over the disc)
-				float r = sqrt( ( float( i ) + 0.5 ) / ${spots}.0 ), t = float( i ) * 2.3999632 + dgTurn;
+				float r = dgSpots == 1 ? 0.0 : sqrt( ( float( i ) + 0.5 ) / ${spots}.0 ), t = float( i ) * 2.3999632 + dgTurn;
 				vec2 uv = shadowCoord.xy + vec2( cos( t ), sin( t ) ) * r * shadowRadius * texelSize;
 				vec2 f = fract( uv * shadowMapSize + 0.5 );
 				uv -= f * texelSize;
@@ -22,7 +26,7 @@ const soft = (spots: number) => /* glsl */ `#elif defined( SHADOWMAP_TYPE_PCF_SO
 					mix( texture2DCompare( shadowMap, uv + vec2( 0.0, texelSize.y ), shadowCoord.z ), texture2DCompare( shadowMap, uv + texelSize, shadowCoord.z ), f.x ),
 					f.y );
 			}
-			shadow /= ${spots}.0;
+			shadow /= float( dgSpots );
 			// (faded out over the picture's outer edge: where it ends, no line, and when it moves on
 			// with the eye, no patch of ground suddenly lit or shaded)
 			vec2 dgEdge = abs( shadowCoord.xy - 0.5 ) * 2.0;

@@ -2232,7 +2232,7 @@ export class CourseView {
    * room again. Software rendering (no graphics card) keeps its own fixed, lower settings.
    */
   perfSample(ms: number) {
-    if ((this.software && !this.adaptiveForced) || this.streetDetail) return;
+    if (this.software && !this.adaptiveForced) return;
     const s = this.perfSamples;
     s.push(ms);
     // A window of 24 frames, or a second and a half on a slow device (24 frames at 5 a second
@@ -2241,11 +2241,15 @@ export class CourseView {
     const sorted = [...s].sort((a, b) => a - b);
     const median = sorted[s.length >> 1];
     s.length = 0;
-    if (median > 34 && this.tier < 4) {
+    // Standing: the full render while the device keeps up; stepped down only when it truly can't
+    // (under about 20 frames a second), and never below the middle step
+    const street = this.streetDetail;
+    const slow = street ? 50 : 34, most = street ? 2 : 4;
+    if (median > slow && this.tier < most) {
       this.fastWindows = 0;
       // (Very slow, under about 14 frames a second: two steps at once)
-      this.setTier(this.tier + (median > 70 ? 2 : 1));
-    } else if (median < 17 && this.tier > 0) {
+      this.setTier(Math.min(most, this.tier + (median > 70 ? 2 : 1)));
+    } else if (median < (street ? 25 : 17) && this.tier > 0) {
       // (only after a few quick windows in a row: no flickering between two levels)
       if (++this.fastWindows >= 3) {
         this.fastWindows = 0;
@@ -2265,20 +2269,24 @@ export class CourseView {
     this.streetDetail = on;
     this.fastWindows = 0;
     this.perfSamples.length = 0;
+    // (starting at the full render; a device that can't keep up steps down from it, see perfSample)
     this.setTier(on ? 0 : this.tier);
   }
 
   /** A quality level: 0 full .. 4 the lightest. */
   setTier(tier: number) {
     this.tier = Math.max(0, Math.min(4, tier));
-    const ratio = this.streetDetail ? Math.min(window.devicePixelRatio || 1, 2) : Math.max(0.75, this.maxRatio * [1, 0.85, 0.72, 0.6, 0.5][this.tier]);
+    const ratio = this.streetDetail ? Math.min(window.devicePixelRatio || 1, 2) * [1, 0.85, 0.72][Math.min(2, this.tier)] : Math.max(0.75, this.maxRatio * [1, 0.85, 0.72, 0.6, 0.5][this.tier]);
     if (Math.abs(this.renderer.getPixelRatio() - ratio) > 0.01) {
       this.renderer.setPixelRatio(ratio);
       this.renderer.setSize(this.size.width, this.size.height, false);
     }
     // (a video records with its own: see setVideoDetail)
     if (this.videoDetail) return this.invalidate();
-    const shadow = this.streetDetail ? 2048 : this.tier >= 3 ? 512 : this.mobile || this.tier >= 2 ? 1024 : 2048;
+    const shadow = this.streetDetail ? (this.tier >= 2 ? 1024 : 2048) : this.tier >= 3 ? 512 : this.mobile || this.tier >= 2 ? 1024 : 2048;
+    // (soft shadow edges: a few looks a pixel while frames keep up, one when they don't: no shader
+    // made again, three/softShadows reads the radius)
+    this.sun.shadow.radius = this.tier >= 2 ? 1 : SHADOW_SOFT;
     if (this.sun.shadow.mapSize.x !== shadow) {
       this.sun.shadow.mapSize.set(shadow, shadow);
       this.sun.shadow.map?.dispose();
@@ -2685,7 +2693,7 @@ export class CourseView {
     if (this.grassSetting !== "auto") return this.grassSetting;
     // Automatic: off without a graphics card, low on a phone, and less while frames run slow
     // (standing: a computer's, on a phone too)
-    if (this.streetDetail) return 2;
+    if (this.streetDetail) return this.tier >= 2 ? 1 : 2;
     const base = this.software ? 0 : this.mobile ? 1 : 2;
     return Math.max(0, base - (this.tier >= 4 ? 2 : this.tier >= 2 ? 1 : 0)) as GrassQuality;
   }
