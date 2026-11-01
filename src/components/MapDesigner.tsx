@@ -819,6 +819,44 @@ export function MapDesigner({ compact = false, topInset = 0, bottomInset = 0, pr
     el.scrollTop += pr.top + pr.height / 2 - (r.top + room.top + visH / 2);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
+  // A button's zoom (− and +, Fit and Fill) glides there, about the spot it keeps, instead of
+  // jumping: the page drawn at its new size at once, scaled from the old and let go
+  const glide = useRef<{ k: number; fx: number; fy: number } | null>(null);
+  const glideEnd = useRef(0);
+  useLayoutEffect(() => {
+    const g = glide.current, pg = pageEl.current;
+    glide.current = null;
+    if (!g || !pg || Math.abs(g.k / kNow.current - 1) < 0.01 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    pg.style.transition = "none";
+    pg.style.transformOrigin = `${g.fx * 100}% ${g.fy * 100}%`;
+    pg.style.transform = `scale(${g.k / kNow.current})`;
+    void pg.offsetWidth;
+    pg.style.transition = "transform 260ms cubic-bezier(0.2, 0.9, 0.3, 1)";
+    pg.style.transform = "";
+    // (let go once it's there, so a pinch after it follows the fingers at once; a render meanwhile,
+    // the painting's progress say, leaves it gliding)
+    window.clearTimeout(glideEnd.current);
+    glideEnd.current = window.setTimeout(() => { pg.style.transition = ""; pg.style.transformOrigin = ""; }, 320);
+  });
+  /** The spot in the middle of what's seen (of the room between the bars, on a phone's Map step). */
+  const seenMiddle = () => {
+    const el = box.current, pg = pageEl.current;
+    if (!el || !pg) return null;
+    const r = el.getBoundingClientRect(), pr = pg.getBoundingClientRect();
+    const vx = r.width / 2, vy = phonePage ? room.top + visH / 2 : r.height / 2;
+    return { fx: Math.max(0, Math.min(1, (r.left + vx - pr.left) / pr.width)), fy: Math.max(0, Math.min(1, (r.top + vy - pr.top) / pr.height)), vx, vy };
+  };
+  /** Zoomed by a button: about the middle of what's seen, gliding there. */
+  const zoomTo = (next: number | null, opts: { whole?: boolean } = {}) => {
+    const m = seenMiddle();
+    if (m) {
+      // (Fit and Fill bring the page's middle to the middle; − and + keep the spot in the middle)
+      if (next !== null) anchor.current = m;
+      glide.current = { k: kNow.current, ...(next === null ? { fx: 0.5, fy: 0.5 } : { fx: m.fx, fy: m.fy }) };
+    }
+    setZoom(next);
+    if (opts.whole !== undefined) setWhole(opts.whole);
+  };
 
   if (!page) return null;
   const margin = compact ? 20 : 48;
@@ -835,14 +873,14 @@ export function MapDesigner({ compact = false, topInset = 0, bottomInset = 0, pr
   const zb = compact ? "w-11 h-11 flex items-center justify-center rounded-full active:bg-white/[0.14] hover:bg-white/[0.08]" : "p-1.5 rounded-full hover:bg-white/[0.08]";
   const zoomGroup = (
     <div className="ml-auto flex items-center gap-1 text-zinc-300">
-      <button className={zb} aria-label="Zoom out" onClick={() => setZoom(Math.max(0.1, k / 1.25))}><Minus size={compact ? 19 : 16} /></button>
+      <button className={zb} aria-label="Zoom out" onClick={() => zoomTo(Math.max(0.1, k / 1.25))}><Minus size={compact ? 19 : 16} /></button>
       <span className={`${compact ? "text-[13px] w-11" : "text-xs w-12"} text-center tabular-nums`} data-testid="design-zoom">{Math.round(k * 100)}%</span>
-      <button className={zb} aria-label="Zoom in" onClick={() => setZoom(Math.min(6, k * 1.25))}><Plus size={compact ? 19 : 16} /></button>
+      <button className={zb} aria-label="Zoom in" onClick={() => zoomTo(Math.min(6, k * 1.25))}><Plus size={compact ? 19 : 16} /></button>
       {/* (a phone: the whole page, or back to filling the screen) */}
       {phonePage ? (zoom !== null || !whole
-        ? <button className={zb} aria-label="Fit the page" title="The whole page" onClick={() => { setZoom(null); setWhole(true); }}><Scan size={19} /></button>
-        : <button className={zb} aria-label="Fill the screen" title="Fill the screen" onClick={() => setWhole(false)}><Maximize2 size={19} /></button>)
-        : (!compact || zoom !== null) && <button className={zb} aria-label="Fit the page" onClick={() => setZoom(null)}><Scan size={compact ? 19 : 16} /></button>}
+        ? <button className={zb} aria-label="Fit the page" title="The whole page" onClick={() => zoomTo(null, { whole: true })}><Scan size={19} /></button>
+        : <button className={zb} aria-label="Fill the screen" title="Fill the screen" onClick={() => zoomTo(null, { whole: false })}><Maximize2 size={19} /></button>)
+        : (!compact || zoom !== null) && <button className={zb} aria-label="Fit the page" onClick={() => zoomTo(null)}><Scan size={compact ? 19 : 16} /></button>}
     </div>
   );
   // (on a phone each tab as wide as its label, short ones: all five across the screen)
