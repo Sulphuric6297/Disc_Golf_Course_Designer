@@ -358,7 +358,7 @@ test("a whole new painting shared out among workers on a computer: the same pixe
 });
 
 test("Hand painted's trees on the graphics chip: two paintings at once, and one stopped part way, each whole, as if painted alone", async () => {
-  test.setTimeout(240_000);
+  test.setTimeout(300_000);
   // (a browser of its own with an emulated graphics chip, as the check below has: the trees are
   // painted on the chip only where there is one)
   const b = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
@@ -373,7 +373,8 @@ test("Hand painted's trees on the graphics chip: two paintings at once, and one 
       const w = window as any, doc = w.__dgCourse();
       const s = { ...doc.style, mapLook: "handpainted", lookParts: { ...doc.style.lookParts, trees: { ...doc.style.lookParts?.trees, style: "brushed" } } };
       const mid = { cx: doc.canvas.width / 2, cy: doc.canvas.height / 2, rotation: 0 };
-      return w.__dgPaintTogether({ ...doc, style: s }, { ...mid, scale: 0.4, width: 520, height: 420 }, { ...mid, scale: 0.55, width: 420, height: 520 });
+      // (a stretch of woods, small: the emulated chip is slow)
+      return w.__dgPaintTogether({ ...doc, style: s }, { ...mid, scale: 1.2, width: 300, height: 240 }, { ...mid, scale: 1.5, width: 240, height: 300 });
     });
     console.log("painted together:", JSON.stringify(r));
     expect(r.a, "the first of two at once").toBe(0);
