@@ -880,7 +880,10 @@ export function MapDesigner({ compact = false, topInset = 0, bottomInset = 0, pr
   const fit = phonePage ? Math.min(visW / page.width, visH / page.height) : Math.min((size.w - margin) / page.width, (size.h - margin - (compact && designSel ? dockH : pill ? 52 : 0)) / page.height);
   // (filling the room: as wide and as tall as it, the rest a slide away)
   const fill = phonePage ? Math.min(fit * 3, Math.max(visW / page.width, fillH / page.height)) : fit;
-  const k = zoom ?? (phonePage && !whole ? fill : fit);
+  // (the course map fills the screen, a poster looked about as the 3D map is; a sign, a page and
+  // the card show whole, each a thing to see at once)
+  const fills = phonePage && preview === "map";
+  const k = zoom ?? (fills && !whole ? fill : fit);
   kRef.current = k;
   kNow.current = k;
   const html = page.svg.replace(/^<svg([^>]*?) width="[^"]*" height="[^"]*"/, `<svg$1 width="${page.width * k}" height="${page.height * k}"`);
@@ -955,9 +958,9 @@ export function MapDesigner({ compact = false, topInset = 0, bottomInset = 0, pr
         <button className={cb} aria-label="Zoom out" onClick={() => zoomTo(Math.max(0.1, k / 1.4))}><Minus size={20} /></button>
         <span className="sr-only" data-testid="design-zoom">{Math.round(k * 100)}%</span>
       </div>
-      {zoom !== null || !whole
+      {zoom !== null || (fills && !whole)
         ? <button className={`${cg} ${cb}`} aria-label="Fit the page" title="The whole page" onClick={() => zoomTo(null, { whole: true })}><Maximize2 size={18} /></button>
-        : <button className={`${cg} ${cb}`} aria-label="Fill the screen" title="Fill the screen" onClick={() => zoomTo(null, { whole: false })}><Expand size={18} /></button>}
+        : fills && <button className={`${cg} ${cb}`} aria-label="Fill the screen" title="Fill the screen" onClick={() => zoomTo(null, { whole: false })}><Expand size={18} /></button>}
     </div>
   );
   const toolbar = editing && designSel && selBox && !typing ? (
