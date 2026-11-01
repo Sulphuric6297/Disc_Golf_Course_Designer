@@ -4,8 +4,10 @@
 // that leaves the picture as it was is a setting that does nothing in that look.
 import { test, expect, blankCourse, addHole } from "./fixtures";
 
-test("every map setting changes the map in every map style", async ({ page }) => {
-  test.setTimeout(600_000);
+// (one test a style: they run side by side)
+for (const theme of ["handpainted", "classic", "brushwood", "hollow", "golden", "storybook", "gouache"])
+test(`every map setting changes the map in the ${theme} style`, async ({ page }) => {
+  test.setTimeout(400_000);
   await blankCourse(page);
   await addHole(page, { x: 400, y: 700 }, { x: 750, y: 700 });
   await page.keyboard.press("Escape");
@@ -13,19 +15,18 @@ test("every map setting changes the map in every map style", async ({ page }) =>
     const w = window as any;
     const ring = (cx: number, cy: number, r: number) => Array.from({ length: 32 }, (_, i) => ({ x: cx + Math.cos((i / 32) * Math.PI * 2) * r, y: cy + Math.sin((i / 32) * Math.PI * 2) * r }));
     w.__dgEditor().set({ areaKind: "woods" }); w.__dgActions.addDrawn("area", ring(560, 590, 100));
-    w.__dgEditor().set({ areaKind: "water" }); w.__dgActions.addDrawn("area", ring(430, 790, 50));
+    w.__dgEditor().set({ areaKind: "water" }); w.__dgActions.addDrawn("area", ring(510, 765, 42));
     w.__dgEditor().set({ areaKind: "fairway" }); w.__dgActions.addDrawn("area", [{ x: 420, y: 680 }, { x: 740, y: 680 }, { x: 740, y: 720 }, { x: 420, y: 720 }]);
     w.__dgEditor().set({ lineKind: "path" }); w.__dgActions.addDrawn("line", [{ x: 360, y: 750 }, { x: 800, y: 770 }]);
-    w.__dgActions.placeAt("add-tree", { x: 700, y: 610 });
+    w.__dgActions.placeAt("add-tree", { x: 655, y: 645 });
     w.__dgEditor().set({ tool: "select" });
   });
   // (the map's painter, and the tests' measure with it)
   await page.getByRole("button", { name: "3 Map" }).click();
   await expect.poll(() => page.evaluate(() => typeof (window as any).__dgMapDiff), { timeout: 60_000 }).toBe("function");
-  const dead = await page.evaluate(async () => {
+  const dead = await page.evaluate(async (theme: string) => {
     const w = window as any, doc = w.__dgCourse();
-    const view = { cx: 580, cy: 700, rotation: 0, scale: 0.9, width: 300, height: 220 };
-    const THEMES = ["handpainted", "classic", "brushwood", "hollow", "golden", "storybook", "gouache"];
+    const view = { cx: 580, cy: 700, rotation: 0, scale: 0.9, width: 220, height: 160 };
     // (each style's own choice for each part: picking it again changes nothing, as it should)
     const OWN: Record<string, Record<string, string>> = {
       handpainted: { trees: "brushed", grass: "painted", fairway: "soft", paths: "painted", water: "deep" },
@@ -40,7 +41,7 @@ test("every map setting changes the map in every map style", async ({ page }) =>
     const MIX = ["#7a4b26", "#8c6a24", "#6e2f20", "#80582a", "#3f4a2b", "#93782e"];
     const lp = (s: any, part: string, patch: object) => ({ ...s, lookParts: { ...s.lookParts, [part]: { ...s.lookParts?.[part], ...patch } } });
     const found: string[] = [];
-    for (const t of THEMES) {
+    for (const t of [theme]) {
       const base = { ...doc.style, mapLook: t === "classic" ? undefined : t, lookParts: undefined, lightMode: undefined, goldenSun: undefined };
       const own = (part: string) => OWN[t][part];
       const settings: [string, (s: any) => any, ((s: any) => any)?][] = [
@@ -70,6 +71,6 @@ test("every map setting changes the map in every map style", async ({ page }) =>
       }
     }
     return found;
-  });
+  }, theme);
   expect(dead).toEqual([]);
 });
