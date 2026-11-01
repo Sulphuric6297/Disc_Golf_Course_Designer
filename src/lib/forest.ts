@@ -16,7 +16,7 @@ import type { HoleStats } from "./holeStats";
 import { conifersOf, style3dOf, tallGrassOf, treeMixOf } from "./landscapes";
 import { reliefExaggeration } from "./relief";
 import { isLineKind, offsetPolygon, roofFor, structureHeight, structurePath, structureWidth } from "./structures";
-import { latitudeOf, lookParts, paintLight, sunFromOf } from "./mapLook";
+import { latitudeOf, lookParts, paintLight, sunFromOf, themeOf } from "./mapLook";
 import { STYLE_GREENS, drawMist, drawShadows, drawTrees, gradeLight, type PaintTree } from "./paintTrees";
 import { drawBrushedSteps, type Wait } from "./brushCrown";
 import { LOOK_TINT, LOOK_VARIANTS, conifersWith, drawOf, lookFor, shapeWith, sharesOf, standShares, type TreeLookId } from "./treeMix";
@@ -751,6 +751,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // the ends of its limbs, the middle highest and gaps between them where the floor shows; a
   // pine is tiers of boughs, each a star a little smaller and higher than the one below it
   const look = lookParts(s), pl = paintLight(s);
+  // (Size, the one thing about the trees that's the map's: every tree in every look, the woods',
+  // the measured and the placed, as big as its look draws it times this; 1 until it's moved)
+  const treeScale = look.trees.size / (themeOf(s).parts.trees.size || 1);
   // (the newer looks: trees drawn as shapes after the ground, not stamped into the height field)
   const vector = look.trees.style !== "classic" && !opts.under;
   const vstyle = look.trees.style as Exclude<typeof look.trees.style, "classic">;
@@ -868,15 +871,15 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
           continue;
         }
         if (natural) {
-          const r = clear(realR(u) * grow);
-          if (rnd() < pineShare) tufted(x, y, r * 0.8, Math.max(realTop(r) * 1.15, ftTop), t);
-          else leafy(x, y, r, Math.max(realTop(r), ftTop), t);
+          const r = clear(realR(u) * grow * treeScale);
+          if (rnd() < pineShare) tufted(x, y, r * 0.8, Math.max(realTop(r) * 1.15, ftTop * treeScale), t);
+          else leafy(x, y, r, Math.max(realTop(r), ftTop * treeScale), t);
           continue;
         }
-        const r = clear(crownR * (0.45 + u * u * 1.35) * grow);
-        if (rnd() < pineShare) tufted(x, y, r * 0.95, Math.max(r * (2.2 + rnd() * 0.9), ftTop), t);
-        else if (cover < 0.75 && rnd() < (0.75 - cover) * 0.8) clumpTree(x, y, r * 1.5, t, Math.max(r * 1.95, ftTop));
-        else stamp(x, y, r, Math.max(r * (1.9 + rnd() * 0.9), ftTop), t);
+        const r = clear(crownR * (0.45 + u * u * 1.35) * grow * treeScale);
+        if (rnd() < pineShare) tufted(x, y, r * 0.95, Math.max(r * (2.2 + rnd() * 0.9), ftTop * treeScale), t);
+        else if (cover < 0.75 && rnd() < (0.75 - cover) * 0.8) clumpTree(x, y, r * 1.5, t, Math.max(r * 1.95, ftTop * treeScale));
+        else stamp(x, y, r, Math.max(r * (1.9 + rnd() * 0.9), ftTop * treeScale), t);
       }
     }
   }
@@ -884,9 +887,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // own kind, as a tree placed by hand is (crowns that touch are the woods' canopy)
   if (measured && !opts.under) measured.trees.forEach(([x0, y0, h0, radius, conifer], idx) => {
     const sp = toScreen({ x: x0, y: y0 });
-    const r = Math.max(2.2 * pt, radius * k);
+    const r = Math.max(2.2 * pt, radius * k * treeScale);
     if (sp.x < -r || sp.y < -r || sp.x > W + r || sp.y > H + r) return;
-    const top = Math.max(r * 1.2, h0 * k);
+    const top = Math.max(r * 1.2, h0 * k * treeScale);
     const tone = 1 + (idx % 6);
     // (its kind by its index, as the 3D view picks it, lib/treeMix; a needle tree leafy where no needle kind is allowed)
     if (vector) { const tr = seeded(idx * 7919 + 13), shape = shapeWith(shares, conifer ? "conifer" : "broadleaf"), kind = lookFor(shape, drawOf(idx, 7), shares); vtrees.push({ x: sp.x, y: sp.y, r, h: top, pine: shape === "conifer", col: asKind(treeColor(tr()), kind), seed: tr(), look: kind }); return; }
@@ -899,9 +902,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   // height and of its own kind, wherever it is (on a fairway too), apart from the woods
   for (const t of opts.under ? [] : (doc.items.filter(i => i.type === "tree") as TreeItem[])) {
     const sp = toScreen(t);
-    const r = Math.max(2.2 * pt, t.radius * (t.width ?? 1) * k);
+    const r = Math.max(2.2 * pt, t.radius * (t.width ?? 1) * k * treeScale);
     if (sp.x < -r || sp.y < -r || sp.x > W + r || sp.y > H + r) continue;
-    const top = Math.max(r * 1.2, (t.height ?? t.radius * 2.6) * k);
+    const top = Math.max(r * 1.2, (t.height ?? t.radius * 2.6) * k * treeScale);
     const tone = 1 + (idSeed(t.id) % 6);
     if (vector) {
       const tr = seeded(idSeed(t.id));
@@ -1260,8 +1263,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         const mott = at(mottle, x, y);
         const grain = GRAIN[tr | (x & 511)];
         if (look.grass.style === "painted") {
-          // (brighter than the tones go: the whole lawn lighter)
-          tone(lawn, (0.5 + mott * 0.5 + grain * 0.18) * Math.min(1, look.grass.bright) * lit);
+          // (brighter than the tones go: the whole lawn lighter; Texture, its mottle stronger or
+          // calmer about the same middle, as every grass look has it)
+          tone(lawn, (0.84 + (mott * 0.5 + grain * 0.18 - 0.34) * look.grass.texture) * Math.min(1, look.grass.bright) * lit);
           const lift = Math.max(1, look.grass.bright);
           cr = tr0 * lift; cg = tg0 * lift; cb = tb0 * lift;
         }

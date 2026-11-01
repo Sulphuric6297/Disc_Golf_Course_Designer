@@ -165,7 +165,6 @@ export function MapLookPanel() {
   // (the style card says Changed when any part shows its dot; Reset all takes every dot away)
   const mixed = PARTS.some(changed);
   const base = import.meta.env.BASE_URL;
-  const painted = parts.trees.style !== "classic";
   const row = useContext(InToolSheet);
 
   return (
@@ -228,18 +227,14 @@ export function MapLookPanel() {
                         {/* (autumn's colours: how vivid, only while the leaves are autumn's) */}
                         {treeMixOf(s).length > 0 && <LookSlider value={s.autumnVivid ?? 1} label="Autumn colors" min={0.4} max={1.6} step={0.05} format={x => (x < 0.95 ? "Softer" : x > 1.05 ? "More vivid" : "As they are")} onDone={v => setStyle({ autumnVivid: Math.abs(v - 1) < 0.01 ? undefined : v })} />}
                         {/* (the trees themselves, their kinds, where they stand and how close, are the 3D
-                        map's: Site, Trees. Here only how big the map draws them) */}
-                        {painted && (
-                          <>
-                            <LookSlider value={parts.trees.size} label="Size" min={0.6} max={1.5} step={0.05} format={pct} onDone={v => setPart("trees", { size: v })} />
-                          </>
-                        )}
+                        map's: Site, Trees. Here only how big the map draws them, in every look) */}
+                        <LookSlider value={parts.trees.size} label="Size" min={0.6} max={1.5} step={0.05} format={pct} onDone={v => setPart("trees", { size: v })} />
                       </>
                     )}
                     {p === "grass" && (
                       <>
                         <LookSlider value={parts.grass.bright} label="Brightness" min={0.7} max={1.5} step={0.02} format={pct} onDone={v => setPart("grass", { bright: v })} />
-                        {parts.grass.style !== "painted" && <LookSlider value={parts.grass.texture} label="Texture" min={0} max={2} step={0.05} format={pct} onDone={v => setPart("grass", { texture: v })} />}
+                        <LookSlider value={parts.grass.texture} label="Texture" min={0} max={2} step={0.05} format={pct} onDone={v => setPart("grass", { texture: v })} />
                       </>
                     )}
                     {p === "fairway" && <LookSlider value={parts.fairway.bright} label="Brightness" min={0.8} max={1.3} step={0.02} format={pct} onDone={v => setPart("fairway", { bright: v })} />}

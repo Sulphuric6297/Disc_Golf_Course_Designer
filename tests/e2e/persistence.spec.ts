@@ -32,6 +32,29 @@ test("New keeps the old course under Recent courses, with Undo; it can be reopen
   expect((await course(page)).holes).toHaveLength(1);
 });
 
+test("each course keeps its own view (photo, lines, shading, grass): another course isn't changed by it", async ({ page }) => {
+  const view = () => page.evaluate(() => { const e = (window as any).__dgEditor(); return { photo: e.photo, contours: e.contours, grass: e.grass }; });
+  await blankCourse(page);
+  await addHole(page, { x: 300, y: 600 }, { x: 600, y: 600 });
+  await page.keyboard.press("Escape");
+  await page.getByRole("textbox", { name: "Course name" }).fill("Plain Course");
+  await page.getByRole("textbox", { name: "Course name" }).blur();
+  await page.evaluate(() => (window as any).__dgEditor().set({ photo: false, contours: false, grass: 0 }));
+  // A new course: as every course starts
+  await page.getByTestId("file-menu").click();
+  await page.getByRole("menuitem", { name: "New course" }).click();
+  await expect.poll(async () => (await course(page)).holes.length).toBe(0);
+  expect(await view()).toEqual({ photo: true, contours: true, grass: "auto" });
+  // Back to the first: as it was left, kept over a reload too
+  await page.getByTestId("file-menu").click();
+  await page.getByTestId("recent-course").getByRole("button", { name: /^Plain Course/ }).click();
+  await expect.poll(async () => (await course(page)).name).toBe("Plain Course");
+  expect(await view()).toEqual({ photo: false, contours: false, grass: 0 });
+  await page.reload();
+  await expect.poll(async () => (await course(page)).name).toBe("Plain Course");
+  expect(await view()).toEqual({ photo: false, contours: false, grass: 0 });
+});
+
 test("save as a file, then open it again (painted the same: its seed kept under the new id)", async ({ page }) => {
   await blankCourse(page);
   await addHole(page, { x: 300, y: 600 }, { x: 650, y: 600 });
