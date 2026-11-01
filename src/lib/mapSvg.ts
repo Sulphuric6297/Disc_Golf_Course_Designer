@@ -1076,6 +1076,55 @@ export const courseBounds = (doc: CourseDoc, stats: HoleStats[]) => {
   };
 };
 
+/** How much of a rectangle (in the turned frame) a convex outline covers: the outline clipped to it. */
+const coveredBy = (outline: P[], x0: number, y0: number, x1: number, y1: number) => {
+  let poly = outline;
+  const clip = (inside: (p: P) => boolean, cut: (a: P, b: P) => P) => {
+    const out: P[] = [];
+    poly.forEach((b, i) => {
+      const a = poly[(i + poly.length - 1) % poly.length];
+      if (inside(b)) { if (!inside(a)) out.push(cut(a, b)); out.push(b); }
+      else if (inside(a)) out.push(cut(a, b));
+    });
+    poly = out;
+  };
+  const atX = (x: number) => (a: P, b: P) => ({ x, y: a.y + ((b.y - a.y) * (x - a.x)) / (b.x - a.x) });
+  const atY = (y: number) => (a: P, b: P) => ({ x: a.x + ((b.x - a.x) * (y - a.y)) / (b.y - a.y), y });
+  clip(p => p.x >= x0, atX(x0)); clip(p => p.x <= x1, atX(x1));
+  clip(p => p.y >= y0, atY(y0)); clip(p => p.y <= y1, atY(y1));
+  return poly.length > 2 ? Math.abs(polygonArea(poly)) : 0;
+};
+
+/**
+ * Where the map's middle goes (plan feet): the course's middle, slid as far as the course still
+ * fits (inside `margin`, page points) to show as little as can be of the land past the site's
+ * measured ground, which has no heights, measured trees or photo. `box` is the course with its
+ * room round it, in the frame turned by `rotation`; the map is `w` by `h` points at `scale`.
+ */
+const leastOffSite = (doc: CourseDoc, box: { minX: number; minY: number; maxX: number; maxY: number }, rotation: number, scale: number, w: number, h: number, margin: number) => {
+  const mid = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
+  const hw = w / 2 / scale, hh = h / 2 / scale, mm = margin / scale;
+  // (how far it can go each way)
+  const sx = Math.max(0, hw - mm - (box.maxX - box.minX) / 2), sy = Math.max(0, hh - mm - (box.maxY - box.minY) / 2);
+  const measured = !!doc.background || Object.keys(doc.terrainHeights).length > 3;
+  if (!measured || (sx < 1 && sy < 1)) return rotatePoint(mid, rotation);
+  const site = [{ x: 0, y: 0 }, { x: doc.canvas.width, y: 0 }, { x: doc.canvas.width, y: doc.canvas.height }, { x: 0, y: doc.canvas.height }].map(q => rotatePoint(q, -rotation));
+  // (past the ground, in square feet; among places as good, the one nearest the middle)
+  const off = (c: P) => 4 * hw * hh - coveredBy(site, c.x - hw, c.y - hh, c.x + hw, c.y + hh) + ((c.x - mid.x) ** 2 + (c.y - mid.y) ** 2) * 1e-3;
+  let best = mid, bestOff = off(mid), rx = sx, ry = sy;
+  // (a grid over where it can go, then finer round the best)
+  for (let round = 0; round < 5; round++) {
+    const from = best;
+    for (let i = -6; i <= 6; i++) for (let j = -6; j <= 6; j++) {
+      const c = { x: Math.max(mid.x - sx, Math.min(mid.x + sx, from.x + (i / 6) * rx)), y: Math.max(mid.y - sy, Math.min(mid.y + sy, from.y + (j / 6) * ry)) };
+      const v = off(c);
+      if (v < bestOff) { best = c; bestOff = v; }
+    }
+    rx /= 4; ry /= 4;
+  }
+  return rotatePoint(best, rotation);
+};
+
 /**
  * The whole course map page as an SVG document, sized in points (1/72 in): the map with the
  * title on top, the legend and the hole table at the side (or below, on a tall page).
@@ -1157,18 +1206,20 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
   const stats = doc.holes.map(h => holeStats(doc, h, layout));
   const totals = courseTotals(doc, stats);
   const rotation = s.rotation || 0;
-  // The course's extent in the turned frame
-  const raw = courseBounds(doc, stats);
-  const corners = [{ x: raw.minX, y: raw.minY }, { x: raw.maxX, y: raw.minY }, { x: raw.maxX, y: raw.maxY }, { x: raw.minX, y: raw.maxY }];
+  // The course's extent in the turned frame: its tees, baskets, throws and amenities, nothing more
+  // (the room their numbers and labels need is kept on the page, so the map comes in as close as
+  // they allow and shows as little as it can past them; a course with no holes yet: the site)
   const pts = coursePoints(doc, stats);
-  const rb = boundsOf((pts.length >= 2 && rotation ? pts : corners).map(q => rotatePoint(q, -rotation)));
-  const pad = rotation && pts.length >= 2 ? Math.max(80, Math.max(rb.maxX - rb.minX, rb.maxY - rb.minY) * 0.08) : 0;
-  const bw = Math.max(50, rb.maxX - rb.minX + pad * 2), bh = Math.max(50, rb.maxY - rb.minY + pad * 2);
-  const center = rotatePoint({ x: (rb.minX + rb.maxX) / 2, y: (rb.minY + rb.maxY) / 2 }, rotation);
+  const raw = courseBounds(doc, stats);
+  const few = pts.length < 2;
+  const box = boundsOf((few ? [{ x: raw.minX, y: raw.minY }, { x: raw.maxX, y: raw.minY }, { x: raw.maxX, y: raw.maxY }, { x: raw.minX, y: raw.maxY }] : pts).map(q => rotatePoint(q, -rotation)));
+  const bw = Math.max(50, box.maxX - box.minX), bh = Math.max(50, box.maxY - box.minY);
   const page = pageSize(doc, bw / bh);
   const W = page.w * 72, H = page.h * 72;
   const ts = (Math.min(W, H) / (8.5 * 72)) * s.labelScale;
   const m = 0.35 * 72 * Math.max(1, ts * 0.8);
+  // (round the outermost tee, basket or amenity: its hole number, its label)
+  const room = few ? 0 : 26 * ts;
   const font = fontStack(s.font, !!s.titleFont);
   const landscape = W > H;
   const full = s.theme === "forest";
@@ -1198,7 +1249,8 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
     };
     // The map fills the page; the course fits inside a margin. Its labels can be dragged on the
     // Design page (the map's scale and turn say how far that is on the ground)
-    const scale = Math.min((W - 2 * m) / bw, (H - 2 * m) / bh);
+    const scale = Math.min((W - 2 * (m + room)) / bw, (H - 2 * (m + room)) / bh);
+    const center = leastOffSite(doc, box, rotation, scale, W, H, m + room);
     const view: MapView = { cx: center.x, cy: center.y, rotation, scale, width: W, height: H };
     const map = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy, labelAt: s.labelAt ?? {} }, "pm");
     parts.push(`<g data-el="map" data-box="0 0 ${n(W)} ${n(H)}" data-k="${scale}" data-rot="${rotation}">${map.svg}</g>`);
@@ -1347,7 +1399,8 @@ const posterPage = (doc: CourseDoc, opts: PosterOptions) => {
   const sideW = showSide && landscape ? Math.min(W * 0.26, 210 * ts) : 0;
   const bottomH = showSide && !landscape ? Math.min(H * 0.3, 150 * ts) : 0;
   const map = { x: m, y: m + titleH, w: W - 2 * m - (sideW ? sideW + m * 0.6 : 0), h: H - 2 * m - titleH - (bottomH ? bottomH + m * 0.5 : 0) - 14 * ts };
-  const scale = Math.min(map.w / bw, map.h / bh);
+  const scale = Math.min((map.w - 2 * room) / bw, (map.h - 2 * room) / bh);
+  const center = leastOffSite(doc, box, rotation, scale, map.w, map.h, room);
   const view: MapView = { cx: center.x, cy: center.y, rotation, scale, width: map.w, height: map.h };
   const { svg, toScreen } = renderMapLayers(doc, view, { stats, contours: opts.contours, hillshade: opts.hillshade, textScale: ts * 0.9, fontFamily: s.font, canopy: opts.canopy }, "pm");
   if (title) parts.push(`<text x="${n(m)}" y="${n(m + 30 * ts)}" font-family="${titleStack((s.page?.title?.font || titleFontOf(s)))}" font-weight="700" font-size="${n(30 * ts)}" fill="${pal.ink}" letter-spacing="${n(keepsCase((s.page?.title?.font || titleFontOf(s))) ? 0 : 0.5 * ts)}">${esc(keepsCase((s.page?.title?.font || titleFontOf(s))) ? title : title.toUpperCase())}</text>`);

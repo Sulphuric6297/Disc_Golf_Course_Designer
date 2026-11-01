@@ -292,10 +292,12 @@ test("on a phone, the Trees tool has the same kinds, woods included, and the way
 });
 
 test("the painted map: Where to paint the woods is there with measured trees, and the map paints in time", async () => {
-  await page.evaluate(() => (window as any).__dgEditor().set({ step: "map", tool: "select" }));
-  const trees = page.getByTestId("part-trees");
-  if ((await trees.getAttribute("aria-expanded")) !== "true") await trees.click();
+  // (where the woods grow is the place's: the Site step's Trees, which the map draws the same)
+  await page.evaluate(() => (window as any).__dgEditor().set({ step: "site", tool: "select" }));
+  const trees = page.getByTestId("site-trees").locator("summary");
+  if (!(await page.getByTestId("forest-options").isVisible())) await trees.click();
   await expect(page.getByTestId("forest-options")).toBeVisible();
+  await page.evaluate(() => (window as any).__dgEditor().set({ step: "map", tool: "select" }));
   const s = Date.now();
   await page.waitForFunction(() => !(window as any).__dgPainting(), null, { timeout: 150_000 });
   console.log("map painted in", Math.round((Date.now() - s) / 1000), "s");
@@ -313,6 +315,21 @@ test("the painted map past the measured ground: level, never the edge's hills dr
     return out;
   });
   expect(Math.max(...d)).toBeLessThan(0.2);
+});
+
+test("the course map comes in close: every tee, basket and amenity on the page and clear of its pieces, little of it past the site", async () => {
+  await page.waitForFunction(() => typeof (window as any).__dgPosterFit === "function", null, { timeout: 60_000 });
+  const fits = await page.evaluate(() => {
+    const w = window as any, doc = w.__dgCourse();
+    // (turned every which way, on a poster and on letter paper)
+    return [0, 45, 90, 135, 180, 225, 270, 315].flatMap(rotation => ["36x48", "letter"].map(paper => ({ rotation, paper, ...w.__dgPosterFit({ ...doc, style: { ...doc.style, rotation, paper } }) })));
+  });
+  for (const f of fits) {
+    expect(f.under, `${f.rotation}° on ${f.paper}: under ${f.under.join(", ")}`).toEqual([]);
+    expect(f.nearest, `${f.rotation}° on ${f.paper}`).toBeGreaterThan(0);
+  }
+  // (north up, the demo's site holds the whole poster)
+  expect(fits.find(f => f.rotation === 0 && f.paper === "36x48")!.offSite).toBeLessThan(0.02);
 });
 
 test("Hand painted: the demo (made before) stays Classic, a new course starts in Hand painted, and its map paints in time", async () => {
