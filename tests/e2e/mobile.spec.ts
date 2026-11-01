@@ -760,6 +760,47 @@ test.describe("phone", () => {
     await expect.poll(zoom).toBeGreaterThan(fit);
   });
 
+  test("the Map step is the page's: its printouts are chips on the top bar, a tool opens a low sheet in the tools' place, and a picked piece has its own bar", async ({ page }) => {
+    await oneHole(page);
+    await nav(page).getByRole("button", { name: /Map/ }).tap();
+    await expect(page.getByTestId("design-page")).toBeVisible();
+    // (the chips where the course's name was, the page under them as big as it goes)
+    const chips = page.getByTestId("top-bar").getByRole("tab");
+    await expect(chips).toHaveCount(5);
+    await expect(page.getByTestId("course-name")).toHaveCount(0);
+    await chips.filter({ hasText: "Sign" }).tap();
+    await expect.poll(() => page.evaluate(() => (window as any).__dgEditor().designTab)).toBe("sign");
+    await expect(page.getByTestId("hole-step")).toBeVisible();
+    await chips.filter({ hasText: "Map" }).tap();
+    // (the paper's name at the page's foot opens the Paper tool, its size first)
+    await page.getByTestId("paper-chip").tap();
+    const sheet = page.getByTestId("page-tool-panel");
+    await expect(sheet).toBeVisible();
+    await sheet.getByLabel("Paper size").selectOption("letter");
+    await expect.poll(async () => (await page.evaluate(() => (window as any).__dgCourse().style.paper))).toBe("letter");
+    await expect(page.getByRole("toolbar", { name: "Page settings" })).toHaveCount(0);
+    // (the page whole above the sheet)
+    const pg = (await page.getByTestId("design-page").boundingBox())!, sb = (await sheet.boundingBox())!;
+    expect(pg.y + pg.height).toBeLessThanOrEqual(sb.y + 1);
+    await page.getByTestId("page-tool-done").tap();
+    await expect(page.getByRole("toolbar", { name: "Page settings" })).toBeVisible();
+    // A piece picked: Done first, then its tools, each opening the low sheet over the bar
+    await page.evaluate(() => (window as any).__dgEditor().set({ designSel: "title" }));
+    const bar = page.getByTestId("piece-toolbar");
+    await expect(bar).toBeVisible();
+    await expect(bar.getByRole("button").first()).toHaveAccessibleName("Done");
+    await bar.getByTestId("piece-tool-font").tap();
+    await expect(page.getByTestId("piece-panel")).toBeVisible();
+    await expect(page.getByTestId("piece-panel").getByTestId("piece-size")).toBeVisible();
+    const sel = (await page.getByTestId("page-selection").boundingBox())!, panel = (await page.getByTestId("piece-panel").boundingBox())!;
+    expect(sel.y + sel.height).toBeLessThanOrEqual(panel.y);
+    await page.getByTestId("piece-panel").getByRole("button", { name: "Bigger" }).tap();
+    await page.getByTestId("piece-panel-done").tap();
+    await expect(page.getByTestId("piece-panel")).toHaveCount(0);
+    await bar.getByTestId("piece-done").tap();
+    await expect.poll(async () => (await editorState(page)).designSel).toBe(null);
+  });
+
   test("a tee sign's pieces follow a slow finger (snapping doesn't hold them back), and a tap off the picked one lets go", async ({ page }) => {
     await oneHole(page);
     await nav(page).getByRole("button", { name: /Map/ }).tap();

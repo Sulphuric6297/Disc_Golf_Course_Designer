@@ -8,7 +8,7 @@ import type { TreeStyle, paintLight } from "./mapLook";
 
 type RGB = [number, number, number];
 /** A treetop to paint; `look`, the kind it is where the county's trees are known (lib/treeMix). */
-export type PaintTree = { x: number; y: number; r: number; h: number; pine: boolean; col: RGB; seed: number; look?: TreeLookId | null };
+export type PaintTree = { x: number; y: number; r: number; h: number; pine: boolean; col: RGB; seed: number; look?: TreeLookId | null; /** one of the woods' own (not placed or measured) */ fill?: boolean };
 
 const clamp = (v: number, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const mix = (a: RGB, b: number[], t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];

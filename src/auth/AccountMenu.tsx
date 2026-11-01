@@ -49,6 +49,12 @@ export function CourseChip() {
   );
 }
 
+/** Where the course chip has no room (a phone's Map step): the save chip, only when it isn't saved. */
+export function SaveAlert() {
+  const { status } = useServerCourse();
+  return status === "conflict" || status === "error" ? <SaveChip /> : null;
+}
+
 function SaveChip() {
   const { status, role, conflict, preview, id } = useServerCourse();
   const open = useAuth(s => s.open);

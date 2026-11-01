@@ -9,6 +9,20 @@ import { renderScorecard, renderTeeSign } from "../../src/lib/teeSign";
 import { renderHolePage } from "../../src/lib/holePage";
 import { tallGrassOf } from "../../src/lib/landscapes";
 
+/** Where the woods are painted, in Site, Trees (the 3D map's, the illustrated map drawing the same), and back to the Map step. */
+/** Site, its Trees open: where the woods and their cover are set, for the 3D map and the illustrated one. */
+const siteTrees = async (page: import("@playwright/test").Page) => {
+  await page.getByRole("button", { name: /^1\s*Site$/ }).click();
+  const fold = page.getByTestId("site-trees");
+  if (!(await fold.evaluate(d => (d as HTMLDetailsElement).open))) await fold.locator("summary").click();
+};
+const woodsAt = async (page: import("@playwright/test").Page, where: "From the photo" | "Everywhere" | "Drawn only") => {
+  await siteTrees(page);
+  await page.getByTestId("forest-options").getByRole("radio", { name: where }).click();
+  await page.getByRole("button", { name: /^3\s*Map$/ }).click();
+};
+
+
 /** The map's painting finished (a quick draft shows first, then the sharp picture). */
 const painted = (page: import("@playwright/test").Page) => expect.poll(() => page.evaluate(() => !(window as any).__dgPainting()), { timeout: 180_000 }).toBe(true);
 
@@ -82,7 +96,7 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "3 Map" }).click();
-  await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
+  await woodsAt(page, "Everywhere");
   const painting = page.getByTestId("design-page").locator("image").first();
   // How light the painted land is (dark canopy against lighter grass)
   const lightness = async () => {
@@ -110,12 +124,15 @@ test("tree cover: sparse woods leave grass between the trees", async ({ page }) 
   const light = dense[Math.floor(dense.length * 0.75)];
   const share = (l: number[]) => l.filter(v => v > light).length / l.length;
   const before = await painting.getAttribute("href");
+  // (Tree cover is the 3D map's, in Site, Trees: the illustrated map draws the same)
+  await siteTrees(page);
   const slider = page.getByLabel("Tree cover");
   await expect(page.getByTestId("forest-options")).toContainText("Dense");
   await slider.fill("0.2");
   await slider.dispatchEvent("pointerup");
   await expect.poll(async () => (await course(page)).style.treeCover).toBe(0.2);
   await expect(page.getByTestId("forest-options")).toContainText("Sparse");
+  await page.getByRole("button", { name: /^3\s*Map$/ }).click();
   await expect.poll(async () => painting.getAttribute("href")).not.toBe(before);
   await painted(page);
   // Grass between the trees: far more of the land is lighter
@@ -143,7 +160,7 @@ test("light and shadow: the sun, shadows and brightness repaint the Forest map, 
   await addHole(page, { x: 300, y: 700 }, { x: 650, y: 700 });
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "3 Map" }).click();
-  await page.getByTestId("forest-options").getByRole("radio", { name: "Everywhere" }).click();
+  await woodsAt(page, "Everywhere");
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
   await painted(page);
@@ -674,7 +691,7 @@ test("painted water: a pond is lighter at its rim and in the shallows, deep and 
     (window as any).__dgActions.addDrawn("area", pts);
   });
   await page.getByRole("button", { name: "3 Map" }).click();
-  await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
+  await woodsAt(page, "Drawn only");
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
   await painted(page);
@@ -718,7 +735,7 @@ test("tall grass is painted its own way: lighter, straw-colored tufts, not the g
     (window as any).__dgActions.addDrawn("area", [{ x: 150, y: 700 }, { x: 500, y: 700 }, { x: 500, y: 860 }, { x: 150, y: 860 }]);
   });
   await page.getByRole("button", { name: "3 Map" }).click();
-  await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
+  await woodsAt(page, "Drawn only");
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
   await painted(page);
@@ -801,9 +818,8 @@ test("the page never freezes while the map paints: it paints between frames, the
     };
     requestAnimationFrame(tick);
   });
-  const slider = page.getByLabel("Tree cover");
-  await slider.fill("0.55");
-  await slider.dispatchEvent("pointerup");
+  // (a change that paints the map again: Tree cover, set in Site's Trees)
+  await page.evaluate(() => (window as any).__dgActions.style({ treeCover: 0.55 }));
   // The old picture stays up while the new one paints
   await expect.poll(() => page.evaluate(() => (window as any).__dgPainting())).toBe(true);
   expect(await painting.getAttribute("href")).toBe(before);
@@ -857,7 +873,7 @@ test("trees placed on a fairway are painted where and as they were placed, and t
   await addHole(page, { x: 300, y: 500 }, { x: 700, y: 500 });
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "3 Map" }).click();
-  await page.getByTestId("forest-options").getByRole("radio", { name: "Drawn only" }).click();
+  await woodsAt(page, "Drawn only");
   const painting = page.getByTestId("design-page").locator("image").first();
   await expect(painting).toHaveAttribute("href", /^(data:image\/jpeg|blob:)/);
   await painted(page);

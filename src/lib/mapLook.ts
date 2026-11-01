@@ -77,7 +77,9 @@ export const themeOf = (s: Pick<MapStyle, "mapLook">): ThemeDef => LOOK_THEMES.f
 export const lookParts = (s: Pick<MapStyle, "mapLook" | "lookParts">): LookParts => {
   const base = themeOf(s).parts, own = s.lookParts ?? {};
   return {
-    trees: { ...base.trees, ...own.trees }, grass: { ...base.grass, ...own.grass }, fairway: { ...base.fairway, ...own.fairway },
+    // (the trees: their look and overall size are the map's to pick; their spacing, color variety and
+    // pines are the look's own, the kinds and where they stand the 3D map's: the same on every map)
+    trees: { ...base.trees, ...(own.trees?.style ? { style: own.trees.style } : {}), ...(own.trees?.size !== undefined ? { size: own.trees.size } : {}) }, grass: { ...base.grass, ...own.grass }, fairway: { ...base.fairway, ...own.fairway },
     paths: { ...base.paths, ...own.paths }, water: { ...base.water, ...own.water }
   };
 };

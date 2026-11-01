@@ -126,7 +126,7 @@ export const paintedGround = (course: CourseDoc, ahead = false): Promise<Painted
   const k = Math.min(4, MAX_PX / Math.max(width, height, 1));
   const view = { cx: width / 2, cy: height / 2, rotation: 0, scale: k, width: width * k, height: height * k };
   const work = (async () => {
-    const diskKey = `paint:map:2:${hashOf(key)}`;
+    const diskKey = `paint:map:3:${hashOf(key)}`;
     const saved = await savedPaint<{ blob: Blob; wooded: WoodedGrid | null }>(diskKey);
     let blob: Blob | null, wooded: WoodedGrid | null;
     if (saved) ({ blob, wooded } = saved);
@@ -190,7 +190,7 @@ export const paintedDetail = (course: CourseDoc, holeId: string, maxPx = 3072): 
   detailUnder = job;
   const view = { cx: rect.x + rect.width / 2, cy: rect.y + rect.height / 2, rotation: 0, scale: k, width: rect.width * k, height: rect.height * k };
   const work = (async () => {
-    const diskKey = `paint:detail:2:${hashOf(key)}`;
+    const diskKey = `paint:detail:3:${hashOf(key)}`;
     const saved = await savedPaint<{ blob: Blob }>(diskKey);
     if (saved) return { canvas: await canvasOf(saved.blob), rect };
     if (job.stop.signal.aborted) throw new Error("stopped");

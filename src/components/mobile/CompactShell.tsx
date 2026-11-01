@@ -23,7 +23,7 @@ import { HoleSteps } from "../HoleSteps";
 import { InspectorBody, groupSummary, itemTitle, useSelection } from "../Inspector";
 import { MapViewport } from "../MapViewport";
 import { getView } from "../../state/view";
-import { MapDesigner } from "../MapDesigner";
+import { MapDesigner, PageChips } from "../MapDesigner";
 import { ProblemsCount, ReviewStep, STEPS, STEP_ICONS, StepContent, touchWords } from "../SidePanel";
 import { SHOW_EVENT } from "../showSetting";
 import { TeeViewHud } from "../TeeViewHud";
@@ -37,7 +37,7 @@ import { BottomSheet, type Detent } from "./BottomSheet";
 import { PageTools } from "./PageTools";
 import { HoleStrip, ItemStrip } from "./HoleStrip";
 import { GettingStarted, openGettingStarted } from "../GettingStarted";
-import { accountActions, CourseChip } from "../../auth/AccountMenu";
+import { accountActions, CourseChip, SaveAlert } from "../../auth/AccountMenu";
 import { LOCKED, LockBadge, showLocked, type LockedId } from "../DemoNote";
 import { DrawBar, useDrawBarShown } from "../DrawBar";
 import { useExportJob } from "../../state/exportJob";
@@ -486,7 +486,7 @@ function AppMenu({ onClose, onHelp, onGoTo, onOpenFile }: { onClose: () => void;
 
 /** Undo and Redo, always in reach: on the top bar of a phone and the rail of a tablet, whatever
  * step it's on and whatever is picked (none when the course is only for viewing). */
-function UndoRedo({ vertical = false }: { vertical?: boolean }) {
+function UndoRedo({ vertical = false, lean = false }: { vertical?: boolean; lean?: boolean }) {
   const readOnly = useCourse(s => s.readOnly);
   const canUndo = useCourse(s => s.past.length > 0);
   const canRedo = useCourse(s => s.future.length > 0);
@@ -497,12 +497,13 @@ function UndoRedo({ vertical = false }: { vertical?: boolean }) {
   return (
     <div className={`flex ${vertical ? "flex-col" : ""} shrink-0`} data-testid="undo-redo">
       <button className={btn} aria-label="Undo" disabled={!canUndo && !drawing} onClick={() => { if (!getView()?.undoPoint()) useCourse.getState().undo(); }} data-testid="undo"><Undo2 size={20} /></button>
-      <button className={btn} aria-label="Redo" disabled={!canRedo} onClick={() => useCourse.getState().redo()} data-testid="redo"><Redo2 size={20} /></button>
+      {/* (lean, beside the Map step's chips: Redo only once there's something to redo) */}
+      {(!lean || canRedo) && <button className={btn} aria-label="Redo" disabled={!canRedo} onClick={() => useCourse.getState().redo()} data-testid="redo"><Redo2 size={20} /></button>}
     </div>
   );
 }
 
-function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
+function PhoneTopBar({ onMenu, pages = false }: { onMenu: () => void; pages?: boolean }) {
   const name = useCourse(s => s.doc.name);
   // (the page covers the map on Map and Export: 2D and 3D would do nothing there)
   const onMap = useEditor(e => e.step === "design" || e.step === "site");
@@ -513,7 +514,8 @@ function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
       <div className="glass pointer-events-auto flex items-center gap-1 h-[56px] pl-1 pr-1 rounded-[22px]">
         {/* (the menu: a button that looks like one, and the course's name opens it too) */}
         {SITE_TOKEN ? <CoursePageButton /> : <button className="w-11 h-11 shrink-0 flex items-center justify-center rounded-[14px] bg-white/[0.1] active:bg-white/[0.18] text-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400" aria-label="Menu: files, help" onClick={onMenu} data-testid="app-menu-button"><Menu size={22} /></button>}
-        {SITE_TOKEN ? (
+        {/* (the Map step: its printouts in the name's place, the page under them as big as it goes) */}
+        {pages ? <PageChips /> : SITE_TOKEN ? (
           <div className="flex-1 min-w-0 pl-0.5">
             <div className="text-[15px] font-bold text-zinc-50 truncate leading-tight" data-testid="course-name">{name}</div>
             <div className="text-[12px] text-zinc-400 truncate tabular-nums">{sub}</div>
@@ -524,8 +526,8 @@ function PhoneTopBar({ onMenu }: { onMenu: () => void }) {
             <div className="text-[12px] text-zinc-400 truncate tabular-nums">{sub}</div>
           </button>
         )}
-        {SERVER && <CourseChip />}
-        <UndoRedo />
+        {SERVER && (pages ? <SaveAlert /> : <CourseChip />)}
+        <UndoRedo lean={pages} />
         {onMap && <ViewToggle look="bar" />}
       </div>
     </div>
@@ -758,7 +760,7 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
             </div>
           </div>
         )}
-        {!immersive && <PhoneTopBar onMenu={openApp} />}
+        {!immersive && <PhoneTopBar onMenu={openApp} pages={design && pageTools} />}
         {!immersive && <GettingStarted phone />}
         {!immersive && <DrawBar bottom={sheetH + 12} />}
         {onSite ? <OnSite /> : ed.teeView && (ed.flyCam && !useCourse.getState().readOnly ? <CameraHud compact /> : <TeeViewHud compact />)}

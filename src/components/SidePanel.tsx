@@ -19,7 +19,7 @@ import { newCourse } from "../state/files";
 import { saplings, yearsSince } from "../lib/lidar";
 import { getView } from "../state/view";
 import { Button, FOCUS, Facts, Field, Fold, HelpLink, Section, Segmented, Slider, TextInput, Toggle } from "./ui";
-import { DesignPanel, TreeKinds } from "./DesignPanel";
+import { DesignPanel, TreeKinds, WoodsOptions } from "./DesignPanel";
 import { CourseFileButton } from "./CourseFileDialog";
 import { OnSiteButton } from "./OnSite";
 import { useToolbarRoom } from "./Toolbar";
@@ -168,10 +168,12 @@ function CameIn() {
 function SiteTrees() {
   const doc = useCourse(s => s.doc);
   const any = !!doc.lidar?.trees.length || !!doc.site.bounds || doc.items.some(i => i.type === "tree" || (i.type === "area" && i.kind === "woods"));
-  if (!any) return null;
+  // (always here: where the woods grow is set here even before there are any)
   return (
     <Fold testid="site-trees" title={<span className="inline-flex items-center gap-1.5">Trees <HelpLink topic="site-trees" label="Trees" /></span>}>
-      <div className="-mt-3"><TreeKinds s={doc.style} /></div>
+      {any && <div className="-mt-3"><TreeKinds s={doc.style} /></div>}
+      {/* (where the woods grow and how thick: the 3D map's, and the illustrated map draws the same) */}
+      <WoodsOptions s={doc.style} measured={!!doc.lidar?.trees.length} />
       <MeasuredSettings />
     </Fold>
   );
