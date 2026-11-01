@@ -305,7 +305,7 @@ function Tools() {
 
 /** A row of chips that scrolls sideways (a phone has no room to wrap them). */
 const ChipRow = ({ children, testid }: { children: ReactNode; testid?: string }) => (
-  <div className="mt-2 px-4 flex gap-1.5 overflow-x-auto dg-noscrollbar dg-fade-r touch-pan-x" data-testid={testid}>{children}<span className="shrink-0 w-4" aria-hidden /></div>
+  <div className="mt-2 px-4 flex gap-1.5 overflow-x-auto dg-noscrollbar dg-fade-r touch-pan-x touch-pan-y" data-testid={testid}>{children}<span className="shrink-0 w-4" aria-hidden /></div>
 );
 
 function ToolHeader() {
@@ -465,7 +465,7 @@ function AppMenu({ onClose, onHelp, onGoTo, onOpenFile }: { onClose: () => void;
         {recent.length > 0 && (
           <div className="border-b border-white/5">
             <div className="px-4 pt-2.5 pb-1 text-[12px] uppercase tracking-wider font-bold text-zinc-500">{SERVER ? "Courses" : "Recent courses"}</div>
-            <div className="flex gap-2 overflow-x-auto dg-noscrollbar px-4 pb-3 touch-pan-x">
+            <div className="flex gap-2 overflow-x-auto dg-noscrollbar px-4 pb-3 touch-pan-x touch-pan-y">
               {recent.map(r => (
                 <div key={r.id} className="shrink-0 flex items-center bg-white/[0.07] rounded-xl" data-testid="recent-course">
                   <button className="text-left pl-3 pr-1 py-2 min-h-[48px]" onClick={() => { onClose(); void openRecent(r.id); }}>

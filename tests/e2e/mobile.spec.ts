@@ -812,6 +812,24 @@ test.describe("phone", () => {
     await expect.poll(async () => (await editorState(page)).designSel).toBe(null);
   });
 
+  test("a finger on the map style pictures scrolls the tool's settings up and down, as well as the pictures sideways", async ({ page }) => {
+    await oneHole(page);
+    await nav(page).getByRole("button", { name: /Map/ }).tap();
+    await page.getByTestId("page-tool-map-style").tap();
+    const pic = page.getByTestId("map-styles").locator("button").first();
+    await expect(pic).toBeVisible();
+    await page.waitForTimeout(400);
+    const scroller = page.getByTestId("page-tool-panel").locator(".overflow-y-auto").first();
+    const b = (await pic.boundingBox())!;
+    const at = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [at] });
+    for (let i = 1; i <= 14; i++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: at.x, y: at.y - i * 10 }] });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect.poll(() => scroller.evaluate(el => el.scrollTop)).toBeGreaterThan(20);
+    await cdp.detach();
+  });
+
   test("a tee sign's pieces follow a slow finger (snapping doesn't hold them back), and a tap off the picked one lets go", async ({ page }) => {
     await oneHole(page);
     await nav(page).getByRole("button", { name: /Map/ }).tap();
