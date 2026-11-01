@@ -118,7 +118,7 @@ export function HoleStrip({ hole }: { hole: Hole }) {
       ? tees.map(t => ({ id: t.id, label: `${TEE_LEVELS[t.level].label}${len(t, pin)}${t.id === s.teeId ? " · played" : ""}`, dot: TEE_LEVELS[t.level].color }))
       : pins.map(b => ({ id: b.id, label: `Pin ${b.position}${len(tee, b)}${b.id === s.basketId ? " · played" : ""}`, dot: doc.style.basket }));
     control = (
-      <div className="flex gap-1.5 overflow-x-auto touch-pan-x dg-scroll -mx-1 px-1">
+      <div className="flex gap-1.5 overflow-x-auto touch-pan-x touch-pan-y dg-scroll -mx-1 px-1">
         {items.map(i => <button key={i.id} className={small} onClick={() => select(i.id)}><span className="w-2.5 h-2.5 rounded-full ring-1 ring-black/40" style={{ background: i.dot }} />{i.label}</button>)}
         {chip === "tees" ? (
           <>
@@ -147,7 +147,7 @@ export function HoleStrip({ hole }: { hole: Hole }) {
   else if (chip === "foliage") control = <Segmented label="Foliage" value={hole.foliage ?? "auto"} onChange={v => set({ foliage: v === "auto" ? undefined : (v as "light" | "heavy") })} options={[{ value: "auto", label: <span className="whitespace-nowrap">Auto · {s.foliage}</span> }, { value: "light", label: "Light" }, { value: "heavy", label: "Heavy" }]} />;
   return (
     <div className="px-3 pb-3" data-testid="hole-strip">
-      <div className="flex gap-1.5 overflow-x-auto touch-pan-x dg-scroll -mx-3 px-3 pb-2" role="tablist" aria-label="Hole settings">
+      <div className="flex gap-1.5 overflow-x-auto touch-pan-x touch-pan-y dg-scroll -mx-3 px-3 pb-2" role="tablist" aria-label="Hole settings">
         {/* (first: the hole as a player sees it, from its tee or flown over, as a computer's panel has them) */}
         {s.complete && <>
           <button className={`${chipCls(false)} !bg-sky-500/90 !text-white active:!bg-sky-600 flex items-center gap-1.5`} onClick={() => useEditor.getState().set({ teeView: hole.id, teeViewTee: null, flyover: false })} data-testid="strip-teeview"><Eye size={15} /> Tee view</button>
@@ -374,7 +374,7 @@ export function ItemStrip({ item }: { item: CourseItem }) {
   if (!chips.length && !placeable) return null;
   return (
     <div className="px-3 pb-3" data-testid="item-strip">
-      <div className="flex gap-1.5 overflow-x-auto touch-pan-x dg-scroll -mx-3 px-3 pb-2" role="tablist" aria-label="Settings">
+      <div className="flex gap-1.5 overflow-x-auto touch-pan-x touch-pan-y dg-scroll -mx-3 px-3 pb-2" role="tablist" aria-label="Settings">
         {placeable && <MoveHere item={item} />}
         {(item.type === "area" || item.type === "line") && <MoveCornerHere item={item} />}
         {chips.map(c => c.run

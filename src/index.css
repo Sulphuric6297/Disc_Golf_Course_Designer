@@ -377,6 +377,10 @@ select option:disabled {
   from { transform: translateY(24px); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
+@keyframes dgsink {
+  from { transform: none; opacity: 1; }
+  to { transform: translateY(24px); opacity: 0; }
+}
 @media (prefers-reduced-motion: reduce) {
   [class*="animate-[dg"] { animation: none !important; }
 }

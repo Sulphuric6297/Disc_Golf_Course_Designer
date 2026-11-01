@@ -305,7 +305,7 @@ function Tools() {
 
 /** A row of chips that scrolls sideways (a phone has no room to wrap them). */
 const ChipRow = ({ children, testid }: { children: ReactNode; testid?: string }) => (
-  <div className="mt-2 px-4 flex gap-1.5 overflow-x-auto dg-noscrollbar dg-fade-r touch-pan-x" data-testid={testid}>{children}<span className="shrink-0 w-4" aria-hidden /></div>
+  <div className="mt-2 px-4 flex gap-1.5 overflow-x-auto dg-noscrollbar dg-fade-r touch-pan-x touch-pan-y" data-testid={testid}>{children}<span className="shrink-0 w-4" aria-hidden /></div>
 );
 
 function ToolHeader() {
@@ -465,7 +465,7 @@ function AppMenu({ onClose, onHelp, onGoTo, onOpenFile }: { onClose: () => void;
         {recent.length > 0 && (
           <div className="border-b border-white/5">
             <div className="px-4 pt-2.5 pb-1 text-[12px] uppercase tracking-wider font-bold text-zinc-500">{SERVER ? "Courses" : "Recent courses"}</div>
-            <div className="flex gap-2 overflow-x-auto dg-noscrollbar px-4 pb-3 touch-pan-x">
+            <div className="flex gap-2 overflow-x-auto dg-noscrollbar px-4 pb-3 touch-pan-x touch-pan-y">
               {recent.map(r => (
                 <div key={r.id} className="shrink-0 flex items-center bg-white/[0.07] rounded-xl" data-testid="recent-course">
                   <button className="text-left pl-3 pr-1 py-2 min-h-[48px]" onClick={() => { onClose(); void openRecent(r.id); }}>
@@ -728,6 +728,17 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
     return () => window.clearInterval(t);
   }, [ed.selectedId, immersive]);
 
+  // (the Map step's tools, floating over the page: how tall, with what they have open)
+  const [toolsH, setToolsH] = useState(64);
+  const toolsSeen = useRef<ResizeObserver | null>(null);
+  const toolsAt = useCallback((el: HTMLDivElement | null) => {
+    toolsSeen.current?.disconnect();
+    toolsSeen.current = null;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setToolsH(Math.round(el.getBoundingClientRect().height)));
+    ro.observe(el);
+    toolsSeen.current = ro;
+  }, []);
   const toggle = useCallback(() => setDetent(d => (d === "peek" ? "half" : "peek")), []);
   const onStep = (s: Step) => goStep(s, setDetent, toggle);
   const top = 72; // below the top bar
@@ -746,11 +757,9 @@ function PhoneShell({ onFindSite, onHelp, onGoTo, onContextMenu, welcome, toasts
             tools under it, the page fitting the room above them and whatever they open; on Export
             over a low sheet, staying put as the sheet's pulled up) */}
         {design && pageTools && (
-          <div className="absolute inset-0 z-20 bg-zinc-950 flex flex-col" data-testid="design-layer">
-            <div className="relative flex-1 min-h-0">
-              <MapDesigner compact topInset={top} />
-            </div>
-            {!ed.designSel && <PageTools />}
+          <div className="absolute inset-0 z-20 bg-zinc-950" data-testid="design-layer">
+            <MapDesigner compact topInset={top} bottomInset={toolsH} />
+            {!ed.designSel && <div ref={toolsAt} className="absolute inset-x-0 bottom-0 z-30"><PageTools /></div>}
           </div>
         )}
         {design && !pageTools && (

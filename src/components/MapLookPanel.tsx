@@ -90,7 +90,7 @@ const commit = () => useCourse.getState().commit();
 
 type Thumb = { id: string; label: string; img: string; on: boolean; pick: () => void };
 /** Pictures to pick from: two to a row, or in a phone's tool sheet one row to swipe. */
-const pickRow = (row: boolean, grid: string) => (row ? "flex gap-2 overflow-x-auto dg-noscrollbar touch-pan-x snap-x -mx-3 px-3 pb-1" : grid);
+const pickRow = (row: boolean, grid: string) => (row ? "flex gap-2 overflow-x-auto dg-noscrollbar touch-pan-x touch-pan-y snap-x -mx-3 px-3 pb-1" : grid);
 const pickItem = (row: boolean) => (row ? "shrink-0 w-[118px] snap-start" : "");
 
 /** Choices as pictures (each a small painting of the map with it), two to a row. */

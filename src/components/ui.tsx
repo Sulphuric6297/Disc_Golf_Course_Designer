@@ -188,7 +188,7 @@ export function ChipPick<T extends string>({ value, options, onChange, label, te
   // (a row: the one picked scrolled into view when it shows)
   useEffect(() => { if (row) box.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.scrollIntoView?.({ inline: "center", block: "nearest" }); }, [row]);
   return (
-    <div ref={box} className={row ? "flex gap-1.5 overflow-x-auto touch-pan-x dg-scroll -mx-1 px-1" : "flex flex-wrap gap-1"} role="radiogroup" aria-label={label} data-testid={testid}>
+    <div ref={box} className={row ? "flex gap-1.5 overflow-x-auto touch-pan-x touch-pan-y dg-scroll -mx-1 px-1" : "flex flex-wrap gap-1"} role="radiogroup" aria-label={label} data-testid={testid}>
       {options.map(o => {
         const on = value === o.value;
         return (

@@ -23,7 +23,9 @@ if (!rootElement) throw new Error("Root element not found");
 
 // (the editor's code still coming: said so, not a blank page)
 const app = <Suspense fallback={<LoadingScreen label="Opening GlideLine Studio…" />}><App /></Suspense>;
-createRoot(rootElement).render(
+// (one root, however often a code change while developing runs this again: two would fight over
+// the page, "Failed to execute removeChild")
+((window as unknown as { __dgRoot?: ReturnType<typeof createRoot> }).__dgRoot ??= createRoot(rootElement)).render(
   <React.StrictMode>
     <ErrorBoundary>
       {SERVER && SITE_TOKEN ? <PublicSite>{app}</PublicSite> : SERVER ? <AuthGate>{app}</AuthGate> : <>{app}<LockedNote /><DemoHome /><Tour /></>}

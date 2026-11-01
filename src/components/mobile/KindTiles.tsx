@@ -50,7 +50,7 @@ export function KindTiles<T extends string>({ label, value, options, onChange }:
   // (the one picked brought into view as the row shows)
   useEffect(() => { box.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.scrollIntoView?.({ inline: "center", block: "nearest" }); }, []);
   return (
-    <div ref={box} className="flex gap-1.5 overflow-x-auto touch-pan-x dg-scroll -mx-3 px-3 pb-1" role="radiogroup" aria-label={label} data-testid="kind-tiles">
+    <div ref={box} className="flex gap-1.5 overflow-x-auto touch-pan-x touch-pan-y dg-scroll -mx-3 px-3 pb-1" role="radiogroup" aria-label={label} data-testid="kind-tiles">
       {options.map(o => {
         const on = o.value === value;
         return (
