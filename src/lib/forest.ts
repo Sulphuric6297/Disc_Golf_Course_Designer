@@ -2090,8 +2090,11 @@ function* reliefGridSteps(doc: CourseDoc, on: boolean, W: number, H: number, toP
       const j = gy * gw + gx;
       const h = at(p);
       elev[j] = h;
-      sx[j] = (at({ x: p.x + ux.x * e, y: p.y + ux.y * e }) - at({ x: p.x - ux.x * e, y: p.y - ux.y * e })) / (2 * e);
-      sy[j] = (at({ x: p.x + uy.x * e, y: p.y + uy.y * e }) - at({ x: p.x - uy.x * e, y: p.y - uy.y * e })) / (2 * e);
+      // (the slope where the measured ground is: at or past its edge, the edge's own, so the light
+      // carries on across it with no seam, then eases away)
+      const q = { x: Math.max(e, Math.min(endX - e, p.x)), y: Math.max(e, Math.min(endY - e, p.y)) };
+      sx[j] = (at({ x: q.x + ux.x * e, y: q.y + ux.y * e }) - at({ x: q.x - ux.x * e, y: q.y - ux.y * e })) / (2 * e);
+      sy[j] = (at({ x: q.x + uy.x * e, y: q.y + uy.y * e }) - at({ x: q.x - uy.x * e, y: q.y - uy.y * e })) / (2 * e);
       const w = (ins[j] = inside(p));
       sx[j] *= w; sy[j] *= w;
       lo = Math.min(lo, h);
