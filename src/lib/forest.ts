@@ -850,27 +850,31 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
         }
         const u = rnd();
         const t = 1 + Math.floor(rnd() * 6);
+        // (a crown that would reach over a fairway, path or water nearby: smaller, so the clearing
+        // stays clear, in every look)
+        const clearAt = (dx: number, dy: number) => { const cx = Math.min(mw - 1, Math.max(0, Math.floor((x + dx) / cell))), cy = Math.min(mh - 1, Math.max(0, Math.floor((y + dy) / cell))); return a[(cy * mw + cx) * 4 + 1] > 90; };
+        const clear = (r0: number) => { let r = r0; for (let tries = 0; tries < 2; tries++) { const q = r * 0.75; if (clearAt(q, 0) || clearAt(-q, 0) || clearAt(0, q) || clearAt(0, -q)) r *= 0.72; else break; } return r; };
+        // (as tall as a woods' tree is, 13 to 34 ft, in every look: over a shed or a house as the
+        // vector looks have it, never under its roof at a close scale)
+        const ftTop = (13 + 21 * (((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1 + 1) % 1)) * k;
         if (vector) {
-          let r = vR(u) * grow;
-          // (a crown that would reach over a fairway, path or water nearby: smaller, so the clearing stays clear)
-          const clearAt = (dx: number, dy: number) => { const cx = Math.min(mw - 1, Math.max(0, Math.floor((x + dx) / cell))), cy = Math.min(mh - 1, Math.max(0, Math.floor((y + dy) / cell))); return a[(cy * mw + cx) * 4 + 1] > 90; };
-          for (let tries = 0; tries < 2; tries++) { const q = r * 0.75; if (clearAt(q, 0) || clearAt(-q, 0) || clearAt(0, q) || clearAt(0, -q)) r *= 0.72; else break; }
+          const r = clear(vR(u) * grow);
           const h = r * (1.6 + rnd() * 0.8), drawnPine = rnd() < vPines, col = treeColor(rnd()), seed = rnd();
           const own = standAt(x, y), pine = own ? LOOK_VARIANTS[own].shape === "conifer" : drawnPine;
           const kind = own ?? lookFor(pine ? "conifer" : "broadleaf", drawOf(Math.round(seed * 1e6), 7), shares);
-          vtrees.push({ x, y, r, h, pine, col: asKind(col, kind), seed, look: kind });
+          vtrees.push({ x, y, r, h, pine, col: asKind(col, kind), seed, look: kind, fill: true });
           continue;
         }
         if (natural) {
-          const r = realR(u) * grow;
-          if (rnd() < pineShare) tufted(x, y, r * 0.8, realTop(r) * 1.15, t);
-          else leafy(x, y, r, realTop(r), t);
+          const r = clear(realR(u) * grow);
+          if (rnd() < pineShare) tufted(x, y, r * 0.8, Math.max(realTop(r) * 1.15, ftTop), t);
+          else leafy(x, y, r, Math.max(realTop(r), ftTop), t);
           continue;
         }
-        const r = crownR * (0.45 + u * u * 1.35) * grow;
-        if (rnd() < pines) tufted(x, y, r * 0.95, r * (2.2 + rnd() * 0.9), t);
-        else if (cover < 0.75 && rnd() < (0.75 - cover) * 0.8) clumpTree(x, y, r * 1.5, t);
-        else stamp(x, y, r, r * (1.9 + rnd() * 0.9), t);
+        const r = clear(crownR * (0.45 + u * u * 1.35) * grow);
+        if (rnd() < pines) tufted(x, y, r * 0.95, Math.max(r * (2.2 + rnd() * 0.9), ftTop), t);
+        else if (cover < 0.75 && rnd() < (0.75 - cover) * 0.8) clumpTree(x, y, r * 1.5, t, Math.max(r * 1.95, ftTop));
+        else stamp(x, y, r, Math.max(r * (1.9 + rnd() * 0.9), ftTop), t);
       }
     }
   }
@@ -904,7 +908,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
       continue;
     }
     if (t.treeType === "conifer") tufted(sp.x, sp.y, r, top, tone);
-    else if (t.treeType === "bush") natural ? leafy(sp.x, sp.y, r, Math.min(top, r * 1.1), tone, 4) : stamp(sp.x, sp.y, r, Math.min(top, r * 1.1), tone);
+    else if (t.treeType === "bush") natural ? leafy(sp.x, sp.y, r * 0.9, Math.min(top, r * 1.1), tone, 4) : stamp(sp.x, sp.y, r * 0.9, Math.min(top, r * 1.1), tone);
     else if (natural) leafy(sp.x, sp.y, r, top, tone);
     else if (r > crownR * 1.4) clumpTree(sp.x, sp.y, r, tone, top);
     else stamp(sp.x, sp.y, r, top, tone);
@@ -1388,7 +1392,7 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
             let wv = (creek + (pond - creek) * open) * (0.55 + 0.45 * lit);
             if (look.water.style === "glinting") wv *= 0.78;
             // (flat: one bright blue, a little deeper in the middle, a white line just inside the shore)
-            if (look.water.style === "flat") wv = 0.7 + 0.12 * (1 - smooth(0, 24 * pt, d)) * open - 0.08 * smooth(4 * pt, 30 * pt, d) * open;
+            if (look.water.style === "flat") wv = (0.7 + 0.12 * (1 - smooth(0, 24 * pt, d)) * open - 0.08 * smooth(4 * pt, 30 * pt, d) * open) * (0.55 + 0.45 * lit);
             lay(water, wv, smooth(0.4, 0.46, w));
             if (look.water.style === "flat") {
               const ring = (1 - smooth(0.35 * pt, 0.8 * pt, Math.abs(d - 1.8 * pt))) * open * 0.55 * smooth(0.4, 0.46, w);
@@ -1525,8 +1529,9 @@ function* forestSteps(doc: CourseDoc, view: ForestView, stats: HoleStats[], opts
   const lxy = Math.hypot(sunX, sunY) || 1, Lx = sunX / lxy, Ly = sunY / lxy;
   if (vector) roomBetween(vtrees);
   if (vector) {
-    const strength = 0.6 + shadowK * 0.8;
-    drawShadows(ctx, vtrees, Lx, Ly, pl, strength, vstyle === "drybrush" ? 1 : vstyle === "cloud" ? 0.3 : 0.6);
+    // (none at 0%, as the other looks; as long as the sun's height makes them, 38° the usual)
+    const strength = shadowK * 1.72, long = Math.max(0.3, Math.min(3, Math.tan((38 * Math.PI) / 180) / rise));
+    if (strength > 0.01) drawShadows(ctx, vtrees, Lx * long, Ly * long, pl, strength, vstyle === "drybrush" ? 1 : vstyle === "cloud" ? 0.3 : 0.6);
     yield 0.92;
     if (vstyle === "brushed") {
       // (every crown brushed on, a step at a time, leafy and pine, the smallest too; a pine in the
@@ -1911,7 +1916,8 @@ const roomBetween = (trees: PaintTree[]) => {
     return false;
   });
   trees.forEach((t, i) => {
-    if (pressed[i]) t.r *= 0.88;
+    // (only the woods' own trees make room: one placed or measured keeps its size)
+    if (pressed[i] && t.fill) t.r *= 0.88;
     const v = 0.92 + 0.16 * ((Math.sin(t.seed * 9301.7) * 43758.5453) % 1 + 1) % 1;
     t.col = [t.col[0] * v, t.col[1] * v, t.col[2] * v];
   });
