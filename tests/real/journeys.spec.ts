@@ -376,6 +376,26 @@ test("a refresh in a course comes back to it, on its step and printout; on the c
   await page.evaluate(() => (window as any).__dgEditor().set({ step: "design", tool: "select" }));
 });
 
+test("the browser's Back and Forward go through the steps, and between a course and Courses", async () => {
+  const step = () => page.evaluate(() => (window as any).__dgEditor().step);
+  for (const s of ["design", "map", "export"]) {
+    await page.evaluate(to => (window as any).__dgEditor().set({ step: to, tool: "select" }), s);
+    await page.waitForTimeout(150);
+  }
+  await page.goBack();
+  await expect.poll(step).toBe("map");
+  await page.goBack();
+  await expect.poll(step).toBe("design");
+  await page.goForward();
+  await expect.poll(step).toBe("map");
+  await page.getByTestId("logo-home").click();
+  await expect(page.getByTestId("home")).toBeVisible();
+  await page.goBack();
+  await expect(page.getByTestId("home")).toBeHidden();
+  await expect.poll(step).toBe("map");
+  await page.evaluate(() => (window as any).__dgEditor().set({ step: "design", tool: "select" }));
+});
+
 test("Hand painted's trees on the graphics chip: two paintings at once, and one stopped part way, each whole, as if painted alone", async () => {
   test.setTimeout(300_000);
   // (a browser of its own with an emulated graphics chip, as the check below has: the trees are
