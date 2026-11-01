@@ -2036,9 +2036,11 @@ function* terrainLight(doc: CourseDoc, dir: P, tanEl: number, hills: number) {
       ring += a3;
       top2 = Math.max(top2, a2, a3); low2 = Math.min(low2, a2, a3);
     }
-    const drop = smooth(5 * hills, 12 * hills, top2 - low2);
-    rock[j] = smooth(0.62, 1.05, Math.hypot(gx, gy)) * drop;
-    wall[j] = smooth(0.45, 0.8, Math.hypot(gx, gy)) * drop;
+    // (on the ground's real slope and drop: Hills makes the shading stronger, it never turns a
+    // wooded bank into a cliff)
+    const drop = smooth(5, 12, (top2 - low2) / hills), steep = Math.hypot(gx, gy) / hills;
+    rock[j] = smooth(0.62, 1.05, steep) * drop;
+    wall[j] = smooth(0.45, 0.8, steep) * drop;
     cv[j] = Math.max(-1, Math.min(1, ((h0 - ring / dirs.length) / (3 * G)) * 3));
   }
   const v = { cols, rows, grid: G, cast, sky, rock, wall, cv };
