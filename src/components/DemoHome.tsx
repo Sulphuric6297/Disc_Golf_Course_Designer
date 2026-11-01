@@ -64,7 +64,7 @@ function Card({ name, sub, note, picture, badge, onOpen, onRemove, onRestart, bu
   );
 }
 
-const REPO_NAME = "Sulphuric6297/Disc_Golf_Course_Designer";
+const REPO_NAME = "Sulphuric6297/GlideLine";
 const API = `https://api.github.com/repos/${REPO_NAME}`;
 
 /** The open course's photo, small, for the example's card. */
